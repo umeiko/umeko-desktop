@@ -12,6 +12,8 @@ foreach ($buildProcess in @(Get-Process Umeko -ErrorAction SilentlyContinue)) {
 if ($LASTEXITCODE -ne 0) { throw 'Build dependency installation failed' }
 & '.venv/Scripts/python.exe' prepare_runtime.py
 if ($LASTEXITCODE -ne 0) { throw 'Pi compatibility validation failed' }
+& '.venv/Scripts/python.exe' scripts/fetch-search-tools.py
+if ($LASTEXITCODE -ne 0) { throw 'Pi search tool preparation failed' }
 & '.venv/Scripts/python.exe' build_icons.py
 & '.venv/Scripts/python.exe' scripts/write-build-info.py
 if ($LASTEXITCODE -ne 0) { throw 'Build metadata generation failed' }

@@ -12,6 +12,7 @@ if output == root or not output.is_relative_to(root):
 PY
 .venv/bin/python -m pip install pyinstaller==6.19.0
 .venv/bin/python prepare_runtime.py
+.venv/bin/python scripts/fetch-search-tools.py
 QT_QPA_PLATFORM=offscreen .venv/bin/python build_icons.py
 .venv/bin/python scripts/write-build-info.py
 .venv/bin/python scripts/build-provider-resources.py

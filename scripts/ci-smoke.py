@@ -43,6 +43,9 @@ def main():
         if not (resources / "provider-resources" / name).is_file():
             raise RuntimeError("Provider development resource is missing: " + name)
     runtime = resources / "runtime/releases" / RELEASE_NAME
+    for name in ("fd", "rg"):
+        tool = runtime / "bin" / (name + (".exe" if os.name == "nt" else ""))
+        subprocess.run([str(tool), "--version"], check=True, capture_output=True, timeout=15)
     for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs"):
         if hashlib.sha256((runtime / name).read_bytes()).digest() != hashlib.sha256((ROOT / "runtime" / name).read_bytes()).digest():
             raise RuntimeError("Packaged Pi bridge differs from the source: " + name)

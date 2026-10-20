@@ -3,12 +3,15 @@
 import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-policy.mjs";
 import { prepareNativeSettings, builtins } from "./resources.mjs";
 import { createInterface } from "node:readline";
-import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
+import { join, resolve, dirname, basename, delimiter } from "node:path";
+import { fileURLToPath } from "node:url";
 import { tmpdir, homedir } from "node:os";
 import http from "node:http";
 
 process.env.PI_OFFLINE = "1";
+const bundledBin = fileURLToPath(new URL("./bin/", import.meta.url));
+if (existsSync(bundledBin)) process.env.PATH = bundledBin + delimiter + (process.env.PATH || "");
 for (const key of Object.keys(process.env)) {
   if (/API_KEY$|ACCESS_TOKEN$|^(HTTP|HTTPS|ALL)_PROXY$|^NODE_(OPTIONS|PATH)$/i.test(key)) delete process.env[key];
 }
@@ -35,6 +38,13 @@ function ask(method, title, detail = "", options = []) {
   return new Promise(resolve => dialogs.set(id, resolve));
 }
 function clearDialogs() { for (const done of dialogs.values()) done(undefined); dialogs.clear(); }
+function canonicalPath(path) {
+  // Match Python's Path.resolve(), including Windows 8.3 names and missing leaves.
+  try { return realpathSync.native(path); } catch {
+    const parent = dirname(path);
+    return parent === path ? path : join(canonicalPath(parent), basename(path));
+  }
+}
 const ui = {
   select: (title, options) => ask("select", title, "", options),
   confirm: async (title, detail) => (await ask("confirm", title, detail)) === true,
@@ -202,7 +212,7 @@ async function state() {
     if (calls.length) row.tools = calls.map(call => {
       const result = results.get(call.id), args = call.arguments || {};
       let path = args.path || args.file_path || args.filePath || "";
-      path = path && typeof path === "string" && !path.includes("://") ? resolve(manager.getCwd(), path.replace(/^~(?=[/\\]|$)/,homedir())) : "";
+      path = path && typeof path === "string" && !path.includes("://") ? canonicalPath(resolve(manager.getCwd(), path.replace(/^~(?=[/\\]|$)/,homedir()))) : "";
       return {id:call.id, name:call.name, arguments:args, path, state:result ? result.isError ? "error" : "done" : "interrupted", result:result ? textOf(result.content).slice(0,8192) : ""};
     });
     return row;

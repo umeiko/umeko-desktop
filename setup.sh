@@ -8,4 +8,5 @@ command -v npm >/dev/null || { echo 'npm is required to install the Pi kernel.' 
 .venv/bin/python -m pip install -r requirements.txt
 npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
 .venv/bin/python prepare_runtime.py
+.venv/bin/python scripts/fetch-search-tools.py
 echo 'Ready. Run ./Start-Umeko.sh (or double-click Start-Umeko.command on macOS).'
