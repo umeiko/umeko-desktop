@@ -163,7 +163,18 @@ class Controller(PiControllerMixin, QObject):
             self.store.data.update(workspace=project["path"], activeProject=project["id"])
         else:
             self.store.data.update(workspace="", activeProject="")
-        if record.model and any(m["alias"] == record.model for p in self.store.data["providers"] for m in p["models"]):
+        # The index can name a deleted supplier or a retired pre-plugin model.
+        # Keep a valid historical selection; otherwise use the current selection.
+        available = [(p["id"], m["alias"]) for p in self.store.data["providers"]
+                     if p["api"] != "internal" or getattr(self.gateway.adapter, "ready", True)
+                     for m in p["models"]]
+        historical = (record.provider, record.model)
+        current = (self.store.data["selectedProvider"], self.store.data["selectedModel"])
+        selected = historical if historical in available else current if current in available else next(iter(available), ("", ""))
+        if not record.busy and historical != selected:
+            record.provider, record.model = selected
+            record.context_usage = {}
+        if (record.provider, record.model) in available:
             self.store.data.update(selectedModel=record.model, selectedProvider=record.provider)
         self._mark_read(record)
         self.store.save()
@@ -1140,7 +1151,7 @@ class Controller(PiControllerMixin, QObject):
                 except OSError:
                     self.toast.emit("原生会话文件暂时无法读取")
         self._activate(record)
-        if not record.process and not record.busy:
+        if record.model and not record.process and not record.busy:
             # QProcess.start() is asynchronous; the transcript is already visible.
             self._command_pi("inspect", record=record)
 

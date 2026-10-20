@@ -85,6 +85,55 @@ class ProviderPluginTests(unittest.TestCase):
         self.manager.login(provider_id, json.dumps({"username": username, "password": password}))
         self.wait(provider_id)
 
+    def wait_for_pi(self):
+        deadline = time.monotonic() + 15
+        while self.controller.busy and time.monotonic() < deadline:
+            self.app.processEvents()
+            time.sleep(.01)
+        self.app.processEvents()
+        self.assertFalse(self.controller.busy, "Pi fixture timed out")
+
+    def test_history_with_removed_model_continues_through_imported_provider(self):
+        provider_id = self.install()
+        self.login(provider_id)
+        c = self.controller
+        c.store.data["agent"].update(agentDir=str(self.path / "agent"), safeMode=True)
+        file = self.path / "legacy.jsonl"
+        rows = [
+            {"type":"session", "id":"old-history", "version":3, "timestamp":"2026-01-01T00:00:00Z", "cwd":str(self.path)},
+            {"type":"model_change", "id":"old-model", "parentId":None, "timestamp":"2026-01-01T00:00:00Z", "provider":"umeko", "modelId":"retired-model"},
+            {"type":"message", "id":"old-user", "parentId":"old-model", "timestamp":"2026-01-01T00:00:00Z", "message":{"role":"user", "content":[{"type":"text", "text":"previous fixture question"}], "timestamp":1}},
+        ]
+        original = ("\n".join(json.dumps(row) for row in rows) + "\n").encode()
+        file.write_bytes(original)
+        c._sessions.append({"id":"old-history", "title":"Old fixture", "workspace":str(self.path), "file":str(file), "model":"retired-model", "provider":"removed-provider"})
+        c.openSession("old-history")
+        self.wait_for_pi()
+        self.assertTrue(c._view.ready)
+        self.assertEqual((c._view.provider, c._view.model), (provider_id, "k3"))
+        self.assertTrue(c.send("continue fixture"))
+        self.wait_for_pi()
+        self.assertFalse(c.messages[-1]["error"], c.messages)
+        self.assertEqual(c.messages[-1]["text"], "fixture")
+        self.assertEqual(c._view.file, str(file))
+        self.assertTrue(file.read_bytes().startswith(original), "Restoring a model rewrote existing history")
+        self.assertEqual(c.messages[0]["text"], "previous fixture question")
+
+    def test_failed_initialization_is_disposed_before_retry(self):
+        self.login(self.install())
+        c = self.controller
+        c.store.data["agent"].update(agentDir=str(self.path / "agent"), safeMode=True)
+        with patch.object(c.gateway, "models", return_value=[]):
+            self.assertTrue(c._command_pi("inspect"))
+            self.wait_for_pi()
+        self.assertFalse(c._view.ready)
+        self.assertIsNone(c._view.process, "An uninitialized Pi was kept for incremental requests")
+        self.assertTrue(c.send("retry fixture"))
+        self.wait_for_pi()
+        self.assertTrue(c._view.ready)
+        self.assertFalse(c.messages[-1]["error"], c.messages)
+        self.assertEqual(c.messages[-1]["text"], "fixture")
+
     def test_import_is_inert_and_no_builtin_account_or_default_model(self):
         self.assertEqual(self.controller.config["providers"], [])
         self.assertEqual(self.controller.gateway.models(), [])
@@ -95,6 +144,26 @@ class ProviderPluginTests(unittest.TestCase):
         self.assertTrue(self.marker.exists())
         self.assertEqual(self.controller.gateway.models()[0]["id"], "k3")
         self.assertEqual(self.controller.config["selectedProvider"], provider_id)
+
+    def test_history_without_an_available_model_can_still_be_browsed(self):
+        c = self.controller
+        c._sessions.append({"id":"old-no-model", "title":"Old fixture", "workspace":"", "model":"retired-model", "provider":"removed-provider", "messages":[{"role":"user", "text":"previous fixture question"}]})
+        c.openSession("old-no-model")
+        self.assertFalse(c.busy)
+        self.assertIsNone(c._view.process)
+        self.assertEqual(c.messages[0]["text"], "previous fixture question")
+        self.assertEqual((c._view.provider, c._view.model), ("", ""))
+
+    def test_valid_history_selection_is_kept(self):
+        first, second = self.install(), self.install()
+        self.login(first)
+        self.login(second, username="second-user")
+        c = self.controller
+        c.selectModel(second, self.manager.rows[1]["models"][0]["alias"])
+        historical = c._new_view()
+        historical.provider, historical.model = first, "k3"
+        c._activate(historical)
+        self.assertEqual((c.config["selectedProvider"], c.config["selectedModel"]), (first, "k3"))
 
     def test_protected_credentials_same_account_reuse_and_changed_account_requires_secret(self):
         provider_id = self.install()

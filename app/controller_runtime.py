@@ -57,7 +57,7 @@ class PiControllerMixin:
         record = record or self._view
         if record.busy or self._kernel_busy:
             return False
-        if record.stale:
+        if record.stale or (record.process and not record.ready):
             self._pool.retire(record)
         record.action, record.failed, record.cancelled = action, False, False
         record.phase = "loading" if not record.process else "running" if action in ("prompt", "compact") else "working"
@@ -268,7 +268,7 @@ class PiControllerMixin:
                 self.store.save()
             if visible:
                 self.approvalChanged.emit()
-            if record.stale:
+            if record.stale or (kind == "done" and not record.ready):
                 self._pool.retire(record)
             self._pool.trim()
         else:

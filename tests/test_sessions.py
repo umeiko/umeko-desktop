@@ -33,7 +33,6 @@ class SessionTests(unittest.TestCase):
         seed.save()
         self.controller = Controller(ROOT)
         self.controller.store.data["agent"]["agentDir"] = str(self.path / "agent")
-        self.controller.setWorkspace(QUrl.fromLocalFile(str(self.path)).toString())
         self.started = {name: threading.Event() for name in ("A", "B")}
         self.gates = {name: threading.Event() for name in ("A", "B")}
         owner = self
@@ -49,6 +48,7 @@ class SessionTests(unittest.TestCase):
                         raise RuntimeError("fixture gate timed out")
                 return Completion("RESULT " + name)
         self.controller.gateway.adapter = Fixture()
+        self.controller.setWorkspace(QUrl.fromLocalFile(str(self.path)).toString())
 
     def wait_for(self, predicate, message="condition", timeout=10000):
         for _ in range(timeout // 25):

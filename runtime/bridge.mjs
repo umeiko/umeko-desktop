@@ -285,7 +285,10 @@ async function execute(input) {
   if (executing) { emit({ type: "error", message: "Pi 正在处理当前操作" }); return; }
   executing = true;
   try {
-    if (!runtime) await init(input);
+    if (!runtime) {
+      if (!input.gateway || !input.token || !Array.isArray(input.models)) throw new Error("Pi 尚未完成初始化，请重新加载会话后重试");
+      await init(input);
+    }
     else if (input.targetFile && resolve(input.targetFile) !== resolve(runtime.session.sessionManager.getSessionFile() || ".")) await runtime.switchSession(input.targetFile);
     if (input.model && runtime.session.model?.id !== input.model) {
       selectedModel = modelRuntime.getModel("umeko", input.model);

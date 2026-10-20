@@ -102,6 +102,19 @@ class PiTests(unittest.TestCase):
             self.server.close()
             self.temp.cleanup()
 
+    def test_incremental_prompt_before_initialization_reports_a_recoverable_error(self):
+        self.send({"type":"prompt", "model":"umeko-default", "text":"early fixture"})
+        output = []
+        while not output or output[-1].get("type") != "done":
+            output.append(self.events.get(timeout=20))
+        errors = [event["message"] for event in output if event.get("type") == "error"]
+        self.assertEqual(errors, ["Pi 尚未完成初始化，请重新加载会话后重试"])
+        self.assertEqual(self.calls, [])
+        self.command(self.payload)
+        self.response_fn = lambda *_: Completion("recovered fixture")
+        state = next(event for event in self.command({"type":"prompt", "text":"retry fixture"}) if event["type"] == "state")
+        self.assertEqual(state["messages"][-1]["text"], "recovered fixture")
+
     def test_native_skills_extensions_tool_loop_resume_and_fork(self):
         events = self.command(self.payload)
         state = next(e for e in events if e["type"] == "state")
