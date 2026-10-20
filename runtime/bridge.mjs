@@ -1,0 +1,401 @@
+// JSONL presentation adapter for the complete, unmodified Pi Coding Agent SDK.
+// Tools, loop, skill expansion, extension hooks and session trees belong to Pi.
+import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-policy.mjs";
+import { prepareNativeSettings, builtins } from "./resources.mjs";
+import { createInterface } from "node:readline";
+import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { tmpdir, homedir } from "node:os";
+import http from "node:http";
+
+process.env.PI_OFFLINE = "1";
+for (const key of Object.keys(process.env)) {
+  if (/API_KEY$|ACCESS_TOKEN$|^(HTTP|HTTPS|ALL)_PROXY$|^NODE_(OPTIONS|PATH)$/i.test(key)) delete process.env[key];
+}
+installProviderPolicy();
+const Pi = await import("@earendil-works/pi-coding-agent");
+const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
+const { AuthStorage } = await import(new URL("./core/auth-storage.js", entry));
+const { loadMcpConfig } = await import(new URL("./extensions/mcp/config.js", entry));
+const { allToolNames } = await import(new URL("./core/tools/index.js", entry));
+const nativeTools = [...allToolNames, "codemode", "tool_search"];
+const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
+const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
+const textOf = content => typeof content === "string" ? content : (content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
+const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
+let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe, closing = false;
+let mcpEntries = [], mcpStatus = "", capturingMcp = false, pollingResources = false;
+let queueChain = Promise.resolve();
+let queueMedia = [];
+const dialogs = new Map();
+
+function ask(method, title, detail = "", options = []) {
+  const id = crypto.randomUUID();
+  emit({ type: "ui_request", id, method, title, detail, options });
+  return new Promise(resolve => dialogs.set(id, resolve));
+}
+function clearDialogs() { for (const done of dialogs.values()) done(undefined); dialogs.clear(); }
+const ui = {
+  select: (title, options) => ask("select", title, "", options),
+  confirm: async (title, detail) => (await ask("confirm", title, detail)) === true,
+  input: (title, placeholder) => ask("input", title, placeholder),
+  editor: (title, prefill) => ask("editor", title, prefill),
+  notify: message => { if (capturingMcp) mcpStatus = message; else emit({ type: "notice", message }); },
+  setStatus: (_key, text) => emit({ type: "status", text: text || "" }),
+  setWorkingMessage: text => emit({ type: "status", text: text || "" }),
+  setWorkingVisible() {}, setWorkingIndicator() {}, setHiddenThinkingLabel() {},
+  setWidget: (key, content) => { if (Array.isArray(content)) emit({ type: "widget", key, text: content.join("\n") }); },
+  setFooter() {}, setHeader() {}, setTitle() {}, onTerminalInput: () => () => {},
+  setEditorText: text => emit({ type: "editor", text }), pasteToEditor: text => emit({ type: "editor", text }),
+  getEditorText: () => "", addAutocompleteProvider: () => () => {},
+  custom: async () => { throw new Error("此扩展要求终端自定义组件；请使用 Pi 的原生终端界面运行该组件"); },
+};
+
+async function bindSession(session) {
+  unsubscribe?.();
+  let lastContext = "";
+  const publishContext = () => {
+    const usage = contextUsage(session), serialized = JSON.stringify(usage);
+    if (serialized !== lastContext) { lastContext = serialized; emit({ type: "context_usage", usage }); }
+  };
+  unsubscribe = session.subscribe(event => {
+    if (event.type === "queue_update") {
+      const pending = [...event.steering, ...event.followUp];
+      queueMedia = queueMedia.filter(item => pending.includes(item.text));
+      emit({ type: "queue", steering: event.steering, followUp: event.followUp });
+    }
+    if (event.type === "message_start" && event.message.role === "user") emit({ type: "user_start", text: textOf(event.message.content) });
+    if (event.type === "message_start" && event.message.role === "assistant") emit({ type: "assistant_start" });
+    if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") emit({ type: "delta", text: event.assistantMessageEvent.delta });
+    if (event.type === "message_update" && event.assistantMessageEvent.type === "thinking_delta") emit({ type: "thinking_delta", text: event.assistantMessageEvent.delta });
+    if (event.type.startsWith("tool_execution_")) emit({ type: "tool", name: event.toolName, id: event.toolCallId,
+      args: event.args, result: event.type === "tool_execution_end" ? textOf(event.result?.content).slice(0,8192) : undefined,
+      state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
+    if (event.type === "message_end") emit({ type: "message", role: event.message.role,
+      text: textOf(event.message.content), thinking: thinkingOf(event.message.content), error: event.message.errorMessage || "" });
+    if (event.type === "compaction_start") emit({ type: "status", text: "正在压缩上下文" });
+    if (event.type === "auto_retry_start") emit({ type: "status", text: `正在重试 ${event.attempt}/${event.maxAttempts}` });
+    if (["entry_appended", "message_end", "compaction_end", "agent_end"].includes(event.type)) publishContext();
+  });
+  await session.bindExtensions({ uiContext: ui, mode: "rpc", abortHandler: () => session.abort(),
+    shutdownHandler: () => shutdown(), onError: error => emit({ type: "notice", message: error.message }),
+    commandContextActions: {
+      waitForIdle: () => session.waitForIdle(),
+      newSession: options => runtime.newSession(options),
+      switchSession: (path, options) => runtime.switchSession(path, options),
+      fork: (id, options) => runtime.fork(id, options),
+      navigateTree: (id, options) => session.navigateTree(id, options),
+      reload: () => reloadSession(session),
+    },
+  });
+  exposeNativeTools(session);
+  publishContext();
+}
+
+function contextUsage(session) {
+  return { tokens: null, contextWindow: null, percent: null, ...session.getContextUsage(), model: session.model?.id || "" };
+}
+
+function exposeNativeTools(session) {
+  // Use Pi's registry, schemas and execution. Deferred/codemode tools remain reachable
+  // through the native discovery tools; explicitly hidden tools stay hidden.
+  const declared = session.getAllTools().filter(tool => ["direct", "model-only"].includes(tool.exposure));
+  session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...declared.map(tool => tool.name)])]);
+}
+
+async function reloadSession(session) {
+  await session.reload();
+  exposeNativeTools(session);
+}
+
+async function init(input) {
+  config = input;
+  setGateway(input.gateway);
+  process.env.PI_CODING_AGENT_DIR = input.agentDir;
+  for (const [name, value] of Object.entries(input.mcpEnv || {})) if (!/^NODE_|^(HTTP|HTTPS|ALL)_PROXY$/i.test(name)) process.env[name] = value;
+  const cwd = resolve(input.workspace || input.defaultCwd);
+  if (!existsSync(cwd)) throw new Error("工作目录不存在");
+  mkdirSync(input.sessionDir, { recursive: true });
+  mkdirSync(input.agentDir, { recursive: true });
+  modelRuntime = await Pi.ModelRuntime.create({ credentials: AuthStorage.inMemory(), modelsPath: null,
+    allowModelNetwork: false, refreshOnCreate: false });
+  if (modelRuntime.getProviders().length) throw new Error("内核包含未禁用的内置供应商");
+  const models = input.models.map(m => ({ id: m.id, name: m.id, api: "openai-completions", input: m.input?.includes("image") ? ["text", "image"] : ["text"],
+    reasoning: false, contextWindow: m.contextWindow || 128000,
+    maxTokens: Math.min(input.agent?.maxTokens || 8192, m.contextWindow || 128000),
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    compat: { supportsDeveloperRole: false, supportsStore: false, supportsUsageInStreaming: true, maxTokensField: "max_tokens" } }));
+  modelRuntime.registerProvider("umeko", { name: "Umeko", api: "openai-completions", baseUrl: input.gateway + "v1",
+    apiKey: input.token, models });
+  await modelRuntime.refresh({ allowNetwork: false });
+  // Extensions retain native tools/commands/hooks, but cannot register a hidden model transport.
+  const reject = () => { throw new Error("供应商由 Umeko 设置统一管理，请先在界面配置"); };
+  modelRuntime.registerProvider = reject;
+  modelRuntime.registerNativeProvider = reject;
+  selectedModel = modelRuntime.getModel("umeko", input.model);
+  if (!selectedModel) throw new Error("请选择已配置的模型");
+  const factory = async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
+    // Load normal Pi settings/resources without importing auth.json or models.json.
+    const settingsManager = await prepareNativeSettings(Pi, { cwd, agentDir, agent: input.agent });
+    const nativeSettings = settingsManager.getSettings();
+    const settings = Pi.SettingsManager.inMemory({ ...nativeSettings,
+      defaultTools: [...new Set([...nativeTools, ...(settingsManager.getDefaultTools() || [])])],
+      codemode: { ...nativeSettings.codemode, mode: "on" },
+      cacheWarming: "off", compaction: { ...nativeSettings.compaction, enabled: input.agent?.autoCompaction !== false },
+    }, { projectTrusted: !input.agent?.safeMode });
+    const services = await Pi.createAgentSessionServices({ cwd, agentDir, modelRuntime, settingsManager,
+      resourceLoaderOptions: {
+        ...(input.agent?.safeMode ? { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+          additionalExtensionPaths: builtins.map(name => "builtin:" + name) } : {}),
+        appendSystemPrompt: ["Your name is umeko. Reply in the user's language.", input.agent?.instructions || ""],
+        extensionFactories: [
+          { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
+          { name: "tool-search", builtin: true, replaceable: true, factory: Pi.createToolSearchExtension() },
+          { name: "mcp", builtin: true, replaceable: true, factory: Pi.createMcpExtension({ loadConfig: ctx => {
+            const loaded = loadMcpConfig({ agentDir, cwd: ctx.cwd, projectTrusted: !input.agent?.safeMode && ctx.isProjectTrusted() });
+            mcpEntries = loaded.servers;
+            setMcpNetwork(mcpEntries);
+            return loaded;
+          } }) },
+        ],
+      },
+    });
+    // Keep native global/project resource scopes in the loader, while desktop
+    // generation/compaction overrides stay in memory on the session itself.
+    services.settingsManager = settings;
+    const result = await Pi.createAgentSessionFromServices({ services, sessionManager, sessionStartEvent, model: selectedModel });
+    return { ...result, services, diagnostics: services.diagnostics };
+  };
+  let manager;
+  if (input.targetFile || input.sessionFile) {
+    const file = input.targetFile || input.sessionFile;
+    if (!existsSync(file)) throw new Error("Pi 会话文件不存在，未创建替代会话");
+    manager = Pi.SessionManager.open(file, input.sessionDir);
+  } else {
+    manager = Pi.SessionManager.create(cwd, input.sessionDir);
+    // One-time import into the native append-only transcript; old files remain intact.
+    for (const message of input.legacyHistory || []) if (["user", "assistant", "toolResult"].includes(message.role)) manager.appendMessage(message);
+  }
+  runtime = await Pi.createAgentSessionRuntime(factory, { cwd: manager.getCwd(), agentDir: input.agentDir, sessionManager: manager });
+  runtime.setRebindSession(bindSession);
+  await bindSession(runtime.session);
+  emit({ type: "ready", version, session: sessionInfo() });
+}
+
+function sessionInfo() {
+  const manager = runtime.session.sessionManager;
+  const file = manager.getSessionFile();
+  return { id: manager.getSessionId(), file: file && existsSync(file) ? file : undefined,
+    title: manager.getSessionName() || "新会话", workspace: manager.getCwd() };
+}
+
+async function state() {
+  const session = runtime.session, manager = session.sessionManager;
+  const branch = manager.getBranch();
+  const results = new Map(branch.filter(e => e.type === "message" && e.message.role === "toolResult").map(e => [e.message.toolCallId, e.message]));
+  const messages = branch.filter(e => e.type === "message" && ["user", "assistant"].includes(e.message.role)).map(e => {
+    const message = e.message;
+    const row = {role: message.role, text: textOf(message.content) || message.errorMessage || "", error: !!message.errorMessage, entryId:e.id};
+    const thinking = thinkingOf(message.content);
+    if (thinking) row.thinking = thinking;
+    const calls = Array.isArray(message.content) ? message.content.filter(c => c.type === "toolCall") : [];
+    if (calls.length) row.tools = calls.map(call => {
+      const result = results.get(call.id), args = call.arguments || {};
+      let path = args.path || args.file_path || args.filePath || "";
+      path = path && typeof path === "string" && !path.includes("://") ? resolve(manager.getCwd(), path.replace(/^~(?=[/\\]|$)/,homedir())) : "";
+      return {id:call.id, name:call.name, arguments:args, path, state:result ? result.isError ? "error" : "done" : "interrupted", result:result ? textOf(result.content).slice(0,8192) : ""};
+    });
+    return row;
+  }).filter(row => row.text || row.thinking || row.tools?.length);
+  const list = await Pi.SessionManager.listAll(config.sessionDir);
+  const file = manager.getSessionFile();
+  emit({ type: "state", session: { id: manager.getSessionId(), file: file && existsSync(file) ? file : undefined,
+    title: manager.getSessionName() || messages.find(m => m.role === "user")?.text.slice(0, 28) || "新会话", workspace: manager.getCwd() },
+    sessions: list.map(s => ({ id: s.id, title: s.name || s.firstMessage.slice(0, 28) || "新会话", file: s.path, workspace: s.cwd })), messages,
+    resources: await capabilities(),
+    contextUsage: contextUsage(session),
+    tree: manager.getBranch().filter(e => e.type === "message").map(e => ({ id: e.id, role: e.message.role, text: textOf(e.message.content).slice(0, 80) })),
+  });
+}
+
+async function capabilities() {
+  const session = runtime.session;
+  if (session.extensionRunner.getCommand("mcp")) {
+    capturingMcp = true;
+    try { await session.prompt("/mcp"); } finally { capturingMcp = false; }
+  }
+  const allTools = session.getAllTools(), active = session.getActiveToolNames();
+  return {
+    tools: active,
+    allTools: allTools.map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters, exposure: tool.exposure, active: active.includes(tool.name), source: tool.sourceInfo?.path || tool.sourceInfo?.kind || "Pi" })),
+    skills: session.resourceLoader.getSkills().skills.map(s => ({ name: s.name, path: s.filePath, description: s.description })),
+    extensions: session.resourceLoader.getExtensions().extensions.map(e => ({ name: e.path.split(/[\\/]/).at(-1), path: e.path })),
+    prompts: session.resourceLoader.getPrompts().prompts.map(p => ({ name: p.name, description: p.description, path: p.filePath })),
+    commands: session.extensionRunner.getRegisteredCommands().map(command => ({ name: command.name, description: command.description || "" })),
+    mcp: mcpEntries.map(entry => {
+      const line = mcpStatus.split("\n").find(line => line.startsWith(entry.name + ": "));
+      return { name: entry.name, scope: entry.scope, state: line ? line.slice(entry.name.length + 2) : entry.config.enabled === false ? "disabled" : "starting", exposure: entry.config.exposure || "codemode",
+        tools: allTools.filter(tool => tool.name.startsWith("mcp__" + entry.name.replace(/-/g, "_") + "__")).map(tool => ({ name: tool.name, description: tool.description })) };
+    }),
+    mcpStatus,
+    diagnostics: [...runtime.diagnostics, ...session.resourceLoader.getExtensions().errors].map(e => ({ message: e.message || e.error })),
+  };
+}
+
+async function execute(input) {
+  if (["follow-up", "steer", "promote-queue"].includes(input.type)) {
+    queueChain = queueChain.then(async () => {
+      try {
+        if (!runtime || !executing || runtime.session.isIdle) throw new Error("当前任务已结束，请重新发送这条消息");
+        if (input.type === "promote-queue") {
+          const media = [...queueMedia];
+          const queued = runtime.session.clearQueue();
+          for (const text of [...queued.steering, ...queued.followUp]) {
+            const index = media.findIndex(item => item.text === text);
+            const images = index >= 0 ? media.splice(index, 1)[0].images : undefined;
+            await runtime.session.steer(text, images);
+            queueMedia.push({text: runtime.session.getSteeringMessages().at(-1), images});
+          }
+        } else {
+          const method = input.type === "steer" ? "steer" : "followUp";
+          await runtime.session[method](input.text, input.images || []);
+          const messages = method === "steer" ? runtime.session.getSteeringMessages() : runtime.session.getFollowUpMessages();
+          queueMedia.push({text: messages.at(-1), images: input.images || []});
+        }
+      } catch (error) { emit({type:"queue_rejected", text:input.text || "", message:error.message}); }
+    });
+    return;
+  }
+  if (input.type === "resources") {
+    if (runtime && !executing && !pollingResources && runtime.session.isIdle) {
+      pollingResources = true;
+      try { emit({ type: "resources", resources: await capabilities() }); } catch (error) { emit({ type: "notice", message: error.message }); }
+      finally { pollingResources = false; }
+    }
+    return;
+  }
+  if (input.type === "ui_response") { dialogs.get(input.id)?.(input.value); dialogs.delete(input.id); return; }
+  if (input.type === "abort") {
+    clearDialogs();
+    const queued = runtime?.session.clearQueue();
+    if (queued?.steering.length || queued?.followUp.length) emit({type:"queue_returned", ...queued});
+    await runtime?.session.abort(); return;
+  }
+  if (input.type === "shutdown") { await shutdown(); return; }
+  if (executing) { emit({ type: "error", message: "Pi 正在处理当前操作" }); return; }
+  executing = true;
+  try {
+    if (!runtime) await init(input);
+    else if (input.targetFile && resolve(input.targetFile) !== resolve(runtime.session.sessionManager.getSessionFile() || ".")) await runtime.switchSession(input.targetFile);
+    if (input.model && runtime.session.model?.id !== input.model) {
+      selectedModel = modelRuntime.getModel("umeko", input.model);
+      if (!selectedModel) throw new Error("模型未配置");
+      await runtime.session.setModel(selectedModel);
+    }
+    if (input.type === "prompt") {
+      if (!runtime.session.sessionManager.getSessionName()) runtime.session.setSessionName(input.text.replace(/\s+/g, " ").slice(0, 28));
+      emit({ type: "session", session: sessionInfo() });
+      await runtime.session.prompt(input.text, { images: input.images || [] });
+    }
+    else if (input.type === "new") await runtime.newSession();
+    else if (input.type === "open") await runtime.switchSession(input.path);
+    else if (input.type === "fork") await runtime.fork(input.entryId || runtime.session.sessionManager.getLeafId(), { position: "at" });
+    else if (input.type === "navigate") await runtime.session.navigateTree(input.entryId, { summarize: false });
+    else if (input.type === "compact") await runtime.session.compact();
+    else if (input.type === "reload") await reloadSession(runtime.session);
+    else if (input.type === "rename") runtime.session.setSessionName(input.title);
+    else if (input.type === "mcp-command") await runtime.session.prompt(input.text);
+    else if (input.type === "export") emit({ type: "notice", message: "已导出到 " + runtime.session.exportToJsonl(input.path) });
+    else if (input.type === "import") await runtime.importFromJsonl(input.path);
+    await state();
+  } catch (error) { emit({ type: "error", message: error.message }); }
+  finally { executing = false; emit({ type: "done", action: input.type }); }
+}
+
+let rl;
+async function shutdown() {
+  if (closing) return;
+  closing = true;
+  clearDialogs();
+  await runtime?.dispose();
+  unsubscribe?.();
+  rl?.close();
+  process.stdin.pause(); process.stdin.unref?.();
+}
+
+async function selfTest() {
+  const temp = mkdtempSync(join(tmpdir(), "umeko-pi-"));
+  let calls = 0;
+  const server = http.createServer(async (req, res) => {
+    let raw = ""; for await (const chunk of req) raw += chunk;
+    const body = JSON.parse(raw);
+    const tools = (body.tools || []).map(t => t.function.name);
+    if (!nativeTools.every(name => tools.includes(name))) throw new Error("Missing native tools: " + nativeTools.filter(name => !tools.includes(name)).join(", "));
+    const message = ++calls === 1 ? { role: "assistant", content: null, tool_calls: [{ id: "native-write", type: "function",
+      function: { name: "write", arguments: JSON.stringify({ path: "proof.txt", content: "native-pi" }) } }] } : { role: "assistant", content: "passed" };
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    const common = { id: "test", object: "chat.completion.chunk", created: 1, model: body.model };
+    const delta = { ...message, ...(message.tool_calls ? { tool_calls: message.tool_calls.map((c, index) => ({ ...c, index })) } : {}) };
+    res.end(`data: ${JSON.stringify({ ...common, choices: [{ index: 0, delta, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ ...common, choices: [{ index: 0, delta: {}, finish_reason: calls === 1 ? "tool_calls" : "stop" }] })}\n\ndata: [DONE]\n\n`);
+  });
+  await new Promise(done => server.listen(0, "127.0.0.1", done));
+  try {
+    await init({ gateway: `http://127.0.0.1:${server.address().port}/`, token: "test-only", workspace: temp, defaultCwd: temp,
+      agentDir: join(temp, "agent"), sessionDir: join(temp, "sessions"), models: [{ id: "test" }], model: "test", agent: {} });
+    await runtime.session.prompt("Write proof.txt");
+    if (calls !== 2 || readFileSync(join(temp, "proof.txt"), "utf8") !== "native-pi") throw new Error("Native Pi tool loop failed");
+    const file = runtime.session.sessionManager.getSessionFile();
+    if (!file || !Pi.SessionManager.open(file).getEntries().some(e => e.type === "message" && e.message.role === "toolResult")) throw new Error("Native session persistence failed");
+    let blocked = false; try { await fetch("https://unconfigured.invalid/"); } catch { blocked = true; }
+    if (!blocked) throw new Error("Network policy failed");
+    emit({ ok: true, version, package: "pi-coding-agent", nativeTools: true, nativeSessions: true, providers: modelRuntime.getProviders().map(p => p.id) });
+  } finally {
+    await shutdown(); server.closeAllConnections(); await new Promise(done => server.close(done));
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+if (process.argv.includes("--check-mcp")) {
+  const temp = mkdtempSync(join(tmpdir(), "umeko-mcp-check-"));
+  try {
+    let raw = ""; for await (const chunk of process.stdin) raw += chunk;
+    const input = JSON.parse(raw);
+    const agentDir = join(temp, "agent"), cwd = join(temp, "project");
+    mkdirSync(agentDir, { recursive: true }); mkdirSync(join(cwd, ".pi"), { recursive: true });
+    writeFileSync(join(agentDir, "mcp.json"), input.global);
+    writeFileSync(join(cwd, ".pi/mcp.json"), input.project);
+    const loaded = loadMcpConfig({ agentDir, cwd, projectTrusted: true });
+    if (loaded.errors.length) throw new Error(loaded.errors.join("\n").split(temp).join("MCP 配置"));
+    emit({ ok: true });
+  } catch (error) { emit({ ok: false, error: error.message }); process.exitCode = 1; }
+  finally { rmSync(temp, { recursive: true, force: true }); }
+}
+else if (process.argv.includes("--session-action")) {
+  try {
+    let raw = ""; for await (const chunk of process.stdin) raw += chunk;
+    const input = JSON.parse(raw);
+    if (input.sessionFile && !existsSync(input.sessionFile)) throw new Error("Pi 会话文件不存在，未创建替代会话");
+    const manager = input.sessionFile ? Pi.SessionManager.open(input.sessionFile) : Pi.SessionManager.create(input.cwd, input.sessionDir);
+    if (!input.sessionFile) for (const message of input.history || []) if (["user", "assistant", "toolResult"].includes(message.role)) manager.appendMessage(message);
+    if (input.action === "rename") manager.appendSessionInfo(input.title);
+    else if (input.action === "export") {
+      const file = manager.getSessionFile();
+      if (!file || !existsSync(file)) throw new Error("该会话暂无可导出的内容");
+      if (resolve(file).toLowerCase() === resolve(input.outputFile).toLowerCase()) throw new Error("导出位置不能是原始会话文件");
+      copyFileSync(file, input.outputFile);
+    } else throw new Error("未知会话操作");
+    const text = manager.getBranch().find(e => e.type === "message" && e.message.role === "user");
+    emit({ ok: true, session: { id: manager.getSessionId(), file: manager.getSessionFile(), title: manager.getSessionName() || textOf(text?.message.content).slice(0, 28) || "新会话", workspace: manager.getCwd() } });
+  } catch (error) { emit({ ok: false, error: error.message }); process.exitCode = 1; }
+}
+else if (process.argv.includes("--list-sessions")) {
+  const directory = process.argv[process.argv.indexOf("--list-sessions") + 1];
+  const sessions = await Pi.SessionManager.listAll(directory);
+  emit({ sessions: sessions.map(s => ({ id: s.id, title: s.name || s.firstMessage.slice(0, 28) || "新会话", file: s.path, workspace: s.cwd })) });
+}
+else if (process.argv.includes("--self-test")) await selfTest();
+else {
+  rl = createInterface({ input: process.stdin });
+  rl.on("line", line => { try { void execute(JSON.parse(line)); } catch (error) { emit({ type: "error", message: error.message }); } });
+  rl.on("close", () => { void shutdown(); });
+}

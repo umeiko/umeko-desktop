@@ -1,0 +1,8 @@
+{
+  "asset": "yanami-pixel.png",
+  "generator": "Built-in image_gen",
+  "created": "2026-10-20",
+  "reference": "User-provided Yanami head-and-bow reference from the chat attachment",
+  "usage": "56 px static closing mascot under the latest assistant reply; transparent RGBA; no pointer handler or animation",
+  "prompt": "Use case: style-transfer. Asset type: a tiny pixel-art end-of-response mascot for the Umeko desktop chat UI. Input image 1 is the user's exact character/identity and expression reference, not an edit target for its white UI background. Create ONE isolated Yanami Anna head-and-blue-bow sprite based very closely on that reference. Preserve the specific navy blue wavy bob silhouette with long side locks and loop-shaped ahoge, asymmetric side-looking turquoise-blue eyes, pointed chin, slightly tilted head, and her cheeky confident sideways grin with a little tooth visible. Preserve her recognizable expression; do not turn her into a generic round baby face, huge round-eyed doll, or different hairstyle. Convert into deliberate crisp 48x48-style retro pixel art, with a restrained palette, navy outline, large clean pixel clusters, hard square pixels and no smooth illustration lines or gradients. A readable compact head silhouette plus small light-blue bow at the base; no body, no extra objects or decorations. Square canvas with head centered filling most of it and a few transparent pixels around every edge, nothing cropped. Actual transparent RGBA background, no white disk or panel, no shadow, no checkerboard baked into pixels, no words, labels, border, logos, text or icons from the reference's surrounding app UI. This will be displayed at about 24 to 28 CSS pixels, so prioritize strong silhouette and likeness over fine shading."
+}

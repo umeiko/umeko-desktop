@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "umeko-provider-sdk"
+version = "0.1.0"
+description = "Provider API, streaming helpers and local authentication context for Umeko Desktop plugins"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["umeko_provider_sdk*"]

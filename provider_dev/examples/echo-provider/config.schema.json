@@ -1,0 +1,1 @@
+{"type": "object", "properties": {"prefix": {"type": "string"}}, "required": ["prefix"], "additionalProperties": false}

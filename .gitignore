@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+runtime/node_modules/
+runtime/releases/
+runtime/staging-*/
+build/
+dist/
+*.spec
+artifacts/
+.private/
+runtime/downloads/
+/.pi/mcp.json
+/internal.json
+/auth.json
