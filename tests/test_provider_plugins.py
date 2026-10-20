@@ -15,7 +15,7 @@ from unittest.mock import patch
 from PySide6.QtCore import QCoreApplication, QUrl
 
 from app.controller import Controller
-from umeko_provider_sdk import ProviderError, collect_openai, ConsentForm, HttpSession
+from umeko_provider_sdk import ProviderError, collect_openai, ConsentForm, HttpSession, response_cookies
 from umeko_provider_sdk.packages import pack_package, unpack_package
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -180,6 +180,13 @@ class ProviderPluginTests(unittest.TestCase):
 
 
 class ProviderSdkTests(unittest.TestCase):
+    def test_repeated_cookie_headers_preserve_expiry_commas(self):
+        from email.message import Message
+        headers = Message()
+        headers.add_header("Set-Cookie", "one=fixture-one; Expires=Wed, 21 Oct 2037 07:28:00 GMT; Path=/")
+        headers.add_header("Set-Cookie", "two=fixture-two; HttpOnly; Path=/")
+        self.assertEqual(response_cookies(headers), {"one":"fixture-one", "two":"fixture-two"})
+
     def test_redirect_origins_and_sensitive_header_handling(self):
         received = []
         class Handler(BaseHTTPRequestHandler):

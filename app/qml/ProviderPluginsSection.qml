@@ -17,10 +17,11 @@ Column {
             RowLayout {
                 Layout.fillWidth: true
                 ColumnLayout {
-                    Layout.fillWidth: true; spacing: 5
+                    spacing: 5
                     Text { text: "自定义供应商"; color: Theme.ink; font.pixelSize: 14; font.weight: Font.DemiBold }
                     Text { text: root.manager.rows.length ? "登录、可用模型和连接配置" : "导入供应商实现，接入自定义的登录与模型服务"; color: Theme.muted; font.pixelSize: 11 }
                 }
+                Item { Layout.fillWidth: true }
                 ActionButton { objectName: "importCustomProviderButton"; glyph: "plus"; hint: "导入自定义供应商实现"; onClicked: importDialog.open() }
             }
         }

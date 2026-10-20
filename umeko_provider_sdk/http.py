@@ -5,8 +5,19 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
+from http.cookies import SimpleCookie
 
 from . import ProviderError
+
+
+def response_cookies(headers):
+    """Read all Set-Cookie headers, including values with commas in Expires."""
+    values = {}
+    for line in headers.get_all("Set-Cookie", []):
+        jar = SimpleCookie()
+        jar.load(line)
+        values.update((key, morsel.value) for key, morsel in jar.items())
+    return values
 
 
 def origin(url):
