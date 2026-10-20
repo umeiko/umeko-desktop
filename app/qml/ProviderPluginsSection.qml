@@ -9,6 +9,12 @@ Column {
     property string currentId: ""
     property string exportKind: "sdk"
     spacing: 14
+    function acceptsPackage(urls) {
+        return urls.length === 1 && String(urls[0]).toLowerCase().startsWith("file:") && String(urls[0]).toLowerCase().endsWith(".zip")
+    }
+    function importPackage(url) {
+        if (root.manager.importZip(String(url))) importDialog.close()
+    }
 
     SectionCard {
         width: parent.width
@@ -115,7 +121,27 @@ Column {
                 ActionButton { glyph: "x"; quiet: true; onClicked: importDialog.close() }
             }
             Text { text: "选择包含 manifest.json 的供应商 ZIP 包。导入后即可在本页登录、查看和配置可用模型。"; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.ink; font.pixelSize: 12 }
-            ActionButton { objectName: "chooseProviderZipButton"; text: "选择供应商 ZIP"; glyph: "plus"; primary: true; onClicked: packagePicker.open() }
+            Rectangle {
+                Layout.fillWidth: true; implicitHeight: 104; radius: 10
+                color: packageDrop.containsDrag ? Theme.accentBg : Theme.bg
+                border.color: packageDrop.containsDrag ? Theme.accent : Theme.line
+                border.width: packageDrop.containsDrag ? 2 : 1
+                ColumnLayout {
+                    anchors.centerIn: parent; spacing: 9
+                    Text { text: packageDrop.containsDrag ? "松开鼠标，导入供应商" : "将供应商 ZIP 拖到这里"; color: Theme.ink; font.pixelSize: 12; Layout.alignment: Qt.AlignHCenter }
+                    ActionButton { objectName: "chooseProviderZipButton"; text: "选择供应商 ZIP"; glyph: "plus"; primary: true; Layout.alignment: Qt.AlignHCenter; onClicked: packagePicker.open() }
+                }
+                DropArea {
+                    id: packageDrop; objectName: "providerPackageDropArea"; anchors.fill: parent
+                    onEntered: drag => { drag.accepted = drag.hasUrls && root.acceptsPackage(drag.urls) }
+                    onDropped: drop => {
+                        if (!drop.hasUrls || !root.acceptsPackage(drop.urls)) { drop.accepted = false; return }
+                        const url = drop.urls[0]
+                        drop.acceptProposedAction()
+                        root.importPackage(url)
+                    }
+                }
+            }
             Text { text: "供应商实现会在本机执行代码，请使用可信来源的包。"; color: Theme.muted; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true }
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
             Text { text: "开发自定义供应商"; color: Theme.ink; font.pixelSize: 13; font.weight: Font.DemiBold }
@@ -128,7 +154,7 @@ Column {
     }
     FileDialog {
         id: packagePicker; title: "导入自定义供应商实现"; nameFilters: ["Provider packages (*.zip)"]
-        onAccepted: { if (root.manager.importZip(selectedFile.toString())) importDialog.close() }
+        onAccepted: root.importPackage(selectedFile)
     }
     FileDialog {
         id: resourcePicker; title: "保存开发资源"; fileMode: FileDialog.SaveFile; nameFilters: ["ZIP archives (*.zip)"]

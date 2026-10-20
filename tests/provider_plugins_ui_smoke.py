@@ -12,7 +12,8 @@ sys.path.insert(0, str(ROOT))
 os.environ["UMEKO_DATA_DIR"] = tempfile.mkdtemp(prefix="umeko-provider-ui-")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
-from PySide6.QtCore import QObject, QMetaObject, Qt, QUrl
+from PySide6.QtCore import QObject, QMetaObject, Qt, QUrl, QMimeData, QPointF
+from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
 from main import create_application
@@ -50,6 +51,19 @@ def click(name):
     QTest.qWait(120)
 
 
+def drop_package(paths):
+    area = item("providerPackageDropArea")
+    point = area.mapToScene(area.boundingRect().center()).toPoint()
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(path)) for path in paths])
+    app.sendEvent(window, QDragEnterEvent(point, Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier))
+    app.sendEvent(window, QDragMoveEvent(point, Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier))
+    event = QDropEvent(QPointF(point), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
+    app.sendEvent(window, event)
+    QTest.qWait(120)
+    return event.isAccepted()
+
+
 try:
     QTest.qWait(400)
     click("settingsButton")
@@ -62,10 +76,15 @@ try:
     assert item("exportProviderSkillButton").isVisible()
     QTest.qWait(200)
     assert window.grabWindow().save(str(out / "70-provider-import.png"))
-    QMetaObject.invokeMethod(popup, "close")
     archive = Path(os.environ["UMEKO_DATA_DIR"]) / "echo.zip"
     pack_package(ROOT / "provider_dev/examples/echo-provider", archive)
-    assert backend.providerPlugins.importZip(QUrl.fromLocalFile(str(archive)).toString())
+    wrong_file = archive.with_suffix(".txt")
+    wrong_file.write_text("fixture", encoding="utf-8")
+    assert not drop_package([wrong_file])
+    assert not drop_package([archive, wrong_file])
+    assert backend.providerPlugins.rows == []
+    assert drop_package([archive]), "ZIP drag and drop was rejected"
+    assert not popup.property("opened"), "Import popup remained open after a valid drop"
     QTest.qWait(200)
     provider_id = backend.providerPlugins.rows[0]["id"]
     field = item("pluginAuth_" + provider_id + "_username")
@@ -101,7 +120,7 @@ try:
         assert backend.providerPlugins.exportResource(kind, QUrl.fromLocalFile(str(destination)).toString())
         with zipfile.ZipFile(destination) as stream: assert expected in stream.namelist()
     assert not warnings, "\n".join(warnings)
-    print("Provider UI: import, login, inline models, model settings, inference and SDK/Skill exports passed")
+    print("Provider UI: ZIP drop, invalid/multiple drop rejection, login, inline models, settings, inference and SDK/Skill exports passed")
 finally:
     backend.close()
     window.close()

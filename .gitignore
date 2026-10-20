@@ -7,6 +7,7 @@ runtime/releases/
 runtime/staging-*/
 build/
 dist/
+release-assets/
 *.spec
 artifacts/
 .private/

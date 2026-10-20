@@ -51,6 +51,12 @@ Use the fixed `dist` output rather than creating a new preview folder for every 
 
 Windows execution and interaction tests are verified locally. Unix packaging, native keyring dialogs and IME composition require acceptance checks on their respective desktops; Windows tests do not prove those behaviors.
 
+### CI packages
+
+[Desktop packages](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml) runs on pushes to `main`, version tags, pull requests, or **Run workflow**. It builds Windows x64, Linux x64, macOS Apple Silicon and macOS Intel on native runners using Python 3.12 and Node.js 22. The Windows job runs the regression suite; every platform must render the packaged GUI and pass the bundled Pi self-test before upload.
+
+Download a platform artifact from the completed run. It contains the versioned ZIP (Windows/macOS) or tar.gz (Linux), a SHA-256 checksum and build/verification details. Separate Provider SDK and developer Skill downloads are also attached. Artifacts are kept for seven days. These are CI builds; the workflow does not publish a GitHub Release. Node.js 22.19+ is still required on the destination machine, and macOS packages are ad-hoc signed rather than notarized. GUI smoke checks do not replace testing native IME, keyring dialogs or real provider accounts on the target desktop.
+
 ## About and application updates
 
 **Settings → About** shows the project repository, author, application version, build OS/architecture, build time, source commit and active Pi kernel version. **Copy project information** copies these public details. Application identity and the single version constant live in `app/project_info.py`; build scripts record provenance in the bundled `build-info.json`. Source runs are labelled separately from packaged builds.
@@ -149,7 +155,7 @@ This UI supports image understanding and text replies. Native audio/video input 
 
 ### Custom account providers
 
-**Settings → Accounts & Providers → +** opens **Import custom provider implementation**. Select a trusted Provider ZIP; there is no permanent internal-account panel. Imported providers render their own login fields and available models on this page. **Log in and refresh models** signs in and discovers models; **Model settings** edits aliases, context length and vision without navigating to API Proxy Service. API model mappings remain under that service's settings.
+**Settings → Accounts & Providers → +** opens **Import custom provider implementation**. Drag a trusted Provider ZIP into the highlighted import area or click to select it; there is no permanent internal-account panel. Imported providers render their own login fields and available models on this page. **Log in and refresh models** signs in and discovers models; **Model settings** edits aliases, context length and vision without navigating to API Proxy Service. API model mappings remain under that service's settings.
 
 The import dialog also exports **umeko-provider-sdk** and a **develop-umeko-provider Skill** for your AI assistant. The public SDK defines login, model discovery, inference streams, protected secrets and configuration. See [Provider development](provider_dev/README.md) for the contract, offline example, dependency layout and validation/pack commands. Run `python scripts/build-provider-resources.py` before exporting resources from a source checkout; both platform build scripts bundle them automatically.
 
