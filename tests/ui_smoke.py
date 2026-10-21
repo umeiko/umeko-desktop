@@ -57,6 +57,11 @@ def click(name):
     QTest.qWait(100)
 
 def reveal_setting(item):
+    ancestor=item.parentItem()
+    while ancestor is not None:
+        if ancestor.objectName().startswith('piFold_'): ancestor.setProperty('expanded',True)
+        ancestor=ancestor.parentItem()
+    QTest.qWait(80)
     scroll = find_item("settingsScroll")
     if scroll is None: return
     flick = scroll.property("contentItem")
@@ -233,9 +238,11 @@ try:
     help_button = find_item("mappingHelp")
     tooltip = window.findChild(QObject, "helpTooltip_mappingHelp")
     assert tooltip, "help popup"
-    # Moving away always dismisses, including after a click; it may reopen nearby.
+    # Leave delay lets the pointer enter/select the explanation.
     QTest.mouseMove(window, QPoint(400, 90)); QTest.qWait(250)
-    assert not tooltip.property("visible"), "help persisted after leaving"
+    assert tooltip.property("visible"), "help closed before its 3-second grace period"
+    QTest.qWait(3000)
+    assert not tooltip.property("visible"), "help persisted after its grace period"
     point = help_button.mapToScene(help_button.boundingRect().center()).toPoint()
     QTest.mouseMove(window, point); QTest.qWait(500)
     assert tooltip.property("visible"), "hover help did not open"
@@ -465,8 +472,6 @@ try:
         QTest.keyClick(window, Qt.Key_Return)
         wait_for(lambda: len(backend.queuedMessages) == 1, "Enter did not queue the follow-up")
         assert backend.running and not a.cancelled
-        QTest.keyClick(window, Qt.Key_S, Qt.ControlModifier)
-        wait_for(lambda: backend.queuedMessages and backend.queuedMessages[0]["mode"] == "steering", "Ctrl+S did not promote native queue")
         click("editQueued_0")
         wait_for(lambda: not backend.queuedMessages and prompt.property("text") == "排队补充", "queued message did not return to editor")
         prompt.setProperty("text", "排队补充（已编辑）")
@@ -476,13 +481,13 @@ try:
         QTest.keyClick(window, Qt.Key_Return)
         wait_for(lambda: len(backend.queuedMessages) == 2, "second queued row did not appear")
         capture("28-compact-queue-list")
-        click("steerQueued_0")
-        wait_for(lambda: backend.queuedMessages[0]["mode"] == "steering", "row steering action did not promote")
         click("removeQueued_1")
         wait_for(lambda: len(backend.queuedMessages) == 1, "row deletion did not clear queue item")
+        prompt.forceActiveFocus()
         QTest.keyClick(window, Qt.Key_S, Qt.ControlModifier)
-        wait_for(lambda: backend.queuedMessages and backend.queuedMessages[0]["mode"] == "steering", "edited message did not promote")
-        capture("28-native-queue")
+        wait_for(lambda: any(m["role"] == "user" and "排队补充（已编辑）" in m["text"] for m in backend.messages), "Ctrl+S did not immediately insert the message")
+        assert not backend.queuedMessages, "interrupted message remained as a queue chip"
+        capture("28-native-interrupt")
         concurrent.gates["async A"].set()
         wait_idle()
         assert not a.cancelled

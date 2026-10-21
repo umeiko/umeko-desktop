@@ -45,7 +45,7 @@ Column {
         ColumnLayout { width: parent.width; spacing: 20
             RowLayout { Layout.fillWidth: true
                 Text { text: "API 代理服务"; color: Theme.ink; font.pixelSize: 14; font.weight: Font.DemiBold }
-                HelpButton { help: "让其他客户端通过兼容 API 使用已配置的供应商和模型。默认仅本机访问，可开启局域网访问。所有请求都需要有效 Key。关闭应用后服务停止，下次需手动启动。" }
+                HelpButton { help: "将本软件可用的供应商和模型，变为本地服务供你的其他 Agent 软件使用。" }
                 Item { Layout.fillWidth: true }
                 ActionButton { objectName: "toggleServerButton"; text: backend.serverRunning ? "停止服务" : "启动服务"; primary: !backend.serverRunning; onClicked: { if (backend.serverRunning) backend.toggleServer(); else if (root.saveServer()) backend.toggleServer() } }
             }
@@ -125,7 +125,7 @@ Column {
                 Text { id: keyNotice; anchors.fill: parent; anchors.margins: 13; text: "完整 API Key 仅在新建或替换后显示一次，请及时复制保存。请勿与他人共享或写入客户端代码。可为不同客户端分别命名，随时停用或撤销。"; wrapMode: Text.Wrap; color: Theme.ink; font.pixelSize: 11 }
             }
             Text { visible: backend.proxyKeys.length === 0; text: "暂无 Key，创建并启用后即可启动代理服务。"; color: Theme.muted; font.pixelSize: 12 }
-            ScrollView {
+            InlineScrollView {
                 id: keyScroll; objectName: "proxyKeysTable"; Layout.fillWidth: true
                 Layout.preferredHeight: keyTable.implicitHeight + 14
                 contentWidth: Math.max(availableWidth, 940); contentHeight: keyTable.implicitHeight; clip: true

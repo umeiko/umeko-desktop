@@ -6,18 +6,31 @@ Popup {
     id: root
     objectName: "modelPopup"
     property real heightLimit: 470
-    width: 365; height: Math.min(470, heightLimit, modelList.contentHeight + 150)
-    x: 0; y: -height - 8
-    margins: 12
-    padding: 10
+    property bool desiredOpen: false
+    readonly property bool animating: motion.moving
+    readonly property real fullWidth: 365
+    readonly property real fullHeight: Math.max(150, Math.min(470, heightLimit, modelList.contentHeight + 150))
+    readonly property real buttonWidth: parent ? parent.width : 180
+    readonly property real buttonHeight: parent ? parent.height : 31
+    function toggle() { if (desiredOpen) close(); else open() }
+    width: Math.max(1,motion.value.width); height: Math.max(1,motion.value.height)
+    x: motion.value.x; y: motion.value.y
+    margins: 12; padding: 10; focus: true
     signal configure()
-    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
     background: Rectangle { radius: 12; color: Theme.surface; border.color: Theme.line }
-    enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 130 } NumberAnimation { property: "scale"; from: 0.98; to: 1; duration: 130; easing.type: Easing.OutCubic } } }
-    exit: Transition { NumberAnimation { property: "opacity"; to: 0; duration: 90 } }
-    onOpened: { modelSearch.clear(); modelSearch.forceActiveFocus() }
+    enter: Transition {}
+    exit: Transition { PauseAnimation { duration: 800 } }
+    onAboutToShow: { desiredOpen = true; modelSearch.clear() }
+    onAboutToHide: desiredOpen = false
+    onOpened: modelSearch.forceActiveFocus()
+    onClosed: motion.snap()
+    PidMotion { id: motion; targetRect: root.desiredOpen ? Qt.rect(0,-root.fullHeight-8,root.fullWidth,root.fullHeight) : Qt.rect(0,-root.buttonHeight-8,root.buttonWidth,root.buttonHeight) }
+    contentItem: Item {
+        clip: true
     ColumnLayout {
-        anchors.fill: parent; spacing: 10
+        width: root.fullWidth - root.padding * 2; height: root.fullHeight - root.padding * 2; spacing: 10
+        opacity: Math.max(0,Math.min(1,((root.height-root.buttonHeight)/Math.max(1,root.fullHeight-root.buttonHeight)-0.15)/0.65))
         InputField { id: modelSearch; objectName: "modelSearch"; Layout.fillWidth: true; placeholderText: "搜索供应商或模型…"; height: 39 }
         ListView {
             id: modelList; Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 9
@@ -48,5 +61,6 @@ Popup {
         }
         Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
         ActionButton { text: "管理供应商与模型"; glyph: "sliders"; quiet: true; Layout.fillWidth: true; onClicked: { root.close(); root.configure() } }
+    }
     }
 }

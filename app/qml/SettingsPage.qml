@@ -10,6 +10,25 @@ Item {
     property bool editingProvider: false
     property string editId: ""
     property string mappingSignature: ""
+    property var activeInlineScroll: null
+    function activateInlineScroll(item) { activeInlineScroll = item }
+    function scrollSettings(delta) {
+        const flick = settingsScroll.contentItem
+        flick.cancelFlick()
+        flick.contentY = Math.max(0, Math.min(Math.max(0, flick.contentHeight - flick.height), flick.contentY - delta))
+    }
+    onTabChanged: activeInlineScroll = null
+    onVisibleChanged: if (!visible) activeInlineScroll = null
+    TapHandler {
+        onPressedChanged: if (pressed && root.activeInlineScroll) {
+            const target = root.activeInlineScroll
+            const p = root.mapToItem(target, point.position.x, point.position.y)
+            if (p.x < 0 || p.y < 0 || p.x > target.width || p.y > target.height) {
+                root.activeInlineScroll = null
+                root.forceActiveFocus()
+            }
+        }
+    }
     function editProvider(p) {
         editId = p ? p.id : ""
         providerName.text = p ? p.name : ""

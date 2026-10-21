@@ -60,12 +60,12 @@ def preview(file):
         content = message.get("content", "")
         text = content_text(content)
         thinking = content_thinking(content)
-        text = text or message.get("errorMessage", "")
+        text = text or ("" if message.get("stopReason") == "aborted" else message.get("errorMessage", ""))
         role = message.get("role", "")
         tree.append({"id": entry["id"], "role": role, "text": text[:80]})
         calls = [block for block in content if isinstance(block, dict) and block.get("type") == "toolCall"] if isinstance(content, list) else []
         if role in ("user", "assistant") and (text or thinking or calls):
-            row = {"role": role, "text": text, "error": bool(message.get("errorMessage")), "entryId": entry["id"]}
+            row = {"role": role, "text": text, "error": message.get("stopReason") != "aborted" and bool(message.get("errorMessage")), "entryId": entry["id"], "timestamp": message.get("timestamp") or entry.get("timestamp")}
             if thinking:
                 row["thinking"] = thinking
             if calls:

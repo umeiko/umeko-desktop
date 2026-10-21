@@ -282,7 +282,7 @@ def scenario():
     assert mascot.width() == 56 and mascot.height() == 56 and not mascot.property("smooth")
     assert not find("replyEndMascot_0").isVisible(), "user message inherited the closing mascot"
     reply_bubble = find("messageBubble_1")
-    assert mascot.x() == reply_bubble.x() and 6 <= mascot.y() - reply_bubble.y() - reply_bubble.height() <= 12
+    assert mascot.x() == reply_bubble.x() and 34 <= mascot.y() - reply_bubble.y() - reply_bubble.height() <= 42
     backend._view.phase = "running"
     backend.chatChanged.emit()
     yield 40

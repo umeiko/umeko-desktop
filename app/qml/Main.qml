@@ -70,12 +70,17 @@ ApplicationWindow {
             id: sessionList; objectName: "projectList"
             x: 12; y: recentLabel.y + 28; width: parent.width - 24; height: apiStatus.y - y - 16
             spacing: 2; clip: true; model: backend.projectRows
+            currentIndex: backend.projectRows.findIndex(row => row.selected && (row.kind === "session" || row.kind === "project" && !backend.activeSession))
+            highlightFollowsCurrentItem: false
+            PidMotion { id: sidebarMotion; objectName: "sidebarPidMotion"; targetRect: Qt.rect(0,sessionList.currentItem ? sessionList.currentItem.y : 0,sessionList.width,sessionList.currentItem ? sessionList.currentItem.height : 34) }
+            highlight: Rectangle { objectName: "sidebarHighlight"; x: sidebarMotion.value.x; y: sidebarMotion.value.y; width: sidebarMotion.value.width; height: sidebarMotion.value.height; radius: 7; color: Theme.surface; visible: sessionList.currentIndex >= 0 && window.page === "chat"; z: -1 }
+
             Text { visible: sessionList.count === 0; x: 17; y: 8; text: backend.showArchived ? "暂无归档会话" : "暂无项目"; font.pixelSize: 11; color: Theme.muted }
             delegate: Item {
                 required property var modelData
                 objectName: "sidebarRow_" + modelData.id
                 width: sessionList.width; height: modelData.kind === "project" ? 38 : 34
-                Rectangle { anchors.fill: parent; radius: 7; color: modelData.selected && window.page === "chat" && (modelData.kind === "session" || !backend.activeSession) ? Theme.surface : rowMouse.containsMouse ? Theme.hover : "transparent" }
+                Rectangle { anchors.fill: parent; radius: 7; color: rowMouse.containsMouse && !modelData.selected ? Theme.hover : "transparent" }
                 MouseArea { id: rowMouse; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.LeftButton | Qt.RightButton; enabled: modelData.kind !== "label"
                     onClicked: mouse => { if (mouse.button === Qt.RightButton) { sidebarMenus.openFor(modelData, mapToItem(sidebarMenus, mouse.x, mouse.y)); return } window.page = "chat"; if (modelData.kind === "project") backend.openProject(modelData.id); else backend.openSession(modelData.id) }
                 }
@@ -263,6 +268,8 @@ ApplicationWindow {
                     id: messageRow
                     required property var modelData
                     required property int index
+                    readonly property point hoverPoint: chatSelection.mapToItem(messageRow, chatSelection.pointer.x, chatSelection.pointer.y)
+                    readonly property bool hovered: chatSelection.hovering && hoverPoint.x >= 0 && hoverPoint.x <= width && hoverPoint.y >= 0 && hoverPoint.y <= height
                     width: conversation.width - 16; spacing: 10
                     Row { visible: modelData.role !== "user"; spacing: 9
                         Rectangle { width: 24; height: 24; radius: 7; color: Theme.accentBg
@@ -289,6 +296,20 @@ ApplicationWindow {
                                 textColor: modelData.error ? Theme.danger : Theme.ink }
                         }
                     }
+                    Item {
+                        objectName: "messageActions_" + messageRow.index
+                        width: parent.width; height: 18
+                        opacity: messageRow.hovered || actionHover.hovered ? 1 : 0
+                        HoverHandler { id: actionHover }
+                        Row {
+                            x: modelData.role === "user" ? parent.width - width : 33
+                            height: parent.height; spacing: 7
+                            Text { objectName: "messageTime_" + messageRow.index; anchors.verticalCenter: parent.verticalCenter; color: Theme.muted; font.pixelSize: 11
+                                text: { if (!modelData.timestamp) return ""; const date = new Date(modelData.timestamp); if (isNaN(date.getTime())) return ""; return Qt.formatDateTime(date, date.toDateString() === new Date().toDateString() ? "hh:mm" : "MM-dd hh:mm") } }
+                            ActionButton { objectName: "copyMessage_" + messageRow.index; glyph: "copy"; width: 22; height: 18; quiet: true; enabled: parent.parent.opacity > 0; hint: "复制消息"
+                                onClicked: { const activity = modelData.activity || []; const prose = activity.filter(item => item.kind === "text").map(item => item.text).join("\n\n"); backend.copy([prose || modelData.text || "", ...(modelData.attachments || []).map(item => item.name)].filter(part => !!part).join("\n")) } }
+                        }
+                    }
                     Image {
                         objectName: "replyEndMascot_" + messageRow.index
                         readonly property bool loaded: status === Image.Ready
@@ -309,7 +330,7 @@ ApplicationWindow {
                 id: composer; objectName: "composer"
                 anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 57
                 width: Math.min(parent.width - 94, 850)
-                onOpenModels: modelPopup.open()
+                onOpenModels: modelPopup.toggle()
                 onChooseFiles: attachmentDialog.open()
             }
             Row { anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 13; spacing: 8

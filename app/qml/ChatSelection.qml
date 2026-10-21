@@ -11,6 +11,7 @@ Item {
     property bool dragging: false
     property double lastScrollTime: 0
     property point pointer: Qt.point(0, 0)
+    readonly property bool hovering: selectionArea.containsMouse
     property point pressPoint: Qt.point(0, 0)
     property bool pointerMoved: false
     property int clickCount: 0
@@ -172,6 +173,7 @@ Item {
     Timer { id: refreshTimer; interval: 0; onTriggered: root.refresh() }
     TextEdit { id: renderer; visible: false; readOnly: true }
     MouseArea {
+        id: selectionArea
         anchors.fill: parent; anchors.rightMargin: 14
         acceptedButtons: Qt.LeftButton; preventStealing: true; hoverEnabled: true
         cursorShape: Qt.IBeamCursor
@@ -193,8 +195,8 @@ Item {
             root.view.beginBrowsing(); root.forceActiveFocus(); root.refresh()
         }
         onPositionChanged: event => {
+            root.pointer = Qt.point(event.x, event.y)
             if (pressed && root.dragging) {
-                root.pointer = Qt.point(event.x, event.y)
                 if (Math.abs(event.x - root.pressPoint.x) > 2 || Math.abs(event.y - root.pressPoint.y) > 2) root.pointerMoved = true
                 if (root.pointerMoved) Qt.callLater(root.extend)
             }

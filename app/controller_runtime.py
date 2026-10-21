@@ -173,9 +173,18 @@ class PiControllerMixin:
             else:
                 record.messages.extend([{"role": "user", "text": text, "error": False}, {"role": "assistant", "text": "", "error": False}])
                 transcript = True
+            if event.get("timestamp"):
+                for message in reversed(record.messages):
+                    if message["role"] == "user":
+                        message["timestamp"] = event["timestamp"]
+                        transcript = True
+                        break
         elif kind == "assistant_start":
             if not record.messages or record.messages[-1]["role"] != "assistant" or record.messages[-1]["text"] or record.messages[-1].get("thinking") or record.messages[-1].get("tools"):
                 record.messages.append({"role": "assistant", "text": "", "error": False})
+                transcript = True
+            if record.messages and event.get("timestamp"):
+                record.messages[-1]["timestamp"] = event["timestamp"]
                 transcript = True
         elif kind == "queue":
             record.queue = event.get("items", [{"text": text, "mode": "steering"} for text in event.get("steering", [])] + [{"text": text, "mode": "followUp"} for text in event.get("followUp", [])])
@@ -190,6 +199,7 @@ class PiControllerMixin:
         elif kind == "message" and event.get("role") == "assistant":
             if record.messages and record.messages[-1]["role"] == "assistant":
                 record.messages[-1].update(text=event.get("text") or event.get("error") or record.messages[-1]["text"], error=bool(event.get("error")))
+                if event.get("timestamp"): record.messages[-1]["timestamp"] = event["timestamp"]
                 if "thinking" in event:
                     record.messages[-1]["thinking"] = event["thinking"]
                 transcript = True

@@ -86,7 +86,8 @@ SectionCard {
                     Text { required property var modelData; text: modelData.name + " · " + modelData.state; textFormat: Text.PlainText; color: Theme.muted; font.pixelSize: 11 }
                 }
             }
-            ScrollView {
+            InlineScrollView {
+                id: catalogScroll
                 Layout.fillWidth: true; Layout.fillHeight: true; clip: true
                 contentWidth: availableWidth
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -97,6 +98,7 @@ SectionCard {
                     model: root.rows
                     boundsBehavior: Flickable.StopAtBounds
                     WheelHandler {
+                        enabled: catalogScroll.wheelActive
                         target: null
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         onWheel: event => {

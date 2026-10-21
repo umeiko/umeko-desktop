@@ -4,7 +4,9 @@ import QtQuick.Layouts
 
 Column {
     id: root
-    spacing: 18
+    property string query: ""
+    spacing: 12
+    SettingsFold { objectName: "piFold_context"; width: parent.width; title: "上下文"; nested: true; query: root.query; searchTerms: "自动压缩 compaction 重新加载"
     SectionCard {
         width: parent.width
         ColumnLayout {
@@ -25,6 +27,8 @@ Column {
             }
         }
     }
+    }
+    SettingsFold { objectName: "piFold_paths"; width: parent.width; title: "资源路径"; nested: true; query: root.query; searchTerms: "Skills 扩展 路径 agentDir 配置目录"
     SectionCard {
         width: parent.width
         ColumnLayout {
@@ -71,6 +75,8 @@ Column {
             }
         }
     }
+    }
+    SettingsFold { objectName: "piFold_instructions"; width: parent.width; title: "运行设置"; nested: true; query: root.query; searchTerms: "自定义指令 提示词 instructions token 回答 上限"
     SectionCard {
         width: parent.width
         ColumnLayout {
@@ -82,13 +88,15 @@ Column {
                 Text { text: "回答上限"; color: Theme.muted; font.pixelSize: 11 }
                 InputField { id: tokens; Layout.preferredWidth: 100; text: backend.config.agent.maxTokens; validator: IntValidator { bottom:256; top:32768 } }
             }
-            ScrollView {
-                Layout.fillWidth: true; Layout.preferredHeight: 120; clip: true
+            InlineScrollView {
+                objectName: "agentInstructionsScroll"; Layout.fillWidth: true; Layout.preferredHeight: 120; clip: true
                 TextArea { id: instructions; objectName: "agentInstructions"; text: backend.config.agent.instructions; placeholderText: "自定义指令"; color: Theme.ink; placeholderTextColor: Theme.muted; font.pixelSize: 12; wrapMode: TextArea.Wrap; padding: 13; selectByMouse: true
                     background: Rectangle { radius: 8; color: Theme.bg; border.color: Theme.line }
                 }
             }
-            ActionButton { objectName: "saveAgentButton"; Layout.alignment: Qt.AlignRight; text: "保存设置"; primary: true; onClicked: backend.saveAgent(JSON.stringify({maxTokens:Number(tokens.text),instructions:instructions.text,autoCompaction:compaction.checked,agentDir:agentDir.text,skillPaths:skillPaths.text.split(";"),extensionPaths:extensionPaths.text.split(";")})) }
+
         }
     }
+    }
+    ActionButton { objectName: "saveAgentButton"; anchors.right: parent.right; text: "保存设置"; primary: true; onClicked: backend.saveAgent(JSON.stringify({maxTokens:Number(tokens.text),instructions:instructions.text,autoCompaction:compaction.checked,agentDir:agentDir.text,skillPaths:skillPaths.text.split(";"),extensionPaths:extensionPaths.text.split(";")})) }
 }

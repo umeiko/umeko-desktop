@@ -57,7 +57,7 @@ Column {
             }
             Text { objectName: "appUpdateStatus"; Layout.fillWidth: true; text: root.about.release.message || "检查 GitHub 上的最新正式发布版本。"; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: root.about.release.state === "error" ? Theme.danger : root.about.release.state === "available" ? Theme.accent : Theme.ink; font.pixelSize: 12 }
             Text { visible: root.about.checkedAt !== ""; text: "上次检查：" + root.about.checkedAt; color: Theme.muted; font.pixelSize: 11 }
-            ScrollView {
+            InlineScrollView {
                 visible: (root.about.release.notes || "") !== ""
                 Layout.fillWidth: true; Layout.preferredHeight: 160; clip: true
                 TextArea { objectName: "appReleaseNotes"; text: root.about.release.notes || ""; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; color: Theme.ink; font.pixelSize: 12; padding: 12

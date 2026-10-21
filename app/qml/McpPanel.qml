@@ -37,7 +37,8 @@ ColumnLayout {
         ActionButton { objectName: "mcpSaveButton"; text: "保存并连接"; primary: true; enabled: !backend.busy; onClicked: backend.saveMcp(root.scope, editor.text) }
     }
     Text { Layout.fillWidth: true; text: backend.mcpConfigPath(root.scope); color: Theme.muted; font.pixelSize: 10; elide: Text.ElideMiddle }
-    ScrollView {
+    InlineScrollView {
+        objectName: "mcpEditorScroll"
         Layout.fillWidth: true; Layout.preferredHeight: 230; clip: true
         TextArea {
             id: editor; objectName: "mcpJsonEditor"

@@ -390,70 +390,75 @@ class PiTests(unittest.TestCase):
         replayed = next(event for event in self.command({**self.payload,"sessionFile":state["session"]["file"]}) if event["type"] == "state")
         self.assertEqual(replayed["messages"],state["messages"])
 
-    def test_native_followup_and_steering_queue_promote_without_abort(self):
-        (self.path / "agent/extensions/transform.js").write_text('''export default function(pi) {
-          pi.on("input", event => event.text.includes("_MARKER") ? {action:"transform", text:event.text + " [input-hook]"} : {action:"continue"});
-        }''', encoding="utf-8")
+    def test_native_followup_queue_edit_delete_and_order(self):
         started, release = threading.Event(), threading.Event()
-        def response(model, messages, tools, max_tokens):
+        def response(_model, messages, *_):
             if len(self.calls) == 1:
-                started.set()
-                self.assertTrue(release.wait(10))
-                return Completion(tool_calls=[{"id": "queued-write", "name": "write", "arguments": {"path": "queued.txt", "content": "native queue"}}])
+                started.set(); self.assertTrue(release.wait(10))
             return Completion("Native queue handled")
         self.response_fn = response
         self.command(self.payload)
-        self.send({"type": "prompt", "text": "Original task"})
+        self.send({"type":"prompt", "text":"Original task"})
+        def until(predicate):
+            while True:
+                event=self.events.get(timeout=15)
+                self.assertNotIn(event.get("type"), ("error", "queue_rejected"), event)
+                if predicate(event): return event
         try:
             self.assertTrue(started.wait(10))
-            self.send({"type": "follow-up", "text": "FOLLOW_UP_MARKER"})
-            self.send({"type": "steer", "text": "STEERING_MARKER"})
-            def until(predicate):
-                output = []
-                while True:
-                    event = self.events.get(timeout=15)
-                    output.append(event)
-                    self.assertNotEqual(event.get("type"), "queue_rejected", event)
-                    if predicate(event): return output
-            until(lambda e: e.get("type") == "queue" and len(e.get("followUp", [])) == 1 and len(e.get("steering", [])) == 1)
-            self.send({"type": "promote-queue"})
-            until(lambda e: e.get("type") == "queue" and not e.get("followUp") and len(e.get("steering", [])) == 2)
-            self.send({"type": "follow-up", "text": "EDIT_ONLY_MARKER"})
-            editable = until(lambda e: e.get("type") == "queue" and any(item["text"] == "EDIT_ONLY_MARKER" for item in e.get("items", [])))[-1]
-            selected = next(item for item in editable["items"] if item["text"] == "EDIT_ONLY_MARKER")
-            self.send({"type": "edit-queue", "id": selected["id"]})
-            edited = until(lambda e: e.get("type") == "queue_edited")[-1]
-            self.assertEqual(edited["text"], "EDIT_ONLY_MARKER")
-            self.send({"type": "follow-up", "text": "DELETE_ONLY_MARKER"})
-            pending = until(lambda e: e.get("type") == "queue" and any(i["text"] == "DELETE_ONLY_MARKER" for i in e.get("items", [])))[-1]
-            selected = next(i for i in pending["items"] if i["text"] == "DELETE_ONLY_MARKER")
-            self.send({"type": "delete-queue", "id": selected["id"]})
-            until(lambda e: e.get("type") == "queue" and len(e.get("items", [])) == 2)
-            self.send({"type": "follow-up", "text": "INDIVIDUAL_STEER_MARKER"})
-            pending = until(lambda e: e.get("type") == "queue" and any(i["text"] == "INDIVIDUAL_STEER_MARKER" for i in e.get("items", [])))[-1]
-            selected = next(i for i in pending["items"] if i["text"] == "INDIVIDUAL_STEER_MARKER")
-            self.send({"type": "steer-queued", "id": selected["id"]})
-            until(lambda e: e.get("type") == "queue" and not e.get("followUp") and len(e.get("steering", [])) == 3)
+            for text in ["FIRST", "EDIT_ONLY", "DELETE_ONLY", "LAST"]:
+                self.send({"type":"follow-up", "text":text})
+            pending=until(lambda e:e.get("type")=="queue" and len(e.get("items",[]))==4)["items"]
+            self.send({"type":"edit-queue", "id":pending[1]["id"]})
+            self.assertEqual(until(lambda e:e.get("type")=="queue_edited")["text"],"EDIT_ONLY")
+            self.send({"type":"delete-queue", "id":pending[2]["id"]})
+            until(lambda e:e.get("type")=="queue" and len(e.get("items",[]))==2)
             release.set()
-            output = until(lambda e: e.get("type") == "done")
-            self.assertFalse([e for e in output if e.get("type") == "error"], output)
-            self.assertEqual((self.path / "queued.txt").read_text(), "native queue")
-            state = next(e for e in output if e.get("type") == "state")
-            text = "\n".join(m["text"] for m in state["messages"])
-            self.assertIn("FOLLOW_UP_MARKER", text)
-            self.assertIn("STEERING_MARKER", text)
-            self.assertNotIn("EDIT_ONLY_MARKER", text)
-            self.assertNotIn("DELETE_ONLY_MARKER", text)
-            self.assertIn("INDIVIDUAL_STEER_MARKER", text)
-            self.assertIn("[input-hook]", text)
-            self.assertNotIn("[input-hook] [input-hook]", text)
-            queues = [event for event in output if event["type"] == "queue"]
-            self.assertTrue(queues)
-            self.assertEqual(queues[-1]["items"], [], "consumed steering remained visible")
-            self.assertTrue(any("FOLLOW_UP_MARKER" in str(call[1]) for call in self.calls[1:]))
-            self.assertTrue(any("STEERING_MARKER" in str(call[1]) for call in self.calls[1:]))
-        finally:
-            release.set()
+            state=until(lambda e:e.get("type")=="state")
+            self.assertEqual([m["text"] for m in state["messages"] if m["role"]=="user"],["Original task","FIRST","LAST"])
+            until(lambda e:e.get("type")=="done")
+        finally: release.set()
+
+    def test_desktop_steering_interrupts_shell_and_preserves_followup(self):
+        shell="powershell" if os.name=="nt" else "bash"
+        command=("[IO.File]::WriteAllText('started.txt','running'); Start-Sleep -Seconds 20; [IO.File]::WriteAllText('late.txt','bad')" if os.name=="nt" else "printf running > started.txt; sleep 20; printf bad > late.txt")
+        def response(_model,messages,*_):
+            text=next(m["content"] for m in reversed(messages) if m["role"]=="user")
+            if isinstance(text,list): text="\n".join(part.get("text","") for part in text if part.get("type")=="text")
+            if text=="Original task" and messages[-1]["role"]!="tool":
+                return Completion(tool_calls=[{"id":"long-shell","name":shell,"arguments":{"command":command}}])
+            return Completion("Resumed: "+str(text))
+        self.response_fn=response
+        self.command(self.payload)
+        def until(predicate):
+            while True:
+                event=self.events.get(timeout=12)
+                self.assertNotIn(event.get("type"),("error","queue_rejected"),event)
+                if predicate(event):return event
+        for mode in ("steer", "steer-queued", "promote-queue"):
+            with self.subTest(mode=mode):
+                self.command({"type":"new"})
+                (self.path/"started.txt").unlink(missing_ok=True)
+                self.send({"type":"prompt","text":"Original task"})
+                until(lambda e:e.get("type")=="tool" and e.get("state")=="running")
+                deadline=time.monotonic()+5
+                while not (self.path/"started.txt").exists() and time.monotonic()<deadline:time.sleep(.02)
+                self.assertTrue((self.path/"started.txt").exists(),"Shell did not actually start")
+                selected=None
+                if mode!="steer":
+                    self.send({"type":"follow-up","text":"PRIORITY"})
+                    selected=until(lambda e:e.get("type")=="queue" and len(e.get("items",[]))==1)["items"][0]
+                self.send({"type":"follow-up","text":"KEEP_FOLLOWUP"})
+                until(lambda e:e.get("type")=="queue" and any(i["text"]=="KEEP_FOLLOWUP" for i in e.get("items",[])))
+                start=time.monotonic()
+                self.send({"type":mode,**({"text":"PRIORITY"} if mode=="steer" else {"id":selected["id"]})})
+                until(lambda e:e.get("type")=="user_start" and e.get("text")=="PRIORITY")
+                self.assertLess(time.monotonic()-start,5,"Steering waited for the 20-second tool")
+                state=until(lambda e:e.get("type")=="state")
+                self.assertEqual([m["text"] for m in state["messages"] if m["role"]=="user"],["Original task","PRIORITY","KEEP_FOLLOWUP"])
+                self.assertFalse((self.path/"late.txt").exists(),"Interrupted shell completed its side effect")
+                self.assertEqual(preview(state["session"]["file"])[0],state["messages"])
+                until(lambda e:e.get("type")=="done")
 
     def test_native_rename_export_and_fork_target(self):
         self.command(self.payload)

@@ -69,15 +69,15 @@ Column {
                     selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset + card.index * 3 + 1
                 }
             }
-            Menu {
-                id: openMenu
-                MenuItem { objectName: "revealChatbox_" + card.key; text: "在文件管理器中打开"; onTriggered: backend.openChatboxPath(card.item.path, true) }
+            FloatingMenu {
+                id: openMenu; objectName: "chatboxOpen_" + card.key
+                ContextAction { objectName: "revealChatbox_" + card.key; text: "在文件管理器中打开"; onTriggered: backend.openChatboxPath(card.item.path, true) }
             }
-            Menu {
-                id: contextMenu
-                MenuItem { objectName: "copyChatboxFile_" + card.key; text: "复制"; onTriggered: backend.copyChatboxFile(card.item.path) }
-                MenuItem { objectName: "copyChatbox_" + card.key; text: "复制路径"; onTriggered: backend.copy(card.item.path) }
-                MenuItem { text: "在文件管理器中打开"; onTriggered: backend.openChatboxPath(card.item.path, true) }
+            FloatingMenu {
+                id: contextMenu; objectName: "chatboxContext_" + card.key
+                ContextAction { objectName: "copyChatboxFile_" + card.key; text: "复制"; onTriggered: backend.copyChatboxFile(card.item.path) }
+                ContextAction { objectName: "copyChatbox_" + card.key; text: "复制路径"; onTriggered: backend.copy(card.item.path) }
+                ContextAction { text: "在文件管理器中打开"; onTriggered: backend.openChatboxPath(card.item.path, true) }
             }
         }
     }

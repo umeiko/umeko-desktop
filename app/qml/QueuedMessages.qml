@@ -27,8 +27,8 @@ Item {
                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 5
                         Item {
                             width: 62; height: 28
-                            Row { anchors.centerIn: parent; spacing: 4; Glyph { name: "steer"; width: 13; height: 13; anchors.verticalCenter: parent.verticalCenter } Text { text: row.modelData.mode === "steering" ? "已引导" : "引导"; font.pixelSize: 12; color: Theme.muted } }
-                            MouseArea { objectName: "steerQueued_" + row.index; anchors.fill: parent; enabled: row.modelData.mode !== "steering"; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: backend.steerQueued(row.modelData.id) }
+                            Row { anchors.centerIn: parent; spacing: 4; Glyph { name: "steer"; width: 13; height: 13; anchors.verticalCenter: parent.verticalCenter } Text { text: "引导"; font.pixelSize: 12; color: Theme.muted } }
+                            MouseArea { objectName: "steerQueued_" + row.index; anchors.fill: parent; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: backend.steerQueued(row.modelData.id) }
                         }
                         ActionButton { objectName: "removeQueued_" + row.index; glyph: "trash"; width: 24; height: 28; quiet: true; hint: "删除排队消息"; onClicked: backend.removeQueued(row.modelData.id) }
                         Item {
@@ -37,11 +37,11 @@ Item {
                             MouseArea { objectName: "queuedMenu_" + row.index; anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { const point = mapToItem(row, 0, height); menu.popup(point.x, point.y) } }
                         }
                     }
-                    Menu {
+                    FloatingMenu {
                         id: menu
-                        MenuItem { text: "编辑"; onTriggered: backend.editQueued(row.modelData.id) }
-                        MenuItem { text: "复制"; onTriggered: backend.copy(row.modelData.text) }
-                        MenuItem { text: "删除"; onTriggered: backend.removeQueued(row.modelData.id) }
+                        ContextAction { text: "编辑"; onTriggered: backend.editQueued(row.modelData.id) }
+                        ContextAction { text: "复制"; onTriggered: backend.copy(row.modelData.text) }
+                        ContextAction { text: "删除"; onTriggered: backend.removeQueued(row.modelData.id) }
                     }
                 }
             }

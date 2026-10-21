@@ -34,6 +34,7 @@ let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe
 let mcpEntries = [], mcpStatus = "", capturingMcp = false, pollingResources = false;
 let queueChain = Promise.resolve();
 let queuedItems = [], queueInput;
+let interruptedInputs = [];
 function syncQueue(steering, followUp) {
   const previous = [...queuedItems];
   queuedItems = [["steering", steering], ["followUp", followUp]].flatMap(([mode, texts]) => texts.map(text => {
@@ -99,8 +100,8 @@ async function bindSession(session) {
     if (event.type === "queue_update") {
       syncQueue(event.steering, event.followUp);
     }
-    if (event.type === "message_start" && event.message.role === "user") emit({ type: "user_start", text: textOf(event.message.content) });
-    if (event.type === "message_start" && event.message.role === "assistant") emit({ type: "assistant_start" });
+    if (event.type === "message_start" && event.message.role === "user") emit({ type: "user_start", text: textOf(event.message.content), timestamp: event.message.timestamp });
+    if (event.type === "message_start" && event.message.role === "assistant") emit({ type: "assistant_start", timestamp: event.message.timestamp });
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") emit({ type: "delta", text: event.assistantMessageEvent.delta });
     if (event.type === "message_update" && event.assistantMessageEvent.type === "thinking_delta") emit({ type: "thinking_delta", text: event.assistantMessageEvent.delta });
     if (event.type.startsWith("tool_execution_")) emit({ type: "tool", name: event.toolName, id: event.toolCallId,
@@ -108,7 +109,7 @@ async function bindSession(session) {
       media: event.type === "tool_execution_end" ? chatboxItems(event.toolName, {...event.result, isError: event.isError}) : undefined,
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
     if (event.type === "message_end") emit({ type: "message", role: event.message.role,
-      text: textOf(event.message.content), thinking: thinkingOf(event.message.content), error: event.message.errorMessage || "" });
+      text: textOf(event.message.content), thinking: thinkingOf(event.message.content), error: event.message.stopReason === "aborted" ? "" : event.message.errorMessage || "", timestamp:event.message.timestamp });
     if (event.type === "compaction_start") emit({ type: "status", text: "正在压缩上下文" });
     if (event.type === "auto_retry_start") emit({ type: "status", text: `正在重试 ${event.attempt}/${event.maxAttempts}` });
     if (["entry_appended", "message_end", "compaction_end", "agent_end"].includes(event.type)) publishContext();
@@ -233,7 +234,7 @@ async function state() {
   const deliveries = branch.filter(e => e.type === "custom" && e.customType === "umeko-chatbox" && e.data?.version === 1 && typeof e.data.toolCallId === "string" && Array.isArray(e.data.items)).map(e => e.data);
   const messages = branch.filter(e => e.type === "message" && ["user", "assistant"].includes(e.message.role)).map(e => {
     const message = e.message;
-    const row = {role: message.role, text: textOf(message.content) || message.errorMessage || "", error: !!message.errorMessage, entryId:e.id};
+    const row = {role: message.role, text: textOf(message.content) || (message.stopReason === "aborted" ? "" : message.errorMessage || ""), error: message.stopReason !== "aborted" && !!message.errorMessage, entryId:e.id, timestamp:message.timestamp || e.timestamp};
     const thinking = thinkingOf(message.content);
     if (thinking) row.thinking = thinking;
     const calls = Array.isArray(message.content) ? message.content.filter(c => c.type === "toolCall") : [];
@@ -284,28 +285,41 @@ async function capabilities() {
   };
 }
 
+async function promptWithInterrupts(first) {
+  let next = first;
+  do {
+    try { await runtime.session.prompt(next.text, { images: next.images || [] }); }
+    catch (error) { if (!interruptedInputs.length) throw error; }
+    await queueChain;
+    next = interruptedInputs.shift();
+  } while (next);
+}
+
 async function execute(input) {
   if (["follow-up", "steer", "promote-queue", "edit-queue", "delete-queue", "steer-queued"].includes(input.type)) {
     queueChain = queueChain.then(async () => {
       try {
         if (!runtime) throw new Error("Pi 尚未就绪");
-        if (["edit-queue", "promote-queue", "delete-queue", "steer-queued"].includes(input.type)) {
-          const selected = input.type !== "promote-queue" ? queuedItems.find(item => item.id === input.id) : undefined;
-          if (input.type !== "promote-queue" && !selected) throw new Error("这条消息已经开始处理");
+        if (["steer", "promote-queue", "steer-queued"].includes(input.type)) {
+          if (!executing) throw new Error("当前任务已结束，请重新发送这条消息");
+          const selected = input.type === "steer" ? {text:input.text,images:input.images || []} : input.type === "promote-queue" ? queuedItems[0] : queuedItems.find(item => item.id === input.id);
+          if (!selected) throw new Error("这条消息已经开始处理");
+          const remaining = takeQueue().filter(item => item !== selected);
+          interruptedInputs.push(selected);
+          clearDialogs();
+          // Native steer waits for a tool boundary. Desktop steering instead
+          // aborts the active model/tool run, then submits a normal Pi prompt.
+          await runtime.session.abort();
+          for (const item of remaining) await enqueue(item, "followUp");
+        } else if (["edit-queue", "delete-queue"].includes(input.type)) {
+          const selected = queuedItems.find(item => item.id === input.id);
+          if (!selected) throw new Error("这条消息已经开始处理");
           const items = takeQueue();
           if (input.type === "edit-queue") emit({type: "queue_edited", text: selected.text, images: selected.images || []});
-          for (let index = 0; index < items.length; index++) {
-            const item = items[index];
-            if (item === selected && input.type !== "steer-queued") continue;
-            try { await enqueue(item, input.type === "promote-queue" || input.type === "steer-queued" && item === selected ? "steering" : item.mode); }
-            catch (error) {
-              emit({type:"queue_returned", steering:[], followUp:items.slice(index).filter(row => row !== selected || input.type === "steer-queued").map(row => row.text)});
-              throw error;
-            }
-          }
+          for (const item of items) if (item !== selected) await enqueue(item, "followUp");
         } else {
           if (!executing || runtime.session.isIdle) throw new Error("当前任务已结束，请重新发送这条消息");
-          await enqueue({text:input.text, images:input.images || []}, input.type === "steer" ? "steering" : "followUp");
+          await enqueue({text:input.text, images:input.images || []}, "followUp");
         }
       } catch (error) { emit({type:"queue_rejected", text:input.text || "", message:error.message}); }
     });
@@ -323,6 +337,7 @@ async function execute(input) {
   if (input.type === "abort") {
     clearDialogs();
     if (runtime) returnQueue();
+    if (interruptedInputs.length) emit({type:"queue_returned", steering:[], followUp:interruptedInputs.splice(0).map(item => item.text)});
     await runtime?.session.abort(); return;
   }
   if (input.type === "shutdown") { await shutdown(); return; }
@@ -342,7 +357,7 @@ async function execute(input) {
     if (input.type === "prompt") {
       if (!runtime.session.sessionManager.getSessionName()) runtime.session.setSessionName(input.text.replace(/\s+/g, " ").slice(0, 28));
       emit({ type: "session", session: sessionInfo() });
-      await runtime.session.prompt(input.text, { images: input.images || [] });
+      await promptWithInterrupts(input);
     }
     else if (input.type === "new") await runtime.newSession();
     else if (input.type === "open") await runtime.switchSession(input.path);
@@ -354,7 +369,12 @@ async function execute(input) {
     else if (input.type === "mcp-command") await runtime.session.prompt(input.text);
     else if (input.type === "export") emit({ type: "notice", message: "已导出到 " + runtime.session.exportToJsonl(input.path) });
     else if (input.type === "import") await runtime.importFromJsonl(input.path);
-    await state();
+    do {
+      await queueChain;
+      if (interruptedInputs.length) await promptWithInterrupts(interruptedInputs.shift());
+      await state();
+      await queueChain;
+    } while (interruptedInputs.length);
   } catch (error) { emit({ type: "error", message: error.message }); }
   finally {
     // A failed/aborted model request can leave Pi's native pending queues intact.

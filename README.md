@@ -49,7 +49,7 @@ Screenshots show the actual app with isolated demo data. No real accounts, crede
 | **An API for your other tools** | An optional OpenAI / Anthropic API proxy, model aliases, LAN access and named, revocable API keys. |
 | **A little personality** | Light, dark and Yanami themes, twelve welcome portraits and greetings, and a pixel Yanami at the end of a reply. |
 
-Pi can deliver images and compact file cards directly with [`submit_to_chatbox`](docs/chatbox-media.md). Click a file to open it; use its corner arrow or right-click menu to reveal or copy it. Queued messages sit above the composer with individual steering, editing and deletion. Double-click selects a word; triple-click selects a paragraph.
+Pi can deliver images and compact file cards directly with [`submit_to_chatbox`](docs/chatbox-media.md). Click a file to open it; use its corner arrow or right-click menu to reveal or copy it. Queued messages sit above the composer with editing and deletion; steering interrupts the active run and submits a normal message immediately. Hover a message for its timestamp and copy action. Double-click selects a word; triple-click selects a paragraph. Pi settings have searchable, nested sections and click-activated inline scrolling. Model selection, sidebar highlights and compact context menus use continuous PID motion.
 
 ## Get started
 

@@ -21,11 +21,8 @@ Item {
         else backend.renameSession(target.id, renameField.text)
         renamePopup.close()
     }
-    component RowMenu: Menu {
-        width: 234; padding: 6
-        background: Rectangle { radius: 10; color: Theme.surface; border.color: Theme.line }
-        enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 100 } }
-    }
+    component RowMenu: FloatingMenu { width: 212 }
+
     RowMenu {
         id: sessionMenu; objectName: "sessionContextMenu"
         ContextAction { objectName: "contextFork"; text: "分支会话"; glyph: "branch"; enabled: !root.target.busy; onTriggered: backend.forkSessionById(root.target.id) }

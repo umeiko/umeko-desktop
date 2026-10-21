@@ -77,6 +77,7 @@ class ChatModel(QAbstractListModel):
                 group["tools"] = group.get("tools", []) + current.get("tools", [])
                 group["text"] = current.get("text", "")
                 group["error"] = group.get("error", False) or current.get("error", False)
+                if current.get("timestamp"): group["timestamp"] = current["timestamp"]
             else:
                 rows.append(current)
         for row in rows:

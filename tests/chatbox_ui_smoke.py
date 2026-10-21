@@ -66,6 +66,10 @@ def context(name):
     QTest.qWait(150)
     item=find(name); assert item,name
     QTest.mouseClick(window,Qt.RightButton,Qt.NoModifier,item.mapToScene(item.boundingRect().center()).toPoint());QTest.qWait(100)
+    from PySide6.QtCore import QObject
+    menu=find('copyChatboxFile_delivery_1').parent()
+    assert menu and menu.property('desiredOpen') and menu.property('animating'), 'Context menu has no PID opening animation'
+    assert .9 < menu.property('scale') < 1.04
 
 try:
     assert backend.send('展示图片，并把报告文件给我。')
@@ -76,15 +80,17 @@ try:
     assert find('chatboxCard_delivery_1').height() <= 36
     with patch('app.controller.QDesktopServices.openUrl',return_value=True) as opened:
         click('openChatbox_delivery_1')
-        assert Path(opened.call_args.args[0].toLocalFile())==report
+        assert Path(opened.call_args.args[0].toLocalFile()).samefile(report)
     with patch('app.controller.subprocess.Popen') as launched,patch('app.controller.QDesktopServices.openUrl',return_value=True) as opened:
         click('toggleChatbox_delivery_1')
         click('revealChatbox_delivery_1')
         assert launched.called if sys.platform in ('win32','darwin') else opened.called
     context('openChatbox_delivery_1');click('copyChatboxFile_delivery_1')
-    assert Path(app.clipboard().mimeData().urls()[0].toLocalFile())==report
+    assert Path(app.clipboard().mimeData().urls()[0].toLocalFile()).samefile(report)
     context('openChatbox_delivery_1')
-    click('copyChatbox_delivery_1');assert app.clipboard().text()==str(report)
+    QTest.qWait(350)
+    assert window.grabWindow().save(str(ROOT/'artifacts/screenshots/62-context-menu.png'))
+    click('copyChatbox_delivery_1');assert Path(app.clipboard().text()).samefile(report)
     selection=find('chatSelection');QMetaObject.invokeMethod(selection,'selectAll');QMetaObject.invokeMethod(selection,'copy')
     assert '测试报告' in app.clipboard().text() and '模型启用视觉' in app.clipboard().text()
     QMetaObject.invokeMethod(selection,'clear')

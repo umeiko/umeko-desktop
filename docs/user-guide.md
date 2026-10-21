@@ -252,3 +252,11 @@ Private provider packages, profiles and protocol notes stay in Git-ignored `.pri
 ```
 
 On Windows use `.venv/Scripts/python.exe`. Fixtures use temporary directories and local services, without real internal endpoints or external models. Native Fcitx5 composition, system keyring dialogs and packaged Unix applications require platform-level checks.
+
+### Conversation and settings interaction
+
+**Enter** during a run queues a follow-up. Ordinary follow-ups start in order when the current run finishes. Click a queued row to edit it, use its trash button to remove it, or choose **Steer** to interrupt the active model/tool execution and insert that message as a normal user turn immediately. **Ctrl+S** sends the editor text this way; with an empty editor it sends the oldest queued message, keeping the remaining follow-ups in order.
+
+Hover a conversation message to reveal its recorded time and copy action. Double-click selects a word; triple-click selects a paragraph. Model selection and sidebar highlights use continuous PID motion.
+
+**Settings → Agent → Pi** groups configuration into two levels. Search opens matching sections without discarding their collapsed state or unsaved input. Inline editors, the API Key table, tool catalog and release notes follow the page wheel until clicked; click outside to return to page scrolling. Help popups stay open for 3 seconds after leaving, or indefinitely while their text is selected; click outside to dismiss them.
