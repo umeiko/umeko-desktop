@@ -53,6 +53,8 @@ Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原�
 
 侧栏高光先响应点击，再加载聊天；连续切换只打开最后一项。文件卡片提供主题悬浮提示、手型光标和明确的下拉状态。选中聊天文字后可右键复制或全选。
 
+外观设置可导入、更新、切换和删除 JSON 配色主题，也能一键复制完整制作提示词；参见[主题格式与示例](docs/themes.md)。回复末尾的小八奈见支持点击、长按和连击彩蛋。
+
 ## 开始使用
 
 在 [Releases](https://github.com/umeiko/umeko-desktop/releases/latest) 下载对应平台的包，解压后运行。请保留完整应用目录。

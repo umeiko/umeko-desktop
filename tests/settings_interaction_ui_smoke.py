@@ -42,7 +42,7 @@ try:
     flick=find('settingsScroll').property('contentItem');click('openPiSettingsButton')
     assert not find('piFold_runtime').property('opened')
     search=find('piSettingsSearch');search.setProperty('text','自定义指令');QTest.qWait(120)
-    assert find('piFold_runtime').isVisible() and find('piFold_instructions').property('opened')
+    assert find('piFold_runtime').isVisible() and find('piFold_context').property('opened')
     assert find('agentInstructions').isVisible() and not find('piFold_kernel').isVisible()
     search.setProperty('text','npm');QTest.qWait(120)
     assert find('piNpmRegistry').isVisible() and not find('piFold_runtime').isVisible()
@@ -50,7 +50,7 @@ try:
     assert not find('piFold_kernel').isVisible() and not find('piFold_runtime').isVisible()
     search.setProperty('text','');QTest.qWait(100)
     assert not find('piFold_runtime').property('opened'),'Search overwrote saved collapse state'
-    for name in ['piFold_runtime','piFold_instructions','piFold_management','piFold_recovery']:find(name).setProperty('expanded',True)
+    for name in ['piFold_runtime','piFold_context','piFold_management','piFold_recovery']:find(name).setProperty('expanded',True)
     editor=find('agentInstructions');editor.setProperty('text','A long editable instruction\n'*60)
     region=find('agentInstructionsScroll');reveal(region)
     before=flick.property('contentY');inner=region.property('contentItem');inner_before=inner.property('contentY')
@@ -81,6 +81,17 @@ try:
     assert popup.property('visible'),'Selected help expired'
     QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,QPoint(400,90));QTest.qWait(100)
     assert not popup.property('visible'),'Outside click did not dismiss selected help'
+    QTest.mouseMove(window,center(help_button));QTest.qWait(500)
+    assert popup.property('visible') and not help_button.property('bubbleVisited')
+    QTest.mouseMove(window,QPoint(400,90));QTest.qWait(550)
+    assert not popup.property('visible'),'Unvisited explanation should dismiss in about 0.3 seconds'
+    QTest.mouseMove(window,center(help_button));QTest.qWait(500)
+    assert popup.property('visible')
+    text=popup.property('contentItem');QTest.mouseMove(window,center(text));QTest.qWait(100)
+    assert help_button.property('bubbleVisited'),'Entering the explanation was not recorded'
+    QTest.mouseMove(window,QPoint(400,90));QTest.qWait(550)
+    assert popup.property('visible'),'Visited explanation did not get its 3 second grace period'
+    QTest.qWait(2800);assert not popup.property('visible')
     assert not warnings,'\n'.join(warnings)
     print('SETTINGS_INTERACTION_UI_OK: two-level search/folds, editor and key-table wheel gating, selectable persistent help')
 finally:

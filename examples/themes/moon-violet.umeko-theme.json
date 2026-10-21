@@ -1,0 +1,24 @@
+{
+  "format": "umeko-theme",
+  "version": 1,
+  "id": "moon-violet",
+  "name": "月夜紫",
+  "base": "dark",
+  "colors": {
+    "bg": "#1B1924",
+    "sidebar": "#16141E",
+    "surface": "#242130",
+    "userBubble": "#342D49",
+    "hover": "#3A324C",
+    "line": "#494059",
+    "ink": "#F1EDF8",
+    "muted": "#B8AEC8",
+    "accent": "#CBB4FF",
+    "accentBg": "#393049",
+    "selectionBg": "#CAB4F4",
+    "selectionText": "#231B32",
+    "button": "#C9B2F1",
+    "buttonText": "#241A36",
+    "danger": "#FFB4B2"
+  }
+}

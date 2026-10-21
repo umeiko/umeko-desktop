@@ -14,7 +14,7 @@ MenuItem {
     HoverHandler { cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
     contentItem: RowLayout {
         spacing: control.glyph ? 8 : 0
-        Glyph { name: control.glyph; visible: !!control.glyph; width: control.glyph ? 14 : 0; height: 14 }
+        Glyph { name: control.glyph; color: control.destructive ? Theme.danger : Theme.ink; visible: !!control.glyph; width: control.glyph ? 14 : 0; height: 14 }
         Text { text: control.text; Layout.fillWidth: true; color: control.destructive ? Theme.danger : Theme.ink; font.pixelSize: 12; verticalAlignment: Text.AlignVCenter }
     }
     background: Rectangle { radius: 6; color: control.down ? Theme.accentBg : control.highlighted || control.hovered ? Theme.hover : "transparent"; Behavior on color { ColorAnimation { duration: 90 } } }

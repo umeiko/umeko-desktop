@@ -34,6 +34,7 @@ from .api_keys import KeyCatalog, generate_key, key_summary, lan_addresses, make
 from .pi_management import PiManagement
 from .message_attachments import split_attachments
 from .app_about import AppAbout
+from .themes import BASES, LIMIT as THEME_LIMIT, theme_library, read_theme
 
 
 GREETINGS = (
@@ -73,6 +74,9 @@ class Controller(PiControllerMixin, QObject):
         self.root = root
         self._app_about = AppAbout(self)
         self.store = Store()
+        self.store.data["themes"] = theme_library(self.store.data.get("themes"))
+        if self.store.data["theme"] not in BASES and not any("custom:" + row["id"] == self.store.data["theme"] for row in self.store.data["themes"]):
+            self.store.data["theme"] = "dark" if self.store.data["dark"] else "light"
         self._proxy_keys = KeyCatalog(self.store.data["server"]["keys"])
         self._created_proxy_key = {}
         self._proxy_usage_timer = QTimer(self)
@@ -967,11 +971,58 @@ class Controller(PiControllerMixin, QObject):
 
     @Slot(str)
     def setTheme(self, value):
-        if value not in ("light", "dark", "yanami"):
+        custom = next((row for row in self.customThemes if row["id"] == value), None)
+        if value not in BASES and not custom:
             return
-        self.store.data.update(theme=value, dark=value == "dark")
+        self.store.data.update(theme=value, dark=(custom["base"] if custom else value) == "dark")
         self.store.save()
         self.changed.emit()
+
+    @Property('QVariantList', notify=changed)
+    def customThemes(self):
+        return [dict(row, id='custom:' + row['id']) for row in theme_library(self.store.data.get('themes'))]
+
+    @Property('QVariantMap', notify=changed)
+    def themeStyle(self):
+        return next((row for row in self.customThemes if row['id'] == self.store.data['theme']), {})
+
+    @Slot(str, result=bool)
+    def importTheme(self, url):
+        previous = dict(self.store.data)
+        try:
+            item = read_theme(QUrl(url).toLocalFile() or url)
+            rows = theme_library(self.store.data.get('themes'))
+            if not any(row['id'] == item['id'] for row in rows) and len(rows) >= THEME_LIMIT:
+                raise ValueError('最多保存 32 个自定义主题，请先删除不需要的主题')
+            self.store.data.update(themes=[row for row in rows if row['id'] != item['id']] + [item], theme='custom:' + item['id'], dark=item['base'] == 'dark')
+            self.store.save()
+        except (OSError, ValueError, RuntimeError) as error:
+            self.store.data = previous
+            self.toast.emit('主题导入失败：' + str(error))
+            return False
+        self.changed.emit()
+        self.toast.emit('主题已导入并应用')
+        return True
+
+    @Slot(str)
+    def removeTheme(self, theme_id):
+        item = next((row for row in self.customThemes if row['id'] == theme_id), None)
+        if not item:
+            return
+        previous = dict(self.store.data)
+        self.store.data['themes'] = [row for row in theme_library(self.store.data.get('themes')) if 'custom:' + row['id'] != theme_id]
+        if self.store.data['theme'] == theme_id:
+            self.store.data.update(theme=item['base'], dark=item['base'] == 'dark')
+        try:
+            self.store.save()
+        except (OSError, RuntimeError):
+            self.store.data = previous
+            return self.toast.emit('无法保存主题设置')
+        self.changed.emit()
+
+    @Slot()
+    def copyThemePrompt(self):
+        self.copy((self.root / 'app/theme-prompt.txt').read_text(encoding='utf-8'))
 
     @Slot(str, str)
     def selectModel(self, provider, model):

@@ -86,7 +86,7 @@ Item {
                 Behavior on color { ColorAnimation { duration: 150 } }
                 scale: sendArea.pressed ? 0.92 : 1
                 Behavior on scale { NumberAnimation { duration: 100 } }
-                Glyph { objectName: "sendGlyph"; anchors.centerIn: parent; name: backend.running ? "stop" : prompt.text.trim().length > 0 && !backend.loading ? (Theme.dark ? "arrow-up" : "send") : "arrow-up"; width: 17; height: 17 }
+                Glyph { objectName: "sendGlyph"; color: parent.disabled ? Theme.muted : Theme.buttonText; anchors.centerIn: parent; name: backend.running ? "stop" : prompt.text.trim().length > 0 && !backend.loading ? (Theme.dark ? "arrow-up" : "send") : "arrow-up"; width: 17; height: 17 }
                 MouseArea { id: sendArea; objectName: "sendArea"; anchors.fill: parent; enabled: !parent.disabled; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: { if (backend.running) backend.stop(); else root.sendMessage(false) } }
                 HoverTip { active: sendArea.containsMouse; text: backend.running ? "停止当前会话任务" : "发送消息" }
             }

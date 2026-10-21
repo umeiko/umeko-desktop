@@ -109,3 +109,5 @@ Build with `./build.ps1` on Windows or `bash build.sh` on macOS/Linux. Each plat
 Created by [umeiko](https://github.com/umeiko). Powered by [Pi Coding Agent](https://github.com/earendil-works/pi), [Qt for Python](https://doc.qt.io/qtforpython-6/) and [Pygments](https://pygments.org/).
 
 The pixel Yanami logo reuses the app's existing [fan-art asset and provenance](app/icons/yanami-pixel.provenance.json). This is an independent fan project, unaffiliated with the character's rights holders. Dependencies retain their upstream licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
+
+Custom color themes use portable JSON files. Import, update or delete them under **Settings → Appearance**, and copy a complete creation prompt from the same page. See the [theme format and example](docs/themes.md). Reply mascots react to taps, click combos and holds.

@@ -242,33 +242,7 @@ Item {
 
                 AgentPage { visible: root.tab === 3; width: parent.width; availableHeight: settingsScroll.availableHeight; onNavigated: Qt.callLater(() => settingsScroll.contentItem.contentY = 0) }
 
-                Column {
-                    visible: root.tab === 5; width: parent.width; spacing: 18
-                    SectionCard {
-                        width: parent.width
-                        ColumnLayout { width: parent.width; spacing: 20
-                            Text { text: "主题"; color: Theme.ink; font.pixelSize: 14; font.weight: Font.DemiBold }
-                            RowLayout { Layout.fillWidth: true; spacing: 20
-                                Repeater {
-                                    model: [{name:"浅色",id:"light",bg:"#fcfcfa",side:"#f2f3ef",card:"#ffffff",line:"#e5e8e1"},{name:"深色",id:"dark",bg:"#191c1b",side:"#141716",card:"#212523",line:"#343a36"},{name:"八奈见 · 海盐蓝",id:"yanami",bg:"#f4f7ff",side:"#e9effd",card:"#ffffff",line:"#d6e1f7"}]
-                                    ColumnLayout { required property var modelData; Layout.fillWidth: true; Layout.preferredWidth: 1; Layout.minimumWidth: 0; spacing: 12
-                                        Rectangle { objectName: "theme_" + modelData.id; Layout.fillWidth: true; height: 160; radius: 10; color: modelData.bg; border.color: backend.config.theme === modelData.id ? Theme.accent : Theme.line; border.width: backend.config.theme === modelData.id ? 2 : 1
-                                            Rectangle { x: 2; y: 2; width: parent.width * 0.22; height: parent.height - 4; radius: 8; color: modelData.side }
-                                            Rectangle { x: parent.width * 0.32; y: 85; width: parent.width * 0.55; height: 40; radius: 6; color: modelData.card; border.color: modelData.line }
-                                            Rectangle { visible: modelData.id !== "yanami"; x: parent.width * 0.54; y: 37; width: 24; height: 24; radius: 8; color: "#59755d" }
-                                            Image { visible: modelData.id === "yanami"; source: "../icons/portraits/02.png"; x: parent.width * 0.42; y: 15; width: 65; height: 65; mipmap: true }
-                                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: backend.setTheme(modelData.id) }
-                                        }
-                                        Row { spacing: 8
-                                            Text { text: modelData.name; color: Theme.ink; font.pixelSize: 12 }
-                                            Glyph { name: "check"; width: 15; height: 15; visible: backend.config.theme === modelData.id }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                ThemeSettings { visible: root.tab === 5; width: parent.width }
                 AboutPage { visible: root.tab === 6; width: parent.width }
                 Item { width: 1; height: 12 }
             }

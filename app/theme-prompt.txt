@@ -1,0 +1,39 @@
+请为 Umeko Desktop 制作一套配色主题。先根据我接下来提供的风格偏好设计，再输出一个完整的 JSON 文件，建议文件名：主题名.umeko-theme.json。请直接给文件内容，不要用 JavaScript、CSS、QML、压缩包或远程资源。
+
+格式规范（两个 Umeko 桌面版本通用）：
+1. format 固定为 "umeko-theme"，version 固定为整数 1。
+2. id：1–48 位小写字母、数字或短横线，首位为字母或数字，例如 moon-violet；使用同一个 id 重新导入会更新该主题。
+3. name：1–48 个字符，显示在外观设置的主题列表中。
+4. base：light、dark、yanami 三选一。未设置的颜色继承这个基础主题。dark 使用深色模式；yanami 保留八奈见背景、头像及互动效果，不需要打包图片。
+5. colors：颜色对象，只支持下列字段，所有值均为不透明的 #RRGGBB：
+bg 窗口与页面背景；sidebar 侧栏；surface 卡片、输入框及浮层；userBubble 用户消息气泡；hover 悬停高亮；line 边框及分割线；ink 正文；muted 辅助文字和默认图标；accent 强调文字；accentBg 柔和强调背景；selectionBg 文字选区背景；selectionText 选中文字；button 主要按钮背景；buttonText 主要按钮文字及图标；danger 危险操作和错误提示。
+6. 请保证 ink/bg、ink/surface、ink/userBubble、muted/bg、buttonText/button、selectionText/selectionBg 的对比度至少 4.5:1；accent/surface 应清楚可读。悬停色与表面色有轻微差异，不能刺眼。请检查浅色与深色图标的辨识度。
+7. 文件为 UTF-8 JSON，最大 64 KiB。不要添加脚本、文件路径、链接、图片、字体、未知字段或透明颜色。主题只定义配色，沿用客户端原有布局与动画。
+
+完整示例（可以直接导入）：
+{
+  "format": "umeko-theme",
+  "version": 1,
+  "id": "moon-violet",
+  "name": "月夜紫",
+  "base": "dark",
+  "colors": {
+    "bg": "#1B1924",
+    "sidebar": "#16141E",
+    "surface": "#242130",
+    "userBubble": "#342D49",
+    "hover": "#3A324C",
+    "line": "#494059",
+    "ink": "#F1EDF8",
+    "muted": "#B8AEC8",
+    "accent": "#CBB4FF",
+    "accentBg": "#393049",
+    "selectionBg": "#CAB4F4",
+    "selectionText": "#231B32",
+    "button": "#C9B2F1",
+    "buttonText": "#241A36",
+    "danger": "#FFB4B2"
+  }
+}
+
+交付前请解析 JSON、检查字段和颜色格式，并检查对比度。使用方式：设置 → 外观 → 导入主题，选择生成的 JSON；导入后自动应用，卡片可随时切换或删除。我的风格偏好是：请在这里补充。

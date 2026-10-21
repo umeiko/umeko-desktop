@@ -329,16 +329,11 @@ ApplicationWindow {
                                 onClicked: { const activity = modelData.activity || []; const prose = activity.filter(item => item.kind === "text").map(item => item.text).join("\n\n"); backend.copy([prose || modelData.text || "", ...(modelData.attachments || []).map(item => item.name)].filter(part => !!part).join("\n")) } }
                         }
                     }
-                    Image {
+                    ReplyMascot {
                         objectName: "replyEndMascot_" + messageRow.index
-                        readonly property bool loaded: status === Image.Ready
+                        selectionController: chatSelection
                         visible: messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !backend.running
-                        x: 33; width: 56; height: 56
-                        source: visible ? "../icons/yanami-pixel.png" : ""
-                        sourceSize: Qt.size(112, 112)
-                        fillMode: Image.PreserveAspectFit
-                        smooth: false; mipmap: false
-                        Accessible.ignored: true
+                        x: 33
                     }
                 }
             }

@@ -5,12 +5,14 @@ ToolButton {
     id: control
     property string help: ""
     property bool suppressed: false
+    property bool bubbleVisited: false
     readonly property bool pinned: bubble.visible
     implicitWidth: 23; implicitHeight: 23
     hoverEnabled: true
+    HoverHandler { cursorShape: Qt.PointingHandCursor }
     function updateDismissal() {
         if (!bubble.visible || hovered || bubbleHover.hovered || explanation.selectionStart !== explanation.selectionEnd) closeTimer.stop()
-        else closeTimer.restart()
+        else { closeTimer.interval = bubbleVisited ? 3000 : 300; closeTimer.restart() }
     }
     onClicked: { openTimer.stop(); if (bubble.visible) bubble.close(); else { suppressed = false; bubble.open() } }
     onHoveredChanged: {
@@ -30,9 +32,13 @@ ToolButton {
         x: 0; y: control.height + 8
         margins: 12; width: 320; padding: 13; timeout: -1
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+        onAboutToShow: control.bubbleVisited = false
         onOpened: control.updateDismissal()
         onClosed: { openTimer.stop(); closeTimer.stop(); explanation.deselect(); control.suppressed = control.hovered }
-        background: Rectangle { radius: 8; color: Theme.ink }
+        background: Rectangle {
+            radius: 8; color: Theme.ink
+            HoverHandler { id: bubbleHover; onHoveredChanged: { if (hovered) control.bubbleVisited = true; control.updateDismissal() } }
+        }
         contentItem: TextArea {
             id: explanation; objectName: "helpText_" + control.objectName
             text: control.help; color: Theme.bg; font.pixelSize: 11; wrapMode: TextEdit.Wrap
@@ -41,7 +47,6 @@ ToolButton {
             background: null
             onSelectionStartChanged: control.updateDismissal()
             onSelectionEndChanged: control.updateDismissal()
-            HoverHandler { id: bubbleHover; onHoveredChanged: control.updateDismissal() }
         }
     }
 }

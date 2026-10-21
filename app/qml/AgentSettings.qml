@@ -6,7 +6,7 @@ Column {
     id: root
     property string query: ""
     spacing: 12
-    SettingsFold { objectName: "piFold_context"; width: parent.width; title: "上下文"; nested: true; query: root.query; searchTerms: "自动压缩 compaction 重新加载"
+    SettingsFold { objectName: "piFold_context"; width: parent.width; title: "上下文"; nested: true; query: root.query; searchTerms: "自动压缩 compaction 重新加载 运行设置 自定义指令 提示词 instructions token 回答 上限"
     SectionCard {
         width: parent.width
         ColumnLayout {
@@ -25,6 +25,27 @@ Column {
                 Item { Layout.fillWidth: true }
                 Toggle { id: compaction; objectName: "piAutoCompaction"; checked: backend.config.agent.autoCompaction }
             }
+        }
+    }
+    SectionCard {
+        objectName: "piRuntimeSettings"
+        width: parent.width
+        ColumnLayout {
+            width: parent.width; spacing: 16
+            RowLayout {
+                Text { text: "运行设置"; color: Theme.ink; font.pixelSize: 14; font.weight: Font.DemiBold }
+                HelpButton { help: "设置附加到 Pi 原生系统提示词，不替换其编码能力和工具说明。回答上限为每次模型请求的最大 token 数。保存后重新加载生效。" }
+                Item { Layout.fillWidth: true }
+                Text { text: "回答上限"; color: Theme.muted; font.pixelSize: 11 }
+                InputField { id: tokens; Layout.preferredWidth: 100; text: backend.config.agent.maxTokens; validator: IntValidator { bottom:256; top:32768 } }
+            }
+            InlineScrollView {
+                objectName: "agentInstructionsScroll"; Layout.fillWidth: true; Layout.preferredHeight: 120; clip: true
+                TextArea { id: instructions; objectName: "agentInstructions"; text: backend.config.agent.instructions; placeholderText: "自定义指令"; color: Theme.ink; placeholderTextColor: Theme.muted; font.pixelSize: 12; wrapMode: TextArea.Wrap; padding: 13; selectByMouse: true
+                    background: Rectangle { radius: 8; color: Theme.bg; border.color: Theme.line }
+                }
+            }
+
         }
     }
     }
@@ -73,28 +94,6 @@ Column {
                 model: backend.agentResources.diagnostics
                 Text { required property var modelData; Layout.fillWidth: true; text: modelData.message || ""; color: Theme.danger; font.pixelSize: 11; wrapMode: Text.Wrap }
             }
-        }
-    }
-    }
-    SettingsFold { objectName: "piFold_instructions"; width: parent.width; title: "运行设置"; nested: true; query: root.query; searchTerms: "自定义指令 提示词 instructions token 回答 上限"
-    SectionCard {
-        width: parent.width
-        ColumnLayout {
-            width: parent.width; spacing: 16
-            RowLayout {
-                Text { text: "运行设置"; color: Theme.ink; font.pixelSize: 14; font.weight: Font.DemiBold }
-                HelpButton { help: "设置附加到 Pi 原生系统提示词，不替换其编码能力和工具说明。回答上限为每次模型请求的最大 token 数。保存后重新加载生效。" }
-                Item { Layout.fillWidth: true }
-                Text { text: "回答上限"; color: Theme.muted; font.pixelSize: 11 }
-                InputField { id: tokens; Layout.preferredWidth: 100; text: backend.config.agent.maxTokens; validator: IntValidator { bottom:256; top:32768 } }
-            }
-            InlineScrollView {
-                objectName: "agentInstructionsScroll"; Layout.fillWidth: true; Layout.preferredHeight: 120; clip: true
-                TextArea { id: instructions; objectName: "agentInstructions"; text: backend.config.agent.instructions; placeholderText: "自定义指令"; color: Theme.ink; placeholderTextColor: Theme.muted; font.pixelSize: 12; wrapMode: TextArea.Wrap; padding: 13; selectByMouse: true
-                    background: Rectangle { radius: 8; color: Theme.bg; border.color: Theme.line }
-                }
-            }
-
         }
     }
     }
