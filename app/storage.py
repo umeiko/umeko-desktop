@@ -68,7 +68,8 @@ DEFAULTS = {
     "selectedProvider": "", "selectedModel": "",
     "providers": [],
     "agent": {"maxTokens": 8192, "instructions": "", "autoCompaction": True,
-              "agentDir": "", "skillPaths": [], "extensionPaths": [], "safeMode": False},
+              "agentDir": "", "skillPaths": [], "extensionPaths": [], "safeMode": False,
+              "npmRegistry": "", "npmUserconfig": "", "npmCafile": ""},
     "server": {"port": 8787, "openai": True, "anthropic": True, "lan": False, "keys": []},
     "ui": {"sidebarWidth": 244, "sidebarCollapsed": False},
 }

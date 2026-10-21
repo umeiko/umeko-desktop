@@ -19,7 +19,8 @@ from PySide6.QtGui import QGuiApplication, QDesktopServices, QImageReader
 
 from .gateway import Gateway, LocalServer, validate_base_url
 from .integration import load_adapter, UnconfiguredAdapter
-from .pi_runtime import PACKAGE, RELEASE_NAME, CREATE_NO_WINDOW, installed_version, node_executable, node_environment, npm_command, project_runtime, verify_runtime
+from .pi_runtime import PACKAGE, RELEASE_NAME, CREATE_NO_WINDOW, installed_version, node_executable, npm_command, project_runtime, verify_runtime
+from .npm_config import npm_environment
 from .storage import Store
 from .pi_sessions import PiSessionPool, SessionState
 from .controller_runtime import PiControllerMixin
@@ -1223,6 +1224,11 @@ class Controller(PiControllerMixin, QObject):
             return False
         return self._send(text, steering=True)
 
+    @Slot(str)
+    def editQueued(self, item_id):
+        if any(row.get("id") == item_id for row in self._view.queue):
+            self._write_pi({"type": "edit-queue", "id": item_id})
+
     @Slot()
     def stop(self):
         self._stop()
@@ -1312,9 +1318,14 @@ class Controller(PiControllerMixin, QObject):
         self._kernel_busy, self._kernel_status = True, "正在检查 Pi 内核版本…"
         self.changed.emit()
         def check():
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-            with opener.open("https://registry.npmjs.org/" + PACKAGE + "/latest", timeout=15) as response:
-                return json.load(response)["version"]
+            result = subprocess.run([*npm_command(), "view", PACKAGE, "version", "--json"],
+                env=npm_environment(self.store.data["agent"]), cwd=self._view.workspace or self.store.directory,
+                capture_output=True, text=True, encoding="utf-8", timeout=45, creationflags=CREATE_NO_WINDOW)
+            if result.returncode: raise RuntimeError("无法访问 npm 软件源，请检查 Pi 的 npm 配置")
+            version = json.loads(result.stdout)
+            if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+(?:-[\w.-]+)?", version):
+                raise RuntimeError("npm 返回的 Pi 版本无效")
+            return version
         self._job("check", check)
 
     @Slot()
@@ -1337,8 +1348,9 @@ class Controller(PiControllerMixin, QObject):
             stage = kernels / ("staging-" + uuid.uuid4().hex)
             stage.mkdir()
             (stage / "package.json").write_text(json.dumps({"private": True, "dependencies": {PACKAGE: version}}))
-            result = subprocess.run([*npm, "install", "--prefix", str(stage), "--registry=https://registry.npmjs.org", "--ignore-scripts", "--no-audit", "--no-fund"],
-                                    env=node_environment(), capture_output=True, timeout=180, creationflags=CREATE_NO_WINDOW)
+            result = subprocess.run([*npm, "install", "--prefix", str(stage), "--ignore-scripts", "--no-audit", "--no-fund"],
+                                    env=npm_environment(self.store.data["agent"]), cwd=self._view.workspace or self.store.directory,
+                                    capture_output=True, timeout=180, creationflags=CREATE_NO_WINDOW)
             if result.returncode:
                 raise RuntimeError("内核下载失败；原有版本未改变")
             release = kernels / ("candidate-" + uuid.uuid4().hex)

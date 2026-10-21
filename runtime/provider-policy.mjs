@@ -1,6 +1,5 @@
-// Process-level routing guard. This is not a sandbox for shell child processes.
-// Install before importing Pi or user extensions. All model HTTP goes to our
-// authenticated loopback gateway; the gateway owns explicit supplier URLs/keys.
+// Discovery can run offline. Interactive extensions retain normal networking;
+// model routing is enforced by the explicit in-memory ModelRuntime registry.
 import net from "node:net";
 import tls from "node:tls";
 import http from "node:http";
@@ -11,7 +10,7 @@ import { syncBuiltinESMExports } from "node:module";
 
 let allowed;
 let mcpEndpoints = [];
-const denied = () => { throw new Error("网络请求已阻止：模型连接须使用 Umeko 中配置的供应商"); };
+const denied = () => { throw new Error("Pi 资源扫描处于离线模式，不能在扫描过程中发起网络请求"); };
 function check(host, port, protocol = "http:") {
   if (allowed && protocol === "http:" && host === "127.0.0.1" && Number(port) === Number(allowed.port)) return;
   if (mcpEndpoints.some(url => url.protocol === protocol && url.hostname === host && Number(url.port || (protocol === "https:" ? 443 : 80)) === Number(port))) return;
@@ -23,10 +22,11 @@ export function setMcpNetwork(entries) {
 }
 export function setGateway(value) {
   const url = new URL(value);
-  if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || !url.port || url.username || url.password || url.pathname !== "/") denied();
+  if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || !url.port || url.username || url.password || url.pathname !== "/") throw new Error("模型网关地址无效");
   allowed = url;
 }
-export function installProviderPolicy() {
+export function installProviderPolicy({ offline = false } = {}) {
+  if (!offline) return;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = function(input, init) {
     const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);

@@ -19,6 +19,22 @@ APP = QCoreApplication.instance() or QCoreApplication([])
 
 
 class NativeExtensionTests(unittest.TestCase):
+    def test_package_entry_uses_manifest_name_without_executing_code(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            package = root / "packages/web-fixture"
+            (package / "dist").mkdir(parents=True)
+            (package / "dist/index.js").write_text("throw new Error('must not execute')")
+            (package / "package.json").write_text(json.dumps({"name":"@fixture/web-access", "pi":{"extensions":["dist/index.js"]}}))
+            agent, cwd = root / "agent", root / "workspace"
+            agent.mkdir(); cwd.mkdir()
+            (agent / "settings.json").write_text(json.dumps({"packages":[str(package)]}))
+            rows = resource_command(RELEASE, cwd, agent, {}, action="scan")
+            row = next(row for row in rows if row["path"] == str(package / "dist/index.js"))
+            self.assertEqual(row["name"], "@fixture/web-access")
+            disabled = resource_command(RELEASE, cwd, agent, {}, action="toggle", id=row["id"], enabled=False)
+            self.assertEqual(next(item for item in disabled if item["id"] == row["id"])["name"], "@fixture/web-access")
+
     def test_damaged_pointer_falls_back_and_late_catalog_cannot_cross_projects(self):
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": temp}):
             data = Path(temp)

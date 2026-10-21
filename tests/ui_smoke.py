@@ -467,10 +467,18 @@ try:
         assert backend.running and not a.cancelled
         QTest.keyClick(window, Qt.Key_S, Qt.ControlModifier)
         wait_for(lambda: backend.queuedMessages and backend.queuedMessages[0]["mode"] == "steering", "Ctrl+S did not promote native queue")
+        click("editQueued_0")
+        wait_for(lambda: not backend.queuedMessages and prompt.property("text") == "排队补充", "queued message did not return to editor")
+        prompt.setProperty("text", "排队补充（已编辑）")
+        QTest.keyClick(window, Qt.Key_Return)
+        wait_for(lambda: len(backend.queuedMessages) == 1, "edited message did not requeue")
+        QTest.keyClick(window, Qt.Key_S, Qt.ControlModifier)
+        wait_for(lambda: backend.queuedMessages and backend.queuedMessages[0]["mode"] == "steering", "edited message did not promote")
         capture("28-native-queue")
         concurrent.gates["async A"].set()
         wait_idle()
         assert not a.cancelled
+        assert not backend.queuedMessages, "consumed steering chip remained above the editor"
         assert any(m["role"] == "user" and "排队补充" in m["text"] for m in backend.messages)
         click("sidebarRow_" + b_id)
         assert not backend.store.data["sessionMeta"][b_id]["unread"]

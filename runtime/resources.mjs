@@ -7,6 +7,20 @@ import { createHash, randomUUID } from "node:crypto";
 export const builtins = ["codemode", "tool-search", "mcp"];
 const target = entry => entry.replace(/^[!+-]/, "");
 const canonical = (value, base) => value.startsWith("builtin:") ? value : resolve(base, value);
+export function extensionName(path, metadata = {}) {
+  if (path.startsWith("builtin:")) return path.slice(8);
+  // Package entry points commonly live in dist/index.js. The directory is not
+  // the package name; use the manifest without importing any extension code.
+  if (metadata.origin === "package") {
+    try {
+      const name = JSON.parse(readFileSync(join(metadata.packageRoot || metadata.baseDir, "package.json"), "utf8")).name;
+      if (typeof name === "string" && name.trim()) return name;
+    } catch {}
+    if (metadata.source?.startsWith("npm:")) return metadata.source.slice(4).replace(/@[^/@]+$/, "");
+    if (metadata.packageRoot) return basename(metadata.packageRoot);
+  }
+  return /^index\.[cm]?[jt]s$/.test(basename(path)) ? basename(dirname(path)) : basename(path);
+}
 function checkErrors(settings) {
   const errors = settings.drainErrors();
   if (errors.length) throw new Error(errors.map(e => e.error?.message || e.message || "Pi 设置无法读写").join("; "));
@@ -57,7 +71,7 @@ async function discover(Pi, input, settings) {
   }
   return resolved.extensions.filter(row => !input.agent?.safeMode || row.path.startsWith("builtin:")).map(row => ({ ...row,
     id: createHash("sha256").update(JSON.stringify([row.path, row.metadata.scope, row.metadata.source])).digest("hex").slice(0, 24),
-    name: row.path.startsWith("builtin:") ? row.path.slice(8) : /^index\.[cm]?[jt]s$/.test(basename(row.path)) ? basename(dirname(row.path)) : basename(row.path),
+    name: extensionName(row.path, row.metadata),
     scope: row.metadata.scope === "project" ? "project" : "global",
   }));
 }
@@ -98,7 +112,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     // Discovery must not fetch models or install missing packages.
     process.env.PI_OFFLINE = "1";
-    const { installProviderPolicy } = await import("./provider-policy.mjs"); installProviderPolicy();
+    const { installProviderPolicy } = await import("./provider-policy.mjs"); installProviderPolicy({ offline: true });
     const Pi = await import(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "node_modules/@earendil-works/pi-coding-agent/dist/index.js")));
     let raw = ""; for await (const chunk of process.stdin) raw += chunk;
     process.stdout.write(JSON.stringify({ ok: true, ...await manageResources(Pi, JSON.parse(raw)) }) + "\n");

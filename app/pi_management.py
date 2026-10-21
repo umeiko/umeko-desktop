@@ -10,14 +10,16 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Property, Signal, Slot, QUrl
 from PySide6.QtGui import QDesktopServices
-from .pi_runtime import CREATE_NO_WINDOW, RELEASE_NAME, installed_version, node_executable, node_environment, verify_runtime
+from .pi_runtime import CREATE_NO_WINDOW, RELEASE_NAME, installed_version, node_executable, verify_runtime
 from .pi_terminal import console_runtime, prepare_terminal, launch_terminal
 from .pi_install import parse_install_command, install_package
+from .npm_config import validate_npm_config, probe_npm, npm_environment
 from .storage import DEFAULTS
 
 
 def resource_command(release, cwd, agent_dir, agent, **action):
-    environment = node_environment(dict(os.environ, PI_OFFLINE="1"))
+    environment = npm_environment(agent)
+    environment["PI_OFFLINE"] = "1"
     environment.pop("NODE_OPTIONS", None)
     environment.pop("NODE_PATH", None)
     result = subprocess.run([node_executable(), str(release / "resources.mjs")],
@@ -59,6 +61,7 @@ class PiManagement(QObject):
         self.controller = controller
         self._busy, self._extensions, self._status, self._backup = False, [], "", ""
         self._install_state, self._install_message = "idle", ""
+        self._npm_status = ""
         backups = controller.store.directory / "pi-backups"
         if backups.is_dir():
             saved = sorted(p for p in backups.iterdir() if p.is_dir() and (p / "restore.json").is_file())
@@ -82,6 +85,37 @@ class PiManagement(QObject):
 
     @Property(str, notify=changed)
     def installMessage(self): return self._install_message
+
+    @Property("QVariantMap", notify=changed)
+    def npmConfig(self):
+        agent = self.controller.store.data["agent"]
+        return {key: agent.get(key, "") for key in ("npmRegistry", "npmUserconfig", "npmCafile")}
+
+    @Property(str, notify=changed)
+    def npmStatus(self): return self._npm_status
+
+    @Slot(str, result=bool)
+    def saveNpmConfig(self, raw):
+        if self._busy or self.controller.kernelBusy: return False
+        previous = copy.deepcopy(self.controller.store.data["agent"])
+        try:
+            values = validate_npm_config(json.loads(raw))
+            self.controller.store.data["agent"].update(values)
+            self.controller.store.save()
+        except (ValueError, OSError, TypeError) as exc:
+            self.controller.store.data["agent"] = previous
+            self.controller.toast.emit(str(exc)); return False
+        self._npm_status = "npm 配置已保存；新启动的 Pi、扩展安装和内核更新将使用此配置"
+        self.controller._restart_pi()
+        self.controller.changed.emit(); self.changed.emit()
+        return True
+
+    @Slot()
+    def testNpmConfig(self):
+        if self._busy or self.controller.kernelBusy: return
+        _, cwd, _, agent = self._context()
+        self._npm_status = "正在检测 npm 源…"
+        self._start("npm", self._npm_status, lambda: probe_npm(agent, cwd))
 
     def _context(self):
         c = self.controller
@@ -146,7 +180,7 @@ class PiManagement(QObject):
         release, cwd, agent_dir, agent = context
         target = "项目 " + str(cwd) if local else "全局 " + str(agent_dir)
         def install():
-            install_package(release, cwd, agent_dir, source, local)
+            install_package(release, cwd, agent_dir, source, local, npm_config=agent)
             # Installation has succeeded even if a separate damaged config prevents scanning.
             try:
                 rows = resource_command(*context, action="scan")
@@ -174,7 +208,7 @@ class PiManagement(QObject):
                 cwd_safe.mkdir(parents=True, exist_ok=True)
             else:
                 cwd_safe = cwd
-            return prepare_terminal(runtime, directory, agent_dir, cwd_safe, directory / "pi/sessions")
+            return prepare_terminal(runtime, directory, agent_dir, cwd_safe, directory / "pi/sessions", npm_config=agent)
         self._start("terminal", "正在准备内嵌 Pi 终端…", prepare)
 
     @Slot(bool)
@@ -237,6 +271,7 @@ class PiManagement(QObject):
         if action == "factory": c._kernel_busy = False
         if not result["ok"]:
             self._status = str(result["value"])
+            if action == "npm": self._npm_status = self._status
             if action == "install":
                 self._install_state, self._install_message = "failed", self._status
             c.toast.emit(self._status); self.changed.emit()
@@ -244,6 +279,8 @@ class PiManagement(QObject):
             return
         try:
             value = result["value"]
+            if action == "npm":
+                self._npm_status = str(value); self.changed.emit(); return
             if action == "install":
                 self._install_state, self._install_message = "succeeded", value["message"]
                 c._restart_pi()

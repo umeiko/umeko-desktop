@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 
 from .pi_runtime import PACKAGE, node_executable, verify_runtime
+from .npm_config import npm_overrides
 
 
 def console_runtime(release, directory, agent_dir, bridge_source):
@@ -36,7 +37,7 @@ def powershell_literal(value):
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def prepare_terminal(runtime, directory, agent_dir, cwd, sessions, platform=None):
+def prepare_terminal(runtime, directory, agent_dir, cwd, sessions, platform=None, npm_config=None):
     platform = platform or sys.platform
     node = node_executable()
     cli = runtime / "node_modules" / PACKAGE / "dist/cli.js"
@@ -47,7 +48,9 @@ def prepare_terminal(runtime, directory, agent_dir, cwd, sessions, platform=None
     if platform == "win32":
         script = scripts / (uuid.uuid4().hex + ".ps1")
         quote = powershell_literal
+        npm_settings = "".join("$env:" + key + "=" + quote(value) + "\n" for key, value in npm_overrides(npm_config or {}).items())
         script.write_text(
+            npm_settings +
             "$env:PI_CODING_AGENT_DIR=" + quote(agent_dir) + "\n"
             "$env:PI_CODING_AGENT_SESSION_DIR=" + quote(sessions) + "\n"
             "$env:PATH=" + quote(str(Path(node).parent) + os.pathsep) + "+$env:PATH\n"
@@ -63,7 +66,9 @@ def prepare_terminal(runtime, directory, agent_dir, cwd, sessions, platform=None
             raise RuntimeError("未找到 PowerShell，请检查本机终端")
         return [shell, "-NoLogo", "-NoProfile", "-NoExit", "-ExecutionPolicy", "Bypass", "-File", str(script)]
     script = scripts / (uuid.uuid4().hex + ".bashrc")
+    npm_settings = "".join("export " + key + "=" + shlex.quote(value) + "\n" for key, value in npm_overrides(npm_config or {}).items())
     script.write_text(
+        npm_settings +
         "export PI_CODING_AGENT_DIR=" + shlex.quote(str(agent_dir)) + "\n"
         "export PI_CODING_AGENT_SESSION_DIR=" + shlex.quote(str(sessions)) + "\n"
         "export PATH=" + shlex.quote(str(Path(node).parent)) + ':"$PATH"\n'

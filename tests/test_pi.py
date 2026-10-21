@@ -299,20 +299,29 @@ class PiTests(unittest.TestCase):
         self.assertIn("reloaded_fixture", state["resources"]["tools"])
         self.assertEqual(settings.read_text(), original)
 
-    def test_no_builtin_models_and_unconfigured_extension_network_blocked(self):
+    def test_extension_network_is_online_and_model_providers_remain_explicit(self):
         ai = ROOT / "runtime/releases" / RELEASE_NAME / "node_modules/@earendil-works/pi-ai/dist"
         self.assertEqual((ai / "models.generated.js").read_text().count("= {}"), 3)
+        class WebFixture(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200); self.end_headers(); self.wfile.write(b"extension-network-ok")
+            def log_message(self, *_): pass
+        web = ThreadingHTTPServer(("127.0.0.1", 0), WebFixture)
+        thread = threading.Thread(target=web.serve_forever, daemon=True); thread.start()
+        self.addCleanup(web.server_close); self.addCleanup(web.shutdown)
         probe = self.path / "agent/extensions/network.js"
         probe.write_text('''export default function(pi) {
           pi.on("session_start", async (_event, ctx) => {
-            let blocked = false;
-            try { await fetch("https://unconfigured.invalid/"); } catch { blocked = true; }
-            if (!blocked) throw new Error("unguarded fetch");
+            if (process.env.PI_OFFLINE !== undefined) throw new Error("interactive process is offline");
+            const response = await fetch("http://127.0.0.1:WEB_PORT/");
+            if (await response.text() !== "extension-network-ok") throw new Error("extension fetch failed");
+            ctx.ui.notify("EXTENSION_NETWORK_OK");
             try { pi.registerProvider("hidden", {baseUrl:"https://unconfigured.invalid", api:"openai-completions", apiKey:"fixture"}); }
             catch { ctx.ui.notify("HIDDEN_PROVIDER_BLOCKED"); }
           });
-        }''', encoding="utf-8")
+        }'''.replace("WEB_PORT", str(web.server_port)), encoding="utf-8")
         events = self.command(self.payload)
+        self.assertTrue(any(e.get("message") == "EXTENSION_NETWORK_OK" for e in events), events)
         self.assertTrue(any(e.get("message") == "HIDDEN_PROVIDER_BLOCKED" for e in events), events)
         self.assertFalse(self.calls)
 
@@ -327,6 +336,9 @@ class PiTests(unittest.TestCase):
         self.assertTrue(any(e.get("type") == "compaction" for e in entries))
 
     def test_native_followup_and_steering_queue_promote_without_abort(self):
+        (self.path / "agent/extensions/transform.js").write_text('''export default function(pi) {
+          pi.on("input", event => event.text.includes("_MARKER") ? {action:"transform", text:event.text + " [input-hook]"} : {action:"continue"});
+        }''', encoding="utf-8")
         started, release = threading.Event(), threading.Event()
         def response(model, messages, tools, max_tokens):
             if len(self.calls) == 1:
@@ -348,9 +360,15 @@ class PiTests(unittest.TestCase):
                     output.append(event)
                     self.assertNotEqual(event.get("type"), "queue_rejected", event)
                     if predicate(event): return output
-            until(lambda e: e.get("type") == "queue" and e.get("followUp") == ["FOLLOW_UP_MARKER"] and e.get("steering") == ["STEERING_MARKER"])
+            until(lambda e: e.get("type") == "queue" and len(e.get("followUp", [])) == 1 and len(e.get("steering", [])) == 1)
             self.send({"type": "promote-queue"})
             until(lambda e: e.get("type") == "queue" and not e.get("followUp") and len(e.get("steering", [])) == 2)
+            self.send({"type": "follow-up", "text": "EDIT_ONLY_MARKER"})
+            editable = until(lambda e: e.get("type") == "queue" and any(item["text"] == "EDIT_ONLY_MARKER" for item in e.get("items", [])))[-1]
+            selected = next(item for item in editable["items"] if item["text"] == "EDIT_ONLY_MARKER")
+            self.send({"type": "edit-queue", "id": selected["id"]})
+            edited = until(lambda e: e.get("type") == "queue_edited")[-1]
+            self.assertEqual(edited["text"], "EDIT_ONLY_MARKER")
             release.set()
             output = until(lambda e: e.get("type") == "done")
             self.assertFalse([e for e in output if e.get("type") == "error"], output)
@@ -359,6 +377,12 @@ class PiTests(unittest.TestCase):
             text = "\n".join(m["text"] for m in state["messages"])
             self.assertIn("FOLLOW_UP_MARKER", text)
             self.assertIn("STEERING_MARKER", text)
+            self.assertNotIn("EDIT_ONLY_MARKER", text)
+            self.assertIn("[input-hook]", text)
+            self.assertNotIn("[input-hook] [input-hook]", text)
+            queues = [event for event in output if event["type"] == "queue"]
+            self.assertTrue(queues)
+            self.assertEqual(queues[-1]["items"], [], "consumed steering remained visible")
             self.assertTrue(any("FOLLOW_UP_MARKER" in str(call[1]) for call in self.calls[1:]))
             self.assertTrue(any("STEERING_MARKER" in str(call[1]) for call in self.calls[1:]))
         finally:

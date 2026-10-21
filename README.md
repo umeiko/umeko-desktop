@@ -51,6 +51,8 @@ Screenshots show the actual app with isolated demo data. No real accounts, crede
 
 ## Get started
 
+Pi web extensions can access the network. Configure company npm mirrors, an optional `.npmrc` and CA file under **Settings → Agent → Pi**; see [npm and extension networking](docs/npm-and-network.md).
+
 Download a package from [Releases](https://github.com/umeiko/umeko-desktop/releases/latest), extract it and open Umeko. Keep the complete application bundle together.
 
 | Platform | Package | Launch |

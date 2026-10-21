@@ -56,6 +56,7 @@ Column {
             ActionButton { text: "GitHub"; glyph: "external-link"; quiet: true; onClicked: backend.openPiGithub() }
         }
         PiVersionCard { width: parent.width }
+        PiNpmSettings { width: parent.width }
         SectionCard {
             width: parent.width
             RowLayout {

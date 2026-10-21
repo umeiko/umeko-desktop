@@ -29,6 +29,7 @@ extension.write_text("import {writeFileSync} from 'node:fs'; writeFileSync(" + j
 (project / ".pi/extensions/project.ts").write_text("throw new Error('Recovery must not execute this extension');")
 store.data["workspace"] = str(project)
 store.data["agent"]["agentDir"] = str(agent)
+store.data.update(providers=[{"id":"fixture", "name":"Fixture", "api":"openai", "baseUrl":"http://127.0.0.1:1/v1", "key":"fixture", "models":[{"upstream":"fixture", "alias":"fixture"}]}], selectedProvider="fixture", selectedModel="fixture")
 store.save()
 app, engine, backend = create_application()
 window = engine.rootObjects()[0]

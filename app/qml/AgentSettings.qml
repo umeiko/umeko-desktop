@@ -12,7 +12,7 @@ Column {
             RowLayout {
                 Layout.fillWidth: true
                 Text { text: "上下文与运行配置"; color: Theme.ink; font.pixelSize: 14; font.weight: Font.DemiBold }
-                HelpButton { help: "默认启用全部 Pi 内置工具、codemode、tool_search 和可直接调用的扩展工具。MCP 与按需扩展工具通过原生发现和调用入口使用，明确隐藏或禁用的配置仍生效。支持原生 Agent 循环、Skills 和 JSONL 会话。工具使用当前用户权限；工作目录并非文件系统沙箱。模型只通过 Umeko 网关访问已配置的供应商，命令启动的其他程序不属于模型连接限制范围。" }
+                HelpButton { help: "默认启用全部 Pi 内置工具、codemode、tool_search 和可直接调用的扩展工具。MCP 与按需扩展工具通过原生发现和调用入口使用，明确隐藏或禁用的配置仍生效。支持原生 Agent 循环、Skills 和 JSONL 会话。工具使用当前用户权限；工作目录并非文件系统沙箱。Pi 主会话模型由供应商设置统一管理；联网扩展按其功能正常访问网络。" }
                 Item { Layout.fillWidth: true }
                 ActionButton { objectName: "reloadPiButton"; text: "重新加载"; glyph: "refresh"; enabled: !backend.piManagement.busy; onClicked: backend.refreshAgent() }
             }

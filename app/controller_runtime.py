@@ -129,17 +129,19 @@ class PiControllerMixin:
             return True
         return False
 
-    def _restore_queued(self, record, texts):
+    def _restore_queued(self, record, texts, images=None):
         drafts = [record.draft] if record.draft else []
+        media = iter(images or [])
         for raw in texts:
             text, attachments = split_attachments(raw)
             if text: drafts.append(text)
             for item in attachments:
                 if len(record.attachments) >= 20: break
                 if not any(existing["path"] == item["path"] for existing in record.attachments):
-                    # Returned queues carry references; image bytes are owned by Pi's queue.
+                    image = next(media, None) if item["kind"] == "image" else None
                     record.attachments.append({**item, "id": uuid.uuid4().hex,
-                        "kind": "file" if item["kind"] == "image" else item["kind"]})
+                        "kind": "image" if image else "file" if item["kind"] == "image" else item["kind"],
+                        **({"data": image["data"], "mime": image["mimeType"]} if image else {})})
         record.draft = "\n\n".join(drafts)
         if record is self._view:
             self.attachmentsChanged.emit()
@@ -176,7 +178,9 @@ class PiControllerMixin:
                 record.messages.append({"role": "assistant", "text": "", "error": False})
                 transcript = True
         elif kind == "queue":
-            record.queue = [{"text": text, "mode": "steering"} for text in event.get("steering", [])] + [{"text": text, "mode": "followUp"} for text in event.get("followUp", [])]
+            record.queue = event.get("items", [{"text": text, "mode": "steering"} for text in event.get("steering", [])] + [{"text": text, "mode": "followUp"} for text in event.get("followUp", [])])
+        elif kind == "queue_edited":
+            self._restore_queued(record, [event["text"]], event.get("images"))
         elif kind == "queue_rejected":
             self._restore_queued(record, [event.get("text", "")])
             if visible:
@@ -252,6 +256,9 @@ class PiControllerMixin:
             transcript = True
         elif kind in ("done", "exit"):
             was_busy = record.busy
+            if record.queue:
+                self._restore_queued(record, [row["text"] for row in record.queue])
+                record.queue = []
             record.phase, record.tool_status, record.approval = "idle", "", {}
             if kind == "exit":
                 record.ready = False

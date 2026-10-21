@@ -26,15 +26,21 @@ Item {
             x: 20; y: 10; width: parent.width - 40; spacing: 5; visible: backend.queuedMessages.length > 0
             Row {
                 width: parent.width; height: 25; spacing: 10
-                Text { text: "待处理 " + backend.queuedMessages.length; color: Theme.accent; font.pixelSize: 10; anchors.verticalCenter: parent.verticalCenter }
+                Text { text: "待处理 " + backend.queuedMessages.length + " · 点击编辑"; color: Theme.accent; font.pixelSize: 10; anchors.verticalCenter: parent.verticalCenter }
                 ActionButton { objectName: "promoteQueueButton"; text: "Ctrl+S 优先处理"; height: 25; quiet: true; onClicked: backend.steer("") }
             }
             Flickable { width: parent.width; height: Math.min(75, queueRows.implicitHeight); contentHeight: queueRows.implicitHeight; clip: true; acceptedButtons: Qt.NoButton
                 Column { id: queueRows; width: parent.width; spacing: 4
                     Repeater { model: backend.queuedMessages
-                        Row { required property var modelData; width: parent.width; height: 21; spacing: 9
-                            Text { text: modelData.mode === "steering" ? "优先" : "队列"; color: Theme.accent; font.pixelSize: 10 }
-                            Text { width: parent.width - 45; text: [modelData.text.replace(/\n/g, " "), ...(modelData.attachments || []).map(item => item.name)].filter(part => part.length).join(" · "); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: 11 }
+                        Rectangle { required property var modelData; required property int index; width: parent.width; height: 23; radius: 5
+                            color: editArea.containsMouse ? Theme.accentBg : "transparent"
+                            Row { anchors.fill: parent; anchors.leftMargin: 4; spacing: 9
+                                Text { text: modelData.mode === "steering" ? "优先" : "队列"; color: Theme.accent; font.pixelSize: 10; anchors.verticalCenter: parent.verticalCenter }
+                                Text { width: parent.width - 45; text: [modelData.text.replace(/\n/g, " "), ...(modelData.attachments || []).map(item => item.name)].filter(part => part.length).join(" · "); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: 11; anchors.verticalCenter: parent.verticalCenter }
+                            }
+                            MouseArea { id: editArea; objectName: "editQueued_" + index; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: backend.editQueued(modelData.id) }
+                            ToolTip.visible: editArea.containsMouse
+                            ToolTip.text: modelData.mode === "steering" ? "等待当前工具或回复结束后优先处理；点击撤回编辑" : "点击撤回到输入框编辑"
                         }
                     }
                 }

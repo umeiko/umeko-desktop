@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 from .pi_runtime import CREATE_NO_WINDOW, PACKAGE, node_executable, node_environment
+from .npm_config import npm_environment
 
 
 def parse_install_command(command, local=False):
@@ -43,8 +44,9 @@ def _log_tail(log):
     return text.strip()[-2000:]
 
 
-def install_package(release, cwd, agent_dir, source, local=False, timeout=180):
-    environment = node_environment(dict(os.environ, PI_CODING_AGENT_DIR=str(agent_dir), PI_SKIP_VERSION_CHECK="1", NO_COLOR="1"))
+def install_package(release, cwd, agent_dir, source, local=False, timeout=180, npm_config=None):
+    environment = npm_environment(npm_config or {})
+    environment.update(PI_CODING_AGENT_DIR=str(agent_dir), PI_SKIP_VERSION_CHECK="1", NO_COLOR="1")
     for key in ("NODE_OPTIONS", "NODE_PATH", "PI_OFFLINE"):
         environment.pop(key, None)
     # Explicit scope avoids the CLI's interactive project-trust prompt/hooks.

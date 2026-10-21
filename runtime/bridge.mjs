@@ -1,7 +1,7 @@
 // JSONL presentation adapter for the complete, unmodified Pi Coding Agent SDK.
 // Tools, loop, skill expansion, extension hooks and session trees belong to Pi.
 import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-policy.mjs";
-import { prepareNativeSettings, builtins } from "./resources.mjs";
+import { prepareNativeSettings, builtins, extensionName } from "./resources.mjs";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
 import { join, resolve, dirname, basename, delimiter } from "node:path";
@@ -9,12 +9,15 @@ import { fileURLToPath } from "node:url";
 import { tmpdir, homedir } from "node:os";
 import http from "node:http";
 
-process.env.PI_OFFLINE = "1";
+// Offline discovery must not turn the interactive extension process offline.
+delete process.env.PI_OFFLINE;
 const bundledBin = fileURLToPath(new URL("./bin/", import.meta.url));
 if (existsSync(bundledBin)) process.env.PATH = bundledBin + delimiter + (process.env.PATH || "");
 for (const key of Object.keys(process.env)) {
-  if (/API_KEY$|ACCESS_TOKEN$|^(HTTP|HTTPS|ALL)_PROXY$|^NODE_(OPTIONS|PATH)$/i.test(key)) delete process.env[key];
+  if (/API_KEY$|ACCESS_TOKEN$|^NODE_(OPTIONS|PATH)$/i.test(key)) delete process.env[key];
 }
+process.env.NO_PROXY = [process.env.NO_PROXY || process.env.no_proxy || "", "127.0.0.1", "localhost", "::1"].filter(Boolean).join(",");
+process.env.no_proxy = process.env.NO_PROXY;
 installProviderPolicy();
 const Pi = await import("@earendil-works/pi-coding-agent");
 const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
@@ -29,7 +32,30 @@ const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.typ
 let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe, closing = false;
 let mcpEntries = [], mcpStatus = "", capturingMcp = false, pollingResources = false;
 let queueChain = Promise.resolve();
-let queueMedia = [];
+let queuedItems = [], queueInput;
+function syncQueue(steering, followUp) {
+  const previous = [...queuedItems];
+  queuedItems = [["steering", steering], ["followUp", followUp]].flatMap(([mode, texts]) => texts.map(text => {
+    const index = previous.findIndex(item => item.nativeText === text && item.mode === mode);
+    const item = index >= 0 ? previous.splice(index, 1)[0] : queueInput || { id: crypto.randomUUID(), text, images: [] };
+    return { ...item, nativeText: text, mode };
+  }));
+  emit({ type: "queue", steering, followUp, items: queuedItems.map(({id, text, mode}) => ({id, text, mode})) });
+}
+async function enqueue(item, mode) {
+  queueInput = { ...item, id: item.id || crypto.randomUUID() };
+  try { await runtime.session[mode === "steering" ? "steer" : "followUp"](item.text, item.images || []); }
+  finally { queueInput = undefined; }
+}
+function takeQueue() {
+  const items = [...queuedItems];
+  runtime.session.clearQueue();
+  return items;
+}
+function returnQueue() {
+  const items = takeQueue();
+  if (items.length) emit({ type: "queue_returned", steering: [], followUp: items.map(item => item.text) });
+}
 const dialogs = new Map();
 
 function ask(method, title, detail = "", options = []) {
@@ -70,9 +96,7 @@ async function bindSession(session) {
   };
   unsubscribe = session.subscribe(event => {
     if (event.type === "queue_update") {
-      const pending = [...event.steering, ...event.followUp];
-      queueMedia = queueMedia.filter(item => pending.includes(item.text));
-      emit({ type: "queue", steering: event.steering, followUp: event.followUp });
+      syncQueue(event.steering, event.followUp);
     }
     if (event.type === "message_start" && event.message.role === "user") emit({ type: "user_start", text: textOf(event.message.content) });
     if (event.type === "message_start" && event.message.role === "assistant") emit({ type: "assistant_start" });
@@ -239,7 +263,7 @@ async function capabilities() {
     tools: active,
     allTools: allTools.map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters, exposure: tool.exposure, active: active.includes(tool.name), source: tool.sourceInfo?.path || tool.sourceInfo?.kind || "Pi" })),
     skills: session.resourceLoader.getSkills().skills.map(s => ({ name: s.name, path: s.filePath, description: s.description })),
-    extensions: session.resourceLoader.getExtensions().extensions.map(e => ({ name: e.path.split(/[\\/]/).at(-1), path: e.path })),
+    extensions: session.resourceLoader.getExtensions().extensions.map(e => ({ name: extensionName(e.path, session.resourceLoader.resourceMetadataByPath?.get(e.path)), path: e.path })),
     prompts: session.resourceLoader.getPrompts().prompts.map(p => ({ name: p.name, description: p.description, path: p.filePath })),
     commands: session.extensionRunner.getRegisteredCommands().map(command => ({ name: command.name, description: command.description || "" })),
     mcp: mcpEntries.map(entry => {
@@ -253,24 +277,27 @@ async function capabilities() {
 }
 
 async function execute(input) {
-  if (["follow-up", "steer", "promote-queue"].includes(input.type)) {
+  if (["follow-up", "steer", "promote-queue", "edit-queue"].includes(input.type)) {
     queueChain = queueChain.then(async () => {
       try {
-        if (!runtime || !executing || runtime.session.isIdle) throw new Error("当前任务已结束，请重新发送这条消息");
-        if (input.type === "promote-queue") {
-          const media = [...queueMedia];
-          const queued = runtime.session.clearQueue();
-          for (const text of [...queued.steering, ...queued.followUp]) {
-            const index = media.findIndex(item => item.text === text);
-            const images = index >= 0 ? media.splice(index, 1)[0].images : undefined;
-            await runtime.session.steer(text, images);
-            queueMedia.push({text: runtime.session.getSteeringMessages().at(-1), images});
+        if (!runtime) throw new Error("Pi 尚未就绪");
+        if (input.type === "edit-queue" || input.type === "promote-queue") {
+          const selected = input.type === "edit-queue" ? queuedItems.find(item => item.id === input.id) : undefined;
+          if (input.type === "edit-queue" && !selected) throw new Error("这条消息已经开始处理");
+          const items = takeQueue();
+          if (selected) emit({type: "queue_edited", text: selected.text, images: selected.images || []});
+          for (let index = 0; index < items.length; index++) {
+            const item = items[index];
+            if (item === selected) continue;
+            try { await enqueue(item, input.type === "promote-queue" ? "steering" : item.mode); }
+            catch (error) {
+              emit({type:"queue_returned", steering:[], followUp:items.slice(index).filter(row => row !== selected).map(row => row.text)});
+              throw error;
+            }
           }
         } else {
-          const method = input.type === "steer" ? "steer" : "followUp";
-          await runtime.session[method](input.text, input.images || []);
-          const messages = method === "steer" ? runtime.session.getSteeringMessages() : runtime.session.getFollowUpMessages();
-          queueMedia.push({text: messages.at(-1), images: input.images || []});
+          if (!executing || runtime.session.isIdle) throw new Error("当前任务已结束，请重新发送这条消息");
+          await enqueue({text:input.text, images:input.images || []}, input.type === "steer" ? "steering" : "followUp");
         }
       } catch (error) { emit({type:"queue_rejected", text:input.text || "", message:error.message}); }
     });
@@ -287,8 +314,7 @@ async function execute(input) {
   if (input.type === "ui_response") { dialogs.get(input.id)?.(input.value); dialogs.delete(input.id); return; }
   if (input.type === "abort") {
     clearDialogs();
-    const queued = runtime?.session.clearQueue();
-    if (queued?.steering.length || queued?.followUp.length) emit({type:"queue_returned", ...queued});
+    if (runtime) returnQueue();
     await runtime?.session.abort(); return;
   }
   if (input.type === "shutdown") { await shutdown(); return; }
@@ -322,7 +348,13 @@ async function execute(input) {
     else if (input.type === "import") await runtime.importFromJsonl(input.path);
     await state();
   } catch (error) { emit({ type: "error", message: error.message }); }
-  finally { executing = false; emit({ type: "done", action: input.type }); }
+  finally {
+    // A failed/aborted model request can leave Pi's native pending queues intact.
+    // Return them to the editor rather than displaying unserviceable queue chips.
+    await queueChain;
+    if (runtime && queuedItems.length) returnQueue();
+    executing = false; emit({ type: "done", action: input.type });
+  }
 }
 
 let rl;
@@ -339,6 +371,7 @@ async function shutdown() {
 async function selfTest() {
   const temp = mkdtempSync(join(tmpdir(), "umeko-pi-"));
   let calls = 0;
+  const web = http.createServer((_req, res) => res.end("extension-network-ok"));
   const server = http.createServer(async (req, res) => {
     let raw = ""; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw);
@@ -352,6 +385,7 @@ async function selfTest() {
     res.end(`data: ${JSON.stringify({ ...common, choices: [{ index: 0, delta, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ ...common, choices: [{ index: 0, delta: {}, finish_reason: calls === 1 ? "tool_calls" : "stop" }] })}\n\ndata: [DONE]\n\n`);
   });
   await new Promise(done => server.listen(0, "127.0.0.1", done));
+  await new Promise(done => web.listen(0, "127.0.0.1", done));
   try {
     await init({ gateway: `http://127.0.0.1:${server.address().port}/`, token: "test-only", workspace: temp, defaultCwd: temp,
       agentDir: join(temp, "agent"), sessionDir: join(temp, "sessions"), models: [{ id: "test" }], model: "test", agent: {} });
@@ -359,11 +393,15 @@ async function selfTest() {
     if (calls !== 2 || readFileSync(join(temp, "proof.txt"), "utf8") !== "native-pi") throw new Error("Native Pi tool loop failed");
     const file = runtime.session.sessionManager.getSessionFile();
     if (!file || !Pi.SessionManager.open(file).getEntries().some(e => e.type === "message" && e.message.role === "toolResult")) throw new Error("Native session persistence failed");
-    let blocked = false; try { await fetch("https://unconfigured.invalid/"); } catch { blocked = true; }
-    if (!blocked) throw new Error("Network policy failed");
+    const response = await fetch(`http://127.0.0.1:${web.address().port}/`);
+    if (await response.text() !== "extension-network-ok" || process.env.PI_OFFLINE !== undefined)
+      throw new Error("Extension networking is unexpectedly offline");
+    if (modelRuntime.getProviders().some(provider => provider.id !== "umeko"))
+      throw new Error("Unconfigured model provider was registered");
     emit({ ok: true, version, package: "pi-coding-agent", nativeTools: true, nativeSessions: true, providers: modelRuntime.getProviders().map(p => p.id) });
   } finally {
     await shutdown(); server.closeAllConnections(); await new Promise(done => server.close(done));
+    web.closeAllConnections(); await new Promise(done => web.close(done));
     rmSync(temp, { recursive: true, force: true });
   }
 }

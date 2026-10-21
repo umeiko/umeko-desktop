@@ -9,6 +9,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
+from .npm_config import npm_overrides
 
 
 @dataclass(eq=False)
@@ -85,9 +86,13 @@ class PiSessionPool(QObject):
         record.process, record.buffer, record.ready = process, b"", False
         environment = QProcessEnvironment.systemEnvironment()
         for key in environment.keys():
-            if key.upper() in ("NODE_OPTIONS", "NODE_PATH", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY") or key.upper().endswith(("API_KEY", "ACCESS_TOKEN")):
+            if key.upper() in ("NODE_OPTIONS", "NODE_PATH") or key.upper().endswith(("API_KEY", "ACCESS_TOKEN")):
                 environment.remove(key)
-        environment.insert("PI_OFFLINE", "1")
+        environment.remove("PI_OFFLINE")
+        for key, value in npm_overrides(payload.get("agent") or {}).items():
+            for existing in environment.keys():
+                if existing.lower() == key: environment.remove(existing)
+            environment.insert(key, value)
         environment.insert("PATH", os.path.dirname(program) + os.pathsep + environment.value("PATH"))
         process.setProcessEnvironment(environment)
         process.setProgram(program)
