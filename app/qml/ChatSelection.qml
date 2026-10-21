@@ -11,6 +11,14 @@ Item {
     property bool dragging: false
     property double lastScrollTime: 0
     property point pointer: Qt.point(0, 0)
+    property point pressPoint: Qt.point(0, 0)
+    property bool pointerMoved: false
+    property int clickCount: 0
+    property double lastClickTime: 0
+    property point lastClickPoint: Qt.point(0, 0)
+    property string lastClickEditor: ""
+    property int selectionUnit: 1
+    property var unitAnchor: null
     readonly property bool hasSelection: anchor !== null && cursor !== null && compare(anchor, cursor) !== 0
     property var expandedDetails: ({})
     function compare(a, b) { return a.row - b.row || a.block - b.block || a.offset - b.offset }
@@ -23,6 +31,7 @@ Item {
     }
     function clear() {
         dragging = false; anchor = null; cursor = null; expandedDetails = ({})
+        clickCount = 0; unitAnchor = null; selectionUnit = 1; pointerMoved = false
         for (const editor of editors) editor.deselect()
     }
     function refresh() {
@@ -60,7 +69,32 @@ Item {
     }
     function extend() {
         const editor = pick(pointer.x, Math.max(0, Math.min(height - 1, pointer.y)), true)
-        if (editor) { cursor = position(editor, pointer.x, Math.max(0, Math.min(height - 1, pointer.y))); refresh() }
+        if (editor) {
+            const target = position(editor, pointer.x, Math.max(0, Math.min(height - 1, pointer.y)))
+            if (unitAnchor && selectionUnit > 1) {
+                const bounds = unitBounds(editor, target.offset, selectionUnit)
+                if (compare(bounds.start, unitAnchor.start) < 0) { anchor = unitAnchor.end; cursor = bounds.start }
+                else { anchor = unitAnchor.start; cursor = bounds.end }
+            } else cursor = target
+            refresh()
+        }
+    }
+    function unitBounds(editor, offset, unit) {
+        let start = offset, end = offset
+        if (unit === 2) {
+            editor.cursorPosition = offset; editor.selectWord()
+            start = editor.selectionStart; end = editor.selectionEnd
+        } else {
+            const text = editor.getText(0, editor.length)
+            while (start > 0 && !/[\n\r\u2029]/.test(text[start - 1])) start--
+            while (end < text.length && !/[\n\r\u2029]/.test(text[end])) end++
+        }
+        return {start:{row:editor.messageIndex,block:editor.blockIndex,offset:start}, end:{row:editor.messageIndex,block:editor.blockIndex,offset:end}}
+    }
+    function selectUnit(editor, offset, unit) {
+        selectionUnit = unit
+        unitAnchor = unitBounds(editor, offset, unit)
+        anchor = unitAnchor.start; cursor = unitAnchor.end; refresh()
     }
     function plain(text, markdown) {
         renderer.textFormat = markdown ? TextEdit.MarkdownText : TextEdit.PlainText
@@ -82,6 +116,12 @@ Item {
                         Markdown.blocks(step.text || "", !step.error, stepIndex < activity.length - 1).forEach((block, index) => segments.push({block:step.blockOffset + index,text:block.text,markdown:!step.error && !block.code}))
                     } else if (step.kind === "thinking" && expandedDetails[row + ":" + step.blockOffset]) {
                         segments.push({block:step.blockOffset,text:step.text,markdown:false})
+                    } else if (step.kind === "media") {
+                        (step.items || []).forEach((item, index) => {
+                            const key = step.blockOffset + index * 3
+                            segments.push({block:key,text:item.title || item.name || "",markdown:false})
+                            if (item.kind === "image" && item.preview && item.caption) segments.push({block:key + 1,text:item.caption,markdown:false})
+                        })
                     } else if (step.kind === "tools") {
                         step.tools.forEach((tool, index) => {
                             const key = step.blockOffset + index + 1
@@ -117,7 +157,7 @@ Item {
     onVisibleChanged: if (!visible) clear()
     onDraggingChanged: lastScrollTime = Date.now()
     function autoScroll() {
-        if (!dragging) return
+        if (!dragging || !pointerMoved) return
         const now = Date.now(), elapsed = Math.min(100, Math.max(16, now - lastScrollTime))
         lastScrollTime = now
         const edge = 42
@@ -138,22 +178,35 @@ Item {
         onPressed: event => {
             const editor = root.pick(event.x, event.y, false)
             if (!editor) { root.clear(); event.accepted = false; return }
-            if (!(event.modifiers & Qt.ShiftModifier) || !root.anchor) root.anchor = root.position(editor, event.x, event.y)
-            root.cursor = root.position(editor, event.x, event.y)
+            const now = Date.now(), key = editor.messageIndex + ":" + editor.blockIndex
+            const close = Math.abs(event.x - root.lastClickPoint.x) <= 5 && Math.abs(event.y - root.lastClickPoint.y) <= 5
+            root.clickCount = !(event.modifiers & Qt.ShiftModifier) && key === root.lastClickEditor && close && now - root.lastClickTime <= Qt.styleHints.mouseDoubleClickInterval ? Math.min(3, root.clickCount + 1) : 1
+            root.lastClickTime = now; root.lastClickPoint = Qt.point(event.x, event.y); root.lastClickEditor = key
+            root.pressPoint = Qt.point(event.x, event.y); root.pointerMoved = false; root.unitAnchor = null; root.selectionUnit = 1
+            const position = root.position(editor, event.x, event.y)
+            if (root.clickCount > 1) root.selectUnit(editor, position.offset, root.clickCount)
+            else {
+                if (!(event.modifiers & Qt.ShiftModifier) || !root.anchor) root.anchor = position
+                root.cursor = position
+            }
             root.pointer = Qt.point(event.x, event.y); root.dragging = true
             root.view.beginBrowsing(); root.forceActiveFocus(); root.refresh()
         }
-        onPositionChanged: event => { if (pressed && root.dragging) { root.pointer = Qt.point(event.x, event.y); Qt.callLater(root.extend) } }
-        onReleased: { if (root.dragging) root.extend(); root.dragging = false }
+        onPositionChanged: event => {
+            if (pressed && root.dragging) {
+                root.pointer = Qt.point(event.x, event.y)
+                if (Math.abs(event.x - root.pressPoint.x) > 2 || Math.abs(event.y - root.pressPoint.y) > 2) root.pointerMoved = true
+                if (root.pointerMoved) Qt.callLater(root.extend)
+            }
+        }
+        onReleased: { if (root.dragging && root.pointerMoved) root.extend(); root.dragging = false }
         onCanceled: root.dragging = false
         onDoubleClicked: event => {
             const editor = root.pick(event.x, event.y, false)
             if (!editor) return
-            editor.cursorPosition = root.position(editor, event.x, event.y).offset
-            editor.selectWord()
-            root.anchor = {row:editor.messageIndex,block:editor.blockIndex,offset:editor.selectionStart}
-            root.cursor = {row:editor.messageIndex,block:editor.blockIndex,offset:editor.selectionEnd}
-            root.refresh()
+            root.clickCount = Math.max(2, root.clickCount)
+            root.lastClickTime = Date.now(); root.lastClickPoint = Qt.point(event.x, event.y); root.lastClickEditor = editor.messageIndex + ":" + editor.blockIndex
+            root.selectUnit(editor, root.position(editor, event.x, event.y).offset, root.clickCount)
         }
         onWheel: event => {
             const delta = event.pixelDelta.y || event.angleDelta.y / 120 * 60

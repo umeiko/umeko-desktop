@@ -5,7 +5,7 @@ import QtQuick.Layouts
 Item {
     id: root
     readonly property Item modelAnchor: modelButton
-    property int queueOffset: backend.queuedMessages.length ? Math.min(112, 31 + backend.queuedMessages.length * 25) + 12 : 0
+    readonly property int queueOffset: queued.height
     height: 157 + (backend.attachments.length ? 48 : 0) + queueOffset
     signal openModels()
     signal chooseFiles()
@@ -17,37 +17,14 @@ Item {
         else if (prompt.text.trim().length || backend.attachments.length) backend.send(prompt.text)
     }
     Connections { target: backend; function onEditorText(text) { root.setText(text) } }
-    Rectangle { x: 0; y: 6; width: parent.width; height: parent.height; radius: 17; color: "#090f0a"; opacity: Theme.dark ? 0.1 : 0.035 }
+    QueuedMessages { id: queued; width: parent.width }
+    Rectangle { x: 0; y: root.queueOffset + 6; width: parent.width; height: parent.height - root.queueOffset; radius: 17; color: "#090f0a"; opacity: Theme.dark ? 0.1 : 0.035 }
     Rectangle {
-        anchors.fill: parent; radius: 15; color: Theme.surface
+        x: 0; y: root.queueOffset; width: parent.width; height: parent.height - root.queueOffset; radius: 15; color: Theme.surface
         border.color: fileDrop.containsDrag || (prompt.activeFocus && Theme.yanami) ? Theme.accent : prompt.activeFocus ? (Theme.dark ? "#59735e" : "#b3c3b0") : Theme.line
         Behavior on border.color { ColorAnimation { duration: 180 } }
-        Column {
-            x: 20; y: 10; width: parent.width - 40; spacing: 5; visible: backend.queuedMessages.length > 0
-            Row {
-                width: parent.width; height: 25; spacing: 10
-                Text { text: "待处理 " + backend.queuedMessages.length + " · 点击编辑"; color: Theme.accent; font.pixelSize: 10; anchors.verticalCenter: parent.verticalCenter }
-                ActionButton { objectName: "promoteQueueButton"; text: "Ctrl+S 优先处理"; height: 25; quiet: true; onClicked: backend.steer("") }
-            }
-            Flickable { width: parent.width; height: Math.min(75, queueRows.implicitHeight); contentHeight: queueRows.implicitHeight; clip: true; acceptedButtons: Qt.NoButton
-                Column { id: queueRows; width: parent.width; spacing: 4
-                    Repeater { model: backend.queuedMessages
-                        Rectangle { required property var modelData; required property int index; width: parent.width; height: 23; radius: 5
-                            color: editArea.containsMouse ? Theme.accentBg : "transparent"
-                            Row { anchors.fill: parent; anchors.leftMargin: 4; spacing: 9
-                                Text { text: modelData.mode === "steering" ? "优先" : "队列"; color: Theme.accent; font.pixelSize: 10; anchors.verticalCenter: parent.verticalCenter }
-                                Text { width: parent.width - 45; text: [modelData.text.replace(/\n/g, " "), ...(modelData.attachments || []).map(item => item.name)].filter(part => part.length).join(" · "); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: 11; anchors.verticalCenter: parent.verticalCenter }
-                            }
-                            MouseArea { id: editArea; objectName: "editQueued_" + index; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: backend.editQueued(modelData.id) }
-                            ToolTip.visible: editArea.containsMouse
-                            ToolTip.text: modelData.mode === "steering" ? "等待当前工具或回复结束后优先处理；点击撤回编辑" : "点击撤回到输入框编辑"
-                        }
-                    }
-                }
-            }
-        }
         Flickable {
-            x: 16; y: root.queueOffset + 12; width: parent.width - 32; height: 36; visible: backend.attachments.length > 0
+            x: 16; y: 12; width: parent.width - 32; height: 36; visible: backend.attachments.length > 0
             contentWidth: attachmentRow.width; contentHeight: height; clip: true
             Row { id: attachmentRow; spacing: 7
                 Repeater {
@@ -63,7 +40,7 @@ Item {
             }
         }
         ScrollView {
-            x: 20; y: root.queueOffset + (backend.attachments.length ? 63 : 15); width: parent.width - 40; height: 82; clip: true
+            x: 20; y: backend.attachments.length ? 63 : 15; width: parent.width - 40; height: 82; clip: true
             TextArea {
                 id: prompt; objectName: "promptInput"
                 color: Theme.ink; placeholderTextColor: Theme.muted

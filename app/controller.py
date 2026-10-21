@@ -9,12 +9,13 @@ import re
 import secrets
 import shutil
 import subprocess
+import sys
 import threading
 import urllib.request
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Property, QProcess, QProcessEnvironment, QTimer, QUrl, Signal, Slot, QBuffer, QIODevice
+from PySide6.QtCore import QObject, Property, QProcess, QProcessEnvironment, QTimer, QUrl, Signal, Slot, QBuffer, QIODevice, QMimeData
 from PySide6.QtGui import QGuiApplication, QDesktopServices, QImageReader
 
 from .gateway import Gateway, LocalServer, validate_base_url
@@ -329,6 +330,39 @@ class Controller(PiControllerMixin, QObject):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
         else:
             self.toast.emit("当前会话目录不存在")
+
+    @Slot(str, bool)
+    def openChatboxPath(self, raw, reveal):
+        path = Path(raw)
+        if not path.is_absolute() or not path.exists():
+            self.toast.emit("文件已移动或不存在")
+            return
+        try:
+            if reveal and path.is_file() and sys.platform == "win32":
+                subprocess.Popen(["explorer.exe", "/select,", str(path)], creationflags=CREATE_NO_WINDOW)
+            elif reveal and path.is_file() and sys.platform == "darwin":
+                subprocess.Popen(["/usr/bin/open", "-R", str(path)])
+            else:
+                target = path.parent if reveal and path.is_file() else path
+                if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(target))):
+                    self.toast.emit("无法打开，请检查文件关联")
+        except OSError:
+            self.toast.emit("无法打开文件或文件夹")
+
+    @Slot(str)
+    def copyChatboxFile(self, raw):
+        path = Path(raw)
+        if not path.is_absolute() or not path.exists():
+            self.toast.emit("文件已移动或不存在")
+            return
+        url = QUrl.fromLocalFile(str(path))
+        mime = QMimeData()
+        mime.setUrls([url])
+        mime.setData('application/x-qt-windows-mime;value="Preferred DropEffect"', b'\x01\x00\x00\x00')
+        mime.setData('x-special/gnome-copied-files', b'copy\n' + bytes(url.toEncoded()))
+        mime.setData('application/x-kde-cutselection', b'0')
+        QGuiApplication.clipboard().setMimeData(mime)
+        self.toast.emit("文件已复制")
 
     @Property("QVariantList", notify=chatChanged)
     def sessions(self):
@@ -1228,6 +1262,16 @@ class Controller(PiControllerMixin, QObject):
     def editQueued(self, item_id):
         if any(row.get("id") == item_id for row in self._view.queue):
             self._write_pi({"type": "edit-queue", "id": item_id})
+
+    @Slot(str)
+    def steerQueued(self, item_id):
+        if any(row.get("id") == item_id for row in self._view.queue):
+            self._write_pi({"type": "steer-queued", "id": item_id})
+
+    @Slot(str)
+    def removeQueued(self, item_id):
+        if any(row.get("id") == item_id for row in self._view.queue):
+            self._write_pi({"type": "delete-queue", "id": item_id})
 
     @Slot()
     def stop(self):

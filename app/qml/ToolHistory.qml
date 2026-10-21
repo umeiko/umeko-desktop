@@ -18,7 +18,7 @@ Column {
     visible: tools.length > 0
     onExpandedChanged: if (!expanded && selectionController) selectionController.hideDetails(messageIndex, blockOffset + 1, tools.length)
     function command(name) { return name === "bash" || name === "powershell" }
-    function action(name) { return ({read:"读取",write:"写入",edit:"编辑",bash:"运行",powershell:"运行",grep:"搜索",find:"查找",ls:"浏览",codemode:"执行代码",tool_search:"查找工具"})[name] || name }
+    function action(name) { return ({read:"读取",write:"写入",edit:"编辑",bash:"运行",powershell:"运行",grep:"搜索",find:"查找",ls:"浏览",codemode:"执行代码",tool_search:"查找工具",submit_to_chatbox:"展示附件"})[name] || name }
     function preview(tool) {
         const args = tool.arguments || {}
         const value = args.command || args.code || args.pattern || args.query || args.path || ""

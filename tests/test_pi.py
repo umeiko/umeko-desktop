@@ -335,6 +335,61 @@ class PiTests(unittest.TestCase):
         entries = [json.loads(line) for line in Path(state["session"]["file"]).read_text(encoding="utf-8").splitlines()]
         self.assertTrue(any(e.get("type") == "compaction" for e in entries))
 
+    def test_chatbox_tool_delivers_media_and_persists_native_history(self):
+        image = self.path / "展示 # image.png"
+        image.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="))
+        document = self.path / "report.txt"
+        document.write_text("local deliverable", encoding="utf-8")
+        folder = self.path / "outputs"; folder.mkdir()
+        def reply(_model, messages, *_):
+            if messages[-1]["role"] == "tool": return Completion("Delivered in chat")
+            return Completion(tool_calls=[{"id":"delivery", "name":"submit_to_chatbox", "arguments":{"items":[
+                {"path":image.name, "caption":"Local image"}, {"path":str(document), "title":"Report"},
+                {"path":str(folder)}, {"path":"missing.txt"}]}}])
+        self.response_fn = reply
+        self.command(self.payload)
+        events = self.command({"type":"prompt", "text":"Show the image and deliver the report"})
+        live = next(event for event in events if event.get("type") == "tool" and event.get("media"))
+        self.assertEqual([item["kind"] for item in live["media"]], ["image", "file", "folder"])
+        state = next(event for event in events if event["type"] == "state")
+        file = Path(state["session"]["file"])
+        self.assertEqual(preview(file)[0], state["messages"])
+        self.assertEqual(next(tool for message in state["messages"] for tool in message.get("tools", []) if tool["name"] == "submit_to_chatbox")["media"], live["media"])
+        rows = [json.loads(line) for line in file.read_text(encoding="utf-8").splitlines()]
+        result = next(row["message"] for row in rows if row.get("message", {}).get("toolName") == "submit_to_chatbox")
+        self.assertEqual(result["details"]["umekoChatbox"]["version"], 1)
+        self.assertNotIn("base64", json.dumps(result))
+        self.stop(); self.start()
+        reopened = next(e for e in self.command({**self.payload, "sessionFile":str(file)}) if e["type"] == "state")
+        self.assertEqual(reopened["messages"], state["messages"])
+        forked = next(e for e in self.command({"type":"fork"}) if e["type"] == "state")
+        self.assertEqual(forked["messages"], state["messages"])
+
+    def test_chatbox_tool_rejects_remote_or_missing_paths_without_media(self):
+        self.command(self.payload)
+        self.response_fn = lambda _model,messages,*_: Completion("Invalid files were not delivered") if messages[-1]["role"] == "tool" else Completion(tool_calls=[{"id":"invalid-delivery", "name":"submit_to_chatbox", "arguments":{"items":[{"path":"https://example.invalid/image.png"}, {"path":"missing.png"}]}}])
+        events = self.command({"type":"prompt", "text":"Invalid delivery fixture"})
+        failed = next(event for event in events if event.get("type") == "tool" and event.get("state") == "error")
+        self.assertFalse(failed.get("media"))
+
+    def test_nested_chatbox_delivery_survives_tool_result_summaries(self):
+        report = self.path / "nested.txt"; report.write_text("nested delivery")
+        (self.path / "agent/extensions/delivery.js").write_text('''export default pi => pi.registerTool({
+          name:"proxy_delivery", label:"Nested delivery fixture", description:"fixture", parameters:{type:"object",properties:{}},
+          execute:async (_id,_args,_signal,_update,ctx) => (await ctx.executeTool("submit_to_chatbox", {items:[{path:"nested.txt"}]})).result
+        });''',encoding="utf-8")
+        self.command(self.payload)
+        self.response_fn = lambda _model,messages,*_: Completion("Delivered") if messages[-1]["role"] == "tool" else Completion(tool_calls=[{"id":"parent-delivery", "name":"proxy_delivery", "arguments":{}}])
+        events = self.command({"type":"prompt", "text":"Deliver through another tool"})
+        state = next(event for event in events if event["type"] == "state")
+        delivered = [tool for row in state["messages"] for tool in row.get("tools", []) if tool.get("media")]
+        self.assertEqual(len(delivered),1)
+        self.assertEqual(delivered[0]["id"],"parent-delivery/1")
+        self.assertEqual(preview(state["session"]["file"])[0],state["messages"])
+        self.stop(); self.start()
+        replayed = next(event for event in self.command({**self.payload,"sessionFile":state["session"]["file"]}) if event["type"] == "state")
+        self.assertEqual(replayed["messages"],state["messages"])
+
     def test_native_followup_and_steering_queue_promote_without_abort(self):
         (self.path / "agent/extensions/transform.js").write_text('''export default function(pi) {
           pi.on("input", event => event.text.includes("_MARKER") ? {action:"transform", text:event.text + " [input-hook]"} : {action:"continue"});
@@ -369,6 +424,16 @@ class PiTests(unittest.TestCase):
             self.send({"type": "edit-queue", "id": selected["id"]})
             edited = until(lambda e: e.get("type") == "queue_edited")[-1]
             self.assertEqual(edited["text"], "EDIT_ONLY_MARKER")
+            self.send({"type": "follow-up", "text": "DELETE_ONLY_MARKER"})
+            pending = until(lambda e: e.get("type") == "queue" and any(i["text"] == "DELETE_ONLY_MARKER" for i in e.get("items", [])))[-1]
+            selected = next(i for i in pending["items"] if i["text"] == "DELETE_ONLY_MARKER")
+            self.send({"type": "delete-queue", "id": selected["id"]})
+            until(lambda e: e.get("type") == "queue" and len(e.get("items", [])) == 2)
+            self.send({"type": "follow-up", "text": "INDIVIDUAL_STEER_MARKER"})
+            pending = until(lambda e: e.get("type") == "queue" and any(i["text"] == "INDIVIDUAL_STEER_MARKER" for i in e.get("items", [])))[-1]
+            selected = next(i for i in pending["items"] if i["text"] == "INDIVIDUAL_STEER_MARKER")
+            self.send({"type": "steer-queued", "id": selected["id"]})
+            until(lambda e: e.get("type") == "queue" and not e.get("followUp") and len(e.get("steering", [])) == 3)
             release.set()
             output = until(lambda e: e.get("type") == "done")
             self.assertFalse([e for e in output if e.get("type") == "error"], output)
@@ -378,6 +443,8 @@ class PiTests(unittest.TestCase):
             self.assertIn("FOLLOW_UP_MARKER", text)
             self.assertIn("STEERING_MARKER", text)
             self.assertNotIn("EDIT_ONLY_MARKER", text)
+            self.assertNotIn("DELETE_ONLY_MARKER", text)
+            self.assertIn("INDIVIDUAL_STEER_MARKER", text)
             self.assertIn("[input-hook]", text)
             self.assertNotIn("[input-hook] [input-hook]", text)
             queues = [event for event in output if event["type"] == "queue"]

@@ -202,6 +202,8 @@ class PiControllerMixin:
                 tool = tool_view(event["id"], event["name"], event.get("args", {}), record.workspace)
                 record.messages[-1].setdefault("tools", []).append(tool)
             tool["state"] = event["state"]
+            if event.get("media"):
+                tool["media"] = event["media"]
             if event.get("result") is not None:
                 tool["result"] = event["result"]
             transcript = True

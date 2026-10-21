@@ -42,6 +42,12 @@ Column {
                 expansionState: step.fold
                 selectionController: root.selectionController; messageIndex: root.messageIndex; blockOffset: step.entry.blockOffset
             }
+            ChatboxMedia {
+                width: parent.width; visible: step.entry.kind === "media"
+                items: visible ? step.entry.items || [] : []; toolId: step.entry.toolId || ""
+                expansionState: step.fold
+                selectionController: root.selectionController; messageIndex: root.messageIndex; blockOffset: step.entry.blockOffset
+            }
         }
     }
 }

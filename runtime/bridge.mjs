@@ -2,6 +2,7 @@
 // Tools, loop, skill expansion, extension hooks and session trees belong to Pi.
 import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-policy.mjs";
 import { prepareNativeSettings, builtins, extensionName } from "./resources.mjs";
+import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
 import { join, resolve, dirname, basename, delimiter } from "node:path";
@@ -24,7 +25,7 @@ const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", entry));
 const { loadMcpConfig } = await import(new URL("./extensions/mcp/config.js", entry));
 const { allToolNames } = await import(new URL("./core/tools/index.js", entry));
-const nativeTools = [...allToolNames, "codemode", "tool_search"];
+const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL];
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 const textOf = content => typeof content === "string" ? content : (content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
@@ -104,6 +105,7 @@ async function bindSession(session) {
     if (event.type === "message_update" && event.assistantMessageEvent.type === "thinking_delta") emit({ type: "thinking_delta", text: event.assistantMessageEvent.delta });
     if (event.type.startsWith("tool_execution_")) emit({ type: "tool", name: event.toolName, id: event.toolCallId,
       args: event.args, result: event.type === "tool_execution_end" ? textOf(event.result?.content).slice(0,8192) : undefined,
+      media: event.type === "tool_execution_end" ? chatboxItems(event.toolName, {...event.result, isError: event.isError}) : undefined,
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
     if (event.type === "message_end") emit({ type: "message", role: event.message.role,
       text: textOf(event.message.content), thinking: thinkingOf(event.message.content), error: event.message.errorMessage || "" });
@@ -183,6 +185,7 @@ async function init(input) {
           additionalExtensionPaths: builtins.map(name => "builtin:" + name) } : {}),
         appendSystemPrompt: ["Your name is umeko. Reply in the user's language.", input.agent?.instructions || ""],
         extensionFactories: [
+          { name: "chatbox", builtin: true, replaceable: false, factory: chatboxExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
           { name: "tool-search", builtin: true, replaceable: true, factory: Pi.createToolSearchExtension() },
           { name: "mcp", builtin: true, replaceable: true, factory: Pi.createMcpExtension({ loadConfig: ctx => {
@@ -227,17 +230,22 @@ async function state() {
   const session = runtime.session, manager = session.sessionManager;
   const branch = manager.getBranch();
   const results = new Map(branch.filter(e => e.type === "message" && e.message.role === "toolResult").map(e => [e.message.toolCallId, e.message]));
+  const deliveries = branch.filter(e => e.type === "custom" && e.customType === "umeko-chatbox" && e.data?.version === 1 && typeof e.data.toolCallId === "string" && Array.isArray(e.data.items)).map(e => e.data);
   const messages = branch.filter(e => e.type === "message" && ["user", "assistant"].includes(e.message.role)).map(e => {
     const message = e.message;
     const row = {role: message.role, text: textOf(message.content) || message.errorMessage || "", error: !!message.errorMessage, entryId:e.id};
     const thinking = thinkingOf(message.content);
     if (thinking) row.thinking = thinking;
     const calls = Array.isArray(message.content) ? message.content.filter(c => c.type === "toolCall") : [];
-    if (calls.length) row.tools = calls.map(call => {
+    if (calls.length) row.tools = calls.flatMap(call => {
       const result = results.get(call.id), args = call.arguments || {};
       let path = args.path || args.file_path || args.filePath || "";
       path = path && typeof path === "string" && !path.includes("://") ? canonicalPath(resolve(manager.getCwd(), path.replace(/^~(?=[/\\]|$)/,homedir()))) : "";
-      return {id:call.id, name:call.name, arguments:args, path, state:result ? result.isError ? "error" : "done" : "interrupted", result:result ? textOf(result.content).slice(0,8192) : ""};
+      const row = {id:call.id, name:call.name, arguments:args, path, state:result ? result.isError ? "error" : "done" : "interrupted", result:result ? textOf(result.content).slice(0,8192) : ""};
+      const media = chatboxItems(call.name, result);
+      if (media.length) row.media = media;
+      const nested = deliveries.filter(item => item.toolCallId.startsWith(call.id + "/")).map(item => ({id: item.toolCallId, name: CHATBOX_TOOL, arguments: {}, path: "", state: "done", result: "已提交到聊天框", media: item.items.slice(0, 12)}));
+      return [row, ...nested];
     });
     return row;
   }).filter(row => row.text || row.thinking || row.tools?.length);
@@ -277,21 +285,21 @@ async function capabilities() {
 }
 
 async function execute(input) {
-  if (["follow-up", "steer", "promote-queue", "edit-queue"].includes(input.type)) {
+  if (["follow-up", "steer", "promote-queue", "edit-queue", "delete-queue", "steer-queued"].includes(input.type)) {
     queueChain = queueChain.then(async () => {
       try {
         if (!runtime) throw new Error("Pi 尚未就绪");
-        if (input.type === "edit-queue" || input.type === "promote-queue") {
-          const selected = input.type === "edit-queue" ? queuedItems.find(item => item.id === input.id) : undefined;
-          if (input.type === "edit-queue" && !selected) throw new Error("这条消息已经开始处理");
+        if (["edit-queue", "promote-queue", "delete-queue", "steer-queued"].includes(input.type)) {
+          const selected = input.type !== "promote-queue" ? queuedItems.find(item => item.id === input.id) : undefined;
+          if (input.type !== "promote-queue" && !selected) throw new Error("这条消息已经开始处理");
           const items = takeQueue();
-          if (selected) emit({type: "queue_edited", text: selected.text, images: selected.images || []});
+          if (input.type === "edit-queue") emit({type: "queue_edited", text: selected.text, images: selected.images || []});
           for (let index = 0; index < items.length; index++) {
             const item = items[index];
-            if (item === selected) continue;
-            try { await enqueue(item, input.type === "promote-queue" ? "steering" : item.mode); }
+            if (item === selected && input.type !== "steer-queued") continue;
+            try { await enqueue(item, input.type === "promote-queue" || input.type === "steer-queued" && item === selected ? "steering" : item.mode); }
             catch (error) {
-              emit({type:"queue_returned", steering:[], followUp:items.slice(index).filter(row => row !== selected).map(row => row.text)});
+              emit({type:"queue_returned", steering:[], followUp:items.slice(index).filter(row => row !== selected || input.type === "steer-queued").map(row => row.text)});
               throw error;
             }
           }

@@ -16,6 +16,10 @@ from PySide6.QtTest import QTest
 from main import create_application
 
 app, engine, backend = create_application()
+backend.store.data.update(selectedProvider='fixture', selectedModel='fixture', providers=[{'id':'fixture','name':'Fixture','api':'openai','baseUrl':'http://127.0.0.1:1/v1','models':[{'upstream':'fixture','alias':'fixture'}]}])
+backend._view.provider = 'fixture'
+backend._view.model = 'fixture'
+backend.changed.emit()
 window = engine.rootObjects()[0]
 warnings = []
 engine.warnings.connect(lambda errors: warnings.extend(e.toString() for e in errors))

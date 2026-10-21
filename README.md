@@ -49,6 +49,8 @@ Screenshots show the actual app with isolated demo data. No real accounts, crede
 | **An API for your other tools** | An optional OpenAI / Anthropic API proxy, model aliases, LAN access and named, revocable API keys. |
 | **A little personality** | Light, dark and Yanami themes, twelve welcome portraits and greetings, and a pixel Yanami at the end of a reply. |
 
+Pi can deliver images and compact file cards directly with [`submit_to_chatbox`](docs/chatbox-media.md). Click a file to open it; use its corner arrow or right-click menu to reveal or copy it. Queued messages sit above the composer with individual steering, editing and deletion. Double-click selects a word; triple-click selects a paragraph.
+
 ## Get started
 
 Pi web extensions can access the network. Configure company npm mirrors, an optional `.npmrc` and CA file under **Settings → Agent → Pi**; see [npm and extension networking](docs/npm-and-network.md).

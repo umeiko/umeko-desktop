@@ -88,6 +88,15 @@ jobs:
           & '.venv/Scripts/python.exe' tests/provider_plugins_ui_smoke.py
           if ($LASTEXITCODE -ne 0) { throw 'Provider import interaction failed' }
 
+      - name: Chat media, queue and selection interaction
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($test in @('chatbox_ui_smoke.py', 'selection_click_ui_smoke.py', 'chat_interaction_smoke.py', 'ui_smoke.py')) {
+            & '.venv/Scripts/python.exe' "tests/$test"
+            if ($LASTEXITCODE -ne 0) { throw "Interaction failed: $test" }
+          }
+
       - name: Build Windows
         if: runner.os == 'Windows'
         shell: pwsh

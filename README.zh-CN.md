@@ -49,6 +49,8 @@ Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原�
 | **给其他工具的 API** | 可选 API 代理服务、模型别名、局域网访问，以及可命名、停用和撤销的 API Key。 |
 | **一点自己的风格** | 浅色、深色与八奈见主题，十二组欢迎头像与问候，以及回复末尾的像素八奈见。 |
 
+使用 [`submit_to_chatbox`](docs/chatbox-media.md) 可直接展示图片和紧凑文件卡片。单击文件打开，小箭头定位文件，右键复制文件或路径。排队消息支持逐条引导、编辑与删除；双击选词，三击选择整段。
+
 ## 开始使用
 
 在 [Releases](https://github.com/umeiko/umeko-desktop/releases/latest) 下载对应平台的包，解压后运行。请保留完整应用目录。

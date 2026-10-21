@@ -2,6 +2,7 @@
 import copy
 from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt
 from .message_attachments import split_attachments
+from .chatbox import media_view
 
 
 class ChatModel(QAbstractListModel):
@@ -55,7 +56,14 @@ class ChatModel(QAbstractListModel):
                     steps.append({"kind": "text", "text": current["text"], "error": current.get("error", False)})
                 if current.get("tools"):
                     current["tools"] = [dict(tool) for tool in current["tools"]]
-                    steps.append({"kind": "tools", "tools": current["tools"]})
+                    batch = []
+                    for tool in current["tools"]:
+                        batch.append(tool)
+                        if tool.get("name") == "submit_to_chatbox" and tool.get("media"):
+                            steps.append({"kind": "tools", "tools": batch})
+                            steps.append({"kind": "media", "items": media_view(tool["media"]), "toolId": tool["id"]})
+                            batch = []
+                    if batch: steps.append({"kind": "tools", "tools": batch})
                 current["activity"] = steps
             if (rows and current.get("role") == rows[-1].get("role") == "assistant"
                     and (rows[-1].get("tools") or current.get("tools"))):
