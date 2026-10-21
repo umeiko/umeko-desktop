@@ -19,7 +19,9 @@ assert REPO=='umeiko/umeko-desktop'
 def gh(*args):
     return subprocess.check_output(['gh',*map(str,args)],text=True)
 
-def api(path):return json.loads(gh('api',f'repos/{REPO}/'+path))
+def api(path):
+    separator='&' if '?' in path else '?'
+    return json.loads(gh('api',f'repos/{REPO}/'+path+separator+'_umeko='+str(time.time_ns())))
 
 run=api('actions/runs/'+RUN)
 assert run['conclusion']=='success' and run['head_branch']=='main'
@@ -61,8 +63,10 @@ release=next((r for r in releases if r['tag_name']==TAG),None)
 if release is None:
     notes=base/'notes.md'
     notes.write_text('Fix standalone startup on computers without Node.js installed.\n\n- Bundles official Node.js 22.23.3 and npm alongside Python, Qt and Pi.\n- Chat, extension installation, the Pi terminal and kernel updates use the bundled runtime.\n- Every package is checked with system Node removed from PATH.\n\nExtract the complete archive; no separate Node.js or Python installation is required. Existing Provider SDK v1 ZIPs remain compatible.\n\nVerified CI: https://github.com/'+REPO+'/actions/runs/'+RUN+'\n\n'+''.join(f'- {p}: {n/1048576:.2f} MiB\n' for p,n in sizes),encoding='utf-8')
-    gh('release','create',TAG,'--repo',REPO,'--target',commit,'--draft','--title',TAG,'--notes-file',notes,*(['--prerelease'] if minimal else []))
-    release=next(r for r in api('releases') if r['tag_name']==TAG)
+    payload=base/'create-release.json'
+    payload.write_text(json.dumps({'tag_name':TAG,'target_commitish':commit,'name':TAG,
+                                  'draft':True,'prerelease':minimal,'body':notes.read_text(encoding='utf-8')}),encoding='utf-8')
+    release=json.loads(gh('api','--method','POST',f'repos/{REPO}/releases','--input',payload))
 assert release['target_commitish']==commit
 rid=release['id']
 for file in files:
