@@ -50,6 +50,7 @@ def prepare_terminal(runtime, directory, agent_dir, cwd, sessions, platform=None
         script.write_text(
             "$env:PI_CODING_AGENT_DIR=" + quote(agent_dir) + "\n"
             "$env:PI_CODING_AGENT_SESSION_DIR=" + quote(sessions) + "\n"
+            "$env:PATH=" + quote(str(Path(node).parent) + os.pathsep) + "+$env:PATH\n"
             "Remove-Item Env:NODE_OPTIONS,Env:NODE_PATH -ErrorAction SilentlyContinue\n"
             "Set-Location -LiteralPath " + quote(cwd) + "\n"
             "function global:pi { & " + quote(node) + " " + quote(cli) + " @args }\n"
@@ -65,6 +66,7 @@ def prepare_terminal(runtime, directory, agent_dir, cwd, sessions, platform=None
     script.write_text(
         "export PI_CODING_AGENT_DIR=" + shlex.quote(str(agent_dir)) + "\n"
         "export PI_CODING_AGENT_SESSION_DIR=" + shlex.quote(str(sessions)) + "\n"
+        "export PATH=" + shlex.quote(str(Path(node).parent)) + ':"$PATH"\n'
         "unset NODE_OPTIONS NODE_PATH\ncd -- " + shlex.quote(str(cwd)) + "\n"
         "pi() { " + shlex.quote(node) + " " + shlex.quote(str(cli)) + ' "$@"; }\n'
         "printf '%s\\n' 'Umeko embedded Pi: pi config / pi install / pi list / pi remove'\n"

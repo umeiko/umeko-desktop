@@ -60,7 +60,7 @@ Download a package from [Releases](https://github.com/umeiko/umeko-desktop/relea
 | macOS Intel | `macos-x64.zip` | `Umeko.app` |
 | Linux x64 | `linux-x64.tar.gz` | `Umeko/Umeko` |
 
-Package names include the version and source commit. **Node.js 22.19+ is required.** Python, Qt, Pi and its file-search binaries are bundled. Linux requires a graphical desktop and Qt runtime libraries; macOS packages are ad-hoc signed and are not notarized. See the [platform notes](docs/user-guide.md#requirements).
+Package names include the version and source commit. **Node.js, npm, Python, Qt, Pi and file-search binaries are bundled.** No separate Node.js or Python installation is required. Linux requires a graphical desktop and Qt runtime libraries; macOS packages are ad-hoc signed and are not notarized. See the [platform notes](docs/user-guide.md#requirements).
 
 1. In **Settings → Accounts & Providers**, add a model API, or use **+** to import a trusted provider ZIP.
 2. Open a project folder from the sidebar, or drag one into it.

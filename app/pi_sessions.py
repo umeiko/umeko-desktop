@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from collections import OrderedDict
@@ -87,6 +88,7 @@ class PiSessionPool(QObject):
             if key.upper() in ("NODE_OPTIONS", "NODE_PATH", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY") or key.upper().endswith(("API_KEY", "ACCESS_TOKEN")):
                 environment.remove(key)
         environment.insert("PI_OFFLINE", "1")
+        environment.insert("PATH", os.path.dirname(program) + os.pathsep + environment.value("PATH"))
         process.setProcessEnvironment(environment)
         process.setProgram(program)
         process.setArguments([str(bridge)])

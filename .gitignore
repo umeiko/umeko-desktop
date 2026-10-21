@@ -12,6 +12,7 @@ release-assets/
 artifacts/
 .private/
 runtime/downloads/
+runtime/node/
 /.pi/mcp.json
 /internal.json
 /auth.json

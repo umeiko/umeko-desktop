@@ -19,7 +19,7 @@ from PySide6.QtGui import QGuiApplication, QDesktopServices, QImageReader
 
 from .gateway import Gateway, LocalServer, validate_base_url
 from .integration import load_adapter, UnconfiguredAdapter
-from .pi_runtime import PACKAGE, RELEASE_NAME, CREATE_NO_WINDOW, installed_version, node_executable, project_runtime, verify_runtime
+from .pi_runtime import PACKAGE, RELEASE_NAME, CREATE_NO_WINDOW, installed_version, node_executable, node_environment, npm_command, project_runtime, verify_runtime
 from .storage import Store
 from .pi_sessions import PiSessionPool, SessionState
 from .controller_runtime import PiControllerMixin
@@ -1331,17 +1331,14 @@ class Controller(PiControllerMixin, QObject):
         self._kernel_busy, self._kernel_status = True, "下载并验证内核，完成后切换…"
         self.changed.emit()
         def update():
-            npm = shutil.which("npm.cmd" if os.name == "nt" else "npm")
-            if not npm:
-                raise RuntimeError("更新内核需要本机已安装 npm")
-            node_executable()
+            npm = npm_command()
             kernels = self.store.directory / "kernels"
             kernels.mkdir(exist_ok=True)
             stage = kernels / ("staging-" + uuid.uuid4().hex)
             stage.mkdir()
             (stage / "package.json").write_text(json.dumps({"private": True, "dependencies": {PACKAGE: version}}))
-            result = subprocess.run([npm, "install", "--prefix", str(stage), "--registry=https://registry.npmjs.org", "--ignore-scripts", "--no-audit", "--no-fund"],
-                                    capture_output=True, timeout=180, creationflags=CREATE_NO_WINDOW)
+            result = subprocess.run([*npm, "install", "--prefix", str(stage), "--registry=https://registry.npmjs.org", "--ignore-scripts", "--no-audit", "--no-fund"],
+                                    env=node_environment(), capture_output=True, timeout=180, creationflags=CREATE_NO_WINDOW)
             if result.returncode:
                 raise RuntimeError("内核下载失败；原有版本未改变")
             release = kernels / ("candidate-" + uuid.uuid4().hex)

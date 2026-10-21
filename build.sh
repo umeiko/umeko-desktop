@@ -11,6 +11,7 @@ if output == root or not output.is_relative_to(root):
     raise SystemExit('Build output must stay inside this workspace')
 PY
 .venv/bin/python -m pip install pyinstaller==6.19.0
+.venv/bin/python scripts/bundle_node.py
 .venv/bin/python prepare_runtime.py
 .venv/bin/python scripts/fetch-search-tools.py
 QT_QPA_PLATFORM=offscreen .venv/bin/python build_icons.py
@@ -42,6 +43,7 @@ if sys.platform == 'darwin':
 for target in targets:
     if target.is_dir():
         shutil.copytree(root / 'runtime/releases' / RELEASE_NAME, target / 'runtime/releases' / RELEASE_NAME, dirs_exist_ok=True)
+        shutil.copytree(root / 'runtime/node', target / 'runtime/node', dirs_exist_ok=True, symlinks=True)
 shutil.copy2(root / 'README.md', output / 'Umeko/README.md')
 print('Build output:', output)
 PY

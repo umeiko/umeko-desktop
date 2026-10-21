@@ -1,0 +1,33 @@
+name: Publish verified desktop release
+on:
+  workflow_dispatch:
+    inputs:
+      build_run:
+        description: Successful native build run ID (main branch)
+        required: true
+        type: string
+      tag:
+        description: Version tag matching all four build manifests
+        default: v0.2.1
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: publish-${{ inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_BUILD_RUN: ${{ inputs.build_run }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify trusted build, upload assets and publish
+        run: python3 scripts/publish-release.py

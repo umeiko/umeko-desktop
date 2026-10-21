@@ -63,6 +63,9 @@ if __name__ == "__main__":
             ctypes.windll.user32.MessageBoxW(None, "应用启动失败。请检查本机设置或从源码启动查看诊断。", "Umeko", 0x10)
         sys.exit(1)
     diagnostic("QML_READY")
+    if "--smoke" in sys.argv:
+        from app.pi_runtime import node_executable
+        diagnostic("NODE_EXECUTABLE:" + node_executable())
     if "--snapshot" in sys.argv:
         output = sys.argv[sys.argv.index("--snapshot") + 1]
         QTimer.singleShot(650, lambda: engine.rootObjects()[0].grabWindow().save(output))

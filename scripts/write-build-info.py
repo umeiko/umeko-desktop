@@ -10,5 +10,7 @@ from app.project_info import build_metadata
 if __name__ == "__main__":
     target = ROOT / "build/build-info.json"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(build_metadata(ROOT), ensure_ascii=False, indent=2), encoding="utf-8")
+    metadata = build_metadata(ROOT)
+    metadata['node'] = json.loads((ROOT / 'runtime/node/distribution.json').read_text(encoding='utf-8'))
+    target.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
     print("Build metadata:", target)

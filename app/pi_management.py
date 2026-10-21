@@ -10,14 +10,14 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Property, Signal, Slot, QUrl
 from PySide6.QtGui import QDesktopServices
-from .pi_runtime import CREATE_NO_WINDOW, RELEASE_NAME, installed_version, node_executable, verify_runtime
+from .pi_runtime import CREATE_NO_WINDOW, RELEASE_NAME, installed_version, node_executable, node_environment, verify_runtime
 from .pi_terminal import console_runtime, prepare_terminal, launch_terminal
 from .pi_install import parse_install_command, install_package
 from .storage import DEFAULTS
 
 
 def resource_command(release, cwd, agent_dir, agent, **action):
-    environment = dict(os.environ, PI_OFFLINE="1")
+    environment = node_environment(dict(os.environ, PI_OFFLINE="1"))
     environment.pop("NODE_OPTIONS", None)
     environment.pop("NODE_PATH", None)
     result = subprocess.run([node_executable(), str(release / "resources.mjs")],

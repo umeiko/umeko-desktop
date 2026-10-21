@@ -49,3 +49,7 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+## Bundled Node.js and npm
+
+Release packages include the official Node.js 22.23.3 distribution and npm from https://nodejs.org/dist/v22.23.3/ . The full distribution retains its LICENSE files and npm dependency notices under `runtime/node/`. Downloads are pinned by SHA-256 in `scripts/node-distributions.json`; the archive origin and version are recorded in build metadata.

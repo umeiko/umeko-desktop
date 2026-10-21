@@ -47,7 +47,7 @@ Build on the target OS and CPU architecture:
 ./build.sh
 ```
 
-Outputs: `dist/Umeko/Umeko.exe` (Windows), `dist/Umeko/Umeko` (Linux), and `dist/Umeko.app` (macOS). Keep the complete bundle directory. Node.js remains a runtime prerequisite. macOS builds use local ad-hoc signing; Developer ID signing and notarization are not automated.
+Outputs: `dist/Umeko/Umeko.exe` (Windows), `dist/Umeko/Umeko` (Linux), and `dist/Umeko.app` (macOS). Keep the complete bundle directory. Node.js 22.23.3 and npm are bundled; no separate Node.js installation is needed. macOS builds use local ad-hoc signing; Developer ID signing and notarization are not automated.
 
 Use the fixed `dist` output rather than creating a new preview folder for every build. Windows packaging refuses to overwrite a running target bundle. To reclaim older generated Windows builds, review `./scripts/clean-builds.ps1 -WhatIf`, then run `./scripts/clean-builds.ps1`. It skips running applications, linked directories and unrecognized folders, preserves the canonical `dist/Umeko` bundle, and retains a latest fallback preview if that bundle is missing. Source, profiles, projects and conversation files are outside its cleanup targets.
 
@@ -57,11 +57,11 @@ The release workflow checks frozen GUI rendering and the bundled Pi on Windows x
 
 [Desktop packages](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml) runs on pushes to `main`, pull requests, or **Run workflow**. It builds Windows x64, Linux x64, macOS Apple Silicon and macOS Intel on native runners using Python 3.12 and Node.js 22. The Windows job runs the regression suite and provider import interaction checks; every platform must render the packaged GUI, run its bundled search binaries and pass the bundled Pi self-test before upload.
 
-Download stable builds from [Releases](https://github.com/umeiko/umeko-desktop/releases/latest). Development artifacts are available from completed CI runs for seven days: versioned ZIP (Windows/macOS) or tar.gz (Linux), SHA-256 checksum and verification details. Separate Provider SDK and developer Skill ZIPs are included. Release assets are published from successful CI packages; the build workflow itself only uploads artifacts. Node.js 22.19+ is required on the destination machine. macOS packages are ad-hoc signed and are not notarized. GUI smoke checks do not replace interactive IME, keyring or real-provider checks.
+Download stable builds from [Releases](https://github.com/umeiko/umeko-desktop/releases/latest). Development artifacts are available from completed CI runs for seven days: versioned ZIP (Windows/macOS) or tar.gz (Linux), SHA-256 checksum and verification details. Separate Provider SDK and developer Skill ZIPs are included. Release assets are published from successful CI packages; the build workflow itself only uploads artifacts. Node.js and npm are included in the release; destination computers do not need a separate Node.js installation. macOS packages are ad-hoc signed and are not notarized. GUI smoke checks do not replace interactive IME, keyring or real-provider checks.
 
 ### Offline search tools
 
-Setup and build scripts fetch fd 10.3.0 and ripgrep 14.1.1 from their official upstream releases. Eight platform archives are pinned by SHA-256 in `scripts/search-tools.json`; downloads are cached in `runtime/downloads`. The matching binaries and their license files are copied into the embedded Pi's `bin` directory and added to its process PATH. File search therefore works without downloading executables during a conversation. Node.js and a shell remain host requirements.
+Setup and build scripts fetch fd 10.3.0 and ripgrep 14.1.1 from their official upstream releases. Eight platform archives are pinned by SHA-256 in `scripts/search-tools.json`; downloads are cached in `runtime/downloads`. The matching binaries and their license files are copied into the embedded Pi's `bin` directory and added to its process PATH. File search therefore works without downloading executables during a conversation. Node.js and npm are bundled. Tool commands still use the operating system shell.
 
 ## About and application updates
 

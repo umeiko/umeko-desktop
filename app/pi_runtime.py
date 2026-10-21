@@ -30,12 +30,40 @@ export const radiusProvider = () => { throw new Error("Configure suppliers in Um
 
 
 def node_executable():
+    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+    bundled = root / "runtime/node" / ("node.exe" if os.name == "nt" else "bin/node")
+    if bundled.is_file():
+        return str(bundled.resolve())
+    if getattr(sys, "frozen", False):
+        raise RuntimeError("内置 Node.js 缺失，请重新解压完整安装包，不要只复制可执行文件")
     found = shutil.which("node")
     if not found and sys.platform == "darwin":
         found = next((path for path in ("/opt/homebrew/bin/node", "/usr/local/bin/node") if Path(path).is_file()), None)
     if not found:
         raise RuntimeError("需要 Node.js 22.19 或更新版本来运行 Pi 内核")
     return found
+
+
+def node_environment(values=None):
+    environment = dict(os.environ if values is None else values)
+    environment["PATH"] = str(Path(node_executable()).parent) + os.pathsep + environment.get("PATH", "")
+    environment.pop("NODE_OPTIONS", None)
+    environment.pop("NODE_PATH", None)
+    return environment
+
+
+def npm_command():
+    node = Path(node_executable())
+    installed = shutil.which("npm.cmd" if os.name == "nt" else "npm")
+    candidates = [node.parent / "node_modules/npm/bin/npm-cli.js",
+                  node.parent.parent / "lib/node_modules/npm/bin/npm-cli.js"]
+    if installed:
+        candidates.append(Path(installed).resolve())
+    candidates.extend((Path("/usr/share/nodejs/npm/bin/npm-cli.js"), Path("/usr/local/lib/node_modules/npm/bin/npm-cli.js")))
+    for path in candidates:
+        if path.is_file() and path.suffix == ".js":
+            return [str(node), str(path)]
+    raise RuntimeError("内置 npm 缺失，请重新解压完整安装包")
 
 
 def project_runtime(source: Path, destination: Path):
@@ -62,7 +90,7 @@ def verify_runtime(release: Path, bridge_source: Path):
         raise RuntimeError("旧 Agent Core 内核不能用于完整 Pi Coding Agent")
     for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs"):
         shutil.copy2(bridge_source.parent / name, release / name)
-    environment = dict(os.environ, PI_OFFLINE="1")
+    environment = node_environment(dict(os.environ, PI_OFFLINE="1"))
     environment.pop("NODE_OPTIONS", None)
     environment.pop("NODE_PATH", None)
     result = subprocess.run([node_executable(), str(release / "bridge.mjs"), "--self-test"],

@@ -10,6 +10,8 @@ foreach ($buildProcess in @(Get-Process Umeko -ErrorAction SilentlyContinue)) {
 }
 & '.venv/Scripts/python.exe' -m pip install pyinstaller==6.19.0
 if ($LASTEXITCODE -ne 0) { throw 'Build dependency installation failed' }
+& '.venv/Scripts/python.exe' scripts/bundle_node.py
+if ($LASTEXITCODE -ne 0) { throw 'Bundled Node.js preparation failed' }
 & '.venv/Scripts/python.exe' prepare_runtime.py
 if ($LASTEXITCODE -ne 0) { throw 'Pi compatibility validation failed' }
 & '.venv/Scripts/python.exe' scripts/fetch-search-tools.py
@@ -33,5 +35,6 @@ $releaseParent = Join-Path $buildDestination 'Umeko/_internal/runtime/releases'
 New-Item -ItemType Directory -Path $releaseParent -Force | Out-Null
 # Node loads its own runtime files; copy them byte-for-byte after Qt packaging.
 Copy-Item -LiteralPath 'runtime/releases/coding-1.3.0' -Destination $releaseParent -Recurse -Force
+Copy-Item -LiteralPath 'runtime/node' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Recurse -Force
 Copy-Item -LiteralPath 'README.md' -Destination (Join-Path $buildDestination 'Umeko/README.md') -Force
 Write-Output ('Portable app: ' + (Join-Path $buildDestination 'Umeko/Umeko.exe'))
