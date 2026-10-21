@@ -55,6 +55,8 @@ Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原�
 
 外观设置可导入、更新、切换和删除 JSON 配色主题，也能一键复制完整制作提示词；参见[主题格式与示例](docs/themes.md)。回复末尾的小八奈见支持点击、长按和连击彩蛋。
 
+切换聊天时立即显示八奈见加载页，历史记录在后台读取；连续切换只展示最后选中的聊天，排版完成后快速渐显。
+
 ## 开始使用
 
 在 [Releases](https://github.com/umeiko/umeko-desktop/releases/latest) 下载对应平台的包，解压后运行。请保留完整应用目录。

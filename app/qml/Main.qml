@@ -18,22 +18,54 @@ ApplicationWindow {
     property string notification: ""
     property string pendingSidebarId: ""
     property string pendingSidebarKind: ""
+    property string pendingSidebarTitle: ""
+    property int sidebarToken: 0
+    property int sidebarFrames: 0
+    property bool sidebarStarted: false
+    property bool sidebarPrepared: false
     readonly property bool sidebarSwitching: pendingSidebarId.length > 0
+    function cancelSidebarSelection() {
+        sidebarToken++; pendingSidebarId = ""
+        backend.sessionPreview.cancel(); chatCover.cancel()
+    }
     function selectSidebar(row) {
-        window.page = "chat"
-        if (row.selected && !sidebarSwitching && (row.kind === "session" || !backend.activeSession)) return
-        pendingSidebarKind = row.kind
-        pendingSidebarId = row.id
+        if (row.selected && !sidebarSwitching && (row.kind === "session" || !backend.activeSession)) { window.page = "chat"; return }
+        backend.sessionPreview.cancel(); sidebarToken++
+        pendingSidebarKind = row.kind; pendingSidebarTitle = row.title; pendingSidebarId = row.id
+        sidebarFrames = 0; sidebarStarted = false; sidebarPrepared = false
+        chatCover.begin(); window.page = "chat"
     }
     function commitSidebarSelection() {
-        if (!sidebarSwitching || sidebarMotion.moving) return
-        const id = pendingSidebarId, kind = pendingSidebarKind
-        if (kind === "project") backend.openProject(id)
-        else backend.openSession(id)
+        if (!sidebarSwitching || !sidebarPrepared || sidebarMotion.moving) return
+        const token = sidebarToken
+        let ok = true
+        if (pendingSidebarKind === "project") backend.openProject(pendingSidebarId)
+        else ok = backend.sessionPreview.activate(token)
+        if (token !== sidebarToken) return
         pendingSidebarId = ""
+        if (!ok) { window.notification = "暂时无法打开所选聊天，请重试"; toastTimer.restart() }
+        chatCover.contentReady()
     }
-    // Keep transcript parsing and delegate creation out of the PID's frames.
-    // Retargeting replaces the pending request; intermediate chats never load.
+    // Present the cover before starting disk I/O. Cold reads can overlap the
+    // sidebar motion; activate the latest result only after the PID settles.
+    FrameAnimation {
+        running: window.sidebarSwitching && !window.sidebarStarted
+        onTriggered: {
+            window.sidebarFrames++
+            if (window.sidebarFrames < 2) return
+            window.sidebarStarted = true
+            if (window.pendingSidebarKind === "project") window.sidebarPrepared = true
+            else backend.sessionPreview.prepare(window.pendingSidebarId, window.sidebarToken)
+        }
+    }
+    Connections {
+        target: backend.sessionPreview
+        function onReady(token, ok) {
+            if (token !== window.sidebarToken || !window.sidebarSwitching) return
+            if (ok) window.sidebarPrepared = true
+            else { window.pendingSidebarId = ""; chatCover.contentReady() }
+        }
+    }
     Timer { interval: 16; repeat: true; running: window.sidebarSwitching; onTriggered: window.commitSidebarSelection() }
     property real sidebarPreferredWidth: backend.sidebarWidth
     property bool sidebarCollapsed: backend.sidebarCollapsed
@@ -46,12 +78,12 @@ ApplicationWindow {
     }
     function toggleSidebar() { sidebarCollapsed = !sidebarCollapsed; saveSidebarLayout() }
     function settings(tab) { settingsTab = tab === 2 ? 1 : tab === 4 ? 3 : tab; page = "settings" }
-    function startChat() { pendingSidebarId = ""; backend.newSession(); page = "chat"; composer.focusInput() }
-    onPageChanged: { if (page !== "chat") pendingSidebarId = ""; backend.setConversationVisible(page === "chat" && active) }
+    function startChat() { cancelSidebarSelection(); backend.newSession(); page = "chat"; composer.focusInput() }
+    onPageChanged: { if (page !== "chat") cancelSidebarSelection(); backend.setConversationVisible(page === "chat" && active) }
     onActiveChanged: backend.setConversationVisible(page === "chat" && active)
     Component.onCompleted: backend.setConversationVisible(page === "chat" && active)
     Shortcut { sequence: "Ctrl+N"; onActivated: window.startChat() }
-    Shortcut { sequence: "Ctrl+S"; enabled: window.page === "chat" && !window.sidebarSwitching; onActivated: composer.sendMessage(true) }
+    Shortcut { sequence: "Ctrl+S"; enabled: window.page === "chat" && !chatCover.visible; onActivated: composer.sendMessage(true) }
     Shortcut { sequence: "Ctrl+,"; onActivated: window.settings(0) }
     Shortcut { sequence: "Ctrl+B"; onActivated: window.toggleSidebar() }
     Shortcut { sequences: [StandardKey.Copy]; enabled: chatSelection.activeFocus && chatSelection.hasSelection; onActivated: Qt.callLater(chatSelection.copy) }
@@ -170,7 +202,7 @@ ApplicationWindow {
                 ActionButton { objectName: "toggleSidebarButton"; glyph: "layout"; quiet: true; width: 30; height: 30; hint: window.sidebarCollapsed ? "展开侧栏（Ctrl+B）" : "收起侧栏（Ctrl+B）"; Accessible.name: window.sidebarCollapsed ? "展开侧栏" : "收起侧栏"; onClicked: window.toggleSidebar() }
                 Text { text: window.page === "chat" ? "工作空间" : "偏好设置"; color: Theme.muted; font.pixelSize: 11; anchors.verticalCenter: parent.verticalCenter }
                 Text { text: "/"; color: Theme.line; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
-                Text { text: window.page === "chat" ? backend.sessionTitle : ["账号与供应商", "API 代理服务", "API 代理服务", "Agent", "Agent", "外观", "关于"][window.settingsTab]; color: Theme.ink; font.pixelSize: 11; width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
+                Text { text: window.page === "chat" ? (window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle) : ["账号与供应商", "API 代理服务", "API 代理服务", "Agent", "Agent", "外观", "关于"][window.settingsTab]; color: Theme.ink; font.pixelSize: 11; width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
             }
             Row {
                 anchors.right: windowControls.left; anchors.rightMargin: 18; anchors.verticalCenter: parent.verticalCenter; spacing: 7
@@ -338,15 +370,19 @@ ApplicationWindow {
                 }
             }
 
-            ChatSelection { id: chatSelection; anchors.fill: conversation; view: conversation; visible: conversation.visible; enabled: !window.sidebarSwitching }
+            ChatSelection { id: chatSelection; anchors.fill: conversation; view: conversation; visible: conversation.visible; enabled: !chatCover.visible }
 
             Composer {
                 id: composer; objectName: "composer"
-                enabled: !window.sidebarSwitching
+                enabled: !chatCover.visible
                 anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 57
                 width: Math.min(parent.width - 94, 850)
                 onOpenModels: modelPopup.toggle()
                 onChooseFiles: attachmentDialog.open()
+            }
+            ChatLoadingOverlay {
+                id: chatCover; anchors.fill: parent; z: 50; view: conversation
+                onRevealed: if (window.page === "chat") composer.focusInput()
             }
             Row { anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 13; spacing: 8
                 ActionButton { height: 28; quiet: true; text: "Agent"; glyph: "sliders"; onClicked: window.settings(3) }

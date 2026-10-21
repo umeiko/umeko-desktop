@@ -1,0 +1,10 @@
+{
+  "asset": "yanami-loading.png",
+  "generator": "Built-in image_gen",
+  "created": "2026-10-21",
+  "approved": true,
+  "reference": "Existing app/icons/yanami-pixel.png character",
+  "usage": "Chat-switch loading cover, rendered at 192 px with native spinner and dots",
+  "sha256": "044c145adbeada3e18376df108dfb2902a878e31de0de054ddc729e022a034b7",
+  "prompt": "Pixel-art Yanami loading mascot, resting her cheeks on her hands, navy blue bob and looped ahoge, blue eyes and bow, relaxed smile, small blue square spinner and three loading dots, transparent background, no text."
+}

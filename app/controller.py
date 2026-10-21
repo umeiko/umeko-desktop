@@ -35,6 +35,7 @@ from .pi_management import PiManagement
 from .message_attachments import split_attachments
 from .app_about import AppAbout
 from .themes import BASES, LIMIT as THEME_LIMIT, theme_library, read_theme
+from .session_preview import SessionPreview
 
 
 GREETINGS = (
@@ -104,6 +105,7 @@ class Controller(PiControllerMixin, QObject):
         self._management_jobs = set()
         self._mcp_jobs = {}
         self._closing = False
+        self._session_preview = SessionPreview(self)
         self._view.id = ""
         self._view.messages = []
         self._view.history = []
@@ -145,6 +147,10 @@ class Controller(PiControllerMixin, QObject):
     @Property(QObject, constant=True)
     def piManagement(self):
         return self._pi_management
+
+    @Property(QObject, constant=True)
+    def sessionPreview(self):
+        return self._session_preview
 
     @Property(QObject, constant=True)
     def providerPlugins(self):
@@ -1466,6 +1472,7 @@ class Controller(PiControllerMixin, QObject):
         if self._closing:
             return
         self._closing = True
+        self._session_preview.cancel()
         self._proxy_usage_timer.stop()
         self._pool.close()
         if self.public_server:

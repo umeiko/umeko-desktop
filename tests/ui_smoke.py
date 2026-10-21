@@ -56,7 +56,7 @@ def click(name):
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, p)
     QTest.qWait(100)
     if name.startswith("sidebarRow_"):
-        wait_for(lambda: not window.property("sidebarSwitching"), "Sidebar selection did not finish")
+        wait_for(lambda: not window.property("sidebarSwitching") and not find_item("chatLoadingOverlay").isVisible(), "Sidebar selection did not finish")
 
 def reveal_setting(item):
     ancestor=item.parentItem()
