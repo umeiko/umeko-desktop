@@ -144,17 +144,17 @@ Column {
                             width: keyTable.width
                             RowLayout { width: parent.width; height: 51; spacing: 12
                                 Text { text: modelData.id; Layout.preferredWidth: 180; elide: Text.ElideMiddle; font.family: "Consolas"; font.pixelSize: 10; color: Theme.ink
-                                    ToolTip.text: modelData.id; ToolTip.visible: idHover.hovered; ToolTip.delay: 600
-                                    HoverHandler { id: idHover }
+                                    HoverTip { active: idHover.hovered; text: modelData.id }
+                                    HoverHandler { id: idHover; cursorShape: Qt.PointingHandCursor }
                                     TapHandler { onTapped: backend.copy(modelData.id) }
                                 }
                                 Text { objectName: "proxyKeyDisplay_" + modelData.id; text: modelData.maskedKey; Layout.preferredWidth: 112; font.family: "Consolas"; font.pixelSize: 11; color: Theme.ink }
                                 Text { text: modelData.name; textFormat: Text.PlainText; Layout.preferredWidth: 136; elide: Text.ElideRight; font.pixelSize: 11; color: Theme.ink
-                                    ToolTip.text: text; ToolTip.visible: nameHover.hovered; ToolTip.delay: 600; HoverHandler { id: nameHover }
+                                    HoverTip { active: nameHover.hovered; text: modelData.name } HoverHandler { id: nameHover }
                                 }
                                 Text { text: Qt.formatDateTime(new Date(modelData.createdAt), "yyyy-MM-dd HH:mm:ss"); Layout.preferredWidth: 140; font.pixelSize: 10; color: Theme.ink }
                                 Text { objectName: "proxyKeyLastUsed_" + modelData.id; text: root.lastUsed(modelData.lastUsedAt); Layout.preferredWidth: 88; font.pixelSize: 11; color: Theme.muted
-                                    ToolTip.text: modelData.lastUsedAt ? Qt.formatDateTime(new Date(modelData.lastUsedAt), "yyyy-MM-dd HH:mm:ss") : "尚未使用"; ToolTip.visible: usedHover.hovered; ToolTip.delay: 600; HoverHandler { id: usedHover }
+                                    HoverTip { active: usedHover.hovered; text: modelData.lastUsedAt ? Qt.formatDateTime(new Date(modelData.lastUsedAt), "yyyy-MM-dd HH:mm:ss") : "尚未使用" } HoverHandler { id: usedHover }
                                 }
                                 Text { text: modelData.enabled ? "生效中" : "已停用"; Layout.preferredWidth: 54; font.pixelSize: 11; color: modelData.enabled ? Theme.accent : Theme.muted }
                                 Row { Layout.preferredWidth: 134; spacing: 1

@@ -7,6 +7,12 @@ Button {
     property bool quiet: false
     property bool destructive: false
     property string hint: ""
+    property var selectionController: null
+    property int interactionPriority: 10
+    readonly property bool interactionHovered: hovered || !!selectionController && selectionController.hoveredTarget === control
+    Component.onCompleted: if (selectionController) selectionController.attachInteraction(control)
+    Component.onDestruction: if (selectionController) selectionController.detachInteraction(control)
+    HoverHandler { cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
     implicitHeight: 38
     implicitWidth: Math.max(38, contents.implicitWidth + (text.length ? 28 : 18))
     padding: 0
@@ -16,7 +22,7 @@ Button {
     Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
     background: Rectangle {
         radius: 8
-        color: control.primary ? (control.hovered ? Qt.lighter(Theme.button, 1.12) : Theme.button) : control.hovered ? Theme.hover : control.quiet ? "transparent" : Theme.surface
+        color: control.primary ? (control.interactionHovered ? Qt.lighter(Theme.button, 1.12) : Theme.button) : control.down ? Theme.accentBg : control.interactionHovered ? Theme.hover : control.quiet ? "transparent" : Theme.surface
         border.color: control.primary || control.quiet ? "transparent" : Theme.line
         Behavior on color { ColorAnimation { duration: 140 } }
     }
@@ -30,7 +36,5 @@ Button {
                 color: control.primary ? Theme.buttonText : control.destructive ? Theme.danger : Theme.ink }
         }
     }
-    ToolTip.visible: hovered && hint !== ""
-    ToolTip.text: hint
-    ToolTip.delay: 600
+    HoverTip { active: control.interactionHovered && !control.down; text: control.hint }
 }

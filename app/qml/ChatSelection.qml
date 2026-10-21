@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import "markdown.js" as Markdown
 
 Item {
@@ -6,6 +7,24 @@ Item {
     objectName: "chatSelection"
     property var view
     property var editors: []
+    property var interactions: []
+    readonly property var hoveredTarget: {
+        const scroll = view ? view.contentY : 0
+        return hovering ? interactionAt(pointer.x, pointer.y) : null
+    }
+    function attachInteraction(item) { interactions = interactions.concat([item]) }
+    function detachInteraction(item) { interactions = interactions.filter(value => value !== item) }
+    function interactionAt(x, y) {
+        let found = null, priority = -Infinity
+        for (const item of interactions) {
+            if (!item.visible || !item.enabled || item.width <= 0 || item.height <= 0) continue
+            const p = mapToItem(item, x, y)
+            if (p.x >= 0 && p.y >= 0 && p.x <= item.width && p.y <= item.height && item.interactionPriority >= priority) {
+                found = item; priority = item.interactionPriority
+            }
+        }
+        return found
+    }
     property var anchor: null
     property var cursor: null
     property bool dragging: false
@@ -172,14 +191,26 @@ Item {
     Timer { interval: 16; repeat: true; running: root.dragging; onTriggered: Qt.callLater(root.autoScroll) }
     Timer { id: refreshTimer; interval: 0; onTriggered: root.refresh() }
     TextEdit { id: renderer; visible: false; readOnly: true }
+    FloatingMenu {
+        id: selectionMenu; objectName: "selectionContextMenu"
+        ContextAction { objectName: "copySelectedText"; text: "复制"; glyph: "copy"; enabled: root.hasSelection; onTriggered: root.copy() }
+        ContextAction { objectName: "selectAllChatText"; text: "全选"; onTriggered: root.selectAll() }
+        onClosed: if (root.visible) root.forceActiveFocus()
+    }
     MouseArea {
         id: selectionArea
         anchors.fill: parent; anchors.rightMargin: 14
-        acceptedButtons: Qt.LeftButton; preventStealing: true; hoverEnabled: true
-        cursorShape: Qt.IBeamCursor
+        objectName: "chatPointerArea"
+        acceptedButtons: Qt.LeftButton | Qt.RightButton; preventStealing: true; hoverEnabled: true
+        cursorShape: root.hoveredTarget ? Qt.PointingHandCursor : root.pick(root.pointer.x, root.pointer.y, false) ? Qt.IBeamCursor : Qt.ArrowCursor
         onPressed: event => {
+            if (root.interactionAt(event.x, event.y)) { if (event.button === Qt.LeftButton) root.clear(); event.accepted = false; return }
             const editor = root.pick(event.x, event.y, false)
-            if (!editor) { root.clear(); event.accepted = false; return }
+            if (!editor) { if (event.button === Qt.LeftButton) root.clear(); event.accepted = false; return }
+            if (event.button === Qt.RightButton) {
+                if (!root.hasSelection) root.selectUnit(editor, root.position(editor, event.x, event.y).offset, 2)
+                root.forceActiveFocus(); return
+            }
             const now = Date.now(), key = editor.messageIndex + ":" + editor.blockIndex
             const close = Math.abs(event.x - root.lastClickPoint.x) <= 5 && Math.abs(event.y - root.lastClickPoint.y) <= 5
             root.clickCount = !(event.modifiers & Qt.ShiftModifier) && key === root.lastClickEditor && close && now - root.lastClickTime <= Qt.styleHints.mouseDoubleClickInterval ? Math.min(3, root.clickCount + 1) : 1
@@ -194,6 +225,7 @@ Item {
             root.pointer = Qt.point(event.x, event.y); root.dragging = true
             root.view.beginBrowsing(); root.forceActiveFocus(); root.refresh()
         }
+        onClicked: event => { if (event.button === Qt.RightButton) selectionMenu.popup(event.x, event.y) }
         onPositionChanged: event => {
             root.pointer = Qt.point(event.x, event.y)
             if (pressed && root.dragging) {

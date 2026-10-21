@@ -16,12 +16,12 @@ Column {
         Row {
             id: heading; height: parent.height; spacing: 7
             Glyph { name: "bulb"; width: 14; height: 14; anchors.verticalCenter: parent.verticalCenter }
-            Text { text: "思考过程"; color: hover.containsMouse ? Theme.ink : Theme.muted; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
+            Text { text: "思考过程"; color: hover.interactionHovered ? Theme.ink : Theme.muted; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
             Glyph { name: root.expanded ? "chevron-down" : "chevron-right"; width: 12; height: 12; anchors.verticalCenter: parent.verticalCenter }
         }
-        MouseArea {
+        ChatHitArea {
             id: hover; objectName: "toggleThinking_" + root.messageIndex + "_" + root.blockOffset
-            anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+            anchors.fill: parent; selectionController: root.selectionController
             onClicked: { root.expanded = !root.expanded; root.expansionState.expanded = root.expanded }
         }
         Accessible.role: Accessible.Button; Accessible.name: "思考过程"; Accessible.description: root.expanded ? "已展开" : "已折叠"

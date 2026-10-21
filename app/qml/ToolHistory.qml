@@ -29,12 +29,12 @@ Column {
         Row {
             id: headerRow; height: parent.height; spacing: 7
             ActivitySpinner { visible: root.running; width: 12; height: 12; anchors.verticalCenter: parent.verticalCenter }
-            Text { text: root.summary; color: headerMouse.containsMouse ? Theme.ink : Theme.muted; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
+            Text { text: root.summary; color: headerMouse.interactionHovered ? Theme.ink : Theme.muted; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
             Glyph { name: root.expanded ? "chevron-down" : "chevron-right"; width: 12; height: 12; anchors.verticalCenter: parent.verticalCenter }
         }
-        MouseArea {
+        ChatHitArea {
             id: headerMouse; objectName: "toggleTools_" + root.messageIndex + "_" + root.blockOffset
-            anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+            anchors.fill: parent; selectionController: root.selectionController
             onClicked: { root.expanded = !root.expanded; root.expansionState.expanded = root.expanded }
         }
         Accessible.role: Accessible.Button; Accessible.name: root.summary; Accessible.description: root.expanded ? "已展开" : "已折叠"
@@ -50,10 +50,10 @@ Column {
             width: root.width; spacing: 4
             Item {
                 width: parent.width; height: 25
-                Rectangle { anchors.fill: parent; radius: 4; color: rowMouse.containsMouse ? Theme.hover : "transparent" }
-                MouseArea {
+                Rectangle { anchors.fill: parent; radius: 4; color: rowMouse.interactionHovered ? Theme.hover : "transparent" }
+                ChatHitArea {
                     id: rowMouse; objectName: "toggleToolDetail_" + toolRow.tool.id
-                    anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                    anchors.fill: parent; selectionController: root.selectionController
                     onClicked: { toolRow.details = !toolRow.details; root.expansionState.details[toolRow.tool.id] = toolRow.details }
                 }
                 ActivitySpinner { width: 14; height: 14; visible: toolRow.tool.state === "running"; anchors.verticalCenter: parent.verticalCenter }
@@ -67,12 +67,12 @@ Column {
                     x: verb.x + verb.width + 6; width: Math.max(0, parent.width - x - 38)
                     visible: !!toolRow.tool.path
                     text: toolRow.tool.path ? toolRow.tool.path.split(/[\\/]/).pop() || toolRow.tool.path : ""
-                    elide: Text.ElideMiddle; color: pathMouse.containsMouse ? Theme.accent : Theme.muted; font.pixelSize: 12; font.underline: true; anchors.verticalCenter: parent.verticalCenter
-                    MouseArea {
+                    elide: Text.ElideMiddle; color: pathMouse.interactionHovered ? Theme.accent : Theme.muted; font.pixelSize: 12; font.underline: true; anchors.verticalCenter: parent.verticalCenter
+                    ChatHitArea {
                         id: pathMouse; width: Math.min(parent.width, parent.implicitWidth); height: parent.height
-                        hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: backend.copy(toolRow.tool.path)
+                        selectionController: root.selectionController; interactionPriority: 10; onClicked: backend.copy(toolRow.tool.path)
                     }
-                    ToolTip.visible: pathMouse.containsMouse; ToolTip.text: (toolRow.tool.path || "") + "\n点击复制路径"
+                    HoverTip { active: pathMouse.interactionHovered; text: (toolRow.tool.path || "") + "\n点击复制路径" }
                 }
                 Text {
                     x: verb.x + verb.width + 6; width: Math.max(0, parent.width - x - 38); visible: !pathLabel.visible

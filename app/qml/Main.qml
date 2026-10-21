@@ -16,6 +16,25 @@ ApplicationWindow {
     property string page: "chat"
     property int settingsTab: 0
     property string notification: ""
+    property string pendingSidebarId: ""
+    property string pendingSidebarKind: ""
+    readonly property bool sidebarSwitching: pendingSidebarId.length > 0
+    function selectSidebar(row) {
+        window.page = "chat"
+        if (row.selected && !sidebarSwitching && (row.kind === "session" || !backend.activeSession)) return
+        pendingSidebarKind = row.kind
+        pendingSidebarId = row.id
+    }
+    function commitSidebarSelection() {
+        if (!sidebarSwitching || sidebarMotion.moving) return
+        const id = pendingSidebarId, kind = pendingSidebarKind
+        if (kind === "project") backend.openProject(id)
+        else backend.openSession(id)
+        pendingSidebarId = ""
+    }
+    // Keep transcript parsing and delegate creation out of the PID's frames.
+    // Retargeting replaces the pending request; intermediate chats never load.
+    Timer { interval: 16; repeat: true; running: window.sidebarSwitching; onTriggered: window.commitSidebarSelection() }
     property real sidebarPreferredWidth: backend.sidebarWidth
     property bool sidebarCollapsed: backend.sidebarCollapsed
     readonly property real sidebarMinimumWidth: 200
@@ -27,12 +46,12 @@ ApplicationWindow {
     }
     function toggleSidebar() { sidebarCollapsed = !sidebarCollapsed; saveSidebarLayout() }
     function settings(tab) { settingsTab = tab === 2 ? 1 : tab === 4 ? 3 : tab; page = "settings" }
-    function startChat() { backend.newSession(); page = "chat"; composer.focusInput() }
-    onPageChanged: backend.setConversationVisible(page === "chat" && active)
+    function startChat() { pendingSidebarId = ""; backend.newSession(); page = "chat"; composer.focusInput() }
+    onPageChanged: { if (page !== "chat") pendingSidebarId = ""; backend.setConversationVisible(page === "chat" && active) }
     onActiveChanged: backend.setConversationVisible(page === "chat" && active)
     Component.onCompleted: backend.setConversationVisible(page === "chat" && active)
     Shortcut { sequence: "Ctrl+N"; onActivated: window.startChat() }
-    Shortcut { sequence: "Ctrl+S"; enabled: window.page === "chat"; onActivated: composer.sendMessage(true) }
+    Shortcut { sequence: "Ctrl+S"; enabled: window.page === "chat" && !window.sidebarSwitching; onActivated: composer.sendMessage(true) }
     Shortcut { sequence: "Ctrl+,"; onActivated: window.settings(0) }
     Shortcut { sequence: "Ctrl+B"; onActivated: window.toggleSidebar() }
     Shortcut { sequences: [StandardKey.Copy]; enabled: chatSelection.activeFocus && chatSelection.hasSelection; onActivated: Qt.callLater(chatSelection.copy) }
@@ -70,7 +89,7 @@ ApplicationWindow {
             id: sessionList; objectName: "projectList"
             x: 12; y: recentLabel.y + 28; width: parent.width - 24; height: apiStatus.y - y - 16
             spacing: 2; clip: true; model: backend.projectRows
-            currentIndex: backend.projectRows.findIndex(row => row.selected && (row.kind === "session" || row.kind === "project" && !backend.activeSession))
+            currentIndex: backend.projectRows.findIndex(row => window.sidebarSwitching ? row.id === window.pendingSidebarId && row.kind === window.pendingSidebarKind : row.selected && (row.kind === "session" || row.kind === "project" && !backend.activeSession))
             highlightFollowsCurrentItem: false
             PidMotion { id: sidebarMotion; objectName: "sidebarPidMotion"; targetRect: Qt.rect(0,sessionList.currentItem ? sessionList.currentItem.y : 0,sessionList.width,sessionList.currentItem ? sessionList.currentItem.height : 34) }
             highlight: Rectangle { objectName: "sidebarHighlight"; x: sidebarMotion.value.x; y: sidebarMotion.value.y; width: sidebarMotion.value.width; height: sidebarMotion.value.height; radius: 7; color: Theme.surface; visible: sessionList.currentIndex >= 0 && window.page === "chat"; z: -1 }
@@ -80,9 +99,9 @@ ApplicationWindow {
                 required property var modelData
                 objectName: "sidebarRow_" + modelData.id
                 width: sessionList.width; height: modelData.kind === "project" ? 38 : 34
-                Rectangle { anchors.fill: parent; radius: 7; color: rowMouse.containsMouse && !modelData.selected ? Theme.hover : "transparent" }
-                MouseArea { id: rowMouse; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.LeftButton | Qt.RightButton; enabled: modelData.kind !== "label"
-                    onClicked: mouse => { if (mouse.button === Qt.RightButton) { sidebarMenus.openFor(modelData, mapToItem(sidebarMenus, mouse.x, mouse.y)); return } window.page = "chat"; if (modelData.kind === "project") backend.openProject(modelData.id); else backend.openSession(modelData.id) }
+                Rectangle { anchors.fill: parent; radius: 7; color: rowMouse.containsMouse && !(window.sidebarSwitching ? window.pendingSidebarId === modelData.id : modelData.selected) ? Theme.hover : "transparent" }
+                MouseArea { id: rowMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; acceptedButtons: Qt.LeftButton | Qt.RightButton; enabled: modelData.kind !== "label"
+                    onClicked: mouse => { if (mouse.button === Qt.RightButton) { sidebarMenus.openFor(modelData, mapToItem(sidebarMenus, mouse.x, mouse.y)); return } window.selectSidebar(modelData) }
                 }
                 Glyph { visible: modelData.kind === "project"; name: "folder"; x: 15; anchors.verticalCenter: parent.verticalCenter; width: 16; height: 16 }
                 Text { x: modelData.kind === "label" ? 17 : 42; width: parent.width - x - 32; anchors.verticalCenter: parent.verticalCenter; text: modelData.title; elide: Text.ElideRight; font.pixelSize: modelData.kind === "label" ? 10 : 11; color: modelData.kind === "label" ? Theme.muted : Theme.ink }
@@ -306,7 +325,7 @@ ApplicationWindow {
                             height: parent.height; spacing: 7
                             Text { objectName: "messageTime_" + messageRow.index; anchors.verticalCenter: parent.verticalCenter; color: Theme.muted; font.pixelSize: 11
                                 text: { if (!modelData.timestamp) return ""; const date = new Date(modelData.timestamp); if (isNaN(date.getTime())) return ""; return Qt.formatDateTime(date, date.toDateString() === new Date().toDateString() ? "hh:mm" : "MM-dd hh:mm") } }
-                            ActionButton { objectName: "copyMessage_" + messageRow.index; glyph: "copy"; width: 22; height: 18; quiet: true; enabled: parent.parent.opacity > 0; hint: "复制消息"
+                            ActionButton { objectName: "copyMessage_" + messageRow.index; selectionController: chatSelection; glyph: "copy"; width: 22; height: 18; quiet: true; enabled: parent.parent.opacity > 0; hint: "复制消息"
                                 onClicked: { const activity = modelData.activity || []; const prose = activity.filter(item => item.kind === "text").map(item => item.text).join("\n\n"); backend.copy([prose || modelData.text || "", ...(modelData.attachments || []).map(item => item.name)].filter(part => !!part).join("\n")) } }
                         }
                     }
@@ -324,10 +343,11 @@ ApplicationWindow {
                 }
             }
 
-            ChatSelection { id: chatSelection; anchors.fill: conversation; view: conversation; visible: conversation.visible }
+            ChatSelection { id: chatSelection; anchors.fill: conversation; view: conversation; visible: conversation.visible; enabled: !window.sidebarSwitching }
 
             Composer {
                 id: composer; objectName: "composer"
+                enabled: !window.sidebarSwitching
                 anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 57
                 width: Math.min(parent.width - 94, 850)
                 onOpenModels: modelPopup.toggle()

@@ -22,8 +22,11 @@ Column {
             objectName: "chatboxCard_" + key
             width: inlineImage ? Math.min(root.width, 640) : Math.min(root.width, Math.min(420, Math.max(150, nameSize.advanceWidth + 66)))
             height: content.implicitHeight
-            radius: 7; color: inlineImage ? "transparent" : headerArea.containsMouse ? Theme.accentBg : Theme.surface
-            border.color: inlineImage ? "transparent" : Theme.line
+            readonly property bool hovered: headerArea.interactionHovered || arrowArea.interactionHovered
+            radius: 7; color: inlineImage ? "transparent" : headerArea.pressed || openMenu.visible ? Theme.accentBg : hovered ? Theme.hover : Theme.surface
+            border.color: inlineImage ? "transparent" : hovered || openMenu.visible ? Qt.alpha(Theme.accent, 0.45) : Theme.line
+            Behavior on color { ColorAnimation { duration: 110 } }
+            Behavior on border.color { ColorAnimation { duration: 110 } }
             TextMetrics { id: nameSize; font: filename.font; text: filename.text }
             Column {
                 id: content; width: parent.width; spacing: 6
@@ -31,20 +34,29 @@ Column {
                     id: header; width: parent.width; height: card.inlineImage ? 28 : 34
                     Glyph { x: 10; width: 14; height: 14; anchors.verticalCenter: parent.verticalCenter; name: card.item.kind === "folder" ? "folder" : card.item.kind === "image" ? "image" : "file" }
                     Text { id: filename; x: 32; width: parent.width - 58; anchors.verticalCenter: parent.verticalCenter; text: card.item.title || card.item.name || "文件"; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.ink; font.pixelSize: 12 }
-                    MouseArea {
+                    ChatHitArea {
                         id: headerArea; objectName: "openChatbox_" + card.key
+                        selectionController: root.selectionController
                         anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.LeftButton | Qt.RightButton; cursorShape: Qt.PointingHandCursor
                         onClicked: mouse => { if (mouse.button === Qt.RightButton) contextMenu.popup(mouse.x, mouse.y); else backend.openChatboxPath(card.item.path, false) }
                     }
-                    Item {
-                        x: parent.width - 24; width: 22; height: parent.height
-                        Glyph { anchors.centerIn: parent; name: "chevron-down"; width: 11; height: 11 }
-                        MouseArea { id: arrowArea; objectName: "toggleChatbox_" + card.key; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: openMenu.popup(card.width - openMenu.width, header.height) }
-                        Accessible.role: Accessible.Button; Accessible.name: "在文件管理器中打开"
+                    Rectangle {
+                        id: arrowButton; objectName: "chatboxArrow_" + card.key
+                        x: parent.width - width - 3; width: 26; height: parent.height - 6; anchors.verticalCenter: parent.verticalCenter
+                        radius: 5; color: arrowArea.pressed || openMenu.visible ? Theme.accentBg : arrowArea.interactionHovered ? Qt.alpha(Theme.accent, 0.16) : "transparent"
+                        border.color: openMenu.visible ? Qt.alpha(Theme.accent, 0.5) : "transparent"
+                        Behavior on color { ColorAnimation { duration: 100 } }
+                        Glyph { anchors.centerIn: parent; name: "chevron-down"; width: 12; height: 12; rotation: openMenu.visible ? 180 : 0; Behavior on rotation { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } } }
+                        ChatHitArea { id: arrowArea; objectName: "toggleChatbox_" + card.key; anchors.fill: parent; selectionController: root.selectionController; interactionPriority: 10; onClicked: { if (openMenu.visible) openMenu.close(); else openMenu.popup(arrowButton.width - openMenu.width, arrowButton.height + 5) } }
+                        HoverTip { active: arrowArea.interactionHovered && !openMenu.visible; text: "文件操作" }
+                        Accessible.role: Accessible.Button; Accessible.name: "文件操作"; Accessible.description: openMenu.visible ? "已展开" : "已收起"
                     }
-                    ToolTip.visible: headerArea.containsMouse && !contextMenu.visible && !openMenu.visible
-                    ToolTip.delay: 500
-                    ToolTip.text: [card.item.path, card.item.caption, card.item.previewNote].filter(value => !!value).join("\n")
+                    HoverTip {
+                        objectName: "chatboxTip_" + card.key
+                        active: headerArea.interactionHovered && !arrowArea.interactionHovered && !headerArea.pressed && !contextMenu.visible && !openMenu.visible
+                        heading: filename.text
+                        text: [card.item.path, card.item.caption, card.item.previewNote].filter(value => !!value).join("\n")
+                    }
                     Accessible.role: Accessible.Button; Accessible.name: card.item.title || card.item.name || "文件"; Accessible.description: card.item.path || ""
                 }
                 Item {
@@ -58,7 +70,8 @@ Column {
                     }
                     BusyIndicator { anchors.centerIn: parent; running: preview.status === Image.Loading; visible: running; width: 26; height: 26 }
                     Text { anchors.centerIn: parent; visible: preview.status === Image.Error; text: "图片暂不可预览，点击打开"; color: Theme.muted; font.pixelSize: 11 }
-                    MouseArea {
+                    ChatHitArea {
+                        selectionController: root.selectionController
                         anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton; cursorShape: Qt.PointingHandCursor
                         onClicked: mouse => { if (mouse.button === Qt.RightButton) { const p = mapToItem(card, mouse.x, mouse.y); contextMenu.popup(p.x, p.y) } else backend.openChatboxPath(card.item.path, false) }
                     }
@@ -71,6 +84,8 @@ Column {
             }
             FloatingMenu {
                 id: openMenu; objectName: "chatboxOpen_" + card.key
+                parent: arrowButton
+                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
                 ContextAction { objectName: "revealChatbox_" + card.key; text: "在文件管理器中打开"; onTriggered: backend.openChatboxPath(card.item.path, true) }
             }
             FloatingMenu {

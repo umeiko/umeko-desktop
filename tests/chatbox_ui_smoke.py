@@ -11,7 +11,7 @@ sys.path.insert(0,str(ROOT))
 os.environ['UMEKO_DATA_DIR']=tempfile.mkdtemp(prefix='umeko-chatbox-ui-')
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 os.environ.setdefault('QT_QUICK_BACKEND','software')
-from PySide6.QtCore import QPointF, Qt, QMetaObject
+from PySide6.QtCore import QPointF, Qt, QMetaObject, QObject
 from PySide6.QtGui import QImage, QPainter, QColor
 from PySide6.QtTest import QTest
 from app.integration import Completion
@@ -78,10 +78,23 @@ try:
     assert find('chatboxCard_delivery_0').isVisible()
     assert find('chatboxCard_delivery_1').isVisible()
     assert find('chatboxCard_delivery_1').height() <= 36
+    header=find('openChatbox_delivery_1')
+    QTest.mouseMove(window,header.mapToScene(QPointF(50,17)).toPoint());QTest.qWait(750)
+    assert header.property('interactionHovered'),'Selection overlay swallowed file hover'
+    assert find('chatPointerArea').property('cursorShape')==Qt.PointingHandCursor
+    tip=find('hoverTipContent_chatboxTip_delivery_1')
+    assert tip and tip.isVisible() and 96<=tip.width()<=336
+    assert window.grabWindow().save(str(ROOT/'artifacts/screenshots/63-file-hover.png'))
     with patch('app.controller.QDesktopServices.openUrl',return_value=True) as opened:
         click('openChatbox_delivery_1')
         assert Path(opened.call_args.args[0].toLocalFile()).samefile(report)
     with patch('app.controller.subprocess.Popen') as launched,patch('app.controller.QDesktopServices.openUrl',return_value=True) as opened:
+        click('toggleChatbox_delivery_1')
+        menu=find('revealChatbox_delivery_1').parent()
+        assert menu.property('visible')
+        assert find('chatboxArrow_delivery_1').property('color').alpha()>0
+        click('toggleChatbox_delivery_1');QTest.qWait(50)
+        assert not menu.property('visible'),'Second arrow click reopened the menu'
         click('toggleChatbox_delivery_1')
         click('revealChatbox_delivery_1')
         assert launched.called if sys.platform in ('win32','darwin') else opened.called

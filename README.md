@@ -51,6 +51,8 @@ Screenshots show the actual app with isolated demo data. No real accounts, crede
 
 Pi can deliver images and compact file cards directly with [`submit_to_chatbox`](docs/chatbox-media.md). Click a file to open it; use its corner arrow or right-click menu to reveal or copy it. Queued messages sit above the composer with editing and deletion; steering interrupts the active run and submits a normal message immediately. Hover a message for its timestamp and copy action. Double-click selects a word; triple-click selects a paragraph. Pi settings have searchable, nested sections and click-activated inline scrolling. Model selection, sidebar highlights and compact context menus use continuous PID motion.
 
+Sidebar motion runs before history loading; rapid switching loads only your final choice. File cards have themed hover details and clear menu states, and selected chat text offers a Copy / Select all context menu.
+
 ## Get started
 
 Pi web extensions can access the network. Configure company npm mirrors, an optional `.npmrc` and CA file under **Settings → Agent → Pi**; see [npm and extension networking](docs/npm-and-network.md).

@@ -33,6 +33,7 @@ Column {
                 Text { x: 14; y: 12; text: modelData.language || "代码"; font.pixelSize: 10; color: Theme.muted; font.family: "Consolas" }
                 ActionButton {
                     id: copyButton; objectName: "copyCode_" + index
+                    selectionController: root.selectionController
                     property bool copied: false
                     anchors.right: parent.right; anchors.rightMargin: 6; y: 4; height: 28
                     text: copied ? "已复制" : "复制"; glyph: copied ? "check" : "copy"; quiet: true

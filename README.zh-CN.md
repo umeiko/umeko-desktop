@@ -51,6 +51,8 @@ Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原�
 
 使用 [`submit_to_chatbox`](docs/chatbox-media.md) 可直接展示图片和紧凑文件卡片。单击文件打开，小箭头定位文件，右键复制文件或路径。排队消息支持逐条引导、编辑与删除；双击选词，三击选择整段。
 
+侧栏高光先响应点击，再加载聊天；连续切换只打开最后一项。文件卡片提供主题悬浮提示、手型光标和明确的下拉状态。选中聊天文字后可右键复制或全选。
+
 ## 开始使用
 
 在 [Releases](https://github.com/umeiko/umeko-desktop/releases/latest) 下载对应平台的包，解压后运行。请保留完整应用目录。
@@ -62,7 +64,7 @@ Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原�
 | macOS Intel | `macos-x64.zip` | `Umeko.app` |
 | Linux x64 | `linux-x64.tar.gz` | `Umeko/Umeko` |
 
-文件名包含版本与源码提交号。**本机需要 Node.js 22.19+**；Python、Qt、Pi 和文件搜索程序已随包提供。Linux 需要图形桌面及 Qt 运行库；macOS 包使用临时签名，尚未公证。详见[平台说明](docs/user-guide.md#requirements)。
+文件名包含版本与源码提交号。**Node.js、npm、Python、Qt、Pi 和文件搜索程序已随包提供**，无需另行安装 Node.js 或 Python。Linux 需要图形桌面及 Qt 运行库；macOS 包使用临时签名，尚未公证。详见[平台说明](docs/user-guide.md#requirements)。
 
 1. 在 **设置 → 账号与供应商** 添加模型 API，或点击 **+** 导入可信的供应商 ZIP。
 2. 从边栏打开项目目录，也可以直接拖入文件夹。

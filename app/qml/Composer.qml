@@ -88,8 +88,7 @@ Item {
                 Behavior on scale { NumberAnimation { duration: 100 } }
                 Glyph { objectName: "sendGlyph"; anchors.centerIn: parent; name: backend.running ? "stop" : prompt.text.trim().length > 0 && !backend.loading ? (Theme.dark ? "arrow-up" : "send") : "arrow-up"; width: 17; height: 17 }
                 MouseArea { id: sendArea; objectName: "sendArea"; anchors.fill: parent; enabled: !parent.disabled; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: { if (backend.running) backend.stop(); else root.sendMessage(false) } }
-                ToolTip.visible: sendArea.containsMouse
-                ToolTip.text: backend.running ? "停止当前会话任务" : "发送消息"
+                HoverTip { active: sendArea.containsMouse; text: backend.running ? "停止当前会话任务" : "发送消息" }
             }
         }
     }
