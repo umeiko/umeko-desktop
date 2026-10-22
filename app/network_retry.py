@@ -5,7 +5,7 @@ import re
 
 def transient_failure(error, http=()):
     responses = [item.get('response', {}) for item in http]
-    detail = str(error) + ' ' + json.dumps([r.get('body') for r in responses], ensure_ascii=False)
+    detail = str(error) + ' ' + json.dumps([r.get('body') for r in responses if str(r.get('status', '')).isdigit() and int(r['status']) >= 400], ensure_ascii=False)
     if re.search(r'insufficient_quota|quota exceeded|out of budget|billing|usage limit reached|invalid.?api.?key|unauthorized|authentication|certificate|CERT_|self.signed|额度不足|余额不足', detail, re.I):
         return False
     status = next((r.get('status') for r in reversed(responses) if r.get('status')), 0)

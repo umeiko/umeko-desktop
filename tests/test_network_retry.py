@@ -15,6 +15,7 @@ class NetworkRetryTests(unittest.TestCase):
             self.assertFalse(transient_failure('stream failed', [{'response':{'status':status}}]))
         self.assertFalse(transient_failure('insufficient_quota', [{'response':{'status':429}}]))
         self.assertFalse(transient_failure('CERTIFICATE_VERIFY_FAILED'))
+        self.assertTrue(transient_failure('ConnectionResetError', [{'response':{'status':200,'body':'billing and quota exceeded explained'}}]))
 
     def test_shared_retry_contract(self):
         subprocess.run([node_executable(), '--test', str(Path(__file__).with_name('network_retry_test.mjs'))], check=True, capture_output=True, timeout=15)

@@ -12,6 +12,7 @@ test('transient streams retry, login, quota and configuration failures do not', 
   for (const status of [400,401,403,404,422]) assert.ok(!transientFailure('stream failed', [{response:{status}}]));
   for (const text of ['insufficient_quota', 'billing exhausted', 'certificate validation failed']) assert.ok(!transientFailure(text));
   assert.ok(!transientFailure('HTTP429', [{response:{status:429,body:'insufficient_quota'}}]));
+  assert.ok(transientFailure('ECONNRESET', [{response:{status:200,body:'data: {"content":"billing and quota exceeded explained"}'}}]));
   assert.match(upstreamFailure({retryable:true,reportId:'fixture',message:'safe detail'}).message, /^Network error:/);
   assert.ok(!upstreamFailure({retryable:false,reportId:'fixture',message:'safe detail'}).message.includes('Network error'));
 });

@@ -4,7 +4,7 @@ export const NETWORK_RETRY = Object.freeze({ enabled: true, maxRetries: 5, baseD
 export function transientFailure(error, http = []) {
   const text = typeof error === 'string' ? error : JSON.stringify(error, Object.getOwnPropertyNames(error || {}));
   const responses = http.map(item => item.response).filter(Boolean);
-  const detail = text + ' ' + JSON.stringify(responses.map(r => r.body));
+  const detail = text + ' ' + JSON.stringify(responses.filter(r => Number(r.status) >= 400).map(r => r.body));
   if (/insufficient_quota|quota exceeded|out of budget|billing|usage limit reached|invalid.?api.?key|unauthorized|authentication|certificate|CERT_|self.signed|额度不足|余额不足/i.test(detail)) return false;
   const status = Number(responses.findLast(r => r.status)?.status);
   if (status >= 400 && status < 500 && ![408, 425, 429].includes(status)) return false;
