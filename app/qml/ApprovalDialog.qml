@@ -18,7 +18,7 @@ Popup {
     ColumnLayout {
         anchors.fill: parent; spacing: 19
         RowLayout {
-            Glyph { name: "lock"; width: 20; height: 20 }
+            Glyph { name: "lock"; width: Theme.icon(20); height: Theme.icon(20) }
             Text { text: backend.pendingApproval.title || I18n.t("操作确认"); color: Theme.ink; font.pixelSize: Theme.font(17); font.weight: Font.Medium }
         }
         ScrollView {

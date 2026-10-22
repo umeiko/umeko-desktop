@@ -12,12 +12,12 @@ Column {
     property int blockOffset: 0
     spacing: 6
     Item {
-        width: heading.implicitWidth; height: 24
+        width: heading.implicitWidth; height: Theme.control(24)
         Row {
             id: heading; height: parent.height; spacing: 7
-            Glyph { name: "bulb"; width: 14; height: 14; anchors.verticalCenter: parent.verticalCenter }
+            Glyph { name: "bulb"; width: Theme.icon(14); height: Theme.icon(14); anchors.verticalCenter: parent.verticalCenter }
             Text { text: I18n.t("思考过程"); color: hover.interactionHovered ? Theme.ink : Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
-            Glyph { name: root.expanded ? "chevron-down" : "chevron-right"; width: 12; height: 12; anchors.verticalCenter: parent.verticalCenter }
+            Glyph { name: root.expanded ? "chevron-down" : "chevron-right"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
         }
         ChatHitArea {
             id: hover; objectName: "toggleThinking_" + root.messageIndex + "_" + root.blockOffset

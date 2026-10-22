@@ -15,7 +15,7 @@ Column {
     Button {
         id: piCard
         objectName: "openPiSettingsButton"
-        width: parent.width; implicitHeight: 96; visible: !root.piOpen
+        width: parent.width; implicitHeight: Theme.control(96); visible: !root.piOpen
         padding: 20; hoverEnabled: true
         Accessible.name: I18n.t("配置 Pi Coding Agent")
         HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -23,7 +23,7 @@ Column {
         contentItem: Item {
             Rectangle {
                 id: piIcon
-                width: 48; height: 48; radius: 10; color: Theme.accentBg
+                width: Theme.icon(48); height: Theme.icon(48); radius: 10; color: Theme.accentBg
                 anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                 Image { anchors.fill: parent; source: "../icons/pi.svg"; sourceSize: Qt.size(96,96) }
             }
@@ -41,7 +41,7 @@ Column {
                 id: piAction; spacing: 7
                 anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                 Text { text: I18n.t("配置"); color: Theme.accent; font.pixelSize: Theme.font(12) }
-                Glyph { name: "chevron-right"; width: 14; height: 14; anchors.verticalCenter: parent.verticalCenter }
+                Glyph { name: "chevron-right"; width: Theme.icon(14); height: Theme.icon(14); anchors.verticalCenter: parent.verticalCenter }
             }
         }
         onClicked: root.piOpen = true
@@ -50,7 +50,7 @@ Column {
         width: parent.width; visible: root.piOpen && !root.toolsOpen; spacing: 18
         RowLayout { width: parent.width; spacing: 8
             ActionButton { objectName: "backToAgentButton"; text: "Agent"; glyph: "arrow-left"; quiet: true; onClicked: root.piOpen = false }
-            Glyph { name: "chevron-right"; width: 13; height: 13 }
+            Glyph { name: "chevron-right"; width: Theme.icon(13); height: Theme.icon(13) }
             Text { text: I18n.t("Pi 配置"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.Medium }
             Item { Layout.fillWidth: true }
             ActionButton { text: "GitHub"; glyph: "external-link"; quiet: true; onClicked: backend.openPiGithub() }
@@ -87,7 +87,7 @@ Column {
         RowLayout {
             width: parent.width; spacing: 8
             ActionButton { objectName: "backToPiButton"; text: I18n.t("Pi 配置"); glyph: "arrow-left"; quiet: true; onClicked: root.toolsOpen = false }
-            Glyph { name: "chevron-right"; width: 13; height: 13 }
+            Glyph { name: "chevron-right"; width: Theme.icon(13); height: Theme.icon(13) }
             Text { text: I18n.t("工具与资源"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.Medium }
             Item { Layout.fillWidth: true }
         }

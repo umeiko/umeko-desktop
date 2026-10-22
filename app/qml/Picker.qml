@@ -4,10 +4,10 @@ ComboBox {
     id: control
     implicitHeight: Math.max(40, font.pixelSize + 20)
     font.pixelSize: Theme.font(12)
-    leftPadding: 12; rightPadding: 30
+    leftPadding: 12; rightPadding: Theme.control(30)
     background: Rectangle { color: Theme.surface; border.color: control.activeFocus ? Theme.accent : Theme.line; radius: 8 }
     contentItem: Text { text: control.displayText; color: Theme.ink; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; font: control.font }
-    indicator: Glyph { name: "chevron-down"; width: 14; height: 14; x: control.width - 23; y: (control.height - height) / 2 }
+    indicator: Glyph { name: "chevron-down"; width: Theme.icon(14); height: Theme.icon(14); x: control.width - width - 9; y: (control.height - height) / 2 }
     popup: Popup {
         y: control.height + 4; width: control.width; padding: 5
         implicitHeight: Math.min(280, contentItem.implicitHeight + 10)

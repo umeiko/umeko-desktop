@@ -8,7 +8,7 @@ ToolButton {
     property bool suppressed: false
     property bool bubbleVisited: false
     readonly property bool pinned: bubble.visible
-    implicitWidth: 23; implicitHeight: 23
+    implicitWidth: Theme.control(23); implicitHeight: Theme.control(23)
     hoverEnabled: true
     HoverHandler { cursorShape: Qt.PointingHandCursor }
     function updateDismissal() {
@@ -23,7 +23,7 @@ ToolButton {
     }
     onVisibleChanged: if (!visible) { openTimer.stop(); closeTimer.stop(); bubble.close() }
     background: Rectangle { radius: 12; color: control.hovered || bubble.visible ? Theme.hover : "transparent" }
-    contentItem: Item { Glyph { name: "help"; width: 15; height: 15; anchors.centerIn: parent } }
+    contentItem: Item { Glyph { name: "help"; width: Theme.icon(15); height: Theme.icon(15); anchors.centerIn: parent } }
     Timer { id: openTimer; interval: 350; onTriggered: if (control.hovered && !control.suppressed) bubble.open() }
     Timer { id: closeTimer; interval: 3000; onTriggered: if (!control.hovered && !bubbleHover.hovered && explanation.selectionStart === explanation.selectionEnd) bubble.close() }
     ToolTip {

@@ -12,17 +12,19 @@ Item {
     readonly property real fraction: known ? Math.max(0, Math.min(1, usage.percent / 100)) : 0
     readonly property color ringColor: !known ? Theme.muted : usage.percent >= 90 ? Theme.danger : usage.percent >= 75 ? (Theme.dark ? "#d6b66c" : "#b98a37") : Theme.accent
     readonly property string description: known ? I18n.t("上下文约使用 ") + usage.percent.toFixed(1) + "%\n" + Math.round(usage.tokens).toLocaleString(Qt.locale(), "f", 0) + " / " + usage.contextWindow.toLocaleString(Qt.locale(), "f", 0) + " tokens" : usage.contextWindow > 0 ? I18n.t("上下文用量待更新\n窗口：") + usage.contextWindow.toLocaleString(Qt.locale(), "f", 0) + " tokens" : I18n.t("上下文用量待更新")
-    width: 25; height: 31
+    width: Theme.control(25); height: Theme.control(31)
     Canvas {
         id: ring; objectName: "contextUsageRing"
-        width: 14; height: 14; anchors.centerIn: parent
+        width: Theme.icon(14); height: Theme.icon(14); anchors.centerIn: parent
         property color track: Theme.line
         property color stroke: root.ringColor
+        onWidthChanged: requestPaint()
+        onHeightChanged: requestPaint()
         onTrackChanged: requestPaint()
         onStrokeChanged: requestPaint()
         onPaint: {
             const ctx = getContext("2d"), center = width / 2, radius = center - 1.3
-            ctx.reset(); ctx.lineWidth = 1.8; ctx.lineCap = "round"
+            ctx.reset(); ctx.lineWidth = 1.8 * Theme.fontScale; ctx.lineCap = "round"
             ctx.beginPath(); ctx.strokeStyle = track; ctx.arc(center, center, radius, 0, 2 * Math.PI); ctx.stroke()
             if (root.known && root.fraction > 0) {
                 ctx.beginPath(); ctx.strokeStyle = stroke

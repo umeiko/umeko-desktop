@@ -47,7 +47,7 @@ FocusScope {
         Glyph {
             required property int index
             readonly property real angle: (index * 72 - 110) * Math.PI / 180
-            visible: burst.running; name: "spark"; color: Theme.accent; width: 11; height: 11
+            visible: burst.running; name: "spark"; color: Theme.accent; width: Theme.icon(11); height: Theme.icon(11)
             x: root.width / 2 + Math.cos(angle) * (20 + root.progress * 32)
             y: root.height / 2 + Math.sin(angle) * (20 + root.progress * 28) - root.progress * 12
             opacity: 1 - root.progress; rotation: root.progress * 60

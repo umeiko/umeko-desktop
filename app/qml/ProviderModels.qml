@@ -51,7 +51,7 @@ ColumnLayout {
                 Layout.fillWidth: true; spacing: 12
                 InputField { objectName: "providerModelId_" + index; readOnly: root.fixedModels; Layout.fillWidth: true; Layout.preferredWidth: 1; text: upstream; placeholderText: I18n.t("服务端模型 ID"); onTextEdited: entries.setProperty(index, "upstream", text) }
                 InputField { objectName: "providerModelAlias_" + index; Layout.fillWidth: true; Layout.preferredWidth: 1; text: alias; placeholderText: I18n.t("与模型 ID 相同"); onTextEdited: entries.setProperty(index, "alias", text) }
-                ActionButton { visible: !root.fixedModels; glyph: "trash"; width: 32; quiet: true; enabled: entries.count > 1; onClicked: entries.remove(index) }
+                ActionButton { visible: !root.fixedModels; glyph: "trash"; width: Theme.control(32); quiet: true; enabled: entries.count > 1; onClicked: entries.remove(index) }
             }
             RowLayout {
                 Layout.fillWidth: true; spacing: 8

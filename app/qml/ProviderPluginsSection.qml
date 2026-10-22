@@ -56,7 +56,7 @@ Column {
                 width: parent.width; spacing: 14
                 RowLayout {
                     Layout.fillWidth: true; spacing: 12
-                    Glyph { name: "server"; width: 21; height: 21 }
+                    Glyph { name: "server"; width: Theme.icon(21); height: Theme.icon(21) }
                     Text { text: card.modelData.name; color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
                     Text { text: "v" + card.modelData.version; color: Theme.muted; font.pixelSize: Theme.font(10) }
                     Item { Layout.fillWidth: true }

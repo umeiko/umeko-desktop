@@ -4,8 +4,8 @@ Item {
     id: root
     property string name: "chat"
     property color color: Theme.muted
-    implicitWidth: 20; implicitHeight: 20
-    width: 20; height: 20
+    implicitWidth: Theme.icon(20); implicitHeight: Theme.icon(20)
+    width: implicitWidth; height: implicitHeight
     opacity: enabled ? 0.9 : 0.4
     IconImage {
         anchors.fill: parent

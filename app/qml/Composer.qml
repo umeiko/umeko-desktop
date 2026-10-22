@@ -6,7 +6,7 @@ Item {
     id: root
     readonly property Item modelAnchor: modelButton
     readonly property int queueOffset: queued.height
-    height: 157 + (backend.attachments.length ? 48 : 0) + queueOffset
+    height: 157 + Theme.control(33) - 33 + (backend.attachments.length ? Theme.control(48) : 0) + queueOffset
     signal openModels()
     signal chooseFiles()
     function focusInput() { prompt.forceActiveFocus() }
@@ -24,23 +24,23 @@ Item {
         border.color: fileDrop.containsDrag || (prompt.activeFocus && Theme.yanami) ? Theme.accent : prompt.activeFocus ? (Theme.dark ? "#59735e" : "#b3c3b0") : Theme.line
         Behavior on border.color { ColorAnimation { duration: 180 } }
         Flickable {
-            x: 16; y: 12; width: parent.width - 32; height: 36; visible: backend.attachments.length > 0
+            x: 16; y: 12; width: parent.width - 32; height: Theme.control(36); visible: backend.attachments.length > 0
             contentWidth: attachmentRow.width; contentHeight: height; clip: true
             Row { id: attachmentRow; spacing: 7
                 Repeater {
                     model: backend.attachments
                     Rectangle {
                         required property var modelData
-                        width: Math.min(attachmentName.implicitWidth, 165) + 63; height: 33; radius: 7; color: Theme.accentBg
-                        Glyph { x: 9; anchors.verticalCenter: parent.verticalCenter; name: modelData.kind === "folder" ? "folder" : modelData.kind === "image" ? "image" : "file"; width: 15; height: 15 }
-                        Text { id: attachmentName; x: 31; anchors.verticalCenter: parent.verticalCenter; width: Math.min(implicitWidth, 165); text: modelData.name; elide: Text.ElideMiddle; color: Theme.ink; font.pixelSize: Theme.font(10) }
-                        ActionButton { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: 27; height: 27; quiet: true; glyph: "x"; onClicked: backend.removeAttachment(modelData.id) }
+                        width: Math.min(attachmentName.implicitWidth, 165) + Theme.control(63); height: Theme.control(33); radius: 7; color: Theme.accentBg
+                        Glyph { x: 9; anchors.verticalCenter: parent.verticalCenter; name: modelData.kind === "folder" ? "folder" : modelData.kind === "image" ? "image" : "file"; width: Theme.icon(15); height: Theme.icon(15) }
+                        Text { id: attachmentName; x: Theme.control(31); anchors.verticalCenter: parent.verticalCenter; width: Math.min(implicitWidth, 165); text: modelData.name; elide: Text.ElideMiddle; color: Theme.ink; font.pixelSize: Theme.font(10) }
+                        ActionButton { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(27); height: Theme.control(27); quiet: true; glyph: "x"; onClicked: backend.removeAttachment(modelData.id) }
                     }
                 }
             }
         }
         ScrollView {
-            x: 20; y: backend.attachments.length ? 63 : 15; width: parent.width - 40; height: 82; clip: true
+            x: 20; y: backend.attachments.length ? Theme.control(48) + 15 : 15; width: parent.width - 40; height: 82; clip: true
             TextArea {
                 id: prompt; objectName: "promptInput"
                 color: Theme.ink; placeholderTextColor: Theme.muted
@@ -56,12 +56,12 @@ Item {
         }
         Row {
             x: 14; anchors.bottom: parent.bottom; anchors.bottomMargin: 12; spacing: 5
-            ActionButton { objectName: "attachFilesButton"; glyph: "plus"; quiet: true; width: 31; height: 31; hint: I18n.t("添加文件"); onClicked: root.chooseFiles() }
-            ActionButton { objectName: "openChatDirectoryButton"; glyph: "folder"; quiet: true; width: 31; height: 31; hint: I18n.t("在文件管理器中打开当前目录"); onClicked: backend.openChatDirectory() }
+            ActionButton { objectName: "attachFilesButton"; glyph: "plus"; quiet: true; width: Theme.control(31); height: Theme.control(31); hint: I18n.t("添加文件"); onClicked: root.chooseFiles() }
+            ActionButton { objectName: "openChatDirectoryButton"; glyph: "folder"; quiet: true; width: Theme.control(31); height: Theme.control(31); hint: I18n.t("在文件管理器中打开当前目录"); onClicked: backend.openChatDirectory() }
             Rectangle { width: 1; height: 15; color: Theme.line; anchors.verticalCenter: parent.verticalCenter }
             ContextUsage {}
             ActionButton {
-                id: modelButton; objectName: "modelSelector"; quiet: true; height: 31
+                id: modelButton; objectName: "modelSelector"; quiet: true; height: Theme.control(31)
                 width: Math.min(modelRow.implicitWidth + 18, 310)
                 onClicked: root.openModels()
                 contentItem: Item { Row {
@@ -69,24 +69,24 @@ Item {
                     Text { text: { let p = backend.config.providers.find(p => p.id === backend.config.selectedProvider); return p ? p.name : I18n.t("选择供应商") } color: Theme.ink; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
                     Text { text: "/"; font.pixelSize: Theme.font(11); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
                     Text { text: backend.config.selectedModel; width: Math.min(implicitWidth, 135); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
-                    Glyph { name: "chevron-down"; width: 12; height: 12; anchors.verticalCenter: parent.verticalCenter }
+                    Glyph { name: "chevron-down"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
                 } }
             }
         }
         Row {
             anchors.right: parent.right; anchors.rightMargin: 14; anchors.bottom: parent.bottom; anchors.bottomMargin: 12; spacing: 13
-            Text { text: backend.loading ? backend.toolStatus || I18n.t("正在加载 Pi") : backend.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
+            Text { visible: Theme.fontScale <= 1.25; text: backend.loading ? backend.toolStatus || I18n.t("正在加载 Pi") : backend.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
             Rectangle {
                 objectName: "sendButton"
                 readonly property bool stopAction: backend.running
                 readonly property bool disabled: backend.loading || backend.kernelBusy || (!stopAction && !prompt.text.trim().length && !backend.attachments.length)
-                width: 33; height: 33; radius: 11
+                width: Theme.control(33); height: Theme.control(33); radius: Theme.control(11)
                 color: !disabled ? Theme.button : Theme.accentBg
                 opacity: disabled ? 0.5 : 1
                 Behavior on color { ColorAnimation { duration: 150 } }
                 scale: sendArea.pressed ? 0.92 : 1
                 Behavior on scale { NumberAnimation { duration: 100 } }
-                Glyph { objectName: "sendGlyph"; color: parent.disabled ? Theme.muted : Theme.buttonText; anchors.centerIn: parent; name: backend.running ? "stop" : prompt.text.trim().length > 0 && !backend.loading ? (Theme.dark ? "arrow-up" : "send") : "arrow-up"; width: 17; height: 17 }
+                Glyph { objectName: "sendGlyph"; color: parent.disabled ? Theme.muted : Theme.buttonText; anchors.centerIn: parent; name: backend.running ? "stop" : prompt.text.trim().length > 0 && !backend.loading ? (Theme.dark ? "arrow-up" : "send") : "arrow-up"; width: Theme.icon(17); height: Theme.icon(17) }
                 MouseArea { id: sendArea; objectName: "sendArea"; anchors.fill: parent; enabled: !parent.disabled; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: { if (backend.running) backend.stop(); else root.sendMessage(false) } }
                 HoverTip { active: sendArea.containsMouse; text: backend.running ? I18n.t("停止当前会话任务") : I18n.t("发送消息") }
             }
@@ -99,6 +99,6 @@ Item {
     }
     Rectangle {
         anchors.fill: parent; radius: 15; color: Theme.accentBg; opacity: 0.95; visible: fileDrop.containsDrag; border.color: Theme.accent
-        Row { anchors.centerIn: parent; spacing: 10; Glyph { name: "plus"; width: 19; height: 19 } Text { text: I18n.t("添加文件或文件夹"); color: Theme.accent; font.pixelSize: Theme.font(13) } }
+        Row { anchors.centerIn: parent; spacing: 10; Glyph { name: "plus"; width: Theme.icon(19); height: Theme.icon(19) } Text { text: I18n.t("添加文件或文件夹"); color: Theme.accent; font.pixelSize: Theme.font(13) } }
     }
 }

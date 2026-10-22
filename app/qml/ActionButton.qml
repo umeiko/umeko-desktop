@@ -31,7 +31,7 @@ Button {
             id: contents
             anchors.centerIn: parent
             spacing: 8
-            Glyph { name: control.glyph; color: control.primary ? Theme.buttonText : control.destructive ? Theme.danger : control.interactionHovered ? Theme.accent : Theme.muted; visible: name !== ""; width: 17; height: 17; anchors.verticalCenter: parent.verticalCenter }
+            Glyph { name: control.glyph; color: control.primary ? Theme.buttonText : control.destructive ? Theme.danger : control.interactionHovered ? Theme.accent : Theme.muted; visible: name !== ""; width: Theme.icon(17); height: Theme.icon(17); anchors.verticalCenter: parent.verticalCenter }
             Text { text: control.text; visible: text.length > 0; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: Theme.font(12)
                 color: control.primary ? Theme.buttonText : control.destructive ? Theme.danger : Theme.ink }
         }

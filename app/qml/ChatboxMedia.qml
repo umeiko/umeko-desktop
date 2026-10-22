@@ -20,7 +20,7 @@ Column {
             property string key: root.toolId + "_" + index
             readonly property bool inlineImage: item.kind === "image" && !!item.preview
             objectName: "chatboxCard_" + key
-            width: inlineImage ? Math.min(root.width, 640) : Math.min(root.width, Math.min(420, Math.max(150, nameSize.advanceWidth + 66)))
+            width: inlineImage ? Math.min(root.width, 640) : Math.min(root.width, Math.min(420, Math.max(150, nameSize.advanceWidth + Theme.control(66))))
             height: content.implicitHeight
             readonly property bool hovered: headerArea.interactionHovered || arrowArea.interactionHovered
             radius: 7; color: inlineImage ? "transparent" : headerArea.pressed || openMenu.visible ? Theme.accentBg : hovered ? Theme.hover : Theme.surface
@@ -31,9 +31,9 @@ Column {
             Column {
                 id: content; width: parent.width; spacing: 6
                 Item {
-                    id: header; width: parent.width; height: card.inlineImage ? 28 : 34
-                    Glyph { x: 10; width: 14; height: 14; anchors.verticalCenter: parent.verticalCenter; name: card.item.kind === "folder" ? "folder" : card.item.kind === "image" ? "image" : "file" }
-                    Text { id: filename; x: 32; width: parent.width - 58; anchors.verticalCenter: parent.verticalCenter; text: card.item.title || card.item.name || I18n.t("文件"); textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.ink; font.pixelSize: Theme.font(12) }
+                    id: header; width: parent.width; height: Theme.control(card.inlineImage ? 28 : 34)
+                    Glyph { x: 10; width: Theme.icon(14); height: Theme.icon(14); anchors.verticalCenter: parent.verticalCenter; name: card.item.kind === "folder" ? "folder" : card.item.kind === "image" ? "image" : "file" }
+                    Text { id: filename; x: 18 + Theme.icon(14); width: parent.width - x - Theme.control(26); anchors.verticalCenter: parent.verticalCenter; text: card.item.title || card.item.name || I18n.t("文件"); textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.ink; font.pixelSize: Theme.font(12) }
                     ChatHitArea {
                         id: headerArea; objectName: "openChatbox_" + card.key
                         selectionController: root.selectionController
@@ -42,11 +42,11 @@ Column {
                     }
                     Rectangle {
                         id: arrowButton; objectName: "chatboxArrow_" + card.key
-                        x: parent.width - width - 3; width: 26; height: parent.height - 6; anchors.verticalCenter: parent.verticalCenter
+                        x: parent.width - width - 3; width: Theme.control(26); height: parent.height - 6; anchors.verticalCenter: parent.verticalCenter
                         radius: 5; color: arrowArea.pressed || openMenu.visible ? Theme.accentBg : arrowArea.interactionHovered ? Qt.alpha(Theme.accent, 0.16) : "transparent"
                         border.color: openMenu.visible ? Qt.alpha(Theme.accent, 0.5) : "transparent"
                         Behavior on color { ColorAnimation { duration: 100 } }
-                        Glyph { anchors.centerIn: parent; name: "chevron-down"; width: 12; height: 12; rotation: openMenu.visible ? 180 : 0; Behavior on rotation { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } } }
+                        Glyph { anchors.centerIn: parent; name: "chevron-down"; width: Theme.icon(12); height: Theme.icon(12); rotation: openMenu.visible ? 180 : 0; Behavior on rotation { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } } }
                         ChatHitArea { id: arrowArea; objectName: "toggleChatbox_" + card.key; anchors.fill: parent; selectionController: root.selectionController; interactionPriority: 10; onClicked: { if (openMenu.visible) openMenu.close(); else openMenu.popup(arrowButton.width - openMenu.width, arrowButton.height + 5) } }
                         HoverTip { active: arrowArea.interactionHovered && !openMenu.visible; text: I18n.t("文件操作") }
                         Accessible.role: Accessible.Button; Accessible.name: I18n.t("文件操作"); Accessible.description: openMenu.visible ? I18n.t("已展开") : I18n.t("已收起")

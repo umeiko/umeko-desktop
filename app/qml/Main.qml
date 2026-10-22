@@ -109,18 +109,18 @@ ApplicationWindow {
         MouseArea { width: parent.width; height: 20; enabled: !chatSelection.dragging; onPressed: window.startSystemMove(); onDoubleClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
         ActionButton {
             objectName: "newChatButton"
-            x: 16; y: 24; width: parent.width - 32; height: 42
+            x: 16; y: 24; width: parent.width - 32; height: Theme.control(42)
             text: I18n.t("新建会话"); glyph: "plus"
             onClicked: window.startChat()
             Text { anchors.right: parent.right; anchors.rightMargin: 13; anchors.verticalCenter: parent.verticalCenter; visible: Theme.fontScale <= 1.25; text: "Ctrl N"; color: Theme.muted; font.pixelSize: Theme.font(10) }
-            contentItem: Item { Row { x: 13; width: parent.width - (Theme.fontScale <= 1.25 ? 65 : 26); spacing: 9; anchors.verticalCenter: parent.verticalCenter; Glyph { name: "plus"; width: 18; height: 18 } Text { width: Math.max(0, parent.width - 27); elide: Text.ElideRight; text: I18n.t("新建会话"); font.pixelSize: Theme.font(12); color: Theme.ink; anchors.verticalCenter: parent.verticalCenter } } }
+            contentItem: Item { Row { x: 13; width: parent.width - (Theme.fontScale <= 1.25 ? 65 : 26); spacing: 9; anchors.verticalCenter: parent.verticalCenter; Glyph { name: "plus"; width: Theme.icon(18); height: Theme.icon(18) } Text { width: Math.max(0, parent.width - Theme.icon(18) - 9); elide: Text.ElideRight; text: I18n.t("新建会话"); font.pixelSize: Theme.font(12); color: Theme.ink; anchors.verticalCenter: parent.verticalCenter } } }
         }
-        Text { id: recentLabel; x: 29; y: 94; text: backend.showArchived ? I18n.t("已归档") : I18n.t("项目"); font.pixelSize: Theme.font(10); color: Theme.muted; font.letterSpacing: 1 }
-        ActionButton { objectName: "archivedViewButton"; anchors.right: parent.right; anchors.rightMargin: 54; y: recentLabel.y - 7; width: 26; height: 26; glyph: "archive"; quiet: true; hint: backend.showArchived ? I18n.t("返回项目") : I18n.t("查看归档会话"); onClicked: backend.toggleArchived() }
-        ActionButton { anchors.right: parent.right; anchors.rightMargin: 22; y: recentLabel.y - 7; width: 26; height: 26; glyph: "plus"; quiet: true; hint: I18n.t("打开项目文件夹"); onClicked: folderDialog.open() }
+        Text { id: recentLabel; x: 29; y: 52 + Theme.control(42); text: backend.showArchived ? I18n.t("已归档") : I18n.t("项目"); font.pixelSize: Theme.font(10); color: Theme.muted; font.letterSpacing: 1 }
+        ActionButton { objectName: "archivedViewButton"; anchors.right: parent.right; anchors.rightMargin: 28 + Theme.control(26); y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "archive"; quiet: true; hint: backend.showArchived ? I18n.t("返回项目") : I18n.t("查看归档会话"); onClicked: backend.toggleArchived() }
+        ActionButton { anchors.right: parent.right; anchors.rightMargin: 22; y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "plus"; quiet: true; hint: I18n.t("打开项目文件夹"); onClicked: folderDialog.open() }
         ListView {
             id: sessionList; objectName: "projectList"
-            x: 12; y: recentLabel.y + 28; width: parent.width - 24; height: apiStatus.y - y - 16
+            x: 12; y: recentLabel.y + Theme.control(28); width: parent.width - 24; height: apiStatus.y - y - 16
             spacing: 2; clip: true; model: backend.projectRows
             currentIndex: backend.projectRows.findIndex(row => window.sidebarSwitching ? row.id === window.pendingSidebarId && row.kind === window.pendingSidebarKind : row.selected && (row.kind === "session" || row.kind === "project" && !backend.activeSession))
             highlightFollowsCurrentItem: false
@@ -136,12 +136,12 @@ ApplicationWindow {
                 MouseArea { id: rowMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; acceptedButtons: Qt.LeftButton | Qt.RightButton; enabled: modelData.kind !== "label"
                     onClicked: mouse => { if (mouse.button === Qt.RightButton) { sidebarMenus.openFor(modelData, mapToItem(sidebarMenus, mouse.x, mouse.y)); return } window.selectSidebar(modelData) }
                 }
-                Glyph { visible: modelData.kind === "project"; name: "folder"; x: 15; anchors.verticalCenter: parent.verticalCenter; width: 16; height: 16 }
+                Glyph { visible: modelData.kind === "project"; name: "folder"; x: 15; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(16); height: Theme.icon(16) }
                 Text { x: modelData.kind === "label" ? 17 : 42; width: parent.width - x - 32; anchors.verticalCenter: parent.verticalCenter; text: modelData.kind === "label" ? I18n.t(modelData.title) : modelData.title; elide: Text.ElideRight; font.pixelSize: Theme.font(modelData.kind === "label" ? 10 : 11); color: modelData.kind === "label" ? Theme.muted : Theme.ink }
-                ActivitySpinner { objectName: "sessionSpinner_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: 15; height: 15; visible: modelData.kind === "session" && modelData.running === true; color: modelData.waiting ? Theme.accent : Theme.muted }
+                ActivitySpinner { objectName: "sessionSpinner_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(15); height: Theme.icon(15); visible: modelData.kind === "session" && modelData.running === true; color: modelData.waiting ? Theme.accent : Theme.muted }
                 Rectangle { objectName: "sessionUnread_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter; width: 6; height: 6; radius: 3; color: "#4c9c6d"; visible: modelData.kind === "session" && modelData.unread === true && !modelData.running }
-                Glyph { anchors.right: parent.right; anchors.rightMargin: 11; anchors.verticalCenter: parent.verticalCenter; width: 12; height: 12; name: "pin"; visible: modelData.pinned === true && !modelData.running && !modelData.unread && !(rowMouse.containsMouse) }
-                ActionButton { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: 28; height: 28; quiet: true; glyph: modelData.collapsed ? "chevron-right" : "chevron-down"; visible: modelData.kind === "project" && (rowMouse.containsMouse || hovered || modelData.collapsed); onClicked: backend.toggleProject(modelData.id) }
+                Glyph { anchors.right: parent.right; anchors.rightMargin: 11; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(12); height: Theme.icon(12); name: "pin"; visible: modelData.pinned === true && !modelData.running && !modelData.unread && !(rowMouse.containsMouse) }
+                ActionButton { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: Theme.control(28); quiet: true; glyph: modelData.collapsed ? "chevron-right" : "chevron-down"; visible: modelData.kind === "project" && (rowMouse.containsMouse || hovered || modelData.collapsed); onClicked: backend.toggleProject(modelData.id) }
             }
         }
         DropArea {
@@ -151,7 +151,7 @@ ApplicationWindow {
         }
         Rectangle {
             anchors.fill: parent; anchors.margins: 7; radius: 10; z: 21; visible: projectDrop.containsDrag; color: Theme.accentBg; border.color: Theme.accent
-            Column { anchors.centerIn: parent; spacing: 12; Glyph { name: "folder"; width: 26; height: 26; anchors.horizontalCenter: parent.horizontalCenter } Text { text: I18n.t("打开项目文件夹"); color: Theme.accent; font.pixelSize: Theme.font(12) } }
+            Column { anchors.centerIn: parent; spacing: 12; Glyph { name: "folder"; width: Theme.icon(26); height: Theme.icon(26); anchors.horizontalCenter: parent.horizontalCenter } Text { text: I18n.t("打开项目文件夹"); color: Theme.accent; font.pixelSize: Theme.font(12) } }
         }
         Item {
             id: apiStatus; x: 26; anchors.bottom: settingsButton.top; anchors.bottomMargin: 9; width: parent.width - 52; height: 29
@@ -162,10 +162,10 @@ ApplicationWindow {
         }
         ActionButton {
             id: settingsButton; objectName: "settingsButton"
-            x: 12; anchors.bottom: parent.bottom; anchors.bottomMargin: 17; width: parent.width - 24; height: 44; quiet: true
+            x: 12; anchors.bottom: parent.bottom; anchors.bottomMargin: 17; width: parent.width - 24; height: Theme.control(44); quiet: true
             onClicked: window.page === "settings" ? window.page = "chat" : window.settings(0)
             contentItem: Item { Row { x: 16; spacing: 12; anchors.verticalCenter: parent.verticalCenter
-                Glyph { name: "settings"; width: 18; height: 18 }
+                Glyph { name: "settings"; width: Theme.icon(18); height: Theme.icon(18) }
                 Text { text: I18n.t("设置"); color: Theme.ink; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
             } }
             Text { anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter; visible: Theme.fontScale <= 1.5; text: "v" + backend.appAbout.info.version; font.pixelSize: Theme.font(10); color: Theme.muted }
@@ -200,7 +200,7 @@ ApplicationWindow {
             id: header; height: 72; width: parent.width
             MouseArea { anchors.fill: parent; enabled: !chatSelection.dragging; onPressed: window.startSystemMove(); onDoubleClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
             Row { x: 20; anchors.verticalCenter: parent.verticalCenter; spacing: 10
-                ActionButton { objectName: "toggleSidebarButton"; glyph: "layout"; quiet: true; width: 30; height: 30; hint: window.sidebarCollapsed ? I18n.t("展开侧栏（Ctrl+B）") : I18n.t("收起侧栏（Ctrl+B）"); Accessible.name: window.sidebarCollapsed ? I18n.t("展开侧栏") : I18n.t("收起侧栏"); onClicked: window.toggleSidebar() }
+                ActionButton { objectName: "toggleSidebarButton"; glyph: "layout"; quiet: true; width: Theme.control(30); height: Theme.control(30); hint: window.sidebarCollapsed ? I18n.t("展开侧栏（Ctrl+B）") : I18n.t("收起侧栏（Ctrl+B）"); Accessible.name: window.sidebarCollapsed ? I18n.t("展开侧栏") : I18n.t("收起侧栏"); onClicked: window.toggleSidebar() }
                 Text { text: window.page === "chat" ? I18n.t("工作空间") : I18n.t("偏好设置"); color: Theme.muted; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
                 Text { text: "/"; color: Theme.line; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
                 Text { text: window.page === "chat" ? (window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle) : [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于")][window.settingsTab]; color: Theme.ink; font.pixelSize: Theme.font(11); width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
@@ -211,9 +211,9 @@ ApplicationWindow {
                 Text { text: I18n.t("本机工作空间"); font.pixelSize: Theme.font(10); color: Theme.muted }
             }
             Row { id: windowControls; anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 18; spacing: 2
-                ActionButton { glyph: "minus"; width: 32; height: 30; quiet: true; hint: I18n.t("最小化"); onClicked: window.showMinimized() }
-                ActionButton { glyph: "maximize"; width: 32; height: 30; quiet: true; hint: I18n.t("最大化"); onClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
-                ActionButton { glyph: "x"; width: 32; height: 30; quiet: true; hint: I18n.t("关闭"); onClicked: window.close() }
+                ActionButton { glyph: "minus"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最小化"); onClicked: window.showMinimized() }
+                ActionButton { glyph: "maximize"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最大化"); onClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
+                ActionButton { glyph: "x"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("关闭"); onClicked: window.close() }
             }
         }
 
@@ -325,7 +325,7 @@ ApplicationWindow {
                     width: conversation.width - 16; spacing: 10
                     Row { visible: modelData.role !== "user"; spacing: 9
                         Rectangle { width: 24; height: 24; radius: 7; color: Theme.accentBg
-                            Glyph { anchors.centerIn: parent; name: "spark"; width: 14; height: 14 } }
+                            Glyph { anchors.centerIn: parent; name: "spark"; width: Theme.icon(14); height: Theme.icon(14) } }
                         SelectableText { selectionController: chatSelection; messageIndex: messageRow.index; blockIndex: -100000; text: "umeko"; anchors.verticalCenter: parent.verticalCenter; color: Theme.ink; font.pixelSize: Theme.font(11); font.weight: Font.DemiBold }
                     }
                     Rectangle {
@@ -365,7 +365,7 @@ ApplicationWindow {
                             height: parent.height; spacing: 7
                             Text { objectName: "messageTime_" + messageRow.index; anchors.verticalCenter: parent.verticalCenter; color: Theme.muted; font.pixelSize: Theme.font(11)
                                 text: { if (!modelData.timestamp) return ""; const date = new Date(modelData.timestamp); if (isNaN(date.getTime())) return ""; return Qt.formatDateTime(date, date.toDateString() === new Date().toDateString() ? "hh:mm" : "MM-dd hh:mm") } }
-                            ActionButton { objectName: "copyMessage_" + messageRow.index; selectionController: chatSelection; glyph: "copy"; width: 22; height: 18; quiet: true; enabled: parent.parent.opacity > 0; hint: I18n.t("复制消息")
+                            ActionButton { objectName: "copyMessage_" + messageRow.index; selectionController: chatSelection; glyph: "copy"; width: Theme.control(22); height: Theme.control(18); quiet: true; enabled: parent.parent.opacity > 0; hint: I18n.t("复制消息")
                                 onClicked: { const activity = modelData.activity || []; const prose = activity.filter(item => item.kind === "text").map(item => item.text).join("\n\n"); backend.copy([prose || modelData.text || "", ...(modelData.attachments || []).map(item => item.name)].filter(part => !!part).join("\n")) } }
                         }
                     }
@@ -393,8 +393,8 @@ ApplicationWindow {
                 onRevealed: if (window.page === "chat") composer.focusInput()
             }
             Row { anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 13; spacing: 8
-                ActionButton { height: 28; quiet: true; text: "Agent"; glyph: "sliders"; onClicked: window.settings(3) }
-                ActionButton { objectName: "forkSessionButton"; visible: backend.messages.length > 0; enabled: !backend.busy; height: 28; quiet: true; text: I18n.t("分支"); glyph: "branch"; onClicked: backend.forkSession() }
+                ActionButton { height: Theme.control(28); quiet: true; text: "Agent"; glyph: "sliders"; onClicked: window.settings(3) }
+                ActionButton { objectName: "forkSessionButton"; visible: backend.messages.length > 0; enabled: !backend.busy; height: Theme.control(28); quiet: true; text: I18n.t("分支"); glyph: "branch"; onClicked: backend.forkSession() }
             }
         }
 

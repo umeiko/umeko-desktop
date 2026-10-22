@@ -42,8 +42,8 @@ SectionCard {
                     RowLayout {
                         Layout.fillWidth: true; spacing: 6
                         Text { text: choice.modelData.name; textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12); elide: Text.ElideRight; Layout.fillWidth: true }
-                        Glyph { name: "check"; width: 15; height: 15; color: Theme.accent; visible: backend.config.theme === choice.modelData.id }
-                        ActionButton { objectName: "deleteTheme_" + choice.modelData.id; glyph: "trash"; quiet: true; destructive: true; width: 24; height: 24; visible: choice.modelData.id.startsWith("custom:"); hint: I18n.t("删除主题"); onClicked: backend.removeTheme(choice.modelData.id) }
+                        Glyph { name: "check"; width: Theme.icon(15); height: Theme.icon(15); color: Theme.accent; visible: backend.config.theme === choice.modelData.id }
+                        ActionButton { objectName: "deleteTheme_" + choice.modelData.id; glyph: "trash"; quiet: true; destructive: true; width: Theme.control(24); height: Theme.control(24); visible: choice.modelData.id.startsWith("custom:"); hint: I18n.t("删除主题"); onClicked: backend.removeTheme(choice.modelData.id) }
                     }
                 }
             }

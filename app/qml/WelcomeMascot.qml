@@ -90,7 +90,7 @@ FocusScope {
         Glyph {
             required property int index
             readonly property real angle: (index * 60 - 110) * Math.PI / 180
-            name: "spark"; width: 17; height: 17
+            name: "spark"; width: Theme.icon(17); height: Theme.icon(17)
             visible: root.celebrating
             x: root.width / 2 + Math.cos(angle) * (78 + root.burstProgress * 44) - width / 2
             y: root.height * 0.4 + Math.sin(angle) * (65 + root.burstProgress * 28) - root.burstProgress * 26

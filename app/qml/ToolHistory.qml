@@ -28,9 +28,9 @@ Column {
         width: headerRow.implicitWidth; height: 22
         Row {
             id: headerRow; height: parent.height; spacing: 7
-            ActivitySpinner { visible: root.running; width: 12; height: 12; anchors.verticalCenter: parent.verticalCenter }
+            ActivitySpinner { visible: root.running; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
             Text { text: root.summary; color: headerMouse.interactionHovered ? Theme.ink : Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
-            Glyph { name: root.expanded ? "chevron-down" : "chevron-right"; width: 12; height: 12; anchors.verticalCenter: parent.verticalCenter }
+            Glyph { name: root.expanded ? "chevron-down" : "chevron-right"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
         }
         ChatHitArea {
             id: headerMouse; objectName: "toggleTools_" + root.messageIndex + "_" + root.blockOffset
@@ -49,19 +49,19 @@ Column {
             Connections { target: root; function onExpansionStateChanged() { toolRow.details = !!root.expansionState.details[toolRow.tool.id] } }
             width: root.width; spacing: 4
             Item {
-                width: parent.width; height: 25
+                width: parent.width; height: Theme.control(25)
                 Rectangle { anchors.fill: parent; radius: 4; color: rowMouse.interactionHovered ? Theme.hover : "transparent" }
                 ChatHitArea {
                     id: rowMouse; objectName: "toggleToolDetail_" + toolRow.tool.id
                     anchors.fill: parent; selectionController: root.selectionController
                     onClicked: { toolRow.details = !toolRow.details; root.expansionState.details[toolRow.tool.id] = toolRow.details }
                 }
-                ActivitySpinner { width: 14; height: 14; visible: toolRow.tool.state === "running"; anchors.verticalCenter: parent.verticalCenter }
+                ActivitySpinner { width: Theme.icon(14); height: Theme.icon(14); visible: toolRow.tool.state === "running"; anchors.verticalCenter: parent.verticalCenter }
                 Glyph {
                     name: root.command(toolRow.tool.name) ? "terminal" : toolRow.tool.name === "edit" || toolRow.tool.name === "write" ? "edit" : "file"
-                    width: 14; height: 14; visible: toolRow.tool.state !== "running"; anchors.verticalCenter: parent.verticalCenter
+                    width: Theme.icon(14); height: Theme.icon(14); visible: toolRow.tool.state !== "running"; anchors.verticalCenter: parent.verticalCenter
                 }
-                Text { id: verb; x: 22; text: root.action(toolRow.tool.name); color: Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
+                Text { id: verb; x: Theme.icon(14) + 8; text: root.action(toolRow.tool.name); color: Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
                 Text {
                     id: pathLabel; objectName: "toolPath_" + toolRow.tool.id
                     x: verb.x + verb.width + 6; width: Math.max(0, parent.width - x - 38)
@@ -78,7 +78,7 @@ Column {
                     x: verb.x + verb.width + 6; width: Math.max(0, parent.width - x - 38); visible: !pathLabel.visible
                     text: root.preview(toolRow.tool); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter
                 }
-                Glyph { x: parent.width - 30; width: 12; height: 12; name: toolRow.details ? "chevron-down" : "chevron-right"; anchors.verticalCenter: parent.verticalCenter }
+                Glyph { x: parent.width - width - 18; width: Theme.icon(12); height: Theme.icon(12); name: toolRow.details ? "chevron-down" : "chevron-right"; anchors.verticalCenter: parent.verticalCenter }
                 Text {
                     x: parent.width - 14; width: 14; text: toolRow.tool.state === "error" ? "×" : toolRow.tool.state === "interrupted" ? "!" : ""
                     color: Theme.danger; font.pixelSize: Theme.font(16); anchors.verticalCenter: parent.verticalCenter

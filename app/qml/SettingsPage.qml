@@ -73,6 +73,7 @@ Item {
             Component.onCompleted: Qt.callLater(syncTarget)
             Connections { target: root; function onTabChanged() { settingsNav.syncTarget() } }
             PidHighlight {
+                height: settingsNav.selectedButton ? settingsNav.selectedButton.height : 38
                 targetX: settingsNav.selectedButton ? settingsNav.selectedButton.x : 0
                 targetWidth: settingsNav.selectedButton ? settingsNav.selectedButton.width : 0
             }
@@ -121,7 +122,7 @@ Item {
                                     required property var modelData
                                     Layout.fillWidth: true; spacing: 12
                                     RowLayout { Layout.fillWidth: true; spacing: 12
-                                    Glyph { name: "server"; width: 19; height: 19 }
+                                    Glyph { name: "server"; width: Theme.icon(19); height: Theme.icon(19) }
                                     Column { Layout.fillWidth: true; spacing: 5
                                         Text { text: modelData.name; color: Theme.ink; font.pixelSize: Theme.font(12) }
                                         Text { text: modelData.baseUrl; color: Theme.muted; font.pixelSize: Theme.font(10); elide: Text.ElideRight; width: 400 }
@@ -207,9 +208,9 @@ Item {
                                         Layout.fillWidth: true; spacing: 14
                                         Text { text: providerName; color: Theme.ink; font.pixelSize: Theme.font(11); Layout.preferredWidth: 88; elide: Text.ElideRight }
                                         InputField { objectName: "mappingModelId_" + index; readOnly: pluginModel; text: upstream; Layout.fillWidth: true; Layout.preferredWidth: 1; onTextEdited: mappingRows.setProperty(index, "upstream", text) }
-                                        Glyph { name: "arrow-right"; width: 24; height: 17 }
+                                        Glyph { name: "arrow-right"; width: Theme.icon(24); height: Theme.icon(17) }
                                         InputField { text: alias; Layout.fillWidth: true; Layout.preferredWidth: 1; onTextEdited: mappingRows.setProperty(index, "alias", text) }
-                                        ActionButton { enabled: !pluginModel; glyph: "trash"; quiet: true; width: 34; hint: I18n.t("删除映射"); onClicked: mappingRows.remove(index) }
+                                        ActionButton { enabled: !pluginModel; glyph: "trash"; quiet: true; width: Theme.control(34); hint: I18n.t("删除映射"); onClicked: mappingRows.remove(index) }
                                     }
                                     RowLayout {
                                         Layout.fillWidth: true; Layout.leftMargin: 102; spacing: 8

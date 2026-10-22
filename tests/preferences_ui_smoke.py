@@ -56,8 +56,11 @@ try:
     drag_slider(slider.width()-1)
     assert backend.fontScale==2.,'Slider did not apply 200%'
     assert find('promptInput').property('font').pixelSize()==26
+    assert find('sendGlyph').width()==34
+    assert find('attachFilesButton').width()==62
     drag_slider(0)
     assert backend.fontScale==.5 and find('promptInput').property('font').pixelSize()==7
+    assert find('sendGlyph').width()==9 and find('attachFilesButton').width()==31
     backend.setFontScale(2);QTest.qWait(300)
     out=ROOT/'artifacts/screenshots';out.mkdir(parents=True,exist_ok=True)
     window.grabWindow().save(str(out/'appearance-english-200.png'))

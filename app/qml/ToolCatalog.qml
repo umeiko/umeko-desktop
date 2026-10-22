@@ -58,7 +58,7 @@ SectionCard {
                     background: Rectangle { radius: 8; color: root.section === navButton.modelData.key ? Theme.accentBg : navButton.hovered ? Theme.hover : "transparent" }
                     contentItem: RowLayout {
                         spacing: 8
-                        Glyph { name: navButton.modelData.glyph; Layout.leftMargin: 10; width: 16; height: 16 }
+                        Glyph { name: navButton.modelData.glyph; Layout.leftMargin: 10; width: Theme.icon(16); height: Theme.icon(16) }
                         Text { Layout.fillWidth: true; text: navButton.modelData.title; color: root.section === navButton.modelData.key ? Theme.accent : Theme.ink; font.pixelSize: Theme.font(12) }
                         Text { Layout.rightMargin: 10; text: Catalog.entries(root.resources, navButton.modelData.key, "").length; color: Theme.muted; font.pixelSize: Theme.font(10) }
                     }
@@ -128,7 +128,7 @@ SectionCard {
                                     Text { visible: root.section === "mcp"; Layout.fillWidth: true; text: Catalog.server(entry.modelData, root.resources); color: Theme.muted; font.pixelSize: Theme.font(10); elide: Text.ElideRight }
                                 }
                                 Text { visible: root.isTools; text: I18n.t(Catalog.status(entry.modelData)); color: entry.modelData.active ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(10) }
-                                Glyph { name: entry.expanded ? "chevron-down" : "chevron-right"; width: 13; height: 13 }
+                                Glyph { name: entry.expanded ? "chevron-down" : "chevron-right"; width: Theme.icon(13); height: Theme.icon(13) }
                             }
                             Text { visible: !entry.expanded && (entry.modelData.description || "") !== ""; Layout.fillWidth: true; text: entry.modelData.description || ""; textFormat: Text.PlainText; color: Theme.muted; font.pixelSize: Theme.font(11); elide: Text.ElideRight; maximumLineCount: 1 }
                             TextEdit { visible: entry.expanded; Layout.fillWidth: true; text: entry.modelData.description || I18n.t("暂无说明"); textFormat: TextEdit.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12); wrapMode: TextEdit.Wrap; readOnly: true; selectByMouse: true }

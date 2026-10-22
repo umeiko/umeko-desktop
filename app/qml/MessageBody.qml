@@ -35,7 +35,7 @@ Column {
                     id: copyButton; objectName: "copyCode_" + index
                     selectionController: root.selectionController
                     property bool copied: false
-                    anchors.right: parent.right; anchors.rightMargin: 6; y: 4; height: 28
+                    anchors.right: parent.right; anchors.rightMargin: 6; y: 4; height: Theme.control(28)
                     text: copied ? I18n.t("已复制") : I18n.t("复制"); glyph: copied ? "check" : "copy"; quiet: true
                     onClicked: { backend.copy(modelData.text); copied = true; resetCopy.restart() }
                     Timer { id: resetCopy; interval: 1600; onTriggered: copyButton.copied = false }

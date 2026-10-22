@@ -29,4 +29,4 @@ Keys, authorization headers and known credentials are redacted. Reports are stor
 
 ## Language and text size
 
-**Settings → Appearance** offers Simplified Chinese and English, plus a text-size slider from **50% to 200%**. Both apply immediately and are saved in the profile. The first run chooses Chinese when the system's preferred UI language is Chinese, otherwise English. A saved choice takes precedence on later launches. Conversation text, project names and custom provider data keep their original language.
+**Settings → Appearance** offers Simplified Chinese and English, plus a text-size slider from **50% to 200%**. Icons, arrows and button hit areas grow with the text. Both preferences apply immediately and are saved in the profile. The first run chooses Chinese when the system's preferred UI language is Chinese, otherwise English. A saved choice takes precedence on later launches. Conversation text, project names and custom provider data keep their original language.
