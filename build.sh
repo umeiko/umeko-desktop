@@ -27,7 +27,7 @@ fi
     --distpath "$output" "${extra[@]}" --collect-all keyring \
     --add-data 'app/qml:app/qml' --add-data 'app/theme-prompt.txt:app' --add-data 'app/icons:app/icons' \
     --add-data 'runtime/bridge.mjs:runtime' --add-data 'runtime/provider-policy.mjs:runtime' \
-    --add-data 'runtime/resources.mjs:runtime' --add-data 'runtime/chatbox.mjs:runtime' \
+    --add-data 'runtime/resources.mjs:runtime' --add-data 'runtime/chatbox.mjs:runtime' --add-data 'runtime/generation-metrics.mjs:runtime' \
     --add-data 'build/build-info.json:.' --add-data 'build/provider-resources:provider-resources' --add-data 'THIRD_PARTY_NOTICES.md:.' main.py
 .venv/bin/python - "$output" <<'PY'
 from pathlib import Path

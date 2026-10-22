@@ -29,7 +29,6 @@ var strings = {
   "规范化后存在重复或大小写冲突的路径": "The normalized path duplicates or conflicts in case with another entry.",
   "同一路径同时被用作文件和目录": "The same path is used as both a file and a directory.",
   "文件位于插件根目录之外": "The file is outside the provider root directory.",
-
   " 个启用": " enabled",
   " 个模型": " models",
   " 分钟前": " min ago",
@@ -511,5 +510,9 @@ var strings = {
   "无法清理旧插件包，请关闭使用它的进程后重试": "Cannot clean up the old plugin package. Close processes using it and retry.",
   "无法安装供应商包": "Cannot install the provider package.",
   "供应商配置保存失败": "Could not save provider settings.",
-  "供应商配置保存失败，未移除": "Could not save provider settings. The provider was not removed."
+  "供应商配置保存失败，未移除": "Could not save provider settings. The provider was not removed.",
+  "网络设置": "Network settings",
+  "代理设置": "Proxy settings",
+  "收起供应商与模型": "Collapse provider and models",
+  "输出速度。≈ 表示服务尚未返回 token 计数，当前为估算值。": "Output speed. ≈ means the service has not reported token counts yet and this value is estimated."
 }

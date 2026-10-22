@@ -242,6 +242,11 @@ class PiControllerMixin:
             if visible:
                 self.contextUsageChanged.emit()
             return
+        elif kind == "generation_metrics":
+            record.generation = {} if record.cancelled else {key: event[key] for key in ("active", "estimated", "tokens", "elapsedMs", "tokensPerSecond") if key in event}
+            if visible:
+                self.generationChanged.emit()
+            return
         elif kind == "error":
             record.failed = True
             if record.messages and not record.messages[-1]["text"]:
@@ -267,6 +272,9 @@ class PiControllerMixin:
                 self.changed.emit()
             transcript = True
         elif kind in ("done", "exit"):
+            record.generation = {}
+            if visible:
+                self.generationChanged.emit()
             was_busy = record.busy
             if record.queue:
                 self._restore_queued(record, [row["text"] for row in record.queue])
@@ -299,6 +307,8 @@ class PiControllerMixin:
 
     def _stop(self):
         record = self._view
+        record.generation = {}
+        self.generationChanged.emit()
         if record.phase == "running":
             record.cancelled = True
             self._pool.write(record, {"type": "abort"})

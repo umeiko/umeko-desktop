@@ -39,6 +39,12 @@ Item {
         providerProtocol.currentIndex = p && p.api === "anthropic" ? 1 : 0
         editingProvider = true
     }
+    function toggleProvider(p) {
+        if (editingProvider && editId === p.id) {
+            editingProvider = false
+            providerKey.clear()
+        } else editProvider(p)
+    }
     function reloadMappings() {
         const signature = JSON.stringify(backend.config.providers.map(p => ({id:p.id, name:p.name, models:p.models})))
         if (signature === mappingSignature) return
@@ -130,7 +136,7 @@ Item {
                                     Text { text: modelData.models.length + I18n.t(" 个模型"); color: Theme.muted; font.pixelSize: Theme.font(10) }
                                     Text { text: modelData.api === "openai" ? I18n.t("OpenAI 格式") : I18n.t("Anthropic 格式"); color: Theme.muted; font.pixelSize: Theme.font(10) }
                                     ProviderProxy { providerId: modelData.id }
-                                    ActionButton { objectName: "editProvider_" + modelData.id; glyph: "edit"; quiet: true; hint: I18n.t("编辑供应商与模型"); onClicked: root.editProvider(modelData) }
+                                    ActionButton { objectName: "editProvider_" + modelData.id; glyph: root.editingProvider && root.editId === modelData.id ? "chevron-up" : "edit"; quiet: true; hint: root.editingProvider && root.editId === modelData.id ? I18n.t("收起供应商与模型") : I18n.t("编辑供应商与模型"); onClicked: root.toggleProvider(modelData) }
                                     ActionButton { glyph: "trash"; quiet: true; hint: I18n.t("移除供应商"); onClicked: backend.removeProvider(modelData.id) }
                                     }
                                     Flow { Layout.fillWidth: true; spacing: 7

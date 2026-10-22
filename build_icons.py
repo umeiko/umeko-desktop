@@ -1,5 +1,26 @@
 """Small, consistent 24 px vector icon set; no icon font or remote assets."""
 from pathlib import Path
+import math
+
+
+def gear():
+    # Eight identical teeth around the exact view-box center, with rounded corners.
+    points = []
+    for tooth in range(8):
+        for angle, radius in ((-22.5, 8), (-15, 8), (-9, 10.2), (9, 10.2), (15, 8)):
+            radians = math.radians(tooth * 45 + angle)
+            points.append((12 + radius * math.cos(radians), 12 + radius * math.sin(radians)))
+    def inset(vertex, neighbor):
+        distance = math.dist(vertex, neighbor)
+        fraction = min(.42 / distance, .35)
+        return tuple(a + (b - a) * fraction for a, b in zip(vertex, neighbor))
+    def coord(point): return f'{point[0]:.4f} {point[1]:.4f}'
+    path = []
+    for index, vertex in enumerate(points):
+        before, after = inset(vertex, points[index - 1]), inset(vertex, points[(index + 1) % len(points)])
+        path.append(('M' if not index else 'L') + coord(before))
+        path.append('Q' + coord(vertex) + ' ' + coord(after))
+    return '<path d="' + ' '.join(path) + 'Z"/><circle cx="12" cy="12" r="3.2"/>'
 
 paths = {
     "pin": '<path d="m16 3 5 5-4 1-3 5-4 1-3-3 1-4 5-3ZM8 15l-5 6"/>',
@@ -20,7 +41,8 @@ paths = {
     "terminal": '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 8 4 4-4 4m6 0h4"/>',
     "bulb": '<path d="M9 18v-2c0-2-4-3-4-7a7 7 0 0 1 14 0c0 4-4 5-4 7v2m-6 0h6m-5 3h4m-2-3v-7m-2-2 2 2 2-2"/>',
     "layers": '<path d="m12 3 10 5-10 5L2 8Zm-9 9 9 5 9-5M3 16l9 5 9-5"/>',
-    "settings": '<path d="m9 3-1 3-3 1-2 3 2 2-1 3 2 3h3l2 3 3-1 1-3 3-1 2-3-2-2 1-3-2-3h-3l-2-2Z"/><circle cx="11.5" cy="12" r="3"/>',
+    "settings": gear(),
+    "chevron-up": '<path d="m6 15 6-6 6 6"/>',
     "chevron-down": '<path d="m6 9 6 6 6-6"/>',
     "chevron-right": '<path d="m9 6 6 6-6 6"/>',
     "arrow-up": '<path d="M12 20V4m-6 6 6-6 6 6"/>',

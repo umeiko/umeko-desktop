@@ -147,6 +147,16 @@ class PiTests(unittest.TestCase):
         self.assertEqual(resumed["session"]["id"], original_id)
         self.assertEqual(len(resumed["messages"]), len(state["messages"]))
 
+    def test_generation_metrics_forward_real_pi_output_usage(self):
+        self.command(self.payload)
+        self.response_fn = lambda *_: Completion("Measured fixture output", input_tokens=10, output_tokens=12)
+        events = self.command({"type":"prompt", "text":"measure fixture"})
+        metrics = [event for event in events if event["type"] == "generation_metrics"]
+        self.assertTrue(any(event["active"] for event in metrics))
+        self.assertFalse(metrics[-1]["active"])
+        self.assertEqual(metrics[-1]["tokens"], 12)
+        self.assertFalse(metrics[-1]["estimated"])
+
     def test_native_reasoning_reaches_live_events_and_cold_history(self):
         self.response_fn = lambda *_: Completion("Visible answer", thinking="Compare the local fixture.")
         self.command(self.payload)

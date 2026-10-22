@@ -37,11 +37,38 @@ try:
     assert backend.saveProvider('','Fixture','openai','http://127.0.0.1:1/v1','fixture-key',json.dumps([{'upstream':'fixture','alias':'fixture'}]))
     identifier=backend.store.data['providers'][0]['id']
     window.setProperty('page','settings');window.setProperty('settingsTab',0);QTest.qWait(200)
+    click('editProvider_'+identifier)
+    assert find('settingsPage').property('editingProvider')
+    assert find('editProvider_'+identifier).property('glyph')=='chevron-up'
+    click('editProvider_'+identifier)
+    assert not find('settingsPage').property('editingProvider')
+    assert find('editProvider_'+identifier).property('glyph')=='edit'
     click('providerProxy_'+identifier)
+    assert find('providerNetworkTitle').property('text')=='网络设置'
+    out=ROOT/'artifacts/screenshots';out.mkdir(parents=True,exist_ok=True)
+    window.grabWindow().save(str(out/'network-settings-v033.png'))
     mode=find('providerProxyMode');mode.setProperty('currentIndex',2)
     find('providerProxyAddress').setProperty('text','http://127.0.0.1:7890')
     click('saveProviderProxy')
     assert backend.store.data['providers'][0]['proxy']['mode']=='custom'
+    window.setProperty('page','chat')
+    current=backend._view
+    current.phase='running';backend.chatChanged.emit()
+    backend._handle_pi_event(current,{'type':'generation_metrics','active':True,'estimated':True,'tokensPerSecond':24.5})
+    QTest.qWait(200)
+    assert find('generationSpeed').isVisible()
+    assert find('generationSpeed').property('text')=='≈ 24.5 tok/s'
+    window.grabWindow().save(str(out/'generation-speed-v033.png'))
+    other=backend._new_view();backend._activate(other);QTest.qWait(100)
+    assert not find('generationSpeed').isVisible()
+    backend._handle_pi_event(current,{'type':'generation_metrics','active':True,'estimated':False,'tokensPerSecond':42})
+    assert not find('generationSpeed').isVisible()
+    backend._activate(current);QTest.qWait(100)
+    assert find('generationSpeed').property('text')=='42.0 tok/s'
+    backend._handle_pi_event(current,{'type':'generation_metrics','active':False,'estimated':False,'tokensPerSecond':42})
+    assert not find('generationSpeed').isVisible()
+    backend._handle_pi_event(current,{'type':'done'});current.phase='idle'
+    window.setProperty('page','settings')
     window.setProperty('settingsTab',5);QTest.qWait(200)
     language=find('interfaceLanguage');reveal(language)
     language.forceActiveFocus();QTest.keyClick(window,Qt.Key_End);QTest.qWait(200)
@@ -74,7 +101,7 @@ try:
     assert not warnings,'\n'.join(warnings)
     saved=json.loads(backend.store.path.read_text(encoding='utf-8'))
     assert saved['ui']['fontScale']==2 and saved['ui']['language']=='en'
-    print('PREFERENCES_UI_OK: proxy gear, language, slider, 50/200% live fonts, complete error details and persistence')
+    print('PREFERENCES_UI_OK: editor toggle, network settings, per-chat live tok/s, fonts/language, error details and persistence')
 finally:
     backend.close()
     import shiboken6

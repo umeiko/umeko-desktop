@@ -392,7 +392,18 @@ ApplicationWindow {
                 id: chatCover; anchors.fill: parent; z: 50; view: conversation
                 onRevealed: if (window.page === "chat") composer.focusInput()
             }
-            Row { anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 13; spacing: 8
+            Text {
+                id: generationSpeed; objectName: "generationSpeed"
+                anchors.left: composer.left; anchors.leftMargin: 8
+                anchors.verticalCenter: footerActions.verticalCenter
+                visible: backend.running && !!backend.generation.active
+                text: backend.generation.tokensPerSecond > 0 ? (backend.generation.estimated ? "≈ " : "") + Number(backend.generation.tokensPerSecond).toFixed(1) + " tok/s" : "— tok/s"
+                width: Math.min(implicitWidth, Math.max(0, (composer.width - footerActions.width) / 2 - 16))
+                elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(10)
+                MouseArea { id: speedHover; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+                HoverTip { active: speedHover.containsMouse; text: I18n.t("输出速度。≈ 表示服务尚未返回 token 计数，当前为估算值。") }
+            }
+            Row { id: footerActions; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 13; spacing: 8
                 ActionButton { height: Theme.control(28); quiet: true; text: "Agent"; glyph: "sliders"; onClicked: window.settings(3) }
                 ActionButton { objectName: "forkSessionButton"; visible: backend.messages.length > 0; enabled: !backend.busy; height: Theme.control(28); quiet: true; text: I18n.t("分支"); glyph: "branch"; onClicked: backend.forkSession() }
             }
