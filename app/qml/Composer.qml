@@ -33,7 +33,7 @@ Item {
                         required property var modelData
                         width: Math.min(attachmentName.implicitWidth, 165) + 63; height: 33; radius: 7; color: Theme.accentBg
                         Glyph { x: 9; anchors.verticalCenter: parent.verticalCenter; name: modelData.kind === "folder" ? "folder" : modelData.kind === "image" ? "image" : "file"; width: 15; height: 15 }
-                        Text { id: attachmentName; x: 31; anchors.verticalCenter: parent.verticalCenter; width: Math.min(implicitWidth, 165); text: modelData.name; elide: Text.ElideMiddle; color: Theme.ink; font.pixelSize: 10 }
+                        Text { id: attachmentName; x: 31; anchors.verticalCenter: parent.verticalCenter; width: Math.min(implicitWidth, 165); text: modelData.name; elide: Text.ElideMiddle; color: Theme.ink; font.pixelSize: Theme.font(10) }
                         ActionButton { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: 27; height: 27; quiet: true; glyph: "x"; onClicked: backend.removeAttachment(modelData.id) }
                     }
                 }
@@ -44,9 +44,9 @@ Item {
             TextArea {
                 id: prompt; objectName: "promptInput"
                 color: Theme.ink; placeholderTextColor: Theme.muted
-                placeholderText: backend.config.workspace ? "在 " + backend.workspaceName + " 项目下开展工作" : "输入任务…"
+                placeholderText: backend.config.workspace ? I18n.t("在 ") + backend.workspaceName + I18n.t(" 项目下开展工作") : I18n.t("输入任务…")
                 wrapMode: TextArea.Wrap; selectByMouse: true
-                padding: 0; topPadding: 3; font.pixelSize: 13
+                padding: 0; topPadding: 3; font.pixelSize: Theme.font(13)
                 background: null
                 onTextChanged: backend.setDraft(text)
                 Keys.onPressed: event => { if (event.matches(StandardKey.Paste) && backend.pasteAttachments()) event.accepted = true }
@@ -56,8 +56,8 @@ Item {
         }
         Row {
             x: 14; anchors.bottom: parent.bottom; anchors.bottomMargin: 12; spacing: 5
-            ActionButton { objectName: "attachFilesButton"; glyph: "plus"; quiet: true; width: 31; height: 31; hint: "添加文件"; onClicked: root.chooseFiles() }
-            ActionButton { objectName: "openChatDirectoryButton"; glyph: "folder"; quiet: true; width: 31; height: 31; hint: "在文件管理器中打开当前目录"; onClicked: backend.openChatDirectory() }
+            ActionButton { objectName: "attachFilesButton"; glyph: "plus"; quiet: true; width: 31; height: 31; hint: I18n.t("添加文件"); onClicked: root.chooseFiles() }
+            ActionButton { objectName: "openChatDirectoryButton"; glyph: "folder"; quiet: true; width: 31; height: 31; hint: I18n.t("在文件管理器中打开当前目录"); onClicked: backend.openChatDirectory() }
             Rectangle { width: 1; height: 15; color: Theme.line; anchors.verticalCenter: parent.verticalCenter }
             ContextUsage {}
             ActionButton {
@@ -66,16 +66,16 @@ Item {
                 onClicked: root.openModels()
                 contentItem: Item { Row {
                     id: modelRow; spacing: 7; anchors.verticalCenter: parent.verticalCenter; x: 10
-                    Text { text: { let p = backend.config.providers.find(p => p.id === backend.config.selectedProvider); return p ? p.name : "选择供应商" } color: Theme.ink; font.pixelSize: 11; anchors.verticalCenter: parent.verticalCenter }
-                    Text { text: "/"; font.pixelSize: 11; color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
-                    Text { text: backend.config.selectedModel; width: Math.min(implicitWidth, 135); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: 11; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: { let p = backend.config.providers.find(p => p.id === backend.config.selectedProvider); return p ? p.name : I18n.t("选择供应商") } color: Theme.ink; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: "/"; font.pixelSize: Theme.font(11); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: backend.config.selectedModel; width: Math.min(implicitWidth, 135); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
                     Glyph { name: "chevron-down"; width: 12; height: 12; anchors.verticalCenter: parent.verticalCenter }
                 } }
             }
         }
         Row {
             anchors.right: parent.right; anchors.rightMargin: 14; anchors.bottom: parent.bottom; anchors.bottomMargin: 12; spacing: 13
-            Text { text: backend.loading ? backend.toolStatus || "正在加载 Pi" : backend.running ? "Enter 加入队列 · Ctrl+S 优先" : "Enter 发送"; font.pixelSize: 10; color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
+            Text { text: backend.loading ? backend.toolStatus || I18n.t("正在加载 Pi") : backend.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
             Rectangle {
                 objectName: "sendButton"
                 readonly property bool stopAction: backend.running
@@ -88,7 +88,7 @@ Item {
                 Behavior on scale { NumberAnimation { duration: 100 } }
                 Glyph { objectName: "sendGlyph"; color: parent.disabled ? Theme.muted : Theme.buttonText; anchors.centerIn: parent; name: backend.running ? "stop" : prompt.text.trim().length > 0 && !backend.loading ? (Theme.dark ? "arrow-up" : "send") : "arrow-up"; width: 17; height: 17 }
                 MouseArea { id: sendArea; objectName: "sendArea"; anchors.fill: parent; enabled: !parent.disabled; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: { if (backend.running) backend.stop(); else root.sendMessage(false) } }
-                HoverTip { active: sendArea.containsMouse; text: backend.running ? "停止当前会话任务" : "发送消息" }
+                HoverTip { active: sendArea.containsMouse; text: backend.running ? I18n.t("停止当前会话任务") : I18n.t("发送消息") }
             }
         }
     }
@@ -99,6 +99,6 @@ Item {
     }
     Rectangle {
         anchors.fill: parent; radius: 15; color: Theme.accentBg; opacity: 0.95; visible: fileDrop.containsDrag; border.color: Theme.accent
-        Row { anchors.centerIn: parent; spacing: 10; Glyph { name: "plus"; width: 19; height: 19 } Text { text: "添加文件或文件夹"; color: Theme.accent; font.pixelSize: 13 } }
+        Row { anchors.centerIn: parent; spacing: 10; Glyph { name: "plus"; width: 19; height: 19 } Text { text: I18n.t("添加文件或文件夹"); color: Theme.accent; font.pixelSize: Theme.font(13) } }
     }
 }

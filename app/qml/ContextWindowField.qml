@@ -22,9 +22,9 @@ RowLayout {
     ActionButton {
         objectName: root.objectName + "_reset"
         Layout.preferredWidth: 66
-        text: root.automatic ? "自动" : "恢复自动"
+        text: root.automatic ? I18n.t("自动") : I18n.t("恢复自动")
         quiet: true
-        hint: root.automatic ? (root.suggestion.matched ? "按模型名匹配；输入数值可自定义" : "未匹配模型名，使用 128000 token；可自定义") : "恢复按原始模型名自动匹配"
+        hint: root.automatic ? (root.suggestion.matched ? I18n.t("按模型名匹配；输入数值可自定义") : I18n.t("未匹配模型名，使用 128000 token；可自定义")) : I18n.t("恢复按原始模型名自动匹配")
         onClicked: root.edited(root.suggestion.tokens.toString(), true)
     }
 }

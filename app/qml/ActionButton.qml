@@ -13,7 +13,7 @@ Button {
     Component.onCompleted: if (selectionController) selectionController.attachInteraction(control)
     Component.onDestruction: if (selectionController) selectionController.detachInteraction(control)
     HoverHandler { cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
-    implicitHeight: 38
+    implicitHeight: Math.max(38, contents.implicitHeight + 16)
     implicitWidth: Math.max(38, contents.implicitWidth + (text.length ? 28 : 18))
     padding: 0
     hoverEnabled: true
@@ -32,7 +32,7 @@ Button {
             anchors.centerIn: parent
             spacing: 8
             Glyph { name: control.glyph; color: control.primary ? Theme.buttonText : control.destructive ? Theme.danger : control.interactionHovered ? Theme.accent : Theme.muted; visible: name !== ""; width: 17; height: 17; anchors.verticalCenter: parent.verticalCenter }
-            Text { text: control.text; visible: text.length > 0; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: 12
+            Text { text: control.text; visible: text.length > 0; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: Theme.font(12)
                 color: control.primary ? Theme.buttonText : control.destructive ? Theme.danger : Theme.ink }
         }
     }

@@ -18,7 +18,7 @@ def archive(target, groups):
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    archive(OUT / "umeko-provider-sdk-0.1.0.zip", [(ROOT / "umeko_provider_sdk", "umeko_provider_sdk"),
+    archive(OUT / "umeko-provider-sdk-0.2.0.zip", [(ROOT / "umeko_provider_sdk", "umeko_provider_sdk"),
         (ROOT / "pyproject.toml", "pyproject.toml"), (ROOT / "provider_dev/README.md", "README.md"),
         (ROOT / "provider_dev/examples", "examples")])
     archive(OUT / "develop-umeko-provider.zip", [(ROOT / "provider_dev/skills/develop-umeko-provider", "develop-umeko-provider")])

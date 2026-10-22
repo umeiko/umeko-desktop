@@ -230,13 +230,15 @@ Use a configured model alias. Streaming, tool calls and image messages are suppo
 
 Private provider packages, profiles and protocol notes stay in Git-ignored `.private/` and are excluded from application bundles. Account protocols are implemented through the public Provider SDK.
 
+See [preferences and upgrades](preferences-and-upgrades.md) for automatic profile migration, per-provider proxy settings, request-error diagnostics and Chinese/English text-size preferences.
+
 ## Local data
 
 | Platform | Default directory |
 | --- | --- |
-| Windows | `%LOCALAPPDATA%/Umeko` |
-| macOS | `~/Library/Application Support/Umeko` |
-| Linux | `$XDG_DATA_HOME/umeko` or `~/.local/share/umeko` |
+| Windows | `~/.umeko/desktop` |
+| macOS | `~/.umeko/desktop` |
+| Linux | `~/.umeko/desktop` |
 
 `UMEKO_DATA_DIR` overrides the location. Account and supplier credentials use Windows DPAPI or the macOS/Linux system keyring; Unix settings contain opaque keyring references. Proxy keys use the one-way verifiers described above. Re-enter account and supplier credentials after migrating operating systems. Conversation JSONL and attachments are local, unencrypted files and are not automatically synchronized. Interface JSON is an index; native Pi JSONL is the source of truth.
 

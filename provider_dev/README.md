@@ -49,3 +49,10 @@ Provider packages execute trusted Python code in the host process; this is **not
 ## Validation checklist
 
 Use synthetic local fixtures for login success/failure, account switching, expiry/refresh, an empty model list, multiple accounts, text, tool calls and image content preservation. Test cancellation and redacted errors. Raise a short `ProviderError` without raw HTTP bodies, passwords, cookies or tokens. Never publish private endpoints, account data, credentials or login captures in the public repository or examples. ZIP imports reject traversal, symlinks, duplicate case-insensitive paths, more than 512 entries or more than 20 MiB expanded data. No hook is run during package validation.
+
+
+## Host networking and diagnostics (SDK 0.2)
+
+Provider API v1 remains compatible. Inside Umeko, `HttpSession` follows the provider card's proxy policy (system, direct or custom), including login, model discovery and inference. This host policy takes precedence over the standalone `environment_proxy` default. Avoid changing process-global proxy variables in provider code. The C++ worker also supplies the selected policy to conventional environment-aware transports.
+
+During inference, the host captures the complete SDK call. `HttpSession` additionally records the actual HTTP request, status and error response for the local request-details window. Keep using `ProviderError` for concise user-facing failures; do not put passwords or raw authentication responses in it. Login requests are not recorded. Transports that bypass `HttpSession` must implement their own policy handling; their exact HTTP traffic cannot be captured by this helper. Existing v1 packages continue to load.

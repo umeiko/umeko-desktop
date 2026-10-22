@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+os.environ.setdefault('UMEKO_LANGUAGE','zh')
 os.environ["UMEKO_DATA_DIR"] = tempfile.mkdtemp(prefix="umeko-attachment-ui-")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")

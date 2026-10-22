@@ -25,18 +25,18 @@ Column {
                 visible: !modelData.code; width: parent.width
                 text: modelData.code ? "" : modelData.text; color: root.textColor
                 wrapMode: TextEdit.Wrap; textFormat: root.markdown ? TextEdit.MarkdownText : TextEdit.PlainText
-                font.pixelSize: 13
+                font.pixelSize: Theme.font(13)
             }
             Rectangle {
                 visible: modelData.code; width: parent.width; height: codeText.contentHeight + 60
                 radius: 9; color: Theme.dark ? "#171c19" : "#f3f5f0"; border.color: Theme.line
-                Text { x: 14; y: 12; text: modelData.language || "代码"; font.pixelSize: 10; color: Theme.muted; font.family: "Consolas" }
+                Text { x: 14; y: 12; text: modelData.language || I18n.t("代码"); font.pixelSize: Theme.font(10); color: Theme.muted; font.family: "Consolas" }
                 ActionButton {
                     id: copyButton; objectName: "copyCode_" + index
                     selectionController: root.selectionController
                     property bool copied: false
                     anchors.right: parent.right; anchors.rightMargin: 6; y: 4; height: 28
-                    text: copied ? "已复制" : "复制"; glyph: copied ? "check" : "copy"; quiet: true
+                    text: copied ? I18n.t("已复制") : I18n.t("复制"); glyph: copied ? "check" : "copy"; quiet: true
                     onClicked: { backend.copy(modelData.text); copied = true; resetCopy.restart() }
                     Timer { id: resetCopy; interval: 1600; onTriggered: copyButton.copied = false }
                 }
@@ -47,7 +47,7 @@ Column {
                     x: 14; y: 42; width: parent.width - 28
                     text: modelData.code ? modelData.text : ""; color: Theme.ink
                     wrapMode: TextEdit.WrapAnywhere; textFormat: TextEdit.PlainText
-                    font.family: "Consolas"; font.pixelSize: 12
+                    font.family: "Consolas"; font.pixelSize: Theme.font(12)
                     SyntaxHighlighter {
                         id: codeColors
                         objectName: "syntax_" + root.messageIndex + "_" + (root.blockOffset + index)

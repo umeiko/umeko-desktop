@@ -36,7 +36,7 @@ Umeko is a native desktop app for working with [Pi Coding Agent](https://github.
 
 </details>
 
-Screenshots show the actual app with isolated demo data. No real accounts, credentials or model requests were used. The current interface is in Chinese.
+Screenshots show the actual app with isolated demo data. No real accounts, credentials or model requests were used. The interface supports Simplified Chinese and English; its first-run language follows your system.
 
 ## Why Umeko
 
@@ -52,6 +52,8 @@ Screenshots show the actual app with isolated demo data. No real accounts, crede
 Pi can deliver images and compact file cards directly with [`submit_to_chatbox`](docs/chatbox-media.md). Click a file to open it; use its corner arrow or right-click menu to reveal or copy it. Queued messages sit above the composer with editing and deletion; steering interrupts the active run and submits a normal message immediately. Hover a message for its timestamp and copy action. Double-click selects a word; triple-click selects a paragraph. Pi settings have searchable, nested sections and click-activated inline scrolling. Model selection, sidebar highlights and compact context menus use continuous PID motion.
 
 Selecting a chat immediately shows an animated Yanami loading cover while cold history loads in the background. Rapid switching keeps only your latest choice; the conversation fades in after its layout is ready. File cards have themed hover details and clear menu states, and selected chat text offers a Copy / Select all context menu.
+
+Providers and imported plugins stay in your home directory across upgrades. Configure a per-provider proxy from its gear, open complete redacted request diagnostics after failures, and adjust language and text size (50%–200%) in Appearance. See [preferences and upgrades](docs/preferences-and-upgrades.md).
 
 ## Get started
 

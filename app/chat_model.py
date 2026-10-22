@@ -1,5 +1,6 @@
 """Stable message rows: streaming updates never reset the conversation list."""
 import copy
+import re
 from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt
 from .message_attachments import split_attachments
 from .chatbox import media_view
@@ -49,6 +50,10 @@ class ChatModel(QAbstractListModel):
                 if attachments:
                     current["attachments"] = attachments
             if current.get("role") == "assistant":
+                marker = re.search(r'\[Umeko:([a-f0-9-]{36})\]', current.get('text', ''))
+                if marker:
+                    current['diagnosticId'] = marker[1]
+                    current['text'] = '供应商请求失败，请查看请求详情'
                 steps = []
                 if current.get("thinking"):
                     steps.append({"kind": "thinking", "text": current["thinking"]})
@@ -68,6 +73,7 @@ class ChatModel(QAbstractListModel):
             if (rows and current.get("role") == rows[-1].get("role") == "assistant"
                     and (rows[-1].get("tools") or current.get("tools"))):
                 group = rows[-1]
+                if current.get('diagnosticId'): group['diagnosticId'] = current['diagnosticId']
                 steps = current["activity"]
                 # Adjacent operations with no intervening prose share a batch.
                 if group["activity"] and steps and group["activity"][-1]["kind"] == steps[0]["kind"] == "tools":

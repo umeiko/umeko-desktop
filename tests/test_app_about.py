@@ -33,7 +33,7 @@ class AboutTests(unittest.TestCase):
             self.assertIsNone(version_key(tag), tag)
 
     def test_release_states_and_unknown_tag_are_distinct(self):
-        self.assertEqual(self.fetch(self.release("v0.3.0"))["state"], "available")
+        self.assertEqual(self.fetch(self.release("v99.0.0"))["state"], "available")
         self.assertEqual(self.fetch(self.release("v" + VERSION))["state"], "current")
         self.assertEqual(self.fetch(self.release("v0.1.0"))["state"], "ahead")
         self.assertEqual(self.fetch(self.release("nightly"))["state"], "unknown")

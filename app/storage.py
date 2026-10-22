@@ -12,8 +12,9 @@ import hashlib
 import uuid
 from pathlib import Path
 from ctypes import wintypes
-from .platform_support import data_directory
+from .platform_support import data_directory, legacy_data_directory, migrate_profile
 from .api_keys import make_key
+from PySide6.QtCore import QLocale
 
 
 class Blob(ctypes.Structure):
@@ -83,15 +84,10 @@ class Store:
             self.directory = Path(custom)
         if self.directory is None:
             self.directory = data_directory()
-            base = self.directory.parent
-            legacy = base / "CodeAgentStudio"
-            if not (self.directory / "settings.json").exists() and (legacy / "settings.json").exists():
-                self.directory.mkdir(parents=True, exist_ok=True)
-                for name in ("settings.json", "sessions.json"):
-                    if (legacy / name).exists() and not (self.directory / name).exists():
-                        shutil.copy2(legacy / name, self.directory / name)
-                if (legacy / "kernels").exists() and not (self.directory / "kernels").exists():
-                    shutil.copytree(legacy / "kernels", self.directory / "kernels")
+            previous = legacy_data_directory()
+            if not (previous / 'settings.json').is_file():
+                previous = previous.parent / 'CodeAgentStudio'
+            migrate_profile(previous, self.directory)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.path = self.directory / "settings.json"
         self.data = copy.deepcopy(DEFAULTS)
@@ -123,6 +119,14 @@ class Store:
                 p["key"] = protect(p.get("key", ""), True)
                 if p["id"] == "internal" and p["name"] == "CodeAgent":
                     p["name"] = "内网服务"
+        ui = self.data['ui']
+        if ui.get('language') not in ('zh', 'en'):
+            preferred = QLocale.system().uiLanguages()
+            system_language = preferred[0] if preferred else QLocale.system().name()
+            ui['language'] = os.environ.get('UMEKO_LANGUAGE') or ('zh' if system_language.lower().startswith('zh') else 'en')
+            if ui['language'] not in ('zh', 'en'): ui['language'] = 'en'
+        scale = ui.get('fontScale', 1.)
+        ui['fontScale'] = max(.5, min(2., float(scale))) if type(scale) in (int, float) and math.isfinite(scale) else 1.
         if not self.path.exists() or "keys" not in saved.get("server", {}):
             self.save()
 

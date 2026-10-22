@@ -31,7 +31,7 @@ Rectangle {
     Column {
         anchors.centerIn: parent; anchors.verticalCenterOffset: -35; spacing: 20
         LoadingMascot { id: mascot; anchors.horizontalCenter: parent.horizontalCenter; running: root.visible }
-        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "正在打开聊天…"; color: Theme.muted; font.pixelSize: 13; textFormat: Text.PlainText }
+        Text { anchors.horizontalCenter: parent.horizontalCenter; text: I18n.t("正在打开聊天…"); color: Theme.muted; font.pixelSize: Theme.font(13); textFormat: Text.PlainText }
     }
-    Accessible.role: Accessible.Indicator; Accessible.name: "正在打开聊天"
+    Accessible.role: Accessible.Indicator; Accessible.name: I18n.t("正在打开聊天")
 }

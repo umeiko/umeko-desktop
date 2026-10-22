@@ -20,11 +20,11 @@ FocusScope {
     property real burstProgress: 1
     readonly property bool celebrating: burst.running
     readonly property bool animating: jump.running || burst.running || springX.running || springY.running || springTilt.running || springSquashX.running || springSquashY.running
-    readonly property var tapLines: ["欸？我在听呢。", "好啦，今天先从哪件事开始？", "再戳的话，点心要分我一半哦。", "我可没有在偷懒，只是休息一下！"]
+    readonly property var tapLines: [I18n.t("欸？我在听呢。"), I18n.t("好啦，今天先从哪件事开始？"), I18n.t("再戳的话，点心要分我一半哦。"), I18n.t("我可没有在偷懒，只是休息一下！")]
     signal interaction(string kind)
     activeFocusOnTab: true
     Accessible.role: Accessible.Button
-    Accessible.name: "八奈见：点击互动，拖拽回弹，长按有彩蛋"
+    Accessible.name: I18n.t("八奈见：点击互动，拖拽回弹，长按有彩蛋")
     Accessible.onPressAction: tap()
     Component.onCompleted: ready = true
     onVisibleChanged: if (ready && !visible) reset()
@@ -49,7 +49,7 @@ FocusScope {
     }
     function celebrate() {
         combo = 0; comboTimer.stop()
-        say("咦，有点心吗？那我再陪你一会儿。")
+        say(I18n.t("咦，有点心吗？那我再陪你一会儿。"))
         returnHome(); jump.restart(); burst.restart()
     }
     function reset() {
@@ -136,7 +136,7 @@ FocusScope {
         onReleased: {
             if (!validPress) { root.returnHome(); return }
             validPress = false
-            if (root.dragging) { root.interaction("drag"); root.say("好啦好啦，让我自己站稳嘛。"); root.returnHome() }
+            if (root.dragging) { root.interaction("drag"); root.say(I18n.t("好啦好啦，让我自己站稳嘛。")); root.returnHome() }
             else if (held) root.returnHome()
             else root.tap()
         }

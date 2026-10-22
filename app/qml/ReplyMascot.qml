@@ -15,15 +15,15 @@ FocusScope {
     smooth: false
     activeFocusOnTab: true
     Accessible.role: Accessible.Button
-    Accessible.name: "八奈见：点击互动，连续点击或长按有彩蛋"
+    Accessible.name: I18n.t("八奈见：点击互动，连续点击或长按有彩蛋")
     Accessible.onPressAction: tap()
     function tap() {
         combo++; comboTimer.restart()
-        reaction = ["我在呢～", "点心分我一半？", "好啦，继续陪你！"][Math.floor(Math.random() * 3)]
+        reaction = [I18n.t("我在呢～"), I18n.t("点心分我一半？"), I18n.t("好啦，继续陪你！")][Math.floor(Math.random() * 3)]
         if (combo >= 3) celebrate()
         else { wiggle.restart(); reactionTimer.restart() }
     }
-    function celebrate() { combo = 0; reaction = "发现一块小饼干！🍪"; wiggle.restart(); burst.restart(); reactionTimer.restart() }
+    function celebrate() { combo = 0; reaction = I18n.t("发现一块小饼干！🍪"); wiggle.restart(); burst.restart(); reactionTimer.restart() }
     function reset() { wiggle.stop(); burst.stop(); reactionTimer.stop(); comboTimer.stop(); combo = 0; reaction = ""; tilt = 0; progress = 1 }
     onVisibleChanged: if (ready && !visible) reset()
     SequentialAnimation {
@@ -57,7 +57,7 @@ FocusScope {
         x: root.width + 8; anchors.verticalCenter: parent.verticalCenter
         width: caption.implicitWidth + 20; height: 30; radius: 9
         visible: root.reaction.length > 0; color: Theme.surface; border.color: Theme.line
-        Text { id: caption; anchors.centerIn: parent; text: root.reaction; color: Theme.ink; font.pixelSize: 11 }
+        Text { id: caption; anchors.centerIn: parent; text: root.reaction; color: Theme.ink; font.pixelSize: Theme.font(11) }
     }
     ChatHitArea {
         id: pointer; objectName: "replyMascotPointer"; anchors.fill: parent; selectionController: root.selectionController

@@ -17,6 +17,7 @@ from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot, QStandardPaths
 
 from umeko_provider_sdk import Provider, ProviderContext, ProviderError
 from umeko_provider_sdk.packages import unpack_package, validate_folder, validate_config
+from umeko_provider_sdk.network import network_scope
 from .model_capabilities import normalize_model
 from .storage import protect
 
@@ -126,7 +127,9 @@ class ProviderPlugins(QObject):
             if self.closed: raise ProviderError("应用正在关闭")
             if provider_id in self.busy and not management: raise ProviderError("供应商正在登录或刷新，请稍后重试")
             self.leases[provider_id] = self.leases.get(provider_id, 0) + 1
-        try: yield self._client(provider_id)
+        try:
+            with network_scope(self._record(provider_id).get('proxy')):
+                yield self._client(provider_id)
         finally:
             with self.lock: self.leases[provider_id] -= 1
 
@@ -393,7 +396,7 @@ class ProviderPlugins(QObject):
 
     @Slot(str, str, result=bool)
     def exportResource(self, kind, url):
-        names = {"sdk": "umeko-provider-sdk-0.1.0.zip", "skill": "develop-umeko-provider.zip"}
+        names = {"sdk": "umeko-provider-sdk-0.2.0.zip", "skill": "develop-umeko-provider.zip"}
         try:
             if kind not in names: raise ProviderError("未知开发资源")
             source = self.c.root / "provider-resources" / names[kind]
@@ -409,7 +412,7 @@ class ProviderPlugins(QObject):
 
     @Slot(str, result=str)
     def resourceFile(self, kind):
-        name = "umeko-provider-sdk-0.1.0.zip" if kind == "sdk" else "develop-umeko-provider.zip"
+        name = "umeko-provider-sdk-0.2.0.zip" if kind == "sdk" else "develop-umeko-provider.zip"
         folder = QStandardPaths.writableLocation(QStandardPaths.DownloadLocation) or str(Path.home())
         return QUrl.fromLocalFile(str(Path(folder) / name)).toString()
 

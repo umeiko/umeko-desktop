@@ -31,7 +31,7 @@ Popup {
     ColumnLayout {
         width: root.fullWidth - root.padding * 2; height: root.fullHeight - root.padding * 2; spacing: 10
         opacity: Math.max(0,Math.min(1,((root.height-root.buttonHeight)/Math.max(1,root.fullHeight-root.buttonHeight)-0.15)/0.65))
-        InputField { id: modelSearch; objectName: "modelSearch"; Layout.fillWidth: true; placeholderText: "搜索供应商或模型…"; height: 39 }
+        InputField { id: modelSearch; objectName: "modelSearch"; Layout.fillWidth: true; placeholderText: I18n.t("搜索供应商或模型…"); height: 39 }
         ListView {
             id: modelList; Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 9
             model: backend.config.providers
@@ -40,7 +40,7 @@ Popup {
                 required property var modelData
                 width: modelList.width; spacing: 3
                 property var provider: modelData
-                Text { x: 9; topPadding: 5; bottomPadding: 7; text: provider.name + "  ·  " + provider.models.length + " 个模型"; color: Theme.muted; font.pixelSize: 10 }
+                Text { x: 9; topPadding: 5; bottomPadding: 7; text: provider.name + "  ·  " + provider.models.length + I18n.t(" 个模型"); color: Theme.muted; font.pixelSize: Theme.font(10) }
                 Repeater {
                     model: provider.models
                     Rectangle {
@@ -50,8 +50,8 @@ Popup {
                         width: modelList.width; height: matches ? 44 : 0; visible: matches; radius: 7
                         color: modelMouse.containsMouse ? Theme.hover : backend.config.selectedProvider === provider.id && backend.config.selectedModel === modelData.alias ? Theme.accentBg : "transparent"
                         Column { x: 11; width: parent.width - 44; anchors.verticalCenter: parent.verticalCenter; spacing: 3
-                            Text { text: modelData.alias; width: parent.width; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: 12 }
-                            Text { text: modelData.upstream; width: parent.width; elide: Text.ElideRight; color: Theme.muted; font.pixelSize: 9 }
+                            Text { text: modelData.alias; width: parent.width; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: Theme.font(12) }
+                            Text { text: modelData.upstream; width: parent.width; elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(9) }
                         }
                         Glyph { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "check"; width: 15; height: 15; visible: backend.config.selectedProvider === provider.id && backend.config.selectedModel === modelData.alias }
                         MouseArea { id: modelMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { backend.selectModel(provider.id, modelData.alias); root.close() } }
@@ -60,7 +60,7 @@ Popup {
             }
         }
         Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
-        ActionButton { text: "管理供应商与模型"; glyph: "sliders"; quiet: true; Layout.fillWidth: true; onClicked: { root.close(); root.configure() } }
+        ActionButton { text: I18n.t("管理供应商与模型"); glyph: "sliders"; quiet: true; Layout.fillWidth: true; onClicked: { root.close(); root.configure() } }
     }
     }
 }

@@ -193,8 +193,8 @@ Item {
     TextEdit { id: renderer; visible: false; readOnly: true }
     FloatingMenu {
         id: selectionMenu; objectName: "selectionContextMenu"
-        ContextAction { objectName: "copySelectedText"; text: "复制"; glyph: "copy"; enabled: root.hasSelection; onTriggered: root.copy() }
-        ContextAction { objectName: "selectAllChatText"; text: "全选"; onTriggered: root.selectAll() }
+        ContextAction { objectName: "copySelectedText"; text: I18n.t("复制"); glyph: "copy"; enabled: root.hasSelection; onTriggered: root.copy() }
+        ContextAction { objectName: "selectAllChatText"; text: I18n.t("全选"); onTriggered: root.selectAll() }
         onClosed: if (root.visible) root.forceActiveFocus()
     }
     MouseArea {

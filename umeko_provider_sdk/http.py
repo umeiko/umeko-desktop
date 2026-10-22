@@ -4,10 +4,12 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
+import traceback
 from html.parser import HTMLParser
 from http.cookies import SimpleCookie
 
 from . import ProviderError
+from .network import proxy_handler, trace, TracedResponse
 
 
 def response_cookies(headers):
@@ -43,7 +45,7 @@ class HttpSession:
                         result.remove_header(key)
                 return result
         handlers = [Redirect(), urllib.request.HTTPCookieProcessor(self.cookies)]
-        if not environment_proxy: handlers.append(urllib.request.ProxyHandler({}))
+        handlers.append(proxy_handler(environment_proxy=environment_proxy))
         self.opener = urllib.request.build_opener(*handlers)
 
     def validate(self, url):
@@ -57,11 +59,22 @@ class HttpSession:
             headers.setdefault("Content-Type", "application/json")
         elif isinstance(data, str): data = data.encode()
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
-        try: return self.opener.open(req, timeout=timeout)
+        records = trace.get()
+        record = {'request': {'url': url, 'method': method, 'headers': headers,
+                  'body': data.decode('utf-8', 'replace') if isinstance(data, bytes) else data},
+                  'response': {'status': None, 'headers': {}, 'body': ''}}
+        if records is not None:
+            records.append(record)
+        try:
+            response = self.opener.open(req, timeout=timeout)
+            record['response'].update(status=response.status, headers=dict(response.headers))
+            return TracedResponse(response, record) if records is not None else response
         except urllib.error.HTTPError as error:
+            record['response'].update(status=error.code, headers=dict(error.headers), body=error.read().decode('utf-8', 'replace'))
             error.close()
             raise ProviderError("服务返回 HTTP " + str(error.code)) from None
         except OSError:
+            record['exception'] = traceback.format_exc()
             raise ProviderError("无法连接服务，请检查网络和证书") from None
 
 

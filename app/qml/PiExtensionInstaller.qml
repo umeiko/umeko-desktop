@@ -19,8 +19,8 @@ Popup {
         anchors.fill: parent; contentWidth: availableWidth; clip: true
         ColumnLayout {
             id: installColumn; width: parent.width; spacing: 18
-            Text { text: "安装 Pi 扩展"; color: Theme.ink; font.pixelSize: 19; font.weight: Font.Medium }
-            Text { text: "粘贴 Pi 安装命令，或直接输入 npm、Git、本地路径来源。"; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: 12 }
+            Text { text: I18n.t("安装 Pi 扩展"); color: Theme.ink; font.pixelSize: Theme.font(19); font.weight: Font.Medium }
+            Text { text: I18n.t("粘贴 Pi 安装命令，或直接输入 npm、Git、本地路径来源。"); Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(12) }
             InputField {
                 id: command; objectName: "piInstallCommand"; Layout.fillWidth: true
                 placeholderText: "pi install npm:billion-context"; font.family: "Consolas"
@@ -31,22 +31,22 @@ Popup {
             }
             RowLayout {
                 Layout.fillWidth: true; spacing: 15
-                Text { text: "安装范围"; color: Theme.ink; font.pixelSize: 12 }
-                Picker { id: scope; objectName: "piInstallScope"; Layout.fillWidth: true; model: ["全局 · 所有项目", "项目 · " + backend.workspaceName]; enabled: !root.manager.busy && !backend.kernelBusy && !root.commandIsLocal }
+                Text { text: I18n.t("安装范围"); color: Theme.ink; font.pixelSize: Theme.font(12) }
+                Picker { id: scope; objectName: "piInstallScope"; Layout.fillWidth: true; model: [I18n.t("全局 · 所有项目"), I18n.t("项目 · ") + backend.workspaceName]; enabled: !root.manager.busy && !backend.kernelBusy && !root.commandIsLocal }
             }
-            Text { text: root.commandIsLocal ? "命令中的 --local / -l 已选择项目范围，移除此参数后可切换范围。" : scope.currentIndex === 1 ? "写入当前项目的 .pi/settings.json。" : "写入当前 Pi 配置目录的 settings.json。"; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: 11 }
+            Text { text: root.commandIsLocal ? I18n.t("命令中的 --local / -l 已选择项目范围，移除此参数后可切换范围。") : scope.currentIndex === 1 ? I18n.t("写入当前项目的 .pi/settings.json。") : I18n.t("写入当前 Pi 配置目录的 settings.json。"); Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(11) }
             RowLayout {
                 Layout.fillWidth: true; visible: root.manager.installMessage.length > 0
                 BusyIndicator { visible: root.manager.installState === "installing"; running: visible; implicitWidth: 24; implicitHeight: 24 }
-                Text { objectName: "piInstallResult"; Layout.fillWidth: true; text: root.manager.installMessage; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: root.manager.installState === "failed" ? Theme.danger : Theme.accent; font.pixelSize: 12 }
+                Text { objectName: "piInstallResult"; Layout.fillWidth: true; text: root.manager.installMessage; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: root.manager.installState === "failed" ? Theme.danger : Theme.accent; font.pixelSize: Theme.font(12) }
             }
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
-                ActionButton { objectName: "closePiInstallButton"; text: root.manager.installState === "installing" ? "后台继续" : "关闭"; quiet: true; onClicked: root.close() }
+                ActionButton { objectName: "closePiInstallButton"; text: root.manager.installState === "installing" ? I18n.t("后台继续") : I18n.t("关闭"); quiet: true; onClicked: root.close() }
                 ActionButton {
                     id: installButton; objectName: "confirmPiInstallButton"
-                    text: root.manager.installState === "installing" ? "正在安装…" : "安装"; primary: true
+                    text: root.manager.installState === "installing" ? I18n.t("正在安装…") : I18n.t("安装"); primary: true
                     enabled: command.text.trim().length > 0 && !root.manager.busy && !backend.kernelBusy
                     onClicked: root.manager.installExtension(command.text, scope.currentIndex === 1)
                 }

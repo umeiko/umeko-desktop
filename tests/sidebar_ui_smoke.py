@@ -9,6 +9,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 RESTORE = "--check-restore" in sys.argv
+os.environ.setdefault('UMEKO_LANGUAGE','zh')
 if not RESTORE:
     os.environ["UMEKO_DATA_DIR"] = tempfile.mkdtemp(prefix="umeko-sidebar-ui-")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

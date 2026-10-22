@@ -6,16 +6,16 @@ import "theme.js" as Colors
 
 SectionCard {
     id: root
-    readonly property var choices: [{id:"light",name:"浅色",base:"light"},{id:"dark",name:"深色",base:"dark"},{id:"yanami",name:"八奈见 · 海盐蓝",base:"yanami"}].concat(backend.customThemes)
-    FileDialog { id: picker; title: "导入主题"; nameFilters: ["Umeko 主题 (*.umeko-theme.json *.json)"]; onAccepted: backend.importTheme(selectedFile.toString()) }
+    readonly property var choices: [{id:"light",name:I18n.t("浅色"),base:"light"},{id:"dark",name:I18n.t("深色"),base:"dark"},{id:"yanami",name:I18n.t("八奈见 · 海盐蓝"),base:"yanami"}].concat(backend.customThemes)
+    FileDialog { id: picker; title: I18n.t("导入主题"); nameFilters: [I18n.t("Umeko 主题 (*.umeko-theme.json *.json)")]; onAccepted: backend.importTheme(selectedFile.toString()) }
     ColumnLayout {
         width: parent.width; spacing: 18
         RowLayout {
             Layout.fillWidth: true
-            Text { text: "主题"; color: Theme.ink; font.pixelSize: 14; font.weight: Font.DemiBold }
+            Text { text: I18n.t("主题"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
             Item { Layout.fillWidth: true }
-            ActionButton { objectName: "copyThemePrompt"; glyph: "copy"; text: "制作提示词"; quiet: true; hint: "复制完整格式、示例与制作提示词"; onClicked: backend.copyThemePrompt() }
-            ActionButton { objectName: "importThemeButton"; glyph: "plus"; text: "导入主题"; onClicked: picker.open() }
+            ActionButton { objectName: "copyThemePrompt"; glyph: "copy"; text: I18n.t("制作提示词"); quiet: true; hint: I18n.t("复制完整格式、示例与制作提示词"); onClicked: backend.copyThemePrompt() }
+            ActionButton { objectName: "importThemeButton"; glyph: "plus"; text: I18n.t("导入主题"); onClicked: picker.open() }
         }
         GridLayout {
             Layout.fillWidth: true; columns: width < 640 ? 2 : 3; columnSpacing: 20; rowSpacing: 18
@@ -41,9 +41,9 @@ SectionCard {
                     }
                     RowLayout {
                         Layout.fillWidth: true; spacing: 6
-                        Text { text: choice.modelData.name; textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true }
+                        Text { text: choice.modelData.name; textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12); elide: Text.ElideRight; Layout.fillWidth: true }
                         Glyph { name: "check"; width: 15; height: 15; color: Theme.accent; visible: backend.config.theme === choice.modelData.id }
-                        ActionButton { objectName: "deleteTheme_" + choice.modelData.id; glyph: "trash"; quiet: true; destructive: true; width: 24; height: 24; visible: choice.modelData.id.startsWith("custom:"); hint: "删除主题"; onClicked: backend.removeTheme(choice.modelData.id) }
+                        ActionButton { objectName: "deleteTheme_" + choice.modelData.id; glyph: "trash"; quiet: true; destructive: true; width: 24; height: 24; visible: choice.modelData.id.startsWith("custom:"); hint: I18n.t("删除主题"); onClicked: backend.removeTheme(choice.modelData.id) }
                     }
                 }
             }

@@ -14,7 +14,7 @@ RowLayout {
     CheckBox {
         id: check
         objectName: root.objectName + "_checkbox"
-        text: "视觉"
+        text: I18n.t("视觉")
         checked: root.automatic ? root.suggestion.vision : root.visionEnabled
         implicitHeight: 42; leftPadding: 0; rightPadding: 0
         onToggled: root.edited(checked, false)
@@ -33,15 +33,15 @@ RowLayout {
                 }
             }
         }
-        contentItem: Text { text: check.text; leftPadding: 25; color: Theme.ink; font.pixelSize: 12; verticalAlignment: Text.AlignVCenter }
+        contentItem: Text { text: check.text; leftPadding: 25; color: Theme.ink; font.pixelSize: Theme.font(12); verticalAlignment: Text.AlignVCenter }
     }
-    HelpButton { help: "启用后可向模型发送图片。默认按原始模型名识别，未知型号不启用；手动勾选或取消会保留，恢复自动后重新识别。请按供应商实际部署的能力设置。此选项只代表图片输入，不代表音视频或生成图片。" }
+    HelpButton { help: I18n.t("启用后可向模型发送图片。默认按原始模型名识别，未知型号不启用；手动勾选或取消会保留，恢复自动后重新识别。请按供应商实际部署的能力设置。此选项只代表图片输入，不代表音视频或生成图片。") }
     ActionButton {
         objectName: root.objectName + "_reset"
         Layout.preferredWidth: 66
-        text: root.automatic ? "自动" : "恢复自动"
+        text: root.automatic ? I18n.t("自动") : I18n.t("恢复自动")
         quiet: true
-        hint: root.automatic ? (root.suggestion.matched ? "按原始模型名识别；可手动勾选或取消" : "未识别模型名，默认不启用图片输入；可手动勾选") : "恢复按原始模型名识别视觉能力"
+        hint: root.automatic ? (root.suggestion.matched ? I18n.t("按原始模型名识别；可手动勾选或取消") : I18n.t("未识别模型名，默认不启用图片输入；可手动勾选")) : I18n.t("恢复按原始模型名识别视觉能力")
         onClicked: root.edited(root.suggestion.vision, true)
     }
     Item { Layout.fillWidth: true }

@@ -13,12 +13,12 @@ Column {
     readonly property bool running: tools.some(tool => tool.state === "running")
     readonly property int failures: tools.filter(tool => tool.state === "error").length
     readonly property bool commandsOnly: tools.length > 0 && tools.every(tool => command(tool.name))
-    readonly property string summary: (running ? (commandsOnly ? "正在运行 " : "正在执行 ") : (commandsOnly ? "运行了 " : "执行了 ")) + tools.length + (commandsOnly ? " 条命令" : " 项操作") + (failures ? "（" + failures + " 失败）" : "")
+    readonly property string summary: (running ? (commandsOnly ? I18n.t("正在运行 ") : I18n.t("正在执行 ")) : (commandsOnly ? I18n.t("运行了 ") : I18n.t("执行了 "))) + tools.length + (commandsOnly ? I18n.t(" 条命令") : I18n.t(" 项操作")) + (failures ? "（" + failures + I18n.t(" 失败）") : "")
     spacing: 2
     visible: tools.length > 0
     onExpandedChanged: if (!expanded && selectionController) selectionController.hideDetails(messageIndex, blockOffset + 1, tools.length)
     function command(name) { return name === "bash" || name === "powershell" }
-    function action(name) { return ({read:"读取",write:"写入",edit:"编辑",bash:"运行",powershell:"运行",grep:"搜索",find:"查找",ls:"浏览",codemode:"执行代码",tool_search:"查找工具",submit_to_chatbox:"展示附件"})[name] || name }
+    function action(name) { return ({read:I18n.t("读取"),write:I18n.t("写入"),edit:I18n.t("编辑"),bash:I18n.t("运行"),powershell:I18n.t("运行"),grep:I18n.t("搜索"),find:I18n.t("查找"),ls:I18n.t("浏览"),codemode:I18n.t("执行代码"),tool_search:I18n.t("查找工具"),submit_to_chatbox:I18n.t("展示附件")})[name] || name }
     function preview(tool) {
         const args = tool.arguments || {}
         const value = args.command || args.code || args.pattern || args.query || args.path || ""
@@ -29,7 +29,7 @@ Column {
         Row {
             id: headerRow; height: parent.height; spacing: 7
             ActivitySpinner { visible: root.running; width: 12; height: 12; anchors.verticalCenter: parent.verticalCenter }
-            Text { text: root.summary; color: headerMouse.interactionHovered ? Theme.ink : Theme.muted; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
+            Text { text: root.summary; color: headerMouse.interactionHovered ? Theme.ink : Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
             Glyph { name: root.expanded ? "chevron-down" : "chevron-right"; width: 12; height: 12; anchors.verticalCenter: parent.verticalCenter }
         }
         ChatHitArea {
@@ -37,7 +37,7 @@ Column {
             anchors.fill: parent; selectionController: root.selectionController
             onClicked: { root.expanded = !root.expanded; root.expansionState.expanded = root.expanded }
         }
-        Accessible.role: Accessible.Button; Accessible.name: root.summary; Accessible.description: root.expanded ? "已展开" : "已折叠"
+        Accessible.role: Accessible.Button; Accessible.name: root.summary; Accessible.description: root.expanded ? I18n.t("已展开") : I18n.t("已折叠")
     }
     Repeater {
         model: root.expanded ? root.tools.length : 0
@@ -61,29 +61,29 @@ Column {
                     name: root.command(toolRow.tool.name) ? "terminal" : toolRow.tool.name === "edit" || toolRow.tool.name === "write" ? "edit" : "file"
                     width: 14; height: 14; visible: toolRow.tool.state !== "running"; anchors.verticalCenter: parent.verticalCenter
                 }
-                Text { id: verb; x: 22; text: root.action(toolRow.tool.name); color: Theme.muted; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
+                Text { id: verb; x: 22; text: root.action(toolRow.tool.name); color: Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
                 Text {
                     id: pathLabel; objectName: "toolPath_" + toolRow.tool.id
                     x: verb.x + verb.width + 6; width: Math.max(0, parent.width - x - 38)
                     visible: !!toolRow.tool.path
                     text: toolRow.tool.path ? toolRow.tool.path.split(/[\\/]/).pop() || toolRow.tool.path : ""
-                    elide: Text.ElideMiddle; color: pathMouse.interactionHovered ? Theme.accent : Theme.muted; font.pixelSize: 12; font.underline: true; anchors.verticalCenter: parent.verticalCenter
+                    elide: Text.ElideMiddle; color: pathMouse.interactionHovered ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(12); font.underline: true; anchors.verticalCenter: parent.verticalCenter
                     ChatHitArea {
                         id: pathMouse; width: Math.min(parent.width, parent.implicitWidth); height: parent.height
                         selectionController: root.selectionController; interactionPriority: 10; onClicked: backend.copy(toolRow.tool.path)
                     }
-                    HoverTip { active: pathMouse.interactionHovered; text: (toolRow.tool.path || "") + "\n点击复制路径" }
+                    HoverTip { active: pathMouse.interactionHovered; text: (toolRow.tool.path || "") + I18n.t("\n点击复制路径") }
                 }
                 Text {
                     x: verb.x + verb.width + 6; width: Math.max(0, parent.width - x - 38); visible: !pathLabel.visible
-                    text: root.preview(toolRow.tool); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter
+                    text: root.preview(toolRow.tool); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter
                 }
                 Glyph { x: parent.width - 30; width: 12; height: 12; name: toolRow.details ? "chevron-down" : "chevron-right"; anchors.verticalCenter: parent.verticalCenter }
                 Text {
                     x: parent.width - 14; width: 14; text: toolRow.tool.state === "error" ? "×" : toolRow.tool.state === "interrupted" ? "!" : ""
-                    color: Theme.danger; font.pixelSize: 16; anchors.verticalCenter: parent.verticalCenter
+                    color: Theme.danger; font.pixelSize: Theme.font(16); anchors.verticalCenter: parent.verticalCenter
                 }
-                Accessible.role: Accessible.Button; Accessible.name: root.action(toolRow.tool.name) + " " + root.preview(toolRow.tool); Accessible.description: toolRow.details ? "已展开" : "已折叠"
+                Accessible.role: Accessible.Button; Accessible.name: root.action(toolRow.tool.name) + " " + root.preview(toolRow.tool); Accessible.description: toolRow.details ? I18n.t("已展开") : I18n.t("已折叠")
             }
             Item {
                 visible: toolRow.details; width: parent.width; height: detailText.implicitHeight + 12
@@ -94,7 +94,7 @@ Column {
                     selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset + toolRow.index + 1
                     conditionalSelection: true
                     text: JSON.stringify(toolRow.tool.arguments || {}, null, 2) + (toolRow.tool.result ? "\n\n" + toolRow.tool.result : "")
-                    font.family: "Consolas"; font.pixelSize: 11; color: Theme.muted
+                    font.family: "Consolas"; font.pixelSize: Theme.font(11); color: Theme.muted
                 }
             }
         }

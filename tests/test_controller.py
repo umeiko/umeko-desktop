@@ -259,8 +259,9 @@ class KernelUpdateTests(unittest.TestCase):
             old.save()
             old.save_sessions([{"id":"fixture", "title":"fixture", "messages":[], "history":[]}])
             original = old.path.read_bytes()
-            migrated = Store()
-            self.assertEqual(migrated.directory.name, "Umeko")
+            with patch("app.storage.data_directory", return_value=Path(temp)/"home/.umeko/desktop"), patch("app.storage.legacy_data_directory", return_value=Path(temp)/"Umeko"):
+                migrated = Store()
+            self.assertEqual(migrated.directory.name, "desktop")
             self.assertEqual(migrated.data["password"], "synthetic-password")
             self.assertEqual(migrated.data["selectedModel"], "existing-alias")
             self.assertEqual(migrated.data["providers"][0]["name"], "内网服务")

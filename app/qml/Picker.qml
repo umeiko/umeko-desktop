@@ -2,19 +2,19 @@ import QtQuick
 import QtQuick.Controls
 ComboBox {
     id: control
-    implicitHeight: 40
-    font.pixelSize: 12
+    implicitHeight: Math.max(40, font.pixelSize + 20)
+    font.pixelSize: Theme.font(12)
     leftPadding: 12; rightPadding: 30
     background: Rectangle { color: Theme.surface; border.color: control.activeFocus ? Theme.accent : Theme.line; radius: 8 }
     contentItem: Text { text: control.displayText; color: Theme.ink; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; font: control.font }
-    indicator: Glyph { name: "chevron-down"; width: 14; height: 14; x: control.width - 23; y: 13 }
+    indicator: Glyph { name: "chevron-down"; width: 14; height: 14; x: control.width - 23; y: (control.height - height) / 2 }
     popup: Popup {
         y: control.height + 4; width: control.width; padding: 5
         implicitHeight: Math.min(280, contentItem.implicitHeight + 10)
         background: Rectangle { color: Theme.surface; border.color: Theme.line; radius: 8 }
         contentItem: ListView { clip: true; implicitHeight: contentHeight; model: control.popup.visible ? control.delegateModel : null; currentIndex: control.highlightedIndex }
     }
-    delegate: ItemDelegate { width: control.width - 10; height: 36; text: modelData; font.pixelSize: 12
+    delegate: ItemDelegate { width: control.width - 10; height: Math.max(36, font.pixelSize + 14); text: modelData; font.pixelSize: Theme.font(12)
         contentItem: Text { text: modelData; color: Theme.ink; font: parent.font; verticalAlignment: Text.AlignVCenter }
         background: Rectangle { radius: 5; color: parent.highlighted ? Theme.accentBg : "transparent" }
         highlighted: control.highlightedIndex === index }

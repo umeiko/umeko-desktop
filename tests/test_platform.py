@@ -4,17 +4,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.platform_support import configure_input_method, data_directory
+from app.platform_support import configure_input_method, data_directory, legacy_data_directory
 from app.storage import keyring_protect
 
 
 class PlatformTests(unittest.TestCase):
     def test_platform_data_locations(self):
         home = Path("/users/example")
-        self.assertEqual(data_directory("darwin", {}, home), home / "Library/Application Support/Umeko")
-        self.assertEqual(data_directory("linux", {}, home), home / ".local/share/umeko")
-        self.assertEqual(data_directory("linux", {"XDG_DATA_HOME": "/custom"}, home), Path("/custom/umeko"))
-        self.assertEqual(data_directory("win32", {"LOCALAPPDATA": "/local"}, home), Path("/local/Umeko"))
+        for system in ('win32', 'darwin', 'linux'):
+            self.assertEqual(data_directory(system, {}, home), home / '.umeko/desktop')
+        self.assertEqual(legacy_data_directory("darwin", {}, home), home / "Library/Application Support/Umeko")
+        self.assertEqual(legacy_data_directory("linux", {}, home), home / ".local/share/umeko")
+        self.assertEqual(legacy_data_directory("linux", {"XDG_DATA_HOME": "/custom"}, home), Path("/custom/umeko"))
+        self.assertEqual(legacy_data_directory("win32", {"LOCALAPPDATA": "/local"}, home), Path("/local/Umeko"))
 
     def test_fcitx_uses_only_compatible_bundled_plugins_and_preserves_overrides(self):
         with tempfile.TemporaryDirectory() as temp:

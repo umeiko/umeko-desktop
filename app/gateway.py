@@ -14,12 +14,15 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .integration import Completion, IntegrationRequired
 from .model_capabilities import normalize_model, normalize_vision
 from .protocols import response_events, collect_openai, anthropic_events_to_openai, openai_events_to_anthropic
+from .request_diagnostics import RequestDiagnostics, RequestFailure
+from umeko_provider_sdk.network import network_scope, proxy_handler, trace, TracedResponse
 
 
 def validate_base_url(url: str) -> str:
@@ -39,6 +42,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 class Gateway:
     def __init__(self, store, adapter, plugins=None):
         self.store, self.adapter, self.plugins = store, adapter, plugins
+        self.diagnostics = RequestDiagnostics(store.directory)
 
     def provider(self, provider_id):
         return next((p for p in self.store.data["providers"] if p["id"] == provider_id), None)
@@ -75,6 +79,23 @@ class Gateway:
         return Completion(msg.get("content") or "", calls, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), data["choices"][0]["finish_reason"], msg.get("reasoning_content") or "")
 
     def events(self, alias, messages, tools=None, max_tokens=4096, provider_id=None, parameters=None):
+        p, model = self.resolve(alias, provider_id)
+        records = []
+        request = {'transport': p['api'], 'model': model, 'messages': messages,
+                   'tools': tools or [], 'max_tokens': max_tokens, 'parameters': parameters or {}}
+        try:
+            with network_scope(p.get('proxy'), records):
+                for event in self._events(alias, messages, tools, max_tokens, provider_id, parameters):
+                    if event.get('error'):
+                        raise ValueError(json.dumps(event, ensure_ascii=False))
+                    yield event
+        except (IntegrationRequired, PermissionError):
+            raise
+        except Exception as error:
+            raise self.diagnostics.failure(p, request, records[-1]['response'] if records else {},
+                                           repr(error), records) from None
+
+    def _events(self, alias, messages, tools=None, max_tokens=4096, provider_id=None, parameters=None):
         p, model = self.resolve(alias, provider_id)
         if any(isinstance(m.get("content"), list) and any(block.get("type") == "image_url" for block in m["content"]) for m in messages) and not self.supports_vision(alias, p["id"]):
             raise ValueError("当前模型未启用视觉，请在模型配置中勾选“视觉”或切换支持图片的模型")
@@ -125,15 +146,21 @@ class Gateway:
             if tools:
                 body["tools"] = [{"type": "function", "function": t} for t in tools]
         request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+        opener = urllib.request.build_opener(proxy_handler(p.get('proxy')), NoRedirect())
+        record = {'request': {'url': url, 'method': 'POST', 'headers': headers, 'body': body},
+                  'response': {'status': None, 'headers': {}, 'body': ''}}
+        trace.get().append(record)
         try:
             with opener.open(request, timeout=90) as response:
-                events = response_events(response)
+                record['response'].update(status=response.status, headers=dict(response.headers))
+                events = response_events(TracedResponse(response, record))
                 yield from anthropic_events_to_openai(events) if p["api"] == "anthropic" else events
         except urllib.error.HTTPError as exc:
-            # Never reflect upstream bodies which may include credentials or internal details.
+            record['response'].update(status=exc.code, headers=dict(exc.headers), body=exc.read().decode('utf-8', 'replace'))
+            exc.close()
             raise ValueError(f"供应商返回 HTTP {exc.code}，请检查地址、密钥和模型名称") from None
         except (urllib.error.URLError, TimeoutError):
+            record['exception'] = traceback.format_exc()
             raise ValueError("无法连接供应商，请检查地址、网络与证书") from None
 
     @staticmethod
@@ -318,8 +345,8 @@ class LocalServer:
                         self.wfile.write(b"data: [DONE]\n\n")
                 except ConnectionError:
                     pass
-                except Exception:
-                    event({"type": "error", "error": {"type": "upstream_error", "message": "供应商流已中断"}}, "error" if anth else None)
+                except Exception as failure:
+                    event({"type": "error", "error": {"type": "upstream_error", "message": str(failure) if isinstance(failure, RequestFailure) else "供应商流已中断"}}, "error" if anth else None)
                 finally:
                     iterator.close() if hasattr(iterator, "close") else None
                     self.close_connection = True

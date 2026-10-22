@@ -36,6 +36,7 @@ from .message_attachments import split_attachments
 from .app_about import AppAbout
 from .themes import BASES, LIMIT as THEME_LIMIT, theme_library, read_theme
 from .session_preview import SessionPreview
+from .preferences import PreferencesMixin
 
 
 GREETINGS = (
@@ -54,8 +55,21 @@ GREETINGS = (
 )
 
 
-class Controller(PiControllerMixin, QObject):
+class Controller(PreferencesMixin, PiControllerMixin, QObject):
     changed = Signal()
+    appearanceChanged = Signal()
+
+    @Property(str, notify=appearanceChanged)
+    def language(self):
+        return self.store.data['ui']['language']
+
+    @Property(float, notify=appearanceChanged)
+    def fontScale(self):
+        return self.store.data['ui']['fontScale']
+
+    @Property(str, constant=True)
+    def userDataDirectory(self):
+        return str(self.store.directory)
     chatChanged = Signal()
     transcriptChanged = Signal()
     viewChanged = Signal()
@@ -84,6 +98,10 @@ class Controller(PiControllerMixin, QObject):
         self._proxy_usage_timer.setInterval(2000)
         self._proxy_usage_timer.timeout.connect(self._sync_proxy_usage)
         self._proxy_usage_timer.start()
+        self._appearance_save = QTimer(self)
+        self._appearance_save.setSingleShot(True)
+        self._appearance_save.setInterval(250)
+        self._appearance_save.timeout.connect(self.store.save)
         self.adapter = load_adapter(self.store.directory)
         self._provider_plugins = ProviderPlugins(self)
         self.gateway = Gateway(self.store, self.adapter, self._provider_plugins)
@@ -1075,7 +1093,8 @@ class Controller(PiControllerMixin, QObject):
                     raise ValueError("模型 ID 不能为空；别名不能重复或包含空白")
                 taken.add(alias)
                 models.append({"upstream": upstream, "alias": alias, **normalize_model(row, previous)})
-            provider = {"id": provider_id, "name": name.strip(), "api": api, "baseUrl": base_url, "key": kept_key, "models": models}
+            provider = {"id": provider_id, "name": name.strip(), "api": api, "baseUrl": base_url, "key": kept_key, "models": models,
+                        "proxy": (existing or {}).get('proxy', {'mode':'system', 'url':''})}
             self.store.data["providers"] = [provider if p["id"] == provider_id else p for p in self.store.data["providers"]]
             if not existing:
                 self.store.data["providers"].append(provider)

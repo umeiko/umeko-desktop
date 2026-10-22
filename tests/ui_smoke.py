@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+os.environ.setdefault('UMEKO_LANGUAGE','zh')
 os.environ["CODEAGENT_DATA_DIR"] = str(Path(tempfile.mkdtemp(prefix="codeagent-ui-test-")).resolve())
 os.environ["UMEKO_DATA_DIR"] = os.environ["CODEAGENT_DATA_DIR"]
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

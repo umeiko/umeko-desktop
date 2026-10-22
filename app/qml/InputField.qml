@@ -1,11 +1,11 @@
 import QtQuick
 import QtQuick.Controls
 TextField {
-    implicitHeight: 42
+    implicitHeight: Math.max(42, font.pixelSize + 22)
     selectByMouse: true
     color: Theme.ink
     placeholderTextColor: Theme.muted
-    font.pixelSize: 13
+    font.pixelSize: Theme.font(13)
     leftPadding: 13; rightPadding: 13
     background: Rectangle {
         radius: 8; color: Theme.surface

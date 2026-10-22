@@ -2,6 +2,8 @@ pragma Singleton
 import QtQuick
 import "theme.js" as Colors
 QtObject {
+    readonly property real fontScale: backend.fontScale
+    function font(size) { return Math.max(1, Math.round(size * fontScale)) }
     readonly property var style: backend.themeStyle
     readonly property string base: style.base || backend.config.theme
     readonly property bool dark: base === "dark"

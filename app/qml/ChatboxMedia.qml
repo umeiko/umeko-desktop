@@ -33,7 +33,7 @@ Column {
                 Item {
                     id: header; width: parent.width; height: card.inlineImage ? 28 : 34
                     Glyph { x: 10; width: 14; height: 14; anchors.verticalCenter: parent.verticalCenter; name: card.item.kind === "folder" ? "folder" : card.item.kind === "image" ? "image" : "file" }
-                    Text { id: filename; x: 32; width: parent.width - 58; anchors.verticalCenter: parent.verticalCenter; text: card.item.title || card.item.name || "文件"; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.ink; font.pixelSize: 12 }
+                    Text { id: filename; x: 32; width: parent.width - 58; anchors.verticalCenter: parent.verticalCenter; text: card.item.title || card.item.name || I18n.t("文件"); textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.ink; font.pixelSize: Theme.font(12) }
                     ChatHitArea {
                         id: headerArea; objectName: "openChatbox_" + card.key
                         selectionController: root.selectionController
@@ -48,8 +48,8 @@ Column {
                         Behavior on color { ColorAnimation { duration: 100 } }
                         Glyph { anchors.centerIn: parent; name: "chevron-down"; width: 12; height: 12; rotation: openMenu.visible ? 180 : 0; Behavior on rotation { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } } }
                         ChatHitArea { id: arrowArea; objectName: "toggleChatbox_" + card.key; anchors.fill: parent; selectionController: root.selectionController; interactionPriority: 10; onClicked: { if (openMenu.visible) openMenu.close(); else openMenu.popup(arrowButton.width - openMenu.width, arrowButton.height + 5) } }
-                        HoverTip { active: arrowArea.interactionHovered && !openMenu.visible; text: "文件操作" }
-                        Accessible.role: Accessible.Button; Accessible.name: "文件操作"; Accessible.description: openMenu.visible ? "已展开" : "已收起"
+                        HoverTip { active: arrowArea.interactionHovered && !openMenu.visible; text: I18n.t("文件操作") }
+                        Accessible.role: Accessible.Button; Accessible.name: I18n.t("文件操作"); Accessible.description: openMenu.visible ? I18n.t("已展开") : I18n.t("已收起")
                     }
                     HoverTip {
                         objectName: "chatboxTip_" + card.key
@@ -57,7 +57,7 @@ Column {
                         heading: filename.text
                         text: [card.item.path, card.item.caption, card.item.previewNote].filter(value => !!value).join("\n")
                     }
-                    Accessible.role: Accessible.Button; Accessible.name: card.item.title || card.item.name || "文件"; Accessible.description: card.item.path || ""
+                    Accessible.role: Accessible.Button; Accessible.name: card.item.title || card.item.name || I18n.t("文件"); Accessible.description: card.item.path || ""
                 }
                 Item {
                     width: parent.width; visible: card.inlineImage
@@ -69,7 +69,7 @@ Column {
                         sourceSize: Qt.size(Math.min(1600, card.item.pixelWidth || 1600), Math.min(1000, card.item.pixelHeight || 1000)); fillMode: Image.PreserveAspectFit
                     }
                     BusyIndicator { anchors.centerIn: parent; running: preview.status === Image.Loading; visible: running; width: 26; height: 26 }
-                    Text { anchors.centerIn: parent; visible: preview.status === Image.Error; text: "图片暂不可预览，点击打开"; color: Theme.muted; font.pixelSize: 11 }
+                    Text { anchors.centerIn: parent; visible: preview.status === Image.Error; text: I18n.t("图片暂不可预览，点击打开"); color: Theme.muted; font.pixelSize: Theme.font(11) }
                     ChatHitArea {
                         selectionController: root.selectionController
                         anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton; cursorShape: Qt.PointingHandCursor
@@ -78,7 +78,7 @@ Column {
                 }
                 SelectableText {
                     visible: card.inlineImage && text.length > 0; width: parent.width; text: card.item.caption || ""; textFormat: TextEdit.PlainText; color: Theme.ink
-                    font.pixelSize: 12; wrapMode: TextEdit.Wrap
+                    font.pixelSize: Theme.font(12); wrapMode: TextEdit.Wrap
                     selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset + card.index * 3 + 1
                 }
             }
@@ -86,13 +86,13 @@ Column {
                 id: openMenu; objectName: "chatboxOpen_" + card.key
                 parent: arrowButton
                 closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-                ContextAction { objectName: "revealChatbox_" + card.key; text: "在文件管理器中打开"; onTriggered: backend.openChatboxPath(card.item.path, true) }
+                ContextAction { objectName: "revealChatbox_" + card.key; text: I18n.t("在文件管理器中打开"); onTriggered: backend.openChatboxPath(card.item.path, true) }
             }
             FloatingMenu {
                 id: contextMenu; objectName: "chatboxContext_" + card.key
-                ContextAction { objectName: "copyChatboxFile_" + card.key; text: "复制"; onTriggered: backend.copyChatboxFile(card.item.path) }
-                ContextAction { objectName: "copyChatbox_" + card.key; text: "复制路径"; onTriggered: backend.copy(card.item.path) }
-                ContextAction { text: "在文件管理器中打开"; onTriggered: backend.openChatboxPath(card.item.path, true) }
+                ContextAction { objectName: "copyChatboxFile_" + card.key; text: I18n.t("复制"); onTriggered: backend.copyChatboxFile(card.item.path) }
+                ContextAction { objectName: "copyChatbox_" + card.key; text: I18n.t("复制路径"); onTriggered: backend.copy(card.item.path) }
+                ContextAction { text: I18n.t("在文件管理器中打开"); onTriggered: backend.openChatboxPath(card.item.path, true) }
             }
         }
     }

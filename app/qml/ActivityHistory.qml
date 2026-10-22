@@ -25,7 +25,7 @@ Column {
             width: root.width
             MessageBody {
                 width: parent.width; visible: step.entry.kind === "text"
-                text: visible ? step.entry.text || "" : ""
+                text: visible ? (step.entry.error ? I18n.t(step.entry.text || "") : step.entry.text || "") : ""
                 markdown: !step.entry.error; textColor: step.entry.error ? Theme.danger : Theme.ink
                 compact: step.index < root.activity.length - 1
                 selectionController: root.selectionController; messageIndex: root.messageIndex; blockOffset: step.entry.blockOffset

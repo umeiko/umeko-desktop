@@ -51,7 +51,7 @@ for metadata in incoming.rglob('build.json'):
     for file in [archive,checksum]:shutil.copy2(file,publish/file.name)
     sizes.append((target,archive.stat().st_size))
 assert seen==platforms
-for name in ['umeko-provider-sdk-0.1.0.zip','develop-umeko-provider.zip']:
+for name in ['umeko-provider-sdk-0.2.0.zip','develop-umeko-provider.zip']:
     matches=list(incoming.rglob(name));assert len(matches)==1
     shutil.copy2(matches[0],publish/name)
 files=sorted(publish.iterdir(),key=lambda p:p.name.casefold())
@@ -62,7 +62,7 @@ releases=api('releases')
 release=next((r for r in releases if r['tag_name']==TAG),None)
 if release is None:
     notes=base/'notes.md'
-    notes.write_text('Open chats with the approved Yanami loading mascot.\n\n- Selecting another chat immediately covers the previous conversation while the sidebar highlight moves.\n- Cold transcripts load in the background. Rapid switches keep only the latest choice; stale results cannot replace the selected chat.\n- A blue pixel spinner and three loading dots animate beside the approved mascot. The finished conversation appears with a short fade after its layout and scroll position are restored.\n- Leaving for Settings or starting a new chat cancels the pending switch. A failed read returns to the previous conversation without a stuck loading page.\n\n'+'Verified CI: https://github.com/'+REPO+'/actions/runs/'+RUN+'\n\n'+''.join(f'- {p}: {n/1048576:.2f} MiB\n' for p,n in sizes),encoding='utf-8')
+    notes.write_text('Portable profiles, provider networking and a bilingual interface.\n\n- Keep providers, plugin packages, themes and conversations under ~/.umeko; migrate older profiles without deleting their originals or losing credential namespaces.\n- Set each provider to use the system proxy, connect directly or use a custom HTTP/HTTPS proxy from its gear.\n- Open failed model requests to inspect the complete request, HTTP response and exception. Credentials are redacted; the latest 30 reports stay on this device. SDK 0.2 adds transport tracing while retaining Provider API v1 compatibility.\n- Choose Simplified Chinese or English. The first launch follows the system UI language; manual choices persist.\n- Adjust text size live from 50% to 200%, with responsive controls and scrollable help.\n- Preserve Yanami loading, PID navigation, custom themes and existing Pi capabilities.\n\n'+'Verified CI: https://github.com/'+REPO+'/actions/runs/'+RUN+'\n\n'+''.join(f'- {p}: {n/1048576:.2f} MiB\n' for p,n in sizes),encoding='utf-8')
     payload=base/'create-release.json'
     payload.write_text(json.dumps({'tag_name':TAG,'target_commitish':commit,'name':TAG,
                                   'draft':True,'prerelease':minimal,'body':notes.read_text(encoding='utf-8')}),encoding='utf-8')

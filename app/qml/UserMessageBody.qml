@@ -9,14 +9,14 @@ Item {
     implicitWidth: textMeasure.advanceWidth + attachmentMeasure.advanceWidth + attachments.length * 34 + Math.max(0, attachments.length - (text.length ? 0 : 1)) * 6 + 1
     implicitHeight: content.implicitHeight
     TextMetrics { id: textMeasure; font: prose.font; text: root.text.slice(0,512).split("\n").reduce((a,b) => a.length > b.length ? a : b, "") }
-    TextMetrics { id: attachmentMeasure; font.pixelSize: 12; text: root.attachments.map(item => item.name).join("") }
+    TextMetrics { id: attachmentMeasure; font.pixelSize: Theme.font(12); text: root.attachments.map(item => item.name).join("") }
     Flow {
         id: content; width: root.width; spacing: 6
         SelectableText {
             id: prose; visible: root.text.length > 0
             width: Math.min(root.width, Math.max(1, Math.ceil(textMeasure.advanceWidth) + 1))
             text: root.text; color: Theme.ink; textFormat: TextEdit.PlainText
-            font.pixelSize: 13; wrapMode: TextEdit.Wrap; topPadding: 3; bottomPadding: 3
+            font.pixelSize: Theme.font(13); wrapMode: TextEdit.Wrap; topPadding: 3; bottomPadding: 3
             selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: 0
         }
         Repeater {
@@ -33,7 +33,7 @@ Item {
                 SelectableText {
                     id: filename; objectName: "userAttachmentName_" + root.messageIndex + "_" + index
                     x: 25; y: 4; width: parent.width - 32
-                    text: modelData.name; textFormat: TextEdit.PlainText; font.pixelSize: 12
+                    text: modelData.name; textFormat: TextEdit.PlainText; font.pixelSize: Theme.font(12)
                     color: Theme.ink; wrapMode: TextEdit.WrapAnywhere
                     selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: 10000 + index
                     Accessible.description: modelData.path

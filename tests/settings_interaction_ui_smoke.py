@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
+os.environ.setdefault('UMEKO_LANGUAGE','zh')
 os.environ['UMEKO_DATA_DIR']=tempfile.mkdtemp(prefix='umeko-settings-interaction-')
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 os.environ.setdefault('QT_QUICK_BACKEND','software')
@@ -74,7 +75,7 @@ try:
     help_button=find('mappingHelp');reveal(help_button);click(help_button)
     from PySide6.QtCore import QObject
     popup=window.findChild(QObject,'helpTooltip_mappingHelp');assert popup and popup.property('visible')
-    text=popup.property('contentItem');pos=text.mapToScene(QPointF(8,8)).toPoint()
+    text=find('helpText_mappingHelp');pos=text.mapToScene(QPointF(8,8)).toPoint()
     QTest.mouseDClick(window,Qt.LeftButton,Qt.NoModifier,pos);QTest.mouseRelease(window,Qt.LeftButton,Qt.NoModifier,pos);QTest.qWait(100)
     assert text.property('selectedText'),'Help text cannot be selected'
     QTest.mouseMove(window,QPoint(400,90));QTest.qWait(3250)

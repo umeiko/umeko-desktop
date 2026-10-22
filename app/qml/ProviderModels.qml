@@ -24,16 +24,16 @@ ColumnLayout {
     ListModel { id: entries }
     RowLayout {
         Layout.fillWidth: true
-        Text { text: "模型"; color: Theme.ink; font.pixelSize: 12 }
-        Text { text: entries.count.toString(); color: Theme.muted; font.pixelSize: 11 }
-        HelpButton { help: "一个供应商可以添加多个模型。模型 ID 填服务端名称，别名用于聊天选择和 API 代理服务；别名留空时使用模型 ID。" }
+        Text { text: I18n.t("模型"); color: Theme.ink; font.pixelSize: Theme.font(12) }
+        Text { text: entries.count.toString(); color: Theme.muted; font.pixelSize: Theme.font(11) }
+        HelpButton { help: I18n.t("一个供应商可以添加多个模型。模型 ID 填服务端名称，别名用于聊天选择和 API 代理服务；别名留空时使用模型 ID。") }
         Item { Layout.fillWidth: true }
-        ActionButton { visible: !root.fixedModels; objectName: "addProviderModelButton"; text: "添加模型"; glyph: "plus"; quiet: true; onClicked: root.addModel() }
+        ActionButton { visible: !root.fixedModels; objectName: "addProviderModelButton"; text: I18n.t("添加模型"); glyph: "plus"; quiet: true; onClicked: root.addModel() }
     }
     RowLayout {
         Layout.fillWidth: true; spacing: 12
-        Text { text: "模型 ID"; color: Theme.muted; font.pixelSize: 10; Layout.fillWidth: true; Layout.preferredWidth: 1 }
-        Text { text: "别名"; color: Theme.muted; font.pixelSize: 10; Layout.fillWidth: true; Layout.preferredWidth: 1 }
+        Text { text: I18n.t("模型 ID"); color: Theme.muted; font.pixelSize: Theme.font(10); Layout.fillWidth: true; Layout.preferredWidth: 1 }
+        Text { text: I18n.t("别名"); color: Theme.muted; font.pixelSize: Theme.font(10); Layout.fillWidth: true; Layout.preferredWidth: 1 }
         Item { Layout.preferredWidth: 32 }
     }
     Repeater {
@@ -49,14 +49,14 @@ ColumnLayout {
             Layout.fillWidth: true; spacing: 4
             RowLayout {
                 Layout.fillWidth: true; spacing: 12
-                InputField { objectName: "providerModelId_" + index; readOnly: root.fixedModels; Layout.fillWidth: true; Layout.preferredWidth: 1; text: upstream; placeholderText: "服务端模型 ID"; onTextEdited: entries.setProperty(index, "upstream", text) }
-                InputField { objectName: "providerModelAlias_" + index; Layout.fillWidth: true; Layout.preferredWidth: 1; text: alias; placeholderText: "与模型 ID 相同"; onTextEdited: entries.setProperty(index, "alias", text) }
+                InputField { objectName: "providerModelId_" + index; readOnly: root.fixedModels; Layout.fillWidth: true; Layout.preferredWidth: 1; text: upstream; placeholderText: I18n.t("服务端模型 ID"); onTextEdited: entries.setProperty(index, "upstream", text) }
+                InputField { objectName: "providerModelAlias_" + index; Layout.fillWidth: true; Layout.preferredWidth: 1; text: alias; placeholderText: I18n.t("与模型 ID 相同"); onTextEdited: entries.setProperty(index, "alias", text) }
                 ActionButton { visible: !root.fixedModels; glyph: "trash"; width: 32; quiet: true; enabled: entries.count > 1; onClicked: entries.remove(index) }
             }
             RowLayout {
                 Layout.fillWidth: true; spacing: 8
-                Text { text: "上下文长度"; color: Theme.muted; font.pixelSize: 11 }
-                HelpButton { help: "自动按原始模型名匹配，未知名称使用 128000 token。输入整数、256K 或 1M 可自定义；K=1024，M=1048576。恢复自动后跟随模型名。请按供应商实际额度填写。" }
+                Text { text: I18n.t("上下文长度"); color: Theme.muted; font.pixelSize: Theme.font(11) }
+                HelpButton { help: I18n.t("自动按原始模型名匹配，未知名称使用 128000 token。输入整数、256K 或 1M 可自定义；K=1024，M=1048576。恢复自动后跟随模型名。请按供应商实际额度填写。") }
                 ContextWindowField {
                     objectName: "providerContext_" + index
                     Layout.preferredWidth: 190; Layout.fillWidth: false
