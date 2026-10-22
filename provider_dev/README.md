@@ -26,7 +26,7 @@ python -m umeko_provider_sdk validate my-provider
 python -m umeko_provider_sdk pack my-provider my-provider.zip
 ```
 
-Import the ZIP using the plus button. Each import creates an independent account instance, even when the same implementation is already installed. Instances have separate configuration and protected credentials. Use a new semantic version when changing package contents; the host rejects different code using an existing package/version identity.
+Import the ZIP using the plus button. Each import creates an independent account instance, even when the same implementation is already installed. Instances have separate configuration and protected credentials. While any account uses a package/version, importing different contents with that identity is rejected; use a new semantic version for updates. Removing the last account releases its installed package. After all accounts using a version are removed, a corrected package can be reimported with the same version. Unreferenced packages left by older app versions are replaced automatically; other accounts and versions are preserved.
 
 ## API v1
 

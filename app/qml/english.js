@@ -454,9 +454,9 @@ var strings = {
   "工作可以认真，休息和好吃的也不能少。": "Work matters, but so do breaks and good food.",
   "好啦，开工吧。今天也请多关照。": "All right, let's get started. Glad to work with you.",
   "供应商配置已保存": "Provider settings saved",
-  "该供应商仍有任务运行": "This provider has a running task",
+  "该供应商仍有任务运行": "This provider still has a running task",
   "代理设置无效": "Invalid proxy settings",
-  "请输入有效的 HTTP / HTTPS 代理地址": "Enter a valid HTTP / HTTPS proxy address",
+  "请输入有效的 HTTP / HTTPS 代理地址": "Enter a valid HTTP / HTTPS proxy URL",
   "请输入有效的 http(s) API 地址，凭据请填写在 API Key 中": "Enter a valid HTTP(S) URL; enter credentials in the API key field",
   "API 地址不能包含查询参数或片段": "API URLs cannot include queries or fragments",
   "模型网关尚未准备好，请检查 Node.js": "Model gateway is not ready. Check the Node.js installation.",
@@ -475,8 +475,11 @@ var strings = {
   "发布版本信息无效": "Invalid release information",
   "当前已是最新正式版本": "You are using the latest stable release",
   "当前构建比正式版更新": "This build is newer than the latest stable release",
-  "代理设置无效": "Invalid proxy settings",
-  "该供应商仍有任务运行": "This provider still has a running task",
-  "请输入有效的 HTTP / HTTPS 代理地址": "Enter a valid HTTP / HTTPS proxy URL"
+  "该版本仍被账号使用，包内容不同；请升级插件版本号或移除所有相关账号": "This version is still used by an account and its contents differ. Increase the plugin version or remove all accounts using this version.",
+  "插件包路径超出安装目录，无法清理": "The plugin package path is outside its installation directory and cannot be cleaned up.",
+  "供应商已移除，旧插件包暂无法清理，重新导入时将重试": "Provider removed. The old package could not be cleaned up; importing it again will retry.",
+  "无法清理旧插件包，请关闭使用它的进程后重试": "Cannot clean up the old plugin package. Close processes using it and retry.",
+  "无法安装供应商包": "Cannot install the provider package.",
+  "供应商配置保存失败": "Could not save provider settings.",
+  "供应商配置保存失败，未移除": "Could not save provider settings. The provider was not removed."
 }
-

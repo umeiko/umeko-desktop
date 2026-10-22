@@ -247,6 +247,73 @@ class ProviderPluginTests(unittest.TestCase):
         with self.assertRaises(ProviderError): unpack_package(self.path / "traversal.zip", self.path / "bad")
         self.assertFalse((self.path / "escape.txt").exists())
 
+    def replace_fixture_code(self):
+        path = self.folder / "scripts/provider.py"
+        path.write_text(path.read_text(encoding="utf-8").replace('"content":"fixture"', '"content":"reloaded"'), encoding="utf-8")
+        pack_package(self.folder, self.archive)
+
+    def assert_reloaded_code(self, provider_id):
+        self.login(provider_id)
+        events = list(self.manager.events(provider_id, "k3", [], [], 32, {}))
+        self.assertEqual(events[0]["choices"][0]["delta"]["content"], "reloaded")
+
+    def test_last_account_removal_releases_package_and_loaded_code(self):
+        first, second = self.install(), self.install()
+        self.login(first)
+        self.login(second)
+        old_class = type(self.manager.clients[first])
+        package, _ = self.manager._package(self.manager._record(first))
+        self.manager.remove(first)
+        self.assertTrue(package.is_dir())
+        self.assertIsNotNone(self.manager._secrets(second).get("session"))
+        self.replace_fixture_code()
+        self.assertFalse(self.manager.importZip(QUrl.fromLocalFile(str(self.archive)).toString()))
+        self.manager.remove(second)
+        self.assertEqual(self.manager.rows, [])
+        self.assertFalse(package.exists())
+        third = self.install()
+        self.assert_reloaded_code(third)
+        self.assertIsNot(type(self.manager.clients[third]), old_class)
+
+    def test_legacy_orphan_package_can_be_replaced_without_restart(self):
+        first = self.install()
+        self.login(first)
+        package, _ = self.manager._package(self.manager._record(first))
+        self.manager._invalidate(first)
+        self.controller.store.data["providers"] = []  # Simulate an older release's removal.
+        self.controller.store.save()
+        self.assertTrue(package.is_dir())
+        self.replace_fixture_code()
+        self.assert_reloaded_code(self.install())
+
+    def test_removal_keeps_other_package_versions(self):
+        first = self.install()
+        old, _ = self.manager._package(self.manager._record(first))
+        manifest_path = self.folder / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["version"] = "2.0.0"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        pack_package(self.folder, self.archive)
+        second = self.install()
+        newer, _ = self.manager._package(self.manager._record(second))
+        self.manager.remove(first)
+        self.assertFalse(old.exists())
+        self.assertTrue(newer.is_dir())
+        self.login(second)
+
+    def test_failed_orphan_replacement_restores_the_old_package(self):
+        first = self.install()
+        package, _ = self.manager._package(self.manager._record(first))
+        original = (package / "scripts/provider.py").read_bytes()
+        self.controller.store.data["providers"] = []
+        self.controller.store.save()
+        self.replace_fixture_code()
+        with patch.object(self.controller.store, "save", side_effect=OSError("fixture write failure")):
+            self.assertFalse(self.manager.importZip(QUrl.fromLocalFile(str(self.archive)).toString()))
+        self.assertEqual(self.manager.rows, [])
+        self.assertEqual((package / "scripts/provider.py").read_bytes(), original)
+        self.assert_reloaded_code(self.install())
+
 
 class ProviderSdkTests(unittest.TestCase):
     def test_repeated_cookie_headers_preserve_expiry_commas(self):
