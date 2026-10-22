@@ -51,7 +51,7 @@ for metadata in incoming.rglob('build.json'):
     for file in [archive,checksum]:shutil.copy2(file,publish/file.name)
     sizes.append((target,archive.stat().st_size))
 assert seen==platforms
-for name in ['umeko-provider-sdk-0.2.0.zip','develop-umeko-provider.zip']:
+for name in ['umeko-provider-sdk-0.2.1.zip','develop-umeko-provider.zip']:
     matches=list(incoming.rglob(name));assert len(matches)==1
     shutil.copy2(matches[0],publish/name)
 files=sorted(publish.iterdir(),key=lambda p:p.name.casefold())
@@ -62,7 +62,7 @@ releases=api('releases')
 release=next((r for r in releases if r['tag_name']==TAG),None)
 if release is None:
     notes=base/'notes.md'
-    notes.write_text('Fix provider package reinstallation after removal.\n\n- Remove the package only after the last account using that implementation and version is removed. Keep packages used by other accounts or other versions.\n- Recover packages left behind by earlier releases: importing a validated replacement can replace an unreferenced installation, even with the same version.\n- Clear loaded Python plugin modules so a reinstalled provider runs the corrected code without restarting the application.\n- Stage replacements before activation and restore the previous package if saving the new account fails.\n- Continue rejecting different contents for a version still used by an account.\n\n'+'Verified CI: https://github.com/'+REPO+'/actions/runs/'+RUN+'\n\n'+''.join(f'- {p}: {n/1048576:.2f} MiB\n' for p,n in sizes),encoding='utf-8')
+    notes.write_text('Fix provider plugin uninstall/reinstall and ZIP import diagnostics.\n\n- Separate installed plugins from accounts: deleting an account keeps the plugin; explicit plugin uninstall removes that version and its associated accounts and credentials.\n- Clear the canonical installation directory and loaded implementation cache on uninstall so a corrected package with the same version can be installed without restarting.\n- Show retained installations from older releases, including plugins with no accounts, and allow them to be explicitly uninstalled.\n- Accept harmless ./ paths in ZIP entries and manifest paths. Continue rejecting traversal, absolute paths, symlinks, special files and normalized collisions.\n- Show the original ZIP entry, specific rule and conflicting entry in a selectable, copyable import error dialog.\n- Include Provider SDK 0.2.1 and updated development instructions. Provider API remains v1.\n\n'+'Verified CI: https://github.com/'+REPO+'/actions/runs/'+RUN+'\n\n'+''.join(f'- {p}: {n/1048576:.2f} MiB\n' for p,n in sizes),encoding='utf-8')
     payload=base/'create-release.json'
     payload.write_text(json.dumps({'tag_name':TAG,'target_commitish':commit,'name':TAG,
                                   'draft':True,'prerelease':minimal,'body':notes.read_text(encoding='utf-8')}),encoding='utf-8')

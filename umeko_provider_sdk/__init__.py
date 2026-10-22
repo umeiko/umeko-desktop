@@ -8,7 +8,7 @@ from pathlib import Path
 from threading import Event
 from typing import Any, Protocol
 
-SDK_VERSION = "0.2.0"
+SDK_VERSION = "0.2.1"
 API_VERSION = 1
 
 

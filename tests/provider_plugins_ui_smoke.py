@@ -120,8 +120,37 @@ try:
         destination = archive.with_name(kind + ".zip")
         assert backend.providerPlugins.exportResource(kind, QUrl.fromLocalFile(str(destination)).toString())
         with zipfile.ZipFile(destination) as stream: assert expected in stream.namelist()
+    plugin = backend.providerPlugins.packages[0]
+    click("removePluginAccount_" + provider_id)
+    assert backend.providerPlugins.rows == []
+    assert len(backend.providerPlugins.packages) == 1
+    click("addPluginAccount_" + plugin["id"] + "_" + plugin["version"])
+    assert len(backend.providerPlugins.rows) == 1
+    click("uninstallPlugin_" + plugin["id"] + "_" + plugin["version"])
+    assert window.findChild(QObject, "uninstallProviderDialog").property("opened")
+    click("confirmUninstallProviderButton")
+    assert backend.providerPlugins.packages == []
+    assert backend.providerPlugins.rows == []
+    # Change code but keep the version; explicit uninstall must release the identity.
+    with zipfile.ZipFile(archive) as source: entries = {n: source.read(n) for n in source.namelist()}
+    with zipfile.ZipFile(archive, "w") as output:
+        for name, value in entries.items(): output.writestr(name, value + (b"\n# corrected fixture" if name.endswith(".py") else b""))
+    click("importCustomProviderButton")
+    assert drop_package([archive])
+    assert len(backend.providerPlugins.packages) == 1
+    bad = archive.with_name("bad-path.zip")
+    with zipfile.ZipFile(bad, "w") as output: output.writestr("./scripts/../outside.py", "fixture")
+    click("importCustomProviderButton")
+    assert drop_package([bad])
+    error_popup = window.findChild(QObject, "providerImportErrorDialog")
+    assert error_popup.property("opened")
+    error_text = item("providerImportErrorText")
+    assert error_text.property("readOnly") and error_text.property("selectByMouse")
+    assert "./scripts/../outside.py" in error_text.property("text")
+    assert "PARENT_PATH" in error_text.property("text")
+    click("closeProviderImportErrorButton")
     assert not warnings, "\n".join(warnings)
-    print("Provider UI: ZIP drop, invalid/multiple drop rejection, login, inline models, settings, inference and SDK/Skill exports passed")
+    print("Provider UI: ZIP drop, login/models/inference, exports, independent account deletion, plugin uninstall/reinstall and selectable path diagnostics passed")
 finally:
     backend.close()
     window.close()

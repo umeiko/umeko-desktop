@@ -16,7 +16,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot, QStandardPaths
 
 from umeko_provider_sdk import Provider, ProviderContext, ProviderError
-from umeko_provider_sdk.packages import unpack_package, validate_folder, validate_config
+from umeko_provider_sdk.packages import PackageValidationError, unpack_package, validate_folder, validate_config
 from umeko_provider_sdk.network import network_scope
 from .model_capabilities import normalize_model
 from .storage import protect
@@ -69,6 +69,7 @@ class ProviderPlugins(QObject):
         self.root.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
         self.clients, self.leases, self.busy, self.status = {}, {}, set(), {}
+        self._import_error = {}
         self.closed = False
         self.finished.connect(self._finished)
 
@@ -88,9 +89,56 @@ class ProviderPlugins(QObject):
         path = self._package_path(record)
         return path, validate_folder(path)
 
-    def _referenced(self, plugin_id, version):
-        return any(p.get("api") == "plugin" and p.get("pluginId") == plugin_id
-                   and p.get("pluginVersion") == version for p in self.c.store.data["providers"])
+    def _accounts(self, plugin_id, version):
+        return [p for p in self.c.store.data["providers"] if p.get("api") == "plugin"
+                and p.get("pluginId") == plugin_id and p.get("pluginVersion") == version]
+
+    @Property("QVariantMap", notify=changed)
+    def importError(self):
+        return self._import_error
+
+    @Property("QVariantList", notify=changed)
+    def packages(self):
+        rows = []
+        for path in sorted((self.root / "packages").glob("*/*")):
+            if not path.is_dir() or path.is_symlink() or path.parent.is_symlink(): continue
+            record = {"pluginId": path.parent.name, "pluginVersion": path.name}
+            try: self._package_path(record)
+            except ProviderError: continue
+            accounts = self._accounts(path.parent.name, path.name)
+            row = {"id": path.parent.name, "version": path.name, "name": path.parent.name,
+                   "accountCount": len(accounts), "valid": False,
+                   "busy": any(p["id"] in self.busy or self.leases.get(p["id"], 0)
+                               or self.c._models_busy(p["id"]) for p in accounts)}
+            try:
+                manifest, _, _ = validate_folder(path)
+                row.update(name=manifest["name"], valid=True)
+            except (OSError, ValueError, RuntimeError): pass
+            rows.append(row)
+        return rows
+
+    @staticmethod
+    def _new_account(manifest):
+        return {"id": uuid.uuid4().hex, "api": "plugin", "name": manifest["name"],
+                "pluginId": manifest["id"], "pluginVersion": manifest["version"],
+                "key": "", "baseUrl": "", "models": []}
+
+    @Slot(str, str, result=bool)
+    def addAccount(self, plugin_id, version):
+        try:
+            with self.lock:
+                _, (manifest, _, _) = self._package({"pluginId": plugin_id, "pluginVersion": version})
+                previous = self.c.store.data["providers"]
+                self.c.store.data["providers"] = previous + [self._new_account(manifest)]
+                try: self.c.store.save()
+                except Exception:
+                    self.c.store.data["providers"] = previous
+                    raise
+                self._notify(save=False)
+            return True
+        except (ProviderError, OSError, ValueError) as exc:
+            self.c.toast.emit(str(exc))
+            return False
 
     def _forget_package(self, path):
         namespace = "_umeko_provider_" + hashlib.sha256(str(path).encode()).hexdigest()[:24]
@@ -233,48 +281,46 @@ class ProviderPlugins(QObject):
     @Slot(str, result=bool)
     def importZip(self, url):
         staging = self.root / "staging" / uuid.uuid4().hex
+        self._import_error = {}
         try:
             path = QUrl(url).toLocalFile()
             if not path: raise ProviderError("请选择本机 ZIP 文件")
             manifest, defaults, _ = unpack_package(path, staging)
             destination = self.root / "packages" / manifest["id"] / manifest["version"]
             with self.lock:
-                referenced = self._referenced(manifest["id"], manifest["version"])
                 exists = destination.exists()
-                if exists and referenced:
+                if exists:
                     def digest(folder):
                         return {p.relative_to(folder).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
                                 for p in folder.rglob("*") if p.is_file() and "__pycache__" not in p.parts}
-                    if digest(destination) != digest(staging): raise ProviderError("该版本仍被账号使用，包内容不同；请升级插件版本号或移除所有相关账号")
-                retired = None
-                installed = not exists or not referenced
+                    if digest(destination) != digest(staging): raise ProviderError("该插件版本已安装但内容不同；请先卸载插件，再安装修正版")
+                installed = not exists
                 previous = self.c.store.data["providers"]
                 try:
                     if installed:
-                        if exists:
-                            retired = self._retire_package(destination)
-                            self._forget_package(destination)
                         destination.parent.mkdir(parents=True, exist_ok=True)
                         staging.rename(destination)
-                    record = {"id": uuid.uuid4().hex, "api": "plugin", "name": manifest["name"], "pluginId": manifest["id"],
-                              "pluginVersion": manifest["version"], "key": "", "baseUrl": "", "models": []}
+                    record = self._new_account(manifest)
                     self.c.store.data["providers"] = previous + [record]
                     self.c.store.save()
                 except Exception:
                     self.c.store.data["providers"] = previous
                     if installed and destination.exists() and not staging.exists():
                         destination.rename(staging)
-                    if retired: retired.rename(destination)
                     raise
-                self._clean_retired(retired)
                 self._notify(save=False)
             self.c.toast.emit("供应商已导入，请在当前页面登录并刷新模型")
             return True
         except Exception as exc:
-            self.c.toast.emit(str(exc) if isinstance(exc, ProviderError) else "无法导入供应商包，请检查 ZIP 和 manifest.json")
+            self._import_error = {"message": str(exc) if isinstance(exc, ProviderError) else "无法导入供应商包，请检查 ZIP 和 manifest.json"}
+            if isinstance(exc, PackageValidationError):
+                self._import_error.update(entry=exc.entry, rule=exc.rule, detail=exc.detail, conflict=exc.conflict)
+            self.changed.emit()
+            self.c.toast.emit("供应商导入失败，请查看错误详情")
             return False
-        # Staging is bounded and intentionally retained on failure for inspection;
-        # Referenced packages are immutable; only unreferenced installations are replaced.
+        finally:
+            if not staging.is_symlink() and staging.resolve().parent == (self.root / "staging").resolve():
+                shutil.rmtree(staging, ignore_errors=True)
 
     @Slot(str, str)
     def login(self, provider_id, raw):
@@ -434,10 +480,8 @@ class ProviderPlugins(QObject):
         try:
             with self.lock:
                 self._idle(provider_id)
-                record = self._record(provider_id)
                 self._invalidate(provider_id)
                 secrets = self._secrets(provider_id)
-                secrets.clear()
                 previous = self.c.store.data["providers"]
                 self.c.store.data["providers"] = [p for p in self.c.store.data["providers"] if p["id"] != provider_id]
                 try:
@@ -445,23 +489,47 @@ class ProviderPlugins(QObject):
                 except Exception:
                     self.c.store.data["providers"] = previous
                     raise
+                secrets.clear()
                 self.status.pop(provider_id, None)
                 self.leases.pop(provider_id, None)
-                if not self._referenced(record["pluginId"], record["pluginVersion"]):
-                    path = self._package_path(record)
-                    self._forget_package(path)
-                    try:
-                        self._clean_retired(self._retire_package(path))
-                    except (ProviderError, OSError):
-                        # The account was removed; a later import retries retiring this orphan.
-                        self.c.toast.emit("供应商已移除，旧插件包暂无法清理，重新导入时将重试")
                 self.repair_selection()
-                self._notify()
+                self._notify(save=False)
         except (RuntimeError, OSError) as exc: self.c.toast.emit(str(exc))
 
     @Slot(str, str, result=bool)
+    def uninstall(self, plugin_id, version):
+        try:
+            with self.lock:
+                path = self._package_path({"pluginId": plugin_id, "pluginVersion": version})
+                accounts = self._accounts(plugin_id, version)
+                for account in accounts: self._idle(account["id"])
+                secrets = [self._secrets(p["id"]) for p in accounts]
+                for account in accounts: self._invalidate(account["id"])
+                retired = self._retire_package(path)
+                previous = self.c.store.data["providers"]
+                self.c.store.data["providers"] = [p for p in previous if p not in accounts]
+                try: self.c.store.save()
+                except Exception:
+                    self.c.store.data["providers"] = previous
+                    if retired: retired.rename(path)
+                    raise
+                self._forget_package(path)
+                for vault in secrets: vault.clear()
+                for account in accounts:
+                    self.status.pop(account["id"], None)
+                    self.leases.pop(account["id"], None)
+                self._clean_retired(retired)
+                self.repair_selection()
+                self._notify(save=False)
+            self.c.toast.emit("插件已卸载，可以重新安装")
+            return True
+        except (ProviderError, OSError) as exc:
+            self.c.toast.emit(str(exc))
+            return False
+
+    @Slot(str, str, result=bool)
     def exportResource(self, kind, url):
-        names = {"sdk": "umeko-provider-sdk-0.2.0.zip", "skill": "develop-umeko-provider.zip"}
+        names = {"sdk": "umeko-provider-sdk-0.2.1.zip", "skill": "develop-umeko-provider.zip"}
         try:
             if kind not in names: raise ProviderError("未知开发资源")
             source = self.c.root / "provider-resources" / names[kind]
@@ -477,7 +545,7 @@ class ProviderPlugins(QObject):
 
     @Slot(str, result=str)
     def resourceFile(self, kind):
-        name = "umeko-provider-sdk-0.2.0.zip" if kind == "sdk" else "develop-umeko-provider.zip"
+        name = "umeko-provider-sdk-0.2.1.zip" if kind == "sdk" else "develop-umeko-provider.zip"
         folder = QStandardPaths.writableLocation(QStandardPaths.DownloadLocation) or str(Path.home())
         return QUrl.fromLocalFile(str(Path(folder) / name)).toString()
 

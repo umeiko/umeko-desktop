@@ -26,7 +26,9 @@ python -m umeko_provider_sdk validate my-provider
 python -m umeko_provider_sdk pack my-provider my-provider.zip
 ```
 
-Import the ZIP using the plus button. Each import creates an independent account instance, even when the same implementation is already installed. Instances have separate configuration and protected credentials. While any account uses a package/version, importing different contents with that identity is rejected; use a new semantic version for updates. Removing the last account releases its installed package. After all accounts using a version are removed, a corrected package can be reimported with the same version. Unreferenced packages left by older app versions are replaced automatically; other accounts and versions are preserved.
+Import the ZIP using the plus button. Each import creates an independent account instance; you can also add accounts from the installed plugin list. Deleting an account removes only that account and its credentials, preserving the plugin. **Uninstall plugin** removes that installed version and its associated accounts and credentials, then clears its canonical installation directory and loaded-code cache. A corrected ZIP with the same version can be installed immediately afterward. Other plugins and versions are preserved. Installed packages left by older releases are also listed, including packages with no accounts, so they can be explicitly uninstalled. Different contents with an already installed ID/version are rejected until uninstall; account deletion alone does not permit replacement.
+
+ZIP entries and manifest paths may start with `./`; these harmless current-directory segments are normalized. Absolute paths, `..`, backslashes, Windows reserved names, symlinks, special files, and normalized file collisions are rejected before extraction. Import errors identify the exact original entry, rule code, and conflicting entry when applicable; the error dialog supports selection and copying.
 
 ## API v1
 

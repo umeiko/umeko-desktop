@@ -257,7 +257,7 @@ class ProviderPluginTests(unittest.TestCase):
         events = list(self.manager.events(provider_id, "k3", [], [], 32, {}))
         self.assertEqual(events[0]["choices"][0]["delta"]["content"], "reloaded")
 
-    def test_last_account_removal_releases_package_and_loaded_code(self):
+    def test_account_deletion_preserves_plugin_and_uninstall_releases_loaded_code(self):
         first, second = self.install(), self.install()
         self.login(first)
         self.login(second)
@@ -270,12 +270,20 @@ class ProviderPluginTests(unittest.TestCase):
         self.assertFalse(self.manager.importZip(QUrl.fromLocalFile(str(self.archive)).toString()))
         self.manager.remove(second)
         self.assertEqual(self.manager.rows, [])
+        self.assertTrue(package.is_dir())
+        self.assertEqual(self.manager.packages[0]["accountCount"], 0)
+        self.assertFalse(self.manager.importZip(QUrl.fromLocalFile(str(self.archive)).toString()))
+        restored = self.manager.addAccount(package.parent.name, package.name)
+        self.assertTrue(restored)
+        self.assertTrue(self.manager.uninstall(package.parent.name, package.name))
+        self.assertEqual(self.manager.rows, [])
+        self.assertEqual(self.manager.packages, [])
         self.assertFalse(package.exists())
         third = self.install()
         self.assert_reloaded_code(third)
         self.assertIsNot(type(self.manager.clients[third]), old_class)
 
-    def test_legacy_orphan_package_can_be_replaced_without_restart(self):
+    def test_legacy_orphan_package_can_be_uninstalled_and_reinstalled_without_restart(self):
         first = self.install()
         self.login(first)
         package, _ = self.manager._package(self.manager._record(first))
@@ -284,6 +292,9 @@ class ProviderPluginTests(unittest.TestCase):
         self.controller.store.save()
         self.assertTrue(package.is_dir())
         self.replace_fixture_code()
+        self.assertFalse(self.manager.importZip(QUrl.fromLocalFile(str(self.archive)).toString()))
+        self.assertEqual(self.manager.packages[0]["accountCount"], 0)
+        self.assertTrue(self.manager.uninstall(package.parent.name, package.name))
         self.assert_reloaded_code(self.install())
 
     def test_removal_keeps_other_package_versions(self):
@@ -297,22 +308,45 @@ class ProviderPluginTests(unittest.TestCase):
         second = self.install()
         newer, _ = self.manager._package(self.manager._record(second))
         self.manager.remove(first)
+        self.assertTrue(old.is_dir())
+        self.assertTrue(self.manager.uninstall(old.parent.name, old.name))
         self.assertFalse(old.exists())
         self.assertTrue(newer.is_dir())
         self.login(second)
 
-    def test_failed_orphan_replacement_restores_the_old_package(self):
+    def test_failed_uninstall_restores_package_accounts_and_credentials(self):
         first = self.install()
+        self.login(first)
         package, _ = self.manager._package(self.manager._record(first))
         original = (package / "scripts/provider.py").read_bytes()
-        self.controller.store.data["providers"] = []
-        self.controller.store.save()
-        self.replace_fixture_code()
         with patch.object(self.controller.store, "save", side_effect=OSError("fixture write failure")):
-            self.assertFalse(self.manager.importZip(QUrl.fromLocalFile(str(self.archive)).toString()))
-        self.assertEqual(self.manager.rows, [])
+            self.assertFalse(self.manager.uninstall(package.parent.name, package.name))
+        self.assertEqual(self.manager.rows[0]["id"], first)
+        self.assertIsNotNone(self.manager._secrets(first).get("session"))
         self.assertEqual((package / "scripts/provider.py").read_bytes(), original)
+        self.login(first)
+        self.assertTrue(self.manager.uninstall(package.parent.name, package.name))
+        self.replace_fixture_code()
         self.assert_reloaded_code(self.install())
+
+    def test_uninstall_checks_every_account_before_removing_anything(self):
+        first, second = self.install(), self.install()
+        package, _ = self.manager._package(self.manager._record(first))
+        self.manager.leases[second] = 1
+        self.assertFalse(self.manager.uninstall(package.parent.name, package.name))
+        self.assertEqual(len(self.manager.rows), 2)
+        self.assertTrue(package.is_dir())
+        self.manager.leases[second] = 0
+        self.assertTrue(self.manager.uninstall(package.parent.name, package.name))
+        self.assertEqual(self.manager.rows, [])
+
+    def test_import_exposes_exact_path_rule_and_conflicting_entry(self):
+        with zipfile.ZipFile(self.archive, "w") as stream:
+            stream.writestr("./scripts/../outside.py", "fixture")
+        self.assertFalse(self.manager.importZip(QUrl.fromLocalFile(str(self.archive)).toString()))
+        self.assertEqual(self.manager.importError["entry"], "./scripts/../outside.py")
+        self.assertEqual(self.manager.importError["rule"], "PARENT_PATH")
+        self.assertFalse(list((self.manager.root / "staging").glob("*")))
 
 
 class ProviderSdkTests(unittest.TestCase):

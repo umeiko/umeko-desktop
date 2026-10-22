@@ -8,12 +8,22 @@ Column {
     property var manager: backend.providerPlugins
     property string currentId: ""
     property string exportKind: "sdk"
+    property var uninstallTarget: ({})
     spacing: 14
     function acceptsPackage(urls) {
         return urls.length === 1 && String(urls[0]).toLowerCase().startsWith("file:") && String(urls[0]).toLowerCase().endsWith(".zip")
     }
     function importPackage(url) {
         if (root.manager.importZip(String(url))) importDialog.close()
+        else errorDialog.open()
+    }
+    function errorText() {
+        const error = root.manager.importError
+        if (!error.rule) return I18n.t(error.message)
+        let text = I18n.t("ZIP 条目") + ": " + JSON.stringify(error.entry) + "\n"
+        text += I18n.t("命中规则") + ": " + error.rule + "\n" + I18n.t(error.detail)
+        if (error.conflict) text += "\n" + I18n.t("冲突条目") + ": " + JSON.stringify(error.conflict)
+        return text
     }
 
     SectionCard {
@@ -29,6 +39,18 @@ Column {
                 }
                 Item { Layout.fillWidth: true }
                 ActionButton { objectName: "importCustomProviderButton"; glyph: "plus"; hint: I18n.t("导入自定义供应商实现"); onClicked: importDialog.open() }
+            }
+            Text { visible: root.manager.packages.length > 0; text: I18n.t("已安装插件"); color: Theme.muted; font.pixelSize: Theme.font(11) }
+            Repeater {
+                model: root.manager.packages
+                RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true; spacing: 10
+                    Text { text: modelData.name; color: Theme.ink; font.pixelSize: Theme.font(12); elide: Text.ElideRight; Layout.fillWidth: true }
+                    Text { text: "v" + modelData.version + " · " + modelData.accountCount + I18n.t(" 个账号"); color: Theme.muted; font.pixelSize: Theme.font(10) }
+                    ActionButton { objectName: "addPluginAccount_" + modelData.id + "_" + modelData.version; text: I18n.t("添加账号"); quiet: true; enabled: modelData.valid && !modelData.busy; onClicked: root.manager.addAccount(modelData.id, modelData.version) }
+                    ActionButton { objectName: "uninstallPlugin_" + modelData.id + "_" + modelData.version; text: I18n.t("卸载插件"); quiet: true; enabled: !modelData.busy; onClicked: { root.uninstallTarget = modelData; uninstallDialog.open() } }
+                }
             }
         }
     }
@@ -61,7 +83,7 @@ Column {
                     Text { text: "v" + card.modelData.version; color: Theme.muted; font.pixelSize: Theme.font(10) }
                     Item { Layout.fillWidth: true }
                     ProviderProxy { providerId: card.modelData.id; enabled: !card.modelData.busy }
-                    ActionButton { glyph: "trash"; quiet: true; hint: I18n.t("移除此账号和已保存的登录凭据"); enabled: !card.modelData.busy; onClicked: root.manager.remove(card.modelData.id) }
+                    ActionButton { objectName: "removePluginAccount_" + card.modelData.id; glyph: "trash"; quiet: true; hint: I18n.t("删除账号，保留已安装插件"); enabled: !card.modelData.busy; onClicked: root.manager.remove(card.modelData.id) }
                 }
                 GridLayout {
                     Layout.fillWidth: true; columns: width > 550 ? 2 : 1; columnSpacing: 16; rowSpacing: 10
@@ -105,6 +127,42 @@ Column {
                     text: card.modelData.models.slice(0, 8).map(m => m.alias).join("  ·  ") + (card.modelData.models.length > 8 ? "  …" : "")
                     color: Theme.muted; font.pixelSize: Theme.font(11); wrapMode: Text.Wrap
                 }
+            }
+        }
+    }
+    Popup {
+        id: uninstallDialog; objectName: "uninstallProviderDialog"
+        parent: Overlay.overlay; anchors.centerIn: parent
+        width: Math.min(480, parent.width - 48); padding: 24; modal: true; focus: true
+        background: Rectangle { radius: 14; color: Theme.surface; border.color: Theme.line }
+        contentItem: ColumnLayout {
+            spacing: 14
+            Text { text: I18n.t("卸载插件") + " · " + (root.uninstallTarget.name || ""); color: Theme.ink; font.pixelSize: Theme.font(16); Layout.fillWidth: true; wrapMode: Text.Wrap }
+            Text { text: I18n.t("卸载此版本的插件及其关联账号和登录凭据。其他插件和版本不受影响，卸载后可重新安装同版本修正版。"); color: Theme.muted; font.pixelSize: Theme.font(12); Layout.fillWidth: true; wrapMode: Text.Wrap }
+            RowLayout {
+                Layout.fillWidth: true; Item { Layout.fillWidth: true }
+                ActionButton { text: I18n.t("取消"); quiet: true; onClicked: uninstallDialog.close() }
+                ActionButton { objectName: "confirmUninstallProviderButton"; text: I18n.t("卸载插件"); primary: true; onClicked: { if (root.manager.uninstall(root.uninstallTarget.id, root.uninstallTarget.version)) uninstallDialog.close() } }
+            }
+        }
+    }
+    Popup {
+        id: errorDialog; objectName: "providerImportErrorDialog"
+        parent: Overlay.overlay; anchors.centerIn: parent
+        width: Math.min(650, parent.width - 48); height: Math.min(360, parent.height - 64)
+        padding: 24; modal: true; focus: true
+        background: Rectangle { radius: 14; color: Theme.surface; border.color: Theme.line }
+        contentItem: ColumnLayout {
+            spacing: 14
+            Text { text: I18n.t("供应商导入失败"); color: Theme.ink; font.pixelSize: Theme.font(17) }
+            ScrollView {
+                Layout.fillWidth: true; Layout.fillHeight: true; clip: true
+                TextArea { objectName: "providerImportErrorText"; text: root.errorText(); readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; color: Theme.ink; font.pixelSize: Theme.font(12); selectionColor: Theme.selectionBg; selectedTextColor: Theme.selectionText; background: Rectangle { radius: 8; color: Theme.bg } }
+            }
+            RowLayout {
+                Layout.fillWidth: true; Item { Layout.fillWidth: true }
+                ActionButton { text: I18n.t("复制错误详情"); quiet: true; onClicked: backend.copy(root.errorText()) }
+                ActionButton { objectName: "closeProviderImportErrorButton"; text: I18n.t("关闭"); onClicked: errorDialog.close() }
             }
         }
     }

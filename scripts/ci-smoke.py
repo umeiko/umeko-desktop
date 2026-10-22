@@ -50,7 +50,7 @@ def main():
     metadata = json.loads((resources / "build-info.json").read_text(encoding="utf-8"))
     if metadata["version"] != VERSION or metadata["commit"] != git_output(ROOT, "rev-parse", "HEAD"):
         raise RuntimeError("Frozen build provenance is missing")
-    for name in ("umeko-provider-sdk-0.2.0.zip", "develop-umeko-provider.zip"):
+    for name in ("umeko-provider-sdk-0.2.1.zip", "develop-umeko-provider.zip"):
         if not (resources / "provider-resources" / name).is_file():
             raise RuntimeError("Provider development resource is missing: " + name)
     runtime = resources / "runtime/releases" / RELEASE_NAME

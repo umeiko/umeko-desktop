@@ -17,3 +17,5 @@ Implement a standalone Provider API v1 package. Keep the desktop host independen
 8. Run `python -m umeko_provider_sdk validate PACKAGE_DIR`, then `python -m umeko_provider_sdk pack PACKAGE_DIR provider.zip`. Inspect the archive for secrets, external paths and unnecessary files. Import into an isolated Umeko profile and confirm that its account card shows its models without navigating to API Proxy Service.
 
 Deliver the ZIP and a concise `PROVIDER.md` explaining setup, supported platforms, dependencies, configuration and tested limits. Keep private deployment presets in private packages, separate from public SDK and Skill distributions.
+
+Package lifecycle: deleting an account keeps the installed plugin. To reinstall corrected contents with the same ID/version, use **Uninstall plugin** on the installed plugin entry first, then import the corrected ZIP. Verify this workflow without restarting the host. Paths beginning with `./` are accepted; traversal, absolute paths, symlinks and normalized collisions remain rejected with entry/rule diagnostics.
