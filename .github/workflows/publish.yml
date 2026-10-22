@@ -8,14 +8,14 @@ on:
         type: string
       tag:
         description: Version tag matching all four build manifests
-        default: v0.3.3
+        default: v0.3.4
         required: true
         type: string
 permissions:
   contents: write
   actions: read
 concurrency:
-  group: publish-${{ inputs.tag }}
+  group: publish-releases
   cancel-in-progress: false
 jobs:
   publish:

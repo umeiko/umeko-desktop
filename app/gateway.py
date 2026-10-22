@@ -121,6 +121,8 @@ class Gateway:
             url = base + ("/messages" if base.endswith("/v1") else "/v1/messages")
             headers.update({"x-api-key": p["key"], "anthropic-version": "2023-06-01"})
             parameters = dict(parameters)
+            if "reasoning_effort" in parameters:
+                parameters["output_config"] = {"effort": parameters.pop("reasoning_effort")}
             if "stop" in parameters:
                 stop = parameters.pop("stop")
                 parameters["stop_sequences"] = [stop] if isinstance(stop, str) else stop
@@ -282,7 +284,9 @@ class LocalServer:
                             messages.insert(0, {"role": "system", "content": system})
                     tools = body.get("tools", [])
                     tools = [{"name": t["name"], "description": t.get("description", ""), "parameters": t["input_schema"]} for t in tools] if anth else [t["function"] for t in tools]
-                    parameters = {k: body[k] for k in ("temperature", "top_p", "top_k", "stop", "tool_choice", "parallel_tool_calls") if k in body}
+                    parameters = {k: body[k] for k in ("temperature", "top_p", "top_k", "stop", "tool_choice", "parallel_tool_calls", "reasoning_effort") if k in body}
+                    if anth and "effort" in body.get("output_config", {}):
+                        parameters["reasoning_effort"] = body["output_config"]["effort"]
                     if anth and "stop_sequences" in body:
                         parameters["stop"] = body["stop_sequences"]
                     if anth and isinstance(parameters.get("tool_choice"), dict):

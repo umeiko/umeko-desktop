@@ -9,7 +9,7 @@ Popup {
     property bool desiredOpen: false
     readonly property bool animating: motion.moving
     readonly property real fullWidth: 365
-    readonly property real fullHeight: Math.max(150, Math.min(470, heightLimit, modelList.contentHeight + 150))
+    readonly property real fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 200))
     readonly property real buttonWidth: parent ? parent.width : 180
     readonly property real buttonHeight: parent ? parent.height : 31
     function toggle() { if (desiredOpen) close(); else open() }
@@ -60,6 +60,28 @@ Popup {
             }
         }
         Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+        RowLayout {
+            id: reasoningControls
+            objectName: "reasoningControls"
+            Layout.fillWidth: true; spacing: 8
+            Text { visible: Theme.fontScale <= 1.25; text: I18n.t("思考强度"); color: Theme.ink; font.pixelSize: Theme.font(11) }
+            Item { Layout.fillWidth: true }
+            Repeater {
+                model: [{value:"off",label:I18n.t("关闭")},{value:"low",label:"Low"},{value:"high",label:"High"},{value:"max",label:"Max"}]
+                ActionButton {
+                    required property var modelData
+                    objectName: "reasoningEffort_" + modelData.value
+                    text: modelData.label; quiet: true; primary: backend.reasoningEffort === modelData.value
+                    onClicked: backend.setReasoningEffort(modelData.value)
+                }
+            }
+            HoverHandler { id: reasoningHover }
+            HoverTip {
+                objectName: "reasoningEffortHint"
+                active: root.desiredOpen && reasoningHover.hovered
+                text: I18n.t("关闭：不发送推理强度参数。\nLow / High / Max：以模型支持的档位为准。")
+            }
+        }
         ActionButton { text: I18n.t("管理供应商与模型"); glyph: "sliders"; quiet: true; Layout.fillWidth: true; onClicked: { root.close(); root.configure() } }
     }
     }

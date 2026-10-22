@@ -157,6 +157,26 @@ class PiTests(unittest.TestCase):
         self.assertEqual(metrics[-1]["tokens"], 12)
         self.assertFalse(metrics[-1]["estimated"])
 
+    def test_reasoning_effort_reaches_gateway_and_off_omits_the_field(self):
+        original = self.gateway.events
+        captured = []
+        def events(*args, **kwargs):
+            captured.append(dict(kwargs.get("parameters") or {}))
+            return original(*args, **kwargs)
+        self.gateway.events = events
+        self.response_fn = lambda *_: Completion("effort fixture")
+        self.command(self.payload)
+        for effort in ("low", "high", "max", "off"):
+            self.command({"type":"prompt", "text":"effort fixture " + effort, "reasoningEffort":effort})
+            if effort == "off": self.assertNotIn("reasoning_effort", captured[-1])
+            else: self.assertEqual(captured[-1]["reasoning_effort"], effort)
+        self.send({"type":"reasoning_effort", "value":"high"})
+        self.command({"type":"prompt", "text":"changed effort fixture"})
+        self.assertEqual(captured[-1]["reasoning_effort"], "high")
+        self.send({"type":"reasoning_effort", "value":"off"})
+        self.command({"type":"prompt", "text":"changed off fixture"})
+        self.assertNotIn("reasoning_effort", captured[-1])
+
     def test_native_reasoning_reaches_live_events_and_cold_history(self):
         self.response_fn = lambda *_: Completion("Visible answer", thinking="Compare the local fixture.")
         self.command(self.payload)

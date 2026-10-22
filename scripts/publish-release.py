@@ -62,7 +62,7 @@ releases=api('releases')
 release=next((r for r in releases if r['tag_name']==TAG),None)
 if release is None:
     notes=base/'notes.md'
-    notes.write_text('Improve provider settings and live generation feedback.\n\n- Toggle an expanded provider editor closed from the same button, with a collapse chevron and matching tooltip.\n- Replace the distorted settings glyph with a centered, rounded eight-tooth gear across the application.\n- Rename the provider connection dialog to Network settings and group its proxy controls under Proxy settings.\n- Show per-response tok/s below the composer while a model is generating. Estimate counts only when the service has not reported them, marking estimates with ≈.\n- Keep speed counters independent between chats and reset them on response completion or cancellation.\n\n'+'Verified CI: https://github.com/'+REPO+'/actions/runs/'+RUN+'\n\n'+''.join(f'- {p}: {n/1048576:.2f} MiB\n' for p,n in sizes),encoding='utf-8')
+    notes.write_text('Improve provider settings and live generation feedback.\n\n- Toggle an expanded provider editor closed from the same button, with a collapse chevron and matching tooltip.\n- Replace the distorted settings glyph with a centered, rounded eight-tooth gear across the application.\n- Rename the provider connection dialog to Network settings and group its proxy controls under Proxy settings.\n- Show per-response tok/s below the composer while a model is generating. Estimate counts only when the service has not reported them, marking estimates with ≈.\n- Keep speed counters independent between chats and reset them on response completion or cancellation.\n- Add Off / Low / High / Max reasoning effort in the model popup and show the selected level beside the model. Off removes the parameter entirely; settings are preserved per chat and passed to provider plugins.\n- Remove superseded patch releases after the new edition is fully verified, preserving minor-version milestones.\n\n'+'Verified CI: https://github.com/'+REPO+'/actions/runs/'+RUN+'\n\n'+''.join(f'- {p}: {n/1048576:.2f} MiB\n' for p,n in sizes),encoding='utf-8')
     payload=base/'create-release.json'
     payload.write_text(json.dumps({'tag_name':TAG,'target_commitish':commit,'name':TAG,
                                   'draft':True,'prerelease':minimal,'body':notes.read_text(encoding='utf-8')}),encoding='utf-8')
@@ -106,6 +106,8 @@ published=api('releases/'+str(rid));assert not published['draft'] and published[
 if not minimal:
     latest=api('releases/latest');assert latest['tag_name']==TAG and not latest['prerelease']
 assert api('git/ref/tags/'+TAG)['object']['sha']==commit
+from release_retention import prune_releases
+prune_releases(REPO, TAG, api, gh)
 print('Published:',published['html_url'],flush=True)
 with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as out:
     out.write('Published ['+TAG+']('+published['html_url']+') from verified build ['+RUN+'](https://github.com/'+REPO+'/actions/runs/'+RUN+'). All 15 server-side asset digests verified.\n')

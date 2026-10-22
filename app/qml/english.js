@@ -514,5 +514,7 @@ var strings = {
   "网络设置": "Network settings",
   "代理设置": "Proxy settings",
   "收起供应商与模型": "Collapse provider and models",
-  "输出速度。≈ 表示服务尚未返回 token 计数，当前为估算值。": "Output speed. ≈ means the service has not reported token counts yet and this value is estimated."
+  "输出速度。≈ 表示服务尚未返回 token 计数，当前为估算值。": "Output speed. ≈ means the service has not reported token counts yet and this value is estimated.",
+  "思考强度": "Reasoning effort",
+  "关闭：不发送推理强度参数。\nLow / High / Max：以模型支持的档位为准。": "Off: omit the reasoning effort parameter.\nLow / High / Max: available levels depend on the model."
 }

@@ -62,13 +62,14 @@ Item {
             ContextUsage {}
             ActionButton {
                 id: modelButton; objectName: "modelSelector"; quiet: true; height: Theme.control(31)
-                width: Math.min(modelRow.implicitWidth + 18, 310)
+                width: Math.min(modelRow.implicitWidth + 18, 350)
                 onClicked: root.openModels()
                 contentItem: Item { Row {
                     id: modelRow; spacing: 7; anchors.verticalCenter: parent.verticalCenter; x: 10
                     Text { text: { let p = backend.config.providers.find(p => p.id === backend.config.selectedProvider); return p ? p.name : I18n.t("选择供应商") } color: Theme.ink; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
                     Text { text: "/"; font.pixelSize: Theme.font(11); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
                     Text { text: backend.config.selectedModel; width: Math.min(implicitWidth, 135); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
+                    Text { objectName: "reasoningEffortBadge"; visible: backend.reasoningEffort !== "off"; text: "· " + ({low:"Low",high:"High",max:"Max"}[backend.reasoningEffort] || ""); color: Theme.accent; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
                     Glyph { name: "chevron-down"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
                 } }
             }

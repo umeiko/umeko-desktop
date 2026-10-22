@@ -82,6 +82,7 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
     attachmentsChanged = Signal()
     contextUsageChanged = Signal()
     generationChanged = Signal()
+    reasoningChanged = Signal()
     proxyKeysChanged = Signal()
     editorText = Signal(str)
 
@@ -183,6 +184,7 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
             self._welcome_portraits = list(range(12))
             secrets.SystemRandom().shuffle(self._welcome_portraits)
         return SessionState(workspace=self.store.data["workspace"] if workspace is None else workspace,
+            reasoning_effort=self.store.data["ui"].get("reasoningEffort", "off") if self.store.data["ui"].get("reasoningEffort") in ("low", "high", "max") else "off",
             model=self.store.data["selectedModel"], provider=self.store.data["selectedProvider"], greeting=self._welcome_greetings.pop(), portrait=self._welcome_portraits.pop())
 
     def _activate(self, record):
@@ -216,6 +218,7 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
         self.editorText.emit(record.draft)
         self.contextUsageChanged.emit()
         self.generationChanged.emit()
+        self.reasoningChanged.emit()
 
     def _refresh_sidebar(self):
         rows = self.projectRows
@@ -695,6 +698,23 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
     @Property("QVariantMap", notify=generationChanged)
     def generation(self):
         return self._view.generation
+
+    @Property(str, notify=reasoningChanged)
+    def reasoningEffort(self):
+        return self._view.reasoning_effort
+
+    @Slot(str, result=bool)
+    def setReasoningEffort(self, value):
+        if value not in ("off", "low", "high", "max"): return False
+        record = self._view
+        record.reasoning_effort = value
+        self.store.data["ui"]["reasoningEffort"] = value
+        if record.id:
+            self.store.data["sessionMeta"].setdefault(record.id, {})["reasoningEffort"] = value
+        self.store.save()
+        self._pool.write(record, {"type": "reasoning_effort", "value": value})
+        self.reasoningChanged.emit()
+        return True
 
     @Property(bool, notify=changed)
     def serverRunning(self):
@@ -1259,6 +1279,8 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
         if record is None:
             record = self._new_view(session.get("workspace", ""))
             record.id, record.file, record.title = session_id, session.get("file", ""), session["title"]
+            effort = self.store.data["sessionMeta"].get(session_id, {}).get("reasoningEffort", record.reasoning_effort)
+            record.reasoning_effort = effort if effort in ("off", "low", "high", "max") else "off"
             record.history = copy.deepcopy(session.get("history", []))
             record.messages = copy.deepcopy(session.get("messages", []))
             record.model, record.provider = session.get("model") or record.model, session.get("provider") or record.provider

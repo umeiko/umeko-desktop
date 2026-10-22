@@ -9,7 +9,7 @@ ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 os.environ['UMEKO_DATA_DIR']=tempfile.mkdtemp(prefix='umeko-preferences-ui-')
 os.environ['UMEKO_LANGUAGE']='zh'
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen');os.environ.setdefault('QT_QUICK_BACKEND','software')
-from PySide6.QtCore import Qt,QPointF
+from PySide6.QtCore import QObject,Qt,QPointF
 from PySide6.QtTest import QTest
 from main import create_application
 app,engine,backend=create_application();window=engine.rootObjects()[0]
@@ -52,6 +52,28 @@ try:
     click('saveProviderProxy')
     assert backend.store.data['providers'][0]['proxy']['mode']=='custom'
     window.setProperty('page','chat')
+    click('modelSelector');QTest.qWait(700)
+    click('reasoningEffort_max')
+    assert backend.reasoningEffort=='max'
+    assert find('reasoningEffortBadge').property('text')=='· Max'
+    assert find('reasoningEffortBadge').isVisible()
+    click('reasoningEffort_off')
+    assert backend.reasoningEffort=='off'
+    assert not find('reasoningEffortBadge').isVisible()
+    click('reasoningEffort_high')
+    hint=window.findChild(QObject,'reasoningEffortHint')
+    assert hint is not None
+    QTest.mouseMove(window,find('modelSearch').mapToScene(QPointF(10,10)).toPoint());QTest.qWait(200)
+    assert not hint.property('visible')
+    window.grabWindow().save(str(out/'reasoning-effort-v034.png'))
+    row=find('reasoningControls')
+    QTest.mouseMove(window,row.mapToScene(row.boundingRect().center()).toPoint());QTest.qWait(700)
+    assert hint.property('visible')
+    window.grabWindow().save(str(out/'reasoning-effort-hover-v034.png'))
+    QTest.mouseMove(window,find('modelSearch').mapToScene(QPointF(10,10)).toPoint());QTest.qWait(200)
+    assert not hint.property('visible')
+    QTest.keyClick(window,Qt.Key_Escape);QTest.qWait(850)
+    assert backend.setReasoningEffort('off')
     current=backend._view
     current.phase='running';backend.chatChanged.emit()
     backend._handle_pi_event(current,{'type':'generation_metrics','active':True,'estimated':True,'tokensPerSecond':24.5})

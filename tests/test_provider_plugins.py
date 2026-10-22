@@ -192,11 +192,11 @@ class ProviderPluginTests(unittest.TestCase):
         self.assertEqual((row["alias"], row["contextWindow"], row["vision"]), ("custom-alias", 65536, True))
         messages = [{"role":"user", "content":[{"type":"text", "text":"fixture"}, {"type":"image_url", "image_url":{"url":"data:image/png;base64,cGl4ZWxz"}}]}]
         tools = [{"name":"read", "parameters":{"type":"object"}}]
-        completion = self.controller.gateway.complete("custom-alias", messages, tools, 32, provider_id, {"temperature":.1})
+        completion = self.controller.gateway.complete("custom-alias", messages, tools, 32, provider_id, {"temperature":.1, "reasoning_effort":"max"})
         self.assertEqual(completion.text, "fixture")
         self.assertEqual((completion.input_tokens, completion.output_tokens), (5, 2))
         client = self.manager.clients[provider_id]
-        self.assertEqual(client.received, ("k3", messages, tools, 32, {"temperature":.1}))
+        self.assertEqual(client.received, ("k3", messages, tools, 32, {"temperature":.1, "reasoning_effort":"max"}))
         client.models = []
         self.manager.refreshModels(provider_id)
         self.wait(provider_id)

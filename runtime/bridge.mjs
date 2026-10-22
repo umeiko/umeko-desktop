@@ -32,6 +32,8 @@ const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 const textOf = content => typeof content === "string" ? content : (content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
 const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
 let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe, closing = false;
+let reasoningEffort = "off";
+const effortLevels = new Set(["off", "low", "high", "max"]);
 let mcpEntries = [], mcpStatus = "", capturingMcp = false, pollingResources = false;
 let queueChain = Promise.resolve();
 let queuedItems = [], queueInput;
@@ -98,6 +100,15 @@ async function bindSession(session) {
     if (serialized !== lastContext) { lastContext = serialized; emit({ type: "context_usage", usage }); }
   };
   const generation = createGenerationMeter(metrics => emit({ type: "generation_metrics", ...metrics }));
+  const originalPayload = session.agent.onPayload;
+  const configurePayload = async (payload, model) => {
+    const result = await originalPayload?.(payload, model) ?? payload;
+    const configured = { ...result };
+    delete configured.reasoning_effort;
+    if (reasoningEffort !== "off") configured.reasoning_effort = reasoningEffort;
+    return configured;
+  };
+  session.agent.onPayload = configurePayload;
   const unbind = session.subscribe(event => {
     if (event.type === "message_start" && event.message.role === "assistant") generation.start();
     if (event.type === "message_update") generation.update(event.assistantMessageEvent);
@@ -120,7 +131,10 @@ async function bindSession(session) {
     if (event.type === "auto_retry_start") emit({ type: "status", text: `正在重试 ${event.attempt}/${event.maxAttempts}` });
     if (["entry_appended", "message_end", "compaction_end", "agent_end"].includes(event.type)) publishContext();
   });
-  unsubscribe = () => { unbind(); generation.stop(); };
+  unsubscribe = () => {
+    unbind(); generation.stop();
+    if (session.agent.onPayload === configurePayload) session.agent.onPayload = originalPayload;
+  };
   await session.bindExtensions({ uiContext: ui, mode: "rpc", abortHandler: () => session.abort(),
     shutdownHandler: () => shutdown(), onError: error => emit({ type: "notice", message: error.message }),
     commandContextActions: {
@@ -154,6 +168,7 @@ async function reloadSession(session) {
 
 async function init(input) {
   config = input;
+  reasoningEffort = effortLevels.has(input.reasoningEffort) ? input.reasoningEffort : "off";
   setGateway(input.gateway);
   process.env.PI_CODING_AGENT_DIR = input.agentDir;
   for (const [name, value] of Object.entries(input.mcpEnv || {})) if (!/^NODE_|^(HTTP|HTTPS|ALL)_PROXY$/i.test(name)) process.env[name] = value;
@@ -303,6 +318,10 @@ async function promptWithInterrupts(first) {
 }
 
 async function execute(input) {
+  if (input.type === "reasoning_effort") {
+    if (effortLevels.has(input.value)) reasoningEffort = input.value;
+    return;
+  }
   if (["follow-up", "steer", "promote-queue", "edit-queue", "delete-queue", "steer-queued"].includes(input.type)) {
     queueChain = queueChain.then(async () => {
       try {
@@ -351,6 +370,7 @@ async function execute(input) {
   if (executing) { emit({ type: "error", message: "Pi 正在处理当前操作" }); return; }
   executing = true;
   try {
+    if (effortLevels.has(input.reasoningEffort)) reasoningEffort = input.reasoningEffort;
     if (!runtime) {
       if (!input.gateway || !input.token || !Array.isArray(input.models)) throw new Error("Pi 尚未完成初始化，请重新加载会话后重试");
       await init(input);
