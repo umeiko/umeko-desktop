@@ -483,16 +483,18 @@ class ProviderPlugins(QObject):
                 self._invalidate(provider_id)
                 secrets = self._secrets(provider_id)
                 previous = self.c.store.data["providers"]
+                selection = {key: self.c.store.data[key] for key in ("selectedProvider", "selectedModel")}
                 self.c.store.data["providers"] = [p for p in self.c.store.data["providers"] if p["id"] != provider_id]
                 try:
+                    self.repair_selection()
                     self.c.store.save()
                 except Exception:
                     self.c.store.data["providers"] = previous
+                    self.c.store.data.update(selection)
                     raise
                 secrets.clear()
                 self.status.pop(provider_id, None)
                 self.leases.pop(provider_id, None)
-                self.repair_selection()
                 self._notify(save=False)
         except (RuntimeError, OSError) as exc: self.c.toast.emit(str(exc))
 
@@ -507,10 +509,14 @@ class ProviderPlugins(QObject):
                 for account in accounts: self._invalidate(account["id"])
                 retired = self._retire_package(path)
                 previous = self.c.store.data["providers"]
+                selection = {key: self.c.store.data[key] for key in ("selectedProvider", "selectedModel")}
                 self.c.store.data["providers"] = [p for p in previous if p not in accounts]
-                try: self.c.store.save()
+                try:
+                    self.repair_selection()
+                    self.c.store.save()
                 except Exception:
                     self.c.store.data["providers"] = previous
+                    self.c.store.data.update(selection)
                     if retired: retired.rename(path)
                     raise
                 self._forget_package(path)
@@ -519,7 +525,6 @@ class ProviderPlugins(QObject):
                     self.status.pop(account["id"], None)
                     self.leases.pop(account["id"], None)
                 self._clean_retired(retired)
-                self.repair_selection()
                 self._notify(save=False)
             self.c.toast.emit("插件已卸载，可以重新安装")
             return True
