@@ -108,7 +108,7 @@ try:
     backend._view.busy, backend._view.phase = False, "idle"
     backend.chatChanged.emit()
     assert "v0.3.0" in find("appUpdateStatus").property("text")
-    assert find("openAppReleasesButton").property("text") == "前往下载"
+    assert find("openAppReleasesButton").property("text") == "查看发布页"
     assert "<b>" in find("appReleaseNotes").property("text")
     with patch("app.app_about.QDesktopServices.openUrl", return_value=True) as opened:
         click("openAppReleasesButton")

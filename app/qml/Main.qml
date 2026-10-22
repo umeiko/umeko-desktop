@@ -170,7 +170,7 @@ ApplicationWindow {
                 Glyph { name: "settings"; width: Theme.icon(18); height: Theme.icon(18) }
                 Text { text: I18n.t("设置"); color: Theme.ink; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
             } }
-            Text { anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter; visible: Theme.fontScale <= 1.5; text: "v" + backend.appAbout.info.version; font.pixelSize: Theme.font(10); color: Theme.muted }
+            AppUpdateBadge { anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter }
         }
     }
 

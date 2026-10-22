@@ -1,5 +1,14 @@
 .pragma library
 var strings = {
+  "在文件夹中查看": "Show in folder",
+  "发现新版本，点击下载": "Update available. Click to download",
+  "更新包已下载，点击查看": "Update downloaded. Click to show in folder",
+  "正在下载更新包…": "Downloading update…",
+  "更新包已下载": "Update downloaded",
+  "下载更新": "Download update",
+  "下载失败，请检查网络后重试": "Download failed. Check your network and retry",
+  "更新包下载或校验失败，请重新下载": "Download or verification failed. Please retry",
+  "无法保存更新包，请检查下载目录权限": "Cannot save the update. Check your Downloads folder permissions",
   "已达到本次输出上限，内容可能尚未完成": "This response reached its output limit and may be incomplete",
   "继续生成": "Continue",
   "继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。": "Continue the unfinished response from where it stopped, without repeating existing content.",

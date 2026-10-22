@@ -53,10 +53,11 @@ Column {
                 Text { text: I18n.t("客户端更新"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
                 Item { Layout.fillWidth: true }
                 BusyIndicator { visible: root.about.busy; running: visible; implicitWidth: 22; implicitHeight: 22 }
-                ActionButton { objectName: "checkAppUpdatesButton"; text: root.about.busy ? I18n.t("检查中…") : I18n.t("检查更新"); glyph: "refresh"; primary: true; enabled: !root.about.busy; onClicked: root.about.checkUpdates() }
+                ActionButton { objectName: "checkAppUpdatesButton"; text: root.about.busy ? I18n.t("检查中…") : I18n.t("检查更新"); glyph: "refresh"; primary: true; enabled: !root.about.busy && root.about.download.state !== "downloading"; onClicked: root.about.checkUpdates() }
             }
             Text { objectName: "appUpdateStatus"; Layout.fillWidth: true; text: I18n.t(root.about.release.message) || I18n.t("检查 GitHub 上的最新正式发布版本。"); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: root.about.release.state === "error" ? Theme.danger : root.about.release.state === "available" ? Theme.accent : Theme.ink; font.pixelSize: Theme.font(12) }
             Text { visible: root.about.checkedAt !== ""; text: I18n.t("上次检查：") + root.about.checkedAt; color: Theme.muted; font.pixelSize: Theme.font(11) }
+            Text { objectName: "appDownloadStatus"; Layout.fillWidth: true; visible: !!root.about.download.state; text: I18n.t(root.about.download.message) + (root.about.download.state === "downloading" ? " " + (root.about.download.progress || 0) + "%" : root.about.download.state === "ready" ? " · " + root.about.download.path : ""); color: root.about.download.state === "error" ? Theme.danger : Theme.muted; font.pixelSize: Theme.font(12); wrapMode: Text.Wrap; textFormat: Text.PlainText }
             InlineScrollView {
                 visible: (root.about.release.notes || "") !== ""
                 Layout.fillWidth: true; Layout.preferredHeight: 160; clip: true
@@ -66,8 +67,9 @@ Column {
             }
             RowLayout {
                 Layout.fillWidth: true
-                Text { Layout.fillWidth: true; text: I18n.t("更新包及完整说明在 GitHub 发布页查看。"); color: Theme.muted; font.pixelSize: Theme.font(11); wrapMode: Text.Wrap }
-                ActionButton { objectName: "openAppReleasesButton"; text: root.about.release.state === "available" ? I18n.t("前往下载") : I18n.t("查看发布页"); glyph: "external-link"; onClicked: root.about.openReleases() }
+                Item { Layout.fillWidth: true }
+                ActionButton { objectName: "openAppReleasesButton"; text: I18n.t("查看发布页"); glyph: "external-link"; onClicked: root.about.openReleases() }
+                ActionButton { objectName: "downloadAppUpdateButton"; visible: !!root.about.release.asset || root.about.download.state === "ready"; text: root.about.download.state === "ready" ? I18n.t("在文件夹中查看") : I18n.t("下载更新"); glyph: root.about.download.state === "ready" ? "folder" : "download"; primary: true; enabled: root.about.download.state !== "downloading"; onClicked: root.about.download.state === "ready" ? root.about.showDownloadedUpdate() : root.about.downloadUpdate() }
             }
         }
     }
