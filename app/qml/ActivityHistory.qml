@@ -5,7 +5,6 @@ Column {
     property var activity: []
     property var selectionController: null
     property int messageIndex: -1
-    property bool streaming: false
     property var expansionStates: ({})
     function expansionState(key) {
         if (!expansionStates[key]) expansionStates[key] = {expanded:false, details:({})}
@@ -29,7 +28,6 @@ Column {
                 text: visible ? (step.entry.error ? I18n.t(step.entry.text || "") : step.entry.text || "") : ""
                 markdown: !step.entry.error; textColor: step.entry.error ? Theme.danger : Theme.ink
                 compact: step.index < root.activity.length - 1
-                streaming: root.streaming && step.index === root.activity.length - 1
                 selectionController: root.selectionController; messageIndex: root.messageIndex; blockOffset: step.entry.blockOffset
             }
             ThinkingHistory {

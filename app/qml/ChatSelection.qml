@@ -122,7 +122,7 @@ Item {
                 return editor.getText(0, editor.length)
         }
         renderer.textFormat = markdown ? TextEdit.MarkdownText : TextEdit.PlainText
-        renderer.text = text
+        renderer.text = markdown ? Markdown.forQt(text) : text
         return renderer.getText(0, renderer.length)
     }
     function selectedText() {

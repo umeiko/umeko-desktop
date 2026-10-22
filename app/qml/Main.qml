@@ -336,12 +336,11 @@ ApplicationWindow {
                         height: replyColumn.implicitHeight + (userMessage ? 22 : modelData.error ? 28 : 4); radius: userMessage ? 13 : 8
                         color: userMessage ? Theme.userBubble : modelData.error ? Theme.accentBg : "transparent"
                         Column { id: replyColumn; x: parent.userMessage || modelData.error ? 14 : 0; y: parent.userMessage ? 11 : modelData.error ? 14 : 0; width: parent.width - x * 2; spacing: 10
-                            ActivityHistory { width: parent.width; activity: modelData.activity || []; selectionController: chatSelection; messageIndex: messageRow.index; streaming: backend.running && messageRow.index === conversation.count - 1 }
+                            ActivityHistory { width: parent.width; activity: modelData.activity || []; selectionController: chatSelection; messageIndex: messageRow.index }
                             UserMessageBody { id: userBody; width: parent.width; visible: modelData.role === "user"
                                 text: modelData.role === "user" ? modelData.text : ""; attachments: modelData.attachments || []
                                 selectionController: chatSelection; messageIndex: messageRow.index }
                             MessageBody { id: reply; width: parent.width
-                                streaming: backend.running && messageRow.index === conversation.count - 1
                                 selectionController: chatSelection; messageIndex: messageRow.index
                                 visible: modelData.role !== "user" && text.length > 0 && !(modelData.activity || []).length
                                 text: modelData.role === "user" || (modelData.activity || []).length ? "" : modelData.text || (messageRow.index === conversation.count - 1 && backend.busy ? backend.toolStatus + "…" : "")
