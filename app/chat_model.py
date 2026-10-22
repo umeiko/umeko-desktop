@@ -1,17 +1,23 @@
 """Stable message rows: streaming updates never reset the conversation list."""
 import copy
 import re
-from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt
+from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt, Property, Signal
 from .message_attachments import split_attachments
 from .chatbox import media_view
 
 
 class ChatModel(QAbstractListModel):
     MessageRole = Qt.UserRole + 1
+    questionsChanged = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.rows = []
+        self._questions = []
+
+    @Property('QVariantList', notify=questionsChanged)
+    def questions(self):
+        return self._questions
 
     def roleNames(self):
         return {self.MessageRole: b"modelData"}
@@ -26,8 +32,10 @@ class ChatModel(QAbstractListModel):
     def update(self, messages):
         messages = self.project(messages)
         common = min(len(messages), len(self.rows))
+        questions_dirty = len(messages) != len(self.rows)
         for row in range(common):
             if self.rows[row] != messages[row]:
+                questions_dirty |= self.rows[row].get('role') == 'user' or messages[row].get('role') == 'user'
                 self.rows[row] = copy.deepcopy(messages[row])
                 self.dataChanged.emit(self.index(row), self.index(row), [self.MessageRole])
         if len(messages) > len(self.rows):
@@ -38,6 +46,16 @@ class ChatModel(QAbstractListModel):
             self.beginRemoveRows(QModelIndex(), len(messages), len(self.rows) - 1)
             del self.rows[len(messages):]
             self.endRemoveRows()
+        if questions_dirty:
+            questions = []
+            for row, message in enumerate(self.rows):
+                if message.get('role') != 'user':
+                    continue
+                title = message.get('text', '').strip() or '、'.join(a.get('name', '') for a in message.get('attachments', [])) or '…'
+                questions.append({'row': row, 'title': re.sub(r'\s+', ' ', title[:500])})
+            if questions != self._questions:
+                self._questions = questions
+                self.questionsChanged.emit()
 
     @staticmethod
     def project(messages):
@@ -83,6 +101,7 @@ class ChatModel(QAbstractListModel):
                 group["tools"] = group.get("tools", []) + current.get("tools", [])
                 group["text"] = current.get("text", "")
                 group["error"] = group.get("error", False) or current.get("error", False)
+                group["stopReason"] = current.get("stopReason", "")
                 if current.get("timestamp"): group["timestamp"] = current["timestamp"]
             else:
                 rows.append(current)

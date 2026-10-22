@@ -127,6 +127,32 @@ class PiTests(unittest.TestCase):
         self.assertEqual([m['text'] for m in state['messages'] if m['role'] == 'assistant'], ['Recovered'])
         self.assertEqual([m['text'] for m in preview(state['session']['file'])[0] if m['role'] == 'assistant'], ['Recovered'])
 
+    def test_default_output_budget_is_maximum(self):
+        limits = []
+        def response(model, messages, tools, max_tokens):
+            limits.append(max_tokens)
+            return Completion('complete')
+        self.response_fn = response
+        self.command({**self.payload, 'type':'prompt', 'text':'default output budget fixture'})
+        self.assertEqual(limits, [32768])
+
+    def test_output_budget_reaches_provider_and_length_reason_survives_history(self):
+        limits = []
+        def response(model, messages, tools, max_tokens):
+            limits.append(max_tokens)
+            return Completion('<svg>unfinished', input_tokens=100, output_tokens=max_tokens, finish_reason='length')
+        self.response_fn = response
+        output = self.command({**self.payload, 'type':'prompt', 'text':'long vector fixture',
+                               'agent':{'maxTokens':16384, 'autoCompaction':False}})
+        self.assertEqual(limits, [16384])
+        message = next(e for e in output if e['type'] == 'message' and e['role'] == 'assistant')
+        self.assertEqual(message['stopReason'], 'length')
+        self.assertEqual(message['error'], '')
+        self.assertFalse([e for e in output if e['type'] == 'network_retry' and e.get('waiting')])
+        state = next(e for e in output if e['type'] == 'state')
+        self.assertEqual(state['messages'][-1]['stopReason'], 'length')
+        self.assertEqual(preview(state['session']['file'])[0], state['messages'])
+
     def test_retry_exhausts_after_five_attempts(self):
         def fail(*args): raise ConnectionResetError('供应商流已中断')
         self.response_fn = fail

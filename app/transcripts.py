@@ -69,6 +69,8 @@ def preview(file):
         calls = [block for block in content if isinstance(block, dict) and block.get("type") == "toolCall"] if isinstance(content, list) else []
         if role in ("user", "assistant") and (text or thinking or calls):
             row = {"role": role, "text": text, "error": message.get("stopReason") != "aborted" and bool(message.get("errorMessage")), "entryId": entry["id"], "timestamp": message.get("timestamp") or entry.get("timestamp")}
+            if role == "assistant":
+                row["stopReason"] = message.get("stopReason", "")
             if thinking:
                 row["thinking"] = thinking
             if calls:

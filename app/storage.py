@@ -68,7 +68,7 @@ DEFAULTS = {
     "employeeId": "", "password": "", "workspace": "", "dark": False, "theme": "light",
     "selectedProvider": "", "selectedModel": "",
     "providers": [],
-    "agent": {"maxTokens": 8192, "instructions": "", "autoCompaction": True,
+    "agent": {"maxTokens": 32768, "outputLimitDefaultVersion": 1, "instructions": "", "autoCompaction": True,
               "agentDir": "", "skillPaths": [], "extensionPaths": [], "safeMode": False,
               "npmRegistry": "", "npmUserconfig": "", "npmCafile": ""},
     "server": {"port": 8787, "openai": True, "anthropic": True, "lan": False, "keys": []},
@@ -91,6 +91,7 @@ class Store:
         self.directory.mkdir(parents=True, exist_ok=True)
         self.path = self.directory / "settings.json"
         self.data = copy.deepcopy(DEFAULTS)
+        saved = {}
         if self.path.exists():
             saved = json.loads(self.path.read_text(encoding="utf-8"))
             self.data.update(saved)
@@ -119,6 +120,11 @@ class Store:
                 p["key"] = protect(p.get("key", ""), True)
                 if p["id"] == "internal" and p["name"] == "CodeAgent":
                     p["name"] = "内网服务"
+        output_default_migrated = saved.get('agent', {}).get('outputLimitDefaultVersion') != 1
+        if output_default_migrated:
+            if self.data['agent']['maxTokens'] == 8192:
+                self.data['agent']['maxTokens'] = 32768
+            self.data['agent']['outputLimitDefaultVersion'] = 1
         ui = self.data['ui']
         if ui.get('language') not in ('zh', 'en'):
             preferred = QLocale.system().uiLanguages()
@@ -127,7 +133,7 @@ class Store:
             if ui['language'] not in ('zh', 'en'): ui['language'] = 'en'
         scale = ui.get('fontScale', 1.)
         ui['fontScale'] = max(.5, min(2., float(scale))) if type(scale) in (int, float) and math.isfinite(scale) else 1.
-        if not self.path.exists() or "keys" not in saved.get("server", {}):
+        if not self.path.exists() or "keys" not in saved.get("server", {}) or output_default_migrated:
             self.save()
 
     def save(self):

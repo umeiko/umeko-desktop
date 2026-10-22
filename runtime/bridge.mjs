@@ -129,7 +129,7 @@ async function bindSession(session) {
     const willRetry = event.type === "message_end" && session.retryAttempt < NETWORK_RETRY.maxRetries &&
       isRetryableAssistantError(event.message) && !isContextOverflow(event.message, session.model?.contextWindow || 128000);
     if (event.type === "message_end" && !willRetry) emit({ type: "message", role: event.message.role,
-      text: textOf(event.message.content), thinking: thinkingOf(event.message.content), error: event.message.stopReason === "aborted" ? "" : event.message.errorMessage || "", timestamp:event.message.timestamp });
+      text: textOf(event.message.content), thinking: thinkingOf(event.message.content), stopReason: event.message.stopReason || "", error: event.message.stopReason === "aborted" ? "" : event.message.errorMessage || "", timestamp:event.message.timestamp });
     if (event.type === "compaction_start") emit({ type: "status", text: "正在压缩上下文" });
     if (["auto_retry_start", "summarization_retry_scheduled"].includes(event.type)) {
       clearTimeout(retryTimer);
@@ -192,7 +192,7 @@ async function init(input) {
   if (modelRuntime.getProviders().length) throw new Error("内核包含未禁用的内置供应商");
   const models = input.models.map(m => ({ id: m.id, name: m.id, api: "openai-completions", input: m.input?.includes("image") ? ["text", "image"] : ["text"],
     reasoning: false, contextWindow: m.contextWindow || 128000,
-    maxTokens: Math.min(input.agent?.maxTokens || 8192, m.contextWindow || 128000),
+    maxTokens: Math.min(input.agent?.maxTokens || 32768, m.contextWindow || 128000),
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     compat: { supportsDeveloperRole: false, supportsStore: false, supportsUsageInStreaming: true, maxTokensField: "max_tokens" } }));
   modelRuntime.registerProvider("umeko", { name: "Umeko", api: "openai-completions", baseUrl: input.gateway + "v1",
@@ -270,6 +270,7 @@ async function state() {
   const messages = branch.filter(e => e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant"].includes(e.message.role)).map(e => {
     const message = e.message;
     const row = {role: message.role, text: textOf(message.content) || (message.stopReason === "aborted" ? "" : message.errorMessage || ""), error: message.stopReason !== "aborted" && !!message.errorMessage, entryId:e.id, timestamp:message.timestamp || e.timestamp};
+    if (message.role === "assistant") row.stopReason = message.stopReason || "";
     const thinking = thinkingOf(message.content);
     if (thinking) row.thinking = thinking;
     const calls = Array.isArray(message.content) ? message.content.filter(c => c.type === "toolCall") : [];

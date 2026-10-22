@@ -1,0 +1,18 @@
+{
+  "generator": "Built-in image_gen",
+  "usage": "40px assistant message header avatars before font scaling; no per-frame animation",
+  "reference": "../yanami-pixel.png",
+  "format": "Lossless WebP, original RGBA pixels and dimensions preserved",
+  "variants": {
+    "smile": {
+      "source": "../yanami-pixel.png",
+      "prompt": "Existing project pixel mascot; reused unchanged."
+    },
+    "wink": {
+      "prompt": "Use case: identity-preserve / pixel art expression variant. Input image is the existing Umeko pixel Yanami Anna head-and-bow avatar and is the identity/style reference. Create ONE isolated tiny UI avatar of exactly this character. Preserve the navy blue wavy bob, long side locks, loop-shaped ahoge, blue eyes, blue bow and recognizable head silhouette. Deliberate crisp retro 32x32-style pixel sprite, restrained palette, navy outline, large readable square pixel clusters, no smooth gradients. Transparent RGBA background, centered head fills 90% of square canvas, no cropped hair, no body, no panels, no words, no objects, no decoration, no drop shadow or white circle. Intended final display size 24px so use bold simple features. Expression: playful wink, one eye open bright blue, small cheerful toothy grin, light blush. Keep the same slight head tilt and hairstyle as the reference."
+    },
+    "happy": {
+      "prompt": "Use case: identity-preserve / pixel art expression variant. Input image is the existing Umeko pixel Yanami Anna head-and-bow avatar and is the identity/style reference. Create ONE isolated tiny UI avatar of exactly this character. Preserve the navy blue wavy bob, long side locks, loop-shaped ahoge, blue eyes, blue bow and recognizable head silhouette. Deliberate crisp retro 32x32-style pixel sprite, restrained palette, navy outline, large readable square pixel clusters, no smooth gradients. Transparent RGBA background, centered head fills 90% of square canvas, no cropped hair, no body, no panels, no words, no objects, no decoration, no drop shadow or white circle. Intended final display size 24px so use bold simple features. Expression: happy closed-eye smile, two little upward arcs for eyes, tiny open smiling mouth, rosy cheeks. Keep the same head size, tilt and hairstyle as the reference."
+    }
+  }
+}

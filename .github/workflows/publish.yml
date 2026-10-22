@@ -8,7 +8,7 @@ on:
         type: string
       tag:
         description: Version tag matching all four build manifests
-        default: v0.3.5
+        default: v0.3.6
         required: true
         type: string
 permissions:

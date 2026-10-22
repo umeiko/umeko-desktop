@@ -18,6 +18,23 @@ from app.request_diagnostics import RequestFailure
 
 
 class PreferencesTests(unittest.TestCase):
+    def test_output_default_migrates_once_and_keeps_other_custom_limits(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)
+            store = Store(path)
+            self.assertEqual(store.data['agent']['maxTokens'], 32768)
+            for value, expected in [(8192,32768), (4096,4096)]:
+                legacy = json.loads(store.path.read_text(encoding='utf-8'))
+                legacy['agent'].pop('outputLimitDefaultVersion')
+                legacy['agent']['maxTokens'] = value
+                store.path.write_text(json.dumps(legacy), encoding='utf-8')
+                migrated = Store(path)
+                self.assertEqual(migrated.data['agent']['maxTokens'], expected)
+                self.assertEqual(json.loads(store.path.read_text())['agent']['outputLimitDefaultVersion'], 1)
+            migrated.data['agent']['maxTokens'] = 8192
+            migrated.save()
+            self.assertEqual(Store(path).data['agent']['maxTokens'], 8192)
+
     def test_system_locale_is_used_only_until_user_chooses(self):
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {'UMEKO_LANGUAGE': ''}), patch('app.storage.QLocale.system', return_value=QLocale('en_US')):
             store = Store(Path(temp))

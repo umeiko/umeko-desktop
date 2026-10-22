@@ -207,7 +207,7 @@ class PiControllerMixin:
             self._restore_queued(record, [*event.get("steering", []), *event.get("followUp", [])])
         elif kind == "message" and event.get("role") == "assistant":
             if record.messages and record.messages[-1]["role"] == "assistant":
-                record.messages[-1].update(text=event.get("text") or event.get("error") or record.messages[-1]["text"], error=bool(event.get("error")))
+                record.messages[-1].update(text=event.get("text") or event.get("error") or record.messages[-1]["text"], error=bool(event.get("error")), stopReason=event.get("stopReason", ""))
                 if event.get("timestamp"): record.messages[-1]["timestamp"] = event["timestamp"]
                 if "thinking" in event:
                     record.messages[-1]["thinking"] = event["thinking"]

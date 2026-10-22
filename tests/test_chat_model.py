@@ -5,6 +5,30 @@ from app.chat_model import ChatModel
 
 
 class ChatModelTests(unittest.TestCase):
+    def test_questions_use_display_rows_and_do_not_refresh_during_streaming(self):
+        from app.message_attachments import attachment_prompt
+        model = ChatModel()
+        changes = []
+        model.questionsChanged.connect(lambda: changes.append(1))
+        messages = [
+            {'role':'user','text':'  First\nquestion  '},
+            {'role':'assistant','text':'inspect','tools':[{'id':'read'}]},
+            {'role':'assistant','text':'answer'},
+            {'role':'user','text':attachment_prompt('', [{'kind':'file','path':'/tmp/report.pdf'}])},
+            {'role':'assistant','text':''},
+        ]
+        model.update(messages)
+        self.assertEqual(model.questions, [{'row':0,'title':'First question'}, {'row':2,'title':'report.pdf'}])
+        for i in range(50):
+            messages[-1]['text'] += ' streamed'
+            model.update(messages)
+        self.assertEqual(len(changes), 1)
+        messages[0]['text'] = 'Edited question'
+        model.update(messages)
+        self.assertEqual(model.questions[0]['title'], 'Edited question')
+        model.update([])
+        self.assertEqual(model.questions, [])
+
     def test_attachment_tags_project_old_history_without_altering_native_prompt(self):
         from app.message_attachments import attachment_prompt
         raw = attachment_prompt("Describe these files", [{"kind":"file", "path":r"D:\fixture\Kimi Code.lnk"}, {"kind":"folder", "path":"/tmp/example folder"}])

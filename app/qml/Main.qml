@@ -16,6 +16,7 @@ ApplicationWindow {
     property string page: "chat"
     property int settingsTab: 0
     property string notification: ""
+    property string avatarChatKey: String(Math.random())
     property string pendingSidebarId: ""
     property string pendingSidebarKind: ""
     property string pendingSidebarTitle: ""
@@ -89,7 +90,8 @@ ApplicationWindow {
     Shortcut { sequences: [StandardKey.Copy]; enabled: chatSelection.activeFocus && chatSelection.hasSelection; onActivated: Qt.callLater(chatSelection.copy) }
     Shortcut { sequences: [StandardKey.SelectAll]; enabled: chatSelection.activeFocus; onActivated: chatSelection.selectAll() }
     Shortcut { sequence: "Escape"; onActivated: { if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
-    Connections { target: backend; function onToast(message) { window.notification = message; toastTimer.restart() } }
+    Connections { target: backend; function onToast(message) { window.notification = message; toastTimer.restart() }
+        function onViewChanged() { window.avatarChatKey = String(Math.random()) } }
     Connections { target: backend; function onLayoutChanged() { window.sidebarPreferredWidth = backend.sidebarWidth; window.sidebarCollapsed = backend.sidebarCollapsed } }
     Timer { id: toastTimer; interval: 4200; onTriggered: window.notification = "" }
     RequestDetails { id: requestInspector }
@@ -248,6 +250,13 @@ ApplicationWindow {
                 property int restoreIndex: -1
                 property int restoreAttempts: 0
                 function beginBrowsing() { tailTimer.stop(); restoreTimer.stop(); restoring = false; cancelFlick(); followTail = false }
+                function jumpToMessage(row) {
+                    if (row < 0 || row >= count) return
+                    beginBrowsing()
+                    chatSelection.clear()
+                    restoring = true; restoreIndex = row; restoreOffset = 0; restoreAttempts = 0
+                    restoreTimer.restart()
+                }
                 function scrollBy(delta) {
                     beginBrowsing()
                     const first = itemAtIndex(0), last = itemAtIndex(count - 1)
@@ -277,9 +286,7 @@ ApplicationWindow {
                 x: Math.max(38, (parent.width - 830) / 2); width: Math.min(parent.width - 76, 830)
                 anchors.top: parent.top; anchors.topMargin: 20; anchors.bottom: composer.top; anchors.bottomMargin: 24
                 clip: true; spacing: 27; model: backend.messageModel
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded
-                    onPressedChanged: { if (pressed) conversation.followTail = false; else if (conversation.atYEnd) conversation.followTail = true }
-                }
+                ScrollBar.vertical: ScrollBar { objectName: "conversationScrollBar"; policy: ScrollBar.AlwaysOff }
                 onAtYEndChanged: if (atYEnd && !restoring && !chatSelection.dragging) followTail = true
                 onFollowTailChanged: saveViewport()
                 onContentYChanged: saveViewport()
@@ -324,8 +331,7 @@ ApplicationWindow {
                     readonly property bool hovered: chatSelection.hovering && hoverPoint.x >= 0 && hoverPoint.x <= width && hoverPoint.y >= 0 && hoverPoint.y <= height
                     width: conversation.width - 16; spacing: 10
                     Row { visible: modelData.role !== "user"; spacing: 9
-                        Rectangle { width: 24; height: 24; radius: 7; color: Theme.accentBg
-                            Glyph { anchors.centerIn: parent; name: "spark"; width: Theme.icon(14); height: Theme.icon(14) } }
+                        AssistantAvatar { objectName: "assistantAvatar_" + messageRow.index; messageKey: window.avatarChatKey + "/" + messageRow.index }
                         SelectableText { selectionController: chatSelection; messageIndex: messageRow.index; blockIndex: -100000; text: "umeko"; anchors.verticalCenter: parent.verticalCenter; color: Theme.ink; font.pixelSize: Theme.font(11); font.weight: Font.DemiBold }
                     }
                     Rectangle {
@@ -355,6 +361,13 @@ ApplicationWindow {
                         x: 33; text: I18n.t("查看请求详情"); glyph: "code"; quiet: true
                         onClicked: requestInspector.show(modelData.diagnosticId)
                     }
+                    OutputLimitNotice {
+                        objectName: "outputLimitNotice_" + messageRow.index
+                        x: 33; width: parent.width - 33
+                        visible: modelData.role === "assistant" && modelData.stopReason === "length"
+                        continuable: messageRow.index === conversation.count - 1 && !backend.busy
+                        onContinued: backend.send(I18n.t("继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。"))
+                    }
                     Item {
                         objectName: "messageActions_" + messageRow.index
                         width: parent.width; height: 18
@@ -379,6 +392,12 @@ ApplicationWindow {
             }
 
             ChatSelection { id: chatSelection; anchors.fill: conversation; view: conversation; visible: conversation.visible; enabled: !chatCover.visible }
+
+            QuestionNavigator {
+                anchors.right: parent.right
+                anchors.top: conversation.top; anchors.bottom: conversation.bottom
+                view: conversation; enabled: !chatCover.visible; z: 20
+            }
 
             Composer {
                 id: composer; objectName: "composer"

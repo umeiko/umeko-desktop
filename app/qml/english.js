@@ -1,5 +1,8 @@
 .pragma library
 var strings = {
+  "已达到本次输出上限，内容可能尚未完成": "This response reached its output limit and may be incomplete",
+  "继续生成": "Continue",
+  "继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。": "Continue the unfinished response from where it stopped, without repeating existing content.",
   "已安装插件": "Installed plugins",
   " 个账号": " accounts",
   "添加账号": "Add account",
