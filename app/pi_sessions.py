@@ -26,6 +26,7 @@ class SessionState:
     tree: list = field(default_factory=list)
     resources: dict = field(default_factory=lambda: {"tools": [], "skills": [], "extensions": [], "diagnostics": []})
     context_usage: dict = field(default_factory=dict)
+    network_retry: dict = field(default_factory=dict)
     reasoning_effort: str = "off"
     attachments: list = field(default_factory=list)
     approval: dict = field(default_factory=dict)

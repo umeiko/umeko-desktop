@@ -6,10 +6,13 @@ import uuid
 from datetime import datetime, timezone
 from PySide6.QtCore import QObject, Signal
 from umeko_provider_sdk.network import redact, secret_values
+from .network_retry import transient_failure
 
 
 class RequestFailure(ValueError):
-    pass
+    def __init__(self, message, retryable=False):
+        super().__init__(message)
+        self.retryable = retryable
 
 
 class RequestDiagnostics(QObject):
@@ -33,7 +36,7 @@ class RequestDiagnostics(QObject):
             for old in sorted(self.directory.glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True)[30:]:
                 old.unlink()
         self.changed.emit()
-        return RequestFailure(f'供应商请求失败，请查看请求详情 [Umeko:{record["id"]}]')
+        return RequestFailure(f'供应商请求失败，请查看请求详情 [Umeko:{record["id"]}]', transient_failure(error, http or []))
 
     def read(self, identifier):
         if not re.fullmatch(r'[a-f0-9-]{36}', identifier):

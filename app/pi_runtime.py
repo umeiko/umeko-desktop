@@ -88,7 +88,7 @@ def verify_runtime(release: Path, bridge_source: Path):
     manifest = json.loads((release / "manifest.json").read_text(encoding="utf-8"))
     if manifest.get("package") != PACKAGE or manifest.get("projection") != 2:
         raise RuntimeError("旧 Agent Core 内核不能用于完整 Pi Coding Agent")
-    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs"):
+    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs"):
         shutil.copy2(bridge_source.parent / name, release / name)
     environment = node_environment(dict(os.environ, PI_OFFLINE="1"))
     environment.pop("NODE_OPTIONS", None)

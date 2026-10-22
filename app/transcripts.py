@@ -51,12 +51,15 @@ def preview(file):
         branch.append(current)
         current = index.get(current.get("parentId"))
     messages, tree = [], []
+    omissions = {e['targetId'] for e in branch if e.get('type') == 'context_edit' and e.get('replacement') is None}
     results = {e["message"].get("toolCallId"): e["message"] for e in branch if e.get("type") == "message" and e.get("message", {}).get("role") == "toolResult"}
     deliveries = [e["data"] for e in reversed(branch) if e.get("type") == "custom" and e.get("customType") == "umeko-chatbox" and isinstance(e.get("data"), dict) and e["data"].get("version") == 1 and isinstance(e["data"].get("toolCallId"), str) and isinstance(e["data"].get("items"), list)]
     for entry in reversed(branch):
         if entry.get("type") != "message":
             continue
         message = entry.get("message", {})
+        if entry['id'] in omissions and message.get('role') == 'assistant' and message.get('stopReason') == 'error':
+            continue
         content = message.get("content", "")
         text = content_text(content)
         thinking = content_thinking(content)

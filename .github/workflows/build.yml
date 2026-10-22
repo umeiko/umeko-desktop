@@ -92,7 +92,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          foreach ($test in @('chatbox_ui_smoke.py', 'message_actions_ui_smoke.py', 'settings_interaction_ui_smoke.py', 'motion_ui_smoke.py', 'selection_click_ui_smoke.py', 'theme_ui_smoke.py', 'preferences_ui_smoke.py', 'streaming_ui_smoke.py', 'markdown_table_ui_smoke.py', 'chat_loading_ui_smoke.py', 'chat_interaction_smoke.py', 'ui_smoke.py')) {
+          foreach ($test in @('chatbox_ui_smoke.py', 'message_actions_ui_smoke.py', 'settings_interaction_ui_smoke.py', 'motion_ui_smoke.py', 'selection_click_ui_smoke.py', 'theme_ui_smoke.py', 'preferences_ui_smoke.py', 'streaming_ui_smoke.py', 'markdown_table_ui_smoke.py', 'network_retry_ui_smoke.py', 'chat_loading_ui_smoke.py', 'chat_interaction_smoke.py', 'ui_smoke.py')) {
             & '.venv/Scripts/python.exe' "tests/$test"
             if ($LASTEXITCODE -ne 0) { throw "Interaction failed: $test" }
           }

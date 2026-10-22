@@ -22,6 +22,7 @@ from .integration import Completion, IntegrationRequired
 from .model_capabilities import normalize_model, normalize_vision
 from .protocols import response_events, collect_openai, anthropic_events_to_openai, openai_events_to_anthropic
 from .request_diagnostics import RequestDiagnostics, RequestFailure
+from .network_retry import upstream_failure
 from umeko_provider_sdk.network import network_scope, proxy_handler, trace, TracedResponse
 
 
@@ -300,9 +301,11 @@ class LocalServer:
                     result = owner.gateway.complete(body["model"], messages, tools, max_tokens, parameters=parameters)
                     self.respond(200, anthropic_response(result, body["model"]) if anth else openai_response(result, body["model"]))
                 except IntegrationRequired as exc:
-                    self.respond(503, {"error": {"type": "integration_required", "message": str(exc)}})
+                    self.respond(422 if owner.private else 503, {"error": {"type": "integration_required", "message": str(exc)}})
                 except PermissionError as exc:
                     self.respond(403, {"error": {"type": "permission_error", "message": str(exc)}})
+                except RequestFailure as exc:
+                    self.respond(503 if exc.retryable else 400, {"error": upstream_failure(exc)})
                 except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
                     self.respond(400, {"error": {"type": "invalid_request_error", "message": str(exc)[:300]}})
                 except ConnectionError:
@@ -350,7 +353,7 @@ class LocalServer:
                 except ConnectionError:
                     pass
                 except Exception as failure:
-                    event({"type": "error", "error": {"type": "upstream_error", "message": str(failure) if isinstance(failure, RequestFailure) else "供应商流已中断"}}, "error" if anth else None)
+                    event({"type": "error", "error": upstream_failure(failure)}, "error" if anth else None)
                 finally:
                     iterator.close() if hasattr(iterator, "close") else None
                     self.close_connection = True

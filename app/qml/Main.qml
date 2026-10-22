@@ -383,11 +383,12 @@ ApplicationWindow {
             Composer {
                 id: composer; objectName: "composer"
                 enabled: !chatCover.visible
-                anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 57
+                anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 57 + (retryStatus.visible ? retryStatus.implicitHeight + 6 : 0)
                 width: Math.min(parent.width - 94, 850)
                 onOpenModels: modelPopup.toggle()
                 onChooseFiles: attachmentDialog.open()
             }
+            NetworkRetry { id: retryStatus; anchors.left: composer.left; anchors.top: composer.bottom; anchors.topMargin: 6; width: composer.width }
             ChatLoadingOverlay {
                 id: chatCover; anchors.fill: parent; z: 50; view: conversation
                 onRevealed: if (window.page === "chat") composer.focusInput()

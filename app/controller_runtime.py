@@ -186,6 +186,9 @@ class PiControllerMixin:
                         transcript = True
                         break
         elif kind == "assistant_start":
+            if event.get("retry") and record.messages and record.messages[-1]["role"] == "assistant" and not record.messages[-1].get("tools"):
+                record.messages[-1] = {"role": "assistant", "text": "", "error": False}
+                transcript = True
             if not record.messages or record.messages[-1]["role"] != "assistant" or record.messages[-1]["text"] or record.messages[-1].get("thinking") or record.messages[-1].get("tools"):
                 record.messages.append({"role": "assistant", "text": "", "error": False})
                 transcript = True
@@ -223,6 +226,11 @@ class PiControllerMixin:
             if event.get("result") is not None:
                 tool["result"] = event["result"]
             transcript = True
+        elif kind == "network_retry":
+            record.network_retry = event if event.get("active") else {}
+            if visible:
+                self.retryChanged.emit()
+            return
         elif kind == "status":
             record.tool_status = event["text"]
         elif kind == "notice":
@@ -273,6 +281,9 @@ class PiControllerMixin:
                 self.changed.emit()
             transcript = True
         elif kind in ("done", "exit"):
+            record.network_retry = {}
+            if visible:
+                self.retryChanged.emit()
             was_busy = record.busy
             if record.queue:
                 self._restore_queued(record, [row["text"] for row in record.queue])
@@ -312,6 +323,8 @@ class PiControllerMixin:
         record = self._view
         if record.phase == "running":
             record.cancelled = True
+            record.network_retry = {}
+            self.retryChanged.emit()
             self._pool.write(record, {"type": "abort"})
             record.approval = {}
             self.approvalChanged.emit()

@@ -82,6 +82,11 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
     attachmentsChanged = Signal()
     contextUsageChanged = Signal()
     reasoningChanged = Signal()
+    retryChanged = Signal()
+
+    @Property("QVariantMap", notify=retryChanged)
+    def networkRetry(self):
+        return self._view.network_retry
     proxyKeysChanged = Signal()
     editorText = Signal(str)
 
@@ -222,6 +227,7 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
         self.editorText.emit(record.draft)
         self.contextUsageChanged.emit()
         self.reasoningChanged.emit()
+        self.retryChanged.emit()
 
     def _refresh_sidebar(self):
         rows = self.projectRows

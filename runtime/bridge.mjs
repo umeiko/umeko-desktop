@@ -3,6 +3,7 @@
 import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-policy.mjs";
 import { prepareNativeSettings, builtins, extensionName } from "./resources.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
+import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
 import { join, resolve, dirname, basename, delimiter } from "node:path";
@@ -21,6 +22,7 @@ process.env.NO_PROXY = [process.env.NO_PROXY || process.env.no_proxy || "", "127
 process.env.no_proxy = process.env.NO_PROXY;
 installProviderPolicy();
 const Pi = await import("@earendil-works/pi-coding-agent");
+const { isRetryableAssistantError, isContextOverflow } = await import("@earendil-works/pi-ai/compat");
 const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", entry));
 const { loadMcpConfig } = await import(new URL("./extensions/mcp/config.js", entry));
@@ -93,6 +95,8 @@ const ui = {
 
 async function bindSession(session) {
   unsubscribe?.();
+  let retryState = {}, retryTimer;
+  const retry = state => { retryState = state; emit({ type: "network_retry", ...state }); };
   let lastContext = "";
   const publishContext = () => {
     const usage = contextUsage(session), serialized = JSON.stringify(usage);
@@ -112,20 +116,33 @@ async function bindSession(session) {
       syncQueue(event.steering, event.followUp);
     }
     if (event.type === "message_start" && event.message.role === "user") emit({ type: "user_start", text: textOf(event.message.content), timestamp: event.message.timestamp });
-    if (event.type === "message_start" && event.message.role === "assistant") emit({ type: "assistant_start", timestamp: event.message.timestamp });
+    if (event.type === "message_start" && event.message.role === "assistant") {
+      emit({ type: "assistant_start", retry: retryState.active === true, timestamp: event.message.timestamp });
+      if (retryState.active) { clearTimeout(retryTimer); retry({ ...retryState, waiting: false }); }
+    }
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") emit({ type: "delta", text: event.assistantMessageEvent.delta });
     if (event.type === "message_update" && event.assistantMessageEvent.type === "thinking_delta") emit({ type: "thinking_delta", text: event.assistantMessageEvent.delta });
     if (event.type.startsWith("tool_execution_")) emit({ type: "tool", name: event.toolName, id: event.toolCallId,
       args: event.args, result: event.type === "tool_execution_end" ? textOf(event.result?.content).slice(0,8192) : undefined,
       media: event.type === "tool_execution_end" ? chatboxItems(event.toolName, {...event.result, isError: event.isError}) : undefined,
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
-    if (event.type === "message_end") emit({ type: "message", role: event.message.role,
+    const willRetry = event.type === "message_end" && session.retryAttempt < NETWORK_RETRY.maxRetries &&
+      isRetryableAssistantError(event.message) && !isContextOverflow(event.message, session.model?.contextWindow || 128000);
+    if (event.type === "message_end" && !willRetry) emit({ type: "message", role: event.message.role,
       text: textOf(event.message.content), thinking: thinkingOf(event.message.content), error: event.message.stopReason === "aborted" ? "" : event.message.errorMessage || "", timestamp:event.message.timestamp });
     if (event.type === "compaction_start") emit({ type: "status", text: "正在压缩上下文" });
-    if (event.type === "auto_retry_start") emit({ type: "status", text: `正在重试 ${event.attempt}/${event.maxAttempts}` });
+    if (["auto_retry_start", "summarization_retry_scheduled"].includes(event.type)) {
+      clearTimeout(retryTimer);
+      retry({ active: true, waiting: true, attempt: event.attempt, maxAttempts: event.maxAttempts, delayMs: event.delayMs, startedAt: Date.now() });
+      retryTimer = setTimeout(() => retry({ ...retryState, waiting: false }), event.delayMs);
+    }
+    if (["auto_retry_end", "summarization_retry_finished"].includes(event.type)) {
+      clearTimeout(retryTimer); retry({ active: false });
+    }
     if (["entry_appended", "message_end", "compaction_end", "agent_end"].includes(event.type)) publishContext();
   });
   unsubscribe = () => {
+    clearTimeout(retryTimer);
     unbind();
     if (session.agent.onPayload === configurePayload) session.agent.onPayload = originalPayload;
   };
@@ -192,6 +209,7 @@ async function init(input) {
     const settingsManager = await prepareNativeSettings(Pi, { cwd, agentDir, agent: input.agent });
     const nativeSettings = settingsManager.getSettings();
     const settings = Pi.SettingsManager.inMemory({ ...nativeSettings,
+      retry: { ...nativeSettings.retry, ...NETWORK_RETRY, provider: { ...nativeSettings.retry?.provider, maxRetries: 0 } },
       defaultTools: [...new Set([...nativeTools, ...(settingsManager.getDefaultTools() || [])])],
       codemode: { ...nativeSettings.codemode, mode: "on" },
       cacheWarming: "off", compaction: { ...nativeSettings.compaction, enabled: input.agent?.autoCompaction !== false },
@@ -246,9 +264,10 @@ function sessionInfo() {
 async function state() {
   const session = runtime.session, manager = session.sessionManager;
   const branch = manager.getBranch();
+  const omittedRetries = retryOmissions(branch);
   const results = new Map(branch.filter(e => e.type === "message" && e.message.role === "toolResult").map(e => [e.message.toolCallId, e.message]));
   const deliveries = branch.filter(e => e.type === "custom" && e.customType === "umeko-chatbox" && e.data?.version === 1 && typeof e.data.toolCallId === "string" && Array.isArray(e.data.items)).map(e => e.data);
-  const messages = branch.filter(e => e.type === "message" && ["user", "assistant"].includes(e.message.role)).map(e => {
+  const messages = branch.filter(e => e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant"].includes(e.message.role)).map(e => {
     const message = e.message;
     const row = {role: message.role, text: textOf(message.content) || (message.stopReason === "aborted" ? "" : message.errorMessage || ""), error: message.stopReason !== "aborted" && !!message.errorMessage, entryId:e.id, timestamp:message.timestamp || e.timestamp};
     const thinking = thinkingOf(message.content);

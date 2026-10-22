@@ -65,7 +65,7 @@ class PiTests(unittest.TestCase):
         return Completion("native complete", input_tokens=10, output_tokens=3)
 
     def start(self):
-        self.process = subprocess.Popen([node_executable(), str(ROOT / "runtime/releases" / RELEASE_NAME / "bridge.mjs")],
+        self.process = subprocess.Popen([node_executable(), *getattr(self, 'node_args', []), str(ROOT / "runtime/releases" / RELEASE_NAME / "bridge.mjs")],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
         self.events, self.errors = queue.Queue(), []
         self.reader = threading.Thread(target=lambda: [self.events.put(json.loads(line)) for line in self.process.stdout if line.startswith("{")], daemon=True)
@@ -100,6 +100,84 @@ class PiTests(unittest.TestCase):
         self.reader.join(timeout=2)
         self.stderr_reader.join(timeout=2)
         self.process.stdin.close(); self.process.stdout.close(); self.process.stderr.close()
+
+    def retry_clock(self):
+        self.stop()
+        self.node_args = ['--import', (ROOT / 'tests/retry-clock.mjs').as_uri()]
+        self.start()
+
+    def test_stream_retry_replaces_partial_draft_and_recovers(self):
+        from types import SimpleNamespace
+        count = [0]
+        def stream(*args):
+            count[0] += 1
+            yield {'choices':[{'index':0,'delta':{'content':'partial' if count[0] < 3 else 'Recovered'},'finish_reason':None}]}
+            if count[0] < 3:
+                raise ConnectionResetError('供应商流已中断')
+            yield {'choices':[{'index':0,'delta':{},'finish_reason':'stop'}]}
+        self.gateway.adapter = SimpleNamespace(events=stream)
+        self.retry_clock()
+        output = self.command({**self.payload, 'type':'prompt', 'text':'fixture'})
+        retries = [e for e in output if e['type'] == 'network_retry' and e.get('waiting')]
+        self.assertEqual([e['delayMs'] for e in retries], [2000,4000])
+        self.assertEqual([e['attempt'] for e in retries], [1,2])
+        self.assertEqual(count[0], 3)
+        self.assertFalse([e for e in output if e['type'] == 'message' and e.get('error')])
+        state = next(e for e in output if e['type'] == 'state')
+        self.assertEqual([m['text'] for m in state['messages'] if m['role'] == 'assistant'], ['Recovered'])
+        self.assertEqual([m['text'] for m in preview(state['session']['file'])[0] if m['role'] == 'assistant'], ['Recovered'])
+
+    def test_retry_exhausts_after_five_attempts(self):
+        def fail(*args): raise ConnectionResetError('供应商流已中断')
+        self.response_fn = fail
+        self.retry_clock()
+        output = self.command({**self.payload, 'type':'prompt', 'text':'fixture'})
+        retries = [e for e in output if e['type'] == 'network_retry' and e.get('waiting')]
+        self.assertEqual([e['delayMs'] for e in retries], [2000,4000,8000,16000,30000])
+        self.assertEqual(len(self.calls), 6)  # initial call plus exactly five retries
+        self.assertEqual(len([e for e in output if e['type'] == 'message' and e.get('error')]), 1)
+        self.assertFalse([e for e in output if e['type'] == 'network_retry'][-1]['active'])
+
+    def test_retry_preserves_completed_tools(self):
+        def response(model, messages, tools, tokens):
+            if messages[-1]['role'] != 'tool':
+                return Completion(tool_calls=[{'id':'once', 'name':'write', 'arguments':{'path':'once.txt','content':'once'}}])
+            if len(self.calls) < 4: raise ConnectionResetError('stream interrupted')
+            return Completion('resumed')
+        self.response_fn = response
+        self.retry_clock()
+        output = self.command({**self.payload, 'type':'prompt', 'text':'fixture'})
+        self.assertEqual(len([e for e in output if e['type'] == 'tool' and e.get('state') == 'done']), 1)
+        self.assertEqual(len([e for e in output if e['type'] == 'user_start']), 1)
+        self.assertEqual((self.path/'once.txt').read_text(), 'once')
+        self.assertEqual(len(self.calls), 4)
+        self.assertEqual(self.calls[-1][1][-1]['role'], 'tool')
+
+    def test_invalid_credentials_do_not_retry(self):
+        def fail(*args): raise ValueError('invalid api key')
+        self.response_fn = fail
+        output = self.command({**self.payload, 'type':'prompt', 'text':'fixture'})
+        self.assertEqual(len(self.calls), 1)
+        self.assertFalse([e for e in output if e['type'] == 'network_retry' and e.get('active')])
+
+    def test_stop_cancels_retry_wait(self):
+        def fail(*args): raise ConnectionResetError('stream interrupted')
+        self.response_fn = fail
+        self.send({**self.payload, 'type':'prompt', 'text':'fixture'})
+        while True:
+            event = self.events.get(timeout=20)
+            if event['type'] == 'network_retry' and event.get('waiting'): break
+        started = time.monotonic()
+        output = self.command({'type':'abort'})
+        self.assertLess(time.monotonic()-started, 1.5)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_missing_provider_configuration_does_not_retry(self):
+        from app.integration import UnconfiguredAdapter
+        self.gateway.adapter = UnconfiguredAdapter()
+        output = self.command({**self.payload, 'type':'prompt', 'text':'fixture'})
+        self.assertFalse([e for e in output if e['type'] == 'network_retry' and e.get('active')])
+        self.assertTrue([e for e in output if e['type'] == 'message' and e.get('error')])
 
     def tearDown(self):
         try:
