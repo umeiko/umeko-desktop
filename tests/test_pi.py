@@ -13,7 +13,7 @@ from pathlib import Path
 
 from app.gateway import Gateway, LocalServer
 from app.integration import Completion
-from app.pi_runtime import node_executable, RELEASE_NAME
+from app.pi_runtime import node_executable, RELEASE_NAME, verify_runtime
 from app.storage import Store
 from app.transcripts import preview
 
@@ -22,6 +22,12 @@ FULL_TOOLS = {"read", "bash", "powershell", "edit", "write", "grep", "find", "ls
 
 
 class PiTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Exercise this checkout's adapters even when a local prepared runtime
+        # remains from an earlier build.
+        verify_runtime(ROOT / "runtime/releases" / RELEASE_NAME, ROOT / "runtime/bridge.mjs")
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name)
@@ -147,15 +153,18 @@ class PiTests(unittest.TestCase):
         self.assertEqual(resumed["session"]["id"], original_id)
         self.assertEqual(len(resumed["messages"]), len(state["messages"]))
 
-    def test_generation_metrics_forward_real_pi_output_usage(self):
+    def test_pi_usage_survives_without_live_generation_metrics(self):
         self.command(self.payload)
-        self.response_fn = lambda *_: Completion("Measured fixture output", input_tokens=10, output_tokens=12)
-        events = self.command({"type":"prompt", "text":"measure fixture"})
+        self.response_fn = lambda *_: Completion("Fixture output", input_tokens=10, output_tokens=12)
+        events = self.command({"type":"prompt", "text":"output fixture"})
         metrics = [event for event in events if event["type"] == "generation_metrics"]
-        self.assertTrue(any(event["active"] for event in metrics))
-        self.assertFalse(metrics[-1]["active"])
-        self.assertEqual(metrics[-1]["tokens"], 12)
-        self.assertFalse(metrics[-1]["estimated"])
+        self.assertEqual(metrics, [])
+        self.assertEqual("".join(event["text"] for event in events if event["type"] == "delta"), "Fixture output")
+        state = next(event for event in events if event["type"] == "state")
+        entries = [json.loads(line) for line in Path(state["session"]["file"]).read_text(encoding="utf-8").splitlines()]
+        assistant = next(entry["message"] for entry in reversed(entries) if entry.get("message", {}).get("role") == "assistant")
+        self.assertEqual(assistant["usage"]["input"], 10)
+        self.assertEqual(assistant["usage"]["output"], 12)
 
     def test_reasoning_effort_reaches_gateway_and_off_omits_the_field(self):
         original = self.gateway.events
