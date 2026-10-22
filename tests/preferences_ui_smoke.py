@@ -74,22 +74,6 @@ try:
     assert not hint.property('visible')
     QTest.keyClick(window,Qt.Key_Escape);QTest.qWait(850)
     assert backend.setReasoningEffort('off')
-    current=backend._view
-    current.phase='running';backend.chatChanged.emit()
-    backend._handle_pi_event(current,{'type':'generation_metrics','active':True,'estimated':True,'tokensPerSecond':24.5})
-    QTest.qWait(200)
-    assert find('generationSpeed').isVisible()
-    assert find('generationSpeed').property('text')=='≈ 24.5 tok/s'
-    window.grabWindow().save(str(out/'generation-speed-v033.png'))
-    other=backend._new_view();backend._activate(other);QTest.qWait(100)
-    assert not find('generationSpeed').isVisible()
-    backend._handle_pi_event(current,{'type':'generation_metrics','active':True,'estimated':False,'tokensPerSecond':42})
-    assert not find('generationSpeed').isVisible()
-    backend._activate(current);QTest.qWait(100)
-    assert find('generationSpeed').property('text')=='42.0 tok/s'
-    backend._handle_pi_event(current,{'type':'generation_metrics','active':False,'estimated':False,'tokensPerSecond':42})
-    assert not find('generationSpeed').isVisible()
-    backend._handle_pi_event(current,{'type':'done'});current.phase='idle'
     window.setProperty('page','settings')
     window.setProperty('settingsTab',5);QTest.qWait(200)
     language=find('interfaceLanguage');reveal(language)
@@ -123,7 +107,7 @@ try:
     assert not warnings,'\n'.join(warnings)
     saved=json.loads(backend.store.path.read_text(encoding='utf-8'))
     assert saved['ui']['fontScale']==2 and saved['ui']['language']=='en'
-    print('PREFERENCES_UI_OK: editor toggle, network settings, per-chat live tok/s, fonts/language, error details and persistence')
+    print('PREFERENCES_UI_OK: editor toggle, network settings, reasoning hover, fonts/language, error details and persistence')
 finally:
     backend.close()
     import shiboken6

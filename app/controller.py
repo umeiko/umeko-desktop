@@ -81,7 +81,6 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
     approvalChanged = Signal()
     attachmentsChanged = Signal()
     contextUsageChanged = Signal()
-    generationChanged = Signal()
     reasoningChanged = Signal()
     proxyKeysChanged = Signal()
     editorText = Signal(str)
@@ -117,6 +116,10 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
         self._pool.touch(self._view, current=True)
         self._pool.event.connect(self._handle_pi_event)
         self._chat_model = ChatModel(self)
+        self._streaming_timer = QTimer(self)
+        self._streaming_timer.setSingleShot(True)
+        self._streaming_timer.setInterval(24)
+        self._streaming_timer.timeout.connect(self._publish_stream)
         self._last_sidebar_rows = None
         self.chatChanged.connect(lambda: self._chat_model.update(self._view.messages))
         self.chatChanged.connect(self._refresh_sidebar)
@@ -188,6 +191,7 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
             model=self.store.data["selectedModel"], provider=self.store.data["selectedProvider"], greeting=self._welcome_greetings.pop(), portrait=self._welcome_portraits.pop())
 
     def _activate(self, record):
+        self._streaming_timer.stop()
         self._view = record
         self.viewChanged.emit()
         self._pool.touch(record, current=True)
@@ -217,7 +221,6 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
         self.approvalChanged.emit()
         self.editorText.emit(record.draft)
         self.contextUsageChanged.emit()
-        self.generationChanged.emit()
         self.reasoningChanged.emit()
 
     def _refresh_sidebar(self):
@@ -694,10 +697,6 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
     @Property(str, notify=chatChanged)
     def toolStatus(self):
         return self._view.tool_status
-
-    @Property("QVariantMap", notify=generationChanged)
-    def generation(self):
-        return self._view.generation
 
     @Property(str, notify=reasoningChanged)
     def reasoningEffort(self):
@@ -1519,6 +1518,7 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
         if self._closing:
             return
         self._closing = True
+        self._streaming_timer.stop()
         self._session_preview.cancel()
         self._proxy_usage_timer.stop()
         self._pool.close()

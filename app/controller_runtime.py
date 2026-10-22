@@ -148,6 +148,11 @@ class PiControllerMixin:
             self.attachmentsChanged.emit()
             self.editorText.emit(record.draft)
 
+    def _publish_stream(self):
+        if not self._closing:
+            self.chatChanged.emit()
+            self.transcriptChanged.emit()
+
     def _handle_pi_event(self, record, event):
         if self._closing:
             return
@@ -243,11 +248,6 @@ class PiControllerMixin:
             if visible:
                 self.contextUsageChanged.emit()
             return
-        elif kind == "generation_metrics":
-            record.generation = {} if record.cancelled else {key: event[key] for key in ("active", "estimated", "tokens", "elapsedMs", "tokensPerSecond") if key in event}
-            if visible:
-                self.generationChanged.emit()
-            return
         elif kind == "error":
             record.failed = True
             if record.messages and not record.messages[-1]["text"]:
@@ -273,9 +273,6 @@ class PiControllerMixin:
                 self.changed.emit()
             transcript = True
         elif kind in ("done", "exit"):
-            record.generation = {}
-            if visible:
-                self.generationChanged.emit()
             was_busy = record.busy
             if record.queue:
                 self._restore_queued(record, [row["text"] for row in record.queue])
@@ -301,6 +298,11 @@ class PiControllerMixin:
             self._pool.trim()
         else:
             return
+        if visible and kind in ("delta", "thinking_delta"):
+            if not self._streaming_timer.isActive(): self._streaming_timer.start()
+            return
+        if visible:
+            self._streaming_timer.stop()
         if visible or kind in ("ready", "session", "state", "done", "exit", "ui_request"):
             self.chatChanged.emit()
         if transcript and visible:
@@ -308,8 +310,6 @@ class PiControllerMixin:
 
     def _stop(self):
         record = self._view
-        record.generation = {}
-        self.generationChanged.emit()
         if record.phase == "running":
             record.cancelled = True
             self._pool.write(record, {"type": "abort"})

@@ -26,7 +26,7 @@ try {
     # Exclude unrelated SDK DLLs in PATH. Qt uses Windows' unversioned ICU shim;
     # Poppler's incompatible icuuc.dll must not be selected by the dependency scan.
     $env:PATH = "$PSScriptRoot/.venv/Scripts;$env:SystemRoot/System32;$env:SystemRoot"
-    & '.venv/Scripts/python.exe' -m PyInstaller --clean --noconfirm --windowed --onedir --name Umeko --distpath $buildDestination --icon app/icons/app.ico --add-data 'app/qml;app/qml' --add-data 'app/theme-prompt.txt;app' --add-data 'app/icons;app/icons' --add-data 'runtime/bridge.mjs;runtime' --add-data 'runtime/provider-policy.mjs;runtime' --add-data 'runtime/resources.mjs;runtime' --add-data 'runtime/chatbox.mjs;runtime' --add-data 'runtime/generation-metrics.mjs;runtime' --add-data 'build/build-info.json;.' --add-data 'build/provider-resources;provider-resources' --add-data 'THIRD_PARTY_NOTICES.md;.' main.py
+    & '.venv/Scripts/python.exe' -m PyInstaller --clean --noconfirm --windowed --onedir --name Umeko --distpath $buildDestination --icon app/icons/app.ico --add-data 'app/qml;app/qml' --add-data 'app/theme-prompt.txt;app' --add-data 'app/icons;app/icons' --add-data 'runtime/bridge.mjs;runtime' --add-data 'runtime/provider-policy.mjs;runtime' --add-data 'runtime/resources.mjs;runtime' --add-data 'runtime/chatbox.mjs;runtime' --add-data 'build/build-info.json;.' --add-data 'build/provider-resources;provider-resources' --add-data 'THIRD_PARTY_NOTICES.md;.' main.py
     if ($LASTEXITCODE -ne 0) { throw 'Application packaging failed' }
 } finally {
     $env:PATH = $originalBuildPath

@@ -116,7 +116,11 @@ Item {
         unitAnchor = unitBounds(editor, offset, unit)
         anchor = unitAnchor.start; cursor = unitAnchor.end; refresh()
     }
-    function plain(text, markdown) {
+    function plain(text, markdown, row, block) {
+        for (const editor of editors) {
+            if (editor.visible && editor.messageIndex === row && editor.blockIndex === block)
+                return editor.getText(0, editor.length)
+        }
         renderer.textFormat = markdown ? TextEdit.MarkdownText : TextEdit.PlainText
         renderer.text = text
         return renderer.getText(0, renderer.length)
@@ -155,7 +159,7 @@ Item {
                 if (message.role === "user") (message.attachments || []).forEach((item, index) => segments.push({block:10000 + index,text:item.name,markdown:false}))
             }
             for (const segment of segments) {
-                const text = plain(segment.text, segment.markdown)
+                const text = plain(segment.text, segment.markdown, row, segment.block)
                 const first = {row:row,block:segment.block,offset:0}, last = {row:row,block:segment.block,offset:text.length}
                 if (compare(last, start) <= 0 || compare(first, end) >= 0) continue
                 pieces.push(text.slice(compare(first, start) < 0 ? start.offset : 0, compare(last, end) > 0 ? end.offset : text.length))

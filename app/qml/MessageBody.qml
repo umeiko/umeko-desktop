@@ -12,6 +12,7 @@ Column {
     property int messageIndex: -1
     property int blockOffset: 0
     property bool compact: false
+    property bool streaming: false
     readonly property var blocks: root.text.length ? Markdown.blocks(root.text, root.markdown, root.compact) : []
     spacing: compact ? 6 : 12
     Repeater {
@@ -19,12 +20,15 @@ Column {
         Column {
             required property int index
             property var modelData: root.blocks[index] || ({code:false, text:"", language:""})
+            // QTextDocument reparses and lays out every table cell on each edit.
+            // Keep live input cheap; restore the rich table once the turn ends.
+            readonly property bool tablePreview: root.streaming && !!modelData.table
             width: root.width
             SelectableText {
                 selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset + index
                 visible: !modelData.code; width: parent.width
                 text: modelData.code ? "" : modelData.text; color: root.textColor
-                wrapMode: TextEdit.Wrap; textFormat: root.markdown ? TextEdit.MarkdownText : TextEdit.PlainText
+                wrapMode: TextEdit.Wrap; textFormat: root.markdown && !parent.tablePreview ? TextEdit.MarkdownText : TextEdit.PlainText
                 font.pixelSize: Theme.font(13)
             }
             Rectangle {

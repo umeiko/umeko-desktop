@@ -8,7 +8,13 @@ function blocks(text, markdown, compact) {
     if (!markdown) return [{code:false, text:text}]
     const lines = text.split("\n"), result = []
     let prose = [], code = [], fence = "", language = ""
-    function flush() { if (prose.length) { result.push({code:false,text:prose.join("\n")}); prose=[] } }
+    function flush() {
+        if (prose.length) {
+            const value = prose.join("\n")
+            const table = /(^|\n)[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(\|[ \t]*:?-{3,}:?[ \t]*)+\|?[ \t]*(\n|$)/.test(value)
+            result.push({code:false,text:value,table:table}); prose=[]
+        }
+    }
     for (let line of lines) {
         if (!fence) {
             const match = /^ {0,3}(`{3,}|~{3,})([^\r]*)\r?$/.exec(line)

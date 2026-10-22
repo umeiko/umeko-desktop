@@ -3,7 +3,6 @@
 import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-policy.mjs";
 import { prepareNativeSettings, builtins, extensionName } from "./resources.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
-import { createGenerationMeter } from "./generation-metrics.mjs";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
 import { join, resolve, dirname, basename, delimiter } from "node:path";
@@ -99,7 +98,6 @@ async function bindSession(session) {
     const usage = contextUsage(session), serialized = JSON.stringify(usage);
     if (serialized !== lastContext) { lastContext = serialized; emit({ type: "context_usage", usage }); }
   };
-  const generation = createGenerationMeter(metrics => emit({ type: "generation_metrics", ...metrics }));
   const originalPayload = session.agent.onPayload;
   const configurePayload = async (payload, model) => {
     const result = await originalPayload?.(payload, model) ?? payload;
@@ -110,10 +108,6 @@ async function bindSession(session) {
   };
   session.agent.onPayload = configurePayload;
   const unbind = session.subscribe(event => {
-    if (event.type === "message_start" && event.message.role === "assistant") generation.start();
-    if (event.type === "message_update") generation.update(event.assistantMessageEvent);
-    if (event.type === "message_end" && event.message.role === "assistant") generation.finish(event.message);
-    if (event.type === "agent_end") generation.stop();
     if (event.type === "queue_update") {
       syncQueue(event.steering, event.followUp);
     }
@@ -132,7 +126,7 @@ async function bindSession(session) {
     if (["entry_appended", "message_end", "compaction_end", "agent_end"].includes(event.type)) publishContext();
   });
   unsubscribe = () => {
-    unbind(); generation.stop();
+    unbind();
     if (session.agent.onPayload === configurePayload) session.agent.onPayload = originalPayload;
   };
   await session.bindExtensions({ uiContext: ui, mode: "rpc", abortHandler: () => session.abort(),
