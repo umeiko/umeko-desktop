@@ -64,12 +64,11 @@ Popup {
             id: reasoningControls
             objectName: "reasoningControls"
             Layout.fillWidth: true; spacing: 8
-            Text { visible: Theme.fontScale <= 1.25; text: I18n.t("思考强度"); color: Theme.ink; font.pixelSize: Theme.font(11) }
-            Item { Layout.fillWidth: true }
             Repeater {
                 model: [{value:"off",label:I18n.t("关闭")},{value:"low",label:"Low"},{value:"high",label:"High"},{value:"max",label:"Max"}]
                 ActionButton {
                     required property var modelData
+                    Layout.fillWidth: true; Layout.preferredWidth: 1; Layout.minimumWidth: 0
                     objectName: "reasoningEffort_" + modelData.value
                     text: modelData.label; quiet: true; primary: backend.reasoningEffort === modelData.value
                     onClicked: backend.setReasoningEffort(modelData.value)
@@ -78,6 +77,7 @@ Popup {
             HoverHandler { id: reasoningHover }
             HoverTip {
                 objectName: "reasoningEffortHint"
+                heading: I18n.t("思考强度")
                 active: root.desiredOpen && reasoningHover.hovered
                 text: I18n.t("关闭：不发送推理强度参数。\nLow / High / Max：以模型支持的档位为准。")
             }

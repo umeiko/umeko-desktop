@@ -1,5 +1,8 @@
 .pragma library
 var strings = {
+  "达到输出上限，正在自动接续": "Output limit reached. Continuing automatically",
+  "已自动接续5次，仍达到输出上限；已暂停，可点击继续生成": "The output limit was reached after five automatic continuations. Paused; click Continue to resume",
+  "模型达到输出上限，但没有返回可接续的内容": "The model reached its output limit without returning content to continue",
   "在文件夹中查看": "Show in folder",
   "发现新版本，点击下载": "Update available. Click to download",
   "更新包已下载，点击查看": "Update downloaded. Click to show in folder",
@@ -527,5 +530,17 @@ var strings = {
   "代理设置": "Proxy settings",
   "收起供应商与模型": "Collapse provider and models",
   "思考强度": "Reasoning effort",
-  "关闭：不发送推理强度参数。\nLow / High / Max：以模型支持的档位为准。": "Off: omit the reasoning effort parameter.\nLow / High / Max: available levels depend on the model."
+  "关闭：不发送推理强度参数。\nLow / High / Max：以模型支持的档位为准。": "Off: omit the reasoning effort parameter.\nLow / High / Max: available levels depend on the model.",
+  "附加到聊天": "Attach to chat",
+  "新增会话": "New conversation",
+  "关闭预览": "Close preview",
+  "松手，接住啦！": "Let go. Got it!",
+  "把文件放这里，马上开工。": "Drop your files here. Time to get started!",
+  "投喂一点资料，马上开动脑筋！": "Feed me some files. Let us get thinking!",
+  "放心松手，已经准备好啦。": "Let go. Ready to catch!",
+  "文件我来接，灵感你来写。": "I will catch the files. You bring the ideas.",
+  "向左展开": "Expand left",
+  "向右展开": "Expand right",
+  "收起左侧": "Collapse left",
+  "收起右侧": "Collapse right"
 }

@@ -16,7 +16,7 @@ import uuid
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Property, QProcess, QProcessEnvironment, QTimer, QUrl, Signal, Slot, QBuffer, QIODevice, QMimeData
-from PySide6.QtGui import QGuiApplication, QDesktopServices, QImageReader
+from PySide6.QtGui import QGuiApplication, QDesktopServices, QImageReader, QWindow
 
 from .gateway import Gateway, LocalServer, validate_base_url
 from .integration import load_adapter, UnconfiguredAdapter
@@ -37,6 +37,7 @@ from .app_about import AppAbout
 from .themes import BASES, LIMIT as THEME_LIMIT, theme_library, read_theme
 from .session_preview import SessionPreview
 from .preferences import PreferencesMixin
+from .chatbox import media_view
 
 
 GREETINGS = (
@@ -390,6 +391,38 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
                     self.toast.emit("无法打开，请检查文件关联")
         except OSError:
             self.toast.emit("无法打开文件或文件夹")
+
+    @Slot(str, result="QVariantMap")
+    def chatboxFileInfo(self, raw):
+        path = Path(raw)
+        if not path.is_absolute() or not path.exists():
+            return {}
+        kind = "folder" if path.is_dir() else "image" if QImageReader(str(path)).canRead() else "file"
+        items = media_view([{"path": str(path), "kind": kind}])
+        return items[0] if items else {}
+
+    @Slot(str)
+    def attachChatboxFile(self, raw):
+        path = Path(raw)
+        if not path.is_absolute() or not path.exists():
+            self.toast.emit("文件已移动或不存在")
+            return
+        self.addAttachments(json.dumps([QUrl.fromLocalFile(str(path)).toString()]))
+
+    @Slot()
+    def activateChatWindow(self):
+        window = next((w for w in QGuiApplication.topLevelWindows() if w.objectName() == "mainWindow"), None)
+        if window is None:
+            return
+        if window.visibility() == QWindow.Minimized:
+            window.showNormal()
+        window.raise_()
+        window.requestActivate()
+        if sys.platform == "win32" and QGuiApplication.platformName() == "windows":
+            import ctypes
+            handle = ctypes.c_void_p(int(window.winId()))
+            ctypes.windll.user32.BringWindowToTop(handle)
+            ctypes.windll.user32.SetForegroundWindow(handle)
 
     @Slot(str)
     def copyChatboxFile(self, raw):

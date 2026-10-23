@@ -5,6 +5,24 @@ from app.chat_model import ChatModel
 
 
 class ChatModelTests(unittest.TestCase):
+    def test_length_continuations_keep_markdown_and_completed_tools_intact(self):
+        messages = [
+            {'role':'assistant', 'text':'Inspect', 'tools':[{'id':'one'}]},
+            {'role':'assistant', 'thinking':'plan', 'text':'```rust\nfn ma', 'stopReason':'length'},
+            {'role':'assistant', 'thinking':'check', 'text':'in() {}\n```', 'stopReason':'stop'},
+        ]
+        original = copy.deepcopy(messages)
+        row = ChatModel.project(messages)[0]
+        self.assertEqual(row['text'], '```rust\nfn main() {}\n```')
+        self.assertEqual([s['kind'] for s in row['activity']], ['text','tools','thinking','text'])
+        self.assertEqual(row['activity'][-1]['text'], row['text'])
+        self.assertEqual(row['activity'][-2]['text'], 'plancheck')
+        self.assertEqual(messages, original)
+        self.assertEqual(len(ChatModel.project([
+            {'role':'assistant','text':'partial','stopReason':'length'},
+            {'role':'user','text':'different task'},
+            {'role':'assistant','text':'new answer'}])), 3)
+
     def test_questions_use_display_rows_and_do_not_refresh_during_streaming(self):
         from app.message_attachments import attachment_prompt
         model = ChatModel()

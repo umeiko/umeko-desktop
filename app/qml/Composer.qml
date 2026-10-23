@@ -21,7 +21,7 @@ Item {
     Rectangle { x: 0; y: root.queueOffset + 6; width: parent.width; height: parent.height - root.queueOffset; radius: 17; color: "#090f0a"; opacity: Theme.dark ? 0.1 : 0.035 }
     Rectangle {
         x: 0; y: root.queueOffset; width: parent.width; height: parent.height - root.queueOffset; radius: 15; color: Theme.surface
-        border.color: fileDrop.containsDrag || (prompt.activeFocus && Theme.yanami) ? Theme.accent : prompt.activeFocus ? (Theme.dark ? "#59735e" : "#b3c3b0") : Theme.line
+        border.color: prompt.activeFocus && Theme.yanami ? Theme.accent : prompt.activeFocus ? (Theme.dark ? "#59735e" : "#b3c3b0") : Theme.line
         Behavior on border.color { ColorAnimation { duration: 180 } }
         Flickable {
             x: 16; y: 12; width: parent.width - 32; height: Theme.control(36); visible: backend.attachments.length > 0
@@ -92,14 +92,5 @@ Item {
                 HoverTip { active: sendArea.containsMouse; text: backend.running ? I18n.t("停止当前会话任务") : I18n.t("发送消息") }
             }
         }
-    }
-    DropArea {
-        id: fileDrop; objectName: "composerDropArea"; anchors.fill: parent
-        onEntered: drag => { drag.accepted = drag.urls.length > 0 }
-        onDropped: drop => { backend.addAttachments(JSON.stringify(drop.urls.map(url => url.toString()))); drop.acceptProposedAction(); prompt.forceActiveFocus() }
-    }
-    Rectangle {
-        anchors.fill: parent; radius: 15; color: Theme.accentBg; opacity: 0.95; visible: fileDrop.containsDrag; border.color: Theme.accent
-        Row { anchors.centerIn: parent; spacing: 10; Glyph { name: "plus"; width: Theme.icon(19); height: Theme.icon(19) } Text { text: I18n.t("添加文件或文件夹"); color: Theme.accent; font.pixelSize: Theme.font(13) } }
     }
 }

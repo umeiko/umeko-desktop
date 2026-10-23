@@ -32,6 +32,12 @@ class FixtureAdapter:
 
 
 class GatewayTests(unittest.TestCase):
+    def test_length_reason_takes_precedence_over_partial_tool_calls(self):
+        from app.gateway import openai_response, anthropic_response
+        result = Completion(tool_calls=[{'id':'partial', 'name':'write', 'arguments':{}}], finish_reason='length')
+        self.assertEqual(openai_response(result, 'fixture')['choices'][0]['finish_reason'], 'length')
+        self.assertEqual(anthropic_response(result, 'fixture')['stop_reason'], 'max_tokens')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)

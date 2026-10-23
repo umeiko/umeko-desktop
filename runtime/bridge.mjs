@@ -172,6 +172,35 @@ function exposeNativeTools(session) {
   session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...declared.map(tool => tool.name)])]);
 }
 
+function outputContinuationExtension(pi) {
+  let attempts = 0;
+  pi.on("message_start", event => {
+    if (event.message.role === "user") attempts = 0;
+  });
+  pi.on("turn_end", (event, ctx) => {
+    if (event.message.role !== "assistant" || event.message.stopReason !== "length" ||
+        closing || ctx.signal?.aborted || ctx.hasPendingMessages()) return;
+    if (attempts >= 5) {
+      ctx.ui.notify("已自动接续5次，仍达到输出上限；已暂停，可点击继续生成", "warning");
+      ctx.abort();
+      return;
+    }
+    const content = event.message.content || [];
+    if (!textOf(content).trim() && !thinkingOf(content).trim() && !content.some(block => block.type === "toolCall")) {
+      ctx.ui.notify("模型达到输出上限，但没有返回可接续的内容", "warning");
+      return;
+    }
+    attempts++;
+    emit({ type: "status", text: "达到输出上限，正在自动接续" });
+    // Use Pi's turn boundary, rather than injecting a user prompt or restarting
+    // the task. Its loop keeps completed tools and rejects truncated tool args.
+    return { continue: true, entries: [{ type: "custom_message",
+      customType: "umeko-output-continuation", display: false,
+      content: "The previous assistant response reached its output token limit (stopReason=length); the original task is not finished. Continue the original task from exactly where it stopped. Do not repeat existing output, reopen an existing code fence, or add an introduction. If a tool call was truncated, submit a fresh complete tool call; truncated arguments were not executed. Keep completed tool results. Stop when the original task is complete.",
+      details: { version: 1, attempt: attempts, maxAttempts: 5 } }] };
+  });
+}
+
 async function reloadSession(session) {
   await session.reload();
   exposeNativeTools(session);
@@ -221,6 +250,7 @@ async function init(input) {
         appendSystemPrompt: ["Your name is umeko. Reply in the user's language.", input.agent?.instructions || ""],
         extensionFactories: [
           { name: "chatbox", builtin: true, replaceable: false, factory: chatboxExtension },
+          { name: "output-continuation", builtin: true, replaceable: false, factory: outputContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
           { name: "tool-search", builtin: true, replaceable: true, factory: Pi.createToolSearchExtension() },
           { name: "mcp", builtin: true, replaceable: true, factory: Pi.createMcpExtension({ loadConfig: ctx => {

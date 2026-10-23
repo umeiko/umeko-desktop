@@ -77,6 +77,14 @@ try:
     copied = app.clipboard().text()
     assert "Kimi Code.lnk" in copied and "screenshot.png" in copied
     assert "用户提供的路径" not in copied and str(store.directory) not in copied
+    QMetaObject.invokeMethod(selection, 'clear')
+    hit=find('openUserAttachment_0_0')
+    QTest.mouseClick(window,Qt.RightButton,Qt.NoModifier,hit.mapToScene(hit.boundingRect().center()).toPoint());QTest.qWait(150)
+    action=find('attachChatbox_user_0_0')
+    QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,action.mapToScene(action.boundingRect().center()).toPoint());QTest.qWait(180)
+    assert any(Path(item['path']).samefile(file) for item in backend.attachments)
+    assert find('promptInput').hasActiveFocus()
+    backend.removeAttachment(backend.attachments[0]['id'])
     # Reopening native JSONL projects the same tags without rewriting its contents.
     native = store.directory / "fixture.jsonl"
     native.write_text("\n".join(json.dumps(row,ensure_ascii=False) for row in [

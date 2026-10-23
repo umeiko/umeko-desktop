@@ -144,7 +144,7 @@ class PiTests(unittest.TestCase):
         self.response_fn = response
         output = self.command({**self.payload, 'type':'prompt', 'text':'long vector fixture',
                                'agent':{'maxTokens':16384, 'autoCompaction':False}})
-        self.assertEqual(limits, [16384])
+        self.assertEqual(limits, [16384] * 6)  # initial request + five continuations
         message = next(e for e in output if e['type'] == 'message' and e['role'] == 'assistant')
         self.assertEqual(message['stopReason'], 'length')
         self.assertEqual(message['error'], '')
@@ -152,6 +152,81 @@ class PiTests(unittest.TestCase):
         state = next(e for e in output if e['type'] == 'state')
         self.assertEqual(state['messages'][-1]['stopReason'], 'length')
         self.assertEqual(preview(state['session']['file'])[0], state['messages'])
+
+    def test_length_continues_without_user_prompt_and_keeps_code_contiguous(self):
+        from app.chat_model import ChatModel
+        chunks = ['```rust\nfn main() { println!("hel', 'lo"); }\n```']
+        def response(model, messages, tools, max_tokens):
+            index = len(self.calls) - 1
+            return Completion(chunks[index], finish_reason='length' if index == 0 else 'stop')
+        self.response_fn = response
+        output = self.command({**self.payload, 'type':'prompt', 'text':'long code fixture'})
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(len([e for e in output if e['type'] == 'user_start']), 1)
+        self.assertFalse([e for e in output if e['type'] == 'queue' and e.get('items')])
+        state = next(e for e in output if e['type'] == 'state')
+        self.assertEqual([m['text'] for m in state['messages'] if m['role'] == 'user'], ['long code fixture'])
+        self.assertEqual(preview(state['session']['file'])[0], state['messages'])
+        rows = ChatModel.project(state['messages'])
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[-1]['text'], ''.join(chunks))
+        self.assertEqual(rows[-1]['activity'][-1]['text'], ''.join(chunks))
+        self.assertEqual(rows[-1]['stopReason'], 'stop')
+        entries = [json.loads(line) for line in Path(state['session']['file']).read_text(encoding='utf-8').splitlines()]
+        notes = [e for e in entries if e.get('customType') == 'umeko-output-continuation']
+        self.assertEqual(len(notes), 1)
+        self.assertFalse(notes[0]['display'])
+        from app.transcripts import content_text
+        self.assertTrue(any(chunks[0] in content_text(m.get('content', '')) for m in self.calls[-1][1]))
+
+    def test_length_continuation_preserves_completed_tool(self):
+        def response(model, messages, tools, max_tokens):
+            if len(self.calls) == 1:
+                return Completion(tool_calls=[{'id':'once', 'name':'write', 'arguments':{'path':'once.txt','content':'once'}}])
+            return Completion('partial' if len(self.calls) == 2 else ' complete',
+                              finish_reason='length' if len(self.calls) == 2 else 'stop')
+        self.response_fn = response
+        output = self.command({**self.payload, 'type':'prompt', 'text':'tool then long output'})
+        self.assertEqual(len(self.calls), 3)
+        self.assertEqual(len([e for e in output if e['type'] == 'tool' and e.get('state') == 'done']), 1)
+        self.assertEqual((self.path/'once.txt').read_text(), 'once')
+        from app.chat_model import ChatModel
+        state = next(e for e in output if e['type'] == 'state')
+        row = ChatModel.project(state['messages'])[-1]
+        self.assertEqual(row['text'], 'partial complete')
+        self.assertEqual([s['kind'] for s in row['activity']], ['tools','text'])
+
+    def test_abort_during_length_continuation_stops_the_loop(self):
+        started, release = threading.Event(), threading.Event()
+        def response(model, messages, tools, max_tokens):
+            if len(self.calls) > 1:
+                started.set()
+                release.wait(10)
+            return Completion('partial', finish_reason='length')
+        self.response_fn = response
+        try:
+            self.send({**self.payload, 'type':'prompt', 'text':'cancel long output'})
+            self.assertTrue(started.wait(10))
+            output = self.command({'type':'abort'})
+            self.assertEqual(len(self.calls), 2)
+            self.assertEqual(len([e for e in output if e['type'] == 'user_start']), 1)
+        finally:
+            release.set()
+
+    def test_length_does_not_execute_truncated_tool_arguments(self):
+        def response(model, messages, tools, max_tokens):
+            if len(self.calls) == 1:
+                return Completion(tool_calls=[{'id':'cut-off', 'name':'write', 'arguments':{'path':'must-not-exist.txt','content':'truncated'}}], finish_reason='length')
+            if len(self.calls) == 2:
+                return Completion(tool_calls=[{'id':'complete', 'name':'write', 'arguments':{'path':'complete.txt','content':'complete'}}])
+            return Completion('done')
+        self.response_fn = response
+        output = self.command({**self.payload, 'type':'prompt', 'text':'truncated tool fixture'})
+        self.assertEqual(len(self.calls), 3)
+        self.assertFalse((self.path/'must-not-exist.txt').exists())
+        self.assertEqual((self.path/'complete.txt').read_text(), 'complete')
+        failed = [e for e in output if e['type']=='tool' and e.get('id')=='cut-off']
+        self.assertEqual(failed[-1]['state'], 'error')
 
     def test_retry_exhausts_after_five_attempts(self):
         def fail(*args): raise ConnectionResetError('供应商流已中断')
@@ -180,9 +255,13 @@ class PiTests(unittest.TestCase):
         self.assertEqual(self.calls[-1][1][-1]['role'], 'tool')
 
     def test_invalid_credentials_do_not_retry(self):
+        from unittest.mock import patch
+        from uuid import UUID
         def fail(*args): raise ValueError('invalid api key')
         self.response_fn = fail
-        output = self.command({**self.payload, 'type':'prompt', 'text':'fixture'})
+        # A diagnostic identifier is not an HTTP status or a retry instruction.
+        with patch('app.request_diagnostics.uuid.uuid4', return_value=UUID('00000503-0500-4502-8429-000000000504')):
+            output = self.command({**self.payload, 'type':'prompt', 'text':'fixture'})
         self.assertEqual(len(self.calls), 1)
         self.assertFalse([e for e in output if e['type'] == 'network_retry' and e.get('active')])
 

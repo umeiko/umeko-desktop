@@ -84,10 +84,24 @@ def project_runtime(source: Path, destination: Path):
     }, indent=2), encoding="utf-8")
 
 
+def patch_retry_diagnostics(release: Path):
+    # Pi recognizes transient errors from text. Random report IDs can contain
+    # status digits such as 503; exclude only that opaque marker from matching.
+    path = release / "node_modules/@earendil-works/pi-ai/dist/utils/retry.js"
+    original = "const errorMessage = message.errorMessage;"
+    replacement = r'const errorMessage = message.errorMessage.replace(/\[Umeko:[a-f0-9-]{36}\]/gi, "[Umeko report]");'
+    text = path.read_text(encoding="utf-8")
+    if replacement not in text:
+        if text.count(original) != 1:
+            raise RuntimeError("Pi retry classifier changed; update the diagnostics adapter")
+        path.write_text(text.replace(original, replacement), encoding="utf-8")
+
+
 def verify_runtime(release: Path, bridge_source: Path):
     manifest = json.loads((release / "manifest.json").read_text(encoding="utf-8"))
     if manifest.get("package") != PACKAGE or manifest.get("projection") != 2:
         raise RuntimeError("旧 Agent Core 内核不能用于完整 Pi Coding Agent")
+    patch_retry_diagnostics(release)
     for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs"):
         shutil.copy2(bridge_source.parent / name, release / name)
     environment = node_environment(dict(os.environ, PI_OFFLINE="1"))

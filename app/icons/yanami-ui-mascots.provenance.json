@@ -1,0 +1,37 @@
+{
+  "assets": [
+    {
+      "file": "yanami-push.png",
+      "prompt": "第一张图只参考动作和半身构图，第二张图参考八奈见原作Q版的五官、齐肩外翘发型和简洁的角色造型。重新画成干净平涂、轮廓清楚的Q版像素风界面小图标：只画头、肩膀、手臂和一点上身，在胸腹位置自然截断，不画裙子和腿。呆毛、头发和双手完整，神态像原作中的八奈见，俏皮但不要婴儿脸。夏季校服自然简洁，画面的重点是脸和推拉动作。右侧只保留一条轻薄的浅蓝色圆角细竖条，作为聊天区的边界。构图紧凑，真正透明背景，没有文字和场景。她鼓着脸、上身向右前倾，两只手掌抵住细竖条努力往右推，手掌是张开的。",
+      "referenceRoles": [
+        "User-provided upper-body push pose",
+        "User-provided original character chibi style"
+      ],
+      "tool": "image_gen",
+      "mode": "reference-guided redraw",
+      "transparentBackground": true
+    },
+    {
+      "file": "yanami-pull.png",
+      "prompt": "第一张图只参考动作和半身构图，第二张图参考八奈见原作Q版的五官、齐肩外翘发型和简洁的角色造型。重新画成干净平涂、轮廓清楚的Q版像素风界面小图标：只画头、肩膀、手臂和一点上身，在胸腹位置自然截断，不画裙子和腿。呆毛、头发和双手完整，神态像原作中的八奈见，俏皮但不要婴儿脸。夏季校服自然简洁，画面的重点是脸和推拉动作。右侧只保留一条轻薄的浅蓝色圆角细竖条，作为聊天区的边界。构图紧凑，真正透明背景，没有文字和场景。她鼓着脸、上身向左后方仰，两只手抓着细竖条的边缘努力往左拉，胳膊伸向右侧，双手呈抓握姿势。",
+      "referenceRoles": [
+        "User-provided upper-body pull pose",
+        "User-provided original character chibi style"
+      ],
+      "tool": "image_gen",
+      "mode": "reference-guided redraw",
+      "transparentBackground": true
+    },
+    {
+      "file": "yanami-catch.png",
+      "prompt": "以这张设定图里下方微笑的Q版八奈见为角色和画风参照，重新画成一枚“准备接住文件”的透明背景像素风半身小图标，只画一个完整人物。保持参考里大头、小肩膀、简洁五官、自然少女感的Q版比例；蓝色齐肩短中发，微翘发梢和呆毛，发型轮廓紧凑。她微笑着稍稍前倾，伸出两只小小的、简化的手，手心朝上。画到腰部附近，不画腿。脸和手都采用参考里的卡通简笔概括，清楚的深色轮廓、干净平涂、少量硬边阴影，明确可见的小像素块，像精致的复古游戏表情图标。夏季校服细节简洁，整体以表情和接东西的动作传达意思。画面没有真实皮肤纹理、立体写实光影、复杂手部刻画，也不要婴儿脸。不要文字、文件、边框或场景。头发、手和上身完整入画，背景真正透明。",
+      "referenceRoles": [
+        "User-provided original character chibi style"
+      ],
+      "approvedByUser": true,
+      "tool": "image_gen",
+      "mode": "reference-guided redraw",
+      "transparentBackground": true
+    }
+  ]
+}

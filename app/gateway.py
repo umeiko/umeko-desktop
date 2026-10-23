@@ -378,7 +378,7 @@ def openai_response(result, model):
     if result.tool_calls:
         msg["tool_calls"] = [{"id": t["id"], "type": "function", "function": {"name": t["name"], "arguments": json.dumps(t["arguments"])}} for t in result.tool_calls]
     return {"id": "chatcmpl-" + uuid.uuid4().hex, "object": "chat.completion", "created": int(time.time()), "model": model,
-            "choices": [{"index": 0, "message": msg, "finish_reason": "tool_calls" if result.tool_calls else result.finish_reason}],
+            "choices": [{"index": 0, "message": msg, "finish_reason": "length" if result.finish_reason == "length" else "tool_calls" if result.tool_calls else result.finish_reason}],
             "usage": {"prompt_tokens": result.input_tokens, "completion_tokens": result.output_tokens, "total_tokens": result.input_tokens + result.output_tokens}}
 
 
@@ -387,7 +387,7 @@ def anthropic_response(result, model):
     if result.thinking:
         content.insert(0, {"type": "thinking", "thinking": result.thinking})
     return {"id": "msg_" + uuid.uuid4().hex, "type": "message", "role": "assistant", "model": model, "content": content,
-            "stop_reason": "tool_use" if result.tool_calls else "max_tokens" if result.finish_reason == "length" else "end_turn", "stop_sequence": None,
+            "stop_reason": "max_tokens" if result.finish_reason == "length" else "tool_use" if result.tool_calls else "end_turn", "stop_sequence": None,
             "usage": {"input_tokens": result.input_tokens, "output_tokens": result.output_tokens}}
 
 

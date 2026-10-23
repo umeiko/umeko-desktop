@@ -40,6 +40,8 @@ def _media_item(path, kind, title, caption, modified):
         reader = QImageReader(path)
         dimensions = reader.size()
         row.update(pixelWidth=dimensions.width(), pixelHeight=dimensions.height())
+        image_format = bytes(reader.format()).decode('ascii', errors='ignore')
+        row['mime'] = 'image/' + ('jpeg' if image_format == 'jpg' else image_format)
         row["preview"] = exists and 0 < size <= 20 * 1024 * 1024 and dimensions.width() > 0 and dimensions.height() > 0 and dimensions.width() * dimensions.height() <= 16_000_000
         row["previewNote"] = "" if row["preview"] else "图片过大或暂不可预览，可打开原文件查看"
     return row

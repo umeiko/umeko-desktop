@@ -1,4 +1,4 @@
-"""A length-limited response is visible and continues only after a user click."""
+"""Manual fallback and contiguous rendering across automatic output continuation."""
 import os
 import sys
 import tempfile
@@ -53,6 +53,19 @@ try:
     backend._view.phase = 'idle'
     backend._handle_pi_event(backend._view, {'type':'message', 'role':'assistant', 'text':'Complete', 'stopReason':'stop'})
     QTest.qWait(100)
+    assert not find('outputLimitNotice_1').isVisible()
+    prefix, suffix = '```rust\nfn ma', 'in() {}\n```'
+    backend._view.phase = 'running'
+    backend._view.messages = [{'role':'user','text':'code','error':False},
+                              {'role':'assistant','text':prefix,'stopReason':'length','error':False}]
+    backend.chatChanged.emit()
+    backend._handle_pi_event(backend._view, {'type':'assistant_start'})
+    backend._handle_pi_event(backend._view, {'type':'delta','text':suffix})
+    backend._handle_pi_event(backend._view, {'type':'message','role':'assistant','text':suffix,'stopReason':'stop'})
+    QTest.qWait(100)
+    assert len(backend.displayMessages)==2
+    assert backend.displayMessages[-1]['text']==prefix+suffix
+    assert backend.displayMessages[-1]['activity'][-1]['text']==prefix+suffix
     assert not find('outputLimitNotice_1').isVisible()
     assert not warnings, '\n'.join(warnings)
     print('OUTPUT_LIMIT_UI_OK', flush=True)

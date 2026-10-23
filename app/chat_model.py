@@ -88,18 +88,31 @@ class ChatModel(QAbstractListModel):
                             batch = []
                     if batch: steps.append({"kind": "tools", "tools": batch})
                 current["activity"] = steps
+            continuing = bool(rows and rows[-1].get('stopReason') == 'length' and not current.get('error'))
             if (rows and current.get("role") == rows[-1].get("role") == "assistant"
-                    and (rows[-1].get("tools") or current.get("tools"))):
+                    and (continuing or rows[-1].get("tools") or current.get("tools"))):
                 group = rows[-1]
                 if current.get('diagnosticId'): group['diagnosticId'] = current['diagnosticId']
                 steps = current["activity"]
+                if continuing:
+                    # Keep a code fence/table/word continuous across output limits.
+                    # Only join prose after the last completed tool/media step.
+                    tail, head = [], []
+                    while group['activity'] and group['activity'][-1]['kind'] in ('thinking', 'text'):
+                        tail.insert(0, group['activity'].pop())
+                    while steps and steps[0]['kind'] in ('thinking', 'text'):
+                        head.append(steps.pop(0))
+                    for kind in ('thinking', 'text'):
+                        text = ''.join(step['text'] for step in tail + head if step['kind'] == kind)
+                        if text:
+                            group['activity'].append({'kind':kind, 'text':text, **({'error':False} if kind == 'text' else {})})
                 # Adjacent operations with no intervening prose share a batch.
                 if group["activity"] and steps and group["activity"][-1]["kind"] == steps[0]["kind"] == "tools":
                     group["activity"][-1]["tools"] = group["activity"][-1]["tools"] + steps[0]["tools"]
                     steps = steps[1:]
                 group["activity"].extend(steps)
                 group["tools"] = group.get("tools", []) + current.get("tools", [])
-                group["text"] = current.get("text", "")
+                group["text"] = (group.get('text', '') if continuing else '') + current.get("text", "")
                 group["error"] = group.get("error", False) or current.get("error", False)
                 group["stopReason"] = current.get("stopReason", "")
                 if current.get("timestamp"): group["timestamp"] = current["timestamp"]

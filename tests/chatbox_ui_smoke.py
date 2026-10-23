@@ -12,8 +12,8 @@ os.environ.setdefault('UMEKO_LANGUAGE','zh')
 os.environ['UMEKO_DATA_DIR']=tempfile.mkdtemp(prefix='umeko-chatbox-ui-')
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 os.environ.setdefault('QT_QUICK_BACKEND','software')
-from PySide6.QtCore import QPointF, Qt, QMetaObject, QObject
-from PySide6.QtGui import QImage, QPainter, QColor
+from PySide6.QtCore import QPoint, QPointF, Qt, QMetaObject, QObject
+from PySide6.QtGui import QImage, QPainter, QColor, QWheelEvent
 from PySide6.QtTest import QTest
 from app.integration import Completion
 from app.transcripts import preview
@@ -71,6 +71,11 @@ def context(name):
     menu=find('copyChatboxFile_delivery_1').parent()
     assert menu and menu.property('desiredOpen') and menu.property('animating'), 'Context menu has no PID opening animation'
     assert .9 < menu.property('scale') < 1.04
+    for action in ('attachChatbox_', 'copyChatboxFile_', 'copyChatbox_', 'revealChatbox_'):
+        name=action+'delivery_1'
+        assert find(name).property('glyph'), name+' has no icon'
+        label=find(name+'Label');assert label, name
+        assert label.width() >= label.implicitWidth() - 1, (name, label.width(), label.implicitWidth())
 
 try:
     assert backend.send('展示图片，并把报告文件给我。')
@@ -90,15 +95,34 @@ try:
         click('openChatbox_delivery_1')
         assert Path(opened.call_args.args[0].toLocalFile()).samefile(report)
     with patch('app.controller.subprocess.Popen') as launched,patch('app.controller.QDesktopServices.openUrl',return_value=True) as opened:
-        click('toggleChatbox_delivery_1')
-        menu=find('revealChatbox_delivery_1').parent()
-        assert menu.property('visible')
-        assert find('chatboxArrow_delivery_1').property('color').alpha()>0
-        click('toggleChatbox_delivery_1');QTest.qWait(50)
-        assert not menu.property('visible'),'Second arrow click reopened the menu'
-        click('toggleChatbox_delivery_1')
+        assert find('toggleChatbox_delivery_1') is None, 'File dropdown should be removed'
+        context('openChatbox_delivery_1')
         click('revealChatbox_delivery_1')
         assert launched.called if sys.platform in ('win32','darwin') else opened.called
+    click('previewChatbox_delivery_0')
+    viewer=window.findChild(QObject,'imagePreview');assert viewer.property('visible')
+    assert not tip.isVisible(),'A chat tooltip should not float above the image preview'
+    center=QPoint(window.width()//2,window.height()//2)
+    event=QWheelEvent(QPointF(center),QPointF(window.mapToGlobal(center)),QPoint(),QPoint(0,120),Qt.NoButton,Qt.NoModifier,Qt.NoScrollPhase,False)
+    app.sendEvent(window,event);QTest.qWait(80)
+    assert viewer.property('zoom')>1,'Image preview wheel zoom failed'
+    QTest.mousePress(window,Qt.LeftButton,Qt.NoModifier,center)
+    QTest.mouseMove(window,center+QPoint(70,45),30)
+    QTest.mouseRelease(window,Qt.LeftButton,Qt.NoModifier,center+QPoint(70,45));QTest.qWait(100)
+    assert viewer.property('visible') and viewer.property('panX')>40,'Dragging should pan without dismissing'
+    assert window.grabWindow().save(str(ROOT/'artifacts/screenshots/image-preview-zoom-pan.png'))
+    QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,center);QTest.qWait(150)
+    assert not viewer.property('visible'),'A stationary click should close the preview'
+    click('previewChatbox_delivery_0')
+    QTest.mouseClick(window,Qt.RightButton,Qt.NoModifier,center);QTest.qWait(150)
+    click('attachChatbox_imagePreview');QTest.qWait(180)
+    assert not viewer.property('visible')
+    assert any(item['kind']=='image' and Path(item['path']).samefile(image) for item in backend.attachments)
+    backend.removeAttachment(backend.attachments[0]['id'])
+    context('openChatbox_delivery_1');click('attachChatbox_delivery_1');QTest.qWait(120)
+    assert any(Path(item['path']).samefile(report) for item in backend.attachments)
+    assert find('promptInput').hasActiveFocus(),'Reattached file should focus the composer'
+    backend.removeAttachment(backend.attachments[0]['id'])
     context('openChatbox_delivery_1');click('copyChatboxFile_delivery_1')
     assert Path(app.clipboard().mimeData().urls()[0].toLocalFile()).samefile(report)
     context('openChatbox_delivery_1')
@@ -116,8 +140,14 @@ try:
     wait(lambda:find('chatboxImage_delivery_0') is not None and find('chatboxImage_delivery_0').property('loaded'))
     assert Path(backend._view.file).read_bytes()==original
     assert len([s for r in backend.displayMessages for s in r.get('activity',[]) if s['kind']=='media'])==1
+    for language in ('zh','en'):
+        backend.setLanguage(language)
+        for scale in (.5,1,2):
+            backend.setFontScale(scale);QTest.qWait(250)
+            context('openChatbox_delivery_1')
+            QTest.keyClick(window,Qt.Key_Escape);QTest.qWait(80)
     assert not warnings,'\n'.join(warnings)
-    print('CHATBOX_UI_OK: real Pi delivery, inline preview, open/reveal/copy, selection and native-history replay')
+    print('CHATBOX_UI_OK: real Pi delivery, compact files, context attach/reveal/copy, image zoom/pan/click-close, selection and native-history replay')
 finally:
     backend.close()
     import shiboken6

@@ -67,6 +67,12 @@ try:
     assert not hint.property('visible')
     window.grabWindow().save(str(out/'reasoning-effort-v034.png'))
     row=find('reasoningControls')
+    for scale in (.5,1,2):
+        backend.setFontScale(scale);QTest.qWait(120)
+        controls=[find('reasoningEffort_'+level) for level in ('off','low','high','max')]
+        assert controls[0].x() < 1 and controls[-1].x()+controls[-1].width() <= row.width()+1
+        assert sum(control.width() for control in controls) >= row.width()*.8
+    backend.setFontScale(1);QTest.qWait(120)
     QTest.mouseMove(window,row.mapToScene(row.boundingRect().center()).toPoint());QTest.qWait(700)
     assert hint.property('visible')
     window.grabWindow().save(str(out/'reasoning-effort-hover-v034.png'))

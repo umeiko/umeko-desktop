@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 
 Item {
     id: root
@@ -22,12 +23,13 @@ Item {
         Repeater {
             model: root.attachments
             Rectangle {
+                id: attachment
                 required property var modelData
                 required property int index
                 objectName: "userAttachment_" + root.messageIndex + "_" + index
                 width: Math.min(root.width, Math.ceil(nameMeasure.advanceWidth) + Theme.control(34))
                 height: Math.max(26, filename.contentHeight + 8)
-                radius: 5; color: Theme.accentBg; border.color: Theme.line
+                radius: 5; color: attachmentHit.interactionHovered ? Theme.hover : Theme.accentBg; border.color: Theme.line
                 TextMetrics { id: nameMeasure; font: filename.font; text: modelData.name }
                 Glyph { x: 7; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(14); height: Theme.icon(14); name: modelData.kind === "folder" ? "folder" : modelData.kind === "image" ? "image" : "file" }
                 SelectableText {
@@ -38,6 +40,12 @@ Item {
                     selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: 10000 + index
                     Accessible.description: modelData.path
                 }
+                ChatHitArea {
+                    id: attachmentHit; objectName: "openUserAttachment_" + root.messageIndex + "_" + attachment.index
+                    anchors.fill: parent; selectionController: root.selectionController; acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onClicked: mouse => { if (mouse.button === Qt.RightButton) fileMenu.popup(mouse.x, mouse.y); else if (root.Window.window) root.Window.window.previewChatImage(attachment.modelData) }
+                }
+                MediaContextMenu { id: fileMenu; item: attachment.modelData; itemKey: "user_" + root.messageIndex + "_" + attachment.index; chatWindow: root.Window.window }
             }
         }
     }

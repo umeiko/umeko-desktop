@@ -14,6 +14,7 @@ ApplicationWindow {
     color: Theme.bg
     flags: Qt.Window | Qt.FramelessWindowHint
     property string page: "chat"
+    readonly property bool mediaOverlayActive: imageViewer.visible || chatDrop.containsDrag
     property int settingsTab: 0
     property string notification: ""
     property string avatarChatKey: String(Math.random())
@@ -80,6 +81,19 @@ ApplicationWindow {
     function toggleSidebar() { sidebarCollapsed = !sidebarCollapsed; saveSidebarLayout() }
     function settings(tab) { settingsTab = tab === 2 ? 1 : tab === 4 ? 3 : tab; page = "settings" }
     function startChat() { cancelSidebarSelection(); backend.newSession(); page = "chat"; composer.focusInput() }
+    function startProjectChat(row) { cancelSidebarSelection(); backend.openProject(row.id); backend.newSession(); if (row.collapsed) backend.toggleProject(row.id); page = "chat"; composer.focusInput() }
+    function focusChatInput() {
+        if (window.visibility === Window.Minimized) window.showNormal()
+        window.raise(); window.requestActivate(); composer.focusInput(); dropFocusTimer.restart()
+    }
+    function acceptChatFiles(urls) { backend.addAttachments(JSON.stringify(urls)); modelPopup.close(); focusChatInput() }
+    function attachChatFile(path) { backend.attachChatboxFile(path); imageViewer.close(); focusChatInput() }
+    function previewChatImage(item, siblings) {
+        const info = item.url && item.preview !== undefined ? item : backend.chatboxFileInfo(item.path)
+        if (info.kind === "image" && info.preview) imageViewer.show(info, siblings || [info])
+        else backend.openChatboxPath(item.path, false)
+    }
+    Timer { id: dropFocusTimer; interval: 80; onTriggered: { backend.activateChatWindow(); composer.focusInput() } }
     onPageChanged: { if (page !== "chat") cancelSidebarSelection(); backend.setConversationVisible(page === "chat" && active) }
     onActiveChanged: backend.setConversationVisible(page === "chat" && active)
     Component.onCompleted: backend.setConversationVisible(page === "chat" && active)
@@ -89,14 +103,15 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+B"; onActivated: window.toggleSidebar() }
     Shortcut { sequences: [StandardKey.Copy]; enabled: chatSelection.activeFocus && chatSelection.hasSelection; onActivated: Qt.callLater(chatSelection.copy) }
     Shortcut { sequences: [StandardKey.SelectAll]; enabled: chatSelection.activeFocus; onActivated: chatSelection.selectAll() }
-    Shortcut { sequence: "Escape"; onActivated: { if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
+    Shortcut { sequence: "Escape"; enabled: !imageViewer.visible; onActivated: { if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
     Connections { target: backend; function onToast(message) { window.notification = message; toastTimer.restart() }
         function onViewChanged() { window.avatarChatKey = String(Math.random()) } }
     Connections { target: backend; function onLayoutChanged() { window.sidebarPreferredWidth = backend.sidebarWidth; window.sidebarCollapsed = backend.sidebarCollapsed } }
     Timer { id: toastTimer; interval: 4200; onTriggered: window.notification = "" }
     RequestDetails { id: requestInspector }
     FolderDialog { id: folderDialog; title: I18n.t("选择工作目录"); onAccepted: backend.setWorkspace(selectedFolder.toString()) }
-    FileDialog { id: attachmentDialog; title: I18n.t("添加文件"); fileMode: FileDialog.OpenFiles; onAccepted: backend.addAttachments(JSON.stringify(selectedFiles.map(url => url.toString()))) }
+    FileDialog { id: attachmentDialog; title: I18n.t("添加文件"); fileMode: FileDialog.OpenFiles; onAccepted: window.acceptChatFiles(selectedFiles.map(url => url.toString())) }
+    ImagePreview { id: imageViewer }
 
     Rectangle { anchors.fill: parent; color: "transparent"; border.color: Theme.line; z: 30 }
     WindowResizeHandles { anchors.fill: parent; z: 100; targetWindow: window }
@@ -139,10 +154,11 @@ ApplicationWindow {
                     onClicked: mouse => { if (mouse.button === Qt.RightButton) { sidebarMenus.openFor(modelData, mapToItem(sidebarMenus, mouse.x, mouse.y)); return } window.selectSidebar(modelData) }
                 }
                 Glyph { visible: modelData.kind === "project"; name: "folder"; x: 15; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(16); height: Theme.icon(16) }
-                Text { x: modelData.kind === "label" ? 17 : 42; width: parent.width - x - 32; anchors.verticalCenter: parent.verticalCenter; text: modelData.kind === "label" ? I18n.t(modelData.title) : modelData.title; elide: Text.ElideRight; font.pixelSize: Theme.font(modelData.kind === "label" ? 10 : 11); color: modelData.kind === "label" ? Theme.muted : Theme.ink }
+                Text { x: modelData.kind === "label" ? 17 : 42; width: parent.width - x - (modelData.kind === "project" ? 64 : 32); anchors.verticalCenter: parent.verticalCenter; text: modelData.kind === "label" ? I18n.t(modelData.title) : modelData.title; elide: Text.ElideRight; font.pixelSize: Theme.font(modelData.kind === "label" ? 10 : 11); color: modelData.kind === "label" ? Theme.muted : Theme.ink }
                 ActivitySpinner { objectName: "sessionSpinner_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(15); height: Theme.icon(15); visible: modelData.kind === "session" && modelData.running === true; color: modelData.waiting ? Theme.accent : Theme.muted }
                 Rectangle { objectName: "sessionUnread_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter; width: 6; height: 6; radius: 3; color: "#4c9c6d"; visible: modelData.kind === "session" && modelData.unread === true && !modelData.running }
                 Glyph { anchors.right: parent.right; anchors.rightMargin: 11; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(12); height: Theme.icon(12); name: "pin"; visible: modelData.pinned === true && !modelData.running && !modelData.unread && !(rowMouse.containsMouse) }
+                ActionButton { objectName: "newProjectSession_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: Theme.control(28); anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: Theme.control(28); quiet: true; glyph: "plus"; visible: modelData.kind === "project" && !backend.showArchived; hint: I18n.t("新增会话"); onClicked: window.startProjectChat(modelData) }
                 ActionButton { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: Theme.control(28); quiet: true; glyph: modelData.collapsed ? "chevron-right" : "chevron-down"; visible: modelData.kind === "project" && (rowMouse.containsMouse || hovered || modelData.collapsed); onClicked: backend.toggleProject(modelData.id) }
             }
         }
@@ -235,7 +251,7 @@ ApplicationWindow {
             }
             Item {
                 id: welcome; width: Math.min(parent.width - 70, 620); height: 270
-                anchors.horizontalCenter: parent.horizontalCenter; anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: -119
+                x: composer.x + (composer.width - width) / 2; anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: -119
                 visible: backend.messages.length === 0
                 WelcomeMascot { id: welcomeMascot; anchors.horizontalCenter: parent.horizontalCenter; portraitIndex: backend.portrait }
                 Connections { target: backend; function onViewChanged() { welcomeMascot.reset() } }
@@ -283,7 +299,7 @@ ApplicationWindow {
                 }
                 acceptedButtons: Qt.NoButton
                 visible: backend.messages.length > 0
-                x: Math.max(38, (parent.width - 830) / 2); width: Math.min(parent.width - 76, 830)
+                x: chatWidth.conversationLeft; width: parent.width - chatWidth.conversationLeft - chatWidth.conversationRight
                 anchors.top: parent.top; anchors.topMargin: 20; anchors.bottom: composer.top; anchors.bottomMargin: 24
                 clip: true; spacing: 27; model: backend.messageModel
                 ScrollBar.vertical: ScrollBar { objectName: "conversationScrollBar"; policy: ScrollBar.AlwaysOff }
@@ -357,7 +373,7 @@ ApplicationWindow {
                     ActionButton {
                         objectName: "requestDetails_" + messageRow.index
                         selectionController: chatSelection
-                        visible: modelData.error && (modelData.diagnosticId || "").length > 0
+                        visible: !!modelData.error && (modelData.diagnosticId || "").length > 0
                         x: 33; text: I18n.t("查看请求详情"); glyph: "code"; quiet: true
                         onClicked: requestInspector.show(modelData.diagnosticId)
                     }
@@ -402,17 +418,19 @@ ApplicationWindow {
             Composer {
                 id: composer; objectName: "composer"
                 enabled: !chatCover.visible
-                anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 57 + (retryStatus.visible ? retryStatus.implicitHeight + 6 : 0)
-                width: Math.min(parent.width - 94, 850)
+                x: chatWidth.composerLeft; anchors.bottom: parent.bottom; anchors.bottomMargin: 57 + (retryStatus.visible ? retryStatus.implicitHeight + 6 : 0)
+                width: parent.width - chatWidth.composerLeft - chatWidth.composerRight
                 onOpenModels: modelPopup.toggle()
                 onChooseFiles: attachmentDialog.open()
             }
             NetworkRetry { id: retryStatus; anchors.left: composer.left; anchors.top: composer.bottom; anchors.topMargin: 6; width: composer.width }
+            ChatWidthControls { id: chatWidth; anchors.fill: parent; z: 25; enabled: !chatCover.visible && !imageViewer.visible }
+            ChatFileDrop { id: chatDrop; anchors.fill: parent; z: 70; enabled: !chatCover.visible; chatWindow: window }
             ChatLoadingOverlay {
                 id: chatCover; anchors.fill: parent; z: 50; view: conversation
                 onRevealed: if (window.page === "chat") composer.focusInput()
             }
-            Row { id: footerActions; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 13; spacing: 8
+            Row { id: footerActions; x: composer.x + (composer.width - width) / 2; anchors.bottom: parent.bottom; anchors.bottomMargin: 13; spacing: 8
                 ActionButton { height: Theme.control(28); quiet: true; text: "Agent"; glyph: "sliders"; onClicked: window.settings(3) }
                 ActionButton { objectName: "forkSessionButton"; visible: backend.messages.length > 0; enabled: !backend.busy; height: Theme.control(28); quiet: true; text: I18n.t("分支"); glyph: "branch"; onClicked: backend.forkSession() }
             }

@@ -1,11 +1,12 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Window
 
 ToolTip {
     id: root
     property bool active: false
     property string heading: ""
-    visible: active && text.length > 0
+    visible: active && text.length > 0 && !(parent && parent.Window.window && parent.Window.window.mediaOverlayActive)
     delay: 500; timeout: -1
     padding: 12; margins: 12
     width: Math.min(360, Overlay.overlay ? Overlay.overlay.width - 24 : 360, Math.max(120, details.implicitWidth + padding * 2))
