@@ -396,7 +396,7 @@ try:
     capture("24-project-empty-entry")
     dropped = second / "context.txt"
     dropped.write_text("local attachment", encoding="utf-8")
-    drop_urls("composerDropArea", [dropped, second])
+    drop_urls("chatFileDropArea", [dropped, second])
     assert [a["kind"] for a in backend.attachments] == ["file", "folder"]
     image = QImage(20, 20, QImage.Format_RGB32)
     image.fill(0x668877)
