@@ -58,7 +58,9 @@ try:
         assert backend._send("你给我详细讲解这些附件")
         raw = command.call_args.kwargs["text"]
         assert command.call_args.kwargs["images"] == []
-        assert str(file) in raw and str(image) in raw
+        # Windows runners can expose an 8.3 TEMP path; attachment intake uses
+        # the resolved long path, so compare the same canonical spelling.
+        assert str(file.resolve()) in raw and str(image.resolve()) in raw, raw
     backend.chatChanged.emit(); backend.transcriptChanged.emit(); QTest.qWait(250)
     assert "未启用视觉，降级为普通文件路径" in notices
     assert find("userAttachment_0_0").isVisible() and find("userAttachment_0_1").isVisible()
