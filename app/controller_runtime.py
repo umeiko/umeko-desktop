@@ -206,6 +206,7 @@ class PiControllerMixin:
         elif kind == "queue_returned":
             self._restore_queued(record, [*event.get("steering", []), *event.get("followUp", [])])
         elif kind == "message" and event.get("role") == "assistant":
+            if event.get('error') or event.get('stopReason') == 'error': record.failed = True
             if record.messages and record.messages[-1]["role"] == "assistant":
                 record.messages[-1].update(text=event.get("text") or event.get("error") or record.messages[-1]["text"], error=bool(event.get("error")), stopReason=event.get("stopReason", ""))
                 if event.get("timestamp"): record.messages[-1]["timestamp"] = event["timestamp"]
@@ -302,6 +303,7 @@ class PiControllerMixin:
             if was_busy and record.action == "prompt" and not record.cancelled and record.id:
                 self.store.data["sessionMeta"].setdefault(record.id, {})["unread"] = not (visible and self._chat_visible)
                 self.store.save()
+                self.taskFinished.emit(record.id, record.title, kind == 'done' and not record.failed)
             if visible:
                 self.approvalChanged.emit()
             if record.stale or (kind == "done" and not record.ready):

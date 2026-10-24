@@ -7,6 +7,7 @@ Column {
     objectName: "aboutPage"
     readonly property var about: backend.appAbout
     spacing: 18
+    AppInstallDialog { id: installConfirmation; about: root.about }
     SectionCard {
         width: parent.width
         ColumnLayout {
@@ -58,6 +59,8 @@ Column {
             Text { objectName: "appUpdateStatus"; Layout.fillWidth: true; text: I18n.t(root.about.release.message) || I18n.t("检查 GitHub 上的最新正式发布版本。"); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: root.about.release.state === "error" ? Theme.danger : root.about.release.state === "available" ? Theme.accent : Theme.ink; font.pixelSize: Theme.font(12) }
             Text { visible: root.about.checkedAt !== ""; text: I18n.t("上次检查：") + root.about.checkedAt; color: Theme.muted; font.pixelSize: Theme.font(11) }
             Text { objectName: "appDownloadStatus"; Layout.fillWidth: true; visible: !!root.about.download.state; text: I18n.t(root.about.download.message) + (root.about.download.state === "downloading" ? " " + (root.about.download.progress || 0) + "%" : root.about.download.state === "ready" ? " · " + root.about.download.path : ""); color: root.about.download.state === "error" ? Theme.danger : Theme.muted; font.pixelSize: Theme.font(12); wrapMode: Text.Wrap; textFormat: Text.PlainText }
+            ProgressBar { objectName: "appDownloadProgress"; Layout.fillWidth: true; visible: root.about.download.state === "downloading" || root.about.busy && !!root.about.installation.state; value: (root.about.download.progress || 0) / 100; indeterminate: root.about.busy && root.about.download.state !== "downloading" }
+            Text { Layout.fillWidth: true; visible: !!root.about.installation.message; text: I18n.t(root.about.installation.message); color: root.about.installation.state === "error" ? Theme.danger : Theme.muted; font.pixelSize: Theme.font(12); wrapMode: Text.Wrap; textFormat: Text.PlainText }
             InlineScrollView {
                 visible: (root.about.release.notes || "") !== ""
                 Layout.fillWidth: true; Layout.preferredHeight: 160; clip: true
@@ -69,7 +72,10 @@ Column {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
                 ActionButton { objectName: "openAppReleasesButton"; text: I18n.t("查看发布页"); glyph: "external-link"; onClicked: root.about.openReleases() }
-                ActionButton { objectName: "downloadAppUpdateButton"; visible: !!root.about.release.asset || root.about.download.state === "ready"; text: root.about.download.state === "ready" ? I18n.t("在文件夹中查看") : I18n.t("下载更新"); glyph: root.about.download.state === "ready" ? "folder" : "download"; primary: true; enabled: root.about.download.state !== "downloading"; onClicked: root.about.download.state === "ready" ? root.about.showDownloadedUpdate() : root.about.downloadUpdate() }
+                ActionButton { objectName: "downloadAppUpdateButton"; visible: !!root.about.release.asset && root.about.download.state !== "ready"; text: I18n.t("下载更新"); glyph: "download"; primary: true; enabled: !root.about.busy && root.about.download.state !== "downloading"; onClicked: root.about.downloadUpdate() }
+                ActionButton { objectName: "installAppUpdateButton"; visible: root.about.download.state === "ready"; text: I18n.t("安装新版本"); glyph: "refresh"; primary: true; enabled: !root.about.busy; onClicked: installConfirmation.open() }
+                ActionButton { objectName: "cancelAppDownloadButton"; visible: root.about.download.state === "downloading"; text: I18n.t("取消下载"); onClicked: root.about.cancelUpdate() }
+                ActionButton { visible: root.about.download.state === "ready"; glyph: "folder"; quiet: true; hint: I18n.t("在文件夹中查看"); onClicked: root.about.showDownloadedUpdate() }
             }
         }
     }

@@ -1,6 +1,7 @@
 """Real native resource filters and repair/console paths, without public services."""
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -116,7 +117,9 @@ class NativeExtensionTests(unittest.TestCase):
             base = Path(temp)
             agent, cwd = base / "agent ' 中文 & $test", base / "project ' 中文 & $test"
             agent.mkdir(); cwd.mkdir()
-            command = prepare_terminal(RELEASE, base, agent, cwd, base / "sessions", platform="win32")
+            shell = shutil.which("pwsh.exe") or shutil.which("powershell.exe") or shutil.which("pwsh")
+            with patch("app.pi_terminal.shutil.which", return_value=shell or "powershell.exe"):
+                command = prepare_terminal(RELEASE, base, agent, cwd, base / "sessions", platform="win32")
             script = Path(command[-1]).read_text(encoding="utf-8-sig")
             self.assertIn("function global:pi", script)
             self.assertIn("try { pi config }", script)
@@ -124,8 +127,9 @@ class NativeExtensionTests(unittest.TestCase):
             self.assertIn(str(RELEASE / "node_modules" / PACKAGE / "dist/cli.js"), script)
             # Ask PowerShell's parser only; never open a terminal during tests.
             parser = "$t=$null;$e=$null;[System.Management.Automation.Language.Parser]::ParseFile(" + powershell_literal(command[-1]) + ",[ref]$t,[ref]$e)|Out-Null;$e|ForEach-Object{$_.Message};if($e.Count){exit 1}"
-            result = subprocess.run([command[0], "-NoProfile", "-Command", parser], capture_output=True, timeout=15)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            if shell:
+                result = subprocess.run([command[0], "-NoProfile", "-Command", parser], capture_output=True, timeout=15)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             native = subprocess.run([node_executable(), str(RELEASE / "node_modules" / PACKAGE / "dist/cli.js"), "--version"], capture_output=True, text=True, timeout=15)
             self.assertEqual(native.returncode, 0, native.stderr)
             self.assertIn("1.3.0", native.stdout)

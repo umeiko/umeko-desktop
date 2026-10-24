@@ -1,0 +1,9 @@
+{
+  "asset": "yanami-installing.png",
+  "generator": "Built-in image_gen",
+  "created": "2026-10-23",
+  "reference": "User-provided slightly parted mouth expression and previous screwdriver working pose; default short hair retained",
+  "usage": "Active installation pixel bust, screwdriver visibly engaged with screw",
+  "sha256": "5b2e9c22ce89918685f816e0e822e3ccecebbc39e1a88d25ba2d4006f86924cf",
+  "prompt": "Use case: precise-object-edit. Asset type: transparent pixel-art active-installation bust. Image 1 is the EDIT TARGET: existing pixel Yanami looking down while using a screwdriver on a small blue panel. Image 2 is the user's EXPRESSION REFERENCE. Change ONLY the facial expression in image 1 to match image 2: normally open blue eyes, gently raised brows, slightly parted small mouth, a mild puzzled/concentrating look, subtle cheek blush. Match the reference's natural anime expression without exaggerating it into fear, a huge mouth or huge staring eyes. Keep the face angled slightly down toward the screwdriver so she still appears absorbed in her installation work. Preserve image 1's DEFAULT SHOULDER-LENGTH SHORT BLUE HAIR, looping ahoge, NO PONYTAIL, blue-overall straps, white shirt, colors, pixel grid, framing, hand anatomy and working pose. In particular preserve her right hand gripping the screwdriver handle, straight metal shaft and tip visibly touching the screw, left hand steadying the panel at the lower edge; the tool must remain clearly plausible and actually engaged with the screw. Compact bust at upper chest with no torso below it. Crisp deliberate chunky pixel clusters with hard stair-step outlines, flat limited palette; no antialiasing, no smooth linework, no 3D. Preserve actual transparent background. No text, no watermark, no added objects."
+}

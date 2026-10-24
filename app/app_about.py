@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import re
 import urllib.error
 import urllib.request
@@ -13,6 +14,7 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication
 
 from .project_info import VERSION, PROJECT_URL, AUTHOR_URL, RELEASES_URL, RELEASE_API, project_info
 from .update_download import platform_target, select_asset, download_asset
+from .update import AppUpdater
 
 
 def version_key(value):
@@ -74,6 +76,10 @@ class AppAbout(QObject):
         self._info = project_info(controller.root)
         self._busy, self._release, self._checked_at = False, {}, ""
         self._download = {}
+        self._installation = {}
+        self._download_cancel = threading.Event()
+        self.updater = AppUpdater(controller)
+        self.updater.changed.connect(self._install_changed)
         self._automatic = QTimer(self)
         self._automatic.setInterval(6*60*60*1000)
         self._automatic.timeout.connect(self.checkUpdates)
@@ -95,6 +101,23 @@ class AppAbout(QObject):
     @Property('QVariantMap', notify=changed)
     def download(self): return self._download
 
+    @Property('QVariantMap', notify=changed)
+    def installation(self): return self._installation
+
+    def _install_changed(self, value):
+        value = dict(value)
+        if 'busy' in value: self._busy = value.pop('busy')
+        self._installation.update(value); self.changed.emit()
+
+    @Slot()
+    def installUpdate(self):
+        if not self._busy and self._download.get('state') == 'ready':
+            self.updater.install(self._release, self._download)
+
+    @Slot()
+    def cancelUpdate(self):
+        if self._download.get('state') == 'downloading': self._download_cancel.set()
+
     @Slot()
     def startAutomaticChecks(self):
         if self._automatic.isActive(): return
@@ -112,8 +135,11 @@ class AppAbout(QObject):
 
     def _finished(self, name, result):
         if name == 'app-update-download' and not self.controller._closing:
-            self._download = ({'state':'ready', 'path':result['value'], 'progress':100, 'message':'更新包已下载'}
+            self._download = ({'state':'ready', 'path':result['value'], 'progress':100,
+                               'sha256':self._download_asset['sha256'], 'name':self._download_asset['name'], 'version':self._download_version,
+                               'message':'SHA-256 校验通过，可以安装。'}
                               if result['ok'] else {'state':'error', 'message':'下载失败，请检查网络后重试'})
+            if self._download_cancel.is_set(): self._download = {'state':'cancelled', 'message':'下载已取消'}
             self.changed.emit()
             self.controller.toast.emit(self._download['message'])
             return
@@ -139,10 +165,13 @@ class AppAbout(QObject):
         if not asset:
             self.controller.toast.emit('该版本没有适合当前平台的更新包，请查看发布页')
             return
+        self._download_asset = dict(asset)
+        self._download_version = self._release['version']
+        self._download_cancel = token = threading.Event()
         self._download = {'state':'downloading', 'progress':0, 'name':asset['name'], 'message':'正在下载更新包…'}
         self.changed.emit()
         directory = Path(QStandardPaths.writableLocation(QStandardPaths.DownloadLocation) or Path.home()/'Downloads')/'Umeko'
-        self.controller._job('app-update-download', lambda: download_asset(asset, directory, self.downloadProgress.emit, lambda:self.controller._closing))
+        self.controller._job('app-update-download', lambda: download_asset(asset, directory, self.downloadProgress.emit, lambda:self.controller._closing or token.is_set()))
 
     @Slot()
     def showDownloadedUpdate(self):

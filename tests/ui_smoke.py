@@ -213,6 +213,7 @@ try:
         capture(name)
     window.setProperty("settingsTab", 1)
     QTest.qWait(50)
+    click("mappingProvider_" + backend.config["providers"][0]["id"])
     assert find_item("mappingContext_1_input").property("text") == "200000"
     # Manual mode also survives mapping saves.
     edit_context_field("mappingContext_0_input", "0.5M")

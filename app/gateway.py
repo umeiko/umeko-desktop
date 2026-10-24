@@ -21,6 +21,7 @@ from pathlib import Path
 from .integration import Completion, IntegrationRequired
 from .model_capabilities import normalize_model, normalize_vision
 from .protocols import response_events, collect_openai, anthropic_events_to_openai, openai_events_to_anthropic
+from .openai_responses import responses_request, responses_events
 from .request_diagnostics import RequestDiagnostics, RequestFailure
 from .network_retry import upstream_failure
 from umeko_provider_sdk.network import network_scope, proxy_handler, trace, TracedResponse
@@ -117,7 +118,7 @@ class Gateway:
             yield openai_response(result, model)
             return
         base = validate_base_url(p["baseUrl"])
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "User-Agent": "Umeko-Desktop"}
         if p["api"] == "anthropic":
             url = base + ("/messages" if base.endswith("/v1") else "/v1/messages")
             headers.update({"x-api-key": p["key"], "anthropic-version": "2023-06-01"})
@@ -142,6 +143,10 @@ class Gateway:
                 body["system"] = system
             if tools:
                 body["tools"] = [{"name": t["name"], "description": t.get("description", ""), "input_schema": t["parameters"]} for t in tools]
+        elif p.get('wireApi') == 'responses':
+            url = base + '/responses'
+            headers['Authorization'] = 'Bearer ' + p['key']
+            body = {**responses_request(messages, tools, max_tokens, parameters), 'model': model}
         else:
             url = base + "/chat/completions"
             headers["Authorization"] = "Bearer " + p["key"]
@@ -157,7 +162,7 @@ class Gateway:
             with opener.open(request, timeout=90) as response:
                 record['response'].update(status=response.status, headers=dict(response.headers))
                 events = response_events(TracedResponse(response, record))
-                yield from anthropic_events_to_openai(events) if p["api"] == "anthropic" else events
+                yield from anthropic_events_to_openai(events) if p["api"] == "anthropic" else responses_events(events) if p.get('wireApi') == 'responses' else events
         except urllib.error.HTTPError as exc:
             record['response'].update(status=exc.code, headers=dict(exc.headers), body=exc.read().decode('utf-8', 'replace'))
             exc.close()

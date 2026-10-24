@@ -72,12 +72,18 @@ class KeyCatalog:
 def lan_addresses():
     # Interface enumeration makes no DNS, discovery or outbound network requests.
     from PySide6.QtNetwork import QAbstractSocket, QNetworkInterface
-    addresses = set()
+    addresses = {}
     for interface in QNetworkInterface.allInterfaces():
-        if not interface.flags() & QNetworkInterface.IsUp:
+        if not interface.flags() & QNetworkInterface.IsUp or interface.flags() & QNetworkInterface.IsLoopBack:
             continue
         for entry in interface.addressEntries():
             ip = entry.ip()
-            if ip.protocol() == QAbstractSocket.IPv4Protocol and not ip.isLoopback() and not ip.isNull():
-                addresses.add(ip.toString())
-    return sorted(addresses)
+            if ip.protocol() != QAbstractSocket.IPv4Protocol or ip.isLoopback() or ip.isNull() or ip.isMulticast(): continue
+            text = ip.toString()
+            if text.startswith('169.254.') or text in ('0.0.0.0', '255.255.255.255'): continue
+            import re
+            virtual = bool(re.match(r'^(docker|veth|virbr|br-|tun|tap|utun|tailscale|wg)', interface.name(), re.I))
+            physical = interface.type() in (QNetworkInterface.Ethernet, QNetworkInterface.Wifi)
+            rank = (virtual, not physical, bool(interface.flags() & QNetworkInterface.IsPointToPoint), text)
+            if text not in addresses or rank < addresses[text]: addresses[text] = rank
+    return sorted(addresses, key=addresses.get)

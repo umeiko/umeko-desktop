@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -20,6 +21,7 @@ from main import create_application
 store = Store()
 store.data["agent"]["agentDir"] = str(store.directory / "agent")
 store.data["providers"] = [{"id":"fixture", "name":"Fixture", "api":"openai", "baseUrl":"http://127.0.0.1:18181/v1", "key":"synthetic", "models":[{"upstream":"fixture", "alias":"fixture"}]}]
+store.data["providers"].append({"id":"other", "name":"Second supplier", "api":"openai", "baseUrl":"http://127.0.0.1:18182/v1", "key":"synthetic", "models":[{"upstream":"other-model", "alias":"other-model"}]})
 store.save()
 app, engine, backend = create_application()
 window = engine.rootObjects()[0]
@@ -52,6 +54,8 @@ def click(name):
     target = item(name)
     assert target, name
     reveal(target)
+    target = item(name)  # Key usage updates can recreate delegates during the reveal wait.
+    assert target, name
     point = target.mapToScene(target.boundingRect().center()).toPoint()
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
     QTest.qWait(160)
@@ -75,11 +79,25 @@ try:
     QTest.qWait(200)
     assert item("settingsTab_2") is None, "standalone mapping tab remains"
     assert item("settingsTab_1").property("text") == "API 代理服务"
+    assert item("proxyAddressPicker") is None, "Address configuration should be automatic"
+    assert item("proxyOpenaiBaseUrl").property("text") == "http://127.0.0.1:8787/v1"
+    assert item("mappingModelId_0") is None and item("mappingModelId_1") is None
+    reveal(item("mappingProvider_fixture"))
+    capture("proxy-provider-groups")
     # An unsaved service edit and model mapping edit survive key administration.
     item("portInput").setProperty("text", "18999")
+    click("mappingProvider_fixture")
     mapping = item("mappingContext_0_input")
     mapping.setProperty("text", "256K")
     QMetaObject.invokeMethod(mapping, "textEdited")
+    assert item("mappingModelId_0").isVisible() and item("mappingModelId_1") is None
+    click("backToMappingProviders"); click("mappingProvider_other")
+    assert item("mappingModelId_0") is None and item("mappingModelId_1").isVisible()
+    alias = item("mappingAlias_1"); alias.setProperty("text", "second-alias"); QMetaObject.invokeMethod(alias, "textEdited")
+    click("backToMappingProviders"); click("mappingProvider_fixture")
+    mapping = item("mappingContext_0_input")
+    assert mapping.property("text") == "256K", "Switching suppliers lost an unsaved mapping"
+    capture("proxy-provider-aliases")
     keys = []
     for name in ("Laptop", "Local tools", "Build client"):
         click("addProxyKeyButton")
@@ -144,6 +162,19 @@ try:
     assert not backend.config["server"]["lan"]
     click("saveMappingsButton")
     assert backend.config["providers"][0]["models"][0]["contextWindow"] == 262144
+    assert backend.config["providers"][1]["models"][0]["alias"] == "second-alias"
+    with patch("app.controller.lan_addresses", return_value=["192.168.15.8"]):
+        assert backend.saveServer(18999, True, True, True); QTest.qWait(100)
+        assert item("proxyOpenaiBaseUrl").property("text") == "http://192.168.15.8:18999/v1"
+        assert item("proxyAnthropicBaseUrl").property("text") == "http://192.168.15.8:18999"
+        click("copyProxyOpenaiBaseUrl"); assert app.clipboard().text() == "http://192.168.15.8:18999/v1"
+        capture("proxy-lan-base-url")
+    with patch("app.controller.lan_addresses", return_value=[]):
+        backend.refreshProxyAddresses(); QTest.qWait(100)
+        assert item("proxyOpenaiBaseUrl").property("text") == ""
+        assert not item("copyProxyOpenaiBaseUrl").isEnabled()
+    assert backend.saveServer(18999, True, True, False); QTest.qWait(100)
+    assert item("proxyOpenaiBaseUrl").property("text") == "http://127.0.0.1:18999/v1"
     window.setProperty("settingsTab", 0)
     QTest.qWait(100)
     assert item("manageInternalModelsButton") is None

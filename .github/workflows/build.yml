@@ -61,7 +61,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libopengl0 libgl1 libdbus-1-3 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-image0 libxcb-render-util0 libxcb-randr0 libxcb-xfixes0 libnss3 libasound2
+          sudo apt-get install -y extra-cmake-modules libxkbcommon-dev libxcb1-dev libx11-dev libegl1 libopengl0 libgl1 libdbus-1-3 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-image0 libxcb-render-util0 libxcb-randr0 libxcb-xfixes0 libnss3 libasound2
 
       - name: Set up Windows
         if: runner.os == 'Windows'
@@ -71,6 +71,18 @@ jobs:
       - name: Set up Unix
         if: runner.os != 'Windows'
         run: bash setup.sh
+
+      - name: Verify installer and tray
+        shell: bash
+        run: |
+          python_bin=.venv/bin/python
+          if [ "$RUNNER_OS" = Windows ]; then python_bin=.venv/Scripts/python.exe; fi
+          node --test tests/update-engine.test.mjs
+          "$python_bin" -m unittest tests.test_update tests.test_common_providers tests.test_openai_responses tests.test_platform tests.test_desktop_notifications -q
+          "$python_bin" tests/installer_ui_smoke.py
+          "$python_bin" tests/tray_ui_smoke.py
+          "$python_bin" tests/common_providers_ui_smoke.py
+          "$python_bin" tests/notifications_ui_smoke.py
 
       - name: Windows regression suite
         if: runner.os == 'Windows'
@@ -110,6 +122,12 @@ jobs:
 
       - name: Verify packaged application and Pi
         run: python scripts/ci-smoke.py
+
+      - name: macOS disk image build tools
+        if: runner.os == 'macOS'
+        run: |
+          python -m pip install ds-store==1.3.1 mac-alias==2.2.3
+          python -m unittest discover -s tests -p test_macos_dmg.py -v
 
       - name: Archive package
         run: python scripts/package-release.py --platform ${{ matrix.platform }}

@@ -1,0 +1,9 @@
+{
+  "asset": "yanami-installer.png",
+  "generator": "Built-in image_gen",
+  "created": "2026-10-23",
+  "reference": "User-provided closed-mouth smile and thumbs-up expression; default short hair explicitly retained",
+  "usage": "Installation complete, gentle smile and thumbs-up pixel bust",
+  "sha256": "e331f2c5f5c076f32749f1410ad3b36f180fc2d41b02582d2c85ac03390ccbca",
+  "prompt": "Use case: style-transfer. Asset type: transparent compact pixel-art COMPLETION bust for a desktop installer. Input image 1 is the user's exact requested replacement expression and thumbs-up pose reference ONLY; DO NOT use its ponytail hairstyle. Image 2 is the approved pixel style, default short hair and installer workwear reference. Draw Anna Yanami with her DEFAULT SHOULDER-LENGTH BLUE BOB and looping ahoge from image 2, NO PONYTAIL, no tied-up hair. For her expression and hand pose use image 1: gentle confident CLOSED-MOUTH smile, relaxed kind blue eyes looking toward the viewer, subtle blush, and a single natural thumbs-up hand beside her cheek. Match the restrained friendly expression and natural anime model proportions closely. Do NOT keep the existing wide toothy grin or oversized intense eyes. Calm reassuring expression after completing a job. Compact head-and-shoulders bust cropped at the upper chest; only a little white shirt collar and blue-overall straps with small orange fasteners at the bottom. No wrench or screwdriver, just the thumbs-up. Crisp deliberate hand-pixelled art, clean square clusters and stair-step edges, limited cobalt/cream/skin palette, flat shading, about a 72 x 72 logical pixel sprite enlarged with nearest-neighbor pixels. Keep ahoge, hand and all short hair inside a roughly square frame with a small transparent margin; no lower torso, no long arms, no 3D, no smooth/vector lines, no antialiasing. One character, actual transparent RGBA background, no text, no watermark, no frame."
+}

@@ -6,15 +6,14 @@ Column {
     id: root
     spacing: 18
     property string serverSignature: ""
-    property string address: "127.0.0.1"
-    readonly property string currentAddress: addressPicker.currentText || "127.0.0.1"
+    readonly property string currentAddress: backend.config.server.lan ? (backend.proxyAddresses.find(ip => ip !== "127.0.0.1") || "") : "127.0.0.1"
     property string editKeyId: ""
     property string revokeKeyId: ""
     property string revokeKeyName: ""
     property bool draftKeyVisible: false
     property string createdKey: ""
     property double now: Date.now()
-    Timer { interval: 30000; running: root.visible; repeat: true; onTriggered: root.now = Date.now() }
+    Timer { interval: 30000; running: root.visible; repeat: true; onTriggered: { root.now = Date.now(); backend.refreshProxyAddresses() } }
     function lastUsed(value) {
         if (!value) return I18n.t("尚未使用")
         const seconds = Math.max(0, (now - new Date(value).getTime()) / 1000)
@@ -88,23 +87,19 @@ Column {
         ColumnLayout { width: parent.width; spacing: 16
             RowLayout { Layout.fillWidth: true
                 Text { text: I18n.t("连接地址"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
-                HelpButton { help: I18n.t("本机客户端使用 127.0.0.1；局域网设备选择能访问的本机网卡地址。OpenAI 使用 Bearer Key，Anthropic 使用 x-api-key，并填写下方模型映射中的别名。") }
+                HelpButton { help: I18n.t("本机模式显示 127.0.0.1；局域网模式自动显示本机网卡 IP。复制对应协议的 Base URL，并使用下方模型别名和有效 API Key 连接。") }
                 Item { Layout.fillWidth: true }
                 ActionButton { text: I18n.t("刷新地址"); quiet: true; glyph: "refresh"; onClicked: backend.refreshProxyAddresses() }
-            }
-            RowLayout { Layout.fillWidth: true
-                Text { text: I18n.t("访问地址"); color: Theme.muted; font.pixelSize: Theme.font(11); Layout.preferredWidth: 135 }
-                Picker { id: addressPicker; objectName: "proxyAddressPicker"; Layout.fillWidth: true; model: backend.proxyAddresses; currentIndex: Math.max(0, model.indexOf(root.address)); onActivated: index => root.address = model[index] }
             }
             Repeater {
                 model: [{label:"OpenAI Base URL", suffix:"/v1", enabled:backend.config.server.openai}, {label:"Anthropic Base URL", suffix:"", enabled:backend.config.server.anthropic}]
                 RowLayout {
                     required property var modelData
                     visible: modelData.enabled; Layout.fillWidth: true
-                    readonly property string url: "http://" + root.currentAddress + ":" + backend.config.server.port + modelData.suffix
+                    readonly property string url: root.currentAddress ? "http://" + root.currentAddress + ":" + backend.config.server.port + modelData.suffix : ""
                     Text { text: modelData.label; color: Theme.muted; font.pixelSize: Theme.font(11); Layout.preferredWidth: 135 }
-                    InputField { Layout.fillWidth: true; text: parent.url; readOnly: true; font.family: "Consolas" }
-                    ActionButton { glyph: "copy"; quiet: true; hint: I18n.t("复制地址"); onClicked: backend.copy(parent.url) }
+                    InputField { objectName: modelData.suffix ? "proxyOpenaiBaseUrl" : "proxyAnthropicBaseUrl"; Layout.fillWidth: true; text: parent.url; readOnly: true; placeholderText: I18n.t("未找到局域网 IP"); font.family: "Consolas" }
+                    ActionButton { objectName: modelData.suffix ? "copyProxyOpenaiBaseUrl" : "copyProxyAnthropicBaseUrl"; glyph: "copy"; quiet: true; enabled: !!parent.url; hint: I18n.t("复制地址"); onClicked: backend.copy(parent.url) }
                 }
             }
             Text { visible: backend.config.server.lan && backend.proxyAddresses.length === 1; text: I18n.t("未找到其他 IPv4 网卡地址，请检查本机网络。"); color: Theme.muted; font.pixelSize: Theme.font(11) }

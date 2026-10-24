@@ -1,0 +1,235 @@
+[
+  {
+    "id": "claude",
+    "name": "Claude",
+    "label": "Claude Code",
+    "api": "anthropic",
+    "baseUrl": "https://api.anthropic.com/v1",
+    "icon": "claude.svg",
+    "keyUrl": "https://platform.claude.com/settings/keys",
+    "models": [
+      {
+        "upstream": "claude-sonnet-5-5",
+        "contextWindow": 1000000,
+        "contextWindowAuto": false,
+        "vision": true,
+        "visionAuto": false
+      },
+      {
+        "upstream": "claude-opus-5-5",
+        "contextWindow": 1000000,
+        "contextWindowAuto": false,
+        "vision": true,
+        "visionAuto": false
+      },
+      {
+        "upstream": "claude-haiku-5-5",
+        "contextWindow": 1000000,
+        "contextWindowAuto": false,
+        "vision": true,
+        "visionAuto": false
+      }
+    ]
+  },
+  {
+    "id": "codex",
+    "name": "Codex",
+    "label": "Codex",
+    "api": "openai",
+    "wireApi": "responses",
+    "baseUrl": "https://api.openai.com/v1",
+    "icon": "codex.png",
+    "keyUrl": "https://platform.openai.com/api-keys",
+    "models": [
+      {
+        "upstream": "gpt-6.1-sol",
+        "contextWindow": 1050000,
+        "contextWindowAuto": false,
+        "vision": true,
+        "visionAuto": false
+      },
+      {
+        "upstream": "gpt-6-astra",
+        "contextWindow": 1050000,
+        "contextWindowAuto": false,
+        "vision": true,
+        "visionAuto": false
+      },
+      {
+        "upstream": "gpt-6-luna",
+        "contextWindow": 1050000,
+        "contextWindowAuto": false,
+        "vision": true,
+        "visionAuto": false
+      }
+    ]
+  },
+  {
+    "id": "kimi",
+    "name": "Kimi",
+    "label": "Kimi Code",
+    "api": "openai",
+    "baseUrl": "https://api.kimi.com/coding/v1",
+    "icon": "kimi.png",
+    "keyUrl": "https://www.kimi.com/code/console?from=kfc_overview_topbar",
+    "models": [
+      {
+        "upstream": "kimi-for-coding",
+        "contextWindow": 1048576,
+        "contextWindowAuto": false,
+        "vision": true,
+        "visionAuto": false
+      },
+      {
+        "upstream": "k3",
+        "contextWindow": 1048576,
+        "contextWindowAuto": false,
+        "vision": true,
+        "visionAuto": false
+      },
+      {
+        "upstream": "k3-256k",
+        "contextWindow": 262144,
+        "contextWindowAuto": false,
+        "vision": true,
+        "visionAuto": false
+      },
+      {
+        "upstream": "k3.1-pro",
+        "contextWindow": 1048576,
+        "contextWindowAuto": false,
+        "vision": true,
+        "visionAuto": false
+      },
+      {
+        "upstream": "k3.1-pro-highspeed",
+        "contextWindow": 1048576,
+        "contextWindowAuto": false,
+        "vision": true,
+        "visionAuto": false
+      },
+      {
+        "upstream": "kimi-for-coding-highspeed",
+        "contextWindow": 262144,
+        "contextWindowAuto": false,
+        "vision": true,
+        "visionAuto": false
+      }
+    ]
+  },
+  {
+    "id": "deepseek",
+    "name": "DeepSeek",
+    "label": "DeepSeek",
+    "api": "openai",
+    "baseUrl": "https://api.deepseek.com/v1",
+    "icon": "deepseek.svg",
+    "keyUrl": "https://platform.deepseek.com/api_keys",
+    "models": [
+      {
+        "upstream": "deepseek-flash",
+        "contextWindow": 1048576,
+        "contextWindowAuto": false,
+        "vision": true,
+        "visionAuto": false
+      },
+      {
+        "upstream": "deepseek-v4-pro",
+        "contextWindow": 1048576,
+        "contextWindowAuto": false,
+        "vision": false,
+        "visionAuto": false
+      }
+    ]
+  },
+  {
+    "id": "glm",
+    "name": "GLM",
+    "label": "GLM Coding Plan",
+    "api": "openai",
+    "baseUrl": "https://open.bigmodel.cn/api/coding/paas/v4",
+    "icon": "glm.png",
+    "keyUrl": "https://bigmodel.cn/coding-plan/personal/overview",
+    "subscription": true,
+    "models": [
+      {
+        "upstream": "glm-5.3",
+        "contextWindow": 1000000,
+        "contextWindowAuto": false,
+        "vision": false,
+        "visionAuto": false
+      },
+      {
+        "upstream": "glm-5.3-flash",
+        "contextWindow": 1000000,
+        "contextWindowAuto": false,
+        "vision": true,
+        "visionAuto": false
+      }
+    ],
+    "international": {
+      "name": "Z.ai",
+      "label": "Z.ai Coding Plan",
+      "api": "openai",
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "icon": "glm.png",
+      "keyUrl": "https://z.ai/manage-apikey/apikey-list",
+      "models": [
+        {
+          "upstream": "glm-5.3",
+          "contextWindow": 1000000,
+          "contextWindowAuto": false,
+          "vision": false,
+          "visionAuto": false
+        },
+        {
+          "upstream": "glm-5.3-flash",
+          "contextWindow": 1000000,
+          "contextWindowAuto": false,
+          "vision": true,
+          "visionAuto": false
+        }
+      ],
+      "siteUrl": "https://z.ai/"
+    },
+    "siteUrl": "https://zcode.z.ai/cn"
+  },
+  {
+    "id": "minimax",
+    "name": "MiniMax",
+    "label": "MiniMax 订阅",
+    "api": "openai",
+    "baseUrl": "https://api.minimax.cn/v1",
+    "icon": "minimax.svg",
+    "keyUrl": "https://platform.minimax.cn/console/plan",
+    "subscription": true,
+    "models": [
+      {
+        "upstream": "MiniMax-M3.1-Flash",
+        "contextWindow": 524288,
+        "contextWindowAuto": false,
+        "vision": true,
+        "visionAuto": false
+      }
+    ],
+    "international": {
+      "name": "MiniMax",
+      "label": "MiniMax 订阅",
+      "api": "openai",
+      "baseUrl": "https://api.minimax.io/v1",
+      "icon": "minimax.svg",
+      "keyUrl": "https://platform.minimax.io/console/plan",
+      "models": [
+        {
+          "upstream": "MiniMax-M3.1-Flash",
+          "contextWindow": 524288,
+          "contextWindowAuto": false,
+          "vision": true,
+          "visionAuto": false
+        }
+      ],
+      "siteUrl": "https://platform.minimax.io"
+    },
+    "siteUrl": "https://platform.minimax.cn"
+  }
+]

@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from app.project_info import VERSION
+from macos_dmg import create_dmg
 
 
 def main():
@@ -43,7 +44,8 @@ def main():
         for chunk in iter(lambda: source.read(1024 * 1024), b""): digest.update(chunk)
     checksum = digest.hexdigest()
     archive.with_name(archive.name + ".sha256").write_text(checksum + "  " + archive.name + "\n", encoding="utf-8")
-    (output / "build.json").write_text(json.dumps({**report, "platform": args.platform, "archive": archive.name, "sha256": checksum}, indent=2), encoding="utf-8")
+    disk_image = {"diskImage": create_dmg(ROOT / "dist/Umeko.app", Path(str(base) + ".dmg"), "Umeko")} if sys.platform == "darwin" else {}
+    (output / "build.json").write_text(json.dumps({**report, "platform": args.platform, "archive": archive.name, "sha256": checksum, **disk_image}, indent=2), encoding="utf-8")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as handle:

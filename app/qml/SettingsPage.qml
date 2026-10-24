@@ -8,8 +8,12 @@ Item {
     signal tabSelected(int value)
     signal back()
     property bool editingProvider: false
+    property bool editingCommon: false
     property string editId: ""
+    CommonProviderDialog { id: commonProviders }
     property string mappingSignature: ""
+    property string mappingProviderId: ""
+    readonly property var mappingAccount: backend.config.providers.find(p => p.id === mappingProviderId) || null
     property var activeInlineScroll: null
     function activateInlineScroll(item) { activeInlineScroll = item }
     function scrollSettings(delta) {
@@ -30,6 +34,7 @@ Item {
         }
     }
     function editProvider(p) {
+        editingCommon = !!(p && p.presetId)
         editId = p ? p.id : ""
         providerName.text = p ? p.name : ""
         providerUrl.text = p ? p.baseUrl : ""
@@ -45,10 +50,19 @@ Item {
             providerKey.clear()
         } else editProvider(p)
     }
+    function openMappingProvider(identifier) {
+        mappingProviderId = identifier
+        Qt.callLater(() => {
+            const flick = settingsScroll.contentItem
+            const top = flick.contentY + mappingsSection.mapToItem(flick, Qt.point(0, 0)).y
+            flick.contentY = Math.max(0, Math.min(top, flick.contentHeight - flick.height))
+        })
+    }
     function reloadMappings() {
         const signature = JSON.stringify(backend.config.providers.map(p => ({id:p.id, name:p.name, models:p.models})))
         if (signature === mappingSignature) return
         mappingSignature = signature
+        if (mappingProviderId && !backend.config.providers.some(p => p.id === mappingProviderId)) mappingProviderId = ""
         mappingRows.clear()
         backend.config.providers.forEach(p => p.models.forEach(m => mappingRows.append({provider:p.id, providerName:p.name, upstream:m.upstream, alias:m.alias, contextWindowText:String(m.contextWindow), contextWindowAuto:m.contextWindowAuto, visionValue:m.vision, visionAuto:m.visionAuto})))
     }
@@ -113,42 +127,48 @@ Item {
                     visible: root.tab === 0; width: parent.width; spacing: 18
                     ProviderPluginsSection { width: parent.width }
                     SectionCard {
+                        objectName: "commonProvidersSection"
                         width: parent.width
-                        ColumnLayout { width: parent.width; spacing: 18
+                        ColumnLayout {
+                            id: commonProviderContent
+                            width: parent.width; spacing: 18
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 16
+                                ColumnLayout {
+                                    Layout.fillWidth: true; spacing: 5
+                                    Text { text: I18n.t("常见供应商"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
+                                    Text { Layout.fillWidth: true; text: I18n.t("填写 API Key，快速接入常见模型服务"); color: Theme.muted; font.pixelSize: Theme.font(11); wrapMode: Text.Wrap }
+                                }
+                                ActionButton { objectName: "addCommonProviderButton"; glyph: "plus"; hint: I18n.t("添加常见供应商"); onClicked: commonProviders.open() }
+                            }
+                            ProviderAccountList {
+                                objectName: "commonProviderAccounts"; Layout.fillWidth: true
+                                accounts: backend.config.providers.filter(p => (p.api === "openai" || p.api === "anthropic") && !!p.presetId)
+                                editing: root.editingProvider; editingId: root.editId
+                                onEditProvider: provider => root.toggleProvider(provider)
+                            }
+                        }
+                    }
+                    SectionCard {
+                        objectName: "apiProvidersSection"
+                        width: parent.width
+                        ColumnLayout { id: apiProviderContent; width: parent.width; spacing: 18
                             RowLayout { Layout.fillWidth: true
                                 Text { text: I18n.t("API 供应商"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
                                 HelpButton { help: I18n.t("手动配置 API 地址和密钥。一个供应商可以添加多个模型，在聊天框底部选择使用。只连接你明确保存的服务地址。") }
                                 Item { Layout.fillWidth: true }
                                 ActionButton { objectName: "addProviderButton"; text: I18n.t("添加供应商"); glyph: "plus"; onClicked: root.editProvider(null) }
                             }
-                            Text { visible: backend.config.providers.filter(p => p.api === "openai" || p.api === "anthropic").length === 0 && !root.editingProvider; text: I18n.t("暂无自定义供应商"); color: Theme.muted; font.pixelSize: Theme.font(11); Layout.topMargin: 8; Layout.bottomMargin: 8 }
-                            Repeater {
-                                model: backend.config.providers.filter(p => p.api === "openai" || p.api === "anthropic")
-                                ColumnLayout {
-                                    required property var modelData
-                                    Layout.fillWidth: true; spacing: 12
-                                    RowLayout { Layout.fillWidth: true; spacing: 12
-                                    Glyph { name: "server"; width: Theme.icon(19); height: Theme.icon(19) }
-                                    Column { Layout.fillWidth: true; spacing: 5
-                                        Text { text: modelData.name; color: Theme.ink; font.pixelSize: Theme.font(12) }
-                                        Text { text: modelData.baseUrl; color: Theme.muted; font.pixelSize: Theme.font(10); elide: Text.ElideRight; width: 400 }
-                                    }
-                                    Text { text: modelData.models.length + I18n.t(" 个模型"); color: Theme.muted; font.pixelSize: Theme.font(10) }
-                                    Text { text: modelData.api === "openai" ? I18n.t("OpenAI 格式") : I18n.t("Anthropic 格式"); color: Theme.muted; font.pixelSize: Theme.font(10) }
-                                    ProviderProxy { providerId: modelData.id }
-                                    ActionButton { objectName: "editProvider_" + modelData.id; glyph: root.editingProvider && root.editId === modelData.id ? "chevron-up" : "edit"; quiet: true; hint: root.editingProvider && root.editId === modelData.id ? I18n.t("收起供应商与模型") : I18n.t("编辑供应商与模型"); onClicked: root.toggleProvider(modelData) }
-                                    ActionButton { glyph: "trash"; quiet: true; hint: I18n.t("移除供应商"); onClicked: backend.removeProvider(modelData.id) }
-                                    }
-                                    Flow { Layout.fillWidth: true; spacing: 7
-                                        Repeater { model: modelData.models
-                                            Rectangle { required property var modelData; width: chip.implicitWidth + 18; height: 27; radius: 6; color: Theme.accentBg
-                                                Text { id: chip; anchors.centerIn: parent; text: modelData.alias; color: Theme.accent; font.pixelSize: Theme.font(10) }
-                                            }
-                                        }
-                                    }
-                                }
+                            Text { visible: backend.config.providers.filter(p => (p.api === "openai" || p.api === "anthropic") && !p.presetId).length === 0 && (!root.editingProvider || root.editingCommon); text: I18n.t("暂无 API 供应商"); color: Theme.muted; font.pixelSize: Theme.font(11); Layout.topMargin: 8; Layout.bottomMargin: 8 }
+                            ProviderAccountList {
+                                objectName: "apiProviderAccounts"; Layout.fillWidth: true
+                                accounts: backend.config.providers.filter(p => (p.api === "openai" || p.api === "anthropic") && !p.presetId)
+                                editing: root.editingProvider; editingId: root.editId
+                                onEditProvider: provider => root.toggleProvider(provider)
                             }
                             ColumnLayout {
+                                id: providerEditor; objectName: "providerEditor"
+                                parent: root.editingCommon ? commonProviderContent : apiProviderContent
                                 visible: root.editingProvider; Layout.fillWidth: true; spacing: 15
                                 Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
                                 RowLayout { Layout.fillWidth: true; spacing: 16
@@ -188,9 +208,32 @@ Item {
                     SectionCard {
                         width: parent.width
                         ColumnLayout { width: parent.width; spacing: 20
-                            RowLayout { Text { text: I18n.t("模型映射"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold } HelpButton { objectName: "mappingHelp"; help: I18n.t("左侧填写供应商的原始模型名称，右侧是聊天与 API 代理服务使用的别名。每个供应商可有多条映射，别名必须唯一。插件供应商的模型 ID 由模型发现提供。") } }
+                            RowLayout { Layout.fillWidth: true
+                                ActionButton { objectName: "backToMappingProviders"; visible: !!root.mappingAccount; glyph: "arrow-left"; quiet: true; hint: I18n.t("返回供应商"); onClicked: root.openMappingProvider("") }
+                                Text { text: root.mappingAccount ? root.mappingAccount.name : I18n.t("模型映射"); textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold; Layout.fillWidth: true; elide: Text.ElideRight }
+                                HelpButton { objectName: "mappingHelp"; help: I18n.t("左侧填写供应商的原始模型名称，右侧是聊天与 API 代理服务使用的别名。每个供应商可有多条映射，别名必须唯一。插件供应商的模型 ID 由模型发现提供。") }
+                            }
+                            ColumnLayout { visible: !root.mappingAccount; Layout.fillWidth: true; spacing: 8
+                                Text { visible: backend.config.providers.length === 0; text: I18n.t("添加供应商后设置模型别名"); color: Theme.muted; font.pixelSize: Theme.font(11) }
+                                Repeater { model: backend.config.providers
+                                    ItemDelegate {
+                                        required property var modelData
+                                        objectName: "mappingProvider_" + modelData.id
+                                        Layout.fillWidth: true; implicitHeight: Math.max(64, providerLabel.implicitHeight + 28)
+                                        background: Rectangle { radius: 9; color: parent.hovered ? Theme.accentBg : Theme.bg }
+                                        contentItem: RowLayout { spacing: 12
+                                            ColumnLayout { id: providerLabel; Layout.fillWidth: true; spacing: 3
+                                                Text { text: modelData.name; textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12); Layout.fillWidth: true; elide: Text.ElideRight }
+                                                Text { text: modelData.models.length + I18n.t(" 个模型"); color: Theme.muted; font.pixelSize: Theme.font(10) }
+                                            }
+                                            Glyph { name: "chevron-right"; width: Theme.icon(18); height: Theme.icon(18); color: Theme.muted }
+                                        }
+                                        onClicked: root.openMappingProvider(modelData.id)
+                                    }
+                                }
+                            }
+                            ColumnLayout { visible: !!root.mappingAccount; Layout.fillWidth: true; spacing: 20
                             RowLayout { Layout.fillWidth: true; spacing: 14
-                                Text { text: I18n.t("供应商"); color: Theme.muted; font.pixelSize: Theme.font(10); Layout.preferredWidth: 88 }
                                 Text { text: I18n.t("原始模型名称"); color: Theme.muted; font.pixelSize: Theme.font(10); Layout.fillWidth: true; Layout.preferredWidth: 1 }
                                 Item { Layout.preferredWidth: 24 }
                                 Text { text: I18n.t("对外模型别名"); color: Theme.muted; font.pixelSize: Theme.font(10); Layout.fillWidth: true; Layout.preferredWidth: 1 }
@@ -198,7 +241,8 @@ Item {
                             }
                             Repeater {
                                 model: mappingRows
-                                ColumnLayout {
+                                Loader {
+                                    id: mappingDelegate
                                     required property int index
                                     required property string provider
                                     readonly property bool pluginModel: { const p = backend.config.providers.find(p => p.id === provider); return p ? p.api === "plugin" : false }
@@ -209,40 +253,43 @@ Item {
                                     required property bool contextWindowAuto
                                     required property bool visionValue
                                     required property bool visionAuto
-                                    Layout.fillWidth: true; spacing: 4
+                                    active: provider === root.mappingProviderId
+                                    visible: active; Layout.fillWidth: true
+                                    sourceComponent: ColumnLayout {
+                                    width: parent ? parent.width : 0; spacing: 4
                                     RowLayout {
                                         Layout.fillWidth: true; spacing: 14
-                                        Text { text: providerName; color: Theme.ink; font.pixelSize: Theme.font(11); Layout.preferredWidth: 88; elide: Text.ElideRight }
-                                        InputField { objectName: "mappingModelId_" + index; readOnly: pluginModel; text: upstream; Layout.fillWidth: true; Layout.preferredWidth: 1; onTextEdited: mappingRows.setProperty(index, "upstream", text) }
+                                        InputField { objectName: "mappingModelId_" + mappingDelegate.index; readOnly: mappingDelegate.pluginModel; text: mappingDelegate.upstream; Layout.fillWidth: true; Layout.preferredWidth: 1; onTextEdited: mappingRows.setProperty(mappingDelegate.index, "upstream", text) }
                                         Glyph { name: "arrow-right"; width: Theme.icon(24); height: Theme.icon(17) }
-                                        InputField { text: alias; Layout.fillWidth: true; Layout.preferredWidth: 1; onTextEdited: mappingRows.setProperty(index, "alias", text) }
-                                        ActionButton { enabled: !pluginModel; glyph: "trash"; quiet: true; width: Theme.control(34); hint: I18n.t("删除映射"); onClicked: mappingRows.remove(index) }
+                                        InputField { objectName: "mappingAlias_" + mappingDelegate.index; text: mappingDelegate.alias; Layout.fillWidth: true; Layout.preferredWidth: 1; onTextEdited: mappingRows.setProperty(mappingDelegate.index, "alias", text) }
+                                        ActionButton { enabled: !mappingDelegate.pluginModel; glyph: "trash"; quiet: true; width: Theme.control(34); hint: I18n.t("删除映射"); onClicked: mappingRows.remove(mappingDelegate.index) }
                                     }
                                     RowLayout {
-                                        Layout.fillWidth: true; Layout.leftMargin: 102; spacing: 8
+                                        Layout.fillWidth: true; spacing: 8
                                         Text { text: I18n.t("上下文长度"); color: Theme.muted; font.pixelSize: Theme.font(11) }
                                         HelpButton { help: I18n.t("自动按原始模型名匹配，未知名称使用 128000 token。输入整数、256K 或 1M 可自定义；K=1024，M=1048576。恢复自动后跟随模型名。") }
                                         ContextWindowField {
-                                            objectName: "mappingContext_" + index
+                                            objectName: "mappingContext_" + mappingDelegate.index
                                             Layout.preferredWidth: 190; Layout.fillWidth: false
-                                            modelName: upstream; customText: contextWindowText; automatic: contextWindowAuto
-                                            onEdited: (value, automatic) => { mappingRows.setProperty(index, "contextWindowText", value); mappingRows.setProperty(index, "contextWindowAuto", automatic) }
+                                            modelName: mappingDelegate.upstream; customText: mappingDelegate.contextWindowText; automatic: mappingDelegate.contextWindowAuto
+                                            onEdited: (value, automatic) => { mappingRows.setProperty(mappingDelegate.index, "contextWindowText", value); mappingRows.setProperty(mappingDelegate.index, "contextWindowAuto", automatic) }
                                         }
                                         VisionField {
-                                            objectName: "mappingVision_" + index
+                                            objectName: "mappingVision_" + mappingDelegate.index
                                             Layout.leftMargin: 12; Layout.preferredWidth: 190; Layout.fillWidth: false
-                                            modelName: upstream; visionEnabled: visionValue; automatic: visionAuto
-                                            onEdited: (value, automatic) => { mappingRows.setProperty(index, "visionValue", value); mappingRows.setProperty(index, "visionAuto", automatic) }
+                                            modelName: mappingDelegate.upstream; visionEnabled: mappingDelegate.visionValue; automatic: mappingDelegate.visionAuto
+                                            onEdited: (value, automatic) => { mappingRows.setProperty(mappingDelegate.index, "visionValue", value); mappingRows.setProperty(mappingDelegate.index, "visionAuto", automatic) }
                                         }
                                         Item { Layout.fillWidth: true }
+                                    }
                                     }
                                 }
                             }
                             RowLayout { Layout.fillWidth: true; spacing: 10
-                                Picker { id: mappingProvider; property var providers: backend.config.providers.filter(p => p.api === "openai" || p.api === "anthropic"); Layout.preferredWidth: 175; model: providers.map(p => p.name) }
-                                ActionButton { text: I18n.t("添加映射"); glyph: "plus"; enabled: mappingProvider.providers.length > 0; onClicked: { let p = mappingProvider.providers[mappingProvider.currentIndex]; if (p) mappingRows.append({provider:p.id, providerName:p.name, upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, visionValue:false, visionAuto:true}) } }
+                                ActionButton { objectName: "addMappingButton"; text: I18n.t("添加映射"); glyph: "plus"; enabled: !!root.mappingAccount && (root.mappingAccount.api === "openai" || root.mappingAccount.api === "anthropic"); onClicked: { const p = root.mappingAccount; if (p) mappingRows.append({provider:p.id, providerName:p.name, upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, visionValue:false, visionAuto:true}) } }
                                 Item { Layout.fillWidth: true }
                                 ActionButton { objectName: "saveMappingsButton"; text: I18n.t("保存映射"); primary: true; onClicked: { let rows = []; for(let i=0;i<mappingRows.count;i++) { let m=mappingRows.get(i); rows.push({provider:m.provider,upstream:m.upstream,alias:m.alias,contextWindow:m.contextWindowText,contextWindowAuto:m.contextWindowAuto,vision:m.visionValue,visionAuto:m.visionAuto}) } backend.saveMappings(JSON.stringify(rows)) } }
+                            }
                             }
                         }
                     }

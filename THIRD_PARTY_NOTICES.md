@@ -53,3 +53,19 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## Bundled Node.js and npm
 
 Release packages include the official Node.js 22.23.3 distribution and npm from https://nodejs.org/dist/v22.23.3/ . The full distribution retains its LICENSE files and npm dependency notices under `runtime/node/`. Downloads are pinned by SHA-256 in `scripts/node-distributions.json`; the archive origin and version are recorded in build metadata.
+
+## Provider brand icons
+
+The Claude and MiniMax marks are from LobeHub Icons (MIT); see `licenses/LobeHub-Icons.txt`. OpenAI, Kimi, DeepSeek and the GLM/ZCode Z icon come from their official sites. Brand marks belong to their respective owners. Source URLs and SHA-256 values are recorded in `app/icons/providers/sources.json`.
+
+## Native notifications
+
+Windows notifications use WinToast 1.3.2 (MIT), pinned to commit 693efb90376809d1e1b4e6ce867171ce20fe7e76; license: `licenses/WinToast.txt`. Small local changes retain Notification Center click handlers after banner timeout and serialize notification-buffer access. macOS uses the system UserNotifications framework; Linux uses the desktop D-Bus service.
+
+## Fcitx5 Qt input plugin
+
+Linux builds compile fcitx5-qt 5.1.13 from https://github.com/fcitx/fcitx5-qt (archive SHA-256 74b2c43ca865ec9ede257bcd3bdadafc20f571900cb2440a4488335e4d4e91cc) against the bundled Qt. DBusAddons is linked into the plugin. BSD-3-Clause and LGPL-2.1-or-later texts are included under licenses/fcitx5-qt. The pinned unmodified source can be downloaded using native/input-method/fetch.py; the build configuration is included in this repository.
+
+## dbus-next
+
+Python Linux builds use dbus-next 0.2.3 (https://github.com/altdesktop/python-dbus-next), Copyright (c) 2019 Tony Crisci, under the MIT license; see licenses/dbus-next.txt.

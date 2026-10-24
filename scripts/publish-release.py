@@ -50,12 +50,21 @@ for metadata in incoming.rglob('build.json'):
     shutil.copy2(metadata,publish/('Umeko-'+TAG+'-'+target+'.json'))
     for file in [archive,checksum]:shutil.copy2(file,publish/file.name)
     sizes.append((target,archive.stat().st_size))
+    if target.startswith('macos-'):
+        image = report['diskImage']
+        assert image['name'] == archive.name.removesuffix('.zip')+'.dmg'
+        disk = metadata.with_name(image['name']); check = disk.with_name(disk.name+'.sha256')
+        assert disk.stat().st_size == image['bytes'] and image['bytes'] > 0
+        digest = hashlib.sha256(disk.read_bytes()).hexdigest()
+        assert digest == image['sha256'] and check.read_text().split() == [digest, disk.name]
+        for file in [disk,check]: shutil.copy2(file,publish/file.name)
+        sizes.append((target+' (DMG)',image['bytes']))
 assert seen==platforms
 for name in ['umeko-provider-sdk-0.2.1.zip','develop-umeko-provider.zip']:
     matches=list(incoming.rglob(name));assert len(matches)==1
     shutil.copy2(matches[0],publish/name)
 files=sorted(publish.iterdir(),key=lambda p:p.name.casefold())
-assert len(files)==14
+assert len(files)==18
 (publish/'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files),encoding='ascii',newline='\n')
 files=sorted(publish.iterdir(),key=lambda p:p.stat().st_size)
 releases=api('releases')
@@ -63,7 +72,7 @@ release=next((r for r in releases if r['tag_name']==TAG),None)
 if release is None:
     notes=base/'notes.md'
     notes.write_text(
-        "More room for conversations and a smoother file workflow.\n\n- Drag files anywhere in the chat area; after dropping, the app activates its window and focuses the input.\n- Open compact file chips directly. Use consistent context-menu icons to copy files or paths, reveal them, and attach them to chat again.\n- Preview images in a full-window viewer with wheel zoom, drag-to-pan, click-to-close and attachment actions.\n- Expand the left and right sides independently on wide windows. Hover either complete blank margin to reveal the matching Yanami push/pull control; chat switches clear stale hover and focus state.\n- Refresh the pixel Yanami catch and upper-body push/pull artwork, keeping animations idle when hidden.\n- Automatically continue explicit output-length truncation up to five times. Keep code blocks and tables continuous, preserve completed tool results, and never execute truncated tool arguments.\n- Improve reasoning-control spacing and make file-menu labels fit Chinese, English and 50%-200% font sizes.\n\n"
+        (Path(__file__).resolve().parents[1]/'docs/releases'/('v'+version+'.md')).read_text(encoding='utf-8') + '\n'
         + 'Verified CI: https://github.com/' + REPO + '/actions/runs/' + RUN + '\n\n'
         + ''.join(f'- {p}: {n/1048576:.2f} MiB\n' for p, n in sizes), encoding='utf-8')
     payload=base/'create-release.json'
@@ -113,4 +122,4 @@ from release_retention import prune_releases
 prune_releases(REPO, TAG, api, gh)
 print('Published:',published['html_url'],flush=True)
 with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as out:
-    out.write('Published ['+TAG+']('+published['html_url']+') from verified build ['+RUN+'](https://github.com/'+REPO+'/actions/runs/'+RUN+'). All 15 server-side asset digests verified.\n')
+    out.write('Published ['+TAG+']('+published['html_url']+') from verified build ['+RUN+'](https://github.com/'+REPO+'/actions/runs/'+RUN+'). All 19 server-side asset digests verified.\n')

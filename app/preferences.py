@@ -18,7 +18,7 @@ class PreferencesMixin:
     def setFontScale(self, scale):
         if not math.isfinite(scale):
             return
-        scale = round(max(.5, min(2., scale)), 2)
+        scale = round(max(.3, min(2., scale)), 2)
         if scale == self.fontScale:
             return
         self.store.data['ui']['fontScale'] = scale

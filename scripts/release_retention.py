@@ -19,11 +19,11 @@ def prune_releases(repo, tag, api, gh):
     assert repo in ("umeiko/umeko-desktop", "umeiko/umeko-desktop-cpp")
     releases = api("releases?per_page=100")
     current = next(r for r in releases if r["tag_name"] == tag)
-    assert not current["draft"] and len(current["assets"]) == 15
+    assert not current["draft"] and len(current["assets"]) in (15, 19)
     if repo.endswith("-cpp"):
         standard = tag.removesuffix("-minimal")
         pair = [next((r for r in releases if r["tag_name"] == name), None) for name in (standard, standard + "-minimal")]
-        if any(not r or r["draft"] or len(r["assets"]) != 15 or r["target_commitish"] != current["target_commitish"] for r in pair):
+        if any(not r or r["draft"] or len(r["assets"]) not in (15, 19) or r["target_commitish"] != current["target_commitish"] for r in pair):
             print("Old patch cleanup deferred until both native editions are published", flush=True)
             return []
     removed = []

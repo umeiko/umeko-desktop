@@ -65,6 +65,7 @@ def keyring_protect(value, decrypt=False, account=""):
 
 DEFAULTS = {
     "projects": [], "activeProject": "", "removedProjects": [], "sessionMeta": {},
+    "fontFamily": "",
     "employeeId": "", "password": "", "workspace": "", "dark": False, "theme": "light",
     "selectedProvider": "", "selectedModel": "",
     "providers": [],
@@ -131,8 +132,9 @@ class Store:
             system_language = preferred[0] if preferred else QLocale.system().name()
             ui['language'] = os.environ.get('UMEKO_LANGUAGE') or ('zh' if system_language.lower().startswith('zh') else 'en')
             if ui['language'] not in ('zh', 'en'): ui['language'] = 'en'
-        scale = ui.get('fontScale', 1.)
-        ui['fontScale'] = max(.5, min(2., float(scale))) if type(scale) in (int, float) and math.isfinite(scale) else 1.
+        old_ui = saved.get('ui') if isinstance(saved.get('ui'), dict) else {}
+        scale = old_ui.get('fontScale', saved.get('fontScale', ui.get('fontScale', 1.)))
+        ui['fontScale'] = max(.3, min(2., float(scale))) if type(scale) in (int, float) and math.isfinite(scale) else 1.
         if not self.path.exists() or "keys" not in saved.get("server", {}) or output_default_migrated:
             self.save()
 

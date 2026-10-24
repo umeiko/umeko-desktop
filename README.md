@@ -38,6 +38,8 @@ Umeko is a native desktop app for working with [Pi Coding Agent](https://github.
 
 Screenshots show the actual app with isolated demo data. No real accounts, credentials or model requests were used. The interface supports Simplified Chinese and English; its first-run language follows your system.
 
+After a verified update download, the independent Yanami installer can stop all agents, install the new version and restart it. Closing the main window keeps agents running in the system tray; right-click the Yanami avatar to quit. [Updates and recovery](docs/updating.md).
+
 ## Why Umeko
 
 | | What you get |
@@ -66,8 +68,8 @@ Download a package from [Releases](https://github.com/umeiko/umeko-desktop/relea
 | Platform | Package | Launch |
 | --- | --- | --- |
 | Windows x64 | `windows-x64.zip` | `Umeko/Umeko.exe` |
-| macOS Apple Silicon | `macos-arm64.zip` | `Umeko.app` |
-| macOS Intel | `macos-x64.zip` | `Umeko.app` |
+| macOS Apple Silicon | `macos-arm64-*.dmg` or `.zip` | Drag `Umeko.app` to Applications |
+| macOS Intel | `macos-x64-*.dmg` or `.zip` | Drag `Umeko.app` to Applications |
 | Linux x64 | `linux-x64.tar.gz` | `Umeko/Umeko` |
 
 Package names include the version and source commit. **Node.js, npm, Python, Qt, Pi and file-search binaries are bundled.** No separate Node.js or Python installation is required. Linux requires a graphical desktop and Qt runtime libraries; macOS packages are ad-hoc signed and are not notarized. See the [platform notes](docs/user-guide.md#requirements).
@@ -115,3 +117,9 @@ Created by [umeiko](https://github.com/umeiko). Powered by [Pi Coding Agent](htt
 The pixel Yanami logo reuses the app's existing [fan-art asset and provenance](app/icons/yanami-pixel.provenance.json). This is an independent fan project, unaffiliated with the character's rights holders. Dependencies retain their upstream licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
 
 Custom color themes use portable JSON files. Import, update or delete them under **Settings → Appearance**, and copy a complete creation prompt from the same page. See the [theme format and example](docs/themes.md). Reply mascots react to taps, click combos and holds.
+
+Common providers: **账号与供应商 → 添加常见供应商** offers Claude Code, Codex, Kimi Code, DeepSeek, GLM Coding Plan (including Z.ai) and MiniMax subscriptions (M Plan). GLM and MiniMax offer a site dropdown inside the Key form with just China and International; China is selected by default. Enter an API Key and optional account alias; endpoints and models are preconfigured. Multiple accounts receive distinct names and model mappings. See [Common provider accounts](docs/common-providers.md).
+
+Background task completion uses [native desktop notifications](docs/notifications.md) while the window is minimized or in the tray. Click a notification to return to its conversation; permissions and sound follow system settings.
+
+macOS releases include a [drag-to-Applications DMG](docs/macos-dmg.md) for Apple Silicon and Intel, alongside the ZIP used by automatic updates. API proxy aliases use [provider submenus and automatic Base URLs](docs/api-proxy-menus.md).

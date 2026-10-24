@@ -24,7 +24,7 @@ class PlatformTests(unittest.TestCase):
             (plugins / "libibusplatforminputcontextplugin.so").touch()
             env = {"QT_IM_MODULE": "fcitx", "XMODIFIERS": "@im=fcitx"}
             configure_input_method("linux", env, plugins)
-            self.assertEqual(env["QT_IM_MODULE"], "ibus")
+            self.assertEqual(env["QT_IM_MODULE"], "fcitx")
             (plugins / "libfcitx5platforminputcontextplugin.so").touch()
             env = {"XMODIFIERS": "@im=fcitx"}
             configure_input_method("linux", env, plugins)

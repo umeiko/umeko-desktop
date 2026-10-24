@@ -37,6 +37,7 @@ from .app_about import AppAbout
 from .themes import BASES, LIMIT as THEME_LIMIT, theme_library, read_theme
 from .session_preview import SessionPreview
 from .preferences import PreferencesMixin
+from .common_providers import CommonProvidersMixin
 from .chatbox import media_view
 
 
@@ -56,7 +57,7 @@ GREETINGS = (
 )
 
 
-class Controller(PreferencesMixin, PiControllerMixin, QObject):
+class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObject):
     changed = Signal()
     appearanceChanged = Signal()
 
@@ -77,6 +78,7 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
     sidebarChanged = Signal()
     layoutChanged = Signal()
     toast = Signal(str)
+    taskFinished = Signal(str, str, bool)
     jobDone = Signal(str, object)
     approvalRequested = Signal(object)
     approvalChanged = Signal()
@@ -1066,6 +1068,28 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
         self.store.save()
         self.changed.emit()
 
+    @Slot(str)
+    def setFontFamily(self, name):
+        self.store.data["fontFamily"] = "" if name == "系统默认" else name
+        self.store.save()
+        app = QGuiApplication.instance()
+        family = self.store.data["fontFamily"]
+        if isinstance(app, QGuiApplication) and family:
+            font = app.font()
+            font.setFamily(family)
+            app.setFont(font)
+        self.changed.emit()
+
+    @Property('QVariantList', notify=changed)
+    def availableFonts(self):
+        if not isinstance(QGuiApplication.instance(), QGuiApplication):
+            return ["系统默认"]
+        from PySide6.QtGui import QFontDatabase
+        installed = set(QFontDatabase.families())
+        curated = ["Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei UI", "WenQuanYi Micro Hei",
+                   "WenQuanYi Zen Hei", "PingFang SC", "SimSun", "sans-serif", "serif"]
+        return ["系统默认"] + [f for f in curated if f in installed or f in ("sans-serif", "serif")]
+
     @Property('QVariantList', notify=changed)
     def customThemes(self):
         return [dict(row, id='custom:' + row['id']) for row in theme_library(self.store.data.get('themes'))]
@@ -1157,7 +1181,7 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
                     raise ValueError("模型 ID 不能为空；别名不能重复或包含空白")
                 taken.add(alias)
                 models.append({"upstream": upstream, "alias": alias, **normalize_model(row, previous)})
-            provider = {"id": provider_id, "name": name.strip(), "api": api, "baseUrl": base_url, "key": kept_key, "models": models,
+            provider = {**(existing or {}), "id": provider_id, "name": name.strip(), "api": api, "baseUrl": base_url, "key": kept_key, "models": models,
                         "proxy": (existing or {}).get('proxy', {'mode':'system', 'url':''})}
             self.store.data["providers"] = [provider if p["id"] == provider_id else p for p in self.store.data["providers"]]
             if not existing:
@@ -1557,6 +1581,7 @@ class Controller(PreferencesMixin, PiControllerMixin, QObject):
         if self._closing:
             return
         self._closing = True
+        self._appearance_save.stop()
         self._streaming_timer.stop()
         self._session_preview.cancel()
         self._proxy_usage_timer.stop()

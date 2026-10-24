@@ -269,6 +269,26 @@ class KernelUpdateTests(unittest.TestCase):
             self.assertTrue((migrated.directory / "sessions-legacy.json").is_file())
             self.assertEqual(old.path.read_bytes(), original)
 
+    def test_font_scale_and_family_persist_with_clamp(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": str(Path(temp) / "data")}):
+            controller = Controller(ROOT)
+            try:
+                controller.setFontScale(1.5)
+                self.assertEqual(controller.store.data["ui"]["fontScale"], 1.5)
+                controller.setFontScale(99.0)
+                self.assertEqual(controller.store.data["ui"]["fontScale"], 2.0)
+                controller.setFontScale(0.01)
+                self.assertEqual(controller.store.data["ui"]["fontScale"], 0.3)
+                controller.setFontFamily("Noto Sans CJK SC")
+                self.assertEqual(controller.store.data["fontFamily"], "Noto Sans CJK SC")
+                controller.setFontFamily("系统默认")
+                self.assertEqual(controller.store.data["fontFamily"], "")
+                self.assertIn("系统默认", controller.availableFonts)
+            finally:
+                controller.close()
+            self.assertFalse(controller._appearance_save.isActive())
+            self.assertEqual(Store(Path(temp) / "data").data["ui"]["fontScale"], 0.3)
+
 
 if __name__ == "__main__":
     unittest.main()

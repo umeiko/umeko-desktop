@@ -7,6 +7,14 @@ def release(tag, identifier=1, **changes):
 
 
 class ReleaseRetentionTests(unittest.TestCase):
+    def test_new_dmg_releases_have_nineteen_assets(self):
+        old = release("v0.3.1", 2)
+        current = release("v0.3.8", 3); current['assets'] = [{}] * 19
+        minimal = release("v0.3.8-minimal", 4); minimal['assets'] = [{}] * 19
+        rows = [old, current, minimal]; calls = []
+        self.assertEqual(prune_releases("umeiko/umeko-desktop-cpp", "v0.3.8", lambda _: rows, lambda *args: calls.append(args)), ["v0.3.1"])
+        self.assertEqual(len(calls), 1)
+
     def test_keeps_milestones_other_series_future_versions_and_drafts(self):
         tags = ["v0.2.9", "v0.3.0", "v0.3.1", "v0.3.3-minimal", "v0.3.4", "v0.3.4-minimal", "v0.3.5", "voices-v1"]
         rows = [release(tag, i) for i, tag in enumerate(tags)]

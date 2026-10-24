@@ -98,8 +98,8 @@ try:
     assert find('sendGlyph').width()==34
     assert find('attachFilesButton').width()==62
     drag_slider(0)
-    assert backend.fontScale==.5 and find('promptInput').property('font').pixelSize()==7
-    assert find('sendGlyph').width()==9 and find('attachFilesButton').width()==31
+    assert backend.fontScale==.3 and find('promptInput').property('font').pixelSize()==4
+    assert find('sendGlyph').width()==5 and find('attachFilesButton').width()==31
     backend.setFontScale(2);QTest.qWait(300)
     out=ROOT/'artifacts/screenshots';out.mkdir(parents=True,exist_ok=True)
     window.grabWindow().save(str(out/'appearance-english-200.png'))

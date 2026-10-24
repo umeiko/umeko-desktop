@@ -1,59 +1,45 @@
-# Linux 下 fcitx5 中文输入法不可用：完整排障记录
+# Linux fcitx5 输入法：修复与验证
 
-> 结论：**PySide6 自带 Qt 与系统输入法插件的 ABI 对齐问题**，根治方案是 vendored 同版本插件 + 库搜索路径修正。
-> 本文件适用于任何「Qt/PySide 应用在 Linux 下打不了中文」的场景。
+当前两个版本均使用 Qt **6.10.2**；Python 固定 `PySide6-Essentials==6.10.2`。此前文档中“已改用 Qt 6.12”的描述不符合当前依赖，现已更正。
 
-## 问题现象
+## 根因与固定方案
 
-应用输入框只接受英文按键，Ctrl+空格等输入法切换键无效；其他应用（浏览器、Electron 应用）中文输入正常。
+Qt 输入法插件依赖 Qt 私有 ABI，不能把发行版 Qt 6.8 的插件直接交给应用的 Qt 6.10，也不能仅看到插件文件存在就认为可以加载。旧 Arch 二进制还可能要求比目标发行版更新的 C++ 运行库。自动改用 `ibus` 也不能保证 fcitx5 已启用对应前端。
 
-## 根因分层
+两个项目现在都从 SHA-256 固定的 fcitx5-qt **5.1.13** 源码编译插件，使用各自应用的 Qt SDK。源码和构建规则见 `native/input-method/`，不修改系统 Qt 或输入法设置。
 
-Linux 中文输入链路：`Qt 平台输入上下文插件(.so)` → `DBus` → `fcitx5 守护进程`。本项目上每一层都有坑：
+- `BUILD_ONLY_PLUGIN=ON` 将 DBusAddons 编入插件，不依赖系统 `libFcitx5Qt6DBusAddons`。
+- 不启用私有 Qt Wayland workaround，避免额外加载系统旧版 `Qt6WaylandClient`。未指定输入法的 Wayland 会话仍交给 Qt 原生文本输入协议。
+- 插件位于应用自己的 `plugins/platforminputcontexts/`；Python 源码开发使用 `build/input-method/plugins/`。启动时先选择应用自己的插件。
+- 不再自动把 `fcitx` 改为 `ibus`，也不再通过启动脚本注入旧 `.local/fcitx5-qt6` 库路径。该目录不再是运行依赖。
+- 发布包自带插件和许可；打包检查会在移除 SDK/外部库路径后确认 `IME_PLUGIN_READY:1`。插件源码归档中的链接会解引用复制，支持不允许符号链接的 exFAT 工作区。
 
-| 层 | 问题 | 典型错误 |
-|---|---|---|
-| 1 | PySide6 自带 Qt 只打包 ibus/compose 插件，**没有 fcitx5 插件** | 输入法完全无反应，无任何报错 |
-| 2 | Debian 系插件按 Qt 6.8 编译，其 DBusAddons 链接 Qt **私有 API**，与运行时 6.10 冲突 | `undefined symbol: _ZTI20QGenericUnixServices, version Qt_6_PRIVATE_API` |
-| 3 | 换 Arch 的插件：Arch 已按 **Qt 6.12** 构建，超过运行时 6.10 | `Plugin uses incompatible Qt library (6.12.0)`（Qt 拒绝比运行时新的插件） |
-| 4 | 插件 NEEDED 的 `libQt6WaylandClient.so.6` 被动态链接器解析到**系统 6.8 旧库**而非 PySide6 自带的 6.12 库 | 又是第 2 层的私有符号错误 |
+## 从源码准备
 
-关键教训：**Qt6 插件兼容性 = 同主版本 + 构建版本 ≤ 运行时版本 + 整条依赖链的 Qt 库同源**。
+桌面需已运行 fcitx5，并安装中文引擎，例如 `fcitx5-chinese-addons`。构建机还需 `extra-cmake-modules libxkbcommon-dev libxcb1-dev libx11-dev` 和 C++ 编译器。
 
-## 解决方案（本项目已实施）
+Python：`bash setup.sh` 自动准备与 PySide 同版的 Qt SDK 并构建插件。已有 SDK 可用 `QT_ROOT=/path/to/Qt/6.10.2/gcc_64 .venv/bin/python scripts/build-input-method.py`。`Start-Umeko.sh` 和直接运行 `main.py` 均使用相同输入法配置。
 
-1. **Vendored Qt6.12 构建的 fcitx5 插件**：从 Arch Linux `fcitx5-qt` 包提取
-   `libfcitx5platforminputcontextplugin.so` 和 `libFcitx5Qt6DBusAddons.so.1`，
-   存放于 `.local/fcitx5-qt6/`（已入库，约 1MB），`setup.sh` 自动安装到 PySide6 插件目录。
-2. **Qt 版本对齐**：`requirements.txt` 锁定 `PySide6-Essentials==6.12.0`（自带 Qt 6.12.0，与插件精确同版）。
-   ⚠️ 升级 PySide6 时必须同步更换插件构建版本。
-3. **库搜索路径修正**：`start.sh` 把 PySide6 自带 Qt 库目录置于 `LD_LIBRARY_PATH` 最前，
-   插件的 Qt 依赖全部解析到版本一致的库，系统其他 Qt 应用不受影响。
+C++：普通 CMake 构建自动编译并安装插件，SDK 版本与主程序一致，无需单独安装发行版 Qt 输入法插件。
 
-## 验证方法
+保留应用级覆盖：`UMEKO_QT_IM_MODULE=ibus`、`fcitx` 或空值（Qt 平台默认）。用户显式选择始终优先。
+
+## 验证，不能用 offscreen 替代
 
 ```bash
-# 1. 插件加载过程（失败会打印 cannot load / incompatible）
-QT_QPA_PLATFORM=xcb QT_IM_MODULE=fcitx QT_DEBUG_PLUGINS=1 \
-  LD_LIBRARY_PATH=<PySide6的Qt/lib>:.local/fcitx5-qt6/lib \
-  ./.venv/bin/python -c "from PySide6.QtWidgets import QApplication,QTextEdit; \
-  app=QApplication([]); t=QTextEdit(); t.show(); t.setFocus(); app.exec()"
+# Python 源码：真实 fcitx 上下文、拼音预编辑，再提交“你”到 Qt Quick TextArea。
+QT_QPA_PLATFORM=xcb .venv/bin/python tests/linux_ime_smoke.py
+# 同一测试也可加载 C++ 构建出的插件。
+QT_QPA_PLATFORM=xcb .venv/bin/python tests/linux_ime_smoke.py --plugins ../umeko-desktop-cpp/build/plugins
 
-# 2. fcitx5 侧注册表（应出现 program:python / Umeko，聚焦时 focus:1）
-dbus-send --print-reply --dest=org.fcitx.Fcitx5 /controller \
-  org.fcitx.Fcitx.Controller1.DebugInfo | grep program:
+# 实际应用应显示应用自带插件 loaded library，不能有该插件的 ABI/符号错误。
+QT_QPA_PLATFORM=xcb QT_DEBUG_PLUGINS=1 ./Start-Umeko.sh
+# C++ 项目中：
+QT_QPA_PLATFORM=xcb QT_DEBUG_PLUGINS=1 build/UmekoCpp --resource-root "$PWD" --data-dir "$PWD/build/ime-profile"
 ```
 
-**探针陷阱**：`QT_QPA_PLATFORM=offscreen` 不会实例化输入上下文，用它做探针会得到「零报错」的假阴性——必须用真实 xcb 窗口。
+真实桌面测试通过插件的原始 D-Bus 连接向 fcitx5 发送拼音按键，并检查预编辑和中文提交；不伪造 `QInputMethodEvent`。测试结束恢复此前输入法，不发送模型请求。
 
-## 维护注意
+`QT_QPA_PLATFORM=offscreen` 不实例化真实桌面的输入上下文，只适合 UI 和包加载检查。它通过不能证明中文能输入。手动验收还应覆盖切换输入法、候选窗位置、长文本、回车确认和密码框。
 
-- `.local/fcitx5-qt6/` 是运行所必需，勿删除
-- PySide6 升降级时检查插件 Qt 构建版本是否仍 ≤ 运行时版本；不满足时重新从 Arch 拉对应构建
-- 用户侧仅需装好 fcitx5（`fcitx5` + 中文引擎如 `fcitx5-chinese-addons`），无其他配置
-
-## 相关文件
-
-- `.local/fcitx5-qt6/` — vendored 插件与 DBusAddons 库
-- `setup.sh` 第 5 步 — 插件安装逻辑
-- `start.sh` — LD_LIBRARY_PATH 注入逻辑
+上游：[Fcitx Qt 插件源码](https://github.com/fcitx/fcitx5-qt)、[Fcitx 5 设置](https://fcitx-im.org/wiki/Setup_Fcitx_5)。升级 Qt 时必须同步重建和复测插件，不能复用旧的二进制。

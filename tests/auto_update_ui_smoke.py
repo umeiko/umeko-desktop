@@ -37,7 +37,7 @@ try:
     QTest.qWait(100)
     button=find('sidebarUpdateButton')
     assert not button.isVisible()
-    release={'state':'available','version':'v99.0.0','message':'发现新版本 v99.0.0','asset':{'name':'fixture.zip'}}
+    release={'state':'available','version':'v99.0.0','message':'发现新版本 v99.0.0','asset':{'name':'fixture.zip','sha256':'a'*64}}
     backend._view.phase='running'
     backend.chatChanged.emit()
     with patch('app.app_about.fetch_latest_release',return_value=release) as check, patch('app.app_about.QTimer.singleShot',side_effect=lambda delay,context,call:call()) as timer:
@@ -60,9 +60,20 @@ try:
         assert not button.isEnabled() and backend.running and window.property('page')=='chat'
         about.downloadUpdate();download.assert_called_once()
         gate.set();wait(lambda:about.download.get('state')=='ready')
-    with patch('app.app_about.QDesktopServices.openUrl',return_value=True) as opened:
-        QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,button.mapToScene(button.boundingRect().center()).toPoint())
-        assert Path(opened.call_args.args[0].toLocalFile())==Path(location).parent
+    with patch.object(about.updater, 'install') as install:
+        def click(item):
+            QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,item.mapToScene(item.boundingRect().center()).toPoint())
+            QTest.qWait(30)
+        click(button)
+        wait(lambda:find('confirmAppInstallButton').isVisible())
+        install.assert_not_called()
+        assert backend.running
+        click(find('cancelAppInstallButton'))
+        install.assert_not_called()
+        click(button)
+        click(find('confirmAppInstallButton'))
+        install.assert_called_once()
+        assert backend.running
     backend._view.phase='idle'
     backend.chatChanged.emit()
     assert not warnings,'\n'.join(warnings)

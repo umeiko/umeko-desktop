@@ -41,6 +41,19 @@ def status(port, key="", header="Authorization", origin=None):
 
 
 class KeyTests(unittest.TestCase):
+    def test_lan_addresses_prioritize_physical_interfaces_and_skip_unusable_ips(self):
+        from types import SimpleNamespace
+        from PySide6.QtNetwork import QHostAddress, QNetworkInterface
+        from app.api_keys import lan_addresses
+        def interface(name, ip, up=True):
+            return SimpleNamespace(name=lambda:name, type=lambda:QNetworkInterface.Ethernet,
+                flags=lambda:QNetworkInterface.IsUp if up else QNetworkInterface.InterfaceFlag(0),
+                addressEntries=lambda:[SimpleNamespace(ip=lambda:QHostAddress(ip))])
+        interfaces = [interface('docker0', '172.17.0.1'), interface('en0', '192.168.15.8'),
+            interface('en1', '169.254.1.2'), interface('lo', '127.0.0.1'), interface('en2', '192.168.1.9', False)]
+        with patch.object(QNetworkInterface, 'allInterfaces', return_value=interfaces):
+            self.assertEqual(lan_addresses(), ['192.168.15.8', '172.17.0.1'])
+
     def test_generated_verifiers_validation_and_usage(self):
         key, other = generate_key(), generate_key()
         self.assertNotEqual(key, other)

@@ -1,0 +1,31 @@
+{
+  "claude.svg": {
+    "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/claude-color.svg",
+    "sha256": "a3101f3047a119aa11825ad9369510f0c472428c8c52d420e31bc62db44a8364",
+    "license": "MIT, LobeHub Icons; Claude brand mark belongs to Anthropic",
+    "licenseUrl": "https://github.com/lobehub/lobe-icons/blob/master/LICENSE"
+  },
+  "codex.png": {
+    "url": "https://developers.openai.com/favicon.png",
+    "sha256": "8d5575ee667ff715cd3e3074d5296edc68d5aadd89720d203e13131b68b22a04"
+  },
+  "kimi.png": {
+    "url": "https://www.kimi.com/pwa-192.png",
+    "sha256": "6c14f9c3062e953b3ed57ae3e19db931c1c1bba38d4d8d55550544f31d55e469"
+  },
+  "deepseek.svg": {
+    "url": "https://api-docs.deepseek.com/img/favicon.svg",
+    "sha256": "0bf5e13ce954f13423a692f083f5cb0f4bcfde35c8b812f64efe89dabfdaed20"
+  },
+  "minimax.svg": {
+    "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/2790e33d00f1a59ef59171218b39d26418f48f84/packages/static-svg/icons/minimax-color.svg",
+    "sha256": "7f7187fa6d9b341ac5f22f6c5a970523afb439dc45566d64eb4f4b9b604d6b01",
+    "license": "MIT, LobeHub Icons; brand mark belongs to its respective owner",
+    "licenseUrl": "https://github.com/lobehub/lobe-icons/blob/2790e33d00f1a59ef59171218b39d26418f48f84/LICENSE"
+  },
+  "glm.png": {
+    "url": "https://zcode.z.ai/favicon-192x192.png?v=20260707-transparent",
+    "sha256": "089bdfa74910eaed241eac46bf5d02bb5718f15d8d6b247a1ee61b3372c9c82c",
+    "description": "Official ZCode favicon; Z brand mark belongs to Zhipu / Z.ai."
+  }
+}

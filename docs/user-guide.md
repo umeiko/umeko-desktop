@@ -71,7 +71,7 @@ Setup and build scripts fetch fd 10.3.0 and ripgrep 14.1.1 from their official u
 
 ## Fcitx5 on Linux
 
-PySide ships its own Qt libraries, so a system Fcitx Qt plugin may have an incompatible Qt ABI. Before Qt starts, Umeko checks its input-context plugins: it uses Fcitx when bundled, otherwise the bundled IBus plugin for Fcitx5's IBus-compatible interface. Native Wayland input and unrelated IME choices are preserved. Fcitx5 must already be running in the same desktop session.
+Umeko bundles an Fcitx5 input plugin built from pinned sources against the same Qt as PySide. It uses its own plugin and Qt libraries, without changing system Qt or silently switching to an inactive IBus frontend. Native Wayland input and explicit IME choices are preserved. Fcitx5 and a Chinese engine must already be running in the same desktop session. See the [build and verification guide](linux-ime-fcitx5.md).
 
 Override the per-application choice if needed:
 
@@ -262,3 +262,5 @@ On Windows use `.venv/Scripts/python.exe`. Fixtures use temporary directories an
 Hover a conversation message to reveal its recorded time and copy action. Double-click selects a word; triple-click selects a paragraph. Model selection and sidebar highlights use continuous PID motion.
 
 **Settings → Agent → Pi** groups configuration into two levels. Search opens matching sections without discarding their collapsed state or unsaved input. Inline editors, the API Key table, tool catalog and release notes follow the page wheel until clicked; click outside to return to page scrolling. Help popups stay open for 3 seconds after leaving, or indefinitely while their text is selected; click outside to dismiss them.
+
+For macOS, open the matching DMG, drag Umeko into Applications, eject the image and open the installed app. API proxy model aliases are grouped by provider account; the connection panel automatically displays copyable local or LAN Base URLs. See [DMG installation](macos-dmg.md) and [proxy menus](api-proxy-menus.md).

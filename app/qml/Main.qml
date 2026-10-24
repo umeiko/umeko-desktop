@@ -94,9 +94,10 @@ ApplicationWindow {
         else backend.openChatboxPath(item.path, false)
     }
     Timer { id: dropFocusTimer; interval: 80; onTriggered: { backend.activateChatWindow(); composer.focusInput() } }
-    onPageChanged: { if (page !== "chat") cancelSidebarSelection(); backend.setConversationVisible(page === "chat" && active) }
-    onActiveChanged: backend.setConversationVisible(page === "chat" && active)
-    Component.onCompleted: backend.setConversationVisible(page === "chat" && active)
+    readonly property bool conversationVisible: page === "chat" && visible && visibility !== Window.Minimized && active
+    onPageChanged: if (page !== "chat") cancelSidebarSelection()
+    onConversationVisibleChanged: backend.setConversationVisible(conversationVisible)
+    Component.onCompleted: backend.setConversationVisible(conversationVisible)
     Shortcut { sequence: "Ctrl+N"; onActivated: window.startChat() }
     Shortcut { sequence: "Ctrl+S"; enabled: window.page === "chat" && !chatCover.visible; onActivated: composer.sendMessage(true) }
     Shortcut { sequence: "Ctrl+,"; onActivated: window.settings(0) }
@@ -231,7 +232,7 @@ ApplicationWindow {
             Row { id: windowControls; anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 18; spacing: 2
                 ActionButton { glyph: "minus"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最小化"); onClicked: window.showMinimized() }
                 ActionButton { glyph: "maximize"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最大化"); onClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
-                ActionButton { glyph: "x"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("关闭"); onClicked: window.close() }
+                ActionButton { objectName: "closeToTrayButton"; glyph: "x"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("收起到托盘"); onClicked: window.close() }
             }
         }
 

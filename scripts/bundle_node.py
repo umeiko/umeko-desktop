@@ -22,6 +22,24 @@ def node_binary(folder, target):
     return folder / ('node.exe' if target.startswith('windows') else 'bin/node')
 
 
+def prepare_cli_launchers(folder, target):
+    """Keep npm usable when a portable bundle is copied without symlinks."""
+    if target.startswith('windows'):
+        return
+    for name, entry in {'npm':'npm/bin/npm-cli.js', 'npx':'npm/bin/npx-cli.js',
+                        'corepack':'corepack/dist/corepack.js'}.items():
+        script = folder / 'lib/node_modules' / entry
+        if not script.is_file():
+            if name == 'corepack': continue
+            raise RuntimeError('Bundled Node CLI is missing: '+name)
+        path = folder / 'bin' / name
+        text = '#!/bin/sh\nlauncher_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\n'
+        text += 'exec "$launcher_dir/node" "$launcher_dir/../lib/node_modules/'+entry+'" "$@"\n'
+        if path.is_symlink(): path.unlink()
+        path.write_text(text, encoding='utf-8')
+        path.chmod(0o755)
+
+
 def install_node(target, destination):
     config = json.loads((ROOT / 'scripts/node-distributions.json').read_text(encoding='utf-8'))
     record = config['platforms'][target]
@@ -30,6 +48,7 @@ def install_node(target, destination):
         existing = json.loads((destination / 'distribution.json').read_text(encoding='utf-8'))
         if existing != metadata or not node_binary(destination, target).is_file():
             raise RuntimeError('Node staging destination contains a different distribution')
+        prepare_cli_launchers(destination, target)
         return metadata
     cache = ROOT / 'runtime/downloads/node'
     cache.mkdir(parents=True, exist_ok=True)
@@ -51,7 +70,7 @@ def install_node(target, destination):
                 shutil.copyfileobj(response, stream)
         os.replace(temporary, archive)
         if not valid(): raise RuntimeError('Node.js archive SHA-256 mismatch')
-    with tempfile.TemporaryDirectory(prefix='node-extract-', dir=cache) as staging:
+    with tempfile.TemporaryDirectory(prefix='umeko-node-extract-') as staging:
         if archive.suffix == '.zip':
             with zipfile.ZipFile(archive) as package:
                 for entry in package.infolist():
@@ -65,7 +84,8 @@ def install_node(target, destination):
         folders = list(Path(staging).iterdir())
         if len(folders) != 1 or not node_binary(folders[0], target).is_file():
             raise RuntimeError('Node.js executable is missing from the archive')
-        shutil.copytree(folders[0], destination, symlinks=True)
+        prepare_cli_launchers(folders[0], target)
+        shutil.copytree(folders[0], destination, symlinks=False)
     (destination / 'distribution.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')
     return metadata
 

@@ -23,8 +23,13 @@ Column {
                 Text { objectName: "fontScaleLabel"; text: Math.round(backend.fontScale * 100) + "%"; color: Theme.accent; font.pixelSize: Theme.font(13) }
                 ActionButton { text: I18n.t("恢复默认"); quiet: true; onClicked: backend.setFontScale(1) }
             }
-            Slider { objectName: "fontScaleSlider"; Layout.fillWidth: true; from: .5; to: 2; stepSize: .01; value: backend.fontScale; onMoved: backend.setFontScale(value); Accessible.name: I18n.t("字体大小") }
-            Text { text: I18n.t("50%–200%，即时预览并自动保存。"); color: Theme.muted; font.pixelSize: Theme.font(11) }
+            RowLayout {
+                Layout.fillWidth: true; spacing: 14
+                Text { text: I18n.t("界面字体"); color: Theme.ink; font.pixelSize: Theme.font(12) }
+                Picker { objectName: "interfaceFontFamily"; Layout.fillWidth: true; model: backend.availableFonts; currentIndex: Math.max(0, model.indexOf(backend.config.fontFamily || "系统默认")); onActivated: index => backend.setFontFamily(model[index]) }
+            }
+            Slider { objectName: "fontScaleSlider"; Layout.fillWidth: true; from: .3; to: 2; stepSize: .01; value: backend.fontScale; onMoved: backend.setFontScale(value); Accessible.name: I18n.t("字体大小") }
+            Text { text: I18n.t("30%–200%，即时预览并自动保存。"); color: Theme.muted; font.pixelSize: Theme.font(11) }
             Text { text: I18n.t("这是字体大小预览 Aa 0123456789"); color: Theme.ink; font.pixelSize: Theme.font(16); wrapMode: Text.Wrap; Layout.fillWidth: true }
         }
     }

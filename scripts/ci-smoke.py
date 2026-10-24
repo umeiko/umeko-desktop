@@ -34,6 +34,8 @@ def main():
         CODEAGENT_DIAGNOSTICS=str(diagnostic), QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software")
     environment["PATH"] = str(report_dir / "no-system-node")
     environment.pop("NODE_OPTIONS", None); environment.pop("NODE_PATH", None)
+    for name in ('QT_PLUGIN_PATH', 'LD_LIBRARY_PATH', 'QML_IMPORT_PATH', 'QML2_IMPORT_PATH'):
+        environment.pop(name, None)
     node = resources / "runtime/node" / ("node.exe" if os.name == "nt" else "bin/node")
     if not node.is_file(): raise RuntimeError("Bundled Node.js is missing")
     diagnostic.unlink(missing_ok=True)
@@ -43,7 +45,10 @@ def main():
     log = diagnostic.read_text(encoding="utf-8") if diagnostic.exists() else ""
     lines = log.strip().splitlines()
     selected = next((line.split(":", 1)[1] for line in lines if line.startswith("NODE_EXECUTABLE:")), "")
-    if result.returncode or lines != ["QML_READY", "NODE_EXECUTABLE:" + selected, "EXIT:0"] or not selected or Path(selected).resolve() != node.resolve():
+    expected = ['QML_READY', 'NATIVE_NOTIFICATIONS_READY:1']
+    if sys.platform.startswith('linux'): expected.append('IME_PLUGIN_READY:1')
+    expected += ["NODE_EXECUTABLE:" + selected, "TRAY_ICON_READY:1", "EXIT:0"]
+    if result.returncode or lines != expected or not selected or Path(selected).resolve() != node.resolve():
         raise RuntimeError("Frozen GUI startup failed: " + log + result.stderr[-2000:])
     if not screenshot.is_file() or screenshot.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
         raise RuntimeError("Frozen GUI did not render a screenshot")

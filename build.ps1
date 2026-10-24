@@ -8,8 +8,10 @@ $buildBundlePrefix = (Join-Path $buildDestination 'Umeko').TrimEnd('\') + '\'
 foreach ($buildProcess in @(Get-Process Umeko -ErrorAction SilentlyContinue)) {
     if (-not $buildProcess.Path -or $buildProcess.Path.StartsWith($buildBundlePrefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Close the app running from the target bundle before building. No output was changed.' }
 }
-& '.venv/Scripts/python.exe' -m pip install pyinstaller==6.19.0
+& '.venv/Scripts/python.exe' -m pip install pyinstaller==6.19.0 cmake==3.31.6
 if ($LASTEXITCODE -ne 0) { throw 'Build dependency installation failed' }
+& '.venv/Scripts/python.exe' scripts/build-notifications.py
+if ($LASTEXITCODE -ne 0) { throw 'Native notification adapter build failed' }
 & '.venv/Scripts/python.exe' scripts/bundle_node.py
 if ($LASTEXITCODE -ne 0) { throw 'Bundled Node.js preparation failed' }
 & '.venv/Scripts/python.exe' prepare_runtime.py
@@ -26,7 +28,7 @@ try {
     # Exclude unrelated SDK DLLs in PATH. Qt uses Windows' unversioned ICU shim;
     # Poppler's incompatible icuuc.dll must not be selected by the dependency scan.
     $env:PATH = "$PSScriptRoot/.venv/Scripts;$env:SystemRoot/System32;$env:SystemRoot"
-    & '.venv/Scripts/python.exe' -m PyInstaller --clean --noconfirm --windowed --onedir --name Umeko --distpath $buildDestination --icon app/icons/app.ico --add-data 'app/qml;app/qml' --add-data 'app/theme-prompt.txt;app' --add-data 'app/icons;app/icons' --add-data 'runtime/bridge.mjs;runtime' --add-data 'runtime/provider-policy.mjs;runtime' --add-data 'runtime/resources.mjs;runtime' --add-data 'runtime/chatbox.mjs;runtime' --add-data 'runtime/network-retry.mjs;runtime' --add-data 'build/build-info.json;.' --add-data 'build/provider-resources;provider-resources' --add-data 'THIRD_PARTY_NOTICES.md;.' main.py
+    & '.venv/Scripts/python.exe' -m PyInstaller --clean --noconfirm --windowed --onedir --name Umeko --distpath $buildDestination --icon app/icons/app.ico --add-binary 'build/notification-runtime/umeko_notifications.dll;notification-runtime' --add-data 'app/qml;app/qml' --add-data 'app/theme-prompt.txt;app' --add-data 'app/provider-presets.json;app' --add-data 'app/icons;app/icons' --add-data 'runtime/update-engine.mjs;runtime' --add-data 'runtime/bridge.mjs;runtime' --add-data 'runtime/provider-policy.mjs;runtime' --add-data 'runtime/resources.mjs;runtime' --add-data 'runtime/chatbox.mjs;runtime' --add-data 'runtime/network-retry.mjs;runtime' --add-data 'build/build-info.json;.' --add-data 'build/provider-resources;provider-resources' --add-data 'THIRD_PARTY_NOTICES.md;.' --add-data 'licenses;licenses' main.py
     if ($LASTEXITCODE -ne 0) { throw 'Application packaging failed' }
 } finally {
     $env:PATH = $originalBuildPath

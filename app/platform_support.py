@@ -80,12 +80,20 @@ def configure_input_method(platform=None, environment=None, plugin_directory=Non
     environment = os.environ if environment is None else environment
     if not platform.startswith("linux"):
         return
+    if plugin_directory is None:
+        from PySide6.QtCore import QCoreApplication, QLibraryInfo
+        # Owned plugin first, without modifying PySide's installation or system Qt.
+        owned = Path(__file__).resolve().parents[1] / 'build/input-method/plugins'
+        if not getattr(sys, 'frozen', False) and owned.is_dir():
+            QCoreApplication.addLibraryPath(str(owned))
+            plugin_directory = owned / 'platforminputcontexts'
+        else:
+            plugin_directory = Path(QLibraryInfo.path(QLibraryInfo.PluginsPath)) / 'platforminputcontexts'
+        # Resolve all Qt dependencies to PySide's Qt before loading the plugin.
+        from PySide6 import QtDBus
     if "UMEKO_QT_IM_MODULE" in environment:
         environment["QT_IM_MODULE"] = environment["UMEKO_QT_IM_MODULE"]
         return
-    if plugin_directory is None:
-        from PySide6.QtCore import QLibraryInfo
-        plugin_directory = Path(QLibraryInfo.path(QLibraryInfo.PluginsPath)) / "platforminputcontexts"
     plugins = Path(plugin_directory)
     module = environment.get("QT_IM_MODULE", "")
     fcitx = module in ("fcitx", "fcitx5") or (not module and "fcitx" in environment.get("XMODIFIERS", ""))
@@ -93,7 +101,3 @@ def configure_input_method(platform=None, environment=None, plugin_directory=Non
         return  # Preserve native Wayland text input and unrelated IME choices.
     if any(plugins.glob("*fcitx*.so")):
         environment["QT_IM_MODULE"] = "fcitx"
-    elif any(plugins.glob("*ibus*.so")):
-        # Fcitx5 implements the IBus protocol. PySide's own Qt normally bundles
-        # this plugin; system fcitx Qt plugins may use an incompatible Qt ABI.
-        environment["QT_IM_MODULE"] = "ibus"

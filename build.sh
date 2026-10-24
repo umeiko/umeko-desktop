@@ -10,7 +10,9 @@ output = (root / sys.argv[1]).resolve()
 if output == root or not output.is_relative_to(root):
     raise SystemExit('Build output must stay inside this workspace')
 PY
-.venv/bin/python -m pip install pyinstaller==6.19.0
+.venv/bin/python -m pip install pyinstaller==6.19.0 cmake==3.31.6
+.venv/bin/python scripts/build-notifications.py
+if [[ "$(uname -s)" == Linux ]]; then .venv/bin/python scripts/build-input-method.py; fi
 .venv/bin/python scripts/bundle_node.py
 .venv/bin/python prepare_runtime.py
 .venv/bin/python scripts/fetch-search-tools.py
@@ -19,32 +21,43 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python build_icons.py
 .venv/bin/python scripts/build-provider-resources.py
 extra=()
 if [[ "$(uname -s)" == Darwin ]]; then
-    extra+=(--icon app/icons/app.icns --hidden-import keyring.backends.macOS)
+    extra+=(--icon app/icons/app.icns --osx-bundle-identifier io.github.umeiko.umeko-desktop --hidden-import keyring.backends.macOS --add-binary "build/notification-runtime/libumeko_notifications.dylib:notification-runtime")
 else
+    extra+=(--add-binary "build/input-method/plugins/platforminputcontexts/libfcitx5platforminputcontextplugin.so:PySide6/Qt/plugins/platforminputcontexts" --hidden-import PySide6.QtDBus)
     extra+=(--hidden-import keyring.backends.SecretService --hidden-import keyring.backends.kwallet)
 fi
+bundle_output="$output"
+if [[ "$(uname -s)" == Linux ]]; then
+    # PyInstaller creates library links; stage on a native filesystem, then copy.
+    bundle_output=$(mktemp -d "${TMPDIR:-/tmp}/umeko-freeze.XXXXXX")
+    trap 'rm -rf -- "$bundle_output"' EXIT
+fi
 .venv/bin/python -m PyInstaller --clean --noconfirm --windowed --onedir --name Umeko \
-    --distpath "$output" "${extra[@]}" --collect-all keyring \
-    --add-data 'app/qml:app/qml' --add-data 'app/theme-prompt.txt:app' --add-data 'app/icons:app/icons' \
-    --add-data 'runtime/bridge.mjs:runtime' --add-data 'runtime/provider-policy.mjs:runtime' \
+    --distpath "$bundle_output" "${extra[@]}" --collect-all keyring \
+    --add-data 'app/qml:app/qml' --add-data 'app/theme-prompt.txt:app' --add-data 'app/provider-presets.json:app' --add-data 'app/icons:app/icons' \
+    --add-data 'runtime/update-engine.mjs:runtime' --add-data 'runtime/bridge.mjs:runtime' --add-data 'runtime/provider-policy.mjs:runtime' \
     --add-data 'runtime/resources.mjs:runtime' --add-data 'runtime/chatbox.mjs:runtime' --add-data 'runtime/network-retry.mjs:runtime' \
-    --add-data 'build/build-info.json:.' --add-data 'build/provider-resources:provider-resources' --add-data 'THIRD_PARTY_NOTICES.md:.' main.py
-.venv/bin/python - "$output" <<'PY'
+    --add-data 'build/build-info.json:.' --add-data 'build/provider-resources:provider-resources' --add-data 'THIRD_PARTY_NOTICES.md:.' --add-data 'licenses:licenses' main.py
+.venv/bin/python - "$output" "$bundle_output" <<'PY'
 from pathlib import Path
 import shutil, sys
 from app.pi_runtime import RELEASE_NAME
 root = Path.cwd().resolve()
 output = (root / sys.argv[1]).resolve()
+bundle = (root / sys.argv[2]).resolve()
 if not output.is_relative_to(root) or output == root:
     raise SystemExit('Build output must stay inside this workspace')
-targets = [output / 'Umeko/_internal']
+targets = [bundle / 'Umeko/_internal']
 if sys.platform == 'darwin':
-    targets.append(output / 'Umeko.app/Contents/Frameworks')
+    targets.append(bundle / 'Umeko.app/Contents/Frameworks')
 for target in targets:
     if target.is_dir():
         shutil.copytree(root / 'runtime/releases' / RELEASE_NAME, target / 'runtime/releases' / RELEASE_NAME, dirs_exist_ok=True)
         shutil.copytree(root / 'runtime/node', target / 'runtime/node', dirs_exist_ok=True, symlinks=True)
-shutil.copy2(root / 'README.md', output / 'Umeko/README.md')
+shutil.copy2(root / 'README.md', bundle / 'Umeko/README.md')
+if bundle != output:
+    if (output / 'Umeko').exists(): shutil.rmtree(output / 'Umeko')
+    shutil.copytree(bundle / 'Umeko', output / 'Umeko', symlinks=False)
 print('Build output:', output)
 PY
 if [[ "$(uname -s)" == Darwin ]]; then
