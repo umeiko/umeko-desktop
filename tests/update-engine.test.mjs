@@ -176,3 +176,11 @@ test('framework-style internal symlinks survive installation', {skip:process.pla
     assert.equal(await fs.readlink(path.join(job.installDir,'node-link')),'runtime/node');
   }
 });
+test('existing installation paths through a directory alias are canonicalized', {skip:process.platform==='win32'}, async t=>{
+  const {job,jobFile,base}=await fixture(t,zip(entries()));
+  const alias=path.join(base,'installed-alias');
+  await fs.symlink(job.installDir,alias);
+  job.executable=path.join(alias,exe);
+  await install(job,jobFile);
+  assert.equal(await fs.readFile(job.executable,'utf8'),'new app');
+});

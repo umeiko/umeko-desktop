@@ -12,7 +12,7 @@ version = qVersion()
 qt = Path(os.environ.get('QT_ROOT', ROOT/'build/qt-sdk'/version/'gcc_64'))
 if not (qt/'lib/cmake/Qt6/Qt6Config.cmake').is_file():
     subprocess.run([sys.executable, '-m', 'aqt', 'install-qt', 'linux', 'desktop', version,
-                    'linux_gcc_64', '--outputdir', str(ROOT/'build/qt-sdk'), '--archives', 'qtbase'], check=True)
+                    'linux_gcc_64', '--outputdir', str(ROOT/'build/qt-sdk'), '--archives', 'qtbase', 'icu'], check=True)
     qt = ROOT/'build/qt-sdk'/version/'gcc_64'
 detected = subprocess.check_output([str(qt/'bin/qmake'), '-query', 'QT_VERSION'], text=True).strip()
 if detected != version: raise SystemExit(f'IME SDK Qt {detected} differs from PySide Qt {version}')

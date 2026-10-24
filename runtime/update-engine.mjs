@@ -232,13 +232,17 @@ async function extractTar(archive, root) {
   } finally {await file.close(); await fsp.rm(tar,{force:true});}
 }
 
+function insideDirectory(root, file) {
+  const relative = path.relative(root, file);
+  return relative !== '' && !path.isAbsolute(relative) && relative !== '..' && !relative.startsWith('..' + path.sep);
+}
 export async function prepare(job, jobFile) {
   const install = await fsp.realpath(job.installDir), executable = await fsp.realpath(job.executable);
-  if (!executable.startsWith(install + path.sep) || !await exists(path.join(install,job.resourceRelative,'build-info.json'))) throw Error('仅打包版支持安装更新；源码版本请使用 Git 更新');
+  if (!insideDirectory(install,executable) || !await exists(path.join(install,job.resourceRelative,'build-info.json'))) throw Error('仅打包版支持安装更新；源码版本请使用 Git 更新');
   if (path.dirname(install) === install || !/^[a-f0-9]{64}$/.test(job.sha256 || '')) throw Error('安装任务无效');
   // Copy the running app and libraries out of the destination before Windows locks them.
-  const helper = path.join(path.dirname(jobFile),'installer-runtime' + (process.platform === 'darwin' ? '.app' : ''));
-  if (path.resolve(helper).startsWith(install + path.sep)) throw Error('更新缓存目录不能位于安装目录内');
+  const helper = path.join(await fsp.realpath(path.dirname(jobFile)),'installer-runtime' + (process.platform === 'darwin' ? '.app' : ''));
+  if (insideDirectory(install,helper)) throw Error('更新缓存目录不能位于安装目录内');
   if (await exists(helper)) throw Error('安装任务已存在，请重新下载');
   status('preparing','正在准备独立安装器…');
   await fsp.access(path.dirname(install),fs.constants.W_OK);
@@ -284,10 +288,11 @@ export async function install(job, jobFile) {
     if (job.edition && info.edition !== job.edition) throw Error('安装包版本类型不匹配');
     const arch = {AMD64:'x64',x86_64:'x64',aarch64:'arm64',arm64:'arm64',x64:'x64'}[info.architecture];
     if (arch !== process.arch || info.system !== {win32:'Windows',darwin:'Darwin',linux:'Linux'}[process.platform]) throw Error('安装包系统或架构不匹配');
-    const relativeExe = path.relative(installDir,job.executable);
+    const relativeExe = path.relative(installDir,await fsp.realpath(job.executable));
+    const realPayload = await fsp.realpath(payload);
     for (const required of [relativeExe, path.join(job.resourceRelative,'runtime/update-engine.mjs'),path.join(job.resourceRelative,'runtime/node',process.platform==='win32'?'node.exe':'bin/node')]) {
       const file = path.join(payload,required);
-      if (!file.startsWith(payload + path.sep) || !(await fsp.stat(file)).isFile() || !(await fsp.realpath(file)).startsWith(payload + path.sep)) throw Error('更新包缺少必要运行文件');
+      if (!insideDirectory(payload,file) || !(await fsp.stat(file)).isFile() || !insideDirectory(realPayload,await fsp.realpath(file))) throw Error('更新包缺少必要运行文件');
     }
     backup = installDir + '.previous-' + randomUUID();
     status('installing','正在安装新版本…',0.9);
