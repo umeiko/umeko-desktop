@@ -146,8 +146,9 @@ test('wrong payload version and missing runtime are rejected before replacement'
 });
 test('replacement failure rolls back the existing directory',async t=>{
   const {job,jobFile}=await fixture(t,zip(entries()));
+  const destination=await fs.realpath(job.installDir);
   const rename=fs.rename;
-  fs.rename=async(source,target)=>{if(source.includes('.umeko-stage-')&&target===job.installDir)throw Error('injected replacement failure');return rename(source,target);};
+  fs.rename=async(source,target)=>{if(source.includes('.umeko-stage-')&&target===destination)throw Error('injected replacement failure');return rename(source,target);};
   try {await assert.rejects(install(job,jobFile),/injected/);} finally {fs.rename=rename;}
   assert.equal(await fs.readFile(job.executable,'utf8'),'old app');
 });
