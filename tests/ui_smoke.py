@@ -337,8 +337,10 @@ try:
         if not backend.busy: break
     class WriterFixture:
         def complete(self, model, messages, tools, max_tokens):
-            assert "Your name is umeko" in messages[0]["content"]
-            assert "You have no shell or file write tool" not in messages[0]["content"]
+            system = messages[0]["content"]
+            assert "You are Umeko" in system
+            assert "Pi embedded in Umeko Desktop" in system and "run_pi_command" in system
+            assert "You have no shell or file write tool" not in system
             if messages[-1]["role"] != "tool":
                 return Completion(tool_calls=[{"id":"write-test","name":"write","arguments":{"path":"hello.txt","content":"hello world"}}])
             return Completion("已创建 hello.txt。")
@@ -350,7 +352,8 @@ try:
         QTest.qWait(50)
         if not backend.busy:
             break
-    assert not backend.busy and (workspace / "hello.txt").read_text() == "hello world"
+    assert not backend.busy and (workspace / "hello.txt").is_file(), (backend.toolStatus, backend.messages)
+    assert (workspace / "hello.txt").read_text() == "hello world"
     capture("15-file-created")
     click("toggleTools_1_0")
     click("toolPath_write-test")
