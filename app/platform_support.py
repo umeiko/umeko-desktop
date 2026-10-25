@@ -67,7 +67,12 @@ def migrate_profile(previous, target):
         try:
             return str(target / Path(path).relative_to(previous))
         except ValueError:
-            return path
+            # The stored path may use /var on macOS, a Windows short name, or
+            # another alias for the now-canonical source profile directory.
+            try:
+                return str(target / Path(path).expanduser().resolve().relative_to(previous))
+            except (ValueError, OSError):
+                return path
     def rewrite(path, transform):
         if path.is_file():
             data = json.loads(path.read_text(encoding='utf-8'))
