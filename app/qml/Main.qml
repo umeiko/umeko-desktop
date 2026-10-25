@@ -69,6 +69,9 @@ ApplicationWindow {
         }
     }
     Timer { interval: 16; repeat: true; running: window.sidebarSwitching; onTriggered: window.commitSidebarSelection() }
+    property real webPreferredWidth: 0
+    readonly property real webMinimumWidth: 300
+    readonly property real webMaximumWidth: Math.max(webMinimumWidth, mainArea.width - 400)
     property real sidebarPreferredWidth: backend.sidebarWidth
     property bool sidebarCollapsed: backend.sidebarCollapsed
     readonly property real sidebarMinimumWidth: 200
@@ -88,8 +91,18 @@ ApplicationWindow {
     }
     function acceptChatFiles(urls) { backend.addAttachments(JSON.stringify(urls)); modelPopup.close(); focusChatInput() }
     function attachChatFile(path) { backend.attachChatboxFile(path); imageViewer.close(); focusChatInput() }
+    function attachChatUrl(url) { backend.attachChatboxUrl(url); focusChatInput() }
+    function previewChatWeb(item) {
+        const url = backend.normalizeWebUrl(item.url || item.path || "")
+        if (!url) return
+        if (!backend.webviewAvailable) { window.notification = I18n.t("网页预览组件尚未安装或无法加载"); toastTimer.restart(); return }
+        window.page = "chat"; webPane.submit(url, item.title || item.name || "")
+    }
+    function previewChatDocument(item) { window.page = "chat"; webPane.showDocument(item) }
     function previewChatImage(item, siblings) {
+        if (item.kind === "web") { previewChatWeb(item); return }
         const info = item.url && item.preview !== undefined ? item : backend.chatboxFileInfo(item.path)
+        if (["markdown", "code", "text"].includes(info.kind)) { previewChatDocument(info); return }
         if (info.kind === "image" && info.preview) imageViewer.show(info, siblings || [info])
         else backend.openChatboxPath(item.path, false)
     }
@@ -106,7 +119,9 @@ ApplicationWindow {
     Shortcut { sequences: [StandardKey.SelectAll]; enabled: chatSelection.activeFocus; onActivated: chatSelection.selectAll() }
     Shortcut { sequence: "Escape"; enabled: !imageViewer.visible; onActivated: { if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
     Connections { target: backend; function onToast(message) { window.notification = message; toastTimer.restart() }
-        function onViewChanged() { window.avatarChatKey = String(Math.random()) } }
+        function onViewChanged() { window.avatarChatKey = String(Math.random()); webPane.dismiss() }
+        function onWebRequested(url, title) { window.page = "chat"; webPane.submit(url, title) }
+        function onDocumentRequested(path, title, kind) { window.previewChatDocument({path:path, title:title, kind:kind}) } }
     Connections { target: backend; function onLayoutChanged() { window.sidebarPreferredWidth = backend.sidebarWidth; window.sidebarCollapsed = backend.sidebarCollapsed } }
     Timer { id: toastTimer; interval: 4200; onTriggered: window.notification = "" }
     RequestDetails { id: requestInspector }
@@ -117,84 +132,94 @@ ApplicationWindow {
     Rectangle { anchors.fill: parent; color: "transparent"; border.color: Theme.line; z: 30 }
     WindowResizeHandles { anchors.fill: parent; z: 100; targetWindow: window }
 
+    PidMotion {
+        id: sidebarWidthMotion; objectName: "sidebarWidthMotion"
+        targetRect: Qt.rect(0, 0, window.sidebarCollapsed ? 1 : Math.min(window.sidebarPreferredWidth, window.sidebarMaximumWidth) + 1, 1)
+    }
     Rectangle {
         id: sidebar; objectName: "sidebar"
-        width: window.sidebarCollapsed ? 0 : Math.min(window.sidebarPreferredWidth, window.sidebarMaximumWidth)
-        visible: !window.sidebarCollapsed; clip: true
+        width: Math.max(0, sidebarWidthMotion.value.width - 1)
+        visible: width > 0.5; clip: true
         anchors.top: parent.top; anchors.bottom: parent.bottom
         color: Theme.sidebar
         Rectangle { width: 1; anchors.right: parent.right; height: parent.height; color: Theme.line }
-        MouseArea { width: parent.width; height: 20; enabled: !chatSelection.dragging; onPressed: window.startSystemMove(); onDoubleClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
-        ActionButton {
-            objectName: "newChatButton"
-            x: 16; y: 24; width: parent.width - 32; height: Theme.control(42)
-            text: I18n.t("新建会话"); glyph: "plus"
-            onClicked: window.startChat()
-            Text { anchors.right: parent.right; anchors.rightMargin: 13; anchors.verticalCenter: parent.verticalCenter; visible: Theme.fontScale <= 1.25; text: "Ctrl N"; color: Theme.muted; font.pixelSize: Theme.font(10) }
-            contentItem: Item { Row { x: 13; width: parent.width - (Theme.fontScale <= 1.25 ? 65 : 26); spacing: 9; anchors.verticalCenter: parent.verticalCenter; Glyph { name: "plus"; width: Theme.icon(18); height: Theme.icon(18) } Text { width: Math.max(0, parent.width - Theme.icon(18) - 9); elide: Text.ElideRight; text: I18n.t("新建会话"); font.pixelSize: Theme.font(12); color: Theme.ink; anchors.verticalCenter: parent.verticalCenter } } }
-        }
-        Text { id: recentLabel; x: 29; y: 52 + Theme.control(42); text: backend.showArchived ? I18n.t("已归档") : I18n.t("项目"); font.pixelSize: Theme.font(10); color: Theme.muted; font.letterSpacing: 1 }
-        ActionButton { objectName: "archivedViewButton"; anchors.right: parent.right; anchors.rightMargin: 28 + Theme.control(26); y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "archive"; quiet: true; hint: backend.showArchived ? I18n.t("返回项目") : I18n.t("查看归档会话"); onClicked: backend.toggleArchived() }
-        ActionButton { anchors.right: parent.right; anchors.rightMargin: 22; y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "plus"; quiet: true; hint: I18n.t("打开项目文件夹"); onClicked: folderDialog.open() }
-        ListView {
-            id: sessionList; objectName: "projectList"
-            x: 12; y: recentLabel.y + Theme.control(28); width: parent.width - 24; height: apiStatus.y - y - 16
-            spacing: 2; clip: true; model: backend.projectRows
-            currentIndex: backend.projectRows.findIndex(row => window.sidebarSwitching ? row.id === window.pendingSidebarId && row.kind === window.pendingSidebarKind : row.selected && (row.kind === "session" || row.kind === "project" && !backend.activeSession))
-            highlightFollowsCurrentItem: false
-            PidMotion { id: sidebarMotion; objectName: "sidebarPidMotion"; targetRect: Qt.rect(0,sessionList.currentItem ? sessionList.currentItem.y : 0,sessionList.width,sessionList.currentItem ? sessionList.currentItem.height : 34) }
-            highlight: Rectangle { objectName: "sidebarHighlight"; x: sidebarMotion.value.x; y: sidebarMotion.value.y; width: sidebarMotion.value.width; height: sidebarMotion.value.height; radius: 7; color: Theme.surface; visible: sessionList.currentIndex >= 0 && window.page === "chat"; z: -1 }
-
-            Text { visible: sessionList.count === 0; x: 17; y: 8; text: backend.showArchived ? I18n.t("暂无归档会话") : I18n.t("暂无项目"); font.pixelSize: Theme.font(11); color: Theme.muted }
-            delegate: Item {
-                required property var modelData
-                objectName: "sidebarRow_" + modelData.id
-                width: sessionList.width; height: modelData.kind === "project" ? 38 : 34
-                Rectangle { anchors.fill: parent; radius: 7; color: rowMouse.containsMouse && !(window.sidebarSwitching ? window.pendingSidebarId === modelData.id : modelData.selected) ? Theme.hover : "transparent" }
-                MouseArea { id: rowMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; acceptedButtons: Qt.LeftButton | Qt.RightButton; enabled: modelData.kind !== "label"
-                    onClicked: mouse => { if (mouse.button === Qt.RightButton) { sidebarMenus.openFor(modelData, mapToItem(sidebarMenus, mouse.x, mouse.y)); return } window.selectSidebar(modelData) }
-                }
-                Glyph { visible: modelData.kind === "project"; name: "folder"; x: 15; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(16); height: Theme.icon(16) }
-                Text { x: modelData.kind === "label" ? 17 : 42; width: parent.width - x - (modelData.kind === "project" ? 64 : 32); anchors.verticalCenter: parent.verticalCenter; text: modelData.kind === "label" ? I18n.t(modelData.title) : modelData.title; elide: Text.ElideRight; font.pixelSize: Theme.font(modelData.kind === "label" ? 10 : 11); color: modelData.kind === "label" ? Theme.muted : Theme.ink }
-                ActivitySpinner { objectName: "sessionSpinner_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(15); height: Theme.icon(15); visible: modelData.kind === "session" && modelData.running === true; color: modelData.waiting ? Theme.accent : Theme.muted }
-                Rectangle { objectName: "sessionUnread_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter; width: 6; height: 6; radius: 3; color: "#4c9c6d"; visible: modelData.kind === "session" && modelData.unread === true && !modelData.running }
-                Glyph { anchors.right: parent.right; anchors.rightMargin: 11; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(12); height: Theme.icon(12); name: "pin"; visible: modelData.pinned === true && !modelData.running && !modelData.unread && !(rowMouse.containsMouse) }
-                ActionButton { objectName: "newProjectSession_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: Theme.control(28); anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: Theme.control(28); quiet: true; glyph: "plus"; visible: modelData.kind === "project" && !backend.showArchived; hint: I18n.t("新增会话"); onClicked: window.startProjectChat(modelData) }
-                ActionButton { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: Theme.control(28); quiet: true; glyph: modelData.collapsed ? "chevron-right" : "chevron-down"; visible: modelData.kind === "project" && (rowMouse.containsMouse || hovered || modelData.collapsed); onClicked: backend.toggleProject(modelData.id) }
-            }
-        }
-        DropArea {
-            id: projectDrop; objectName: "projectDropArea"; anchors.fill: parent; z: 20
-            onEntered: drag => { drag.accepted = drag.urls.length > 0 }
-            onDropped: drop => { backend.dropProjects(JSON.stringify(drop.urls.map(url => url.toString()))); drop.acceptProposedAction(); window.page = "chat" }
-        }
-        Rectangle {
-            anchors.fill: parent; anchors.margins: 7; radius: 10; z: 21; visible: projectDrop.containsDrag; color: Theme.accentBg; border.color: Theme.accent
-            Column { anchors.centerIn: parent; spacing: 12; Glyph { name: "folder"; width: Theme.icon(26); height: Theme.icon(26); anchors.horizontalCenter: parent.horizontalCenter } Text { text: I18n.t("打开项目文件夹"); color: Theme.accent; font.pixelSize: Theme.font(12) } }
-        }
         Item {
-            id: apiStatus; x: 26; anchors.bottom: settingsButton.top; anchors.bottomMargin: 9; width: parent.width - 52; height: 29
-            Rectangle { x: 1; y: 10; width: 6; height: 6; radius: 3; color: backend.serverRunning ? "#72a783" : "#a6ada5" }
-            Text { x: 17; y: 5; width: Math.max(0, apiPort.x - x - 8); elide: Text.ElideRight; text: backend.serverRunning ? I18n.t("API 代理运行中") : I18n.t("API 代理未启动"); color: Theme.muted; font.pixelSize: Theme.font(10) }
-            Text { id: apiPort; anchors.right: parent.right; y: 5; text: ":" + backend.config.server.port; color: Theme.muted; font.pixelSize: Theme.font(10); font.family: "Consolas" }
-            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: window.settings(1) }
-        }
-        ActionButton {
-            id: settingsButton; objectName: "settingsButton"
-            x: 12; anchors.bottom: parent.bottom; anchors.bottomMargin: 17; width: parent.width - 24; height: Theme.control(44); quiet: true
-            onClicked: window.page === "settings" ? window.page = "chat" : window.settings(0)
-            contentItem: Item { Row { x: 16; spacing: 12; anchors.verticalCenter: parent.verticalCenter
-                Glyph { name: "settings"; width: Theme.icon(18); height: Theme.icon(18) }
-                Text { text: I18n.t("设置"); color: Theme.ink; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
-            } }
-            AppUpdateBadge { anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter }
+            // Keep content at its expanded width while the outer panel reveals or clips it.
+            width: Math.min(window.sidebarPreferredWidth, window.sidebarMaximumWidth)
+            anchors.top: parent.top; anchors.bottom: parent.bottom
+            enabled: !window.sidebarCollapsed && !sidebarWidthMotion.moving
+            MouseArea { width: parent.width; height: 20; enabled: !chatSelection.dragging; onPressed: window.startSystemMove(); onDoubleClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
+            ActionButton {
+                objectName: "newChatButton"
+                x: 16; y: 24; width: parent.width - 32; height: Theme.control(42)
+                text: I18n.t("新建会话"); glyph: "plus"
+                onClicked: window.startChat()
+                Text { anchors.right: parent.right; anchors.rightMargin: 13; anchors.verticalCenter: parent.verticalCenter; visible: Theme.fontScale <= 1.25; text: "Ctrl N"; color: Theme.muted; font.pixelSize: Theme.font(10) }
+                contentItem: Item { Row { x: 13; width: parent.width - (Theme.fontScale <= 1.25 ? 65 : 26); spacing: 9; anchors.verticalCenter: parent.verticalCenter; Glyph { name: "plus"; width: Theme.icon(18); height: Theme.icon(18) } Text { width: Math.max(0, parent.width - Theme.icon(18) - 9); elide: Text.ElideRight; text: I18n.t("新建会话"); font.pixelSize: Theme.font(12); color: Theme.ink; anchors.verticalCenter: parent.verticalCenter } } }
+            }
+            Text { id: recentLabel; x: 29; y: 52 + Theme.control(42); text: backend.showArchived ? I18n.t("已归档") : I18n.t("项目"); font.pixelSize: Theme.font(10); color: Theme.muted; font.letterSpacing: 1 }
+            ActionButton { objectName: "archivedViewButton"; anchors.right: parent.right; anchors.rightMargin: 28 + Theme.control(26); y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "archive"; quiet: true; hint: backend.showArchived ? I18n.t("返回项目") : I18n.t("查看归档会话"); onClicked: backend.toggleArchived() }
+            ActionButton { anchors.right: parent.right; anchors.rightMargin: 22; y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "plus"; quiet: true; hint: I18n.t("打开项目文件夹"); onClicked: folderDialog.open() }
+            ListView {
+                id: sessionList; objectName: "projectList"
+                x: 12; y: recentLabel.y + Theme.control(28); width: parent.width - 24; height: apiStatus.y - y - 16
+                spacing: 2; clip: true; model: backend.projectRows
+                currentIndex: backend.projectRows.findIndex(row => window.sidebarSwitching ? row.id === window.pendingSidebarId && row.kind === window.pendingSidebarKind : row.selected && (row.kind === "session" || row.kind === "project" && !backend.activeSession))
+                highlightFollowsCurrentItem: false
+                PidMotion { id: sidebarMotion; objectName: "sidebarPidMotion"; targetRect: Qt.rect(0,sessionList.currentItem ? sessionList.currentItem.y : 0,sessionList.width,sessionList.currentItem ? sessionList.currentItem.height : 34) }
+                highlight: Rectangle { objectName: "sidebarHighlight"; x: sidebarMotion.value.x; y: sidebarMotion.value.y; width: sidebarMotion.value.width; height: sidebarMotion.value.height; radius: 7; color: Theme.surface; visible: sessionList.currentIndex >= 0 && window.page === "chat"; z: -1 }
+
+                Text { visible: sessionList.count === 0; x: 17; y: 8; text: backend.showArchived ? I18n.t("暂无归档会话") : I18n.t("暂无项目"); font.pixelSize: Theme.font(11); color: Theme.muted }
+                delegate: Item {
+                    required property var modelData
+                    objectName: "sidebarRow_" + modelData.id
+                    width: sessionList.width; height: modelData.kind === "project" ? 38 : 34
+                    Rectangle { anchors.fill: parent; radius: 7; color: rowMouse.containsMouse && !(window.sidebarSwitching ? window.pendingSidebarId === modelData.id : modelData.selected) ? Theme.hover : "transparent" }
+                    MouseArea { id: rowMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; acceptedButtons: Qt.LeftButton | Qt.RightButton; enabled: modelData.kind !== "label"
+                        onClicked: mouse => { if (mouse.button === Qt.RightButton) { sidebarMenus.openFor(modelData, mapToItem(sidebarMenus, mouse.x, mouse.y)); return } window.selectSidebar(modelData) }
+                    }
+                    Glyph { visible: modelData.kind === "project"; name: "folder"; x: 15; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(16); height: Theme.icon(16) }
+                    Text { x: modelData.kind === "label" ? 17 : 42; width: parent.width - x - (modelData.kind === "project" ? 64 : 32); anchors.verticalCenter: parent.verticalCenter; text: modelData.kind === "label" ? I18n.t(modelData.title) : modelData.title; elide: Text.ElideRight; font.pixelSize: Theme.font(modelData.kind === "label" ? 10 : 11); color: modelData.kind === "label" ? Theme.muted : Theme.ink }
+                    ActivitySpinner { objectName: "sessionSpinner_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(15); height: Theme.icon(15); visible: modelData.kind === "session" && modelData.running === true; color: modelData.waiting ? Theme.accent : Theme.muted }
+                    Rectangle { objectName: "sessionUnread_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter; width: 6; height: 6; radius: 3; color: "#4c9c6d"; visible: modelData.kind === "session" && modelData.unread === true && !modelData.running }
+                    Glyph { anchors.right: parent.right; anchors.rightMargin: 11; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(12); height: Theme.icon(12); name: "pin"; visible: modelData.pinned === true && !modelData.running && !modelData.unread && !(rowMouse.containsMouse) }
+                    ActionButton { objectName: "newProjectSession_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: Theme.control(28); anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: Theme.control(28); quiet: true; glyph: "plus"; visible: modelData.kind === "project" && !backend.showArchived; hint: I18n.t("新增会话"); onClicked: window.startProjectChat(modelData) }
+                    ActionButton { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: Theme.control(28); quiet: true; glyph: modelData.collapsed ? "chevron-right" : "chevron-down"; visible: modelData.kind === "project" && (rowMouse.containsMouse || hovered || modelData.collapsed); onClicked: backend.toggleProject(modelData.id) }
+                }
+            }
+            DropArea {
+                id: projectDrop; objectName: "projectDropArea"; anchors.fill: parent; z: 20
+                onEntered: drag => { drag.accepted = drag.urls.length > 0 }
+                onDropped: drop => { backend.dropProjects(JSON.stringify(drop.urls.map(url => url.toString()))); drop.acceptProposedAction(); window.page = "chat" }
+            }
+            Rectangle {
+                anchors.fill: parent; anchors.margins: 7; radius: 10; z: 21; visible: projectDrop.containsDrag; color: Theme.accentBg; border.color: Theme.accent
+                Column { anchors.centerIn: parent; spacing: 12; Glyph { name: "folder"; width: Theme.icon(26); height: Theme.icon(26); anchors.horizontalCenter: parent.horizontalCenter } Text { text: I18n.t("打开项目文件夹"); color: Theme.accent; font.pixelSize: Theme.font(12) } }
+            }
+            Item {
+                id: apiStatus; x: 26; anchors.bottom: settingsButton.top; anchors.bottomMargin: 9; width: parent.width - 52; height: 29
+                Rectangle { x: 1; y: 10; width: 6; height: 6; radius: 3; color: backend.serverRunning ? "#72a783" : "#a6ada5" }
+                Text { x: 17; y: 5; width: Math.max(0, apiPort.x - x - 8); elide: Text.ElideRight; text: backend.serverRunning ? I18n.t("API 代理运行中") : I18n.t("API 代理未启动"); color: Theme.muted; font.pixelSize: Theme.font(10) }
+                Text { id: apiPort; anchors.right: parent.right; y: 5; text: ":" + backend.config.server.port; color: Theme.muted; font.pixelSize: Theme.font(10); font.family: "Consolas" }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: window.settings(1) }
+            }
+            ActionButton {
+                id: settingsButton; objectName: "settingsButton"
+                x: 12; anchors.bottom: parent.bottom; anchors.bottomMargin: 17; width: parent.width - 24; height: Theme.control(44); quiet: true
+                onClicked: window.page === "settings" ? window.page = "chat" : window.settings(0)
+                contentItem: Item { Row { x: 16; spacing: 12; anchors.verticalCenter: parent.verticalCenter
+                    Glyph { name: "settings"; width: Theme.icon(18); height: Theme.icon(18) }
+                    Text { text: I18n.t("设置"); color: Theme.ink; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
+                } }
+                AppUpdateBadge { anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter }
+            }
         }
     }
 
     MouseArea {
         id: sidebarResizeHandle; objectName: "sidebarResizeHandle"
         x: sidebar.width - width / 2; y: 5; width: 8; height: window.height - 10; z: 40
-        visible: !window.sidebarCollapsed; enabled: !chatSelection.dragging
+        visible: !window.sidebarCollapsed && !sidebarWidthMotion.moving; enabled: !chatSelection.dragging
         cursorShape: Qt.SizeHorCursor; hoverEnabled: true; preventStealing: true
         property real pressX: 0
         property real pressWidth: 0
@@ -206,6 +231,7 @@ ApplicationWindow {
             if (!pressed) return
             const delta = mapToItem(window.contentItem, mouse.x, mouse.y).x - pressX
             window.sidebarPreferredWidth = Math.max(window.sidebarMinimumWidth, Math.min(window.sidebarMaximumWidth, pressWidth + delta))
+            sidebarWidthMotion.snap()
         }
         onReleased: window.saveSidebarLayout()
         onCanceled: window.saveSidebarLayout()
@@ -224,11 +250,6 @@ ApplicationWindow {
                 Text { text: "/"; color: Theme.line; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
                 Text { text: window.page === "chat" ? (window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle) : [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于")][window.settingsTab]; color: Theme.ink; font.pixelSize: Theme.font(11); width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
             }
-            Row {
-                anchors.right: windowControls.left; anchors.rightMargin: 18; anchors.verticalCenter: parent.verticalCenter; spacing: 7
-                Rectangle { width: 5; height: 5; radius: 3; color: Theme.accent; anchors.verticalCenter: parent.verticalCenter }
-                Text { text: I18n.t("本机工作空间"); font.pixelSize: Theme.font(10); color: Theme.muted }
-            }
             Row { id: windowControls; anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 18; spacing: 2
                 ActionButton { glyph: "minus"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最小化"); onClicked: window.showMinimized() }
                 ActionButton { glyph: "maximize"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最大化"); onClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
@@ -237,7 +258,7 @@ ApplicationWindow {
         }
 
         Item {
-            id: chatPage; objectName: "chatPage"; anchors.top: header.bottom; anchors.bottom: parent.bottom; width: parent.width
+            id: chatPage; objectName: "chatPage"; anchors.top: header.bottom; anchors.bottom: parent.bottom; width: parent.width - (window.page === "chat" ? webPane.animatedWidth : 0)
             visible: window.page === "chat"
             opacity: visible ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 180 } }
@@ -435,6 +456,35 @@ ApplicationWindow {
                 ActionButton { height: Theme.control(28); quiet: true; text: "Agent"; glyph: "sliders"; onClicked: window.settings(3) }
                 ActionButton { objectName: "forkSessionButton"; visible: backend.messages.length > 0; enabled: !backend.busy; height: Theme.control(28); quiet: true; text: I18n.t("分支"); glyph: "branch"; onClicked: backend.forkSession() }
             }
+        }
+
+        WebPane {
+            id: webPane
+            anchors.right: parent.right; anchors.top: header.bottom; anchors.bottom: parent.bottom
+            preferredWidth: Math.max(window.webMinimumWidth, Math.min(window.webMaximumWidth, window.webPreferredWidth > 0 ? window.webPreferredWidth : Math.min(540, Math.max(350, parent.width * 0.46))))
+            resizing: webResizeHandle.pressed
+            blocked: window.page !== "chat" || !window.visible || window.visibility === Window.Minimized || window.mediaOverlayActive || modelPopup.visible || backend.pendingApproval.id !== undefined
+        }
+
+        MouseArea {
+            id: webResizeHandle; objectName: "webPaneResizeHandle"
+            x: webPane.x - 4; width: 8; anchors.top: header.bottom; anchors.bottom: parent.bottom; z: 40
+            visible: webPane.opened && (!webPane.moving || pressed)
+            enabled: !webPane.blocked && !chatSelection.dragging
+            cursorShape: Qt.SizeHorCursor; hoverEnabled: true; preventStealing: true
+            property real pressX: 0
+            property real pressWidth: 0
+            onPressed: mouse => {
+                pressX = mapToItem(window.contentItem, mouse.x, mouse.y).x
+                pressWidth = webPane.width
+            }
+            onPositionChanged: mouse => {
+                if (!pressed) return
+                const delta = mapToItem(window.contentItem, mouse.x, mouse.y).x - pressX
+                window.webPreferredWidth = Math.max(window.webMinimumWidth, Math.min(window.webMaximumWidth, pressWidth - delta))
+                webPane.snapWidth()
+            }
+            Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 2; height: parent.height; color: parent.containsMouse || parent.pressed ? Theme.accent : "transparent"; opacity: 0.5 }
         }
 
         SettingsPage {

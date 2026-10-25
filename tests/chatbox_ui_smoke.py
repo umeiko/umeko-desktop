@@ -24,7 +24,7 @@ window=engine.rootObjects()[0]
 warnings=[]
 engine.warnings.connect(lambda errors:warnings.extend(e.toString() for e in errors))
 directory=backend.store.directory
-image=directory/'展示 # sample.png'; report=directory/'report.txt'
+image=directory/'展示 # sample.png'; report=directory/'report.pdf'
 pixels=QImage(720,320,QImage.Format_RGB32);pixels.fill(QColor('#e8efff'))
 painter=QPainter(pixels);painter.setPen(QColor('#315b9e'));font=painter.font();font.setPixelSize(30);painter.setFont(font)
 painter.drawText(pixels.rect(),Qt.AlignCenter,'Umeko · media delivery');painter.end();assert pixels.save(str(image))
@@ -94,6 +94,10 @@ try:
     with patch('app.controller.QDesktopServices.openUrl',return_value=True) as opened:
         click('openChatbox_delivery_1')
         assert Path(opened.call_args.args[0].toLocalFile()).samefile(report)
+    prompt=find('promptInput');outside=prompt.mapToScene(QPointF(30,15)).toPoint()
+    QTest.mouseMove(window,outside);QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,outside);QTest.qWait(200)
+    assert not header.property('interactionHovered'),'File hover stayed latched after leaving and clicking elsewhere'
+    assert not tip.isVisible(),'File tooltip stayed open after leaving'
     with patch('app.controller.subprocess.Popen') as launched,patch('app.controller.QDesktopServices.openUrl',return_value=True) as opened:
         assert find('toggleChatbox_delivery_1') is None, 'File dropdown should be removed'
         context('openChatbox_delivery_1')

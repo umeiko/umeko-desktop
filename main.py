@@ -30,6 +30,8 @@ def diagnostic(message):
 
 def create_application():
     root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    from app.webview import configure, configure_engine
+    configure(root)
     app = QApplication(sys.argv)
     if not QFontDatabase.families() and os.name == "nt":
         # The Windows offscreen test platform does not discover system fonts.
@@ -57,6 +59,7 @@ def create_application():
         app.setFont(font)
     register_text_types()
     engine = QQmlApplicationEngine()
+    configure_engine(engine)
     engine.warnings.connect(lambda errors: diagnostic("\n".join(e.toString() for e in errors)))
     engine.rootContext().setContextProperty("backend", controller)
     engine.load(QUrl.fromLocalFile(str(root / "app/qml/Main.qml")))
@@ -94,6 +97,8 @@ if __name__ == "__main__":
             ctypes.windll.user32.MessageBoxW(None, "应用启动失败。请检查本机设置或从源码启动查看诊断。", "Umeko", 0x10)
         sys.exit(1)
     diagnostic("QML_READY")
+    preview_url=os.environ.get('UMEKO_WEB_PREVIEW_URL') if '--demo' in sys.argv else ''
+    if preview_url: QTimer.singleShot(800, lambda: controller.webRequested.emit(preview_url,'Preview'))
     if "--smoke" not in sys.argv and "--install-update" not in sys.argv:
         controller.appAbout.startAutomaticChecks()
     if "--smoke" in sys.argv:
@@ -112,9 +117,9 @@ if __name__ == "__main__":
             diagnostic("TRAY_ICON_READY:" + str(int(not controller._system_tray.tray.icon().pixmap(32,32).isNull())))
     if "--snapshot" in sys.argv:
         output = sys.argv[sys.argv.index("--snapshot") + 1]
-        QTimer.singleShot(650, lambda: engine.rootObjects()[0].grabWindow().save(output))
+        QTimer.singleShot(4000 if preview_url else 650, lambda: engine.rootObjects()[0].grabWindow().save(output))
     if "--smoke" in sys.argv:
-        QTimer.singleShot(1500, app.quit)
+        QTimer.singleShot(5500 if preview_url else 1500, app.quit)
     result = app.exec()
     diagnostic("EXIT:" + str(result))
     import shiboken6

@@ -30,7 +30,15 @@ Item {
     property bool dragging: false
     property double lastScrollTime: 0
     property point pointer: Qt.point(0, 0)
-    readonly property bool hovering: selectionArea.containsMouse
+    readonly property bool hovering: hoverTracker.hovered
+    // Passive tracking keeps hover current when the selection overlay passes
+    // a click through to a card or button underneath it.
+    HoverHandler {
+        id: hoverTracker; objectName: "chatHoverTracker"
+        blocking: false
+        onPointChanged: if (hovered) root.pointer = point.position
+        onHoveredChanged: if (hovered) root.pointer = point.position
+    }
     property point pressPoint: Qt.point(0, 0)
     property bool pointerMoved: false
     property int clickCount: 0
@@ -208,6 +216,7 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.RightButton; preventStealing: true; hoverEnabled: true
         cursorShape: root.hoveredTarget ? Qt.PointingHandCursor : root.pick(root.pointer.x, root.pointer.y, false) ? Qt.IBeamCursor : Qt.ArrowCursor
         onPressed: event => {
+            root.pointer = Qt.point(event.x, event.y)
             if (root.interactionAt(event.x, event.y)) { if (event.button === Qt.LeftButton) root.clear(); event.accepted = false; return }
             const editor = root.pick(event.x, event.y, false)
             if (!editor) { if (event.button === Qt.LeftButton) root.clear(); event.accepted = false; return }

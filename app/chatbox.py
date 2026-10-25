@@ -3,6 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QImageReader
+from .document_preview import document_kind
 
 
 def result_media(name, result):
@@ -20,7 +21,13 @@ def media_view(items):
     for item in items[:12]:
         if not isinstance(item, dict): continue
         path, kind = item.get("path"), item.get("kind")
-        if not isinstance(path, str) or not Path(path).is_absolute() or any(c in path for c in "\0\r\n") or kind not in ("image", "file", "folder"):
+        if isinstance(path, str): kind = document_kind(path, kind) or kind
+        if kind=='web' and isinstance(path,str):
+            url=QUrl(path,QUrl.StrictMode)
+            if url.isValid() and url.scheme() in ('http','https') and url.host() and not url.userInfo():
+                out.append({'path':url.toString(),'url':url.toString(),'kind':'web','name':url.host(),'title':str(item.get('title') or url.host())[:160],'caption':str(item.get('caption') or '')[:1000]})
+            continue
+        if not isinstance(path, str) or not Path(path).is_absolute() or any(c in path for c in "\0\r\n") or kind not in ("image", "file", "folder", "markdown", "code", "text"):
             continue
         title, caption = item.get("title"), item.get("caption")
         out.append(dict(_media_item(path, kind, str(title or Path(path).name)[:160], str(caption or "")[:1000], str(item.get("modified", "")))))

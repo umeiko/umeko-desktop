@@ -1,14 +1,49 @@
 import tempfile
+import hashlib
+import json
+import os
 import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.platform_support import configure_input_method, data_directory, legacy_data_directory
-from app.storage import keyring_protect
+from app.platform_support import configure_input_method, data_directory, legacy_data_directory, migrate_profile
+from app.storage import Store, keyring_protect
 
 
 class PlatformTests(unittest.TestCase):
+    def test_moving_profile_rekeys_projects_and_preserves_chat_history(self):
+        with tempfile.TemporaryDirectory() as temp:
+            previous, target = Path(temp)/'old', Path(temp)/'new'
+            (previous/'workspace').mkdir(parents=True)
+            (previous/'pi/sessions').mkdir(parents=True)
+            (previous/'settings.json').write_text(json.dumps({'workspace':str(previous/'workspace'),
+                'activeProject':'old-id','projects':[{'id':'old-id','path':str(previous/'workspace'),'name':'My project','pinned':True}]}))
+            log = previous/'pi/sessions/one.jsonl'
+            body = b'{"type":"message","text":"preserved history"}\n'
+            log.write_bytes(json.dumps({'type':'session','cwd':str(previous/'workspace')}).encode()+b'\n'+body)
+            migrate_profile(previous, target)
+            data = json.loads((target/'settings.json').read_text())
+            expected = hashlib.sha256(os.path.normcase(str((target/'workspace').resolve())).encode()).hexdigest()[:16]
+            self.assertEqual(data['activeProject'], expected)
+            self.assertEqual(data['projects'], [{'id':expected,'path':str((target/'workspace').resolve()),'name':'My project','pinned':True}])
+            self.assertEqual((target/'pi/sessions/one.jsonl').read_bytes().split(b'\n',1)[1], body)
+            self.assertTrue(log.exists())
+
+    def test_existing_duplicate_projects_are_repaired_once_on_startup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)/'workspace'; path.mkdir()
+            (Path(temp)/'settings.json').write_text(json.dumps({'activeProject':'duplicate-id','projects':[
+                {'id':'old-id','path':str(path),'name':'My project'},
+                {'id':'duplicate-id','path':str(path)+os.sep+'.','name':'workspace','pinned':True}]}))
+            repaired = Store(Path(temp))
+            projects = repaired.data['projects']
+            self.assertEqual(len(projects), 1)
+            self.assertEqual(projects[0]['name'], 'My project')
+            self.assertTrue(projects[0]['pinned'])
+            self.assertEqual(repaired.data['activeProject'], projects[0]['id'])
+            self.assertEqual(Store(Path(temp)).data['projects'], projects)
+
     def test_platform_data_locations(self):
         home = Path("/users/example")
         for system in ('win32', 'darwin', 'linux'):

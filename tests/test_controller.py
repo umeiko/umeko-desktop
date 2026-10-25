@@ -93,6 +93,24 @@ class KernelUpdateTests(unittest.TestCase):
             finally:
                 controller.close()
 
+    def test_web_attachment_preserves_draft_deduplicates_and_rejects_unsafe_urls(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": str(Path(temp) / "data")}):
+            controller = Controller(ROOT)
+            try:
+                controller.setDraft("Existing draft")
+                url = "https://example.com/page?q=1#section"
+                controller.attachChatboxUrl(url)
+                controller.attachChatboxUrl(url)
+                controller.attachChatboxUrl("javascript:alert(1)")
+                controller.attachChatboxUrl("https://name:secret@example.com/")
+                self.assertEqual(len(controller.attachments), 1)
+                self.assertEqual(controller.attachments[0]["url"], url)
+                self.assertEqual(controller._view.draft, "Existing draft")
+                controller.removeAttachment(controller.attachments[0]["id"])
+                self.assertEqual(controller.attachments, [])
+            finally:
+                controller.close()
+
     def test_context_limits_persist_across_provider_mapping_and_discovery_edits(self):
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": str(Path(temp) / "data")}):
             controller = Controller(ROOT)

@@ -9,7 +9,7 @@ Button {
     property string hint: ""
     property var selectionController: null
     property int interactionPriority: 10
-    readonly property bool interactionHovered: hovered || !!selectionController && selectionController.hoveredTarget === control
+    readonly property bool interactionHovered: selectionController ? selectionController.hoveredTarget === control : hovered
     Component.onCompleted: if (selectionController) selectionController.attachInteraction(control)
     Component.onDestruction: if (selectionController) selectionController.detachInteraction(control)
     HoverHandler { cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }

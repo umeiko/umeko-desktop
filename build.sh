@@ -12,6 +12,7 @@ if output == root or not output.is_relative_to(root):
 PY
 .venv/bin/python -m pip install pyinstaller==6.19.0 cmake==3.31.6
 .venv/bin/python scripts/build-notifications.py
+.venv/bin/python scripts/webview_package.py --frontend build/webview-support
 if [[ "$(uname -s)" == Linux ]]; then .venv/bin/python scripts/build-input-method.py; fi
 .venv/bin/python scripts/bundle_node.py
 .venv/bin/python prepare_runtime.py
@@ -36,7 +37,7 @@ fi
     --distpath "$bundle_output" "${extra[@]}" --collect-all keyring \
     --add-data 'app/qml:app/qml' --add-data 'app/theme-prompt.txt:app' --add-data 'app/provider-presets.json:app' --add-data 'app/icons:app/icons' \
     --add-data 'runtime/update-engine.mjs:runtime' --add-data 'runtime/bridge.mjs:runtime' --add-data 'runtime/provider-policy.mjs:runtime' \
-    --add-data 'runtime/resources.mjs:runtime' --add-data 'runtime/chatbox.mjs:runtime' --add-data 'runtime/network-retry.mjs:runtime' \
+    --add-data 'runtime/resources.mjs:runtime' --add-data 'runtime/chatbox.mjs:runtime' --add-data 'runtime/network-retry.mjs:runtime' --add-data 'runtime/pi-commands.mjs:runtime' --add-data 'runtime/webview-component.mjs:runtime' --add-data 'runtime/webview-component.json:runtime' --add-data 'build/webview-support:webview-support' \
     --add-data 'build/build-info.json:.' --add-data 'build/provider-resources:provider-resources' --add-data 'THIRD_PARTY_NOTICES.md:.' --add-data 'licenses:licenses' main.py
 .venv/bin/python - "$output" "$bundle_output" <<'PY'
 from pathlib import Path

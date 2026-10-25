@@ -12,7 +12,7 @@ import hashlib
 import uuid
 from pathlib import Path
 from ctypes import wintypes
-from .platform_support import data_directory, legacy_data_directory, migrate_profile
+from .platform_support import data_directory, legacy_data_directory, migrate_profile, normalize_projects
 from .api_keys import make_key
 from PySide6.QtCore import QLocale
 
@@ -135,7 +135,8 @@ class Store:
         old_ui = saved.get('ui') if isinstance(saved.get('ui'), dict) else {}
         scale = old_ui.get('fontScale', saved.get('fontScale', ui.get('fontScale', 1.)))
         ui['fontScale'] = max(.3, min(2., float(scale))) if type(scale) in (int, float) and math.isfinite(scale) else 1.
-        if not self.path.exists() or "keys" not in saved.get("server", {}) or output_default_migrated:
+        projects_migrated = normalize_projects(self.data)
+        if not self.path.exists() or "keys" not in saved.get("server", {}) or output_default_migrated or projects_migrated:
             self.save()
 
     def save(self):

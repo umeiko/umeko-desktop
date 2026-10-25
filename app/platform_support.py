@@ -6,7 +6,36 @@ import sys
 import json
 import shutil
 import uuid
+import hashlib
 from pathlib import Path
+
+
+def normalize_projects(data):
+    """Keep path-derived identities consistent after a move and merge duplicates."""
+    previous = data.get('projects', [])
+    projects, positions, identifiers = [], {}, {}
+    for value in previous:
+        project = dict(value)
+        if not project.get('path'):
+            projects.append(project)
+            continue
+        path = str(Path(project['path']).expanduser().resolve())
+        identifier = hashlib.sha256(os.path.normcase(path).encode()).hexdigest()[:16]
+        if project.get('id'): identifiers[project['id']] = identifier
+        project.update(path=path, id=identifier)
+        if identifier not in positions:
+            positions[identifier] = len(projects)
+            projects.append(project)
+        else:
+            merged = projects[positions[identifier]]
+            for key, value in project.items(): merged.setdefault(key, value)
+            if project.get('pinned'): merged['pinned'] = True
+            if not merged.get('name'): merged['name'] = project.get('name', '')
+    active = identifiers.get(data.get('activeProject', ''), data.get('activeProject', ''))
+    removed = list(dict.fromkeys(identifiers.get(value, value) for value in data.get('removedProjects', [])))
+    changed = projects != previous or active != data.get('activeProject', '') or removed != data.get('removedProjects', [])
+    if changed: data.update(projects=projects, activeProject=active, removedProjects=removed)
+    return changed
 
 
 def data_directory(platform=None, environment=None, home=None):
@@ -51,6 +80,7 @@ def migrate_profile(previous, target):
         for project in data.get('projects', []):
             for key in ('path', 'workspace'):
                 if key in project: project[key] = remap(project[key])
+        normalize_projects(data)
     def sessions(data):
         for session in data:
             for key in ('file', 'workspace'):

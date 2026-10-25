@@ -18,6 +18,7 @@ ALIASES = {
     "py": "python", "python3": "python", "js": "javascript", "jsx": "javascript",
     "ts": "typescript", "tsx": "typescript", "sh": "bash", "shell": "bash", "zsh": "bash",
     "ps1": "powershell", "pwsh": "powershell", "yml": "yaml", "c++": "cpp", "cc": "cpp",
+    "mjs": "javascript", "cjs": "javascript", "pyw": "python", "hpp": "cpp", "h": "c", "cxx": "cpp", "jsonc": "json", "qml": "javascript", "scss": "css", "svg": "xml",
     "cs": "csharp", "c#": "csharp", "rs": "rust", "golang": "go", "htm": "html",
 }
 LANGUAGES = {"python", "javascript", "typescript", "json", "yaml", "bash", "powershell",

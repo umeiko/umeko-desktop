@@ -1,0 +1,102 @@
+import QtQuick
+import QtQuick.Controls
+
+Rectangle {
+    id: pane
+    objectName: "webPane"
+    property bool opened: false
+    property bool blocked: false
+    property bool resizing: false
+    property string pageUrl: ""
+    property string pageTitle: ""
+    property string mode: "web"
+    property string documentPath: ""
+    property real preferredWidth: 480
+    readonly property real animatedWidth: Math.max(0, motion.value.width - 1)
+    readonly property bool moving: motion.moving && !resizing
+    readonly property bool live: opened && !moving && !blocked && visible
+    width: animatedWidth
+    visible: animatedWidth > 0.5
+    color: Theme.surface
+    clip: true
+    // Opened by fresh Agent deliveries or an explicit click on a delivered URL card.
+    function submit(url, title) {
+        const clean = backend.normalizeWebUrl(url)
+        if (!clean || !backend.webviewAvailable) return
+        backend.documentPreview.cancel()
+        pageTitle = title || ""
+        if (mode === "web" && surface.item && pageUrl === clean) surface.item.reload()
+        else { pageUrl = clean; if (surface.item) surface.item.url = clean }
+        mode = "web"
+        opened = true
+    }
+    function showDocument(item) {
+        address.focus = false
+        documentPath = item.path; pageTitle = item.title || item.name || item.path.split(/[\\/]/).pop()
+        mode = "document"; opened = true
+        backend.documentPreview.load(documentPath, item.kind || "file")
+    }
+    function dismiss() { address.focus = false; opened = false; backend.documentPreview.cancel() }
+    function snapWidth() { motion.snap() }
+    function navigate() {
+        const url = backend.normalizeWebUrl(address.text)
+        if (!opened || !url) { address.text = pageUrl; return }
+        pageUrl = url
+        if (surface.item) surface.item.url = url
+    }
+    PidMotion { id: motion; objectName: "webPaneMotion"; targetRect: Qt.rect(0, 0, pane.opened ? pane.preferredWidth + 1 : 1, 1) }
+    Rectangle { width: 1; height: parent.height; color: Theme.line }
+    Item {
+        id: heading
+        width: parent.width; height: Theme.control(44)
+        Glyph { x: 16; anchors.verticalCenter: parent.verticalCenter; name: pane.mode === "web" ? "globe" : backend.documentPreview.state.kind === "code" ? "code" : "file"; width: Theme.icon(15); height: width }
+        Text { x: 40; width: Math.max(0, parent.width - 88); anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: pane.mode === "web" && surface.item && surface.item.title ? surface.item.title : pane.pageTitle || pane.pageUrl; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: Theme.font(11) }
+        ActionButton { objectName: "closeWebPaneButton"; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: width; quiet: true; glyph: "x"; hint: I18n.t("关闭预览"); onClicked: pane.dismiss() }
+    }
+    Row {
+        id: toolbar
+        x: 9; y: heading.height; spacing: 3; height: pane.mode === "web" ? Theme.control(42) : 0; visible: pane.mode === "web"
+        ActionButton { objectName: "webBackButton"; width: Theme.control(29); height: Theme.control(30); quiet: true; glyph: "arrow-left"; enabled: !!surface.item && surface.item.canGoBack; hint: I18n.t("后退"); onClicked: surface.item.goBack() }
+        ActionButton { objectName: "webForwardButton"; width: Theme.control(29); height: Theme.control(30); quiet: true; glyph: "arrow-right"; enabled: !!surface.item && surface.item.canGoForward; hint: I18n.t("前进"); onClicked: surface.item.goForward() }
+        ActionButton { objectName: "webReloadButton"; width: Theme.control(29); height: Theme.control(30); quiet: true; glyph: "refresh-cw"; enabled: !!surface.item; hint: I18n.t("刷新"); onClicked: { surface.item.errorMessage = ""; surface.item.reload() } }
+        TextField {
+            id: address; objectName: "webAddress"
+            width: Math.max(80, pane.width - toolbar.x * 2 - Theme.control(96)); height: Theme.control(30)
+            text: pane.pageUrl; selectByMouse: true; font.pixelSize: Theme.font(11); color: Theme.ink; leftPadding: 11; rightPadding: 11
+            background: Rectangle { radius: 15; color: Theme.bg; border.color: address.activeFocus ? Theme.accent : Theme.line }
+            onActiveFocusChanged: if (activeFocus) Qt.callLater(function() { if (address.activeFocus) address.selectAll() })
+            onAccepted: { pane.navigate(); focus = false }
+        }
+    }
+    Item {
+        id: fileToolbar; x: 12; y: heading.height; width: parent.width - 24; height: pane.mode === "document" ? Theme.control(36) : 0; visible: pane.mode === "document"
+        Text { anchors.left: parent.left; anchors.right: fileActions.left; anchors.verticalCenter: parent.verticalCenter; text: pane.documentPath; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.muted; font.pixelSize: Theme.font(10) }
+        Row {
+            id: fileActions; anchors.right: parent.right; spacing: 2
+            ActionButton { objectName: "copyDocumentPreviewButton"; glyph: "copy"; quiet: true; width: Theme.control(30); height: Theme.control(30); enabled: !backend.documentPreview.state.busy && !backend.documentPreview.state.error; hint: I18n.t("复制预览内容"); onClicked: backend.copy(backend.documentPreview.state.text || "") }
+            ActionButton { objectName: "openDocumentFileButton"; glyph: "external-link"; quiet: true; width: Theme.control(30); height: Theme.control(30); hint: I18n.t("打开完整文件"); onClicked: backend.openChatboxPath(pane.documentPath, false) }
+        }
+    }
+    Rectangle { x: 1; y: toolbar.y + toolbar.height; width: parent.width - 1; height: 1; color: Theme.line }
+    Rectangle { x: 1; y: toolbar.y + toolbar.height; height: 2; color: Theme.accent; width: surface.item ? (parent.width - 1) * surface.item.loadProgress / 100 : 0; visible: !!surface.item && surface.item.loading }
+    Loader {
+        id: surface; objectName: "webSurfaceLoader"
+        anchors.left: parent.left; anchors.leftMargin: 1; anchors.right: parent.right
+        anchors.top: toolbar.bottom; anchors.topMargin: 1; anchors.bottom: parent.bottom
+        active: pane.opened && pane.mode === "web"
+        visible: !pane.moving && !pane.blocked
+        source: active ? "WebSurface.qml" : ""
+        onLoaded: item.url = pane.pageUrl
+    }
+    Loader {
+        id: documentSurface; objectName: "documentSurfaceLoader"
+        x: 1; y: fileToolbar.y + fileToolbar.height + 1
+        width: Math.max(0, pane.preferredWidth - 1); height: parent.height - y
+        active: pane.opened && pane.mode === "document"; visible: !pane.blocked
+        source: active ? "DocumentSurface.qml" : ""
+    }
+    Connections {
+        target: surface.item
+        function onUrlChanged() { pane.pageUrl = String(surface.item.url); if (!address.activeFocus) address.text = pane.pageUrl }
+    }
+}

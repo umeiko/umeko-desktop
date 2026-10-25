@@ -84,6 +84,17 @@ class ChatModelTests(unittest.TestCase):
         self.assertEqual(len(model.rows), 3)
         self.assertEqual(model.rows[1]["tools"][1]["state"], "done")
 
+    def test_web_attachments_keep_full_url_and_restore_as_cards(self):
+        from app.message_attachments import attachment_prompt, split_attachments
+        url = "https://example.com/page?q=1#section"
+        prompt = attachment_prompt("Compare this", [{"kind":"web", "path":url}, {"kind":"file", "path":"/tmp/report.txt"}])
+        text, items = split_attachments(prompt)
+        self.assertEqual(text, "Compare this")
+        self.assertEqual(items[0], {"kind":"web", "path":url, "url":url, "name":"example.com"})
+        self.assertEqual(len(items), 2)
+        invalid = attachment_prompt("Keep visible", [{"kind":"web", "path":"javascript:alert(1)"}])
+        self.assertEqual(split_attachments(invalid), (invalid, []))
+
     def test_reasoning_and_adjacent_tools_preserve_order_and_stable_offsets(self):
         messages = [
             {"role": "assistant", "thinking": "Check fixtures", "text": "I will run the checks.", "tools": [{"id": "a", "state": "running"}]},

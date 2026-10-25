@@ -36,6 +36,7 @@ from .message_attachments import split_attachments
 from .app_about import AppAbout
 from .themes import BASES, LIMIT as THEME_LIMIT, theme_library, read_theme
 from .session_preview import SessionPreview
+from .document_preview import DocumentPreview
 from .preferences import PreferencesMixin
 from .common_providers import CommonProvidersMixin
 from .chatbox import media_view
@@ -69,6 +70,18 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
     def fontScale(self):
         return self.store.data['ui']['fontScale']
 
+    @Property(bool, constant=True)
+    def webviewAvailable(self):
+        from .webview import configuration
+        return configuration()['available']
+
+    @Slot(str, result=str)
+    def normalizeWebUrl(self, raw):
+        raw=raw.strip()
+        if '://' not in raw: raw='https://'+raw
+        url=QUrl(raw,QUrl.StrictMode)
+        return url.toString(QUrl.FullyEncoded) if url.isValid() and url.scheme() in ('http','https') and url.host() and not url.userInfo() else ''
+
     @Property(str, constant=True)
     def userDataDirectory(self):
         return str(self.store.directory)
@@ -78,6 +91,8 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
     sidebarChanged = Signal()
     layoutChanged = Signal()
     toast = Signal(str)
+    webRequested = Signal(str, str)
+    documentRequested = Signal(str, str, str)
     taskFinished = Signal(str, str, bool)
     jobDone = Signal(str, object)
     approvalRequested = Signal(object)
@@ -137,6 +152,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self._mcp_jobs = {}
         self._closing = False
         self._session_preview = SessionPreview(self)
+        self._document_preview = DocumentPreview(self)
         self._view.id = ""
         self._view.messages = []
         self._view.history = []
@@ -182,6 +198,10 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
     @Property(QObject, constant=True)
     def sessionPreview(self):
         return self._session_preview
+
+    @Property(QObject, constant=True)
+    def documentPreview(self):
+        return self._document_preview
 
     @Property(QObject, constant=True)
     def providerPlugins(self):
@@ -410,6 +430,19 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
             self.toast.emit("文件已移动或不存在")
             return
         self.addAttachments(json.dumps([QUrl.fromLocalFile(str(path)).toString()]))
+
+    @Slot(str)
+    def attachChatboxUrl(self, raw):
+        if self._view.busy and self._view.phase != "running":
+            return self.toast.emit("Pi 加载完成后可添加附件")
+        url = self.normalizeWebUrl(raw)
+        if not url or any(item["path"] == url for item in self._view.attachments):
+            return
+        if len(self._view.attachments) >= 20:
+            return self.toast.emit("一次最多添加 20 个附件")
+        self._view.attachments.append({"id": uuid.uuid4().hex, "name": QUrl(url).host(),
+                                       "kind": "web", "path": url, "url": url})
+        self.attachmentsChanged.emit()
 
     @Slot()
     def activateChatWindow(self):
@@ -1584,6 +1617,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self._appearance_save.stop()
         self._streaming_timer.stop()
         self._session_preview.cancel()
+        self._document_preview.cancel()
         self._proxy_usage_timer.stop()
         self._pool.close()
         if self.public_server:

@@ -34,8 +34,8 @@ class TrayController(QObject):
         self.app.setQuitOnLastWindowClosed(False)
         self.app.aboutToQuit.connect(self.mark_quitting)
         window.destroyed.connect(self.window_destroyed)
+        # Keep Python away from transient Chromium objects seen by global app filters.
         window.installEventFilter(self)
-        self.app.installEventFilter(self)
         self.availability = QTimer(self)
         self.availability.setInterval(2000)
         self.availability.timeout.connect(self.refresh)
@@ -45,7 +45,6 @@ class TrayController(QObject):
         self.window = None
         self.availability.stop()
         self.tray.hide()
-        self.app.removeEventFilter(self)
 
     def tray_available(self):
         return QSystemTrayIcon.isSystemTrayAvailable()
@@ -61,8 +60,6 @@ class TrayController(QObject):
         return False
 
     def eventFilter(self, watched, event):
-        if watched is self.app and event.type() == QEvent.Quit:
-            self.mark_quitting()
         if watched is self.window and event.type() == QEvent.Close and not self.quitting:
             event.ignore()
             self.minimize_to_tray()

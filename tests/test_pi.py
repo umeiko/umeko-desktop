@@ -572,7 +572,7 @@ class PiTests(unittest.TestCase):
         self.command(self.payload)
         events = self.command({"type":"prompt", "text":"Show the image and deliver the report"})
         live = next(event for event in events if event.get("type") == "tool" and event.get("media"))
-        self.assertEqual([item["kind"] for item in live["media"]], ["image", "file", "folder"])
+        self.assertEqual([item["kind"] for item in live["media"]], ["image", "text", "folder"])
         state = next(event for event in events if event["type"] == "state")
         file = Path(state["session"]["file"])
         self.assertEqual(preview(file)[0], state["messages"])
@@ -587,9 +587,9 @@ class PiTests(unittest.TestCase):
         forked = next(e for e in self.command({"type":"fork"}) if e["type"] == "state")
         self.assertEqual(forked["messages"], state["messages"])
 
-    def test_chatbox_tool_rejects_remote_or_missing_paths_without_media(self):
+    def test_chatbox_tool_rejects_unsupported_urls_or_missing_paths_without_media(self):
         self.command(self.payload)
-        self.response_fn = lambda _model,messages,*_: Completion("Invalid files were not delivered") if messages[-1]["role"] == "tool" else Completion(tool_calls=[{"id":"invalid-delivery", "name":"submit_to_chatbox", "arguments":{"items":[{"path":"https://example.invalid/image.png"}, {"path":"missing.png"}]}}])
+        self.response_fn = lambda _model,messages,*_: Completion("Invalid files were not delivered") if messages[-1]["role"] == "tool" else Completion(tool_calls=[{"id":"invalid-delivery", "name":"submit_to_chatbox", "arguments":{"items":[{"path":"javascript:alert(1)"}, {"path":"missing.png"}]}}])
         events = self.command({"type":"prompt", "text":"Invalid delivery fixture"})
         failed = next(event for event in events if event.get("type") == "tool" and event.get("state") == "error")
         self.assertFalse(failed.get("media"))

@@ -1,5 +1,14 @@
 .pragma library
 var strings = {
+    "添加 MCP 服务器": "Add MCP server",
+    "粘贴 pi mcp add 命令，或服务器 JSON 配置。": "Paste a pi mcp add command or server JSON.",
+    "添加范围": "Scope",
+    "写入当前项目的 .pi/mcp.json。": "Saves to .pi/mcp.json in the current project.",
+    "写入当前 Pi 配置目录的 mcp.json。": "Saves to mcp.json in the current Pi configuration directory.",
+    "添加服务器": "Add server",
+    "添加": "Add",
+    "正在添加…": "Adding\u2026",
+
   "（中国大陆）": " (Mainland China)",
   "（国际）": " (International)",
   "国内站": "China site",
@@ -201,6 +210,19 @@ var strings = {
   "复制完整格式、示例与制作提示词": "Copy the complete format, examples and creation prompt",
   "复制消息": "Copy message",
   "复制路径": "Copy path",
+  "复制网址": "Copy URL",
+  "关闭预览": "Close preview",
+  "代码较大，已关闭语法高亮": "Syntax highlighting disabled for large code.",
+  "仅显示部分内容，打开可查看完整文件": "Partial preview. Open the file to view it in full.",
+  "文档较复杂，已使用纯文本预览": "Complex document shown as plain text.",
+  "复制预览内容": "Copy preview text",
+  "打开完整文件": "Open full file",
+  "文件不存在或不支持文本预览": "File missing or unsupported for text preview",
+  "文件暂时无法读取": "Unable to read the file",
+  "文件读取失败": "Failed to read the file",
+  "这是二进制文件，无法作为文本预览": "Binary files cannot be previewed as text",
+  "打开": "Open",
+  "网页预览组件尚未安装或无法加载": "The web preview component is missing or could not be loaded",
   "复制输入值": "Copy input",
   "复制项目信息": "Copy project information",
   "外观": "Appearance",
@@ -580,5 +602,9 @@ var strings = {
   "常见供应商": "Common providers",
   "填写 API Key，快速接入常见模型服务": "Connect to popular model services with an API key",
   "暂无 API 供应商": "No API providers yet",
-  "申请 API Key": "Get API key"
+  "申请 API Key": "Get API key",
+  "关闭网页": "Close page",
+  "后退": "Back",
+  "前进": "Forward",
+  "刷新": "Reload"
 }

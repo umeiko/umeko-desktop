@@ -79,12 +79,13 @@ jobs:
             set -e
             python_bin=.venv/bin/python
             if [ "$RUNNER_OS" = Windows ]; then python_bin=.venv/Scripts/python.exe; fi
-            node --test tests/update-engine.test.mjs
+            node --test tests/update-engine.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs
             "$python_bin" -m unittest tests.test_update tests.test_common_providers tests.test_openai_responses tests.test_platform tests.test_desktop_notifications -q
             "$python_bin" tests/installer_ui_smoke.py
             "$python_bin" tests/tray_ui_smoke.py
             "$python_bin" tests/common_providers_ui_smoke.py
             "$python_bin" tests/notifications_ui_smoke.py
+            "$python_bin" tests/mcp_add_ui_smoke.py
           }
           export -f verify_desktop
           if [ "$RUNNER_OS" = Linux ]; then
@@ -115,7 +116,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          foreach ($test in @('chatbox_ui_smoke.py', 'chat_drop_ui_smoke.py', 'chat_width_ui_smoke.py', 'chat_width_hover_ui_smoke.py', 'attachment_ui_smoke.py', 'message_actions_ui_smoke.py', 'settings_interaction_ui_smoke.py', 'motion_ui_smoke.py', 'selection_click_ui_smoke.py', 'theme_ui_smoke.py', 'preferences_ui_smoke.py', 'streaming_ui_smoke.py', 'markdown_table_ui_smoke.py', 'network_retry_ui_smoke.py', 'question_navigation_ui_smoke.py', 'output_limit_ui_smoke.py', 'auto_update_ui_smoke.py', 'about_ui_smoke.py', 'chat_loading_ui_smoke.py', 'chat_interaction_smoke.py', 'ui_smoke.py')) {
+          foreach ($test in @('chatbox_ui_smoke.py', 'document_preview_ui_smoke.py', 'chat_drop_ui_smoke.py', 'chat_width_ui_smoke.py', 'chat_width_hover_ui_smoke.py', 'attachment_ui_smoke.py', 'message_actions_ui_smoke.py', 'settings_interaction_ui_smoke.py', 'motion_ui_smoke.py', 'selection_click_ui_smoke.py', 'theme_ui_smoke.py', 'preferences_ui_smoke.py', 'streaming_ui_smoke.py', 'markdown_table_ui_smoke.py', 'network_retry_ui_smoke.py', 'question_navigation_ui_smoke.py', 'output_limit_ui_smoke.py', 'auto_update_ui_smoke.py', 'about_ui_smoke.py', 'chat_loading_ui_smoke.py', 'chat_interaction_smoke.py', 'ui_smoke.py')) {
             & '.venv/Scripts/python.exe' "tests/$test" 2>&1 | Tee-Object -FilePath "build/test-logs/$test.log"
             if ($LASTEXITCODE -ne 0) { throw "Interaction failed: $test" }
           }

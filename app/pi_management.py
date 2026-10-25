@@ -192,6 +192,26 @@ class PiManagement(QObject):
         self._install_state, self._install_message = "installing", "正在安装到" + target + "…"
         self._start("install", self._install_message, install)
 
+    @Slot(str, bool)
+    def addMcp(self, text, local):
+        if self._busy or self.controller.kernelBusy: return
+        context = self._context()
+        if not text.strip() or len(text) > 1_000_000 or context[3].get('safeMode') or local and not self.controller._view.workspace:
+            self._install_state, self._install_message = 'failed', '请填写 MCP 命令或 JSON；项目范围需先打开项目，并关闭恢复模式'
+            self.changed.emit(); return
+        release, cwd, agent_dir, agent = context
+        extensions = copy.deepcopy(self._extensions)
+        def add():
+            result = subprocess.run([node_executable(), str(release/'pi-commands.mjs'), '--add-mcp'],
+                input=json.dumps({'text':text, 'local':local, 'cwd':str(cwd), 'agentDir':str(agent_dir)}),
+                capture_output=True, text=True, encoding='utf-8', timeout=25,
+                env=npm_environment(agent), creationflags=CREATE_NO_WINDOW)
+            payload = json.loads(result.stdout)
+            if result.returncode or not payload.get('ok'): raise ValueError(payload.get('error', 'MCP 添加失败'))
+            return {'extensions':extensions, 'message':payload['message']}
+        self._install_state, self._install_message = 'installing', '正在添加 MCP 服务器…'
+        self._start('mcp-add', self._install_message, add)
+
     @Slot()
     def openTerminal(self):
         if self._busy or self.controller.kernelBusy: return
@@ -272,7 +292,7 @@ class PiManagement(QObject):
         if not result["ok"]:
             self._status = str(result["value"])
             if action == "npm": self._npm_status = self._status
-            if action == "install":
+            if action in ("install", "mcp-add"):
                 self._install_state, self._install_message = "failed", self._status
             c.toast.emit(self._status); self.changed.emit()
             if action == "factory": c.changed.emit()
@@ -281,11 +301,11 @@ class PiManagement(QObject):
             value = result["value"]
             if action == "npm":
                 self._npm_status = str(value); self.changed.emit(); return
-            if action == "install":
+            if action in ("install", "mcp-add"):
                 self._install_state, self._install_message = "succeeded", value["message"]
                 c._restart_pi()
                 self._status = value["message"]
-                c.toast.emit("扩展安装成功；运行中的任务完成后应用")
+                c.toast.emit("MCP 已添加；运行中的任务完成后应用" if action == "mcp-add" else "扩展安装成功；运行中的任务完成后应用")
                 self._extensions = value["extensions"] if self._job_context == self._resource_key() else []
                 self.changed.emit()
                 if self._job_context != self._resource_key(): self.scan()

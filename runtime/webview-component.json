@@ -1,0 +1,10 @@
+{
+  "id": "qt-webengine-6.10.2-linux-x64-v1",
+  "qt": "6.10.2",
+  "platform": "linux-x64",
+  "filename": "Umeko-qt-webengine-6.10.2-linux-x64-v1.zip",
+  "bytes": 114536308,
+  "sha256": "e892f306a5956a784100cabcd5ea25cf3c2b782f177842b22d115b4fa3029ffe",
+  "releaseUrl": "https://github.com/umeiko/umeko-desktop-cpp/releases/tag/qt-webengine-6.10.2-linux-x64-v1",
+  "url": "https://github.com/umeiko/umeko-desktop-cpp/releases/download/qt-webengine-6.10.2-linux-x64-v1/Umeko-qt-webengine-6.10.2-linux-x64-v1.zip"
+}

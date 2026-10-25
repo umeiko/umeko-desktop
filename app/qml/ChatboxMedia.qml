@@ -30,14 +30,16 @@ Column {
             Behavior on color { ColorAnimation { duration: 110 } }
             TextMetrics { id: nameSize; font: filename.font; text: filename.text }
             function open() {
-                if (inlineImage && root.Window.window) root.Window.window.previewChatImage(item, root.items)
+                if (item.kind === "web" && root.Window.window) root.Window.window.previewChatWeb(item)
+                else if (["markdown", "code", "text"].includes(item.kind) && root.Window.window) root.Window.window.previewChatDocument(item)
+                else if (inlineImage && root.Window.window) root.Window.window.previewChatImage(item, root.items)
                 else backend.openChatboxPath(item.path, false)
             }
             Column {
                 id: content; width: parent.width; spacing: 6
                 Item {
                     width: parent.width; height: Theme.control(card.inlineImage ? 23 : 30)
-                    Glyph { visible: !card.inlineImage; x: 9; width: Theme.icon(14); height: Theme.icon(14); anchors.verticalCenter: parent.verticalCenter; name: card.item.kind === "folder" ? "folder" : "file" }
+                    Glyph { visible: !card.inlineImage; x: 9; width: Theme.icon(14); height: Theme.icon(14); anchors.verticalCenter: parent.verticalCenter; name: card.item.kind === "web" ? "globe" : card.item.kind === "code" ? "code" : card.item.kind === "folder" ? "folder" : "file" }
                     Text {
                         id: filename; objectName: "chatboxLabel_" + card.key
                         x: card.inlineImage ? 0 : 16 + Theme.icon(14); width: parent.width - x - 8; anchors.verticalCenter: parent.verticalCenter

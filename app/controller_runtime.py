@@ -4,6 +4,7 @@ import uuid
 from pathlib import Path
 
 from .pi_runtime import node_executable
+from .webview import configuration as webview_configuration
 from .transcripts import tool_view
 from .message_attachments import attachment_prompt, split_attachments
 
@@ -80,7 +81,7 @@ class PiControllerMixin:
                     agentDir=agent.get("agentDir") or str(Path.home() / ".pi/agent"),
                     sessionDir=str(self.store.directory / "pi/sessions"), sessionFile=record.file,
                     legacyHistory=record.history, models=self.gateway.models(), agent=agent,
-                    mcpEnv=self._mcp_environment(record.workspace))
+                    mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration())
                 self._pool.start(record, node_executable(), bridge, payload)
         except (RuntimeError, OSError) as error:
             record.phase, record.failed = "idle", True
@@ -224,6 +225,15 @@ class PiControllerMixin:
             tool["state"] = event["state"]
             if event.get("media"):
                 tool["media"] = event["media"]
+                if visible and event.get('name')=='submit_to_chatbox' and event.get('state')=='done':
+                    for item in event['media']:
+                        if self.webviewAvailable and item.get('kind')=='web' and item.get('presentation')=='webview':
+                            url=self.normalizeWebUrl(item.get('url',''))
+                            if url: self.webRequested.emit(url,item.get('title',''))
+                        from .document_preview import document_kind
+                        path = item.get('path', '')
+                        document = document_kind(path, item.get('kind', ''))
+                        if document and Path(path).is_absolute(): self.documentRequested.emit(path, item.get('title', ''), document)
             if event.get("result") is not None:
                 tool["result"] = event["result"]
             transcript = True
