@@ -108,7 +108,10 @@ ApplicationWindow {
     }
     Timer { id: dropFocusTimer; interval: 80; onTriggered: { backend.activateChatWindow(); composer.focusInput() } }
     readonly property bool conversationVisible: page === "chat" && visible && visibility !== Window.Minimized && active
-    onPageChanged: if (page !== "chat") cancelSidebarSelection()
+    onPageChanged: if (page !== "chat") {
+        cancelSidebarSelection()
+        webPane.dismiss()
+    }
     onConversationVisibleChanged: backend.setConversationVisible(conversationVisible)
     Component.onCompleted: backend.setConversationVisible(conversationVisible)
     Shortcut { sequence: "Ctrl+N"; onActivated: window.startChat() }
@@ -460,6 +463,7 @@ ApplicationWindow {
 
         WebPane {
             id: webPane
+            visible: window.page === "chat" && animatedWidth > 0.5
             anchors.right: parent.right; anchors.top: header.bottom; anchors.bottom: parent.bottom
             preferredWidth: Math.max(window.webMinimumWidth, Math.min(window.webMaximumWidth, window.webPreferredWidth > 0 ? window.webPreferredWidth : Math.min(540, Math.max(350, parent.width * 0.46))))
             resizing: webResizeHandle.pressed
@@ -469,7 +473,7 @@ ApplicationWindow {
         MouseArea {
             id: webResizeHandle; objectName: "webPaneResizeHandle"
             x: webPane.x - 4; width: 8; anchors.top: header.bottom; anchors.bottom: parent.bottom; z: 40
-            visible: webPane.opened && (!webPane.moving || pressed)
+            visible: webPane.visible && webPane.opened && (!webPane.moving || pressed)
             enabled: !webPane.blocked && !chatSelection.dragging
             cursorShape: Qt.SizeHorCursor; hoverEnabled: true; preventStealing: true
             property real pressX: 0

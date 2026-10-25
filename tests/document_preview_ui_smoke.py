@@ -37,6 +37,25 @@ with tempfile.TemporaryDirectory(prefix='umeko-document-ui-') as temporary:
     assert '<img' not in controller.documentPreview.state['html']
     assert 'Markdown' in find('documentPreviewText').property('text')
     output=ROOT/'artifacts/screenshots';output.mkdir(parents=True,exist_ok=True);assert window.grabWindow().save(str(output/'document-markdown.png'))
+    # All settings entry points close the entire pane and unload its content.
+    for entry in ('button','shortcut','direct'):
+        wait(lambda:controller.documentPreview.state.get('html') and not pane.property('moving'))
+        before=pane.width()
+        if entry=='button':click('settingsButton')
+        elif entry=='shortcut':QTest.keyClick(window,Qt.Key_Comma,Qt.ControlModifier)
+        else:window.setProperty('page','settings')
+        assert window.property('page')=='settings'
+        assert not pane.property('opened') and not pane.isVisible() and not find('webPaneResizeHandle').isVisible()
+        assert controller.documentPreview.state=={}
+        wait(lambda:loader.property('item') is None and not pane.property('moving'))
+        assert pane.width()<0.5 and find('settingsPage').width()==find('mainArea').width()
+        if entry=='button':assert window.grabWindow().save(str(output/'settings-preview-dismissed.png'))
+        QTest.keyClick(window,Qt.Key_Escape)
+        assert window.property('page')=='chat' and not pane.property('opened') and not pane.isVisible()
+        QTest.qWait(150)  # Let the full-width chat delegates finish their layout.
+        click('openChatbox_document-Readme.md_0')
+        wait(lambda:controller.documentPreview.state.get('html') and not pane.property('moving'))
+        assert abs(pane.width()-before)<0.1
     submit(code,'code');wait(lambda:controller.documentPreview.state.get('kind')=='code' and not controller.documentPreview.state.get('busy'))
     wait(lambda:find('documentPreviewText').property('syntaxColors').property('status')=='highlighted')
     assert window.grabWindow().save(str(output/'document-code.png'))
@@ -59,4 +78,4 @@ with tempfile.TemporaryDirectory(prefix='umeko-document-ui-') as temporary:
     controller.newSession();wait(lambda:not pane.property('opened'));assert controller.documentPreview.state=={}
     assert not [w for w in warnings if 'DocumentSurface' in w or 'WebPane' in w or 'Main.qml' in w],warnings
     controller.close();engine.deleteLater();QCoreApplication.sendPostedEvents(None,QEvent.DeferredDelete)
-    print('DOCUMENT_UI_OK: Markdown, highlighted code, no WebEngine, drag resize, bounded 512MiB preview, event-loop responsiveness, latest request, close/reopen, missing file, session isolation')
+    print('DOCUMENT_UI_OK: Markdown, highlighted code, no WebEngine, settings dismiss/unload, no automatic reopen, retained width, drag resize, bounded 512MiB preview, event-loop responsiveness, latest request, close/reopen, missing file, session isolation')

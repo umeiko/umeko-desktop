@@ -84,6 +84,17 @@ with tempfile.TemporaryDirectory(prefix='umeko-webview-ui-') as temp:
     click('openChatbox_web-0_0');wait(lambda:loader.property('item') is not None and not pane.property('moving'))
     view=loader.property('item');wait(lambda:view.property('title')=='Preview' and not view.property('loading'))
     assert abs(pane.width()-enlarged)<0.1
+    click('settingsButton')
+    assert window.property('page')=='settings' and not pane.property('opened') and not pane.isVisible()
+    assert not handle.isVisible()
+    wait(lambda:loader.property('item') is None and not pane.property('moving'))
+    assert pane.width()<0.5
+    QTest.keyClick(window,Qt.Key_Escape)
+    assert window.property('page')=='chat' and not pane.property('opened') and loader.property('item') is None
+    QTest.qWait(150)
+    click('openChatbox_web-0_0');wait(lambda:loader.property('item') is not None and not pane.property('moving'))
+    view=loader.property('item');wait(lambda:view.property('title')=='Preview' and not view.property('loading'))
+    assert abs(pane.width()-enlarged)<0.1
     address=find('webAddress');address.setProperty('text',url.replace('/preview','/second'));assert QMetaObject.invokeMethod(address,'accepted',Qt.DirectConnection)
     wait(lambda:view.property('title')=='Second' and not view.property('loading'))
     assert QMetaObject.invokeMethod(find('webBackButton'),'clicked',Qt.DirectConnection)
