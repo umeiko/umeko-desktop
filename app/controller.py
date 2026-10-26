@@ -27,6 +27,7 @@ from .pi_sessions import PiSessionPool, SessionState
 from .controller_runtime import PiControllerMixin
 from .transcripts import preview
 from .chat_model import ChatModel
+from .transcript_index import TranscriptRepository
 from .model_context import context_suggestion
 from .model_capabilities import normalize_model, vision_suggestion
 from .provider_plugins import ProviderPlugins
@@ -86,6 +87,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
     def userDataDirectory(self):
         return str(self.store.directory)
     chatChanged = Signal()
+    messageCountChanged = Signal()
     transcriptChanged = Signal()
     viewChanged = Signal()
     sidebarChanged = Signal()
@@ -113,6 +115,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self.root = root
         self._app_about = AppAbout(self)
         self.store = Store()
+        self.transcripts = TranscriptRepository(self.store.directory / 'cache/chat-index')
         self.store.data["themes"] = theme_library(self.store.data.get("themes"))
         if self.store.data["theme"] not in BASES and not any("custom:" + row["id"] == self.store.data["theme"] for row in self.store.data["themes"]):
             self.store.data["theme"] = "dark" if self.store.data["dark"] else "light"
@@ -144,13 +147,15 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self._streaming_timer.setInterval(24)
         self._streaming_timer.timeout.connect(self._publish_stream)
         self._last_sidebar_rows = None
-        self.chatChanged.connect(lambda: self._chat_model.update(self._view.messages))
+        self._stream_projection = False
+        self.chatChanged.connect(self._update_chat_model)
         self.chatChanged.connect(self._refresh_sidebar)
         self._project_drafts = {self._view.workspace: self._view}
         self._chat_visible = True
         self._management_jobs = set()
         self._mcp_jobs = {}
         self._closing = False
+        self._copy_request = 0
         self._session_preview = SessionPreview(self)
         self._document_preview = DocumentPreview(self)
         self._view.id = ""
@@ -261,6 +266,21 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
     @Property(QObject, constant=True)
     def messageModel(self):
         return self._chat_model
+
+    def _update_chat_model(self):
+        count = self._chat_model.rowCount()
+        self._chat_model.set_snapshot(self._view.transcript)
+        dirty = self._view.projection_dirty_from
+        if dirty is None and self._stream_projection:
+            dirty = max(0, len(self._view.messages) - 1)
+        self._chat_model.update(self._view.messages, dirty_from=dirty)
+        self._view.projection_dirty_from = None
+        if count != self._chat_model.rowCount():
+            self.messageCountChanged.emit()
+
+    @Property(int, notify=messageCountChanged)
+    def messageCount(self):
+        return self._chat_model.rowCount()
 
     @Property(float, notify=viewChanged)
     def scrollPosition(self):
@@ -387,6 +407,44 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
     @Property("QVariantList", notify=chatChanged)
     def displayMessages(self):
         return self._chat_model.rows
+
+    @Slot(int, result='QVariantMap')
+    def displayMessage(self, row):
+        return self._chat_model.message(row, synchronous=True)
+
+    @Slot(int)
+    def copyDisplayMessage(self, row):
+        model = self._chat_model
+        if model.snapshot and row < model.base_count:
+            snapshot = model.snapshot
+            self._copy_chat(lambda: snapshot.copy_text(row))
+            return
+        message = model.message(row)
+        if message.get('_chunked'):
+            index = row - model.base_count
+            first = model._source_starts[index]
+            end = next((value for value in model._source_starts[index + 1:] if value > first), len(model._source))
+            parts = ChatModel.project(model._source[first:end])
+        else:
+            parts = [message]
+        pieces = []
+        for value in parts:
+            prose = '\n\n'.join(step['text'] for step in value.get('activity', []) if step['kind'] == 'text')
+            pieces.extend([prose or value.get('text', ''), *(item.get('name', '') for item in value.get('attachments', []))])
+        self.copy('\n'.join(piece for piece in pieces if piece))
+
+    @Slot(str)
+    def copyChatSelection(self, raw):
+        from .chat_copy import selected_text
+        selection = json.loads(raw)
+        model = self._chat_model
+        snapshot, overlay = model.snapshot, list(model.rows)
+        script = (self.root / 'app/qml/markdown.js').read_text(encoding='utf-8')
+        self._copy_chat(lambda: selected_text(script, snapshot, overlay, selection['anchor'], selection['cursor'], selection.get('expanded', {})))
+
+    def _copy_chat(self, job):
+        self._copy_request += 1
+        self._job(f'copy-chat:{self._copy_request}', job)
 
     @Slot()
     def openChatDirectory(self):
@@ -1071,6 +1129,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
 
     @Slot(str)
     def copy(self, value):
+        self._copy_request += 1
         QGuiApplication.clipboard().setText(value)
         self.toast.emit("已复制到剪贴板")
 
@@ -1371,6 +1430,10 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         if not session:
             return
         record = self._pool.find(session_id)
+        stale = record and record.transcript and not record.busy and not record.transcript.matches_source()
+        if (record and (not record.loaded or stale)) or (record is None and session.get('file') and self.transcripts.large(session['file'])):
+            self._session_preview.open_direct(session_id)
+            return
         if record is None:
             record = self._new_view(session.get("workspace", ""))
             record.id, record.file, record.title = session_id, session.get("file", ""), session["title"]
@@ -1385,7 +1448,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
                 except OSError:
                     self.toast.emit("原生会话文件暂时无法读取")
         self._activate(record)
-        if record.model and not record.process and not record.busy:
+        if record.model and not record.process and not record.busy and not record.transcript:
             # QProcess.start() is asynchronous; the transcript is already visible.
             self._command_pi("inspect", record=record)
 
@@ -1403,6 +1466,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
             if record:
                 self._pool.retire(record)
             file.unlink(missing_ok=True)
+            self._job('discard-chat-index', lambda: self.transcripts.discard(file))
         if record:
             self._pool.records.pop(record.key, None)
         self._sessions = [s for s in self._sessions if s["id"] != session_id]
@@ -1487,7 +1551,40 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
     def _on_job_done(self, name, result):
         if self._closing:
             return
-        if name.startswith("pi-admin:"):
+        if name.startswith('copy-chat:'):
+            if int(name.split(':', 1)[1]) != self._copy_request:
+                return
+            if result['ok']:
+                self.copy(result['value'])
+            else:
+                self.toast.emit('暂时无法复制所选内容，请重新选择后再试')
+            return
+        if name.startswith('transcript:'):
+            key = name.split(':', 1)[1]
+            record = self._pool.records.get(key)
+            if not record:
+                return
+            record.index_running = False
+            if result['ok'] and result['value']['request'] == record.index_request and result['value']['file'] == record.file:
+                value = result['value']
+                snapshot, captured = value['snapshot'], value['captured']
+                self._chat_model.viewportAboutToChange.emit() if record is self._view else None
+                record.transcript = snapshot
+                record.messages = [message for message in record.messages if id(message) not in captured]
+                record.history, record.tree, record.loaded = [], [], True
+                record.tail_characters = sum(len(message.get('text', '')) + len(message.get('thinking', '')) for message in record.messages)
+                record.body_dirty = True
+                if record is self._view:
+                    self.chatChanged.emit()
+                    self._chat_model.viewportChanged.emit()
+                self._pool.trim_bodies()
+            elif not result['ok'] and not self._closing:
+                self.toast.emit('聊天索引暂时无法更新，当前内容仍可继续浏览')
+            pending, record.index_pending = record.index_pending, None
+            if pending:
+                self._queue_transcript_index(record, *pending)
+            return
+        elif name.startswith("pi-admin:"):
             return
         if name.startswith("mcp-save:"):
             record, scope, workspace = self._mcp_jobs.pop(name)
@@ -1617,6 +1714,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self._appearance_save.stop()
         self._streaming_timer.stop()
         self._session_preview.cancel()
+        self._chat_model.close()
         self._document_preview.cancel()
         self._proxy_usage_timer.stop()
         self._pool.close()

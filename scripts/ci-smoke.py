@@ -7,12 +7,73 @@ import json
 import os
 import subprocess
 import sys
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from app.pi_runtime import RELEASE_NAME, PINNED_VERSION
 from app.project_info import VERSION, git_output
+
+
+def verify_windows_preview(executable, environment, report_dir):
+    import ctypes
+    from ctypes import wintypes
+    ready = threading.Event()
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == '/ready': ready.set()
+            raw = b'<title>Packaged preview</title><h1>Umeko WebView</h1><script>requestAnimationFrame(()=>fetch("/ready"))</script>'
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html;charset=utf-8')
+            self.send_header('Content-Length', str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+        def log_message(self, *args): pass
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    diagnostic = report_dir / 'web-preview.log'
+    diagnostic.unlink(missing_ok=True)
+    env = dict(environment, QT_QPA_PLATFORM='windows', CODEAGENT_DIAGNOSTICS=str(diagnostic),
+               UMEKO_DATA_DIR=str(report_dir / 'preview-profile'), UMEKO_WEB_PREVIEW_URL=f'http://127.0.0.1:{server.server_port}/')
+    user32 = ctypes.windll.user32
+    callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user32.EnumWindows.argtypes = [callback, wintypes.LPARAM]
+    user32.EnumChildWindows.argtypes = [wintypes.HWND, callback, wintypes.LPARAM]
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    seen = []
+    with subprocess.Popen([str(executable), '--demo', '--smoke'], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
+        @callback
+        def child(handle, unused):
+            name = ctypes.create_unicode_buffer(200)
+            user32.GetClassNameW(handle, name, len(name))
+            if name.value == 'Chrome_RenderWidgetHostHWND' and user32.IsWindowVisible(handle):
+                seen.append(True)
+            return True
+        @callback
+        def window(handle, unused):
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(handle, ctypes.byref(pid))
+            if pid.value == process.pid: user32.EnumChildWindows(handle, child, 0)
+            return True
+        try:
+            deadline = time.monotonic() + 20
+            while process.poll() is None and time.monotonic() < deadline:
+                user32.EnumWindows(window, 0)
+                time.sleep(0.05)
+            if process.poll() is None:
+                process.kill()
+                raise RuntimeError('Frozen browser did not exit its smoke test')
+            stdout, stderr = process.communicate(timeout=5)
+            (report_dir / 'web-preview-output.log').write_bytes(stdout + stderr)
+            log = diagnostic.read_text(encoding='utf-8') if diagnostic.exists() else ''
+            if process.returncode or not ready.is_set() or not seen or 'WebSurface.qml:' in log or 'EXIT:0' not in log:
+                raise RuntimeError('Frozen Windows browser failed: ' + log)
+        finally:
+            server.shutdown()
 
 
 def main():
@@ -50,6 +111,7 @@ def main():
     expected += ["NODE_EXECUTABLE:" + selected, "TRAY_ICON_READY:1", "EXIT:0"]
     if result.returncode or lines != expected or not selected or Path(selected).resolve() != node.resolve():
         raise RuntimeError("Frozen GUI startup failed: " + log + result.stderr[-2000:])
+    if sys.platform == 'win32': verify_windows_preview(executable, environment, report_dir)
     if not screenshot.is_file() or screenshot.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
         raise RuntimeError("Frozen GUI did not render a screenshot")
     metadata = json.loads((resources / "build-info.json").read_text(encoding="utf-8"))

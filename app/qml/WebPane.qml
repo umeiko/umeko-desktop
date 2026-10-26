@@ -7,6 +7,8 @@ Rectangle {
     property bool opened: false
     property bool blocked: false
     property bool resizing: false
+    property bool surfaceReady: false
+    onOpenedChanged: if (!opened) surfaceReady = false
     property string pageUrl: ""
     property string pageTitle: ""
     property string mode: "web"
@@ -79,14 +81,39 @@ Rectangle {
     }
     Rectangle { x: 1; y: toolbar.y + toolbar.height; width: parent.width - 1; height: 1; color: Theme.line }
     Rectangle { x: 1; y: toolbar.y + toolbar.height; height: 2; color: Theme.accent; width: surface.item ? (parent.width - 1) * surface.item.loadProgress / 100 : 0; visible: !!surface.item && surface.item.loading }
+    // WebView2 must be initialized in a visible, settled native window.
+    // Retain the page through later resizes and temporary overlay blocking.
+    Timer {
+        interval: 0
+        running: pane.opened && pane.mode === "web" && !pane.moving && !pane.blocked && !pane.surfaceReady
+        onTriggered: pane.surfaceReady = true
+    }
     Loader {
         id: surface; objectName: "webSurfaceLoader"
         anchors.left: parent.left; anchors.leftMargin: 1; anchors.right: parent.right
         anchors.top: toolbar.bottom; anchors.topMargin: 1; anchors.bottom: parent.bottom
-        active: pane.opened && pane.mode === "web"
-        visible: !pane.moving && !pane.blocked
+        active: pane.opened && pane.mode === "web" && pane.surfaceReady
+        visible: !pane.moving && !pane.blocked && (!item || !item.errorMessage)
         source: active ? "WebSurface.qml" : ""
         onLoaded: item.url = pane.pageUrl
+    }
+    Item {
+        objectName: "webLoadError"
+        anchors.fill: surface
+        visible: pane.opened && pane.mode === "web" && !pane.moving && !pane.blocked
+                 && (surface.status === Loader.Error || !!surface.item && !!surface.item.errorMessage)
+        Column {
+            anchors.centerIn: parent; width: Math.max(0, Math.min(parent.width - 48, 420)); spacing: 16
+            Text { width: parent.width; text: I18n.t("网页加载失败"); color: Theme.ink; font.pixelSize: Theme.font(15); wrapMode: Text.Wrap }
+            Text { width: parent.width; text: surface.item ? surface.item.errorMessage : I18n.t("网页组件加载失败，请重新安装最新版本。"); color: Theme.muted; font.pixelSize: Theme.font(12); wrapMode: Text.WrapAnywhere }
+            ActionButton {
+                objectName: "retryWebLoadButton"; text: I18n.t("重试"); glyph: "refresh-cw"
+                onClicked: {
+                    if (surface.item) { surface.item.errorMessage = ""; surface.item.reload() }
+                    else { pane.surfaceReady = false }
+                }
+            }
+        }
     }
     Loader {
         id: documentSurface; objectName: "documentSurfaceLoader"

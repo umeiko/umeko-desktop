@@ -10,6 +10,25 @@ from .message_attachments import attachment_prompt, split_attachments
 
 
 class PiControllerMixin:
+    def _queue_transcript_index(self, record, leaf=None, canonical=False, captured=None):
+        if not record.file or self._closing:
+            return
+        captured = list(record.messages) if captured is None else captured
+        record.index_request += 1
+        if record.index_running:
+            record.index_pending = (leaf, canonical, captured)
+            return
+        record.index_running = True
+        file = record.file
+        request = record.index_request
+        focus = record.scroll_index if not record.follow_tail else -1
+        def build():
+            snapshot = self.transcripts.open(file, leaf=leaf, cancelled=lambda: self._closing, focus=focus)
+            entries = snapshot.covered_ids(message.get('entryId') for message in captured)
+            covered = {id(message) for message in captured if canonical or message.get('entryId') in entries}
+            return {'snapshot':snapshot, 'captured':covered, 'file':file, 'request':request}
+        self._job('transcript:' + record.key, build)
+
     def _write_pi(self, payload, record=None):
         self._pool.write(record or self._view, payload)
 
@@ -116,9 +135,10 @@ class PiControllerMixin:
         record.model, record.provider = self.store.data["selectedModel"], self.store.data["selectedProvider"]
         if not record.id:
             record.id = "pending-" + record.key
-        if not record.messages:
+        if not record.messages and not record.transcript:
             record.title = " ".join(text.split())[:28]
         record.messages.extend([{"role": "user", "text": text, "error": False}, {"role": "assistant", "text": "", "error": False}])
+        record.body_dirty = True
         record.optimistic_user = True
         self._index_record(record)
         self.store.data["sessionMeta"].setdefault(record.id, {})["unread"] = False
@@ -151,7 +171,11 @@ class PiControllerMixin:
 
     def _publish_stream(self):
         if not self._closing:
-            self.chatChanged.emit()
+            self._stream_projection = True
+            try:
+                self.chatChanged.emit()
+            finally:
+                self._stream_projection = False
             self.transcriptChanged.emit()
 
     def _handle_pi_event(self, record, event):
@@ -159,7 +183,18 @@ class PiControllerMixin:
             return
         kind, visible = event.get("type"), record is self._view
         transcript = False
-        if kind == "ready":
+        dirty = max(0, len(record.messages) - 2)
+        if kind == 'native_entry':
+            for message in reversed(record.messages):
+                if message.get('role') == event.get('role') and message.get('timestamp') == event.get('timestamp'):
+                    message['entryId'] = event['entryId']
+                    break
+            return
+        elif kind == 'history_checkpoint':
+            if record.file and (len(record.messages) > 256 or record.tail_characters > 1024 * 1024):
+                self._queue_transcript_index(record, event.get('leafId'))
+            return
+        elif kind == "ready":
             record.ready = True
             record.phase = "running" if record.action in ("prompt", "compact") else "working"
             record.tool_status = "正在生成" if record.phase == "running" else "正在处理"
@@ -172,6 +207,7 @@ class PiControllerMixin:
                 record.messages.append({"role": "assistant", "text": "", "error": False})
             field = "thinking" if kind == "thinking_delta" else "text"
             record.messages[-1][field] = record.messages[-1].get(field, "") + event["text"]
+            record.tail_characters += len(event['text'])
             transcript = True
         elif kind == "user_start":
             text = event["text"]
@@ -216,7 +252,10 @@ class PiControllerMixin:
                 transcript = True
         elif kind == "tool":
             record.tool_status = event["name"] + (" · 运行中" if event["state"] == "running" else " · 失败" if event["state"] == "error" else " · 完成")
-            tool = next((tool for message in reversed(record.messages) for tool in message.get("tools", []) if tool["id"] == event["id"]), None)
+            found = next(((i, tool) for i in range(len(record.messages) - 1, -1, -1) for tool in record.messages[i].get("tools", []) if tool["id"] == event["id"]), None)
+            tool = found[1] if found else None
+            if found:
+                dirty = found[0]
             if tool is None:
                 if not record.messages or record.messages[-1]["role"] != "assistant":
                     record.messages.append({"role": "assistant", "text": "", "error": False})
@@ -276,7 +315,13 @@ class PiControllerMixin:
                 self.toast.emit(event["message"])
         elif kind == "state":
             self._record_info(record, event["session"])
-            record.messages, record.history, record.tree = event["messages"], [], event["tree"]
+            if event.get('indexedHistory'):
+                # Keep the already visible live tail while its durable index is
+                # prepared. The complete history never crosses into the UI.
+                self._queue_transcript_index(record, event['indexedHistory'].get('leafId'), canonical=True)
+            else:
+                record.messages, record.history, record.tree = event["messages"], [], event["tree"]
+                record.transcript, record.loaded = None, True
             record.resources = event["resources"]
             record.context_usage = event.get("contextUsage") or {}
             if visible:
@@ -321,6 +366,9 @@ class PiControllerMixin:
             self._pool.trim()
         else:
             return
+        if transcript:
+            record.body_dirty = True
+            record.projection_dirty_from = min(dirty, record.projection_dirty_from) if record.projection_dirty_from is not None else dirty
         if visible and kind in ("delta", "thinking_delta"):
             if not self._streaming_timer.isActive(): self._streaming_timer.start()
             return

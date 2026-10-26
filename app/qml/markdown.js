@@ -54,3 +54,35 @@ function blocks(text, markdown, compact) {
     flush()
     return result
 }
+
+
+function selectionSegments(message, row, expanded) {
+    const segments = message.role === "user" || message.continuation ? [] : [{block:-100000,text:"umeko",markdown:false}]
+            const activity = message.activity || []
+            if (activity.length) {
+                for (let stepIndex = 0; stepIndex < activity.length; stepIndex++) {
+                    const step = activity[stepIndex]
+                    if (step.kind === "text") {
+                        blocks(step.text || "", !step.error, stepIndex < activity.length - 1).forEach((block, index) => segments.push({block:step.blockOffset + index,text:block.text,markdown:!step.error && !block.code,copyPrefix:index === 0 ? step._copyPrefix || "" : "",copyJoin:index === 0 ? step._copyJoin || "" : ""}))
+                    } else if (step.kind === "thinking" && expanded[row + ":" + step.blockOffset]) {
+                        segments.push({block:step.blockOffset,text:step.text,markdown:false})
+                    } else if (step.kind === "media") {
+                        (step.items || []).forEach((item, index) => {
+                            const key = step.blockOffset + index * 3
+                            segments.push({block:key,text:item.title || item.name || "",markdown:false})
+                            if (item.kind === "image" && item.preview && item.caption) segments.push({block:key + 1,text:item.caption,markdown:false})
+                        })
+                    } else if (step.kind === "tools") {
+                        step.tools.forEach((tool, index) => {
+                            const key = step.blockOffset + index + 1
+                            if (expanded[row + ":" + key]) segments.push({block:key,text:JSON.stringify(tool.arguments || {}, null, 2) + (tool.result ? "\n\n" + tool.result : ""),markdown:false})
+                        })
+                    }
+                }
+            } else {
+                const markdown = message.role === "assistant" && !message.error
+                blocks(message.text || "", markdown).forEach((block, index) => segments.push({block:index,text:block.text,markdown:markdown && !block.code,copyPrefix:index === 0 ? message._copyPrefix || "" : "",copyJoin:index === 0 ? message._copyJoin || "" : ""}))
+                if (message.role === "user") (message.attachments || []).forEach((item, index) => segments.push({block:10000 + index,text:item.name,markdown:false}))
+            }
+    return segments
+}

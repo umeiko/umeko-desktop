@@ -1,5 +1,6 @@
 import io
 import json
+import ssl
 import tempfile
 import unittest
 import urllib.error
@@ -58,6 +59,30 @@ class AboutTests(unittest.TestCase):
         for raw in (b"invalid-json", b" " * (2 * 1024 * 1024 + 1)):
             with patch("urllib.request.OpenerDirector.open", return_value=io.BytesIO(raw)):
                 self.assertEqual(fetch_latest_release()["state"], "error")
+
+    def test_proxy_network_failure_tries_direct_but_http_rejection_does_not(self):
+        raw = json.dumps(self.release('v99.0.0')).encode()
+        with patch('app.app_about.system_proxy', return_value='http://fixture.invalid:8080'), \
+             patch('app.app_about._release_metadata', side_effect=[urllib.error.URLError('offline'),raw]) as read:
+            self.assertEqual(fetch_latest_release()['state'], 'available')
+            self.assertEqual([call.args[0] for call in read.call_args_list], ['http://fixture.invalid:8080',''])
+        with patch('app.app_about.system_proxy', return_value='http://fixture.invalid:8080'), \
+             patch('app.app_about._release_metadata', side_effect=urllib.error.HTTPError(RELEASE_API,407,'',{},None)) as read:
+            self.assertEqual(fetch_latest_release()['state'], 'error')
+            self.assertEqual(read.call_count, 1)
+
+    def test_certificate_failure_has_system_trust_guidance_and_verified_context(self):
+        error = urllib.error.URLError(ssl.SSLCertVerificationError(1,'synthetic untrusted chain'))
+        with patch('app.app_about._release_metadata', side_effect=error):
+            result = fetch_latest_release()
+        self.assertEqual(result['state'], 'error')
+        self.assertIn('系统信任证书', result['message'])
+        with patch('urllib.request.build_opener') as build:
+            build.return_value.open.return_value.__enter__.return_value.read.return_value = json.dumps(self.release('v99.0.0')).encode()
+            self.assertEqual(fetch_latest_release()['state'], 'available')
+            context = build.call_args.args[1]._context
+            self.assertTrue(context.check_hostname)
+            self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
 
     def test_packaged_info_uses_build_platform_and_never_guesses_build_date(self):
         with tempfile.TemporaryDirectory() as temp:

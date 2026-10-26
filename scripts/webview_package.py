@@ -4,6 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 QT = '6.10.2'
+FRONTEND_LAYOUT = 2
 ID = 'qt-webengine-' + QT + '-linux-x64-v1'
 
 def digest(file):
@@ -19,10 +20,10 @@ def stage_frontend(output, qt_root=None):
     marker=output/'frontend-manifest.json'
     if not qt_root and marker.is_file():
         cached=json.loads(marker.read_text())
-        if cached.get('qt')==QT and cached.get('platform')==sys.platform and cached.get('files') and all((output/name).is_file() and digest(output/name)==sha for name,sha in cached['files'].items()): return
+        if cached.get('layout')==FRONTEND_LAYOUT and cached.get('qt')==QT and cached.get('platform')==sys.platform and cached.get('files') and all((output/name).is_file() and digest(output/name)==sha for name,sha in cached['files'].items()): return
     def stamp():
         files={file.relative_to(output).as_posix():digest(file) for file in output.rglob('*') if file.is_file() and file!=marker}
-        marker.write_text(json.dumps({'qt':QT,'platform':sys.platform,'files':files},sort_keys=True)+'\n')
+        marker.write_text(json.dumps({'layout':FRONTEND_LAYOUT,'qt':QT,'platform':sys.platform,'files':files},sort_keys=True)+'\n')
     if output.exists(): shutil.rmtree(output)
     output.mkdir(parents=True)
     if qt_root:
@@ -46,8 +47,13 @@ def stage_frontend(output, qt_root=None):
                 name = entry.filename
                 if name.startswith('PySide6/Qt/'):
                     relative = name.removeprefix('PySide6/Qt/')
-                elif sys.platform == 'win32' and name.startswith('PySide6/') and name.endswith('.dll'):
-                    relative = 'bin/' + name.removeprefix('PySide6/')
+                elif sys.platform == 'win32' and name.startswith('PySide6/'):
+                    # Windows wheels put qml/ and plugins/ directly in PySide6,
+                    # alongside root DLLs. Preserve module metadata and paths.
+                    relative = name.removeprefix('PySide6/')
+                    if relative.startswith(('qml/', 'plugins/')): pass
+                    elif '/' not in relative and relative.endswith('.dll'): relative = 'bin/' + relative
+                    else: continue
                 else: continue
                 if frontend('/' + relative) and not entry.is_dir():
                     target = output / relative; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(stream.read(entry))

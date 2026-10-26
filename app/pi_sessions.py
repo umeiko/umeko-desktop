@@ -48,6 +48,15 @@ class SessionState:
     scroll_y: float = -1
     scroll_index: int = -1
     follow_tail: bool = True
+    loaded: bool = True
+    transcript: object = None
+    index_request: int = 0
+    body_bytes: int = 0
+    body_dirty: bool = True
+    index_running: bool = False
+    index_pending: object = None
+    tail_characters: int = 0
+    projection_dirty_from: int | None = None
 
     @property
     def busy(self):
@@ -61,15 +70,17 @@ class SessionState:
 class PiSessionPool(QObject):
     event = Signal(object, object)
 
-    def __init__(self, parent=None, limit=8):
+    def __init__(self, parent=None, limit=8, body_limit=32 * 1024 * 1024):
         super().__init__(parent)
         self.limit = limit
+        self.body_limit = body_limit
         self.records = OrderedDict()
         self.current = None
         self.retiring = set()
         self.closing = False
 
     def touch(self, record, current=False):
+        record.body_dirty = True
         self.records[record.key] = record
         self.records.move_to_end(record.key)
         if current:
@@ -153,6 +164,25 @@ class PiSessionPool(QObject):
             if not oldest:
                 break  # Running/loading instances are never evicted.
             self.retire(oldest)
+        self.trim_bodies()
+
+    def trim_bodies(self):
+        from .transcript_index import memory_weight
+        for record in self.records.values():
+            if record.body_dirty:
+                record.body_bytes = memory_weight((record.messages, record.history, record.tree, record.resources))
+                record.body_dirty = False
+        total = sum(record.body_bytes for record in self.records.values())
+        for record in self.records.values():
+            if total <= self.body_limit:
+                break
+            if record is self.current or record.busy or not record.file or not record.loaded:
+                continue
+            self.retire(record)
+            total -= record.body_bytes
+            record.messages, record.history, record.tree = [], [], []
+            record.resources = {"tools": [], "skills": [], "extensions": [], "diagnostics": []}
+            record.transcript, record.loaded, record.body_bytes = None, False, 0
 
     def invalidate(self):
         for record in self.records.values():

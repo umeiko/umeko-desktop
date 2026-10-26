@@ -14,7 +14,7 @@ if not RESTORE:
     os.environ["UMEKO_DATA_DIR"] = tempfile.mkdtemp(prefix="umeko-sidebar-ui-")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
-from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtCore import QObject, QPoint, QPointF, Qt
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
 from app.storage import Store
@@ -42,20 +42,45 @@ def click(name):
     item = find(name)
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, item.mapToScene(item.boundingRect().center()).toPoint())
     QTest.qWait(100)
+    settle_sidebar()
 
 
-def resize_sidebar(delta):
+def wait_for(predicate, message):
+    for _ in range(400):
+        if predicate(): return
+        QTest.qWait(10)
+    raise AssertionError(message)
+
+
+def settle_sidebar():
+    QTest.qWait(30)  # Window resize notifications reach QML on the next event turn.
+    wait_for(lambda: not find('sidebarWidthMotion').property('moving'), 'Sidebar PID did not settle')
+
+
+def resize_sidebar(delta, collapse=False, via_narrow=False):
+    settle_sidebar()
     handle = find("sidebarResizeHandle")
     start = handle.mapToScene(QPointF(handle.width() / 2, 210)).toPoint()
+    initial = find('sidebar').width()
     with patch.object(backend.store, "save", wraps=backend.store.save) as save:
         QTest.mousePress(window, Qt.LeftButton, Qt.NoModifier, start)
-        for step in range(1, 5):
-            QTest.mouseMove(window, start + QPoint(round(delta * step / 4), 0))
+        assert handle.property('pressed') and handle.property('resizing')
+        offsets = [round(delta * step / 4) for step in range(1, 5)]
+        if via_narrow: offsets.insert(0, round(100 - initial))
+        for offset in offsets:
+            QTest.mouseMove(window, start + QPoint(offset, 0))
             QTest.qWait(15)
-        assert save.call_count == 0, "dragging wrote preferences before release"
+            assert handle.isVisible() and handle.property('pressed'), 'Width change cancelled the active mouse grab'
+            expected = max(0, min(window.property('sidebarMaximumWidth'), initial + offset))
+            assert abs(find('sidebar').width() - expected) < 1, 'Sidebar did not follow the pointer'
+            assert not window.property('sidebarCollapsed'), 'Sidebar collapsed before mouse release'
+            assert save.call_count == 0, "dragging wrote preferences before release"
         QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, start + QPoint(delta, 0))
         QTest.qWait(100)
+        assert window.property('sidebarCollapsed') is collapse
         assert save.call_count <= 1, "one drag repeatedly saved the profile"
+        if collapse: assert save.call_count == 1, 'Snap collapse must persist exactly once'
+    settle_sidebar()
 
 
 def capture(name):
@@ -66,6 +91,7 @@ def capture(name):
 
 try:
     QTest.qWait(200)
+    settle_sidebar()
     sidebar, main = find("sidebar"), find("mainArea")
     if RESTORE:
         assert backend.sidebarCollapsed
@@ -88,23 +114,42 @@ try:
         assert main.x() == sidebar.width()
         assert backend.sidebarWidth == 346
         assert Store(backend.store.directory).data["ui"]["sidebarWidth"] == 346
-        resize_sidebar(-240)
+        resize_sidebar(-166)  # Above the collapse threshold: return to the 200px minimum.
         assert sidebar.width() == 200, sidebar.width()
         resize_sidebar(500)
         assert sidebar.width() == 480, sidebar.width()
         # Resize the window without forgetting the user's wider preference.
         window.resize(1060, 740)
-        QTest.qWait(100)
+        settle_sidebar()
         assert sidebar.width() == 300 and main.width() >= 760
         assert backend.sidebarWidth == 480
         window.resize(1320, 860)
-        QTest.qWait(100)
+        settle_sidebar()
         assert sidebar.width() == 480
         resize_sidebar(-134)
         assert sidebar.width() == 346
         backend.setTheme("yanami")
         QTest.qWait(150)
         capture("45-sidebar-resizable")
+        assert find('sidebarResizeHandle').width() >= 14
+        resize_sidebar(0, via_narrow=True)
+        assert sidebar.width() == 346 and not backend.sidebarCollapsed, 'Dragging back out of the narrow region should keep the panel open'
+        pulse = window.findChild(QObject, 'sidebarCollapseHintPulse')
+        assert pulse is not None
+        resize_sidebar(-220, collapse=True)
+        assert backend.sidebarCollapsed and sidebar.width() == 0
+        assert backend.sidebarWidth == 346, 'Snap collapse forgot the last expanded width'
+        assert pulse.property('running'), 'The restore button did not flash after snap collapse'
+        assert prompt.property('text') == 'Unsent fixture draft'
+        click('toggleSidebarButton')
+        assert sidebar.width() == 346 and not pulse.property('running')
+        # A fast swipe beyond the window must also collapse and finish its cue.
+        resize_sidebar(-380, collapse=True)
+        assert pulse.property('running')
+        wait_for(lambda: not pulse.property('running'), 'Collapse cue did not finish')
+        assert find('toggleSidebarButton').property('collapseHint') == 0
+        click('toggleSidebarButton')
+        assert sidebar.width() == 346
         click("toggleSidebarButton")
         assert backend.sidebarCollapsed and not sidebar.isVisible()
         assert main.x() == 0 and main.width() == window.width()
@@ -119,7 +164,7 @@ try:
         window.setProperty("page", "settings")
         QTest.qWait(100)
         QTest.keyClick(window, Qt.Key_B, Qt.ControlModifier)
-        QTest.qWait(100)
+        settle_sidebar()
         assert backend.sidebarCollapsed and main.x() == 0
         click("toggleSidebarButton")
         assert sidebar.width() == 346 and sidebar.isVisible()
@@ -136,7 +181,7 @@ try:
                                 capture_output=True, text=True, timeout=20, cwd=ROOT)
         assert result.returncode == 0, result.stdout + result.stderr
         assert "SIDEBAR_RESTORE_OK" in result.stdout
-        print("SIDEBAR_UI_OK: pointer resize, bounds, responsive width, collapse button, shortcut, active-task/draft preservation, restart")
+        print("SIDEBAR_UI_OK: uninterrupted pointer resize, snap collapse, finite restore cue, width memory, responsive bounds, shortcuts, draft preservation and restart")
 finally:
     backend.close()
     import shiboken6

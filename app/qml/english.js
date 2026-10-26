@@ -1,5 +1,13 @@
 .pragma library
 var strings = {
+    "重新加载消息": "Reload message",
+    "重试": "Retry",
+    "聊天记录暂时无法读取，请稍后重试": "Chat history could not be read. Please try again shortly.",
+    "暂时无法复制所选内容，请重新选择后再试": "Could not copy this selection. Please select the text and try again.",
+    "聊天索引暂时无法更新，当前内容仍可继续浏览": "The chat index could not be updated. You can keep browsing the current content.",
+    "网页加载失败": "Could not load this page",
+    "网页组件加载失败，请重新安装最新版本。": "The browser component could not load. Please reinstall the latest version.",
+
     "系统代理": "System proxy",
     "直连": "Direct",
     "暂停下载": "Pause download",

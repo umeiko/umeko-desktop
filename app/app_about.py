@@ -5,6 +5,7 @@ import json
 import threading
 import subprocess
 import re
+import ssl
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -28,25 +29,46 @@ def version_key(value):
     return int(major), int(minor), int(patch or 0), 0 if pre else 1, prerelease
 
 
-def fetch_latest_release():
+class UpdateNetworkError(ValueError):
+    pass
+
+
+def _release_metadata(proxy):
     request = urllib.request.Request(RELEASE_API, headers={
         "Accept": "application/vnd.github+json", "User-Agent": "Umeko/" + VERSION,
         "X-GitHub-Api-Version": "2026-03-10",
     })
+    if proxy.startswith(('socks5:', 'socks5h:', 'https:')):
+        from .pi_runtime import node_executable, node_environment, CREATE_NO_WINDOW
+        environment = node_environment(); environment['UMEKO_UPDATE_PROXY'] = proxy
+        response = subprocess.run([node_executable(), str(Path(__file__).resolve().parents[1]/'runtime/update-engine.mjs'), 'metadata', RELEASE_API],
+            env=environment, capture_output=True, text=True, timeout=70, creationflags=CREATE_NO_WINDOW)
+        value = json.loads(response.stdout)
+        if value.get('state') == 'error': raise UpdateNetworkError(value.get('message') or '更新网络连接失败')
+        if value.get('code') != 200: raise urllib.error.HTTPError(RELEASE_API, value.get('code', 0), '', {}, None)
+        return value['body'].encode('utf-8')
+    # create_default_context loads Windows CA/ROOT stores and keeps hostname
+    # and certificate verification enabled; no certifi-only replacement.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({'https':proxy} if proxy else {}),
+                                         urllib.request.HTTPSHandler(context=ssl.create_default_context()))
+    with opener.open(request, timeout=20) as response:
+        return response.read(2 * 1024 * 1024 + 1)
+
+
+def fetch_latest_release():
     try:
         proxy = system_proxy(RELEASE_API)
-        if proxy.startswith(('socks5:', 'socks5h:', 'https:')):
-            from .pi_runtime import node_executable, node_environment, CREATE_NO_WINDOW
-            environment = node_environment(); environment['UMEKO_UPDATE_PROXY'] = proxy
-            response = subprocess.run([node_executable(), str(Path(__file__).resolve().parents[1]/'runtime/update-engine.mjs'), 'metadata', RELEASE_API],
-                env=environment, capture_output=True, text=True, timeout=70, creationflags=CREATE_NO_WINDOW)
-            value = json.loads(response.stdout)
-            if value.get('code') != 200: raise urllib.error.HTTPError(RELEASE_API, value.get('code', 0), '', {}, None)
-            raw = value['body'].encode('utf-8')
-        else:
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({'https':proxy} if proxy else {}))
-            with opener.open(request, timeout=20) as response:
-                raw = response.read(2 * 1024 * 1024 + 1)
+        try:
+            raw = _release_metadata(proxy)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            if not proxy or isinstance(error, urllib.error.HTTPError):
+                raise
+            try:
+                raw = _release_metadata('')
+            except OSError:
+                if isinstance(getattr(error, 'reason', error), ssl.SSLCertVerificationError):
+                    raise error
+                raise
         if len(raw) > 2 * 1024 * 1024:
             raise ValueError("Oversized release metadata")
         data = json.loads(raw)
@@ -75,7 +97,12 @@ def fetch_latest_release():
         if error.code in (403, 429):
             return {"state": "error", "message": "GitHub 请求受限，请稍后重试。"}
         return {"state": "error", "message": "GitHub 暂时无法提供版本信息，请稍后重试。"}
-    except (OSError, ValueError, subprocess.TimeoutExpired):
+    except UpdateNetworkError as error:
+        return {'state':'error', 'message':str(error)}
+    except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+        cause = getattr(error, 'reason', error)
+        if isinstance(cause, ssl.SSLCertVerificationError):
+            return {'state':'error', 'message':'无法验证更新服务器证书（已使用系统信任证书），请检查系统时间，并确认内网根证书已安装到系统受信任的根证书颁发机构。'}
         return {"state": "error", "message": "检查失败，请检查网络后重试，或直接查看 GitHub 发布页。"}
 
 

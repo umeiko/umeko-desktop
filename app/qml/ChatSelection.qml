@@ -137,50 +137,35 @@ Item {
         if (!hasSelection) return ""
         const start = compare(anchor, cursor) < 0 ? anchor : cursor
         const end = compare(anchor, cursor) < 0 ? cursor : anchor
-        const rows = backend.displayMessages, pieces = []
-        for (let row = start.row; row <= end.row && row < rows.length; row++) {
-            const message = rows[row], segments = message.role === "user" ? [] : [{block:-100000,text:"umeko",markdown:false}]
-            const activity = message.activity || []
-            if (activity.length) {
-                for (let stepIndex = 0; stepIndex < activity.length; stepIndex++) {
-                    const step = activity[stepIndex]
-                    if (step.kind === "text") {
-                        Markdown.blocks(step.text || "", !step.error, stepIndex < activity.length - 1).forEach((block, index) => segments.push({block:step.blockOffset + index,text:block.text,markdown:!step.error && !block.code}))
-                    } else if (step.kind === "thinking" && expandedDetails[row + ":" + step.blockOffset]) {
-                        segments.push({block:step.blockOffset,text:step.text,markdown:false})
-                    } else if (step.kind === "media") {
-                        (step.items || []).forEach((item, index) => {
-                            const key = step.blockOffset + index * 3
-                            segments.push({block:key,text:item.title || item.name || "",markdown:false})
-                            if (item.kind === "image" && item.preview && item.caption) segments.push({block:key + 1,text:item.caption,markdown:false})
-                        })
-                    } else if (step.kind === "tools") {
-                        step.tools.forEach((tool, index) => {
-                            const key = step.blockOffset + index + 1
-                            if (expandedDetails[row + ":" + key]) segments.push({block:key,text:JSON.stringify(tool.arguments || {}, null, 2) + (tool.result ? "\n\n" + tool.result : ""),markdown:false})
-                        })
-                    }
-                }
-            } else {
-                const markdown = message.role === "assistant" && !message.error
-                Markdown.blocks(message.text || "", markdown).forEach((block, index) => segments.push({block:index,text:block.text,markdown:markdown && !block.code}))
-                if (message.role === "user") (message.attachments || []).forEach((item, index) => segments.push({block:10000 + index,text:item.name,markdown:false}))
-            }
+        const count = backend.messageCount, pieces = []
+        for (let row = start.row; row <= end.row && row < count; row++) {
+            const message = backend.displayMessage(row), segments = Markdown.selectionSegments(message, row, expandedDetails)
             for (const segment of segments) {
                 const text = plain(segment.text, segment.markdown, row, segment.block)
                 const first = {row:row,block:segment.block,offset:0}, last = {row:row,block:segment.block,offset:text.length}
                 if (compare(last, start) <= 0 || compare(first, end) >= 0) continue
-                pieces.push(text.slice(compare(first, start) < 0 ? start.offset : 0, compare(last, end) > 0 ? end.offset : text.length))
+                let selected = text.slice(compare(first, start) < 0 ? start.offset : 0, compare(last, end) > 0 ? end.offset : text.length)
+                if (segment.copyPrefix && (start.row < row || start.block < segment.block)) {
+                    const prefix = plain(segment.copyPrefix, true, -2147483647, -2147483647)
+                    if (selected.startsWith(prefix)) selected = selected.slice(prefix.length)
+                }
+                if (segment.copyJoin && pieces.length) pieces[pieces.length - 1] += (segment.copyJoin === "direct" || pieces[pieces.length - 1].endsWith("\n") ? "" : "\n") + selected
+                else pieces.push(selected)
             }
         }
         return pieces.join("\n\n").replace(/\u2029|\u2028/g, "\n")
     }
-    function copy() { if (hasSelection) backend.copy(selectedText()) }
+    function copy() {
+        if (!hasSelection) return
+        if (backend.messageModel.paged || Math.abs(anchor.row - cursor.row) > 100)
+            backend.copyChatSelection(JSON.stringify({anchor:anchor, cursor:cursor, expanded:expandedDetails}))
+        else backend.copy(selectedText())
+    }
     function selectAll() {
-        const rows = backend.displayMessages
-        if (!rows.length) return
+        const count = backend.messageCount
+        if (!count) return
         anchor = {row:0,block:-100000,offset:0}
-        cursor = {row:rows.length - 1,block:2147483647,offset:0}
+        cursor = {row:count - 1,block:2147483647,offset:0}
         refresh(); forceActiveFocus()
     }
     Keys.onPressed: event => {

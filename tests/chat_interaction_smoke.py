@@ -11,7 +11,7 @@ os.environ.setdefault('UMEKO_LANGUAGE','zh')
 os.environ["UMEKO_DATA_DIR"] = str(Path(tempfile.mkdtemp(prefix="umeko-interaction-")).resolve())
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
-from PySide6.QtCore import QPoint, QPointF, Qt, QMetaObject, QEvent, QTimer
+from PySide6.QtCore import QPoint, QPointF, Qt, QMetaObject, QEvent, QTimer, Q_ARG
 from PySide6.QtGui import QWheelEvent, QKeyEvent, QMouseEvent
 from PySide6.QtTest import QTest
 from main import create_application
@@ -328,10 +328,27 @@ def scenario():
         backend._view.messages[1]["text"] = "超大代码保持纯文本：\n\n```python\n" + big_code + "\n```"
         backend.chatChanged.emit(); backend.transcriptChanged.emit()
         yield 400
-        assert syntax.property("status") == "plain" and document.toPlainText() == big_code
-        assert lexed.call_count == 1, "oversized code reached the lexer"
+        from app.transcript_index import FRAGMENT_CHARS
+        assert backend.messageModel.rowCount() > 2, "large code was not split into bounded rows"
+        QMetaObject.invokeMethod(view, "jumpToMessage", Qt.DirectConnection, Q_ARG('QVariant', 2))
+        yield 350
+        stack = [find('messageBubble_2')]
+        large_syntax = None
+        while stack:
+            item = stack.pop()
+            if item.objectName() == 'codeBlock_0':
+                large_syntax = item.property('syntaxColors')
+                break
+            stack.extend(item.childItems())
+        assert large_syntax is not None
+        assert large_syntax.property("status") == "plain"
+        assert len(large_syntax.property("document").textDocument().toPlainText()) <= FRAGMENT_CHARS
+        backend.copyDisplayMessage(2)
+        assert app.clipboard().text() == backend._view.messages[1]['text'], "large-code copy lost fragment boundaries"
+        from app.syntax_highlight import eligible
+        assert all(eligible(*call.args) and len(call.args[0]) <= FRAGMENT_CHARS for call in lexed.call_args_list[1:]), "oversized code reached the lexer"
     assert not warnings, "\n".join(warnings)
-    print("Chat interactions passed: scrolling/selection, process folds, context ring, right-aligned user bubbles, native code colors, Unicode copy, stable streaming documents, debounce, cached theme colors and large-block fallback.")
+    print("Chat interactions passed: scrolling/selection, process folds, context ring, right-aligned user bubbles, native code colors, Unicode copy, stable streaming documents, debounce, cached theme colors and bounded large-code fallback.")
 
 steps = scenario()
 failed = []

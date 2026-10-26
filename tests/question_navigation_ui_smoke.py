@@ -2,6 +2,7 @@
 import os
 import sys
 import tempfile
+import faulthandler
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,6 +41,20 @@ def wheel(item):
     event = QWheelEvent(QPointF(local), QPointF(window.mapToGlobal(local)), QPoint(), QPoint(0,240), Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
     app.sendEvent(window, event)
 
+
+def private_memory():
+    if sys.platform != 'win32': return 0
+    import ctypes
+    class Counters(ctypes.Structure):
+        _fields_ = [('cb', ctypes.c_ulong), ('faults', ctypes.c_ulong)] + [(name, ctypes.c_size_t) for name in ('peak', 'working', 'pagedPeak', 'paged', 'nonpagedPeak', 'nonpaged', 'private', 'privatePeak')]
+    counters = Counters()
+    counters.cb = ctypes.sizeof(counters)
+    kernel = ctypes.windll.kernel32
+    kernel.GetCurrentProcess.restype = ctypes.c_void_p
+    kernel.K32GetProcessMemoryInfo.argtypes = [ctypes.c_void_p, ctypes.POINTER(Counters), ctypes.c_ulong]
+    assert kernel.K32GetProcessMemoryInfo(kernel.GetCurrentProcess(), ctypes.byref(counters), counters.cb)
+    return counters.private
+
 try:
     backend.setTheme('yanami')
     backend.setFontScale(1.49)
@@ -70,7 +85,6 @@ try:
     QTest.mouseMove(window, point(view, view.width()/2, view.height()/2))
     QTest.qWait(350)
     assert not nav.property('expanded') and rail.property('opacity') == 0
-    assert not find('conversationScrollBar').property('visible')
     QTest.mouseMove(window, point(nav, 12, nav.height()/2))
     QTest.qWait(250)
     assert nav.property('expanded'), 'Right edge did not reveal the navigator'
@@ -121,6 +135,20 @@ try:
             assert not updates and abs(view.property('contentY') - offset) < 2, 'Streaming rebuilt navigation or pulled history to the bottom'
             assert header.property('source') == source, 'Streaming changed the avatar'
             backend.messageModel.questionsChanged.disconnect(question_update)
+    # Repeatedly cross very uneven row heights. The former hidden attached
+    # scrollbar could feed size changes back into ListView's own positioning.
+    baseline = private_memory()
+    faulthandler.dump_traceback_later(20, exit=True)
+    try:
+        for cycle in range(40):
+            row = backend.messageModel.questions[0 if cycle % 2 else 59]['row']
+            invoke(view, 'jumpToMessage', row)
+            QTest.qWait(40)
+        growth = private_memory() - baseline
+        assert growth < 128 * 1024 * 1024, ('Unbounded scroll allocation', growth)
+        print('SCROLL_STRESS_OK private_growth_bytes=' + str(growth), flush=True)
+    finally:
+        faulthandler.cancel_dump_traceback_later()
     (ROOT/'artifacts').mkdir(exist_ok=True)
     window.grabWindow().save(str(ROOT/'artifacts/question-navigation-yanami.png'))
     backend.setTheme('dark')

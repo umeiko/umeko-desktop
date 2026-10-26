@@ -56,18 +56,35 @@ export function selectAsset(assets, repo, tag, platform = platformKey()) {
 
 // The host resolves desktop / PAC settings. Credentials stay in child environment,
 // never in persisted jobs, progress events, URLs in the UI, or updater logs.
-async function proxyTunnel(proxy, target, signal) {
+export function updateCertificates(read = tls.getCACertificates) {
+  const defaults = read ? read('default') : tls.rootCertificates;
+  // The bundled Node otherwise ignores roots installed by enterprise IT in
+  // Windows / macOS. Keep Mozilla and explicitly configured extra CAs as well.
+  let system = [];
+  try { system = read ? read('system') : []; } catch {}
+  return [...new Set([...defaults, ...system])];
+}
+let trustedCertificates;
+const certificateError = error => ['SELF_SIGNED_CERT_IN_CHAIN','DEPTH_ZERO_SELF_SIGNED_CERT','UNABLE_TO_GET_ISSUER_CERT_LOCALLY','UNABLE_TO_VERIFY_LEAF_SIGNATURE','CERT_HAS_EXPIRED','CERT_NOT_YET_VALID','ERR_TLS_CERT_ALTNAME_INVALID','CERT_REVOKED'].includes(error?.code);
+const routeError = error => certificateError(error) || error?.code==='PROXY' && [502,503,504].includes(error.proxyStatus) || ['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','EAI_AGAIN','ENOTFOUND','ERR_SSL_WRONG_VERSION_NUMBER','ERR_SSL_PACKET_LENGTH_TOO_LONG'].includes(error?.code);
+function certificateMessage(error) {
+  if (['CERT_HAS_EXPIRED','CERT_NOT_YET_VALID'].includes(error.code)) return '更新服务器证书的有效期异常，请检查系统时间或联系网络管理员';
+  if (error.code === 'ERR_TLS_CERT_ALTNAME_INVALID') return '更新服务器证书与访问域名不匹配，请检查网络代理或联系网络管理员';
+  if (error.code === 'CERT_REVOKED') return '更新服务器证书已被撤销，请联系网络管理员';
+  return '无法验证更新服务器证书（已使用系统信任证书），请将内网根证书安装到系统受信任的根证书颁发机构后重试';
+}
+async function proxyTunnel(proxy, target, signal, timeout, ca) {
   const port=Number(target.port || 443), hostname=target.hostname.replace(/^\[|\]$/g,'');
   if (proxy.protocol==='http:' || proxy.protocol==='https:') {
     return new Promise((resolve,reject)=>{
       const headers={Host:`${target.hostname}:${port}`};
       if(proxy.username || proxy.password)headers['Proxy-Authorization']='Basic '+Buffer.from(decodeURIComponent(proxy.username)+':'+decodeURIComponent(proxy.password)).toString('base64');
-      const connect=(proxy.protocol==='https:'?https:http).request(proxy,{method:'CONNECT',path:`${target.hostname}:${port}`,headers,signal,agent:false});
-      const timer=setTimeout(()=>connect.destroy(Object.assign(Error('系统代理连接超时'),{code:'ETIMEDOUT'})),30000);
+      const connect=(proxy.protocol==='https:'?https:http).request(proxy,{method:'CONNECT',path:`${target.hostname}:${port}`,headers,signal,agent:false,ca,rejectUnauthorized:true});
+      const timer=setTimeout(()=>connect.destroy(Object.assign(Error('系统代理连接超时'),{code:'ETIMEDOUT'})),timeout);
       connect.on('error',e=>{clearTimeout(timer);reject(e);});
       connect.on('connect',(res,socket,head)=>{
         clearTimeout(timer);
-        if(res.statusCode!==200){socket.destroy();reject(Object.assign(Error(`系统代理返回 HTTP ${res.statusCode}`),{code:'PROXY',retryable:false}));return;}
+        if(res.statusCode!==200){socket.destroy();reject(Object.assign(Error(`系统代理返回 HTTP ${res.statusCode}`),{code:'PROXY',proxyStatus:res.statusCode,retryable:false}));return;}
         if(head.length)socket.unshift(head);
         resolve(socket);
       });
@@ -78,7 +95,7 @@ async function proxyTunnel(proxy, target, signal) {
   const socket=net.connect({host:proxy.hostname.replace(/^\[|\]$/g,''),port:Number(proxy.port || 1080)});
   const abort=()=>socket.destroy(Object.assign(Error('下载已暂停'),{code:'ABORT_ERR'}));
   signal?.addEventListener('abort',abort,{once:true});
-  const timer=setTimeout(()=>socket.destroy(Object.assign(Error('系统代理连接超时'),{code:'ETIMEDOUT'})),30000);
+  const timer=setTimeout(()=>socket.destroy(Object.assign(Error('系统代理连接超时'),{code:'ETIMEDOUT'})),timeout);
   try {
     // Read exactly N bytes without consuming a subsequent protocol frame.
     const read=async count=>{
@@ -105,32 +122,69 @@ async function proxyTunnel(proxy, target, signal) {
   } catch(e){socket.destroy();throw e;}
   finally {clearTimeout(timer);signal?.removeEventListener('abort',abort);}
 }
-export async function updateRequest(url, options = {}, redirects = 0) {
+async function requestOnRoute(url, options, redirects = 0) {
   const parsed=new URL(url);
   if(parsed.protocol!=='https:' || parsed.username || parsed.password || redirects>6)throw Error('下载重定向无效');
-  const address=options.proxy ?? process.env.UMEKO_UPDATE_PROXY ?? process.env.https_proxy ?? process.env.HTTPS_PROXY ?? process.env.all_proxy ?? process.env.ALL_PROXY ?? process.env.http_proxy ?? process.env.HTTP_PROXY ?? '';
+  const address=options.proxy;
+  const ca = trustedCertificates ??= updateCertificates();
+  const timeout = options.connectTimeout ?? 20000;
   let agent=false;
   if(address){
     const proxy=new URL(address);
     agent=new https.Agent({keepAlive:false});
     agent.createConnection=(opts,callback)=>{
-      proxyTunnel(proxy,parsed,options.signal).then(socket=>{
+      proxyTunnel(proxy,parsed,options.signal,timeout,ca).then(socket=>{
         if(options.signal?.aborted){socket.destroy();callback(Object.assign(Error('下载已暂停'),{code:'ABORT_ERR'}));return;}
-        const secure=tls.connect({...opts,socket,servername:net.isIP(parsed.hostname)?undefined:parsed.hostname});
+        const secure=tls.connect({...opts,socket,ca,rejectUnauthorized:true,servername:net.isIP(parsed.hostname)?undefined:parsed.hostname});
         callback(null,secure);
       },callback);
     };
   }
   return new Promise((resolve,reject)=>{
-    const req=https.get(parsed,{agent,signal:options.signal,headers:{'User-Agent':'Umeko-Updater','Accept-Encoding':'identity',...options.headers}},res=>{
+    const req=https.get(parsed,{agent,ca,rejectUnauthorized:true,signal:options.signal,headers:{'User-Agent':'Umeko-Updater','Accept-Encoding':'identity',...options.headers}},res=>{
+      clearTimeout(deadline);
       if([301,302,303,307,308].includes(res.statusCode)){
         res.resume();
-        try{updateRequest(new URL(res.headers.location,url).href,options,redirects+1).then(resolve,reject);}catch{reject(Error('下载重定向地址无效'));}
+        try{requestOnRoute(new URL(res.headers.location,url).href,options,redirects+1).then(resolve,reject);}catch{reject(Error('下载重定向地址无效'));}
       } else resolve(res);
     });
+    const deadline=setTimeout(()=>req.destroy(Object.assign(Error('下载连接超时'),{code:'ETIMEDOUT'})),timeout);
     req.setTimeout(60000,()=>req.destroy(Object.assign(Error('下载连接超时'),{code:'ETIMEDOUT'})));
-    req.on('error',reject);
+    req.on('error',error=>{clearTimeout(deadline);reject(error);});
   });
+}
+export async function updateRequest(url, options = {}) {
+  const configured=options.proxy ?? process.env.UMEKO_UPDATE_PROXY ?? process.env.https_proxy ?? process.env.HTTPS_PROXY ?? process.env.all_proxy ?? process.env.ALL_PROXY ?? process.env.http_proxy ?? process.env.HTTP_PROXY ?? '';
+  const network=options.network || {};
+  // An explicit per-call route and NO_PROXY remain authoritative. Only the
+  // updater's automatic system-proxy mode has a direct fallback.
+  let routes = configured && options.proxy === undefined ? [configured, ''] : [configured];
+  if (network.preferred !== undefined && routes.includes(network.preferred)) routes = [network.preferred, ...routes.filter(route=>route!==network.preferred)];
+  const attempts=[];
+  let trustFailure;
+  for (let i=0;i<routes.length;i++) {
+    const proxy=routes[i], route=proxy ? '系统代理' : '直连';
+    if (options.signal?.aborted) throw Object.assign(Error('下载已暂停'),{code:'ABORT_ERR'});
+    network.route=route;
+    options.onRoute?.(route, i > 0);
+    try {
+      const response=await requestOnRoute(url,{...options,proxy});
+      network.preferred=proxy;
+      return response;
+    } catch (error) {
+      if (options.signal?.aborted || ['ABORT_ERR','PAUSED'].includes(error.code)) throw error;
+      if (certificateError(error)) trustFailure=error;
+      attempts.push({route,code:error.code || 'NETWORK'});
+      if (routeError(error) && i+1<routes.length) continue;
+      const failure=trustFailure || error;
+      if (trustFailure) { failure.message=certificateMessage(trustFailure); failure.retryable=false; }
+      // Route names and stable error codes are safe to show; proxy URLs and
+      // credentials never enter the diagnostic or download state.
+      if (attempts.length>1) failure.message += '（'+attempts.map(a=>a.route+': '+a.code).join('；')+'）';
+      failure.routes=attempts;
+      throw failure;
+    }
+  }
 }
 const request=updateRequest;
 async function digest(file) {
@@ -165,6 +219,10 @@ async function waitRetry(ms, signal) {
 // Persistent parts are keyed by the pinned SHA, never by a signed redirect URL.
 // All I/O and hashing run in the updater process, away from the Qt GUI thread.
 export async function download(job, fetch = request, options = {}) {
+  const network={};
+  if (fetch===request) fetch=(url,config)=>request(url,{...config,network,onRoute:(route,fallback)=>{
+    if(fallback)status('downloading',route==='直连'?'系统代理连接失败，正在尝试直连…':'直连失败，正在尝试系统代理…',-1,{route});
+  }});
   const a = job.asset || selectAsset(job.assets || [], job.repo, job.version);
   if (!a || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(a.name) || !Number.isSafeInteger(a.bytes) || a.bytes <= 0 || a.bytes > MAX_ARCHIVE) throw Error('更新包信息无效');
   releaseURL(a.url, job.repo, job.version);
@@ -203,7 +261,7 @@ export async function download(job, fetch = request, options = {}) {
   const report = (state='downloading', text=message) => {
     const now=Date.now(), elapsed=(now-lastTime)/1000;
     if (elapsed >= .2) {const sample=Math.max(0,received-lastBytes)/elapsed;speed=speed ? speed*.5+sample*.5 : sample;lastTime=now;lastBytes=received;}
-    status(state,text,progress(),{received,total:a.bytes,speed:state==='downloading'?Math.round(speed):0,eta:speed>0?Math.ceil((a.bytes-received)/speed):-1,retries,resumable:received>0});
+    status(state,text,progress(),{received,total:a.bytes,speed:state==='downloading'?Math.round(speed):0,eta:speed>0?Math.ceil((a.bytes-received)/speed):-1,retries,resumable:received>0,...(network.route?{route:network.route}:{})});
   };
   const maximumAttempts = Math.max(1,Math.min(6,job.maxAttempts || 5));
   const delayBase = Math.max(1,Math.min(2000,job.retryDelay || 800));
@@ -254,7 +312,7 @@ export async function download(job, fetch = request, options = {}) {
       } catch (e) {
         response?.destroy();pauseCheck(signal);pauseCheck(localSignal);
         // Network stream failures may have no explicit retryable field.
-        const retryable=e.retryable || ['ECONNRESET','ETIMEDOUT','EPIPE','ECONNREFUSED','EAI_AGAIN','ENOTFOUND','ERR_STREAM_PREMATURE_CLOSE','UND_ERR_SOCKET'].includes(e.code) || /TLS|socket|network|fetch failed/i.test(e.message);
+        const retryable=e.retryable !== false && (e.retryable || ['ECONNRESET','ETIMEDOUT','EPIPE','ECONNREFUSED','EAI_AGAIN','ENOTFOUND','ERR_STREAM_PREMATURE_CLOSE','UND_ERR_SOCKET'].includes(e.code) || /TLS|socket|network|fetch failed/i.test(e.message));
         if (!retryable || attempt+1>=maximumAttempts) throw e;
         retries++;message='连接中断，正在自动重连…';report();
         await waitRetry(e.retryAfter || Math.min(10000,delayBase*2**attempt),localSignal);
@@ -336,12 +394,12 @@ export async function download(job, fetch = request, options = {}) {
       }
     }
     complete=true;
-    status('ready','SHA-256 校验通过，可以安装新版本。',1,{archive,sha256:sha,name:a.name,version:job.version,received:a.bytes,total:a.bytes,speed:0});
+    status('ready','SHA-256 校验通过，可以安装新版本。',1,{archive,sha256:sha,name:a.name,version:job.version,received:a.bytes,total:a.bytes,speed:0,...(network.route?{route:network.route}:{})});
   } catch(e) {
     clearInterval(timer);timer=null;
     if(signal?.aborted)e=downloadError('下载已暂停，进度已保存','PAUSED');
     const message=e.code==='PAUSED'?e.message:e.code==='HASH'?e.message:['ENOSPC','EACCES','EPERM'].includes(e.code)?'无法保存更新包，请检查磁盘空间和权限':e.retryable||['ECONNRESET','ETIMEDOUT','ERR_STREAM_PREMATURE_CLOSE','EAI_AGAIN','ENOTFOUND'].includes(e.code)?'网络连接中断，进度已保存，点击继续下载':e.message;
-    e.downloadState={message,progress:progress(),received,total:a.bytes,speed:0,eta:-1,resumable:received>0,retries,code:e.code || 'NETWORK'};throw e;
+    e.downloadState={message,progress:progress(),received,total:a.bytes,speed:0,eta:-1,resumable:received>0,retries,code:e.code || 'NETWORK',...(network.route?{route:network.route}:{}),...(e.routes?{routes:e.routes}:{})};throw e;
   } finally {
     clearInterval(timer);
     try {if((await readJSON(lockFile)).token===lockToken)await fsp.rm(lockFile);}catch{}

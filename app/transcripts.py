@@ -50,11 +50,16 @@ def preview(file):
         visited.add(current["id"])
         branch.append(current)
         current = index.get(current.get("parentId"))
+    return present(list(reversed(branch)), cwd)
+
+
+def present(entries, cwd):
+    """Project an already ordered branch or a bounded group and its tool results."""
     messages, tree = [], []
-    omissions = {e['targetId'] for e in branch if e.get('type') == 'context_edit' and e.get('replacement') is None}
-    results = {e["message"].get("toolCallId"): e["message"] for e in branch if e.get("type") == "message" and e.get("message", {}).get("role") == "toolResult"}
-    deliveries = [e["data"] for e in reversed(branch) if e.get("type") == "custom" and e.get("customType") == "umeko-chatbox" and isinstance(e.get("data"), dict) and e["data"].get("version") == 1 and isinstance(e["data"].get("toolCallId"), str) and isinstance(e["data"].get("items"), list)]
-    for entry in reversed(branch):
+    omissions = {e['targetId'] for e in entries if e.get('type') == 'context_edit' and e.get('replacement') is None}
+    results = {e["message"].get("toolCallId"): e["message"] for e in entries if e.get("type") == "message" and e.get("message", {}).get("role") == "toolResult"}
+    deliveries = [e["data"] for e in entries if e.get("type") == "custom" and e.get("customType") == "umeko-chatbox" and isinstance(e.get("data"), dict) and e["data"].get("version") == 1 and isinstance(e["data"].get("toolCallId"), str) and isinstance(e["data"].get("items"), list)]
+    for entry in entries:
         if entry.get("type") != "message":
             continue
         message = entry.get("message", {})

@@ -38,6 +38,10 @@ def configure(root):
         except (OSError, ValueError, KeyError, TypeError): return
     QCoreApplication.addLibraryPath(str(support/'plugins'))
     _configuration['frontendQmlPath']=str(support/'qml')
+    module = support/'qml/QtWebView/qmldir'
+    if not module.is_file():
+        _configuration['error']='Qt WebView QML module is missing: '+str(module)
+        return
     if sys.platform=='win32':
         library=support/'bin/Qt6WebView.dll'
         if library.parent.is_dir(): _libraries.append(os.add_dll_directory(str(library.parent)))
@@ -47,6 +51,10 @@ def configure(root):
         _libraries.append(ctypes.CDLL(str(library), mode=getattr(ctypes,'RTLD_GLOBAL',0)))
         if sys.platform.startswith('linux'):
             _libraries.append(ctypes.CDLL(str(support/'lib/libQt6WebViewQuick.so.6'), mode=ctypes.RTLD_GLOBAL))
+        elif sys.platform=='win32':
+            # Qt's QML plugin loader does not use Python's DLL search handles.
+            # Load its Quick dependency first from the staged bin directory.
+            _libraries.append(ctypes.CDLL(str(support/'bin/Qt6WebViewQuick.dll')))
         _configuration['available']=True
     except OSError as error: _configuration['error']=str(error)
 

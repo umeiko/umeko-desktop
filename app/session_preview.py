@@ -17,6 +17,7 @@ class SessionPreview(QObject):
         self.pending = None
         self.prepared = None
         self.reading = False
+        self.direct_token = 0
         self.completed.connect(self._completed)
 
     @Slot()
@@ -33,7 +34,8 @@ class SessionPreview(QObject):
             self.ready.emit(token, False)
             return
         saved = dict(saved)
-        if self.controller._pool.find(session_id):
+        cached = self.controller._pool.find(session_id)
+        if cached and cached.loaded and (cached.busy or not cached.transcript or cached.transcript.matches_source()):
             self.prepared = {'token': token, 'saved': saved}
             self.ready.emit(token, True)
             return
@@ -49,7 +51,13 @@ class SessionPreview(QObject):
             result = dict(job)
             try:
                 saved = job['saved']
-                result['messages'], result['tree'] = preview(saved['file']) if saved.get('file') else (copy.deepcopy(saved.get('messages', [])), [])
+                file = saved.get('file')
+                if file and self.controller.transcripts.large(file):
+                    cached = self.controller._pool.find(saved['id'])
+                    focus = cached.scroll_index if cached and not cached.follow_tail else -1
+                    result['snapshot'] = self.controller.transcripts.open(file, cancelled=lambda: self.request != job['token'] or self.controller._closing, focus=focus)
+                else:
+                    result['messages'], result['tree'] = preview(file) if file else (copy.deepcopy(saved.get('messages', [])), [])
             except Exception:
                 result['error'] = True
             try:
@@ -69,6 +77,8 @@ class SessionPreview(QObject):
             else:
                 self.prepared = result
             self.ready.emit(result['token'], not result.get('error', False))
+            if result['token'] == self.direct_token and not result.get('error', False):
+                self.activate(result['token'])
         self._start()
 
     @Slot(int, result=bool)
@@ -79,14 +89,22 @@ class SessionPreview(QObject):
         saved = next((row for row in self.controller._sessions if row['id'] == result['saved']['id']), None)
         if not saved:
             return False
-        if not self.controller._pool.find(saved['id']):
-            record = self.controller._new_view(saved.get('workspace', ''))
+        record = self.controller._pool.find(saved['id'])
+        if not record or not record.loaded or 'snapshot' in result or 'messages' in result:
+            record = record or self.controller._new_view(saved.get('workspace', ''))
             record.id, record.file, record.title = saved['id'], saved.get('file', ''), saved['title']
             record.history = copy.deepcopy(saved.get('history', []))
             record.messages, record.tree = result.get('messages', []), result.get('tree', [])
+            record.transcript, record.loaded = result.get('snapshot'), True
             record.model = saved.get('model') or record.model
             record.provider = saved.get('provider') or record.provider
-            self.controller._pool.touch(record)
+            # Register before activation; trimming it while the old view is
+            # still pinned could immediately evict this prepared selection.
+            self.controller._pool.records[record.key] = record
         self.cancel()
         self.controller.openSession(saved['id'])
         return True
+
+    def open_direct(self, session_id):
+        self.direct_token -= 1
+        self.prepare(session_id, self.direct_token)

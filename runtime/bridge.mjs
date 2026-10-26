@@ -109,6 +109,7 @@ const ui = {
 
 async function bindSession(session) {
   unsubscribe?.();
+  let publishedFile = existsSync(session.sessionManager.getSessionFile() || "");
   let retryState = {}, retryTimer;
   const retry = state => { retryState = state; emit({ type: "network_retry", ...state }); };
   let lastContext = "";
@@ -126,6 +127,23 @@ async function bindSession(session) {
   };
   session.agent.onPayload = configurePayload;
   const unbind = session.subscribe(event => {
+    if (event.type === "message_end" && ["user", "assistant"].includes(event.message.role)) {
+      // Pi persists after notifying listeners. Read the new leaf in the next
+      // microtask, after that append, without rebuilding its complete branch.
+      queueMicrotask(() => {
+        if (runtime?.session !== session) return;
+        const id = session.sessionManager.getLeafId(), entry = session.sessionManager.getEntry(id);
+        if (entry?.type === "message" && entry.message.role === event.message.role && entry.message.timestamp === event.message.timestamp)
+          emit({type:"native_entry", entryId:id, role:event.message.role, timestamp:event.message.timestamp});
+        if (!publishedFile && sessionInfo().file) {
+          publishedFile = true;
+          emit({type:"session", session:sessionInfo()});
+        }
+      });
+    }
+    if (event.type === "turn_end") queueMicrotask(() => {
+      if (runtime?.session === session) emit({type:"history_checkpoint", leafId:session.sessionManager.getLeafId()});
+    });
     if (event.type === "queue_update") {
       syncQueue(event.steering, event.followUp);
     }
@@ -166,7 +184,7 @@ async function bindSession(session) {
       waitForIdle: () => session.waitForIdle(),
       newSession: options => runtime.newSession(options),
       switchSession: (path, options) => runtime.switchSession(path, options),
-      fork: (id, options) => runtime.fork(id, options),
+      fork: (id, options) => forkSession(id, options),
       navigateTree: (id, options) => session.navigateTree(id, options),
       reload: () => reloadSession(session),
     },
@@ -306,13 +324,32 @@ function sessionInfo() {
     title: manager.getSessionName() || "新会话", workspace: manager.getCwd() };
 }
 
+async function forkSession(entryId, options) {
+  const manager = runtime.session.sessionManager;
+  const sourceTitle = manager.getSessionName() || textOf(runtime.session.messages.find(m => m.role === "user")?.content).slice(0, 28) || "新会话";
+  const title = sourceTitle.replace(/^(?:\(Fork\d+\)\s*)+/i, "");
+  const sessions = await Pi.SessionManager.listAll(config.sessionDir);
+  let number = 1;
+  for (const session of sessions) {
+    const match = /^\(Fork(\d+)\)\s+(.*)$/i.exec(session.name || "");
+    if (match && match[2] === title) number = Math.max(number, Number(match[1]) + 1);
+  }
+  const result = await runtime.fork(entryId, options);
+  if (!result.cancelled) runtime.session.setSessionName(`(Fork${number}) ${title}`);
+  return result;
+}
+
 async function state() {
   const session = runtime.session, manager = session.sessionManager;
   const branch = manager.getBranch();
   const omittedRetries = retryOmissions(branch);
   const results = new Map(branch.filter(e => e.type === "message" && e.message.role === "toolResult").map(e => [e.message.toolCallId, e.message]));
   const deliveries = branch.filter(e => e.type === "custom" && e.customType === "umeko-chatbox" && e.data?.version === 1 && typeof e.data.toolCallId === "string" && Array.isArray(e.data.items)).map(e => e.data);
-  const messages = branch.filter(e => e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant"].includes(e.message.role)).map(e => {
+  const candidates = branch.filter(e => e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant"].includes(e.message.role));
+  const characters = candidates.reduce((sum, e) => sum + (typeof e.message.content === "string" ? e.message.content.length : (Array.isArray(e.message.content) ? e.message.content : []).reduce((n, block) => n + (block.text || block.thinking || "").length, 0)), 0);
+  const paged = candidates.length > 256 || characters > 1024 * 1024;
+  const selected = paged ? candidates.slice(-128) : candidates;
+  const messages = selected.map(e => {
     const message = e.message;
     const row = {role: message.role, text: textOf(message.content) || (message.stopReason === "aborted" ? "" : message.errorMessage || ""), error: message.stopReason !== "aborted" && !!message.errorMessage, entryId:e.id, timestamp:message.timestamp || e.timestamp};
     if (message.role === "assistant") row.stopReason = message.stopReason || "";
@@ -338,7 +375,8 @@ async function state() {
     sessions: list.map(s => ({ id: s.id, title: s.name || s.firstMessage.slice(0, 28) || "新会话", file: s.path, workspace: s.cwd })), messages,
     resources: await capabilities(),
     contextUsage: contextUsage(session),
-    tree: manager.getBranch().filter(e => e.type === "message").map(e => ({ id: e.id, role: e.message.role, text: textOf(e.message.content).slice(0, 80) })),
+    tree: paged ? [] : branch.filter(e => e.type === "message").map(e => ({ id: e.id, role: e.message.role, text: textOf(e.message.content).slice(0, 80) })),
+    ...(paged ? {indexedHistory:{leafId:manager.getLeafId(), totalMessages:candidates.length}} : {}),
   });
 }
 
@@ -460,7 +498,7 @@ async function execute(input) {
     }
     else if (input.type === "new") await runtime.newSession();
     else if (input.type === "open") await runtime.switchSession(input.path);
-    else if (input.type === "fork") await runtime.fork(input.entryId || runtime.session.sessionManager.getLeafId(), { position: "at" });
+    else if (input.type === "fork") await forkSession(input.entryId || runtime.session.sessionManager.getLeafId(), { position: "at" });
     else if (input.type === "navigate") await runtime.session.navigateTree(input.entryId, { summarize: false });
     else if (input.type === "compact") await runtime.session.compact();
     else if (input.type === "reload") await reloadSession(runtime.session);

@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -134,6 +135,35 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(c.contextUsage, {})
         c._handle_pi_event(first, {"type": "context_usage", "usage": {**initial, "tokens": None, "percent": None}})
         self.assertIsNone(c.contextUsage["percent"])
+
+    def test_paged_checkpoint_coalesces_without_losing_new_tail_or_draft(self):
+        c, gate = self.controller, threading.Event()
+        record = c._view
+        file = self.path/'checkpoint.jsonl'
+        entries = [{'type':'session','id':'checkpoint','cwd':str(self.path)}]
+        for i in range(400):
+            entries.append({'type':'message','id':str(i),'parentId':str(i-1) if i else None,'message':{'role':'user' if i%2==0 else 'assistant','content':'message '+str(i)}})
+        file.write_text(''.join(json.dumps(row)+'\n' for row in entries),encoding='utf-8')
+        record.id,record.file,record.draft = 'checkpoint',str(file),'keep this draft'
+        record.messages = preview(file)[0]
+        c.chatChanged.emit()
+        original = c.transcripts.open
+        def blocked(*args,**kwargs):
+            if not gate.wait(5): raise RuntimeError('checkpoint fixture timed out')
+            return original(*args,**kwargs)
+        with patch.object(c.transcripts,'open',side_effect=blocked):
+            c._queue_transcript_index(record,'399')
+            c._queue_transcript_index(record,'399',True)
+            record.messages.extend([{'role':'user','text':'new live task'},{'role':'assistant','text':'still streaming'}])
+            gate.set()
+            deadline=time.monotonic()+10
+            while (record.index_running or record.index_pending) and time.monotonic()<deadline:
+                QTest.qWait(10);time.sleep(.001)
+        self.assertFalse(record.index_running)
+        self.assertIsNotNone(record.transcript)
+        self.assertEqual([m['text'] for m in record.messages],['new live task','still streaming'])
+        self.assertEqual(record.draft,'keep this draft')
+        self.assertEqual(c.messageModel.rowCount(),402)
 
     def test_stop_only_selected_session_and_greeting_stays_stable(self):
         c = self.controller

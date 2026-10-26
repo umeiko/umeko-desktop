@@ -86,7 +86,7 @@ def download_asset(asset, directory, progress, cancelled):
                 except ValueError: continue
                 if not isinstance(value, dict) or 'state' not in value: continue
                 last = value
-                progress({**value, 'route':'系统代理' if proxy else '直连'})
+                progress({'route':'系统代理' if proxy else '直连', **value})
             process.wait()
             if last.get('state') == 'ready': return last['archive']
             if cancelled() or last.get('state') == 'paused': raise InterruptedError('下载已暂停，进度已保存')

@@ -686,11 +686,18 @@ class PiTests(unittest.TestCase):
         self.command(self.payload)
         first = next(e for e in self.command({"type": "prompt", "text": "first session"}) if e["type"] == "state")
         first_file = Path(first["session"]["file"])
+        title = "A long conversation title that keeps the fork marker visible at the front"
+        self.command({"type": "rename", "title": title})
         self.command({"type": "new"})
         self.command({"type": "prompt", "text": "second session"})
         forked = next(e for e in self.command({"type": "fork", "targetFile": str(first_file)}) if e["type"] == "state")
         self.assertEqual(forked["messages"], first["messages"])
         self.assertNotEqual(forked["session"]["id"], first["session"]["id"])
+        self.assertEqual(forked["session"]["title"], "(Fork1) " + title)
+        sibling = next(e for e in self.command({"type": "fork", "targetFile": str(first_file)}) if e["type"] == "state")
+        self.assertEqual(sibling["session"]["title"], "(Fork2) " + title)
+        nested = next(e for e in self.command({"type": "fork"}) if e["type"] == "state")
+        self.assertEqual(nested["session"]["title"], "(Fork3) " + title)
         def action(**payload):
             result = subprocess.run([node_executable(), str(ROOT / "runtime/releases" / RELEASE_NAME / "bridge.mjs"), "--session-action"],
                 input=json.dumps({"sessionFile": str(first_file), **payload}), capture_output=True, text=True, encoding="utf-8", timeout=20)
@@ -703,6 +710,31 @@ class PiTests(unittest.TestCase):
         export = self.path / "export.jsonl"
         action(action="export", outputFile=str(export))
         self.assertEqual(export.read_bytes(), first_file.read_bytes())
+
+    def test_large_history_state_is_bounded_and_live_entries_keep_native_ids(self):
+        path = self.path / 'large-history.jsonl'
+        entries = [{'type':'session','version':3,'id':'large-fixture','timestamp':'2026-01-01T00:00:00.000Z','cwd':str(self.path)}]
+        for i in range(400):
+            message = {'role':'user' if i%2==0 else 'assistant','content':[{'type':'text','text':'history '+str(i)}],'timestamp':1000+i}
+            if message['role'] == 'assistant':
+                message.update(api='openai-completions',provider='umeko',model='umeko-default',stopReason='stop',usage={'input':1,'output':1,'cacheRead':0,'cacheWrite':0,'cost':{'input':0,'output':0,'cacheRead':0,'cacheWrite':0,'total':0}})
+            entries.append({'type':'message','id':'history-'+str(i),'parentId':'history-'+str(i-1) if i else None,'timestamp':'2026-01-01T00:00:00.000Z','message':message})
+        path.write_text(''.join(json.dumps(row)+'\n' for row in entries),encoding='utf-8')
+        state = next(e for e in self.command({**self.payload,'sessionFile':str(path)}) if e['type']=='state')
+        self.assertIn('indexedHistory',state)
+        self.assertLessEqual(len(state['messages']),128)
+        self.assertEqual(state['indexedHistory']['totalMessages'],400)
+        self.assertEqual(state['tree'],[])
+        events = self.command({'type':'prompt','text':'Continue the fixture'})
+        native = [e for e in events if e['type']=='native_entry']
+        self.assertTrue(any(e['role']=='user' for e in native))
+        self.assertTrue(any(e['role']=='assistant' for e in native))
+        self.assertTrue(any(e['type']=='history_checkpoint' and e.get('leafId') for e in events))
+        final = next(e for e in events if e['type']=='state')
+        self.assertIn('indexedHistory',final)
+        from app.transcript_index import TranscriptRepository
+        snapshot = TranscriptRepository(self.path/'index').open(path,leaf=final['indexedHistory']['leafId'])
+        self.assertEqual(snapshot.row(snapshot.count-1)['text'],'native complete')
 
     def test_native_mcp_stdio_project_override_and_tool_call(self):
         server = self.path / "mcp-fixture.mjs"
