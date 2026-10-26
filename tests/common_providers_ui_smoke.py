@@ -33,6 +33,15 @@ def find(name):
 def click(name):
     QTest.qWait(70)
     item = find(name)
+    # Focusing the inline editor can scroll Settings. After it collapses,
+    # ensure the next real pointer click is inside the viewport on every OS.
+    settings = find('settingsScroll').property('contentItem')
+    if within(item, settings):
+        settings.cancelFlick()
+        position = item.mapToItem(settings, QPointF(0, 0))
+        top = settings.property('contentY') + position.y() - settings.height() / 2 + item.height() / 2
+        settings.setProperty('contentY', max(0, min(top, max(0, settings.property('contentHeight') - settings.height()))))
+        QTest.qWait(70)
     # At large text sizes the choices scroll inside the popup.
     if name.startswith('commonProvider_'):
         scroll = find('commonProviderScroll')
@@ -40,8 +49,16 @@ def click(name):
         scroll.setProperty('contentY', max(0, min(scroll.property('contentY') + position.y() - 30,
                                                 scroll.property('contentHeight') - scroll.height())))
         QTest.qWait(70)
-    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, item.mapToScene(item.boundingRect().center()).toPoint())
+    target = item.mapToScene(item.boundingRect().center()).toPoint()
+    QTest.mouseMove(window, target)
     QTest.qWait(100)
+    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, target)
+    QTest.qWait(100)
+    if name == 'addCommonProviderButton':
+        dialog = window.findChild(QObject, 'commonProviderDialog')
+        if not dialog or not dialog.property('visible'):
+            window.grabWindow().save(str(ROOT/'artifacts/screenshots/common-provider-open-failed.png'))
+        assert dialog and dialog.property('visible'), 'Add common provider did not open the popup'
 def choose_international():
     click('commonProviderRegion')
     assert find('commonProviderRegion').property('count') == 2
