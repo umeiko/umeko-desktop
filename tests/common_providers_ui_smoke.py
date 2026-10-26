@@ -49,10 +49,22 @@ def click(name):
         scroll.setProperty('contentY', max(0, min(scroll.property('contentY') + position.y() - 30,
                                                 scroll.property('contentHeight') - scroll.height())))
         QTest.qWait(70)
-    target = item.mapToScene(item.boundingRect().center()).toPoint()
+    # ScrollView can still be fixing its content bounds after the editor
+    # disappears. A press during that motion only stops the flick.
+    previous = None
+    stable = 0
+    for _ in range(40):
+        QTest.qWait(25)
+        target = item.mapToScene(item.boundingRect().center()).toPoint()
+        current = (target.x(), target.y(), item.width(), item.height())
+        stable = stable + 1 if current == previous and not settings.property('moving') else 0
+        previous = current
+        if stable >= 4: break
+    assert stable >= 4, (name, 'Click target did not settle', previous)
     QTest.mouseMove(window, target)
     QTest.qWait(100)
-    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, target)
+    target = item.mapToScene(item.boundingRect().center()).toPoint()
+    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, target, delay=50)
     QTest.qWait(100)
     if name == 'addCommonProviderButton':
         dialog = window.findChild(QObject, 'commonProviderDialog')
