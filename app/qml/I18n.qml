@@ -10,6 +10,8 @@ QtObject {
         if (root.language !== "en") return text
         if (Object.prototype.hasOwnProperty.call(English.strings, text)) return English.strings[text]
         const patterns = [
+            [/^下载服务器返回 HTTP (\d+)$/, "Download server returned HTTP $1"],
+            [/^系统代理返回 HTTP (\d+)$/, "System proxy returned HTTP $1"],
             [/^新版本 (.+) 可下载$/, "New version available: $1"],
             [/^已发现 (\d+) 个扩展$/, "Found $1 extensions"],
             [/^已启用 (\d+) \/ (\d+) 个扩展$/, "Enabled $1 / $2 extensions"],

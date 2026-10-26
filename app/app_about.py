@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import threading
+import subprocess
 import re
 import urllib.error
 import urllib.request
@@ -15,6 +16,7 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication
 from .project_info import VERSION, PROJECT_URL, AUTHOR_URL, RELEASES_URL, RELEASE_API, project_info
 from .update_download import platform_target, select_asset, download_asset
 from .update import AppUpdater
+from .update_proxy import system_proxy
 
 
 def version_key(value):
@@ -32,8 +34,19 @@ def fetch_latest_release():
         "X-GitHub-Api-Version": "2026-03-10",
     })
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            raw = response.read(2 * 1024 * 1024 + 1)
+        proxy = system_proxy(RELEASE_API)
+        if proxy.startswith(('socks5:', 'socks5h:', 'https:')):
+            from .pi_runtime import node_executable, node_environment, CREATE_NO_WINDOW
+            environment = node_environment(); environment['UMEKO_UPDATE_PROXY'] = proxy
+            response = subprocess.run([node_executable(), str(Path(__file__).resolve().parents[1]/'runtime/update-engine.mjs'), 'metadata', RELEASE_API],
+                env=environment, capture_output=True, text=True, timeout=70, creationflags=CREATE_NO_WINDOW)
+            value = json.loads(response.stdout)
+            if value.get('code') != 200: raise urllib.error.HTTPError(RELEASE_API, value.get('code', 0), '', {}, None)
+            raw = value['body'].encode('utf-8')
+        else:
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({'https':proxy} if proxy else {}))
+            with opener.open(request, timeout=20) as response:
+                raw = response.read(2 * 1024 * 1024 + 1)
         if len(raw) > 2 * 1024 * 1024:
             raise ValueError("Oversized release metadata")
         data = json.loads(raw)
@@ -62,13 +75,13 @@ def fetch_latest_release():
         if error.code in (403, 429):
             return {"state": "error", "message": "GitHub 请求受限，请稍后重试。"}
         return {"state": "error", "message": "GitHub 暂时无法提供版本信息，请稍后重试。"}
-    except (OSError, ValueError):
+    except (OSError, ValueError, subprocess.TimeoutExpired):
         return {"state": "error", "message": "检查失败，请检查网络后重试，或直接查看 GitHub 发布页。"}
 
 
 class AppAbout(QObject):
     changed = Signal()
-    downloadProgress = Signal(int)
+    downloadProgress = Signal(object)
 
     def __init__(self, controller):
         super().__init__(controller)
@@ -76,6 +89,7 @@ class AppAbout(QObject):
         self._info = project_info(controller.root)
         self._busy, self._release, self._checked_at = False, {}, ""
         self._download = {}
+        self._download_running = False
         self._installation = {}
         self._download_cancel = threading.Event()
         self.updater = AppUpdater(controller)
@@ -116,7 +130,7 @@ class AppAbout(QObject):
 
     @Slot()
     def cancelUpdate(self):
-        if self._download.get('state') == 'downloading': self._download_cancel.set()
+        if self._download.get('state') in ('downloading', 'verifying'): self._download_cancel.set()
 
     @Slot()
     def startAutomaticChecks(self):
@@ -126,7 +140,7 @@ class AppAbout(QObject):
 
     @Slot()
     def checkUpdates(self):
-        if self._busy or self._download.get('state') == 'downloading': return
+        if self._busy or self._download_running: return
         self._busy = True
         if self._release.get('state') != 'available':
             self._release = {"state": "checking", "message": "正在检查 GitHub 最新正式版本…"}
@@ -134,12 +148,15 @@ class AppAbout(QObject):
         self.controller._job("app-update-check", fetch_latest_release)
 
     def _finished(self, name, result):
-        if name == 'app-update-download' and not self.controller._closing:
+        if name == 'app-update-download':
+            self._download_running = False
+            if self.controller._closing: return
             self._download = ({'state':'ready', 'path':result['value'], 'progress':100,
                                'sha256':self._download_asset['sha256'], 'name':self._download_asset['name'], 'version':self._download_version,
                                'message':'SHA-256 校验通过，可以安装。'}
-                              if result['ok'] else {'state':'error', 'message':'下载失败，请检查网络后重试'})
-            if self._download_cancel.is_set(): self._download = {'state':'cancelled', 'message':'下载已取消'}
+                              if result['ok'] else {**self._download, 'state':'error', 'message':result['value']})
+            if self._download_cancel.is_set() and not result['ok']:
+                self._download.update(state='paused', message='下载已暂停，进度已保存', speed=0, eta=-1)
             self.changed.emit()
             self.controller.toast.emit(self._download['message'])
             return
@@ -152,19 +169,25 @@ class AppAbout(QObject):
         self._checked_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M")
         self.changed.emit()
 
-    @Slot(int)
+    @Slot(object)
     def _progress(self, value):
-        if self.controller._closing or self._download.get('state') != 'downloading': return
-        self._download = {**self._download, 'progress':value}
+        if self.controller._closing: return
+        if isinstance(value, dict):
+            value = {**value, 'progress':max(0, min(100, round(value.get('progress', 0)*100)))}
+            self._download = {**self._download, **value}
+            if 'archive' in value: self._download['path'] = value['archive']
+        else:
+            self._download = {**self._download, 'progress':value}
         self.changed.emit()
 
     @Slot()
     def downloadUpdate(self):
-        if self._busy or self._download.get('state') == 'downloading': return
+        if self._busy or self._download_running: return
         asset = self._release.get('asset')
         if not asset:
             self.controller.toast.emit('该版本没有适合当前平台的更新包，请查看发布页')
             return
+        self._download_running = True
         self._download_asset = dict(asset)
         self._download_version = self._release['version']
         self._download_cancel = token = threading.Event()

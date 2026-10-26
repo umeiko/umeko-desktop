@@ -1,7 +1,6 @@
 """Download a platform release asset without touching the installed application."""
 from __future__ import annotations
 
-import hashlib
 import os
 from pathlib import Path
 import platform
@@ -40,36 +39,59 @@ def select_asset(data, project_url, target, native=False, minimal=False):
 
 
 def download_asset(asset, directory, progress, cancelled):
+    # Same engine / resume format as C++; this function runs in controller._job.
+    import json
+    import subprocess
+    import sys
+    import threading
+    from .pi_runtime import node_executable, CREATE_NO_WINDOW
+    from .update_proxy import system_proxy
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     name = asset['name']
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,199}', name):
         raise ValueError('更新包文件名无效')
-    temporary = None
-    try:
-        request = urllib.request.Request(asset['url'], headers={'User-Agent':'Umeko updater', 'Accept-Encoding':'identity'})
-        with urllib.request.urlopen(request, timeout=30) as response:
-            final_url = response.geturl()
-            if urllib.parse.urlsplit(final_url).scheme != 'https': raise ValueError('更新包下载地址必须使用 HTTPS')
-            digest, received, previous = hashlib.sha256(), 0, -1
-            with tempfile.NamedTemporaryFile(dir=directory, prefix='.umeko-', suffix='.part', delete=False) as output:
-                temporary = Path(output.name)
-                while chunk := response.read(256*1024):
-                    if cancelled(): raise InterruptedError('下载已取消')
-                    received += len(chunk)
-                    if received > asset['size']: raise ValueError('更新包大小与发布信息不一致')
-                    output.write(chunk); digest.update(chunk)
-                    percent = received*100//asset['size']
-                    if percent != previous: progress(percent); previous = percent
-        if cancelled(): raise InterruptedError('下载已取消')
-        if received != asset['size'] or digest.hexdigest() != asset['sha256']:
-            raise ValueError('更新包校验失败，请重新下载')
-        target, number = directory/name, 1
-        while target.exists() or target.is_symlink():
-            target = directory/(Path(name).stem+f'-{number}'+Path(name).suffix)
-            number += 1
-        os.replace(temporary, target)
-        temporary = None
-        return str(target)
-    finally:
-        if temporary is not None: temporary.unlink(missing_ok=True)
+    url = urllib.parse.urlsplit(asset['url'])
+    match = re.fullmatch(r'/umeiko/(umeko-desktop(?:-cpp)?)/releases/download/([^/]+)/[^/]+', url.path)
+    if url.scheme != 'https' or url.netloc != 'github.com' or not match:
+        raise ValueError('更新包下载地址无效')
+    if cancelled(): raise InterruptedError('下载已暂停，进度已保存')
+    proxy = system_proxy(asset['url'])
+    from .update import update_environment
+    qt_environment = update_environment()
+    environment = {key:qt_environment.value(key) for key in qt_environment.keys()}
+    environment['UMEKO_UPDATE_PROXY'] = proxy
+    root = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
+    job = dict(repo=match[1], version=urllib.parse.unquote(match[2]), cache=str(directory),
+               asset=dict(name=name, url=asset['url'], bytes=asset['size'], sha256=asset['sha256']))
+    with tempfile.TemporaryDirectory(prefix='umeko-download-job-') as temp:
+        job_file = Path(temp)/'job.json'
+        job_file.write_text(json.dumps(job), encoding='utf-8'); job_file.chmod(0o600)
+        process = subprocess.Popen([node_executable(), str(root/'runtime/update-engine.mjs'), 'download', str(job_file)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+            encoding='utf-8', env=environment, creationflags=CREATE_NO_WINDOW)
+        stopped = threading.Event()
+        def watch_cancel():
+            while not stopped.wait(.1):
+                if cancelled():
+                    try: process.stdin.write('pause\n'); process.stdin.flush()
+                    except (BrokenPipeError, OSError): pass
+                    if not stopped.wait(3) and process.poll() is None: process.kill()
+                    return
+        watcher = threading.Thread(target=watch_cancel, daemon=True); watcher.start()
+        last = {}
+        try:
+            for line in process.stdout:
+                try: value = json.loads(line)
+                except ValueError: continue
+                if not isinstance(value, dict) or 'state' not in value: continue
+                last = value
+                progress({**value, 'route':'系统代理' if proxy else '直连'})
+            process.wait()
+            if last.get('state') == 'ready': return last['archive']
+            if cancelled() or last.get('state') == 'paused': raise InterruptedError('下载已暂停，进度已保存')
+            raise ValueError(last.get('message') or '下载引擎意外退出，已保存下载进度，请继续下载')
+        finally:
+            stopped.set(); watcher.join(1)
+            if process.poll() is None: process.kill(); process.wait()
+            process.stdout.close(); process.stdin.close()

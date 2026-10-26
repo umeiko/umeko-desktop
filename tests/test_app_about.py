@@ -12,17 +12,21 @@ from app.project_info import VERSION, PROJECT_URL, RELEASE_API, RELEASES_URL, bu
 
 
 class AboutTests(unittest.TestCase):
+    def setUp(self):
+        proxy = patch('app.app_about.system_proxy', return_value='')
+        proxy.start(); self.addCleanup(proxy.stop)
+
     def release(self, tag, **extra):
         return {"tag_name": tag, "draft": False, "prerelease": False,
                 "html_url": PROJECT_URL + "/releases/tag/" + tag, "body": "Fixture release notes", **extra}
 
     def fetch(self, value):
-        with patch("app.app_about.urllib.request.urlopen", return_value=io.BytesIO(json.dumps(value).encode())) as request:
+        with patch("urllib.request.OpenerDirector.open", return_value=io.BytesIO(json.dumps(value).encode())) as request:
             result = fetch_latest_release()
         req = request.call_args.args[0]
         self.assertEqual(req.full_url, RELEASE_API)
         self.assertIsNone(req.get_header("Authorization"))
-        self.assertEqual(request.call_args.kwargs["timeout"], 15)
+        self.assertEqual(request.call_args.kwargs["timeout"], 20)
         return result
 
     def test_semantic_comparison_and_legacy_minor_versions(self):
@@ -41,10 +45,10 @@ class AboutTests(unittest.TestCase):
     def test_no_release_rate_limit_and_network_failure_never_report_current(self):
         for code, expected in ((404, "unpublished"), (403, "error"), (429, "error"), (500, "error")):
             error = urllib.error.HTTPError(RELEASE_API, code, "Fixture", {}, None)
-            with patch("app.app_about.urllib.request.urlopen", side_effect=error):
+            with patch("urllib.request.OpenerDirector.open", side_effect=error):
                 self.assertEqual(fetch_latest_release()["state"], expected)
         for error in (urllib.error.URLError("fixture offline"), TimeoutError("fixture timeout")):
-            with patch("app.app_about.urllib.request.urlopen", side_effect=error):
+            with patch("urllib.request.OpenerDirector.open", side_effect=error):
                 self.assertEqual(fetch_latest_release()["state"], "error")
 
     def test_untrusted_or_invalid_metadata(self):
@@ -52,7 +56,7 @@ class AboutTests(unittest.TestCase):
         for value in ([], {}, self.release("v0.3.0", draft=True), self.release("v0.3.0", prerelease=True)):
             self.assertEqual(self.fetch(value)["state"], "error")
         for raw in (b"invalid-json", b" " * (2 * 1024 * 1024 + 1)):
-            with patch("app.app_about.urllib.request.urlopen", return_value=io.BytesIO(raw)):
+            with patch("urllib.request.OpenerDirector.open", return_value=io.BytesIO(raw)):
                 self.assertEqual(fetch_latest_release()["state"], "error")
 
     def test_packaged_info_uses_build_platform_and_never_guesses_build_date(self):

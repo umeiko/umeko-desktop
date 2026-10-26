@@ -3,6 +3,10 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import https from 'node:https';
+import http from 'node:http';
+import net from 'node:net';
+import tls from 'node:tls';
+import {once} from 'node:events';
 import {createHash, randomUUID} from 'node:crypto';
 import {createGunzip, createInflateRaw, crc32} from 'node:zlib';
 import {Readable, Transform} from 'node:stream';
@@ -50,57 +54,299 @@ export function selectAsset(assets, repo, tag, platform = platformKey()) {
     sha256:/^sha256:[a-f0-9]{64}$/i.test(asset.digest || '') ? asset.digest.slice(7).toLowerCase() : '', checksumUrl:checksum?.browser_download_url || ''};
 }
 
-function request(url, redirects = 0) {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || redirects > 6) return reject(Error('下载重定向无效'));
-    const req = https.get(parsed, {headers:{'User-Agent':'Umeko-Updater','Accept-Encoding':'identity'}}, res => {
-      if ([301,302,303,307,308].includes(res.statusCode)) {
-        res.resume();
-        try {request(new URL(res.headers.location, url).href, redirects + 1).then(resolve, reject);}
-        catch {reject(Error('下载重定向地址无效'));}
-      } else if (res.statusCode === 200) resolve(res);
-      else {res.resume(); reject(Error(`下载失败，HTTP ${res.statusCode}`));}
+// The host resolves desktop / PAC settings. Credentials stay in child environment,
+// never in persisted jobs, progress events, URLs in the UI, or updater logs.
+async function proxyTunnel(proxy, target, signal) {
+  const port=Number(target.port || 443), hostname=target.hostname.replace(/^\[|\]$/g,'');
+  if (proxy.protocol==='http:' || proxy.protocol==='https:') {
+    return new Promise((resolve,reject)=>{
+      const headers={Host:`${target.hostname}:${port}`};
+      if(proxy.username || proxy.password)headers['Proxy-Authorization']='Basic '+Buffer.from(decodeURIComponent(proxy.username)+':'+decodeURIComponent(proxy.password)).toString('base64');
+      const connect=(proxy.protocol==='https:'?https:http).request(proxy,{method:'CONNECT',path:`${target.hostname}:${port}`,headers,signal,agent:false});
+      const timer=setTimeout(()=>connect.destroy(Object.assign(Error('系统代理连接超时'),{code:'ETIMEDOUT'})),30000);
+      connect.on('error',e=>{clearTimeout(timer);reject(e);});
+      connect.on('connect',(res,socket,head)=>{
+        clearTimeout(timer);
+        if(res.statusCode!==200){socket.destroy();reject(Object.assign(Error(`系统代理返回 HTTP ${res.statusCode}`),{code:'PROXY',retryable:false}));return;}
+        if(head.length)socket.unshift(head);
+        resolve(socket);
+      });
+      connect.end();
     });
-    req.setTimeout(30000, () => req.destroy(Error('下载超时，请重试')));
-    req.on('error', reject);
+  }
+  if(!['socks5:','socks5h:'].includes(proxy.protocol))throw Object.assign(Error('系统代理协议不受支持'),{code:'PROXY',retryable:false});
+  const socket=net.connect({host:proxy.hostname.replace(/^\[|\]$/g,''),port:Number(proxy.port || 1080)});
+  const abort=()=>socket.destroy(Object.assign(Error('下载已暂停'),{code:'ABORT_ERR'}));
+  signal?.addEventListener('abort',abort,{once:true});
+  const timer=setTimeout(()=>socket.destroy(Object.assign(Error('系统代理连接超时'),{code:'ETIMEDOUT'})),30000);
+  try {
+    // Read exactly N bytes without consuming a subsequent protocol frame.
+    const read=async count=>{
+      let chunks=[],left=count;
+      while(left){let chunk=socket.read(left);if(chunk){chunks.push(chunk);left-=chunk.length;continue;}if(socket.destroyed)throw Error('SOCKS 代理连接已关闭');await once(socket,'readable');}
+      return Buffer.concat(chunks);
+    };
+    await once(socket,'connect');
+    const user=Buffer.from(decodeURIComponent(proxy.username)),pass=Buffer.from(decodeURIComponent(proxy.password));
+    if(user.length>255 || pass.length>255)throw Error('SOCKS 代理凭据无效');
+    socket.write(user.length?Buffer.from([5,2,0,2]):Buffer.from([5,1,0]));
+    const greeting=await read(2);
+    if(greeting[0]!==5 || ![0,2].includes(greeting[1]))throw Error('SOCKS 代理拒绝认证');
+    if(greeting[1]===2){socket.write(Buffer.concat([Buffer.from([1,user.length]),user,Buffer.from([pass.length]),pass]));if((await read(2))[1]!==0)throw Error('SOCKS 代理认证失败');}
+    const host=Buffer.from(hostname);
+    if(host.length>255)throw Error('SOCKS 目标地址无效');
+    // Proxy resolves the domain, avoiding DNS failures outside the proxy.
+    socket.write(Buffer.concat([Buffer.from([5,1,0,3,host.length]),host,Buffer.from([port>>8,port&255])]));
+    const reply=await read(4);
+    if(reply[0]!==5 || reply[1]!==0)throw Error('SOCKS 代理连接失败');
+    const length=reply[3]===1?4:reply[3]===4?16:reply[3]===3?(await read(1))[0]:-1;
+    if(length<0)throw Error('SOCKS 代理响应无效');
+    await read(length+2);return socket;
+  } catch(e){socket.destroy();throw e;}
+  finally {clearTimeout(timer);signal?.removeEventListener('abort',abort);}
+}
+export async function updateRequest(url, options = {}, redirects = 0) {
+  const parsed=new URL(url);
+  if(parsed.protocol!=='https:' || parsed.username || parsed.password || redirects>6)throw Error('下载重定向无效');
+  const address=options.proxy ?? process.env.UMEKO_UPDATE_PROXY ?? process.env.https_proxy ?? process.env.HTTPS_PROXY ?? process.env.all_proxy ?? process.env.ALL_PROXY ?? process.env.http_proxy ?? process.env.HTTP_PROXY ?? '';
+  let agent=false;
+  if(address){
+    const proxy=new URL(address);
+    agent=new https.Agent({keepAlive:false});
+    agent.createConnection=(opts,callback)=>{
+      proxyTunnel(proxy,parsed,options.signal).then(socket=>{
+        if(options.signal?.aborted){socket.destroy();callback(Object.assign(Error('下载已暂停'),{code:'ABORT_ERR'}));return;}
+        const secure=tls.connect({...opts,socket,servername:net.isIP(parsed.hostname)?undefined:parsed.hostname});
+        callback(null,secure);
+      },callback);
+    };
+  }
+  return new Promise((resolve,reject)=>{
+    const req=https.get(parsed,{agent,signal:options.signal,headers:{'User-Agent':'Umeko-Updater','Accept-Encoding':'identity',...options.headers}},res=>{
+      if([301,302,303,307,308].includes(res.statusCode)){
+        res.resume();
+        try{updateRequest(new URL(res.headers.location,url).href,options,redirects+1).then(resolve,reject);}catch{reject(Error('下载重定向地址无效'));}
+      } else resolve(res);
+    });
+    req.setTimeout(60000,()=>req.destroy(Object.assign(Error('下载连接超时'),{code:'ETIMEDOUT'})));
+    req.on('error',reject);
   });
 }
+const request=updateRequest;
 async function digest(file) {
   const hash = createHash('sha256');
   for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
   return hash.digest('hex');
 }
-export async function download(job, fetch = request) {
+const downloadError = (message, code, retryable = false) => Object.assign(Error(message), {code, retryable});
+function pauseCheck(signal) { if (signal?.aborted) throw downloadError('下载已暂停，进度已保存', 'PAUSED'); }
+async function safeDirectory(directory) {
+  await fsp.mkdir(directory, {recursive:true,mode:0o700});
+  const info = await fsp.lstat(directory);
+  if (!info.isDirectory() || info.isSymbolicLink()) throw downloadError('下载缓存目录无效', 'CACHE');
+}
+async function partSize(file, maximum) {
+  try {
+    const info = await fsp.lstat(file);
+    if (!info.isFile() || info.isSymbolicLink()) throw downloadError('下载缓存文件无效', 'CACHE');
+    if (info.size > maximum) {await fsp.rm(file); return 0;}
+    return info.size;
+  } catch (e) {if (e.code === 'ENOENT') return 0; throw e;}
+}
+async function waitRetry(ms, signal) {
+  pauseCheck(signal);
+  await new Promise((resolve,reject) => {
+    const finish = () => {signal?.removeEventListener('abort',abort); resolve();};
+    const timer = setTimeout(finish,ms);
+    const abort = () => {clearTimeout(timer);reject(downloadError('下载已暂停，进度已保存','PAUSED'));};
+    signal?.addEventListener('abort',abort,{once:true});
+  });
+}
+// Persistent parts are keyed by the pinned SHA, never by a signed redirect URL.
+// All I/O and hashing run in the updater process, away from the Qt GUI thread.
+export async function download(job, fetch = request, options = {}) {
   const a = job.asset || selectAsset(job.assets || [], job.repo, job.version);
-  if (!a || path.basename(a.name) !== a.name || !Number.isSafeInteger(a.bytes) || a.bytes <= 0 || a.bytes > MAX_ARCHIVE) throw Error('更新包信息无效');
+  if (!a || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(a.name) || !Number.isSafeInteger(a.bytes) || a.bytes <= 0 || a.bytes > MAX_ARCHIVE) throw Error('更新包信息无效');
   releaseURL(a.url, job.repo, job.version);
+  const signal = options.signal;
   let sha = a.sha256;
   if (!/^[a-f0-9]{64}$/.test(sha || '')) {
     releaseURL(a.checksumUrl, job.repo, job.version);
-    const res = await fetch(a.checksumUrl); let raw = '';
+    const res = await fetch(a.checksumUrl,{signal}); let raw = '';
+    if (res.statusCode && res.statusCode !== 200) {res.destroy();throw Error('无法获取更新包校验信息');}
     for await (const chunk of res) {raw += chunk; if (raw.length > 4096) throw Error('校验文件过大');}
     const match = /^([a-f0-9]{64})\s+\*?(.+?)\s*$/i.exec(raw);
     if (!match || match[2] !== a.name) throw Error('SHA-256 文件内容无效');
     sha = match[1].toLowerCase();
   }
-  await fsp.mkdir(job.cache, {recursive:true, mode:0o700});
-  const archive = path.join(job.cache, a.name), partial = archive + '.part';
-  status('downloading', '正在下载新版本…', 0);
-  let received = 0, last = 0;
+  await fsp.mkdir(job.cache,{recursive:true,mode:0o700});
+  const parent = path.join(job.cache,'.umeko-downloads'), cache = path.join(parent,sha);
+  await safeDirectory(parent); await safeDirectory(cache);
+  const lockFile = path.join(cache,'lock.json'), lockToken = randomUUID();
   try {
-    const response = await fetch(a.url);
-    await pipeline(response, new Transform({transform(chunk, _, cb) {
-      received += chunk.length;
-      if (received > a.bytes) return cb(Error('更新包超过预期大小'));
-      if (Date.now() - last > 150) {last = Date.now(); status('downloading', `正在下载… ${Math.round(received / a.bytes * 100)}%`, received / a.bytes);}
-      cb(null, chunk);
-    }}), fs.createWriteStream(partial, {mode:0o600}));
-    status('verifying', '正在校验 SHA-256…');
-    if (received !== a.bytes || await digest(partial) !== sha) throw Error('SHA-256 或文件大小校验失败，请重新下载');
-    await fsp.rename(partial, archive);
-    status('ready', 'SHA-256 校验通过，可以安装新版本。', 1, {archive, sha256:sha});
-  } finally {await fsp.rm(partial, {force:true});}
+    const lock = await fsp.open(lockFile,'wx',0o600);
+    await lock.writeFile(JSON.stringify({pid:process.pid,token:lockToken}));await lock.close();
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    const info = await fsp.lstat(lockFile);
+    if (!info.isFile() || info.isSymbolicLink()) throw Error('下载缓存锁无效');
+    const lock = await readJSON(lockFile);
+    if (!Number.isSafeInteger(lock.pid) || lock.pid <= 0) throw Error('下载缓存锁无效');
+    try {process.kill(lock.pid,0);throw Error('另一个窗口正在下载此更新，请稍后继续');}
+    catch (e) {if(e.code !== 'ESRCH') throw e;}
+    await fsp.rm(lockFile);
+    return download(job,fetch,options);
+  }
+  let parts = [], received = 0, speed = 0, lastBytes = 0, lastTime = Date.now(), timer;
+  let complete = false, retries = 0, message = '正在下载更新包…';
+  const progress = () => Math.min(0.99,received/a.bytes);
+  const report = (state='downloading', text=message) => {
+    const now=Date.now(), elapsed=(now-lastTime)/1000;
+    if (elapsed >= .2) {const sample=Math.max(0,received-lastBytes)/elapsed;speed=speed ? speed*.5+sample*.5 : sample;lastTime=now;lastBytes=received;}
+    status(state,text,progress(),{received,total:a.bytes,speed:state==='downloading'?Math.round(speed):0,eta:speed>0?Math.ceil((a.bytes-received)/speed):-1,retries,resumable:received>0});
+  };
+  const maximumAttempts = Math.max(1,Math.min(6,job.maxAttempts || 5));
+  const delayBase = Math.max(1,Math.min(2000,job.retryDelay || 800));
+  const header = (res,key) => res.headers?.[key.toLowerCase()] || '';
+  function validateResponse(res,start,end,single) {
+    const code=res.statusCode || 200;
+    if (code===416) throw downloadError('服务器不支持当前续传请求','RANGE_UNSUPPORTED');
+    if (code!==200 && code!==206) {
+      const error=downloadError(code===404?'此版本更新包已不可用，请重新检查更新':`下载服务器返回 HTTP ${code}`,`HTTP_${code}`,[403,408,429,500,502,503,504].includes(code));
+      error.retryAfter=Math.min(30000,Math.max(0,Number(header(res,'retry-after'))*1000 || 0));throw error;
+    }
+    if (header(res,'content-encoding') && header(res,'content-encoding')!=='identity') throw downloadError('下载服务器返回了不支持的编码','RESPONSE');
+    if (code===200) {
+      if (!single) throw downloadError('服务器不支持分段续传','RANGE_UNSUPPORTED');
+      const length=header(res,'content-length');
+      if (length && Number(length)!==a.bytes) throw downloadError('更新包大小与发布信息不一致','SIZE');
+      return 0; // The server ignored Range; overwrite this part instead of appending.
+    }
+    const range=/^bytes (\d+)-(\d+)\/(\d+)$/.exec(header(res,'content-range'));
+    if (!range || Number(range[1])!==start || Number(range[2])!==end || Number(range[3])!==a.bytes) throw downloadError('服务器返回的续传范围无效','RANGE');
+    const length=header(res,'content-length');
+    if (length && Number(length)!==end-start+1) throw downloadError('服务器返回的续传长度无效','RANGE');
+    return start;
+  }
+  async function transfer(part, localSignal, initial=null) {
+    for (let attempt=0;attempt<maximumAttempts;attempt++) {
+      pauseCheck(signal);pauseCheck(localSignal);
+      let response=initial;initial=null;
+      try {
+        if (part.size===part.length) return;
+        const start=part.start+part.size, end=part.start+part.length-1;
+        response ||= await fetch(a.url,{signal:localSignal,headers:{Range:`bytes=${start}-${end}`}});
+        const offset=validateResponse(response,start,end,part.single);
+        if (offset===0 && part.size>0) {received-=part.size;part.size=0;await fsp.truncate(part.file,0);}
+        const flags=fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_APPEND|(fs.constants.O_NOFOLLOW || 0);
+        const file=await fsp.open(part.file,flags,0o600);
+        try {
+          message='正在下载更新包…';
+          for await (const chunk of response) {
+            pauseCheck(signal);pauseCheck(localSignal);
+            if (part.size+chunk.length>part.length) throw downloadError('更新包超过预期大小','SIZE');
+            let offset=0;
+            while(offset<chunk.length) {const {bytesWritten}=await file.write(chunk,offset,chunk.length-offset);if(!bytesWritten)throw downloadError('无法保存更新包，请检查磁盘空间和权限','DISK');offset+=bytesWritten;part.size+=bytesWritten;received+=bytesWritten;}
+          }
+        } finally {await file.close();}
+        if (part.size!==part.length) throw downloadError('下载连接中断，已保存当前进度','SHORT_READ',true);
+        return;
+      } catch (e) {
+        response?.destroy();pauseCheck(signal);pauseCheck(localSignal);
+        // Network stream failures may have no explicit retryable field.
+        const retryable=e.retryable || ['ECONNRESET','ETIMEDOUT','EPIPE','ECONNREFUSED','EAI_AGAIN','ENOTFOUND','ERR_STREAM_PREMATURE_CLOSE','UND_ERR_SOCKET'].includes(e.code) || /TLS|socket|network|fetch failed/i.test(e.message);
+        if (!retryable || attempt+1>=maximumAttempts) throw e;
+        retries++;message='连接中断，正在自动重连…';report();
+        await waitRetry(e.retryAfter || Math.min(10000,delayBase*2**attempt),localSignal);
+      }
+    }
+  }
+  async function makeParts(single) {
+    const count=single?1:Math.max(1,Math.min(3,job.connections || (a.bytes>=8*1024*1024?3:1)));
+    parts=[];
+    for(let i=0;i<count;i++) {
+      const start=Math.floor(a.bytes*i/count), end=Math.floor(a.bytes*(i+1)/count);
+      const file=path.join(cache,single?'full.part':`part-${i}`);
+      parts.push({file,start,length:end-start,size:await partSize(file,end-start),single});
+    }
+    received=parts.reduce((sum,p)=>sum+p.size,0);lastBytes=received;lastTime=Date.now();
+  }
+  try {
+    pauseCheck(signal);
+    // Reuse an already verified archive; never overwrite an unrelated user's file.
+    let archive=path.join(job.cache,a.name), number=1;
+    while(await exists(archive)) {
+      const info=await fsp.lstat(archive);
+      if(info.isFile()&&!info.isSymbolicLink()&&info.size===a.bytes&&await digest(archive)===sha) {
+        status('ready','SHA-256 校验通过，可以安装新版本。',1,{archive,sha256:sha,name:a.name,version:job.version,received:a.bytes,total:a.bytes});complete=true;return;
+      }
+      const ext=path.extname(a.name);archive=path.join(job.cache,path.basename(a.name,ext)+'-'+(number++)+ext);
+    }
+    let single=await exists(path.join(cache,'full.part')) || (job.connections || (a.bytes>=8*1024*1024?3:1))===1;
+    await makeParts(single);report();timer=setInterval(()=>report(),400);
+    const run = async () => {
+      const group=new AbortController();
+      const abort=()=>group.abort();signal?.addEventListener('abort',abort,{once:true});
+      let failure;
+      try {
+        // Validate the first response before starting the other two connections.
+        const first=parts.find(p=>p.size<p.length);
+        let initial;
+        if(first) {
+          for(let attempt=0;;attempt++) {
+            pauseCheck(signal);
+            try {initial=await fetch(a.url,{signal:group.signal,headers:{Range:`bytes=${first.start+first.size}-${first.start+first.length-1}`}});validateResponse(initial,first.start+first.size,first.start+first.length-1,single);break;}
+            catch(e) {initial?.destroy();if(e.code==='RANGE_UNSUPPORTED'||e.retryable===false||['RANGE','SIZE','RESPONSE'].includes(e.code)||attempt+1>=maximumAttempts)throw e;retries++;message='连接中断，正在自动重连…';report();await waitRetry(e.retryAfter || Math.min(10000,delayBase*2**attempt),signal);}
+          }
+        }
+        await Promise.all(parts.map(async p=>{try{await transfer(p,group.signal,p===first?initial:null);}catch(e){failure ||= e;group.abort();throw e;}}).map(p=>p.catch(()=>{})));
+        if(failure)throw failure;
+      } finally {signal?.removeEventListener('abort',abort);group.abort();}
+    };
+    try {await run();}
+    catch(e) {
+      pauseCheck(signal);
+      if(e.code!=='RANGE_UNSUPPORTED')throw e;
+      message='服务器不支持分段续传，正在使用单连接下载…';
+      for(const p of parts)await fsp.rm(p.file,{force:true});
+      single=true;await makeParts(true);report();await transfer(parts[0],signal);
+    }
+    clearInterval(timer);timer=null;pauseCheck(signal);received=a.bytes;report('verifying','正在校验 SHA-256…');
+    const assembled=path.join(cache,'verified.part');
+    if(await exists(assembled)) {await partSize(assembled,a.bytes);await fsp.rm(assembled);}
+    const output=await fsp.open(assembled,'wx',0o600), hash=createHash('sha256');
+    try {
+      for(const p of parts)for await(const chunk of fs.createReadStream(p.file)) {
+        pauseCheck(signal);hash.update(chunk);let offset=0;
+        while(offset<chunk.length) {const {bytesWritten}=await output.write(chunk,offset,chunk.length-offset);if(!bytesWritten)throw downloadError('无法保存更新包，请检查磁盘空间和权限','DISK');offset+=bytesWritten;}
+      }
+    } finally {await output.close();}
+    if(hash.digest('hex')!==sha) {
+      for(const p of parts)await fsp.rm(p.file,{force:true});await fsp.rm(assembled,{force:true});received=0;
+      throw downloadError('SHA-256 校验失败，已清除损坏缓存，请重新下载','HASH');
+    }
+    pauseCheck(signal);
+    // Hard-link promotion is atomic and exclusive; copy exclusively on filesystems without links.
+    for(;;) {
+      try {await fsp.link(assembled,archive);break;}
+      catch(e) {
+        if(e.code==='EEXIST') {const ext=path.extname(a.name);archive=path.join(job.cache,path.basename(a.name,ext)+'-'+(number++)+ext);continue;}
+        if(!['EPERM','EOPNOTSUPP','ENOTSUP','EXDEV'].includes(e.code))throw e;
+        try {await fsp.copyFile(assembled,archive,fs.constants.COPYFILE_EXCL);break;}catch(copy){if(copy.code!=='EEXIST')throw copy;}
+      }
+    }
+    complete=true;
+    status('ready','SHA-256 校验通过，可以安装新版本。',1,{archive,sha256:sha,name:a.name,version:job.version,received:a.bytes,total:a.bytes,speed:0});
+  } catch(e) {
+    clearInterval(timer);timer=null;
+    if(signal?.aborted)e=downloadError('下载已暂停，进度已保存','PAUSED');
+    const message=e.code==='PAUSED'?e.message:e.code==='HASH'?e.message:['ENOSPC','EACCES','EPERM'].includes(e.code)?'无法保存更新包，请检查磁盘空间和权限':e.retryable||['ECONNRESET','ETIMEDOUT','ERR_STREAM_PREMATURE_CLOSE','EAI_AGAIN','ENOTFOUND'].includes(e.code)?'网络连接中断，进度已保存，点击继续下载':e.message;
+    e.downloadState={message,progress:progress(),received,total:a.bytes,speed:0,eta:-1,resumable:received>0,retries,code:e.code || 'NETWORK'};throw e;
+  } finally {
+    clearInterval(timer);
+    try {if((await readJSON(lockFile)).token===lockToken)await fsp.rm(lockFile);}catch{}
+    if(complete)await fsp.rm(cache,{recursive:true,force:true});
+  }
 }
 
 // Never extract through an archive-created symlink, including directory links.
@@ -325,12 +571,29 @@ async function cleanup(job, jobFile) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const [mode, jobFile] = process.argv.slice(2), job = await readJSON(jobFile);
+    const [mode, jobFile] = process.argv.slice(2);
+    if(mode==='metadata') {
+      if(!/^https:\/\/api\.github\.com\/repos\/umeiko\/umeko-desktop(?:-cpp)?\/releases\/(latest|tags\/v[0-9A-Za-z.-]+)$/.test(jobFile))throw Error('版本检查地址无效');
+      const response=await request(jobFile), chunks=[];let size=0;
+      for await(const chunk of response){size+=chunk.length;if(size>2*1024*1024){response.destroy();throw Error('版本信息过大');}chunks.push(chunk);}
+      emit({code:response.statusCode,body:Buffer.concat(chunks).toString('utf8')});
+      process.exitCode=0;
+    } else {
+    const job = await readJSON(jobFile);
     if (mode !== 'cleanup') logFile = jobFile + '.log';
-    if (mode === 'download') await download(job);
+    if (mode === 'download') {
+      const controller=new AbortController();
+      const pause=()=>controller.abort();
+      process.on('SIGTERM',pause);process.on('SIGINT',pause);
+      const input=chunk=>{if(chunk.toString().includes('pause'))pause();};
+      process.stdin.on('data',input);
+      try {await download(job,request,{signal:controller.signal});}
+      finally {process.stdin.removeListener('data',input);process.stdin.pause();}
+    }
     else if (mode === 'prepare') await prepare(job,jobFile);
     else if (mode === 'install') await install(job,jobFile);
     else if (mode === 'cleanup') await cleanup(job,jobFile);
     else throw Error('未知更新操作');
-  } catch (error) {status('error',error.message); process.exitCode = 1;}
+    }
+  } catch (error) {const detail=error.downloadState || {};status(error.code==='PAUSED'?'paused':'error',detail.message || error.message,detail.progress ?? -1,detail);process.exitCode=error.code==='PAUSED'?0:1;}
 }

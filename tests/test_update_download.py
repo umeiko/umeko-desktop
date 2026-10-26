@@ -34,26 +34,38 @@ class UpdateDownloadTests(unittest.TestCase):
                 self.assertEqual(select_asset({**release,'assets':[{**asset,**bad}]},PROJECT_URL,expected),{})
             self.assertEqual(select_asset({**release,'assets':[asset,asset]},PROJECT_URL,expected),{})
 
+    def seed(self, temp, asset, body):
+        partial = Path(temp)/'.umeko-downloads'/asset['sha256']/'full.part'
+        partial.parent.mkdir(parents=True)
+        partial.write_bytes(body)
+
     def test_verified_atomic_download_preserves_existing_files(self):
         payload,release,raw=self.fixture()
         asset=select_asset(release,PROJECT_URL,'windows-x64')
         with tempfile.TemporaryDirectory() as temp:
             existing=Path(temp)/raw['name']; existing.write_bytes(b'keep existing')
+            self.seed(temp,asset,payload)
             progress=[]
-            with patch('app.update_download.urllib.request.urlopen',return_value=Response(payload)):
+            with patch('app.update_proxy.system_proxy',return_value=''):
                 downloaded=Path(download_asset(asset,temp,progress.append,lambda:False))
             self.assertNotEqual(downloaded,existing)
             self.assertEqual(existing.read_bytes(),b'keep existing')
             self.assertEqual(downloaded.read_bytes(),payload)
-            self.assertEqual(progress[-1],100)
-            self.assertLessEqual(len(progress),101)
-            self.assertFalse(list(Path(temp).glob('*.part')))
+            self.assertEqual(progress[-1]['progress'],1)
+            self.assertEqual(progress[-1]['state'],'ready')
+            with patch('app.update_proxy.system_proxy',return_value=''):
+                self.assertEqual(download_asset(asset,temp,lambda _:None,lambda:False),str(downloaded))
 
-    def test_truncation_bad_digest_and_cancel_never_leave_an_update_archive(self):
+    def test_bad_digest_and_cancel_never_leave_an_update_archive(self):
         payload,release,_=self.fixture()
         asset=select_asset(release,PROJECT_URL,'windows-x64')
-        for body,expected,cancel in [(payload[:-5],asset,False),(payload,{**asset,'sha256':'0'*64},False),(payload,asset,True)]:
-            with tempfile.TemporaryDirectory() as temp, patch('app.update_download.urllib.request.urlopen',return_value=Response(body)):
-                with self.assertRaises((ValueError,InterruptedError)):
-                    download_asset(expected,temp,lambda _:None,lambda:cancel)
-                self.assertEqual(list(Path(temp).iterdir()),[])
+        with tempfile.TemporaryDirectory() as temp:
+            self.seed(temp,asset,b'z'*len(payload))
+            with patch('app.update_proxy.system_proxy',return_value=''):
+                with self.assertRaisesRegex(ValueError,'SHA-256'):
+                    download_asset(asset,temp,lambda _:None,lambda:False)
+            self.assertFalse(list(Path(temp).glob('*.zip')))
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaises(InterruptedError):
+                download_asset(asset,temp,lambda _:None,lambda:True)
+            self.assertEqual(list(Path(temp).iterdir()),[])
