@@ -34,13 +34,28 @@ test('three ranged transfers assemble the exact pinned archive',async t=>{
   assert.equal(await fs.stat(f.part).then(()=>true,()=>false),false);
 });
 test('truncated network streams reconnect at saved offsets instead of becoming SHA errors',async t=>{
-  let dropped=false;
+  let dropped=false,savedBeforeDrop=false;
   const f=await fixture(t,(q,s,b)=>{
     const body=range(q,s,b);
-    if(!dropped){dropped=true;s.write(body.subarray(0,40000));setTimeout(()=>s.destroy(),10);}
+    if(!dropped){
+      dropped=true;s.write(body.subarray(0,40000));
+      // A flushed socket write does not mean the client has saved its bytes.
+      // Interrupt only after the partial really exists, including on busy CI.
+      void (async()=>{
+        const deadline=Date.now()+5000;
+        while(Date.now()<deadline){
+          if(await fs.stat(path.join(f.part,'part-0')).then(x=>x.size===40000,()=>false)){
+            savedBeforeDrop=true;break;
+          }
+          await new Promise(resolve=>setTimeout(resolve,5));
+        }
+        s.destroy();
+      })();
+    }
     else s.end(body);
   });
   await download(f.job,f.fetch);
+  assert.ok(savedBeforeDrop,'fixture must save 40000 bytes before interrupting the network stream');
   assert.ok(f.calls.includes('bytes=40000-299999'),f.calls.join(','));
   assert.deepEqual(await fs.readFile(path.join(f.cache,'fixture.zip')),f.bytes);
 });
