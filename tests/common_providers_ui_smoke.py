@@ -10,8 +10,8 @@ os.environ['UMEKO_DATA_DIR'] = tempfile.mkdtemp(prefix='umeko-common-provider-ui
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 os.environ.setdefault('QT_QUICK_BACKEND', 'software')
 from PySide6.QtCore import Qt, QObject, QUrl, Slot, QPointF
-from PySide6.QtGui import QDesktopServices
-from PySide6.QtTest import QTest
+from PySide6.QtGui import QDesktopServices, QEnterEvent
+from PySide6.QtTest import QTest, QSignalSpy
 from main import create_application
 app, engine, backend = create_application()
 window = engine.rootObjects()[0]
@@ -61,15 +61,29 @@ def click(name):
         previous = current
         if stable >= 4: break
     assert stable >= 4, (name, 'Click target did not settle', previous)
+    # Closing an offscreen popup does not synthesize window re-entry for
+    # QtTest. Match the enter-before-move sequence of the native UI tests.
+    app.sendEvent(window, QEnterEvent(QPointF(target), QPointF(target), QPointF(window.mapToGlobal(target))))
     QTest.mouseMove(window, target)
     QTest.qWait(100)
     target = item.mapToScene(item.boundingRect().center()).toPoint()
+    if name == 'addCommonProviderButton':
+        clicks = QSignalSpy(item.clicked)
+        presses = QSignalSpy(item.pressed)
+        releases = QSignalSpy(item.released)
+        dialog = window.findChild(QObject, 'commonProviderDialog')
+        openings = QSignalSpy(dialog.opened)
+        closings = QSignalSpy(dialog.closed)
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, target, delay=50)
     QTest.qWait(100)
     if name == 'addCommonProviderButton':
         dialog = window.findChild(QObject, 'commonProviderDialog')
         if not dialog or not dialog.property('visible'):
             window.grabWindow().save(str(ROOT/'artifacts/screenshots/common-provider-open-failed.png'))
+            print('COMMON_PROVIDER_CLICK', {'target':(target.x(), target.y()), 'after':str(item.mapToScene(item.boundingRect().center())),
+                  'pressed':presses.count(), 'released':releases.count(), 'clicked':clicks.count(),
+                  'opened':openings.count(), 'closed':closings.count(), 'enabled':item.isEnabled(),
+                  'down':item.property('down'), 'moving':settings.property('moving'), 'scroll':settings.property('contentY')}, flush=True)
         assert dialog and dialog.property('visible'), 'Add common provider did not open the popup'
 def choose_international():
     click('commonProviderRegion')
