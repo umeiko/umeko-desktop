@@ -744,10 +744,12 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         except (ValueError, OSError):
             self.toast.emit("无法打开拖入的目录")
 
-    @Slot(str)
+    @Slot(str, result=bool)
     def addAttachments(self, raw):
         if self._view.busy and self._view.phase != "running":
-            return self.toast.emit("Pi 加载完成后可添加附件")
+            self.toast.emit("Pi 加载完成后可添加附件")
+            return False
+        accepted = False
         try:
             for url in json.loads(raw):
                 parsed = QUrl(url)
@@ -757,6 +759,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
                 if not path.is_file() and not path.is_dir():
                     continue
                 if any(item["path"] == str(path) for item in self._view.attachments):
+                    accepted = True
                     continue
                 if len(self._view.attachments) >= 20:
                     self.toast.emit("一次最多添加 20 个附件")
@@ -779,9 +782,11 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
                 if image is not None:
                     item.update(kind="image", data=self._image_data(image), mime="image/png", preview=QUrl.fromLocalFile(str(path)).toString())
                 self._view.attachments.append(item)
-            self.attachmentsChanged.emit()
+                accepted = True
         except (ValueError, OSError):
             self.toast.emit("无法读取附件")
+        self.attachmentsChanged.emit()
+        return accepted
 
     @staticmethod
     def _image_data(image):
@@ -798,8 +803,21 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         if self._view.busy and self._view.phase != "running":
             return False
         mime = QGuiApplication.clipboard().mimeData()
-        if mime.hasUrls() and any(url.isLocalFile() for url in mime.urls()):
-            self.addAttachments(json.dumps([url.toString() for url in mime.urls()]))
+        if mime is None:
+            return False
+        urls = [url for url in mime.urls() if url.isLocalFile()]
+        # IDEs can advertise URI/image formats alongside code. Only a text
+        # representation of the copied files themselves should prefer files.
+        file_texts = {
+            "\n".join(url.toString() for url in urls),
+            "\n".join(url.toLocalFile() for url in urls),
+            "\n".join(os.path.normpath(url.toLocalFile()) for url in urls),
+        }
+        clipboard_text = mime.text()
+        text = clipboard_text.replace("\r\n", "\n").rstrip("\n")
+        if clipboard_text and (not urls or text not in file_texts):
+            return False
+        if urls and self.addAttachments(json.dumps([url.toString() for url in urls])):
             return True
         if mime.hasImage():
             folder = self.store.directory / "attachments"
@@ -807,8 +825,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
             path = folder / ("clipboard-" + uuid.uuid4().hex[:12] + ".png")
             image = QGuiApplication.clipboard().image()
             if not image.isNull() and image.save(str(path)):
-                self.addAttachments(json.dumps([QUrl.fromLocalFile(str(path)).toString()]))
-                return True
+                return self.addAttachments(json.dumps([QUrl.fromLocalFile(str(path)).toString()]))
         return False
 
     @Slot(str)
