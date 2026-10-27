@@ -85,6 +85,7 @@ jobs:
             "$python_bin" tests/tray_ui_smoke.py
             "$python_bin" tests/tooltip_click_ui_smoke.py
             "$python_bin" tests/clipboard_paste_ui_smoke.py
+            "$python_bin" tests/request_details_ui_smoke.py
             "$python_bin" tests/common_providers_ui_smoke.py
             "$python_bin" tests/umeko_control_ui_smoke.py
             "$python_bin" tests/notifications_ui_smoke.py

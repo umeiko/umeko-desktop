@@ -485,7 +485,7 @@ ApplicationWindow {
                         objectName: "requestDetails_" + messageRow.index
                         selectionController: chatSelection
                         visible: !modelData._loading && !!modelData.error && (modelData.diagnosticId || "").length > 0
-                        x: 33; text: I18n.t("查看请求详情"); glyph: "code"; quiet: true
+                        x: 33; text: I18n.t("查看请求与返回"); glyph: "code"; quiet: true
                         onClicked: requestInspector.show(modelData.diagnosticId)
                     }
                     OutputLimitNotice {

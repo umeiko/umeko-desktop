@@ -11,6 +11,10 @@ on:
         default: v0.5.0
         required: true
         type: string
+      replace_existing:
+        description: Explicitly overwrite the existing same-version assets and retarget its tag
+        default: false
+        type: boolean
 permissions:
   contents: write
   actions: read
@@ -25,6 +29,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_BUILD_RUN: ${{ inputs.build_run }}
       RELEASE_TAG: ${{ inputs.tag }}
+      REPLACE_EXISTING_RELEASE: ${{ inputs.replace_existing }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
