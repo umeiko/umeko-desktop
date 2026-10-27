@@ -83,6 +83,7 @@ jobs:
             "$python_bin" -m unittest tests.test_update tests.test_common_providers tests.test_openai_responses tests.test_platform tests.test_desktop_notifications tests.test_umeko_control -q
             "$python_bin" tests/installer_ui_smoke.py
             "$python_bin" tests/tray_ui_smoke.py
+            "$python_bin" tests/tooltip_click_ui_smoke.py
             "$python_bin" tests/common_providers_ui_smoke.py
             "$python_bin" tests/umeko_control_ui_smoke.py
             "$python_bin" tests/notifications_ui_smoke.py
