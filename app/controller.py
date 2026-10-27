@@ -195,6 +195,8 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
                 self._kernel_status = "已使用内置内核，可在此恢复配置"
         self.jobDone.connect(self._on_job_done)
         self._pi_management = PiManagement(self)
+        from .umeko_control import UmekoControl
+        self._umeko_control = UmekoControl(self)
 
     @Property(QObject, constant=True)
     def piManagement(self):

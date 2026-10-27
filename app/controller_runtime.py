@@ -182,6 +182,10 @@ class PiControllerMixin:
         if self._closing:
             return
         kind, visible = event.get("type"), record is self._view
+        if kind == 'umeko_request':
+            result = self._umeko_control.execute({'operation': event.get('operation'), 'arguments': event.get('arguments', {})}, record)
+            self._write_pi({'type': 'umeko_response', 'id': event.get('id'), 'result': result}, record)
+            return
         transcript = False
         dirty = max(0, len(record.messages) - 2)
         if kind == 'native_entry':

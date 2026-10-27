@@ -120,6 +120,8 @@ Custom color themes use portable JSON files. Import, update or delete them under
 
 Common providers: **账号与供应商 → 添加常见供应商** offers Claude Code, Codex, Kimi Code, DeepSeek, GLM Coding Plan (including Z.ai) and MiniMax subscriptions (M Plan). GLM and MiniMax offer a site dropdown inside the Key form with just China and International; China is selected by default. Enter an API Key and optional account alias; endpoints and models are preconfigured. Multiple accounts receive distinct names and model mappings. See [Common provider accounts](docs/common-providers.md).
 
+The Agent can manage this running desktop through **`config_umeko`**: providers, plugins, themes, settings, projects, chats and updates. Changes refresh the UI; operations that need idle tasks return a queued job. `/help` points to the bundled [Umeko management documentation](runtime/umeko-docs/README.md), loaded by topic instead of adding a large command list to every prompt. Umeko provider and theme settings are separate from Pi's terminal configuration.
+
 Background task completion uses [native desktop notifications](docs/notifications.md) while the window is minimized or in the tray. Click a notification to return to its conversation; permissions and sound follow system settings.
 
 macOS releases include a [drag-to-Applications DMG](docs/macos-dmg.md) for Apple Silicon and Intel, alongside the ZIP used by automatic updates. API proxy aliases use [provider submenus and automatic Base URLs](docs/api-proxy-menus.md).

@@ -61,7 +61,7 @@ class CommonProviderTests(unittest.TestCase):
             self.assertEqual(provider['name'], preset['name'] + '(工作号)')
             self.assertEqual(provider['api'], 'openai')
             self.assertEqual(provider['presetId'], preset['id'])
-            self.assertNotIn('fixture-subscription-key', self.controller.store.path.read_text())
+            self.assertNotIn('fixture-subscription-key', self.controller.store.path.read_text(encoding='utf-8'))
 
     def test_region_accounts_keep_credentials_names_and_aliases_separate(self):
         c = self.controller

@@ -79,11 +79,12 @@ jobs:
             set -e
             python_bin=.venv/bin/python
             if [ "$RUNNER_OS" = Windows ]; then python_bin=.venv/Scripts/python.exe; fi
-            node --test tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs
-            "$python_bin" -m unittest tests.test_update tests.test_common_providers tests.test_openai_responses tests.test_platform tests.test_desktop_notifications -q
+            node --test tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs
+            "$python_bin" -m unittest tests.test_update tests.test_common_providers tests.test_openai_responses tests.test_platform tests.test_desktop_notifications tests.test_umeko_control -q
             "$python_bin" tests/installer_ui_smoke.py
             "$python_bin" tests/tray_ui_smoke.py
             "$python_bin" tests/common_providers_ui_smoke.py
+            "$python_bin" tests/umeko_control_ui_smoke.py
             "$python_bin" tests/notifications_ui_smoke.py
             "$python_bin" tests/mcp_add_ui_smoke.py
           }

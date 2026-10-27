@@ -88,6 +88,8 @@ class PiTests(unittest.TestCase):
             output.append(event)
             if event.get("type") == "ui_request":
                 self.send({"type": "ui_response", "id": event["id"], "value": True})
+            if event.get("type") == "umeko_request" and hasattr(self, 'desktop_control'):
+                self.send({"type": "umeko_response", "id": event["id"], "result": self.desktop_control(event)})
             if event.get("type") == "done":
                 break
         self.assertFalse([e for e in output if e.get("type") == "error"], output)
@@ -105,6 +107,28 @@ class PiTests(unittest.TestCase):
         self.stop()
         self.node_args = ['--import', (ROOT / 'tests/retry-clock.mjs').as_uri()]
         self.start()
+
+    def test_umeko_tool_round_trip_uses_desktop_protocol(self):
+        requests = []
+        def desktop(event):
+            requests.append(event)
+            return {'ok': True, 'status': 'applied', 'operation': event['operation']}
+        self.desktop_control = desktop
+        self.response_fn = lambda _model, messages, *_: Completion('Desktop applied') if messages[-1]['role'] == 'tool' else Completion(tool_calls=[{
+            'id': 'control-fixture', 'name': 'config_umeko', 'arguments': {'operation': 'appearance.fontScale', 'arguments': {'scale': 1.25}}}])
+        events = self.command({**self.payload, 'type': 'prompt', 'text': 'Adjust Umeko text size'})
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0]['operation'], 'appearance.fontScale')
+        self.assertEqual(requests[0]['arguments'], {'scale': 1.25})
+        self.assertTrue(any(e.get('name') == 'config_umeko' and e.get('state') == 'done' for e in events))
+        self.assertTrue(any(e.get('text') == 'Desktop applied' for e in events))
+
+    def test_help_returns_umeko_docs_directory_without_model_request(self):
+        events = self.command({**self.payload, 'type': 'prompt', 'text': '/help'})
+        roots = [e['message'] for e in events if e.get('type') == 'notice' and 'umeko-docs' in e.get('message', '')]
+        self.assertEqual(len(roots), 1)
+        self.assertTrue(Path(roots[0]).is_dir())
+        self.assertFalse(self.calls)
 
     def test_stream_retry_replaces_partial_draft_and_recovers(self):
         from types import SimpleNamespace

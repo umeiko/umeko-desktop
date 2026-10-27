@@ -110,7 +110,7 @@ class NativeExtensionTests(unittest.TestCase):
             settings.write_text("damaged JSON")
             (cwd / ".pi/settings.json").write_text("also damaged")
             safe = scan(action="scan")
-            self.assertEqual({r["path"] for r in safe}, {"builtin:codemode", "builtin:tool-search", "builtin:mcp", "builtin:chatbox", "builtin:pi-commands"})
+            self.assertEqual({r["path"] for r in safe}, {"builtin:codemode", "builtin:tool-search", "builtin:mcp", "builtin:chatbox", "builtin:pi-commands", "builtin:umeko-control"})
 
     def test_terminal_uses_exact_embedded_cli_and_quotes_user_paths(self):
         with tempfile.TemporaryDirectory() as temp:

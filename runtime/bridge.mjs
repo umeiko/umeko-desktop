@@ -5,6 +5,7 @@ import { prepareNativeSettings, builtins, extensionName } from "./resources.mjs"
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
+import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl } from "./umeko-control.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
@@ -29,9 +30,10 @@ const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", entry));
 const { loadMcpConfig } = await import(new URL("./extensions/mcp/config.js", entry));
 const { allToolNames } = await import(new URL("./core/tools/index.js", entry));
-const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL];
+const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL];
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
+const umekoControl = createUmekoControl({ emit });
 const textOf = content => typeof content === "string" ? content : (content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
 const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
 let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe, closing = false;
@@ -279,10 +281,11 @@ async function init(input) {
       resourceLoaderOptions: {
         ...(input.agent?.safeMode ? { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
           additionalExtensionPaths: builtins.map(name => "builtin:" + name) } : {}),
-        appendSystemPrompt: [DESKTOP_PI_PROMPT + " Reply in the user's language.", input.agent?.instructions || ""],
+        appendSystemPrompt: [DESKTOP_PI_PROMPT + " " + UMEKO_PROMPT + " Reply in the user's language.", input.agent?.instructions || ""],
         extensionFactories: [
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}) },
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },
+          { name: "umeko-control", builtin: true, replaceable: false, factory: pi => umekoControl.extension(pi) },
           { name: "output-continuation", builtin: true, replaceable: false, factory: outputContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
           { name: "tool-search", builtin: true, replaceable: true, factory: Pi.createToolSearchExtension() },
@@ -425,6 +428,7 @@ async function promptWithInterrupts(first) {
 }
 
 async function execute(input) {
+  if (input.type === "umeko_response") { umekoControl.response(input); return; }
   if (input.type === "reasoning_effort") {
     if (effortLevels.has(input.value)) reasoningEffort = input.value;
     return;
@@ -527,6 +531,7 @@ let rl;
 async function shutdown() {
   if (closing) return;
   closing = true;
+  umekoControl.clear();
   piCommands.clear();
   clearDialogs();
   await runtime?.dispose();

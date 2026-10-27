@@ -5,6 +5,7 @@ import { dirname, join, resolve, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { umekoHelp } from './umeko-control.mjs';
 
 export const PI_COMMAND_TOOL = 'run_pi_command';
 export const DESKTOP_PI_PROMPT = 'You are Umeko, powered by Pi embedded in Umeko Desktop. For Pi/MCP/extension management and slash commands, use run_pi_command; it targets this running session and its configuration. Do not invoke a system pi binary or install a separate Pi. Models and credentials are managed in Umeko settings.';
@@ -101,7 +102,7 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
     if (!pending.some(item => item.command === command && item.sessionId === sessionId)) pending.push({ command, sessionId, toolCallId });
     return { ...info(), status: 'queued', command, message: '已排队，将在本轮回复结束后作用于当前 Pi 会话。' };
   };
-  const help = () => ({ ...info(), commands: ['pi install <source> [-l]', 'pi remove <source> [-l]', 'pi list', 'pi mcp add …', 'pi mcp remove <server> [-l]', 'pi mcp list', 'pi mcp login/logout <server>', '/reload', '/compact [instructions]', '/session', '/name <title>', ...getRuntime().session.extensionRunner.getRegisteredCommands().map(c => '/' + c.name)] });
+  const help = () => umekoHelp();
   const slash = async command => {
     const session = getRuntime().session;
     const [name, ...rest] = commandWords(command), args = rest.join(' ');
@@ -189,7 +190,7 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
     clear() { pending.length = 0; },
     extension(pi) {
       pi.registerTool({ name: PI_COMMAND_TOOL, label: '运行当前 Pi 命令', exposure: 'direct',
-        description: 'Manage this embedded Pi instance, its extensions and MCP servers. Accepts pi install/remove/list, pi mcp commands, /session, /name, /reload, /compact and commands registered by loaded extensions. This is not a shell. Reload, compaction and extension commands requested during a turn are queued until the response finishes; queued is not completed. Use /help for current paths and supported commands.',
+        description: 'Run commands in this embedded Pi instance: extension packages, MCP and registered slash commands. Umeko providers, themes and desktop settings use config_umeko. This is not a shell. Busy-session reload/compaction commands are queued; queued is not completed. /help returns the Umeko documentation directory.',
         promptSnippet: 'Run Pi administration and slash commands in the current Umeko session.',
         promptGuidelines: ['Use run_pi_command instead of shell pi commands or a separate Pi install. For MCP additions use pi mcp add; for extensions use pi install. Report queued commands as queued until completion is reported.'],
         parameters: Type.Object({ command: Type.String({ minLength: 1, maxLength: 16384 }), scope: Type.Optional(Type.Union([Type.Literal('global'), Type.Literal('project')])) }),

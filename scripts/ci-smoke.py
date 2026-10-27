@@ -124,10 +124,13 @@ def main():
     for name in ("fd", "rg"):
         tool = runtime / "bin" / (name + (".exe" if os.name == "nt" else ""))
         subprocess.run([str(tool), "--version"], check=True, capture_output=True, timeout=15)
-    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "webview-component.mjs", "webview-component.json"):
+    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         if hashlib.sha256((runtime / name).read_bytes()).digest() != hashlib.sha256((ROOT / "runtime" / name).read_bytes()).digest():
             raise RuntimeError("Packaged Pi bridge differs from the source: " + name)
     npm = resources / "runtime/node" / ("node_modules/npm/bin/npm-cli.js" if os.name == "nt" else "lib/node_modules/npm/bin/npm-cli.js")
+    for document in (ROOT/'runtime/umeko-docs').glob('*.md'):
+        if (runtime/'umeko-docs'/document.name).read_bytes() != document.read_bytes():
+            raise RuntimeError('Packaged Umeko document differs: ' + document.name)
     subprocess.run([str(node), str(npm), "--version"], env=environment, check=True, capture_output=True, timeout=15)
     pi = subprocess.run([str(node), str(runtime / "bridge.mjs"), "--self-test"],
         env=environment, timeout=60, capture_output=True, text=True, encoding="utf-8", errors="replace")
