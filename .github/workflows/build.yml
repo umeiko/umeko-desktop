@@ -158,6 +158,11 @@ jobs:
         if: runner.os != 'Windows'
         run: bash build.sh
 
+      - name: Initialize Windows browser profile
+        if: runner.os == 'Windows'
+        shell: bash
+        run: .venv/Scripts/python.exe scripts/ci-prepare-windows-webview.py
+
       - name: Verify packaged application and Pi
         run: python scripts/ci-smoke.py
 
