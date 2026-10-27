@@ -26,6 +26,7 @@ from PySide6.QtWidgets import QApplication
 from app.controller import Controller
 from app.integration import Completion
 from app.syntax_highlight import register_text_types
+from app.transcript_index import TranscriptRepository
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -142,11 +143,30 @@ class CompactComposerTests(unittest.TestCase):
         self.assertTrue(notices, "Compaction notice was not persisted in native history")
         self.assertEqual(notices[-1]["data"]["version"], 1)
         self.assertEqual(notices[-1]["data"]["before"], result["before"])
+        self.assert_notice_style()
+
+    def assert_notice_style(self):
+        self.wait_for(lambda: any(item.objectName().startswith("compactionNotice_") and item.isVisible()
+                                 for item in items(self.window)))
+        notice = next(item for item in items(self.window)
+                      if item.objectName().startswith("compactionNotice_") and item.isVisible())
+        self.assertIn("已压缩：", notice.property("text"))
+        self.assertFalse(notice.property("continuable"))
+        index = notice.objectName().rsplit("_", 1)[1]
+        for prefix in ("assistantAvatar_", "messageBubble_", "messageActions_", "replyEndMascot_"):
+            row_item = next(item for item in items(self.window) if item.objectName() == prefix + index)
+            self.assertFalse(row_item.isVisible(), prefix + " must not render for a local notice")
 
     def test_enter_dispatches_idle_compact_with_instructions(self):
         self.seed()
         self.enter("  /compact\t保留当前任务  ")
         self.assert_compacted("保留当前任务")
+        # Rebuild the display from disk, without the live record's messages or cache.
+        repository = TranscriptRepository(self.path / "cold-cache")
+        self.backend._view.transcript = repository.open(Path(self.backend._view.file))
+        self.backend._view.messages = []
+        self.backend.chatChanged.emit()
+        self.assert_notice_style()
 
     def test_busy_enter_queues_compact_until_original_turn_finishes(self):
         self.seed()

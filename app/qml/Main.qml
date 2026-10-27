@@ -443,6 +443,7 @@ ApplicationWindow {
                     id: messageRow
                     required property var modelData
                     required property int index
+                    readonly property bool compactionNotice: modelData.customType === "umeko-compaction"
                     readonly property point hoverPoint: chatSelection.mapToItem(messageRow, chatSelection.pointer.x, chatSelection.pointer.y)
                     readonly property bool hovered: chatSelection.hovering && hoverPoint.x >= 0 && hoverPoint.x <= width && hoverPoint.y >= 0 && hoverPoint.y <= height
                     width: conversation.width - 16; spacing: 10
@@ -456,13 +457,13 @@ ApplicationWindow {
                         }
                         ActionButton { x: 33; y: 16; visible: !!modelData._loadError; text: I18n.t("重新加载消息"); glyph: "refresh-cw"; onClicked: backend.messageModel.retryPage(messageRow.index) }
                     }
-                    Row { visible: !modelData._loading && !modelData.continuation && modelData.role !== "user"; spacing: 9
+                    Row { visible: !modelData._loading && !messageRow.compactionNotice && !modelData.continuation && modelData.role !== "user"; spacing: 9
                         AssistantAvatar { objectName: "assistantAvatar_" + messageRow.index; messageKey: window.avatarChatKey + "/" + messageRow.index }
                         SelectableText { selectionController: chatSelection; messageIndex: messageRow.index; blockIndex: -100000; text: "umeko"; anchors.verticalCenter: parent.verticalCenter; color: Theme.ink; font.pixelSize: Theme.font(11); font.weight: Font.DemiBold }
                     }
                     Rectangle {
                         objectName: "messageBubble_" + messageRow.index
-                        visible: !modelData._loading
+                        visible: !modelData._loading && !messageRow.compactionNotice
                         readonly property bool userMessage: modelData.role === "user"
                         width: userMessage ? (modelData.text.length > 512 ? messageRow.width * 0.82 : Math.min(messageRow.width * 0.82, Math.max(64, userBody.implicitWidth + 28))) : parent.width - 33
                         x: userMessage ? parent.width - width : 33
@@ -476,7 +477,7 @@ ApplicationWindow {
                             MessageBody { id: reply; width: parent.width
                                 selectionController: chatSelection; messageIndex: messageRow.index
                                 visible: modelData.role !== "user" && text.length > 0 && !(modelData.activity || []).length
-                                text: modelData.role === "user" || (modelData.activity || []).length ? "" : modelData.customType === "umeko-compaction" ? I18n.t(modelData.text) : modelData.text || (messageRow.index === conversation.count - 1 && backend.busy ? I18n.t(backend.toolStatus) + "…" : "")
+                                text: modelData.role === "user" || (modelData.activity || []).length ? "" : modelData.text || (messageRow.index === conversation.count - 1 && backend.busy ? I18n.t(backend.toolStatus) + "…" : "")
                                 markdown: modelData.role === "assistant" && !modelData.error
                                 textColor: modelData.error ? Theme.danger : Theme.ink }
                         }
@@ -489,6 +490,12 @@ ApplicationWindow {
                         onClicked: requestInspector.show(modelData.diagnosticId)
                     }
                     OutputLimitNotice {
+                        objectName: "compactionNotice_" + messageRow.index
+                        x: 33; width: parent.width - 33
+                        visible: !modelData._loading && messageRow.compactionNotice
+                        text: messageRow.compactionNotice ? I18n.t(modelData.text) : ""
+                    }
+                    OutputLimitNotice {
                         objectName: "outputLimitNotice_" + messageRow.index
                         x: 33; width: parent.width - 33
                         visible: !modelData._loading && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
@@ -497,7 +504,7 @@ ApplicationWindow {
                     }
                     Item {
                         objectName: "messageActions_" + messageRow.index
-                        visible: !modelData._loading && modelData.segmentLast !== false
+                        visible: !modelData._loading && !messageRow.compactionNotice && modelData.segmentLast !== false
                         width: parent.width; height: 18
                         opacity: messageRow.hovered || actionHover.hovered ? 1 : 0
                         HoverHandler { id: actionHover }
@@ -513,7 +520,7 @@ ApplicationWindow {
                     ReplyMascot {
                         objectName: "replyEndMascot_" + messageRow.index
                         selectionController: chatSelection
-                        visible: !modelData._loading && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !backend.running
+                        visible: !modelData._loading && !messageRow.compactionNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !backend.running
                         x: 33
                     }
                 }
