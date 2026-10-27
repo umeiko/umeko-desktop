@@ -67,7 +67,7 @@ ColumnLayout {
                     onEdited: (value, automatic) => { entries.setProperty(index, "contextWindowText", value); entries.setProperty(index, "contextWindowAuto", automatic) }
                 }
                 Text { text: I18n.t("压缩阈值"); color: Theme.muted; font.pixelSize: Theme.font(11); Layout.leftMargin: 12 }
-                HelpButton { help: I18n.t("留空保持 Pi 原生压缩设置。设置阈值后，预留 token = 上下文长度 − 阈值；近期上下文最多保留 min(20000, floor(阈值/2)) token，Pi 原生机制可能保留更少。阈值至少为 1024 token，且不能超过供应商上限与当前上下文长度中的较小值。") }
+                HelpButton { help: I18n.t("留空保持 Pi 原生压缩设置。设置阈值后，预留 token = 上下文长度 − 阈值；近期保留设置 = min(Pi 原生设置, floor(阈值/2)) token，原生默认 20000，实际保留由 Pi 消息边界决定。阈值至少为 1024 token，且不能超过供应商上限与当前上下文长度中的较小值。") }
                 CompactionThresholdField {
                     objectName: "providerCompaction_" + index
                     Layout.preferredWidth: 155; Layout.fillWidth: false

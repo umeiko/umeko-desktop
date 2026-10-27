@@ -3,7 +3,7 @@
 In **Settings → Accounts & Providers**, edit a model or open its model mappings.
 **Compaction threshold** sits beside **Context length** and accepts an integer
 token count. Leave it empty to keep Pi's native policy (normally the context
-window minus 16,384 tokens, retaining 20,000 recent tokens). The existing Agent
+window minus 16,384 tokens, with a recent-token budget of 20,000). The existing Agent
 auto-compaction switch still controls whether automatic compaction runs.
 
 For an explicit threshold `T`, Umeko sets a session-only Pi model override:
@@ -16,7 +16,7 @@ keepRecentTokens = min(native keepRecentTokens, floor(T / 2))
 The native recent-token default is 20,000. The threshold must be at least 1,024
 and at most the effective context window; a known provider limit is also an
 upper bound. For a 128,000-token window and threshold 20,000, the default mapping
-is reserve 108,000 and recent retention 10,000. A threshold equal to the window
+is reserve 108,000 and recent-token budget 10,000. A threshold equal to the window
 uses reserve zero, which Pi supports. Settings are saved per model and reapplied
 when switching models or resuming a conversation. Native/project settings files
 are not rewritten. The output-token setting keeps its existing behavior.
@@ -25,6 +25,8 @@ Pi uses estimated context tokens and checks at native turn boundaries, so this
 is a trigger target rather than an exact token interrupt. The current request
 can take usage past the threshold before compaction starts. The reported
 post-compaction count is Pi's estimate, not a new provider usage measurement.
+Retention follows native message/turn boundaries and can exceed the configured
+recent-token budget.
 
 ## Provider-reported limits
 
