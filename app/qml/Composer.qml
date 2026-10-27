@@ -12,7 +12,7 @@ Item {
     function focusInput() { prompt.forceActiveFocus() }
     function setText(value) { prompt.text = value; prompt.forceActiveFocus(); prompt.cursorPosition = value.length }
     function sendMessage(steering) {
-        if (backend.loading || backend.kernelBusy) return
+        if (backend.kernelBusy || (backend.loading && !/^\/compact(?:\s|$)/.test(prompt.text.trim()))) return
         if (steering) backend.steer(prompt.text)
         else if (prompt.text.trim().length || backend.attachments.length) backend.send(prompt.text)
     }
@@ -76,7 +76,7 @@ Item {
         }
         Row {
             anchors.right: parent.right; anchors.rightMargin: 14; anchors.bottom: parent.bottom; anchors.bottomMargin: 12; spacing: 13
-            Text { visible: Theme.fontScale <= 1.25; text: backend.loading ? backend.toolStatus || I18n.t("正在加载 Pi") : backend.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
+            Text { objectName: "composerStatus"; visible: backend.compactionPending || backend.compacting || Theme.fontScale <= 1.25; text: backend.compactionPending || backend.compacting ? I18n.t(backend.toolStatus) : backend.loading ? I18n.t(backend.toolStatus || "正在加载 Pi") : backend.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
             Rectangle {
                 objectName: "sendButton"
                 readonly property bool stopAction: backend.running

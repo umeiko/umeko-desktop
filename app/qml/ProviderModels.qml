@@ -9,15 +9,15 @@ ColumnLayout {
     property bool fixedModels: false
     function load(models) {
         entries.clear()
-        models.forEach(m => entries.append({upstream:m.upstream, alias:m.alias || "", contextWindowText:String(m.contextWindow || ""), contextWindowAuto:m.contextWindowAuto !== false, visionValue:m.vision === true, visionAuto:m.visionAuto !== false}))
+        models.forEach(m => entries.append({upstream:m.upstream, alias:m.alias || "", contextWindowText:String(m.contextWindow || ""), contextWindowAuto:m.contextWindowAuto !== false, providerContextWindow:Number(m.providerContextWindow || 0), compactionThresholdText:m.compactionThreshold === null || m.compactionThreshold === undefined ? "" : String(m.compactionThreshold), visionValue:m.vision === true, visionAuto:m.visionAuto !== false}))
         if (!entries.count && !fixedModels) addModel()
     }
-    function addModel() { entries.append({upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, visionValue:false, visionAuto:true}) }
+    function addModel() { entries.append({upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, providerContextWindow:0, compactionThresholdText:"", visionValue:false, visionAuto:true}) }
     function json() {
         let rows = []
         for(let i = 0; i < entries.count; i++) {
             let item = entries.get(i)
-            rows.push({upstream:item.upstream, alias:item.alias, contextWindow:item.contextWindowText, contextWindowAuto:item.contextWindowAuto, vision:item.visionValue, visionAuto:item.visionAuto})
+            rows.push({upstream:item.upstream, alias:item.alias, contextWindow:item.contextWindowText, contextWindowAuto:item.contextWindowAuto, compactionThreshold:item.compactionThresholdText, vision:item.visionValue, visionAuto:item.visionAuto})
         }
         return JSON.stringify(rows)
     }
@@ -44,6 +44,8 @@ ColumnLayout {
             required property string alias
             required property string contextWindowText
             required property bool contextWindowAuto
+            required property double providerContextWindow
+            required property string compactionThresholdText
             required property bool visionValue
             required property bool visionAuto
             Layout.fillWidth: true; spacing: 4
@@ -56,16 +58,29 @@ ColumnLayout {
             RowLayout {
                 Layout.fillWidth: true; spacing: 8
                 Text { text: I18n.t("上下文长度"); color: Theme.muted; font.pixelSize: Theme.font(11) }
-                HelpButton { help: I18n.t("自动按原始模型名匹配，未知名称使用 128000 token。输入整数、256K 或 1M 可自定义；K=1024，M=1048576。恢复自动后跟随模型名。请按供应商实际额度填写。") }
+                HelpButton { help: I18n.t("自动优先使用供应商提供的上下文长度；未提供时按原始模型名匹配，未知名称使用 128000 token。输入整数、256K 或 1M 可自定义；K=1024，M=1048576。供应商上限为只读信息，可在模型映射中刷新。") }
                 ContextWindowField {
+                    id: providerContext
                     objectName: "providerContext_" + index
                     Layout.preferredWidth: 190; Layout.fillWidth: false
-                    modelName: upstream; customText: contextWindowText; automatic: contextWindowAuto
+                    modelName: upstream; customText: contextWindowText; automatic: contextWindowAuto; providerTokens: providerContextWindow
                     onEdited: (value, automatic) => { entries.setProperty(index, "contextWindowText", value); entries.setProperty(index, "contextWindowAuto", automatic) }
                 }
+                Text { text: I18n.t("压缩阈值"); color: Theme.muted; font.pixelSize: Theme.font(11); Layout.leftMargin: 12 }
+                HelpButton { help: I18n.t("留空保持 Pi 原生压缩设置。设置阈值后，预留 token = 上下文长度 − 阈值；近期上下文最多保留 min(20000, floor(阈值/2)) token，Pi 原生机制可能保留更少。阈值至少为 1024 token，且不能超过供应商上限与当前上下文长度中的较小值。") }
+                CompactionThresholdField {
+                    objectName: "providerCompaction_" + index
+                    Layout.preferredWidth: 155; Layout.fillWidth: false
+                    customText: compactionThresholdText; contextTokens: providerContext.effectiveTokens; providerTokens: providerContextWindow
+                    onEdited: value => entries.setProperty(index, "compactionThresholdText", value)
+                }
+                Item { Layout.fillWidth: true }
+            }
+            RowLayout {
+                Layout.fillWidth: true; spacing: 8
                 VisionField {
                     objectName: "providerVision_" + index
-                    Layout.leftMargin: 12; Layout.preferredWidth: 190; Layout.fillWidth: false
+                    Layout.preferredWidth: 190; Layout.fillWidth: false
                     modelName: upstream; visionEnabled: visionValue; automatic: visionAuto
                     onEdited: (value, automatic) => { entries.setProperty(index, "visionValue", value); entries.setProperty(index, "visionAuto", automatic) }
                 }

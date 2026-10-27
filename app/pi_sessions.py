@@ -43,6 +43,7 @@ class SessionState:
     stale: bool = False
     operation: bool = False
     queue: list = field(default_factory=list)
+    pending_compactions: list = field(default_factory=list)
     portrait: int = 0
     optimistic_user: bool = False
     scroll_y: float = -1

@@ -64,7 +64,7 @@ Item {
         mappingSignature = signature
         if (mappingProviderId && !backend.config.providers.some(p => p.id === mappingProviderId)) mappingProviderId = ""
         mappingRows.clear()
-        backend.config.providers.forEach(p => p.models.forEach(m => mappingRows.append({provider:p.id, providerName:p.name, upstream:m.upstream, alias:m.alias, contextWindowText:String(m.contextWindow), contextWindowAuto:m.contextWindowAuto, visionValue:m.vision, visionAuto:m.visionAuto})))
+        backend.config.providers.forEach(p => p.models.forEach(m => mappingRows.append({provider:p.id, providerName:p.name, upstream:m.upstream, alias:m.alias, contextWindowText:String(m.contextWindow), contextWindowAuto:m.contextWindowAuto, providerContextWindow:Number(m.providerContextWindow || 0), compactionThresholdText:m.compactionThreshold === null || m.compactionThreshold === undefined ? "" : String(m.compactionThreshold), visionValue:m.vision, visionAuto:m.visionAuto})))
     }
     Component.onCompleted: reloadMappings()
     Connections { target: backend; function onChanged() { root.reloadMappings() } }
@@ -251,6 +251,8 @@ Item {
                                     required property string alias
                                     required property string contextWindowText
                                     required property bool contextWindowAuto
+                                    required property double providerContextWindow
+                                    required property string compactionThresholdText
                                     required property bool visionValue
                                     required property bool visionAuto
                                     active: provider === root.mappingProviderId
@@ -267,16 +269,29 @@ Item {
                                     RowLayout {
                                         Layout.fillWidth: true; spacing: 8
                                         Text { text: I18n.t("上下文长度"); color: Theme.muted; font.pixelSize: Theme.font(11) }
-                                        HelpButton { help: I18n.t("自动按原始模型名匹配，未知名称使用 128000 token。输入整数、256K 或 1M 可自定义；K=1024，M=1048576。恢复自动后跟随模型名。") }
+                                        HelpButton { help: I18n.t("自动优先使用供应商提供的上下文长度；未提供时按原始模型名匹配，未知名称使用 128000 token。输入整数、256K 或 1M 可自定义；K=1024，M=1048576。供应商上限为只读信息，可在模型映射中刷新。") }
                                         ContextWindowField {
+                                            id: mappingContext
                                             objectName: "mappingContext_" + mappingDelegate.index
                                             Layout.preferredWidth: 190; Layout.fillWidth: false
-                                            modelName: mappingDelegate.upstream; customText: mappingDelegate.contextWindowText; automatic: mappingDelegate.contextWindowAuto
+                                            modelName: mappingDelegate.upstream; customText: mappingDelegate.contextWindowText; automatic: mappingDelegate.contextWindowAuto; providerTokens: mappingDelegate.providerContextWindow
                                             onEdited: (value, automatic) => { mappingRows.setProperty(mappingDelegate.index, "contextWindowText", value); mappingRows.setProperty(mappingDelegate.index, "contextWindowAuto", automatic) }
                                         }
+                                        Text { text: I18n.t("压缩阈值"); color: Theme.muted; font.pixelSize: Theme.font(11); Layout.leftMargin: 12 }
+                                        HelpButton { help: I18n.t("留空保持 Pi 原生压缩设置。设置阈值后，预留 token = 上下文长度 − 阈值；近期上下文最多保留 min(20000, floor(阈值/2)) token，Pi 原生机制可能保留更少。阈值至少为 1024 token，且不能超过供应商上限与当前上下文长度中的较小值。") }
+                                        CompactionThresholdField {
+                                            objectName: "mappingCompaction_" + mappingDelegate.index
+                                            Layout.preferredWidth: 155; Layout.fillWidth: false
+                                            customText: mappingDelegate.compactionThresholdText; contextTokens: mappingContext.effectiveTokens; providerTokens: mappingDelegate.providerContextWindow
+                                            onEdited: value => mappingRows.setProperty(mappingDelegate.index, "compactionThresholdText", value)
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true; spacing: 8
                                         VisionField {
                                             objectName: "mappingVision_" + mappingDelegate.index
-                                            Layout.leftMargin: 12; Layout.preferredWidth: 190; Layout.fillWidth: false
+                                            Layout.preferredWidth: 190; Layout.fillWidth: false
                                             modelName: mappingDelegate.upstream; visionEnabled: mappingDelegate.visionValue; automatic: mappingDelegate.visionAuto
                                             onEdited: (value, automatic) => { mappingRows.setProperty(mappingDelegate.index, "visionValue", value); mappingRows.setProperty(mappingDelegate.index, "visionAuto", automatic) }
                                         }
@@ -286,9 +301,10 @@ Item {
                                 }
                             }
                             RowLayout { Layout.fillWidth: true; spacing: 10
-                                ActionButton { objectName: "addMappingButton"; text: I18n.t("添加映射"); glyph: "plus"; enabled: !!root.mappingAccount && (root.mappingAccount.api === "openai" || root.mappingAccount.api === "anthropic"); onClicked: { const p = root.mappingAccount; if (p) mappingRows.append({provider:p.id, providerName:p.name, upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, visionValue:false, visionAuto:true}) } }
+                                ActionButton { objectName: "addMappingButton"; text: I18n.t("添加映射"); glyph: "plus"; enabled: !!root.mappingAccount && (root.mappingAccount.api === "openai" || root.mappingAccount.api === "anthropic"); onClicked: { const p = root.mappingAccount; if (p) mappingRows.append({provider:p.id, providerName:p.name, upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, providerContextWindow:0, compactionThresholdText:"", visionValue:false, visionAuto:true}) } }
+                                ActionButton { objectName: "refreshProviderModelsButton"; text: I18n.t("刷新模型信息"); glyph: "refresh"; enabled: !!root.mappingAccount && (root.mappingAccount.api === "openai" || root.mappingAccount.api === "anthropic"); onClicked: backend.refreshProviderModels(root.mappingProviderId) }
                                 Item { Layout.fillWidth: true }
-                                ActionButton { objectName: "saveMappingsButton"; text: I18n.t("保存映射"); primary: true; onClicked: { let rows = []; for(let i=0;i<mappingRows.count;i++) { let m=mappingRows.get(i); rows.push({provider:m.provider,upstream:m.upstream,alias:m.alias,contextWindow:m.contextWindowText,contextWindowAuto:m.contextWindowAuto,vision:m.visionValue,visionAuto:m.visionAuto}) } backend.saveMappings(JSON.stringify(rows)) } }
+                                ActionButton { objectName: "saveMappingsButton"; text: I18n.t("保存映射"); primary: true; onClicked: { let rows = []; for(let i=0;i<mappingRows.count;i++) { let m=mappingRows.get(i); rows.push({provider:m.provider,upstream:m.upstream,alias:m.alias,contextWindow:m.contextWindowText,contextWindowAuto:m.contextWindowAuto,compactionThreshold:m.compactionThresholdText,vision:m.visionValue,visionAuto:m.visionAuto}) } backend.saveMappings(JSON.stringify(rows)) } }
                             }
                             }
                         }

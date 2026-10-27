@@ -21,7 +21,7 @@ Column {
             RowLayout {
                 Layout.fillWidth: true
                 Text { text: I18n.t("自动压缩上下文"); color: Theme.ink; font.pixelSize: Theme.font(12) }
-                HelpButton { help: I18n.t("这里只控制是否启用自动压缩。压缩时机、摘要和上下文保留均由 Pi 原生机制与设置决定，使用当前配置的供应商。") }
+                HelpButton { help: I18n.t("这里只控制是否启用自动压缩。每个模型可在供应商设置中指定压缩阈值；留空保持 Pi 原生设置。设置阈值后，预留 token = 上下文长度 − 阈值，近期上下文最多保留 min(20000, floor(阈值/2)) token，Pi 原生机制可能保留更少。压缩使用当前配置的供应商。") }
                 Item { Layout.fillWidth: true }
                 Toggle { id: compaction; objectName: "piAutoCompaction"; checked: backend.config.agent.autoCompaction }
             }

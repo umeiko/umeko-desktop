@@ -476,7 +476,7 @@ ApplicationWindow {
                             MessageBody { id: reply; width: parent.width
                                 selectionController: chatSelection; messageIndex: messageRow.index
                                 visible: modelData.role !== "user" && text.length > 0 && !(modelData.activity || []).length
-                                text: modelData.role === "user" || (modelData.activity || []).length ? "" : modelData.text || (messageRow.index === conversation.count - 1 && backend.busy ? backend.toolStatus + "…" : "")
+                                text: modelData.role === "user" || (modelData.activity || []).length ? "" : modelData.customType === "umeko-compaction" ? I18n.t(modelData.text) : modelData.text || (messageRow.index === conversation.count - 1 && backend.busy ? I18n.t(backend.toolStatus) + "…" : "")
                                 markdown: modelData.role === "assistant" && !modelData.error
                                 textColor: modelData.error ? Theme.danger : Theme.ink }
                         }

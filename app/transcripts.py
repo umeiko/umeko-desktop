@@ -30,6 +30,21 @@ def content_thinking(content):
     return "\n".join(block.get("thinking", "") for block in content if block.get("type") == "thinking") if isinstance(content, list) else ""
 
 
+def compaction_view(entry):
+    """Display only Pi's token counts; the summary never enters the chat view."""
+    if entry.get("type") != "custom" or entry.get("customType") != "umeko-compaction":
+        return None
+    details = entry.get("data")
+    if not isinstance(details, dict) or details.get("version") != 1:
+        return None
+    before, after = details.get("before"), details.get("after")
+    if any(type(number) is not int or number < 0 for number in (before, after)):
+        return None
+    return {"role": "assistant", "text": f"已压缩：{before} → {after} tokens", "error": False,
+            "customType": "umeko-compaction", "compaction": details,
+            "entryId": entry["id"], "timestamp": entry.get("timestamp")}
+
+
 def preview(file):
     entries = []
     cwd = str(Path(file).parent)
@@ -60,6 +75,10 @@ def present(entries, cwd):
     results = {e["message"].get("toolCallId"): e["message"] for e in entries if e.get("type") == "message" and e.get("message", {}).get("role") == "toolResult"}
     deliveries = [e["data"] for e in entries if e.get("type") == "custom" and e.get("customType") == "umeko-chatbox" and isinstance(e.get("data"), dict) and e["data"].get("version") == 1 and isinstance(e["data"].get("toolCallId"), str) and isinstance(e["data"].get("items"), list)]
     for entry in entries:
+        receipt = compaction_view(entry)
+        if receipt:
+            messages.append(receipt)
+            continue
         if entry.get("type") != "message":
             continue
         message = entry.get("message", {})

@@ -20,7 +20,7 @@ from pathlib import Path
 
 from .chat_model import ChatModel
 from .message_attachments import split_attachments
-from .transcripts import content_text, content_thinking, present
+from .transcripts import content_text, content_thinking, present, compaction_view
 
 SCHEMA = 1
 LARGE_FILE = 2 * 1024 * 1024
@@ -299,8 +299,10 @@ class Snapshot:
             pieces, previous = [], ''
             for value in entries:
                 source.seek(value['offset'])
-                message = json.loads(source.read(value['length']))['message']
-                text = content_text(message.get('content', ''))
+                entry = json.loads(source.read(value['length']))
+                receipt = compaction_view(entry)
+                message = entry.get('message', {})
+                text = receipt['text'] if receipt else content_text(message.get('content', ''))
                 if message.get('role') == 'user':
                     text, attachments = split_attachments(text)
                     text = '\n'.join([text, *(item.get('name', '') for item in attachments)]).strip()
@@ -409,6 +411,9 @@ class TranscriptRepository:
                         role = message.get('role', '')
                         text, thinking = content_text(content), content_thinking(content)
                         text = text or ('' if message.get('stopReason') == 'aborted' else message.get('errorMessage', ''))
+                        receipt = compaction_view(entry)
+                        if receipt:
+                            role, text = 'assistant', receipt['text']
                         tools = any(isinstance(c, dict) and c.get('type') == 'toolCall' for c in content) if isinstance(content, list) else False
                         title = ''
                         if role == 'user':
@@ -489,7 +494,8 @@ class TranscriptRepository:
         previous = db.execute('SELECT logical,role FROM display ORDER BY seq DESC LIMIT 1').fetchone()
         logical = previous['logical'] if previous else ''
         previous_role = previous['role'] if previous else ''
-        prior = db.execute('SELECT e.tools,e.stop FROM native n JOIN entries e ON e.id=n.id WHERE n.pos=?', (start - 1,)).fetchone()
+        prior = db.execute('SELECT e.tools,e.stop,e.kind FROM native n JOIN entries e ON e.id=n.id WHERE n.pos=?', (start - 1,)).fetchone()
+        previous_notice = bool(prior and prior['kind'] == 'custom')
         has_tools = bool(prior and prior['tools'])
         if prior and previous_role == 'assistant':
             has_tools = bool(db.execute('''SELECT MAX(e.tools) FROM native n JOIN entries e ON n.id=e.id
@@ -538,7 +544,8 @@ class TranscriptRepository:
             for value in cursor:
                 if cancelled():
                     raise Cancelled()
-                merge = bool(previous_role == value['role'] == 'assistant' and (has_tools or value['tools'] or stop == 'length') and not value['error'])
+                merge = bool(previous_role == value['role'] == 'assistant' and not previous_notice and value['kind'] != 'custom'
+                             and (has_tools or value['tools'] or stop == 'length') and not value['error'])
                 bounded = len(group) >= GROUP_MESSAGES or weight + value['length'] > GROUP_BYTES
                 if group and (not merge or bounded):
                     flush()
@@ -552,4 +559,5 @@ class TranscriptRepository:
                 weight += value['length']
                 last = value['pos']
                 previous_role, has_tools, stop = value['role'], bool(value['tools']) if not merge else has_tools or bool(value['tools']), value['stop']
+                previous_notice = value['kind'] == 'custom'
             flush()

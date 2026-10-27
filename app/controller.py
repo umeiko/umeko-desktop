@@ -29,6 +29,7 @@ from .transcripts import preview
 from .chat_model import ChatModel
 from .transcript_index import TranscriptRepository
 from .model_context import context_suggestion
+from .provider_models import fetch_model_windows
 from .model_capabilities import normalize_model, vision_suggestion
 from .provider_plugins import ProviderPlugins
 from .api_keys import KeyCatalog, generate_key, key_summary, lan_addresses, make_key
@@ -154,6 +155,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self._chat_visible = True
         self._management_jobs = set()
         self._mcp_jobs = {}
+        self._model_refresh_jobs = {}
         self._closing = False
         self._copy_request = 0
         self._session_preview = SessionPreview(self)
@@ -847,7 +849,17 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
 
     @Property(str, notify=chatChanged)
     def toolStatus(self):
+        if self._view.pending_compactions:
+            return "等待当前任务结束后压缩上下文"
         return self._view.tool_status
+
+    @Property(bool, notify=chatChanged)
+    def compactionPending(self):
+        return bool(self._view.pending_compactions)
+
+    @Property(bool, notify=chatChanged)
+    def compacting(self):
+        return self._view.busy and self._view.action == "compact"
 
     @Property(str, notify=reasoningChanged)
     def reasoningEffort(self):
@@ -1291,7 +1303,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
                 if not upstream or not alias or alias in taken or any(c.isspace() for c in alias):
                     raise ValueError("模型 ID 不能为空；别名不能重复或包含空白")
                 taken.add(alias)
-                models.append({"upstream": upstream, "alias": alias, **normalize_model(row, previous)})
+                models.append({"upstream": upstream, "alias": alias, **normalize_model(row, previous or {})})
             provider = {**(existing or {}), "id": provider_id, "name": name.strip(), "api": api, "baseUrl": base_url, "key": kept_key, "models": models,
                         "proxy": (existing or {}).get('proxy', {'mode':'system', 'url':''})}
             self.store.data["providers"] = [provider if p["id"] == provider_id else p for p in self.store.data["providers"]]
@@ -1309,6 +1321,20 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         except (ValueError, KeyError, TypeError) as exc:
             self.toast.emit(str(exc))
             return False
+
+    @Slot(str)
+    def refreshProviderModels(self, provider_id):
+        provider = self.gateway.provider(provider_id)
+        if not provider or provider["api"] not in ("openai", "anthropic"):
+            return self.toast.emit("请在账号页刷新插件模型 / Refresh plugin models on the account page")
+        if self._models_busy(provider_id):
+            return self.toast.emit("请等待当前任务结束后刷新模型 / Wait for the current task before refreshing models")
+        if provider_id in self._model_refresh_jobs:
+            return
+        snapshot = copy.deepcopy(provider)
+        self._model_refresh_jobs[provider_id] = snapshot
+        self.toast.emit("正在获取供应商模型信息 / Fetching provider model information")
+        self._job("model-windows:" + provider_id, lambda: fetch_model_windows(snapshot))
 
     @Slot(str)
     def removeProvider(self, provider_id):
@@ -1347,7 +1373,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
                         raise ValueError("名称不能为空，别名不能重复或含空白")
                     seen.add(alias)
                     models.append({"alias": alias, "upstream": upstream,
-                                   **(self._provider_plugins.modelSettings(row, previous.get(upstream) or by_alias.get(alias)) if p["api"] == "plugin" else normalize_model(row, previous.get(upstream) or by_alias.get(alias)))})
+                                   **(self._provider_plugins.modelSettings(row, previous.get(upstream) or by_alias.get(alias)) if p["api"] == "plugin" else normalize_model(row, previous.get(upstream) or by_alias.get(alias) or {}))})
                 if not models and p["models"]:
                     raise ValueError("已有模型的供应商至少需要一个模型映射")
                 if p["api"] == "plugin" and {m["upstream"] for m in models} != {m["upstream"] for m in p["models"]}:
@@ -1503,8 +1529,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
 
     @Slot()
     def compactSession(self):
-        if self._view.id and not self._view.busy:
-            self._command_pi("compact")
+        self._request_compaction()
 
     @Slot(str)
     def navigateSession(self, entry_id):
@@ -1569,6 +1594,40 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
 
     def _on_job_done(self, name, result):
         if self._closing:
+            return
+        if name.startswith("model-windows:"):
+            provider_id = name.split(":", 1)[1]
+            snapshot = self._model_refresh_jobs.pop(provider_id, None)
+            provider = self.gateway.provider(provider_id)
+            if not result["ok"]:
+                self.toast.emit(str(result["value"]))
+                return
+            if not snapshot or provider != snapshot or self._models_busy(provider_id):
+                self.toast.emit("配置已变化或会话已开始，请重新刷新模型 / Configuration changed or a task started; refresh models again")
+                return
+            try:
+                models = copy.deepcopy(provider["models"])
+                windows = result["value"]
+                for row in models:
+                    if row["upstream"] not in windows:
+                        continue
+                    limit = windows[row["upstream"]]
+                    row.pop("providerContextWindow", None)
+                    if limit is not None:
+                        row["providerContextWindow"] = limit
+                    row.update(normalize_model(row))
+                previous = provider["models"]
+                provider["models"] = models
+                try:
+                    self.store.save()
+                except (OSError, RuntimeError):
+                    provider["models"] = previous
+                    raise
+                self._restart_pi()
+                self.changed.emit()
+                self.toast.emit("供应商模型信息已更新 / Provider model information updated")
+            except (ValueError, OSError, RuntimeError) as exc:
+                self.toast.emit(str(exc))
             return
         if name.startswith('copy-chat:'):
             if int(name.split(':', 1)[1]) != self._copy_request:

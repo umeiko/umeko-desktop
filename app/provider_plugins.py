@@ -19,6 +19,7 @@ from umeko_provider_sdk import Provider, ProviderContext, ProviderError
 from umeko_provider_sdk.packages import PackageValidationError, unpack_package, validate_folder, validate_config
 from umeko_provider_sdk.network import network_scope
 from .model_capabilities import normalize_model
+from .model_context import provider_context_window
 from .storage import protect
 
 
@@ -366,9 +367,18 @@ class ProviderPlugins(QObject):
             if alias in taken or any(c.isspace() for c in alias): raise ProviderError("供应商模型别名无效")
             taken.add(alias)
             metadata = {"upstream": upstream}
+            reported = provider_context_window(row)
+            if reported is None:
+                reported = old.get("providerContextWindow")
+            if reported is not None:
+                metadata["providerContextWindow"] = reported
+            if "compactionThreshold" in old:
+                metadata["compactionThreshold"] = old["compactionThreshold"]
             sources = {}
             for key, automatic in (("contextWindow", "contextWindowAuto"), ("vision", "visionAuto")):
                 sources[key + "Source"] = "auto"
+                if key == "contextWindow" and reported is not None:
+                    sources[key + "Source"] = "provider"
                 if key in row:
                     metadata.update({key: row[key], automatic: False})
                     sources[key + "Source"] = "provider"

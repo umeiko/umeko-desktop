@@ -6,6 +6,7 @@ import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
 import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl } from "./umeko-control.mjs";
+import { compactionSettings } from "./compaction-settings.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
@@ -36,6 +37,7 @@ const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 const umekoControl = createUmekoControl({ emit });
 const textOf = content => typeof content === "string" ? content : (content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
 const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
+const compactionText = data => `已压缩：${data.before} → ${data.after} tokens`;
 let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe, closing = false;
 let reasoningEffort = "off";
 const effortLevels = new Set(["off", "low", "high", "max"]);
@@ -165,6 +167,20 @@ async function bindSession(session) {
     if (event.type === "message_end" && !willRetry) emit({ type: "message", role: event.message.role,
       text: textOf(event.message.content), thinking: thinkingOf(event.message.content), stopReason: event.message.stopReason || "", error: event.message.stopReason === "aborted" ? "" : event.message.errorMessage || "", timestamp:event.message.timestamp });
     if (event.type === "compaction_start") emit({ type: "status", text: "正在压缩上下文" });
+    if (event.type === "compaction_end" && event.result && !event.aborted) {
+      const { tokensBefore: before, estimatedTokensAfter: after } = event.result;
+      if (Number.isFinite(before) && Number.isFinite(after)) {
+        const data = { version: 1, mode: event.reason === "manual" ? "manual" : "auto", before, after,
+          afterEstimated: true, compactionEntryId: session.sessionManager.getLeafId() };
+        emit({ type: "compaction_result", ...data, entryId: data.compactionEntryId });
+        // A local receipt is metadata, never a model-visible message or queued
+        // agent input. Appending it cannot request another assistant turn.
+        const entryId = session.sessionManager.appendCustomEntry("umeko-compaction", data);
+        const entry = session.sessionManager.getEntry(entryId);
+        emit({ type: "message", role: "assistant", text: compactionText(data), customType: "umeko-compaction",
+          compaction: data, entryId, timestamp: entry.timestamp });
+      }
+    }
     if (["auto_retry_start", "summarization_retry_scheduled"].includes(event.type)) {
       clearTimeout(retryTimer);
       retry({ active: true, waiting: true, attempt: event.attempt, maxAttempts: event.maxAttempts, delayMs: event.delayMs, startedAt: Date.now() });
@@ -271,11 +287,18 @@ async function init(input) {
     // Load normal Pi settings/resources without importing auth.json or models.json.
     const settingsManager = await prepareNativeSettings(Pi, { cwd, agentDir, agent: input.agent });
     const nativeSettings = settingsManager.getSettings();
+    const modelOverrides = { ...nativeSettings.compaction?.modelOverrides };
+    for (const model of input.models) {
+      if (model.compactionThreshold === null || model.compactionThreshold === undefined || model.compactionThreshold === "") continue;
+      const key = `umeko/${model.id}`;
+      const effective = compactionSettings(model, settingsManager.getCompactionSettings({ provider: "umeko", id: model.id }));
+      modelOverrides[key] = { ...modelOverrides[key], reserveTokens: effective.reserveTokens, keepRecentTokens: effective.keepRecentTokens };
+    }
     const settings = Pi.SettingsManager.inMemory({ ...nativeSettings,
       retry: { ...nativeSettings.retry, ...NETWORK_RETRY, provider: { ...nativeSettings.retry?.provider, maxRetries: 0 } },
       defaultTools: [...new Set([...nativeTools, ...(settingsManager.getDefaultTools() || [])])],
       codemode: { ...nativeSettings.codemode, mode: "on" },
-      cacheWarming: "off", compaction: { ...nativeSettings.compaction, enabled: input.agent?.autoCompaction !== false },
+      cacheWarming: "off", compaction: { ...nativeSettings.compaction, modelOverrides, enabled: input.agent?.autoCompaction !== false },
     }, { projectTrusted: !input.agent?.safeMode });
     const services = await Pi.createAgentSessionServices({ cwd, agentDir, modelRuntime, settingsManager,
       resourceLoaderOptions: {
@@ -348,11 +371,14 @@ async function state() {
   const omittedRetries = retryOmissions(branch);
   const results = new Map(branch.filter(e => e.type === "message" && e.message.role === "toolResult").map(e => [e.message.toolCallId, e.message]));
   const deliveries = branch.filter(e => e.type === "custom" && e.customType === "umeko-chatbox" && e.data?.version === 1 && typeof e.data.toolCallId === "string" && Array.isArray(e.data.items)).map(e => e.data);
-  const candidates = branch.filter(e => e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant"].includes(e.message.role));
-  const characters = candidates.reduce((sum, e) => sum + (typeof e.message.content === "string" ? e.message.content.length : (Array.isArray(e.message.content) ? e.message.content : []).reduce((n, block) => n + (block.text || block.thinking || "").length, 0)), 0);
+  const candidates = branch.filter(e => (e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant"].includes(e.message.role)) ||
+    (e.type === "custom" && e.customType === "umeko-compaction" && e.data?.version === 1));
+  const characters = candidates.reduce((sum, e) => sum + (typeof e.message?.content === "string" ? e.message.content.length : (Array.isArray(e.message?.content) ? e.message.content : []).reduce((n, block) => n + (block.text || block.thinking || "").length, 0)), 0);
   const paged = candidates.length > 256 || characters > 1024 * 1024;
   const selected = paged ? candidates.slice(-128) : candidates;
   const messages = selected.map(e => {
+    if (e.type === "custom") return { role: "assistant", text: compactionText(e.data), customType: e.customType,
+      compaction: e.data, entryId: e.id, timestamp: e.timestamp };
     const message = e.message;
     const row = {role: message.role, text: textOf(message.content) || (message.stopReason === "aborted" ? "" : message.errorMessage || ""), error: message.stopReason !== "aborted" && !!message.errorMessage, entryId:e.id, timestamp:message.timestamp || e.timestamp};
     if (message.role === "assistant") row.stopReason = message.stopReason || "";
@@ -504,7 +530,7 @@ async function execute(input) {
     else if (input.type === "open") await runtime.switchSession(input.path);
     else if (input.type === "fork") await forkSession(input.entryId || runtime.session.sessionManager.getLeafId(), { position: "at" });
     else if (input.type === "navigate") await runtime.session.navigateTree(input.entryId, { summarize: false });
-    else if (input.type === "compact") await runtime.session.compact();
+    else if (input.type === "compact") await runtime.session.compact(input.customInstructions);
     else if (input.type === "reload") await reloadSession(runtime.session);
     else if (input.type === "rename") runtime.session.setSessionName(input.title);
     else if (input.type === "mcp-command") await runtime.session.prompt(input.text);

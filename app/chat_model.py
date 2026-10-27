@@ -252,7 +252,7 @@ class ChatModel(QAbstractListModel):
                 current["text"], attachments = split_attachments(current.get("text", ""))
                 if attachments:
                     current["attachments"] = attachments
-            if current.get("role") == "assistant":
+            if current.get("role") == "assistant" and current.get("customType") != "umeko-compaction":
                 marker = re.search(r'\[Umeko:([a-f0-9-]{36})\]', current.get('text', ''))
                 if marker:
                     current['diagnosticId'] = marker[1]
@@ -275,6 +275,7 @@ class ChatModel(QAbstractListModel):
                 current["activity"] = steps
             continuing = bool(rows and rows[-1].get('stopReason') == 'length' and not current.get('error'))
             merging = bool(rows and current.get("role") == rows[-1].get("role") == "assistant"
+                    and current.get("customType") != "umeko-compaction" and rows[-1].get("customType") != "umeko-compaction"
                     and (continuing or rows[-1].get("tools") or rows[-1].get('_chain_tools') or current.get("tools")))
             if merging and (max_group is None or source_index - starts[-1] < max_group):
                 group = rows[-1]

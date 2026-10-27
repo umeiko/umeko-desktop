@@ -72,6 +72,8 @@ Selecting a chat immediately shows an animated Yanami loading cover while cold h
 
 Providers and imported plugins stay in your home directory across upgrades. Configure a per-provider proxy from its gear, open complete redacted request diagnostics after failures, and adjust language and text size (50%–200%) in Appearance. See [preferences and upgrades](docs/preferences-and-upgrades.md).
 
+Set a per-model compaction threshold beside its context window, refresh provider-reported window limits, or type `/compact` with optional instructions in chat. Busy chats wait for the current turn before compacting. See [context windows and compaction](docs/context-compaction.md).
+
 ## Get started
 
 Pi web extensions can access the network. Configure company npm mirrors, an optional `.npmrc` and CA file under **Settings → Agent → Pi**; see [npm and extension networking](docs/npm-and-network.md).
