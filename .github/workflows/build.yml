@@ -158,10 +158,12 @@ jobs:
         if: runner.os != 'Windows'
         run: bash build.sh
 
-      - name: Initialize Windows browser profile
+      - name: Windows native web preview
         if: runner.os == 'Windows'
-        shell: bash
-        run: .venv/Scripts/python.exe scripts/ci-prepare-windows-webview.py
+        shell: pwsh
+        run: |
+          & '.venv/Scripts/python.exe' tests/windows_webview_ui_smoke.py
+          if ($LASTEXITCODE -ne 0) { throw 'Windows embedded browser failed' }
 
       - name: Verify packaged application and Pi
         run: python scripts/ci-smoke.py
