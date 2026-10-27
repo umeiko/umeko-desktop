@@ -25,10 +25,15 @@ try:
     assert fixture, component.errorString()
     fixture.setParentItem(window.contentItem())
     fixture.setZ(500)
-    QTest.qWait(750)
     button = fixture.findChild(QObject, 'tooltipClickTarget')
     hint = fixture.findChild(QObject, 'overlappingHoverTip')
-    assert hint.property('visible')
+    # Wait for the real delayed hint, including a busy runner's initial QML
+    # polish; a fixed 750 ms races its 500 ms opening timer on macOS CI.
+    for _ in range(100):
+        if hint.property('visible'):
+            break
+        QTest.qWait(50)
+    assert hint.property('visible'), (hint.property('wanted'), hint.property('shown'))
     tip = hint.property('contentItem')
     center = tip.mapToItem(fixture, tip.boundingRect().center())
     button.setX(center.x() - button.width()/2)
