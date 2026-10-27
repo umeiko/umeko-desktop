@@ -10,10 +10,23 @@ Your projects, your providers, the full Pi Coding Agent — with a little Yanami
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-[Download](https://github.com/umeiko/umeko-desktop/releases/latest) · [User guide](docs/user-guide.md) · [Provider SDK](provider_dev/README.md) · [Build status](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
+[Download](#downloads) · [User guide](docs/user-guide.md) · [Provider SDK](provider_dev/README.md) · [Build status](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
 
 [![Desktop packages](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml/badge.svg)](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/umeiko/umeko-desktop?color=4f74c8)](https://github.com/umeiko/umeko-desktop/releases/latest)
+
+<a id="downloads"></a>
+
+<!-- umeko-downloads:standard:start -->
+
+**Download v0.5.0 · 点击下载**
+
+[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.0/Umeko-0.5.0-windows-x64-e5aa981.zip)
+[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.0/Umeko-0.5.0-macos-arm64-e5aa981.dmg)
+[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.0/Umeko-0.5.0-macos-x64-e5aa981.dmg)
+[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.0/Umeko-0.5.0-linux-x64-e5aa981.tar.gz)
+
+<!-- umeko-downloads:standard:end -->
 
 </div>
 
@@ -63,7 +76,7 @@ Providers and imported plugins stay in your home directory across upgrades. Conf
 
 Pi web extensions can access the network. Configure company npm mirrors, an optional `.npmrc` and CA file under **Settings → Agent → Pi**; see [npm and extension networking](docs/npm-and-network.md).
 
-Download a package from [Releases](https://github.com/umeiko/umeko-desktop/releases/latest), extract it and open Umeko. Keep the complete application bundle together.
+Use the [download buttons above](#downloads) for your platform, extract the package and open Umeko. Keep the complete application bundle together.
 
 | Platform | Package | Launch |
 | --- | --- | --- |

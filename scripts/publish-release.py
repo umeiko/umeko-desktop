@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import time
+from release_downloads import release_notes, refresh_readmes
 
 REPO=os.environ['GITHUB_REPOSITORY']
 RUN=os.environ['RELEASE_BUILD_RUN']
@@ -72,7 +73,7 @@ release=next((r for r in releases if r['tag_name']==TAG),None)
 if release is None:
     notes=base/'notes.md'
     notes.write_text(
-        (Path(__file__).resolve().parents[1]/'docs/releases'/('v'+version+'.md')).read_text(encoding='utf-8') + '\n'
+        release_notes((Path(__file__).resolve().parents[1]/'docs/releases'/('v'+version+'.md')).read_text(encoding='utf-8'), REPO, TAG, [f.name for f in files]) + '\n'
         + 'Verified CI: https://github.com/' + REPO + '/actions/runs/' + RUN + '\n\n'
         + ''.join(f'- {p}: {n/1048576:.2f} MiB\n' for p, n in sizes), encoding='utf-8')
     payload=base/'create-release.json'
@@ -118,6 +119,7 @@ published=api('releases/'+str(rid));assert not published['draft'] and published[
 if not minimal:
     latest=api('releases/latest');assert latest['tag_name']==TAG and not latest['prerelease']
 assert api('git/ref/tags/'+TAG)['object']['sha']==commit
+refresh_readmes(REPO, TAG, published['assets'], api, gh)
 from release_retention import prune_releases
 prune_releases(REPO, TAG, api, gh)
 print('Published:',published['html_url'],flush=True)

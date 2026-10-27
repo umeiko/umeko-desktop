@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="196" height="52" viewBox="0 0 196 52" role="img" aria-label="Download macOS Intel DMG">
+  <title>Download macOS Intel DMG</title>
+  <rect width="196" height="52" rx="10" fill="#242832"/>
+  <g fill="#fff"><path d="M31 18c-3-2-5-2-8 0-5 3-4 11-1 16 2 4 4 5 7 3 2-1 3-1 5 0 3 2 5-1 7-5-5-2-6-8-1-11-2-4-6-5-9-3Z"/><path d="M30 16c0-4 3-7 7-7 0 4-3 7-7 7Z"/></g>
+  <path d="M54 12v28" stroke="#fff" stroke-opacity=".25"/>
+  <g fill="#fff" font-family="Segoe UI,Arial,sans-serif"><text x="68" y="24" font-size="16" font-weight="600">macOS</text><text x="68" y="40" font-size="11.5">Intel x64 · DMG ↓</text></g>
+</svg>

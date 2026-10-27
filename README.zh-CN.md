@@ -10,10 +10,23 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-[下载应用](https://github.com/umeiko/umeko-desktop/releases/latest) · [使用手册](docs/user-guide.md) · [Provider SDK](provider_dev/README.md) · [构建状态](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
+[下载应用](#downloads) · [使用手册](docs/user-guide.md) · [Provider SDK](provider_dev/README.md) · [构建状态](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
 
 [![Desktop packages](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml/badge.svg)](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/umeiko/umeko-desktop?color=4f74c8)](https://github.com/umeiko/umeko-desktop/releases/latest)
+
+<a id="downloads"></a>
+
+<!-- umeko-downloads:standard:start -->
+
+**Download v0.5.0 · 点击下载**
+
+[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.0/Umeko-0.5.0-windows-x64-e5aa981.zip)
+[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.0/Umeko-0.5.0-macos-arm64-e5aa981.dmg)
+[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.0/Umeko-0.5.0-macos-x64-e5aa981.dmg)
+[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.0/Umeko-0.5.0-linux-x64-e5aa981.tar.gz)
+
+<!-- umeko-downloads:standard:end -->
 
 </div>
 
@@ -61,7 +74,7 @@ Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原�
 
 ## 开始使用
 
-在 [Releases](https://github.com/umeiko/umeko-desktop/releases/latest) 下载对应平台的包，解压后运行。请保留完整应用目录。
+点击[上方下载按钮](#downloads)直接获取对应平台的安装包，解压后运行。请保留完整应用目录。
 
 | 平台 | 下载包 | 入口 |
 | --- | --- | --- |
