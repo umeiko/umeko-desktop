@@ -113,12 +113,19 @@ class PiControllerMixin:
             self.chatChanged.emit()
             return False
         self.chatChanged.emit()
+        self.piCommandStarted.emit(record, action)
         return True
 
     def _send(self, text, steering=False):
         record = self._view
         text = text.strip()
-        if (not text and not record.attachments) or (record.busy and record.phase != "running") or self._kernel_busy:
+        self._last_send_error = ""
+        if self._kernel_busy:
+            self._last_send_error = "Pi 内核检查或更新正在进行；完成后即可再次发送消息。"
+            self.toast.emit(self._last_send_error)
+            self.changed.emit()
+            return False
+        if (not text and not record.attachments) or (record.busy and record.phase != "running"):
             return False
         images = [{"type": "image", "data": item["data"], "mimeType": item["mime"]} for item in record.attachments if item["kind"] == "image"]
         model = record.model if record.phase == "running" else self.store.data["selectedModel"]

@@ -97,6 +97,8 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
     documentRequested = Signal(str, str, str)
     taskFinished = Signal(str, str, bool, bool)
     jobDone = Signal(str, object)
+    jobStarted = Signal(str)
+    piCommandStarted = Signal(object, str)
     approvalRequested = Signal(object)
     approvalChanged = Signal()
     attachmentsChanged = Signal()
@@ -175,6 +177,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
             if session.get("workspace"):
                 self._ensure_project(session["workspace"])
         self._kernel_busy = False
+        self._last_send_error = ""
         self._latest = ""
         self._kernel_status = "就绪"
         self._view.approval = {}
@@ -977,6 +980,10 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         return self._kernel_busy
 
     @Property(str, notify=changed)
+    def lastSendError(self):
+        return self._last_send_error
+
+    @Property(str, notify=changed)
     def kernelStatus(self):
         return self._kernel_status
 
@@ -1144,7 +1151,8 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
     def refreshAgent(self):
         if not self._view.busy:
             self._pool.retire(self._view)
-            self._command_pi("inspect")
+            return self._command_pi("inspect")
+        return False
 
     @Slot(str)
     def copy(self, value):
@@ -1260,6 +1268,25 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self.changed.emit()
         self.contextUsageChanged.emit()
 
+    def _validate_model_mappings(self, rows, previous_models, taken, *, plugin=False):
+        """Share the mapping editor's alias rules with the provider editor."""
+        if not isinstance(rows, list):
+            raise ValueError("模型映射必须是数组")
+        by_upstream = {model["upstream"]: model for model in previous_models}
+        by_alias = {model["alias"]: model for model in previous_models}
+        models = []
+        for row in rows:
+            upstream = row["upstream"].strip()
+            requested_alias = row.get("alias", "").strip()
+            previous = by_alias.get(requested_alias) or by_upstream.get(upstream)
+            alias = requested_alias or (previous or {}).get("alias", upstream)
+            if not upstream or not alias or alias in taken or any(c.isspace() for c in alias):
+                raise ValueError("模型 ID 不能为空；别名不能重复或包含空白")
+            taken.add(alias)
+            settings = self._provider_plugins.modelSettings(row, previous) if plugin else normalize_model(row, previous)
+            models.append({"upstream": upstream, "alias": alias, **settings})
+        return models
+
     @Slot(str, str, str, str, str, str, result=bool)
     def saveProvider(self, provider_id, name, api, base_url, key, model_names):
         try:
@@ -1278,20 +1305,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
                 raise ValueError("请输入 API Key")
             provider_id = provider_id or uuid.uuid4().hex[:12]
             taken = {m["alias"] for p in self.store.data["providers"] if p["id"] != provider_id for m in p["models"]}
-            old_models = {m["upstream"]: m for m in (existing or {}).get("models", [])}
-            old_aliases = {m["alias"]: m for m in old_models.values()}
-            models = []
-            if len(set(names)) != len(names):
-                raise ValueError("同一供应商的模型 ID 不能重复")
-            for row in rows:
-                upstream = row["upstream"].strip()
-                requested_alias = row.get("alias", "").strip()
-                previous = old_models.get(upstream) or old_aliases.get(requested_alias)
-                alias = requested_alias or (previous or {}).get("alias", upstream)
-                if not upstream or not alias or alias in taken or any(c.isspace() for c in alias):
-                    raise ValueError("模型 ID 不能为空；别名不能重复或包含空白")
-                taken.add(alias)
-                models.append({"upstream": upstream, "alias": alias, **normalize_model(row, previous)})
+            models = self._validate_model_mappings(rows, (existing or {}).get("models", []), taken)
             provider = {**(existing or {}), "id": provider_id, "name": name.strip(), "api": api, "baseUrl": base_url, "key": kept_key, "models": models,
                         "proxy": (existing or {}).get('proxy', {'mode':'system', 'url':''})}
             self.store.data["providers"] = [provider if p["id"] == provider_id else p for p in self.store.data["providers"]]
@@ -1323,7 +1337,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self._restart_pi()
         self.changed.emit()
 
-    @Slot(str)
+    @Slot(str, result=bool)
     def saveMappings(self, raw):
         try:
             if self._models_busy():
@@ -1336,18 +1350,8 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
                     continue
                 if p["api"] == "plugin":
                     self._provider_plugins._idle(p["id"])
-                previous = {m["upstream"]: m for m in p["models"]}
-                by_alias = {m["alias"]: m for m in p["models"]}
-                models = []
-                for row in rows:
-                    if row["provider"] != p["id"]:
-                        continue
-                    alias, upstream = row["alias"].strip(), row["upstream"].strip()
-                    if not alias or not upstream or alias in seen or any(c.isspace() for c in alias):
-                        raise ValueError("名称不能为空，别名不能重复或含空白")
-                    seen.add(alias)
-                    models.append({"alias": alias, "upstream": upstream,
-                                   **(self._provider_plugins.modelSettings(row, previous.get(upstream) or by_alias.get(alias)) if p["api"] == "plugin" else normalize_model(row, previous.get(upstream) or by_alias.get(alias)))})
+                models = self._validate_model_mappings([row for row in rows if row["provider"] == p["id"]],
+                    p["models"], seen, plugin=p["api"] == "plugin")
                 if not models and p["models"]:
                     raise ValueError("已有模型的供应商至少需要一个模型映射")
                 if p["api"] == "plugin" and {m["upstream"] for m in models} != {m["upstream"] for m in p["models"]}:
@@ -1359,8 +1363,10 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("模型映射已保存")
+            return True
         except (ValueError, KeyError, TypeError, StopIteration) as exc:
             self.toast.emit(str(exc))
+            return False
 
     def _new_proxy_listener(self, settings):
         return LocalServer(self.gateway, settings["port"], host="0.0.0.0" if settings["lan"] else "127.0.0.1",
@@ -1560,6 +1566,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self._stop()
 
     def _job(self, name, fn):
+        self.jobStarted.emit(name)
         def run():
             try:
                 self.jobDone.emit(name, {"ok": True, "value": fn()})
