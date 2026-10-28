@@ -18,12 +18,20 @@ Column {
     visible: tools.length > 0
     onExpandedChanged: if (!expanded && selectionController) selectionController.hideDetails(messageIndex, blockOffset + 1, tools.length)
     function command(name) { return name === "bash" || name === "powershell" }
-    function action(name) { return ({read:I18n.t("读取"),write:I18n.t("写入"),edit:I18n.t("编辑"),bash:I18n.t("运行"),powershell:I18n.t("运行"),grep:I18n.t("搜索"),find:I18n.t("查找"),ls:I18n.t("浏览"),codemode:I18n.t("执行代码"),tool_search:I18n.t("查找工具"),submit_to_chatbox:I18n.t("展示附件")})[name] || name }
+    function action(name) { return ({read:I18n.t("读取"),write:I18n.t("写入"),edit:I18n.t("编辑"),bash:I18n.t("运行"),powershell:I18n.t("运行"),grep:I18n.t("搜索"),find:I18n.t("查找"),ls:I18n.t("浏览"),codemode:I18n.t("执行代码"),tool_search:I18n.t("查找工具"),submit_to_chatbox:I18n.t("展示附件"),subagent:I18n.t("子代理")})[name] || name }
+    function agentType(value) {
+        return ({"general-purpose":I18n.t("通用"), Explore:I18n.t("探索"), Plan:I18n.t("规划")})[value] || value || I18n.t("子代理")
+    }
+    function agentState(value) {
+        return ({queued:I18n.t("排队中"), running:I18n.t("运行中"), done:I18n.t("已完成"), completed:I18n.t("已完成"), error:I18n.t("出错"), interrupted:I18n.t("已中断"), aborted:I18n.t("已取消"), stopped:I18n.t("已停止")})[value] || value || ""
+    }
+    function agentMode(agent) { return agent.isBackground ? I18n.t("后台") : I18n.t("前台") }
+    function agentActivity(value) { return value === "Continuing" ? I18n.t("继续执行中") : value || "" }
     function preview(tool) {
         const args = tool.arguments || {}
         if (tool.subagent) {
             const agent = tool.subagent
-            return [agent.type || args.type || "subagent", tool.state || agent.status || "", agent.isBackground ? "background" : "foreground", String(agent.toolUses || 0) + " tool uses", agent.task || args.task || "", agent.activity || ""].filter(value => value !== "").join(" · ").replace(/\s+/g, " ").trim()
+            return [agentType(agent.type || args.type), agentState(tool.state || agent.status), agentMode(agent), I18n.t("调用工具 %1 次").replace("%1", agent.toolUses || 0), agent.task || args.task || "", agentActivity(agent.activity)].filter(value => value !== "").join(" · ").replace(/\s+/g, " ").trim()
         }
         const value = args.command || args.code || args.pattern || args.query || args.path || ""
         return String(value).replace(/\s+/g, " ").trim()
@@ -32,7 +40,15 @@ Column {
         if (tool.subagent) {
             const agent = tool.subagent
             const args = tool.arguments || {}
-            return "Type: " + (agent.type || args.type || "subagent") + "\nTask: " + (agent.task || args.task || "") + "\nState: " + (tool.state || agent.status || "") + "\nMode: " + (agent.isBackground ? "background" : "foreground") + "\nTool uses: " + (agent.toolUses || 0) + "\nActivity: " + (agent.activity || "") + (agent.continued ? "\nContinued: yes" : "") + (agent.error ? "\nError: " + agent.error : "") + ((tool.result || agent.result) ? "\n\n" + (tool.result || agent.result) : "")
+            const lines = [I18n.t("类型：") + agentType(agent.type || args.type),
+                           I18n.t("任务：") + (agent.task || args.task || ""),
+                           I18n.t("状态：") + agentState(tool.state || agent.status),
+                           I18n.t("模式：") + agentMode(agent),
+                           I18n.t("工具调用次数：") + (agent.toolUses || 0),
+                           I18n.t("活动：") + agentActivity(agent.activity)]
+            if (agent.continued) lines.push(I18n.t("已继续：是"))
+            if (agent.error) lines.push(I18n.t("错误：") + I18n.t(agent.error))
+            return lines.join("\n") + ((tool.result || agent.result) ? "\n\n" + (tool.result || agent.result) : "")
         }
         return JSON.stringify(tool.arguments || {}, null, 2) + (tool.result ? "\n\n" + tool.result : "")
     }
