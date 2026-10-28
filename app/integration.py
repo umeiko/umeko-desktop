@@ -25,7 +25,7 @@ class UnconfiguredAdapter:
 
 
 def load_adapter(directory=None, profile=None) -> InternalAdapter:
-    entry = os.environ.get("CODEAGENT_ADAPTER", "")
+    entry = os.environ.get("UMEKO_ADAPTER", "")
     if not entry:
         return UnconfiguredAdapter()
     module, factory = entry.split(":", 1)

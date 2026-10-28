@@ -9,7 +9,7 @@ from html.parser import HTMLParser
 from http.cookies import SimpleCookie
 
 from . import ProviderError
-from .network import proxy_handler, trace, TracedResponse
+from .network import proxy_handler, tls_context, trace, TracedResponse
 
 
 def response_cookies(headers):
@@ -46,6 +46,7 @@ class HttpSession:
                 return result
         handlers = [Redirect(), urllib.request.HTTPCookieProcessor(self.cookies)]
         handlers.append(proxy_handler(environment_proxy=environment_proxy))
+        handlers.append(urllib.request.HTTPSHandler(context=tls_context()))
         self.opener = urllib.request.build_opener(*handlers)
 
     def validate(self, url):

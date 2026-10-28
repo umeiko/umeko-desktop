@@ -29,6 +29,20 @@ Umeko 使用自己的供应商网关。不要指导用户执行 Pi `/login`、�
 
 每个供应商的网络模式通过 `providers.network` 设置，参数 `id`、`mode`、`address`。模式 `system` 跟随系统，`direct` 不走代理，`custom` 使用指定的 HTTP/HTTPS 代理地址。非 custom 时 `address` 留空。不要把它称为独立供应商类型。
 
+### 私有 CA 与证书校验失败
+
+Python 模型请求使用系统证书信任链，并可按供应商追加可信的 PEM 根证书/中间证书。证书过期、域名不匹配或信任链校验失败时会直接显示原因，不进入网络流重试。始终保留证书与域名校验。
+
+在供应商齿轮 →「网络设置」填写 CA 文件路径，或调用：
+
+```json
+{"operation":"providers.certificate","arguments":{"id":"供应商ID","caFile":"C:/Users/example/.umeko/certs/company-ca.pem"}}
+```
+
+传 `caFile:""` 清除此供应商的额外 CA；修改代理模式会保留已配置的 CA。保存后下一次请求生效，不修改系统证书库或其他供应商的信任配置。通用配置可使用 `UMEKO_MODEL_CA_FILE`、`NODE_EXTRA_CA_CERTS`；环境变量变更后须完全重启应用。模型、npm 安装和客户端更新下载证书分别管理。
+
+错误详情保留底层异常链和证书校验原因。代理 CONNECT 失败与证书错误应分别排查；证书配置不会改变用户选择的代理模式，也不会自动信任服务端返回的未知证书或关闭 TLS 校验。
+
 `models.mappings` 的 `models` 是完整映射数组，行格式包含 `provider`、`upstream`、`alias`、`contextWindow`、`contextWindowAuto`、`vision`、`visionAuto`。这是替换操作，先读取所有供应商并保留其他映射；插件模型 ID 由刷新获取，不能在映射中凭空新增。
 
 `providers.remove` 删除一个供应商账号，参数 `id`。它不等同于卸载整个插件，参阅 [plugins.md](plugins.md)。

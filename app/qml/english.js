@@ -1,5 +1,8 @@
 .pragma library
 var strings = {
+  "证书信任失败时，自动补用系统信任库再连接一次。也可指定可信的 PEM 根证书或中间证书文件；留空使用默认信任链。始终校验证书和域名，不会自动关闭 TLS 验证。": "If certificate trust fails, retry once with the system trust store. You may also specify a trusted PEM root or intermediate CA file. Leave blank to use the default trust chain. Certificate and hostname checks remain enabled.",
+  "PEM 证书文件的完整路径": "Full path to a PEM certificate file",
+  "CA 证书文件不存在、不可读或不是有效的 PEM 证书（最大 4 MiB）": "The CA file is missing, unreadable, or not a valid PEM certificate (maximum 4 MiB).",
   "请求与返回详情": "Request and response details",
   "查看请求与返回": "View request and response",
   "请求": "Request",

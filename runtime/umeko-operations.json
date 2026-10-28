@@ -5,6 +5,7 @@
     "providers.addCommon": {"target":"backend","method":"addCommonProvider","args":[["preset","string"],["key","string"],["alias","string",""],["region","string","cn"]]},
     "providers.remove": {"target":"backend","method":"removeProvider","idle":"provider","exists":"provider","args":[["id","string"]]},
     "providers.network": {"target":"backend","method":"setProviderProxy","idle":"provider","exists":"provider","args":[["id","string"],["mode","string"],["address","string",""]]},
+    "providers.certificate": {"target":"backend","method":"setProviderCertificate","idle":"provider","exists":"provider","args":[["id","string"],["caFile","string",""]]},
     "models.mappings": {"target":"backend","method":"saveMappings","idle":"all","args":[["models","json"]]},
     "themes.import": {"target":"backend","method":"importTheme","args":[["path","string"]]},
     "themes.select": {"target":"backend","method":"setTheme","args":[["id","string"]]},

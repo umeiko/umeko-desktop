@@ -7,6 +7,8 @@ QtObject {
     readonly property string language: backend.language
     function t(value) {
         const text = String(value || "")
+        const certificate = text.match(/^TLS certificate validation failed \(([^)]+)\); check the provider's Network settings and CA file, then open request details(.*)$/)
+        if (certificate) return root.language === "en" ? text : "证书校验失败（" + certificate[1] + "），请检查供应商的网络设置与 CA 证书，并查看请求详情" + certificate[2]
         if (root.language !== "en") return text
         if (Object.prototype.hasOwnProperty.call(English.strings, text)) return English.strings[text]
         const patterns = [

@@ -36,7 +36,7 @@ def verify_windows_preview(executable, environment, report_dir):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     diagnostic = report_dir / 'web-preview.log'
     diagnostic.unlink(missing_ok=True)
-    env = dict(environment, QT_QPA_PLATFORM='windows', CODEAGENT_DIAGNOSTICS=str(diagnostic),
+    env = dict(environment, QT_QPA_PLATFORM='windows', UMEKO_DIAGNOSTICS=str(diagnostic),
                UMEKO_DATA_DIR=str(report_dir / 'preview-profile'), UMEKO_WEB_PREVIEW_URL=f'http://127.0.0.1:{server.server_port}/')
     user32 = ctypes.windll.user32
     callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -92,7 +92,7 @@ def main():
     diagnostic = report_dir / "application.log"
     screenshot = report_dir / "application.png"
     environment = dict(os.environ, UMEKO_DATA_DIR=str(report_dir / "profile"),
-        CODEAGENT_DIAGNOSTICS=str(diagnostic), QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software")
+        UMEKO_DIAGNOSTICS=str(diagnostic), QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software")
     environment["PATH"] = str(report_dir / "no-system-node")
     environment.pop("NODE_OPTIONS", None); environment.pop("NODE_PATH", None)
     for name in ('QT_PLUGIN_PATH', 'LD_LIBRARY_PATH', 'QML_IMPORT_PATH', 'QML2_IMPORT_PATH'):

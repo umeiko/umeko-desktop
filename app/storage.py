@@ -80,14 +80,12 @@ DEFAULTS = {
 class Store:
     def __init__(self, directory: Path | None = None):
         self.directory = directory
-        custom = os.environ.get("UMEKO_DATA_DIR") or os.environ.get("CODEAGENT_DATA_DIR")
+        custom = os.environ.get("UMEKO_DATA_DIR")
         if self.directory is None and custom:
             self.directory = Path(custom)
         if self.directory is None:
             self.directory = data_directory()
             previous = legacy_data_directory()
-            if not (previous / 'settings.json').is_file():
-                previous = previous.parent / 'CodeAgentStudio'
             migrate_profile(previous, self.directory)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.path = self.directory / "settings.json"
@@ -119,8 +117,6 @@ class Store:
             self.data["server"].pop("token", None)
             for p in self.data["providers"]:
                 p["key"] = protect(p.get("key", ""), True)
-                if p["id"] == "internal" and p["name"] == "CodeAgent":
-                    p["name"] = "内网服务"
         output_default_migrated = saved.get('agent', {}).get('outputLimitDefaultVersion') != 1
         if output_default_migrated:
             if self.data['agent']['maxTokens'] == 8192:

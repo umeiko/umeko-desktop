@@ -3,9 +3,38 @@ import json
 import re
 
 
+def describe_failure(error, seen=None):
+    if not isinstance(error, BaseException):
+        return str(error)
+    seen = set() if seen is None else seen
+    if id(error) in seen:
+        return '[Circular error]'
+    seen.add(id(error))
+    result = {'name': type(error).__name__, 'message': str(error)}
+    code = getattr(error, 'code', None)
+    if code is not None:
+        result['code'] = code
+    if getattr(error, 'verify_message', None):
+        result.update(verifyCode=error.verify_code, verifyMessage=error.verify_message)
+    nested = getattr(error, 'reason', None) or error.__cause__ or error.__context__
+    if nested:
+        result['cause'] = describe_failure(nested, seen)
+    if getattr(error, 'exceptions', None):
+        result['errors'] = [describe_failure(item, seen) for item in error.exceptions]
+    return result
+
+
+def certificate_failure(error):
+    detail = json.dumps(describe_failure(error), ensure_ascii=False)
+    code = re.search(r'UMEKO_CA_[A-Z_]+|ERR_TLS_CERT_[A-Z_]+|CERTIFICATE_VERIFY_FAILED|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_VERIFY_LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER_CERT_LOCALLY|CERT_[A-Z_]+', detail, re.I)
+    return code[0].upper() if code else 'CERTIFICATE_VERIFY_FAILED' if re.search(r'certificate|self.signed|证书', detail, re.I) else ''
+
+
 def transient_failure(error, http=()):
+    if certificate_failure(error):
+        return False
     responses = [item.get('response', {}) for item in http]
-    detail = str(error) + ' ' + json.dumps([r.get('body') for r in responses if str(r.get('status', '')).isdigit() and int(r['status']) >= 400], ensure_ascii=False)
+    detail = json.dumps(describe_failure(error), ensure_ascii=False) + ' ' + json.dumps([r.get('body') for r in responses if str(r.get('status', '')).isdigit() and int(r['status']) >= 400], ensure_ascii=False)
     if re.search(r'insufficient_quota|quota exceeded|out of budget|billing|usage limit reached|invalid.?api.?key|unauthorized|authentication|certificate|CERT_|self.signed|额度不足|余额不足', detail, re.I):
         return False
     status = next((r.get('status') for r in reversed(responses) if r.get('status')), 0)
@@ -22,5 +51,6 @@ def transient_failure(error, http=()):
 
 def upstream_failure(error):
     retryable = bool(getattr(error, 'retryable', False))
-    return {'type': 'upstream_error', 'code': 'umeko_stream_interrupted' if retryable else 'umeko_request_failed',
+    return {'type': 'upstream_error', 'code': 'umeko_tls_certificate' if getattr(error, 'tls_code', '') else 'umeko_stream_interrupted' if retryable else 'umeko_request_failed',
+            **({'tlsCode': error.tls_code} if getattr(error, 'tls_code', '') else {}),
             'retryable': retryable, 'message': ('Network error: stream interrupted. ' if retryable else '') + str(error)}

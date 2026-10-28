@@ -12,6 +12,7 @@ ActionButton {
         const network = record.proxy || {mode:"system",url:""}
         mode.currentIndex = Math.max(0, ["system","direct","custom"].indexOf(network.mode))
         address.text = network.url || ""
+        caFile.text = network.caFile || ""
         dialog.open()
     }
     Popup {
@@ -26,12 +27,18 @@ ActionButton {
             Text { text: I18n.t("代理设置"); color: Theme.ink; font.pixelSize: Theme.font(12); font.weight: Font.Medium }
             Picker { id: mode; objectName: "providerProxyMode"; Layout.fillWidth: true; model: [I18n.t("跟随系统代理"), I18n.t("不使用代理"), I18n.t("使用自定义代理")] }
             InputField { id: address; objectName: "providerProxyAddress"; Layout.fillWidth: true; visible: mode.currentIndex === 2; placeholderText: "http://127.0.0.1:7890" }
+            RowLayout {
+                Layout.fillWidth: true
+                Text { text: I18n.t("CA 证书文件（可选）"); color: Theme.ink; font.pixelSize: Theme.font(12) }
+                HelpButton { help: I18n.t("证书信任失败时，自动补用系统信任库再连接一次。也可指定可信的 PEM 根证书或中间证书文件；留空使用默认信任链。始终校验证书和域名，不会自动关闭 TLS 验证。") }
+            }
+            InputField { id: caFile; objectName: "providerCaFile"; Layout.fillWidth: true; placeholderText: I18n.t("PEM 证书文件的完整路径") }
             Text { text: I18n.t("仅影响此供应商的模型请求，以及插件的登录和模型发现。自定义代理支持 HTTP / HTTPS。"); color: Theme.muted; font.pixelSize: Theme.font(12); wrapMode: Text.Wrap; Layout.fillWidth: true }
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
                 ActionButton { text: I18n.t("取消"); quiet: true; onClicked: dialog.close() }
-                ActionButton { objectName: "saveProviderProxy"; text: I18n.t("保存"); primary: true; onClicked: if (backend.setProviderProxy(root.providerId, ["system","direct","custom"][mode.currentIndex], address.text)) dialog.close() }
+                ActionButton { objectName: "saveProviderProxy"; text: I18n.t("保存"); primary: true; onClicked: if (backend.setProviderNetwork(root.providerId, ["system","direct","custom"][mode.currentIndex], address.text, caFile.text)) dialog.close() }
             }
         }
     }
