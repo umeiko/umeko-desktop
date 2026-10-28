@@ -1,6 +1,8 @@
 """Exercise actual ToolHistory QML translations without a model or app profile."""
 import json
 import os
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -79,6 +81,16 @@ ApplicationWindow {
 
 class ToolHistoryI18nTests(unittest.TestCase):
     def test_live_language_changes_translate_labels_and_preserve_metadata(self):
+        # Other unit tests may already own a QCoreApplication, which cannot be
+        # upgraded to the GUI application needed by Qt Quick.
+        result = subprocess.run([sys.executable, str(Path(__file__).resolve()), '--qml-check'],
+            env=dict(os.environ, QT_QPA_PLATFORM='offscreen', QT_QUICK_BACKEND='software'),
+            capture_output=True, text=True, encoding='utf-8', timeout=30,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('SUBAGENT_I18N_QML_OK', result.stdout)
+
+    def run_qml_checks(self):
         tool = {'id': 'child', 'name': 'subagent', 'state': 'running', 'arguments': {},
                 'result': 'Model result', 'subagent': {'type': 'general-purpose',
                     'task': 'User task', 'status': 'running', 'isBackground': True,
@@ -118,4 +130,9 @@ class ToolHistoryI18nTests(unittest.TestCase):
             window.hide(); shiboken6.delete(engine)
 
 
-if __name__ == '__main__': unittest.main()
+if __name__ == '__main__':
+    if sys.argv[1:] == ['--qml-check']:
+        ToolHistoryI18nTests().run_qml_checks()
+        print('SUBAGENT_I18N_QML_OK', flush=True)
+    else:
+        unittest.main()
