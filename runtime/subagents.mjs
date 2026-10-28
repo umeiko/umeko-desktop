@@ -133,7 +133,8 @@ export function createSubagentExtension({ emit, loadPackage } = {}) {
   async function extension(pi) {
     dispose(); api = pi;
     const loaded = loadPackage ? await loadPackage() : await (async () => {
-      const jiti = createJiti(import.meta.url, { moduleCache: false });
+      const jiti = createJiti(import.meta.url, { moduleCache: false,
+        alias: { "@earendil-works/pi-coding-agent": fileURLToPath(new URL("./subagent-sdk.mjs", import.meta.url)) } });
       const root = new URL("../", import.meta.resolve("@gotgenes/pi-subagents"));
       const factory = await jiti.import(fileURLToPath(new URL("index.ts", root)), { default: true });
       const service = await jiti.import("@gotgenes/pi-subagents");

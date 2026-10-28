@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createSubagentExtension, projectSubagents, subagentTool } from "../runtime/subagents.mjs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import http from "node:http";
+import { NETWORK_RETRY } from "../runtime/network-retry.mjs";
+import { upstreamFailure } from "../runtime/network-retry.mjs";
 
 test("state projection preserves nested children, latest snapshots and continuation ownership", () => {
   const call = (id, name = "subagent") => ({ type: "toolCall", id, name, arguments: {} });
@@ -127,4 +133,85 @@ test("resuming through the tool persists an alias to its original history row", 
     assert.equal(final.ownerEntryId, "owner");
     assert.equal(final.tool.subagent.continued, true);
   } finally { adapter.dispose(); }
+});
+
+test("community child uses Umeko settings and native retry without changing saved settings", { timeout: 90000 }, async () => {
+  const Pi = await import("../runtime/node_modules/@earendil-works/pi-coding-agent/dist/index.js");
+  const { AuthStorage } = await import("../runtime/node_modules/@earendil-works/pi-coding-agent/dist/core/auth-storage.js");
+  const { SettingsManager } = await import("../runtime/subagent-sdk.mjs");
+  const { createJiti } = await import("../runtime/node_modules/jiti/lib/jiti.mjs");
+  const directory = mkdtempSync(join(tmpdir(), "umeko-child-retry-"));
+  const agentDir = join(directory, "agent"); mkdirSync(agentDir);
+  const settingsFile = join(agentDir, "settings.json");
+  const saved = JSON.stringify({ retry: { enabled: false, maxRetries: 1,
+    provider: { maxRetries: 7, timeoutMs: 12345 } }, compaction: { enabled: false }, cacheWarming: "off" });
+  writeFileSync(settingsFile, saved);
+  const settings = SettingsManager.create(directory, agentDir, { projectTrusted: true });
+  assert.deepEqual(settings.getRetrySettings(), NETWORK_RETRY);
+  assert.equal(settings.getProviderRetrySettings().maxRetries, 0);
+  assert.equal(settings.getProviderRetrySettings().timeoutMs, 12345);
+  const previousDirectory = process.cwd(), previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir; process.chdir(directory);
+  let requests = 0, session, modelRuntime;
+  const events = [];
+  const adapter = createSubagentExtension({ emit: event => events.push(event) });
+  const server = http.createServer(async (request, response) => {
+    for await (const _chunk of request) { /* consume the real provider request */ }
+    if (++requests === 1) {
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      response.end(`data: ${JSON.stringify({ error: upstreamFailure({ retryable: true }) })}\n\n`); return;
+    }
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    const common = { id: "child-retry", object: "chat.completion.chunk", created: 1, model: "retry-test" };
+    response.end(`data: ${JSON.stringify({ ...common, choices: [{ index: 0, delta: { role: "assistant", content: "Recovered child" }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ ...common, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`);
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    modelRuntime = await Pi.ModelRuntime.create({ credentials: AuthStorage.inMemory(), modelsPath: null,
+      allowModelNetwork: false, refreshOnCreate: false });
+    modelRuntime.registerProvider("umeko-retry-test", { api: "openai-completions",
+      baseUrl: `http://127.0.0.1:${server.address().port}/v1`, apiKey: "local-test-only",
+      models: [{ id: "retry-test", name: "retry-test", api: "openai-completions", reasoning: false,
+        input: ["text"], contextWindow: 128000, maxTokens: 256,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        compat: { supportsDeveloperRole: false, supportsStore: false } }] });
+    await modelRuntime.refresh({ allowNetwork: false });
+    const loader = new Pi.DefaultResourceLoader({ cwd: directory, agentDir,
+      settingsManager: Pi.SettingsManager.inMemory({}), noExtensions: true, noSkills: true,
+      noPromptTemplates: true, noThemes: true, noContextFiles: true,
+      additionalExtensionPaths: ["builtin:subagents"],
+      extensionFactories: [{ name: "subagents", builtin: true, factory: adapter.extension }] });
+    await loader.reload();
+    assert.deepEqual(loader.getExtensions().errors, []);
+    ({ session } = await Pi.createAgentSession({ cwd: directory, agentDir, modelRuntime,
+      settingsManager: Pi.SettingsManager.inMemory({ compaction: { enabled: false }, cacheWarming: "off" }),
+      resourceLoader: loader, sessionManager: Pi.SessionManager.create(directory, join(directory, "sessions")),
+      model: modelRuntime.getModel("umeko-retry-test", "retry-test") }));
+    await session.bindExtensions({});
+    const jiti = createJiti(new URL("../runtime/subagents.mjs", import.meta.url).href, { moduleCache: false });
+    const { getSubagentsService } = await jiti.import("@gotgenes/pi-subagents");
+    const service = getSubagentsService(); assert.ok(service);
+    const id = service.spawn("general-purpose", "Reply briefly", { foreground: true });
+    await service.waitForAll();
+    const record = service.getRecord(id);
+    assert.equal(record.status, "completed", record.error);
+    assert.match(record.result, /Recovered child/);
+    assert.equal(requests, 2);
+    // Raw native history preserves the failed agent attempt. If a provider SDK
+    // had retried invisibly, only the successful assistant would be present.
+    const entries = readFileSync(record.outputFile, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    const assistants = entries.filter(entry => entry.type === "message" && entry.message.role === "assistant");
+    assert.equal(assistants.filter(entry => entry.message.stopReason === "error").length, 1);
+    assert.equal(assistants.at(-1).message.stopReason, "stop");
+    assert.ok(events.some(event => event.subagent?.id === id && event.state === "done"));
+    assert.equal(readFileSync(settingsFile, "utf8"), saved);
+  } finally {
+    adapter.dispose();
+    await session?.extensionRunner.emit({ type: "session_shutdown" });
+    await session?.dispose(); await modelRuntime?.dispose?.();
+    server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+    process.chdir(previousDirectory);
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
