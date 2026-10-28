@@ -6,6 +6,8 @@ import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
 import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl } from "./umeko-control.mjs";
+import { rpcCustom } from "./rpc-ui.mjs";
+import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
@@ -34,6 +36,7 @@ const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, P
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 const umekoControl = createUmekoControl({ emit });
+const subagents = createSubagentExtension({ emit });
 const textOf = content => typeof content === "string" ? content : (content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
 const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
 let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe, closing = false;
@@ -106,7 +109,7 @@ const ui = {
   setFooter() {}, setHeader() {}, setTitle() {}, onTerminalInput: () => () => {},
   setEditorText: text => emit({ type: "editor", text }), pasteToEditor: text => emit({ type: "editor", text }),
   getEditorText: () => "", addAutocompleteProvider: () => () => {},
-  custom: async () => { throw new Error("此扩展要求终端自定义组件；请使用 Pi 的原生终端界面运行该组件"); },
+  custom: rpcCustom,
 };
 
 async function bindSession(session) {
@@ -156,7 +159,7 @@ async function bindSession(session) {
     }
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") emit({ type: "delta", text: event.assistantMessageEvent.delta });
     if (event.type === "message_update" && event.assistantMessageEvent.type === "thinking_delta") emit({ type: "thinking_delta", text: event.assistantMessageEvent.delta });
-    if (event.type.startsWith("tool_execution_")) emit({ type: "tool", name: event.toolName, id: event.toolCallId,
+    if (event.type.startsWith("tool_execution_") && event.toolName !== "subagent") emit({ type: "tool", name: event.toolName, id: event.toolCallId,
       args: event.args, result: event.type === "tool_execution_end" ? textOf(event.result?.content).slice(0,8192) : undefined,
       media: event.type === "tool_execution_end" ? chatboxItems(event.toolName, {...event.result, isError: event.isError}) : undefined,
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
@@ -286,6 +289,7 @@ async function init(input) {
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}) },
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },
           { name: "umeko-control", builtin: true, replaceable: false, factory: pi => umekoControl.extension(pi) },
+          { name: "subagents", builtin: true, replaceable: true, factory: subagents.extension },
           { name: "output-continuation", builtin: true, replaceable: false, factory: outputContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
           { name: "tool-search", builtin: true, replaceable: true, factory: Pi.createToolSearchExtension() },
@@ -352,7 +356,7 @@ async function state() {
   const characters = candidates.reduce((sum, e) => sum + (typeof e.message.content === "string" ? e.message.content.length : (Array.isArray(e.message.content) ? e.message.content : []).reduce((n, block) => n + (block.text || block.thinking || "").length, 0)), 0);
   const paged = candidates.length > 256 || characters > 1024 * 1024;
   const selected = paged ? candidates.slice(-128) : candidates;
-  const messages = selected.map(e => {
+  const messages = projectSubagents(branch, selected.map(e => {
     const message = e.message;
     const row = {role: message.role, text: textOf(message.content) || (message.stopReason === "aborted" ? "" : message.errorMessage || ""), error: message.stopReason !== "aborted" && !!message.errorMessage, entryId:e.id, timestamp:message.timestamp || e.timestamp};
     if (message.role === "assistant") row.stopReason = message.stopReason || "";
@@ -370,7 +374,7 @@ async function state() {
       return [row, ...nested];
     });
     return row;
-  }).filter(row => row.text || row.thinking || row.tools?.length);
+  }).filter(row => row.text || row.thinking || row.tools?.length));
   const list = await Pi.SessionManager.listAll(config.sessionDir);
   const file = manager.getSessionFile();
   emit({ type: "state", session: { id: manager.getSessionId(), file: file && existsSync(file) ? file : undefined,
@@ -532,6 +536,7 @@ async function shutdown() {
   if (closing) return;
   closing = true;
   umekoControl.clear();
+  subagents.dispose();
   piCommands.clear();
   clearDialogs();
   await runtime?.dispose();

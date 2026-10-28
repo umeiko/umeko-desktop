@@ -275,6 +275,10 @@ class PiControllerMixin:
                     record.messages.append({"role": "assistant", "text": "", "error": False})
                 tool = tool_view(event["id"], event["name"], event.get("args", {}), record.workspace)
                 record.messages[-1].setdefault("tools", []).append(tool)
+            if isinstance(event.get("subagent"), dict):
+                tool["subagent"] = dict(event["subagent"])
+                if isinstance(event.get("args"), dict):
+                    tool["arguments"] = dict(event["args"])
             tool["state"] = event["state"]
             if event.get("media"):
                 tool["media"] = event["media"]

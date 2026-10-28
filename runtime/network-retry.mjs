@@ -22,13 +22,22 @@ function failureText(error, seen = new Set()) {
 }
 
 export function certificateFailure(error) {
-  const detail = failureText(error);
-  const fatal = detail.match(/ERR_TLS_CERT_[A-Z_]+|CERT_HAS_EXPIRED|CERT_NOT_YET_VALID|CERT_REVOKED|CERT_SIGNATURE_FAILURE|UMEKO_CA_[A-Z_]+/i);
-  const trust = detail.match(/SELF_SIGNED_CERT_IN_CHAIN|DEPTH_ZERO_SELF_SIGNED_CERT|UNABLE_TO_VERIFY_LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER_CERT(?:_LOCALLY)?|CERT_UNTRUSTED/i);
-  const code = fatal?.[0] || trust?.[0] || detail.match(/CERT_[A-Z_]+|CERTIFICATE_VERIFY_FAILED/i)?.[0];
-  if (!code && !/certificate|self.signed/i.test(detail)) return null;
-  return {code: (code || 'CERTIFICATE_VERIFY_FAILED').toUpperCase(),
-    recoverable: !fatal && (!!trust || /self.signed|unable to (?:verify|get.*issuer)/i.test(detail))};
+  const pending = [error], seen = new Set(), codes = [];
+  while (pending.length) {
+    const current = pending.pop();
+    if (!current || typeof current !== 'object' || seen.has(current)) continue;
+    seen.add(current);
+    // Error messages and stacks can contain filenames or provider content.
+    // Certificate recovery must depend on the transport's structured code.
+    for (const value of [current.code, current.tlsCode]) {
+      if (typeof value === 'string' && /^(?:ERR_TLS_CERT_[A-Z_]+|UMEKO_CA_[A-Z_]+|CERT_[A-Z_]+|CERTIFICATE_VERIFY_FAILED|SELF_SIGNED_CERT_IN_CHAIN|DEPTH_ZERO_SELF_SIGNED_CERT|UNABLE_TO_VERIFY_LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER_CERT(?:_LOCALLY)?)$/i.test(value)) codes.push(value.toUpperCase());
+    }
+    pending.push(current.cause, ...(current.errors || []));
+  }
+  const trustCode = code => /^(?:SELF_SIGNED_CERT_IN_CHAIN|DEPTH_ZERO_SELF_SIGNED_CERT|UNABLE_TO_VERIFY_LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER_CERT(?:_LOCALLY)?|CERT_UNTRUSTED)$/.test(code);
+  const fatal = codes.find(code => !trustCode(code));
+  const code = fatal || codes[0];
+  return code ? {code, recoverable: !fatal} : null;
 }
 
 export function transientFailure(error, http = []) {
@@ -36,7 +45,7 @@ export function transientFailure(error, http = []) {
   const text = failureText(error);
   const responses = http.map(item => item.response).filter(Boolean);
   const detail = text + ' ' + JSON.stringify(responses.filter(r => Number(r.status) >= 400).map(r => r.body));
-  if (/insufficient_quota|quota exceeded|out of budget|billing|usage limit reached|invalid.?api.?key|unauthorized|authentication|certificate|CERT_|self.signed|额度不足|余额不足/i.test(detail)) return false;
+  if (/insufficient_quota|quota exceeded|out of budget|billing|usage limit reached|invalid.?api.?key|unauthorized|authentication|额度不足|余额不足/i.test(detail)) return false;
   const status = Number(responses.findLast(r => r.status)?.status);
   if (status >= 400 && status < 500 && ![408, 425, 429].includes(status)) return false;
   if ([408, 425, 429].includes(status) || status >= 500) return true;

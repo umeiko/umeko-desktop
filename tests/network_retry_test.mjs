@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { NETWORK_RETRY, transientFailure, upstreamFailure, retryOmissions } from '../runtime/network-retry.mjs';
+import { readFile } from 'node:fs/promises';
+import { createServer, get } from 'node:https';
+import { NETWORK_RETRY, certificateFailure, transientFailure, upstreamFailure, retryOmissions } from '../runtime/network-retry.mjs';
 
 test('five bounded exponential backoffs', () => {
   assert.equal(NETWORK_RETRY.maxRetries, 5);
@@ -18,4 +20,47 @@ test('transient streams retry, login, quota and configuration failures do not', 
 });
 test('recovered drafts stay in raw history but disappear from presentation', () => {
   assert.deepEqual([...retryOmissions([{id:'bad',type:'message',message:{role:'assistant',stopReason:'error'}}, {type:'context_edit',targetId:'bad',replacement:null}])], ['bad']);
+});
+
+test('certificate words and paths do not hide transient timeouts', () => {
+  for (const detail of ['timed out reading certificate request details',
+    String.raw`timed out opening C:\certificate\CERT_HAS_EXPIRED\request.json`,
+    'timed out reading self-signed certificate notes']) {
+    const error = new Error(detail);
+    assert.equal(certificateFailure(error), null, detail);
+    assert.ok(transientFailure(error), detail);
+  }
+  assert.ok(transientFailure(new Error('timed out'), [{response: {status: 503, body: 'certificate processing timed out'}}]));
+});
+
+test('nested structured TLS codes preserve trust recovery and fatal precedence', () => {
+  const trust = Object.assign(new Error('verification failed'), {code: 'SELF_SIGNED_CERT_IN_CHAIN'});
+  const error = new Error('fetch failed', {cause: new AggregateError([trust], 'connection failed')});
+  assert.deepEqual(certificateFailure(error), {code: 'SELF_SIGNED_CERT_IN_CHAIN', recoverable: true});
+  assert.ok(!transientFailure(error, [{response: {status: 503}}]));
+  const expired = Object.assign(new Error('verification failed'), {code: 'CERT_HAS_EXPIRED'});
+  assert.deepEqual(certificateFailure(new AggregateError([trust, expired])), {code: 'CERT_HAS_EXPIRED', recoverable: false});
+  assert.deepEqual(certificateFailure(Object.assign(new Error('invalid CA file'), {code: 'UMEKO_CA_INVALID'})),
+    {code: 'UMEKO_CA_INVALID', recoverable: false});
+});
+
+test('native Node TLS verification errors remain terminal when nested', async () => {
+  const fixture = new URL('./fixtures/update-tls/', import.meta.url);
+  const server = createServer({cert: await readFile(new URL('server.pem', fixture)),
+    key: await readFile(new URL('server-key.pem', fixture))}, (_request, response) => response.end('fixture'));
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const tlsError = await new Promise((resolve, reject) => {
+      get(`https://127.0.0.1:${server.address().port}`, response => {
+        response.resume();
+        reject(new Error('untrusted fixture unexpectedly succeeded'));
+      }).on('error', resolve);
+    });
+    assert.ok(['UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY'].includes(tlsError.code), tlsError.code);
+    const error = new Error('fetch failed', {cause: tlsError});
+    assert.deepEqual(certificateFailure(error), {code: tlsError.code, recoverable: true});
+    assert.ok(!transientFailure(error));
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
 });

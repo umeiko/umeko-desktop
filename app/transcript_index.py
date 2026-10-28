@@ -22,7 +22,7 @@ from .chat_model import ChatModel
 from .message_attachments import split_attachments
 from .transcripts import content_text, content_thinking, present
 
-SCHEMA = 1
+SCHEMA = 2
 LARGE_FILE = 2 * 1024 * 1024
 PAGE_ROWS = 24
 GROUP_MESSAGES = 16
@@ -385,6 +385,7 @@ class TranscriptRepository:
                     meta, offset = {}, 0
                 source.seek(offset)
                 parsed, latest, cwd = 0, meta.get('latest', ''), meta.get('cwd', str(file.parent))
+                subagent_owners = set()
                 while True:
                     if cancelled():
                         raise Cancelled()
@@ -415,7 +416,9 @@ class TranscriptRepository:
                             title, attachments = split_attachments(text)
                             title = re.sub(r'\s+', ' ', title.strip()[:500]) or '、'.join(a.get('name', '') for a in attachments) or '…'
                         data = entry.get('data') or {}
-                        tool = message.get('toolCallId', '') if role == 'toolResult' else data.get('toolCallId', '') if entry.get('customType') == 'umeko-chatbox' and isinstance(data, dict) else ''
+                        tool = message.get('toolCallId', '') if role == 'toolResult' else data.get('toolCallId', '') if entry.get('customType') in ('umeko-chatbox', 'umeko-subagent', 'umeko-subagent-link') and isinstance(data, dict) else ''
+                        if entry.get('customType') == 'umeko-subagent' and isinstance(data, dict) and data.get('ownerEntryId'):
+                            subagent_owners.add(data['ownerEntryId'])
                         omitted = entry.get('targetId', '') if entry.get('type') == 'context_edit' and entry.get('replacement') is None else ''
                         db.execute('INSERT OR REPLACE INTO entries(id,parent,offset,length,kind,role,tool,omitted,eligible,tools,stop,error,title) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
                                    (entry['id'], entry.get('parentId'), at, len(line), entry.get('type', ''), role, tool, omitted, int(role in ('user', 'assistant') and bool(text or thinking or tools)), int(tools), message.get('stopReason', ''), int(bool(message.get('errorMessage'))), title))
@@ -452,6 +455,14 @@ class TranscriptRepository:
                 # Rebuild every fragment of the last bounded message group.
                 value = db.execute('SELECT MIN(first_native) FROM display WHERE last_native>=?', (rebuild,)).fetchone()[0]
                 rebuild = value if value is not None else rebuild
+                # Background completions and resumed children update their original
+                # launch row, which may precede the most recent message group.
+                for owner in subagent_owners:
+                    native = db.execute('SELECT pos FROM native WHERE id=?', (owner,)).fetchone()
+                    if native:
+                        value = db.execute('SELECT MIN(first_native) FROM display WHERE last_native>=?', (native[0],)).fetchone()[0]
+                        if value is not None:
+                            rebuild = min(rebuild, value)
             else:
                 db.execute('DELETE FROM branch')
                 db.execute('''WITH RECURSIVE path(id) AS (
@@ -514,7 +525,7 @@ class TranscriptRepository:
                     results = db.execute("SELECT e.offset,e.length FROM entries e JOIN branch b ON e.id=b.id WHERE e.tool=? AND e.role='toolResult' ORDER BY e.num", (call,))
                     dependencies.extend(read(source, value) for value in results)
                     prefix = call + '/'
-                    deliveries = db.execute("SELECT e.offset,e.length FROM entries e JOIN branch b ON e.id=b.id WHERE e.tool>=? AND e.tool<? AND e.kind='custom' ORDER BY e.num", (prefix, prefix + chr(0x10ffff)))
+                    deliveries = db.execute("SELECT e.offset,e.length FROM entries e JOIN branch b ON e.id=b.id WHERE ((e.tool>=? AND e.tool<?) OR e.tool=?) AND e.kind='custom' ORDER BY e.num", (prefix, prefix + chr(0x10ffff), call))
                     dependencies.extend(read(source, value) for value in deliveries)
                 messages, _ = present(group + dependencies, cwd)
                 for row in ChatModel.project(messages):
