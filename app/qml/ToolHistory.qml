@@ -23,7 +23,7 @@ Column {
         const args = tool.arguments || {}
         if (tool.subagent) {
             const agent = tool.subagent
-            return [agent.type || args.type || "subagent", agent.task || args.task || "", tool.state || agent.status || "", agent.isBackground ? "background" : "foreground", String(agent.toolUses || 0) + " tool uses", agent.activity || ""].filter(value => value !== "").join(" · ")
+            return [agent.type || args.type || "subagent", tool.state || agent.status || "", agent.isBackground ? "background" : "foreground", String(agent.toolUses || 0) + " tool uses", agent.task || args.task || "", agent.activity || ""].filter(value => value !== "").join(" · ").replace(/\s+/g, " ").trim()
         }
         const value = args.command || args.code || args.pattern || args.query || args.path || ""
         return String(value).replace(/\s+/g, " ").trim()
