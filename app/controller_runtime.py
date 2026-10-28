@@ -1,5 +1,6 @@
 """Route native Pi events to their owning session, independently of the view."""
 import copy
+import time
 import uuid
 from pathlib import Path
 
@@ -81,6 +82,7 @@ class PiControllerMixin:
         if record.stale or (record.process and not record.ready):
             self._pool.retire(record)
         record.action, record.failed, record.cancelled = action, False, False
+        record.prompt_started = time.monotonic() if action == 'prompt' else None
         record.phase = "loading" if not record.process else "running" if action in ("prompt", "compact") else "working"
         record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在生成" if record.phase == "running" else "正在处理"
         payload = {"type": action, "model": record.model or self.store.data["selectedModel"], "reasoningEffort": record.reasoning_effort, **values}
@@ -104,6 +106,7 @@ class PiControllerMixin:
                 self._pool.start(record, node_executable(), bridge, payload)
         except (RuntimeError, OSError) as error:
             record.phase, record.failed = "idle", True
+            record.prompt_started = None
             self.toast.emit(str(error))
             if record.messages and not record.messages[-1]["text"]:
                 record.messages[-1].update(text=str(error), error=True)
@@ -345,6 +348,8 @@ class PiControllerMixin:
             if visible:
                 self.retryChanged.emit()
             was_busy = record.busy
+            long_running = record.prompt_started is not None and time.monotonic() - record.prompt_started > 180
+            record.prompt_started = None
             if record.queue:
                 self._restore_queued(record, [row["text"] for row in record.queue])
                 record.queue = []
@@ -362,7 +367,7 @@ class PiControllerMixin:
             if was_busy and record.action == "prompt" and not record.cancelled and record.id:
                 self.store.data["sessionMeta"].setdefault(record.id, {})["unread"] = not (visible and self._chat_visible)
                 self.store.save()
-                self.taskFinished.emit(record.id, record.title, kind == 'done' and not record.failed)
+                self.taskFinished.emit(record.id, record.title, kind == 'done' and not record.failed, long_running)
             if visible:
                 self.approvalChanged.emit()
             if record.stale or (kind == "done" and not record.ready):

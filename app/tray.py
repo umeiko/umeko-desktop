@@ -73,12 +73,12 @@ class TrayController(QObject):
         if self.tray_available() and not self.tray.icon().isNull():
             self.tray.show()
             self.window.hide()
-            message = 'Minimized to the system tray. Agents keep running. Right-click the Yanami icon to quit.' if self.english else '已最小化到系统托盘。Agent 继续运行，右键八奈见头像可退出。'
+            message = "I'll keep working here! To quit completely, right-click the icon in the system tray~" if self.english else '我在这里继续执行任务！需要完全退出你可以右键点击任务栏中的图标~'
             self.notificationRequested.emit(message)
             self.tray.showMessage('Umeko', message, self.tray.icon(), 4000)
         else:
             self.window.showMinimized()
-            self.notificationRequested.emit('System tray unavailable. Minimized to the taskbar; agents keep running.' if self.english else '系统托盘不可用，已最小化到任务栏。Agent 继续运行。')
+            self.notificationRequested.emit("The system tray is unavailable, so I'm minimized to the taskbar. I'll keep working here." if self.english else '系统托盘不可用，已最小化到任务栏。我会在这里继续执行任务。')
 
     def activated(self, reason):
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick): self.restore()

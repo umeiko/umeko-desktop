@@ -20,7 +20,7 @@ with patch.object(QSystemTrayIcon,'isSystemTrayAvailable',return_value=True), pa
     assert not window.close()
     assert not window.isVisible() and not exits
     QTest.qWait(50);assert ticks,'Agents stopped when window was hidden'
-    notify.assert_called_once();assert 'Agent' in notify.call_args.args[1]
+    notify.assert_called_once();assert notify.call_args.args[1]=='我在这里继续执行任务！需要完全退出你可以右键点击任务栏中的图标~'
     assert not tray.tray.icon().isNull()
     tray.open_action.trigger();QTest.qWait(20);assert window.isVisible()
     window.showMaximized();QTest.qWait(20)

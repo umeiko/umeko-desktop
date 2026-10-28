@@ -34,6 +34,7 @@ class SessionState:
     greeting: str = ""
     phase: str = "idle"
     action: str = ""
+    prompt_started: float | None = None
     tool_status: str = ""
     process: QProcess | None = None
     buffer: bytes = b""

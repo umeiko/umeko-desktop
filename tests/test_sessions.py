@@ -117,6 +117,32 @@ class SessionTests(unittest.TestCase):
         self.assertFalse(c._session_flags(a_id)["unread"])
         self.assertTrue(any(s["id"] == b_id for s in c.sessions), "parallel index update lost another session")
 
+    def test_completion_timing_belongs_to_each_prompt_across_chat_switches(self):
+        c, events = self.controller, []
+        c.taskFinished.connect(lambda *args: events.append(args))
+        self.assertTrue(c.send('TASK A'))
+        first = c._view
+        self.assertIsNotNone(first.prompt_started)
+        self.wait_for(lambda: self.started['A'].is_set(), timeout=20000)
+        c.newSession()
+        self.assertTrue(c.send('TASK B'))
+        second = c._view
+        self.wait_for(lambda: self.started['B'].is_set(), timeout=20000)
+        second_start = second.prompt_started
+        first.prompt_started = time.monotonic() - 181
+        self.gates['A'].set()
+        self.wait_for(lambda: not first.busy)
+        self.assertEqual(events, [(first.id, first.title, True, True)])
+        self.assertIsNone(first.prompt_started)
+        self.assertEqual(second.prompt_started, second_start)
+        second.prompt_started = time.monotonic() - 179
+        self.gates['B'].set()
+        self.wait_for(lambda: not second.busy)
+        self.assertEqual(events[-1], (second.id, second.title, True, False))
+        self.assertIsNone(second.prompt_started)
+        c._handle_pi_event(first, {'type': 'done'})
+        self.assertEqual(len(events), 2)
+
     def test_context_usage_follows_view_without_background_session_leaks(self):
         c = self.controller
         first, second = c._view, c._new_view()

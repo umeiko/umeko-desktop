@@ -95,7 +95,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
     toast = Signal(str)
     webRequested = Signal(str, str)
     documentRequested = Signal(str, str, str)
-    taskFinished = Signal(str, str, bool)
+    taskFinished = Signal(str, str, bool, bool)
     jobDone = Signal(str, object)
     approvalRequested = Signal(object)
     approvalChanged = Signal()
