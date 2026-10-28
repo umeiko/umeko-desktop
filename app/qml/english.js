@@ -654,5 +654,7 @@ var strings = {
   "关闭网页": "Close page",
   "后退": "Back",
   "前进": "Forward",
-  "刷新": "Reload"
+  "刷新": "Reload",
+  "Pi 内核检查或更新正在进行；完成后即可再次发送消息。": "Pi is being checked or updated. You can send messages when it finishes.",
+  "Umeko 配置任务已开始": "Umeko configuration task started"
 }

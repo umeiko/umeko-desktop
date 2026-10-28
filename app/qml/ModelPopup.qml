@@ -17,12 +17,13 @@ Popup {
     x: motion.value.x; y: motion.value.y
     margins: 12; padding: 10; focus: true
     signal configure()
+    signal dismissed()
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
     background: Rectangle { radius: 12; color: Theme.surface; border.color: Theme.line }
     enter: Transition {}
     exit: Transition { PauseAnimation { duration: 800 } }
     onAboutToShow: { desiredOpen = true; modelSearch.clear() }
-    onAboutToHide: desiredOpen = false
+    onAboutToHide: { desiredOpen = false; focus = false; dismissed() }
     onOpened: modelSearch.forceActiveFocus()
     onClosed: motion.snap()
     PidMotion { id: motion; targetRect: root.desiredOpen ? Qt.rect(0,-root.fullHeight-8,root.fullWidth,root.fullHeight) : Qt.rect(0,-root.buttonHeight-8,root.buttonWidth,root.buttonHeight) }

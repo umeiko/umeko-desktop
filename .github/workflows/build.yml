@@ -149,6 +149,8 @@ jobs:
           New-Item -ItemType Directory -Force build/test-logs | Out-Null
           & '.venv/Scripts/python.exe' -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | Tee-Object -FilePath build/test-logs/regression.log
           if ($LASTEXITCODE -ne 0) { throw 'Regression suite failed' }
+          & '.venv/Scripts/python.exe' tests/window_resize_ui_smoke.py
+          if ($LASTEXITCODE -ne 0) { throw 'Window interaction regression failed' }
 
       - name: Build Windows
         if: runner.os == 'Windows'

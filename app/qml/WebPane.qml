@@ -90,8 +90,8 @@ Rectangle {
     }
     Loader {
         id: surface; objectName: "webSurfaceLoader"
-        anchors.left: parent.left; anchors.leftMargin: 1; anchors.right: parent.right
-        anchors.top: toolbar.bottom; anchors.topMargin: 1; anchors.bottom: parent.bottom
+        anchors.left: parent.left; anchors.leftMargin: 6; anchors.right: parent.right; anchors.rightMargin: 12
+        anchors.top: toolbar.bottom; anchors.topMargin: 1; anchors.bottom: parent.bottom; anchors.bottomMargin: 12
         active: pane.opened && pane.mode === "web" && pane.surfaceReady
         visible: !pane.moving && !pane.blocked && (!item || !item.errorMessage)
         source: active ? "WebSurface.qml" : ""

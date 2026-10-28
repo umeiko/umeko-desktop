@@ -70,8 +70,11 @@ ApplicationWindow {
     }
     Timer { interval: 16; repeat: true; running: window.sidebarSwitching; onTriggered: window.commitSidebarSelection() }
     property real webPreferredWidth: 0
-    readonly property real webMinimumWidth: 300
-    readonly property real webMaximumWidth: Math.max(webMinimumWidth, mainArea.width - 400)
+    readonly property real webMinimumWidth: 320
+    readonly property real chatMinimumWidth: 640
+    readonly property bool previewSidebarCollapsed: webPane.opened && page === "chat" && width - Math.min(sidebarPreferredWidth, sidebarMaximumWidth) < chatMinimumWidth + webMinimumWidth
+    readonly property bool sidebarLayoutCollapsed: sidebarCollapsed || previewSidebarCollapsed
+    readonly property real webMaximumWidth: Math.max(webMinimumWidth, mainArea.width - chatMinimumWidth)
     property real sidebarPreferredWidth: backend.sidebarWidth
     property bool sidebarCollapsed: backend.sidebarCollapsed
     readonly property real sidebarMinimumWidth: 200
@@ -147,7 +150,7 @@ ApplicationWindow {
 
     PidMotion {
         id: sidebarWidthMotion; objectName: "sidebarWidthMotion"
-        targetRect: Qt.rect(0, 0, (sidebarResizeHandle.resizing ? sidebarResizeHandle.dragWidth : window.sidebarCollapsed ? 0 : Math.min(window.sidebarPreferredWidth, window.sidebarMaximumWidth)) + 1, 1)
+        targetRect: Qt.rect(0, 0, (sidebarResizeHandle.resizing ? sidebarResizeHandle.dragWidth : window.sidebarLayoutCollapsed ? 0 : Math.min(window.sidebarPreferredWidth, window.sidebarMaximumWidth)) + 1, 1)
         onMovingChanged: if (!moving) window.showSidebarCollapseHint()
     }
     Rectangle {
@@ -162,7 +165,7 @@ ApplicationWindow {
             width: Math.max(window.sidebarMinimumWidth, sidebarResizeHandle.resizing ? sidebarResizeHandle.dragWidth : Math.min(window.sidebarPreferredWidth, window.sidebarMaximumWidth))
             anchors.top: parent.top; anchors.bottom: parent.bottom
             enabled: !window.sidebarCollapsed && !sidebarWidthMotion.moving
-            MouseArea { width: parent.width; height: 20; enabled: !chatSelection.dragging; onPressed: window.startSystemMove(); onDoubleClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
+            TitleBarDrag { objectName: "sidebarTitleDrag"; width: parent.width; height: 20; enabled: !chatSelection.dragging; targetWindow: window }
             ActionButton {
                 objectName: "newChatButton"
                 x: 16; y: 24; width: parent.width - 32; height: Theme.control(42)
@@ -278,7 +281,7 @@ ApplicationWindow {
         anchors.left: sidebar.right; anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
         Item {
             id: header; height: 72; width: parent.width
-            MouseArea { anchors.fill: parent; enabled: !chatSelection.dragging; onPressed: window.startSystemMove(); onDoubleClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
+            TitleBarDrag { objectName: "mainTitleDrag"; anchors.fill: parent; enabled: !chatSelection.dragging; targetWindow: window }
             Row { x: 20; anchors.verticalCenter: parent.verticalCenter; spacing: 10
                 ActionButton {
                     id: sidebarToggle; objectName: "toggleSidebarButton"; glyph: "layout"; quiet: true
@@ -594,6 +597,7 @@ ApplicationWindow {
         parent: composer.modelAnchor
         heightLimit: window.height - 128
         onConfigure: { window.settings(0) }
+        onDismissed: Qt.callLater(function() { if (window.page === "chat" && !modelPopup.desiredOpen && !window.mediaOverlayActive) composer.focusInput() })
     }
     ApprovalDialog { parent: Overlay.overlay }
     SidebarMenus { id: sidebarMenus; objectName: "sidebarMenus"; parent: Overlay.overlay; anchors.fill: parent }
