@@ -153,6 +153,7 @@ ApplicationWindow {
         targetRect: Qt.rect(0, 0, (sidebarResizeHandle.resizing ? sidebarResizeHandle.dragWidth : window.sidebarLayoutCollapsed ? 0 : Math.min(window.sidebarPreferredWidth, window.sidebarMaximumWidth)) + 1, 1)
         onMovingChanged: if (!moving) window.showSidebarCollapseHint()
     }
+    Connections { target: backend.subagents; function onRequested() { window.page = "chat"; webPane.showSubagent() } }
     Rectangle {
         id: sidebar; objectName: "sidebar"
         width: sidebarResizeHandle.resizing ? sidebarResizeHandle.dragWidth : Math.max(0, sidebarWidthMotion.value.width - 1)
@@ -313,6 +314,7 @@ ApplicationWindow {
                 ActionButton { glyph: "maximize"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最大化"); onClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
                 ActionButton { objectName: "closeToTrayButton"; glyph: "x"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("收起到托盘"); onClicked: window.close() }
             }
+            SubagentIndicator { anchors.right: windowControls.left; anchors.rightMargin: 13; anchors.verticalCenter: windowControls.verticalCenter; visible: window.page === "chat" && backend.subagents.activeCount > 0 }
         }
 
         Item {

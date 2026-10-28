@@ -266,6 +266,12 @@ class ChatModel(QAbstractListModel):
                     current["tools"] = [dict(tool) for tool in current["tools"]]
                     batch = []
                     for tool in current["tools"]:
+                        if tool.get("subagent"):
+                            if batch:
+                                steps.append({"kind": "tools", "tools": batch})
+                                batch = []
+                            steps.append({"kind": "subagents", "agents": [dict(tool["subagent"])]})
+                            continue
                         batch.append(tool)
                         if tool.get("name") == "submit_to_chatbox" and tool.get("media"):
                             steps.append({"kind": "tools", "tools": batch})

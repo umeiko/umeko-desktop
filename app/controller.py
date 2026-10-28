@@ -41,6 +41,7 @@ from .document_preview import DocumentPreview
 from .preferences import PreferencesMixin
 from .common_providers import CommonProvidersMixin
 from .chatbox import media_view
+from .subagents import Subagents
 
 
 GREETINGS = (
@@ -159,7 +160,8 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self._closing = False
         self._copy_request = 0
         self._session_preview = SessionPreview(self)
-        self._document_preview = DocumentPreview(self)
+        self._document_preview = DocumentPreview(self, store=self.store)
+        self._subagents = Subagents(self)
         self._view.id = ""
         self._view.messages = []
         self._view.history = []
@@ -212,6 +214,10 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
     @Property(QObject, constant=True)
     def documentPreview(self):
         return self._document_preview
+
+    @Property(QObject, constant=True)
+    def subagents(self):
+        return self._subagents
 
     @Property(QObject, constant=True)
     def providerPlugins(self):
@@ -1741,7 +1747,8 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self._streaming_timer.stop()
         self._session_preview.cancel()
         self._chat_model.close()
-        self._document_preview.cancel()
+        self._document_preview.close()
+        self._subagents.close()
         self._proxy_usage_timer.stop()
         self._pool.close()
         if self.public_server:

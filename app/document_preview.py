@@ -82,7 +82,9 @@ def read_preview(path, kind=''):
             if len(html) > 256 * 1024:
                 html, simple = '', True
     highlight = kind == 'code' and len(text) <= 24000 and len(lines) <= 500 and all(len(line) <= 1000 for line in lines)
-    result.update(kind=kind, text=text, html=html, language=Path(path).suffix.lower().lstrip('.'), bytes=info.st_size, truncated=truncated, simple=simple, highlight=highlight)
+    suffix = Path(path).suffix.lower()
+    file_type = 'html' if suffix in ('.html', '.htm') else 'markdown' if kind == 'markdown' else kind
+    result.update(kind=kind, fileType=file_type, text=text, html=html, language=suffix.lstrip('.'), bytes=info.st_size, truncated=truncated, simple=simple, highlight=highlight)
     return result
 
 
@@ -90,8 +92,12 @@ class DocumentPreview(QObject):
     changed = Signal()
     completed = Signal(int, object)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, store=None):
         super().__init__(parent)
+        self._store = store
+        modes = store.data.get('ui', {}).get('documentPreviewModes', {}) if store else {}
+        self._modes = {kind:mode for kind,mode in modes.items() if kind in ('html','markdown') and mode in ('source','rendered')} if isinstance(modes,dict) else {}
+        self._static = None
         self._state, self._pending = {}, None
         self._generation, self._reading = 0, False
         self.completed.connect(self._completed)
@@ -100,10 +106,44 @@ class DocumentPreview(QObject):
     def state(self):
         return self._state
 
+    def _presentation(self):
+        from .static_preview import HTML_LIMIT, StaticPreview
+        kind = self._state.get('fileType', '')
+        self._state['mode'] = self._modes.get(kind, 'rendered' if kind in ('markdown', 'html') else 'source')
+        self._state['previewUrl'] = ''
+        if kind == 'html' and not self._state.get('error') and not self._state.get('busy'):
+            from .webview import configuration
+            available = configuration()['available']
+            self._state['renderable'] = available and self._state.get('bytes', 0) <= HTML_LIMIT
+            if self._state['mode'] == 'rendered' and self._state['renderable']:
+                try:
+                    if self._static is None:
+                        self._static = StaticPreview()
+                    self._state['previewUrl'] = self._static.open(self._state['path'])
+                except OSError:
+                    self._state['renderable'] = False
+            if not self._state['renderable']:
+                self._state['mode'] = 'source'
+                self._state['renderNote'] = 'HTML 较大，已使用源码预览' if available else '网页预览组件尚未安装或无法加载'
+
+    @Slot(str, str)
+    def setMode(self, file_type, mode):
+        if file_type not in ('markdown', 'html') or mode not in ('source', 'rendered'):
+            return
+        self._modes[file_type] = mode
+        if self._store:
+            self._store.data.setdefault('ui', {})['documentPreviewModes'] = dict(self._modes)
+            self._store.save()
+        if self._state.get('fileType') == file_type:
+            self._presentation()
+            self.changed.emit()
+
     @Slot()
     def cancel(self):
         self._generation += 1
         self._state, self._pending = {}, None
+        if self._static:
+            self._static.revoke()
         self.changed.emit()
 
     @Slot(str, str)
@@ -135,5 +175,12 @@ class DocumentPreview(QObject):
         self._reading = False
         if generation == self._generation:
             self._state = result
+            self._presentation()
             self.changed.emit()
         self._start()
+
+    def close(self):
+        self.cancel()
+        if self._static:
+            self._static.close()
+            self._static = None

@@ -36,7 +36,7 @@ const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, P
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 const umekoControl = createUmekoControl({ emit });
-const subagents = createSubagentExtension({ emit });
+const subagents = createSubagentExtension({ emit, restoreSession: restoreSubagentSession });
 const textOf = content => typeof content === "string" ? content : (content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
 const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
 let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe, closing = false;
@@ -243,6 +243,30 @@ async function reloadSession(session) {
   exposeNativeTools(session);
 }
 
+async function restoreSubagentSession(child, context, customTools) {
+  if (!existsSync(child.outputFile)) throw new Error("子代理的原生会话文件已不存在。");
+  const manager = Pi.SessionManager.open(child.outputFile);
+  const model = modelRuntime.getModel("umeko", context?.model || runtime.session.model?.id);
+  if (!model) throw new Error("原子代理使用的模型已不在供应商配置中。");
+  const settings = await prepareNativeSettings(Pi, {cwd:manager.getCwd(),agentDir:config.agentDir,agent:config.agent});
+  const policy = Pi.SettingsManager.inMemory({...settings.getSettings(),retry:{...NETWORK_RETRY,provider:{maxRetries:0}},cacheWarming:"off"});
+  // New children persist their exact resolved prompt and allowlist. Older
+  // transcripts use the standard read-only policy for Explore/Plan.
+  const readonly = ["Explore","Plan"].includes(child.type);
+  const loader = new Pi.DefaultResourceLoader({cwd:manager.getCwd(),agentDir:config.agentDir,settingsManager:policy,
+    systemPrompt:context?.systemPrompt || `You are the ${child.type} subagent embedded in Umeko Desktop. Continue the task in this existing conversation. ${readonly ? "Inspect and report only; do not modify files." : ""}`,
+    appendSystemPrompt:[],
+    extensionsOverride:base=>({...base,extensions:base.extensions.filter(extension=>!String(extension.path || "").includes("pi-subagents"))})});
+  await loader.reload();
+  const {session} = await Pi.createAgentSession({cwd:manager.getCwd(),agentDir:config.agentDir,sessionManager:manager,
+    modelRuntime,model,settingsManager:policy,resourceLoader:loader,thinkingLevel:context?.thinkingLevel || "off",
+    customTools,excludeTools:["subagent","get_subagent_result","steer_subagent"],
+    tools:context?.tools || (readonly ? ["read","grep","find","ls"] : undefined)});
+  await session.bindExtensions({uiContext:ui,mode:"rpc",abortHandler:()=>session.abort(),
+    shutdownHandler:()=>session.abort(),onError:error=>emit({type:"notice",message:error.message})});
+  return session;
+}
+
 async function init(input) {
   config = input;
   reasoningEffort = effortLevels.has(input.reasoningEffort) ? input.reasoningEffort : "off";
@@ -433,6 +457,7 @@ async function promptWithInterrupts(first) {
 
 async function execute(input) {
   if (input.type === "umeko_response") { umekoControl.response(input); return; }
+  if (input.type === "subagent-command") { await subagents.command(input); return; }
   if (input.type === "reasoning_effort") {
     if (effortLevels.has(input.value)) reasoningEffort = input.value;
     return;
@@ -506,6 +531,10 @@ async function execute(input) {
     }
     else if (input.type === "new") await runtime.newSession();
     else if (input.type === "open") await runtime.switchSession(input.path);
+    else if (input.type === "subagent-open") {
+      if (input.command.action === "send") await subagents.command({action:"watch",id:input.command.id});
+      await subagents.command(input.command);
+    }
     else if (input.type === "fork") await forkSession(input.entryId || runtime.session.sessionManager.getLeafId(), { position: "at" });
     else if (input.type === "navigate") await runtime.session.navigateTree(input.entryId, { summarize: false });
     else if (input.type === "compact") await runtime.session.compact();

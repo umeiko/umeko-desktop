@@ -93,7 +93,7 @@ class SubagentHistoryTests(unittest.TestCase):
         record = SimpleNamespace(messages=[{"role": "assistant", "text": "", "tools": [tool]},
             {"role": "user", "text": "Continue"}, {"role": "assistant", "text": "Later"}],
             workspace=".", projection_dirty_from=None, body_dirty=False)
-        host = SimpleNamespace(_closing=False, _view=object())
+        host = SimpleNamespace(_closing=False, _view=object(), _subagents=SimpleNamespace(merge=lambda *_: None))
         updated = snapshot("final", state="done", background=False, continued=True)["data"]["tool"]
         PiControllerMixin._handle_pi_event(host, record, {"type": "tool", "id": updated["id"],
             "name": "subagent", "args": updated["arguments"], "state": "done", "result": "Answer",
