@@ -11,9 +11,10 @@ Column {
     property int messageIndex: -1
     property int blockOffset: 0
     readonly property bool running: tools.some(tool => tool.state === "running")
+    readonly property string runningNames: tools.filter(tool => tool.state === "running").map(tool => tool.name).join(", ")
     readonly property int failures: tools.filter(tool => tool.state === "error").length
     readonly property bool commandsOnly: tools.length > 0 && tools.every(tool => command(tool.name))
-    readonly property string summary: (running ? (commandsOnly ? I18n.t("正在运行 ") : I18n.t("正在执行 ")) : (commandsOnly ? I18n.t("运行了 ") : I18n.t("执行了 "))) + tools.length + (commandsOnly ? I18n.t(" 条命令") : I18n.t(" 项操作")) + (failures ? "（" + failures + I18n.t(" 失败）") : "")
+    readonly property string summary: (running ? (commandsOnly ? I18n.t("正在运行 ") : I18n.t("正在执行 ")) : (commandsOnly ? I18n.t("运行了 ") : I18n.t("执行了 "))) + tools.length + (commandsOnly ? I18n.t(" 条命令") : I18n.t(" 项操作")) + (failures ? "（" + failures + I18n.t(" 失败）") : "") + (runningNames ? " · " + runningNames : "")
     spacing: 2
     visible: tools.length > 0
     onExpandedChanged: if (!expanded && selectionController) selectionController.hideDetails(messageIndex, blockOffset + 1, tools.length)

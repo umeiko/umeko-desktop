@@ -13,6 +13,7 @@ from app.controller import Controller
 from app.pi_management import resource_command, prepare_factory
 from app.pi_terminal import prepare_terminal, powershell_literal
 from app.pi_runtime import PACKAGE, node_executable
+from app.filesystem_paths import filesystem_path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE = ROOT / "runtime/releases/coding-1.3.0"
@@ -20,6 +21,27 @@ APP = QCoreApplication.instance() or QCoreApplication([])
 
 
 class NativeExtensionTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows extended-length paths")
+    def test_factory_copies_deep_profile_and_preserves_ordinary_paths(self):
+        base = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, filesystem_path(base))
+        directory = base / ("profile_" * 14) / ("nested_" * 14) / ("level_" * 10)
+        self.assertGreater(len(str(directory)), 260)
+        release = filesystem_path(base / "root/runtime/releases/coding-1.3.0")
+        release.mkdir(parents=True)
+        (release / "fixture.txt").write_text("factory files")
+        agent = filesystem_path(directory / "original-agent")
+        agent.mkdir(parents=True)
+        (agent / "settings.json").write_text("original settings")
+        workspace = base / "workspace"
+        workspace.mkdir()
+        with patch("app.pi_management.verify_runtime"):
+            result = prepare_factory(base / "root", directory, {"agentDir":str(directory / "original-agent")}, workspace)
+        self.assertFalse(any(value.startswith("\\\\?\\") for value in result.values()))
+        self.assertEqual((filesystem_path(result["release"]) / "fixture.txt").read_text(), "factory files")
+        self.assertEqual((filesystem_path(result["backup"]) / "personal-settings.json").read_text(), "original settings")
+        self.assertTrue(filesystem_path(result["agentDir"]).is_dir())
+
     def test_package_entry_uses_manifest_name_without_executing_code(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

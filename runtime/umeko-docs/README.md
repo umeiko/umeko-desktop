@@ -17,3 +17,7 @@ Agent 入口只有一个：`config_umeko`。第一次使用先调用 `{"operatio
 先查询实际配置和 ID，再做用户要求的修改。没有提供的密钥不要臆造；已保存的密钥不需要读出，编辑供应商时留空保留。删除、卸载、恢复出厂、安装更新等操作应符合用户明确意图。任务正在使用的连接及会话会排队处理；`queued`、`accepted` 都不能报告为“已经完成”。
 
 配置、插件和聊天属于当前用户配置目录，升级应用不会把它们覆盖。`settings.get` 返回当前实例的路径和配置，不应猜测另一个安装副本或另一个系统用户的数据位置。
+
+## Windows 上运行 Python 项目命令
+
+优先使用项目已有虚拟环境的 Python 路径；项目没有指定解释器且已安装 Windows Python Launcher 时，可用 `py -3`，例如 `py -3 -m unittest discover -s tests -v`。裸 `python` 可能命中 Microsoft Store 的应用执行别名，并提示 “Python was not found”；这不表示项目依赖缺失。可用 `py -3 -c "import sys; print(sys.executable)"` 查看该启动器实际选择的解释器。Umeko 自身的 Python 运行时不等于项目所需的 Python 环境。
