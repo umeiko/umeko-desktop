@@ -165,7 +165,7 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
     if (sources.length !== 1 || !sources[0] || sources[0].startsWith('-')) throw new Error('一次操作一个 npm、Git 或本地扩展来源');
     if (action === 'install' && getConfig().agent?.installPermission !== 'automatic') {
       if (!ctx?.ui?.confirm) throw new Error('Installation needs user approval in the desktop. No package was installed.');
-      const accepted = await ctx.ui.confirm('Install Pi package?', `${sources[0]}\n${reason}\n${audit.summary || ''}`);
+      const accepted = await ctx.ui.confirm('安装 Pi 扩展包？', JSON.stringify({ umekoPackageInstall: { source: sources[0], reason, audit } }));
       if (!accepted) return { ...info(), status: 'declined', source: sources[0], message: 'The user declined installation. Nothing was installed.' };
     }
     if (signal?.aborted) throw new Error('Pi 操作已取消');

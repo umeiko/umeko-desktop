@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "PackageText.js" as PackageText
 
 ColumnLayout {
     id: root
@@ -12,7 +13,7 @@ ColumnLayout {
     Text {
         objectName: root.namePrefix + "Progress"
         Layout.fillWidth: true; visible: text.length > 0
-        text: root.manager.marketplaceProgress.message || root.manager.status
+        text: PackageText.progress(root.manager.marketplaceProgress, I18n.t) || I18n.t(root.manager.status)
         textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.accent; font.pixelSize: Theme.font(11)
     }
     Repeater {
@@ -27,8 +28,8 @@ ColumnLayout {
                 ActionButton { objectName: root.namePrefix + "Remove_" + modelData.id; visible: modelData.removable; text: I18n.t("卸载"); glyph: "trash"; quiet: true; enabled: !root.manager.busy && !backend.config.agent.safeMode; onClicked: root.manager.uninstallPackage(modelData.id) }
             }
             Text { Layout.fillWidth: true; visible: modelData.removable; text: I18n.t("安装者：") + (modelData.installedBy === "agent" ? "Agent" : modelData.installedBy === "user" ? I18n.t("用户") : I18n.t("未知（已有安装）")) + " · " + I18n.t("使用次数：") + modelData.useCount + " · " + I18n.t("最近使用：") + (modelData.lastUsed || I18n.t("暂无记录")); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(10) }
-            Text { Layout.fillWidth: true; visible: !!modelData.reason; text: I18n.t("安装原因：") + modelData.reason; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(10) }
-            Text { Layout.fillWidth: true; visible: !!modelData.audit; text: I18n.t("检查备注：") + modelData.audit; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(10) }
+            Text { Layout.fillWidth: true; visible: !!modelData.reason; text: I18n.t("安装原因：") + I18n.t(modelData.reason); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(10) }
+            PackageAudit { objectName: root.namePrefix + "Audit_" + modelData.id; Layout.fillWidth: true; visible: !!modelData.audit; value: modelData.audit }
             Repeater {
                 model: modelData.extensions
                 RowLayout {

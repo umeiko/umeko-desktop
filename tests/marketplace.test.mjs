@@ -25,7 +25,15 @@ test('run_pi_command defaults to ask, decline never installs, automatic installs
  try {
   const command='pi install '+JSON.stringify(f.source.replaceAll('\\','/'));
   let confirms=0;
-  const ctx={ui:{confirm:async()=>{confirms++;return false;}}};
+  const ctx={ui:{confirm:async(title,detail)=>{
+   confirms++;
+   assert.equal(title,'安装 Pi 扩展包？');
+   const request=JSON.parse(detail).umekoPackageInstall;
+   assert.equal(request.source,f.source.replaceAll('\\','/'));
+   assert.equal(request.reason,'Installed for the current task');
+   assert.deepEqual(request.audit,{summary:'Not audited'});
+   return false;
+  }}};
   const registered=[];f.controller.extension({registerTool:tool=>registered.push(tool)});
   const declined=await registered[0].execute('decline',{command},undefined,undefined,ctx);
   assert.equal(JSON.parse(declined.content[0].text).status,'declined');

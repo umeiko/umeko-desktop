@@ -14,6 +14,7 @@ from .pi_runtime import CREATE_NO_WINDOW, RELEASE_NAME, installed_version, node_
 from .pi_terminal import console_runtime, prepare_terminal, launch_terminal
 from .pi_install import parse_install_command, install_package, remove_package
 from .package_records import PackageRecords, timestamp
+from .package_presentation import audit_presentation
 from .npm_config import validate_npm_config, probe_npm, npm_environment
 from .storage import DEFAULTS
 
@@ -105,6 +106,10 @@ class PiManagement(QObject):
 
     @Property("QVariantMap", notify=changed)
     def marketplaceProgress(self): return self._marketplace_progress
+
+    @Slot("QVariant", result="QVariantMap")
+    def auditPresentation(self, value):
+        return audit_presentation(value.toVariant() if hasattr(value, "toVariant") else value)
 
     @Slot(str, result=bool)
     def setInstallPermission(self, value):

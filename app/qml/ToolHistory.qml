@@ -18,7 +18,7 @@ Column {
     visible: tools.length > 0
     onExpandedChanged: if (!expanded && selectionController) selectionController.hideDetails(messageIndex, blockOffset + 1, tools.length)
     function command(name) { return name === "bash" || name === "powershell" }
-    function action(name) { return ({read:I18n.t("读取"),write:I18n.t("写入"),edit:I18n.t("编辑"),bash:I18n.t("运行"),powershell:I18n.t("运行"),grep:I18n.t("搜索"),find:I18n.t("查找"),ls:I18n.t("浏览"),codemode:I18n.t("执行代码"),tool_search:I18n.t("查找工具"),submit_to_chatbox:I18n.t("展示附件")})[name] || name }
+    function action(name) { return ({read:I18n.t("读取"),write:I18n.t("写入"),edit:I18n.t("编辑"),bash:I18n.t("运行"),powershell:I18n.t("运行"),grep:I18n.t("搜索"),find:I18n.t("查找"),ls:I18n.t("浏览"),codemode:I18n.t("执行代码"),tool_search:I18n.t("查找工具"),submit_to_chatbox:I18n.t("展示附件"),marketplace_search:I18n.t("搜索扩展包"),marketplace_detail:I18n.t("读取扩展包详情"),marketplace_audit:I18n.t("检查扩展包"),marketplace_install:I18n.t("安装扩展包")})[name] || name }
     function preview(tool) {
         const args = tool.arguments || {}
         const value = args.command || args.code || args.pattern || args.query || args.path || ""
