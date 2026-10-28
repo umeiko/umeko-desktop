@@ -3,8 +3,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, statSyn
 import { dirname, basename, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
+import { packageManifest } from "./package-source.mjs";
 
-export const builtins = ["codemode", "tool-search", "mcp", "chatbox", "pi-commands", "umeko-control"];
+export const builtins = ["codemode", "tool-search", "mcp", "chatbox", "pi-commands", "umeko-control", "marketplace"];
 const target = entry => entry.replace(/^[!+-]/, "");
 const canonical = (value, base) => value.startsWith("builtin:") ? value : resolve(base, value);
 export function extensionName(path, metadata = {}) {
@@ -69,11 +70,19 @@ async function discover(Pi, input, settings) {
       }
     }
   }
-  return resolved.extensions.filter(row => !input.agent?.safeMode || row.path.startsWith("builtin:")).map(row => ({ ...row,
+  const rows = resolved.extensions.filter(row => !input.agent?.safeMode || row.path.startsWith("builtin:")).map(row => ({ ...row,
     id: createHash("sha256").update(JSON.stringify([row.path, row.metadata.scope, row.metadata.source])).digest("hex").slice(0, 24),
     name: extensionName(row.path, row.metadata),
     scope: row.metadata.scope === "project" ? "project" : "global",
   }));
+  if (!input.agent?.safeMode) for (const pkg of manager.listConfiguredPackages()) {
+    if (!pkg.installedPath || rows.some(row => row.metadata.source === pkg.source && row.metadata.scope === pkg.scope)) continue;
+    const manifest = packageManifest(pkg.installedPath);
+    rows.push({ id: 'package:' + pkg.scope + ':' + pkg.source, name: manifest.name || basename(pkg.installedPath),
+      path: pkg.installedPath, enabled: true, resourceKind: 'package', scope: pkg.scope === 'project' ? 'project' : 'global',
+      metadata: { source: pkg.source, scope: pkg.scope, origin: 'package', packageRoot: pkg.installedPath } });
+  }
+  return rows;
 }
 
 export async function manageResources(Pi, input) {
@@ -105,7 +114,9 @@ export async function manageResources(Pi, input) {
     await settings.flush(); checkErrors(settings);
     rows = await discover(Pi, input, settings);
   }
-  return { extensions: rows.map(({ metadata, ...row }) => ({ ...row, source: metadata.source })), safeMode: !!input.agent?.safeMode };
+  return { extensions: rows.map(({ metadata, ...row }) => ({ ...row, source: metadata.source,
+    origin: metadata.origin, packageRoot: metadata.packageRoot || metadata.baseDir || '',
+    version: metadata.origin === 'package' ? packageManifest(metadata.packageRoot || metadata.baseDir).version || '' : '' })), safeMode: !!input.agent?.safeMode };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

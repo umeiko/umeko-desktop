@@ -76,6 +76,8 @@ Providers and imported plugins stay in your home directory across upgrades. Conf
 
 Pi web extensions can access the network. Configure company npm mirrors, an optional `.npmrc` and CA file under **Settings → Agent → Pi**; see [npm and extension networking](docs/npm-and-network.md).
 
+The agent can find and install missing Pi tools from the npm package market, then continue the same task. Installation asks every time by default; the small wrench beside Send/Stop offers an opt-in fully automatic mode, install/use history, enable/disable and uninstall. See [package management](docs/package-market.md).
+
 Use the [download buttons above](#downloads) for your platform, extract the package and open Umeko. Keep the complete application bundle together.
 
 | Platform | Package | Launch |

@@ -12,7 +12,8 @@ from PySide6.QtCore import QObject, Property, Signal, Slot, QUrl
 from PySide6.QtGui import QDesktopServices
 from .pi_runtime import CREATE_NO_WINDOW, RELEASE_NAME, installed_version, node_executable, verify_runtime
 from .pi_terminal import console_runtime, prepare_terminal, launch_terminal
-from .pi_install import parse_install_command, install_package
+from .pi_install import parse_install_command, install_package, remove_package
+from .package_records import PackageRecords, timestamp
 from .npm_config import validate_npm_config, probe_npm, npm_environment
 from .storage import DEFAULTS
 
@@ -62,6 +63,8 @@ class PiManagement(QObject):
         self._busy, self._extensions, self._status, self._backup = False, [], "", ""
         self._install_state, self._install_message = "idle", ""
         self._npm_status = ""
+        self._package_records = PackageRecords(controller.store.directory)
+        self._marketplace_progress = {}
         backups = controller.store.directory / "pi-backups"
         if backups.is_dir():
             saved = sorted(p for p in backups.iterdir() if p.is_dir() and (p / "restore.json").is_file())
@@ -73,6 +76,71 @@ class PiManagement(QObject):
 
     @Property("QVariantList", notify=changed)
     def extensions(self): return self._extensions
+
+    @Property("QVariantList", notify=changed)
+    def packages(self):
+        # Adapted grouping/action model: pi-extmgr 0.4.2 InstalledPackage and
+        # UnifiedItem in src/types/index.ts, src/ui/installed/items.ts, and
+        # src/ui/installed/item-actions.ts. Desktop actions reuse Pi's native
+        # enable/remove paths rather than copying its TUI implementation.
+        groups = {}
+        workspace = str(self.controller._view.workspace or self.controller.store.data.get("workspace", ""))
+        for extension in self._extensions:
+            source = extension.get("source", "")
+            native_package = extension.get("origin") == "package" or source not in ("builtin", "local", "")
+            key = (source, extension.get("scope")) if native_package else (extension["id"],)
+            if key not in groups:
+                details = self._package_records.metadata(source, extension["name"], extension.get("scope", ""), workspace)
+                groups[key] = {**details, **extension, "extensions": [], "removable": native_package}
+                if not groups[key].get("version"):
+                    groups[key]["version"] = details["version"]
+            if extension.get("resourceKind") != "package":
+                groups[key]["extensions"].append(extension)
+        return sorted(groups.values(), key=lambda row: (not bool(row["useCount"]), row["name"].casefold()))
+
+    @Property(str, notify=changed)
+    def installPermission(self):
+        value = self.controller.store.data["agent"].get("installPermission", "ask")
+        return value if value in ("ask", "automatic") else "ask"
+
+    @Property("QVariantMap", notify=changed)
+    def marketplaceProgress(self): return self._marketplace_progress
+
+    @Slot(str, result=bool)
+    def setInstallPermission(self, value):
+        if value not in ("ask", "automatic"):
+            return False
+        c = self.controller
+        previous = c.store.data["agent"].get("installPermission", "ask")
+        c.store.data["agent"]["installPermission"] = value
+        try:
+            c.store.save()
+        except OSError as exc:
+            c.store.data["agent"]["installPermission"] = previous
+            c.toast.emit(str(exc)); return False
+        for record in c._pool.records.values():
+            c._pool.write(record, {"type": "install_permission", "value": value})
+        c.changed.emit(); self.changed.emit()
+        return True
+
+    def handleRuntimeEvent(self, event, record):
+        kind = event.get("type")
+        if kind not in ("package_install", "package_usage", "marketplace_progress"):
+            return False
+        try:
+            if kind == "package_install":
+                self._package_records.installed({**event, "session": event.get("session") or record.id,
+                    "workspace": record.workspace, "scope": event.get("scope", "global")})
+                self.scan()
+            elif kind == "package_usage":
+                self._package_records.used(event)
+            else:
+                self._marketplace_progress = {key: str(event.get(key, ""))[:2000]
+                    for key in ("operation", "package", "state", "message")}
+        except (OSError, ValueError) as exc:
+            self.controller.toast.emit("扩展记录保存失败：" + str(exc))
+        self.changed.emit()
+        return True
 
     @Property(str, notify=changed)
     def status(self): return self._status
@@ -136,7 +204,8 @@ class PiManagement(QObject):
 
     def _resource_key(self):
         c = self.controller
-        return (c._view.workspace or c.store.data["workspace"], str(c._release), json.dumps(c.store.data["agent"], sort_keys=True))
+        agent = {key: value for key, value in c.store.data["agent"].items() if key != "installPermission"}
+        return (c._view.workspace or c.store.data["workspace"], str(c._release), json.dumps(agent, sort_keys=True))
 
     def _scan(self, apply=False):
         if self._busy or self.controller.kernelBusy: return
@@ -188,9 +257,30 @@ class PiManagement(QObject):
             except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
                 rows, warning = [], "\n列表读取失败：" + str(exc)[:250]
             recovery = "\n恢复模式已开启，关闭后可加载新扩展。" if agent.get("safeMode") else ""
-            return {"extensions": rows, "message": "安装成功 · " + target + recovery + warning}
+            installed = next((row for row in rows if row.get("source") == source), {})
+            if not installed and not source.startswith(("npm:", "git:", "https://", "http://", "ssh://", "git@")):
+                installed = next((row for row in rows if row.get("packageRoot") and
+                    Path(row["packageRoot"]).resolve() == (cwd / source).resolve()), {})
+            return {"extensions": rows, "message": "安装成功 · " + target + recovery + warning,
+                    "installation": {"package": installed.get("name", source), "version": installed.get("version", ""),
+                        "source": installed.get("source", source), "scope": "project" if local else "global", "workspace": str(cwd),
+                        "installedBy": "user", "reason": "用户从设置手动安装", "time": timestamp()}}
         self._install_state, self._install_message = "installing", "正在安装到" + target + "…"
         self._start("install", self._install_message, install)
+
+    @Slot(str)
+    def uninstallPackage(self, extension_id):
+        if self._busy or self.controller.kernelBusy: return
+        row = next((row for row in self.packages if row["id"] == extension_id), None)
+        if not row or not row["removable"]:
+            self.controller.toast.emit("仅已注册的第三方扩展包可以卸载")
+            return
+        context = self._context()
+        release, cwd, agent_dir, agent = context
+        def uninstall():
+            remove_package(release, cwd, agent_dir, row["source"], row["scope"] == "project", npm_config=agent, package_root=row.get("packageRoot"))
+            return resource_command(*context, action="scan")
+        self._start("remove", "正在卸载 " + row["name"] + "…", uninstall)
 
     @Slot(str, bool)
     def addMcp(self, text, local):
@@ -302,6 +392,8 @@ class PiManagement(QObject):
             if action == "npm":
                 self._npm_status = str(value); self.changed.emit(); return
             if action in ("install", "mcp-add"):
+                if value.get("installation"):
+                    self._package_records.installed(value["installation"])
                 self._install_state, self._install_message = "succeeded", value["message"]
                 c._restart_pi()
                 self._status = value["message"]
@@ -310,8 +402,8 @@ class PiManagement(QObject):
                 self.changed.emit()
                 if self._job_context != self._resource_key(): self.scan()
                 return
-            if action in ("scan", "toggle", "reload"):
-                if action in ("toggle", "reload"):
+            if action in ("scan", "toggle", "reload", "remove"):
+                if action in ("toggle", "reload", "remove"):
                     c._restart_pi()
                 if self._job_context != self._resource_key():
                     self._extensions = []
@@ -320,8 +412,8 @@ class PiManagement(QObject):
                     return
                 self._extensions = value
                 self._status = "已启用 " + str(sum(row["enabled"] for row in value)) + " / " + str(len(value)) + " 个扩展"
-                if action in ("toggle", "reload"):
-                    c.toast.emit("已保存；运行中的任务完成后应用扩展设置")
+                if action in ("toggle", "reload", "remove"):
+                    c.toast.emit("扩展包已卸载；运行中的任务完成后应用" if action == "remove" else "已保存；运行中的任务完成后应用扩展设置")
             elif action == "terminal":
                 launch_terminal(value)
                 self._status = "Pi 管理终端已打开，返回后可刷新扩展列表"

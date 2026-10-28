@@ -185,6 +185,8 @@ class PiControllerMixin:
         if self._closing:
             return
         kind, visible = event.get("type"), record is self._view
+        if self._pi_management.handleRuntimeEvent(event, record):
+            return
         if kind == 'umeko_request':
             result = self._umeko_control.execute({'operation': event.get('operation'), 'arguments': event.get('arguments', {})}, record)
             self._write_pi({'type': 'umeko_response', 'id': event.get('id'), 'result': result}, record)

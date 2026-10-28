@@ -29,13 +29,13 @@ test('real embedded Pi tool installs into its own profile, reloads the same sess
  });
  await new Promise(done=>server.listen(0,'127.0.0.1',done));
  const events=[];let stderr='',buffer='';
- child=spawn(process.execPath,[join(root,'runtime/releases/coding-1.3.0/bridge.mjs')],{cwd,stdio:['pipe','pipe','pipe']});
+ child=spawn(process.execPath,[join(root,'runtime/releases/coding-1.3.0/bridge.mjs')],{cwd,windowsHide:true,stdio:['pipe','pipe','pipe']});
  child.stderr.on('data',data=>stderr+=data);
  child.stdout.on('data',data=>{buffer+=data;let i;while((i=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);if(line)events.push(JSON.parse(line));}});
  const send=input=>child.stdin.write(JSON.stringify(input)+'\n');
  const wait=async predicate=>{const end=Date.now()+15000;while(Date.now()<end){if(predicate())return;await new Promise(done=>setTimeout(done,20));}throw new Error('Timed out: '+JSON.stringify(events.slice(-4))+' '+stderr);};
  try{
-  const initial={type:'prompt',text:'Inspect this Pi',workspace:cwd,defaultCwd:cwd,agentDir,sessionDir,model:'fixture',models:[{id:'fixture',contextWindow:128000}],agent:{},gateway:`http://127.0.0.1:${server.address().port}/`,token:'local-fixture'};
+  const initial={type:'prompt',text:'Inspect this Pi',workspace:cwd,defaultCwd:cwd,agentDir,sessionDir,model:'fixture',models:[{id:'fixture',contextWindow:128000}],agent:{installPermission:'automatic'},gateway:`http://127.0.0.1:${server.address().port}/`,token:'local-fixture'};
   send(initial);await wait(()=>events.some(e=>e.type==='done'));
   const first=events.find(e=>e.type==='ready').session.id;
   const tool=events.find(e=>e.type==='tool'&&e.name==='run_pi_command'&&e.state==='done');

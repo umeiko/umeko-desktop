@@ -534,6 +534,7 @@ ApplicationWindow {
                 x: chatWidth.composerLeft; anchors.bottom: parent.bottom; anchors.bottomMargin: 57 + (retryStatus.visible ? retryStatus.implicitHeight + 6 : 0)
                 width: parent.width - chatWidth.composerLeft - chatWidth.composerRight
                 onOpenModels: modelPopup.toggle()
+                onOpenPackages: packagePopup.toggle()
                 onChooseFiles: attachmentDialog.open()
             }
             NetworkRetry { id: retryStatus; anchors.left: composer.left; anchors.top: composer.bottom; anchors.topMargin: 6; width: composer.width }
@@ -555,7 +556,7 @@ ApplicationWindow {
             anchors.right: parent.right; anchors.top: header.bottom; anchors.bottom: parent.bottom
             preferredWidth: Math.max(window.webMinimumWidth, Math.min(window.webMaximumWidth, window.webPreferredWidth > 0 ? window.webPreferredWidth : Math.min(540, Math.max(350, parent.width * 0.46))))
             resizing: webResizeHandle.pressed
-            blocked: window.page !== "chat" || !window.visible || window.visibility === Window.Minimized || window.mediaOverlayActive || modelPopup.visible || backend.pendingApproval.id !== undefined
+            blocked: window.page !== "chat" || !window.visible || window.visibility === Window.Minimized || window.mediaOverlayActive || modelPopup.visible || packagePopup.visible || backend.pendingApproval.id !== undefined
         }
 
         MouseArea {
@@ -596,6 +597,12 @@ ApplicationWindow {
         onConfigure: { window.settings(0) }
     }
     ApprovalDialog { parent: Overlay.overlay }
+    PackagePopup {
+        id: packagePopup
+        parent: composer.packageAnchor
+        heightLimit: window.height - 128
+        onConfigure: { window.settings(3) }
+    }
     SidebarMenus { id: sidebarMenus; objectName: "sidebarMenus"; parent: Overlay.overlay; anchors.fill: parent }
     Rectangle {
         z: 100; anchors.horizontalCenter: mainArea.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 27

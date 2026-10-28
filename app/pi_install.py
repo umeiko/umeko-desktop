@@ -45,13 +45,29 @@ def _log_tail(log):
 
 
 def install_package(release, cwd, agent_dir, source, local=False, timeout=180, npm_config=None):
+    return package_operation(release, cwd, agent_dir, source, local, timeout, npm_config, operation="install")
+
+
+def remove_package(release, cwd, agent_dir, source, local=False, timeout=180, npm_config=None, package_root=None):
+    # Native relative package registrations are relative to their settings file,
+    # while CLI local source parsing is relative to the working directory.
+    base = Path(cwd) / ".pi" if local else Path(agent_dir)
+    if source in (".", "..") or source.startswith(("./", "../", ".\\", "..\\")) or (
+            package_root and (base / source).resolve() == Path(package_root).resolve()):
+        source = str((base / source).resolve())
+    return package_operation(release, cwd, agent_dir, source, local, timeout, npm_config, operation="remove")
+
+
+def package_operation(release, cwd, agent_dir, source, local=False, timeout=180, npm_config=None, *, operation):
+    if operation not in ("install", "remove"):
+        raise ValueError("Unsupported package operation")
     environment = npm_environment(npm_config or {})
     environment.update(PI_CODING_AGENT_DIR=str(agent_dir), PI_SKIP_VERSION_CHECK="1", NO_COLOR="1")
     for key in ("NODE_OPTIONS", "NODE_PATH", "PI_OFFLINE"):
         environment.pop(key, None)
     # Explicit scope avoids the CLI's interactive project-trust prompt/hooks.
     args = [node_executable(), str(Path(release) / "node_modules" / PACKAGE / "dist/cli.js"),
-            "install", source, "--approve" if local else "--no-approve"]
+            operation, source, "--approve" if local else "--no-approve"]
     if local: args.append("--local")
     with tempfile.TemporaryFile() as log:
         process = subprocess.Popen(args, cwd=cwd, env=environment, stdin=subprocess.DEVNULL,
@@ -71,8 +87,8 @@ def install_package(release, cwd, agent_dir, source, local=False, timeout=180, n
             finally:
                 process.kill()
                 process.wait(timeout=10)
-            raise RuntimeError("安装超时，请检查软件源或网络后重试") from None
+            raise RuntimeError(("安装" if operation == "install" else "卸载") + "超时，请检查软件源或网络后重试") from None
         output = _log_tail(log)
     if code:
-        raise RuntimeError("Pi 安装失败：" + (output or "退出码 " + str(code)))
+        raise RuntimeError("Pi " + ("安装" if operation == "install" else "卸载") + "失败：" + (output or "退出码 " + str(code)))
     return output

@@ -105,6 +105,8 @@ class UmekoControl(QObject):
 
     def _execute(self, operation, args, caller, queue):
         b = self.b
+        if operation == 'extensions.install':
+            raise ValueError('Agent package installation must use marketplace_install or run_pi_command so the user installation permission is enforced')
         if operation == 'help': return {'docsRoot': str(b._release/'umeko-docs'), 'entry': str(b._release/'umeko-docs/README.md')}
         if operation == 'operations.list':
             prefix = args.get('prefix', '')

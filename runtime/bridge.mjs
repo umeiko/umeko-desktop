@@ -6,6 +6,8 @@ import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
 import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl } from "./umeko-control.mjs";
+import { MARKETPLACE_TOOLS, MARKETPLACE_PROMPT, createMarketplace } from "./marketplace.mjs";
+import { packageSource } from "./package-source.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
@@ -30,7 +32,7 @@ const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", entry));
 const { loadMcpConfig } = await import(new URL("./extensions/mcp/config.js", entry));
 const { allToolNames } = await import(new URL("./core/tools/index.js", entry));
-const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL];
+const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, ...MARKETPLACE_TOOLS];
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 const umekoControl = createUmekoControl({ emit });
@@ -70,6 +72,7 @@ function returnQueue() {
 const dialogs = new Map();
 const commandOutput = new AsyncLocalStorage();
 const piCommands = createPiCommandController({ Pi, getRuntime: () => runtime, getConfig: () => config,
+  emit,
   reload: reloadSession, notify: message => emit({ type: "notice", message }),
   invokeSlash: async command => {
     const lines = [];
@@ -79,6 +82,7 @@ const piCommands = createPiCommandController({ Pi, getRuntime: () => runtime, ge
     return { output: lines.map(line => line.message).join("\n") || "当前 Pi 命令已执行" };
   },
 });
+const marketplace = createMarketplace({ getConfig: () => config, runPiCommand: (...args) => piCommands.run(...args), emit });
 
 function ask(method, title, detail = "", options = []) {
   const id = crypto.randomUUID();
@@ -156,6 +160,10 @@ async function bindSession(session) {
     }
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") emit({ type: "delta", text: event.assistantMessageEvent.delta });
     if (event.type === "message_update" && event.assistantMessageEvent.type === "thinking_delta") emit({ type: "thinking_delta", text: event.assistantMessageEvent.delta });
+    if (event.type === "tool_execution_start") {
+      const source = packageSource(session, event.toolName);
+      if (source) emit({ type: 'package_usage', ...source, tool: event.toolName, time: new Date().toISOString() });
+    }
     if (event.type.startsWith("tool_execution_")) emit({ type: "tool", name: event.toolName, id: event.toolCallId,
       args: event.args, result: event.type === "tool_execution_end" ? textOf(event.result?.content).slice(0,8192) : undefined,
       media: event.type === "tool_execution_end" ? chatboxItems(event.toolName, {...event.result, isError: event.isError}) : undefined,
@@ -281,11 +289,12 @@ async function init(input) {
       resourceLoaderOptions: {
         ...(input.agent?.safeMode ? { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
           additionalExtensionPaths: builtins.map(name => "builtin:" + name) } : {}),
-        appendSystemPrompt: [DESKTOP_PI_PROMPT + " " + UMEKO_PROMPT + " Reply in the user's language.", input.agent?.instructions || ""],
+        appendSystemPrompt: [DESKTOP_PI_PROMPT + " " + UMEKO_PROMPT + " " + MARKETPLACE_PROMPT + " Reply in the user's language.", input.agent?.instructions || ""],
         extensionFactories: [
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}) },
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },
           { name: "umeko-control", builtin: true, replaceable: false, factory: pi => umekoControl.extension(pi) },
+          { name: "marketplace", builtin: true, replaceable: false, factory: pi => marketplace.extension(pi) },
           { name: "output-continuation", builtin: true, replaceable: false, factory: outputContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
           { name: "tool-search", builtin: true, replaceable: true, factory: Pi.createToolSearchExtension() },
@@ -428,6 +437,10 @@ async function promptWithInterrupts(first) {
 }
 
 async function execute(input) {
+  if (input.type === 'install_permission') {
+    if (config && ['ask', 'automatic'].includes(input.value)) config.agent = { ...config.agent, installPermission: input.value };
+    return;
+  }
   if (input.type === "umeko_response") { umekoControl.response(input); return; }
   if (input.type === "reasoning_effort") {
     if (effortLevels.has(input.value)) reasoningEffort = input.value;

@@ -1,5 +1,29 @@
 # Third-party notices
 
+## Pi package marketplace and management
+
+The built-in marketplace adapts npm `pi-marketplace` 0.1.3 by ssdiwu, MIT,
+Copyright (c) 2026 507: https://github.com/ssdiwu/pi-marketplace . Its npm
+registry API, search/detail/audit tool definitions and static source scanning
+are adapted in `runtime/marketplace-source.mjs` and `runtime/marketplace.mjs`.
+The complete notice is retained in `runtime/marketplace-LICENSE.txt` and copied
+into the projected runtime. Its separate installer and terminal renderer are
+not included.
+
+The installed-package grouping and enable/disable/remove action model adapt
+`pi-extmgr` 0.4.2 by Abdeslam Yassine Agmar (MIT), particularly
+`src/types/index.ts`, `src/ui/installed/items.ts` and `item-actions.ts`:
+https://github.com/ayagmar/pi-extmgr . See `licenses/pi-extmgr.txt`.
+The terminal UI is not included. The last-used presentation is inspired by
+Claude Code's Installed plugin list; no Claude Code source is distributed.
+
+Archive extraction uses `tar` 7.5.22, https://github.com/isaacs/node-tar
+(ISC), with its notice retained in runtime node_modules.
+
+The wrench icon is Lucide's `icons/wrench.svg`, adapted to the existing stroke
+weight: https://github.com/lucide-icons/lucide . Copyright (c) 2026 Lucide Icons
+and Contributors, ISC; see `licenses/Lucide.txt`.
+
 ## Bundled search tools
 
 Release bundles include fd 10.3.0 (MIT or Apache-2.0, https://github.com/sharkdp/fd/tree/v10.3.0) and ripgrep 14.1.1 (MIT or Unlicense, https://github.com/BurntSushi/ripgrep/tree/14.1.1) so Pi's find/grep tools work without a first-run download. Their upstream license files accompany the binaries under `runtime/releases/coding-1.3.0/bin`. Archive SHA-256 values are pinned in `scripts/search-tools.json`.

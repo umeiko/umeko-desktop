@@ -71,7 +71,7 @@ DEFAULTS = {
     "providers": [],
     "agent": {"maxTokens": 32768, "outputLimitDefaultVersion": 1, "instructions": "", "autoCompaction": True,
               "agentDir": "", "skillPaths": [], "extensionPaths": [], "safeMode": False,
-              "npmRegistry": "", "npmUserconfig": "", "npmCafile": ""},
+              "npmRegistry": "", "npmUserconfig": "", "npmCafile": "", "installPermission": "ask"},
     "server": {"port": 8787, "openai": True, "anthropic": True, "lan": False, "keys": []},
     "ui": {"sidebarWidth": 244, "sidebarCollapsed": False},
 }

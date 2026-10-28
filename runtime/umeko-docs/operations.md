@@ -51,7 +51,6 @@
 | `extensions.scan` | 无 | 无 | 是 |
 | `extensions.refresh` | 无 | all | 是 |
 | `extensions.enable` | `id: string`, `enabled: boolean` | all | 是 |
-| `extensions.install` | `source: string`, `project: boolean=false` | all | 是 |
 | `mcp.add` | `text: string`, `project: boolean=false` | all | 是 |
 | `mcp.save` | `scope: string`, `config: json` | all | 是 |
 | `mcp.reconnect` | `name: string` | view | 是 |

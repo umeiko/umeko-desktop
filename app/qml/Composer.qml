@@ -5,9 +5,11 @@ import QtQuick.Layouts
 Item {
     id: root
     readonly property Item modelAnchor: modelButton
+    readonly property Item packageAnchor: packageButton
     readonly property int queueOffset: queued.height
     height: 157 + Theme.control(33) - 33 + (backend.attachments.length ? Theme.control(48) : 0) + queueOffset
     signal openModels()
+    signal openPackages()
     signal chooseFiles()
     function focusInput() { prompt.forceActiveFocus() }
     function setText(value) { prompt.text = value; prompt.forceActiveFocus(); prompt.cursorPosition = value.length }
@@ -88,6 +90,7 @@ Item {
         Row {
             anchors.right: parent.right; anchors.rightMargin: 14; anchors.bottom: parent.bottom; anchors.bottomMargin: 12; spacing: 13
             Text { visible: Theme.fontScale <= 1.25; text: backend.loading ? backend.toolStatus || I18n.t("正在加载 Pi") : backend.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
+            ActionButton { id: packageButton; objectName: "packageManagerButton"; glyph: "wrench"; quiet: true; width: Theme.control(31); height: Theme.control(31); anchors.verticalCenter: parent.verticalCenter; hint: I18n.t("管理扩展包"); onClicked: root.openPackages() }
             Rectangle {
                 objectName: "sendButton"
                 readonly property bool stopAction: backend.running

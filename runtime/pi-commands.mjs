@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { umekoHelp } from './umeko-control.mjs';
+import { installedPackage } from './package-source.mjs';
 
 export const PI_COMMAND_TOOL = 'run_pi_command';
 export const DESKTOP_PI_PROMPT = 'You are Umeko, powered by Pi embedded in Umeko Desktop. For Pi/MCP/extension management and slash commands, use run_pi_command; it targets this running session and its configuration. Do not invoke a system pi binary or install a separate Pi. Models and credentials are managed in Umeko settings.';
@@ -91,7 +92,7 @@ export async function addMcpFromInput(input) {
   return { path, message: `已添加 ${Object.keys(validated).length} 个 MCP 服务器` };
 }
 
-export function createPiCommandController({ Pi, getRuntime, getConfig, reload, invokeSlash, notify }) {
+export function createPiCommandController({ Pi, getRuntime, getConfig, reload, invokeSlash, notify, emit = () => {} }) {
   const pending = [];
   const info = () => {
     const session = getRuntime().session, manager = session.sessionManager;
@@ -124,7 +125,7 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
     child.on('error', fail);
     child.on('close', code => code === 0 ? done({ ...context, status: 'completed', output }) : fail(new Error(signal?.aborted ? 'Pi 操作已取消' : output || `Pi 命令未成功完成（${code}）`)));
   });
-  const run = async (text, { signal, toolCallId, scope } = {}) => {
+  const run = async (text, { signal, toolCallId, scope, ctx, reason = 'Installed for the current task', audit = { summary: 'Not audited' } } = {}) => {
     if (signal?.aborted) throw new Error('Pi 操作已取消');
     let words = commandWords(text);
     if (words[0] === 'pi') words.shift();
@@ -162,7 +163,28 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
     const local = scope === 'project' || scope === undefined && args.some(a => ['--local','-l'].includes(a));
     const sources = args.filter(a => !['--local','-l'].includes(a));
     if (sources.length !== 1 || !sources[0] || sources[0].startsWith('-')) throw new Error('一次操作一个 npm、Git 或本地扩展来源');
-    const result = await nativeCli([action === 'uninstall' ? 'remove' : action, sources[0], local ? '--approve' : '--no-approve', ...(local ? ['--local'] : [])], signal);
+    if (action === 'install' && getConfig().agent?.installPermission !== 'automatic') {
+      if (!ctx?.ui?.confirm) throw new Error('Installation needs user approval in the desktop. No package was installed.');
+      const accepted = await ctx.ui.confirm('Install Pi package?', `${sources[0]}\n${reason}\n${audit.summary || ''}`);
+      if (!accepted) return { ...info(), status: 'declined', source: sources[0], message: 'The user declined installation. Nothing was installed.' };
+    }
+    if (signal?.aborted) throw new Error('Pi 操作已取消');
+    emit({ type: 'marketplace_progress', operation: action, package: sources[0], state: 'running', message: `${action}: ${sources[0]}` });
+    let result;
+    try {
+      result = await nativeCli([action === 'uninstall' ? 'remove' : action, sources[0], local ? '--approve' : '--no-approve', ...(local ? ['--local'] : [])], signal);
+    } catch (error) {
+      emit({ type: 'marketplace_progress', operation: action, package: sources[0], state: 'error', message: error.message });
+      throw error;
+    }
+    if (action === 'install') {
+      const context = info();
+      const settingsManager = Pi.SettingsManager.create(context.workspace, context.agentDir, { projectTrusted: !getConfig().agent?.safeMode });
+      const manager = new Pi.DefaultPackageManager({ cwd: context.workspace, agentDir: context.agentDir, settingsManager });
+      emit({ type: 'package_install', ...installedPackage(manager, sources[0], local), time: new Date().toISOString(), reason,
+        session: context.sessionId, workspace: context.workspace, scope: local ? 'project' : 'global', audit, installedBy: 'agent' });
+    }
+    emit({ type: 'marketplace_progress', operation: action, package: sources[0], state: 'done', message: `${action} completed: ${sources[0]}` });
     if (signal?.aborted) throw new Error('Pi 操作已取消');
     const applied = session.isIdle ? await slash('/reload') : queue('/reload', toolCallId);
     return { ...result, reload: applied.status || 'completed' };
@@ -194,8 +216,8 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
         promptSnippet: 'Run Pi administration and slash commands in the current Umeko session.',
         promptGuidelines: ['Use run_pi_command instead of shell pi commands or a separate Pi install. For MCP additions use pi mcp add; for extensions use pi install. Report queued commands as queued until completion is reported.'],
         parameters: Type.Object({ command: Type.String({ minLength: 1, maxLength: 16384 }), scope: Type.Optional(Type.Union([Type.Literal('global'), Type.Literal('project')])) }),
-        async execute(id, params, signal) {
-          const result = await run(params.command, { signal, toolCallId: id, scope: params.scope });
+        async execute(id, params, signal, _onUpdate, ctx) {
+          const result = await run(params.command, { signal, toolCallId: id, scope: params.scope, ctx });
           return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { umekoPiCommand: result } };
         },
       });
