@@ -56,7 +56,7 @@ jobs:
         run: bash setup.sh
 
       - name: Node tests
-        run: node --test tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/marketplace.test.mjs tests/marketplace-source.test.mjs tests/marketplace-audit-summary.test.mjs
+        run: node --test tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/marketplace.test.mjs tests/marketplace-source.test.mjs tests/marketplace-audit-summary.test.mjs tests/marketplace-npm-resolution.test.mjs
 
       - name: Python unit tests
         run: |

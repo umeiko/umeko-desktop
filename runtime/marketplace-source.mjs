@@ -8,7 +8,7 @@
 import {execFile} from 'node:child_process';
 import {readFile,writeFile,mkdtemp,rm,readdir} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
-import {join,relative,dirname,resolve} from 'node:path';
+import {join,relative,dirname,resolve,posix,win32} from 'node:path';
 import {tmpdir} from 'node:os';
 import {EnvHttpProxyAgent,fetch as undiciFetch} from 'undici';
 import * as tar from 'tar';
@@ -19,9 +19,14 @@ function runNode(args,cwd,env){return new Promise((resolve,reject)=>{
   if(error)reject(new Error('Could not resolve npm configuration: '+error.message));else resolve(stdout);
  });
 });}
-function npmCliPath(){
- const candidates=[process.env.npm_execpath,join(dirname(process.execPath),'node_modules/npm/bin/npm-cli.js'),join(process.env.APPDATA||'', 'npm/node_modules/npm/bin/npm-cli.js')].filter(Boolean);
- const found=candidates.find(x=>existsSync(x));if(!found)throw new Error('npm-cli.js not found for effective registry configuration');return found;
+export function resolveNpmCliPath({execPath=process.execPath,env=process.env,platform=process.platform,exists=existsSync}={}){
+ const paths=platform==='win32'?win32:posix;
+ const nodeDir=paths.dirname(execPath);
+ const candidates=[env.npm_execpath,
+  paths.join(nodeDir,'node_modules/npm/bin/npm-cli.js'),
+  paths.join(nodeDir,'../lib/node_modules/npm/bin/npm-cli.js'),
+  env.APPDATA&&paths.join(env.APPDATA,'npm/node_modules/npm/bin/npm-cli.js')].filter(Boolean);
+ const found=candidates.find(candidate=>exists(candidate));if(!found)throw new Error('npm-cli.js not found for effective registry configuration');return found;
 }
 
 export function createRegistryClient({agent={},cwd=process.cwd(),fetch:injectedFetch}={}) {
@@ -31,7 +36,7 @@ export function createRegistryClient({agent={},cwd=process.cwd(),fetch:injectedF
   if(agent.npmRegistry)env.npm_config_registry=agent.npmRegistry;
   if(agent.npmUserconfig)env.npm_config_userconfig=agent.npmUserconfig;
   if(agent.npmCafile)env.npm_config_cafile=agent.npmCafile;
-  const args=[npmCliPath(),'config','list','--json'];
+  const args=[resolveNpmCliPath(),'config','list','--json'];
   const config=JSON.parse(await runNode(args,cwd,env));
   NPM_REGISTRY=String(agent.npmRegistry||env.npm_config_registry||env.NPM_CONFIG_REGISTRY||config.registry||'https://registry.npmjs.org').replace(/\/$/,'');
   const cafile=agent.npmCafile||env.npm_config_cafile||env.NPM_CONFIG_CAFILE||config.cafile;
