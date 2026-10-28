@@ -4,7 +4,7 @@ import { dirname, basename, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 
-export const builtins = ["codemode", "tool-search", "mcp", "chatbox", "pi-commands", "umeko-control"];
+export const builtins = ["codemode", "tool-search", "mcp", "chatbox", "pi-commands", "umeko-control", "subagents"];
 const target = entry => entry.replace(/^[!+-]/, "");
 const canonical = (value, base) => value.startsWith("builtin:") ? value : resolve(base, value);
 export function extensionName(path, metadata = {}) {

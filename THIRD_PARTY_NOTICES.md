@@ -20,6 +20,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 Dependencies retain their license files in the runtime's node_modules directory. PyInstaller uses GPLv2 with its bootloader exception; application packaging is permitted by that exception. Locally drawn SVG interface icons are part of this project. The application avatar icon was supplied by the user.
 
+## Pi subagents
+
+Release bundles include the unmodified npm package `@gotgenes/pi-subagents` 25.0.5 (MIT) in the runtime's `node_modules` directory. Official source: https://github.com/gotgenes/pi-packages/tree/pi-subagents-v25.0.5/packages/pi-subagents . The full upstream copyright and permission notice is included in `licenses/pi-subagents-MIT.txt` and retained with the package.
+
 ## Pygments 2.19.2
 
 Syntax tokenization uses Pygments, under its BSD 2-Clause license. Project: https://pygments.org/ . Authors: https://github.com/pygments/pygments/blob/2.19.2/AUTHORS .

@@ -11,3 +11,7 @@ MCP：`mcp.get` 的 `scope` 是 `global` 或 `project`，返回本实例文件�
 `mcp.reconnect` 传 `name` 重新连接。需要登录/登出等原生 MCP 命令时用当前实例的 `run_pi_command`。异步结果在 `status.get` 和配置查询中核实；含认证信息的字段不会由管理工具原样返回。项目范围必须有实际工作目录。
 
 自定义供应商插件与这些 Pi 扩展不同，见 plugins.md。主题与 Pi 终端配色不同，见 themes.md。
+
+## 子 Agent
+
+可把互不依赖、范围清楚的任务交给内置 `subagent` 工具。子 Agent 类型由 Agent 在项目的 `.pi/agents/*.md` 中按需定义和维护。任务可以在前台等待结果，也可以放到后台运行，后台默认最多同时运行 4 个；用 `steer_subagent` 补充当前任务，用 `subagent` 的 `resume` 接着处理已有任务。主 Agent 负责汇总结果并给出最终答复。
