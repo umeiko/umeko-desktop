@@ -23,7 +23,7 @@ def gear():
     return '<path d="' + ' '.join(path) + 'Z"/><circle cx="12" cy="12" r="3.2"/>'
 
 paths = {
-    "pin": '<path d="m16 3 5 5-4 1-3 5-4 1-3-3 1-4 5-3ZM8 15l-5 6"/>',
+    "pin": '<g transform="rotate(35 12 12)"><rect x="7" y="3" width="10" height="4" rx="1"/><path d="M9 7v4l-3 4h12l-3-4V7M12 15v6"/></g>',
     "archive": '<rect x="3" y="3" width="18" height="5" rx="1"/><path d="M5 8v13h14V8M9 12h6"/>',
     "download": '<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>',
     "file": '<path d="M14 2H5v20h14V7Zm0 0v5h5M8 12h8m-8 4h6"/>',

@@ -21,8 +21,8 @@ Item {
         flick.cancelFlick()
         flick.contentY = Math.max(0, Math.min(Math.max(0, flick.contentHeight - flick.height), flick.contentY - delta))
     }
-    onTabChanged: activeInlineScroll = null
-    onVisibleChanged: if (!visible) activeInlineScroll = null
+    onTabChanged: { activeInlineScroll = null; if (providerPopup) providerPopup.close() }
+    onVisibleChanged: if (!visible) { activeInlineScroll = null; if (providerPopup) providerPopup.close() }
     TapHandler {
         onPressedChanged: if (pressed && root.activeInlineScroll) {
             const target = root.activeInlineScroll
@@ -43,11 +43,11 @@ Item {
         providerModels.load(p ? p.models : [])
         providerProtocol.currentIndex = p && p.api === "anthropic" ? 1 : 0
         editingProvider = true
+        providerPopup.open()
     }
     function toggleProvider(p) {
         if (editingProvider && editId === p.id) {
-            editingProvider = false
-            providerKey.clear()
+            providerPopup.close()
         } else editProvider(p)
     }
     function openMappingProvider(identifier) {
@@ -166,36 +166,6 @@ Item {
                                 editing: root.editingProvider; editingId: root.editId
                                 onEditProvider: provider => root.toggleProvider(provider)
                             }
-                            ColumnLayout {
-                                id: providerEditor; objectName: "providerEditor"
-                                parent: root.editingCommon ? commonProviderContent : apiProviderContent
-                                visible: root.editingProvider; Layout.fillWidth: true; spacing: 15
-                                Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
-                                RowLayout { Layout.fillWidth: true; spacing: 16
-                                    ColumnLayout { Layout.fillWidth: true; spacing: 8
-                                        Text { text: I18n.t("供应商名称"); color: Theme.ink; font.pixelSize: Theme.font(11) }
-                                        InputField { id: providerName; objectName: "providerName"; Layout.fillWidth: true; placeholderText: I18n.t("例如：我的模型服务") }
-                                    }
-                                    ColumnLayout { Layout.preferredWidth: 190; Layout.fillWidth: false; spacing: 8
-                                        Text { text: I18n.t("API 协议"); color: Theme.ink; font.pixelSize: Theme.font(11) }
-                                        Picker { id: providerProtocol; Layout.fillWidth: true; model: [I18n.t("OpenAI 兼容"), I18n.t("Anthropic 兼容")] }
-                                    }
-                                }
-                                ColumnLayout { Layout.fillWidth: true; spacing: 8
-                                    RowLayout { Text { text: "Base URL"; color: Theme.ink; font.pixelSize: Theme.font(11) } HelpButton { help: I18n.t("OpenAI 兼容地址需包含服务的版本路径，例如 /v1；Anthropic 地址可填根路径或 /v1。") } }
-                                    InputField { id: providerUrl; objectName: "providerUrl"; Layout.fillWidth: true; placeholderText: I18n.t("https://你的服务地址/v1") }
-                                }
-                                ColumnLayout { Layout.fillWidth: true; spacing: 8
-                                    RowLayout { Text { text: "API Key"; color: Theme.ink; font.pixelSize: Theme.font(11) } HelpButton { help: I18n.t("密钥使用系统凭据保护保存。编辑供应商时留空可保持已有密钥。") } }
-                                    InputField { id: providerKey; objectName: "providerKey"; Layout.fillWidth: true; echoMode: TextInput.Password; placeholderText: I18n.t("输入 API Key") }
-                                }
-                                ProviderModels { id: providerModels; objectName: "providerModelsEditor"; Layout.fillWidth: true }
-                                RowLayout { Layout.fillWidth: true
-                                    Item { Layout.fillWidth: true }
-                                    ActionButton { text: I18n.t("收起"); quiet: true; onClicked: root.editingProvider = false }
-                                    ActionButton { objectName: "saveProviderButton"; text: I18n.t("保存供应商"); primary: true; onClicked: { if (backend.saveProvider(root.editId, providerName.text, providerProtocol.currentIndex === 0 ? "openai" : "anthropic", providerUrl.text, providerKey.text, providerModels.json())) { providerKey.clear(); root.editingProvider = false } } }
-                                }
-                            }
                         }
                     }
                 }
@@ -300,6 +270,59 @@ Item {
                 AppearanceSettings { visible: root.tab === 5; width: parent.width }
                 AboutPage { visible: root.tab === 6; width: parent.width }
                 Item { width: 1; height: 12 }
+            }
+        }
+    }
+
+    PidPopup {
+        id: providerPopup; objectName: "providerEditorPopup"; parent: Overlay.overlay
+        width: Math.min(Theme.control(760), parent.width - 40)
+        height: Math.min(parent.height - 40, providerEditor.implicitHeight + providerHeader.implicitHeight + providerFooter.implicitHeight + padding * 2 + 60)
+        x: (parent.width - width) / 2; y: (parent.height - height) / 2
+        onOpened: providerName.forceActiveFocus()
+        onClosed: { providerPopup.motion.snap(); root.editingProvider = false; providerKey.clear() }
+        contentItem: ColumnLayout {
+            spacing: 20
+            RowLayout {
+                id: providerHeader; Layout.fillWidth: true; spacing: 16
+                Text { Layout.fillWidth: true; text: root.editId ? I18n.t("编辑供应商与模型") : I18n.t("添加供应商"); color: Theme.ink; font.pixelSize: Theme.font(18); font.weight: Font.DemiBold; wrapMode: Text.Wrap }
+                ActionButton { objectName: "closeProviderEditorButton"; glyph: "x"; quiet: true; hint: I18n.t("关闭"); onClicked: providerPopup.close() }
+            }
+            ScrollView {
+                id: providerFormScroll; objectName: "providerFormScroll"
+                Layout.fillWidth: true; Layout.fillHeight: true
+                clip: true; contentWidth: availableWidth; contentHeight: providerEditor.implicitHeight
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                ColumnLayout {
+                    id: providerEditor; objectName: "providerEditor"
+                    width: providerFormScroll.availableWidth; spacing: 18
+                    RowLayout { Layout.fillWidth: true; spacing: 16
+                        ColumnLayout { Layout.fillWidth: true; spacing: 8
+                            Text { text: I18n.t("供应商名称"); color: Theme.ink; font.pixelSize: Theme.font(11) }
+                            InputField { id: providerName; objectName: "providerName"; Layout.fillWidth: true; placeholderText: I18n.t("例如：我的模型服务") }
+                        }
+                        ColumnLayout { Layout.preferredWidth: Theme.control(220); Layout.fillWidth: false; spacing: 8
+                            Text { text: I18n.t("API 协议"); color: Theme.ink; font.pixelSize: Theme.font(11) }
+                            Picker { id: providerProtocol; Layout.fillWidth: true; model: [I18n.t("OpenAI 兼容"), I18n.t("Anthropic 兼容")] }
+                        }
+                    }
+                    ColumnLayout { Layout.fillWidth: true; spacing: 8
+                        RowLayout { Text { text: "Base URL"; color: Theme.ink; font.pixelSize: Theme.font(11) } HelpButton { help: I18n.t("OpenAI 兼容地址需包含服务的版本路径，例如 /v1；Anthropic 地址可填根路径或 /v1。") } }
+                        InputField { id: providerUrl; objectName: "providerUrl"; Layout.fillWidth: true; placeholderText: I18n.t("https://你的服务地址/v1") }
+                    }
+                    ColumnLayout { Layout.fillWidth: true; spacing: 8
+                        RowLayout { Text { text: "API Key"; color: Theme.ink; font.pixelSize: Theme.font(11) } HelpButton { help: I18n.t("密钥使用系统凭据保护保存。编辑供应商时留空可保持已有密钥。") } }
+                        InputField { id: providerKey; objectName: "providerKey"; Layout.fillWidth: true; echoMode: TextInput.Password; placeholderText: I18n.t("输入 API Key") }
+                    }
+                    ProviderModels { id: providerModels; objectName: "providerModelsEditor"; Layout.fillWidth: true }
+                }
+            }
+            RowLayout {
+                id: providerFooter; Layout.fillWidth: true; spacing: 12
+                Item { Layout.fillWidth: true }
+                ActionButton { objectName: "cancelProviderButton"; text: I18n.t("取消"); quiet: true; onClicked: providerPopup.close() }
+                ActionButton { objectName: "saveProviderButton"; text: I18n.t("保存供应商"); primary: true; onClicked: { if (backend.saveProvider(root.editId, providerName.text, providerProtocol.currentIndex === 0 ? "openai" : "anthropic", providerUrl.text, providerKey.text, providerModels.json())) providerPopup.close() } }
             }
         }
     }

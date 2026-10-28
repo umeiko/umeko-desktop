@@ -133,10 +133,12 @@ try:
     assert within(find('editProvider_' + provider['id']), find('commonProvidersSection'))
     assert not within(find('editProvider_' + provider['id']), find('apiProvidersSection'))
     click('editProvider_' + provider['id'])
-    assert within(find('providerEditor'), find('commonProvidersSection'))
+    editor_popup = window.findChild(QObject, 'providerEditorPopup')
+    assert editor_popup.property('visible')
+    assert within(find('providerEditor'), editor_popup.property('contentItem'))
     assert find('providerKey').property('text') == ''
     assert find('providerName').property('text') == 'Codex'
-    click('editProvider_' + provider['id'])
+    click('closeProviderEditorButton'); QTest.qWait(350)
     click('addCommonProviderButton'); click('commonProvider_codex')
     find('commonProviderKey').setProperty('text', 'fixture-key-2'); click('confirmCommonProvider')
     assert backend.store.data['providers'][-1]['name'] == 'Codex(2)'

@@ -211,9 +211,10 @@ ApplicationWindow {
                 Column { anchors.centerIn: parent; spacing: 12; Glyph { name: "folder"; width: Theme.icon(26); height: Theme.icon(26); anchors.horizontalCenter: parent.horizontalCenter } Text { text: I18n.t("打开项目文件夹"); color: Theme.accent; font.pixelSize: Theme.font(12) } }
             }
             Item {
-                id: apiStatus; x: 26; anchors.bottom: settingsButton.top; anchors.bottomMargin: 9; width: parent.width - 52; height: 29
-                Rectangle { x: 1; y: 10; width: 6; height: 6; radius: 3; color: backend.serverRunning ? "#72a783" : "#a6ada5" }
-                Text { x: 17; y: 5; width: Math.max(0, apiPort.x - x - 8); elide: Text.ElideRight; text: backend.serverRunning ? I18n.t("API 代理运行中") : I18n.t("API 代理未启动"); color: Theme.muted; font.pixelSize: Theme.font(10) }
+                id: apiStatus; objectName: "apiProxySidebarStatus"; visible: backend.serverRunning
+                x: 26; anchors.bottom: settingsButton.top; anchors.bottomMargin: 9; width: parent.width - 52; height: 29
+                Rectangle { x: 1; y: 10; width: 6; height: 6; radius: 3; color: "#72a783" }
+                Text { x: 17; y: 5; width: Math.max(0, apiPort.x - x - 8); elide: Text.ElideRight; text: I18n.t("API 代理运行中"); color: Theme.muted; font.pixelSize: Theme.font(10) }
                 Text { id: apiPort; anchors.right: parent.right; y: 5; text: ":" + backend.config.server.port; color: Theme.muted; font.pixelSize: Theme.font(10); font.family: "Consolas" }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: window.settings(1) }
             }
@@ -595,7 +596,7 @@ ApplicationWindow {
         onConfigure: { window.settings(0) }
     }
     ApprovalDialog { parent: Overlay.overlay }
-    SidebarMenus { id: sidebarMenus; parent: Overlay.overlay; anchors.fill: parent }
+    SidebarMenus { id: sidebarMenus; objectName: "sidebarMenus"; parent: Overlay.overlay; anchors.fill: parent }
     Rectangle {
         z: 100; anchors.horizontalCenter: mainArea.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 27
         width: Math.min(toastLabel.implicitWidth + 40, 750); height: toastLabel.implicitHeight + 24; radius: 10

@@ -16,6 +16,17 @@ Item {
         if (steering) backend.steer(prompt.text)
         else if (prompt.text.trim().length || backend.attachments.length) backend.send(prompt.text)
     }
+    function handleEnter(event) {
+        if (prompt.inputMethodComposing) { event.accepted = false; return }
+        if (event.modifiers & Qt.AltModifier) {
+            const position = prompt.selectionStart
+            prompt.remove(position, prompt.selectionEnd)
+            prompt.insert(position, "\n")
+            prompt.cursorPosition = position + 1
+            event.accepted = true
+        } else if (event.modifiers & Qt.ShiftModifier) event.accepted = false
+        else { sendMessage(); event.accepted = true }
+    }
     Connections { target: backend; function onEditorText(text) { root.setText(text) } }
     QueuedMessages { id: queued; width: parent.width }
     Rectangle { x: 0; y: root.queueOffset + 6; width: parent.width; height: parent.height - root.queueOffset; radius: 17; color: "#090f0a"; opacity: Theme.dark ? 0.1 : 0.035 }
@@ -50,8 +61,8 @@ Item {
                 background: null
                 onTextChanged: backend.setDraft(text)
                 Keys.onPressed: event => { if (event.matches(StandardKey.Paste) && backend.pasteAttachments()) event.accepted = true }
-                Keys.onReturnPressed: event => { if (!(event.modifiers & Qt.ShiftModifier) && !inputMethodComposing) { root.sendMessage(); event.accepted = true } else event.accepted = false }
-                Keys.onEnterPressed: event => { if (!(event.modifiers & Qt.ShiftModifier) && !inputMethodComposing) { root.sendMessage(); event.accepted = true } else event.accepted = false }
+                Keys.onReturnPressed: event => root.handleEnter(event)
+                Keys.onEnterPressed: event => root.handleEnter(event)
             }
         }
         Row {

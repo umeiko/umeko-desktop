@@ -21,7 +21,7 @@ Item {
         else backend.renameSession(target.id, renameField.text)
         renamePopup.close()
     }
-    component RowMenu: FloatingMenu { width: 212 }
+    component RowMenu: FloatingMenu {}
 
     RowMenu {
         id: sessionMenu; objectName: "sessionContextMenu"
