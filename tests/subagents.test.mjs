@@ -55,3 +55,36 @@ test("community events and foreground progress use existing tool events and dura
     assert.equal(new Set(events.map(e => e.id)).size, 1);
   } finally { adapter.dispose(); }
 });
+
+test("resuming through the tool persists an alias to its original history row", async () => {
+  const entries = [], handlers = new Map();
+  let execute, first = true;
+  let record = { id: "a", type: "Explore", status: "running", toolUses: 0 };
+  const adapter = createSubagentExtension({ emit() {}, loadPackage: async () => ({
+    getService: () => ({ getRecord: () => record }),
+    factory: pi => pi.registerTool({ name: "subagent", execute: async () => {
+      record = { ...record, status: "running" };
+      handlers.get(first ? "subagents:started" : "subagents:resuming")({ id: "a", type: "Explore" });
+      record = { ...record, status: "completed", result: "Finished" };
+      handlers.get(first ? "subagents:completed" : "subagents:resumed")({ id: "a", type: "Explore" });
+      first = false;
+      return { content: [] };
+    } }),
+  }) });
+  try {
+    await adapter.extension({ events: { on: (name, handler) => { handlers.set(name, handler); return () => {}; } },
+      on() {}, registerTool: tool => { execute = tool.execute; },
+      appendEntry: (customType, data) => entries.push({ customType, data }) });
+    const ctx = { sessionManager: { getBranch: () => [{ id: "owner", type: "message", message: {
+      content: [{ type: "toolCall", id: "launch" }] } }] } };
+    await execute("launch", { prompt: "Inspect" }, undefined, undefined, ctx);
+    await execute("resume", { prompt: "Continue", resume: "a" }, undefined, undefined, ctx);
+    const link = entries.find(e => e.customType === "umeko-subagent-link");
+    assert.equal(link.data.toolCallId, "resume");
+    assert.equal(link.data.subagentId, "subagent:a");
+    const final = entries.at(-1).data;
+    assert.equal(final.toolCallId, "launch");
+    assert.equal(final.ownerEntryId, "owner");
+    assert.equal(final.tool.subagent.continued, true);
+  } finally { adapter.dispose(); }
+});
