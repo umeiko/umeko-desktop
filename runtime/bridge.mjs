@@ -7,7 +7,7 @@ import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
 import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
-import { createSubagentExtension } from "./subagents.mjs";
+import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
@@ -356,7 +356,7 @@ async function state() {
   const characters = candidates.reduce((sum, e) => sum + (typeof e.message.content === "string" ? e.message.content.length : (Array.isArray(e.message.content) ? e.message.content : []).reduce((n, block) => n + (block.text || block.thinking || "").length, 0)), 0);
   const paged = candidates.length > 256 || characters > 1024 * 1024;
   const selected = paged ? candidates.slice(-128) : candidates;
-  const messages = selected.map(e => {
+  const messages = projectSubagents(branch, selected.map(e => {
     const message = e.message;
     const row = {role: message.role, text: textOf(message.content) || (message.stopReason === "aborted" ? "" : message.errorMessage || ""), error: message.stopReason !== "aborted" && !!message.errorMessage, entryId:e.id, timestamp:message.timestamp || e.timestamp};
     if (message.role === "assistant") row.stopReason = message.stopReason || "";
@@ -374,7 +374,7 @@ async function state() {
       return [row, ...nested];
     });
     return row;
-  }).filter(row => row.text || row.thinking || row.tools?.length);
+  }).filter(row => row.text || row.thinking || row.tools?.length));
   const list = await Pi.SessionManager.listAll(config.sessionDir);
   const file = manager.getSessionFile();
   emit({ type: "state", session: { id: manager.getSessionId(), file: file && existsSync(file) ? file : undefined,

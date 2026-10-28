@@ -1,6 +1,46 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createSubagentExtension, subagentTool } from "../runtime/subagents.mjs";
+import { createSubagentExtension, projectSubagents, subagentTool } from "../runtime/subagents.mjs";
+
+test("state projection preserves nested children, latest snapshots and continuation ownership", () => {
+  const call = (id, name = "subagent") => ({ type: "toolCall", id, name, arguments: {} });
+  const message = (id, content) => ({ id, type: "message", message: { role: "assistant", content } });
+  const snapshot = (id, toolCallId, status, extra = {}) => ({ type: "custom", customType: "umeko-subagent",
+    data: { version: 1, toolCallId, ...extra, tool: { id: "subagent:" + id, name: "subagent", state: status,
+      result: status === "error" ? "Provider failed" : "", arguments: { mode: "background" },
+      subagent: { id, status, isBackground: true, toolUses: status === "error" ? 2 : 0 } } } });
+  const branch = [
+    snapshot("unowned", undefined, "running"),
+    message("nested-owner", [call("code-1", "code_execution")]),
+    snapshot("nested", "code-1/worker-1", "running"),
+    message("direct-owner", [call("direct")]), snapshot("direct", "direct", "running"),
+    message("explicit-owner", [{ type: "text", text: "Explicit owner" }]),
+    message("later", [call("resume"), call("ordinary"), call("read", "read")]),
+    snapshot("explicit", "unrelated", "error", { ownerEntryId: "explicit-owner" }),
+    snapshot("nested", "code-1/worker-1", "error"),
+    { type: "custom", customType: "umeko-subagent-link", data: { version: 1,
+      toolCallId: "resume", subagentId: "subagent:nested" } },
+    snapshot("direct", "resume", "error"),
+    message("fallback-owner", [{ type: "text", text: "Fallback" }]),
+    snapshot("fallback", undefined, "error"),
+  ];
+  const messages = branch.filter(entry => entry.type === "message").map(entry => ({
+    role: "assistant", entryId: entry.id, text: "",
+    tools: entry.message.content.filter(block => block.type === "toolCall").map(block => ({ id: block.id, name: block.name })),
+  }));
+  assert.equal(projectSubagents(branch, messages), messages);
+  assert.deepEqual(messages[0].tools.map(tool => tool.id), ["code-1", "subagent:nested"]);
+  assert.equal(messages[0].tools[1].state, "error");
+  assert.equal(messages[0].tools[1].subagent.toolUses, 2);
+  assert.equal(messages[0].tools[1].result, "Provider failed");
+  assert.deepEqual(messages[1].tools.map(tool => tool.id), ["subagent:direct"]);
+  assert.equal(messages[1].tools[0].state, "error");
+  assert.deepEqual(messages[2].tools.map(tool => tool.id), ["subagent:explicit"]);
+  assert.deepEqual(messages[3].tools.map(tool => tool.id), ["ordinary", "read"]);
+  assert.deepEqual(messages[4].tools.map(tool => tool.id), ["subagent:fallback"]);
+  assert.equal(messages.flatMap(row => row.tools).some(tool => tool.id === "subagent:unowned"), false);
+  assert.equal(branch[8].data.tool.path, undefined);
+});
 
 test("one stable row covers queue, progress, continuation and a final error", () => {
   const event = { id: "child-1", type: "Explore", description: "Compare files", isBackground: true };

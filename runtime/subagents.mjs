@@ -8,6 +8,55 @@ const channels = ["created", "started", "resuming", "completed", "failed", "resu
 const active = new Set(["queued", "running"]);
 const textOf = content => (content || []).filter(item => item.type === "text").map(item => item.text).join("\n");
 
+export function projectSubagents(branch, messages) {
+  const owners = new Map(messages.filter(row => row.role === "assistant").map(row => [row.entryId, row]));
+  const calls = new Map();
+  for (const entry of branch) {
+    if (entry.type !== "message" || entry.message?.role !== "assistant") continue;
+    const owner = owners.get(entry.id);
+    if (!owner || !Array.isArray(entry.message.content)) continue;
+    for (const call of entry.message.content) if (call.type === "toolCall") calls.set(call.id, owner);
+  }
+  const callOwner = id => {
+    if (typeof id !== "string") return;
+    if (calls.has(id)) return calls.get(id);
+    // code_execution's nested subagent calls retain the outer tool-call prefix.
+    return [...calls.keys()].filter(call => id.startsWith(call + "/"))
+      .sort((a, b) => b.length - a.length).map(call => calls.get(call))[0];
+  };
+  const launches = new Set(branch.filter(entry => entry.type === "custom" &&
+    entry.customType === "umeko-subagent-link" && entry.data?.version === 1 &&
+    typeof entry.data.toolCallId === "string").map(entry => entry.data.toolCallId));
+  const children = new Map();
+  let previousAssistant;
+  for (const entry of branch) {
+    if (entry.type === "message" && entry.message?.role === "assistant") {
+      previousAssistant = owners.get(entry.id);
+      continue;
+    }
+    const data = entry.data, snapshot = data?.tool;
+    if (entry.type !== "custom" || entry.customType !== "umeko-subagent" || data?.version !== 1 ||
+        snapshot?.name !== "subagent" || typeof snapshot.id !== "string" ||
+        !snapshot.subagent || typeof snapshot.subagent !== "object") continue;
+    let child = children.get(snapshot.id);
+    if (!child) {
+      const owner = owners.get(data.ownerEntryId) || callOwner(data.toolCallId) || previousAssistant;
+      if (!owner) continue;
+      const tools = owner.tools ||= [];
+      const position = tools.findIndex(tool => tool.id === data.toolCallId);
+      child = {};
+      children.set(snapshot.id, child);
+      tools.splice(position < 0 ? tools.length : position, 0, child);
+    }
+    Object.assign(child, snapshot, { arguments: { ...snapshot.arguments }, subagent: { ...snapshot.subagent },
+      path: snapshot.path || "" });
+    if (typeof data.toolCallId === "string") launches.add(data.toolCallId);
+  }
+  for (const row of messages) if (row.tools) row.tools = row.tools.filter(tool =>
+    !(tool.name === "subagent" && launches.has(tool.id) && !children.has(tool.id)));
+  return messages;
+}
+
 export function subagentTool(previous, channel, event, record = {}, invocation = {}) {
   const old = previous?.subagent || {};
   const continuing = channel === "resuming";
