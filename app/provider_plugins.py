@@ -75,7 +75,9 @@ class ProviderPlugins(QObject):
 
     def _record(self, provider_id):
         record = next((p for p in self.c.store.data["providers"] if p["id"] == provider_id and p["api"] == "plugin"), None)
-        if not record: raise ProviderError("自定义供应商不存在")
+        if not record:
+            raise ProviderError("参数 id 需要供应商/账号 ID（provider/account ID），不能使用插件包 ID；"
+                                "包操作使用 plugin 参数。请通过 plugins.list 查看 accounts[].id 和 packages[].id")
         return record
 
     def _package_path(self, record):
@@ -88,6 +90,17 @@ class ProviderPlugins(QObject):
     def _package(self, record):
         path = self._package_path(record)
         return path, validate_folder(path)
+
+    def require_package(self, plugin_id, version):
+        message = ("参数 plugin 需要已安装的插件包 ID（package ID），不能使用供应商/账号 ID 或 ZIP 文件名；"
+                   "参数 version 需要该包的已安装版本。请通过 plugins.list 查看 packages[].id 和 packages[].version；"
+                   "账号操作的 id 使用 accounts[].id")
+        try:
+            path = self._package_path({"pluginId": plugin_id, "pluginVersion": version})
+        except ProviderError:
+            raise ProviderError(message) from None
+        if not path.is_dir(): raise ProviderError(message)
+        return path
 
     def _accounts(self, plugin_id, version):
         return [p for p in self.c.store.data["providers"] if p.get("api") == "plugin"
@@ -127,6 +140,7 @@ class ProviderPlugins(QObject):
     def addAccount(self, plugin_id, version):
         try:
             with self.lock:
+                self.require_package(plugin_id, version)
                 _, (manifest, _, _) = self._package({"pluginId": plugin_id, "pluginVersion": version})
                 previous = self.c.store.data["providers"]
                 self.c.store.data["providers"] = previous + [self._new_account(manifest)]
@@ -322,7 +336,7 @@ class ProviderPlugins(QObject):
             if not staging.is_symlink() and staging.resolve().parent == (self.root / "staging").resolve():
                 shutil.rmtree(staging, ignore_errors=True)
 
-    @Slot(str, str)
+    @Slot(str, str, result=bool)
     def login(self, provider_id, raw):
         try:
             _, (manifest, _, _) = self._package(self._record(provider_id))
@@ -343,12 +357,19 @@ class ProviderPlugins(QObject):
                 self._secrets(provider_id).set("credentials", credentials)
                 return {"models": models, "label": str(details.get("label", "已登录"))[:100]}
             self._submit(provider_id, "login", authenticate, {f["key"]: credentials[f["key"]] for f in fields if f.get("secret")})
-        except (ValueError, RuntimeError, OSError) as exc: self.c.toast.emit(str(exc))
+            return True
+        except (ValueError, RuntimeError, OSError) as exc:
+            self.c.toast.emit(str(exc))
+            return False
 
-    @Slot(str)
+    @Slot(str, result=bool)
     def refreshModels(self, provider_id):
-        try: self._submit(provider_id, "refresh", lambda client: {"models": client.list_models(refresh=True)})
-        except (ProviderError, OSError) as exc: self.c.toast.emit(str(exc))
+        try:
+            self._submit(provider_id, "refresh", lambda client: {"models": client.list_models(refresh=True)})
+            return True
+        except (ProviderError, OSError) as exc:
+            self.c.toast.emit(str(exc))
+            return False
 
     def _models(self, record, rows):
         if not isinstance(rows, list) or len(rows) > 2000: raise ProviderError("供应商返回的模型列表无效")
@@ -406,6 +427,7 @@ class ProviderPlugins(QObject):
             self._notify()
             self.c.toast.emit("可用模型已更新")
         except (ProviderError, ValueError, OSError) as exc:
+            payload["error"] = str(exc)
             self.status[provider_id] = str(exc)
             self.changed.emit()
             self.c.toast.emit(str(exc))
@@ -502,7 +524,7 @@ class ProviderPlugins(QObject):
     def uninstall(self, plugin_id, version):
         try:
             with self.lock:
-                path = self._package_path({"pluginId": plugin_id, "pluginVersion": version})
+                path = self.require_package(plugin_id, version)
                 accounts = self._accounts(plugin_id, version)
                 for account in accounts: self._idle(account["id"])
                 secrets = [self._secrets(p["id"]) for p in accounts]

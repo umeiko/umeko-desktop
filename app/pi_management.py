@@ -55,6 +55,7 @@ def prepare_factory(root, directory, agent, workspace):
 
 class PiManagement(QObject):
     changed = Signal()
+    operationFinished = Signal(str, object)
 
     def __init__(self, controller):
         super().__init__(controller)
@@ -286,6 +287,11 @@ class PiManagement(QObject):
 
     def _finished(self, name, result):
         if not name.startswith("pi-admin:") or self.controller._closing: return
+        outcome = dict(result)
+        self._apply_finished(name, outcome)
+        self.operationFinished.emit(name, outcome)
+
+    def _apply_finished(self, name, result):
         action, c = name.split(":", 1)[1], self.controller
         self._busy = False
         if action == "factory": c._kernel_busy = False
@@ -334,5 +340,6 @@ class PiManagement(QObject):
                 c.changed.emit()
                 self.scan()
         except (OSError, RuntimeError, ValueError) as exc:
+            result.update(ok=False, value=str(exc))
             self._status = str(exc); self.changed.emit(); c.toast.emit(self._status)
             if action == "factory": c.changed.emit()

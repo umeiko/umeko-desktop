@@ -11,7 +11,7 @@
 {"operation":"plugins.list"}
 ```
 
-导入成功会安装包并创建账号，返回 `createdProviderIds`。插件及账号会立刻出现在 UI 中；随后 `plugins.login` 传账号 `id` 和与 manifest 一致的 `fields` 对象。该操作是后台工作，返回 accepted 后查看 `status.get` 或 `plugins.list` 的 busy/status/models，确认成功后才能选模型。
+导入成功会安装包并创建账号，返回 `createdProviderIds`。插件及账号会立刻出现在 UI 中；随后 `plugins.login` 传账号 `id` 和与 manifest 一致的 `fields` 对象。该操作是后台工作，返回 `accepted` 和 `jobId` 后，用 `jobs.get` 的 `id` 查询至 `done` 或 `failed`，确认成功后才能选模型。`plugins.list` 中的 `fields` 保留字段名、类型和 secret 标记，秘密字段值不会返回。
 
 - `plugins.addAccount`：从已安装包新增账号，传 `plugin`、`version`。
 - `plugins.getConfig`：按账号 `id` 读取脱敏配置。
