@@ -25,7 +25,7 @@ Popup {
     onAboutToShow: { desiredOpen = true; modelSearch.clear() }
     onAboutToHide: { desiredOpen = false; focus = false; dismissed() }
     onOpened: modelSearch.forceActiveFocus()
-    onClosed: motion.snap()
+    onClosed: { motion.snap(); dismissed() }
     PidMotion { id: motion; targetRect: root.desiredOpen ? Qt.rect(0,-root.fullHeight-8,root.fullWidth,root.fullHeight) : Qt.rect(0,-root.buttonHeight-8,root.buttonWidth,root.buttonHeight) }
     contentItem: Item {
         clip: true

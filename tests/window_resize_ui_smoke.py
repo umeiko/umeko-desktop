@@ -164,6 +164,10 @@ try:
     assert prompt.hasActiveFocus()
     QTest.keyClick(window, Qt.Key_B)
     assert prompt.property('text').lower() == 'ab'
+    QTest.qWait(1100)
+    assert prompt.hasActiveFocus(), 'focus lost after exit animation'
+    QTest.keyClick(window, Qt.Key_C)
+    assert prompt.property('text').lower() == 'abc'
     assert not warnings, "\n".join(warnings)
     print("WINDOW_RESIZE_UI_OK: eight directions, restore, preview width and temporary sidebar collapse, native web insets, popup typing focus")
 finally:
