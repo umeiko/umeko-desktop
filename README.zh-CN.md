@@ -14,6 +14,8 @@
 
 [![Desktop packages](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml/badge.svg)](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/umeiko/umeko-desktop?color=4f74c8)](https://github.com/umeiko/umeko-desktop/releases/latest)
+[![欢迎 PR](https://img.shields.io/badge/PRs-welcome-2ea44f?logo=github)](https://github.com/umeiko/umeko-desktop/compare)
+[![欢迎 Issue](https://img.shields.io/badge/Issues-welcome-4f74c8?logo=github)](https://github.com/umeiko/umeko-desktop/issues/new)
 
 <a id="downloads"></a>
 
@@ -34,22 +36,26 @@
 
 Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原生桌面应用。让聊天围绕项目组织，让 Agent 的工作过程清晰可见，也让你自由选择模型服务。使用 Python 与 Qt Quick 构建，支持 Windows、macOS 和 Linux。
 
-![八奈见主题下的项目与会话](docs/images/chat-yanami.png)
+![纯白主题下的项目与会话 · 中文界面](docs/images/chat-white-zh.png)
 
 <details>
-<summary>展开看看 · 思考过程、工具记录与自定义供应商</summary>
+<summary>展开看看 · 工具记录、子智能体与自定义供应商</summary>
 
 **过程看得见，阅读不打断。** 思考和连续工具调用可以逐级展开，点击文件名即可复制路径。
 
-![深色主题下展开的思考与工具过程](docs/images/chat-process.png)
+![纯白主题下展开的思考与工具过程 · 中文界面](docs/images/process-white-zh.png)
+
+**和一组智能体一起工作。** 在主聊天旁查看子智能体的独立对话，排队补充要求或直接介入任务；每个对话单独保留草稿和附件。
+
+![子智能体对话与待发送队列 · 中文界面](docs/images/subagents-white-zh.png)
 
 **把模型服务带进来。** 直接拖入供应商 ZIP，在同一页登录、刷新和配置模型。SDK 与开发 Skill 也可以从导入窗口直接导出。
 
-![供应商 ZIP 拖入及开发资源导出](docs/images/provider-import.png)
+![供应商 ZIP 拖入及开发资源导出 · 中文界面](docs/images/provider-white-zh.png)
 
 </details>
 
-以上为真实应用界面，使用隔离的演示数据拍摄；不含真实账号、凭据或模型请求。当前界面语言为中文。
+以上为真实应用的纯白主题界面，使用隔离的演示数据拍摄；不含真实账号、凭据或模型请求。中英文 README 分别展示对应语言的界面。
 
 ## 主要特性
 
