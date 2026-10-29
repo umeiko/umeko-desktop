@@ -18,7 +18,7 @@ class ProviderResourceTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        for source in ("umeko_provider_sdk", "provider_dev/examples", "provider_dev/skills"):
+        for source in ("umeko_provider_sdk", "provider_dev/examples", "provider_dev/skills", "character_dev/skills"):
             shutil.copytree(ROOT / source, self.root / source, ignore=shutil.ignore_patterns("__pycache__"))
         for source in ("pyproject.toml", "provider_dev/README.md"):
             shutil.copyfile(ROOT / source, self.root / source)
@@ -43,7 +43,12 @@ class ProviderResourceTests(unittest.TestCase):
         catalog = json.loads((self.output / "bundled-providers.json").read_text())
         self.assertEqual(catalog["providers"], [])
         self.assertFalse((self.output / "unapproved-1.0.0.zip").exists())
-        self.assertEqual(len(list(self.output.glob("*.zip"))), 2)
+        self.assertEqual({path.name for path in self.output.glob("*.zip")}, {
+            "umeko-provider-sdk-0.2.1.zip", "develop-umeko-provider.zip", "create-umeko-character.zip"})
+        with zipfile.ZipFile(self.output / "create-umeko-character.zip") as stream:
+            self.assertTrue(stream.read("create-umeko-character/SKILL.md"))
+            self.assertIn("create-umeko-character/references/format.md", stream.namelist())
+            self.assertIn("create-umeko-character/scripts/package.py", stream.namelist())
         for path in self.output.glob("*.zip"):
             with zipfile.ZipFile(path) as stream:
                 self.assertFalse(any("bundled/" in name for name in stream.namelist()))
