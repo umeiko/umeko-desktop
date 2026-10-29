@@ -7,7 +7,11 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-os.environ["UMEKO_DATA_DIR"] = tempfile.mkdtemp(prefix="umeko-child-reaction-")
+test_base = Path("C:/UmekoTests") if os.name == "nt" else Path(tempfile.gettempdir())
+test_base.mkdir(parents=True, exist_ok=True)
+test_profile = tempfile.TemporaryDirectory(prefix="umeko-child-reaction-", dir=test_base)
+os.environ["UMEKO_DATA_DIR"] = test_profile.name
+os.environ["PI_CODING_AGENT_DIR"] = str(Path(test_profile.name) / "pi-agent")
 os.environ["UMEKO_LANGUAGE"] = "zh"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
@@ -21,8 +25,8 @@ warnings = []
 engine.warnings.connect(lambda errors: warnings.extend(error.toString() for error in errors))
 
 
-def find(name):
-    stack = [window.contentItem()]
+def find(name, root=None):
+    stack = [root if root is not None else window.contentItem()]
     while stack:
         item = stack.pop()
         if item.objectName() == name: return item
@@ -30,15 +34,55 @@ def find(name):
     return None
 
 
+def tool_item(name):
+    pane = find("subagentConversation")
+    return find(name, pane) if pane is not None else None
+
+
+def item_state(item):
+    if item is None: return None
+    ancestors = []
+    current = item
+    while current is not None:
+        point = current.mapToScene(QPointF(0, 0))
+        ancestors.append({"object": current.objectName(), "type": current.metaObject().className(),
+                          "visible": current.isVisible(), "enabled": current.isEnabled(),
+                          "rect": [point.x(), point.y(), current.width(), current.height()],
+                          "clip": current.property("clip"), "expanded": current.property("expanded")})
+        current = current.parentItem()
+    return {"name": item.property("name"), "ancestors": ancestors}
+
+
+def clickable(item):
+    if item is None or not item.isVisible() or not item.isEnabled() or item.width() <= 0 or item.height() <= 0:
+        return False
+    point = item.mapToScene(QPointF(item.width()/2, item.height()/2))
+    if not (0 < point.x() < window.width() and 0 < point.y() < window.height()): return False
+    ancestor = item.parentItem()
+    while ancestor is not None:
+        if ancestor.property("clip"):
+            local = ancestor.mapFromScene(point)
+            if not (0 <= local.x() < ancestor.width() and 0 <= local.y() < ancestor.height()): return False
+        ancestor = ancestor.parentItem()
+    return True
+
+
 def wait(predicate, label):
     for _ in range(400):
         QTest.qWait(10)
         if predicate(): return
-    raise AssertionError(label + "\n" + "\n".join(warnings))
+    diagnostic = {"child": backend.subagents.selected_id,
+                  "header": item_state(tool_item("toggleTools_1_0")),
+                  "status": item_state(tool_item("toolState_slow"))}
+    raise AssertionError(label + "\n" + json.dumps(diagnostic, ensure_ascii=False) + "\n" + "\n".join(warnings))
 
 
 def click(item):
-    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, item.mapToScene(QPointF(item.width()/2, item.height()/2)).toPoint())
+    # Visibility can update before Positioners and the ListView have polished
+    # their hit geometry. Complete a render before sending synthetic input.
+    window.grabWindow()
+    point = item.mapToScene(QPointF(item.width()/2, item.height()/2)).toPoint()
+    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
 
 
 try:
@@ -55,7 +99,7 @@ try:
     ]) + "\n", encoding="utf-8")
     roles = ["lemon-yakishio", "chika-komari", "kaju-nukumizu", "yumeko-shikiya"]
     seen = set()
-    screenshots = ROOT / "artifacts/screenshots"
+    screenshots = directory / "screenshots"
     screenshots.mkdir(parents=True, exist_ok=True)
     for i, role in enumerate(roles):
         child_id = f"role-{i}"
@@ -83,17 +127,18 @@ try:
         snapshot = [{"role": "user", "text": "检查任务。"}, {"role": "assistant", "text": "", "tools": [
             {"id": "slow", "name": "bash", "arguments": {"command": "sleep 60"}, "path": "", "state": "running", "result": ""}]}]
         backend.subagents.handle(record, {"type": "subagent_context", "id": child_id, "messages": snapshot})
-        QTest.qWait(70)
-        toggle = find("toggleTools_1_0")
+        wait(lambda: clickable(tool_item("toggleTools_1_0")), "Running tool header did not become clickable")
+        toggle = tool_item("toggleTools_1_0")
         if not toggle.parentItem().parentItem().property("expanded"): click(toggle)
-        QTest.qWait(30)
-        status = find("toolState_slow")
-        assert status.isVisible() and status.property("name") == "hourglass"
+        wait(lambda: tool_item("toggleTools_1_0").parentItem().parentItem().property("expanded"), "Tool header click did not expand its rows")
+        wait(lambda: tool_item("toolState_slow") is not None and tool_item("toolState_slow").isVisible()
+             and tool_item("toolState_slow").property("name") == "hourglass", "Running tool did not show its hourglass")
+        status = tool_item("toolState_slow")
         running_color = status.property("color")
         snapshot[1]["tools"][0]["state"] = "error"
         backend.subagents.handle(record, {"type": "subagent_context", "id": child_id, "messages": snapshot})
-        QTest.qWait(50)
-        status = find("toolState_slow")
+        wait(lambda: tool_item("toolState_slow") is not None and tool_item("toolState_slow").property("name") == "x", "Failed tool did not show its error marker")
+        status = tool_item("toolState_slow")
         assert status.property("name") == "x" and status.property("color") != running_color
         assert not find("subagentReplyMascot_1").isVisible()
         backend.subagents.closeView()
@@ -119,3 +164,4 @@ finally:
     backend.close()
     import shiboken6
     shiboken6.delete(engine)
+    test_profile.cleanup()

@@ -8,6 +8,8 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import json
+import select
+import socket
 import threading
 import time
 import urllib.error
@@ -25,6 +27,7 @@ from .openai_responses import responses_request, responses_events
 from .request_diagnostics import RequestDiagnostics, RequestFailure
 from .network_retry import upstream_failure
 from umeko_provider_sdk.network import network_scope, proxy_handler, tls_context, trace, TracedResponse
+from umeko_provider_sdk import request_scope
 
 
 def validate_base_url(url: str) -> str:
@@ -319,6 +322,31 @@ class LocalServer:
                     self.respond(502, {"error": {"type": "upstream_error", "message": "请求失败，请检查适配器或供应商配置"}})
 
             def stream_events(self, events, model, anth):
+                cancelled, finished = threading.Event(), threading.Event()
+
+                def disconnected():
+                    # A provider can be quiet before its first token. Detect
+                    # peer closure independently of writes to the SSE socket.
+                    while not finished.wait(0.1):
+                        try:
+                            if owner.closed or (select.select([self.connection], [], [], 0)[0]
+                                                and not self.connection.recv(1, socket.MSG_PEEK)):
+                                cancelled.set()
+                                return
+                        except (OSError, ValueError):
+                            cancelled.set()
+                            return
+
+                watcher = threading.Thread(target=disconnected, daemon=True)
+                watcher.start()
+                try:
+                    with request_scope(cancelled):
+                        return self._stream_events(events, model, anth)
+                finally:
+                    finished.set()
+                    watcher.join(timeout=1)
+
+            def _stream_events(self, events, model, anth):
                 # Fetch the first event before committing a 200 response, so login errors
                 # retain their HTTP status. Later failures become explicit SSE errors.
                 iterator = iter(events)

@@ -17,6 +17,11 @@ Column {
         if (root.manager.importZip(String(url))) importDialog.close()
         else errorDialog.open()
     }
+    function installBundle(pluginId) {
+        // Installing updates the Repeater synchronously and destroys its button.
+        importDialog.close()
+        if (!root.manager.installBundled(pluginId)) importDialog.open()
+    }
     function errorText() {
         const error = root.manager.importError
         if (!error.rule) return I18n.t(error.message)
@@ -108,6 +113,20 @@ Column {
                     }
                 }
                 Text { text: I18n.t(card.modelData.status); color: Theme.muted; font.pixelSize: Theme.font(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
+                Repeater {
+                    model: card.modelData.cardActions || []
+                    ColumnLayout {
+                        required property var modelData
+                        Layout.fillWidth: true; spacing: 5
+                        ActionButton {
+                            objectName: "pluginCardAction_" + card.modelData.id + "_" + modelData.key
+                            text: modelData.label; enabled: !card.modelData.busy
+                            onClicked: root.manager.cardAction(card.modelData.id, modelData.key)
+                        }
+                        Text { visible: !!modelData.hint; text: modelData.hint; color: Theme.muted; font.pixelSize: Theme.font(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
+                    }
+                }
+                Text { visible: !!card.modelData.cardStatus; text: card.modelData.cardStatus || ""; color: Theme.muted; font.pixelSize: Theme.font(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
                 RowLayout {
                     Layout.fillWidth: true; spacing: 8
                     ActionButton { text: I18n.t("连接配置"); quiet: true; enabled: !card.modelData.busy; onClicked: { root.currentId = card.modelData.id; configEditor.text = root.manager.configJson(root.currentId); configDialog.open() } }
@@ -204,6 +223,16 @@ Column {
                 ActionButton { glyph: "x"; quiet: true; onClicked: importDialog.close() }
             }
             Text { text: I18n.t("选择包含 manifest.json 的供应商 ZIP 包。导入后即可在本页登录、查看和配置可用模型。"); Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.ink; font.pixelSize: Theme.font(12) }
+            Text { visible: root.manager.availableBundles.length > 0; text: I18n.t("随应用提供的供应商"); color: Theme.ink; font.pixelSize: Theme.font(12) }
+            Repeater {
+                model: root.manager.availableBundles
+                RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Text { text: modelData.name; color: Theme.ink; font.pixelSize: Theme.font(12); Layout.fillWidth: true }
+                    ActionButton { objectName: "installBundledProvider_" + modelData.id; text: I18n.t("安装供应商"); onClicked: root.installBundle(modelData.id) }
+                }
+            }
             Rectangle {
                 Layout.fillWidth: true; implicitHeight: 104; radius: 10
                 color: packageDrop.containsDrag ? Theme.accentBg : Theme.bg

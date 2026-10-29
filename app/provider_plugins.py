@@ -14,12 +14,14 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot, QStandardPaths
+from PySide6.QtGui import QDesktopServices
 
 from umeko_provider_sdk import Provider, ProviderContext, ProviderError
 from umeko_provider_sdk.packages import PackageValidationError, unpack_package, validate_folder, validate_config
 from umeko_provider_sdk.network import network_scope
 from .model_capabilities import normalize_model
 from .storage import protect
+from .bundled_providers import BundledProviders
 
 
 class ProtectedSecrets:
@@ -61,6 +63,8 @@ class ProtectedSecrets:
 class ProviderPlugins(QObject):
     changed = Signal()
     finished = Signal(str, object)
+    progress = Signal(str, object, object)
+    refreshReady = Signal(str)
 
     def __init__(self, controller):
         super().__init__(controller)
@@ -70,8 +74,29 @@ class ProviderPlugins(QObject):
         self.lock = threading.RLock()
         self.clients, self.leases, self.busy, self.status = {}, {}, set(), {}
         self._import_error = {}
+        self._client_tokens, self._pending_refresh = {}, {}
         self.closed = False
         self.finished.connect(self._finished)
+        self.progress.connect(self._progress)
+        self.refreshReady.connect(self._drain_refresh)
+        self.c.changed.connect(self._drain_pending_refresh)
+        self.bundled = BundledProviders(self)
+        self.bundle_errors = self.bundled.sync()
+
+    @Property("QVariantList", notify=changed)
+    def availableBundles(self):
+        try: return self.bundled.available()
+        except (ProviderError, OSError, ValueError): return []
+
+    @Slot(str, result=bool)
+    def installBundled(self, plugin_id):
+        try:
+            if self.bundled.install(plugin_id): self._notify(save=False)
+            self.c.toast.emit("供应商插件已安装")
+            return True
+        except (ProviderError, OSError, ValueError) as exc:
+            self.c.toast.emit(str(exc))
+            return False
 
     def _record(self, provider_id):
         record = next((p for p in self.c.store.data["providers"] if p["id"] == provider_id and p["api"] == "plugin"), None)
@@ -205,9 +230,18 @@ class ProviderPlugins(QObject):
             vendor = path / "vendor"
             if vendor.is_dir() and str(vendor) not in sys.path: sys.path.append(str(vendor))
             entry, factory = manifest["entrypoint"].split(":")
+            token = object()
+            self._client_tokens[provider_id] = token
+            def notify(event):
+                if not self.closed:
+                    self.progress.emit(provider_id, token, event)
             try:
                 implementation = importlib.import_module(namespace + "." + entry[:-3].replace("/", "."))
-                client = getattr(implementation, factory)(ProviderContext(config, state_dir, self._secrets(provider_id)))
+                downloads = QStandardPaths.writableLocation(QStandardPaths.DownloadLocation)
+                client = getattr(implementation, factory)(ProviderContext(
+                    config, state_dir, self._secrets(provider_id), profile_dir=self.c.store.directory.resolve(),
+                    downloads_dir=Path(downloads) if downloads else None,
+                    language=self.c.language, notify=notify))
             except ImportError:
                 raise ProviderError("供应商依赖缺失，请让插件作者将依赖放入包内 vendor 目录") from None
             if not isinstance(client, Provider): raise ProviderError("供应商实现必须继承 umeko_provider_sdk.Provider")
@@ -225,6 +259,7 @@ class ProviderPlugins(QObject):
                 yield self._client(provider_id)
         finally:
             with self.lock: self.leases[provider_id] -= 1
+            if not self.closed: self.refreshReady.emit(provider_id)
 
     def events(self, provider_id, model, messages, tools, max_tokens, parameters):
         with self._lease(provider_id) as client:
@@ -236,6 +271,8 @@ class ProviderPlugins(QObject):
             raise ProviderError("该供应商仍有任务运行，结束后可修改")
 
     def _invalidate(self, provider_id):
+        self._client_tokens.pop(provider_id, None)
+        self._pending_refresh.pop(provider_id, None)
         client = self.clients.pop(provider_id, None)
         if client: client.close()
 
@@ -265,17 +302,99 @@ class ProviderPlugins(QObject):
             result.append(item)
         return result
 
+    def _public_message(self, provider_id, value):
+        if not isinstance(value, str): raise ProviderError("供应商卡片信息无效")
+        message = value[:2000]
+        def redact(secret):
+            nonlocal message
+            if isinstance(secret, dict):
+                for item in secret.values(): redact(item)
+            elif isinstance(secret, list):
+                for item in secret: redact(item)
+            elif isinstance(secret, str) and len(secret) >= 3:
+                message = message.replace(secret, "***")
+        redact(self._secrets(provider_id)._read())
+        return message
+
+    def _public_url(self, provider_id, value):
+        if not isinstance(value, str) or len(value) > 2000:
+            raise ProviderError("供应商操作链接无效")
+        url = QUrl(value)
+        if (not url.isValid() or url.scheme().lower() not in ("http", "https")
+                or not url.host() or url.userInfo() or any(c.isspace() for c in value)
+                or self._public_message(provider_id, value) != value):
+            raise ProviderError("供应商操作链接无效")
+        return value
+
+    def _card_actions(self, provider_id):
+        client = self.clients.get(provider_id)
+        if client is None: return []
+        actions = client.card_actions()
+        if not isinstance(actions, list) or len(actions) > 50:
+            raise ProviderError("供应商卡片操作无效")
+        import re
+        result, seen = [], set()
+        for action in actions:
+            key = action.get("key") if isinstance(action, dict) else None
+            if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,127}", key) or key in seen:
+                raise ProviderError("供应商卡片操作无效")
+            seen.add(key)
+            label = self._public_message(provider_id, action.get("label"))
+            if not label.strip(): raise ProviderError("供应商卡片操作无效")
+            item = {"key": key, "label": label, "hint": self._public_message(provider_id, action.get("hint", ""))}
+            if action.get("url"): item["url"] = self._public_url(provider_id, action["url"])
+            result.append(item)
+        return result
+
+    def _card_result(self, provider_id, result):
+        if not isinstance(result, dict): raise ProviderError("供应商卡片信息无效")
+        public = {"message": self._public_message(provider_id, result.get("message", ""))}
+        if "refreshModels" in result and not isinstance(result["refreshModels"], bool):
+            raise ProviderError("供应商卡片信息无效")
+        public["refreshModels"] = result.get("refreshModels", False)
+        if result.get("url"): public["url"] = self._public_url(provider_id, result["url"])
+        return public
+
+    @Slot(str, object, object)
+    def _progress(self, provider_id, token, event):
+        if self.closed or self._client_tokens.get(provider_id) is not token: return
+        try:
+            public = self._card_result(provider_id, event)
+            if public["message"]: self.status[provider_id] = public["message"]
+            self.changed.emit()
+            if public["refreshModels"]:
+                self._pending_refresh[provider_id] = public["message"]
+                self._drain_refresh(provider_id)
+        except (ProviderError, OSError, ValueError):
+            # Background events never open URLs or expose invalid plugin output.
+            return
+
+    def _drain_refresh(self, provider_id):
+        if (provider_id not in self._pending_refresh or provider_id in self.busy
+                or self.leases.get(provider_id, 0) or self.c._models_busy(provider_id)): return
+        message = self._pending_refresh.pop(provider_id)
+        self._submit(provider_id, "refresh", lambda client: {
+            "models": client.list_models(refresh=True), "message": message})
+
+    @Slot()
+    def _drain_pending_refresh(self):
+        if self.closed: return
+        for provider_id in list(self._pending_refresh): self._drain_refresh(provider_id)
+
     @Property("QVariantList", notify=changed)
     def rows(self):
         rows = []
         for record in self.c.store.data["providers"]:
             if record["api"] != "plugin": continue
             row = {"id": record["id"], "name": record["name"], "version": record["pluginVersion"],
-                   "models": copy.deepcopy(record["models"]), "fields": [], "cardFields": [], "busy": record["id"] in self.busy,
+                   "models": copy.deepcopy(record["models"]), "fields": [], "cardFields": [], "cardActions": [], "cardStatus": "", "busy": record["id"] in self.busy,
                    "status": self.status.get(record["id"], record.get("accountLabel", "尚未登录"))}
             try:
                 _, (manifest, _, _) = self._package(record)
                 row["cardFields"] = self._card_fields(record["id"])
+                row["cardActions"] = self._card_actions(record["id"])
+                client = self.clients.get(record["id"])
+                if client: row["cardStatus"] = self._public_message(record["id"], client.card_status())
                 values = self._secrets(record["id"]).get("credentials", {})
                 for field in manifest.get("auth", {}).get("fields", []):
                     row["fields"].append({**field, "secret": bool(field.get("secret")),
@@ -289,7 +408,7 @@ class ProviderPlugins(QObject):
         with self.lock:
             self._idle(provider_id)
             self.busy.add(provider_id)
-        self.status[provider_id] = {"login": "正在登录…", "card-secret": "正在保存密钥并刷新模型…"}.get(action, "正在刷新模型…")
+        self.status[provider_id] = {"login": "正在登录…", "card-secret": "正在保存密钥并刷新模型…", "card-action": "正在执行供应商操作…"}.get(action, "正在刷新模型…")
         self.changed.emit()
         def work():
             try:
@@ -408,6 +527,22 @@ class ProviderPlugins(QObject):
             self.c.toast.emit(str(exc))
             return False
 
+    @Slot(str, str, result=bool)
+    def cardAction(self, provider_id, key):
+        try:
+            self._record(provider_id)
+            if key not in {item["key"] for item in self._card_actions(provider_id)}:
+                raise ProviderError("供应商卡片操作不可用")
+            def execute(client):
+                result = self._card_result(provider_id, client.card_action(key))
+                if result.pop("refreshModels"): result["models"] = client.list_models(refresh=True)
+                return result
+            self._submit(provider_id, "card-action", execute)
+            return True
+        except (ProviderError, ValueError, OSError) as exc:
+            self.c.toast.emit(str(exc))
+            return False
+
     def _models(self, record, rows):
         if not isinstance(rows, list) or len(rows) > 2000: raise ProviderError("供应商返回的模型列表无效")
         previous = {m["upstream"]: m for m in record["models"]}
@@ -453,21 +588,26 @@ class ProviderPlugins(QObject):
             self.status[provider_id] = payload["error"]
             self.changed.emit()
             self.c.toast.emit(payload["error"])
+            self._drain_refresh(provider_id)
             return
         try:
             record = self._record(provider_id)
             result = payload["result"]
-            record["models"] = self._models(record, result["models"])
+            if "models" in result: record["models"] = self._models(record, result["models"])
             if "label" in result: record["accountLabel"] = result["label"]
             self.status[provider_id] = result.get("message") or record.get("accountLabel", "已连接") + f" · {len(record['models'])} 个模型"
-            self.repair_selection(provider_id)
-            self._notify()
-            self.c.toast.emit(result.get("message") or "可用模型已更新")
+            if "models" in result:
+                self.repair_selection(provider_id)
+                self._notify()
+            else: self.changed.emit()
+            if result.get("url"): QDesktopServices.openUrl(QUrl(self._public_url(provider_id, result["url"])))
+            self.c.toast.emit(result.get("message") or ("供应商操作已完成" if payload["action"] == "card-action" else "可用模型已更新"))
         except (ProviderError, ValueError, OSError) as exc:
             payload["error"] = str(exc)
             self.status[provider_id] = str(exc)
             self.changed.emit()
             self.c.toast.emit(str(exc))
+        self._drain_refresh(provider_id)
 
     def repair_selection(self, preferred=""):
         data = self.c.store.data
@@ -569,13 +709,17 @@ class ProviderPlugins(QObject):
                 retired = self._retire_package(path)
                 previous = self.c.store.data["providers"]
                 selection = {key: self.c.store.data[key] for key in ("selectedProvider", "selectedModel")}
+                previous_bundles = copy.deepcopy(self.c.store.data.get("bundledProviders"))
                 self.c.store.data["providers"] = [p for p in previous if p not in accounts]
                 try:
+                    self.bundled.mark_uninstalled(plugin_id, version)
                     self.repair_selection()
                     self.c.store.save()
                 except Exception:
                     self.c.store.data["providers"] = previous
                     self.c.store.data.update(selection)
+                    if previous_bundles is None: self.c.store.data.pop("bundledProviders", None)
+                    else: self.c.store.data["bundledProviders"] = previous_bundles
                     if retired: retired.rename(path)
                     raise
                 self._forget_package(path)
@@ -616,5 +760,7 @@ class ProviderPlugins(QObject):
     def close(self):
         with self.lock:
             self.closed = True
+            self._client_tokens.clear()
+            self._pending_refresh.clear()
             for client in self.clients.values(): client.close()
             self.clients.clear()
