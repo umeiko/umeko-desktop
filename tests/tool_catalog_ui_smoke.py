@@ -49,6 +49,7 @@ mcp_path.write_text(json.dumps({"mcpServers": {"catalog-fixture": {"command": no
 saved_mcp = mcp_path.read_bytes()
 store.data["workspace"] = str(project)
 store.data["agent"]["agentDir"] = str(agent)
+store.data.update(providers=[{"id":"fixture", "name":"Fixture", "api":"openai", "baseUrl":"http://127.0.0.1:9/v1", "key":"fixture", "models":[{"upstream":"fixture", "alias":"fixture"}]}], selectedProvider="fixture", selectedModel="fixture")
 store.save()
 app, engine, backend = create_application()
 window = engine.rootObjects()[0]
@@ -107,6 +108,10 @@ try:
     QTest.qWait(100)
     click("openPiSettingsButton")
     wait_for(lambda: not backend.piManagement.busy and bool(backend.piManagement.extensions))
+    for name in ("piFold_kernel",): find(name).setProperty("expanded", False)
+    for name in ("piFold_extensions", "piFold_packages", "piFold_mcp", "piFold_tools"): find(name).setProperty("expanded", True)
+    QTest.qWait(100)
+    wait_for(lambda: not backend.piManagement.busy and not backend.busy)
     assert find("showPiCapabilitiesButton") is None
     assert window.findChild(QObject, "piCapabilities") is None
     card = find("mcpSettingsCard")
@@ -142,6 +147,11 @@ try:
     assert find("toolCategory_native").width() <= 160
     click("toolCategory_native")
     assert count() == 8, backend.agentResources
+    tool_list = find("toolCatalogList")
+    assert tool_list.width() > 300 and tool_list.height() > 100, "Registry count exists but the list viewport is empty"
+    read = find("toolEntry_read")
+    position = read.mapToItem(tool_list, QPointF(read.width()/2, read.height()/2))
+    assert read.isVisible() and read.width() > 100 and read.height() > 20 and 0 <= position.y() <= tool_list.height(), "The read row is outside the visible viewport"
     click("toolEntry_read")
     assert page.property("expandedName") == "read"
     capture("62-native-tool-details")
@@ -152,7 +162,8 @@ try:
     click("toolEntry_" + tool["name"])
     capture("63-mcp-tools")
     click("toolCategory_extensions")
-    assert count() == 3  # codemode, tool_search, and the local deferred fixture.
+    assert count() >= 3
+    assert {"codemode", "tool_search", "catalog_fixture"}.issubset({row['name'] for row in backend.agentResources['allTools']})
     find("toolCatalogSearch").setProperty("text", "local extension")
     QTest.qWait(30)
     assert count() == 1

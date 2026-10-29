@@ -1,8 +1,101 @@
 // Native resource discovery/settings only: never import or execute extension code.
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, statSync } from "node:fs";
-import { dirname, basename, join, relative, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, statSync, realpathSync } from "node:fs";
+import { dirname, basename, join, relative, resolve, delimiter } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const semver = require("semver");
+const runtimeRoot = dirname(fileURLToPath(import.meta.url));
+const desktopRepository = "https://github.com/umeiko/umeko-desktop";
+const packageName = /^(?:@[a-z0-9._-]+\/)?[a-z0-9][a-z0-9._-]*$/i;
+const text = value => typeof value === "string" ? value.slice(0, 4096) : "";
+export function webLink(value) {
+  try {
+    const url = new URL(text(value).replace(/^git\+/, "").replace(/^git:\/\//, "https://").replace(/^git@github.com:/, "https://github.com/"));
+    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password ? url.href.replace(/\.git(?=$|#)/, "") : "";
+  } catch { return ""; }
+}
+function manifestAt(directory) {
+  if (!directory) return {};
+  try {
+    const file = join(directory, "package.json");
+    if (statSync(file).size > 1024 * 1024) return {};
+    return JSON.parse(readFileSync(file, "utf8"));
+  } catch { return {}; }
+}
+export function extensionInfo(row) {
+  const builtin = row.path.startsWith("builtin:"), name = row.path.slice(8);
+  let root = row.metadata?.packageRoot || row.metadata?.baseDir || "";
+  let origin = "local", updateKind = "none", manifest = {};
+  if (builtin && ["chatbox", "pi-commands", "umeko-control"].includes(name)) {
+    const descriptions = {chatbox:"向聊天和侧栏展示文件、图片、文档与网页。", "pi-commands":"向当前内嵌 Pi 实例发送原生命令和斜杠命令。", "umeko-control":"查询和管理 Umeko 的供应商、主题、扩展与应用设置。"};
+    return {origin:"desktop", bundled:true, description:descriptions[name], homepage:desktopRepository, repository:desktopRepository, version:"", package:"", updateKind:"desktop"};
+  }
+  if (builtin) {
+    const dependency = name === "subagents" ? "@gotgenes/pi-subagents" : "@earendil-works/pi-coding-agent";
+    root = join(runtimeRoot, "node_modules", dependency);
+    manifest = manifestAt(root);
+    origin = name === "subagents" ? "community" : "pi";
+    updateKind = manifest.name ? "npm" : "none";
+  } else {
+    if (!root || !existsSync(join(root, "package.json"))) {
+      let current = dirname(row.path);
+      for (let i = 0; i < 8; i++) {
+        if (existsSync(join(current, "package.json"))) { root = current; break; }
+        const parent = dirname(current); if (parent === current) break; current = parent;
+      }
+    }
+    manifest = manifestAt(root);
+    if (row.metadata?.origin === "package") origin = "community";
+    if (row.metadata?.source?.startsWith("npm:") && packageName.test(manifest.name || "")) updateKind = "npm";
+    else if (root && existsSync(join(root, ".git"))) updateKind = "git";
+  }
+  const repository = webLink(typeof manifest.repository === "string" ? manifest.repository : manifest.repository?.url);
+  const descriptions = {codemode:"通过代码组合调用多个工具。", "tool-search":"按名称和说明查找可用工具。", mcp:"连接 MCP 服务器并使用其工具。"};
+  return {origin, bundled:builtin, package:text(manifest.name), version:text(manifest.version), description:builtin && descriptions[name] || text(manifest.description),
+    homepage:webLink(manifest.homepage), repository, npmUrl:manifest.name && packageName.test(manifest.name) ? "https://www.npmjs.com/package/" + manifest.name : "",
+    updateKind, ...(updateKind === "git" ? {packageRoot:root} : {})};
+}
+function npmVersion(name, cwd) {
+  const nodeDir = dirname(process.execPath);
+  const candidates = [join(nodeDir,"node_modules/npm/bin/npm-cli.js"), join(nodeDir,"../lib/node_modules/npm/bin/npm-cli.js")];
+  for (const directory of (process.env.PATH || "").split(delimiter)) {
+    const npm = join(directory,process.platform === "win32" ? "npm.cmd" : "npm");
+    try { const file = realpathSync(npm); if (file.endsWith(".js")) candidates.push(file); } catch {}
+    candidates.push(join(directory,"node_modules/npm/bin/npm-cli.js"));
+  }
+  candidates.push("/usr/share/nodejs/npm/bin/npm-cli.js", "/usr/local/lib/node_modules/npm/bin/npm-cli.js");
+  const cli = candidates.find(file=>existsSync(file));
+  if (!cli) throw new Error("内置 npm 缺失，请重新解压完整安装包");
+  try {
+    return JSON.parse(execFileSync(process.execPath,[cli,"view",name,"version","--json","--fetch-retries=0","--fetch-timeout=10000"],
+      {cwd,encoding:"utf8",timeout:15000,maxBuffer:256*1024,windowsHide:true,stdio:["ignore","pipe","pipe"]}));
+  } catch { throw new Error("检查失败，请检查 npm 软件源、网络或包的访问权限"); }
+}
+export async function checkExtensionUpdate(row, {cwd, lookup = npmVersion} = {}) {
+  const info = row.info;
+  if (info.updateKind === "npm" && packageName.test(info.package)) {
+    const latest = await lookup(info.package,cwd);
+    if (!semver.valid(latest)) throw new Error("软件源没有返回有效版本");
+    const available = !!semver.valid(info.version) && semver.gt(latest,info.version);
+    return {id:row.id,status:available ? "available" : "current", current:info.version, latest,
+      message:available ? "发现新版本" : "当前版本已是最新或高于软件源版本"};
+  }
+  if (info.updateKind === "git") {
+    try {
+      const options = {cwd:info.packageRoot,encoding:"utf8",timeout:12000,maxBuffer:256*1024,windowsHide:true,stdio:["ignore","pipe","pipe"]};
+      const current = execFileSync("git",["rev-parse","HEAD"],options).trim();
+      const branch = execFileSync("git",["symbolic-ref","--quiet","--short","HEAD"],options).trim();
+      const latest = execFileSync("git",["ls-remote","origin","refs/heads/"+branch],options).trim().split(/\s/)[0];
+      if (!/^[a-f0-9]{40,64}$/i.test(latest)) throw new Error();
+      return {id:row.id,status:latest === current ? "current" : "available",current:current.slice(0,12),latest:latest.slice(0,12),message:latest === current ? "远端提交未变化" : "远端提交已变更"};
+    } catch { throw new Error("无法检查 Git 扩展，请检查远端连接或是否处于分支上"); }
+  }
+  return {id:row.id,status:"unsupported",message:"本地扩展没有可检查的更新源"};
+}
 
 export const builtins = ["codemode", "tool-search", "mcp", "chatbox", "pi-commands", "umeko-control", "subagents"];
 const target = entry => entry.replace(/^[!+-]/, "");
@@ -105,7 +198,13 @@ export async function manageResources(Pi, input) {
     await settings.flush(); checkErrors(settings);
     rows = await discover(Pi, input, settings);
   }
-  return { extensions: rows.map(({ metadata, ...row }) => ({ ...row, source: metadata.source })), safeMode: !!input.agent?.safeMode };
+  const extensions = rows.map(({ metadata, ...row }) => ({ ...row, source: metadata.source, info:extensionInfo({...row,metadata}) }));
+  if (input.action === "check-update") {
+    const row = extensions.find(row=>row.id === input.id);
+    if (!row) throw new Error("扩展已变更，请刷新列表后重试");
+    return {extensions,update:await checkExtensionUpdate(row,{cwd:input.cwd})};
+  }
+  return { extensions, safeMode: !!input.agent?.safeMode };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

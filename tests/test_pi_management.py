@@ -20,6 +20,24 @@ APP = QCoreApplication.instance() or QCoreApplication([])
 
 
 class NativeExtensionTests(unittest.TestCase):
+    def test_extension_update_results_remain_scoped_to_the_original_pi_context(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR":temp}):
+            controller = Controller(ROOT)
+            try:
+                manager = controller.piManagement
+                manager._job_context = manager._resource_key()
+                manager._extension_update = {"id":"fixture", "status":"checking"}
+                manager._finished("pi-admin:extension-check", {"ok":True, "value":{"id":"fixture", "status":"available", "latest":"2.0.0"}})
+                self.assertEqual(manager.extensionUpdate["latest"],"2.0.0")
+                manager._finished("pi-admin:extension-check", {"ok":False, "value":"Registry unreachable"})
+                self.assertEqual(manager.extensionUpdate["id"],"fixture")
+                self.assertEqual(manager.extensionUpdate["status"],"error")
+                controller._view.workspace = str(Path(temp)/"another-project")
+                manager._finished("pi-admin:extension-check", {"ok":True, "value":{"id":"fixture", "latest":"3.0.0"}})
+                self.assertEqual(manager.extensionUpdate,{})
+            finally:
+                controller.close()
+
     def test_package_entry_uses_manifest_name_without_executing_code(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
