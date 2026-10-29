@@ -21,12 +21,12 @@ Your projects, your providers, the full Pi Coding Agent — with a little Yanami
 
 <!-- umeko-downloads:standard:start -->
 
-**Download v0.5.2 · 点击下载**
+**Download v0.6.0 · 点击下载**
 
-[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.2/Umeko-0.5.2-windows-x64-327b5b7.zip)
-[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.2/Umeko-0.5.2-macos-arm64-327b5b7.dmg)
-[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.2/Umeko-0.5.2-macos-x64-327b5b7.dmg)
-[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.2/Umeko-0.5.2-linux-x64-327b5b7.tar.gz)
+[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.0/Umeko-0.6.0-windows-x64-736419c.zip)
+[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.0/Umeko-0.6.0-macos-arm64-736419c.dmg)
+[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.0/Umeko-0.6.0-macos-x64-736419c.dmg)
+[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.0/Umeko-0.6.0-linux-x64-736419c.tar.gz)
 
 <!-- umeko-downloads:standard:end -->
 
