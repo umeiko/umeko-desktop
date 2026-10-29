@@ -3,7 +3,17 @@
 export * from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { SettingsManager as NativeSettingsManager } from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { createAgentSession as nativeCreateAgentSession } from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
+import { DefaultResourceLoader as NativeResourceLoader } from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { NETWORK_RETRY } from "./network-retry.mjs";
+import { SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
+
+export class DefaultResourceLoader extends NativeResourceLoader {
+  getAppendSystemPrompt() {
+    const append = super.getAppendSystemPrompt();
+    return this.getSystemPrompt()?.includes(SUBAGENT_COMPLETION_HINT) || append.some(text=>text.includes(SUBAGENT_COMPLETION_HINT))
+      ? append : [...append, SUBAGENT_COMPLETION_HINT];
+  }
+}
 
 // Observe public native session events without patching the community package.
 // Jiti and ESM can load separate module instances; the process-local symbol is

@@ -22,6 +22,8 @@ class Subagents(QObject):
     contextChanged = Signal()
     requested = Signal()
     messageSent = Signal(str)
+    draftRestored = Signal(str)
+    queueChanged = Signal()
     loaded = Signal(object)
 
     def __init__(self, controller):
@@ -37,6 +39,9 @@ class Subagents(QObject):
         self._generation = 0
         self._pending = {}
         self._drafts = {}
+        self._attachments = {}
+        self._queues = {}
+        self._projection_cache = {}
         self._deferred = {}
         self._closed = False
         self._stream = QTimer(self)
@@ -65,16 +70,26 @@ class Subagents(QObject):
                     record.subagents[row["id"]] = row
         return record.subagents
 
-    def _display(self, row):
-        row = dict(row)
-        slot = row.get("avatarSlot", 0)
-        slot = slot if isinstance(slot, int) and 0 <= slot < 4 else 0
-        row.update(avatar=AVATARS[slot], name=NAMES[slot], active=row.get("status") in ACTIVE)
-        return row
+    def _projection(self, record):
+        rows = self._rows(record)
+        cached = self._projection_cache.get(record.key)
+        if cached and cached[0] == len(rows): return cached[1]
+        def slot(row):
+            value = row.get("avatarSlot", 0)
+            return value if isinstance(value, int) and 0 <= value < 4 else 0
+        totals = [sum(slot(row) == i for row in rows.values()) for i in range(4)]
+        counts = [0,0,0,0]
+        projected = {}
+        for row in rows.values():
+            index = slot(row); counts[index] += 1
+            name = NAMES[index] + (f" · {counts[index]}" if totals[index] > 1 else "")
+            projected[row["id"]] = dict(row, avatar=AVATARS[index], name=name, active=row.get("status") in ACTIVE)
+        self._projection_cache[record.key] = (len(rows), projected)
+        return projected
 
     @Property("QVariantList", notify=changed)
     def agents(self):
-        return [self._display(row) for row in self._rows(self.controller._view).values()]
+        return list(self._projection(self.controller._view).values())
 
     @Property("QVariantList", notify=changed)
     def activeAgents(self):
@@ -107,15 +122,43 @@ class Subagents(QObject):
 
     @Property("QVariantMap", notify=changed)
     def selected(self):
-        row = self._rows(self.owner).get(self.selected_id) if self.owner else None
-        return self._display(row) if row else {}
+        return self._projection(self.owner).get(self.selected_id, {}) if self.owner else {}
 
     @Property("QVariantMap", notify=contextChanged)
     def context(self):
         key = (self.owner.key, self.selected_id) if self.owner else None
         return {"loading": self.loading, "error": self.error, "truncated": self.truncated,
                 "pending": any(item["key"] == key for item in self._pending.values()),
-                "draft": self._drafts.get(key, "")}
+                "draft": self._drafts.get(key, ""),
+                "attachments": copy.deepcopy(self._attachments.get(key, []))}
+
+    @Property("QVariantList", notify=queueChanged)
+    def queuedMessages(self):
+        from .message_attachments import split_attachments
+        key = (self.owner.key, self.selected_id) if self.owner else None
+        result = []
+        for item in self._queues.get(key, []):
+            text, attachments = split_attachments(item["text"])
+            result.append({**item, "text": text, "attachments": attachments})
+        return result
+
+    @Slot(str)
+    def copy(self, text):
+        self.controller.copy(text)
+
+    def _queue_command(self, action, identifier=None):
+        if not self.owner: return False
+        if identifier is not None and not any(row["id"] == identifier for row in self.queuedMessages): return False
+        return self._command(self.owner, {"action": action, "id": self.selected_id, "queueId": identifier, "requestId": uuid.uuid4().hex})
+
+    @Slot(str)
+    def editQueued(self, identifier): self._queue_command("edit-queue", identifier)
+
+    @Slot(str)
+    def removeQueued(self, identifier): self._queue_command("delete-queue", identifier)
+
+    @Slot(str)
+    def steerQueued(self, identifier): self._queue_command("steer-queued", identifier)
 
     def merge(self, record, row):
         if not isinstance(row, dict) or not isinstance(row.get("id"), str):
@@ -124,9 +167,10 @@ class Subagents(QObject):
         old = rows.get(row["id"], {})
         current = {**old, **row}
         if not isinstance(current.get("avatarSlot"), int):
-            occupied = {r.get("avatarSlot") for r in rows.values() if r.get("status") in ACTIVE and r.get("id") != row["id"]}
-            current["avatarSlot"] = next((i for i in range(4) if i not in occupied), len(rows) % 4) if current.get("status") in ACTIVE else len(rows) % 4
+            counts = [sum(r.get("avatarSlot") == i and r.get("status") in ACTIVE for r in rows.values()) for i in range(4)]
+            current["avatarSlot"] = counts.index(min(counts)) if current.get("status") in ACTIVE else len(rows) % 4
         rows[row["id"]] = current
+        self._projection_cache.pop(record.key, None)
         record.subagents_active = any(r.get("status") in ACTIVE for r in rows.values())
         signature = lambda value: (value.get("status"), value.get("outputFile"), value.get("avatarSlot"))
         if signature(old) != signature(current) and record.id:
@@ -162,6 +206,7 @@ class Subagents(QObject):
         self.owner, self.selected_id = record, agent_id
         self.error, self.loading, self.truncated = "", True, False
         self.changed.emit()
+        self.queueChanged.emit()
         self.contextChanged.emit()
         self.requested.emit()
         row = record.subagents[agent_id]
@@ -185,6 +230,8 @@ class Subagents(QObject):
         self._generation += 1
         self._stream.stop()
         self.owner, self.selected_id = None, ""
+        self.queueChanged.emit()
+        self._projection_cache.clear()
         self.messages = []
         self.model.set_snapshot(None)
         self.model.update([])
@@ -219,22 +266,67 @@ class Subagents(QObject):
             self._drafts[(self.owner.key, self.selected_id)] = text
 
     @Slot(str, result=bool)
+    def addAttachments(self, raw):
+        import json
+        if not self.owner or not self.selected_id: return False
+        key = (self.owner.key, self.selected_id)
+        items = self._attachments.setdefault(key, [])
+        accepted = False
+        try:
+            urls = json.loads(raw)
+            if not isinstance(urls, list): return False
+            for url in urls:
+                if len(items) >= 20:
+                    self.controller.toast.emit("一次最多添加 20 个附件"); break
+                try:
+                    item = self.controller._file_attachment(url, encode_image=False)
+                    if item is None: continue
+                    if not any(existing["path"] == item["path"] for existing in items): items.append(item)
+                    accepted = True
+                except (ValueError, OSError):
+                    self.controller.toast.emit("无法读取附件")
+        except (ValueError, TypeError):
+            self.controller.toast.emit("无法读取附件")
+        self.contextChanged.emit()
+        return accepted
+
+    @Slot(str)
+    def removeAttachment(self, identifier):
+        if not self.owner: return
+        key = (self.owner.key, self.selected_id)
+        self._attachments[key] = [item for item in self._attachments.get(key, []) if item["id"] != identifier]
+        self.contextChanged.emit()
+
+    @Slot(str, result=bool)
     def send(self, text):
+        return self._send(text)
+
+    @Slot(str, result=bool)
+    def steer(self, text):
+        if not text.strip() and not self.context["attachments"]:
+            return bool(self.queuedMessages) and self._queue_command("promote-queue")
+        return self._send(text, interrupt=True)
+
+    def _send(self, text, interrupt=False):
         import time
+        from .message_attachments import attachment_prompt
         text = text.strip()
-        if not self.owner or self.loading or not text or len(text) > 65536 or self.context["pending"]:
+        key = (self.owner.key, self.selected_id) if self.owner else None
+        attachments = self._attachments.get(key, [])
+        if not self.owner or self.loading or (not text and not attachments) or self.context["pending"]:
             return False
+        prompt = attachment_prompt(text, attachments)
+        if len(prompt) > 65536:
+            self.controller.toast.emit("请输入消息，长度不得超过 64K 字符"); return False
         row = self.owner.subagents.get(self.selected_id, {})
         if row.get("status") == "queued":
             self.controller.toast.emit("子代理正在排队，请在开始运行后发送指引")
             return False
-        if row.get("status") not in ACTIVE and sum(r.get("status") in ACTIVE for r in self.owner.subagents.values()) >= 4:
-            self.controller.toast.emit("当前会话最多同时运行 4 个子代理，请等待其中一个完成")
-            return False
         request = uuid.uuid4().hex
-        self._pending[request] = {"key": (self.owner.key, self.selected_id), "text": text, "time": time.monotonic()}
+        self._pending[request] = {"key": key, "text": text, "attachmentIds": {item["id"] for item in attachments}, "time": time.monotonic()}
         self._drafts[(self.owner.key, self.selected_id)] = text
-        if not self._command(self.owner, {"action": "send", "id": self.selected_id, "text": text, "requestId": request}):
+        if not self._command(self.owner, {"action": "send", "id": self.selected_id, "text": prompt,
+                "mode": "interrupt" if interrupt else "followUp", "messageId": request, "requestId": request}):
             self._pending.pop(request)
             self.controller.toast.emit("Pi 尚未就绪，请稍后重试")
             return False
@@ -251,14 +343,22 @@ class Subagents(QObject):
         if kind == "subagents":
             for row in event.get("agents", []):
                 self.merge(record, row)
+        elif kind == "subagent_queue":
+            self._queues[(record.key, event["id"])] = copy.deepcopy(event.get("items", []))
+            self.queueChanged.emit()
+        elif kind in ("subagent_queue_edited", "subagent_queue_returned"):
+            items = [event["item"]] if kind == "subagent_queue_edited" else event.get("items", [])
+            self._restore_queue(record, event["id"], items)
         elif kind == "subagent_command":
             pending = self._pending.pop(event.get("requestId"), None)
             if not event.get("ok"):
                 self.controller.toast.emit(event.get("message") or "子代理操作失败")
                 if event.get("action") == "watch" and record is self.owner:
                     self.loading, self.error = False, event.get("message") or "无法加载子代理"
-            elif pending:
-                self._drafts[pending["key"]] = ""
+            elif pending and not pending.get("returned"):
+                if self._drafts.get(pending["key"], "") == pending["text"]:
+                    self._drafts[pending["key"]] = ""
+                self._attachments[pending["key"]] = [item for item in self._attachments.get(pending["key"], []) if item["id"] not in pending["attachmentIds"]]
                 if self.owner and pending["key"] == (self.owner.key, self.selected_id):
                     self.messageSent.emit(self.selected_id)
             self.contextChanged.emit()
@@ -275,6 +375,24 @@ class Subagents(QObject):
                     self._publish()
             elif kind == "subagent_event":
                 self._event(event["event"])
+
+    def _restore_queue(self, record, identifier, items):
+        from .message_attachments import split_attachments
+        key = (record.key, identifier)
+        texts = []
+        attachments = self._attachments.setdefault(key, [])
+        for item in items:
+            text, files = split_attachments(item["text"])
+            pending = self._pending.get(item.get("id"))
+            already_in_editor = pending and pending["key"] == key and self._drafts.get(key, "") == pending["text"]
+            if pending and pending["key"] == key: pending["returned"] = True
+            if text and not already_in_editor: texts.append(text)
+            for file in files:
+                if not any(existing["path"] == file["path"] for existing in attachments):
+                    attachments.append({**file, "id": uuid.uuid4().hex})
+        self._drafts[key] = "\n\n".join(part for part in [self._drafts.get(key, ""), *texts] if part)
+        self.contextChanged.emit()
+        if self.owner is record and self.selected_id == identifier: self.draftRestored.emit(identifier)
 
     def _event(self, event):
         kind = event["type"]

@@ -527,6 +527,20 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
             handle = ctypes.c_void_p(int(window.winId()))
             ctypes.windll.user32.BringWindowToTop(handle)
             ctypes.windll.user32.SetForegroundWindow(handle)
+            ctypes.windll.user32.GetForegroundWindow.restype = ctypes.c_void_p
+            foreground = ctypes.windll.user32.GetForegroundWindow()
+            if foreground and foreground != handle.value:
+                # Explorer can retain the input queue after an OLE drop. Join
+                # it only for activation, then immediately detach again.
+                thread = ctypes.windll.kernel32.GetCurrentThreadId()
+                other = ctypes.windll.user32.GetWindowThreadProcessId(ctypes.c_void_p(foreground), None)
+                attached = other != thread and ctypes.windll.user32.AttachThreadInput(thread, other, True)
+                try:
+                    if attached:
+                        ctypes.windll.user32.BringWindowToTop(handle)
+                        ctypes.windll.user32.SetForegroundWindow(handle)
+                finally:
+                    if attached: ctypes.windll.user32.AttachThreadInput(thread, other, False)
 
     @Slot(str)
     def copyChatboxFile(self, raw):
@@ -764,38 +778,46 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
                 parsed = QUrl(url)
                 if not parsed.isLocalFile():
                     continue
-                path = Path(parsed.toLocalFile()).resolve(strict=True)
-                if not path.is_file() and not path.is_dir():
-                    continue
-                if any(item["path"] == str(path) for item in self._view.attachments):
+                item = self._file_attachment(url)
+                if item is None: continue
+                if any(existing["path"] == item["path"] for existing in self._view.attachments):
                     accepted = True
                     continue
                 if len(self._view.attachments) >= 20:
                     self.toast.emit("一次最多添加 20 个附件")
                     break
-                kind = "folder" if path.is_dir() else "file"
-                image = None
-                if path.is_file() and path.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"):
-                    if path.stat().st_size > 20 * 1024 * 1024:
-                        self.toast.emit("图片不能超过 20 MB")
-                        continue
-                    reader = QImageReader(str(path))
-                    size = reader.size()
-                    if size.isValid() and size.width() * size.height() > 40_000_000:
-                        self.toast.emit("图片尺寸过大")
-                        continue
-                    image = reader.read()
-                    if image.isNull():
-                        continue
-                item = {"id": uuid.uuid4().hex, "name": path.name, "path": str(path), "kind": kind}
-                if image is not None:
-                    item.update(kind="image", data=self._image_data(image), mime="image/png", preview=QUrl.fromLocalFile(str(path)).toString())
                 self._view.attachments.append(item)
                 accepted = True
         except (ValueError, OSError):
             self.toast.emit("无法读取附件")
         self.attachmentsChanged.emit()
         return accepted
+
+    def _file_attachment(self, url, *, encode_image=True):
+        parsed = QUrl(url)
+        if not parsed.isLocalFile(): return None
+        path = Path(parsed.toLocalFile()).resolve(strict=True)
+        if not path.is_file() and not path.is_dir(): return None
+        kind = "folder" if path.is_dir() else "file"
+        image = None
+        if path.is_file() and path.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"):
+            if path.stat().st_size > 20 * 1024 * 1024:
+                self.toast.emit("图片不能超过 20 MB")
+                return None
+            reader = QImageReader(str(path))
+            size = reader.size()
+            if size.isValid() and size.width() * size.height() > 40_000_000:
+                self.toast.emit("图片尺寸过大")
+                return None
+            image = reader.read()
+            if image.isNull():
+                return None
+        item = {"id": uuid.uuid4().hex, "name": path.name, "path": str(path), "kind": kind}
+        if image is not None:
+            item.update(kind="image", preview=QUrl.fromLocalFile(str(path)).toString())
+            if encode_image:
+                item.update(data=self._image_data(image), mime="image/png")
+        return item
 
     @staticmethod
     def _image_data(image):

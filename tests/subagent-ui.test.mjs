@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createJiti } from "../runtime/node_modules/jiti/lib/jiti.mjs";
 import * as Pi from "../runtime/node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { AuthStorage } from "../runtime/node_modules/@earendil-works/pi-coding-agent/dist/core/auth-storage.js";
 import { createSubagentExtension, childMessages } from "../runtime/subagents.mjs";
+import { SUBAGENT_COMPLETION_HINT } from "../runtime/resources.mjs";
 
 const waitFor = async predicate => {
   const deadline = Date.now()+12000;
@@ -17,7 +18,7 @@ const waitFor = async predicate => {
   }
 };
 
-test("native child streams, four slots, steering, stop, retained resume and cold native resume", {timeout:30000}, async () => {
+test("native child streams, repeated roles and more than four background agents, steering, stop, retained resume and cold native resume", {timeout:30000}, async () => {
   const directory = mkdtempSync(join(tmpdir(),"umeko-subagent-ui-"));
   const agentDir = join(directory,"agent"); mkdirSync(agentDir);
   const previousDirectory = process.cwd(), previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -55,12 +56,25 @@ test("native child streams, four slots, steering, stop, retained resume and cold
     await loader.reload();
     ({session}=await Pi.createAgentSession({cwd:directory,agentDir,modelRuntime,model,settingsManager:settings,resourceLoader:loader,sessionManager:Pi.SessionManager.create(directory,join(directory,"sessions"))}));
     await session.bindExtensions({});
-    const jiti=createJiti(new URL("../runtime/subagents.mjs",import.meta.url).href,{moduleCache:false,fsCache:join(agentDir,"cache","test-service")});
+    const jiti=createJiti(new URL("../runtime/subagents.mjs",import.meta.url).href,{moduleCache:false,tryNative:false,fsCache:join(agentDir,"cache","test-service")});
     const {getSubagentsService}=await jiti.import("@gotgenes/pi-subagents");
+    const {SettingsManager:ChildSettings}=await jiti.import(new URL("../runtime/subagent-settings.mjs",import.meta.url).href);
+    const childSettings=new ChildSettings({emit(){},cwd:directory,agentDir});
+    childSettings.load();
+    assert.equal(childSettings.maxConcurrent,Number.MAX_SAFE_INTEGER);
+    const policy=join(agentDir,"subagents.json"), saved=JSON.stringify({maxConcurrent:2});
+    writeFileSync(policy,saved);
+    childSettings.load();
+    assert.equal(childSettings.maxConcurrent,2,"explicit user concurrency remains authoritative");
+    assert.equal(readFileSync(policy,"utf8"),saved);
     const service=getSubagentsService();
-    const ids=Array.from({length:4},(_,i)=>service.spawn("general-purpose",`task-${i}: Return a short answer`,{maxTurns:3,foreground:true}));
+    const ids=Array.from({length:6},(_,i)=>service.spawn("general-purpose",`task-${i}: Return a short answer`,{maxTurns:3,foreground:false}));
     await adapter.command({action:"watch",id:ids[0]});
-    await waitFor(()=>pending.length===4);
+    await waitFor(()=>pending.length===6);
+    for (const item of pending) {
+      const system=item.body.messages.filter(message=>message.role==="system").map(message=>JSON.stringify(message.content)).join("\n");
+      assert.equal(system.split(SUBAGENT_COMPLETION_HINT).length-1,1,"each child receives one concise completion hint");
+    }
     assert.ok(existsSync(join(agentDir,"cache","umeko-subagents")),"community transpilation cache belongs in the user profile");
     assert.deepEqual(existsSync(bundledCache) ? readdirSync(bundledCache).sort() : [],cacheBefore,"loading extensions must not add files to a signed app bundle");
     const childEvents=events.filter(event=>event.subagent);
@@ -68,26 +82,26 @@ test("native child streams, four slots, steering, stop, retained resume and cold
     assert.equal(new Set([...latest.values()].map(child=>child.avatarSlot)).size,4);
     assert.ok(events.some(event=>event.type==="subagent_event" && event.id===ids[0] && event.event.type==="user_start"),"native SDK observer must forward child user events");
     assert.ok(session.sessionManager.getBranch().some(entry=>entry.customType==="umeko-subagent-context"),"resolved prompt and tool policy must be durable");
-    const blocked=await session.agent.state.tools.find(tool=>tool.name==="subagent").execute("fifth",{prompt:"fifth",subagent_type:"general-purpose",run_in_background:true},undefined,()=>{});
-    assert.equal(blocked.isError,true); assert.equal(service.listAgents().length,4);
+    assert.equal(service.listAgents().length,6);
     await adapter.command({action:"send",id:ids[0],text:"steer-only-first",requestId:"steer"});
     assert.ok(events.some(event=>event.type==="subagent_command" && event.requestId==="steer" && event.ok));
     await adapter.command({action:"stop",id:ids[1]});
     await waitFor(()=>service.getRecord(ids[1]).status==="stopped");
-    for (const item of pending.slice(0,4)) if (!JSON.stringify(item.body.messages).includes("task-1:")) item.respond("initial-answer");
-    await waitFor(()=>pending.length>=5 || service.getRecord(ids[0]).status!=="running");
-    assert.equal(pending.length,5,JSON.stringify({agents:service.listAgents().map(record=>({id:record.id,status:record.status,error:record.error,result:record.result})),requests:requests.map(body=>body.messages.slice(-2).map(message=>({role:message.role,content:JSON.stringify(message.content).slice(0,240)})))}));
-    assert.match(JSON.stringify(pending[4].body.messages),/steer-only-first/);
-    assert.equal(requests.slice(0,4).filter(body=>JSON.stringify(body.messages).includes("steer-only-first")).length,0);
-    pending[4].respond("steered-answer");
+    for (const item of pending.slice(0,6)) if (!JSON.stringify(item.body.messages).includes("task-1:")) item.respond("initial-answer");
+    await waitFor(()=>pending.length>=7 || service.getRecord(ids[0]).status!=="running");
+    assert.equal(pending.length,7,JSON.stringify({agents:service.listAgents().map(record=>({id:record.id,status:record.status,error:record.error,result:record.result})),requests:requests.map(body=>body.messages.slice(-2).map(message=>({role:message.role,content:JSON.stringify(message.content).slice(0,240)})))}));
+    assert.match(JSON.stringify(pending[6].body.messages),/steer-only-first/);
+    assert.equal(requests.slice(0,6).filter(body=>JSON.stringify(body.messages).includes("steer-only-first")).length,0);
+    pending[6].respond("steered-answer");
     await service.waitForAll();
     assert.ok(events.some(event=>event.type==="subagent_event" && event.id===ids[0] && event.event.type==="delta"));
     assert.equal(service.getRecord(ids[0]).result,"steered-answer");
     const file=service.getRecord(ids[0]).outputFile;
     await adapter.command({action:"send",id:ids[0],text:"resume-existing-context",requestId:"resume"});
-    await waitFor(()=>pending.length===6);
-    assert.match(JSON.stringify(pending[5].body.messages),/steered-answer/);
-    pending[5].respond("resumed-answer"); await service.waitForAll();
+    await waitFor(()=>pending.length===8);
+    assert.match(JSON.stringify(pending[7].body.messages),/steered-answer/);
+    assert.equal(JSON.stringify(pending[7].body.messages).split(SUBAGENT_COMPLETION_HINT).length-1,1);
+    pending[7].respond("resumed-answer"); await service.waitForAll();
     assert.equal(service.getRecord(ids[0]).outputFile,file);
     const branch=session.sessionManager.getBranch();
     adapter.dispose();
@@ -107,10 +121,11 @@ test("native child streams, four slots, steering, stop, retained resume and cold
     cold.hydrate(branch);
     await cold.command({action:"watch",id:ids[0]});
     await cold.command({action:"send",id:ids[0],text:"wake-after-restart",requestId:"cold"});
-    await waitFor(()=>pending.length===7);
-    assert.match(JSON.stringify(pending[6].body.messages),/resumed-answer/);
-    assert.match(JSON.stringify(pending[6].body.messages),/wake-after-restart/);
-    pending[6].respond("cold-answer");
+    await waitFor(()=>pending.length===9);
+    assert.match(JSON.stringify(pending[8].body.messages),/resumed-answer/);
+    assert.match(JSON.stringify(pending[8].body.messages),/wake-after-restart/);
+    assert.equal(JSON.stringify(pending[8].body.messages).split(SUBAGENT_COMPLETION_HINT).length-1,1);
+    pending[8].respond("cold-answer");
     await waitFor(()=>events.some(event=>event.subagent?.id===ids[0] && event.subagent.result==="cold-answer"));
     assert.equal(restored.sessionManager.getSessionFile(),file);
     assert.ok(coldEntries.some(entry=>entry.data.tool?.subagent.result==="cold-answer"));
@@ -132,4 +147,21 @@ test("live snapshot bounds tool arguments and text without changing native histo
   assert.ok(JSON.stringify(snapshot).length<60000);
   assert.equal(snapshot.messages[0].tools[0].arguments.truncated,true);
   assert.equal(messages[0].content[0].text.length,before);
+});
+
+test("opening an executing child preserves pending tool state and real completion/errors",()=>{
+  const messages=[{role:"assistant",content:[{type:"toolCall",id:"sleep",name:"bash",arguments:{command:"sleep 60"}},
+    {type:"toolCall",id:"finished",name:"read",arguments:{path:"fixture.txt"}},
+    {type:"toolCall",id:"failed",name:"read",arguments:{path:"missing.txt"}},
+    {type:"toolCall",id:"stopped",name:"bash",arguments:{command:"old command"}}]},
+    {role:"toolResult",toolCallId:"finished",content:[]},
+    {role:"toolResult",toolCallId:"failed",isError:true,content:[{type:"text",text:"not found"}]}];
+  const original=JSON.stringify(messages);
+  const session={messages,agent:{state:{pendingToolCalls:new Set(["sleep"])}}};
+  assert.deepEqual(childMessages(session).messages[0].tools.map(tool=>tool.state),["running","done","error","interrupted"]);
+  assert.equal(JSON.stringify(messages),original);
+  session.agent.state.pendingToolCalls.clear();
+  assert.equal(childMessages(session).messages[0].tools[0].state,"interrupted");
+  messages.push({role:"toolResult",toolCallId:"sleep",content:[]});
+  assert.equal(childMessages(session).messages[0].tools[0].state,"done");
 });

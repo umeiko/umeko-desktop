@@ -36,7 +36,7 @@ fi
 .venv/bin/python -m PyInstaller --clean --noconfirm --windowed --onedir --name Umeko \
     --distpath "$bundle_output" "${extra[@]}" --collect-all keyring \
     --add-data 'app/qml:app/qml' --add-data 'app/theme-prompt.txt:app' --add-data 'app/provider-presets.json:app' --add-data 'app/icons:app/icons' \
-    --add-data 'runtime/update-engine.mjs:runtime' --add-data 'runtime/bridge.mjs:runtime' --add-data 'runtime/subagents.mjs:runtime' --add-data 'runtime/subagent-sdk.mjs:runtime' --add-data 'runtime/rpc-ui.mjs:runtime' --add-data 'runtime/provider-policy.mjs:runtime' \
+    --add-data 'runtime/update-engine.mjs:runtime' --add-data 'runtime/bridge.mjs:runtime' --add-data 'runtime/input-queue.mjs:runtime' --add-data 'runtime/subagents.mjs:runtime' --add-data 'runtime/subagent-sdk.mjs:runtime' --add-data 'runtime/subagent-settings.mjs:runtime' --add-data 'runtime/rpc-ui.mjs:runtime' --add-data 'runtime/provider-policy.mjs:runtime' \
     --add-data 'runtime/resources.mjs:runtime' --add-data 'runtime/chatbox.mjs:runtime' --add-data 'runtime/network-retry.mjs:runtime' --add-data 'runtime/pi-commands.mjs:runtime' --add-data 'runtime/umeko-control.mjs:runtime' --add-data 'runtime/umeko-operations.json:runtime' --add-data 'runtime/umeko-docs:runtime/umeko-docs' --add-data 'runtime/webview-component.mjs:runtime' --add-data 'runtime/webview-component.json:runtime' --add-data 'build/webview-support:webview-support' \
     --add-data 'build/build-info.json:.' --add-data 'build/provider-resources:provider-resources' --add-data 'THIRD_PARTY_NOTICES.md:.' --add-data 'licenses:licenses' main.py
 .venv/bin/python - "$output" "$bundle_output" <<'PY'

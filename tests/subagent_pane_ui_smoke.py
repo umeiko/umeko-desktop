@@ -12,7 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 os.environ.setdefault("UMEKO_LANGUAGE", "zh")
 os.environ["UMEKO_DATA_DIR"] = tempfile.mkdtemp(prefix="umeko-subagent-pane-ui-")
-from PySide6.QtCore import Qt, QPoint, QPointF
+from PySide6.QtCore import Qt, QPoint, QPointF, QObject
 from PySide6.QtTest import QTest
 from main import create_application
 
@@ -87,7 +87,7 @@ try:
     QTest.qWait(450)
     click("activeSubagent_preview-3")
     wait(lambda: backend.subagents.selected.get("id") == "preview-3" and not backend.subagents.context["loading"], "Active menu did not open the chosen child")
-    QTest.qWait(450)
+    wait(lambda: not window.findChild(QObject, "subagentActiveMenu").property("visible"), "Active menu did not finish closing")
     output = ROOT / "artifacts/screenshots"
     output.mkdir(parents=True, exist_ok=True)
     assert window.grabWindow().save(str(output / "subagent-pane.png"))
@@ -97,7 +97,9 @@ try:
     QTest.mousePress(window, Qt.LeftButton, Qt.NoModifier, start)
     QTest.mouseMove(window, start+QPoint(100,0)); QTest.qWait(80)
     QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, start+QPoint(100,0)); QTest.qWait(80)
-    assert find("webPane").width() < before-70
+    assert find("webPane").width() < before-70, {
+        "before": before, "after": find("webPane").width(), "handleEnabled": handle.isEnabled(),
+        "blocked": find("webPane").property("blocked"), "popupVisible": find("subagentIndicator").property("popupVisible")}
     window.setProperty("page", "settings")
     wait(lambda: not find("webPane").property("moving"), "Settings left the right pane open")
     assert not find("webPane").property("opened") and not backend.subagents.selected

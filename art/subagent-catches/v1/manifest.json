@@ -1,0 +1,38 @@
+{
+  "tool": "image_gen.imagegen (built-in)",
+  "prompts": "prompts.json",
+  "assets": [
+    {
+      "id": "chika-komari",
+      "file": "../../../app/icons/subagents/chika-komari-catch.png",
+      "sha256": "b3b47347ec1f60cdb2d4aa16670cd3c5da857b5ebd1fe8532b0a1daae64ee546",
+      "width": 1265,
+      "height": 1244,
+      "transparent": true
+    },
+    {
+      "id": "lemon-yakishio",
+      "file": "../../../app/icons/subagents/lemon-yakishio-catch.png",
+      "sha256": "01f6d0cc943ae3c3f0d1fe2a7e2d98f7099fffff93f26f279723ebaf787f31b7",
+      "width": 1265,
+      "height": 1244,
+      "transparent": true
+    },
+    {
+      "id": "kaju-nukumizu",
+      "file": "../../../app/icons/subagents/kaju-nukumizu-catch.png",
+      "sha256": "fc50ee41a586746e393fe5a7d9c5441d1f2b2458e05e089356ba3e367e9e4ee5",
+      "width": 1265,
+      "height": 1244,
+      "transparent": true
+    },
+    {
+      "id": "yumeko-shikiya",
+      "file": "../../../app/icons/subagents/yumeko-shikiya-catch.png",
+      "sha256": "63790d6914d13816236a00fc2502f7a36e9d3a9c3b1eac25ff384f79dce9a6ca",
+      "width": 1265,
+      "height": 1244,
+      "transparent": true
+    }
+  ]
+}

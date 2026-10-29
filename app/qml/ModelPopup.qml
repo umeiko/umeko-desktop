@@ -2,36 +2,23 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-Popup {
+AnchoredPidPopup {
     id: root
     objectName: "modelPopup"
     property real heightLimit: 470
-    property bool desiredOpen: false
-    readonly property bool animating: motion.moving
-    readonly property real fullWidth: 365
-    readonly property real fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 200))
-    readonly property real buttonWidth: parent ? parent.width : 180
-    readonly property real buttonHeight: parent ? parent.height : 31
-    function toggle() { if (desiredOpen) close(); else open() }
-    width: Math.max(1,motion.value.width); height: Math.max(1,motion.value.height)
-    x: motion.value.x; y: motion.value.y
-    margins: 12; padding: 10; focus: true
+    fullWidth: 365
+    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 200))
     signal configure()
     signal dismissed()
-    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-    background: Rectangle { radius: 12; color: Theme.surface; border.color: Theme.line }
-    enter: Transition {}
-    exit: Transition { PauseAnimation { duration: 800 } }
-    onAboutToShow: { desiredOpen = true; modelSearch.clear() }
-    onAboutToHide: { desiredOpen = false; focus = false; dismissed() }
+    onAboutToShow: modelSearch.clear()
+    onAboutToHide: { focus = false; dismissed() }
     onOpened: modelSearch.forceActiveFocus()
-    onClosed: { motion.snap(); dismissed() }
-    PidMotion { id: motion; targetRect: root.desiredOpen ? Qt.rect(0,-root.fullHeight-8,root.fullWidth,root.fullHeight) : Qt.rect(0,-root.buttonHeight-8,root.buttonWidth,root.buttonHeight) }
+    onClosed: dismissed()
     contentItem: Item {
         clip: true
     ColumnLayout {
-        width: root.fullWidth - root.padding * 2; height: root.fullHeight - root.padding * 2; spacing: 10
-        opacity: Math.max(0,Math.min(1,((root.height-root.buttonHeight)/Math.max(1,root.fullHeight-root.buttonHeight)-0.15)/0.65))
+        width: root.expandedWidth - root.padding * 2; height: root.expandedHeight - root.padding * 2; spacing: 10
+        opacity: root.contentOpacity
         InputField { id: modelSearch; objectName: "modelSearch"; Layout.fillWidth: true; placeholderText: I18n.t("搜索供应商或模型…"); height: 39 }
         ListView {
             id: modelList; Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 9

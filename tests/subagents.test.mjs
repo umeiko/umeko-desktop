@@ -135,6 +135,32 @@ test("resuming through the tool persists an alias to its original history row", 
   } finally { adapter.dispose(); }
 });
 
+test("invalid explicit model returns the current complete wrapped model catalog, only on model-selection errors", async () => {
+  let execute, response={isError:true,content:[{type:"text",text:'Model not found: "original-provider/fast".\n\nAvailable models:\n  stale/model'}]};
+  let models=[{provider:"umeko",id:"fast",name:"Fast",apiKey:"must-not-be-returned"},
+    {provider:"umeko",id:"careful",name:"Careful"}];
+  const adapter=createSubagentExtension({emit(){},loadPackage:async()=>({getService:()=>undefined,
+    factory:pi=>pi.registerTool({name:"subagent",execute:async()=>response})})});
+  try {
+    await adapter.extension({events:{on:()=>()=>{}},on(){},registerTool:tool=>{execute=tool.execute;}});
+    const ctx={modelRegistry:{getAvailable:()=>models}};
+    const result=await execute("bad",{model:"original-provider/fast"},undefined,undefined,ctx);
+    assert.equal(result.isError,true);
+    assert.deepEqual(result.details.availableModels.map(model=>model.model),["umeko/careful","umeko/fast"]);
+    assert.match(result.content[0].text,/原供应商 ID/);
+    assert.match(result.content[0].text,/"model":"umeko\/careful"/);
+    assert.ok(!JSON.stringify(result).includes("must-not-be-returned"));
+    assert.ok(!JSON.stringify(result).includes("stale/model"));
+    models.push({provider:"umeko",id:"new-model",name:"New"});
+    const refreshed=await execute("again",{model:"bad/model"},undefined,undefined,ctx);
+    assert.equal(refreshed.details.availableModels.length,3);
+    response={isError:true,content:[{type:"text",text:"Network timeout"}]};
+    assert.equal(await execute("network",{model:"umeko/fast"},undefined,undefined,ctx),response);
+    response={content:[{type:"text",text:"Started"}]};
+    assert.equal(await execute("ok",{model:"umeko/fast"},undefined,undefined,ctx),response);
+  } finally { adapter.dispose(); }
+});
+
 test("community child uses Umeko settings and native retry without changing saved settings", { timeout: 90000 }, async () => {
   const Pi = await import("../runtime/node_modules/@earendil-works/pi-coding-agent/dist/index.js");
   const { AuthStorage } = await import("../runtime/node_modules/@earendil-works/pi-coding-agent/dist/core/auth-storage.js");
@@ -188,7 +214,8 @@ test("community child uses Umeko settings and native retry without changing save
       resourceLoader: loader, sessionManager: Pi.SessionManager.create(directory, join(directory, "sessions")),
       model: modelRuntime.getModel("umeko-retry-test", "retry-test") }));
     await session.bindExtensions({});
-    const jiti = createJiti(new URL("../runtime/subagents.mjs", import.meta.url).href, { moduleCache: false });
+    const jiti = createJiti(new URL("../runtime/subagents.mjs", import.meta.url).href, {
+      moduleCache: false, tryNative: false, fsCache: join(agentDir, "cache", "test-service") });
     const { getSubagentsService } = await jiti.import("@gotgenes/pi-subagents");
     const service = getSubagentsService(); assert.ok(service);
     const id = service.spawn("general-purpose", "Reply briefly", { foreground: true });

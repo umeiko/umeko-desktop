@@ -75,6 +75,17 @@ ApplicationWindow {
     readonly property bool previewSidebarCollapsed: webPane.opened && page === "chat" && width - Math.min(sidebarPreferredWidth, sidebarMaximumWidth) < chatMinimumWidth + webMinimumWidth
     readonly property bool sidebarLayoutCollapsed: sidebarCollapsed || previewSidebarCollapsed
     readonly property real webMaximumWidth: Math.max(webMinimumWidth, mainArea.width - chatMinimumWidth)
+    function showChatWidthLimitHint() {
+        const text = I18n.t("已经不能更窄啦！")
+        if (welcome.visible) { welcomeMascot.say(text); return }
+        const row = conversation.itemAtIndex(conversation.count-1)
+        const mascot = row ? row.replyMascot : null
+        if (mascot && mascot.visible) {
+            const point = mascot.mapToItem(conversation,0,0)
+            if (point.y >= 0 && point.y+mascot.height <= conversation.height) { mascot.say(text); return }
+        }
+        widthLimitMascot.say(text)
+    }
     property real sidebarPreferredWidth: backend.sidebarWidth
     property bool sidebarCollapsed: backend.sidebarCollapsed
     readonly property real sidebarMinimumWidth: 200
@@ -102,7 +113,7 @@ ApplicationWindow {
         if (window.visibility === Window.Minimized) window.showNormal()
         window.raise(); window.requestActivate(); composer.focusInput(); dropFocusTimer.restart()
     }
-    function acceptChatFiles(urls) { backend.addAttachments(JSON.stringify(urls)); modelPopup.close(); focusChatInput() }
+    function acceptChatFiles(urls) { const accepted = backend.addAttachments(JSON.stringify(urls)); if (accepted) { modelPopup.close(); focusChatInput() }; return accepted }
     function attachChatFile(path) { backend.attachChatboxFile(path); imageViewer.close(); focusChatInput() }
     function attachChatUrl(url) { backend.attachChatboxUrl(url); focusChatInput() }
     function previewChatWeb(item) {
@@ -112,6 +123,10 @@ ApplicationWindow {
         window.page = "chat"; webPane.submit(url, item.title || item.name || "")
     }
     function previewChatDocument(item) { window.page = "chat"; webPane.showDocument(item) }
+    function showSubagentGroup(agents, anchor) {
+        if (subagentMatrix.desiredOpen && subagentMatrix.parent === anchor) { subagentMatrix.close(); return }
+        subagentMatrix.agents = agents; subagentMatrix.parent = anchor; subagentMatrix.open()
+    }
     function previewChatImage(item, siblings) {
         if (item.kind === "web") { previewChatWeb(item); return }
         const info = item.url && item.preview !== undefined ? item : backend.chatboxFileInfo(item.path)
@@ -128,7 +143,7 @@ ApplicationWindow {
     onConversationVisibleChanged: backend.setConversationVisible(conversationVisible)
     Component.onCompleted: backend.setConversationVisible(conversationVisible)
     Shortcut { sequence: "Ctrl+N"; onActivated: window.startChat() }
-    Shortcut { sequence: "Ctrl+S"; enabled: window.page === "chat" && !chatCover.visible; onActivated: composer.sendMessage(true) }
+    Shortcut { sequence: "Ctrl+S"; enabled: window.page === "chat" && !chatCover.visible && !webPane.subagentInputFocused; onActivated: composer.sendMessage(true) }
     Shortcut { sequence: "Ctrl+,"; onActivated: window.settings(0) }
     Shortcut { sequence: "Ctrl+B"; onActivated: window.toggleSidebar() }
     Shortcut { sequences: [StandardKey.Copy]; enabled: chatSelection.activeFocus && chatSelection.hasSelection; onActivated: Qt.callLater(chatSelection.copy) }
@@ -241,10 +256,13 @@ ApplicationWindow {
         // A PID target change must not hide the active handle and cancel its grab.
         visible: resizing || !window.sidebarCollapsed && !sidebarWidthMotion.moving; enabled: !chatSelection.dragging
         cursorShape: Qt.SizeHorCursor; hoverEnabled: true; preventStealing: true
-        property bool resizing: false
-        property real pressX: 0
-        property real pressWidth: 0
-        property real dragWidth: 0
+        readonly property bool resizing: sidebarGesture.active
+        readonly property real dragWidth: sidebarGesture.dragWidth
+        PanelResizeGesture {
+            id: sidebarGesture
+            minimumWidth: window.sidebarMinimumWidth; maximumWidth: window.sidebarMaximumWidth
+            collapseThreshold: window.sidebarCollapseThreshold
+        }
         function finishResize(collapse) {
             if (!resizing) return
             if (collapse) {
@@ -252,27 +270,23 @@ ApplicationWindow {
                 window.sidebarCollapseHintPending = true
                 window.sidebarCollapsed = true
             } else {
-                window.sidebarPreferredWidth = Math.max(window.sidebarMinimumWidth, Math.min(window.sidebarMaximumWidth, dragWidth))
+                window.sidebarPreferredWidth = sidebarGesture.settledWidth
             }
-            resizing = false
+            sidebarGesture.end()
             window.saveSidebarLayout()
             window.showSidebarCollapseHint()
         }
         onPressed: mouse => {
-            pressX = mapToItem(window.contentItem, mouse.x, mouse.y).x
-            pressWidth = sidebar.width
-            dragWidth = pressWidth
-            resizing = true
+            sidebarGesture.begin(mapToItem(window.contentItem, mouse.x, mouse.y).x, sidebar.width)
             window.sidebarCollapseHintPending = false; sidebarToggle.stopCollapseHint()
             sidebarWidthMotion.snap()
         }
         onPositionChanged: mouse => {
             if (!pressed || !resizing) return
-            const delta = mapToItem(window.contentItem, mouse.x, mouse.y).x - pressX
-            dragWidth = Math.max(0, Math.min(window.sidebarMaximumWidth, pressWidth + delta))
+            sidebarGesture.move(mapToItem(window.contentItem, mouse.x, mouse.y).x)
             sidebarWidthMotion.snap()
         }
-        onReleased: finishResize(dragWidth <= window.sidebarCollapseThreshold)
+        onReleased: finishResize(sidebarGesture.collapseReady)
         onCanceled: finishResize(false)
         Rectangle { width: 2; height: parent.height; anchors.horizontalCenter: parent.horizontalCenter; color: parent.containsMouse || parent.pressed ? Theme.accent : "transparent"; opacity: 0.5 }
     }
@@ -314,7 +328,7 @@ ApplicationWindow {
                 ActionButton { glyph: "maximize"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最大化"); onClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
                 ActionButton { objectName: "closeToTrayButton"; glyph: "x"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("收起到托盘"); onClicked: window.close() }
             }
-            SubagentIndicator { anchors.right: windowControls.left; anchors.rightMargin: 13; anchors.verticalCenter: windowControls.verticalCenter; visible: window.page === "chat" && backend.subagents.activeCount > 0 }
+            SubagentIndicator { id: subagentIndicator; anchors.right: windowControls.left; anchors.rightMargin: 13; anchors.verticalCenter: windowControls.verticalCenter; visible: window.page === "chat" && backend.subagents.activeCount > 0 }
         }
 
         Item {
@@ -447,6 +461,7 @@ ApplicationWindow {
                 }
                 delegate: Column {
                     id: messageRow
+                    readonly property var replyMascot: closingMascot
                     required property var modelData
                     required property int index
                     readonly property point hoverPoint: chatSelection.mapToItem(messageRow, chatSelection.pointer.x, chatSelection.pointer.y)
@@ -517,6 +532,7 @@ ApplicationWindow {
                         }
                     }
                     ReplyMascot {
+                        id: closingMascot
                         objectName: "replyEndMascot_" + messageRow.index
                         selectionController: chatSelection
                         visible: !modelData._loading && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !backend.running
@@ -526,6 +542,12 @@ ApplicationWindow {
             }
 
             ChatSelection { id: chatSelection; anchors.fill: conversation; view: conversation; visible: conversation.visible; enabled: !chatCover.visible }
+            ReplyMascot {
+                id: widthLimitMascot; objectName: "chatWidthLimitMascot"
+                x: composer.x+33; y: Math.max(0,composer.y-height-12); z: 50
+                visible: reaction.length > 0
+            }
+            Connections { target: backend; function onViewChanged() { widthLimitMascot.reset() } }
 
             QuestionNavigator {
                 anchors.right: parent.right
@@ -558,29 +580,43 @@ ApplicationWindow {
             id: webPane
             visible: window.page === "chat" && animatedWidth > 0.5
             anchors.right: parent.right; anchors.top: header.bottom; anchors.bottom: parent.bottom
-            preferredWidth: Math.max(window.webMinimumWidth, Math.min(window.webMaximumWidth, window.webPreferredWidth > 0 ? window.webPreferredWidth : Math.min(540, Math.max(350, parent.width * 0.46))))
-            resizing: webResizeHandle.pressed
-            blocked: window.page !== "chat" || !window.visible || window.visibility === Window.Minimized || window.mediaOverlayActive || modelPopup.visible || backend.pendingApproval.id !== undefined
+            preferredWidth: Math.max(window.webMinimumWidth, Math.min(window.webMaximumWidth, webResizeHandle.resizing ? webResizeHandle.dragWidth : window.webPreferredWidth > 0 ? window.webPreferredWidth : Math.min(540, Math.max(350, parent.width * 0.46))))
+            resizing: webResizeHandle.resizing
+            blocked: window.page !== "chat" || !window.visible || window.visibility === Window.Minimized || window.mediaOverlayActive || modelPopup.visible || (subagentMatrix.visible && (subagentMatrix.desiredOpen || subagentMatrix.animating)) || subagentIndicator.popupVisible || backend.pendingApproval.id !== undefined
         }
 
         MouseArea {
             id: webResizeHandle; objectName: "webPaneResizeHandle"
             x: webPane.x - 4; width: 8; anchors.top: header.bottom; anchors.bottom: parent.bottom; z: 40
-            visible: webPane.visible && webPane.opened && (!webPane.moving || pressed)
+            visible: resizing || webPane.visible && webPane.opened && !webPane.moving
             enabled: !webPane.blocked && !chatSelection.dragging
             cursorShape: Qt.SizeHorCursor; hoverEnabled: true; preventStealing: true
-            property real pressX: 0
-            property real pressWidth: 0
-            onPressed: mouse => {
-                pressX = mapToItem(window.contentItem, mouse.x, mouse.y).x
-                pressWidth = webPane.width
+            readonly property bool resizing: webGesture.active
+            readonly property real dragWidth: webGesture.dragWidth
+            PanelResizeGesture {
+                id: webGesture; direction: -1
+                minimumWidth: window.webMinimumWidth; maximumWidth: window.webMaximumWidth
+                onMaximumExceeded: window.showChatWidthLimitHint()
             }
-            onPositionChanged: mouse => {
-                if (!pressed) return
-                const delta = mapToItem(window.contentItem, mouse.x, mouse.y).x - pressX
-                window.webPreferredWidth = Math.max(window.webMinimumWidth, Math.min(window.webMaximumWidth, pressWidth - delta))
+            function finishResize(collapse) {
+                if (!resizing) return
+                if (collapse) {
+                    if (window.webPreferredWidth <= 0) window.webPreferredWidth = webGesture.pressWidth
+                    webPane.dismiss()
+                } else window.webPreferredWidth = webGesture.settledWidth
+                webGesture.end()
+            }
+            onPressed: mouse => {
+                webGesture.begin(mapToItem(window.contentItem,mouse.x,mouse.y).x,webPane.width)
                 webPane.snapWidth()
             }
+            onPositionChanged: mouse => {
+                if (!pressed || !resizing) return
+                webGesture.move(mapToItem(window.contentItem,mouse.x,mouse.y).x)
+                webPane.snapWidth()
+            }
+            onReleased: finishResize(webGesture.collapseReady)
+            onCanceled: finishResize(false)
             Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 2; height: parent.height; color: parent.containsMouse || parent.pressed ? Theme.accent : "transparent"; opacity: 0.5 }
         }
 
@@ -601,6 +637,8 @@ ApplicationWindow {
         onConfigure: { window.settings(0) }
         onDismissed: Qt.callLater(function() { if (window.page === "chat" && !modelPopup.desiredOpen && !window.mediaOverlayActive) composer.focusInput() })
     }
+    SubagentMatrix { id: subagentMatrix; parent: Overlay.overlay }
+    Connections { target: backend; function onViewChanged() { subagentMatrix.close() } }
     ApprovalDialog { parent: Overlay.overlay }
     SidebarMenus { id: sidebarMenus; objectName: "sidebarMenus"; parent: Overlay.overlay; anchors.fill: parent }
     Rectangle {

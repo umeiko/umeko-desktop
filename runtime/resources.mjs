@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 const semver = require("semver");
 const runtimeRoot = dirname(fileURLToPath(import.meta.url));
 const desktopRepository = "https://github.com/umeiko/umeko-desktop";
+export const SUBAGENT_COMPLETION_HINT = "完成任务后，如有需要，请使用 notify_parent 工具向主智能体简要汇报结果。";
 const packageName = /^(?:@[a-z0-9._-]+\/)?[a-z0-9][a-z0-9._-]*$/i;
 const text = value => typeof value === "string" ? value.slice(0, 4096) : "";
 export function webLink(value) {

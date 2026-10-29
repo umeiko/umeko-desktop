@@ -12,6 +12,7 @@ Rectangle {
     property string pageUrl: ""
     property string pageTitle: ""
     property string mode: "web"
+    readonly property bool subagentInputFocused: !!agentSurface.item && agentSurface.item.inputFocused
     property string documentPath: ""
     property real preferredWidth: 480
     readonly property real animatedWidth: Math.max(0, motion.value.width - 1)
@@ -156,7 +157,7 @@ Rectangle {
     Loader {
         id: agentSurface; objectName: "subagentSurfaceLoader"
         x: 1; y: 0; width: Math.max(0,pane.preferredWidth-1); height: parent.height
-        active: pane.opened && pane.mode === "subagent"; visible: !pane.blocked
+        active: pane.opened && pane.mode === "subagent"
         source: active ? "SubagentPane.qml" : ""
     }
     Connections { target: agentSurface.item; function onClosed() { pane.dismiss() } }

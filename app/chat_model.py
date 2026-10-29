@@ -270,7 +270,10 @@ class ChatModel(QAbstractListModel):
                             if batch:
                                 steps.append({"kind": "tools", "tools": batch})
                                 batch = []
-                            steps.append({"kind": "subagents", "agents": [dict(tool["subagent"])]})
+                            if steps and steps[-1]["kind"] == "subagents":
+                                steps[-1]["agents"].append(dict(tool["subagent"]))
+                            else:
+                                steps.append({"kind": "subagents", "agents": [dict(tool["subagent"])]})
                             continue
                         batch.append(tool)
                         if tool.get("name") == "submit_to_chatbox" and tool.get("media"):
@@ -299,8 +302,9 @@ class ChatModel(QAbstractListModel):
                         if text:
                             group['activity'].append({'kind':kind, 'text':text, **({'error':False} if kind == 'text' else {})})
                 # Adjacent operations with no intervening prose share a batch.
-                if group["activity"] and steps and group["activity"][-1]["kind"] == steps[0]["kind"] == "tools":
-                    group["activity"][-1]["tools"] = group["activity"][-1]["tools"] + steps[0]["tools"]
+                if group["activity"] and steps and group["activity"][-1]["kind"] == steps[0]["kind"] and steps[0]["kind"] in ("tools", "subagents"):
+                    field = "tools" if steps[0]["kind"] == "tools" else "agents"
+                    group["activity"][-1][field] = group["activity"][-1][field] + steps[0][field]
                     steps = steps[1:]
                 group["activity"].extend(steps)
                 group["tools"] = group.get("tools", []) + current.get("tools", [])

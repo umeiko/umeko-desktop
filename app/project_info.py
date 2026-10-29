@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 NAME = "Umeko"
-VERSION = "0.5.2"
+VERSION = "0.6.0"
 AUTHOR = "umeiko"
 PROJECT_URL = "https://github.com/umeiko/umeko-desktop"
 AUTHOR_URL = "https://github.com/umeiko"

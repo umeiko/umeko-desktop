@@ -192,7 +192,7 @@ class PiControllerMixin:
         if self._closing:
             return
         kind, visible = event.get("type"), record is self._view
-        if kind in ("subagents", "subagent_context", "subagent_event", "subagent_command"):
+        if kind in ("subagents", "subagent_context", "subagent_event", "subagent_command", "subagent_queue", "subagent_queue_edited", "subagent_queue_returned"):
             self._subagents.handle(record, event)
             return
         if kind == 'umeko_request':

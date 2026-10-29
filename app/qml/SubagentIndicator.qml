@@ -1,42 +1,42 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Window
+import QtQuick.Layouts
 
 ActionButton {
     id: root
     objectName: "subagentIndicator"
+    readonly property bool popupVisible: menu.visible && (menu.desiredOpen || menu.animating)
     visible: backend.subagents.activeCount > 0
-    width: Theme.control(62); height: Theme.control(34); quiet: true
+    width: Math.max(Theme.control(70), count.implicitWidth + Theme.icon(45) + Theme.control(16))
+    height: Theme.control(34); quiet: true
     hint: I18n.t("正在工作的子代理")
-    onClicked: menu.visible ? menu.close() : menu.open()
+    onClicked: menu.toggle()
     onVisibleChanged: if (!visible) menu.close()
-    contentItem: Item {
-        SubagentAvatar { x: 3; anchors.verticalCenter: parent.verticalCenter; width: 29; height: 29; slot: backend.subagents.activeAgents.length ? backend.subagents.activeAgents[0].avatarSlot || 0 : 0 }
-        Rectangle { x: 26; y: 2; width: 6; height: 6; radius: 3; color: Theme.accent }
-        Text { x: 38; anchors.verticalCenter: parent.verticalCenter; text: backend.subagents.activeCount; color: Theme.ink; font.pixelSize: Theme.font(11) }
-        Glyph { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down"; width: 10; height: 10 }
+    contentItem: RowLayout {
+        spacing: 5
+        SubagentAvatar { Layout.preferredWidth: Theme.icon(27); Layout.preferredHeight: Theme.icon(27); slot: backend.subagents.activeAgents.length ? backend.subagents.activeAgents[0].avatarSlot || 0 : 0 }
+        Text { id: count; text: backend.subagents.activeCount; color: Theme.ink; font.pixelSize: Theme.font(11) }
+        Glyph { name: "chevron-down"; Layout.preferredWidth: Theme.icon(10); Layout.preferredHeight: Theme.icon(10) }
     }
-    PidPopup {
+    AnchoredPidPopup {
         id: menu; objectName: "subagentActiveMenu"
-        x: root.width-width; y: root.height+8; width: Math.min(340,root.Window.window.width-40)
-        padding: 9; modal: false; transformOrigin: Popup.TopRight
-        contentItem: Column {
-            spacing: 4
-            Repeater {
-                model: backend.subagents.activeAgents
-                ActionButton {
-                    id: entry
+        openBelow: true; alignRight: true
+        fullWidth: Theme.control(340)
+        fullHeight: Math.min(Theme.control(520), backend.subagents.activeCount*(Theme.control(74)+4)-4+padding*2)
+        padding: 9
+        contentItem: Item {
+            clip: true
+            ListView {
+                id: list; objectName: "activeSubagentList"
+                width: menu.expandedWidth-menu.padding*2; height: menu.expandedHeight-menu.padding*2
+                opacity: menu.contentOpacity; clip: true; spacing: 4
+                model: backend.subagents.activeAgents; reuseItems: true; cacheBuffer: 100
+                ScrollBar.vertical: ScrollBar {}
+                delegate: SubagentTile {
                     required property var modelData
                     objectName: "activeSubagent_" + modelData.id
-                    width: menu.availableWidth; height: Theme.control(67); quiet: true
-                    onClicked: { menu.close(); backend.subagents.open(modelData.id) }
-                    contentItem: Item {
-                        SubagentAvatar { x: 7; anchors.verticalCenter: parent.verticalCenter; width: 38; height: 38; slot: entry.modelData.avatarSlot || 0 }
-                        Column { x: 56; width: Math.max(0,parent.width-x-18); anchors.verticalCenter: parent.verticalCenter; spacing: 6
-                            Text { width: parent.width; text: entry.modelData.name + " · " + I18n.t(entry.modelData.status === "queued" ? "排队中" : "运行中"); color: Theme.ink; font.pixelSize: Theme.font(12); elide: Text.ElideRight }
-                            Text { width: parent.width; text: entry.modelData.activity || entry.modelData.task || entry.modelData.type; textFormat: Text.PlainText; color: Theme.muted; font.pixelSize: Theme.font(10); elide: Text.ElideRight }
-                        }
-                    }
+                    width: list.width; height: Theme.control(74); agent: modelData; showStatus: true
+                    onActivated: { menu.close(); backend.subagents.open(modelData.id) }
                 }
             }
         }
