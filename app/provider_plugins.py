@@ -595,7 +595,7 @@ class ProviderPlugins(QObject):
             result = payload["result"]
             if "models" in result: record["models"] = self._models(record, result["models"])
             if "label" in result: record["accountLabel"] = result["label"]
-            self.status[provider_id] = result.get("message") or record.get("accountLabel", "已连接") + f" · {len(record['models'])} 个模型"
+            self.status[provider_id] = result.get("message") or record.get("accountLabel", "已连接")
             if "models" in result:
                 self.repair_selection(provider_id)
                 self._notify()

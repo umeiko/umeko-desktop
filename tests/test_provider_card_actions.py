@@ -64,8 +64,8 @@ class ProviderCardActionTests(unittest.TestCase):
     def setUpClass(cls): cls.app = QCoreApplication.instance() or QCoreApplication([])
 
     def setUp(self):
-        root = Path("C:/UmekoTests")
-        root.mkdir(exist_ok=True)
+        root = Path("C:/UmekoTests") if os.name == "nt" else Path(tempfile.gettempdir()) / "UmekoTests"
+        root.mkdir(parents=True, exist_ok=True)
         self.temp = tempfile.TemporaryDirectory(prefix="f6-cards-", dir=root)
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)

@@ -559,6 +559,8 @@ var strings = {
   "供应商卡片操作不可用": "Provider card action is unavailable",
   "正在执行供应商操作…": "Running provider action…",
   "供应商操作已完成": "Provider action completed",
+  "可用模型已更新": "Available models updated",
+  "已连接": "Connected",
   "供应商插件已安装": "Provider plugin installed",
   "随应用提供的供应商": "Providers included with the app",
   "安装供应商": "Install provider",

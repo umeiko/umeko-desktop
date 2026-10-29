@@ -13,9 +13,11 @@ from umeko_provider_sdk import ProviderError
 
 class FixtureController(QObject):
     toast = Signal(str)
+    changed = Signal()
 
     def __init__(self, directory):
         super().__init__()
+        self.root = directory
         self.store = SimpleNamespace(directory=directory, data={"providers": [
             {"id": "account-123", "api": "plugin", "pluginId": "echo-provider", "pluginVersion": "1.0.0"}
         ]})
@@ -89,6 +91,16 @@ class ProviderIdDiagnosticTests(unittest.TestCase):
         self.assertEqual(self.manager.status["account-123"], "safe model apply error")
         self.assertEqual(self.notices[-1], "safe model apply error")
         self.assertNotIn("account-123", self.manager.busy)
+
+    def test_finished_keeps_account_label_without_untranslated_model_count(self):
+        with patch.object(self.manager, "_models", return_value=[]), \
+                patch.object(self.manager, "repair_selection"), \
+                patch.object(self.manager, "_notify"):
+            self.manager._finished("account-123", {"action": "refresh", "result": {
+                "models": [], "label": "Connected.",
+            }})
+        self.assertEqual(self.manager.status["account-123"], "Connected.")
+        self.assertEqual(self.notices[-1], "可用模型已更新")
 
 
 if __name__ == "__main__":
