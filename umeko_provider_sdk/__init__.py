@@ -42,6 +42,19 @@ class ProviderContext:
 
 class Provider:
     def __init__(self, context: ProviderContext): self.context = context
+    def card_fields(self) -> list[dict]:
+        """Public extra-secret descriptors; return [] until they should be shown.
+
+        Each descriptor has key, label, optional hint/link/message and hasValue.
+        Never return secret values. This accessor must be local and nonblocking.
+        """
+        return []
+    def set_card_secret(self, key: str, value: str) -> dict:
+        """Update a card field using context.secrets; return a public message.
+
+        The host refreshes list_models after this management operation.
+        """
+        raise ProviderError("该供应商不支持额外密钥字段")
     def authenticate(self, credentials: dict[str, str]) -> dict:
         """Return public account details; persist tokens with context.secrets."""
         raise NotImplementedError

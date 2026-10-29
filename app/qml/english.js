@@ -1,5 +1,16 @@
 .pragma library
 var strings = {
+  "密钥已保存，输入可替换": "Key saved; enter a new value to replace it",
+  "输入密钥": "Enter key",
+  "保存密钥": "Save key",
+  "申请密钥": "Apply for a key",
+  "正在保存密钥并刷新模型…": "Saving key and refreshing models…",
+  "供应商额外字段无效": "Invalid provider card fields",
+  "供应商额外字段不可用": "Provider card field is unavailable",
+  "请输入密钥": "Enter a key",
+  "该供应商不支持额外密钥字段": "This provider does not support extra secret fields",
+  "HTTP 许可必须是明确的服务基础地址": "HTTP permission requires an explicit service base URL",
+  "HTTP 服务路径无效": "Invalid HTTP service path",
   "已经不能更窄啦！": "It can't get any narrower!",
   "：点击互动，连续点击或长按有彩蛋": ": tap, tap repeatedly or hold for surprises",
   "嘿，下一棒交给我！": "Hey, I'll take the next leg!",

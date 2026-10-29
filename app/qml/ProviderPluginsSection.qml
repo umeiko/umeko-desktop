@@ -115,6 +115,30 @@ Column {
                     Item { Layout.fillWidth: true }
                     ActionButton { objectName: "loginPlugin_" + card.modelData.id; text: card.modelData.busy ? I18n.t("连接中…") : I18n.t("登录并刷新模型"); primary: true; enabled: !card.modelData.busy; onClicked: { const id = card.modelData.id; const values = card.credentials(); card.clearSecrets(); root.manager.login(id, values) } }
                 }
+                Repeater {
+                    model: card.modelData.cardFields || []
+                    ColumnLayout {
+                        required property var modelData
+                        Layout.fillWidth: true; spacing: 7
+                        Text { text: modelData.label; color: Theme.ink; font.pixelSize: Theme.font(12); font.weight: Font.DemiBold; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                        Text { visible: !!modelData.hint; text: modelData.hint; color: Theme.muted; font.pixelSize: Theme.font(11); Layout.fillWidth: true; wrapMode: Text.Wrap }
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: 8
+                            InputField {
+                                id: extraSecret; objectName: "pluginCardSecret_" + card.modelData.id + "_" + modelData.key
+                                Layout.fillWidth: true; echoMode: TextInput.Password; enabled: !card.modelData.busy
+                                placeholderText: modelData.hasValue ? I18n.t("密钥已保存，输入可替换") : I18n.t("输入密钥")
+                            }
+                            ActionButton {
+                                objectName: "savePluginCardSecret_" + card.modelData.id + "_" + modelData.key
+                                text: I18n.t("保存密钥"); enabled: !card.modelData.busy && extraSecret.text.trim().length > 0
+                                onClicked: { const value = extraSecret.text; extraSecret.clear(); root.manager.saveCardSecret(card.modelData.id, modelData.key, value) }
+                            }
+                            ActionButton { visible: !!modelData.link; text: I18n.t("申请密钥"); quiet: true; onClicked: Qt.openUrlExternally(modelData.link) }
+                        }
+                        Text { visible: !!modelData.message; text: modelData.message; color: Theme.muted; font.pixelSize: Theme.font(11); Layout.fillWidth: true; wrapMode: Text.Wrap }
+                    }
+                }
                 Rectangle { visible: card.modelData.models.length > 0; Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
                     visible: card.modelData.models.length > 0; Layout.fillWidth: true

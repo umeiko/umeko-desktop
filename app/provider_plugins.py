@@ -245,16 +245,37 @@ class ProviderPlugins(QObject):
         self.changed.emit()
         self.c.changed.emit()
 
+    def _card_fields(self, provider_id):
+        # Import remains inert. Only an already activated provider supplies fields.
+        client = self.clients.get(provider_id)
+        if client is None: return []
+        fields = client.card_fields()
+        if not isinstance(fields, list) or len(fields) > 50:
+            raise ProviderError("供应商额外字段无效")
+        import re
+        result, seen = [], set()
+        for field in fields:
+            key = field.get("key") if isinstance(field, dict) else None
+            if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,127}", key) or key in seen:
+                raise ProviderError("供应商额外字段无效")
+            seen.add(key)
+            item = {name: str(field.get(name, ""))[:1000] for name in ("key", "label", "hint", "link", "message")}
+            if item["link"] and not re.match(r"^https?://[^/]+", item["link"], re.I): item["link"] = ""
+            item.update(hasValue=bool(field.get("hasValue")))
+            result.append(item)
+        return result
+
     @Property("QVariantList", notify=changed)
     def rows(self):
         rows = []
         for record in self.c.store.data["providers"]:
             if record["api"] != "plugin": continue
             row = {"id": record["id"], "name": record["name"], "version": record["pluginVersion"],
-                   "models": copy.deepcopy(record["models"]), "fields": [], "busy": record["id"] in self.busy,
+                   "models": copy.deepcopy(record["models"]), "fields": [], "cardFields": [], "busy": record["id"] in self.busy,
                    "status": self.status.get(record["id"], record.get("accountLabel", "尚未登录"))}
             try:
                 _, (manifest, _, _) = self._package(record)
+                row["cardFields"] = self._card_fields(record["id"])
                 values = self._secrets(record["id"]).get("credentials", {})
                 for field in manifest.get("auth", {}).get("fields", []):
                     row["fields"].append({**field, "secret": bool(field.get("secret")),
@@ -268,7 +289,7 @@ class ProviderPlugins(QObject):
         with self.lock:
             self._idle(provider_id)
             self.busy.add(provider_id)
-        self.status[provider_id] = "正在登录…" if action == "login" else "正在刷新模型…"
+        self.status[provider_id] = {"login": "正在登录…", "card-secret": "正在保存密钥并刷新模型…"}.get(action, "正在刷新模型…")
         self.changed.emit()
         def work():
             try:
@@ -371,6 +392,22 @@ class ProviderPlugins(QObject):
             self.c.toast.emit(str(exc))
             return False
 
+    @Slot(str, str, str, result=bool)
+    def saveCardSecret(self, provider_id, key, value):
+        try:
+            self._record(provider_id)
+            if key not in {field["key"] for field in self._card_fields(provider_id)}:
+                raise ProviderError("供应商额外字段不可用")
+            if not value.strip(): raise ProviderError("请输入密钥")
+            def update(client):
+                details = client.set_card_secret(key, value) or {}
+                return {"models": client.list_models(refresh=True), "message": str(details.get("message", ""))[:400]}
+            self._submit(provider_id, "card-secret", update, value)
+            return True
+        except (ProviderError, ValueError, OSError) as exc:
+            self.c.toast.emit(str(exc))
+            return False
+
     def _models(self, record, rows):
         if not isinstance(rows, list) or len(rows) > 2000: raise ProviderError("供应商返回的模型列表无效")
         previous = {m["upstream"]: m for m in record["models"]}
@@ -422,10 +459,10 @@ class ProviderPlugins(QObject):
             result = payload["result"]
             record["models"] = self._models(record, result["models"])
             if "label" in result: record["accountLabel"] = result["label"]
-            self.status[provider_id] = record.get("accountLabel", "已连接") + f" · {len(record['models'])} 个模型"
+            self.status[provider_id] = result.get("message") or record.get("accountLabel", "已连接") + f" · {len(record['models'])} 个模型"
             self.repair_selection(provider_id)
             self._notify()
-            self.c.toast.emit("可用模型已更新")
+            self.c.toast.emit(result.get("message") or "可用模型已更新")
         except (ProviderError, ValueError, OSError) as exc:
             payload["error"] = str(exc)
             self.status[provider_id] = str(exc)
