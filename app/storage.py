@@ -66,7 +66,7 @@ def keyring_protect(value, decrypt=False, account=""):
 DEFAULTS = {
     "projects": [], "activeProject": "", "removedProjects": [], "sessionMeta": {},
     "fontFamily": "",
-    "employeeId": "", "password": "", "workspace": "", "dark": False, "theme": "light",
+    "employeeId": "", "password": "", "workspace": "", "dark": False, "theme": "light", "character": "yanami",
     "selectedProvider": "", "selectedModel": "",
     "providers": [],
     "agent": {"maxTokens": 32768, "outputLimitDefaultVersion": 1, "instructions": "", "autoCompaction": True,

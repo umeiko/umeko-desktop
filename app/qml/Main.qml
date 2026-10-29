@@ -76,7 +76,7 @@ ApplicationWindow {
     readonly property bool sidebarLayoutCollapsed: sidebarCollapsed || previewSidebarCollapsed
     readonly property real webMaximumWidth: Math.max(webMinimumWidth, mainArea.width - chatMinimumWidth)
     function showChatWidthLimitHint() {
-        const text = I18n.t("已经不能更窄啦！")
+        const text = Character.scene("layout.tooNarrow", "")
         if (welcome.visible) { welcomeMascot.say(text); return }
         const row = conversation.itemAtIndex(conversation.count-1)
         const mascot = row ? row.replyMascot : null
@@ -343,7 +343,7 @@ ApplicationWindow {
                 Repeater { model: [{x:0.17,y:0.16,size:12},{x:0.82,y:0.30,size:17},{x:0.27,y:0.65,size:9},{x:0.73,y:0.73,size:11}]
                     Glyph { required property var modelData; x: parent.width * modelData.x; y: parent.height * modelData.y; width: modelData.size; height: modelData.size; name: "spark"; opacity: 0.28 }
                 }
-                Image { objectName: "yanamiWatermark"; anchors.fill: parent; source: "../icons/portraits/02.png"; fillMode: Image.PreserveAspectCrop; horizontalAlignment: Image.AlignHCenter; verticalAlignment: Image.AlignVCenter; mipmap: true; opacity: 0.055 }
+                CharacterArt { objectName: "yanamiWatermark"; anchors.fill: parent; fallbackSource: "../icons/portraits/02.png"; artwork: Character.asset("background", fallbackSource); fillMode: Image.PreserveAspectCrop; horizontalAlignment: Image.AlignHCenter; verticalAlignment: Image.AlignVCenter; mipmap: true; opacity: 0.055 }
             }
             Item {
                 id: welcome; width: Math.min(parent.width - 70, 620); height: 270
@@ -351,7 +351,7 @@ ApplicationWindow {
                 visible: backend.messageCount === 0
                 WelcomeMascot { id: welcomeMascot; anchors.horizontalCenter: parent.horizontalCenter; portraitIndex: backend.portrait }
                 Connections { target: backend; function onViewChanged() { welcomeMascot.reset() } }
-                Text { objectName: "welcomeGreeting"; anchors.horizontalCenter: parent.horizontalCenter; y: 231; width: parent.width; text: welcomeMascot.reactionText || I18n.t(backend.greeting); color: Theme.yanami ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(14); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; lineHeight: 1.35 }
+                Text { objectName: "welcomeGreeting"; anchors.horizontalCenter: parent.horizontalCenter; y: 231; width: parent.width; text: welcomeMascot.reactionText || Character.greeting(I18n.t(backend.greeting), welcomeMascot.portraitIndex); color: Theme.yanami ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(14); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; lineHeight: 1.35 }
             }
 
             ListView {

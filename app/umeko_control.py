@@ -211,11 +211,14 @@ class UmekoControl(QObject):
 
     def _execute(self, operation, args, caller, queue, job_id=None):
         b = self.b
-        if operation == 'help': return {'docsRoot': str(b._release/'umeko-docs'), 'entry': str(b._release/'umeko-docs/README.md')}
+        if operation == 'help':
+            docs = b.store.directory/'agent-docs'
+            if not (docs/'README.md').is_file(): docs = b._release/'umeko-docs'
+            return {'docsRoot': str(docs), 'entry': str(docs/'README.md')}
         if operation == 'operations.list':
             prefix = args.get('prefix', '')
             return {'operations': {name: spec for name, spec in self.operations.items() if name.startswith(prefix)},
-                    'reads': ['settings.get', 'providers.list', 'plugins.list', 'plugins.getConfig', 'themes.list', 'projects.list', 'sessions.list', 'sessions.get', 'mcp.get', 'status.get', 'jobs.get']}
+                    'reads': ['settings.get', 'providers.list', 'models.list', 'characters.list', 'characters.get', 'characters.config', 'plugins.list', 'plugins.getConfig', 'themes.list', 'projects.list', 'sessions.list', 'sessions.get', 'mcp.get', 'status.get', 'jobs.get']}
         if operation == 'batch':
             operations = args.get('operations')
             if not isinstance(operations, list) or not 1 <= len(operations) <= 32: raise ValueError('batch needs 1-32 operations')
@@ -227,6 +230,12 @@ class UmekoControl(QObject):
             settings.pop('sessionMeta', None)
             return {'config': redacted(settings), 'activeSession': b.activeSession, 'callerSession': caller.id if caller else ''}
         if operation == 'providers.list': return {'providers': redacted(b.config['providers']), 'presets': b.commonProviders}
+        if operation == 'models.list':
+            return {'models': [dict(model='umeko/'+row['id'], id=row['id'], provider='umeko', displayProvider=row.get('owned_by', 'Umeko'), contextWindow=row['contextWindow'], vision='image' in row['input'])
+                               for row in b.gateway.models()]}
+        if operation == 'characters.list': return {'selected': b.characterStyle['id'], 'characters': b.characterPacks}
+        if operation == 'characters.get': return {'character': b.characterStyle}
+        if operation == 'characters.config': return {'path':str(b.store.directory/'character-config.json'), 'config':copy.deepcopy(b._character_config), 'overrides':copy.deepcopy(b._character_options)}
         if operation == 'plugins.list': return {'accounts': redacted(b.providerPlugins.rows), 'packages': b.providerPlugins.packages}
         if operation == 'plugins.resource':
             kind = args.get('kind')

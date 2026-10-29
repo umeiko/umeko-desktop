@@ -11,7 +11,8 @@ Item {
     width: 0; height: 0
     Component.onCompleted: { ready = true; snap() }
     onTargetRectChanged: if (ready) moving = true
-    function snap() { value = targetRect; velocity = [0,0,0,0]; integral = [0,0,0,0]; moving = false }
+    function snapTo(rect) { value = rect; velocity = [0,0,0,0]; integral = [0,0,0,0]; moving = false }
+    function snap() { snapTo(targetRect) }
     function clamp(value, limit) { return Math.max(-limit, Math.min(limit, value)) }
     function advance(seconds) {
         const target = [targetRect.x,targetRect.y,targetRect.width,targetRect.height]

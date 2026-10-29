@@ -1,12 +1,13 @@
 import QtQuick
 import "assistant-avatars.js" as Avatars
 
-Image {
+CharacterArt {
     property string messageKey: ""
     readonly property int variant: Avatars.choose(messageKey)
     readonly property bool loaded: status === Image.Ready
     width: Theme.icon(40); height: width
-    source: "../icons/avatars/" + ["smile", "wink", "happy"][variant] + ".webp"
+    fallbackSource: "../icons/avatars/" + ["smile", "wink", "happy"][variant] + ".webp"
+    artwork: Character.asset(["avatarSmile", "avatarWink", "avatarHappy"][variant], fallbackSource)
     sourceSize: Qt.size(96, 96)
     fillMode: Image.PreserveAspectFit
     smooth: false; mipmap: false

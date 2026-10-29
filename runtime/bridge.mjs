@@ -5,7 +5,7 @@ import { prepareNativeSettings, builtins, extensionName, SUBAGENT_COMPLETION_HIN
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
-import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl } from "./umeko-control.mjs";
+import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
@@ -249,6 +249,7 @@ async function restoreSubagentSession(child, context, customTools) {
 
 async function init(input) {
   config = input;
+  configureUmekoDocs({directory: input.docsDir || join(input.agentDir, "cache", "umeko-docs"), models: input.models});
   reasoningEffort = effortLevels.has(input.reasoningEffort) ? input.reasoningEffort : "off";
   setGateway(input.gateway);
   process.env.PI_CODING_AGENT_DIR = input.agentDir;

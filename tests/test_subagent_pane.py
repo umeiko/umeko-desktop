@@ -18,7 +18,9 @@ from app.transcript_index import TranscriptRepository
 
 class Host(QObject):
     viewChanged = Signal()
+    changed = Signal()
     toast = Signal(str)
+    characterNames = ['烧盐柠檬', '小鞠知花', '温水佳树', '志喜屋梦子']
 
     def __init__(self, directory):
         super().__init__()

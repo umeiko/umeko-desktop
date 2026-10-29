@@ -90,6 +90,9 @@ try:
     assert len({row["name"] for row in backend.subagents.agents}) == 80
     click("subagentGroupCard")
     matrix = window.findChild(QObject, "subagentMatrix")
+    anchor = find("subagentGroupCard")
+    assert abs(matrix.property("width")-anchor.width())<12, "First frame started at the overlay width instead of the widget"
+    assert abs(matrix.property("x"))<2 and abs(matrix.property("y"))<2, "First frame did not start at the widget origin"
     wait(lambda: matrix.property("desiredOpen") and not matrix.property("animating"), "Matrix did not settle")
     grid = find("subagentMatrixGrid")
     assert grid.property("count") == 80

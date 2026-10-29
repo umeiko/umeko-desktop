@@ -274,13 +274,19 @@ Item {
         }
     }
 
-    PidPopup {
+    Popup {
         id: providerPopup; objectName: "providerEditorPopup"; parent: Overlay.overlay
         width: Math.min(Theme.control(760), parent.width - 40)
         height: Math.min(parent.height - 40, providerEditor.implicitHeight + providerHeader.implicitHeight + providerFooter.implicitHeight + padding * 2 + 60)
         x: (parent.width - width) / 2; y: (parent.height - height) / 2
         onOpened: providerName.forceActiveFocus()
-        onClosed: { providerPopup.motion.snap(); root.editingProvider = false; providerKey.clear() }
+        modal: true; focus: true; padding: Theme.control(24)
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        enter: Transition {}
+        exit: Transition {}
+        background: Rectangle { radius: 16; color: Theme.surface; border.color: Theme.line }
+        Overlay.modal: Rectangle { color: "#32000000" }
+        onClosed: { root.editingProvider = false; providerKey.clear() }
         contentItem: ColumnLayout {
             spacing: 20
             RowLayout {

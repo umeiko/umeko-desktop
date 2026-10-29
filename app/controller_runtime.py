@@ -101,6 +101,7 @@ class PiControllerMixin:
                     workspace=record.workspace, defaultCwd=str(default_cwd),
                     agentDir=agent.get("agentDir") or str(Path.home() / ".pi/agent"),
                     sessionDir=str(self.store.directory / "pi/sessions"), sessionFile=record.file,
+                    docsDir=str(self.store.directory / "agent-docs"),
                     legacyHistory=record.history, models=self.gateway.models(), agent=agent,
                     mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration())
                 self._pool.start(record, node_executable(), bridge, payload)

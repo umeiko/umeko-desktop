@@ -46,7 +46,9 @@ Column {
                 RowLayout {
                     required property var modelData
                     Layout.fillWidth: true; spacing: 10
-                    Text { text: modelData.name; color: Theme.ink; font.pixelSize: Theme.font(12); elide: Text.ElideRight; Layout.fillWidth: true }
+                    Text { text: modelData.name; color: Theme.ink; font.pixelSize: Theme.font(12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.maximumWidth: implicitWidth }
+                    HelpButton { objectName: "pluginDescription_" + modelData.id + "_" + modelData.version; help: modelData.description || ""; visible: help.trim().length > 0 }
+                    Item { Layout.fillWidth: true }
                     Text { text: "v" + modelData.version + " · " + modelData.accountCount + I18n.t(" 个账号"); color: Theme.muted; font.pixelSize: Theme.font(10) }
                     ActionButton { objectName: "addPluginAccount_" + modelData.id + "_" + modelData.version; text: I18n.t("添加账号"); quiet: true; enabled: modelData.valid && !modelData.busy; onClicked: root.manager.addAccount(modelData.id, modelData.version) }
                     ActionButton { objectName: "uninstallPlugin_" + modelData.id + "_" + modelData.version; text: I18n.t("卸载插件"); quiet: true; enabled: !modelData.busy; onClicked: { root.uninstallTarget = modelData; uninstallDialog.open() } }
@@ -79,7 +81,8 @@ Column {
                 RowLayout {
                     Layout.fillWidth: true; spacing: 12
                     Glyph { name: "server"; width: Theme.icon(21); height: Theme.icon(21) }
-                    Text { text: card.modelData.name; color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
+                    Text { text: card.modelData.name; color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold; elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.maximumWidth: implicitWidth }
+                    HelpButton { objectName: "providerDescription_" + card.modelData.id; help: card.modelData.description || ""; visible: help.trim().length > 0 }
                     Text { text: "v" + card.modelData.version; color: Theme.muted; font.pixelSize: Theme.font(10) }
                     Item { Layout.fillWidth: true }
                     ProviderProxy { providerId: card.modelData.id; enabled: !card.modelData.busy }

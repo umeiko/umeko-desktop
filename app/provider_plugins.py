@@ -120,12 +120,12 @@ class ProviderPlugins(QObject):
             except ProviderError: continue
             accounts = self._accounts(path.parent.name, path.name)
             row = {"id": path.parent.name, "version": path.name, "name": path.parent.name,
-                   "accountCount": len(accounts), "valid": False,
+                   "description": "", "accountCount": len(accounts), "valid": False,
                    "busy": any(p["id"] in self.busy or self.leases.get(p["id"], 0)
                                or self.c._models_busy(p["id"]) for p in accounts)}
             try:
                 manifest, _, _ = validate_folder(path)
-                row.update(name=manifest["name"], valid=True)
+                row.update(name=manifest["name"], description=manifest["description"], valid=True)
             except (OSError, ValueError, RuntimeError): pass
             rows.append(row)
         return rows
@@ -250,11 +250,12 @@ class ProviderPlugins(QObject):
         rows = []
         for record in self.c.store.data["providers"]:
             if record["api"] != "plugin": continue
-            row = {"id": record["id"], "name": record["name"], "version": record["pluginVersion"],
+            row = {"id": record["id"], "name": record["name"], "version": record["pluginVersion"], "description": "",
                    "models": copy.deepcopy(record["models"]), "fields": [], "busy": record["id"] in self.busy,
                    "status": self.status.get(record["id"], record.get("accountLabel", "尚未登录"))}
             try:
                 _, (manifest, _, _) = self._package(record)
+                row["description"] = manifest["description"]
                 values = self._secrets(record["id"]).get("credentials", {})
                 for field in manifest.get("auth", {}).get("fields", []):
                     row["fields"].append({**field, "secret": bool(field.get("secret")),
