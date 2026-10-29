@@ -1,4 +1,4 @@
-"""Build public SDK downloads and default-installable Provider SDK packages."""
+"""Build public provider and character downloads and default-installable provider packages."""
 from pathlib import Path
 import json
 import re
@@ -35,6 +35,7 @@ def build(output):
         (ROOT / "pyproject.toml", "pyproject.toml"), (ROOT / "provider_dev/README.md", "README.md"),
         (ROOT / "provider_dev/examples", "examples")])
     archive(output / "develop-umeko-provider.zip", [(ROOT / "provider_dev/skills/develop-umeko-provider", "develop-umeko-provider")])
+    archive(output / "create-umeko-character.zip", [(ROOT / "character_dev/skills/create-umeko-character", "create-umeko-character")])
     providers = []
     # Adding a source directory alone must never opt users into a new provider.
     for plugin_id in selected:

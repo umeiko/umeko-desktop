@@ -1,0 +1,19 @@
+{
+  "format": "umeko-character",
+  "version": 1,
+  "id": "kaju",
+  "name": "温水佳树",
+  "assets": {
+    "welcome": "welcome.png",
+    "avatarSmile": "avatarSmile.png",
+    "avatarWink": "avatarWink.png",
+    "avatarHappy": "avatarHappy.png",
+    "reply": "reply.png",
+    "loading": "loading.png",
+    "catch": "catch.png",
+    "push": "push.png",
+    "pull": "pull.png",
+    "background": "welcome.png"
+  },
+  "dialogue": "dialogue.json"
+}

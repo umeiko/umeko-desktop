@@ -5,6 +5,11 @@ import hashlib
 import re
 import shutil
 import uuid
+import stat
+import tempfile
+import unicodedata
+import zipfile
+import zlib
 from pathlib import Path
 
 from PySide6.QtCore import QUrl, Slot, QSaveFile, QIODevice, QTimer
@@ -13,6 +18,7 @@ from PySide6.QtGui import QImageReader
 SLOTS = frozenset('welcome avatarSmile avatarWink avatarHappy reply loading catch push pull background subagent0 subagent1 subagent2 subagent3 subagentCatch0 subagentCatch1 subagentCatch2 subagentCatch3'.split())
 LINES = frozenset(('tap', 'celebration', 'greeting'))
 DEFAULT = {'id': 'yanami', 'name': '八奈见杏菜', 'assets': {}, 'lines': {}}
+BUILTINS = frozenset(('yanami', 'komari', 'kaju'))
 CONFIG_DEFAULTS = json.loads((Path(__file__).parent/'character-defaults.json').read_text(encoding='utf-8'))
 
 
@@ -118,6 +124,54 @@ def read_character(file, check_images=False):
     return result
 
 
+def unpack_character_zip(source, destination):
+    """Bounded data-only extraction; validate every entry before writing any file."""
+    limit = 96 * 1024 * 1024 + 131072
+    if source.stat().st_size > limit: raise ValueError('形象 ZIP 超过 96 MiB')
+    with zipfile.ZipFile(source) as archive:
+        entries = archive.infolist()
+        if not 1 <= len(entries) <= 128: raise ValueError('形象 ZIP 最多包含 128 个条目')
+        names, files, total = {}, [], 0
+        for entry in entries:
+            original = entry.orig_filename
+            name = original[:-1] if entry.is_dir() else original
+            parts = name.split('/')
+            if (not name or '\\' in name or ':' in name or any(ord(c)<32 for c in name)
+                    or any(part in ('', '.', '..') or part.endswith((' ', '.')) for part in parts)):
+                raise ValueError('ZIP 包含无效路径')
+            kind = stat.S_IFMT(entry.external_attr >> 16)
+            if kind not in (0, stat.S_IFREG, stat.S_IFDIR) or (kind == stat.S_IFDIR) != entry.is_dir() and kind:
+                raise ValueError('ZIP 不能包含符号链接或特殊文件')
+            key = unicodedata.normalize('NFC', name).casefold()
+            if key in names or any(key.startswith(old+'/') and not is_dir or old.startswith(key+'/') and not entry.is_dir() for old,is_dir in names.items()):
+                raise ValueError('ZIP 包含重复或冲突路径')
+            names[key] = entry.is_dir()
+            if entry.is_dir(): continue
+            if entry.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED) or entry.flag_bits & 1:
+                raise ValueError('ZIP 仅支持未加密的 Stored/Deflate 格式')
+            suffix = Path(name).suffix.lower()
+            if suffix not in ('.json','.png','.jpg','.jpeg','.gif','.webp'): raise ValueError('形象 ZIP 只能包含 JSON 和图片')
+            maximum = 65536 if suffix == '.json' else 12*1024*1024
+            total += entry.file_size
+            if entry.file_size > maximum or total > limit: raise ValueError('ZIP 解压大小超过形象包限制')
+            files.append((entry,name))
+        manifests = [name for _,name in files if name.split('/')[-1]=='manifest.json']
+        if len(manifests)!=1 or manifests[0].count('/')>1: raise ValueError('ZIP 需要一个根目录或一级目录中的 manifest.json')
+        prefix = manifests[0][:-len('manifest.json')]
+        if any(not name.startswith(prefix) for _,name in files): raise ValueError('ZIP 文件必须位于同一个形象目录')
+        for entry,name in files:
+            output = destination/name
+            output.parent.mkdir(parents=True,exist_ok=True)
+            with archive.open(entry) as stream, output.open('wb') as target:
+                written=0
+                while data := stream.read(65536):
+                    written += len(data)
+                    if written > entry.file_size: raise ValueError('ZIP 数据大小不符')
+                    target.write(data)
+                if written != entry.file_size: raise ValueError('ZIP 数据不完整')
+        return destination/manifests[0]
+
+
 class CharactersMixin:
     def _init_characters(self):
         self._character_options = {}
@@ -153,21 +207,28 @@ class CharactersMixin:
 
     def _character_packs(self):
         rows = [dict(DEFAULT, builtin=True)]
-        builtin = self.root/'app/icons/characters/komari/manifest.json'
-        files = [(builtin, True)] if builtin.is_file() else []
+        files = [(self.root/f'app/icons/characters/{identifier}/manifest.json', True)
+                 for identifier in ('komari', 'kaju') if (self.root/f'app/icons/characters/{identifier}/manifest.json').is_file()]
         files += [(path, False) for path in sorted((self.store.directory/'characters').glob('*/manifest.json'))
                   if re.fullmatch(r'[a-z0-9][a-z0-9-]{0,47}', path.parent.name) and not path.is_symlink() and not path.parent.is_symlink()]
         for file, builtin in files:
             try:
                 item = read_character(file)
-                if not builtin and (item['id'] in ('yanami', 'komari') or item['id'] != file.parent.name): continue
+                if not builtin and (item['id'] in BUILTINS or item['id'] != file.parent.name): continue
                 item.update(builtin=builtin, directory=str(file.parent.resolve()))
                 rows.append(item)
             except (ValueError, OSError): pass
         return rows
 
     def _characterPacks(self):
-        return [{key: item[key] for key in ('id', 'name', 'builtin')} for item in self._character_packs()]
+        rows = []
+        for item in self._character_packs():
+            row = {key: item[key] for key in ('id', 'name', 'builtin')}
+            asset = next((item['assets'][key] for key in ('avatarSmile','reply','welcome') if key in item['assets']), None)
+            path = Path(item['directory'])/asset if asset else self.root/'app/icons/avatars/smile.webp'
+            row['portrait'] = QUrl.fromLocalFile(str(path)).toString()
+            rows.append(row)
+        return rows
 
     def _characterStyle(self):
         item = self._character_record
@@ -228,12 +289,16 @@ class CharactersMixin:
     @Slot(str, result=bool)
     def importCharacter(self, url):
         staging = revision = dialogue = None
+        extraction = None
         committed = False
         previous = self.store.data.get('character', 'yanami')
         try:
             file = Path(QUrl(url).toLocalFile() or url).expanduser().resolve()
+            if file.suffix.lower() == '.zip':
+                extraction = tempfile.TemporaryDirectory(prefix='umeko-character-')
+                file = unpack_character_zip(file, Path(extraction.name))
             item = read_character(file, check_images=True)
-            if item['id'] in ('yanami', 'komari'): raise ValueError('不能覆盖内置形象的 id')
+            if item['id'] in BUILTINS: raise ValueError('不能覆盖内置形象的 id')
             library = self.store.directory/'characters'
             library.mkdir(exist_ok=True)
             if library.is_symlink(): raise ValueError('形象安装目录不能是符号链接')
@@ -276,17 +341,18 @@ class CharactersMixin:
                     try: folder.unlink(missing_ok=True)
                     except OSError: pass
             return True
-        except (ValueError, OSError, RuntimeError) as error:
+        except (ValueError, OSError, RuntimeError, zipfile.BadZipFile, NotImplementedError, zlib.error, EOFError) as error:
             self.toast.emit('形象导入失败：'+str(error))
             return False
         finally:
+            if extraction: extraction.cleanup()
             for folder in (staging, revision if not committed else None):
                 if folder and folder.is_dir(): shutil.rmtree(folder, ignore_errors=True)
             if dialogue and not committed: dialogue.unlink(missing_ok=True)
 
     @Slot(str, result=bool)
     def removeCharacter(self, identifier):
-        if identifier in ('yanami', 'komari') or not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,47}', identifier): return False
+        if identifier in BUILTINS or not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,47}', identifier): return False
         folder = self.store.directory/'characters'/identifier
         if not folder.is_dir() or folder.is_symlink(): return False
         previous = self.store.data.get('character', 'yanami')
@@ -304,3 +370,22 @@ class CharactersMixin:
         self.changed.emit()
         QTimer.singleShot(250,lambda:cleanup_removed_character(folder,marker))
         return True
+
+
+    @Slot(str, result=bool)
+    def exportCharacterSkill(self, url):
+        try:
+            name = 'create-umeko-character.zip'
+            source = next((folder/name for folder in (self.root/'provider-resources', self.root/'build/provider-resources') if (folder/name).is_file()), None)
+            target = QUrl(url).toLocalFile()
+            if source is None: raise ValueError('角色制作 Skill 不可用，请重新构建开发资源')
+            if not target: raise ValueError('请选择本机保存位置')
+            output = QSaveFile(target)
+            data = source.read_bytes()
+            if not output.open(QIODevice.OpenModeFlag.WriteOnly) or output.write(data)!=len(data) or not output.commit():
+                raise OSError('无法导出角色制作 Skill')
+            self.toast.emit('角色制作 Skill 已导出')
+            return True
+        except (ValueError,OSError) as error:
+            self.toast.emit(str(error))
+            return False

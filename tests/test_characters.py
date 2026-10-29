@@ -2,6 +2,9 @@ import json
 import os
 import tempfile
 import unittest
+import zipfile
+import stat
+import importlib.util
 from pathlib import Path
 from unittest.mock import patch
 
@@ -119,6 +122,86 @@ class CharacterTests(unittest.TestCase):
         topics=('外观','Pi 扩展','子代理','OpenClaw','供应商','排查','Token','文件路径','预览','右上角','对话','Ctrl+S','别名','上下文','验收标准','计划','账号','分支')
         self.assertEqual(len(tips),len(topics))
         for tip,topic in zip(tips,topics): self.assertIn(topic,tip)
+
+    def make_zip(self, entries, name='character.zip'):
+        target=self.root/name
+        with zipfile.ZipFile(target,'w',zipfile.ZIP_DEFLATED) as archive:
+            for path, data in entries: archive.writestr(path,data)
+        return target
+
+    def zip_entries(self, prefix=''):
+        return [(prefix+path.name,path.read_bytes()) for path in self.folder.iterdir()]
+
+    def test_all_builtin_characters_are_complete_and_protected(self):
+        b=self.backend
+        self.assertEqual({row['id'] for row in b.characterPacks if row['builtin']},{'yanami','komari','kaju'})
+        for identifier in ('yanami','komari','kaju'):
+            self.assertFalse(b.removeCharacter(identifier))
+            self.manifest['id']=identifier;self.write()
+            self.assertFalse(b.importCharacter(str(self.make_zip(self.zip_entries()))))
+        self.assertTrue(b.selectCharacter('kaju'))
+        self.assertEqual(b.characterStyle['name'],'温水佳树')
+        self.assertEqual(len(b.characterStyle['assets']),10)
+        for value in b.characterStyle['assets'].values(): self.assertTrue(Path(QUrl(value).toLocalFile()).is_file())
+        self.assertIn('佳树',b.characterStyle['dialogue']['welcome']['greetings'][0])
+        b.setTheme('yanami')
+        self.assertEqual(b.characterStyle['id'],'kaju')
+        self.assertEqual(json.loads(b.store.path.read_text())['character'],'kaju')
+        self.assertTrue(all(row['portrait'].startswith('file:') for row in b.characterPacks))
+
+    def test_zip_import_root_wrapped_reimport_and_cleanup(self):
+        b=self.backend
+        for prefix in ('','my-character/'):
+            package=self.make_zip(self.zip_entries(prefix))
+            self.assertTrue(b.importCharacter(QUrl.fromLocalFile(str(package)).toString()))
+            self.assertEqual(b.characterStyle['id'],'test-character')
+            self.assertEqual(Path(QUrl(b.characterStyle['assets']['loading']).toLocalFile()).read_bytes(),GIF)
+        self.assertTrue(b.removeCharacter('test-character'))
+        self.assertEqual(b.characterStyle['id'],'yanami')
+
+    def test_invalid_zip_preserves_current_character_and_installed_files(self):
+        b=self.backend
+        self.assertTrue(b.importCharacter(str(self.file)))
+        installed=b.store.directory/'characters/test-character/manifest.json'
+        original=installed.read_bytes()
+        cases=[
+            [('manifest.json',self.file.read_bytes()),('../outside.png',b'bad')],
+            [('manifest.json',self.file.read_bytes()),('/absolute.png',b'bad')],
+            [('manifest.json',self.file.read_bytes()),('a\\b.png',b'bad')],
+            [('manifest.json',self.file.read_bytes()),('portrait.png',b'bad'),('PORTRAIT.PNG',b'bad')],
+            [('manifest.json',self.file.read_bytes()),('folder',b'bad'),('folder/a.png',b'bad')],
+            [('wrapper/manifest.json',self.file.read_bytes()),('outside.png',b'bad')],
+            [('wrapper/deep/manifest.json',self.file.read_bytes())],
+            [('a/manifest.json',self.file.read_bytes()),('b/manifest.json',self.file.read_bytes())],
+            [('manifest.json',self.file.read_bytes()),('script.py',b'print(1)')],
+            [('manifest.json',self.file.read_bytes()),('huge.png',b'x'*(12*1024*1024+1))],
+            [('manifest.json',self.file.read_bytes())]+[(f'{i}.png',b'x') for i in range(128)],
+        ]
+        link=zipfile.ZipInfo('portrait.png');link.create_system=3;link.external_attr=(stat.S_IFLNK|0o777)<<16
+        cases.append([('manifest.json',self.file.read_bytes()),(link,b'/tmp/elsewhere')])
+        for entries in cases:
+            with self.subTest(entries=[str(x[0]) for x in entries[:4]]):
+                self.assertFalse(b.importCharacter(str(self.make_zip(entries))))
+                self.assertEqual(b.characterStyle['id'],'test-character')
+                self.assertEqual(installed.read_bytes(),original)
+        self.assertFalse((self.root/'outside.png').exists())
+        bad=self.root/'invalid.zip';bad.write_bytes(b'not a zip')
+        self.assertFalse(b.importCharacter(str(bad)))
+
+    def test_exported_skill_can_package_an_importable_character(self):
+        script=ROOT/'character_dev/skills/create-umeko-character/scripts/package.py'
+        spec=importlib.util.spec_from_file_location('package_character',script)
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        package=module.package(self.folder,self.root/'made-by-skill.zip')
+        self.assertTrue(self.backend.importCharacter(str(package)))
+        from runpy import run_path
+        run_path(str(ROOT/'scripts/build-provider-resources.py'),run_name='__main__')
+        exported=self.root/'skill.zip'
+        self.assertTrue(self.backend.exportCharacterSkill(QUrl.fromLocalFile(str(exported)).toString()))
+        with zipfile.ZipFile(exported) as archive:
+            self.assertIn('create-umeko-character/SKILL.md',archive.namelist())
+            self.assertIn('create-umeko-character/scripts/package.py',archive.namelist())
+            self.assertFalse(any(name.endswith('.pyc') for name in archive.namelist()))
 
     def test_scene_text_roles_and_portraits_are_configurable_and_persistent(self):
         b = self.backend

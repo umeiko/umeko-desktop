@@ -6,14 +6,16 @@ import "theme.js" as Colors
 
 SectionCard {
     id: root
-    readonly property var choices: [{id:"light",name:I18n.t("浅色"),base:"light"},{id:"dark",name:I18n.t("深色"),base:"dark"},{id:"yanami",name:I18n.t("八奈见 · 海盐蓝"),base:"yanami"}].concat(backend.customThemes)
+    readonly property var choices: [{id:"light",name:I18n.t("浅色"),base:"light"},{id:"dark",name:I18n.t("深色"),base:"dark"},{id:"yanami",name:I18n.t("海盐蓝"),base:"yanami"}].concat(backend.customThemes)
     FileDialog { id: picker; title: I18n.t("导入主题"); nameFilters: [I18n.t("Umeko 主题 (*.umeko-theme.json *.json)")]; onAccepted: backend.importTheme(selectedFile.toString()) }
+    CharacterDialog { id: characterDialog }
     ColumnLayout {
         width: parent.width; spacing: 18
         RowLayout {
             Layout.fillWidth: true
             Text { text: I18n.t("主题"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
             Item { Layout.fillWidth: true }
+            ActionButton { objectName: "chooseCharacterButton"; glyph: "user"; text: I18n.t("主角色"); quiet: true; hint: I18n.t("当前角色") + " · " + I18n.t(backend.characterStyle.name); onClicked: characterDialog.open() }
             ActionButton { objectName: "copyThemePrompt"; glyph: "copy"; text: I18n.t("制作提示词"); quiet: true; hint: I18n.t("复制完整格式、示例与制作提示词"); onClicked: backend.copyThemePrompt() }
             ActionButton { objectName: "importThemeButton"; glyph: "plus"; text: I18n.t("导入主题"); onClicked: picker.open() }
         }
@@ -35,8 +37,7 @@ SectionCard {
                         Rectangle { x: parent.width * 0.32; y: 85; width: parent.width * 0.55; height: 40; radius: 6; color: choice.palette.surface; border.color: choice.palette.line
                             Rectangle { x: 12; y: 14; width: parent.width * 0.44; height: 3; radius: 1; color: choice.palette.muted }
                         }
-                        Rectangle { visible: choice.modelData.base !== "yanami"; x: parent.width * 0.54; y: 37; width: 24; height: 24; radius: 8; color: choice.palette.button }
-                        Image { visible: choice.modelData.base === "yanami"; source: "../icons/portraits/02.png"; x: parent.width * 0.42; y: 15; width: 65; height: 65; mipmap: true }
+                        Rectangle { x: parent.width * 0.54; y: 37; width: 24; height: 24; radius: 8; color: choice.palette.button }
                         MouseArea { id: hover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: backend.setTheme(choice.modelData.id) }
                     }
                     RowLayout {

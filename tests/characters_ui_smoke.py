@@ -12,9 +12,9 @@ os.environ['UMEKO_DATA_DIR'] = profile.name
 os.environ.setdefault('UMEKO_LANGUAGE','zh')
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 os.environ.setdefault('QT_QUICK_BACKEND','software')
-from PySide6.QtCore import QObject, QUrl, QMetaObject
-from PySide6.QtQml import QQmlComponent
+from PySide6.QtCore import QObject, QUrl, QMetaObject, QPoint, Qt
 from PySide6.QtTest import QTest
+from PySide6.QtQml import QQmlComponent
 from main import create_application
 from tests.test_characters import GIF
 
@@ -37,6 +37,46 @@ try:
     QTest.qWait(300)
     welcome=find('welcomeMascot')
     assert welcome and welcome.property('loaded')
+    window.setProperty('page','settings');window.setProperty('settingsTab',5)
+    QTest.qWait(200)
+    for identifier in ('yanami','komari','kaju'):
+        assert backend.selectCharacter(identifier)
+        QTest.qWait(100)
+        for theme in ('light','dark','yanami'):
+            card=find('theme_'+theme)
+            assert card and card.isVisible()
+            pending=[card]
+            while pending:
+                item=pending.pop()
+                assert not item.inherits('QQuickImage'), 'Theme thumbnails must not contain character artwork'
+                pending.extend(item.childItems())
+    assert window.grabWindow().save(str(out/'theme-preview-no-character.png'))
+    button=find('chooseCharacterButton')
+    assert button and button.isVisible()
+    QMetaObject.invokeMethod(button,'clicked')
+    QTest.qWait(450)
+    dialog=window.findChild(QObject,'characterDialog')
+    assert dialog and dialog.property('opened')
+    kaju=find('character_kaju')
+    assert kaju and kaju.isVisible()
+    point=kaju.mapToScene(kaju.boundingRect().center()).toPoint()
+    QTest.mouseClick(window,Qt.MouseButton.LeftButton,Qt.KeyboardModifier.NoModifier,point)
+    QTest.qWait(250)
+    assert backend.characterStyle['id']=='kaju'
+    assert not find('deleteCharacter_yanami').isVisible()
+    assert not find('deleteCharacter_komari').isVisible()
+    assert not find('deleteCharacter_kaju').isVisible()
+    assert window.grabWindow().save(str(out/'character-picker.png'))
+    QMetaObject.invokeMethod(find('closeCharacterDialog'),'clicked')
+    QTest.qWait(350)
+    window.setProperty('page','chat')
+    QTest.qWait(350)
+    assert welcome.property('loaded')
+    assert window.grabWindow().save(str(out/'character-kaju-welcome.png'))
+    window.setProperty('page','settings')
+    QTest.qWait(200)
+    assert window.grabWindow().save(str(out/'character-theme-separation.png'))
+    window.setProperty('page','chat')
     assert backend.selectCharacter('komari')
     QTest.qWait(500)
     assert welcome.property('loaded')
@@ -93,11 +133,31 @@ try:
     art.setVisible(False)
     QTest.qWait(100)
     assert not art.property('playing')
+    # An imported fourth role must expose its label and deletion confirmation.
+    window.setProperty('page','settings');window.setProperty('settingsTab',5)
+    QTest.qWait(200)
+    QMetaObject.invokeMethod(find('chooseCharacterButton'),'clicked')
+    QTest.qWait(450)
+    listing=find('characterList')
+    listing.setProperty('contentY', max(0,listing.property('contentHeight')-listing.height()))
+    trash=find('deleteCharacter_animated-test')
+    assert trash and trash.isVisible()
+    QTest.mouseClick(window,Qt.MouseButton.LeftButton,Qt.KeyboardModifier.NoModifier,trash.mapToScene(trash.boundingRect().center()).toPoint())
+    QTest.qWait(450)
+    confirm=find('confirmRemoveCharacter')
+    assert confirm and confirm.isVisible()
+    assert window.grabWindow().save(str(out/'character-delete-confirmation.png'))
+    QTest.mouseClick(window,Qt.MouseButton.LeftButton,Qt.KeyboardModifier.NoModifier,confirm.mapToScene(confirm.boundingRect().center()).toPoint())
+    QTest.qWait(400)
+    assert backend.characterStyle['id']=='yanami'
+    QMetaObject.invokeMethod(find('closeCharacterDialog'),'clicked')
+    QTest.qWait(350)
+    window.setProperty('page','chat')
     assert backend.selectCharacter('yanami')
     QTest.qWait(150)
     assert welcome.property('loaded')
     assert not warnings,'\n'.join(warnings)
-    print('Character UI: Komari, live selection, Yanami fallback, theme independence, two-frame GIF and hidden playback passed')
+    print('Character picker, Kaju and protected defaults passed. Character UI: Komari, live selection, Yanami fallback, theme independence, two-frame GIF and hidden playback passed')
 finally:
     backend.close()
     window.close()

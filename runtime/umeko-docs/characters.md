@@ -1,10 +1,10 @@
 # 动画形象、角色美术资源与第三方形象包
 
-这里配置的是 Umeko 桌面中的欢迎形象、聊天头像、回复完成互动、接文件、加载、推拉和背景美术。它独立于主题配色，不改变 Agent 的身份或系统提示词。外观设置不提供角色选择控件；用户表达意图后，由 Agent 通过 `config_umeko` 应用。
+这里配置的是 Umeko 桌面中的欢迎形象、聊天头像、回复完成互动、接文件、加载、推拉和背景美术。它独立于主题配色，不改变 Agent 的身份或系统提示词。用户可在「设置 → 外观 → 主题 → 主角色」切换或导入 ZIP 人设包，也可以让 Agent 通过 `config_umeko` 应用。此处可导出角色制作 Skill，供 Agent 制作新的人设包。
 
 ## 查询和切换
 
-先调用 `{"operation":"characters.list"}` 查询当前可用 ID；`characters.get` 返回正在使用的资源及台词。内置 `yanami` 为八奈见，`komari` 为项目随附的小鞠知花完整资源包。小鞠在 UI 中没有选项，可以在用户要求的主题搭配/形象更换任务中被发现和使用：
+先调用 `{"operation":"characters.list"}` 查询当前可用 ID；`characters.get` 返回正在使用的资源及台词。内置 `yanami` 为八奈见，`komari` 为小鞠知花，`kaju` 为温水佳树，三者都是不可删除或覆盖的内置完整角色。切换示例：
 
 ```json
 {"operation":"characters.select","arguments":{"id":"komari"}}
@@ -64,9 +64,11 @@
 
 `assets`、`dialogue` 和它们的每个项目都可以省略；省略的美术使用八奈见，省略的台词使用原有默认值。`dialogue.json` 使用上面 `config` 对象的相同结构，可以只提供要改的场景、角色名称和口头禅；包内角色图片统一放在 `assets.subagent0`–`subagent3`（头像与完成图）、`assets.subagentCatch0`–`subagentCatch3`（接文件），不要在包内台词 JSON 引用外部头像文件。`background` 只在当前主题原本展示人物水印的区域出现，不给纯色主题强行增加背景。主形象不会自动覆盖子代理各自的角色。
 
-资源路径相对于清单目录，只能指向包内实际文件，不能是绝对路径、`..`、符号链接或远程地址。清单、台词 JSON 各最多 64 KiB，每张图片最多 12 MiB、1600 万像素，引用总量最多 96 MiB。`id` 为 1–48 位小写字母/数字/短横线，不能覆盖内置 `yanami`/`komari`；名称最多 48 字符。
+资源路径相对于清单目录，只能指向包内实际文件，不能是绝对路径、`..`、符号链接或远程地址。清单、台词 JSON 各最多 64 KiB，每张图片最多 12 MiB、1600 万像素，引用总量最多 96 MiB。`id` 为 1–48 位小写字母/数字/短横线，不能覆盖内置 `yanami`/`komari`/`kaju`；名称最多 48 字符。
 
-导入清单（导入后直接应用）：
+将清单与图片放在 ZIP 根目录或唯一的一级目录中，导入 ZIP 或清单后直接应用。ZIP 最多 128 条目、解压总量 96 MiB + 128 KiB；只允许 JSON 和图片，拒绝符号链接、重复或冲突路径。
+
+导入示例（path 也可以是 ZIP）：
 
 ```json
 {"operation":"characters.import","arguments":{"path":"C:/work/my-character/manifest.json"}}
