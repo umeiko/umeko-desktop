@@ -88,11 +88,20 @@ try:
     assert find("subagentGroupCard").isVisible()
     assert not any(item.objectName().startswith("subagentCard_") and item.isVisible() for item in items())
     assert len({row["name"] for row in backend.subagents.agents}) == 80
-    click("subagentGroupCard")
     matrix = window.findChild(QObject, "subagentMatrix")
     anchor = find("subagentGroupCard")
-    assert abs(matrix.property("width")-anchor.width())<12, "First frame started at the overlay width instead of the widget"
-    assert abs(matrix.property("x"))<2 and abs(matrix.property("y"))<2, "First frame did not start at the widget origin"
+    opening = []
+    # Capture the seed before a render tick. QTest.mouseClick may process the
+    # first PID frame before returning on some platform plugins.
+    def capture_opening():
+        opening.append(tuple(matrix.property(key) for key in ("x","y","width","height")))
+    matrix.aboutToShow.connect(capture_opening)
+    click("subagentGroupCard")
+    assert opening, "Matrix did not announce its first opening"
+    x,y,width,height=opening[0]
+    assert abs(width-anchor.width())<2 and abs(height-anchor.height())<2, ("First frame started at the overlay size instead of the widget",opening[0])
+    assert abs(x)<2 and abs(y)<2, ("First frame did not start at the widget origin",opening[0])
+    matrix.aboutToShow.disconnect(capture_opening)
     wait(lambda: matrix.property("desiredOpen") and not matrix.property("animating"), "Matrix did not settle")
     grid = find("subagentMatrixGrid")
     assert grid.property("count") == 80
