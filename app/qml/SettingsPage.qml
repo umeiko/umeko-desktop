@@ -79,8 +79,8 @@ Item {
         }
         Item {
             id: settingsNav
-            Layout.topMargin: 30; Layout.alignment: Qt.AlignLeft
-            implicitWidth: tabButtons.implicitWidth; implicitHeight: tabButtons.implicitHeight
+            Layout.topMargin: 30; Layout.fillWidth: true
+            implicitHeight: tabButtons.implicitHeight
             property Item selectedButton: null
             function syncTarget() {
                 let selected = null
@@ -89,9 +89,14 @@ Item {
                     if (button && button.modelData.id === root.tab) { selected = button; break }
                 }
                 selectedButton = selected
+                if (selected) settingsNavScroll.contentX = Math.max(0,Math.min(Math.max(0,settingsNavScroll.contentWidth-settingsNavScroll.width),selected.x-(settingsNavScroll.width-selected.width)/2))
             }
             Component.onCompleted: Qt.callLater(syncTarget)
             Connections { target: root; function onTabChanged() { settingsNav.syncTarget() } }
+            Flickable {
+                id: settingsNavScroll
+                anchors.fill: parent; contentWidth: tabButtons.implicitWidth; contentHeight: height
+                clip: true; boundsBehavior: Flickable.StopAtBounds
             PidHighlight {
                 height: settingsNav.selectedButton ? settingsNav.selectedButton.height : 38
                 targetX: settingsNav.selectedButton ? settingsNav.selectedButton.x : 0
@@ -101,7 +106,7 @@ Item {
                 id: tabButtons; z: 1; spacing: 8
                 Repeater {
                     id: tabItems
-                    model: [{id:0, title:I18n.t("账号与供应商")}, {id:1, title:I18n.t("API 代理服务")}, {id:3, title:"Agent"}, {id:5, title:I18n.t("外观")}, {id:6, title:I18n.t("关于")}]
+                    model: [{id:0, title:I18n.t("账号与供应商")}, {id:1, title:I18n.t("API 代理服务")}, {id:3, title:"Agent"}, {id:5, title:I18n.t("外观")}, {id:7, title:I18n.t("Umeko 插件管理")}, {id:6, title:I18n.t("关于")}]
                     onItemAdded: Qt.callLater(settingsNav.syncTarget)
                     ActionButton {
                         required property var modelData
@@ -112,10 +117,12 @@ Item {
                     }
                 }
             }
+            }
         }
         Rectangle { Layout.fillWidth: true; Layout.topMargin: 15; height: 1; color: Theme.line }
+        DesktopPluginsPage { Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 23; visible: root.tab === 7 }
         ScrollView {
-            id: settingsScroll; objectName: "settingsScroll"; Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 23
+            id: settingsScroll; objectName: "settingsScroll"; visible: root.tab !== 7; Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 23
             Connections { target: root; function onTabChanged() { settingsScroll.contentItem.contentY = 0 } }
             contentWidth: availableWidth; clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff

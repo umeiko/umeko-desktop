@@ -1,0 +1,1 @@
+{"kind":"umeko-plugin","apiVersion":1,"id":"file-tree","name":"文件树目录查看器","version":"1.0.0","description":"浏览当前会话工作目录。熟悉的文件树、文件类型图标、逐层展开、隐藏文件开关、搜索和文件预览，可将文件附加到当前聊天。","author":"Umeko","entrypoint":"scripts/plugin.py:create_plugin","page":"qml/Main.qml","permissions":["workspace.read","session.write"],"readme":"README.md","config":"config.json","configSchema":"config.schema.json"}

@@ -54,6 +54,8 @@ def validate_folder(folder):
             raise PackageValidationError(name, "SYMLINK", "不支持符号链接，请打包实际文件")
         return json.loads(path.read_text(encoding="utf-8-sig"))
     manifest = read("manifest.json")
+    if manifest.get("kind") == "umeko-plugin":
+        raise ProviderError("这是 Umeko 插件，请在 Umeko 插件管理中导入")
     if manifest.get("apiVersion") != API_VERSION:
         raise ProviderError("Unsupported Provider API version")
     if not re.fullmatch(r"[a-z][a-z0-9-]{0,63}", manifest.get("id", "")):

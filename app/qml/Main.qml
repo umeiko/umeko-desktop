@@ -143,7 +143,7 @@ ApplicationWindow {
     onConversationVisibleChanged: backend.setConversationVisible(conversationVisible)
     Component.onCompleted: backend.setConversationVisible(conversationVisible)
     Shortcut { sequence: "Ctrl+N"; onActivated: window.startChat() }
-    Shortcut { sequence: "Ctrl+S"; enabled: window.page === "chat" && !chatCover.visible && !webPane.subagentInputFocused; onActivated: composer.sendMessage(true) }
+    Shortcut { sequence: "Ctrl+S"; enabled: window.page === "chat" && !chatCover.visible && !webPane.subagentInputFocused && !webPane.pluginInputFocused; onActivated: composer.sendMessage(true) }
     Shortcut { sequence: "Ctrl+,"; onActivated: window.settings(0) }
     Shortcut { sequence: "Ctrl+B"; onActivated: window.toggleSidebar() }
     Shortcut { sequences: [StandardKey.Copy]; enabled: chatSelection.activeFocus && chatSelection.hasSelection; onActivated: Qt.callLater(chatSelection.copy) }
@@ -168,6 +168,7 @@ ApplicationWindow {
         targetRect: Qt.rect(0, 0, (sidebarResizeHandle.resizing ? sidebarResizeHandle.dragWidth : window.sidebarLayoutCollapsed ? 0 : Math.min(window.sidebarPreferredWidth, window.sidebarMaximumWidth)) + 1, 1)
         onMovingChanged: if (!moving) window.showSidebarCollapseHint()
     }
+    Connections { target: backend.desktopPlugins; function onRequested() { window.page = "chat"; webPane.showPlugin() } }
     Connections { target: backend.subagents; function onRequested() { window.page = "chat"; webPane.showSubagent() } }
     Rectangle {
         id: sidebar; objectName: "sidebar"
@@ -321,7 +322,7 @@ ApplicationWindow {
                 }
                 Text { text: window.page === "chat" ? I18n.t("工作空间") : I18n.t("偏好设置"); color: Theme.muted; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
                 Text { text: "/"; color: Theme.line; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
-                Text { text: window.page === "chat" ? (window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle) : [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于")][window.settingsTab]; color: Theme.ink; font.pixelSize: Theme.font(11); width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
+                Text { text: window.page === "chat" ? (window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle) : [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于"), I18n.t("Umeko 插件管理")][window.settingsTab]; color: Theme.ink; font.pixelSize: Theme.font(11); width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
             }
             Row { id: windowControls; anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 18; spacing: 2
                 ActionButton { glyph: "minus"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最小化"); onClicked: window.showMinimized() }
@@ -572,6 +573,7 @@ ApplicationWindow {
             }
             Row { id: footerActions; x: composer.x + (composer.width - width) / 2; anchors.bottom: parent.bottom; anchors.bottomMargin: 13; spacing: 8
                 ActionButton { height: Theme.control(28); quiet: true; text: "Agent"; glyph: "sliders"; onClicked: window.settings(3) }
+                DesktopPluginMenu { id: desktopPluginMenu }
                 ActionButton { objectName: "forkSessionButton"; visible: backend.messageCount > 0; enabled: !backend.busy; height: Theme.control(28); quiet: true; text: I18n.t("分支"); glyph: "branch"; onClicked: backend.forkSession() }
             }
         }
@@ -582,7 +584,7 @@ ApplicationWindow {
             anchors.right: parent.right; anchors.top: header.bottom; anchors.bottom: parent.bottom
             preferredWidth: Math.max(window.webMinimumWidth, Math.min(window.webMaximumWidth, webResizeHandle.resizing ? webResizeHandle.dragWidth : window.webPreferredWidth > 0 ? window.webPreferredWidth : Math.min(540, Math.max(350, parent.width * 0.46))))
             resizing: webResizeHandle.resizing
-            blocked: window.page !== "chat" || !window.visible || window.visibility === Window.Minimized || window.mediaOverlayActive || modelPopup.visible || (subagentMatrix.visible && (subagentMatrix.desiredOpen || subagentMatrix.animating)) || subagentIndicator.popupVisible || backend.pendingApproval.id !== undefined
+            blocked: window.page !== "chat" || !window.visible || window.visibility === Window.Minimized || window.mediaOverlayActive || modelPopup.visible || (subagentMatrix.visible && (subagentMatrix.desiredOpen || subagentMatrix.animating)) || subagentIndicator.popupVisible || desktopPluginMenu.popupVisible || backend.pendingApproval.id !== undefined
         }
 
         MouseArea {

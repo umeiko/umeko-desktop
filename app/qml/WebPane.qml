@@ -13,6 +13,7 @@ Rectangle {
     property string pageTitle: ""
     property string mode: "web"
     readonly property bool subagentInputFocused: !!agentSurface.item && agentSurface.item.inputFocused
+    readonly property bool pluginInputFocused: !!pluginSurface.item && pluginSurface.item.activeFocus
     property string documentPath: ""
     property real preferredWidth: 480
     readonly property real animatedWidth: Math.max(0, motion.value.width - 1)
@@ -24,6 +25,7 @@ Rectangle {
     clip: true
     // Opened by fresh Agent deliveries or an explicit click on a delivered URL card.
     function submit(url, title) {
+        backend.desktopPlugins.closePage()
         const clean = backend.normalizeWebUrl(url)
         if (!clean || !backend.webviewAvailable) return
         if (mode === "subagent") backend.subagents.closeView()
@@ -35,14 +37,16 @@ Rectangle {
         opened = true
     }
     function showDocument(item) {
+        backend.desktopPlugins.closePage()
         if (mode === "subagent") backend.subagents.closeView()
         address.focus = false
         documentPath = item.path; pageTitle = item.title || item.name || item.path.split(/[\\/]/).pop()
         mode = "document"; opened = true
         backend.documentPreview.load(documentPath, item.kind || "file")
     }
-    function showSubagent() { address.focus = false; backend.documentPreview.cancel(); mode = "subagent"; opened = true }
-    function dismiss() { address.focus = false; opened = false; backend.documentPreview.cancel(); if (mode === "subagent") backend.subagents.closeView() }
+    function showSubagent() { backend.desktopPlugins.closePage(); address.focus = false; backend.documentPreview.cancel(); mode = "subagent"; opened = true }
+    function showPlugin() { if (mode === "subagent") backend.subagents.closeView(); address.focus = false; backend.documentPreview.cancel(); mode = "plugin"; opened = true }
+    function dismiss() { backend.desktopPlugins.closePage(); address.focus = false; opened = false; backend.documentPreview.cancel(); if (mode === "subagent") backend.subagents.closeView() }
     function snapWidth() { motion.snap() }
     function navigate() {
         const url = backend.normalizeWebUrl(address.text)
@@ -57,7 +61,7 @@ Rectangle {
         visible: pane.mode !== "subagent"
         width: parent.width; height: Theme.control(44)
         Glyph { x: 16; anchors.verticalCenter: parent.verticalCenter; name: pane.mode === "web" ? "globe" : backend.documentPreview.state.kind === "code" ? "code" : "file"; width: Theme.icon(15); height: width }
-        Text { x: 40; width: Math.max(0, parent.width - 88); anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: pane.mode === "web" && surface.item && surface.item.title ? surface.item.title : pane.pageTitle || pane.pageUrl; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: Theme.font(11) }
+        Text { x: 40; width: Math.max(0, parent.width - 88); anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: pane.mode === "web" && surface.item && surface.item.title ? surface.item.title : pane.mode === "plugin" ? backend.desktopPlugins.page.title || "" : pane.pageTitle || pane.pageUrl; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: Theme.font(11) }
         ActionButton { objectName: "closeWebPaneButton"; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: width; quiet: true; glyph: "x"; hint: I18n.t("关闭预览"); onClicked: pane.dismiss() }
     }
     Row {
@@ -154,6 +158,14 @@ Rectangle {
         target: surface.item
         function onUrlChanged() { pane.pageUrl = String(surface.item.url); if (!address.activeFocus) address.text = pane.pageUrl }
     }
+    Loader {
+        id: pluginSurface; objectName: "desktopPluginSurfaceLoader"
+        x: 1; y: heading.height; width: Math.max(0,pane.preferredWidth-1); height: parent.height-y
+        active: pane.opened && pane.mode === "plugin"
+        source: active ? "DesktopPluginSurface.qml" : ""
+        onLoaded: item.live = Qt.binding(function() { return pane.live })
+    }
+    Connections { target: backend.desktopPlugins; function onDismissed() { if (pane.mode === "plugin") { pane.opened = false } } }
     Loader {
         id: agentSurface; objectName: "subagentSurfaceLoader"
         x: 1; y: 0; width: Math.max(0,pane.preferredWidth-1); height: parent.height
