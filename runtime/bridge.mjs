@@ -22,7 +22,7 @@ delete process.env.PI_OFFLINE;
 const bundledBin = fileURLToPath(new URL("./bin/", import.meta.url));
 if (existsSync(bundledBin)) process.env.PATH = bundledBin + delimiter + (process.env.PATH || "");
 for (const key of Object.keys(process.env)) {
-  if (/API_KEY$|ACCESS_TOKEN$|^NODE_(OPTIONS|PATH)$/i.test(key)) delete process.env[key];
+  if (/API_KEY$|ACCESS_TOKEN$|_(AK|SK|SECRET_KEY|SECURITY_TOKEN)$|^NODE_(OPTIONS|PATH)$/i.test(key)) delete process.env[key];
 }
 process.env.NO_PROXY = [process.env.NO_PROXY || process.env.no_proxy || "", "127.0.0.1", "localhost", "::1"].filter(Boolean).join(",");
 process.env.no_proxy = process.env.NO_PROXY;
@@ -253,7 +253,7 @@ async function init(input) {
   reasoningEffort = effortLevels.has(input.reasoningEffort) ? input.reasoningEffort : "off";
   setGateway(input.gateway);
   process.env.PI_CODING_AGENT_DIR = input.agentDir;
-  for (const [name, value] of Object.entries(input.mcpEnv || {})) if (!/^NODE_|^(HTTP|HTTPS|ALL)_PROXY$/i.test(name)) process.env[name] = value;
+  for (const [name, value] of Object.entries(input.mcpEnv || {})) if (!/^NODE_|^(HTTP|HTTPS|ALL)_PROXY$|_(AK|SK|SECRET_KEY|SECURITY_TOKEN)$/i.test(name)) process.env[name] = value;
   const cwd = resolve(input.workspace || input.defaultCwd);
   if (!existsSync(cwd)) throw new Error("工作目录不存在");
   mkdirSync(input.sessionDir, { recursive: true });
@@ -401,6 +401,7 @@ async function capabilities() {
   const allTools = session.getAllTools(), active = session.getActiveToolNames();
   return {
     tools: active,
+    contextFiles: session.resourceLoader.getAgentsFiles().agentsFiles.map(file => file.path),
     allTools: allTools.map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters, exposure: tool.exposure, active: active.includes(tool.name), source: tool.sourceInfo?.path || tool.sourceInfo?.kind || "Pi" })),
     skills: session.resourceLoader.getSkills().skills.map(s => ({ name: s.name, path: s.filePath, description: s.description })),
     extensions: session.resourceLoader.getExtensions().extensions.map(e => ({ name: extensionName(e.path, session.resourceLoader.resourceMetadataByPath?.get(e.path)), path: e.path })),

@@ -13,6 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class KernelUpdateTests(unittest.TestCase):
+    def setUp(self):
+        # Bundled release resources are covered by their own lifecycle tests.
+        bundles = patch("app.provider_plugins.BundledProviders.sync", return_value=[])
+        bundles.start()
+        self.addCleanup(bundles.stop)
+
     def test_project_entry_is_blank_and_management_preserves_native_files(self):
         from PySide6.QtCore import QUrl
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": str(Path(temp) / "data")}):
