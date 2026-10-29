@@ -53,7 +53,7 @@ if sys.platform == 'darwin':
     targets.append(bundle / 'Umeko.app/Contents/Frameworks')
 for target in targets:
     if target.is_dir():
-        shutil.copytree(root / 'runtime/releases' / RELEASE_NAME, target / 'runtime/releases' / RELEASE_NAME, dirs_exist_ok=True)
+        shutil.copytree(root / 'runtime/releases' / RELEASE_NAME, target / 'runtime/releases' / RELEASE_NAME, dirs_exist_ok=True, ignore=shutil.ignore_patterns('.cache'))
         shutil.copytree(root / 'runtime/node', target / 'runtime/node', dirs_exist_ok=True, symlinks=True)
 shutil.copy2(root / 'README.md', bundle / 'Umeko/README.md')
 if bundle != output:

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createJiti } from "../runtime/node_modules/jiti/lib/jiti.mjs";
@@ -23,6 +23,8 @@ test("native child streams, four slots, steering, stop, retained resume and cold
   const previousDirectory = process.cwd(), previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.chdir(directory); process.env.PI_CODING_AGENT_DIR = agentDir;
   const events = [], requests = [], pending = [];
+  const bundledCache = new URL("../runtime/node_modules/.cache/jiti/",import.meta.url);
+  const cacheBefore = existsSync(bundledCache) ? readdirSync(bundledCache).sort() : [];
   const server = http.createServer(async (request,response) => {
     let raw=""; for await (const chunk of request) raw+=chunk;
     const body=JSON.parse(raw);
@@ -53,12 +55,14 @@ test("native child streams, four slots, steering, stop, retained resume and cold
     await loader.reload();
     ({session}=await Pi.createAgentSession({cwd:directory,agentDir,modelRuntime,model,settingsManager:settings,resourceLoader:loader,sessionManager:Pi.SessionManager.create(directory,join(directory,"sessions"))}));
     await session.bindExtensions({});
-    const jiti=createJiti(new URL("../runtime/subagents.mjs",import.meta.url).href,{moduleCache:false});
+    const jiti=createJiti(new URL("../runtime/subagents.mjs",import.meta.url).href,{moduleCache:false,fsCache:join(agentDir,"cache","test-service")});
     const {getSubagentsService}=await jiti.import("@gotgenes/pi-subagents");
     const service=getSubagentsService();
     const ids=Array.from({length:4},(_,i)=>service.spawn("general-purpose",`task-${i}: Return a short answer`,{maxTurns:3,foreground:true}));
     await adapter.command({action:"watch",id:ids[0]});
     await waitFor(()=>pending.length===4);
+    assert.ok(existsSync(join(agentDir,"cache","umeko-subagents")),"community transpilation cache belongs in the user profile");
+    assert.deepEqual(existsSync(bundledCache) ? readdirSync(bundledCache).sort() : [],cacheBefore,"loading extensions must not add files to a signed app bundle");
     const childEvents=events.filter(event=>event.subagent);
     const latest=new Map(childEvents.map(event=>[event.subagent.id,event.subagent]));
     assert.equal(new Set([...latest.values()].map(child=>child.avatarSlot)).size,4);

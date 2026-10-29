@@ -3,6 +3,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createJiti } from "jiti";
 import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { homedir } from "node:os";
 
 const channels = ["created", "started", "resuming", "completed", "failed", "resumed", "update", "steered", "compacted"];
 const active = new Set(["queued", "running"]);
@@ -334,7 +336,9 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession } = 
     hook = (session,options) => observe(session,options);
     globalThis[sessionHook] = hook;
     const loaded = loadPackage ? await loadPackage() : await (async () => {
-      const jiti = createJiti(import.meta.url, { moduleCache: false, tryNative: false,
+      // Keep generated TypeScript cache out of the signed/read-only app bundle.
+      const cache = join(process.env.PI_CODING_AGENT_DIR || join(homedir(),".pi","agent"),"cache","umeko-subagents");
+      const jiti = createJiti(import.meta.url, { moduleCache: false, tryNative: false, fsCache:cache,
         alias: { "@earendil-works/pi-coding-agent": fileURLToPath(new URL("./subagent-sdk.mjs", import.meta.url)) } });
       const root = new URL("../", import.meta.resolve("@gotgenes/pi-subagents"));
       const factory = await jiti.import(fileURLToPath(new URL("index.ts", root)), { default: true });
