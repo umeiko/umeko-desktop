@@ -91,7 +91,9 @@ class ProviderCardFieldTests(unittest.TestCase):
         (self.folder / "scripts/provider.py").write_text(code, encoding="utf-8")
         self.archive = self.path / "fixture.zip"
         pack_package(self.folder, self.archive)
-        self.controller = Controller(ROOT)
+        # Release bundles must not add unrelated accounts to this fixture.
+        with patch("app.provider_plugins.BundledProviders.sync", return_value=[]):
+            self.controller = Controller(ROOT)
         self.addCleanup(self.controller.close)
         self.manager = self.controller.providerPlugins
         self.notices = []

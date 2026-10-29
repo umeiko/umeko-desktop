@@ -59,7 +59,9 @@ class ProviderPluginTests(unittest.TestCase):
         (self.folder / "scripts/provider.py").write_text(code, encoding="utf-8")
         self.archive = self.path / "fixture.zip"
         pack_package(self.folder, self.archive)
-        self.controller = Controller(ROOT)
+        # Import lifecycle tests install only their synthetic package fixture.
+        with patch("app.provider_plugins.BundledProviders.sync", return_value=[]):
+            self.controller = Controller(ROOT)
         self.manager = self.controller.providerPlugins
         self.notices = []
         self.controller.toast.connect(self.notices.append)
