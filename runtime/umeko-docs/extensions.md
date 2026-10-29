@@ -12,6 +12,10 @@ MCP：`mcp.get` 的 `scope` 是 `global` 或 `project`，返回本实例文件�
 
 自定义供应商插件与这些 Pi 扩展不同，见 plugins.md。主题与 Pi 终端配色不同，见 themes.md。
 
+## 后台命令
+
+长时间运行命令时使用内置 `background_job` 工具：启动后获得任务ID，之后可以查询状态、增量读取独立输出、限时等待，或只停止该任务的进程树。普通 bash 会拒绝按程序名称或批量结束进程的命令，具体PID仍可使用。详见 [background-jobs.md](background-jobs.md)。
+
 ## 子 Agent
 
 可把互不依赖、范围清楚的任务交给内置 `subagent` 工具。子 Agent 类型由 Agent 在项目的 `.pi/agents/*.md` 中按需定义和维护。任务可以在前台等待结果，也可以放到后台运行，后台默认最多同时运行 4 个；用 `steer_subagent` 补充当前任务，用 `subagent` 的 `resume` 接着处理已有任务。主 Agent 负责汇总结果并给出最终答复。

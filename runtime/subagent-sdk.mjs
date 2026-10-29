@@ -6,8 +6,14 @@ import { createAgentSession as nativeCreateAgentSession } from "./node_modules/@
 import { DefaultResourceLoader as NativeResourceLoader } from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { NETWORK_RETRY } from "./network-retry.mjs";
 import { SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
+import { backgroundJobsExtension } from "./background-jobs.mjs";
 
 export class DefaultResourceLoader extends NativeResourceLoader {
+  constructor(options = {}) {
+    const factories = options.extensionFactories || [];
+    super({...options, extensionFactories: factories.some(item=>item.name === "background-jobs") ? factories :
+      [...factories,{name:"background-jobs",builtin:true,replaceable:false,factory:backgroundJobsExtension}]});
+  }
   getAppendSystemPrompt() {
     const append = super.getAppendSystemPrompt();
     return this.getSystemPrompt()?.includes(SUBAGENT_COMPLETION_HINT) || append.some(text=>text.includes(SUBAGENT_COMPLETION_HINT))

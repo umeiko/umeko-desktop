@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@alexlikevibe/pi-bg": "2.3.0",
     "@earendil-works/pi-coding-agent": "1.3.0",
     "@gotgenes/pi-subagents": "25.0.5",
     "semver": "7.8.5"
