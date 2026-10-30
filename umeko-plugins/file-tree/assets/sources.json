@@ -1,0 +1,16 @@
+{
+  "codicons": {
+    "version": "0.0.46-24",
+    "source": "https://registry.npmjs.org/@vscode/codicons/-/codicons-0.0.46-24.tgz",
+    "integrity": "sha512-KIDWUYxG6eh+DHRg+3G4bS487T+g1ZkLfB4HylOBbCcHsvLdfLMRM/m92DS1Ljhi8nglLr9ucwwWhHTEAC+DpA==",
+    "fontSha256": "3819e4ae4b87350e7c37a5d8f24e71ada2f1f2ee58f7ce5ebc1f88e3c8c38c80",
+    "license": "CC-BY-4.0"
+  },
+  "seti": {
+    "source": "https://github.com/jesseweed/seti-ui/commit/2d6c5e68b4ded73c92dac291845ee44e1182d511",
+    "vscodeVersion": "1.143.1",
+    "license": "MIT",
+    "conversion": "WOFF to TTF container; glyph outlines unchanged",
+    "fontSha256": "0f3acaf7a77b08fa8a91b9bb8b464b54fe2af7dc36b0cf3780cbd683fc43dfb3"
+  }
+}

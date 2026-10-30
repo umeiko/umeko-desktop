@@ -106,7 +106,11 @@ ApplicationWindow {
         sidebarCollapseHintPending = false; sidebarToggle.stopCollapseHint()
         sidebarCollapsed = !sidebarCollapsed; saveSidebarLayout()
     }
-    function settings(tab) { settingsTab = tab === 2 ? 1 : tab === 4 ? 3 : tab; page = "settings" }
+    function settings(tab) {
+        settingsTab = tab === 2 ? 1 : tab === 4 || tab === 7 ? 3 : tab
+        page = "settings"
+        if (tab === 7) Qt.callLater(() => settingsPage.openPluginManagement())
+    }
     function startChat() { cancelSidebarSelection(); backend.newSession(); page = "chat"; composer.focusInput() }
     function startProjectChat(row) { cancelSidebarSelection(); backend.openProject(row.id); backend.newSession(); if (row.collapsed) backend.toggleProject(row.id); page = "chat"; composer.focusInput() }
     function focusChatInput() {
@@ -143,7 +147,7 @@ ApplicationWindow {
     onConversationVisibleChanged: backend.setConversationVisible(conversationVisible)
     Component.onCompleted: backend.setConversationVisible(conversationVisible)
     Shortcut { sequence: "Ctrl+N"; onActivated: window.startChat() }
-    Shortcut { sequence: "Ctrl+S"; enabled: window.page === "chat" && !chatCover.visible && !webPane.subagentInputFocused; onActivated: composer.sendMessage(true) }
+    Shortcut { sequence: "Ctrl+S"; enabled: window.page === "chat" && !chatCover.visible && !webPane.subagentInputFocused && !webPane.pluginInputFocused; onActivated: composer.sendMessage(true) }
     Shortcut { sequence: "Ctrl+,"; onActivated: window.settings(0) }
     Shortcut { sequence: "Ctrl+B"; onActivated: window.toggleSidebar() }
     Shortcut { sequences: [StandardKey.Copy]; enabled: chatSelection.activeFocus && chatSelection.hasSelection; onActivated: Qt.callLater(chatSelection.copy) }
@@ -168,6 +172,7 @@ ApplicationWindow {
         targetRect: Qt.rect(0, 0, (sidebarResizeHandle.resizing ? sidebarResizeHandle.dragWidth : window.sidebarLayoutCollapsed ? 0 : Math.min(window.sidebarPreferredWidth, window.sidebarMaximumWidth)) + 1, 1)
         onMovingChanged: if (!moving) window.showSidebarCollapseHint()
     }
+    Connections { target: backend.desktopPlugins; function onRequested() { window.page = "chat"; webPane.showPlugin() } }
     Connections { target: backend.subagents; function onRequested() { window.page = "chat"; webPane.showSubagent() } }
     Rectangle {
         id: sidebar; objectName: "sidebar"
@@ -321,7 +326,7 @@ ApplicationWindow {
                 }
                 Text { text: window.page === "chat" ? I18n.t("工作空间") : I18n.t("偏好设置"); color: Theme.muted; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
                 Text { text: "/"; color: Theme.line; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
-                Text { text: window.page === "chat" ? (window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle) : [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于")][window.settingsTab]; color: Theme.ink; font.pixelSize: Theme.font(11); width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
+                Text { text: window.page === "chat" ? (window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle) : [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于"), I18n.t("Umeko 插件管理")][window.settingsTab]; color: Theme.ink; font.pixelSize: Theme.font(11); width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
             }
             Row { id: windowControls; anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 18; spacing: 2
                 ActionButton { glyph: "minus"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最小化"); onClicked: window.showMinimized() }
@@ -558,7 +563,8 @@ ApplicationWindow {
             Composer {
                 id: composer; objectName: "composer"
                 enabled: !chatCover.visible
-                x: chatWidth.composerLeft; anchors.bottom: parent.bottom; anchors.bottomMargin: 57 + (retryStatus.visible ? retryStatus.implicitHeight + 6 : 0)
+                x: chatWidth.composerLeft; anchors.bottom: parent.bottom
+                anchors.bottomMargin: Math.max(57, Math.max(footerActions.height, desktopPluginMenu.height) + Theme.control(10) + 13) + (retryStatus.visible ? retryStatus.implicitHeight + 6 : 0)
                 width: parent.width - chatWidth.composerLeft - chatWidth.composerRight
                 onOpenModels: modelPopup.toggle()
                 onChooseFiles: attachmentDialog.open()
@@ -574,6 +580,18 @@ ApplicationWindow {
                 ActionButton { height: Theme.control(28); quiet: true; text: "Agent"; glyph: "sliders"; onClicked: window.settings(3) }
                 ActionButton { objectName: "forkSessionButton"; visible: backend.messageCount > 0; enabled: !backend.busy; height: Theme.control(28); quiet: true; text: I18n.t("分支"); glyph: "branch"; onClicked: backend.forkSession() }
             }
+            DesktopPluginMenu {
+                id: desktopPluginMenu
+                readonly property bool docked: webPane.opened && chatPage.width - composer.x - composer.width < width + Theme.control(24)
+                readonly property bool docking: pluginDockMotion.moving
+                anchors.right: parent.right; anchors.bottom: parent.bottom
+                anchors.rightMargin: 12 + Math.max(0, pluginDockMotion.value.x); anchors.bottomMargin: 12; z: 45
+                onManageRequested: window.settings(7)
+            }
+            PidMotion {
+                id: pluginDockMotion
+                targetRect: Qt.rect(desktopPluginMenu.docked ? Math.max(0, chatPage.width - composer.x - composer.width - 12) : 0, 0, 1, 1)
+            }
         }
 
         WebPane {
@@ -582,7 +600,7 @@ ApplicationWindow {
             anchors.right: parent.right; anchors.top: header.bottom; anchors.bottom: parent.bottom
             preferredWidth: Math.max(window.webMinimumWidth, Math.min(window.webMaximumWidth, webResizeHandle.resizing ? webResizeHandle.dragWidth : window.webPreferredWidth > 0 ? window.webPreferredWidth : Math.min(540, Math.max(350, parent.width * 0.46))))
             resizing: webResizeHandle.resizing
-            blocked: window.page !== "chat" || !window.visible || window.visibility === Window.Minimized || window.mediaOverlayActive || modelPopup.visible || (subagentMatrix.visible && (subagentMatrix.desiredOpen || subagentMatrix.animating)) || subagentIndicator.popupVisible || backend.pendingApproval.id !== undefined
+            blocked: window.page !== "chat" || !window.visible || window.visibility === Window.Minimized || window.mediaOverlayActive || modelPopup.visible || (subagentMatrix.visible && (subagentMatrix.desiredOpen || subagentMatrix.animating)) || subagentIndicator.popupVisible || desktopPluginMenu.popupVisible || backend.pendingApproval.id !== undefined
         }
 
         MouseArea {
@@ -621,6 +639,7 @@ ApplicationWindow {
         }
 
         SettingsPage {
+            id: settingsPage
             objectName: "settingsPage"
             anchors.top: header.bottom; anchors.bottom: parent.bottom; width: parent.width
             visible: window.page === "settings"

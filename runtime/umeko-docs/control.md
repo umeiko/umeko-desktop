@@ -1,4 +1,4 @@
-# config_umeko 工具协议
+# umeko_desktop 工具协议
 
 参数形状：`{"operation":"操作名称","arguments":{...}}`。参数必须是 JSON 数据。它通过现有的桌面进程调用 Umeko 控制器，保存配置并发出相应刷新信号，不是 Shell，也不动态执行任意 Python/JavaScript。
 

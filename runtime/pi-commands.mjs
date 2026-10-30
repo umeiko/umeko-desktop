@@ -190,7 +190,7 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
     clear() { pending.length = 0; },
     extension(pi) {
       pi.registerTool({ name: PI_COMMAND_TOOL, label: '运行当前 Pi 命令', exposure: 'direct',
-        description: 'Run commands in this embedded Pi instance: extension packages, MCP and registered slash commands. Umeko providers, themes and desktop settings use config_umeko. This is not a shell. Busy-session reload/compaction commands are queued; queued is not completed. /help returns the Umeko documentation directory.',
+        description: 'Run commands in this embedded Pi instance: extension packages, MCP and registered slash commands. Umeko providers, themes and desktop settings use umeko_desktop. This is not a shell. Busy-session reload/compaction commands are queued; queued is not completed. /help returns the Umeko documentation directory.',
         promptSnippet: 'Run Pi administration and slash commands in the current Umeko session.',
         promptGuidelines: ['Use run_pi_command instead of shell pi commands or a separate Pi install. For MCP additions use pi mcp add; for extensions use pi install. Report queued commands as queued until completion is reported.'],
         parameters: Type.Object({ command: Type.String({ minLength: 1, maxLength: 16384 }), scope: Type.Optional(Type.Union([Type.Literal('global'), Type.Literal('project')])) }),

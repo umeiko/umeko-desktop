@@ -52,6 +52,20 @@
 | `plugins.models` | `id: string`, `models: json` | provider | 否 |
 | `plugins.resource` | `kind: string` | 无 | 否 |
 | `plugins.exportResource` | `kind: string`, `path: string` | 无 | 否 |
+| `widgets.list`（仅 python） | `activeOnly: boolean=false` | 无 | 否 |
+| `widgets.docs`（仅 python） | `id: string` | 无 | 否 |
+| `widgets.messages`（仅 python） | `id: string=""`, `after: integer=0`, `limit: integer=50` | 无 | 否 |
+| `widgets.result`（仅 python） | `requestId: string` | 无 | 否 |
+| `widgets.resource`（仅 python） | 无 | 无 | 否 |
+| `widgets.call`（仅 python） | `id: string`, `method: string`, `arguments: json={}`, `timeoutMs: integer=20000` | 无 | 是 |
+| `widgets.import`（仅 python） | `path: string` | 无 | 是 |
+| `widgets.config`（仅 python） | `id: string`, `config: json` | 无 | 是 |
+| `widgets.enable`（仅 python） | `id: string`, `enabled: boolean` | 无 | 否 |
+| `widgets.activate`（仅 python） | `id: string`, `enabled: boolean` | 无 | 否 |
+| `widgets.open`（仅 python） | `id: string` | 无 | 否 |
+| `widgets.close`（仅 python） | 无 | 无 | 否 |
+| `widgets.uninstall`（仅 python） | `id: string` | 无 | 否 |
+| `widgets.exportSdk`（仅 python） | `path: string` | 无 | 否 |
 | `extensions.scan` | 无 | 无 | 是 |
 | `extensions.refresh` | 无 | all | 是 |
 | `extensions.enable` | `id: string`, `enabled: boolean` | all | 是 |
@@ -76,3 +90,7 @@
 | `updates.install` | 无 | all | 是 |
 | `kernel.check` | 无 | 无 | 是 |
 | `kernel.update` | 无 | all | 是 |
+
+Widget 只读查询：`widgets.list`、`widgets.docs`、`widgets.messages`、`widgets.result`、`widgets.resource`。
+
+`plugins.*` 管理 Provider 插件；`widgets.*` 管理桌面 Widget。`help` 的 `arguments.topic` 可为 `plugins`、`provider` 或 `widget`。
