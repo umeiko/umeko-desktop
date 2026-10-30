@@ -1,0 +1,8 @@
+{
+  "plugin-manager.png": {
+    "source": "https://raw.githubusercontent.com/microsoft/fluentui-emoji/1ffb34c752ecf5d402f04cfb4b392c77f57c54bc/assets/Puzzle%20piece/3D/puzzle_piece_3d.png",
+    "sha256": "c0f47e02e87bd61118985d8ab7b5f40fe302c82e6bb7ae6a7b7add2eefc6de7a",
+    "license": "MIT",
+    "copyright": "Microsoft Corporation"
+  }
+}

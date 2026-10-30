@@ -3,6 +3,12 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+if "--umeko-plugin-worker" in sys.argv:
+    import runpy
+    _plugin_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    runpy.run_path(str(_plugin_root / "plugin-runtime/worker.py"), run_name="__main__")
+    sys.exit(0)
+
 from app.platform_support import configure_input_method
 
 os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")

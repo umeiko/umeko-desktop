@@ -1,0 +1,1 @@
+{"type":"object","properties":{"showHidden":{"type":"boolean"},"directoryLimit":{"type":"integer","enum":[200,500,1000,2000]}},"required":["showHidden","directoryLimit"],"additionalProperties":false}
