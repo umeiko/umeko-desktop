@@ -166,7 +166,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+B"; onActivated: window.toggleSidebar() }
     Shortcut { sequences: [StandardKey.Copy]; enabled: chatSelection.activeFocus && chatSelection.hasSelection; onActivated: Qt.callLater(chatSelection.copy) }
     Shortcut { sequences: [StandardKey.SelectAll]; enabled: chatSelection.activeFocus; onActivated: chatSelection.selectAll() }
-    Shortcut { sequence: "Escape"; enabled: !imageViewer.visible && !webPane.pluginInputFocused; onActivated: { if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
+    Shortcut { sequence: "Escape"; enabled: !imageViewer.visible; onActivated: { if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
     Connections { target: backend; function onToast(message) { window.notification = message; toastTimer.restart() }
         function onViewChanged() { window.avatarChatKey = String(Math.random()); webPane.dismiss() }
         function onWebRequested(url, title) { window.page = "chat"; webPane.submit(url, title) }

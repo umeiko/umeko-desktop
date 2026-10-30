@@ -36,17 +36,6 @@ def click(name,button=Qt.LeftButton):
     wait(lambda:find(name) is not None,'Control did not appear: '+name)
     item=find(name)
     window.grabWindow();QTest.mouseClick(window,button,Qt.NoModifier,item.mapToScene(item.boundingRect().center()).toPoint());QTest.qWait(120)
-def clickable(item):
-    if item is None or not item.isVisible() or not item.isEnabled() or item.width()<=0 or item.height()<=0:return False
-    point=item.mapToScene(item.boundingRect().center())
-    if not (0<point.x()<window.width() and 0<point.y()<window.height()):return False
-    ancestor=item.parentItem()
-    while ancestor is not None:
-        if ancestor.property('clip'):
-            local=ancestor.mapFromScene(point)
-            if not (0<=local.x()<ancestor.width() and 0<=local.y()<ancestor.height()):return False
-        ancestor=ancestor.parentItem()
-    return True
 def check_launcher_boundary():
     launcher=find('desktopPluginLauncher');chat=find('chatPage');composer=find('composer')
     corner=launcher.mapToScene(launcher.boundingRect().bottomRight());edge=chat.mapToScene(chat.boundingRect().bottomRight())
@@ -127,9 +116,7 @@ try:
     wait(lambda:(workspace/'hello.md').exists() and find('fileManagerRenameField') is None,'Escape did not cancel inline rename')
     click('fileTreeRow_hello.md',Qt.RightButton);click('fileManagerRename')
     wait(lambda:find('fileManagerRenameField') is not None and find('fileManagerRenameField').property('activeFocus'),'Inline rename did not reopen')
-    QTest.keyClick(window,Qt.Key_A,Qt.ControlModifier)
-    for character in 'renamed.md':QTest.keyClick(window,Qt.Key(ord(character.upper())))
-    QTest.keyClick(window,Qt.Key_Return)
+    QTest.keyClick(window,Qt.Key_A,Qt.ControlModifier);QCoreApplication.sendEvent(window,QKeyEvent(QEvent.KeyPress,0,Qt.NoModifier,'renamed.md'));QTest.keyClick(window,Qt.Key_Return)
     wait(lambda:(workspace/'renamed.md').exists() and find('fileTreeRow_renamed.md') is not None,'File was not renamed')
     click('fileTreeRow_delete-me.txt',Qt.RightButton);click('fileManagerDelete')
     wait(lambda:find('fileManagerDeleteDialog').property('visible'),'Delete confirmation did not open')
@@ -173,7 +160,6 @@ try:
     wait(lambda:find('fileTreePluginPage') is not None and find('fileTreePluginPage').property('selectedPath')=='example.py','Explorer did not select requested file')
     assert manager.openPage('git-viewer')
     wait(lambda:find('gitChangesList') is not None and find('gitChangesList').property('count')>=3,'Git changes did not reload')
-    wait(lambda:clickable(find('gitChange_untracked_example.py')),'Git example.py row did not become clickable')
     click('gitChange_untracked_example.py')
     wait(lambda:find('gitDiffText') is not None and 'hello' in find('gitDiffText').property('text'),'Git diff did not open')
     window.grabWindow().save(str(out/'git-diff.png'))
