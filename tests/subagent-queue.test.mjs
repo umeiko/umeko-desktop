@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import {mkdtempSync,mkdirSync,rmSync,readFileSync} from "node:fs";
+import {mkdtempSync,mkdirSync,readFileSync} from "node:fs";
+import {rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {createJiti} from "../runtime/node_modules/jiti/lib/jiti.mjs";
@@ -134,6 +135,8 @@ test("child queue edits/removal, immediate tool and model interruption, FIFO con
     server.closeAllConnections(); await new Promise(resolve=>server.close(resolve));
     process.chdir(previousDirectory);
     if (previousAgentDir===undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR=previousAgentDir;
-    rmSync(directory,{recursive:true,force:true,maxRetries:12,retryDelay:100});
+    // Let pending Windows child-process close callbacks release cwd handles
+    // between retries. Synchronous cleanup blocks those callbacks itself.
+    await rm(directory,{recursive:true,force:true,maxRetries:12,retryDelay:100});
   }
 });
