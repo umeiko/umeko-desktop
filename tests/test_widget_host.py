@@ -270,7 +270,9 @@ class WidgetHostTests(unittest.TestCase):
             with patch.dict(os.environ, {'NODE_OPTIONS':'--require /forbidden', 'NODE_PATH':'/forbidden', 'FIXTURE_API_KEY':'private'}):
                 result=context.run_executable('node',['-e','console.log(JSON.stringify({cwd:process.cwd(), injected:process.env.NODE_OPTIONS,secret:process.env.FIXTURE_API_KEY}))'],timeout=3)
             self.assertEqual(result['code'],0)
-            self.assertEqual(json.loads(result['text']), {'cwd':str(Path(directory).resolve())})
+            payload=json.loads(result['text'])
+            self.assertEqual(set(payload), {'cwd'})
+            self.assertEqual(Path(payload['cwd']).resolve(), Path(directory).resolve())
 
     def test_sdk_request_is_nonblocking_and_requires_explicit_application_target(self):
         with tempfile.TemporaryDirectory() as directory:

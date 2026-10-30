@@ -43,7 +43,7 @@ class PiInstallTests(unittest.TestCase):
             self.assertIn('Installed',output)
             config=cwd/'.pi/settings.json';registered=json.loads(config.read_text())['packages'][0]
             package=(config.parent/registered).resolve()
-            self.assertTrue(package.is_relative_to(cwd/'.pi/umeko-packages'))
+            self.assertTrue(package.is_relative_to((cwd/'.pi/umeko-packages').resolve()))
             self.assertTrue((package/'index.js').is_file())
             self.assertFalse(any(p.name.startswith('preparing-') for p in (agent/'umeko-install-cache').iterdir()))
 
@@ -61,6 +61,23 @@ class PiInstallTests(unittest.TestCase):
                      'pi install "unfinished', "pi install npm:a && whoami", "pi install npm:a; whoami",
                      "pi install npm:a\npi install npm:b", "pi install $(whoami)", "npm:a|whoami"):
             with self.subTest(command=text), self.assertRaises(ValueError): parse_install_command(text)
+
+    def test_native_remove_keeps_the_registered_directory_alias(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base=Path(temp);real=base/'real';real.mkdir();alias=base/'alias'
+            try:
+                alias.symlink_to(real,target_is_directory=True)
+            except OSError as error:
+                self.skipTest('Directory aliases unavailable: '+str(error))
+            cwd=alias/'project';agent=alias/'agent';package=alias/'package'
+            cwd.mkdir();agent.mkdir();(package/'extensions').mkdir(parents=True)
+            (package/'extensions/example.ts').write_text('throw Error("must not execute");')
+            self.assertIn('Installed',install_package(RELEASE,cwd,agent,str(package),timeout=30))
+            settings=agent/'settings.json';source=json.loads(settings.read_text())['packages'][0]
+            self.assertIn('Removed',remove_package(RELEASE,cwd,agent,source,timeout=30,
+                package_root=package.resolve()))
+            self.assertFalse(json.loads(settings.read_text()).get('packages',[]))
+            self.assertTrue((package/'extensions/example.ts').is_file())
 
     def test_native_install_persists_both_scopes_without_executing_extensions(self):
         with tempfile.TemporaryDirectory() as temp:

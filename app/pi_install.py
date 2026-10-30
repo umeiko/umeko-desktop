@@ -101,7 +101,9 @@ def remove_package(release, cwd, agent_dir, source, local=False, timeout=180, np
     base = Path(cwd) / ".pi" if local else Path(agent_dir)
     if source in (".", "..") or source.startswith(("./", "../", ".\\", "..\\")) or (
             package_root and (base / source).resolve() == Path(package_root).resolve()):
-        source = str((base / source).resolve())
+        # Pi compares registered local sources lexically. realpath/resolve
+        # expands Windows 8.3 names and symlinks, changing that identity.
+        source = os.path.abspath(base / source)
     return package_operation(release, cwd, agent_dir, source, local, timeout, npm_config, operation="remove")
 
 
