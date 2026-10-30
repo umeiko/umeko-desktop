@@ -10,7 +10,7 @@ import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
 import { backgroundJobsExtension } from "./background-jobs.mjs";
-import { createWidgetMessages } from "./widget-messages.mjs";
+import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
 import { createToolPermissionExtension } from "./tool-permissions.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
@@ -44,6 +44,7 @@ const subagents = createSubagentExtension({ emit, restoreSession: restoreSubagen
 const textOf = content => typeof content === "string" ? content : (content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
 const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
 let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe, closing = false;
+const loopReview=createLoopReview({emit});
 const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit});
 let reasoningEffort = "off";
 const effortLevels = new Set(["off", "low", "high", "max"]);
@@ -309,6 +310,7 @@ async function init(input) {
           additionalExtensionPaths: builtins.map(name => "builtin:" + name) } : {}),
         appendSystemPrompt: [DESKTOP_PI_PROMPT + " " + UMEKO_PROMPT + " Reply in the user's language.", input.agent?.instructions || ""],
         extensionFactories: [
+          ...(input.loopReview ? [{name:"loop-review",hidden:true,replaceable:false,factory:loopReview.extension}] : []),
           // Mandatory inline factory: resource filters cannot disable the gate.
           { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}) },
@@ -455,6 +457,7 @@ async function promptWithInterrupts(first) {
 }
 
 async function execute(input) {
+  if (input.type === "loop_review_response") { loopReview.response(input); return; }
   if (input.type === "umeko_response") { umekoControl.response(input); return; }
   if(input.type==='widget-notify' && runtime && (executing || input.notification?.wake===false)) {
     try {await widgetMessages.deliver(input.notification);}catch(error){emit({type:'widget_delivery',id:input.notification?.id,status:'failed',error:error.message});}
@@ -553,6 +556,7 @@ let rl;
 async function shutdown() {
   if (closing) return;
   closing = true;
+  loopReview.clear();
   umekoControl.clear();
   subagents.dispose();
   piCommands.clear();

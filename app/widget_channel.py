@@ -296,6 +296,7 @@ class WidgetChannel(QObject):
 
     def pi_event(self,record,event):
         if self.m.closed:return
+        self.m.review_event(record,event)
         state=self.states.get(record.key)
         if not state or record.key!=state['token']:return
         if event.get('type') in ('ready','session','state'):state=self.remember(record)

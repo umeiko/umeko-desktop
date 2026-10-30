@@ -106,7 +106,7 @@ class PiControllerMixin:
                     legacyHistory=record.history, models=self.gateway.models(), agent=agent,
                     permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,
                     dataDir=str(self.store.directory),
-                    mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration())
+                    mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(), loopReview=True)
                 self._pool.start(record, node_executable(), bridge, payload)
         except (RuntimeError, OSError) as error:
             record.phase, record.failed = "idle", True

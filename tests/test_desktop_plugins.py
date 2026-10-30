@@ -13,7 +13,8 @@ from app.desktop_plugins import DesktopPlugins
 
 class Pool(QObject):
     event=Signal(object,object)
-    def __init__(self,record):super().__init__();self.records={record.key:record}
+    def __init__(self,record):super().__init__();self.records={record.key:record};self.writes=[]
+    def write(self,record,event):self.writes.append((record.key,event))
     def find(self,identifier):return next((row for row in self.records.values() if row.id==identifier),None)
 
 class Host(QObject):
@@ -85,6 +86,45 @@ def create_plugin(context):return Fixture(context)
             for p in folder.rglob('*'):
                 if p.is_file():stream.write(p,p.relative_to(folder).as_posix())
         return archive,marker
+    def test_loop_review_is_opt_in_captures_before_tools_and_opens_on_cancellation(self):
+        self.assertFalse(self.manager.enabled('change-review'))
+        self.assertNotIn('change-review',self.manager.workers)
+        record=self.host._view
+        begin={'type':'loop_review','id':'begin-1','phase':'begin','loopId':'one'}
+        self.host._pool.event.emit(record,begin)
+        self.assertEqual(self.host._pool.writes[-1][1]['id'],'begin-1')
+        self.assertNotIn('change-review',self.manager.workers)
+        self.manager.setEnabled('change-review',True)
+        file=Path(record.workspace)/'proof.txt';file.write_text('before\n')
+        self.host._pool.event.emit(record,{**begin,'id':'begin-2','loopId':'two'})
+        self.wait(lambda:any(event['id']=='begin-2' for _,event in self.host._pool.writes))
+        file.write_text('after\n')
+        self.host._pool.event.emit(record,{'type':'loop_review','id':'end-2','phase':'finish','loopId':'two','reason':'cancelled'})
+        self.wait(lambda:self.manager.page.get('id')=='change-review')
+        value=self.call('status')['result'];self.assertEqual(value['reason'],'cancelled');self.assertEqual(value['total'],1)
+        self.manager.closePage();self.assertIn('change-review',self.manager.workers)
+        self.assertIn('-before',self.call_for_review('diff',{'path':'proof.txt'})['result']['text'])
+        self.manager.setEnabled('change-review',False);self.assertNotIn('change-review',self.manager.workers)
+    def test_review_process_exit_retains_background_chat_without_stealing_panel(self):
+        self.manager.setEnabled('change-review',True);record=self.host._view
+        file=Path(record.workspace)/'proof.txt';file.write_text('before\n')
+        self.host._pool.event.emit(record,{'type':'loop_review','id':'start-exit','phase':'begin','loopId':'exit-loop'})
+        self.wait(lambda:any(event['id']=='start-exit' for _,event in self.host._pool.writes))
+        file.write_text('after\n')
+        self.host._view=copy.copy(record);self.host._view.key='foreground';self.host._view.id='foreground'
+        self.host._pool.records['foreground']=self.host._view;self.host.viewChanged.emit()
+        self.host._pool.event.emit(record,{'type':'exit'})
+        snapshot=self.manager.bridge.snapshot(record)
+        request=self.manager.call_for('change-review','status','{}',session=snapshot)
+        self.wait(lambda:request in self.responses)
+        self.assertEqual(self.responses[request]['result']['reason'],'exited')
+        self.assertEqual(self.responses[request]['result']['total'],1)
+        self.assertEqual(self.manager.page,{})
+
+    def call_for_review(self,method,args):
+        request=self.manager.call_for('change-review',method,json.dumps(args))
+        self.wait(lambda:request in self.responses);return self.responses[request]
+
     def test_official_tree_is_lazy_bounded_and_closes_worker(self):
         directory=Path(self.host._view.workspace);(directory/'a.py').write_text('print(1)');(directory/'nested').mkdir();(directory/'nested/x.txt').write_text('hello')
         self.assertEqual(len(self.manager.sessionPlugins),2)
@@ -101,7 +141,7 @@ def create_plugin(context):return Fixture(context)
         self.assertEqual(rows['file-tree']['iconGlyph'],'folder')
         self.assertEqual(rows['git-viewer']['iconGlyph'],'branch')
         self.assertEqual(rows['desktop-pet']['iconGlyph'],'pet')
-        self.assertEqual(len(self.manager.iconCatalog),21)
+        self.assertEqual(len(self.manager.iconCatalog),22)
         for icon in self.manager.iconCatalog:self.assertTrue((ROOT/'app/icons'/(icon['glyph']+'.svg')).is_file())
         self.fixture();folder=self.path/'session-demo-1.0.0';manifest=json.loads((folder/'manifest.json').read_text())
         manifest['icon']='does-not-exist';(folder/'manifest.json').write_text(json.dumps(manifest))
