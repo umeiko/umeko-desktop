@@ -15,7 +15,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QPoint, Property, QTimer, QUrl, Qt, Signal, Slot
 
-from .pet_packs import STATES, import_pack, read_pack
+from .pet_packs import BUILTIN_APPEARANCES, STATES, import_pack, read_pack
 
 ID = 'desktop-pet'
 DEFAULTS = {'visible': False, 'appearance': 'yanami', 'size': 192, 'alwaysOnTop': True,
@@ -90,12 +90,12 @@ class DesktopPet(QObject):
             self.configure(DEFAULTS, persist=False)
 
     def load_packs(self):
-        builtin = self.b.root / 'umeko-plugins' / ID / 'assets' / 'yanami'
+        assets = self.b.root / 'umeko-plugins' / ID / 'assets'
         self._packs = {}
-        for path, builtin_flag in [(builtin, True), *((p, False) for p in self.pack_directory.glob('*') if p.is_dir() and not p.name.startswith('.'))]:
+        for path, builtin_flag in [*((assets / name, True) for name in BUILTIN_APPEARANCES), *((p, False) for p in self.pack_directory.glob('*') if p.is_dir() and not p.name.startswith('.'))]:
             try:
                 pack = read_pack(path)
-                if not builtin_flag and pack['id'] == 'yanami':
+                if not builtin_flag and pack['id'] in BUILTIN_APPEARANCES:
                     continue
                 self._packs[pack['id']] = {**pack, 'directory': path, 'builtin': builtin_flag}
             except (OSError, ValueError, TypeError):

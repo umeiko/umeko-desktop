@@ -73,7 +73,10 @@ def wait(predicate, label):
         if predicate(): return
     diagnostic = {"child": backend.subagents.selected_id,
                   "header": item_state(tool_item("toggleTools_1_0")),
-                  "status": item_state(tool_item("toolState_slow"))}
+                  "status": item_state(tool_item("toolState_" + globals().get("tool_id", ""))),
+                  "injectedSnapshot": globals().get("snapshot"),
+                  "messages": backend.subagents.messages,
+                  "modelRows": backend.subagents.model.rows}
     raise AssertionError(label + "\n" + json.dumps(diagnostic, ensure_ascii=False) + "\n" + "\n".join(warnings))
 
 
@@ -103,6 +106,8 @@ try:
     screenshots.mkdir(parents=True, exist_ok=True)
     for i, role in enumerate(roles):
         child_id = f"role-{i}"
+        # A recycled previous child's delegate must not satisfy this child's lookup.
+        tool_id = f"slow-{child_id}"
         backend.subagents.merge(record, {"id": child_id, "avatarSlot": i, "status": "completed", "outputFile": str(file)})
         backend.subagents.open(child_id)
         wait(lambda: not backend.subagents.loading and not find("webPane").property("moving"), "Child pane did not settle")
@@ -125,20 +130,20 @@ try:
         QTest.qWait(40)
         assert not mascot.isVisible() and mascot.property("reaction") == ""
         snapshot = [{"role": "user", "text": "检查任务。"}, {"role": "assistant", "text": "", "tools": [
-            {"id": "slow", "name": "bash", "arguments": {"command": "sleep 60"}, "path": "", "state": "running", "result": ""}]}]
+            {"id": tool_id, "name": "bash", "arguments": {"command": "sleep 60"}, "path": "", "state": "running", "result": ""}]}]
         backend.subagents.handle(record, {"type": "subagent_context", "id": child_id, "messages": snapshot})
         wait(lambda: clickable(tool_item("toggleTools_1_0")), "Running tool header did not become clickable")
         toggle = tool_item("toggleTools_1_0")
         if not toggle.parentItem().parentItem().property("expanded"): click(toggle)
         wait(lambda: tool_item("toggleTools_1_0").parentItem().parentItem().property("expanded"), "Tool header click did not expand its rows")
-        wait(lambda: tool_item("toolState_slow") is not None and tool_item("toolState_slow").isVisible()
-             and tool_item("toolState_slow").property("name") == "hourglass", "Running tool did not show its hourglass")
-        status = tool_item("toolState_slow")
+        wait(lambda: tool_item(f"toolState_{tool_id}") is not None and tool_item(f"toolState_{tool_id}").isVisible()
+             and tool_item(f"toolState_{tool_id}").property("name") == "hourglass", "Running tool did not show its hourglass")
+        status = tool_item(f"toolState_{tool_id}")
         running_color = status.property("color")
         snapshot[1]["tools"][0]["state"] = "error"
         backend.subagents.handle(record, {"type": "subagent_context", "id": child_id, "messages": snapshot})
-        wait(lambda: tool_item("toolState_slow") is not None and tool_item("toolState_slow").property("name") == "x", "Failed tool did not show its error marker")
-        status = tool_item("toolState_slow")
+        wait(lambda: tool_item(f"toolState_{tool_id}") is not None and tool_item(f"toolState_{tool_id}").property("name") == "x", "Failed tool did not show its error marker")
+        status = tool_item(f"toolState_{tool_id}")
         assert status.property("name") == "x" and status.property("color") != running_color
         assert not find("subagentReplyMascot_1").isVisible()
         backend.subagents.closeView()
