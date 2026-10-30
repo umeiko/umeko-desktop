@@ -16,6 +16,18 @@ Item {
     readonly property var mappingAccount: backend.config.providers.find(p => p.id === mappingProviderId) || null
     property var activeInlineScroll: null
     function activateInlineScroll(item) { activeInlineScroll = item }
+    function openExtensions() {
+        root.tabSelected(3)
+        agentPage.openExtensions()
+        // Like openMappingProvider, position only after the expanded layout
+        // has been polished. Agent navigation's reset is queued before this.
+        Qt.callLater(() => {
+            const flick = settingsScroll.contentItem
+            const top = flick.contentY + agentPage.extensionManagement.mapToItem(flick, Qt.point(0, 0)).y
+            flick.cancelFlick()
+            flick.contentY = Math.max(0, Math.min(top, flick.contentHeight - flick.height))
+        })
+    }
     function scrollSettings(delta) {
         const flick = settingsScroll.contentItem
         flick.cancelFlick()
@@ -265,7 +277,7 @@ Item {
                     }
                 }
 
-                AgentPage { visible: root.tab === 3; width: parent.width; availableHeight: settingsScroll.availableHeight; onNavigated: Qt.callLater(() => settingsScroll.contentItem.contentY = 0) }
+                AgentPage { id: agentPage; objectName: "agentPage"; visible: root.tab === 3; width: parent.width; availableHeight: settingsScroll.availableHeight; onNavigated: Qt.callLater(() => settingsScroll.contentItem.contentY = 0) }
 
                 AppearanceSettings { visible: root.tab === 5; width: parent.width }
                 AboutPage { visible: root.tab === 6; width: parent.width }

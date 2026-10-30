@@ -148,7 +148,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+B"; onActivated: window.toggleSidebar() }
     Shortcut { sequences: [StandardKey.Copy]; enabled: chatSelection.activeFocus && chatSelection.hasSelection; onActivated: Qt.callLater(chatSelection.copy) }
     Shortcut { sequences: [StandardKey.SelectAll]; enabled: chatSelection.activeFocus; onActivated: chatSelection.selectAll() }
-    Shortcut { sequence: "Escape"; enabled: !imageViewer.visible; onActivated: { if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
+    Shortcut { sequence: "Escape"; enabled: !imageViewer.visible; onActivated: { if (window.page === "settings") window.page = "chat"; else { modelPopup.close(); packagePopup.close() } } }
     Connections { target: backend; function onToast(message) { window.notification = message; toastTimer.restart() }
         function onViewChanged() { window.avatarChatKey = String(Math.random()); webPane.dismiss() }
         function onWebRequested(url, title) { window.page = "chat"; webPane.submit(url, title) }
@@ -622,6 +622,7 @@ ApplicationWindow {
         }
 
         SettingsPage {
+            id: settingsPage
             objectName: "settingsPage"
             anchors.top: header.bottom; anchors.bottom: parent.bottom; width: parent.width
             visible: window.page === "settings"
@@ -645,8 +646,10 @@ ApplicationWindow {
         id: packagePopup
         parent: composer.packageAnchor
         heightLimit: window.height - 128
-        onConfigure: { window.settings(3) }
+        onConfigure: { window.settings(3); settingsPage.openExtensions() }
+        onDismissed: Qt.callLater(function() { if (window.page === "chat" && !packagePopup.desiredOpen && !window.mediaOverlayActive) composer.focusInput() })
     }
+    Connections { target: backend; function onViewChanged() { packagePopup.close() } }
     SidebarMenus { id: sidebarMenus; objectName: "sidebarMenus"; parent: Overlay.overlay; anchors.fill: parent }
     Rectangle {
         z: 100; anchors.horizontalCenter: mainArea.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 27

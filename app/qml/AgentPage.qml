@@ -8,6 +8,14 @@ Column {
     property bool toolsOpen: false
     property real availableHeight: 600
     signal navigated()
+    function openExtensions() {
+        search.clear()
+        piOpen = true
+        toolsOpen = false
+        extensionsFold.expanded = true
+        packagesFold.expanded = true
+    }
+    readonly property Item extensionManagement: extensionManager
     spacing: 18
     onPiOpenChanged: { if (!piOpen) toolsOpen = false; else backend.piManagement.scan(); navigated() }
     onToolsOpenChanged: navigated()
@@ -63,9 +71,10 @@ Column {
             SettingsFold { objectName: "piFold_npm"; width: parent.width; title: I18n.t("npm 与网络"); nested: true; query: search.text; searchTerms: I18n.t("镜像 源 证书 registry CA npmrc 连接 ") + JSON.stringify(backend.piManagement.npmConfig); PiNpmSettings { width: parent.width } }
         }
         SettingsFold {
+            id: extensionsFold
             objectName: "piFold_extensions"; width: parent.width; title: I18n.t("扩展与工具"); query: search.text
             searchTerms: I18n.t("安装 Skills MCP 服务器 builtin extensions 工具 资源 ") + JSON.stringify(backend.piManagement.extensions) + JSON.stringify(backend.agentResources)
-            SettingsFold { objectName: "piFold_packages"; width: parent.width; title: I18n.t("Pi 扩展"); nested: true; query: search.text; searchTerms: I18n.t("安装 扩展包 extensions builtin ") + JSON.stringify(backend.piManagement.extensions); ExtensionManager { width: parent.width; namePrefix: "agentExtensions" } }
+            SettingsFold { id: packagesFold; objectName: "piFold_packages"; width: parent.width; title: I18n.t("Pi 扩展"); nested: true; query: search.text; searchTerms: I18n.t("安装 扩展包 extensions builtin ") + JSON.stringify(backend.piManagement.extensions); ExtensionManager { id: extensionManager; objectName: "agentExtensionsManager"; width: parent.width; namePrefix: "agentExtensions" } }
             SettingsFold { objectName: "piFold_mcp"; width: parent.width; title: I18n.t("MCP 服务器"); nested: true; query: search.text; searchTerms: I18n.t("builtin:mcp 全局 项目 配置服务器 JSON"); McpSettings { width: parent.width } }
             SettingsFold { objectName: "piFold_tools"; width: parent.width; title: I18n.t("工具与资源"); nested: true; query: search.text; searchTerms: I18n.t("原生 工具 Skills 提示模板 命令 资源 ") + JSON.stringify(backend.agentResources)
                 SectionCard { width: parent.width; ActionButton { objectName: "openToolCatalogButton"; text: I18n.t("查看工具与资源"); glyph: "layers"; enabled: !backend.piManagement.busy && !backend.kernelBusy; onClicked: root.toolsOpen = true } }

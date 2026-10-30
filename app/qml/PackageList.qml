@@ -8,9 +8,10 @@ ColumnLayout {
     property string namePrefix: "package"
     property bool thirdPartyOnly: true
     property bool showDetails: false
+    property var packageRows: null
     signal detailsRequested(string extensionId)
     readonly property var manager: backend.piManagement
-    readonly property var rows: manager.packages.filter(row => !thirdPartyOnly || row.removable)
+    readonly property var rows: packageRows !== null ? packageRows : thirdPartyOnly ? manager.manageablePackages : manager.packages
     spacing: 12
     Text {
         objectName: root.namePrefix + "Progress"

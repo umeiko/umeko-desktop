@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Property, Signal, Slot, QUrl
+from PySide6.QtCore import QObject, Property, Signal, Slot, QUrl, QTimer
 from PySide6.QtGui import QDesktopServices
 from .pi_runtime import CREATE_NO_WINDOW, RELEASE_NAME, installed_version, node_executable, verify_runtime
 from .pi_terminal import console_runtime, prepare_terminal, launch_terminal
@@ -73,6 +73,12 @@ class PiManagement(QObject):
             saved = sorted(p for p in backups.iterdir() if p.is_dir() and (p / "restore.json").is_file())
             if saved: self._backup = str(saved[-1])
         controller.jobDone.connect(self._finished)
+        self._visible_context = None
+        self._scan_pending = False
+        if hasattr(controller, "viewChanged"):
+            self._visible_context = self._resource_key()
+            controller.viewChanged.connect(self._sync_context)
+            controller.changed.connect(self._sync_context)
 
     @Property(bool, notify=changed)
     def busy(self): return self._busy
@@ -100,6 +106,32 @@ class PiManagement(QObject):
             if extension.get("resourceKind") != "package":
                 groups[key]["extensions"].append(extension)
         return sorted(groups.values(), key=lambda row: (not bool(row["useCount"]), row["name"].casefold()))
+
+    @Property("QVariantList", notify=changed)
+    def manageablePackages(self):
+        # Native discovery is scoped to the current workspace. Disabled local
+        # extensions remain manageable (the user can enable them); built-ins
+        # and group placeholders do not create a composer action.
+        return [row for row in self.packages if row.get("source") != "builtin"
+                and not row.get("path", "").startswith("builtin:")
+                and (row.get("resourceKind") == "package" and row.get("packageRoot")
+                     or any(extension.get("path") for extension in row["extensions"]))]
+
+    @Property(bool, notify=changed)
+    def hasManageableExtensions(self):
+        return bool(self.manageablePackages)
+
+    def _sync_context(self):
+        if getattr(self.controller, "_closing", False): return
+        key = self._resource_key()
+        if key != self._visible_context:
+            self._visible_context = key
+            self._extensions = []
+            self._marketplace_progress = {}
+            self._scan_pending = True
+            self.changed.emit()
+        if self._scan_pending and not self._busy and not self.controller.kernelBusy:
+            self.scan()
 
     @Property(str, notify=changed)
     def installPermission(self):
@@ -225,7 +257,10 @@ class PiManagement(QObject):
         return (c._view.workspace or c.store.data["workspace"], str(c._release), json.dumps(agent, sort_keys=True))
 
     def _scan(self, apply=False):
-        if self._busy or self.controller.kernelBusy: return
+        if self._busy or self.controller.kernelBusy:
+            self._scan_pending = True
+            return
+        self._scan_pending = False
         context = self._context()
         self._start("reload" if apply else "scan", "正在读取 Pi 扩展…", lambda: resource_command(*context, action="scan"))
 
@@ -396,6 +431,8 @@ class PiManagement(QObject):
         outcome = dict(result)
         self._apply_finished(name, outcome)
         self.operationFinished.emit(name, outcome)
+        if self._scan_pending:
+            QTimer.singleShot(0, self._sync_context)
 
     def _apply_finished(self, name, result):
         action, c = name.split(":", 1)[1], self.controller

@@ -11,6 +11,7 @@ Item {
     signal openModels()
     signal openPackages()
     signal chooseFiles()
+    Component.onCompleted: Qt.callLater(backend.piManagement.scan)
     function focusInput() { prompt.forceActiveFocus() }
     function setText(value) { prompt.text = value; prompt.forceActiveFocus(); prompt.cursorPosition = value.length }
     function sendMessage(steering) {
@@ -90,7 +91,7 @@ Item {
         Row {
             anchors.right: parent.right; anchors.rightMargin: 14; anchors.bottom: parent.bottom; anchors.bottomMargin: 12; spacing: 13
             Text { visible: Theme.fontScale <= 1.25; text: backend.loading ? backend.toolStatus || I18n.t("正在加载 Pi") : backend.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
-            ActionButton { id: packageButton; objectName: "packageManagerButton"; glyph: "wrench"; quiet: true; width: Theme.control(31); height: Theme.control(31); anchors.verticalCenter: parent.verticalCenter; hint: I18n.t("管理扩展包"); onClicked: root.openPackages() }
+            ActionButton { id: packageButton; objectName: "packageManagerButton"; visible: backend.piManagement.hasManageableExtensions; glyph: "wrench"; quiet: true; width: Theme.control(31); height: Theme.control(31); anchors.verticalCenter: parent.verticalCenter; hint: I18n.t("管理扩展包"); onClicked: root.openPackages() }
             Rectangle {
                 objectName: "sendButton"
                 readonly property bool stopAction: backend.running

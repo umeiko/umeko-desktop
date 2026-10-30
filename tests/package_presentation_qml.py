@@ -134,7 +134,11 @@ ApplicationWindow {
         backend._approval = {}
         backend.changed.emit()
         QMetaObject.invokeMethod(window, "showPanel")
-        settle()
+        for _ in range(100):
+            if panel.property("listReady") and not panel.property("animating"):
+                break
+            settle()
+        assert panel.property("listReady") and not panel.property("animating")
         audit = find("packagePopupAudit_" + row["id"])
         assert audit is not None
         expected = "3 条中风险：HTTP 请求（index.ts、request.ts）" if language == "zh" else "3 medium-risk findings: HTTP requests (index.ts, request.ts)"
