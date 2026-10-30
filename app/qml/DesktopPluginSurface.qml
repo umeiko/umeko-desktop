@@ -18,6 +18,8 @@ FocusScope {
         readonly property string revealPath: root.page.selection || ""
         readonly property bool active: root.live
         readonly property var hostCapabilities: root.manager.hostServices.capabilities
+        readonly property Component chatMessageComponent: chatMessageRenderer
+        readonly property Component queuedMessagesComponent: queueRenderer
         signal response(string request, var value)
         signal hostResponse(string request, var value)
         signal event(string topic, var data)
@@ -25,6 +27,8 @@ FocusScope {
         function requestHost(operation,args) { return root.manager.requestHost(operation,JSON.stringify(args || {})) }
         function copyText(text) { backend.copy(text) }
     }
+    Component { id: chatMessageRenderer; WidgetChatMessage {} }
+    Component { id: queueRenderer; QueuedMessages {} }
     Connections {target:root.manager;function onResponse(request,value) {bridge.response(request,value)}function onEvent(topic,data){bridge.event(topic,data)}}
     Connections {target:root.manager;function onHostResponse(widget,request,value) {if (widget===root.page.id) bridge.hostResponse(request,value)}}
     Loader {

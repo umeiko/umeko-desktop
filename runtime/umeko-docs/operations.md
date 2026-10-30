@@ -94,6 +94,10 @@
 | `updates.install` | 无 | all | 是 |
 | `kernel.check` | 无 | 无 | 是 |
 | `kernel.update` | 无 | all | 是 |
+| `agent_bus.create` | `requestKey: string`, `name: string=""`, `character: string=""`, `model: string=""`, `instructions: string=""` | 无 | 否 |
+| `agent_bus.creation_status` | `requestId: string` | 无 | 否 |
+| `agent_bus.connections` | 无 | 无 | 否 |
+| `agent_bus.set_connection` | `sessionId: string`, `enabled: boolean` | 无 | 否 |
 | `agent_bus.overview` | 无 | 无 | 否 |
 | `agent_bus.requests` | 无 | 无 | 否 |
 | `agent_bus.dispatch` | `targetId: string`, `text: string` | 无 | 否 |

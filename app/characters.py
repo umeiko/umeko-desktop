@@ -227,6 +227,8 @@ class CharactersMixin:
             asset = next((item['assets'][key] for key in ('avatarSmile','reply','welcome') if key in item['assets']), None)
             path = Path(item['directory'])/asset if asset else self.root/'app/icons/avatars/smile.webp'
             row['portrait'] = QUrl.fromLocalFile(str(path)).toString()
+            reply = Path(item['directory'])/item['assets']['reply'] if item['assets'].get('reply') else self.root/'app/icons/yanami-pixel.webp' if item['id']=='yanami' else path
+            row['replyPortrait'] = QUrl.fromLocalFile(str(reply if reply.is_file() else path)).toString()
             rows.append(row)
         return rows
 
