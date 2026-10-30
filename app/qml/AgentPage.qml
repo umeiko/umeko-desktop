@@ -6,24 +6,28 @@ Column {
     id: root
     property bool piOpen: false
     property bool toolsOpen: false
+    property bool pluginsOpen: false
     property real availableHeight: 600
     signal navigated()
     function openExtensions() {
         search.clear()
+        pluginsOpen = false
         piOpen = true
         toolsOpen = false
         extensionsFold.expanded = true
         packagesFold.expanded = true
     }
     readonly property Item extensionManagement: extensionManager
+    function openPlugins() { piOpen = false; pluginsOpen = true }
     spacing: 18
-    onPiOpenChanged: { if (!piOpen) toolsOpen = false; else backend.piManagement.scan(); navigated() }
+    onPiOpenChanged: { if (!piOpen) toolsOpen = false; else { pluginsOpen = false; backend.piManagement.scan() }; navigated() }
     onToolsOpenChanged: navigated()
-    onVisibleChanged: if (!visible) piOpen = false
+    onPluginsOpenChanged: navigated()
+    onVisibleChanged: if (!visible) { piOpen = false; pluginsOpen = false }
     Button {
         id: piCard
         objectName: "openPiSettingsButton"
-        width: parent.width; implicitHeight: Theme.control(96); visible: !root.piOpen
+        width: parent.width; implicitHeight: Theme.control(96); visible: !root.piOpen && !root.pluginsOpen
         padding: 20; hoverEnabled: true
         Accessible.name: I18n.t("配置 Pi Coding Agent")
         HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -53,6 +57,37 @@ Column {
             }
         }
         onClicked: root.piOpen = true
+    }
+    Button {
+        id: pluginsCard
+        objectName: "openDesktopPluginsButton"
+        width: parent.width; implicitHeight: Theme.control(72); visible: !root.piOpen && !root.pluginsOpen
+        padding: 20; hoverEnabled: true
+        Accessible.name: I18n.t("插件管理")
+        HoverHandler { cursorShape: Qt.PointingHandCursor }
+        background: Rectangle { radius: 12; color: pluginsCard.hovered ? Theme.hover : Theme.surface; border.color: pluginsCard.activeFocus ? Theme.accent : Theme.line }
+        contentItem: RowLayout {
+            spacing: 16
+            Rectangle {
+                Layout.preferredWidth: Theme.icon(40); Layout.preferredHeight: Theme.icon(40)
+                radius: 10; color: "transparent"
+                Image { objectName: "pluginManagerArtwork"; anchors.centerIn: parent; source: "../icons/fluent/plugin-manager.png"; width: Theme.icon(42); height: Theme.icon(42); sourceSize: Qt.size(128,128); fillMode: Image.PreserveAspectFit; mipmap: true }
+            }
+            Text { text: I18n.t("插件管理"); color: Theme.ink; font.pixelSize: Theme.font(16); font.weight: Font.DemiBold; Layout.fillWidth: true }
+            Glyph { name: "chevron-right"; width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }
+        }
+        onClicked: root.openPlugins()
+    }
+    Column {
+        width: parent.width; visible: root.pluginsOpen; spacing: 14
+        RowLayout {
+            width: parent.width; spacing: 8
+            ActionButton { objectName: "backFromDesktopPluginsButton"; text: "Agent"; glyph: "arrow-left"; quiet: true; onClicked: root.pluginsOpen = false }
+            Glyph { name: "chevron-right"; width: Theme.icon(13); height: Theme.icon(13) }
+            Text { text: I18n.t("插件管理"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.Medium }
+            Item { Layout.fillWidth: true }
+        }
+        DesktopPluginsPage { width: parent.width; height: Math.max(360, root.availableHeight - 64) }
     }
     Column {
         width: parent.width; visible: root.piOpen && !root.toolsOpen; spacing: 18

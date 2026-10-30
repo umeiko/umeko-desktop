@@ -1,0 +1,12 @@
+{
+  "kind":"umeko-plugin","apiVersion":1,"id":"file-watch-service","name":"文件监听服务","version":"1.0.0",
+  "summary":"跨聊天监听文件并推送变化",
+  "description":"应用级后台服务示例。订阅工作区文件后，变化通知始终发给订阅时的聊天。",
+  "lifecycle":"application","author":"Umeko","entrypoint":"scripts/plugin.py:create_plugin",
+  "permissions":["workspace.read","session.write"],"readme":"README.md","config":"config.json","configSchema":"config.schema.json",
+  "agent":{"document":"AGENT.md","methods":{
+    "subscribe":{"description":"监听当前调用聊天工作区内的单个文件","parameters":{"type":"object","properties":{"path":{"type":"string","maxLength":1024}},"required":["path"],"additionalProperties":false}},
+    "unsubscribe":{"description":"取消当前调用聊天的文件监听","parameters":{"type":"object","properties":{},"additionalProperties":false}},
+    "status":{"description":"查看当前调用聊天的监听状态","parameters":{"type":"object","properties":{},"additionalProperties":false}}
+  }}
+}

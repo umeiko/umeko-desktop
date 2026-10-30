@@ -159,7 +159,7 @@ def verify_runtime(release: Path, bridge_source: Path):
         raise RuntimeError("旧 Agent Core 内核不能用于完整 Pi Coding Agent")
     ensure_adapter_dependencies(release, bridge_source)
     patch_retry_diagnostics(release)
-    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json", "marketplace.mjs", "marketplace-source.mjs", "package-source.mjs", "marketplace-LICENSE.txt"):
+    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json", "marketplace.mjs", "marketplace-source.mjs", "package-source.mjs", "marketplace-LICENSE.txt"):
         shutil.copy2(bridge_source.parent / name, release / name)
     shutil.copytree(bridge_source.parent/'umeko-docs', release/'umeko-docs', dirs_exist_ok=True)
     environment = node_environment(dict(os.environ, PI_OFFLINE="1"))

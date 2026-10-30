@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ADAPTERS = (
     "bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs",
     "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs",
-    "umeko-documents.mjs", "subagents.mjs", "subagent-sdk.mjs",
+    "umeko-documents.mjs", "widget-messages.mjs", "subagents.mjs", "subagent-sdk.mjs",
     "subagent-settings.mjs", "input-queue.mjs", "rpc-ui.mjs",
     "umeko-operations.json", "webview-component.mjs", "webview-component.json",
     "marketplace.mjs", "marketplace-source.mjs", "package-source.mjs",

@@ -216,11 +216,28 @@ class UmekoControl(QObject):
         if operation == 'help':
             docs = b.store.directory/'agent-docs'
             if not (docs/'README.md').is_file(): docs = b._release/'umeko-docs'
-            return {'docsRoot': str(docs), 'entry': str(docs/'README.md')}
+            topics={'plugins':'plugins.md','provider':'provider-plugins.md','widget':'widget-plugins.md'}
+            topic=args.get('topic','')
+            topic={'插件':'plugins','provider插件':'provider','widget插件':'widget','供应商':'provider'}.get(str(topic).lower(),str(topic).lower())
+            if topic and topic not in topics:raise ValueError('topic 请选择 plugins、provider 或 widget')
+            result={'docsRoot':str(docs),'entry':str(docs/(topics[topic] if topic else 'README.md')),'topics':{key:str(docs/value) for key,value in topics.items()}}
+            if topic in ('widget','plugins'):result['activeWidgets']=b.desktopPlugins.bridge.list(True,caller)
+            return result
+        if operation.startswith('widgets.'):
+            spec=self.operations.get(operation)
+            if not spec or set(args)-{field[0] for field in spec['args']}:raise ValueError('未知 Widget 操作或参数')
+            values={}
+            for field in spec['args']:
+                name,kind=field[:2]
+                if name not in args and len(field)<3:raise ValueError('Missing argument: '+name)
+                value=args.get(name,copy.deepcopy(field[2]) if len(field)>2 else None)
+                if not {'string':isinstance(value,str),'boolean':type(value) is bool,'integer':type(value) is int,'json':isinstance(value,dict)}[kind]:raise ValueError(name+' must be '+kind)
+                values[name]=value
+            return b.desktopPlugins.bridge.execute(operation,values,caller,self)
         if operation == 'operations.list':
             prefix = args.get('prefix', '')
             return {'operations': {name: spec for name, spec in self.operations.items() if name.startswith(prefix)},
-                    'reads': ['settings.get', 'providers.list', 'models.list', 'characters.list', 'characters.get', 'characters.config', 'plugins.list', 'plugins.getConfig', 'themes.list', 'projects.list', 'sessions.list', 'sessions.get', 'mcp.get', 'status.get', 'jobs.get']}
+                    'reads': ['settings.get', 'providers.list', 'models.list', 'characters.list', 'characters.get', 'characters.config', 'plugins.list', 'plugins.getConfig', 'themes.list', 'projects.list', 'sessions.list', 'sessions.get', 'mcp.get', 'status.get', 'jobs.get', *[name for name,spec in self.operations.items() if spec.get('read')]]}
         if operation == 'batch':
             operations = args.get('operations')
             if not isinstance(operations, list) or not 1 <= len(operations) <= 32: raise ValueError('batch needs 1-32 operations')
@@ -270,12 +287,15 @@ class UmekoControl(QObject):
                     'kernel': {'busy': b.kernelBusy, 'status': b.kernelStatus, 'version': b.kernelVersion},
                     'management': {'busy': b.piManagement.busy, 'status': b.piManagement.status, 'extensions': b.piManagement.extensions,
                     'npm': redacted(b.piManagement.npmConfig), 'npmStatus': b.piManagement.npmStatus},
-                    'plugins': redacted(b.providerPlugins.rows), 'updates': {'busy': b.appAbout.busy, 'release': b.appAbout.release,
+                    'plugins': redacted(b.providerPlugins.rows), 'widgets':b.desktopPlugins.bridge.list(caller=caller), 'updates': {'busy': b.appAbout.busy, 'release': b.appAbout.release,
                     'download': b.appAbout.download, 'installation': b.appAbout.installation}, 'serverRunning': b.serverRunning, 'keys': b.proxyKeys}
         if operation == 'jobs.get':
-            if args.get('id') and args['id'] not in self.jobs: raise ValueError('Job ID does not exist')
+            target=caller or b._view;token=target.key
+            visible_jobs={key:job for key,job in self.jobs.items() if not job.get('widgetSession') or job['widgetSession']==token or
+                          (job.get('widgetSessionId') and not job['widgetSessionId'].startswith('pending-') and job['widgetSessionId']==target.id and Path(job['widgetWorkspace']).resolve()==Path(target.workspace).resolve())}
+            if args.get('id') and args['id'] not in visible_jobs: raise ValueError('Job ID does not exist in this session')
             return {'jobs': redacted([{'id': key, **{k: v for k, v in job.items() if k in ('operation', 'status', 'result')}}
-                                     for key, job in self.jobs.items() if not args.get('id') or key == args['id']])}
+                                     for key, job in visible_jobs.items() if not args.get('id') or key == args['id']])}
         if operation in ('models.select', 'sessions.reasoning'):
             target = b._pool.find(args.get('sessionId', '')) if args.get('sessionId') else caller or b._view
             if not target: raise ValueError('Session is no longer loaded')

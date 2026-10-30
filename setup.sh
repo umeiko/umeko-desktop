@@ -7,6 +7,7 @@ command -v npm >/dev/null || { echo 'npm is required to install the Pi kernel.' 
 [[ -x .venv/bin/python ]] || python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python scripts/build-provider-resources.py
+.venv/bin/python scripts/build-desktop-plugin-resources.py
 npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
 .venv/bin/python prepare_runtime.py
 .venv/bin/python scripts/fetch-search-tools.py

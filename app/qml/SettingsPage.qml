@@ -10,6 +10,7 @@ Item {
     property bool editingProvider: false
     property bool editingCommon: false
     property string editId: ""
+    function openPluginManagement() { agentPage.openPlugins() }
     CommonProviderDialog { id: commonProviders }
     property string mappingSignature: ""
     property string mappingProviderId: ""
@@ -91,8 +92,8 @@ Item {
         }
         Item {
             id: settingsNav
-            Layout.topMargin: 30; Layout.alignment: Qt.AlignLeft
-            implicitWidth: tabButtons.implicitWidth; implicitHeight: tabButtons.implicitHeight
+            Layout.topMargin: 30; Layout.fillWidth: true
+            implicitHeight: tabButtons.implicitHeight
             property Item selectedButton: null
             function syncTarget() {
                 let selected = null
@@ -101,9 +102,14 @@ Item {
                     if (button && button.modelData.id === root.tab) { selected = button; break }
                 }
                 selectedButton = selected
+                if (selected) settingsNavScroll.contentX = Math.max(0,Math.min(Math.max(0,settingsNavScroll.contentWidth-settingsNavScroll.width),selected.x-(settingsNavScroll.width-selected.width)/2))
             }
             Component.onCompleted: Qt.callLater(syncTarget)
             Connections { target: root; function onTabChanged() { settingsNav.syncTarget() } }
+            Flickable {
+                id: settingsNavScroll
+                anchors.fill: parent; contentWidth: tabButtons.implicitWidth; contentHeight: height
+                clip: true; boundsBehavior: Flickable.StopAtBounds
             PidHighlight {
                 height: settingsNav.selectedButton ? settingsNav.selectedButton.height : 38
                 targetX: settingsNav.selectedButton ? settingsNav.selectedButton.x : 0
@@ -123,6 +129,7 @@ Item {
                         background: Rectangle { radius: 7; color: parent.hovered && root.tab !== modelData.id ? Theme.hover : "transparent" }
                     }
                 }
+            }
             }
         }
         Rectangle { Layout.fillWidth: true; Layout.topMargin: 15; height: 1; color: Theme.line }

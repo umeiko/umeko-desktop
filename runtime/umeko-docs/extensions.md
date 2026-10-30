@@ -1,6 +1,6 @@
 # Pi 扩展、Skills、MCP
 
-这一部分由内嵌 Pi 负责运行，但配置仍应针对 Umeko 当前加载的 Pi 实例。`run_pi_command` 只用于原生 Pi 扩展命令；`config_umeko` 提供桌面 UI 对应入口。不要用系统 PATH 里的另一份 `pi`，不要修改 Pi 供应商目录来添加 Umeko 供应商。
+这一部分由内嵌 Pi 负责运行，但配置仍应针对 Umeko 当前加载的 Pi 实例。`run_pi_command` 只用于原生 Pi 扩展命令；`umeko_desktop` 提供桌面 UI 对应入口。不要用系统 PATH 里的另一份 `pi`，不要修改 Pi 供应商目录来添加 Umeko 供应商。
 
 任务缺少能力时，先查看当前工具与 `run_pi_command` 的 `pi list`，复用已安装的包；再用 `marketplace_search` 搜索 npm 中带 `pi-package` 关键词的包，并用 `marketplace_detail` 和 `marketplace_audit` 查看具体版本、功能与审计备注。工具清单或 `tool_search` 没有合适的专用工具时，即使可以用 Shell 临时替代，也先执行上述市场搜索；优先选择小而清晰、直接满足任务的包。选择合适的包后，用 `marketplace_install` 提交包名、精确版本和本次任务需要它的理由。该工具复用当前实例的安装和排队 `/reload`；收到隐藏的实际执行结果后，用新加载的工具继续原任务，无需用户再次发送消息。不要把排队或下载完成说成工具已经可用。
 
@@ -16,7 +16,7 @@ MCP：`mcp.get` 的 `scope` 是 `global` 或 `project`，返回本实例文件�
 
 `mcp.reconnect` 传 `name` 重新连接。需要登录/登出等原生 MCP 命令时用当前实例的 `run_pi_command`。异步结果在 `status.get` 和配置查询中核实；含认证信息的字段不会由管理工具原样返回。项目范围必须有实际工作目录。
 
-自定义供应商插件与这些 Pi 扩展不同，见 plugins.md。主题与 Pi 终端配色不同，见 themes.md。
+Umeko 的 [Provider 插件](provider-plugins.md)和 [Widget 插件](widget-plugins.md)与这些 Pi 扩展分开管理。Provider 接入模型，Widget 扩展桌面面板与当前聊天。主题与 Pi 终端配色不同，见 themes.md。
 
 ## 子 Agent
 
