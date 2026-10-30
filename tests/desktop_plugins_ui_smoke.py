@@ -31,7 +31,10 @@ def wait(check,message):
     print({name: ({p:str(find(name).property(p)) for p in ('visible','opened','mode','moving','source','width','height')} if find(name) else None) for name in ('webPane','desktopPluginSurfaceLoader','desktopPluginSurface','desktopPluginPageLoader','fileTreePluginPage')},flush=True)
     raise AssertionError(message+'\n'+str(backend.desktopPlugins.page)+'\n'+'\n'.join(warnings))
 def click(name,button=Qt.LeftButton):
-    item=find(name);assert item is not None,name
+    # A ListView model can be populated before its visible delegates are
+    # materialized on the next polish. Wait for the actual click target.
+    wait(lambda:find(name) is not None,'Control did not appear: '+name)
+    item=find(name)
     window.grabWindow();QTest.mouseClick(window,button,Qt.NoModifier,item.mapToScene(item.boundingRect().center()).toPoint());QTest.qWait(120)
 def clickable(item):
     if item is None or not item.isVisible() or not item.isEnabled() or item.width()<=0 or item.height()<=0:return False
