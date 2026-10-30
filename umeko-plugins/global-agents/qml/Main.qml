@@ -44,11 +44,17 @@ Rectangle {
     readonly property string helpText: selected?"连接的会话可双向发送任务和回复。总线消息按到达顺序排队，聊天上方可删除待处理消息或移到队首，优先处理不打断当前任务。输入框可手动 steering；停止会取消其未完成请求。":section==="bridge"?"展开项目并点击会话，进入二级列表。勾选对应的全局子智能体，建立与该会话的一条双向链路；双方均可发送任务并接收回复。关闭会取消这条链路上的未完成请求。":section==="requests"?"记录通过智能体总线分派的任务，查看投递状态、执行进度和返回结果。已投递不代表已完成；取消未完成的请求不会撤销已执行的操作。":"创建拥有独立上下文的子智能体，向已授权的对话分派任务。开启‘允许自动被创建’后，模型请求直接创建；关闭时需要你在预填表单中确认。模型未指定形象时随机分配，创建成功后自动连接来源对话。"
     color: c.surface
     function bridgeTree(projects, targets, query, collapsed) {
+        // Pi returns native paths; saved projects may use forward slashes.
+        const pathKey=path=>{
+            let value=String(path || "").replace(/\\/g,"/")
+            if(value.length>1)value=value.replace(/\/+$/,"")
+            return Qt.platform.os==="windows"?value.toLowerCase():value
+        }
         const names=Object.create(null), groups=Object.create(null)
-        for(const project of projects)if(project.path)names[project.path]=project.name || ""
+        for(const project of projects)if(project.path)names[pathKey(project.path)]=project.name || ""
         for(const target of targets) {
             if(target.kind!=="session")continue
-            const key=target.workspace || ""
+            const key=pathKey(target.workspace)
             if(!groups[key]) {
                 const parts=key.replace(/\\/g,"/").split("/").filter(Boolean)
                 groups[key]={key:key,name:names[key] || parts[parts.length-1] || (key?key:"未选择项目"),path:key,chats:[]}
