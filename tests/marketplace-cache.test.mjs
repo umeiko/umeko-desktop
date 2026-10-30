@@ -22,6 +22,14 @@ function fixture(registry, cacheOptions) {
 const detail = (name, version = '1.0.0') => ({ name, version, keywords: ['pi-package'] });
 const installParams = { name: 'fixture', version: '1.0.0', reason: 'Use its tool' };
 
+test('oversized marketplace results return a bounded error instead of breaking the host frame', async () => {
+  const f=fixture({getPackageDetail:async name=>({...detail(name),description:'x'.repeat(300*1024)})});
+  const result=await f.run('detail',{name:'fixture'});
+  assert.equal(result.isError,true);
+  assert.match(result.details.error,/result exceeds 262144 bytes/);
+  assert.ok(Buffer.byteLength(JSON.stringify(result))<1024);
+});
+
 test('failed detail and audit promises are evicted so the same request can retry', async () => {
   let detailCalls = 0, auditCalls = 0;
   const f = fixture({

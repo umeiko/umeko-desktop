@@ -86,6 +86,38 @@ test('published archive and cache budgets are explicit', () => {
   assert.deepEqual(CACHE_LIMITS, { maxEntries: 64, maxBytes: 8 * 1024 * 1024, ttlMs: 300000 });
 });
 
+test('small compressed sources cannot amplify into unbounded audit findings', async t => {
+  const {client}=await registry(t,{tarball:archive([{path:'package/index.js',content:'process.env.X;\n'.repeat(30000)}])});
+  const report=await client.fullAudit('fixture',true,'1.0.0');
+  assert.equal(report.deepScanned,false);
+  assert.match(report.scanError,/finding count limit exceeded: 500/);
+  assert.equal(report.findings.length,500);
+  assert.ok(Buffer.byteLength(JSON.stringify(report))<256*1024);
+  assert.match(report.summary,/scan incomplete/);
+  assert.equal(report.overallRisk,'medium');
+});
+
+test('finding byte and per-file budgets preserve explicit incomplete results', async t => {
+  const body=archive([{path:'package/index.js',content:'process.env.X;\n'.repeat(100)}]);
+  for(const [limits,pattern] of [[{findingBytes:128},/finding bytes limit exceeded: 128/],
+                               [{sourceFileBytes:128},/file bytes limit exceeded: 128/]]){
+    const {client}=await registry(t,{tarball:body,limits});
+    const report=await client.fullAudit('fixture',true,'1.0.0');
+    assert.equal(report.deepScanned,false);
+    assert.match(report.scanError,pattern);
+    assert.ok(Buffer.byteLength(JSON.stringify(report))<4096);
+  }
+});
+
+test('registry JSON budget rejects oversized documents and permits a later retry', async t => {
+  let requests=0;
+  const {client}=await registry(t,{limits:{metadataBytes:1024},onDocument(_req,res){
+    if(requests++===0){res.end(JSON.stringify({oversized:'x'.repeat(2048)}));return true;}
+  }});
+  await assert.rejects(client.getPackageDetail('fixture'),/Registry JSON response limit exceeded: 1024 bytes/);
+  assert.equal((await client.getPackageDetail('fixture')).version,'1.0.0');
+});
+
 test('bounded cache enforces LRU count, settled byte size, TTL, deletion and clear', () => {
   let now = 0;
   const cache = createBoundedCache({ maxEntries: 2, maxBytes: 400, ttlMs: 10, now: () => now });

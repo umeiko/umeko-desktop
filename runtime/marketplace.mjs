@@ -7,8 +7,12 @@ import { createBoundedCache, createRegistryClient } from './marketplace-source.m
 export const MARKETPLACE_TOOLS = ['marketplace_search', 'marketplace_detail', 'marketplace_audit', 'marketplace_install'];
 export const MARKETPLACE_PROMPT = "Prefer existing dedicated tools to ad hoc scripts. When the tool inventory or tool_search has no suitable dedicated tool for a capability the task needs, treat that as missing even if a shell workaround exists. First inspect installed tools and run_pi_command pi list, then search with marketplace_search, inspect and audit a suitable package, and install its exact version with marketplace_install. Search the market before substituting shell commands or scripts for that missing tool. Prefer a small, clearly described package that directly fits the task. After reload, continue the original task with its tools. If nothing fits, explain what you searched and why nothing fit. Do not write your own extension as a fallback. Installation permission is controlled by the user in the desktop; automatic mode needs no additional user input.";
 const packageName = Type.String({ minLength: 1, maxLength: 214 });
-const version = Type.String({ pattern: '^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$' });
-const result = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }], details: value });
+const version = Type.String({ maxLength:256, pattern: '^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$' });
+const result = value => {
+  const text=JSON.stringify(value);
+  if(Buffer.byteLength(text)>256*1024)throw new Error('Marketplace result exceeds 262144 bytes; narrow the query or request fewer results');
+  return {content:[{type:'text',text}],details:value};
+};
 
 export function createMarketplace({ getConfig, runPiCommand, emit = () => {}, registryFactory = createRegistryClient, cacheOptions }) {
   let client, configKey;

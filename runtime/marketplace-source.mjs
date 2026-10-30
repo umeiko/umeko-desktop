@@ -6,7 +6,7 @@
  * versions, direct tarball source scan, structured output.
  */
 import {execFile} from 'node:child_process';
-import {readFile,mkdtemp,rm,readdir} from 'node:fs/promises';
+import {readFile,mkdtemp,rm,readdir,stat} from 'node:fs/promises';
 import {Readable,Transform} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import {createGunzip} from 'node:zlib';
@@ -24,6 +24,7 @@ import * as tar from 'tar';
 // completed source scans within these limits (largest download 15,221,332 bytes;
 // largest declared unpacked size 52,058,316 bytes; largest file count 1,241).
 export const ARCHIVE_LIMITS = Object.freeze({compressedBytes:32*1024*1024,entries:20000,expandedBytes:128*1024*1024});
+export const SCAN_LIMITS = Object.freeze({sourceFileBytes:4*1024*1024,findings:500,findingBytes:192*1024,metadataBytes:16*1024*1024});
 // Per cache, not per item: settled JSON UTF-8 bytes plus key/entry overhead;
 // pending promises reserve overhead and still count toward the entry limit.
 export const CACHE_LIMITS = Object.freeze({maxEntries:64,maxBytes:8*1024*1024,ttlMs:5*60*1000});
@@ -85,7 +86,18 @@ export function resolveNpmCliPath({execPath=process.execPath,env=process.env,pla
 }
 
 export function createRegistryClient({agent={},cwd=process.cwd(),fetch:injectedFetch,limits={},cacheOptions={}}={}) {
- const bounds={...ARCHIVE_LIMITS,...limits};
+ const bounds={...ARCHIVE_LIMITS,...SCAN_LIMITS,...limits};
+ async function readJson(response,signal){
+  const chunks=[];let bytes=0;
+  await pipeline(Readable.fromWeb(response.body),async stream=>{
+   for await(const chunk of stream){
+    checkCancelled(signal);bytes+=chunk.length;
+    if(bytes>bounds.metadataBytes)throw new Error(`Registry JSON response limit exceeded: ${bounds.metadataBytes} bytes`);
+    chunks.push(chunk);
+   }
+  },{signal});
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+ }
  let configured,dispatcher;const docCache=createBoundedCache(cacheOptions),detailCache=createBoundedCache(cacheOptions),auditCache=createBoundedCache(cacheOptions);
  async function configure(){return configured??=(async()=>{
   const env={...process.env};
@@ -131,7 +143,7 @@ async function upstreamSearchPackages(query, options) {
         }
     });
     if (!res.ok) throw registryError(`npm registry search failed: HTTP ${res.status}`, res.status);
-    let data; try { data = await res.json(); } catch { throw registryError("Registry returned invalid search JSON", 0, true); }
+    let data; try { data = await readJson(res,options?.signal); } catch(error) { checkCancelled(options?.signal);if(!(error instanceof SyntaxError))throw error;throw registryError("Registry returned invalid search JSON", 0, true); }
     if (!data || !Array.isArray(data.objects) || data.objects.some(obj => !obj?.package || typeof obj.package.name !== "string")) throw registryError("Registry returned a non-search response", 0, true);
   return data.objects.map((obj)=>({
             name: String(obj.package.name ?? ""),
@@ -218,7 +230,7 @@ async function upstreamFetchRegistryDoc(name,signal) {
         }
     });
     if (!res.ok) throw registryError(`npm registry detail failed for ${name}: HTTP ${res.status}`, res.status);
-    return await res.json();
+    return await readJson(res,signal);
 }
 function getLatestVersionName(data) {
     const latest = data["dist-tags"]?.latest;
@@ -407,12 +419,15 @@ async function sourceScan(detail,signal) {
         && ['File', 'Directory', 'OldFile', 'ContiguousFile'].includes(entry.type)});
     await pipeline(Readable.fromWeb(res.body),byteLimiter('compressed download',bounds.compressedBytes),
       createGunzip(),byteLimiter('expanded archive',bounds.expandedBytes),entryLimiter(bounds.entries),extractor,{signal});
-    await walkAndScan(join(tmpDir, 'package'), join(tmpDir, 'package'), findings,signal);
+    await walkAndScan(join(tmpDir, 'package'), join(tmpDir, 'package'), findings,signal,{bytes:0});
     return findings;
   } finally { await rm(tmpDir, {recursive: true, force: true}); }
 }
 
-async function walkAndScan(dir, rootDir, findings,signal) {
+function scanLimit(kind,limit,findings){
+    return Object.assign(new Error(`Source scan ${kind} limit exceeded: ${limit}`),{partialFindings:[...findings]});
+}
+async function walkAndScan(dir, rootDir, findings,signal,budget) {
     await yieldScan(undefined,{signal});checkCancelled(signal);
     let entries;
     try {
@@ -427,16 +442,18 @@ async function walkAndScan(dir, rootDir, findings,signal) {
         const fullPath = join(dir, entry.name);
         if (IGNORED_DIRECTORIES.includes(entry.name)) continue;
         if (entry.isDirectory()) {
-            await walkAndScan(fullPath, rootDir, findings,signal);
+            await walkAndScan(fullPath, rootDir, findings,signal,budget);
             continue;
         }
         const ext = entry.name.includes(".") ? `.${entry.name.split(".").pop()}` : "";
         if (SOURCE_EXTENSIONS.includes(ext)) {
-            await scanFile(fullPath, rootDir, findings,signal);
+            await scanFile(fullPath, rootDir, findings,signal,budget);
         }
     }
 }
-async function scanFile(filePath, rootDir, findings,signal) {
+async function scanFile(filePath, rootDir, findings,signal,budget) {
+    if((await stat(filePath)).size>bounds.sourceFileBytes)
+        throw scanLimit('file bytes',bounds.sourceFileBytes,findings);
     let content;
     try {
         content = await readFile(filePath, {encoding:"utf-8",signal});
@@ -453,13 +470,17 @@ async function scanFile(filePath, rootDir, findings,signal) {
         while((match = regex.exec(content)) !== null){
             if(++matched%256===0)await yieldScan(undefined,{signal});
             while(charCount<=match.index&&lineNum<lines.length)charCount+=lines[lineNum++].length+1;
-            findings.push({
+            const finding = {
                 severity: danger.severity,
                 pattern: danger.description,
                 file: relPath,
                 line: lineNum,
                 context: truncate(lines[lineNum - 1]?.trim() ?? "", 100)
-            });
+            };
+            const bytes=Buffer.byteLength(JSON.stringify(finding))+1;
+            if(findings.length>=bounds.findings)throw scanLimit('finding count',bounds.findings,findings);
+            if(budget.bytes+bytes>bounds.findingBytes)throw scanLimit('finding bytes',bounds.findingBytes,findings);
+            findings.push(finding);budget.bytes+=bytes;
         }
     }
 }
@@ -473,9 +494,11 @@ async function performAudit(name, deepScan = true, version, signal) {
   if (deepScan) {
     try { findings = await sourceScan(detail,signal); deepScanned = true; }
     catch(error) { checkCancelled(signal);scanError = error instanceof Error ? error.message : String(error);
-      findings = [{severity:'info',pattern:'Source scan unavailable',file:'',context:scanError}]; }
+      findings = error.partialFindings?.length ? error.partialFindings : [{severity:'info',pattern:'Source scan unavailable',file:'',context:scanError}]; }
   }
-  return {...buildReport(name, detail.version, meta, findings, deepScanned), requestedDeepScan: deepScan, ...(scanError?{scanError}:{})};
+  const report=buildReport(name, detail.version, meta, findings, deepScanned);
+  if(scanError)report.summary+=' Source scan incomplete: '+scanError;
+  return {...report, requestedDeepScan: deepScan, ...(scanError?{scanError}:{})};
 }
 function buildReport(name, version, meta, findings, deepScanned) {
     const crit = findings.filter((f)=>f.severity === "critical").length;
