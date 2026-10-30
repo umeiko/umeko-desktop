@@ -7,6 +7,8 @@ ColumnLayout {
     id: root
     property string namePrefix: "package"
     property bool thirdPartyOnly: true
+    property bool showDetails: false
+    signal detailsRequested(string extensionId)
     readonly property var manager: backend.piManagement
     readonly property var rows: manager.packages.filter(row => !thirdPartyOnly || row.removable)
     spacing: 12
@@ -35,7 +37,22 @@ ColumnLayout {
                 RowLayout {
                     required property var modelData
                     Layout.fillWidth: true; spacing: 10
-                    Text { Layout.fillWidth: true; text: modelData.path; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.muted; font.pixelSize: Theme.font(10) }
+                    Text { visible: !root.showDetails; Layout.fillWidth: true; text: modelData.path; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.muted; font.pixelSize: Theme.font(10) }
+                    ActionButton {
+                        visible: root.showDetails
+                        objectName: root.namePrefix + "Details_" + modelData.id
+                        Layout.fillWidth: true; Layout.preferredHeight: 54; quiet: true
+                        hint: I18n.t("查看扩展详情")
+                        onClicked: root.detailsRequested(modelData.id)
+                        contentItem: ColumnLayout { spacing: 5
+                            RowLayout { Layout.fillWidth: true
+                                Text { Layout.fillWidth: true; text: modelData.name; textFormat: Text.PlainText; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: Theme.font(12) }
+                                Text { text: ((modelData.info || {}).origin === "community" ? I18n.t("社区扩展 · ") : modelData.source === "builtin" ? I18n.t("内置 · ") : "") + (modelData.scope === "project" ? I18n.t("项目") : I18n.t("全局")); color: Theme.muted; font.pixelSize: Theme.font(10) }
+                                Glyph { name: "chevron-right"; width: Theme.icon(12); height: width }
+                            }
+                            Text { Layout.fillWidth: true; text: modelData.path; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.muted; font.pixelSize: Theme.font(10) }
+                        }
+                    }
                     Text { text: modelData.enabled ? I18n.t("已启用") : I18n.t("已停用"); color: modelData.enabled ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(10) }
                     Toggle { objectName: root.namePrefix + "Toggle_" + modelData.id; checked: modelData.enabled; enabled: !root.manager.busy && !backend.config.agent.safeMode; onClicked: { const state = checked; checked = Qt.binding(() => modelData.enabled); root.manager.setExtensionEnabled(modelData.id, state) } }
                 }

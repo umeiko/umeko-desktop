@@ -1,0 +1,38 @@
+[
+  {
+    "id": "chika-komari",
+    "prompt": "Create one new desktop UI mascot asset. Reference image 1 is the character identity and pixel-art style reference; reference image 2 is only the welcoming catching pose/composition reference. Depict Chika Komari (小鞠知花): burgundy chin-length bob, eye-covering fringe, small red hair clip, shy but friendly expression. Keep the recognizable facial design and hairstyle from reference 1. Match the existing tasteful anime chibi pixel-art UI mascot: crisp clean pixel edges, restrained cell shading, expressive face, not realistic and not baby-like. Waist-up / upper-body only, centered compact silhouette. Both forearms reach slightly forward with clearly readable open upturned palms, ready to catch a dropped file; natural neat hands, no held object. Retain the simple school outfit suggested by reference 1 without adding elaborate decorations. Entire head, forearms and both hands fully visible with comfortable transparent margins. No full body, no legs, no wall, no background, no frame, no symbols, no text, no slogans. Actual transparent RGBA background. This is an individual character asset, not a sprite sheet.",
+    "references": [
+      "../../../app/icons/subagents/chika-komari.png",
+      "../../../app/icons/yanami-catch.png"
+    ],
+    "transparent_background": true
+  },
+  {
+    "id": "lemon-yakishio",
+    "prompt": "Create one new desktop UI mascot asset. Reference image 1 is the character identity and pixel-art style reference; reference image 2 is only the welcoming catching pose/composition reference. Depict Lemon Yakishio (烧盐柠檬): short dark brown sporty hair, small yellow hair clips, warm tan skin, purple eyes, energetic smile. Keep the recognizable facial design and hairstyle from reference 1. Match the existing tasteful anime chibi pixel-art UI mascot: crisp clean pixel edges, restrained cell shading, expressive face, not realistic and not baby-like. Waist-up / upper-body only, centered compact silhouette. Both forearms reach slightly forward with clearly readable open upturned palms, ready to catch a dropped file; natural neat hands, no held object. Retain the simple school outfit suggested by reference 1 without adding elaborate decorations. Entire head, forearms and both hands fully visible with comfortable transparent margins. No full body, no legs, no wall, no background, no frame, no symbols, no text, no slogans. Actual transparent RGBA background. This is an individual character asset, not a sprite sheet.",
+    "references": [
+      "../../../app/icons/subagents/lemon-yakishio.png",
+      "../../../app/icons/yanami-catch.png"
+    ],
+    "transparent_background": true
+  },
+  {
+    "id": "kaju-nukumizu",
+    "prompt": "Create one new desktop UI mascot asset. Reference image 1 is the character identity and pixel-art style reference; reference image 2 is only the welcoming catching pose/composition reference. Depict Kaju Nukumizu (温水佳树): straight dark shoulder-length hair with blunt bangs, brown eyes, gentle cheerful expression, retain her dark collar outfit. Keep the recognizable facial design and hairstyle from reference 1. Match the existing tasteful anime chibi pixel-art UI mascot: crisp clean pixel edges, restrained cell shading, expressive face, not realistic and not baby-like. Waist-up / upper-body only, centered compact silhouette. Both forearms reach slightly forward with clearly readable open upturned palms, ready to catch a dropped file; natural neat hands, no held object. Retain the simple school outfit suggested by reference 1 without adding elaborate decorations. Entire head, forearms and both hands fully visible with comfortable transparent margins. No full body, no legs, no wall, no background, no frame, no symbols, no text, no slogans. Actual transparent RGBA background. This is an individual character asset, not a sprite sheet.",
+    "references": [
+      "../../../app/icons/subagents/kaju-nukumizu.png",
+      "../../../app/icons/yanami-catch.png"
+    ],
+    "transparent_background": true
+  },
+  {
+    "id": "yumeko-shikiya",
+    "prompt": "Create one new desktop UI mascot asset. Reference image 1 is the character identity and pixel-art style reference; reference image 2 is only the welcoming catching pose/composition reference. Depict Yumeko Shikiya (志喜屋梦子): pale ash-blonde wavy shoulder-length hair, sleepy half-lidded gray eyes, calm dreamy expression. Keep the recognizable facial design and hairstyle from reference 1. Match the existing tasteful anime chibi pixel-art UI mascot: crisp clean pixel edges, restrained cell shading, expressive face, not realistic and not baby-like. Waist-up / upper-body only, centered compact silhouette. Both forearms reach slightly forward with clearly readable open upturned palms, ready to catch a dropped file; natural neat hands, no held object. Retain the simple school outfit suggested by reference 1 without adding elaborate decorations. Entire head, forearms and both hands fully visible with comfortable transparent margins. No full body, no legs, no wall, no background, no frame, no symbols, no text, no slogans. Actual transparent RGBA background. This is an individual character asset, not a sprite sheet.",
+    "references": [
+      "../../../app/icons/subagents/yumeko-shikiya.png",
+      "../../../app/icons/yanami-catch.png"
+    ],
+    "transparent_background": true
+  }
+]

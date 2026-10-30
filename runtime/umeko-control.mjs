@@ -2,10 +2,13 @@
 import { Type } from 'typebox';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { prepareDocumentation } from './umeko-documents.mjs';
 
 export const UMEKO_TOOL = 'config_umeko';
-export const umekoDocs = () => fileURLToPath(new URL('./umeko-docs/', import.meta.url));
-export const umekoHelp = () => ({ docsRoot: umekoDocs(), entry: fileURLToPath(new URL('./umeko-docs/README.md', import.meta.url)) });
+let instanceDocs;
+export const umekoDocs = () => instanceDocs?.docsRoot || fileURLToPath(new URL('./umeko-docs/', import.meta.url));
+export const umekoHelp = () => instanceDocs || ({ docsRoot: umekoDocs(), entry: fileURLToPath(new URL('./umeko-docs/README.md', import.meta.url)) });
+export function configureUmekoDocs(options) { instanceDocs = prepareDocumentation(options); }
 export const UMEKO_PROMPT = 'Umeko owns providers, credentials, themes, desktop settings, projects and chats; Pi provider configuration does not apply. For Umeko questions or changes, first call config_umeko with operation help, then read the relevant bundled documentation. Use config_umeko to apply changes to the running desktop. Do not edit its settings files behind the UI.';
 
 export function createUmekoControl({ emit, timeoutMs = 90000 }) {

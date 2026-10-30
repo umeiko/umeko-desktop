@@ -18,6 +18,8 @@ APP = QCoreApplication.instance() or QCoreApplication([])
 
 
 class Backend(QObject):
+    jobStarted = Signal(str)
+    piCommandStarted = Signal(str, str)
     jobDone = Signal(str, object)
     changed = Signal()
     toast = Signal(str)
@@ -27,7 +29,9 @@ class Backend(QObject):
         self.root = ROOT
         self.store = SimpleNamespace(directory=Path(directory), data={"agent": {"installPermission": "ask"}, "workspace": "", "projects": []}, save=Mock())
         self._view = SimpleNamespace(workspace="", id="fixture-session")
-        self._pool = SimpleNamespace(records={"one": SimpleNamespace(ready=True)}, write=Mock())
+        self._pool = SimpleNamespace(records={"one": SimpleNamespace(ready=True, busy=False)}, write=Mock(), event=Mock())
+        self.providerPlugins = SimpleNamespace(finished=Mock())
+        self.appAbout = SimpleNamespace(updater=SimpleNamespace(changed=Mock()))
         self.kernelBusy = False
         self._release = ROOT / "runtime"
         self._job = Mock()

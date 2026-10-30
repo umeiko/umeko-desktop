@@ -1,4 +1,4 @@
-"""Actual provider modal, PID transitions, proxy status and localized menu bounds."""
+"""Immediate provider modal, proxy status and localized menu bounds."""
 import json
 import os
 from pathlib import Path
@@ -70,8 +70,7 @@ try:
     popup = find('providerEditorPopup')
     wait(lambda: popup.property('visible'), 'modal did not open')
     QTest.qWait(30)
-    assert popup.property('animating') and popup.property('animationProgress') < 1
-    wait(lambda: not popup.property('animating'), 'PID entrance did not settle')
+    assert popup.property('opacity') == 1 and popup.property('scale') == 1, 'Provider editor faded or scaled in'
     assert popup.property('modal')
     assert find('providerEditor').parentItem() != find('apiProviderAccounts').parentItem()
     assert window.grabWindow().save(str(out/'provider-popup-add-en.png'))
@@ -82,12 +81,12 @@ try:
                         'providerModelAlias_0':'fixture-model'}.items(): edit(name, value)
     click('saveProviderButton')
     QTest.qWait(35)
-    assert popup.property('visible') and popup.property('animationProgress') < 1, 'PID exit was cut off'
+    assert not popup.property('visible'), 'Provider editor still animated after saving'
     wait(lambda: not popup.property('visible'), 'modal did not close')
     assert len(backend.config['providers']) == 1
     provider = backend.config['providers'][0]
     click('editProvider_'+provider['id'])
-    wait(lambda: popup.property('visible') and not popup.property('animating'), 'edit modal did not open')
+    wait(lambda: popup.property('visible'), 'edit modal did not open')
     assert find('providerName').property('text') == 'Popup fixture'
     assert not find('providerKey').property('text')
     edit('providerName', 'Popup fixture edited')
@@ -96,7 +95,7 @@ try:
     assert backend.config['providers'][0]['name'] == 'Popup fixture edited'
     assert backend.store.data['providers'][0]['key'] == 'fixture-only-key'
     click('addProviderButton')
-    wait(lambda: popup.property('visible') and not popup.property('animating'), 'second modal did not open')
+    wait(lambda: popup.property('visible'), 'second modal did not open')
     window.resize(980, 640); backend.setFontScale(2); QTest.qWait(300)
     save = find('saveProviderButton')
     point = save.mapToScene(save.boundingRect().center())
@@ -153,7 +152,7 @@ try:
         assert sent == ['Plain Enter sends']
     finally: backend._send = original_send
     assert not warnings, warnings
-    print('PROVIDER_POPUP_UI_OK: PID add/edit/cancel, saved credentials, bounded layout, active-only proxy status, localized menus and Alt/Shift+Enter')
+    print('PROVIDER_POPUP_UI_OK: immediate add/edit/cancel without fade, saved credentials, bounded layout, active-only proxy status, localized menus and Alt/Shift+Enter')
 finally:
     backend.close(); window.hide()
     import shiboken6

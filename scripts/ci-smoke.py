@@ -117,16 +117,19 @@ def main():
     metadata = json.loads((resources / "build-info.json").read_text(encoding="utf-8"))
     if metadata["version"] != VERSION or metadata["commit"] != git_output(ROOT, "rev-parse", "HEAD"):
         raise RuntimeError("Frozen build provenance is missing")
-    for name in ("umeko-provider-sdk-0.2.1.zip", "develop-umeko-provider.zip"):
+    for name in ("umeko-provider-sdk-0.2.1.zip", "develop-umeko-provider.zip", "create-umeko-character.zip"):
         if not (resources / "provider-resources" / name).is_file():
             raise RuntimeError("Provider development resource is missing: " + name)
     runtime = resources / "runtime/releases" / RELEASE_NAME
     for name in ("fd", "rg"):
         tool = runtime / "bin" / (name + (".exe" if os.name == "nt" else ""))
         subprocess.run([str(tool), "--version"], check=True, capture_output=True, timeout=15)
-    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
+    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         if hashlib.sha256((runtime / name).read_bytes()).digest() != hashlib.sha256((ROOT / "runtime" / name).read_bytes()).digest():
             raise RuntimeError("Packaged Pi bridge differs from the source: " + name)
+    for name in ("subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "rpc-ui.mjs"):
+        if not (runtime / name).is_file() or not (resources / "runtime" / name).is_file():
+            raise RuntimeError("Bundled subagent runtime module is missing: " + name)
     npm = resources / "runtime/node" / ("node_modules/npm/bin/npm-cli.js" if os.name == "nt" else "lib/node_modules/npm/bin/npm-cli.js")
     for document in (ROOT/'runtime/umeko-docs').glob('*.md'):
         if (runtime/'umeko-docs'/document.name).read_bytes() != document.read_bytes():

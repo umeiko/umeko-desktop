@@ -49,6 +49,34 @@ class ResizeProbe(QObject):
 
 
 probe = ResizeProbe()
+
+class MoveProbe(QObject):
+    def __init__(self):
+        super().__init__()
+        self.state, self.calls, self.left, self.top = 4, [], 0.0, 0.0
+
+    @Property(int)
+    def visibility(self): return self.state
+
+    @Property(float)
+    def width(self): return 1320.0 if self.state == 4 else 1060.0
+
+    @Property(float)
+    def x(self): return self.left
+    @x.setter
+    def x(self, value): self.left = value
+
+    @Property(float)
+    def y(self): return self.top
+    @y.setter
+    def y(self, value): self.top = value
+
+    @Slot()
+    def showNormal(self): self.calls.append('restore'); self.state = 2
+
+    @Slot(result=bool)
+    def startSystemMove(self): self.calls.append('move'); return True
+
 try:
     QTest.qWait(200)
     handles = find("windowResizeHandles")
@@ -96,8 +124,52 @@ try:
     assert not handles.isEnabled()
     window.showNormal(); QTest.qWait(100)
     assert handles.isEnabled()
+    # Native movement is delegated only after Qt has restored maximized state.
+    move_probe = MoveProbe()
+    title = find('mainTitleDrag')
+    title.setProperty('targetWindow', move_probe)
+    point = title.mapToScene(title.boundingRect().center()).toPoint()
+    QTest.mousePress(window, Qt.LeftButton, Qt.NoModifier, point)
+    assert not move_probe.calls
+    QTest.mouseMove(window, point + QPoint(50, 0))
+    QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, point + QPoint(50, 0))
+    assert move_probe.calls == ['restore', 'move'], move_probe.calls
+    title.setProperty('targetWindow', window)
+    # A preview must not reduce the conversation below its usable width.
+    pane = find('webPane')
+    sidebar_width = backend.sidebarWidth
+    window.resize(1060, 700)
+    pane.setProperty('mode', 'document')
+    pane.setProperty('opened', True)
+    QTest.qWait(1200)
+    assert find('chatPage').width() >= 639
+    assert pane.width() >= 319
+    assert window.property('previewSidebarCollapsed')
+    assert not backend.sidebarCollapsed and backend.sidebarWidth == sidebar_width
+    # Native browser child windows leave the splitter and outer resize targets free.
+    surface = find('webSurfaceLoader')
+    assert surface.x() >= 6 and pane.width() - surface.x() - surface.width() >= 11
+    pane.setProperty('opened', False)
+    QTest.qWait(1000)
+    assert not window.property('previewSidebarCollapsed')
+    assert find('mainArea').x() > 100
+    # Closing the model popup restores typing immediately, including during exit.
+    window.resize(1320, 860)
+    selector = find('modelSelector')
+    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, selector.mapToScene(selector.boundingRect().center()).toPoint())
+    QTest.qWait(900)
+    assert find('modelSearch').hasActiveFocus()
+    QTest.keyClick(window, Qt.Key_Escape)
+    QTest.qWait(80)
+    assert prompt.hasActiveFocus()
+    QTest.keyClick(window, Qt.Key_B)
+    assert prompt.property('text').lower() == 'ab'
+    QTest.qWait(1100)
+    assert prompt.hasActiveFocus(), 'focus lost after exit animation'
+    QTest.keyClick(window, Qt.Key_C)
+    assert prompt.property('text').lower() == 'abc'
     assert not warnings, "\n".join(warnings)
-    print("WINDOW_RESIZE_UI_OK: eight directions, expanded corners, hover cursors, chat/settings, composer, maximized/fullscreen/restore")
+    print("WINDOW_RESIZE_UI_OK: eight directions, restore, preview width and temporary sidebar collapse, native web insets, popup typing focus")
 finally:
     backend.close()
     import shiboken6

@@ -1,0 +1,61 @@
+{
+  "tool": "built-in image_gen",
+  "transparentBackground": true,
+  "created": "2026-10-29",
+  "assets": {
+    "reply": {
+      "file": "app/icons/characters/komari/reply.png",
+      "generatedFile": "exec-f9e5a223-b82a-4200-8a7f-81ed88effb36.png",
+      "prompt": "Use case: stylized-concept. Create fresh production artwork for a desktop assistant character pack featuring Chika Komari (小鞠知花) from Makeine. Use the reference only for character identity: burgundy shoulder-length bob, fringe covering one eye, visible warm amber eye, small side tie. Match the appealing anime chibi linework with crisp gently pixel-edged shading seen in the reference; recognizable teenage character, cute but not a toddler. Natural school uniform as reference, do not overemphasize ribbons. True transparent background. One character only, fully visible within generous transparent margins, no words, no labels, no watermark, no other people.\nComposition/action: A compact head-and-shoulders portrait, shy relieved soft smile after finishing work, facing the viewer, clean readable silhouette at small sizes.",
+      "reference": "app/icons/subagents/chika-komari.png"
+    },
+    "catch": {
+      "file": "app/icons/characters/komari/catch.png",
+      "generatedFile": "exec-227b8c71-02c9-4127-987e-0a34713116e8.png",
+      "prompt": "Use case: stylized-concept. Create fresh production artwork for a desktop assistant character pack featuring Chika Komari (小鞠知花) from Makeine. Use the reference only for character identity: burgundy shoulder-length bob, fringe covering one eye, visible warm amber eye, small side tie. Match the appealing anime chibi linework with crisp gently pixel-edged shading seen in the reference; recognizable teenage character, cute but not a toddler. Natural school uniform as reference, do not overemphasize ribbons. True transparent background. One character only, fully visible within generous transparent margins, no words, no labels, no watermark, no other people.\nComposition/action: An upper-body pose with both hands extended toward the viewer, palms open ready to receive a dropped file, slightly flustered but welcoming. Include complete hands, no file or prop obscuring them.",
+      "reference": "app/icons/subagents/chika-komari-catch.png"
+    },
+    "welcome": {
+      "file": "app/icons/characters/komari/welcome.png",
+      "generatedFile": "exec-44bfb822-b941-48d0-8e5b-695d79581d59.png",
+      "prompt": "Use case: stylized-concept. Create fresh production artwork for a desktop assistant character pack featuring Chika Komari (小鞠知花) from Makeine. Use the reference only for character identity: burgundy shoulder-length bob, fringe covering one eye, visible warm amber eye, small side tie. Match the appealing anime chibi linework with crisp gently pixel-edged shading seen in the reference; recognizable teenage character, cute but not a toddler. Natural school uniform as reference, do not overemphasize ribbons. True transparent background. One character only, fully visible within generous transparent margins, no words, no labels, no watermark, no other people.\nComposition/action: A waist-up welcoming pose, gently holding a closed book against her chest with one arm and raising her free hand in a small tentative greeting, shy friendly smile.",
+      "reference": "app/icons/subagents/chika-komari-catch.png"
+    },
+    "push": {
+      "file": "app/icons/characters/komari/push.png",
+      "generatedFile": "exec-eac630eb-fd39-4dcc-b640-9462b742cbc7.png",
+      "prompt": "Use case: stylized-concept. Fresh Chika Komari (小鞠知花, Makeine) character artwork for the same coherent desktop assistant pack. Follow the attached character reference: burgundy shoulder-length bob with one eye hidden under fringe, one warm amber eye, small side tie, beige cardigan over school blouse. Anime chibi illustration with clean expressive linework and gently pixel-edged shading; cute teenage appearance rather than toddler. One upper-body character, complete hair and hands inside generous transparent margins. True transparent background, no text, no watermark, no scenery.\nAction: Three-quarter side view facing right, both palms braced against a slim smooth translucent blue UI divider at far right, trying hard to push it, determined puffed cheek. Only upper body. The divider is a narrow elegant glass edge, no masonry wall, no concrete.",
+      "reference": "app/icons/subagents/chika-komari-catch.png"
+    },
+    "pull": {
+      "file": "app/icons/characters/komari/pull.png",
+      "generatedFile": "exec-b6732f23-3921-4ca5-8b63-30b3c7823752.png",
+      "prompt": "Use case: stylized-concept. Fresh Chika Komari (小鞠知花, Makeine) character artwork for the same coherent desktop assistant pack. Follow the attached character reference: burgundy shoulder-length bob with one eye hidden under fringe, one warm amber eye, small side tie, beige cardigan over school blouse. Anime chibi illustration with clean expressive linework and gently pixel-edged shading; cute teenage appearance rather than toddler. One upper-body character, complete hair and hands inside generous transparent margins. True transparent background, no text, no watermark, no scenery.\nAction: Three-quarter side view facing right, both hands clearly curled around a slim smooth translucent blue UI divider at right, leaning back to pull it inward, effortful funny expression. Only upper body. Show gripping fingers, no concrete and no full wall.",
+      "reference": "app/icons/subagents/chika-komari-catch.png"
+    },
+    "loading": {
+      "file": "app/icons/characters/komari/loading.png",
+      "generatedFile": "exec-76731ed1-a3ae-431a-9cea-0eafd400e40e.png",
+      "prompt": "Use case: stylized-concept. Fresh Chika Komari (小鞠知花, Makeine) character artwork for the same coherent desktop assistant pack. Follow the attached character reference: burgundy shoulder-length bob with one eye hidden under fringe, one warm amber eye, small side tie, beige cardigan over school blouse. Anime chibi illustration with clean expressive linework and gently pixel-edged shading; cute teenage appearance rather than toddler. One upper-body character, complete hair and hands inside generous transparent margins. True transparent background, no text, no watermark, no scenery.\nAction: Waist-up seated with an open book, thinking carefully and looking at a small floating hourglass beside her face, calm focused shy expression. No baked lettering, no loading dots. Clear silhouette suitable for a native animated waiting UI.",
+      "reference": "app/icons/subagents/chika-komari-catch.png"
+    },
+    "avatarSmile": {
+      "file": "app/icons/characters/komari/avatarSmile.png",
+      "generatedFile": "exec-7d8c7cd3-786c-486f-8909-9a7366e61429.png",
+      "prompt": "Use case: stylized-concept. New matching small desktop-avatar portrait of Chika Komari from Makeine, based on the reference identity. Burgundy short shoulder-length bob, fringe hiding one eye, tiny side tie, visible warm amber eye. Anime chibi with crisp softly pixel-edged cel shading, natural shy teenage character, not toddler, not realistic. Head and collar only, same compact framing, all hair included with comfortable transparent margins. White school collar and beige cardigan glimpse. True transparent background, single character, no lettering, no props, no watermark. Expression: gentle bashful closed-mouth smile looking at the viewer.",
+      "reference": "app/icons/subagents/chika-komari.png"
+    },
+    "avatarWink": {
+      "file": "app/icons/characters/komari/avatarWink.png",
+      "generatedFile": "exec-ee556a20-7029-424d-9d89-e51d152cd359.png",
+      "prompt": "Use case: stylized-concept. New matching small desktop-avatar portrait of Chika Komari from Makeine, based on the reference identity. Burgundy short shoulder-length bob, fringe hiding one eye, tiny side tie, visible warm amber eye. Anime chibi with crisp softly pixel-edged cel shading, natural shy teenage character, not toddler, not realistic. Head and collar only, same compact framing, all hair included with comfortable transparent margins. White school collar and beige cardigan glimpse. True transparent background, single character, no lettering, no props, no watermark. Expression: visible eye playfully closed in a shy cheerful wink, small blushing smile.",
+      "reference": "app/icons/subagents/chika-komari.png"
+    },
+    "avatarHappy": {
+      "file": "app/icons/characters/komari/avatarHappy.png",
+      "generatedFile": "exec-28da7fea-dcfc-4e25-a55e-463655f8d22b.png",
+      "prompt": "Use case: stylized-concept. New matching small desktop-avatar portrait of Chika Komari from Makeine, based on the reference identity. Burgundy short shoulder-length bob, fringe hiding one eye, tiny side tie, visible warm amber eye. Anime chibi with crisp softly pixel-edged cel shading, natural shy teenage character, not toddler, not realistic. Head and collar only, same compact framing, all hair included with comfortable transparent margins. White school collar and beige cardigan glimpse. True transparent background, single character, no lettering, no props, no watermark. Expression: bright happy laughing smile, visible amber eye curved joyfully, subtle blush.",
+      "reference": "app/icons/subagents/chika-komari.png"
+    }
+  }
+}

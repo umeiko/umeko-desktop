@@ -60,7 +60,7 @@ def browser_children(window):
         if name.value == 'Chrome_RenderWidgetHostHWND':
             rect = wintypes.RECT()
             user32.GetWindowRect(handle, ctypes.byref(rect))
-            children.append((bool(user32.IsWindowVisible(handle)), rect.right - rect.left, rect.bottom - rect.top))
+            children.append((bool(user32.IsWindowVisible(handle)), rect.right - rect.left, rect.bottom - rect.top, rect.right, rect.bottom))
         return True
 
     user32.EnumChildWindows(int(window.winId()), visit, 0)
@@ -74,6 +74,7 @@ with tempfile.TemporaryDirectory(prefix='umeko-windows-webview-') as temporary:
     url = 'http://127.0.0.1:' + str(server.server_port)
     app, engine, controller = create_application()
     window = engine.rootObjects()[0]
+    window.resize(1560, 900)
     window.setPosition(app.primaryScreen().availableGeometry().topLeft() + QPoint(40, 40))
     window.raise_()
     window.requestActivate()
@@ -114,6 +115,10 @@ with tempfile.TemporaryDirectory(prefix='umeko-windows-webview-') as temporary:
         view = loader.property('item')
         wait(lambda: view.property('title') == 'Preview' and not view.property('loading'))
         wait(rendered)
+        frame = wintypes.RECT()
+        user32.GetWindowRect(int(window.winId()), ctypes.byref(frame))
+        child = browser_children(window)[0]
+        assert child[3] <= frame.right - 6 and child[4] <= frame.bottom - 6
         output = ROOT / 'artifacts/screenshots'
         output.mkdir(parents=True, exist_ok=True)
         QTest.qWait(250)

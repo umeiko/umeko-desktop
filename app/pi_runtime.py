@@ -11,6 +11,7 @@ from pathlib import Path
 PACKAGE = "@earendil-works/pi-coding-agent"
 PINNED_VERSION = "1.3.0"
 RELEASE_NAME = "coding-" + PINNED_VERSION
+ADAPTER_DEPENDENCIES = {"@gotgenes/pi-subagents": "25.0.5", "semver": "7.8.5", "tar": "7.5.22"}
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 CATALOG = '''// Umeko provider policy. Native coding-agent implementation is unchanged.
 import { createModels } from "../models.js";
@@ -72,7 +73,12 @@ def project_runtime(source: Path, destination: Path):
     modules = source / "node_modules"
     version = json.loads((modules / PACKAGE / "package.json").read_text(encoding="utf-8"))["version"]
     # Preserve the complete upstream SDK, native tools, resource loader and dependencies.
-    shutil.copytree(modules, destination / "node_modules")
+    # The source checkout can live under a long Windows workspace path. npm
+    # installs nested SDK type declarations beyond MAX_PATH; preserve them too.
+    source_modules, target_modules = modules.resolve(), (destination / "node_modules").resolve()
+    if os.name == "nt":
+        source_modules, target_modules = "\\\\?\\" + str(source_modules), "\\\\?\\" + str(target_modules)
+    shutil.copytree(source_modules, target_modules)
     ai = destination / "node_modules/@earendil-works/pi-ai/dist"
     if not (ai / "providers/all.js").is_file() or not (ai / "models.generated.js").is_file():
         raise RuntimeError("Pi provider 接口已变化，需要更新桥接适配")
@@ -97,12 +103,63 @@ def patch_retry_diagnostics(release: Path):
         path.write_text(text.replace(original, replacement), encoding="utf-8")
 
 
+def runtime_install_manifest(version):
+    return {"private": True, "dependencies": {PACKAGE: version, **ADAPTER_DEPENDENCIES}}
+
+
+def ensure_adapter_dependencies(release: Path, bridge_source: Path):
+    """Migrate external kernels offline using the shipped factory dependencies.
+
+    Keep each adapter's dependency closure local to that adapter, so migration
+    its transitive dependencies cannot replace another Pi version's hoisted ones.
+    """
+    factory = bridge_source.parent / "releases" / RELEASE_NAME / "node_modules"
+    modules = release / "node_modules"
+
+    def manifest(package):
+        return json.loads((package / "package.json").read_text(encoding="utf-8"))
+
+    def dependency(source, name):
+        for parent in (source, *source.parents):
+            candidate = parent / "node_modules" / name
+            if (candidate / "package.json").is_file():
+                return candidate
+            if parent == factory.parent:
+                break
+        raise RuntimeError("内置内核的桌面依赖缺失：" + name)
+
+    def copy_package(source, target, ancestors):
+        data = manifest(source)
+        identity = (data["name"], data["version"])
+        if identity in ancestors:
+            return
+        source_path, target_path = source.resolve(), target.resolve()
+        if os.name == "nt":
+            source_path, target_path = "\\\\?\\" + str(source_path), "\\\\?\\" + str(target_path)
+        shutil.copytree(source_path, target_path, dirs_exist_ok=True)
+        for name in data.get("dependencies", {}):
+            copy_package(dependency(source, name), target / "node_modules" / name, (*ancestors, identity))
+
+    for name, version in ADAPTER_DEPENDENCIES.items():
+        target = modules / name
+        try:
+            if manifest(target)["version"] == version:
+                continue
+        except (OSError, ValueError, KeyError):
+            pass
+        source = factory / name
+        if source.resolve() == target.resolve() or not (source / "package.json").is_file() or manifest(source).get("version") != version:
+            raise RuntimeError("内置内核的桌面依赖缺失：" + name)
+        copy_package(source, target, ())
+
+
 def verify_runtime(release: Path, bridge_source: Path):
     manifest = json.loads((release / "manifest.json").read_text(encoding="utf-8"))
     if manifest.get("package") != PACKAGE or manifest.get("projection") != 2:
         raise RuntimeError("旧 Agent Core 内核不能用于完整 Pi Coding Agent")
+    ensure_adapter_dependencies(release, bridge_source)
     patch_retry_diagnostics(release)
-    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json", "marketplace.mjs", "marketplace-source.mjs", "package-source.mjs", "marketplace-LICENSE.txt"):
+    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json", "marketplace.mjs", "marketplace-source.mjs", "package-source.mjs", "marketplace-LICENSE.txt"):
         shutil.copy2(bridge_source.parent / name, release / name)
     shutil.copytree(bridge_source.parent/'umeko-docs', release/'umeko-docs', dirs_exist_ok=True)
     environment = node_environment(dict(os.environ, PI_OFFLINE="1"))

@@ -1,6 +1,7 @@
 """Classify transient transport failures without retrying login/configuration errors."""
 import json
 import re
+import ssl
 
 
 def describe_failure(error, seen=None):
@@ -25,9 +26,23 @@ def describe_failure(error, seen=None):
 
 
 def certificate_failure(error):
-    detail = json.dumps(describe_failure(error), ensure_ascii=False)
-    code = re.search(r'UMEKO_CA_[A-Z_]+|ERR_TLS_CERT_[A-Z_]+|CERTIFICATE_VERIFY_FAILED|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_VERIFY_LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER_CERT_LOCALLY|CERT_[A-Z_]+', detail, re.I)
-    return code[0].upper() if code else 'CERTIFICATE_VERIFY_FAILED' if re.search(r'certificate|self.signed|证书', detail, re.I) else ''
+    pending, seen = [error], set()
+    while pending:
+        current = pending.pop()
+        if not isinstance(current, BaseException) or id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, ssl.SSLCertVerificationError):
+            return 'CERTIFICATE_VERIFY_FAILED'
+        # Only structured codes identify TLS failures; messages may quote a
+        # certificate filename or contain unrelated request/response content.
+        for value in (getattr(current, 'code', None), getattr(current, 'reason', None),
+                      getattr(current, 'tls_code', None)):
+            if isinstance(value, str) and re.fullmatch(r'UMEKO_CA_[A-Z_]+|ERR_TLS_CERT_[A-Z_]+|CERTIFICATE_VERIFY_FAILED|SELF_SIGNED_CERT_IN_CHAIN|DEPTH_ZERO_SELF_SIGNED_CERT|UNABLE_TO_VERIFY_LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER_CERT(?:_LOCALLY)?|CERT_[A-Z_]+', value, re.I):
+                return value.upper()
+        pending.extend((getattr(current, 'reason', None), current.__cause__, current.__context__))
+        pending.extend(getattr(current, 'exceptions', ()))
+    return ''
 
 
 def transient_failure(error, http=()):
@@ -35,7 +50,7 @@ def transient_failure(error, http=()):
         return False
     responses = [item.get('response', {}) for item in http]
     detail = json.dumps(describe_failure(error), ensure_ascii=False) + ' ' + json.dumps([r.get('body') for r in responses if str(r.get('status', '')).isdigit() and int(r['status']) >= 400], ensure_ascii=False)
-    if re.search(r'insufficient_quota|quota exceeded|out of budget|billing|usage limit reached|invalid.?api.?key|unauthorized|authentication|certificate|CERT_|self.signed|额度不足|余额不足', detail, re.I):
+    if re.search(r'insufficient_quota|quota exceeded|out of budget|billing|usage limit reached|invalid.?api.?key|unauthorized|authentication|额度不足|余额不足', detail, re.I):
         return False
     status = next((r.get('status') for r in reversed(responses) if r.get('status')), 0)
     try:

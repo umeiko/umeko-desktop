@@ -22,7 +22,11 @@ SectionCard {
             ActionButton { objectName: root.namePrefix + "RefreshButton"; text: I18n.t("刷新"); glyph: "refresh"; enabled: !root.manager.busy; onClicked: root.manager.refresh() }
         }
         Text { visible: backend.config.agent.safeMode; Layout.fillWidth: true; text: I18n.t("恢复模式仅加载内置能力，第三方扩展暂不加载。"); color: Theme.accent; wrapMode: Text.Wrap; font.pixelSize: Theme.font(11) }
-        PackageList { Layout.fillWidth: true; namePrefix: root.namePrefix; thirdPartyOnly: false }
+        PackageList {
+            Layout.fillWidth: true; namePrefix: root.namePrefix; thirdPartyOnly: false; showDetails: true
+            onDetailsRequested: extensionId => { details.extensionId = extensionId; details.open(); backend.loadCapabilities() }
+        }
     }
     PiExtensionInstaller { id: installer }
+    ExtensionDetails { id: details; manager: root.manager }
 }

@@ -14,6 +14,7 @@ QtObject {
         if (root.language !== "en") return text
         if (Object.prototype.hasOwnProperty.call(English.strings, text)) return English.strings[text]
         const patterns = [
+            [/^内置内核的桌面依赖缺失：(.+)$/, "Bundled desktop runtime dependency is missing: $1"],
             [/^扩展记录保存失败：([\s\S]*)$/, "Could not save package records: $1"],
             [/^正在卸载 (.+)…$/, "Uninstalling $1…"],
             [/^Pi 卸载失败：退出码 (\d+)$/, "Pi uninstall failed: Exit code $1"],
