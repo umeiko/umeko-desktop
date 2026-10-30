@@ -11,6 +11,14 @@ Widget 扩展 Umeko 的桌面界面和当前会话，例如文件管理器、版
 
 ## 开发与使用
 
+### 官方桌面小宠物
+
+`desktop-pet` 是默认启用、默认隐藏的官方应用级 Widget。到“设置 → Agent → 插件管理 → 桌面小宠物”打开显示或导入形象；Agent 使用 `widgets.docs {"id":"desktop-pet"}` 获取管理和制作动画形象的完整文档，之后通过 `widgets.call` 调用 `show`、`hide`、`configure`、`importAppearance`、`selectAppearance` 等方法。形象支持透明 WebP / GIF / PNG 或 `umeko-pet` ZIP，独立于聊天角色配置。
+
+后台观察每 1–2 秒读取活动摘要，所有动作至少保持 3 秒。它不调用模型、不扫描聊天历史、不向上下文推送活动通知。隐藏时卸载动画解码器，停用 Widget 时停止观察。该官方 Widget 使用宿主内置适配器；第三方 Widget 不能声明或取得同等宿主访问权限。
+
+Widget 可以用 `settingsPage` 声明包内的 QML 设置页，根项同样声明 `required property var sdk`。设置页由插件管理加载，`sdk.call` 定向调用选中 Widget，`sdk.response` 接收结果，`sdk.colors` / `scale` / `t(text)` 提供样式和翻译，`sdk.active` 表明服务是否可用。没有设置页的 Widget 继续使用原来的 JSON 配置编辑器。应用服务的 `settingsPage` 不会创建聊天侧栏页面。
+
 从“设置 → Agent → 插件管理 → 导出 SDK 和示例”取得当前版本的 SDK、协议和完整示例。先阅读导出包的 `README.md`，以其中接口为准。典型结构：
 
 ```text

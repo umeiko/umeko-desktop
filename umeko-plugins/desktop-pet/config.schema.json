@@ -1,0 +1,34 @@
+{
+  "type": "object",
+  "properties": {
+    "visible": {
+      "type": "boolean"
+    },
+    "alwaysOnTop": {
+      "type": "boolean"
+    },
+    "paused": {
+      "type": "boolean"
+    },
+    "appearance": {
+      "type": "string",
+      "maxLength": 48
+    },
+    "size": {
+      "type": "integer",
+      "minimum": 96,
+      "maximum": 320
+    },
+    "sampleIntervalMs": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 2000
+    },
+    "minimumStateMs": {
+      "type": "integer",
+      "minimum": 3000,
+      "maximum": 30000
+    }
+  },
+  "additionalProperties": false
+}
