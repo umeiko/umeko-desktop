@@ -13,6 +13,7 @@ from app.controller import Controller
 from app.pi_management import resource_command, prepare_factory
 from app.pi_terminal import prepare_terminal, powershell_literal
 from app.pi_runtime import PACKAGE, node_executable
+from app.pi_sessions import clean_extension_modes
 from app.filesystem_paths import filesystem_path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +22,39 @@ APP = QCoreApplication.instance() or QCoreApplication([])
 
 
 class NativeExtensionTests(unittest.TestCase):
+    def test_invalid_chat_modes_do_not_break_session_loading(self):
+        for value in (None,[],"invalid",7): self.assertEqual(clean_extension_modes(value),{})
+        self.assertEqual(clean_extension_modes({"builtin:mcp":"disabled","builtin:codemode":"session","invalid":True}),{"builtin:mcp":"disabled","builtin:codemode":"session"})
+
+    def test_chat_modes_persist_without_changing_other_chat_or_native_settings(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ,{"UMEKO_DATA_DIR":temp}):
+            c=Controller(ROOT)
+            try:
+                manager=c.piManagement
+                c.store.data["agent"]["agentDir"]=str(Path(temp)/"agent")
+                manager._extensions_context=manager._resource_key()
+                manager._extensions=[{"id":"fixture","path":"builtin:mcp","enabled":False}]
+                first=c._view; first.id="first-chat"
+                manager.setExtensionMode("fixture","session")
+                self.assertEqual(first.extension_modes,{"builtin:mcp":"session"})
+                self.assertFalse((Path(temp)/"agent/settings.json").exists())
+                self.assertEqual(c.store.data["sessionMeta"][first.id]["extensionModes"],first.extension_modes)
+                other=c._new_view(first.workspace);c._view=other
+                self.assertEqual(manager.extensionModes,{})
+                manager.setExtensionMode("fixture","disabled")
+                self.assertEqual(first.extension_modes,{"builtin:mcp":"session"})
+                self.assertEqual(other.extension_modes,{"builtin:mcp":"disabled"})
+                c._view=first
+                manager.setExtensionMode("fixture","disabled")
+                self.assertEqual(manager.extensionModes,{"builtin:mcp":"disabled"})
+                with patch.object(c._pool,"start") as start:
+                    c._command_pi("inspect")
+                    self.assertEqual(start.call_args.args[-1]["sessionExtensions"],{"builtin:mcp":False})
+                first.phase="idle"
+                manager.setExtensionMode("fixture","not-an-option")
+                self.assertEqual(manager.extensionModes,{"builtin:mcp":"disabled"})
+            finally: c.close()
+
     @unittest.skipUnless(os.name == "nt", "Windows extended-length paths")
     def test_factory_copies_deep_profile_and_preserves_ordinary_paths(self):
         base = Path(tempfile.mkdtemp())
@@ -41,6 +75,50 @@ class NativeExtensionTests(unittest.TestCase):
         self.assertEqual((filesystem_path(result["release"]) / "fixture.txt").read_text(), "factory files")
         self.assertEqual((filesystem_path(result["backup"]) / "personal-settings.json").read_text(), "original settings")
         self.assertTrue(filesystem_path(result["agentDir"]).is_dir())
+
+    def test_structured_install_and_remove_preserve_literal_package_paths(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR":temp}):
+            data = Path(temp)
+            package = data / 'literal package'
+            (package / 'extensions').mkdir(parents=True)
+            file = package / 'extensions/example.ts'
+            file.write_text("throw new Error('discovery must not execute me'); export default () => {};", encoding='utf-8')
+            controller = Controller(ROOT)
+            controller.store.data['agent']['agentDir'] = str(data/'agent')
+            try:
+                manager = controller.piManagement
+                with patch.object(controller, '_job') as job:
+                    manager.installPackage(str(package), False)
+                    self.assertTrue(manager.busy)
+                    self.assertEqual(job.call_args.args[0], 'pi-admin:install')
+                    manager._finished('pi-admin:install', {'ok':True, 'value':job.call_args.args[1]()})
+                    self.assertEqual(manager.installState, 'succeeded')
+                    row = next(row for row in manager.extensions if row['path']==str(file))
+                    manager.uninstallPackage(row['id'])
+                    self.assertEqual(job.call_args.args[0], 'pi-admin:remove')
+                    manager._finished('pi-admin:remove', {'ok':True, 'value':job.call_args.args[1]()})
+                    self.assertFalse(any(row['path']==str(file) for row in manager.extensions))
+                    self.assertTrue(file.exists())
+            finally:
+                controller.close()
+
+    def test_starting_a_new_scan_does_not_make_old_inventory_current(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR":temp}):
+            controller = Controller(ROOT)
+            try:
+                manager = controller.piManagement
+                manager._extensions = [{"id":"old", "enabled":True}]
+                manager._extensions_context = manager._resource_key()
+                self.assertTrue(manager.extensionsCurrent)
+                controller._view.workspace = str(Path(temp)/"different-project")
+                with patch.object(controller, "_job"):
+                    manager.scan()
+                    self.assertFalse(manager.extensionsCurrent)
+                    manager._finished("pi-admin:scan", {"ok":True, "value":[{"id":"new", "enabled":True}]})
+                self.assertTrue(manager.extensionsCurrent)
+                self.assertEqual(manager.extensions[0]["id"], "new")
+            finally:
+                controller.close()
 
     def test_extension_update_results_remain_scoped_to_the_original_pi_context(self):
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR":temp}):

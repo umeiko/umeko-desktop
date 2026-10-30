@@ -1,7 +1,7 @@
 // JSONL presentation adapter for the complete, unmodified Pi Coding Agent SDK.
 // Tools, loop, skill expansion, extension hooks and session trees belong to Pi.
 import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-policy.mjs";
-import { prepareNativeSettings, builtins, extensionName, SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
+import { prepareNativeSettings, sessionResourceSettings, builtins, extensionName, SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
@@ -242,7 +242,8 @@ async function restoreSubagentSession(child, context, customTools) {
   const manager = Pi.SessionManager.open(child.outputFile);
   const model = modelRuntime.getModel("umeko", context?.model || runtime.session.model?.id);
   if (!model) throw new Error("原子代理使用的模型已不在供应商配置中。");
-  const settings = await prepareNativeSettings(Pi, {cwd:manager.getCwd(),agentDir:config.agentDir,agent:config.agent});
+  const native = await prepareNativeSettings(Pi, {cwd:manager.getCwd(),agentDir:config.agentDir,agent:config.agent});
+  const settings = await sessionResourceSettings(Pi, {...config,cwd:manager.getCwd()}, native);
   const policy = Pi.SettingsManager.inMemory({...settings.getSettings(),retry:{...NETWORK_RETRY,provider:{maxRetries:0}},cacheWarming:"off"});
   // New children persist their exact resolved prompt and allowlist. Older
   // transcripts use the standard read-only policy for Explore/Plan.
@@ -296,7 +297,8 @@ async function init(input) {
   if (!selectedModel) throw new Error("请选择已配置的模型");
   const factory = async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
     // Load normal Pi settings/resources without importing auth.json or models.json.
-    const settingsManager = await prepareNativeSettings(Pi, { cwd, agentDir, agent: input.agent });
+    const nativeManager = await prepareNativeSettings(Pi, { cwd, agentDir, agent: input.agent });
+    const settingsManager = await sessionResourceSettings(Pi, {...input,cwd,agentDir}, nativeManager);
     const nativeSettings = settingsManager.getSettings();
     const settings = Pi.SettingsManager.inMemory({ ...nativeSettings,
       retry: { ...nativeSettings.retry, ...NETWORK_RETRY, provider: { ...nativeSettings.retry?.provider, maxRetries: 0 } },

@@ -40,7 +40,9 @@ def main():
                 if 'session.read' not in m.get('permissions',[]):session.pop('messages',None)
                 state=Path(args['stateDir']);state.mkdir(parents=True,exist_ok=True)
                 context=Context(folder,state,config,session,m.get('permissions',[]),m.get('executables',{}),
-                    lambda event:emit({'type':'event',**event}),lifecycle=m.get('lifecycle','session'))
+                    lambda event:emit({'type':'event',**event}),lifecycle=m.get('lifecycle','session'),
+                    host_capabilities=copy.deepcopy(args.get('hostCapabilities',{})),
+                    runtimes=copy.deepcopy(args.get('runtimes',{})))
                 vendor=folder/'vendor'
                 if vendor.is_dir():sys.path.insert(0,str(vendor))
                 entry,_,factory=m['entrypoint'].partition(':')

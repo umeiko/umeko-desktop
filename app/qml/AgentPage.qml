@@ -54,7 +54,7 @@ Column {
         objectName: "openDesktopPluginsButton"
         width: parent.width; implicitHeight: Theme.control(72); visible: !root.piOpen && !root.pluginsOpen
         padding: 20; hoverEnabled: true
-        Accessible.name: I18n.t("插件管理")
+        Accessible.name: I18n.t("Widgets")
         HoverHandler { cursorShape: Qt.PointingHandCursor }
         background: Rectangle { radius: 12; color: pluginsCard.hovered ? Theme.hover : Theme.surface; border.color: pluginsCard.activeFocus ? Theme.accent : Theme.line }
         contentItem: RowLayout {
@@ -64,7 +64,7 @@ Column {
                 radius: 10; color: "transparent"
                 Image { objectName: "pluginManagerArtwork"; anchors.centerIn: parent; source: "../icons/fluent/plugin-manager.png"; width: Theme.icon(42); height: Theme.icon(42); sourceSize: Qt.size(128,128); fillMode: Image.PreserveAspectFit; mipmap: true }
             }
-            Text { text: I18n.t("插件管理"); color: Theme.ink; font.pixelSize: Theme.font(16); font.weight: Font.DemiBold; Layout.fillWidth: true }
+            Text { text: I18n.t("Widgets"); color: Theme.ink; font.pixelSize: Theme.font(16); font.weight: Font.DemiBold; Layout.fillWidth: true }
             Glyph { name: "chevron-right"; width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }
         }
         onClicked: root.openPlugins()
@@ -75,7 +75,7 @@ Column {
             width: parent.width; spacing: 8
             ActionButton { objectName: "backFromDesktopPluginsButton"; text: "Agent"; glyph: "arrow-left"; quiet: true; onClicked: root.pluginsOpen = false }
             Glyph { name: "chevron-right"; width: Theme.icon(13); height: Theme.icon(13) }
-            Text { text: I18n.t("插件管理"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.Medium }
+            Text { text: I18n.t("Widgets"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.Medium }
             Item { Layout.fillWidth: true }
         }
         DesktopPluginsPage { id:pluginManager; width: parent.width; height: Math.max(360, root.availableHeight - 64) }
@@ -99,7 +99,6 @@ Column {
         SettingsFold {
             objectName: "piFold_extensions"; width: parent.width; title: I18n.t("扩展与工具"); query: search.text
             searchTerms: I18n.t("安装 Skills MCP 服务器 builtin extensions 工具 资源 ") + JSON.stringify(backend.piManagement.extensions) + JSON.stringify(backend.agentResources)
-            SettingsFold { objectName: "piFold_packages"; width: parent.width; title: I18n.t("Pi 扩展"); nested: true; query: search.text; searchTerms: I18n.t("安装 扩展包 extensions builtin ") + JSON.stringify(backend.piManagement.extensions); ExtensionManager { width: parent.width; namePrefix: "agentExtensions" } }
             SettingsFold { objectName: "piFold_mcp"; width: parent.width; title: I18n.t("MCP 服务器"); nested: true; query: search.text; searchTerms: I18n.t("builtin:mcp 全局 项目 配置服务器 JSON"); McpSettings { width: parent.width } }
             SettingsFold { objectName: "piFold_tools"; width: parent.width; title: I18n.t("工具与资源"); nested: true; query: search.text; searchTerms: I18n.t("原生 工具 Skills 提示模板 命令 资源 ") + JSON.stringify(backend.agentResources)
                 SectionCard { width: parent.width; ActionButton { objectName: "openToolCatalogButton"; text: I18n.t("查看工具与资源"); glyph: "layers"; enabled: !backend.piManagement.busy && !backend.kernelBusy; onClicked: root.toolsOpen = true } }

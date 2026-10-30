@@ -85,60 +85,30 @@ try:
     click("openPiSettingsButton")
     wait_for(lambda: not manager.busy and len(manager.extensions) >= 5)
     assert not executed.exists(), "scanning executed extension code"
-    row = next(row for row in manager.extensions if row["path"] == str(extension))
-    click("agentExtensionsToggle_" + row["id"])
-    wait_for(lambda: not manager.busy)
-    assert not next(row for row in manager.extensions if row["path"] == str(extension))["enabled"]
-    click("agentExtensionsRefreshButton")
-    wait_for(lambda: not manager.busy)
-    row = next(row for row in manager.extensions if row["path"] == str(extension))
-    assert not row["enabled"]
-    click("agentExtensionsToggle_" + row["id"])
-    wait_for(lambda: not manager.busy)
-    assert next(row for row in manager.extensions if row["path"] == str(extension))["enabled"]
-    with patch("app.pi_management.QDesktopServices.openUrl", return_value=True) as open_url:
-        assert find("agentExtensionsCatalogButton").property("text") == "查看在线扩展"
-        click("agentExtensionsCatalogButton")
-        assert open_url.call_args.args[0].toString() == "https://pi.dev/packages"
-    # Install via the real native CLI and actual QML dialog, never public npm.
-    local_package = store.directory / "ui fixture package"
-    (local_package / "extensions").mkdir(parents=True)
-    installed_extension = local_package / "extensions/installed.ts"
-    installed_extension.write_text("export default () => {};", encoding="utf-8")
-    click("agentExtensionsInstallButton")
-    assert window.findChild(QObject, "piExtensionInstaller").property("visible")
-    find("piInstallCommand").setProperty("text", "pi install npm:a && whoami")
-    click("confirmPiInstallButton")
-    assert manager.installState == "failed" and not manager.busy
-    capture("51-pi-extension-install-validation")
-    find("piInstallCommand").setProperty("text", 'pi install "' + str(store.directory / "missing package") + '"')
-    click("confirmPiInstallButton")
-    wait_for(lambda: not manager.busy)
-    assert manager.installState == "failed" and "Pi 安装失败" in manager.installMessage
-    find("piInstallCommand").setProperty("text", 'pi install "' + str(local_package) + '" --local')
-    assert find("piInstallScope").property("currentIndex") == 1
-    assert not find("piInstallScope").isEnabled(), "command scope must agree with the scope selector"
-    click("confirmPiInstallButton")
-    wait_for(lambda: not manager.busy)
-    assert manager.installState == "succeeded", manager.installMessage
-    assert local_package.resolve() in {(project / ".pi" / path).resolve() for path in json.loads((project / ".pi/settings.json").read_text())["packages"]}
-    assert any(row["path"] == str(installed_extension) and row["scope"] == "project" for row in manager.extensions)
-    capture("52-pi-extension-installed")
-    click("closePiInstallButton")
+    # Pi extension UI is now exclusively a closeable Widget; recovery stays here.
+    assert find("piFold_packages") is None
     capture("53-pi-agent-configuration")
     click("backToAgentButton")
     assert find("openPiSettingsButton").isVisible() and not find("checkKernelButton").isVisible()
     capture("50-agent-pi-overview")
     click("openPiSettingsButton")
     wait_for(lambda: not manager.busy)
+    find("piFold_kernel").setProperty("expanded",False)
+    find("piFold_management").setProperty("expanded",True)
+    find("piFold_recovery").setProperty("expanded",True)
     with patch("app.pi_management.launch_terminal") as launch:
         click("openPiTerminalButton")
         wait_for(lambda: not manager.busy)
         launch.assert_called_once()
         command = launch.call_args.args[0]
-        assert "-NoExit" in command
-        script = Path(command[-1]).read_text(encoding="utf-8-sig")
-        assert "function global:pi" in script and "pi config" in script
+        scripts=list((store.directory/"pi-console/launchers").iterdir())
+        assert len(scripts)==1
+        script=scripts[0].read_text(encoding="utf-8-sig")
+        if os.name=="nt":
+            assert "-NoExit" in command and "function global:pi" in script
+        else:
+            assert "pi()" in script
+        assert "pi config" in script
         assert "pi-console" in script
     capture("47-pi-native-extension-manager")
     backend._view.phase = "running"
@@ -172,20 +142,16 @@ try:
     manager.setRecoveryMode(False)
     wait_for(lambda: not manager.busy)
     codemode = next(row for row in manager.extensions if row["path"] == "builtin:codemode")
+    assert codemode["info"]["required"] and codemode["enabled"]
     manager.setExtensionEnabled(codemode["id"], False)
     wait_for(lambda: not manager.busy)
+    assert next(row for row in manager.extensions if row["path"] == "builtin:codemode")["enabled"]
+    assert "基础能力固定启用" in manager.status
     backend.loadCapabilities()
     wait_for(lambda: not backend.busy)
-    assert "codemode" not in backend.agentResources["tools"], backend.agentResources
-    assert {"read", "bash", "edit", "write"}.issubset(set(backend.agentResources["tools"]))
-    codemode = next(row for row in manager.extensions if row["path"] == "builtin:codemode")
-    manager.setExtensionEnabled(codemode["id"], True)
-    wait_for(lambda: not manager.busy)
-    backend.loadCapabilities()
-    wait_for(lambda: not backend.busy)
-    assert "codemode" in backend.agentResources["tools"], backend.agentResources
+    assert {"read", "bash", "edit", "write", "codemode"}.issubset(set(backend.agentResources["tools"]))
     assert not warnings, "\n".join(warnings)
-    print("PI_MANAGEMENT_UI_OK: Agent/Pi navigation, in-app native install, scopes, validation, extension switches, catalog, console plan, task guard, factory recovery")
+    print("PI_MANAGEMENT_UI_OK: Agent/Pi navigation, Widget-only extension placement, console plan, task guard, factory recovery")
 finally:
     backend.close()
     import shiboken6

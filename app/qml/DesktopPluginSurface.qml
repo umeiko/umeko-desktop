@@ -4,6 +4,7 @@ import QtQuick.Layouts
 FocusScope {
     id: root
     objectName: "desktopPluginSurface"
+    clip: true
     property var manager: backend.desktopPlugins
     property bool live: true
     readonly property var page: manager.page
@@ -16,12 +17,16 @@ FocusScope {
         readonly property string language: I18n.language
         readonly property string revealPath: root.page.selection || ""
         readonly property bool active: root.live
+        readonly property var hostCapabilities: root.manager.hostServices.capabilities
         signal response(string request, var value)
+        signal hostResponse(string request, var value)
         signal event(string topic, var data)
         function call(method,args) { return root.manager.call(method,JSON.stringify(args || {})) }
+        function requestHost(operation,args) { return root.manager.requestHost(operation,JSON.stringify(args || {})) }
         function copyText(text) { backend.copy(text) }
     }
     Connections {target:root.manager;function onResponse(request,value) {bridge.response(request,value)}function onEvent(topic,data){bridge.event(topic,data)}}
+    Connections {target:root.manager;function onHostResponse(widget,request,value) {if (widget===root.page.id) bridge.hostResponse(request,value)}}
     Loader {
         id: content; objectName: "desktopPluginPageLoader"; anchors.fill: parent
         asynchronous: true

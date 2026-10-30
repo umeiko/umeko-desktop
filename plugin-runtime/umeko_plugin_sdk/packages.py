@@ -5,7 +5,7 @@ from pathlib import Path, PurePosixPath
 from . import PluginError
 MAX_BYTES=128*1024*1024
 MAX_FILES=2048
-PERMISSIONS={'workspace.read','workspace.write','session.read','session.write','process.execute','git.read','git.write'}
+PERMISSIONS={'workspace.read','workspace.write','session.read','session.write','process.execute','git.read','git.write','pi.read','pi.manage','pi.observe'}
 BUILTIN_ICONS={row['id'] for row in json.loads(Path(__file__).with_name('icons.json').read_text(encoding='utf-8'))}
 
 def relative(value):
@@ -108,7 +108,9 @@ def validate(folder):
     for name,spec in m.get('executables',{}).items():
         if not isinstance(spec,dict) or not isinstance(name,str):raise PluginError('可执行文件清单无效')
         for target,path in spec.items():
-            if target=='system':
+            if target=='runtime':
+                if set(spec)!={'runtime'} or path!='node':raise PluginError('Only the host node runtime is supported')
+            elif target=='system':
                 if not isinstance(path,str) or not re.fullmatch('[A-Za-z0-9_.-]+',path):raise PluginError('系统可执行文件名无效')
             else:file(path)
     return m,defaults,schema

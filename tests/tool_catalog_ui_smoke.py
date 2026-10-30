@@ -109,7 +109,7 @@ try:
     click("openPiSettingsButton")
     wait_for(lambda: not backend.piManagement.busy and bool(backend.piManagement.extensions))
     for name in ("piFold_kernel",): find(name).setProperty("expanded", False)
-    for name in ("piFold_extensions", "piFold_packages", "piFold_mcp", "piFold_tools"): find(name).setProperty("expanded", True)
+    for name in ("piFold_extensions", "piFold_mcp", "piFold_tools"): find(name).setProperty("expanded", True)
     QTest.qWait(100)
     wait_for(lambda: not backend.piManagement.busy and not backend.busy)
     assert find("showPiCapabilitiesButton") is None
@@ -123,7 +123,7 @@ try:
     draft = '{"mcpServers":{},"draft":"unsaved local fixture"}'
     editor.setProperty("text", draft)
     mcp = next(row for row in backend.piManagement.extensions if row["path"] == "builtin:mcp")
-    click("agentExtensionsToggle_" + mcp["id"])
+    backend.piManagement.setExtensionEnabled(mcp["id"], False)
     wait_for(lambda: not backend.piManagement.busy)
     assert not card.property("mcpEnabled")
     for name in ("configureMcpButton", "mcpSaveButton", "mcpJsonEditor", "mcpGlobalTab", "mcpProjectTab"):
@@ -137,7 +137,7 @@ try:
     assert count() == 0, backend.agentResources
     click("backToPiButton")
     wait_for(lambda: not backend.piManagement.busy)
-    click("agentExtensionsToggle_" + mcp["id"])
+    backend.piManagement.setExtensionEnabled(mcp["id"], True)
     wait_for(lambda: not backend.piManagement.busy)
     assert card.property("mcpEnabled") and editor.isEnabled()
     assert editor.property("text") == draft and mcp_path.read_bytes() == saved_mcp

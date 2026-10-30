@@ -1,0 +1,34 @@
+{
+  "kind": "umeko-plugin",
+  "apiVersion": 1,
+  "id": "pi-management-example",
+  "version": "1.0.0",
+  "name": "Pi 管理示例",
+  "description": "通过公开宿主服务查询和管理 Pi 扩展，供商店 Widget 迁移参考。",
+  "summary": "演示异步 Pi 宿主服务",
+  "icon": "puzzle",
+  "lifecycle": "application",
+  "entrypoint": "scripts/plugin.py:create_plugin",
+  "page": "qml/Main.qml",
+  "readme": "README.md",
+  "config": "config.json",
+  "configSchema": "config.schema.json",
+  "permissions": [
+    "pi.read",
+    "pi.manage",
+    "session.write"
+  ],
+  "agent": {
+    "document": "AGENT.md",
+    "methods": {
+      "inventory": {
+        "description": "异步查询发起聊天的 Pi 扩展；通过 updates 返回结果。",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}

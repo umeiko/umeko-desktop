@@ -2,9 +2,11 @@
 import copy
 import json
 import os
+import re
 import shutil
 import subprocess
 import uuid
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -12,7 +14,7 @@ from PySide6.QtCore import QObject, Property, Signal, Slot, QUrl
 from PySide6.QtGui import QDesktopServices
 from .pi_runtime import CREATE_NO_WINDOW, RELEASE_NAME, installed_version, node_executable, verify_runtime
 from .pi_terminal import console_runtime, prepare_terminal, launch_terminal
-from .pi_install import parse_install_command, install_package
+from .pi_install import parse_install_command, install_package, remove_package
 from .npm_config import validate_npm_config, probe_npm, npm_environment
 from .storage import DEFAULTS
 from .filesystem_paths import filesystem_path, ordinary_path
@@ -32,7 +34,7 @@ def resource_command(release, cwd, agent_dir, agent, **action):
         raise RuntimeError("Pi 配置管理暂不可用，可尝试恢复出厂内核") from None
     if result.returncode or not payload.get("ok"):
         raise RuntimeError(payload.get("error", "Pi 配置读取失败"))
-    return payload["update"] if action.get("action") == "check-update" else payload["extensions"]
+    return payload["details"] if action.get("action") == "details" else payload["update"] if action.get("action") == "check-update" else payload["extensions"]
 
 
 def prepare_factory(root, directory, agent, workspace):
@@ -58,6 +60,7 @@ def prepare_factory(root, directory, agent, workspace):
 class PiManagement(QObject):
     changed = Signal()
     operationFinished = Signal(str, object)
+    installProgress = Signal(str)
 
     def __init__(self, controller):
         super().__init__(controller)
@@ -66,17 +69,66 @@ class PiManagement(QObject):
         self._install_state, self._install_message = "idle", ""
         self._npm_status = ""
         self._extension_update = {}
+        self._install_cancel = None
+        self.installProgress.connect(self._progress_install)
+        self._extension_details = {}
+        self._global_target = None
+        self._extensions_context = None
         backups = controller.store.directory / "pi-backups"
         if backups.is_dir():
             saved = sorted(p for p in backups.iterdir() if p.is_dir() and (p / "restore.json").is_file())
             if saved: self._backup = str(saved[-1])
         controller.jobDone.connect(self._finished)
+        controller.viewChanged.connect(self.changed)
 
     @Property(bool, notify=changed)
     def busy(self): return self._busy
 
     @Property("QVariantList", notify=changed)
     def extensions(self): return self._extensions
+
+    @Property("QVariantMap", notify=changed)
+    def extensionDetails(self): return self._extension_details
+
+    @Property("QVariantMap", notify=changed)
+    def extensionModes(self): return self.controller._view.extension_modes
+
+    @Slot(str)
+    def loadExtensionDetails(self, extension_id):
+        if self._busy: return
+        context = self._context()
+        self._extension_details = {"id":extension_id, "busy":True}
+        self._start("details", "正在读取扩展说明…", lambda: resource_command(*context,action="details",id=extension_id))
+
+    @Slot(str, str)
+    def setExtensionMode(self, extension_id, mode):
+        if self._busy or self.controller.kernelBusy or mode not in ("global", "session", "disabled"): return
+        row = next((row for row in self._extensions if row.get("id") == extension_id), None)
+        if not row or not self.extensionsCurrent:
+            self.controller.toast.emit("请刷新当前对话的插件列表"); return
+        if row.get("info",{}).get("required"):
+            self.controller.toast.emit("Umeko 基础能力固定启用，不能修改启用范围"); return
+        if self.controller.store.data["agent"].get("safeMode"): return
+        record = self.controller._view
+        if mode == "global":
+            self._global_target = (record, row["path"])
+            context = self._context()
+            self._start("enable-global", "正在保存扩展配置…", lambda: resource_command(*context,action="enable-global",id=extension_id))
+            return
+        record.extension_modes[row["path"]] = mode
+        self._save_modes(record)
+
+    def _save_modes(self, record):
+        c=self.controller
+        if record.id:
+            c.store.data["sessionMeta"].setdefault(record.id,{})["extensionModes"] = dict(record.extension_modes)
+            c.store.save()
+        record.stale = True
+        if not record.busy and not record.subagents_active: c._pool.retire(record)
+        self.changed.emit(); c.chatChanged.emit()
+    @Property(bool, notify=changed)
+    def extensionsCurrent(self):
+        return self._extensions_context == self._resource_key()
 
     @Property(str, notify=changed)
     def status(self): return self._status
@@ -89,6 +141,19 @@ class PiManagement(QObject):
 
     @Property(str, notify=changed)
     def installMessage(self): return self._install_message
+
+    @Property(bool, notify=changed)
+    def installCancellable(self): return self._install_state=='installing' and self._install_cancel is not None and not self._install_cancel.is_set()
+
+    @Slot()
+    def cancelInstall(self):
+        if self.installCancellable:
+            self._install_cancel.set(); self._install_message='正在取消安装…'; self.changed.emit()
+
+    @Slot(str)
+    def _progress_install(self, message):
+        if self._install_state=='installing' and self._install_cancel is not None and not self._install_cancel.is_set():
+            self._install_message=message;self.changed.emit()
 
     @Property("QVariantMap", notify=changed)
     def npmConfig(self):
@@ -171,6 +236,25 @@ class PiManagement(QObject):
         context = self._context()
         self._start("toggle", "正在保存扩展配置…", lambda: resource_command(*context, action="toggle", id=extension_id, enabled=enabled))
 
+    @Slot(str)
+    def uninstallPackage(self, extension_id):
+        if self._busy or self.controller.kernelBusy: return
+        if not self.extensionsCurrent:
+            raise ValueError('Refresh the current workspace before removing a package')
+        row = next((item for item in self._extensions if item.get('id') == extension_id), None)
+        if not row or row.get('source') in ('', 'builtin', 'local', None):
+            raise ValueError('Only a registered third-party package can be removed')
+        context = self._context()
+        release, cwd, agent_dir, agent = context
+        if agent.get('safeMode'): raise ValueError('Leave recovery mode before removing a package')
+        source, local = row['source'], row.get('scope') == 'project'
+        if not Path(source).is_absolute() and not re.match(r'^(npm:|git:|https?:|ssh:|git@)', source):
+            source = str(((cwd / '.pi' if local else agent_dir) / source).resolve())
+        def uninstall():
+            remove_package(release, cwd, agent_dir, source, local, npm_config=agent)
+            return resource_command(*context, action='scan')
+        self._start('remove', '正在卸载 Pi 扩展包…', uninstall)
+
     @Slot()
     def openCatalog(self):
         QDesktopServices.openUrl(QUrl("https://pi.dev/packages"))
@@ -186,6 +270,19 @@ class PiManagement(QObject):
         if self._busy or self.controller.kernelBusy: return
         try:
             source, local = parse_install_command(command, local)
+        except (ValueError, OSError) as exc:
+            self._install_state, self._install_message = "failed", str(exc)
+            self.changed.emit()
+            return
+        self.installPackage(source, local)
+
+    @Slot(str, bool)
+    def installPackage(self, source, local):
+        """Structured host/Agent operations pass one literal source, not a command."""
+        if self._busy or self.controller.kernelBusy: return
+        try:
+            if not source.strip() or len(source) > 4096 or source.startswith('-') or any(c in source for c in '\r\n\x00'):
+                raise ValueError('请提供一个有效的扩展来源')
             context = self._context()
         except (ValueError, OSError) as exc:
             self._install_state, self._install_message = "failed", str(exc)
@@ -193,8 +290,11 @@ class PiManagement(QObject):
             return
         release, cwd, agent_dir, agent = context
         target = "项目 " + str(cwd) if local else "全局 " + str(agent_dir)
+        self._install_cancel=threading.Event()
+        cancel=self._install_cancel
         def install():
-            install_package(release, cwd, agent_dir, source, local, npm_config=agent)
+            install_package(release, cwd, agent_dir, source, local, npm_config=agent,
+                progress=self.installProgress.emit,cancelled=cancel.is_set)
             # Installation has succeeded even if a separate damaged config prevents scanning.
             try:
                 rows = resource_command(*context, action="scan")
@@ -308,6 +408,17 @@ class PiManagement(QObject):
     def _apply_finished(self, name, result):
         action, c = name.split(":", 1)[1], self.controller
         self._busy = False
+        if action == "details":
+            self._extension_details = ({**result["value"], "busy":False} if result["ok"] else {**self._extension_details,"busy":False,"error":str(result["value"])}) if self._job_context == self._resource_key() else {}
+            self._status = self._extension_details.get("error", "")
+            self.changed.emit(); return
+        if action == "enable-global":
+            target,self._global_target = self._global_target,None
+            if result["ok"] and target:
+                record,path=target
+                record.extension_modes.pop(path,None)
+                self._save_modes(record)
+                c._restart_pi()
         if action == "extension-check":
             if self._job_context != self._resource_key():
                 self._extension_update = {}
@@ -323,7 +434,8 @@ class PiManagement(QObject):
             self._status = str(result["value"])
             if action == "npm": self._npm_status = self._status
             if action in ("install", "mcp-add"):
-                self._install_state, self._install_message = "failed", self._status
+                self._install_state, self._install_message = "cancelled" if action=="install" and self._install_cancel and self._install_cancel.is_set() else "failed", self._status
+                if action=="install":self._install_cancel=None
             c.toast.emit(self._status); self.changed.emit()
             if action == "factory": c.changed.emit()
             return
@@ -333,24 +445,28 @@ class PiManagement(QObject):
                 self._npm_status = str(value); self.changed.emit(); return
             if action in ("install", "mcp-add"):
                 self._install_state, self._install_message = "succeeded", value["message"]
+                if action=="install":self._install_cancel=None
                 c._restart_pi()
                 self._status = value["message"]
                 c.toast.emit("MCP 已添加；运行中的任务完成后应用" if action == "mcp-add" else "扩展安装成功；运行中的任务完成后应用")
                 self._extensions = value["extensions"] if self._job_context == self._resource_key() else []
+                self._extensions_context = self._job_context if self._job_context == self._resource_key() else None
                 self.changed.emit()
                 if self._job_context != self._resource_key(): self.scan()
                 return
-            if action in ("scan", "toggle", "reload"):
-                if action in ("toggle", "reload"):
+            if action in ("scan", "toggle", "reload", "enable-global", "remove"):
+                if action in ("toggle", "reload", "remove"):
                     c._restart_pi()
                 if self._job_context != self._resource_key():
                     self._extensions = []
+                    self._extensions_context = None
                     self.changed.emit()
                     self.scan()
                     return
                 self._extensions = value
+                self._extensions_context = self._job_context
                 self._status = "已启用 " + str(sum(row["enabled"] for row in value)) + " / " + str(len(value)) + " 个扩展"
-                if action in ("toggle", "reload"):
+                if action in ("toggle", "reload", "remove"):
                     c.toast.emit("已保存；运行中的任务完成后应用扩展设置")
             elif action == "terminal":
                 launch_terminal(value)

@@ -66,9 +66,13 @@
 | `widgets.close`（仅 python） | 无 | 无 | 否 |
 | `widgets.uninstall`（仅 python） | `id: string` | 无 | 否 |
 | `widgets.exportSdk`（仅 python） | `path: string` | 无 | 否 |
+| `extensions.details` | `id: string` | 无 | 是 |
+| `extensions.activation` | `id: string`, `mode: string` | view | 是 |
 | `extensions.scan` | 无 | 无 | 是 |
 | `extensions.refresh` | 无 | all | 是 |
 | `extensions.enable` | `id: string`, `enabled: boolean` | all | 是 |
+| `extensions.remove` | `id: string` | all | 是 |
+| `extensions.checkUpdate` | `id: string` | 无 | 是 |
 | `extensions.install` | `source: string`, `project: boolean=false` | all | 是 |
 | `mcp.add` | `text: string`, `project: boolean=false` | all | 是 |
 | `mcp.save` | `scope: string`, `config: json` | all | 是 |

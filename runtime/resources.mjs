@@ -1,5 +1,5 @@
 // Native resource discovery/settings only: never import or execute extension code.
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, statSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, statSync, realpathSync, openSync, readSync, closeSync } from "node:fs";
 import { dirname, basename, join, relative, resolve, delimiter } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
@@ -28,12 +28,12 @@ function manifestAt(directory) {
   } catch { return {}; }
 }
 export function extensionInfo(row) {
-  const builtin = row.path.startsWith("builtin:"), name = row.path.slice(8);
+  const builtin = row.path.startsWith("builtin:"), name = row.path.slice(8), required = requiredBuiltins.has(row.path);
   let root = row.metadata?.packageRoot || row.metadata?.baseDir || "";
   let origin = "local", updateKind = "none", manifest = {};
   if (builtin && ["chatbox", "pi-commands", "umeko-control", "background-jobs"].includes(name)) {
     const descriptions = {chatbox:"向聊天和侧栏展示文件、图片、文档与网页。", "pi-commands":"向当前内嵌 Pi 实例发送原生命令和斜杠命令。", "umeko-control":"查询和管理 Umeko 的供应商、主题、扩展与应用设置。", "background-jobs":"运行后台命令、读取独立日志、等待结果或只停止该任务的进程树；阻止按名称批量结束进程。"};
-    return {origin:"desktop", bundled:true, description:descriptions[name], homepage:desktopRepository, repository:desktopRepository, version:"", package:"", updateKind:"desktop"};
+    return {icon:name, required, origin:"desktop", bundled:true, description:descriptions[name], homepage:desktopRepository, repository:desktopRepository, version:"", package:"", updateKind:"desktop"};
   }
   if (builtin) {
     const dependency = name === "subagents" ? "@gotgenes/pi-subagents" : "@earendil-works/pi-coding-agent";
@@ -56,7 +56,7 @@ export function extensionInfo(row) {
   }
   const repository = webLink(typeof manifest.repository === "string" ? manifest.repository : manifest.repository?.url);
   const descriptions = {codemode:"通过代码组合调用多个工具。", "tool-search":"按名称和说明查找可用工具。", mcp:"连接 MCP 服务器并使用其工具。"};
-  return {origin, bundled:builtin, package:text(manifest.name), version:text(manifest.version), description:builtin && descriptions[name] || text(manifest.description),
+  return {icon:builtin ? name : "package", required, origin, bundled:builtin, package:text(manifest.name), version:text(manifest.version), description:builtin && descriptions[name] || text(manifest.description),
     homepage:webLink(manifest.homepage), repository, npmUrl:manifest.name && packageName.test(manifest.name) ? "https://www.npmjs.com/package/" + manifest.name : "",
     updateKind, ...(updateKind === "git" ? {packageRoot:root} : {})};
 }
@@ -99,6 +99,22 @@ export async function checkExtensionUpdate(row, {cwd, lookup = npmVersion} = {})
 }
 
 export const builtins = ["codemode", "tool-search", "mcp", "chatbox", "pi-commands", "umeko-control", "background-jobs", "subagents"];
+// Desktop integration and tool routing are part of Umeko's runtime contract.
+// Keep optional MCP/community extensions configurable. This policy is a read
+// view: native Pi settings remain writable and are never rewritten on startup.
+export const requiredBuiltins = new Set(builtins.filter(name => ["codemode", "tool-search", "chatbox", "pi-commands", "umeko-control", "background-jobs"].includes(name)).map(name => "builtin:" + name));
+const protectedSettings = new WeakMap();
+function requiredResourceSettings(settings) {
+  if (protectedSettings.has(settings)) return protectedSettings.get(settings);
+  const force = data => ({...data, extensions:[...(data.extensions || []).filter(value=>!requiredBuiltins.has(value.replace(/^[!+-]/,""))), ...[...requiredBuiltins].map(path => "+" + path)]});
+  const view = new Proxy(settings, {get(target, key) {
+    if (key === "getGlobalSettings" || key === "getProjectSettings") return () => force(target[key]());
+    const value = Reflect.get(target, key, target);
+    return typeof value === "function" ? value.bind(target) : value;
+  }});
+  protectedSettings.set(settings, view); protectedSettings.set(view, view);
+  return view;
+}
 const target = entry => entry.replace(/^[!+-]/, "");
 const canonical = (value, base) => value.startsWith("builtin:") ? value : resolve(base, value);
 export function extensionName(path, metadata = {}) {
@@ -150,7 +166,7 @@ export async function prepareNativeSettings(Pi, input) {
 }
 
 async function discover(Pi, input, settings) {
-  const manager = new Pi.DefaultPackageManager({ cwd: input.cwd, agentDir: input.agentDir, settingsManager: settings, builtinExtensions: builtins });
+  const manager = new Pi.DefaultPackageManager({ cwd: input.cwd, agentDir: input.agentDir, settingsManager: requiredResourceSettings(settings), builtinExtensions: builtins });
   const resolved = await manager.resolve(async () => "skip");
   // pi config can replace an external file declaration with only '-file'.
   // Keep that existing, explicitly disabled file available for re-enabling.
@@ -163,11 +179,88 @@ async function discover(Pi, input, settings) {
       }
     }
   }
-  return resolved.extensions.filter(row => !input.agent?.safeMode || row.path.startsWith("builtin:")).map(row => ({ ...row,
+  return resolved.extensions.filter(row => !input.agent?.safeMode || row.path.startsWith("builtin:")).map(row => requiredBuiltins.has(row.path) ? {...row, enabled:true, metadata:{...row.metadata, scope:"user"}} : row).map(row => ({ ...row,
     id: createHash("sha256").update(JSON.stringify([row.path, row.metadata.scope, row.metadata.source])).digest("hex").slice(0, 24),
     name: extensionName(row.path, row.metadata),
     scope: row.metadata.scope === "project" ? "project" : "global",
   }));
+}
+
+// Apply native filters before any extension module is imported. Session overrides
+// use a separate in-memory storage, preserving both native scopes and /reload.
+function selectExtension(settings, input, row, enabled) {
+  const project = row.metadata.scope === "project";
+  const data = project ? settings.getProjectSettings() : settings.getGlobalSettings();
+  const base = project ? join(input.cwd, ".pi") : input.agentDir;
+  const pattern = row.path.startsWith("builtin:") ? row.path : row.metadata.origin === "package" ? relative(row.metadata.packageRoot || row.metadata.baseDir, row.path).replaceAll("\\", "/") : row.path;
+  const matches = p => row.metadata.origin === "package" ? target(p) === pattern : canonical(target(p), base) === canonical(pattern, base);
+  const entry = (enabled ? "+" : "-") + pattern;
+  if (row.metadata.origin === "package") {
+    const packages = structuredClone(data.packages || []);
+    const index = packages.findIndex(p => (typeof p === "string" ? p : p.source) === row.metadata.source);
+    if (index < 0) throw new Error("扩展包配置已变更，请刷新后重试");
+    const pkg = typeof packages[index] === "string" ? { source: packages[index] } : packages[index];
+    pkg.extensions = [...(pkg.extensions || []).filter(p => !matches(p)), entry]; packages[index] = pkg;
+    if (project) settings.setProjectPackages(packages); else settings.setPackages(packages);
+  } else {
+    const paths = (data.extensions || []).filter(p => !/^[!+-]/.test(p) || !matches(p));
+    if (row.metadata.source === "local" && !paths.some(p => !/^[!+-]/.test(p) && matches(p))) paths.push(pattern);
+    paths.push(entry);
+    if (project) settings.setProjectExtensionPaths(paths); else settings.setExtensionPaths(paths);
+  }
+}
+export async function sessionResourceSettings(Pi, input, native) {
+  const overrides = input.sessionExtensions;
+  if (input.agent?.safeMode || !overrides || typeof overrides !== "object" || Array.isArray(overrides) || !Object.values(overrides).some(value=>typeof value === "boolean")) return requiredResourceSettings(native);
+  const rows = await discover(Pi, input, native);
+  const selected = rows.filter(row=>!requiredBuiltins.has(row.path) && typeof overrides[row.path] === "boolean");
+  if(!selected.length) return requiredResourceSettings(native);
+  const data = {global:JSON.stringify(native.getGlobalSettings()), project:JSON.stringify(native.getProjectSettings())};
+  const storage = {withLock(scope, fn) { const next=fn(data[scope]); if(typeof next === "string") data[scope]=next; }};
+  const settings = Pi.SettingsManager.fromStorage(storage,{projectTrusted:true});
+  for(const row of selected) selectExtension(settings,input,row,overrides[row.path]);
+  await settings.flush(); checkErrors(settings);
+  const reload=settings.reload.bind(settings);
+  settings.reload=async()=>{
+    await native.reload(); checkErrors(native);
+    const rows=await discover(Pi,input,native);
+    data.global=JSON.stringify(native.getGlobalSettings());
+    data.project=JSON.stringify(native.getProjectSettings());
+    await reload();
+    for(const row of rows) if(!requiredBuiltins.has(row.path) && typeof overrides[row.path] === "boolean") selectExtension(settings,input,row,overrides[row.path]);
+    await settings.flush(); checkErrors(settings);
+  };
+  return requiredResourceSettings(settings);
+}
+export function extensionDocument(row) {
+  const info=extensionInfo(row);
+  const name=row.path.startsWith("builtin:") ? row.path.slice(8) : row.name;
+  const tools={codemode:["codemode"], "tool-search":["tool_search"], mcp:["MCP 服务器提供的工具"], chatbox:["submit_to_chatbox"], "pi-commands":["run_pi_command"], "umeko-control":["umeko_desktop"], "background-jobs":["background_job"], subagents:["subagent", "get_subagent_result", "steer_subagent"]};
+  const summary=`# ${name}
+
+${info.description || "本地 Pi 扩展。"}
+
+`;
+  if(row.path.startsWith("builtin:") && name !== "subagents") return {markdown:summary+"## 功能与工具\n\n"+(tools[name]||[]).map(t=>"- `"+t+"`").join("\n")+"\n\n扩展的启用设置在任务结束后应用。", truncated:false};
+  const root=row.path.startsWith("builtin:") ? join(runtimeRoot,"node_modules/@gotgenes/pi-subagents") : row.metadata?.packageRoot || row.metadata?.baseDir || dirname(row.path);
+  // A fixed allowlist, byte/line caps and no remote images: opening a detail page
+  // cannot read a giant document into the UI or make background network requests.
+  for(const file of ["README.md","readme.md","Readme.md","README.markdown"]) {
+    let fd;
+    try {
+      const path=join(root,file), stat=statSync(path); if(!stat.isFile()) continue; const size=stat.size;
+      fd=openSync(path,"r"); const buffer=Buffer.alloc(Math.min(size,48*1024));
+      const count=readSync(fd,buffer,0,buffer.length,0);
+      let md=buffer.subarray(0,count).toString("utf8");
+      const lines=md.split(/\r?\n/); let truncated=size>count || lines.length>1200 || lines.some(l=>l.length>2000);
+      md=lines.slice(0,1200).map(l=>l.slice(0,2000)).join("\n");
+      // HTML cannot execute in the text renderer. Strip image syntax/tags so
+      // package READMEs remain fully local even with tracking images.
+      md=md.replace(/!\[[^\]]*\]\([^)]*\)/g," ").replace(/<[^>]*>/g,"").replace(/^\s*\[[^\]]+\]:[^\n]+$/gm,"");
+      return {markdown:md,truncated};
+    } catch {} finally {if(fd!==undefined)closeSync(fd);}
+  }
+  return {markdown:summary+"该扩展未附带 README。可通过扩展主页或源代码了解更多。",truncated:false};
 }
 
 export async function manageResources(Pi, input) {
@@ -177,27 +270,36 @@ export async function manageResources(Pi, input) {
     if (input.agent?.safeMode) throw new Error("请先关闭恢复模式，再修改扩展配置");
     const row = rows.find(r => r.id === input.id);
     if (!row) throw new Error("扩展已变更，请刷新列表后重试");
-    const project = row.metadata.scope === "project";
-    const data = project ? settings.getProjectSettings() : settings.getGlobalSettings();
-    const base = project ? join(input.cwd, ".pi") : input.agentDir;
-    const pattern = row.path.startsWith("builtin:") ? row.path : row.metadata.origin === "package" ? relative(row.metadata.packageRoot || row.metadata.baseDir, row.path).replaceAll("\\", "/") : row.path;
-    const matches = p => row.metadata.origin === "package" ? target(p) === pattern : canonical(target(p), base) === canonical(pattern, base);
-    const entry = (input.enabled ? "+" : "-") + pattern;
-    if (row.metadata.origin === "package") {
-      const packages = structuredClone(data.packages || []);
-      const index = packages.findIndex(p => (typeof p === "string" ? p : p.source) === row.metadata.source);
-      if (index < 0) throw new Error("扩展包配置已变更，请刷新后重试");
-      const pkg = typeof packages[index] === "string" ? { source: packages[index] } : packages[index];
-      pkg.extensions = [...(pkg.extensions || []).filter(p => !matches(p)), entry]; packages[index] = pkg;
-      if (project) settings.setProjectPackages(packages); else settings.setPackages(packages);
-    } else {
-      const paths = (data.extensions || []).filter(p => !/^[!+-]/.test(p) || !matches(p));
-      if (row.metadata.source === "local" && !paths.some(p => !/^[!+-]/.test(p) && matches(p))) paths.push(pattern);
-      paths.push(entry);
-      if (project) settings.setProjectExtensionPaths(paths); else settings.setExtensionPaths(paths);
-    }
+    if (requiredBuiltins.has(row.path)) throw new Error("Umeko 基础能力固定启用，不能修改启用范围");
+    selectExtension(settings, input, row, input.enabled);
     await settings.flush(); checkErrors(settings);
     rows = await discover(Pi, input, settings);
+  }
+  if(input.action === "enable-global") {
+    if(input.agent?.safeMode) throw new Error("请先关闭恢复模式，再修改扩展配置");
+    const row=rows.find(r=>r.id===input.id);
+    if(!row) throw new Error("扩展已变更，请刷新列表后重试");
+    if (requiredBuiltins.has(row.path)) throw new Error("Umeko 基础能力固定启用，不能修改启用范围");
+    let globalRow={...row,metadata:{...row.metadata,scope:"user"}};
+    if(row.metadata.origin === "package" && row.metadata.scope === "project") {
+      const original=row.metadata.source;
+      const source=/^(npm:|git:|https?:|ssh:|git@)/.test(original) ? original : resolve(input.cwd,".pi",original);
+      const packages=structuredClone(settings.getGlobalSettings().packages || []);
+      if(!packages.some(p=>(typeof p === "string" ? p : p.source)===source))
+        packages.push({source,extensions:[],skills:[],prompts:[],themes:[]});
+      settings.setPackages(packages);
+      globalRow.metadata.source=source;
+    }
+    selectExtension(settings,input,globalRow,true);
+    // An explicit project filter takes precedence over the global default.
+    if(row.metadata.scope === "project") selectExtension(settings,input,row,true);
+    await settings.flush(); checkErrors(settings);
+    rows=await discover(Pi,input,settings);
+  }
+  if(input.action === "details") {
+    const row=rows.find(row=>row.id===input.id);
+    if(!row) throw new Error("扩展已变更，请刷新列表后重试");
+    return {details:{id:row.id,...extensionDocument(row)}};
   }
   const extensions = rows.map(({ metadata, ...row }) => ({ ...row, source: metadata.source, info:extensionInfo({...row,metadata}) }));
   if (input.action === "check-update") {

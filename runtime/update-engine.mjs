@@ -126,7 +126,7 @@ async function requestOnRoute(url, options, redirects = 0) {
   const parsed=new URL(url);
   if(parsed.protocol!=='https:' || parsed.username || parsed.password || redirects>6)throw Error('下载重定向无效');
   const address=options.proxy;
-  const ca = trustedCertificates ??= updateCertificates();
+  const ca = options.ca ?? (trustedCertificates ??= updateCertificates());
   const timeout = options.connectTimeout ?? 20000;
   let agent=false;
   if(address){
@@ -448,7 +448,7 @@ async function saveEntry(root, entry, stream, expanded) {
   let bytes = 0, crc = 0;
   const measure = new Transform({transform(chunk, _, cb) {
     bytes += chunk.length; expanded.value += chunk.length; crc = crc32(chunk, crc);
-    if (bytes > entry.size || expanded.value > MAX_EXPANDED) return cb(Error('更新包解压大小超过限制'));
+    if (bytes > entry.size || expanded.value > (expanded.limit ?? MAX_EXPANDED)) return cb(Error('更新包解压大小超过限制'));
     cb(null, chunk);
   }});
   if (entry.type === 'symlink') {
@@ -457,7 +457,7 @@ async function saveEntry(root, entry, stream, expanded) {
       let raw = '';
       for await (const chunk of stream) {
         bytes += chunk.length; expanded.value += chunk.length; crc = crc32(chunk,crc); raw += chunk;
-        if (bytes > entry.size || bytes > 4096 || expanded.value > MAX_EXPANDED) throw Error('更新包链接过长');
+        if (bytes > entry.size || bytes > 4096 || expanded.value > (expanded.limit ?? MAX_EXPANDED)) throw Error('更新包链接过长');
       }
       target = raw;
     } else if (entry.size !== 0) throw Error('更新包链接条目无效');
@@ -470,15 +470,15 @@ async function saveEntry(root, entry, stream, expanded) {
   }
 }
 
-async function extractZip(archive, root) {
-  const file = await fsp.open(archive); const expanded = {value:0};
+async function extractZip(archive, root, limits = {}) {
+  const file = await fsp.open(archive); const expanded = {value:0, limit:limits.maxBytes};
   try {
     const size = (await file.stat()).size, tail = await readAt(file, Math.max(0,size-65557), Math.min(size,65557));
     let end = -1;
     for (let p = tail.length - 22; p >= 0; p--) if (tail.readUInt32LE(p) === 0x06054b50 && p + 22 + tail.readUInt16LE(p+20) === tail.length) {end = p; break;}
     if (end < 0 || tail.readUInt16LE(end+4) || tail.readUInt16LE(end+6)) throw Error('ZIP 格式无效');
     const count = tail.readUInt16LE(end+10); let offset = tail.readUInt32LE(end+16);
-    if (count === 65535 || offset === 0xffffffff) throw Error('不支持 ZIP64 更新包');
+    if (count > (limits.maxEntries ?? 65534) || count === 65535 || offset === 0xffffffff) throw Error('不支持 ZIP64 更新包');
     for (let i = 0; i < count; i++) {
       const h = await readAt(file,offset,46);
       if (h.readUInt32LE(0) !== 0x02014b50 || h.readUInt16LE(8) & 1) throw Error('ZIP 目录无效或已加密');
@@ -498,14 +498,25 @@ async function extractZip(archive, root) {
   } finally {await file.close();}
 }
 
+export async function extractPackageArchive(archive, root) {
+  const info=await fsp.stat(archive);
+  if(!info.isFile() || info.size>256*1024**2) throw Error("插件归档超过 256 MiB 限制");
+  await fsp.mkdir(root,{recursive:true});
+  const limits={maxBytes:1024**3,maxEntries:20000};
+  if(/\.zip$/i.test(archive)) await extractZip(archive,root,limits);
+  else if(/\.(tgz|tar\.gz)$/i.test(archive)) await extractTar(archive,root,limits);
+  else throw Error("仅支持 ZIP、TGZ 或 TAR.GZ 插件包");
+}
+
 function tarText(buffer) {return buffer.toString('utf8').split('\0')[0];}
 function tarNumber(buffer) {const n = parseInt(tarText(buffer).trim() || '0',8); if (!Number.isSafeInteger(n) || n < 0) throw Error('TAR 数值无效'); return n;}
-async function extractTar(archive, root) {
+async function extractTar(archive, root, limits = {}) {
   const tar = path.join(root, '.archive.tar'); let inflated = 0;
-  await pipeline(fs.createReadStream(archive), createGunzip(), new Transform({transform(c,_,cb) {inflated += c.length; cb(inflated > MAX_EXPANDED ? Error('更新包过大') : null,c);}}),fs.createWriteStream(tar,{flags:'wx',mode:0o600}));
-  const file = await fsp.open(tar); let offset = 0, pax = {}, global = {}, longName, longLink; const expanded = {value:0};
+  await pipeline(fs.createReadStream(archive), createGunzip(), new Transform({transform(c,_,cb) {inflated += c.length; cb(inflated > (limits.maxBytes ?? MAX_EXPANDED) ? Error('更新包过大') : null,c);}}),fs.createWriteStream(tar,{flags:'wx',mode:0o600}));
+  const file = await fsp.open(tar); let offset = 0, pax = {}, global = {}, longName, longLink; const expanded = {value:0, limit:limits.maxBytes}; let entries=0;
   try {
     while (offset + 512 <= inflated) {
+      if (++entries > (limits.maxEntries ?? 1000000)) throw Error("归档条目过多");
       const h = await readAt(file,offset,512); if (h.every(b => b === 0)) break;
       const sum = h.reduce((a,b,i) => a + (i >= 148 && i < 156 ? 32 : b),0);
       if (sum !== tarNumber(h.subarray(148,156))) throw Error('TAR 头校验失败');

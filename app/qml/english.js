@@ -1,5 +1,7 @@
 .pragma library
 var strings = {
+  "Widgets": "Widgets",
+  "请先在插件管理 Widget 中启用 builtin:mcp，再配置 MCP 服务器。已有配置会保留。": "Enable builtin:mcp in the Pi manager Widget before configuring MCP servers. Existing configuration is preserved.",
   "工具执行权限": "Tool permissions",
   "每次询问": "Ask every time",
   "全自动": "Fully automatic",

@@ -79,3 +79,111 @@ test("real npm update probe uses the configured registry without installing the 
     rmSync(root,{recursive:true,force:true});
   }
 });
+
+test("chat filters survive reload without changing native settings or another chat",async()=>{
+  const {prepareNativeSettings,sessionResourceSettings}=await import("../runtime/resources.mjs");
+  const root=mkdtempSync(join(tmpdir(),"umeko-chat-filters-"));
+  try {
+    const agent=join(root,"agent"),cwd=join(root,"project"),pkg=join(root,"package");
+    for(const dir of [agent,join(cwd,".pi"),pkg])mkdirSync(dir,{recursive:true});
+    writeFileSync(join(pkg,"package.json"),JSON.stringify({name:"fixture",type:"module",pi:{extensions:["index.js"]}}));
+    const extension=join(pkg,"index.js"),marker=join(root,"executed");
+    writeFileSync(extension,`import {writeFileSync} from 'node:fs'; writeFileSync(${JSON.stringify(marker)},'loaded'); export default ()=>{};`);
+    const global={packages:[pkg],extensions:["-builtin:mcp"]},project={extensions:["-builtin:codemode"]};
+    writeFileSync(join(agent,"settings.json"),JSON.stringify(global));writeFileSync(join(cwd,".pi/settings.json"),JSON.stringify(project));
+    const input={cwd,agentDir:agent,agent:{}};
+    const native=await prepareNativeSettings(Pi,input);
+    const disabled=await sessionResourceSettings(Pi,{...input,sessionExtensions:{[extension]:false,"builtin:mcp":true,"builtin:codemode":true}},native);
+    const enabledRows=async settings=>(await new Pi.DefaultPackageManager({cwd,agentDir:agent,settingsManager:settings,builtinExtensions:builtins}).resolve(async()=>"skip")).extensions;
+    for(let pass=0;pass<2;pass++) {
+      const rows=await enabledRows(disabled);
+      assert.equal(rows.find(r=>r.path===extension).enabled,false);
+      assert.equal(rows.find(r=>r.path==='builtin:mcp').enabled,true);
+      assert.equal(rows.find(r=>r.path==='builtin:codemode').enabled,true);
+      await disabled.reload();
+    }
+    global.theme="new-external-theme";
+    writeFileSync(join(agent,"settings.json"),JSON.stringify(global));
+    await disabled.reload();
+    assert.equal(disabled.getGlobalSettings().theme,"new-external-theme");
+    assert.equal((await enabledRows(disabled)).find(r=>r.path===extension).enabled,false);
+    const loader=new Pi.DefaultResourceLoader({cwd,agentDir:agent,settingsManager:disabled});
+    await loader.reload();
+    assert.equal((await import('node:fs')).existsSync(marker),false,"disabled modules must not even be imported");
+    const other=await enabledRows(await prepareNativeSettings(Pi,input));
+    assert.equal(other.find(r=>r.path===extension).enabled,true);
+    assert.equal(other.find(r=>r.path==='builtin:mcp').enabled,false);
+    assert.deepEqual(JSON.parse((await import('node:fs')).readFileSync(join(agent,"settings.json"),'utf8')),global);
+    assert.deepEqual(JSON.parse((await import('node:fs')).readFileSync(join(cwd,".pi/settings.json"),'utf8')),project);
+  } finally {rmSync(root,{recursive:true,force:true});}
+});
+
+test("global enable promotes a project-only package and keeps relative sources correct",async()=>{
+  const root=mkdtempSync(join(tmpdir(),"umeko-global-filter-"));
+  try {
+    const agent=join(root,"agent"),cwd=join(root,"project"),pkg=join(cwd,".pi/package");
+    for(const dir of [agent,pkg])mkdirSync(dir,{recursive:true});
+    writeFileSync(join(pkg,"package.json"),JSON.stringify({name:"fixture",pi:{extensions:["index.js"]}}));writeFileSync(join(pkg,"index.js"),"throw Error('no metadata imports')");
+    writeFileSync(join(cwd,".pi/settings.json"),JSON.stringify({packages:[{source:"./package",extensions:["-index.js"]}]}));
+    const input={cwd,agentDir:agent,agent:{}};
+    const row=(await manageResources(Pi,input)).extensions.find(r=>r.name==='fixture');assert.equal(row.enabled,false);
+    await manageResources(Pi,{...input,action:'enable-global',id:row.id});
+    const other=join(root,"other");mkdirSync(other);
+    assert.equal((await manageResources(Pi,{...input,cwd:other})).extensions.find(r=>r.name==='fixture').enabled,true);
+    assert.equal((await manageResources(Pi,input)).extensions.find(r=>r.name==='fixture').enabled,true);
+  } finally {rmSync(root,{recursive:true,force:true});}
+});
+
+test("detail documents are on-demand, bounded and do not request remote images",async()=>{
+  const root=mkdtempSync(join(tmpdir(),"umeko-readme-"));
+  try {
+    const agent=join(root,"agent"),cwd=join(root,"project"),pkg=join(root,"package");
+    for(const dir of [agent,cwd,pkg])mkdirSync(dir,{recursive:true});
+    writeFileSync(join(pkg,"package.json"),JSON.stringify({name:"readme-fixture",pi:{extensions:["index.js"]}}));writeFileSync(join(pkg,"index.js"),"throw Error('README must not import code')");
+    writeFileSync(join(pkg,"README.md"),'# Local README\n\n![tracking](https://example.com/track)\n\n'+"details\n".repeat(200000));
+    writeFileSync(join(agent,"settings.json"),JSON.stringify({packages:[pkg]}));
+    const input={cwd,agentDir:agent,agent:{}};
+    const rows=(await manageResources(Pi,input)).extensions;
+    assert.equal(rows.some(r=>'markdown' in r || 'markdown' in r.info),false);
+    const details=(await manageResources(Pi,{...input,action:'details',id:rows.find(r=>r.name==='readme-fixture').id})).details;
+    assert.equal(details.truncated,true);assert.ok(details.markdown.length<=48*1024);assert.match(details.markdown,/# Local README/);assert.doesNotMatch(details.markdown,/https:\/\/example.com\/track/);
+    assert.ok(rows.every(r=>/^[a-z-]+$/.test(r.info.icon)));
+  } finally {rmSync(root,{recursive:true,force:true});}
+});
+
+
+test("required desktop abilities ignore old disable filters and reject configuration changes",async()=>{
+  const {prepareNativeSettings,sessionResourceSettings,requiredBuiltins}=await import("../runtime/resources.mjs");
+  const {readFileSync}=await import("node:fs");
+  const root=mkdtempSync(join(tmpdir(),"umeko-required-"));
+  try {
+    const agent=join(root,"agent"),cwd=join(root,"project");
+    mkdirSync(agent,{recursive:true});mkdirSync(join(cwd,".pi"),{recursive:true});
+    const original={extensions:["!builtin:*","-builtin:chatbox"],theme:"dark"};
+    writeFileSync(join(agent,"settings.json"),JSON.stringify(original));
+    writeFileSync(join(cwd,".pi/settings.json"),JSON.stringify({extensions:["!builtin:*","-builtin:chatbox"]}));
+    const input={cwd,agentDir:agent,agent:{}};
+    const native=await prepareNativeSettings(Pi,input);
+    const settings=await sessionResourceSettings(Pi,{...input,sessionExtensions:Object.fromEntries([...requiredBuiltins].map(path=>[path,false]))},native);
+    const rows=async()=>(await new Pi.DefaultPackageManager({cwd,agentDir:agent,settingsManager:settings,builtinExtensions:builtins}).resolve(async()=>"skip")).extensions;
+    for(let pass=0;pass<2;pass++) {
+      const result=await rows();
+      for(const path of requiredBuiltins) assert.equal(result.find(row=>row.path===path).enabled,true,path);
+      assert.equal(result.find(row=>row.path==='builtin:mcp').enabled,false);
+      assert.equal(result.find(row=>row.path==='builtin:subagents').enabled,false);
+      await settings.reload();
+    }
+    // Ordinary native setters retain persistence through the policy view.
+    settings.setTheme('light');await settings.flush();
+    assert.equal(JSON.parse(readFileSync(join(agent,'settings.json'),'utf8')).theme,'light');
+    assert.deepEqual(JSON.parse(readFileSync(join(agent,'settings.json'),'utf8')).extensions,original.extensions);
+    const scan=(await manageResources(Pi,input)).extensions;
+    for(const path of requiredBuiltins) {
+      const row=scan.find(row=>row.path===path);assert.equal(row.info.required,true);assert.equal(row.enabled,true);
+      await assert.rejects(manageResources(Pi,{...input,action:'toggle',id:row.id,enabled:false}),/基础能力固定启用/);
+      await assert.rejects(manageResources(Pi,{...input,action:'enable-global',id:row.id}),/基础能力固定启用/);
+    }
+    assert.equal(scan.find(row=>row.path==='builtin:mcp').info.required,false);
+    assert.equal(scan.find(row=>row.path==='builtin:subagents').info.required,false);
+  } finally {rmSync(root,{recursive:true,force:true});}
+});

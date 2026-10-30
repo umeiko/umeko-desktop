@@ -194,13 +194,22 @@ class UmekoControl(QObject):
             self._completed(identifier, ('installation', 'update'), {'ok': value.get('state') != 'error', 'value': value, **({'error': value.get('message', 'Update installation failed')} if value.get('state') == 'error' else {})})
 
     def execute(self, request, caller=None, queue=True, _job_id=None):
+        return self._dispatch(request, caller, queue, _job_id)
+
+    def _confirmed_widget_install(self, arguments, caller):
+        # Only the in-process Widget host calls this after native confirmation.
+        # No JSON field, operation name or caller-supplied flag enables it.
+        return self._dispatch({'operation':'extensions.install','arguments':arguments},
+                              caller, False, _widget_install=True)
+
+    def _dispatch(self, request, caller=None, queue=True, _job_id=None, *, _widget_install=False):
         try:
             if not isinstance(request, dict) or set(request) - {'operation', 'arguments'}: raise ValueError('Expected operation and arguments')
             operation = request.get('operation')
             args = request.get('arguments', {})
             if not isinstance(operation, str) or not isinstance(args, dict): raise ValueError('Invalid desktop request')
             if len(json.dumps(args)) > 2 * 1024 * 1024: raise ValueError('Desktop arguments exceed 2 MiB')
-            result = self._execute(operation, args, caller, queue, _job_id)
+            result = self._execute(operation, args, caller, queue, _job_id, _widget_install=_widget_install)
             return {'ok': True, 'operation': operation, **result}
         except Exception as error:
             result = {'ok': False, 'status': 'failed', 'operation': request.get('operation', '') if isinstance(request, dict) else '', 'error': str(error)}
@@ -209,12 +218,14 @@ class UmekoControl(QObject):
                 result['jobId'] = _job_id
             return result
 
-    def _execute(self, operation, args, caller, queue, job_id=None):
+    def _execute(self, operation, args, caller, queue, job_id=None, *, _widget_install=False):
         b = self.b
         if operation.startswith('agent_bus.'):
             return b.desktopPlugins.global_agents.execute(operation,args,caller)
         if caller and getattr(caller,'global_agent','') and operation not in ('help','models.list'):
             raise ValueError('全局协调子智能体只能使用 agent_bus.* 和 models.list；其他任务请委派给已开启桥的工作区代理')
+        if operation == 'extensions.install' and not _widget_install:
+            raise ValueError('Agent package installation must use run_pi_command and its native installation permission; confirmed Widget installs use the private host entry')
         if operation == 'help':
             docs = b.store.directory/'agent-docs'
             if not (docs/'README.md').is_file(): docs = b._release/'umeko-docs'
@@ -346,6 +357,7 @@ class UmekoControl(QObject):
             if not any(item['id'] == args['id'] for item in items): raise ValueError('Pin target does not exist')
         if operation == 'projects.add' and (not values[0] or any(not isinstance(path, str) or not Path(path).expanduser().is_dir() for path in values[0])): raise ValueError('paths must contain existing directories')
         if operation == 'workspace.set' and not Path(args['path']).expanduser().is_dir(): raise ValueError('Workspace directory does not exist')
+        if operation == 'extensions.activation' and args['mode'] not in ('global','session','disabled'): raise ValueError('Invalid extension activation mode')
         if operation == 'agent.save':
             patch = values[0]
             allowed = {'maxTokens', 'instructions', 'autoCompaction', 'agentDir', 'skillPaths', 'extensionPaths'}
