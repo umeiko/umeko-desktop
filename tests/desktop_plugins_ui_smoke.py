@@ -53,7 +53,9 @@ try:
     wait(lambda:find('pluginManagerArtwork').property('progress')==1 and find('pluginManagerArtwork').property('implicitWidth')>0,'Plugin illustration did not load')
     window.grabWindow().save(str(out/'agent-plugin-entry.png'))
     click('openDesktopPluginsButton')
-    assert find('desktopPluginsPage').isVisible();assert find('desktopPluginInstalledList').property('count')==3
+    assert find('desktopPluginsPage').isVisible()
+    assert {row['id'] for row in backend.desktopPlugins.rows}=={'file-tree','git-viewer','desktop-pet','terminal'}
+    assert find('desktopPluginInstalledList').property('count')==len(backend.desktopPlugins.rows)
     search=find('desktopPluginSearch');search.setProperty('text','Git');QTest.qWait(50);assert find('desktopPluginInstalledList').property('count')==1
     search.setProperty('text','');QTest.qWait(50);window.grabWindow().save(str(out/'manager.png'))
     manager=backend.desktopPlugins

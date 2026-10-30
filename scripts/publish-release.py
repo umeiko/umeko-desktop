@@ -39,6 +39,7 @@ for metadata in incoming.rglob('build.json'):
     target=report['platform'];assert target in platforms and target not in seen
     assert report['build']['commit']==commit and report['build']['version']==version
     assert report['gui']=='passed' and report['pi']=='passed'
+    if tuple(map(int,version.split('.'))) >= (0,6,1):assert report.get('terminal')=='passed'
     assert report['build']['node']['version']=='22.23.3'
     seen.add(target)
     suffix='.tar.gz' if target=='linux-x64' else '.zip'

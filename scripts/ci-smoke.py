@@ -114,6 +114,8 @@ def main():
     if sys.platform == 'win32': verify_windows_preview(executable, environment, report_dir)
     if not screenshot.is_file() or screenshot.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
         raise RuntimeError("Frozen GUI did not render a screenshot")
+    from terminal_smoke import verify_terminal_worker
+    verify_terminal_worker([str(executable),'--umeko-plugin-worker'],resources,environment,report_dir)
     metadata = json.loads((resources / "build-info.json").read_text(encoding="utf-8"))
     if metadata["version"] != VERSION or metadata["commit"] != git_output(ROOT, "rev-parse", "HEAD"):
         raise RuntimeError("Frozen build provenance is missing")
@@ -142,7 +144,7 @@ def main():
         raise RuntimeError("Packaged Pi self-test failed: " + pi.stdout[-1500:] + pi.stderr[-1500:])
     if sys.platform == "darwin":
         subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(output / "Umeko.app")], check=True)
-    (report_dir / "result.json").write_text(json.dumps({"gui": "passed", "pi": "passed", "build": metadata}, indent=2), encoding="utf-8")
+    (report_dir / "result.json").write_text(json.dumps({"gui": "passed", "pi": "passed", "terminal":"passed", "build": metadata}, indent=2), encoding="utf-8")
     print("Packaged GUI rendered; bundled Pi self-test and build provenance verified")
 
 

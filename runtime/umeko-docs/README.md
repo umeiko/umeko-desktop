@@ -22,3 +22,5 @@ Agent 入口只有一个：`umeko_desktop`。第一次使用先调用 `{"operati
 配置、插件和聊天属于当前用户配置目录，升级应用不会把它们覆盖。`settings.get` 返回当前实例的路径和配置，不应猜测另一个安装副本或另一个系统用户的数据位置。
 
 与 Widget 交互时先 `widgets.list`（`activeOnly:true`）发现已激活和已打开的插件，再 `widgets.docs` 读取目标插件的简短介绍、完整文档与公开方法。按文档调用 `widgets.call`，用 `widgets.result` 读取结果及期间更新。Widget 可以主动推送消息，无需轮询；`widgets.messages` 提供可按游标查询的历史记录。
+
+用户附带 `terminal-ID-...` 终端时，读取 Widget `terminal` 的文档并操作已有终端；这个终端 ID 是方法参数，不是插件包 ID。Agent 输入的命令和输出会出现在用户的同一个终端界面。

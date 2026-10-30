@@ -10,6 +10,10 @@ The file-tree and version-management plugins include unmodified Microsoft Codico
 
 The plugin-management illustration is the unmodified Puzzle Piece 3D asset from Microsoft Fluent Emoji (MIT, https://github.com/microsoft/fluentui-emoji). Its pinned source and SHA-256 are in `app/icons/fluent/sources.json`; the complete license is in `licenses/Fluent-Emoji-MIT.txt`.
 
+## Terminal widget
+
+The terminal widget also uses the unmodified Microsoft Codicons font noted above. VT parsing uses pyte 0.8.2 (LGPL-3.0, https://github.com/selectel/pyte), character widths use wcwidth 0.2.13 (MIT, https://github.com/jquast/wcwidth), and macOS/Linux PTYs use ptyprocess 0.7.0 (ISC, https://github.com/pexpect/ptyprocess). Their unmodified, editable Python sources, copyright notices and license texts ship under `umeko-plugins/terminal/vendor/`. Download URLs, versions and SHA-256 hashes are recorded in `vendor/sources.json`; `scripts/prepare-terminal-vendor.py` reproduces those sources. These dependencies load from that external plugin directory rather than being embedded in the executable.
+
 ## Bundled search tools
 
 Release bundles include fd 10.3.0 (MIT or Apache-2.0, https://github.com/sharkdp/fd/tree/v10.3.0) and ripgrep 14.1.1 (MIT or Unlicense, https://github.com/BurntSushi/ripgrep/tree/14.1.1) so Pi's find/grep tools work without a first-run download. Their upstream license files accompany the binaries under `runtime/releases/coding-1.3.0/bin`. Archive SHA-256 values are pinned in `scripts/search-tools.json`.

@@ -1,0 +1,23 @@
+[
+  {"id":"terminal","label":"终端","glyph":"terminal"},
+  {"id":"pet","label":"桌宠","glyph":"pet"},
+  {"id":"folder","label":"文件","glyph":"folder"},
+  {"id":"branch","label":"版本管理","glyph":"branch"},
+  {"id":"code","label":"代码","glyph":"code"},
+  {"id":"globe","label":"网页","glyph":"globe"},
+  {"id":"search","label":"搜索","glyph":"search"},
+  {"id":"chat","label":"聊天","glyph":"chat"},
+  {"id":"image","label":"图片","glyph":"image"},
+  {"id":"file","label":"文档","glyph":"file"},
+  {"id":"server","label":"服务","glyph":"server"},
+  {"id":"cpu","label":"计算","glyph":"cpu"},
+  {"id":"layers","label":"资源","glyph":"layers"},
+  {"id":"grid","label":"面板","glyph":"grid"},
+  {"id":"bulb","label":"灵感","glyph":"bulb"},
+  {"id":"sliders","label":"控制","glyph":"sliders"},
+  {"id":"archive","label":"归档","glyph":"archive"},
+  {"id":"download","label":"下载","glyph":"download"},
+  {"id":"lock","label":"安全","glyph":"lock"},
+  {"id":"hourglass","label":"任务","glyph":"hourglass"},
+  {"id":"puzzle","label":"插件","glyph":"puzzle"}
+]
