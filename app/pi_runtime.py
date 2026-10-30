@@ -132,9 +132,7 @@ def ensure_adapter_dependencies(release: Path, bridge_source: Path):
         identity = (data["name"], data["version"])
         if identity in ancestors:
             return
-        source_path, target_path = source.resolve(), target.resolve()
-        if os.name == "nt":
-            source_path, target_path = "\\\\?\\" + str(source_path), "\\\\?\\" + str(target_path)
+        source_path, target_path = filesystem_path(source), filesystem_path(target)
         shutil.copytree(source_path, target_path, dirs_exist_ok=True)
         for name in data.get("dependencies", {}):
             copy_package(dependency(source, name), target / "node_modules" / name, (*ancestors, identity))

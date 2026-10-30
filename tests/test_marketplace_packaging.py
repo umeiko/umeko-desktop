@@ -95,7 +95,8 @@ class MarketplacePackagingTests(unittest.TestCase):
                      patch.object(pi_runtime.subprocess, "run", side_effect=self_test) as run, \
                      patch.dict(os.environ, {"NODE_OPTIONS": "fixture-option", "NODE_PATH": "fixture-path"}):
                     pi_runtime.verify_runtime(release, bridge_source)
-                dependencies.assert_called_once_with(release, bridge_source)
+                dependencies.assert_called_once_with(pi_runtime.filesystem_path(release),
+                                                     pi_runtime.filesystem_path(bridge_source))
                 run.assert_called_once()
 
 
