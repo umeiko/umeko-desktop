@@ -13,6 +13,7 @@ FocusScope {
         readonly property var config: root.page.config || ({})
         readonly property var colors: ({bg:Theme.bg,surface:Theme.surface,ink:Theme.ink,muted:Theme.muted,line:Theme.line,hover:Theme.hover,accent:Theme.accent,accentBg:Theme.accentBg,danger:Theme.danger,dark:Theme.dark})
         readonly property real scale: Theme.fontScale
+        readonly property string language: I18n.language
         readonly property string revealPath: root.page.selection || ""
         readonly property bool active: root.live
         signal response(string request, var value)

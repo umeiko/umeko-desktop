@@ -11,7 +11,6 @@ Item {
     signal manageRequested()
     implicitWidth: Theme.control(66)
     implicitHeight: Theme.control(30)
-    function iconFor(plugin) { return plugin.id === "file-tree" ? "folder" : plugin.id === "git-viewer" ? "branch" : "puzzle" }
     function openRecent() {
         menu.close()
         if (recentOpen) manager.closePage()
@@ -34,7 +33,7 @@ Item {
         Accessible.name: I18n.t(root.recentOpen ? "收起插件" : "打开最近使用的插件") + (root.recent.name ? " · " + root.recent.name : "")
         HoverHandler { cursorShape: Qt.PointingHandCursor }
         background: Rectangle { radius: 5; color: recentButton.down ? Theme.accentBg : recentButton.hovered ? Theme.hover : "transparent" }
-        contentItem: Item { Glyph { name: root.recent.id ? root.iconFor(root.recent) : "puzzle"; color: root.manager.page.id ? Theme.accent : Theme.muted; anchors.centerIn: parent; width: Theme.icon(17); height: Theme.icon(17) } }
+        contentItem: Item { WidgetIcon { plugin:root.recent; color: root.manager.page.id ? Theme.accent : Theme.muted; anchors.centerIn: parent; width: Theme.icon(17); height: Theme.icon(17) } }
         HoverTip { active: recentButton.hovered && !recentButton.down; text: root.recent.name ? I18n.t(root.recentOpen ? "收起插件" : "打开最近使用的插件") + " · " + root.recent.name : I18n.t("插件管理") }
         onClicked: root.openRecent()
     }
@@ -78,7 +77,7 @@ Item {
                         background: Rectangle { radius: 6; color: root.manager.page.id === entry.modelData.id ? Theme.accentBg : entry.hovered ? Theme.hover : "transparent" }
                         contentItem: RowLayout {
                             spacing: 9
-                            Glyph { name: root.iconFor(entry.modelData); width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }
+                            WidgetIcon { plugin:entry.modelData; width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }
                             Text { text: entry.modelData.name; textFormat: Text.PlainText; font.pixelSize: Theme.font(12); color: Theme.ink; elide: Text.ElideRight; Layout.fillWidth: true }
                             Glyph { name: "check"; visible: root.manager.page.id === entry.modelData.id; width: Theme.icon(14); height: Theme.icon(14); color: Theme.accent }
                         }

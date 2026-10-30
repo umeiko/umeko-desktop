@@ -74,6 +74,16 @@ class Context:
         target=self._target_session(session);path=self.resolve_workspace(relative,session=target)
         self.emit({'event':'session.attach','arguments':{'path':str(path),'session':target}})
 
+    def append_to_chat(self, text, *, session=None):
+        """Append user-visible context to the composer without sending a prompt."""
+        self.require('session.write')
+        if not isinstance(text,str) or not text.strip() or len(text)>16000:raise PluginError('聊天上下文文本无效或过长')
+        self.emit({'event':'session.draft','arguments':{'text':text,'session':self._target_session(session)}})
+
+    def open_page(self):
+        self.require('session.write')
+        self.emit({'event':'page.open','arguments':{'session':self.capture_session()}})
+
     def preview_file(self, relative):
         path=self.resolve_workspace(relative)
         self.emit({'event':'preview.file','arguments':{'path':str(path),'session':self.capture_session()}})
@@ -116,11 +126,13 @@ class Context:
         self.emit({'event':'agent.notify','arguments':value})
         return identifier
 
-    def publish(self, topic, data):
+    def publish(self, topic, data, *, session=None):
         """Publish structured view data to the currently open Widget page."""
         if not isinstance(topic,str) or not topic or len(topic)>80 or not isinstance(data,dict):raise PluginError('Widget 事件需要名称和 JSON 对象')
         if len(json.dumps(data,ensure_ascii=False,allow_nan=False).encode('utf-8'))>65536:raise PluginError('Widget 事件超过 64 KiB')
-        self.emit({'event':'widget.event','arguments':{'topic':topic,'data':data}})
+        arguments={'topic':topic,'data':data}
+        if session is not None:arguments['session']=self._target_session(session)
+        self.emit({'event':'widget.event','arguments':arguments})
 
     def run_executable(self, name, args=(), *, timeout=12, limit=512*1024, session=None):
         self.require('process.execute')

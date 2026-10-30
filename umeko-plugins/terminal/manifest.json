@@ -1,0 +1,13 @@
+{
+  "kind":"umeko-plugin","apiVersion":1,"id":"terminal","name":"终端","version":"1.0.0","icon":"terminal",
+  "summary":"用户与 Agent 共享可见终端","description":"集成真实伪终端。支持多终端、拆分、重命名与聊天关联，用户和 Agent 在同一会话中操作。",
+  "author":"Umeko","lifecycle":"application","entrypoint":"scripts/plugin.py:create_plugin","page":"qml/Main.qml",
+  "permissions":["workspace.read","session.write","process.execute"],"readme":"README.md","config":"config.json","configSchema":"config.schema.json",
+  "agent":{"document":"AGENT.md","methods":{
+    "list":{"description":"查询用户已附加到本聊天的终端","parameters":{"type":"object","properties":{},"additionalProperties":false}},
+    "read":{"description":"读取已附加终端的可见内容和滚动历史","parameters":{"type":"object","properties":{"terminalId":{"type":"string","maxLength":80},"lines":{"type":"integer","minimum":1,"maximum":1000},"afterSequence":{"type":"integer","minimum":-1}},"required":["terminalId"],"additionalProperties":false}},
+    "run":{"description":"在用户可见的同一终端中输入命令并回车；返回提交状态，需读取输出确认结果","parameters":{"type":"object","properties":{"terminalId":{"type":"string","maxLength":80},"command":{"type":"string","maxLength":16000}},"required":["terminalId","command"],"additionalProperties":false}},
+    "write":{"description":"向已附加终端发送原始输入，用于交互提示和按键","parameters":{"type":"object","properties":{"terminalId":{"type":"string","maxLength":80},"text":{"type":"string","maxLength":16000}},"required":["terminalId","text"],"additionalProperties":false}},
+    "interrupt":{"description":"向已附加终端发送 Ctrl+C，中断前台命令","parameters":{"type":"object","properties":{"terminalId":{"type":"string","maxLength":80}},"required":["terminalId"],"additionalProperties":false}}
+  }}
+}

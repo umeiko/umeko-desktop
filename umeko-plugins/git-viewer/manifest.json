@@ -1,5 +1,5 @@
 {
-  "kind":"umeko-plugin","apiVersion":1,"id":"git-viewer","name":"版本管理","version":"1.0.0",
+  "kind":"umeko-plugin","apiVersion":1,"id":"git-viewer","name":"版本管理","version":"1.0.0","icon":"branch",
   "summary":"查看 Git 状态、历史与差异",
   "description":"采用 VS Code 源代码管理布局，浏览更改、暂存区、文件差异与真实提交图。支持初始化仓库、暂存、取消暂存和提交。",
   "author":"Umeko","entrypoint":"scripts/plugin.py:create_plugin","page":"qml/Main.qml",

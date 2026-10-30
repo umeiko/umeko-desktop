@@ -6,6 +6,7 @@ from . import PluginError
 MAX_BYTES=128*1024*1024
 MAX_FILES=2048
 PERMISSIONS={'workspace.read','workspace.write','session.read','session.write','process.execute','git.read','git.write'}
+BUILTIN_ICONS={row['id'] for row in json.loads(Path(__file__).with_name('icons.json').read_text(encoding='utf-8'))}
 
 def relative(value):
     if not isinstance(value,str) or not value or '\0' in value or '\\' in value or ':' in value or value.startswith('/'):
@@ -65,9 +66,16 @@ def validate(folder):
     for key in ('name','description'):
         if not isinstance(m.get(key,''),str) or len(m.get(key,''))>8000:raise PluginError('插件文案无效')
     if not m.get('name','').strip():raise PluginError('插件名称不能为空')
+    icon=m.get('icon','puzzle')
+    if isinstance(icon,str):
+        if icon not in BUILTIN_ICONS:raise PluginError('未知内置 Widget 图标：'+icon+'；可选名称见 SDK 的 icons.json')
+    elif isinstance(icon,dict) and set(icon)=={'path'}:
+        image=file(icon['path'])
+        if image.suffix.lower() not in ('.svg','.png','.webp','.jpg','.jpeg') or image.stat().st_size>512*1024:raise PluginError('Widget 自定义图标须为 SVG/PNG/WebP/JPEG，最多 512 KiB')
+    else:raise PluginError('icon 应为内置图标名称，或 {"path":"assets/icon.svg"}')
+    m['icon']=icon
     lifecycle=m.get('lifecycle','session')
     if lifecycle not in ('session','application'):raise PluginError('lifecycle 必须为 session 或 application')
-    if lifecycle=='application' and m.get('page'):raise PluginError('应用级 Widget 是后台服务，不能声明 page')
     m['lifecycle']=lifecycle
     if not isinstance(m.get('summary'),str) or not m['summary'].strip() or len(m['summary'])>20 or '\n' in m['summary'] or '\r' in m['summary']:
         raise PluginError('Widget 插件必须提供 20 字以内的单行 summary 简介')

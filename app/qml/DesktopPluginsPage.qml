@@ -21,6 +21,7 @@ Item {
         RowLayout {
             Layout.fillWidth:true;spacing:12
             InputField {id:search;objectName:"desktopPluginSearch";Layout.fillWidth:true;placeholderText:I18n.t("搜索已安装插件…")}
+            ActionButton {objectName:"desktopPluginIconCatalogButton";text:I18n.t("内置图标");quiet:true;onClicked:iconCatalog.open()}
             ActionButton {objectName:"exportDesktopPluginSdkButton";text:I18n.t("导出 SDK 和示例");quiet:true;onClicked:sdkPicker.open()}
             ActionButton {objectName:"importDesktopPluginButton";text:I18n.t("导入 ZIP");glyph:"plus";enabled:!root.manager.busy;onClicked:picker.open()}
         }
@@ -38,8 +39,9 @@ Item {
                             required property var modelData
                             width:list.width;height:78;radius:8
                             color:root.selectedId===modelData.id?Theme.accentBg:rowMouse.containsMouse?Theme.hover:"transparent"
+                            WidgetIcon {x:12;y:12;plugin:modelData;width:Theme.icon(18);height:Theme.icon(18)}
                             Column {
-                                anchors.fill:parent;anchors.margins:12;spacing:7
+                                anchors.fill:parent;anchors.margins:12;anchors.leftMargin:22+Theme.icon(18);spacing:7
                                 Text {width:parent.width;text:modelData.name;textFormat:Text.PlainText;color:Theme.ink;font.pixelSize:Theme.font(12);font.weight:Font.DemiBold;elide:Text.ElideRight}
                                 Text {text:(modelData.builtin?I18n.t("官方内置"):"v"+modelData.version)+" · "+(modelData.enabled?I18n.t("已启用"):I18n.t("已停用"));color:Theme.muted;font.pixelSize:Theme.font(10)}
                             }
@@ -58,11 +60,12 @@ Item {
                             Layout.fillWidth:true;Layout.leftMargin:24;Layout.rightMargin:24;spacing:16;visible:!!root.selected
                             RowLayout {
                                 Layout.fillWidth:true
+                                WidgetIcon {plugin:root.selected || ({});Layout.preferredWidth:Theme.icon(24);Layout.preferredHeight:Theme.icon(24)}
                                 Text {text:root.selected ? root.selected.name : "";textFormat:Text.PlainText;color:Theme.ink;font.pixelSize:Theme.font(20);font.weight:Font.DemiBold;Layout.fillWidth:true;wrapMode:Text.Wrap}
                                 Switch {palette.windowText:Theme.ink;palette.buttonText:Theme.ink;palette.dark:Theme.accent;objectName:"desktopPluginGlobalSwitch";checked:!!root.selected && !!root.selected.enabled;onToggled:root.manager.setEnabled(root.selectedId,checked)}
                             }
                             Text {text:root.selected?"v"+root.selected.version+"  ·  "+(root.selected.author || root.selected.id):"";textFormat:Text.PlainText;color:Theme.muted;font.pixelSize:Theme.font(11)}
-                            Text {visible:!!root.selected && root.selected.lifecycle==="application";text:I18n.t("应用级后台服务")+" · "+I18n.t(root.selected && root.selected.running?"运行中":root.selected && root.selected.starting?"正在启动":"已停止");color:Theme.muted;font.pixelSize:Theme.font(11)}
+                            Text {visible:!!root.selected && root.selected.lifecycle==="application";text:I18n.t(root.selected.hasPage?"应用级插件":"应用级后台服务")+" · "+I18n.t(root.selected && root.selected.running?"运行中":root.selected && root.selected.starting?"正在启动":"已停止");color:Theme.muted;font.pixelSize:Theme.font(11)}
                             Text {text:root.selected?root.selected.description || "":"";textFormat:Text.PlainText;color:Theme.ink;Layout.fillWidth:true;wrapMode:Text.Wrap;font.pixelSize:Theme.font(12)}
                             RowLayout {
                                 Layout.fillWidth:true;spacing:8
@@ -88,6 +91,39 @@ Item {
                         }
                         Item {height:20}
                     }
+                }
+            }
+        }
+    }
+    Popup {
+        id:iconCatalog;objectName:"desktopPluginIconCatalog";parent:Overlay.overlay;anchors.centerIn:parent
+        width:Math.min(480,parent.width-32);padding:18;modal:true;focus:true
+        closePolicy:Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background:Rectangle {color:Theme.surface;radius:12;border.color:Theme.line}
+        contentItem:ColumnLayout {
+            spacing:12
+            RowLayout {
+                Layout.fillWidth:true
+                Text {text:I18n.t("Widget 内置图标");color:Theme.ink;font.pixelSize:Theme.font(15);font.weight:Font.DemiBold;Layout.fillWidth:true}
+                ActionButton {text:I18n.t("关闭");quiet:true;onClicked:iconCatalog.close()}
+            }
+            GridView {
+                id:iconGrid;objectName:"desktopPluginIconGrid";Layout.fillWidth:true
+                Layout.preferredHeight:Math.min(5*Theme.control(66),Math.max(100,iconCatalog.parent.height-140))
+                readonly property int columns:Math.max(2,Math.floor(width/Theme.control(100)))
+                cellWidth:width/columns;cellHeight:Theme.control(66);clip:true;model:root.manager.iconCatalog
+                ScrollBar.vertical:ScrollBar {policy:ScrollBar.AsNeeded}
+                delegate:ItemDelegate {
+                    id:iconOption;required property var modelData;width:iconGrid.cellWidth-4;height:iconGrid.cellHeight-4
+                    HoverHandler {cursorShape:Qt.PointingHandCursor}
+                    background:Rectangle {color:iconOption.hovered?Theme.hover:"transparent";radius:7}
+                    contentItem:Column {
+                        spacing:5
+                        Glyph {name:iconOption.modelData.glyph;anchors.horizontalCenter:parent.horizontalCenter;width:Theme.icon(22);height:Theme.icon(22);color:Theme.ink}
+                        Text {anchors.horizontalCenter:parent.horizontalCenter;text:iconOption.modelData.id;color:Theme.ink;font.pixelSize:Theme.font(11)}
+                    }
+                    HoverTip {active:iconOption.hovered;text:I18n.t("点击复制图标清单配置")}
+                    onClicked:{backend.copy('"icon": "'+modelData.id+'"');backend.toast(I18n.t("已复制图标清单配置"))}
                 }
             }
         }

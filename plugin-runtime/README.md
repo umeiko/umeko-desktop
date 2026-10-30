@@ -11,7 +11,7 @@ my-plugin/
   config.json
   config.schema.json
   scripts/plugin.py
-  qml/Main.qml            # 可选；应用级后台服务不声明页面
+  qml/Main.qml            # 可选；会话级和应用级均可提供页面
   bin/linux-x64/tool      # 可选：按操作系统和架构声明的程序
   bin/windows-x64/tool.exe
   vendor/                 # 可选：与目标 Python / OS / 架构兼容的依赖
@@ -29,6 +29,7 @@ my-plugin/
   "summary": "向当前聊天提供项目信息",
   "author": "Your name",
   "version": "1.0.0",
+  "icon": "terminal",
   "lifecycle": "session",
   "entrypoint": "scripts/plugin.py:create_plugin",
   "page": "qml/Main.qml",
@@ -48,6 +49,25 @@ my-plugin/
 
 `config.json` 是非秘密的 JSON 对象，`config.schema.json` 支持 type、properties、required、additionalProperties、items、enum。账号密码和密钥不要放入配置、Markdown、公开返回值或日志。示例和 SDK ZIP 可在插件管理页面导出，导出包中包含文件树与 Git 示例。
 
+## Widget 图标
+
+清单中的 `icon` 可以直接选择内置图标，例如 `"icon": "terminal"`，无需提供图片。在插件管理页点击“内置图标”预览，点击某个图标即可复制对应清单配置。启动按钮、插件菜单和插件管理统一使用这个图标；不声明时使用 `puzzle`。
+
+| 名称 | 用途 | 名称 | 用途 |
+| --- | --- | --- | --- |
+| `terminal` | 终端 | `folder` | 文件管理 |
+| `branch` | 版本管理 | `code` | 代码 |
+| `globe` | 网页 | `search` | 搜索 |
+| `chat` | 聊天 | `image` | 图片 |
+| `file` | 文档 | `server` | 服务 |
+| `cpu` | 计算 | `layers` | 资源 |
+| `grid` | 面板 | `bulb` | 灵感 |
+| `sliders` | 控制 | `archive` | 归档 |
+| `download` | 下载 | `lock` | 安全 |
+| `hourglass` | 任务 | `puzzle` | 通用插件 |
+
+完整列表保存在 `umeko_plugin_sdk/icons.json`。如需自带美术资源，使用 `"icon": {"path": "assets/icon.svg"}`；路径必须是包内相对路径，支持 SVG、PNG、WebP、JPEG，最多 512 KiB。自带图标保留原色；内置线条图标自动跟随宿主主题颜色。不要填写网络地址。
+
 每个包必须提供单行 `summary`（1–20 个 Unicode 字符）和 `agent.document` 指向的非空 Markdown（最多 64 KiB）。文档应说明用途、公开方法、参数、返回值、主动消息和限制；没有 Agent 方法时也要说明使用方式。缺少这些材料会在安装前拒绝。`agent.methods` 声明 Agent 可调用的方法和参数 schema；页面自己的调用仍可使用插件内部方法。
 
 ```bash
@@ -61,7 +81,7 @@ python -m umeko_plugin_sdk pack my-plugin my-plugin.zip
 
 `lifecycle` 默认是 `session`：插件绑定当前聊天，可带右侧页面，也可作为该聊天的后台插件。切换聊天时停止；页面插件收起时停止。
 
-`lifecycle: "application"` 声明应用级后台服务，不声明 `page`。导入或升级后保持停用；用户在插件管理中启用，或 Agent 按用户意图调用 `widgets.enable` 后启动。此开关持久保存，后续随应用启动运行。切换聊天、进入设置、关闭右侧面板不停止服务；停用、升级、卸载、退出应用时停止。修改已启用服务的配置会重新启动服务。进程异常停止后可重新启用重试，不因聊天更新反复重启。
+`lifecycle: "application"` 声明跨聊天常驻插件；可以省略 `page` 成为后台服务，也可以提供页面，例如共享终端。导入或升级后保持停用；用户在插件管理中启用，或 Agent 按用户意图调用 `widgets.enable` 后启动。此开关持久保存，后续随应用启动运行。切换聊天、进入设置、关闭右侧面板不停止进程；停用、升级、卸载、退出应用时停止。修改已启用插件的配置会重新启动进程。进程异常停止后可重新启用重试，不因聊天更新反复重启。
 
 应用服务每个插件只有一个工作进程，`context.state_dir` 固定为该插件的 `application` 状态目录，不按聊天划分。它仍能接收前台 `session.changed` 快照，但每次 Agent 方法调用都有独立、线程隔离的 `context.request_session`、`context.request_id` 和 `context.call_source`，指向发起调用的聊天。后台工作必须保存 `target = context.capture_session()`，使用 `notify_agent(..., session=target)` 和 `resolve_workspace(..., session=target)`；不能在任务完成时重新读取当前聊天来决定目标。
 
@@ -94,6 +114,8 @@ def create_plugin(context):
 - `context.state_dir`：会话级按插件和聊天划分，应用级使用插件固定的 `application` 持久状态目录。
 - `context.resolve_workspace(relative, session=None)`：要求 `workspace.read`，校验解析后的路径处于目标聊天目录内，拒绝目录穿越和指向外部的符号链接。应用级后台线程须显式传入捕获的 session。
 - `context.send_message(text, steering=False)`：要求 `session.write`，将消息发送到绑定会话，支持 steering。
+- `context.append_to_chat(text, session=None)`：要求 `session.write`，追加到目标聊天的输入框草稿，保留已有文字和附件，不自动发送；仅当前显示的目标聊天接受。
+- `context.open_page()`：要求 `session.write`，请求打开本插件页面；后台聊天的调用不会抢占前台面板。
 - `context.attach_file(relative)`：要求 `workspace.read` 和 `session.write`，附加文件到绑定会话。
 - `context.preview_file(relative)`：要求 `workspace.read`，在 Umeko 文档预览器中打开文件，替换插件面板。
 - `context.reveal_file(relative)`：要求 `workspace.read`，在系统文件管理器中定位工作区内的文件；已删除文件定位到其所在文件夹。
@@ -162,9 +184,13 @@ Rectangle {
 }
 ```
 
-`sdk.call(method, arguments)` 立即返回请求 ID，结果通过 `sdk.response(id, value)` 异步送达。`sdk.session` 是当前绑定的会话快照；`sdk.config` 是只读的已校验配置；`sdk.colors` 提供 bg、surface、ink、muted、line、hover、accent、accentBg、danger、dark；`sdk.scale` 为字体比例；`sdk.active` 表示页面当前可交互；`sdk.copyText(text)` 供用户操作复制内容。不要依赖宿主内部 backend、私有 QML 组件或未公开路径。
+`sdk.call(method, arguments)` 立即返回请求 ID，结果通过 `sdk.response(id, value)` 异步送达。`sdk.session` 是当前绑定的会话快照；`sdk.config` 是只读的已校验配置；`sdk.colors` 提供 bg、surface、ink、muted、line、hover、accent、accentBg、danger、dark；`sdk.scale` 为字体比例；`sdk.language` 是当前界面语言（`zh` / `en`）；`sdk.active` 表示页面当前可交互；`sdk.copyText(text)` 供用户操作复制内容。不要依赖宿主内部 backend、私有 QML 组件或未公开路径。
 
-页面的打开、收起和拖动宽度复用 Umeko 现有 PID 右侧栏。网页、文档、子代理、插件四种模式互斥。会话级页面随切换会话、进入设置、关闭页面而撤销；应用级后台服务独立于右侧栏和前台聊天运行。
+终端示例使用公开的 `import Umeko.Terminal 1.0` 与 `TerminalView` 原生网格组件。`input(text)`、`resized(columns,rows)` 和 `contextMenuRequested(x,y)` 传给 Python；`applyFrame(frame)` 更新有界屏幕和滚动历史。完整帧协议与 IME、选择、剪贴板接线见 `examples/terminal/qml/TerminalPane.qml`，真实 PTY 实现及 Agent 文档也随示例提供，无需启动另一份命令执行工具。
+
+页面的打开、收起和拖动宽度复用 Umeko 现有 PID 右侧栏。网页、文档、子代理、插件四种模式互斥。会话级页面随切换会话、进入设置、关闭页面而撤销；应用级页面可以撤销后重新打开，后台进程持续运行。Python 接收 `Plugin.on_event("page.visibility", {"visible": bool})`，可暂停隐藏页面的帧传输并在打开后补发快照。
+
+`context.publish(topic, data, session=None)` 更新可见页面，数据最多 64 KiB。应用级进程不指定 `session` 时发布共享界面状态；显式传入捕获的 `session` 时，仅该聊天处于前台才会送达，适用于按 Agent 调用选中界面元素。
 
 ## 性能与信任边界
 
