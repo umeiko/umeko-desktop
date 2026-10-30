@@ -1,0 +1,161 @@
+{
+  "kind": "umeko-plugin",
+  "apiVersion": 1,
+  "id": "desktop-pet",
+  "name": "桌面小宠物",
+  "version": "1.0.0",
+  "summary": "用动作陪伴任务进展",
+  "description": "官方内置桌宠。后台低频观察任务，默认不显示。支持拖动、点击互动、右键菜单与自定义动画形象。",
+  "author": "Umeko",
+  "lifecycle": "application",
+  "entrypoint": "scripts/plugin.py:create_plugin",
+  "settingsPage": "qml/Settings.qml",
+  "permissions": [],
+  "agent": {
+    "document": "AGENT.md",
+    "methods": {
+      "status": {
+        "description": "查看实际显示状态、活动摘要、导入进度和设置",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      "appearances": {
+        "description": "列出内置和用户导入的形象 id",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      "show": {
+        "description": "显示桌宠并保存偏好",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      "hide": {
+        "description": "隐藏桌宠，后台观察服务继续运行",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      "resetPosition": {
+        "description": "把桌宠放回屏幕右下角",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      "configure": {
+        "description": "局部更新桌宠设置并立即生效，不需要重启 Widget",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "visible": {
+              "type": "boolean"
+            },
+            "alwaysOnTop": {
+              "type": "boolean"
+            },
+            "paused": {
+              "type": "boolean"
+            },
+            "appearance": {
+              "type": "string",
+              "maxLength": 48
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 96,
+              "maximum": 320
+            },
+            "sampleIntervalMs": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 2000
+            },
+            "minimumStateMs": {
+              "type": "integer",
+              "minimum": 3000,
+              "maximum": 30000
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "importAppearance": {
+        "description": "导入数据型形象 ZIP、pet.json 或单段 WebP/GIF/PNG；完成后返回新形象 id",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "path"
+          ]
+        }
+      },
+      "selectAppearance": {
+        "description": "选择已导入的形象",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 48
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "removeAppearance": {
+        "description": "删除用户形象，当前形象先回退到八奈见",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 48
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "interact": {
+        "description": "触发点击、悬停或拖动互动；动作仍遵守最短保持时间",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "tap",
+                "hover",
+                "drag"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}

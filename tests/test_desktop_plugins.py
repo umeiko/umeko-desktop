@@ -32,7 +32,7 @@ class DesktopPluginTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):cls.app=QCoreApplication.instance() or QCoreApplication([])
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.path=Path(self.temp.name)
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.path=Path(self.temp.name).resolve()
         self.host=Host(self.path);self.manager=DesktopPlugins(self.host);self.addCleanup(self.manager.close)
         self.responses={};self.manager.response.connect(lambda key,value:self.responses.__setitem__(key,value))
     def wait(self,predicate):
@@ -92,7 +92,7 @@ def create_plugin(context):return Fixture(context)
         self.assertNotIn('x.txt',str(entries))
         self.assertNotIn('messages',self.manager.session)
         self.assertFalse(self.call('list',{'path':'..'})['ok'])
-        self.manager.closePage();self.assertFalse(self.manager.workers);self.app.processEvents()
+        self.manager.closePage();self.assertEqual(set(self.manager.workers),{'desktop-pet'});self.app.processEvents()
 
     def desktop_control(self):
         from app.umeko_control import UmekoControl
@@ -292,7 +292,7 @@ def create_plugin(context):return Fixture(context)
         self.assertEqual(self.host.sent,[('session-one','from-plugin',True)])
         self.assertTrue(marker.exists())
         self.manager.call('late','{}');self.host._view.key='token-two';self.host._view.id='session-two';self.host.viewChanged.emit()
-        self.assertFalse(self.manager.page);self.assertFalse(self.manager.workers)
+        self.assertFalse(self.manager.page);self.assertEqual(set(self.manager.workers),{'desktop-pet'})
         deadline=time.monotonic()+1
         while time.monotonic()<deadline:self.app.processEvents();time.sleep(.01)
         self.assertEqual(len(self.host.sent),1)
