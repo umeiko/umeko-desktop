@@ -6,8 +6,18 @@ import { createAgentSession as nativeCreateAgentSession } from "./node_modules/@
 import { DefaultResourceLoader as NativeResourceLoader } from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { NETWORK_RETRY } from "./network-retry.mjs";
 import { SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
+import { createToolPermissionExtension } from "./tool-permissions.mjs";
+
+const permissionHost = () => globalThis[Symbol.for("umeko:tool-permission-host")];
 
 export class DefaultResourceLoader extends NativeResourceLoader {
+  constructor(options) {
+    super({ ...options, extensionFactories: [
+      ...(options?.extensionFactories || []),
+      { name: "tool-permissions", hidden: true, replaceable: false,
+        factory: createToolPermissionExtension({ getPolicy: () => permissionHost()?.getPolicy() || { mode: "auto" } }) },
+    ] });
+  }
   getAppendSystemPrompt() {
     const append = super.getAppendSystemPrompt();
     return this.getSystemPrompt()?.includes(SUBAGENT_COMPLETION_HINT) || append.some(text=>text.includes(SUBAGENT_COMPLETION_HINT))
@@ -20,6 +30,13 @@ export class DefaultResourceLoader extends NativeResourceLoader {
 // the narrow handoff between its SDK facade and the desktop extension.
 export async function createAgentSession(options) {
   const result = await nativeCreateAgentSession(options);
+  // The community package binds children with {}. Relay supported confirmations
+  // through the desktop while leaving genuinely headless contexts headless.
+  const bind = result.session.bindExtensions.bind(result.session);
+  result.session.bindExtensions = (options = {}) => {
+    const host = permissionHost();
+    return bind(host?.ui ? { ...options, uiContext: host.ui, mode: "rpc" } : options);
+  };
   globalThis[Symbol.for("umeko:subagent-session")]?.(result.session, options);
   return result;
 }

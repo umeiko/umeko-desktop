@@ -14,7 +14,7 @@ def verify_terminal_worker(command, resources, environment, report_dir):
     responses=queue.Queue();serial=0
     log_path=report_dir/'terminal-worker.log'
     with log_path.open('wb') as errors, subprocess.Popen(command,
-            env=dict(environment,UMEKO_SMOKE_FIXTURE='TERMINAL_PACKAGED_OK'),
+            env=dict(environment,UMEKO_SMOKE_FIXTURE='TERMINAL_PACKAGED_OK',PYTHONDONTWRITEBYTECODE='1'),
             stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=errors,
             creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0)) as process:
         def consume():

@@ -253,7 +253,7 @@ class PiManagement(QObject):
 
     def _resource_key(self):
         c = self.controller
-        agent = {key: value for key, value in c.store.data["agent"].items() if key != "installPermission"}
+        agent = {key: value for key, value in c.store.data["agent"].items() if key not in {"installPermission", "toolPermissionMode"}}
         return (c._view.workspace or c.store.data["workspace"], str(c._release), json.dumps(agent, sort_keys=True))
 
     def _scan(self, apply=False):
@@ -406,7 +406,8 @@ class PiManagement(QObject):
         pointer = c.store.directory / "kernels/active.json"
         old_pointer = pointer.read_bytes() if pointer.exists() else None
         old_agent = c.store.data["agent"]
-        new_agent = {**copy.deepcopy(DEFAULTS["agent"]), "agentDir": value["agentDir"], "safeMode": True}
+        new_agent = {**copy.deepcopy(DEFAULTS["agent"]), "agentDir": value["agentDir"], "safeMode": True,
+                     "toolPermissionMode": old_agent.get("toolPermissionMode", "auto")}
         try:
             c.store.data["agent"] = new_agent
             c.store.save()
