@@ -33,12 +33,12 @@ class TerminalTests(unittest.TestCase):
 
     def test_real_terminal_parses_unicode_colors_resize_and_preserves_same_environment(self):
         identifier=self.create();terminal=self.plugin.terminals[identifier];pid=terminal.backend.pid
-        self.call('run',{'terminalId':identifier,'command':self.command("$env:UMEKO_TERMINAL_FIXTURE='same-process'; [Console]::Write(([char]27)+'[31mVT_RED'+([char]27)+'[0m'); [Console]::WriteLine('中文输出')","export UMEKO_TERMINAL_FIXTURE=same-process; printf '\033[31mVT_RED\033[0m中文输出\n'")})
+        self.call('run',{'terminalId':identifier,'command':self.command("$env:UMEKO_TERMINAL_FIXTURE='same-process'; [Console]::Write(([char]27)+'[31mVT_RED'+([char]27)+'[0m'); [Console]::WriteLine('中文输出')",r"export UMEKO_TERMINAL_FIXTURE=same-process; printf '\033[31mVT_RED\033[0m中文输出\n'")})
         self.wait_text(identifier,'VT_RED中文输出')
         frame=self.call('view',{'ids':[identifier]})['frames'][0]
         self.assertTrue(any(run[2]=='red' and 'VT_RED' in run[1] for row in frame['screen'] for run in row['runs']))
         colors="[Console]::Write(([char]27)+'[38;5;33mVT_256'+([char]27)+'[38;2;12;34;56mVT_RGB'+([char]27)+'[0m')"
-        self.call('run',{'terminalId':identifier,'command':self.command(colors,"printf '\033[38;5;33mVT_256\033[38;2;12;34;56mVT_RGB\033[0m'")})
+        self.call('run',{'terminalId':identifier,'command':self.command(colors,r"printf '\033[38;5;33mVT_256\033[38;2;12;34;56mVT_RGB\033[0m'")})
         self.wait_text(identifier,'VT_256VT_RGB')
         frame=self.call('view',{'ids':[identifier]})['frames'][0]
         self.assertTrue(any(run[2]=='0087ff' and 'VT_256' in run[1] for row in frame['screen'] for run in row['runs']))
@@ -68,10 +68,22 @@ class TerminalTests(unittest.TestCase):
         terminal=self.plugin.terminals[split];self.call('kill',{'terminalId':split});self.assertFalse(terminal.backend.isalive());self.assertFalse(terminal.reader.is_alive())
 
     def test_interrupt_and_panel_close_keep_the_shared_shell_alive(self):
+        if os.name=='nt':
+            import ctypes
+            # Reproduce launcher/CI process groups which disable Ctrl+C and
+            # pass that flag down even into a fresh ConPTY session.
+            ctypes.windll.kernel32.SetConsoleCtrlHandler(None,True)
+            self.addCleanup(lambda:ctypes.windll.kernel32.SetConsoleCtrlHandler(None,False))
         identifier=self.create();terminal=self.plugin.terminals[identifier];self.call('attach',{'terminalId':identifier})
         self.call('run',{'terminalId':identifier,'command':self.command("Write-Output ('WAIT_'+'STARTED'); Start-Sleep -Seconds 30","printf 'WAIT_%s\n' STARTED; sleep 30")},source='agent')
         self.wait_text(identifier,'WAIT_STARTED')
-        self.call('interrupt',{'terminalId':identifier},source='agent');time.sleep(.25)
+        self.call('interrupt',{'terminalId':identifier},source='agent')
+        until=time.monotonic()+8
+        while time.monotonic()<until:
+            output=self.call('read',{'terminalId':identifier})['text'].rsplit('WAIT_STARTED',1)[-1].strip()
+            if output.endswith(('>','$','#','%')):break
+            time.sleep(.03)
+        else:self.fail('Ctrl+C did not return the shared shell prompt')
         self.call('run',{'terminalId':identifier,'command':self.command("Write-Output ('AFTER_'+'INTERRUPT')","printf 'AFTER_%s\n' INTERRUPT")},source='agent')
         self.wait_text(identifier,'AFTER_INTERRUPT')
         self.plugin.on_event('page.visibility',{'visible':False});self.assertTrue(terminal.backend.isalive())
