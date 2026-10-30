@@ -48,6 +48,11 @@ Column {
                 expansionState: step.fold
                 selectionController: root.selectionController; messageIndex: root.messageIndex; blockOffset: step.entry.blockOffset
             }
+            SubagentCards {
+                width: parent.width; visible: step.entry.kind === "subagents"
+                agents: visible ? step.entry.agents || [] : []
+                selectionController: root.selectionController
+            }
         }
     }
 }

@@ -73,12 +73,13 @@ Item {
         Behavior on scale { NumberAnimation { duration: 100 } }
         Accessible.name: hint
         HoverHandler { cursorShape: Qt.PointingHandCursor }
-        contentItem: Image {
+        contentItem: CharacterArt {
             objectName: control.objectName + "Mascot"
             readonly property bool loaded: status === Image.Ready
-            source: root.expandable ? "../icons/yanami-" + (control.collapsing ? "pull" : "push") + ".png" : ""
+            fallbackSource: "../icons/yanami-" + (control.collapsing ? "pull" : "push") + ".png"
+            artwork: root.expandable ? Character.asset(control.collapsing ? "pull" : "push", fallbackSource) : ""
             mirror: control.leftSide; fillMode: Image.PreserveAspectFit
-            sourceSize: Qt.size(320, 320); asynchronous: true; cache: true; mipmap: true
+            sourceSize: Qt.size(320, 320); asynchronous: true; mipmap: true
             transform: Translate { x: control.effort }
         }
         background: Rectangle {
@@ -107,7 +108,7 @@ Item {
             leftSide: true; collapsing: root.expandedLeft
             x: (root.composerLeft - width) / 2
             text: root.expandedLeft ? "\u25b6" : "\u25c0"
-            hint: root.expandedLeft ? I18n.t("收起左侧") : I18n.t("向左展开")
+            hint: root.expandedLeft ? Character.scene("layout.collapseLeft", "") : Character.scene("layout.expandLeft", "")
             onClicked: root.expandedLeft = !root.expandedLeft
         }
     }
@@ -125,7 +126,7 @@ Item {
             collapsing: root.expandedRight
             x: (parent.width - width) / 2
             text: root.expandedRight ? "\u25c0" : "\u25b6"
-            hint: root.expandedRight ? I18n.t("收起右侧") : I18n.t("向右展开")
+            hint: root.expandedRight ? Character.scene("layout.collapseRight", "") : Character.scene("layout.expandRight", "")
             onClicked: root.expandedRight = !root.expandedRight
         }
     }

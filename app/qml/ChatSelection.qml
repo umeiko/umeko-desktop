@@ -6,6 +6,7 @@ Item {
     id: root
     objectName: "chatSelection"
     property var view
+    property var dataSource: backend
     property var editors: []
     property var interactions: []
     readonly property var hoveredTarget: {
@@ -137,9 +138,9 @@ Item {
         if (!hasSelection) return ""
         const start = compare(anchor, cursor) < 0 ? anchor : cursor
         const end = compare(anchor, cursor) < 0 ? cursor : anchor
-        const count = backend.messageCount, pieces = []
+        const count = dataSource.messageCount, pieces = []
         for (let row = start.row; row <= end.row && row < count; row++) {
-            const message = backend.displayMessage(row), segments = Markdown.selectionSegments(message, row, expandedDetails)
+            const message = dataSource.displayMessage(row), segments = Markdown.selectionSegments(message, row, expandedDetails)
             for (const segment of segments) {
                 const text = plain(segment.text, segment.markdown, row, segment.block)
                 const first = {row:row,block:segment.block,offset:0}, last = {row:row,block:segment.block,offset:text.length}
@@ -157,12 +158,12 @@ Item {
     }
     function copy() {
         if (!hasSelection) return
-        if (backend.messageModel.paged || Math.abs(anchor.row - cursor.row) > 100)
-            backend.copyChatSelection(JSON.stringify({anchor:anchor, cursor:cursor, expanded:expandedDetails}))
+        if (dataSource.messageModel.paged || Math.abs(anchor.row - cursor.row) > 100)
+            dataSource.copyChatSelection(JSON.stringify({anchor:anchor, cursor:cursor, expanded:expandedDetails}))
         else backend.copy(selectedText())
     }
     function selectAll() {
-        const count = backend.messageCount
+        const count = dataSource.messageCount
         if (!count) return
         anchor = {row:0,block:-100000,offset:0}
         cursor = {row:count - 1,block:2147483647,offset:0}

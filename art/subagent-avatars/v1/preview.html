@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Umeko · 子代理头像</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f5f6f3; color: #26352d; font: 14px system-ui, sans-serif; }
+  main { max-width: 1180px; margin: auto; padding: 36px; }
+  header { display: flex; align-items: baseline; gap: 16px; margin-bottom: 28px; }
+  h1 { margin: 0; font-size: 25px; letter-spacing: -.6px; }
+  header span, .sizes span, footer { color: #7b877f; font-size: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  article { border: 1px solid #dfe4dc; border-radius: 18px; background: #fff; overflow: hidden; }
+  .hero { height: 228px; display: grid; place-items: center; background-image: conic-gradient(#f5f6f3 25%, #fff 0 50%, #f5f6f3 0 75%, #fff 0); background-size: 20px 20px; }
+  .hero img { width: 184px; height: 184px; object-fit: contain; }
+  .name { margin: 18px 18px 3px; font-weight: 650; font-size: 17px; }
+  .en { margin: 0 18px 20px; color: #8a948e; font-size: 11px; }
+  .sizes { display: flex; justify-content: space-around; align-items: end; gap: 8px; padding: 14px 12px 17px; border-top: 1px solid #eef0eb; }
+  .sizes div { display: flex; flex-direction: column; align-items: center; gap: 9px; }
+  img { image-rendering: pixelated; }
+  .dark { background: #242d29; padding: 16px; border-radius: 18px; margin-top: 24px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .agent { display: flex; align-items: center; gap: 12px; color: #e7eee7; font-size: 13px; min-width: 0; }
+  .agent img { flex: none; width: 44px; height: 44px; object-fit: contain; }
+  footer { margin-top: 20px; line-height: 1.7; }
+  @media(max-width: 760px) { main { padding: 22px; } .grid { grid-template-columns: repeat(2, 1fr); } .dark { grid-template-columns: repeat(2, 1fr); } }
+</style>
+<main>
+  <header><h1>子代理头像</h1><span>第一版 · 透明底像素画</span></header>
+  <div class="grid" id="avatars"></div>
+  <div class="dark" id="dark"></div>
+  <footer>上方：放大预览与 32 / 48 / 64 px 实际显示尺寸。下方：深色背景。</footer>
+</main>
+<script>
+  const characters = [
+    { id: 'lemon-yakishio', name: '烧盐柠檬', en: 'Lemon Yakishio' },
+    { id: 'chika-komari', name: '小鞠知花', en: 'Chika Komari' },
+    { id: 'kaju-nukumizu', name: '温水佳树', en: 'Kaju Nukumizu' },
+    { id: 'yumeko-shikiya', name: '志喜屋梦子', en: 'Yumeko Shikiya' }
+  ];
+  const avatar = (c, size) => `<img src="${c.id}.png" alt="${c.name}" width="${size}" height="${size}">`;
+  document.getElementById('avatars').innerHTML = characters.map(c => `
+    <article><div class="hero">${avatar(c,184)}</div>
+      <div class="name">${c.name}</div><div class="en">${c.en}</div>
+      <div class="sizes">${[32,48,64].map(size => `<div>${avatar(c,size)}<span>${size} px</span></div>`).join('')}</div>
+    </article>`).join('');
+  document.getElementById('dark').innerHTML = characters.map(c => `<div class="agent">${avatar(c,44)}<span>${c.name}</span></div>`).join('');
+</script>
+</html>

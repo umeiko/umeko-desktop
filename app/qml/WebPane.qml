@@ -12,6 +12,7 @@ Rectangle {
     property string pageUrl: ""
     property string pageTitle: ""
     property string mode: "web"
+    readonly property bool subagentInputFocused: !!agentSurface.item && agentSurface.item.inputFocused
     property string documentPath: ""
     property real preferredWidth: 480
     readonly property real animatedWidth: Math.max(0, motion.value.width - 1)
@@ -25,6 +26,7 @@ Rectangle {
     function submit(url, title) {
         const clean = backend.normalizeWebUrl(url)
         if (!clean || !backend.webviewAvailable) return
+        if (mode === "subagent") backend.subagents.closeView()
         backend.documentPreview.cancel()
         pageTitle = title || ""
         if (mode === "web" && surface.item && pageUrl === clean) surface.item.reload()
@@ -33,12 +35,14 @@ Rectangle {
         opened = true
     }
     function showDocument(item) {
+        if (mode === "subagent") backend.subagents.closeView()
         address.focus = false
         documentPath = item.path; pageTitle = item.title || item.name || item.path.split(/[\\/]/).pop()
         mode = "document"; opened = true
         backend.documentPreview.load(documentPath, item.kind || "file")
     }
-    function dismiss() { address.focus = false; opened = false; backend.documentPreview.cancel() }
+    function showSubagent() { address.focus = false; backend.documentPreview.cancel(); mode = "subagent"; opened = true }
+    function dismiss() { address.focus = false; opened = false; backend.documentPreview.cancel(); if (mode === "subagent") backend.subagents.closeView() }
     function snapWidth() { motion.snap() }
     function navigate() {
         const url = backend.normalizeWebUrl(address.text)
@@ -50,6 +54,7 @@ Rectangle {
     Rectangle { width: 1; height: parent.height; color: Theme.line }
     Item {
         id: heading
+        visible: pane.mode !== "subagent"
         width: parent.width; height: Theme.control(44)
         Glyph { x: 16; anchors.verticalCenter: parent.verticalCenter; name: pane.mode === "web" ? "globe" : backend.documentPreview.state.kind === "code" ? "code" : "file"; width: Theme.icon(15); height: width }
         Text { x: 40; width: Math.max(0, parent.width - 88); anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: pane.mode === "web" && surface.item && surface.item.title ? surface.item.title : pane.pageTitle || pane.pageUrl; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: Theme.font(11) }
@@ -71,7 +76,29 @@ Rectangle {
         }
     }
     Item {
-        id: fileToolbar; x: 12; y: heading.height; width: parent.width - 24; height: pane.mode === "document" ? Theme.control(36) : 0; visible: pane.mode === "document"
+        id: viewSwitch; x: 16; y: heading.height; width: parent.width-32
+        height: visible ? Theme.control(39) : 0
+        visible: pane.mode === "document" && ["markdown","html"].includes(backend.documentPreview.state.fileType || "")
+        Row { spacing: 3; anchors.verticalCenter: parent.verticalCenter
+            Repeater {
+                model: ["source","rendered"]
+                ActionButton {
+                    required property string modelData
+                    objectName: "documentMode_" + modelData
+                    readonly property bool selected: backend.documentPreview.state.mode === modelData
+                    text: modelData === "source" ? I18n.t("源码") : backend.documentPreview.state.fileType === "html" ? I18n.t("网页") : I18n.t("渲染")
+                    width: Theme.control(70); height: Theme.control(29); quiet: true
+                    enabled: modelData === "source" || backend.documentPreview.state.fileType !== "html" || !!backend.documentPreview.state.renderable
+                    hint: !enabled ? I18n.t(backend.documentPreview.state.renderNote || "") : ""
+                    background: Rectangle { radius: 7; color: parent.selected ? Theme.accentBg : parent.interactionHovered ? Theme.hover : "transparent" }
+                    onClicked: backend.documentPreview.setMode(backend.documentPreview.state.fileType,modelData)
+                    Accessible.role: Accessible.RadioButton; Accessible.checked: selected
+                }
+            }
+        }
+    }
+    Item {
+        id: fileToolbar; x: 12; y: heading.height + viewSwitch.height; width: parent.width - 24; height: pane.mode === "document" ? Theme.control(36) : 0; visible: pane.mode === "document"
         Text { anchors.left: parent.left; anchors.right: fileActions.left; anchors.verticalCenter: parent.verticalCenter; text: pane.documentPath; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.muted; font.pixelSize: Theme.font(10) }
         Row {
             id: fileActions; anchors.right: parent.right; spacing: 2
@@ -79,7 +106,7 @@ Rectangle {
             ActionButton { objectName: "openDocumentFileButton"; glyph: "external-link"; quiet: true; width: Theme.control(30); height: Theme.control(30); hint: I18n.t("打开完整文件"); onClicked: backend.openChatboxPath(pane.documentPath, false) }
         }
     }
-    Rectangle { x: 1; y: toolbar.y + toolbar.height; width: parent.width - 1; height: 1; color: Theme.line }
+    Rectangle { x: 1; y: toolbar.y + toolbar.height; width: parent.width - 1; height: 1; color: Theme.line; visible: pane.mode !== "subagent" }
     Rectangle { x: 1; y: toolbar.y + toolbar.height; height: 2; color: Theme.accent; width: surface.item ? (parent.width - 1) * surface.item.loadProgress / 100 : 0; visible: !!surface.item && surface.item.loading }
     // WebView2 must be initialized in a visible, settled native window.
     // Retain the page through later resizes and temporary overlay blocking.
@@ -90,8 +117,8 @@ Rectangle {
     }
     Loader {
         id: surface; objectName: "webSurfaceLoader"
-        anchors.left: parent.left; anchors.leftMargin: 1; anchors.right: parent.right
-        anchors.top: toolbar.bottom; anchors.topMargin: 1; anchors.bottom: parent.bottom
+        anchors.left: parent.left; anchors.leftMargin: 6; anchors.right: parent.right; anchors.rightMargin: 12
+        anchors.top: toolbar.bottom; anchors.topMargin: 1; anchors.bottom: parent.bottom; anchors.bottomMargin: 12
         active: pane.opened && pane.mode === "web" && pane.surfaceReady
         visible: !pane.moving && !pane.blocked && (!item || !item.errorMessage)
         source: active ? "WebSurface.qml" : ""
@@ -121,9 +148,17 @@ Rectangle {
         width: Math.max(0, pane.preferredWidth - 1); height: parent.height - y
         active: pane.opened && pane.mode === "document"; visible: !pane.blocked
         source: active ? "DocumentSurface.qml" : ""
+        onLoaded: item.browserAllowed = Qt.binding(function() { return pane.live })
     }
     Connections {
         target: surface.item
         function onUrlChanged() { pane.pageUrl = String(surface.item.url); if (!address.activeFocus) address.text = pane.pageUrl }
     }
+    Loader {
+        id: agentSurface; objectName: "subagentSurfaceLoader"
+        x: 1; y: 0; width: Math.max(0,pane.preferredWidth-1); height: parent.height
+        active: pane.opened && pane.mode === "subagent"
+        source: active ? "SubagentPane.qml" : ""
+    }
+    Connections { target: agentSurface.item; function onClosed() { pane.dismiss() } }
 }

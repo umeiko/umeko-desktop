@@ -48,13 +48,13 @@ test('documents are delivered by reference with automatic kinds and artifact gui
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'umeko-artifacts-'));
   try {
     let tool;const entries=[];
-    chatboxExtension({registerTool(value){tool=value;},appendEntry(...value){entries.push(value);}});
+    chatboxExtension({registerTool(value){tool=value;},appendEntry(...value){entries.push(value);}},()=>({available:true}));
     const cases=[['report.md','markdown'],['main.py','code'],['notes.txt','text'],['index.html','code'],['report.pdf','file'],['CMakeLists.txt','code']];
     for (const [file] of cases) await fs.writeFile(path.join(directory,file),'Artifact content must stay out of the model context');
     const result=await tool.execute('artifacts',{items:cases.map(([file])=>({path:file}))},null,null,{cwd:directory});
     const payload=JSON.parse(result.content[0].text);
     assert.deepEqual(payload.submitted.map(item=>item.kind),cases.map(([,kind])=>kind));
-    assert.ok(!payload.webview);
+    assert.deepEqual(payload.webview, {status:'ready'});
     assert.ok(!JSON.stringify(result).includes('Artifact content must'));
     assert.equal(entries.length,1);
     assert.match(tool.promptGuidelines[0],/after creating or updating.*artifact/);

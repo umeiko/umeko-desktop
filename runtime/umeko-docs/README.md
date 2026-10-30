@@ -4,10 +4,12 @@
 
 Agent 入口只有一个：`config_umeko`。第一次使用先调用 `{"operation":"help"}`，再用文件读取工具打开本目录相应文档。`/help` 只提供此目录的位置，不展开整个操作清单。不要直接改写 `settings.json`，也不要安装另一份 Pi 来配置 Umeko。
 
+- [委派子代理：选择不同模型、正确调用名称、并行任务](delegate-subagents.md)
 - [工具协议、批量与排队](control.md)
 - [添加供应商、模型和网络](providers.md)
 - [制作与加载自定义供应商插件](plugins.md)
 - [制作、导入和切换主题](themes.md)
+- [动画形象、角色资源和第三方形象包](characters.md)
 - [外观、运行、上下文与资源设置](settings.md)
 - [项目、会话、归档、删除与分支](sessions.md)
 - [Pi 扩展、Skills 与 MCP](extensions.md)

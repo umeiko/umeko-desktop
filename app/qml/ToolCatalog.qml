@@ -94,6 +94,8 @@ SectionCard {
                 ListView {
                     id: toolList
                     objectName: "toolCatalogList"
+                    width: catalogScroll.availableWidth
+                    height: catalogScroll.availableHeight
                     clip: true; spacing: 8
                     model: root.rows
                     boundsBehavior: Flickable.StopAtBounds

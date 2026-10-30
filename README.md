@@ -14,17 +14,19 @@ Your projects, your providers, the full Pi Coding Agent — with a little Yanami
 
 [![Desktop packages](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml/badge.svg)](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/umeiko/umeko-desktop?color=4f74c8)](https://github.com/umeiko/umeko-desktop/releases/latest)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-2ea44f?logo=github)](https://github.com/umeiko/umeko-desktop/compare)
+[![Issues welcome](https://img.shields.io/badge/Issues-welcome-4f74c8?logo=github)](https://github.com/umeiko/umeko-desktop/issues/new)
 
 <a id="downloads"></a>
 
 <!-- umeko-downloads:standard:start -->
 
-**Download v0.5.1 · 点击下载**
+**Download v0.6.0 · 点击下载**
 
-[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.1/Umeko-0.5.1-windows-x64-191bd94.zip)
-[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.1/Umeko-0.5.1-macos-arm64-191bd94.dmg)
-[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.1/Umeko-0.5.1-macos-x64-191bd94.dmg)
-[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.1/Umeko-0.5.1-linux-x64-191bd94.tar.gz)
+[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.0/Umeko-0.6.0-windows-x64-736419c.zip)
+[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.0/Umeko-0.6.0-macos-arm64-736419c.dmg)
+[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.0/Umeko-0.6.0-macos-x64-736419c.dmg)
+[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.0/Umeko-0.6.0-linux-x64-736419c.tar.gz)
 
 <!-- umeko-downloads:standard:end -->
 
@@ -34,22 +36,26 @@ Your projects, your providers, the full Pi Coding Agent — with a little Yanami
 
 Umeko is a native desktop app for working with [Pi Coding Agent](https://github.com/earendil-works/pi). Keep conversations beside their project folders, follow the agent's work, and connect the model services you choose. Built with Python and Qt Quick for Windows, macOS and Linux.
 
-![Project conversations in the Yanami theme](docs/images/chat-yanami.png)
+![Project conversations in the pure white theme — English interface](docs/images/chat-white-en.png)
 
 <details>
-<summary>Explore the workflow · thinking, tools and custom providers</summary>
+<summary>Explore the workflow · tools, subagents and custom providers</summary>
 
 **See the work without losing the conversation.** Thinking and tool batches expand in place; file actions expose copyable paths.
 
-![Dark theme with expanded thinking and grouped tool calls](docs/images/chat-process.png)
+![Pure white theme with expanded thinking and grouped tool calls — English interface](docs/images/process-white-en.png)
+
+**Work with a team of agents.** Open a subagent beside the main chat, queue follow-ups or interrupt its current task. Each conversation keeps its own draft and attachments.
+
+![Subagent conversation with queued guidance — English interface](docs/images/subagents-white-en.png)
 
 **Bring your own provider.** Drop in a ZIP, sign in and configure its models on the same page. Export the SDK and developer Skill directly from the import dialog.
 
-![Custom provider import with ZIP drag-and-drop and SDK exports](docs/images/provider-import.png)
+![Custom provider import with ZIP drag-and-drop and SDK exports — English interface](docs/images/provider-white-en.png)
 
 </details>
 
-Screenshots show the actual app with isolated demo data. No real accounts, credentials or model requests were used. The interface supports Simplified Chinese and English; its first-run language follows your system.
+Screenshots show the actual app in the pure white theme with isolated demo data. No real accounts, credentials or model requests were used. The interface supports Simplified Chinese and English; its first-run language follows your system.
 
 After a verified update download, the independent Yanami installer can stop all agents, install the new version and restart it. Closing the main window keeps agents running in the system tray; right-click the Yanami avatar to quit. [Updates and recovery](docs/updating.md).
 

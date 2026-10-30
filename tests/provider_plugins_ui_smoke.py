@@ -14,8 +14,9 @@ os.environ["UMEKO_DATA_DIR"] = tempfile.mkdtemp(prefix="umeko-provider-ui-")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 from PySide6.QtCore import QObject, QMetaObject, Qt, QUrl, QMimeData, QPointF
-from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
+from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent, QEnterEvent
 from PySide6.QtQuick import QQuickItem
+from PySide6.QtQml import QQmlExpression
 from PySide6.QtTest import QTest
 from main import create_application
 from umeko_provider_sdk.packages import pack_package
@@ -37,7 +38,7 @@ def item(name):
     return window.findChild(QQuickItem, name)
 
 
-def click(name):
+def expose(name):
     target = item(name)
     assert target and target.isVisible(), name
     flick = item("settingsScroll").property("contentItem")
@@ -47,9 +48,31 @@ def click(name):
         point = target.mapToItem(flick, target.boundingRect().center())
         flick.setProperty("contentY", max(0, min(flick.property("contentY") + point.y() - flick.height()/2, flick.property("contentHeight") - flick.height())))
         QTest.qWait(80)
+    return target
+
+
+def click(name):
+    target = expose(name)
     point = target.mapToScene(target.boundingRect().center()).toPoint()
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
     QTest.qWait(120)
+
+
+def hover_description(name, description):
+    target = expose(name)
+    point = target.mapToScene(target.boundingRect().center()).toPoint()
+    app.sendEvent(window, QEnterEvent(QPointF(point), QPointF(point), QPointF(window.mapToGlobal(point))))
+    QTest.mouseMove(window, point)
+    QTest.qWait(600)
+    assert target.property("pinned"), (name, point, target.property("hovered"))
+    text = item("helpText_" + name)
+    assert text.property("text") == description
+    assert QQmlExpression(engine.rootContext(), text, "textFormat === 0").evaluate()[0]
+    assert text.property("readOnly") and text.property("selectByMouse")
+    assert window.grabWindow().save(str(out / ("provider-description-" + name.split("_")[0] + ".png")))
+    QTest.mouseMove(window, window.contentItem().boundingRect().topLeft().toPoint())
+    QTest.qWait(500)
+    assert not target.property("pinned"), "Description remained open after leaving"
 
 
 def drop_package(paths):
@@ -88,6 +111,10 @@ try:
     assert not popup.property("opened"), "Import popup remained open after a valid drop"
     QTest.qWait(200)
     provider_id = backend.providerPlugins.rows[0]["id"]
+    plugin = backend.providerPlugins.packages[0]
+    assert plugin["description"] == backend.providerPlugins.rows[0]["description"]
+    hover_description("pluginDescription_" + plugin["id"] + "_" + plugin["version"], plugin["description"])
+    hover_description("providerDescription_" + provider_id, plugin["description"])
     field = item("pluginAuth_" + provider_id + "_username")
     assert field
     field.setProperty("text", "Fixture User")

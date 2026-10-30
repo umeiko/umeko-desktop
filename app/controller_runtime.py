@@ -101,6 +101,7 @@ class PiControllerMixin:
                     workspace=record.workspace, defaultCwd=str(default_cwd),
                     agentDir=agent.get("agentDir") or str(Path.home() / ".pi/agent"),
                     sessionDir=str(self.store.directory / "pi/sessions"), sessionFile=record.file,
+                    docsDir=str(self.store.directory / "agent-docs"),
                     legacyHistory=record.history, models=self.gateway.models(), agent=agent,
                     mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration())
                 self._pool.start(record, node_executable(), bridge, payload)
@@ -113,12 +114,19 @@ class PiControllerMixin:
             self.chatChanged.emit()
             return False
         self.chatChanged.emit()
+        self.piCommandStarted.emit(record, action)
         return True
 
     def _send(self, text, steering=False):
         record = self._view
         text = text.strip()
-        if (not text and not record.attachments) or (record.busy and record.phase != "running") or self._kernel_busy:
+        self._last_send_error = ""
+        if self._kernel_busy:
+            self._last_send_error = "Pi 内核检查或更新正在进行；完成后即可再次发送消息。"
+            self.toast.emit(self._last_send_error)
+            self.changed.emit()
+            return False
+        if (not text and not record.attachments) or (record.busy and record.phase != "running"):
             return False
         images = [{"type": "image", "data": item["data"], "mimeType": item["mime"]} for item in record.attachments if item["kind"] == "image"]
         model = record.model if record.phase == "running" else self.store.data["selectedModel"]
@@ -185,6 +193,9 @@ class PiControllerMixin:
         if self._closing:
             return
         kind, visible = event.get("type"), record is self._view
+        if kind in ("subagents", "subagent_context", "subagent_event", "subagent_command", "subagent_queue", "subagent_queue_edited", "subagent_queue_returned"):
+            self._subagents.handle(record, event)
+            return
         if kind == 'umeko_request':
             result = self._umeko_control.execute({'operation': event.get('operation'), 'arguments': event.get('arguments', {})}, record)
             self._write_pi({'type': 'umeko_response', 'id': event.get('id'), 'result': result}, record)
@@ -203,6 +214,7 @@ class PiControllerMixin:
             return
         elif kind == "ready":
             record.ready = True
+            self._subagents.process_ready(record)
             record.phase = "running" if record.action in ("prompt", "compact") else "working"
             record.tool_status = "正在生成" if record.phase == "running" else "正在处理"
             if event.get("session"):
@@ -258,6 +270,13 @@ class PiControllerMixin:
                     record.messages[-1]["thinking"] = event["thinking"]
                 transcript = True
         elif kind == "tool":
+            if isinstance(event.get("subagent"), dict):
+                self._subagents.merge(record, event["subagent"])
+                previous = next((tool for message in record.messages for tool in message.get("tools", []) if tool["id"] == event["id"]), None)
+                # Live progress belongs to the independent side pane. Keep the
+                # main transcript card stable until its state changes.
+                if previous and previous.get("state") == event["state"]:
+                    return
             record.tool_status = event["name"] + (" · 运行中" if event["state"] == "running" else " · 失败" if event["state"] == "error" else " · 完成")
             found = next(((i, tool) for i in range(len(record.messages) - 1, -1, -1) for tool in record.messages[i].get("tools", []) if tool["id"] == event["id"]), None)
             tool = found[1] if found else None
@@ -268,6 +287,10 @@ class PiControllerMixin:
                     record.messages.append({"role": "assistant", "text": "", "error": False})
                 tool = tool_view(event["id"], event["name"], event.get("args", {}), record.workspace)
                 record.messages[-1].setdefault("tools", []).append(tool)
+            if isinstance(event.get("subagent"), dict):
+                tool["subagent"] = dict(event["subagent"])
+                if isinstance(event.get("args"), dict):
+                    tool["arguments"] = dict(event["args"])
             tool["state"] = event["state"]
             if event.get("media"):
                 tool["media"] = event["media"]
@@ -330,6 +353,7 @@ class PiControllerMixin:
                 record.messages, record.history, record.tree = event["messages"], [], event["tree"]
                 record.transcript, record.loaded = None, True
             record.resources = event["resources"]
+            self._subagents.sync(record)
             record.context_usage = event.get("contextUsage") or {}
             if visible:
                 self.contextUsageChanged.emit()
@@ -354,7 +378,12 @@ class PiControllerMixin:
                 self._restore_queued(record, [row["text"] for row in record.queue])
                 record.queue = []
             record.phase, record.tool_status, record.approval = "idle", "", {}
+            if kind == "done":
+                self._subagents.process_ready(record)
             if kind == "exit":
+                for child in list(record.subagents.values()):
+                    if child.get("status") in ("queued", "running"):
+                        self._subagents.merge(record, {**child, "status": "stopped"})
                 record.ready = False
                 if was_busy:
                     record.failed = True

@@ -41,6 +41,8 @@ from .document_preview import DocumentPreview
 from .preferences import PreferencesMixin
 from .common_providers import CommonProvidersMixin
 from .chatbox import media_view
+from .subagents import Subagents
+from .characters import CharactersMixin
 
 
 GREETINGS = (
@@ -59,9 +61,21 @@ GREETINGS = (
 )
 
 
-class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObject):
+class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObject):
     changed = Signal()
     appearanceChanged = Signal()
+
+    @Property('QVariantList', notify=changed)
+    def characterPacks(self):
+        return self._characterPacks()
+
+    @Property('QVariantMap', notify=changed)
+    def characterStyle(self):
+        return self._characterStyle()
+
+    @Property('QStringList', notify=changed)
+    def characterNames(self):
+        return self._characterNames()
 
     @Property(str, notify=appearanceChanged)
     def language(self):
@@ -97,6 +111,8 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
     documentRequested = Signal(str, str, str)
     taskFinished = Signal(str, str, bool, bool)
     jobDone = Signal(str, object)
+    jobStarted = Signal(str)
+    piCommandStarted = Signal(object, str)
     approvalRequested = Signal(object)
     approvalChanged = Signal()
     attachmentsChanged = Signal()
@@ -115,6 +131,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self.root = root
         self._app_about = AppAbout(self)
         self.store = Store()
+        self._init_characters()
         self.transcripts = TranscriptRepository(self.store.directory / 'cache/chat-index')
         self.store.data["themes"] = theme_library(self.store.data.get("themes"))
         if self.store.data["theme"] not in BASES and not any("custom:" + row["id"] == self.store.data["theme"] for row in self.store.data["themes"]):
@@ -157,7 +174,8 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self._closing = False
         self._copy_request = 0
         self._session_preview = SessionPreview(self)
-        self._document_preview = DocumentPreview(self)
+        self._document_preview = DocumentPreview(self, store=self.store)
+        self._subagents = Subagents(self)
         self._view.id = ""
         self._view.messages = []
         self._view.history = []
@@ -175,6 +193,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
             if session.get("workspace"):
                 self._ensure_project(session["workspace"])
         self._kernel_busy = False
+        self._last_send_error = ""
         self._latest = ""
         self._kernel_status = "就绪"
         self._view.approval = {}
@@ -209,6 +228,10 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
     @Property(QObject, constant=True)
     def documentPreview(self):
         return self._document_preview
+
+    @Property(QObject, constant=True)
+    def subagents(self):
+        return self._subagents
 
     @Property(QObject, constant=True)
     def providerPlugins(self):
@@ -518,6 +541,20 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
             handle = ctypes.c_void_p(int(window.winId()))
             ctypes.windll.user32.BringWindowToTop(handle)
             ctypes.windll.user32.SetForegroundWindow(handle)
+            ctypes.windll.user32.GetForegroundWindow.restype = ctypes.c_void_p
+            foreground = ctypes.windll.user32.GetForegroundWindow()
+            if foreground and foreground != handle.value:
+                # Explorer can retain the input queue after an OLE drop. Join
+                # it only for activation, then immediately detach again.
+                thread = ctypes.windll.kernel32.GetCurrentThreadId()
+                other = ctypes.windll.user32.GetWindowThreadProcessId(ctypes.c_void_p(foreground), None)
+                attached = other != thread and ctypes.windll.user32.AttachThreadInput(thread, other, True)
+                try:
+                    if attached:
+                        ctypes.windll.user32.BringWindowToTop(handle)
+                        ctypes.windll.user32.SetForegroundWindow(handle)
+                finally:
+                    if attached: ctypes.windll.user32.AttachThreadInput(thread, other, False)
 
     @Slot(str)
     def copyChatboxFile(self, raw):
@@ -755,38 +792,46 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
                 parsed = QUrl(url)
                 if not parsed.isLocalFile():
                     continue
-                path = Path(parsed.toLocalFile()).resolve(strict=True)
-                if not path.is_file() and not path.is_dir():
-                    continue
-                if any(item["path"] == str(path) for item in self._view.attachments):
+                item = self._file_attachment(url)
+                if item is None: continue
+                if any(existing["path"] == item["path"] for existing in self._view.attachments):
                     accepted = True
                     continue
                 if len(self._view.attachments) >= 20:
                     self.toast.emit("一次最多添加 20 个附件")
                     break
-                kind = "folder" if path.is_dir() else "file"
-                image = None
-                if path.is_file() and path.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"):
-                    if path.stat().st_size > 20 * 1024 * 1024:
-                        self.toast.emit("图片不能超过 20 MB")
-                        continue
-                    reader = QImageReader(str(path))
-                    size = reader.size()
-                    if size.isValid() and size.width() * size.height() > 40_000_000:
-                        self.toast.emit("图片尺寸过大")
-                        continue
-                    image = reader.read()
-                    if image.isNull():
-                        continue
-                item = {"id": uuid.uuid4().hex, "name": path.name, "path": str(path), "kind": kind}
-                if image is not None:
-                    item.update(kind="image", data=self._image_data(image), mime="image/png", preview=QUrl.fromLocalFile(str(path)).toString())
                 self._view.attachments.append(item)
                 accepted = True
         except (ValueError, OSError):
             self.toast.emit("无法读取附件")
         self.attachmentsChanged.emit()
         return accepted
+
+    def _file_attachment(self, url, *, encode_image=True):
+        parsed = QUrl(url)
+        if not parsed.isLocalFile(): return None
+        path = Path(parsed.toLocalFile()).resolve(strict=True)
+        if not path.is_file() and not path.is_dir(): return None
+        kind = "folder" if path.is_dir() else "file"
+        image = None
+        if path.is_file() and path.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"):
+            if path.stat().st_size > 20 * 1024 * 1024:
+                self.toast.emit("图片不能超过 20 MB")
+                return None
+            reader = QImageReader(str(path))
+            size = reader.size()
+            if size.isValid() and size.width() * size.height() > 40_000_000:
+                self.toast.emit("图片尺寸过大")
+                return None
+            image = reader.read()
+            if image.isNull():
+                return None
+        item = {"id": uuid.uuid4().hex, "name": path.name, "path": str(path), "kind": kind}
+        if image is not None:
+            item.update(kind="image", preview=QUrl.fromLocalFile(str(path)).toString())
+            if encode_image:
+                item.update(data=self._image_data(image), mime="image/png")
+        return item
 
     @staticmethod
     def _image_data(image):
@@ -977,6 +1022,10 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         return self._kernel_busy
 
     @Property(str, notify=changed)
+    def lastSendError(self):
+        return self._last_send_error
+
+    @Property(str, notify=changed)
     def kernelStatus(self):
         return self._kernel_status
 
@@ -1144,7 +1193,8 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
     def refreshAgent(self):
         if not self._view.busy:
             self._pool.retire(self._view)
-            self._command_pi("inspect")
+            return self._command_pi("inspect")
+        return False
 
     @Slot(str)
     def copy(self, value):
@@ -1260,6 +1310,25 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self.changed.emit()
         self.contextUsageChanged.emit()
 
+    def _validate_model_mappings(self, rows, previous_models, taken, *, plugin=False):
+        """Share the mapping editor's alias rules with the provider editor."""
+        if not isinstance(rows, list):
+            raise ValueError("模型映射必须是数组")
+        by_upstream = {model["upstream"]: model for model in previous_models}
+        by_alias = {model["alias"]: model for model in previous_models}
+        models = []
+        for row in rows:
+            upstream = row["upstream"].strip()
+            requested_alias = row.get("alias", "").strip()
+            previous = by_alias.get(requested_alias) or by_upstream.get(upstream)
+            alias = requested_alias or (previous or {}).get("alias", upstream)
+            if not upstream or not alias or alias in taken or any(c.isspace() for c in alias):
+                raise ValueError("模型 ID 不能为空；别名不能重复或包含空白")
+            taken.add(alias)
+            settings = self._provider_plugins.modelSettings(row, previous) if plugin else normalize_model(row, previous)
+            models.append({"upstream": upstream, "alias": alias, **settings})
+        return models
+
     @Slot(str, str, str, str, str, str, result=bool)
     def saveProvider(self, provider_id, name, api, base_url, key, model_names):
         try:
@@ -1278,20 +1347,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
                 raise ValueError("请输入 API Key")
             provider_id = provider_id or uuid.uuid4().hex[:12]
             taken = {m["alias"] for p in self.store.data["providers"] if p["id"] != provider_id for m in p["models"]}
-            old_models = {m["upstream"]: m for m in (existing or {}).get("models", [])}
-            old_aliases = {m["alias"]: m for m in old_models.values()}
-            models = []
-            if len(set(names)) != len(names):
-                raise ValueError("同一供应商的模型 ID 不能重复")
-            for row in rows:
-                upstream = row["upstream"].strip()
-                requested_alias = row.get("alias", "").strip()
-                previous = old_models.get(upstream) or old_aliases.get(requested_alias)
-                alias = requested_alias or (previous or {}).get("alias", upstream)
-                if not upstream or not alias or alias in taken or any(c.isspace() for c in alias):
-                    raise ValueError("模型 ID 不能为空；别名不能重复或包含空白")
-                taken.add(alias)
-                models.append({"upstream": upstream, "alias": alias, **normalize_model(row, previous)})
+            models = self._validate_model_mappings(rows, (existing or {}).get("models", []), taken)
             provider = {**(existing or {}), "id": provider_id, "name": name.strip(), "api": api, "baseUrl": base_url, "key": kept_key, "models": models,
                         "proxy": (existing or {}).get('proxy', {'mode':'system', 'url':''})}
             self.store.data["providers"] = [provider if p["id"] == provider_id else p for p in self.store.data["providers"]]
@@ -1323,7 +1379,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self._restart_pi()
         self.changed.emit()
 
-    @Slot(str)
+    @Slot(str, result=bool)
     def saveMappings(self, raw):
         try:
             if self._models_busy():
@@ -1336,18 +1392,8 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
                     continue
                 if p["api"] == "plugin":
                     self._provider_plugins._idle(p["id"])
-                previous = {m["upstream"]: m for m in p["models"]}
-                by_alias = {m["alias"]: m for m in p["models"]}
-                models = []
-                for row in rows:
-                    if row["provider"] != p["id"]:
-                        continue
-                    alias, upstream = row["alias"].strip(), row["upstream"].strip()
-                    if not alias or not upstream or alias in seen or any(c.isspace() for c in alias):
-                        raise ValueError("名称不能为空，别名不能重复或含空白")
-                    seen.add(alias)
-                    models.append({"alias": alias, "upstream": upstream,
-                                   **(self._provider_plugins.modelSettings(row, previous.get(upstream) or by_alias.get(alias)) if p["api"] == "plugin" else normalize_model(row, previous.get(upstream) or by_alias.get(alias)))})
+                models = self._validate_model_mappings([row for row in rows if row["provider"] == p["id"]],
+                    p["models"], seen, plugin=p["api"] == "plugin")
                 if not models and p["models"]:
                     raise ValueError("已有模型的供应商至少需要一个模型映射")
                 if p["api"] == "plugin" and {m["upstream"] for m in models} != {m["upstream"] for m in p["models"]}:
@@ -1359,8 +1405,10 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("模型映射已保存")
+            return True
         except (ValueError, KeyError, TypeError, StopIteration) as exc:
             self.toast.emit(str(exc))
+            return False
 
     def _new_proxy_listener(self, settings):
         return LocalServer(self.gateway, settings["port"], host="0.0.0.0" if settings["lan"] else "127.0.0.1",
@@ -1560,6 +1608,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self._stop()
 
     def _job(self, name, fn):
+        self.jobStarted.emit(name)
         def run():
             try:
                 self.jobDone.emit(name, {"ok": True, "value": fn()})
@@ -1734,7 +1783,8 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self._streaming_timer.stop()
         self._session_preview.cancel()
         self._chat_model.close()
-        self._document_preview.cancel()
+        self._document_preview.close()
+        self._subagents.close()
         self._proxy_usage_timer.stop()
         self._pool.close()
         if self.public_server:

@@ -1,0 +1,53 @@
+{
+  "tool": "built-in image_gen",
+  "transparentBackground": true,
+  "created": "2026-10-29",
+  "assets": {
+    "welcome": {
+      "file": "app/icons/characters/kaju/welcome.png",
+      "generatedFile": "/home/umeko/.codex/generated_images/01a18811-b531-7d42-91a3-a0943b182618/exec-7cf34424-f80b-4ec7-87f8-5967a0c5e56d.png",
+      "prompt": "Use case: stylized-concept. Production character-pack artwork for Umeko desktop featuring Kaju Nukumizu (温水佳树) from Makeine. Reference image is the character identity and style guide: straight near-black dark brown hair reaching shoulders/chest, neat blunt bangs, warm chestnut brown eyes, navy sailor uniform with two cream collar stripes. Match the crisp pixel-edged anime chibi style, friendly expressive face, recognizable character, no toddler proportions. True transparent background. One character only, complete hair and hands within comfortable transparent margins, no text, no watermark, no scenery.\nAction: Waist-up welcoming pose, warm sunny smile, one hand waving gently next to her face, other hand resting at chest.",
+      "reference": "app/icons/subagents/kaju-nukumizu-catch.png"
+    },
+    "avatarWink": {
+      "file": "app/icons/characters/kaju/avatarWink.png",
+      "generatedFile": "/home/umeko/.codex/generated_images/01a18811-b531-7d42-91a3-a0943b182618/exec-cf5b9e87-96b6-49f2-bb9a-b2fdf896add4.png",
+      "prompt": "Use case: stylized-concept. Production character-pack artwork for Umeko desktop featuring Kaju Nukumizu (温水佳树) from Makeine. Reference image is the character identity and style guide: straight near-black dark brown hair reaching shoulders/chest, neat blunt bangs, warm chestnut brown eyes, navy sailor uniform with two cream collar stripes. Match the crisp pixel-edged anime chibi style, friendly expressive face, recognizable character, no toddler proportions. True transparent background. One character only, complete hair and hands within comfortable transparent margins, no text, no watermark, no scenery.\nAction: Compact head-and-collar avatar portrait, playful gentle wink with one brown eye open, small smiling mouth and subtle blush.",
+      "reference": "app/icons/subagents/kaju-nukumizu-catch.png"
+    },
+    "avatarHappy": {
+      "file": "app/icons/characters/kaju/avatarHappy.png",
+      "generatedFile": "/home/umeko/.codex/generated_images/01a18811-b531-7d42-91a3-a0943b182618/exec-299bb11d-1ba6-4ea0-afda-08839c863402.png",
+      "prompt": "Use case: stylized-concept. Production character-pack artwork for Umeko desktop featuring Kaju Nukumizu (温水佳树) from Makeine. Reference image is the character identity and style guide: straight near-black dark brown hair reaching shoulders/chest, neat blunt bangs, warm chestnut brown eyes, navy sailor uniform with two cream collar stripes. Match the crisp pixel-edged anime chibi style, friendly expressive face, recognizable character, no toddler proportions. True transparent background. One character only, complete hair and hands within comfortable transparent margins, no text, no watermark, no scenery.\nAction: Compact head-and-collar avatar portrait, delighted happy laughing smile with both eyes joyfully curved, light blush.",
+      "reference": "app/icons/subagents/kaju-nukumizu-catch.png"
+    },
+    "reply": {
+      "file": "app/icons/characters/kaju/reply.png",
+      "generatedFile": "/home/umeko/.codex/generated_images/01a18811-b531-7d42-91a3-a0943b182618/exec-d842de63-9d8d-48d0-8043-373626e377b0.png",
+      "prompt": "Use case: stylized-concept. A coherent Umeko desktop character-pack illustration of Kaju Nukumizu (温水佳树, Makeine). The reference image is the identity/style guide only: straight near-black dark brown hair with blunt bangs, large warm chestnut eyes, navy sailor school uniform with two cream collar stripes. Friendly expressive anime chibi, crisp pixel-edged cel shading matching reference, recognizable character rather than toddler. True transparent background, no words, watermark, scenery or extra people. Keep complete hair/hands within generous transparent margins.\nAction: Head-and-shoulders compact portrait looking at viewer, gentle satisfied closed-mouth smile after finishing a task, warm relaxed brown eyes, no props.",
+      "reference": "app/icons/subagents/kaju-nukumizu-catch.png"
+    },
+    "loading": {
+      "file": "app/icons/characters/kaju/loading.png",
+      "generatedFile": "/home/umeko/.codex/generated_images/01a18811-b531-7d42-91a3-a0943b182618/exec-596c5236-0c62-422b-8027-6aad18e90e0e.png",
+      "prompt": "Use case: stylized-concept. A coherent Umeko desktop character-pack illustration of Kaju Nukumizu (温水佳树, Makeine). The reference image is the identity/style guide only: straight near-black dark brown hair with blunt bangs, large warm chestnut eyes, navy sailor school uniform with two cream collar stripes. Friendly expressive anime chibi, crisp pixel-edged cel shading matching reference, recognizable character rather than toddler. True transparent background, no words, watermark, scenery or extra people. Keep complete hair/hands within generous transparent margins.\nAction: Upper-body pose concentrating on a small open notebook held at chest height, one index finger resting lightly at her cheek, thoughtful but cheerful expression. No floating icons, no text.",
+      "reference": "app/icons/subagents/kaju-nukumizu-catch.png"
+    },
+    "push": {
+      "file": "app/icons/characters/kaju/push.png",
+      "generatedFile": "/home/umeko/.codex/generated_images/01a18811-b531-7d42-91a3-a0943b182618/exec-64f24abd-03f0-431f-8984-d2068a4bd1e7.png",
+      "prompt": "Use case: stylized-concept. A coherent Umeko desktop character-pack illustration of Kaju Nukumizu (温水佳树, Makeine). The reference image is the identity/style guide only: straight near-black dark brown hair with blunt bangs, large warm chestnut eyes, navy sailor school uniform with two cream collar stripes. Friendly expressive anime chibi, crisp pixel-edged cel shading matching reference, recognizable character rather than toddler. True transparent background, no words, watermark, scenery or extra people. Keep complete hair/hands within generous transparent margins.\nAction: Waist-up three-quarter view facing right, leaning forward and pressing both open palms against a very thin pale blue translucent UI divider at the right, determined cute effortful expression. Show the active pushing posture and both complete hands, no wall or scenery.",
+      "reference": "app/icons/subagents/kaju-nukumizu-catch.png"
+    },
+    "pull": {
+      "file": "app/icons/characters/kaju/pull.png",
+      "generatedFile": "/home/umeko/.codex/generated_images/01a18811-b531-7d42-91a3-a0943b182618/exec-a0037f9b-7179-4da2-8f85-1bf46c949358.png",
+      "prompt": "Use case: stylized-concept. A coherent Umeko desktop character-pack illustration of Kaju Nukumizu (温水佳树, Makeine). The reference image is the identity/style guide only: straight near-black dark brown hair with blunt bangs, large warm chestnut eyes, navy sailor school uniform with two cream collar stripes. Friendly expressive anime chibi, crisp pixel-edged cel shading matching reference, recognizable character rather than toddler. True transparent background, no words, watermark, scenery or extra people. Keep complete hair/hands within generous transparent margins.\nAction: Waist-up three-quarter view facing right, hands curled securely around a very thin pale blue translucent UI divider at the right, leaning back clearly pulling the divider toward herself, playful effortful expression. Show complete gripping fingers, no wall or scenery.",
+      "reference": "app/icons/subagents/kaju-nukumizu-catch.png"
+    }
+  },
+  "reused": {
+    "avatarSmile": "app/icons/subagents/kaju-nukumizu.png",
+    "catch": "app/icons/subagents/kaju-nukumizu-catch.png"
+  }
+}
