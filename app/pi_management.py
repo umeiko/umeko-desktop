@@ -15,6 +15,7 @@ from .pi_terminal import console_runtime, prepare_terminal, launch_terminal
 from .pi_install import parse_install_command, install_package
 from .npm_config import validate_npm_config, probe_npm, npm_environment
 from .storage import DEFAULTS
+from .filesystem_paths import filesystem_path, ordinary_path
 
 
 def resource_command(release, cwd, agent_dir, agent, **action):
@@ -35,13 +36,14 @@ def resource_command(release, cwd, agent_dir, agent, **action):
 
 
 def prepare_factory(root, directory, agent, workspace):
+    root, directory = filesystem_path(root), filesystem_path(directory)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
     backup = directory / "pi-backups" / stamp
     backup.mkdir(parents=True)
-    old_dir = Path(agent.get("agentDir") or Path.home() / ".pi/agent")
+    old_dir = filesystem_path(agent.get("agentDir") or Path.home() / ".pi/agent")
     (backup / "restore.json").write_text(json.dumps({"agent": agent, "workspace": str(workspace)}, ensure_ascii=False, indent=2), encoding="utf-8")
     for source, name in ((old_dir / "settings.json", "personal-settings.json"),
-                         (Path(workspace) / ".pi/settings.json", "project-settings.json"),
+                         (filesystem_path(workspace) / ".pi/settings.json", "project-settings.json"),
                          (directory / "kernels/active.json", "active.json")):
         if source.is_file(): shutil.copy2(source, backup / name)
     release = directory / "kernels" / ("factory-" + stamp)
@@ -50,7 +52,7 @@ def prepare_factory(root, directory, agent, workspace):
     fresh = directory / "pi-profiles" / stamp
     fresh.mkdir(parents=True)
     # Keep all original Pi directories, extension files and native sessions intact.
-    return {"backup": str(backup), "release": str(release), "agentDir": str(fresh)}
+    return {"backup": str(ordinary_path(backup)), "release": str(ordinary_path(release)), "agentDir": str(ordinary_path(fresh))}
 
 
 class PiManagement(QObject):
