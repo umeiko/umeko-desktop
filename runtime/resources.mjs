@@ -31,8 +31,8 @@ export function extensionInfo(row) {
   const builtin = row.path.startsWith("builtin:"), name = row.path.slice(8);
   let root = row.metadata?.packageRoot || row.metadata?.baseDir || "";
   let origin = "local", updateKind = "none", manifest = {};
-  if (builtin && ["chatbox", "pi-commands", "umeko-control"].includes(name)) {
-    const descriptions = {chatbox:"向聊天和侧栏展示文件、图片、文档与网页。", "pi-commands":"向当前内嵌 Pi 实例发送原生命令和斜杠命令。", "umeko-control":"查询和管理 Umeko 的供应商、主题、扩展与应用设置。"};
+  if (builtin && ["chatbox", "pi-commands", "umeko-control", "background-jobs"].includes(name)) {
+    const descriptions = {chatbox:"向聊天和侧栏展示文件、图片、文档与网页。", "pi-commands":"向当前内嵌 Pi 实例发送原生命令和斜杠命令。", "umeko-control":"查询和管理 Umeko 的供应商、主题、扩展与应用设置。", "background-jobs":"运行后台命令、读取独立日志、等待结果或只停止该任务的进程树；阻止按名称批量结束进程。"};
     return {origin:"desktop", bundled:true, description:descriptions[name], homepage:desktopRepository, repository:desktopRepository, version:"", package:"", updateKind:"desktop"};
   }
   if (builtin) {
@@ -98,7 +98,7 @@ export async function checkExtensionUpdate(row, {cwd, lookup = npmVersion} = {})
   return {id:row.id,status:"unsupported",message:"本地扩展没有可检查的更新源"};
 }
 
-export const builtins = ["codemode", "tool-search", "mcp", "chatbox", "pi-commands", "umeko-control", "subagents"];
+export const builtins = ["codemode", "tool-search", "mcp", "chatbox", "pi-commands", "umeko-control", "background-jobs", "subagents"];
 const target = entry => entry.replace(/^[!+-]/, "");
 const canonical = (value, base) => value.startsWith("builtin:") ? value : resolve(base, value);
 export function extensionName(path, metadata = {}) {

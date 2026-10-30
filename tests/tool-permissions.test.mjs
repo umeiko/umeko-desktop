@@ -285,6 +285,33 @@ test('ask mode requests approval for shell, edit, write and annotated mutating t
   ]) assert.ok(!(await h.call(name, input))?.block);
   assert.equal(h.prompts.length, 5);
 });
+test('background starts use the same approval and headless policy as native shell commands', async () => {
+  const denied = harness({ mode: 'ask', approve: false });
+  assert.equal((await denied.call('background_job', {action:'start',command:'printf harmless'}))?.block, true);
+  assert.equal(denied.prompts.length, 1);
+  assert.match(denied.prompts[0].join(' '), /printf harmless/);
+  const headless = harness({ mode:'ask', hasUI:false });
+  assert.equal((await headless.call('background_job', {action:'start',command:'printf harmless'}))?.block, true);
+});
+test('automatic background starts classify dangerous commands and preserve safe inspection calls', async () => {
+  const h = harness({ approve:false });
+  // Classification only: no dangerous command is ever executed.
+  for (const command of ['shutdown /r /t 0', 'rm -rf /', 'git push -f origin main']) {
+    assert.equal((await h.call('background_job', {action:'start',command}))?.block, true);
+  }
+  assert.ok(!(await h.call('background_job', {action:'start',command:'printf harmless'}))?.block);
+  h.setMode('ask');
+  for (const action of ['list','status','read','wait','kill']) {
+    assert.ok(!(await h.call('background_job', {action,id:'owned-job'}))?.block);
+  }
+  assert.equal(h.prompts.length, 3);
+});
+test('background classification uses its actual requested working directory', async () => {
+  let observed;
+  const h = harness({classify(command, context) { observed=context.cwd; return null; }});
+  await h.call('background_job', {action:'start',command:'printf harmless',cwd:process.cwd()});
+  assert.equal(observed, process.cwd());
+});
 test('read and search tools stay silent in ask mode including readOnlyHint extension', async () => {
   const h = harness({ mode: 'ask' });
   for (const [name, input] of [
