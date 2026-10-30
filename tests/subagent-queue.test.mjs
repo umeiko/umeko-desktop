@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import {mkdtempSync,mkdirSync,readFileSync} from "node:fs";
+import {existsSync,mkdtempSync,mkdirSync,readFileSync,writeFileSync} from "node:fs";
 import {rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
@@ -23,6 +23,8 @@ test("child queue edits/removal, immediate tool and model interruption, FIFO con
   const agentDir=join(directory,"agent"); mkdirSync(agentDir);
   const previousDirectory=process.cwd(), previousAgentDir=process.env.PI_CODING_AGENT_DIR;
   process.chdir(directory); process.env.PI_CODING_AGENT_DIR=agentDir;
+  const commandPid=join(directory,"fixture-command.pid");
+  const longCommand=`node -e "const fs=require('node:fs');fs.writeFileSync('fixture-command.pid',String(process.pid));setInterval(()=>{if(fs.existsSync('fixture-command.stop'))process.exit(0)},25);setTimeout(()=>process.exit(0),30000)"`;
   const events=[], requests=[];
   const server=http.createServer(async(request,response)=>{
     let raw=""; for await (const chunk of request) raw+=chunk;
@@ -30,7 +32,7 @@ test("child queue edits/removal, immediate tool and model interruption, FIFO con
     const item={body,response,respond(text,call=false){
       response.writeHead(200,{"Content-Type":"text/event-stream"});
       const common={id:"queue-test",object:"chat.completion.chunk",created:1,model:"test"};
-      const delta=call ? {role:"assistant",content:null,tool_calls:[{index:0,id:"long-command",type:"function",function:{name:"bash",arguments:JSON.stringify({command:'node -e "setTimeout(() => {}, 30000)"',timeout:40})}}]}
+      const delta=call ? {role:"assistant",content:null,tool_calls:[{index:0,id:"long-command",type:"function",function:{name:"bash",arguments:JSON.stringify({command:longCommand,timeout:40})}}]}
         : {role:"assistant",content:text};
       response.end(`data: ${JSON.stringify({...common,choices:[{index:0,delta,finish_reason:null}]})}\n\ndata: ${JSON.stringify({...common,choices:[{index:0,delta:{},finish_reason:call ? "tool_calls" : "stop"}]})}\n\ndata: [DONE]\n\n`);
     }};
@@ -73,6 +75,7 @@ test("child queue edits/removal, immediate tool and model interruption, FIFO con
     const untouched=requests.find(item=>lastUser(item).includes("QueueControl"));
     first.respond("",true);
     await waitFor(()=>events.some(event=>event.type==="subagent_event" && event.id===subject && event.event.type==="tool" && event.event.state==="running"),"Long command did not start");
+    await waitFor(()=>existsSync(commandPid),"Fixture command did not actually start");
     await command({action:"send",id:subject,text:"normal-A",mode:"followUp",messageId:"A"});
     await command({action:"send",id:subject,text:"delete-B",mode:"followUp",messageId:"B"});
     assert.deepEqual(queue(subject).map(item=>item.id),["A","B"]);
@@ -133,6 +136,18 @@ test("child queue edits/removal, immediate tool and model interruption, FIFO con
     adapter.dispose(); await session?.extensionRunner.emit({type:"session_shutdown"});
     await session?.dispose?.(); await modelRuntime?.dispose?.();
     server.closeAllConnections(); await new Promise(resolve=>server.close(resolve));
+    // The SDK can resolve an interrupted tool before every Windows descendant
+    // has exited. Signal only this fixture's own sleeper, without killing any
+    // unrelated processes or weakening the interruption-time assertions above.
+    writeFileSync(join(directory,"fixture-command.stop"),"stop");
+    if (process.platform==="win32" && existsSync(commandPid)) {
+      const pid=Number(readFileSync(commandPid,"utf8"));
+      assert.ok(Number.isSafeInteger(pid) && pid>0 && pid!==process.pid);
+      await waitFor(()=>{
+        try { process.kill(pid,0); return false; }
+        catch (error) { if (error.code==="ESRCH") return true; throw error; }
+      },"Fixture command did not release its Windows directory handle");
+    }
     process.chdir(previousDirectory);
     if (previousAgentDir===undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR=previousAgentDir;
     // Let pending Windows child-process close callbacks release cwd handles
