@@ -24,6 +24,7 @@ class DesktopPlugins(QObject):
     def __init__(self, backend):
         super().__init__(backend)
         self.b=backend;self.root=backend.store.directory/'desktop-plugins';self.registry=self.root/'settings.json'
+        self._icons=read(backend.root/'plugin-runtime/umeko_plugin_sdk/icons.json',[]) or []
         self.settings=read(self.registry,{}) or {};self.entries={}
         for identifier,record in self.settings.get('installed',{}).items():
             if re.fullmatch('[a-z][a-z0-9-]{0,63}',identifier) and re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?',record.get('version','')):
@@ -54,7 +55,17 @@ class DesktopPlugins(QObject):
         sessions=self.settings.get('sessions',{})
         return identifier in sessions[self.storage_key] if self.storage_key in sessions else self.entries[identifier].get('builtin',False)
     @Property('QVariantList',notify=changed)
-    def rows(self):return sorted([{**e,'lifecycle':e.get('lifecycle','session'),'enabled':self.enabled(k),'sessionEnabled':self.session_enabled(k),'hasPage':bool(e.get('page')),'running':bool(self.workers.get(k,{}).get('ready')),'starting':k in self.workers and not self.workers[k]['ready']} for k,e in self.entries.items()],key=lambda e:e['name'])
+    def rows(self):return sorted([{**e,**self.icon_for(k),'lifecycle':e.get('lifecycle','session'),'enabled':self.enabled(k),'sessionEnabled':self.session_enabled(k),'hasPage':bool(e.get('page')),'running':bool(self.workers.get(k,{}).get('ready')),'starting':k in self.workers and not self.workers[k]['ready']} for k,e in self.entries.items()],key=lambda e:e['name'])
+    @Property('QVariantList',constant=True)
+    def iconCatalog(self):return self._icons
+    def icon_for(self,identifier):
+        icon=self.entries[identifier].get('icon','puzzle')
+        if isinstance(icon,str):
+            return {'iconGlyph':next((row['glyph'] for row in self._icons if row['id']==icon),'puzzle'),'iconSource':''}
+        if isinstance(icon,dict) and isinstance(icon.get('path'),str):
+            root=self.path(identifier).resolve();path=(root/icon['path']).resolve()
+            if path.is_relative_to(root) and path.is_file():return {'iconGlyph':'puzzle','iconSource':QUrl.fromLocalFile(str(path)).toString()}
+        return {'iconGlyph':'puzzle','iconSource':''}
     @Property('QVariantList',notify=changed)
     def sessionPlugins(self):return [e for e in self.rows if e['enabled'] and e['sessionEnabled'] and e['hasPage']]
     def recent_key(self):return os.path.normcase(os.path.abspath(self._session.get('workspace') or '.'))
@@ -72,7 +83,7 @@ class DesktopPlugins(QObject):
     def page(self):
         if not self._page:return {}
         e=self.entries[self._page];worker=self.workers.get(self._page)
-        return {'id':self._page,'title':e['name'],'url':QUrl.fromLocalFile(str(self.path(self._page)/e['page'])).toString(),'selection':self._selection,'config':self.settings.get('config',{}).get(self._page,read(self.path(self._page)/e.get('config','config.json'),{})),'error':self._error,'loading':not worker or not worker['ready']}
+        return {'id':self._page,'title':e['name'],**self.icon_for(self._page),'url':QUrl.fromLocalFile(str(self.path(self._page)/e['page'])).toString(),'selection':self._selection,'config':self.settings.get('config',{}).get(self._page,read(self.path(self._page)/e.get('config','config.json'),{})),'error':self._error,'loading':not worker or not worker['ready']}
     @Property(bool,notify=changed)
     def busy(self):return self._busy
     @Property(str,notify=changed)
@@ -116,7 +127,7 @@ class DesktopPlugins(QObject):
         if switched:self.changed.emit()
         for identifier in list(self.workers):self.send(identifier,{'id':uuid.uuid4().hex,'operation':'session','arguments':{'session':value}})
         for identifier,e in self.entries.items():
-            if self.enabled(identifier) and self.session_enabled(identifier) and not e.get('page'):self.start(identifier)
+            if self.enabled(identifier) and self.session_enabled(identifier) and (self.application(identifier) or not e.get('page')):self.start(identifier)
     @Slot(str,bool)
     def setEnabled(self,identifier,value):
         if identifier not in self.entries:return
@@ -128,7 +139,7 @@ class DesktopPlugins(QObject):
         if not value:
             if self._page==identifier:self.closePage()
             self.stop(identifier)
-        elif self.session_enabled(identifier) and not self.entries[identifier].get('page'):self.start(identifier)
+        elif self.session_enabled(identifier) and (self.application(identifier) or not self.entries[identifier].get('page')):self.start(identifier)
         self.changed.emit()
     @Slot(str,bool)
     def setSessionEnabled(self,identifier,value):
@@ -147,15 +158,20 @@ class DesktopPlugins(QObject):
     @Slot(str,result=bool)
     def openPage(self,identifier):
         if identifier not in self.entries or not self.enabled(identifier) or not self.session_enabled(identifier) or not self.entries[identifier].get('page'):return False
+        if self._page==identifier and not self._error and identifier in self.workers:return True
+        self._failed_services.discard(identifier)
         self.closePage();self._page=identifier;self._error=''
         recent=self.settings.setdefault('recentPages',{})
         if recent.get(self.recent_key())!=identifier:
             recent[self.recent_key()]=identifier;self.save();self.changed.emit()
-        self.start(identifier);self.sessionChanged.emit();self.pageChanged.emit();self.requested.emit();return True
+        self.start(identifier);self.send(identifier,{'id':uuid.uuid4().hex,'operation':'event','arguments':{'name':'page.visibility','data':{'visible':True}}});self.sessionChanged.emit();self.pageChanged.emit();self.requested.emit();return True
     @Slot()
     def closePage(self):
         if not self._page:return
-        old=self._page;self._page='';self._selection='';self._error='';self.stop(old);self.sessionChanged.emit();self.pageChanged.emit();self.dismissed.emit()
+        old=self._page;self._page='';self._selection='';self._error=''
+        self.send(old,{'id':uuid.uuid4().hex,'operation':'event','arguments':{'name':'page.visibility','data':{'visible':False}}})
+        if not self.application(old):self.stop(old)
+        self.sessionChanged.emit();self.pageChanged.emit();self.dismissed.emit()
     def command(self):
         if getattr(sys,'frozen',False):return sys.executable,['--umeko-plugin-worker']
         return sys.executable,['-B',str(self.b.root/'plugin-runtime/worker.py')]
@@ -255,7 +271,8 @@ class DesktopPlugins(QObject):
                     self.response.emit(request,{'ok':False,'error':'桌宠操作超时，可通过 status 查看导入结果'})
             QTimer.singleShot(timeout_ms,self,service_timeout)
             return request
-        self.send(identifier,{'id':request,'operation':'agentCall' if agent else 'call','arguments':{'method':method,'arguments':args,'session':session or self._session}})
+        snapshot={**(session or self._session),'language':getattr(self.b,'language','zh')}
+        self.send(identifier,{'id':request,'operation':'agentCall' if agent else 'call','arguments':{'method':method,'arguments':args,'session':snapshot}})
         def timeout():
             if self.workers.get(identifier) is w and request in w['pending']:
                 if self.application(identifier):self._failed_services.add(identifier)
@@ -304,12 +321,25 @@ class DesktopPlugins(QObject):
         if kind=='agent.notify':
             if 'session.write' in perms:self.bridge.notify(identifier,args)
             return
+        if kind=='widget.event':
+            target=args.get('session')
+            if target is not None and (not isinstance(target,dict) or target.get('token')!=self._session.get('token') or target.get('workspace')!=self._session.get('workspace')):return
+            if identifier==self._page and isinstance(args.get('topic'),str) and 0<len(args['topic'])<=80 and isinstance(args.get('data'),dict) and len(json.dumps(args['data'],ensure_ascii=False).encode('utf-8'))<=65536:
+                self.event.emit(args['topic'],args['data'])
+            return
         if self.application(identifier) and kind!='notification':
             target=args.get('session',{})
             if not isinstance(target,dict) or target.get('token')!=self._session.get('token'):return
-        if kind=='widget.event':
-            if identifier==self._page and isinstance(args.get('topic'),str) and 0<len(args['topic'])<=80 and isinstance(args.get('data'),dict) and len(json.dumps(args['data']))<=65536:
-                self.event.emit(args['topic'],args['data'])
+        if kind=='page.open':
+            if 'session.write' in perms:self.openPage(identifier)
+            return
+        if kind=='session.draft':
+            if 'session.write' not in perms:return
+            target=args.get('session',{});text=args.get('text','')
+            if not isinstance(target,dict) or target.get('token')!=self._session.get('token') or not isinstance(text,str) or not text.strip() or len(text)>16000:return
+            draft=getattr(self.b._view,'draft','')
+            self.b.setDraft(draft+(chr(10) if draft and not draft.endswith(chr(10)) else '')+text)
+            self.b.editorText.emit(self.b._view.draft)
             return
         if kind in ('files.copy','file.openWith'):
             if 'workspace.read' not in perms or not self._session.get('workspace'):return

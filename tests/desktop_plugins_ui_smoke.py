@@ -31,7 +31,10 @@ def wait(check,message):
     print({name: ({p:str(find(name).property(p)) for p in ('visible','opened','mode','moving','source','width','height')} if find(name) else None) for name in ('webPane','desktopPluginSurfaceLoader','desktopPluginSurface','desktopPluginPageLoader','fileTreePluginPage')},flush=True)
     raise AssertionError(message+'\n'+str(backend.desktopPlugins.page)+'\n'+'\n'.join(warnings))
 def click(name,button=Qt.LeftButton):
-    item=find(name);assert item is not None,name
+    # A ListView model can be populated before its visible delegates are
+    # materialized on the next polish. Wait for the actual click target.
+    wait(lambda:find(name) is not None,'Control did not appear: '+name)
+    item=find(name)
     window.grabWindow();QTest.mouseClick(window,button,Qt.NoModifier,item.mapToScene(item.boundingRect().center()).toPoint());QTest.qWait(120)
 def check_launcher_boundary():
     launcher=find('desktopPluginLauncher');chat=find('chatPage');composer=find('composer')
@@ -50,7 +53,9 @@ try:
     wait(lambda:find('pluginManagerArtwork').property('progress')==1 and find('pluginManagerArtwork').property('implicitWidth')>0,'Plugin illustration did not load')
     window.grabWindow().save(str(out/'agent-plugin-entry.png'))
     click('openDesktopPluginsButton')
-    assert find('desktopPluginsPage').isVisible();assert find('desktopPluginInstalledList').property('count')==3
+    assert find('desktopPluginsPage').isVisible()
+    assert {row['id'] for row in backend.desktopPlugins.rows}=={'file-tree','git-viewer','desktop-pet','terminal'}
+    assert find('desktopPluginInstalledList').property('count')==len(backend.desktopPlugins.rows)
     search=find('desktopPluginSearch');search.setProperty('text','Git');QTest.qWait(50);assert find('desktopPluginInstalledList').property('count')==1
     search.setProperty('text','');QTest.qWait(50);window.grabWindow().save(str(out/'manager.png'))
     manager=backend.desktopPlugins

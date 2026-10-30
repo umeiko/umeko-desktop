@@ -1,5 +1,5 @@
 {
-  "kind":"umeko-plugin","apiVersion":1,"id":"file-tree","name":"文件管理器","version":"1.0.0",
+  "kind":"umeko-plugin","apiVersion":1,"id":"file-tree","name":"文件管理器","version":"1.0.0","icon":"folder",
   "summary":"浏览文件并附加到聊天",
   "description":"管理当前工作目录。单击选中，双击附加文件到聊天；右键提供打开方式、系统定位、剪切、复制、路径复制、重命名与永久删除。",
   "author":"Umeko","entrypoint":"scripts/plugin.py:create_plugin","page":"qml/Main.qml",

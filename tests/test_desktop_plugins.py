@@ -17,7 +17,7 @@ class Pool(QObject):
     def find(self,identifier):return next((row for row in self.records.values() if row.id==identifier),None)
 
 class Host(QObject):
-    viewChanged=Signal();chatChanged=Signal();toast=Signal(str);documentRequested=Signal(str,str,str)
+    viewChanged=Signal();chatChanged=Signal();toast=Signal(str);documentRequested=Signal(str,str,str);editorText=Signal(str)
     def __init__(self,directory):
         super().__init__();self.root=ROOT;self.store=SimpleNamespace(directory=directory/'profile')
         self._view=SimpleNamespace(key='token-one',id='session-one',workspace=str(directory/'workspace'),title='Fixture',busy=False,messages=[{'role':'user','text':'fixture context'}])
@@ -26,6 +26,7 @@ class Host(QObject):
     def send(self,text):self.sent.append((self._view.id,text,False))
     def steer(self,text):self.sent.append((self._view.id,text,True))
     def attachChatboxFile(self,path):self.attached.append(path)
+    def setDraft(self,text):self._view.draft=text
     def openChatboxPath(self,path,reveal):self.revealed.append((path,reveal))
 
 class DesktopPluginTests(unittest.TestCase):
@@ -93,6 +94,52 @@ def create_plugin(context):return Fixture(context)
         self.assertNotIn('messages',self.manager.session)
         self.assertFalse(self.call('list',{'path':'..'})['ok'])
         self.manager.closePage();self.assertEqual(set(self.manager.workers),{'desktop-pet'});self.app.processEvents()
+
+    def test_widget_icons_have_a_shared_catalog_and_validate_custom_assets(self):
+        rows={row['id']:row for row in self.manager.rows}
+        self.assertEqual(rows['terminal']['iconGlyph'],'terminal')
+        self.assertEqual(rows['file-tree']['iconGlyph'],'folder')
+        self.assertEqual(rows['git-viewer']['iconGlyph'],'branch')
+        self.assertEqual(rows['desktop-pet']['iconGlyph'],'pet')
+        self.assertEqual(len(self.manager.iconCatalog),21)
+        for icon in self.manager.iconCatalog:self.assertTrue((ROOT/'app/icons'/(icon['glyph']+'.svg')).is_file())
+        self.fixture();folder=self.path/'session-demo-1.0.0';manifest=json.loads((folder/'manifest.json').read_text())
+        manifest['icon']='does-not-exist';(folder/'manifest.json').write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(PluginError,'未知内置'):validate(folder)
+        (folder/'assets/custom.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M2 2h16v16H2z"/></svg>')
+        manifest['icon']={'path':'assets/custom.svg'};(folder/'manifest.json').write_text(json.dumps(manifest))
+        self.assertEqual(validate(folder)[0]['icon'],manifest['icon'])
+        manifest['icon']={'path':'../outside.svg'};(folder/'manifest.json').write_text(json.dumps(manifest))
+        with self.assertRaises(PluginError):validate(folder)
+
+    def test_terminal_worker_grants_the_composer_chat_and_executes_in_the_visible_pty(self):
+        pet_worker=self.manager.workers['desktop-pet']
+        self.manager.pet.configure({'visible':True})
+        config=json.loads((ROOT/'umeko-plugins/terminal/config.json').read_text());config['useShellProfile']=False
+        self.manager.settings.setdefault('config',{})['terminal']=config
+        self.manager.setEnabled('terminal',True);self.assertTrue(self.manager.openPage('terminal'))
+        listed=self.call('list',{'ensure':True});self.assertTrue(listed['ok'],listed)
+        terminal=listed['result']['terminals'][0];identifier=terminal['id'];pid=terminal['pid']
+        self.host._view.draft='existing';updates=[];self.host.editorText.connect(updates.append)
+        self.assertTrue(self.call('attach',{'terminalId':identifier})['ok'])
+        self.assertEqual(updates[-1],'existing\n用户附带了来自widget：'+identifier+'的终端')
+        command="Write-Output ('HOST_'+'SHARED_PTY')" if os.name=='nt' else "printf 'HOST_%s\\n' SHARED_PTY"
+        request=self.manager.call_for('terminal','run',json.dumps({'terminalId':identifier,'command':command}),agent=True)
+        self.wait(lambda:request in self.responses);self.assertTrue(self.responses[request]['ok'],self.responses[request])
+        output={}
+        def has_output():
+            nonlocal output
+            output=self.call('read',{'terminalId':identifier})['result']
+            return 'HOST_SHARED_PTY' in output.get('text','')
+        self.wait(has_output);self.assertEqual(output['pid'],pid)
+        self.manager.closePage();self.assertIn('terminal',self.manager.workers)
+        self.host._view.key='another-chat';self.host._view.id='session-after-switch';self.host.viewChanged.emit()
+        self.assertIs(self.manager.workers['desktop-pet'],pet_worker);self.assertTrue(self.manager.pet.visible)
+        self.assertIn('terminal',self.manager.workers)
+        stopped=[];self.manager.workers['terminal']['process'].finished.connect(lambda *_:stopped.append(True))
+        self.manager.setEnabled('terminal',False);self.assertNotIn('terminal',self.manager.workers)
+        self.wait(lambda:bool(stopped))
+        self.assertIs(self.manager.workers['desktop-pet'],pet_worker);self.assertTrue(self.manager.pet.running)
 
     def desktop_control(self):
         from app.umeko_control import UmekoControl
@@ -264,7 +311,28 @@ def create_plugin(context):return Fixture(context)
         self.assertEqual(seen,['',first['workspace']]);self.assertEqual(events[0]['arguments']['session'],captured)
         self.assertEqual(events[0]['arguments']['requestId'],'')
         self.fixture();folder=self.path/'session-demo-1.0.0';manifest=json.loads((folder/'manifest.json').read_text());manifest['lifecycle']='application';(folder/'manifest.json').write_text(json.dumps(manifest))
-        with self.assertRaisesRegex(PluginError,'page'):validate(folder)
+        self.assertEqual(validate(folder)[0]['lifecycle'],'application')
+
+    def test_application_page_can_close_without_stopping_worker_and_append_only_to_bound_composer(self):
+        self.fixture(lifecycle='application');folder=self.path/'session-demo-1.0.0';manifest=json.loads((folder/'manifest.json').read_text());manifest['page']='qml/Main.qml';(folder/'manifest.json').write_text(json.dumps(manifest))
+        archive=self.path/'app-page.zip'
+        with zipfile.ZipFile(archive,'w') as stream:
+            for path in folder.rglob('*'):
+                if path.is_file():stream.write(path,path.relative_to(folder).as_posix())
+        self.manager.importZip(QUrl.fromLocalFile(str(archive)).toString());self.wait(lambda:not self.manager.busy)
+        self.manager.setEnabled('session-demo',True);self.assertTrue(self.manager.openPage('session-demo'))
+        self.wait(lambda:self.manager.workers['session-demo']['ready']);worker=self.manager.workers['session-demo']
+        self.host._view.draft='existing draft';updates=[];self.host.editorText.connect(updates.append)
+        self.manager.host_event('session-demo',{'event':'session.draft','arguments':{'text':'terminal reference','session':{'token':self.host._view.key}}})
+        self.assertEqual(updates[-1],'existing draft\nterminal reference');self.assertFalse(self.host.sent)
+        self.manager.host_event('session-demo',{'event':'session.draft','arguments':{'text':'wrong chat','session':{'token':'other-chat'}}})
+        self.assertEqual(updates[-1],'existing draft\nterminal reference')
+        events=[];self.manager.event.connect(lambda topic,data:events.append((topic,data)))
+        target={'token':self.host._view.key,'workspace':self.host._view.workspace}
+        self.manager.host_event('session-demo',{'event':'widget.event','arguments':{'topic':'select','data':{'id':'ours'},'session':target}})
+        self.manager.host_event('session-demo',{'event':'widget.event','arguments':{'topic':'select','data':{'id':'other'},'session':{**target,'token':'other-chat'}}})
+        self.assertEqual(events,[('select',{'id':'ours'})])
+        self.manager.closePage();self.assertIs(self.manager.workers['session-demo'],worker)
 
     def test_application_service_startup_failure_does_not_restart_on_chat_updates(self):
         archive,_=self.fixture(lifecycle='application');folder=self.path/'session-demo-1.0.0';counter=self.path/'startup-count'

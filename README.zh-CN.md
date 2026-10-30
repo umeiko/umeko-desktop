@@ -41,7 +41,7 @@ Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原�
 <details>
 <summary>展开看看 · 工具记录、子智能体与自定义供应商</summary>
 
-**过程看得见，阅读不打断。** 思考和连续工具调用可以逐级展开，点击文件名即可复制路径。
+**过程看得见，阅读不打断。** 思考和连续工具调用可以逐级展开，点击文件名直接预览，右键可附加到聊天、复制或在文件管理器中打开。
 
 ![纯白主题下展开的思考与工具过程 · 中文界面](docs/images/process-white-zh.png)
 

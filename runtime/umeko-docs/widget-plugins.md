@@ -5,9 +5,9 @@ Widget 扩展 Umeko 的桌面界面和当前会话，例如文件管理器、版
 ## 会话插件和应用常驻服务
 
 - `lifecycle: "session"`（默认）：绑定聊天，可有页面或无页面，切换聊天时停止。
-- `lifecycle: "application"`：无页面的应用级后台服务，跨聊天常驻。导入或升级后停用，使用插件管理的全局开关或 `widgets.enable` 明确启用后随应用启动。切换聊天、进入设置和关闭面板不停止；停用、升级、卸载或退出时停止。修改服务配置会重启该服务，异常停止后可重新启用重试。
+- `lifecycle: "application"`：应用级常驻插件，可提供页面（如终端）或作为无页面的后台服务。导入或升级后停用，使用插件管理的全局开关或 `widgets.enable` 明确启用后随应用启动。切换聊天、进入设置和关闭面板不停止；停用、升级、卸载或退出时停止。修改配置会重启该插件，异常停止后可重新启用重试。
 
-`widgets.list` 返回 `lifecycle`、`active`、`running` 和 `starting`，应用级服务会出现在文档发现和管理列表，但不会出现在右侧页面选择器。应用级进程和 `context.state_dir` 属于整个应用，不能把当前前台聊天当作所有后台任务的目标。开发包的 `examples/application-service` 提供完整文件监听示例。
+`widgets.list` 返回 `lifecycle`、`active`、`running` 和 `starting`，有页面的插件出现在右侧页面选择器，无页面的服务仅出现在文档发现和管理列表。应用级进程和 `context.state_dir` 属于整个应用，不能把当前前台聊天当作所有后台任务的目标。开发包的 `examples/application-service` 提供完整文件监听示例，`examples/terminal` 提供共享终端示例。
 
 ## 开发与使用
 
@@ -42,6 +42,8 @@ python -m umeko_plugin_sdk pack my-widget my-widget.zip
 
 所有 Widget 管理和通信复用 `umeko_desktop` 的 `widgets.*` 操作；`plugins.import`、`plugins.login`、`plugins.resource` 等仍只属于 Provider 插件。每个 Widget ZIP 必须包含 20 字以内的单行 `summary`、`agent.document` 指向的完整非空 Markdown，以及 `agent.methods` 公开方法清单；文档最多 64 KiB。缺少这些材料会在安装时拒绝。
 
+Widget 清单可选 `icon`：填写 `"terminal"`、`"folder"`、`"branch"`、`"code"`、`"pet"` 等内置名称，或 `{"path":"assets/icon.svg"}` 使用包内图标。插件管理的“内置图标”可以预览并复制清单配置；SDK 的 `umeko_plugin_sdk/icons.json` 列出全部 21 个选项。未填写时使用通用插件图标。自带图标最多 512 KiB，支持 SVG/PNG/WebP/JPEG。
+
 ## Agent 如何发现、管理和调用 Widget
 
 先调用 `help`，参数 `{"topic":"widget"}`，获取本指南和已激活的 Widget；或调用 `widgets.list`，参数 `{"activeOnly":true}`。列表包含简介、激活/打开状态、文档路径和公开方法名。再调用 `widgets.docs`，参数 `{"id":"目标 ID"}`，获取完整文档与参数 schema。
@@ -65,7 +67,9 @@ python -m umeko_plugin_sdk pack my-widget my-widget.zip
 
 调用立即返回 `accepted`、`requestId`、`jobId`。用 `widgets.result` 的 `requestId` 查询到 `completed` 或 `failed`，其中 `result` 包含 `{ok,result}` 或 `{ok:false,error}`，`updates` 包含该 Widget 在此请求期间推送的消息。也可用 `jobs.get` 观察最终状态。默认调用超时 20 秒，可通过 `timeoutMs` 调整为 1–120 秒；超时会停止该插件进程。当前最多保留 64 项请求，退出后不恢复未完成调用。
 
-会话级 Widget 调用绑定当前显示的主会话。应用级服务可接受已经在后台运行的其他聊天发起的调用，每次调用的参数、工作区、结果和更新都绑定发起它的聊天，其他聊天不能查询其请求结果。已激活的 Widget 可通过调用按需启动；展示界面的公开方法应先打开页面，应用服务不调用 `widgets.open`。
+会话级 Widget 调用绑定当前显示的主会话。应用级插件可接受已经在后台运行的其他聊天发起的调用，每次调用的参数、工作区、结果和更新都绑定发起它的聊天，其他聊天不能查询其请求结果。已激活的 Widget 可通过调用按需启动；有页面的插件可使用 `widgets.open`，无页面的服务不调用此操作。
+
+用户附加 `terminal-ID-...` 终端引用时，Widget 包 ID 仍为 `terminal`。先读取 `widgets.docs`（`id: "terminal"`），再用 `widgets.call` 的 `read`、`run`、`write`、`interrupt` 操作这个已有终端。只能访问用户附加到本聊天的终端；命令及输出显示在同一终端中。`run` 返回提交状态，不代表命令已执行完成。
 
 ## Widget 如何向 Agent 提供信息
 
@@ -76,6 +80,8 @@ python -m umeko_plugin_sdk pack my-widget my-widget.zip
 | 让 Agent 处理一段文字 | `context.send_message(text)` | 通过聊天的普通发送流程提交；正在回复时进入后续消息队列 |
 | 影响正在运行的任务 | `context.send_message(text, steering=True)` | 通过聊天的引导流程提交，沿用 Umeko 当前的打断和继续行为 |
 | 提供工作区文件 | `context.attach_file(relative)` | 放入当前聊天输入框的附件列表，等待用户或后续发送动作一起发送 |
+| 附加文字上下文 | `context.append_to_chat(text, session=None)` | 追加到当前目标聊天的草稿，保留已有内容，不自动发送 |
+| 展示本插件页面 | `context.open_page()` | 仅当调用聊天处于前台时打开；后台调用不抢占面板 |
 | 仅提示用户 | `context.notify(message)` | 显示简短界面通知，不加入 Agent 上下文 |
 | 实时推送进度和数据 | `context.notify_agent(message, data={}, request_id=None, wake=True)` | 主动注入主 Agent 上下文，同时保留可查询的消息记录 |
 
@@ -119,7 +125,7 @@ def create_plugin(context):
 | `sdk.session` / `context.session` | 当前会话 `id`、实例 `token`、标题、工作区、忙碌状态；宿主随会话变化同步 |
 | `session.read` 权限 | 额外提供最近 8 条消息的角色和文本，每条最多 2000 字符 |
 | `sdk.config` / `context.config` | 按插件 schema 验证后的配置 |
-| `sdk.colors`、`sdk.scale`、`sdk.active` | 页面主题、字号缩放和当前是否可交互 |
+| `sdk.colors`、`sdk.scale`、`sdk.language`、`sdk.active` | 页面主题、字号缩放、当前界面语言（`zh` / `en`）和当前是否可交互 |
 | `context.resolve_workspace(relative)` | 在授权工作区内解析文件路径，要求 `workspace.read` |
 | `context.state_dir` | 按插件和会话划分的持久状态目录 |
 
@@ -127,7 +133,7 @@ def create_plugin(context):
 
 Umeko 会合并聊天更新，约每 200ms 同步一次最新会话快照；它不是每个 token 的独立事件。QML 可用 `Connections` 监听 `sdk.sessionChanged`；Python 覆盖 `Plugin.on_event("session.changed", snapshot)` 接收快照。长时间执行的 `handle()` 会延迟该进程处理后续快照，耗时任务应可取消地在后台执行。
 
-Agent 可调用插件公开方法传入结构化数据。插件通过 `context.publish(topic, data)` 更新当前可见页面，QML 监听 `sdk.event(topic, data)`；页面未打开时不缓存界面事件，应在重新打开时从插件状态读取。事件负载最多 64 KiB。
+Agent 可调用插件公开方法传入结构化数据。插件通过 `context.publish(topic, data, session=None)` 更新当前可见页面，QML 监听 `sdk.event(topic, data)`；页面未打开时不缓存界面事件，应在重新打开时从插件状态读取。事件负载最多 64 KiB。应用级共享状态可不指定 session；操作某聊天对应界面元素时传入捕获的 session，其他聊天处于前台就不送达。`page.visibility` 事件用于暂停和恢复隐藏页面的帧传输。
 
 ## 当前能力边界
 
