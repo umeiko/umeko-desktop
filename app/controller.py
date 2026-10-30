@@ -1075,6 +1075,28 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self.approvalChanged.emit()
 
     @Slot(str)
+    def setToolPermissionMode(self, mode):
+        """Apply the user's tool permission choice without interrupting sessions."""
+        if mode not in ("auto", "ask"):
+            return self.toast.emit("工具执行权限模式无效")
+        agent = self.store.data["agent"]
+        previous = agent.get("toolPermissionMode", "auto")
+        if mode == previous:
+            return
+        agent["toolPermissionMode"] = mode
+        try:
+            self.store.save()
+        except (OSError, RuntimeError) as exc:
+            agent["toolPermissionMode"] = previous
+            return self.toast.emit("工具执行权限保存失败：" + str(exc))
+        self.changed.emit()
+        payload = {"type": "tool_permission_mode", "mode": mode,
+                   "language": self.language, "dataDir": str(self.store.directory)}
+        for record in self._pool.records.values():
+            if record.process is not None:
+                self._pool.write(record, payload)
+
+    @Slot(str)
     def saveAgent(self, raw):
         if self._view.busy:
             return self.toast.emit("请先停止当前任务")

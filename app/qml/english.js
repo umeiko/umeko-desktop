@@ -1,5 +1,12 @@
 .pragma library
 var strings = {
+  "工具执行权限": "Tool permissions",
+  "每次询问": "Ask every time",
+  "全自动": "Fully automatic",
+  "每次执行命令、编辑或写入文件前询问；读取和搜索直接执行。切换立即保存并生效。": "Ask before each command, file edit or write. Reads and searches run directly. Changes are saved and applied immediately.",
+  "工具自动执行，仅七类高风险操作需要确认。切换立即保存并生效。": "Run tools automatically; only the seven high-risk categories require approval. Changes are saved and applied immediately.",
+  "工具执行权限模式无效": "Invalid tool permission mode",
+  "工具执行权限保存失败：": "Could not save tool permissions: ",
   "桌面小宠物": "Desktop pet",
   "桌宠设置": "Pet settings",
   "打开 Umeko": "Open Umeko",
