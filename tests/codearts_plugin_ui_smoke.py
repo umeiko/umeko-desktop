@@ -5,6 +5,8 @@ All profiles, Downloads and CLI state are disposable; no model calls are made.
 """
 from __future__ import annotations
 
+import copy
+from contextlib import nullcontext
 import importlib
 import json
 import os
@@ -153,6 +155,31 @@ class FakeLegacy:
         self.raw = None
 
 
+class FakeSecrets:
+    """Confine non-Windows smoke storage to memory, without OS keyring IO.
+
+    Windows keeps actual DPAPI for this flow. --memory-secrets also exercises
+    the Linux fixture path on a Windows development machine.
+    """
+    values = {}
+
+    def __init__(self, path):
+        self.path = Path(path)
+
+    def _read(self):
+        return copy.deepcopy(self.values.get(self.path, {}))
+
+    def get(self, name, default=None):
+        return self._read().get(name, default)
+
+    def set(self, name, value):
+        self.values.setdefault(self.path, {})[name] = copy.deepcopy(value)
+
+    def clear(self, keep_credentials=False):
+        credentials = self.get("credentials") if keep_credentials else None
+        self.values[self.path] = {"credentials": credentials} if credentials else {}
+
+
 def main():
     archive = Path(os.environ.get("CODEARTS_PROVIDER_ZIP", ROOT / "build/optional-providers/umeko-codearts-provider-0.1.0.zip"))
     assert archive.is_file(), "Build the optional CodeArts ZIP first"
@@ -161,6 +188,9 @@ def main():
     base = Path("C:/UmekoTests") if os.name == "nt" else Path(tempfile.gettempdir()) / "UmekoTests"
     base.mkdir(parents=True, exist_ok=True)
     active, report, opened, calls, guards = None, {}, [], [], []
+    memory_secrets = os.name != "nt" or "--memory-secrets" in sys.argv
+    secrets_guard = (patch("app.provider_plugins.ProtectedSecrets", FakeSecrets)
+                     if memory_secrets else nullcontext())
     with tempfile.TemporaryDirectory(prefix="codearts-f8-ui-", dir=base) as temporary:
         work = Path(temporary)
         private_temp = work / "temp"
@@ -196,7 +226,8 @@ def main():
             return module
 
         try:
-            with patch.dict(os.environ, {"TEMP": str(private_temp), "TMP": str(private_temp)}), \
+            with secrets_guard, \
+                 patch.dict(os.environ, {"TEMP": str(private_temp), "TMP": str(private_temp)}), \
                  patch.object(QDesktopServices, "openUrl", side_effect=lambda url: opened.append(url.toString()) or True), \
                  patch.object(Controller, "loadNativeIndex", new=lambda self: None), \
                  patch("app.project_info.git_output", return_value=""), \
@@ -234,7 +265,8 @@ def main():
                 assert active.find("managePluginModels_" + account_id).isVisible()
                 active.capture(out / "codearts-optional-connected.png")
                 report["cardCsvLogin"] = {"passed": True, "fakeBrowserOpens": 1, "csvDeleted": True,
-                                          "protectedCredentials": True, "connectedModel": MODEL}
+                                          "protectedCredentials": not memory_secrets,
+                                          "publicCredentialsMasked": True, "connectedModel": MODEL}
                 active.click("uninstallPlugin_codearts_" + version)
                 assert active.window.findChild(QObject, "uninstallProviderDialog").property("opened")
                 active.click("confirmUninstallProviderButton")
@@ -259,6 +291,7 @@ def main():
                 active = None
                 report.update(ok=True, fakeOnly=True, actualCreateApplication=True, actualMainQml=True,
                               controlsStyle="Basic", fakeCliCatalogCalls=len(calls), externalProcesses=0,
+                              secretsBackend="private-memory-fixture" if memory_secrets else "Windows-DPAPI",
                               modelCalls=0, qmlWarnings=0,
                               temporaryBytesBeforeCleanup=sum(p.stat().st_size for p in work.rglob("*") if p.is_file()))
         finally:
@@ -266,6 +299,7 @@ def main():
                 active.close()
             for guard in reversed(guards):
                 guard.stop()
+            FakeSecrets.values.clear()
     report.update(profilesCleaned=not work.exists(), temporaryBytesAfterCleanup=0)
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
