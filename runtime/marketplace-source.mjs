@@ -6,12 +6,67 @@
  * versions, direct tarball source scan, structured output.
  */
 import {execFile} from 'node:child_process';
-import {readFile,writeFile,mkdtemp,rm,readdir} from 'node:fs/promises';
+import {readFile,mkdtemp,rm,readdir} from 'node:fs/promises';
+import {Readable,Transform} from 'node:stream';
+import {pipeline} from 'node:stream/promises';
+import {createGunzip} from 'node:zlib';
+import {setImmediate as yieldScan} from 'node:timers/promises';
 import {existsSync} from 'node:fs';
 import {join,relative,dirname,resolve,posix,win32} from 'node:path';
 import {tmpdir} from 'node:os';
 import {EnvHttpProxyAgent,fetch as undiciFetch} from 'undici';
 import * as tar from 'tar';
+
+// Per archive: compressed input, decoded tar bytes (including headers/padding),
+// and physical entries (including metadata). No archive is buffered whole.
+// Limits apply before writing.
+// 2026-10-30: all 20 results on npm's first keywords:pi-package search page
+// completed source scans within these limits (largest download 15,221,332 bytes;
+// largest declared unpacked size 52,058,316 bytes; largest file count 1,241).
+export const ARCHIVE_LIMITS = Object.freeze({compressedBytes:32*1024*1024,entries:20000,expandedBytes:128*1024*1024});
+// Per cache, not per item: settled JSON UTF-8 bytes plus key/entry overhead;
+// pending promises reserve overhead and still count toward the entry limit.
+export const CACHE_LIMITS = Object.freeze({maxEntries:64,maxBytes:8*1024*1024,ttlMs:5*60*1000});
+export function createBoundedCache({maxEntries=CACHE_LIMITS.maxEntries,maxBytes=CACHE_LIMITS.maxBytes,ttlMs=CACHE_LIMITS.ttlMs,now=Date.now}={}) {
+ const items=new Map();let bytes=0;
+ function remove(key){const item=items.get(key);if(item){bytes-=item.bytes;items.delete(key);}}
+ function prune(){for(const [key,item] of items)if(now()>=item.expires)remove(key);}
+ function trim(){while(items.size>maxEntries||bytes>maxBytes)remove(items.keys().next().value);}
+ function get(key){prune();const item=items.get(key);if(item){items.delete(key);items.set(key,item);}return item?.value;}
+ function set(key,value){
+  prune();remove(key);const overhead=Buffer.byteLength(String(key),'utf8')+64;
+  const item={value,bytes:overhead,expires:now()+ttlMs};
+  if(!(value instanceof Promise))item.bytes+=Buffer.byteLength(JSON.stringify(value)??'null','utf8');
+  items.set(key,item);bytes+=item.bytes;trim();
+  if(value instanceof Promise)value.then(resolved=>{
+   if(items.get(key)!==item)return;
+   bytes-=item.bytes;item.bytes=overhead+Buffer.byteLength(JSON.stringify(resolved)??'null','utf8');bytes+=item.bytes;trim();
+  },()=>{if(items.get(key)===item)remove(key);});
+  return value;
+ }
+ return {get,set,delete:remove,clear(){items.clear();bytes=0;},
+  getOrCreate(key,loader){const cached=get(key);return cached===undefined?set(key,Promise.resolve().then(loader)):cached;},
+  stats(){prune();return {entries:items.size,bytes};}};
+}
+function checkCancelled(signal){signal?.throwIfAborted();}
+function capError(kind,value){return new Error(`Archive ${kind} limit exceeded: ${value}${kind==='entry count'?' entries':' bytes'}`);}
+function byteLimiter(kind,limit){let bytes=0;return new Transform({transform(chunk,_encoding,done){bytes+=chunk.length;done(bytes>limit?capError(kind,limit):null,bytes>limit?undefined:chunk);}});}
+// Count physical tar headers too (PAX/long-name/ignored entries), before tar
+// allocates metadata or creates files. Only a single 512-byte header is retained.
+function entryLimiter(limit){let count=0,skip=0,used=0;const header=Buffer.alloc(512);
+ return new Transform({transform(chunk,_encoding,done){try{
+  let offset=0;while(offset<chunk.length){
+   if(skip){const n=Math.min(skip,chunk.length-offset);skip-=n;offset+=n;continue;}
+   const n=Math.min(512-used,chunk.length-offset);chunk.copy(header,used,offset,offset+n);used+=n;offset+=n;
+   if(used===512){used=0;if(header.some(byte=>byte!==0)){
+    if(++count>limit)throw capError('entry count',limit);
+    const size=new tar.Header(header).size;
+    if(!Number.isSafeInteger(size)||size<0)throw new Error('Archive contains an invalid entry size');
+    skip=Math.ceil(size/512)*512;
+   }}
+  }done(null,chunk);
+ }catch(error){done(error);}}});
+}
 
 function registryError(message,status=0,unsupported=false){return Object.assign(new Error(message),{status,unsupported});}
 function runNode(args,cwd,env){return new Promise((resolve,reject)=>{
@@ -29,8 +84,9 @@ export function resolveNpmCliPath({execPath=process.execPath,env=process.env,pla
  const found=candidates.find(candidate=>exists(candidate));if(!found)throw new Error('npm-cli.js not found for effective registry configuration');return found;
 }
 
-export function createRegistryClient({agent={},cwd=process.cwd(),fetch:injectedFetch}={}) {
- let configured,dispatcher;const docCache=new Map(),detailCache=new Map(),auditCache=new Map();
+export function createRegistryClient({agent={},cwd=process.cwd(),fetch:injectedFetch,limits={},cacheOptions={}}={}) {
+ const bounds={...ARCHIVE_LIMITS,...limits};
+ let configured,dispatcher;const docCache=createBoundedCache(cacheOptions),detailCache=createBoundedCache(cacheOptions),auditCache=createBoundedCache(cacheOptions);
  async function configure(){return configured??=(async()=>{
   const env={...process.env};
   if(agent.npmRegistry)env.npm_config_registry=agent.npmRegistry;
@@ -48,10 +104,13 @@ export function createRegistryClient({agent={},cwd=process.cwd(),fetch:injectedF
   const noProxy=Array.isArray(config.noproxy)?config.noproxy.join(','):config.noproxy||env.NO_PROXY||env.no_proxy||'';
   dispatcher=new EnvHttpProxyAgent({httpProxy,httpsProxy,noProxy,connect:tls,requestTls:tls,proxyTls:tls});
   return {registry:NPM_REGISTRY,cafile:cafile||null};
- })();}
+ })().catch(error=>{configured=undefined;throw error;});}
  async function request(url,options={}){
+  checkCancelled(options.signal);
   await configure();
-  return injectedFetch?injectedFetch(url,options):undiciFetch(url,{...options,dispatcher,signal:options.signal||AbortSignal.timeout(30000)});
+  const signal=AbortSignal.any([AbortSignal.timeout(30000),...(options.signal?[options.signal]:[])]);
+  checkCancelled(signal);
+  return injectedFetch?injectedFetch(url,{...options,signal}):undiciFetch(url,{...options,dispatcher,signal});
  }
 let NPM_REGISTRY = "https://registry.npmjs.org";
 
@@ -66,6 +125,7 @@ async function upstreamSearchPackages(query, options) {
     url.searchParams.set("text", searchText);
     url.searchParams.set("size", String(Math.min(limit, 250)));
     const res = await request(url.toString(), {
+        signal:options?.signal,
         headers: {
             Accept: "application/json"
         }
@@ -90,13 +150,14 @@ async function upstreamSearchPackages(query, options) {
             }
         }));
 }
-async function upstreamGetPackageDetail(name, version) {
-    const data = await fetchRegistryDoc(name);
+async function upstreamGetPackageDetail(name, version, signal) {
+    const data = await fetchRegistryDoc(name,signal);
     const latestName = version ?? getLatestVersionName(data);
     const latestVersion = latestName ? data.versions?.[latestName] : undefined;
     if (!latestVersion || !latestName) {
         throw new Error(`npm registry detail for ${name} did not contain a latest version`);
     }
+    if (latestVersion.version !== latestName) throw new Error('Registry version metadata does not match the requested exact version');
     const maintainerSource = latestVersion.maintainers ?? data.maintainers;
     const date = data.time?.[latestName] ?? "";
     return {
@@ -149,8 +210,9 @@ function inferPackageTypes(manifest) {
     if (manifest.themes?.length) types.push("theme");
     return types;
 }
-async function upstreamFetchRegistryDoc(name) {
+async function upstreamFetchRegistryDoc(name,signal) {
     const res = await request(`${NPM_REGISTRY.replace(/\/$/, "")}/${encodeURIComponent(name)}`, {
+        signal,
         headers: {
             Accept: "application/json"
         }
@@ -332,24 +394,26 @@ async function quickAudit(name) {
     const detail = await getPackageDetail(name);
     return buildReport(name, detail.version, metadataCheck(detail), [], false);
 }
-async function sourceScan(detail) {
+async function sourceScan(detail,signal) {
+  checkCancelled(signal);
   const findings = [];
   const tmpDir = await mkdtemp(join(tmpdir(), 'umeko-marketplace-audit-'));
   try {
-    const res = await request(detail.dist.tarball);
+    const res = await request(detail.dist.tarball,{signal});
     if (!res.ok) throw registryError('Source download failed: HTTP ' + res.status, res.status);
-    const archive = join(tmpDir, 'source.tgz');
-    await writeFile(archive, Buffer.from(await res.arrayBuffer()));
-    await tar.x({file: archive, cwd: tmpDir, preservePaths: false, strict: true,
+    const extractor=tar.x({cwd: tmpDir, preservePaths: false, strict: true,
       filter: (entryPath, entry) => !entryPath.replaceAll('\\', '/').split('/').includes('..')
         && !/^(?:[a-z]:|[\\/])/i.test(entryPath)
         && ['File', 'Directory', 'OldFile', 'ContiguousFile'].includes(entry.type)});
-    await walkAndScan(join(tmpDir, 'package'), join(tmpDir, 'package'), findings);
+    await pipeline(Readable.fromWeb(res.body),byteLimiter('compressed download',bounds.compressedBytes),
+      createGunzip(),byteLimiter('expanded archive',bounds.expandedBytes),entryLimiter(bounds.entries),extractor,{signal});
+    await walkAndScan(join(tmpDir, 'package'), join(tmpDir, 'package'), findings,signal);
     return findings;
   } finally { await rm(tmpDir, {recursive: true, force: true}); }
 }
 
-async function walkAndScan(dir, rootDir, findings) {
+async function walkAndScan(dir, rootDir, findings,signal) {
+    await yieldScan(undefined,{signal});checkCancelled(signal);
     let entries;
     try {
         entries = await readdir(dir, {
@@ -359,40 +423,36 @@ async function walkAndScan(dir, rootDir, findings) {
         return;
     }
     for (const entry of entries){
+        checkCancelled(signal);
         const fullPath = join(dir, entry.name);
         if (IGNORED_DIRECTORIES.includes(entry.name)) continue;
         if (entry.isDirectory()) {
-            await walkAndScan(fullPath, rootDir, findings);
+            await walkAndScan(fullPath, rootDir, findings,signal);
             continue;
         }
         const ext = entry.name.includes(".") ? `.${entry.name.split(".").pop()}` : "";
         if (SOURCE_EXTENSIONS.includes(ext)) {
-            await scanFile(fullPath, rootDir, findings);
+            await scanFile(fullPath, rootDir, findings,signal);
         }
     }
 }
-async function scanFile(filePath, rootDir, findings) {
+async function scanFile(filePath, rootDir, findings,signal) {
     let content;
     try {
-        content = await readFile(filePath, "utf-8");
+        content = await readFile(filePath, {encoding:"utf-8",signal});
     } catch  {
+        checkCancelled(signal);
         return;
     }
     const relPath = relative(rootDir, filePath) || filePath;
     const lines = content.split("\n");
     for (const danger of DANGER_PATTERNS){
+        await yieldScan(undefined,{signal});
         const regex = new RegExp(danger.pattern.source, danger.pattern.flags);
-        let match;
+        let match,lineNum=1,charCount=lines[0]?.length+1,matched=0;
         while((match = regex.exec(content)) !== null){
-            let lineNum = 1;
-            let charCount = 0;
-            for(let i = 0; i < lines.length; i++){
-                charCount += lines[i].length + 1;
-                if (charCount > match.index) {
-                    lineNum = i + 1;
-                    break;
-                }
-            }
+            if(++matched%256===0)await yieldScan(undefined,{signal});
+            while(charCount<=match.index&&lineNum<lines.length)charCount+=lines[lineNum++].length+1;
             findings.push({
                 severity: danger.severity,
                 pattern: danger.description,
@@ -406,13 +466,13 @@ async function scanFile(filePath, rootDir, findings) {
 function truncate(s, n) {
     return s.length > n ? `${s.slice(0, n - 1)}…` : s;
 }
-async function performAudit(name, deepScan = true, version) {
-  const detail = await getPackageDetail(name, version);
+async function performAudit(name, deepScan = true, version, signal) {
+  const detail = await getPackageDetail(name, version,{signal});
   const meta = metadataCheck(detail);
   let findings = [], deepScanned = false, scanError;
   if (deepScan) {
-    try { findings = await sourceScan(detail); deepScanned = true; }
-    catch(error) { scanError = error instanceof Error ? error.message : String(error);
+    try { findings = await sourceScan(detail,signal); deepScanned = true; }
+    catch(error) { checkCancelled(signal);scanError = error instanceof Error ? error.message : String(error);
       findings = [{severity:'info',pattern:'Source scan unavailable',file:'',context:scanError}]; }
   }
   return {...buildReport(name, detail.version, meta, findings, deepScanned), requestedDeepScan: deepScan, ...(scanError?{scanError}:{})};
@@ -431,7 +491,7 @@ function buildReport(name, version, meta, findings, deepScanned) {
     } else if (findings.length === 0 && deepScanned) {
         parts.push("No configured danger patterns were found in published source. This keyword scan is not a safety guarantee.");
     } else if (!deepScanned) {
-        parts.push("Metadata-only audit (no source scan). Run with deepScan=true for full analysis.");
+        parts.push("Metadata-only notes (no source scan). A keyword scan is not a safety guarantee.");
     } else {
         parts.push(`${findings.length} finding(s) found (${crit} critical, ${high} high, ${med} medium, ${findings.filter((f)=>f.severity === "low").length} low, ${findings.filter((f)=>f.severity === "info").length} info).`);
     }
@@ -542,7 +602,7 @@ function formatAuditReport(report) {
         lines.push("");
     } else {
         lines.push("### ✅ Source Scan", "");
-        lines.push("No dangerous patterns found in source code.", "");
+        lines.push("No configured patterns found. This keyword scan is not a safety guarantee.", "");
     }
     lines.push("### 📝 Summary", "");
     lines.push(report.summary);
@@ -630,34 +690,41 @@ function formatDeps(deps) {
 }
 
 
- async function fetchRegistryDoc(name){
-  if(!docCache.has(name))docCache.set(name,upstreamFetchRegistryDoc(name).catch(error=>{docCache.delete(name);throw error;}));
-  return docCache.get(name);
+ async function fetchRegistryDoc(name,signal){
+  checkCancelled(signal);const value=await docCache.getOrCreate(name,()=>upstreamFetchRegistryDoc(name,signal));checkCancelled(signal);return value;
  }
- async function getPackageDetail(name,version){
+ async function getPackageDetail(name,version,{signal}={}){
+  checkCancelled(signal);
   await configure();const key=name+'@'+(version||'latest');
-  if(!detailCache.has(key))detailCache.set(key,upstreamGetPackageDetail(name,version).catch(error=>{detailCache.delete(key);throw error;}));
-  return detailCache.get(key);
+  const value=await detailCache.getOrCreate(key,()=>upstreamGetPackageDetail(name,version,signal));checkCancelled(signal);return value;
  }
- async function fullAudit(name,deepScan=true,version){
-  const detail=await getPackageDetail(name,version);const key=name+'@'+detail.version+':'+Boolean(deepScan);
-  if(!auditCache.has(key))auditCache.set(key,performAudit(name,deepScan,detail.version).catch(error=>{auditCache.delete(key);throw error;}));
-  return auditCache.get(key);
+ async function fullAudit(name,deepScan=true,version,{signal}={}){
+  const detail=await getPackageDetail(name,version,{signal});const key=name+'@'+detail.version+':'+Boolean(deepScan);
+  const cached=auditCache.get(key);if(cached){const value=await cached;checkCancelled(signal);return value;}
+  const pending=performAudit(name,deepScan,detail.version,signal);
+  auditCache.set(key,pending);
+  const value=await pending;
+  // A scan transport/limit failure remains visible, but must be retried next time.
+  if(value.scanError)auditCache.delete(key);
+  checkCancelled(signal);return value;
  }
- async function searchPackages(query,{limit=20,type}={}){
+ async function searchPackages(query,{limit=20,type,signal}={}){
+  checkCancelled(signal);
   await configure();let packages,method='search',searchError;
-  try {packages=await upstreamSearchPackages(query,{limit});}
+  try {packages=await upstreamSearchPackages(query,{limit,signal});}
   catch(error){
    if(!([404,405,501].includes(error.status)||error.unsupported))throw error;
    const exact=query.trim();
    if(!/^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i.test(exact))throw error;
-   searchError=error.message;const detail=await getPackageDetail(exact);
+   searchError=error.message;const detail=await getPackageDetail(exact,undefined,{signal});
    if(!detail.keywords.includes('pi-package'))throw new Error('Exact-name result is not tagged pi-package');
    packages=[detail];method='exact-name';
   }
-  if(type){const filtered=[];for(const p of packages){const detail=await getPackageDetail(p.name,p.version);if(inferPackageTypes(detail.piManifest).includes(type))filtered.push({...p,types:inferPackageTypes(detail.piManifest)});}packages=filtered;}
+  if(type){const filtered=[];for(const p of packages){const detail=await getPackageDetail(p.name,p.version,{signal});if(inferPackageTypes(detail.piManifest).includes(type))filtered.push({...p,types:inferPackageTypes(detail.piManifest)});}packages=filtered;}
+  checkCancelled(signal);
   return {method,registry:NPM_REGISTRY,packages,...(searchError?{searchError}:{})};
  }
  return {searchPackages,getPackageDetail,fullAudit,formatSearchResults,formatPackageDetail,formatAuditReport,metadataCheck,
+   cacheStats:()=>({docs:docCache.stats(),details:detailCache.stats(),audits:auditCache.stats()}),
    getConfiguration:configure,close:async()=>{await dispatcher?.close();}};
 }
