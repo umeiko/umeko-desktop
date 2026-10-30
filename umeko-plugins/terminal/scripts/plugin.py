@@ -33,8 +33,12 @@ class Terminals(Plugin):
         profiles=self.profiles();selected=next((row for row in profiles if row['id']==profile),profiles[0] if profiles else None)
         if not selected:raise PluginError('本机没有可用的终端 Shell')
         argv=[selected['path']];load=self.context.config.get('useShellProfile',True)
-        if selected['id']=='powershell':argv+=['-NoLogo']+([] if load else ['-NoProfile'])
-        elif selected['id']=='cmd':argv+=['/Q']
+        if selected['id']=='powershell':
+            # ConPTY transports UTF-8; Windows PowerShell otherwise encodes
+            # managed/native output with the machine's legacy OEM code page.
+            initialize='[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding'
+            argv+=['-NoLogo','-NoExit']+([] if load else ['-NoProfile'])+['-Command',initialize]
+        elif selected['id']=='cmd':argv+=['/Q','/K','chcp 65001>nul']
         elif Path(selected['path']).name=='bash':argv+=(['-il'] if load else ['--noprofile','--norc','-i'])
         elif Path(selected['path']).name=='zsh':argv+=(['-il'] if load else ['-f','-i'])
         else:argv+=['-i']

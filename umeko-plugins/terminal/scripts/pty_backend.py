@@ -55,6 +55,7 @@ if os.name=='nt':
     ExitCode=bind('GetExitCodeProcess',[W.HANDLE,C.POINTER(W.DWORD)],W.BOOL)
     Read=bind('ReadFile',[W.HANDLE,C.c_void_p,W.DWORD,C.POINTER(W.DWORD),C.c_void_p],W.BOOL)
     Write=bind('WriteFile',[W.HANDLE,C.c_void_p,W.DWORD,C.POINTER(W.DWORD),C.c_void_p],W.BOOL)
+    SetCtrlHandler=bind('SetConsoleCtrlHandler',[C.c_void_p,W.BOOL],W.BOOL)
     def check(value):
         if not value:raise C.WinError(C.get_last_error())
 
@@ -75,6 +76,10 @@ if os.name=='nt':
                 startup.StartupInfo.dwFlags=0x00000100
                 command=C.create_unicode_buffer(subprocess.list2cmdline(argv));environment=C.create_unicode_buffer('\0'.join(key+'='+value for key,value in sorted(env.items(),key=lambda pair:pair[0].upper()))+'\0\0')
                 process=PROCESS_INFORMATION()
+                # A launcher may have inherited CREATE_NEW_PROCESS_GROUP's
+                # ignore-Ctrl+C flag. Clear it before spawning this PTY child.
+                # https://github.com/microsoft/terminal/issues/5460
+                SetCtrlHandler(None,False)
                 check(CreateProcess(argv[0],command,None,None,False,0x00080000|0x00000400|0x00000004,environment,str(cwd),C.byref(startup.StartupInfo),C.byref(process)))
                 self.process=process.hProcess;self.pid=process.dwProcessId
                 try:
