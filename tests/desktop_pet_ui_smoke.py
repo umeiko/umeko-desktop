@@ -45,6 +45,16 @@ try:
     wait(lambda:find('desktopPetSettings') is not None,'Pet settings did not load')
     wait(lambda:find('desktopPetAppearancePicker').property('count')==1,'Appearance list did not load')
     main.grabWindow().save(str(out/'settings.png'))
+    settings_loader=find('desktopPluginSettingsLoader')
+    for identifier in ('git-viewer','file-tree','desktop-pet','git-viewer','desktop-pet'):
+        page.setProperty('selectedId',identifier);QTest.qWait(50)
+        if identifier=='desktop-pet':
+            wait(lambda:find('desktopPetSettings') is not None,'Pet settings did not reload')
+            assert settings_loader.isVisible() and settings_loader.height()>0
+        else:
+            assert not settings_loader.isVisible() and settings_loader.property('item') is None,'Inactive settings reserved a blank area'
+            divider=find('desktopPluginSettingsDivider');heading=find('desktopPluginReadmeHeading')
+            assert 0<=heading.y()-divider.y()-divider.height()<30,'Widget description was pushed down by an empty settings container'
     pet.ui('show',{})
     wait(lambda:main.findChild(QObject,'desktopPetWindow') is not None,'Pet window did not load')
     window=main.findChild(QObject,'desktopPetWindow')
