@@ -16,28 +16,39 @@ Item {
     property string mappingProviderId: ""
     readonly property var mappingAccount: backend.config.providers.find(p => p.id === mappingProviderId) || null
     property var activeInlineScroll: null
+    property bool extensionDestination: false
     function activateInlineScroll(item) { activeInlineScroll = item }
-    function openExtensions() {
-        root.tabSelected(3)
-        agentPage.openExtensions()
-        // Like openMappingProvider, position only after the expanded layout
-        // has been polished. Agent navigation's reset is queued before this.
-        Qt.callLater(() => {
-            const flick = settingsScroll.contentItem
+    function repositionExtensionDestination() { if (extensionDestination) positionAgentSettings() }
+    function positionAgentSettings() {
+        const flick = settingsScroll.contentItem
+        if (extensionDestination && agentPage.piOpen && !agentPage.toolsOpen && !agentPage.pluginsOpen) {
             const top = flick.contentY + agentPage.extensionManagement.mapToItem(flick, Qt.point(0, 0)).y
             flick.cancelFlick()
             flick.contentY = Math.max(0, Math.min(top, flick.contentHeight - flick.height))
-        })
+        } else {
+            extensionDestination = false
+            flick.contentY = 0
+        }
+    }
+    function openExtensions() {
+        extensionDestination = true
+        root.tabSelected(3)
+        agentPage.openExtensions()
+        // All deferred navigation callbacks share the destination, including
+        // callbacks delivered after the nested folds finish their layout.
+        Qt.callLater(root.positionAgentSettings)
     }
     function scrollSettings(delta) {
         const flick = settingsScroll.contentItem
         flick.cancelFlick()
         flick.contentY = Math.max(0, Math.min(Math.max(0, flick.contentHeight - flick.height), flick.contentY - delta))
     }
-    onTabChanged: { activeInlineScroll = null; if (providerPopup) providerPopup.close() }
-    onVisibleChanged: if (!visible) { activeInlineScroll = null; if (providerPopup) providerPopup.close() }
+    onTabChanged: { if (tab !== 3) extensionDestination = false; activeInlineScroll = null; if (providerPopup) providerPopup.close() }
+    onVisibleChanged: if (!visible) { extensionDestination = false; activeInlineScroll = null; if (providerPopup) providerPopup.close() }
     TapHandler {
-        onPressedChanged: if (pressed && root.activeInlineScroll) {
+        onPressedChanged: if (pressed) {
+            root.extensionDestination = false
+            if (!root.activeInlineScroll) return
             const target = root.activeInlineScroll
             const p = root.mapToItem(target, point.position.x, point.position.y)
             if (p.x < 0 || p.y < 0 || p.x > target.width || p.y > target.height) {
@@ -136,6 +147,11 @@ Item {
         ScrollView {
             id: settingsScroll; objectName: "settingsScroll"; Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 23
             Connections { target: root; function onTabChanged() { settingsScroll.contentItem.contentY = 0 } }
+            Connections { target: settingsScroll.contentItem
+                function onContentHeightChanged() { if (root.extensionDestination) Qt.callLater(root.repositionExtensionDestination) }
+                function onHeightChanged() { if (root.extensionDestination) Qt.callLater(root.repositionExtensionDestination) }
+                function onMovementStarted() { root.extensionDestination = false }
+            }
             contentWidth: availableWidth; clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             Column {
@@ -284,7 +300,7 @@ Item {
                     }
                 }
 
-                AgentPage { id: agentPage; objectName: "agentPage"; visible: root.tab === 3; width: parent.width; availableHeight: settingsScroll.availableHeight; onNavigated: Qt.callLater(() => settingsScroll.contentItem.contentY = 0) }
+                AgentPage { id: agentPage; objectName: "agentPage"; visible: root.tab === 3; width: parent.width; availableHeight: settingsScroll.availableHeight; onNavigated: Qt.callLater(root.positionAgentSettings) }
 
                 AppearanceSettings { visible: root.tab === 5; width: parent.width }
                 AboutPage { visible: root.tab === 6; width: parent.width }

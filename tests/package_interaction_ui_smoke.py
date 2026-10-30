@@ -88,7 +88,7 @@ def hidden_popen(args, *positional, **kwargs):
 
 process_patch = patch("subprocess.Popen", hidden_popen)
 process_patch.start()
-from PySide6.QtCore import QObject, QPoint, QPointF, Qt, QUrl
+from PySide6.QtCore import QObject, QPoint, QPointF, Qt, QUrl, QMetaObject
 from PySide6.QtTest import QTest
 from app.storage import Store
 from main import create_application
@@ -209,7 +209,9 @@ def assert_in_viewport(item, viewport, label, top_only=False):
     view_top = viewport.mapToScene(QPointF(0, 0))
     view_bottom = viewport.mapToScene(QPointF(viewport.width(), viewport.height()))
     assert top.y() >= view_top.y() - 1 and bottom.y() <= view_bottom.y() + 1, (
-        label, top.y(), bottom.y(), view_top.y(), view_bottom.y())
+        label, top.y(), bottom.y(), view_top.y(), view_bottom.y(),
+        {"destination": find("settingsPage").property("extensionDestination"),
+         "contentY": viewport.property("contentY"), "contentHeight": viewport.property("contentHeight")})
     assert top.x() >= view_top.x() - 1 and bottom.x() <= view_bottom.x() + 1, label
 
 
@@ -336,6 +338,11 @@ try:
          "Configure did not expand the complete extension management path")
     assert find("piSettingsSearch").property("text") == ""
     settled()
+    # Linux can deliver a queued Agent navigation notification after the
+    # explicit destination scroll. It must retain that destination, not reset.
+    assert QMetaObject.invokeMethod(agent_page, "navigated")
+    # A later viewport/layout change must also retain the explicit destination.
+    window.resize(1320, 820)
     QTest.qWait(150)
     viewport = find("settingsScroll").property("contentItem")
     assert find("agentExtensionsManager").isVisible()
