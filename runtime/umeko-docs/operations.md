@@ -4,7 +4,7 @@
 
 动态查询可用 `operations.list`，按 prefix 筛选。参数传在 arguments 中，JSON 类型直接传对象/数组。
 
-只读及组合操作：`help`、`operations.list`、`batch`、`settings.get`、`providers.list`、`plugins.list`、`plugins.getConfig`、`themes.list`、`themes.prompt`、`projects.list`、`sessions.list`、`sessions.get`、`mcp.get`、`status.get`、`jobs.get`。
+只读及组合操作：`help`、`operations.list`、`batch`、`settings.get`、`providers.list`、`models.list`、`characters.list`、`characters.get`、`characters.config`、`plugins.list`、`plugins.getConfig`、`themes.list`、`themes.prompt`、`projects.list`、`sessions.list`、`sessions.get`、`mcp.get`、`status.get`、`jobs.get`。
 
 会话专用：`models.select(provider, model, sessionId?)`、`sessions.reasoning(value, sessionId?)`。缺省关联调用会话。
 
@@ -14,8 +14,13 @@
 | `providers.addCommon` | `preset: string`, `key: string`, `alias: string=""`, `region: string="cn"` | 无 | 否 |
 | `providers.remove` | `id: string` | provider | 否 |
 | `providers.network` | `id: string`, `mode: string`, `address: string=""` | provider | 否 |
+| `providers.certificate` | `id: string`, `caFile: string=""` | provider | 否 |
 | `models.mappings` | `models: json` | all | 否 |
 | `themes.import` | `path: string` | 无 | 否 |
+| `characters.import` | `path: string` | 无 | 否 |
+| `characters.select` | `id: string` | 无 | 否 |
+| `characters.configure` | `config: json` | 无 | 否 |
+| `characters.remove` | `id: string` | 无 | 否 |
 | `themes.select` | `id: string` | 无 | 否 |
 | `themes.remove` | `id: string` | 无 | 否 |
 | `appearance.language` | `language: string` | 无 | 否 |

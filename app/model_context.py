@@ -129,23 +129,3 @@ def normalize_context(model: dict, previous: dict | None = None) -> dict:
     if reported is not None:
         result["providerContextWindow"] = reported
     return result
-
-
-def normalize_compaction_threshold(model: dict, context: dict, previous: dict | None = None) -> dict:
-    """An omitted threshold keeps the saved setting; blank/null uses Pi defaults."""
-    source = model if "compactionThreshold" in model else previous or model
-    if "compactionThreshold" not in source:
-        return {}
-    value = source["compactionThreshold"]
-    if value is None or isinstance(value, str) and not value.strip():
-        return {"compactionThreshold": None}
-    message = "压缩阈值请输入至少 1024 的整数 token / Compaction threshold must be an integer of at least 1024 tokens"
-    if isinstance(value, bool) or not isinstance(value, (int, str)) or not re.fullmatch(r"\s*\d+\s*", str(value)):
-        raise ValueError(message)
-    tokens = int(value)
-    if tokens < MIN_CONTEXT:
-        raise ValueError(message)
-    limit = min(context["contextWindow"], context.get("providerContextWindow", context["contextWindow"]))
-    if tokens > limit:
-        raise ValueError(f"压缩阈值不能超过上下文上限 {limit} token / Compaction threshold cannot exceed context limit {limit} tokens")
-    return {"compactionThreshold": tokens}

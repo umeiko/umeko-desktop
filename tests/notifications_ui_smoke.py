@@ -1,4 +1,4 @@
-"""Native handoff, minimized-only alerts, independent clicks, suppression and shutdown."""
+"""Native handoff, foreground long-task alerts, independent clicks and suppression."""
 import os, sys, tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -29,15 +29,29 @@ QTest.qWait(200);assert opened==['B','A'],'Older Notification Center entries ope
 client.language='en';client.task_finished('C','Failed task',False)
 assert 'needs attention' in native.sent[-1][1]
 native.events += ['dismissed:'+native.sent[-1][0]];QTest.qWait(170);assert opened==['B','A']
-client.close();client.task_finished('closed','Ignore after shutdown',True);assert len(native.sent)==3
+window.showNormal();QTest.qWait(20)
+client.task_finished('visible-short','Short task',True,False);assert len(native.sent)==3
+client.task_finished('visible-long','Long task',True,True);assert len(native.sent)==4
+native.events += ['clicked:'+native.sent[-1][0]];QTest.qWait(170);assert opened==['B','A','visible-long']
+client.task_finished('visible-long-error','Long failed task',False,True)
+assert len(native.sent)==5 and 'needs attention' in native.sent[-1][1]
+client.close();client.task_finished('closed','Ignore after shutdown',True,True);assert len(native.sent)==5
 with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ,{'UMEKO_DATA_DIR':temp}):
     backend=Controller(ROOT);events=[];backend.taskFinished.connect(lambda *args:events.append(args))
     record=backend._view;record.id='notification-fixture';record.title='Local task';record.ready=True;record.action='prompt';record.phase='running'
     backend._handle_pi_event(record,{'type':'done'});backend._handle_pi_event(record,{'type':'done'})
-    assert events==[('notification-fixture','Local task',True)]
+    assert events==[('notification-fixture','Local task',True,False)]
     record.phase='running';record.cancelled=True;backend._handle_pi_event(record,{'type':'done'});assert len(events)==1
     record.cancelled=False;record.phase='running';record.failed=True;backend._handle_pi_event(record,{'type':'done'})
-    assert events[-1][-1] is False
+    assert events[-1][2] is False
     record.phase='working';record.action='reload';backend._handle_pi_event(record,{'type':'done'});assert len(events)==2
+    with patch('app.controller_runtime.time.monotonic', return_value=1000):
+        for duration, expected in ((179.999,False),(180,False),(180.001,True)):
+            record.action='prompt';record.phase='running';record.failed=False;record.prompt_started=1000-duration
+            backend._handle_pi_event(record,{'type':'done'})
+            assert events[-1][3] is expected, (duration,events[-1])
+            assert record.prompt_started is None
+        count=len(events);record.phase='running';record.cancelled=True;record.prompt_started=0
+        backend._handle_pi_event(record,{'type':'done'});assert len(events)==count and record.prompt_started is None
     backend.close()
-print('TASK_NOTIFICATIONS_OK: hidden/minimized only, independent activation, failure, cancel/duplicate/reload suppression and shutdown')
+print('TASK_NOTIFICATIONS_OK: foreground long tasks, strict three-minute boundary, background alerts, activation and cancellation suppression')

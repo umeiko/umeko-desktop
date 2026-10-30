@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 
 Item {
     id: root
@@ -34,13 +35,49 @@ Item {
     }
     onFractionChanged: ring.requestPaint()
     onKnownChanged: ring.requestPaint()
-    Accessible.role: Accessible.Indicator; Accessible.name: root.description
-    MouseArea { id: hover; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+    Accessible.role: Accessible.Button; Accessible.name: root.description
+    MouseArea {
+        id: hover; objectName: "contextUsageMouse"
+        anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+        onClicked: compactPopup.toggle()
+    }
     ToolTip {
         objectName: "contextUsageTooltip"
         parent: root; x: 0; y: -height - 8; margins: 12; padding: 12
-        visible: hover.containsMouse; delay: 250
+        visible: hover.containsMouse && !compactPopup.visible; delay: 250
         background: Rectangle { radius: 8; color: Theme.ink }
         contentItem: Text { text: root.description; color: Theme.bg; font.pixelSize: Theme.font(11); lineHeight: 1.5 }
+    }
+    AnchoredPidPopup {
+        id: compactPopup; objectName: "compactContextPopup"
+        parent: root
+        fullWidth: 320
+        fullHeight: popupContents.implicitHeight + padding * 2
+        contentItem: Item {
+            clip: true
+            ColumnLayout {
+                id: popupContents
+                width: compactPopup.expandedWidth - compactPopup.padding * 2
+                spacing: 10; opacity: compactPopup.contentOpacity
+                Text {
+                    Layout.fillWidth: true; text: root.description
+                    color: Theme.muted; font.pixelSize: Theme.font(11); lineHeight: 1.5; wrapMode: Text.Wrap
+                }
+                Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+                ActionButton {
+                    objectName: "compactContextAction"
+                    Layout.fillWidth: true; quiet: true
+                    text: I18n.t("压缩上下文")
+                    enabled: backend.compactionAvailable && !backend.busy && !!backend.activeSession
+                    onClicked: { compactPopup.close(); backend.compactSession() }
+                }
+                Text {
+                    visible: backend.busy
+                    Layout.fillWidth: true
+                    text: I18n.t("仅在当前任务结束后可压缩上下文。")
+                    color: Theme.muted; font.pixelSize: Theme.font(10); wrapMode: Text.Wrap
+                }
+            }
+        }
     }
 }

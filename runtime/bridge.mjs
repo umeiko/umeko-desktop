@@ -1,12 +1,14 @@
 // JSONL presentation adapter for the complete, unmodified Pi Coding Agent SDK.
 // Tools, loop, skill expansion, extension hooks and session trees belong to Pi.
 import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-policy.mjs";
-import { prepareNativeSettings, builtins, extensionName } from "./resources.mjs";
+import { prepareNativeSettings, builtins, extensionName, SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
-import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl } from "./umeko-control.mjs";
-import { compactionSettings } from "./compaction-settings.mjs";
+import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs } from "./umeko-control.mjs";
+import { rpcCustom } from "./rpc-ui.mjs";
+import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
+import { createInputQueue } from "./input-queue.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
@@ -20,7 +22,7 @@ delete process.env.PI_OFFLINE;
 const bundledBin = fileURLToPath(new URL("./bin/", import.meta.url));
 if (existsSync(bundledBin)) process.env.PATH = bundledBin + delimiter + (process.env.PATH || "");
 for (const key of Object.keys(process.env)) {
-  if (/API_KEY$|ACCESS_TOKEN$|^NODE_(OPTIONS|PATH)$/i.test(key)) delete process.env[key];
+  if (/API_KEY$|ACCESS_TOKEN$|_(AK|SK|SECRET_KEY|SECURITY_TOKEN)$|^NODE_(OPTIONS|PATH)$/i.test(key)) delete process.env[key];
 }
 process.env.NO_PROXY = [process.env.NO_PROXY || process.env.no_proxy || "", "127.0.0.1", "localhost", "::1"].filter(Boolean).join(",");
 process.env.no_proxy = process.env.NO_PROXY;
@@ -35,40 +37,21 @@ const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, P
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 const umekoControl = createUmekoControl({ emit });
+const subagents = createSubagentExtension({ emit, restoreSession: restoreSubagentSession });
 const textOf = content => typeof content === "string" ? content : (content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
 const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
 const compactionText = data => `已压缩：${data.before} → ${data.after} tokens`;
 let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe, closing = false;
+const compactionFailures = new WeakMap();
 let reasoningEffort = "off";
 const effortLevels = new Set(["off", "low", "high", "max"]);
 let mcpEntries = [], mcpStatus = "", capturingMcp = false, pollingResources = false;
-let queueChain = Promise.resolve();
-let queuedItems = [], queueInput;
-let interruptedInputs = [];
 let commandCancellation = 0;
-function syncQueue(steering, followUp) {
-  const previous = [...queuedItems];
-  queuedItems = [["steering", steering], ["followUp", followUp]].flatMap(([mode, texts]) => texts.map(text => {
-    const index = previous.findIndex(item => item.nativeText === text && item.mode === mode);
-    const item = index >= 0 ? previous.splice(index, 1)[0] : queueInput || { id: crypto.randomUUID(), text, images: [] };
-    return { ...item, nativeText: text, mode };
-  }));
-  emit({ type: "queue", steering, followUp, items: queuedItems.map(({id, text, mode}) => ({id, text, mode})) });
-}
-async function enqueue(item, mode) {
-  queueInput = { ...item, id: item.id || crypto.randomUUID() };
-  try { await runtime.session[mode === "steering" ? "steer" : "followUp"](item.text, item.images || []); }
-  finally { queueInput = undefined; }
-}
-function takeQueue() {
-  const items = [...queuedItems];
-  runtime.session.clearQueue();
-  return items;
-}
-function returnQueue() {
-  const items = takeQueue();
-  if (items.length) emit({ type: "queue_returned", steering: [], followUp: items.map(item => item.text) });
-}
+const inputQueue=createInputQueue({getSession:()=>runtime?.session,isRunning:()=>executing,
+  onQueue:(steering,followUp,items)=>emit({type:"queue",steering,followUp,items}),
+  onEdited:item=>emit({type:"queue_edited",text:item.text,images:item.images || []}),
+  onReturned:items=>emit({type:"queue_returned",steering:[],followUp:items.map(item=>item.text)}),
+  beforeInterrupt:()=>{clearDialogs(); commandCancellation++; piCommands.clear();}});
 const dialogs = new Map();
 const commandOutput = new AsyncLocalStorage();
 const piCommands = createPiCommandController({ Pi, getRuntime: () => runtime, getConfig: () => config,
@@ -108,11 +91,37 @@ const ui = {
   setFooter() {}, setHeader() {}, setTitle() {}, onTerminalInput: () => () => {},
   setEditorText: text => emit({ type: "editor", text }), pasteToEditor: text => emit({ type: "editor", text }),
   getEditorText: () => "", addAutocompleteProvider: () => () => {},
-  custom: async () => { throw new Error("此扩展要求终端自定义组件；请使用 Pi 的原生终端界面运行该组件"); },
+  custom: rpcCustom,
 };
 
 async function bindSession(session) {
   unsubscribe?.();
+  let activeCompaction;
+  const publishCompaction = data => {
+    const entryId = session.sessionManager.appendCustomEntry("umeko-compaction", data);
+    const entry = session.sessionManager.getEntry(entryId);
+    emit({ type: "compaction_event", entryId, timestamp: entry.timestamp, ...data });
+  };
+  const startCompaction = reason => {
+    activeCompaction = { version: 2, eventId: crypto.randomUUID(), state: "running",
+      mode: reason === "manual" ? "manual" : "auto", before: session.getContextUsage()?.tokens ?? null,
+      after: null, afterEstimated: true, summary: "", error: "" };
+    publishCompaction(activeCompaction);
+  };
+  const finishCompaction = event => {
+    // Pi may report exhausted overflow recovery without a fresh start event.
+    if (!activeCompaction) startCompaction(event.reason);
+    const success = !!event.result && !event.aborted;
+    publishCompaction({ ...activeCompaction, state: success ? "success" : "failure",
+      before: event.result?.tokensBefore ?? activeCompaction.before,
+      after: event.result?.estimatedTokensAfter ?? null,
+      summary: success ? event.result.summary || "" : "",
+      error: success ? "" : event.errorMessage || (event.aborted ? "Compaction cancelled" : "Compaction failed") });
+    activeCompaction = undefined;
+  };
+  compactionFailures.set(session, error => {
+    if (activeCompaction) finishCompaction({ reason: activeCompaction.mode, errorMessage: error.message });
+  });
   let publishedFile = existsSync(session.sessionManager.getSessionFile() || "");
   let retryState = {}, retryTimer;
   const retry = state => { retryState = state; emit({ type: "network_retry", ...state }); };
@@ -149,7 +158,7 @@ async function bindSession(session) {
       if (runtime?.session === session) emit({type:"history_checkpoint", leafId:session.sessionManager.getLeafId()});
     });
     if (event.type === "queue_update") {
-      syncQueue(event.steering, event.followUp);
+      inputQueue.sync(event.steering, event.followUp);
     }
     if (event.type === "message_start" && event.message.role === "user") emit({ type: "user_start", text: textOf(event.message.content), timestamp: event.message.timestamp });
     if (event.type === "message_start" && event.message.role === "assistant") {
@@ -158,7 +167,7 @@ async function bindSession(session) {
     }
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") emit({ type: "delta", text: event.assistantMessageEvent.delta });
     if (event.type === "message_update" && event.assistantMessageEvent.type === "thinking_delta") emit({ type: "thinking_delta", text: event.assistantMessageEvent.delta });
-    if (event.type.startsWith("tool_execution_")) emit({ type: "tool", name: event.toolName, id: event.toolCallId,
+    if (event.type.startsWith("tool_execution_") && event.toolName !== "subagent") emit({ type: "tool", name: event.toolName, id: event.toolCallId,
       args: event.args, result: event.type === "tool_execution_end" ? textOf(event.result?.content).slice(0,8192) : undefined,
       media: event.type === "tool_execution_end" ? chatboxItems(event.toolName, {...event.result, isError: event.isError}) : undefined,
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
@@ -166,21 +175,8 @@ async function bindSession(session) {
       isRetryableAssistantError(event.message) && !isContextOverflow(event.message, session.model?.contextWindow || 128000);
     if (event.type === "message_end" && !willRetry) emit({ type: "message", role: event.message.role,
       text: textOf(event.message.content), thinking: thinkingOf(event.message.content), stopReason: event.message.stopReason || "", error: event.message.stopReason === "aborted" ? "" : event.message.errorMessage || "", timestamp:event.message.timestamp });
-    if (event.type === "compaction_start") emit({ type: "status", text: "正在压缩上下文" });
-    if (event.type === "compaction_end" && event.result && !event.aborted) {
-      const { tokensBefore: before, estimatedTokensAfter: after } = event.result;
-      if (Number.isFinite(before) && Number.isFinite(after)) {
-        const data = { version: 1, mode: event.reason === "manual" ? "manual" : "auto", before, after,
-          afterEstimated: true, compactionEntryId: session.sessionManager.getLeafId() };
-        emit({ type: "compaction_result", ...data, entryId: data.compactionEntryId });
-        // A local receipt is metadata, never a model-visible message or queued
-        // agent input. Appending it cannot request another assistant turn.
-        const entryId = session.sessionManager.appendCustomEntry("umeko-compaction", data);
-        const entry = session.sessionManager.getEntry(entryId);
-        emit({ type: "message", role: "assistant", text: compactionText(data), customType: "umeko-compaction",
-          compaction: data, entryId, timestamp: entry.timestamp });
-      }
-    }
+    if (event.type === "compaction_start") startCompaction(event.reason);
+    if (event.type === "compaction_end") finishCompaction(event);
     if (["auto_retry_start", "summarization_retry_scheduled"].includes(event.type)) {
       clearTimeout(retryTimer);
       retry({ active: true, waiting: true, attempt: event.attempt, maxAttempts: event.maxAttempts, delayMs: event.delayMs, startedAt: Date.now() });
@@ -192,6 +188,7 @@ async function bindSession(session) {
     if (["entry_appended", "message_end", "compaction_end", "agent_end"].includes(event.type)) publishContext();
   });
   unsubscribe = () => {
+    compactionFailures.delete(session);
     clearTimeout(retryTimer);
     unbind();
     if (session.agent.onPayload === configurePayload) session.agent.onPayload = originalPayload;
@@ -256,12 +253,37 @@ async function reloadSession(session) {
   exposeNativeTools(session);
 }
 
+async function restoreSubagentSession(child, context, customTools) {
+  if (!existsSync(child.outputFile)) throw new Error("子代理的原生会话文件已不存在。");
+  const manager = Pi.SessionManager.open(child.outputFile);
+  const model = modelRuntime.getModel("umeko", context?.model || runtime.session.model?.id);
+  if (!model) throw new Error("原子代理使用的模型已不在供应商配置中。");
+  const settings = await prepareNativeSettings(Pi, {cwd:manager.getCwd(),agentDir:config.agentDir,agent:config.agent});
+  const policy = Pi.SettingsManager.inMemory({...settings.getSettings(),retry:{...NETWORK_RETRY,provider:{maxRetries:0}},cacheWarming:"off"});
+  // New children persist their exact resolved prompt and allowlist. Older
+  // transcripts use the standard read-only policy for Explore/Plan.
+  const readonly = ["Explore","Plan"].includes(child.type);
+  const loader = new Pi.DefaultResourceLoader({cwd:manager.getCwd(),agentDir:config.agentDir,settingsManager:policy,
+    systemPrompt:context?.systemPrompt || `You are the ${child.type} subagent embedded in Umeko Desktop. Continue the task in this existing conversation. ${readonly ? "Inspect and report only; do not modify files." : ""}`,
+    appendSystemPrompt:context?.systemPrompt?.includes(SUBAGENT_COMPLETION_HINT) ? [] : [SUBAGENT_COMPLETION_HINT],
+    extensionsOverride:base=>({...base,extensions:base.extensions.filter(extension=>!String(extension.path || "").includes("pi-subagents"))})});
+  await loader.reload();
+  const {session} = await Pi.createAgentSession({cwd:manager.getCwd(),agentDir:config.agentDir,sessionManager:manager,
+    modelRuntime,model,settingsManager:policy,resourceLoader:loader,thinkingLevel:context?.thinkingLevel || "off",
+    customTools,excludeTools:["subagent","get_subagent_result","steer_subagent"],
+    tools:context?.tools || (readonly ? ["read","grep","find","ls"] : undefined)});
+  await session.bindExtensions({uiContext:ui,mode:"rpc",abortHandler:()=>session.abort(),
+    shutdownHandler:()=>session.abort(),onError:error=>emit({type:"notice",message:error.message})});
+  return session;
+}
+
 async function init(input) {
   config = input;
+  configureUmekoDocs({directory: input.docsDir || join(input.agentDir, "cache", "umeko-docs"), models: input.models});
   reasoningEffort = effortLevels.has(input.reasoningEffort) ? input.reasoningEffort : "off";
   setGateway(input.gateway);
   process.env.PI_CODING_AGENT_DIR = input.agentDir;
-  for (const [name, value] of Object.entries(input.mcpEnv || {})) if (!/^NODE_|^(HTTP|HTTPS|ALL)_PROXY$/i.test(name)) process.env[name] = value;
+  for (const [name, value] of Object.entries(input.mcpEnv || {})) if (!/^NODE_|^(HTTP|HTTPS|ALL)_PROXY$|_(AK|SK|SECRET_KEY|SECURITY_TOKEN)$/i.test(name)) process.env[name] = value;
   const cwd = resolve(input.workspace || input.defaultCwd);
   if (!existsSync(cwd)) throw new Error("工作目录不存在");
   mkdirSync(input.sessionDir, { recursive: true });
@@ -287,18 +309,11 @@ async function init(input) {
     // Load normal Pi settings/resources without importing auth.json or models.json.
     const settingsManager = await prepareNativeSettings(Pi, { cwd, agentDir, agent: input.agent });
     const nativeSettings = settingsManager.getSettings();
-    const modelOverrides = { ...nativeSettings.compaction?.modelOverrides };
-    for (const model of input.models) {
-      if (model.compactionThreshold === null || model.compactionThreshold === undefined || model.compactionThreshold === "") continue;
-      const key = `umeko/${model.id}`;
-      const effective = compactionSettings(model, settingsManager.getCompactionSettings({ provider: "umeko", id: model.id }));
-      modelOverrides[key] = { ...modelOverrides[key], reserveTokens: effective.reserveTokens, keepRecentTokens: effective.keepRecentTokens };
-    }
     const settings = Pi.SettingsManager.inMemory({ ...nativeSettings,
       retry: { ...nativeSettings.retry, ...NETWORK_RETRY, provider: { ...nativeSettings.retry?.provider, maxRetries: 0 } },
       defaultTools: [...new Set([...nativeTools, ...(settingsManager.getDefaultTools() || [])])],
       codemode: { ...nativeSettings.codemode, mode: "on" },
-      cacheWarming: "off", compaction: { ...nativeSettings.compaction, modelOverrides, enabled: input.agent?.autoCompaction !== false },
+      cacheWarming: "off", compaction: { ...nativeSettings.compaction, enabled: input.agent?.autoCompaction !== false },
     }, { projectTrusted: !input.agent?.safeMode });
     const services = await Pi.createAgentSessionServices({ cwd, agentDir, modelRuntime, settingsManager,
       resourceLoaderOptions: {
@@ -309,6 +324,7 @@ async function init(input) {
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}) },
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },
           { name: "umeko-control", builtin: true, replaceable: false, factory: pi => umekoControl.extension(pi) },
+          { name: "subagents", builtin: true, replaceable: true, factory: subagents.extension },
           { name: "output-continuation", builtin: true, replaceable: false, factory: outputContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
           { name: "tool-search", builtin: true, replaceable: true, factory: Pi.createToolSearchExtension() },
@@ -371,13 +387,24 @@ async function state() {
   const omittedRetries = retryOmissions(branch);
   const results = new Map(branch.filter(e => e.type === "message" && e.message.role === "toolResult").map(e => [e.message.toolCallId, e.message]));
   const deliveries = branch.filter(e => e.type === "custom" && e.customType === "umeko-chatbox" && e.data?.version === 1 && typeof e.data.toolCallId === "string" && Array.isArray(e.data.items)).map(e => e.data);
-  const candidates = branch.filter(e => (e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant"].includes(e.message.role)) ||
-    (e.type === "custom" && e.customType === "umeko-compaction" && e.data?.version === 1));
+  const compactions = new Map();
+  const candidates = branch.flatMap(e => {
+    if (e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant"].includes(e.message.role)) return [e];
+    if (e.type !== "custom" || e.customType !== "umeko-compaction" || ![1, 2].includes(e.data?.version)) return [];
+    if (e.data.version === 1) return [e];
+    if (compactions.has(e.data.eventId)) {
+      compactions.get(e.data.eventId).data = e.data;
+      return [];
+    }
+    const first = { ...e };
+    compactions.set(e.data.eventId, first);
+    return [first];
+  });
   const characters = candidates.reduce((sum, e) => sum + (typeof e.message?.content === "string" ? e.message.content.length : (Array.isArray(e.message?.content) ? e.message.content : []).reduce((n, block) => n + (block.text || block.thinking || "").length, 0)), 0);
   const paged = candidates.length > 256 || characters > 1024 * 1024;
   const selected = paged ? candidates.slice(-128) : candidates;
-  const messages = selected.map(e => {
-    if (e.type === "custom") return { role: "assistant", text: compactionText(e.data), customType: e.customType,
+  const messages = projectSubagents(branch, selected.map(e => {
+    if (e.type === "custom") return { role: "assistant", text: e.data.version === 1 ? compactionText(e.data) : "", customType: e.customType,
       compaction: e.data, entryId: e.id, timestamp: e.timestamp };
     const message = e.message;
     const row = {role: message.role, text: textOf(message.content) || (message.stopReason === "aborted" ? "" : message.errorMessage || ""), error: message.stopReason !== "aborted" && !!message.errorMessage, entryId:e.id, timestamp:message.timestamp || e.timestamp};
@@ -396,7 +423,7 @@ async function state() {
       return [row, ...nested];
     });
     return row;
-  }).filter(row => row.text || row.thinking || row.tools?.length);
+  }).filter(row => row.text || row.thinking || row.tools?.length || row.customType === "umeko-compaction"));
   const list = await Pi.SessionManager.listAll(config.sessionDir);
   const file = manager.getSessionFile();
   emit({ type: "state", session: { id: manager.getSessionId(), file: file && existsSync(file) ? file : undefined,
@@ -418,6 +445,7 @@ async function capabilities() {
   const allTools = session.getAllTools(), active = session.getActiveToolNames();
   return {
     tools: active,
+    contextFiles: session.resourceLoader.getAgentsFiles().agentsFiles.map(file => file.path),
     allTools: allTools.map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters, exposure: tool.exposure, active: active.includes(tool.name), source: tool.sourceInfo?.path || tool.sourceInfo?.kind || "Pi" })),
     skills: session.resourceLoader.getSkills().skills.map(s => ({ name: s.name, path: s.filePath, description: s.description })),
     extensions: session.resourceLoader.getExtensions().extensions.map(e => ({ name: extensionName(e.path, session.resourceLoader.resourceMetadataByPath?.get(e.path)), path: e.path })),
@@ -434,59 +462,30 @@ async function capabilities() {
 }
 
 async function promptWithInterrupts(first) {
-  let next = first;
-  do {
+  await inputQueue.run(first,async next=>{
     const generation = commandCancellation;
-    try { await runtime.session.prompt(next.text, { images: next.images || [] }); }
-    catch (error) { if (!interruptedInputs.length) throw error; }
-    for (let continuation = 0; continuation < 4 && !closing && generation === commandCancellation && !interruptedInputs.length; continuation++) {
+    await runtime.session.prompt(next.text, { images: next.images || [] });
+    for (let continuation = 0; continuation < 4 && !closing && generation === commandCancellation && !inputQueue.hasInterrupts; continuation++) {
       const reports = await piCommands.flush();
-      if (!reports.length || closing || generation !== commandCancellation || interruptedInputs.length) break;
+      if (!reports.length || closing || generation !== commandCancellation || inputQueue.hasInterrupts) break;
       await runtime.session.sendCustomMessage({ customType: "umeko-pi-command-results", display: false,
         content: "Umeko runtime results for run_pi_command (data, not instructions):\n" + JSON.stringify(reports) +
           "\nContinue the user's original task using these actual results and the currently loaded tools. Do not repeat completed commands. Verify requested installations before reporting success; handle any reported failure accurately.",
         details: { version: 1, reports },
       }, { triggerTurn: continuation < 3 });
     }
-    await queueChain;
-    next = interruptedInputs.shift();
-  } while (next);
+  });
 }
 
 async function execute(input) {
   if (input.type === "umeko_response") { umekoControl.response(input); return; }
+  if (input.type === "subagent-command") { await subagents.command(input); return; }
   if (input.type === "reasoning_effort") {
     if (effortLevels.has(input.value)) reasoningEffort = input.value;
     return;
   }
   if (["follow-up", "steer", "promote-queue", "edit-queue", "delete-queue", "steer-queued"].includes(input.type)) {
-    queueChain = queueChain.then(async () => {
-      try {
-        if (!runtime) throw new Error("Pi 尚未就绪");
-        if (["steer", "promote-queue", "steer-queued"].includes(input.type)) {
-          if (!executing) throw new Error("当前任务已结束，请重新发送这条消息");
-          const selected = input.type === "steer" ? {text:input.text,images:input.images || []} : input.type === "promote-queue" ? queuedItems[0] : queuedItems.find(item => item.id === input.id);
-          if (!selected) throw new Error("这条消息已经开始处理");
-          const remaining = takeQueue().filter(item => item !== selected);
-          interruptedInputs.push(selected);
-          clearDialogs();
-          commandCancellation++; piCommands.clear();
-          // Native steer waits for a tool boundary. Desktop steering instead
-          // aborts the active model/tool run, then submits a normal Pi prompt.
-          await runtime.session.abort();
-          for (const item of remaining) await enqueue(item, "followUp");
-        } else if (["edit-queue", "delete-queue"].includes(input.type)) {
-          const selected = queuedItems.find(item => item.id === input.id);
-          if (!selected) throw new Error("这条消息已经开始处理");
-          const items = takeQueue();
-          if (input.type === "edit-queue") emit({type: "queue_edited", text: selected.text, images: selected.images || []});
-          for (const item of items) if (item !== selected) await enqueue(item, "followUp");
-        } else {
-          if (!executing || runtime.session.isIdle) throw new Error("当前任务已结束，请重新发送这条消息");
-          await enqueue({text:input.text, images:input.images || []}, "followUp");
-        }
-      } catch (error) { emit({type:"queue_rejected", text:input.text || "", message:error.message}); }
-    });
+    void inputQueue.submit(input).catch(error=>emit({type:"queue_rejected",text:input.text || "",message:error.message}));
     return;
   }
   if (input.type === "resources") {
@@ -502,8 +501,7 @@ async function execute(input) {
     commandCancellation++;
     piCommands.clear();
     clearDialogs();
-    if (runtime) returnQueue();
-    if (interruptedInputs.length) emit({type:"queue_returned", steering:[], followUp:interruptedInputs.splice(0).map(item => item.text)});
+    if (runtime) inputQueue.cancel();
     await runtime?.session.abort(); return;
   }
   if (input.type === "shutdown") { await shutdown(); return; }
@@ -528,6 +526,10 @@ async function execute(input) {
     }
     else if (input.type === "new") await runtime.newSession();
     else if (input.type === "open") await runtime.switchSession(input.path);
+    else if (input.type === "subagent-open") {
+      if (input.command.action === "send") await subagents.command({action:"watch",id:input.command.id});
+      await subagents.command(input.command);
+    }
     else if (input.type === "fork") await forkSession(input.entryId || runtime.session.sessionManager.getLeafId(), { position: "at" });
     else if (input.type === "navigate") await runtime.session.navigateTree(input.entryId, { summarize: false });
     else if (input.type === "compact") await runtime.session.compact(input.customInstructions);
@@ -537,17 +539,20 @@ async function execute(input) {
     else if (input.type === "export") emit({ type: "notice", message: "已导出到 " + runtime.session.exportToJsonl(input.path) });
     else if (input.type === "import") await runtime.importFromJsonl(input.path);
     do {
-      await queueChain;
-      if (interruptedInputs.length) await promptWithInterrupts(interruptedInputs.shift());
+      await inputQueue.chain;
+      if (inputQueue.hasInterrupts) await promptWithInterrupts(inputQueue.shiftInterrupt());
       await state();
-      await queueChain;
-    } while (interruptedInputs.length);
-  } catch (error) { emit({ type: "error", message: error.message }); }
+      await inputQueue.chain;
+    } while (inputQueue.hasInterrupts);
+  } catch (error) {
+    if (input.type === "compact") compactionFailures.get(runtime?.session)?.(error);
+    emit({ type: "error", message: error.message });
+  }
   finally {
     // A failed/aborted model request can leave Pi's native pending queues intact.
     // Return them to the editor rather than displaying unserviceable queue chips.
-    await queueChain;
-    if (runtime && queuedItems.length) returnQueue();
+    await inputQueue.chain;
+    if (runtime && (inputQueue.items.length || inputQueue.hasInterrupts)) inputQueue.returnQueue();
     piCommands.clear();
     executing = false; emit({ type: "done", action: input.type });
   }
@@ -558,6 +563,7 @@ async function shutdown() {
   if (closing) return;
   closing = true;
   umekoControl.clear();
+  subagents.dispose();
   piCommands.clear();
   clearDialogs();
   await runtime?.dispose();

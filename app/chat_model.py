@@ -199,6 +199,13 @@ class ChatModel(QAbstractListModel):
         source = messages
         first = start = 0
         if dirty_from is not None and self._source is source and self._source_starts and len(source) >= self._source_count:
+            # An appended terminal transition belongs to the event's first row,
+            # even if ordinary conversation now separates those transitions.
+            events = {value.get('compaction', {}).get('eventId') for value in source[dirty_from:]
+                      if value.get('customType') == 'umeko-compaction' and value.get('compaction', {}).get('version') == 2}
+            if events:
+                dirty_from = min(dirty_from, next((index for index, value in enumerate(source[:dirty_from])
+                    if value.get('customType') == 'umeko-compaction' and value.get('compaction', {}).get('eventId') in events), dirty_from))
             first = max(0, bisect_right(self._source_starts, min(dirty_from, self._source_count - 1)) - 1)
             start = self._source_starts[first]
             first = bisect_left(self._source_starts, start)
@@ -245,9 +252,19 @@ class ChatModel(QAbstractListModel):
     @staticmethod
     def project(messages, with_starts=False, max_group=None):
         """Keep ordered process steps under one assistant, leaving Pi's log intact."""
-        rows, starts = [], []
+        rows, starts, compactions = [], [], {}
         for source_index, message in enumerate(messages):
             current = dict(message)
+            if current.get('customType') == 'umeko-compaction':
+                current.pop('activity', None)
+                details = current.get('compaction', {})
+                if details.get('version') == 2:
+                    current['text'] = ''
+                    previous = compactions.get(details.get('eventId'))
+                    if previous is not None:
+                        previous['compaction'] = dict(details)
+                        continue
+                    compactions[details.get('eventId')] = current
             if current.get("role") == "user":
                 current["text"], attachments = split_attachments(current.get("text", ""))
                 if attachments:
@@ -266,6 +283,15 @@ class ChatModel(QAbstractListModel):
                     current["tools"] = [dict(tool) for tool in current["tools"]]
                     batch = []
                     for tool in current["tools"]:
+                        if tool.get("subagent"):
+                            if batch:
+                                steps.append({"kind": "tools", "tools": batch})
+                                batch = []
+                            if steps and steps[-1]["kind"] == "subagents":
+                                steps[-1]["agents"].append(dict(tool["subagent"]))
+                            else:
+                                steps.append({"kind": "subagents", "agents": [dict(tool["subagent"])]})
+                            continue
                         batch.append(tool)
                         if tool.get("name") == "submit_to_chatbox" and tool.get("media"):
                             steps.append({"kind": "tools", "tools": batch})
@@ -294,8 +320,9 @@ class ChatModel(QAbstractListModel):
                         if text:
                             group['activity'].append({'kind':kind, 'text':text, **({'error':False} if kind == 'text' else {})})
                 # Adjacent operations with no intervening prose share a batch.
-                if group["activity"] and steps and group["activity"][-1]["kind"] == steps[0]["kind"] == "tools":
-                    group["activity"][-1]["tools"] = group["activity"][-1]["tools"] + steps[0]["tools"]
+                if group["activity"] and steps and group["activity"][-1]["kind"] == steps[0]["kind"] and steps[0]["kind"] in ("tools", "subagents"):
+                    field = "tools" if steps[0]["kind"] == "tools" else "agents"
+                    group["activity"][-1][field] = group["activity"][-1][field] + steps[0][field]
                     steps = steps[1:]
                 group["activity"].extend(steps)
                 group["tools"] = group.get("tools", []) + current.get("tools", [])

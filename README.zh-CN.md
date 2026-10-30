@@ -14,17 +14,19 @@
 
 [![Desktop packages](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml/badge.svg)](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/umeiko/umeko-desktop?color=4f74c8)](https://github.com/umeiko/umeko-desktop/releases/latest)
+[![欢迎 PR](https://img.shields.io/badge/PRs-welcome-2ea44f?logo=github)](https://github.com/umeiko/umeko-desktop/compare)
+[![欢迎 Issue](https://img.shields.io/badge/Issues-welcome-4f74c8?logo=github)](https://github.com/umeiko/umeko-desktop/issues/new)
 
 <a id="downloads"></a>
 
 <!-- umeko-downloads:standard:start -->
 
-**Download v0.5.0 · 点击下载**
+**Download v0.6.0 · 点击下载**
 
-[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.0/Umeko-0.5.0-windows-x64-8a608c0.zip)
-[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.0/Umeko-0.5.0-macos-arm64-8a608c0.dmg)
-[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.0/Umeko-0.5.0-macos-x64-8a608c0.dmg)
-[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.5.0/Umeko-0.5.0-linux-x64-8a608c0.tar.gz)
+[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.0/Umeko-0.6.0-windows-x64-736419c.zip)
+[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.0/Umeko-0.6.0-macos-arm64-736419c.dmg)
+[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.0/Umeko-0.6.0-macos-x64-736419c.dmg)
+[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.0/Umeko-0.6.0-linux-x64-736419c.tar.gz)
 
 <!-- umeko-downloads:standard:end -->
 
@@ -34,22 +36,26 @@
 
 Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原生桌面应用。让聊天围绕项目组织，让 Agent 的工作过程清晰可见，也让你自由选择模型服务。使用 Python 与 Qt Quick 构建，支持 Windows、macOS 和 Linux。
 
-![八奈见主题下的项目与会话](docs/images/chat-yanami.png)
+![纯白主题下的项目与会话 · 中文界面](docs/images/chat-white-zh.png)
 
 <details>
-<summary>展开看看 · 思考过程、工具记录与自定义供应商</summary>
+<summary>展开看看 · 工具记录、子智能体与自定义供应商</summary>
 
 **过程看得见，阅读不打断。** 思考和连续工具调用可以逐级展开，点击文件名即可复制路径。
 
-![深色主题下展开的思考与工具过程](docs/images/chat-process.png)
+![纯白主题下展开的思考与工具过程 · 中文界面](docs/images/process-white-zh.png)
+
+**和一组智能体一起工作。** 在主聊天旁查看子智能体的独立对话，排队补充要求或直接介入任务；每个对话单独保留草稿和附件。
+
+![子智能体对话与待发送队列 · 中文界面](docs/images/subagents-white-zh.png)
 
 **把模型服务带进来。** 直接拖入供应商 ZIP，在同一页登录、刷新和配置模型。SDK 与开发 Skill 也可以从导入窗口直接导出。
 
-![供应商 ZIP 拖入及开发资源导出](docs/images/provider-import.png)
+![供应商 ZIP 拖入及开发资源导出 · 中文界面](docs/images/provider-white-zh.png)
 
 </details>
 
-以上为真实应用界面，使用隔离的演示数据拍摄；不含真实账号、凭据或模型请求。当前界面语言为中文。
+以上为真实应用的纯白主题界面，使用隔离的演示数据拍摄；不含真实账号、凭据或模型请求。中英文 README 分别展示对应语言的界面。
 
 ## 主要特性
 
@@ -72,7 +78,7 @@ Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原�
 
 切换聊天时立即显示八奈见加载页，历史记录在后台读取；连续切换只展示最后选中的聊天，排版完成后快速渐显。
 
-每个模型都可在上下文长度旁设置压缩阈值，并刷新供应商报告的窗口上限。在聊天框输入 `/compact` 或 `/compact 保留当前任务` 可手动压缩；忙碌时会等待当前任务结束。见[上下文窗口与压缩说明](docs/context-compaction.md)。
+可在模型设置中刷新供应商报告的上下文窗口。点击上下文用量圆环可手动压缩空闲会话；自动压缩沿用 Pi 原生策略。压缩会作为可展开事件保留在历史中。见[上下文窗口与压缩说明](docs/context-compaction.md)。
 
 ## 开始使用
 

@@ -20,7 +20,7 @@ from app.syntax_highlight import register_text_types
 
 
 def diagnostic(message):
-    target = os.environ.get("CODEAGENT_DIAGNOSTICS")
+    target = os.environ.get("UMEKO_DIAGNOSTICS")
     if target:
         with open(target, "a", encoding="utf-8") as handle:
             handle.write(message + "\n")

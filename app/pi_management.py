@@ -31,7 +31,7 @@ def resource_command(release, cwd, agent_dir, agent, **action):
         raise RuntimeError("Pi 配置管理暂不可用，可尝试恢复出厂内核") from None
     if result.returncode or not payload.get("ok"):
         raise RuntimeError(payload.get("error", "Pi 配置读取失败"))
-    return payload["extensions"]
+    return payload["update"] if action.get("action") == "check-update" else payload["extensions"]
 
 
 def prepare_factory(root, directory, agent, workspace):
@@ -55,6 +55,7 @@ def prepare_factory(root, directory, agent, workspace):
 
 class PiManagement(QObject):
     changed = Signal()
+    operationFinished = Signal(str, object)
 
     def __init__(self, controller):
         super().__init__(controller)
@@ -62,6 +63,7 @@ class PiManagement(QObject):
         self._busy, self._extensions, self._status, self._backup = False, [], "", ""
         self._install_state, self._install_message = "idle", ""
         self._npm_status = ""
+        self._extension_update = {}
         backups = controller.store.directory / "pi-backups"
         if backups.is_dir():
             saved = sorted(p for p in backups.iterdir() if p.is_dir() and (p / "restore.json").is_file())
@@ -93,6 +95,16 @@ class PiManagement(QObject):
 
     @Property(str, notify=changed)
     def npmStatus(self): return self._npm_status
+
+    @Property("QVariantMap", notify=changed)
+    def extensionUpdate(self): return self._extension_update
+
+    @Slot(str)
+    def checkExtensionUpdate(self, extension_id):
+        if self._busy or self.controller.kernelBusy: return
+        context = self._context()
+        self._extension_update = {"id": extension_id, "status": "checking", "message": "正在检查扩展更新…"}
+        self._start("extension-check", "正在检查扩展更新…", lambda: resource_command(*context, action="check-update", id=extension_id))
 
     @Slot(str, result=bool)
     def saveNpmConfig(self, raw):
@@ -286,8 +298,23 @@ class PiManagement(QObject):
 
     def _finished(self, name, result):
         if not name.startswith("pi-admin:") or self.controller._closing: return
+        outcome = dict(result)
+        self._apply_finished(name, outcome)
+        self.operationFinished.emit(name, outcome)
+
+    def _apply_finished(self, name, result):
         action, c = name.split(":", 1)[1], self.controller
         self._busy = False
+        if action == "extension-check":
+            if self._job_context != self._resource_key():
+                self._extension_update = {}
+            elif result["ok"]:
+                self._extension_update = result["value"]
+            else:
+                self._extension_update = {**self._extension_update, "status": "error", "message": str(result["value"])}
+            self._status = self._extension_update.get("message", "")
+            self.changed.emit()
+            return
         if action == "factory": c._kernel_busy = False
         if not result["ok"]:
             self._status = str(result["value"])
@@ -334,5 +361,6 @@ class PiManagement(QObject):
                 c.changed.emit()
                 self.scan()
         except (OSError, RuntimeError, ValueError) as exc:
+            result.update(ok=False, value=str(exc))
             self._status = str(exc); self.changed.emit(); c.toast.emit(self._status)
             if action == "factory": c.changed.emit()

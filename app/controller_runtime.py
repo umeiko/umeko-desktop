@@ -1,12 +1,13 @@
 """Route native Pi events to their owning session, independently of the view."""
 import copy
 import re
+import time
 import uuid
 from pathlib import Path
 
 from .pi_runtime import node_executable
 from .webview import configuration as webview_configuration
-from .transcripts import tool_view
+from .transcripts import tool_view, compaction_view
 from .message_attachments import attachment_prompt, split_attachments
 
 
@@ -82,6 +83,7 @@ class PiControllerMixin:
         if record.stale or (record.process and not record.ready):
             self._pool.retire(record)
         record.action, record.failed, record.cancelled = action, False, False
+        record.prompt_started = time.monotonic() if action == 'prompt' else None
         record.phase = "loading" if not record.process else "running" if action in ("prompt", "compact") else "working"
         record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在压缩上下文" if action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
         payload = {"type": action, "model": record.model or self.store.data["selectedModel"], "reasoningEffort": record.reasoning_effort, **values}
@@ -100,26 +102,32 @@ class PiControllerMixin:
                     workspace=record.workspace, defaultCwd=str(default_cwd),
                     agentDir=agent.get("agentDir") or str(Path.home() / ".pi/agent"),
                     sessionDir=str(self.store.directory / "pi/sessions"), sessionFile=record.file,
+                    docsDir=str(self.store.directory / "agent-docs"),
                     legacyHistory=record.history, models=self.gateway.models(), agent=agent,
                     mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration())
                 self._pool.start(record, node_executable(), bridge, payload)
         except (RuntimeError, OSError) as error:
             record.phase, record.failed = "idle", True
+            record.prompt_started = None
             self.toast.emit(str(error))
             if record.messages and not record.messages[-1]["text"]:
                 record.messages[-1].update(text=str(error), error=True)
             self.chatChanged.emit()
             return False
         self.chatChanged.emit()
+        self.piCommandStarted.emit(record, action)
         return True
 
     def _send(self, text, steering=False):
         record = self._view
         text = text.strip()
-        command = text.split(maxsplit=1)
-        if command and command[0] == "/compact":
-            return self._request_compaction(command[1] if len(command) > 1 else "")
-        if (not text and not record.attachments) or (record.busy and record.phase != "running") or self._kernel_busy:
+        self._last_send_error = ""
+        if self._kernel_busy:
+            self._last_send_error = "Pi 内核检查或更新正在进行；完成后即可再次发送消息。"
+            self.toast.emit(self._last_send_error)
+            self.changed.emit()
+            return False
+        if (not text and not record.attachments) or (record.busy and record.phase != "running"):
             return False
         images = [{"type": "image", "data": item["data"], "mimeType": item["mime"]} for item in record.attachments if item["kind"] == "image"]
         model = record.model if record.phase == "running" else self.store.data["selectedModel"]
@@ -155,7 +163,7 @@ class PiControllerMixin:
             return True
         return False
 
-    def _request_compaction(self, instructions=""):
+    def _request_compaction(self):
         record = self._view
         if self._kernel_busy:
             self.toast.emit("请等待 Pi 内核操作结束 / Wait for the Pi runtime operation to finish")
@@ -164,12 +172,9 @@ class PiControllerMixin:
             self.toast.emit("当前会话没有可压缩内容 / This conversation has no context to compact")
             return False
         if record.busy:
-            record.pending_compactions.append(instructions)
-            self.chatChanged.emit()
-        elif not self._command_pi("compact", record=record, customInstructions=instructions):
             return False
-        record.draft = ""
-        self.editorText.emit("")
+        if not self._command_pi("compact", record=record):
+            return False
         return True
 
     def _restore_queued(self, record, texts, images=None):
@@ -203,6 +208,9 @@ class PiControllerMixin:
         if self._closing:
             return
         kind, visible = event.get("type"), record is self._view
+        if kind in ("subagents", "subagent_context", "subagent_event", "subagent_command", "subagent_queue", "subagent_queue_edited", "subagent_queue_returned"):
+            self._subagents.handle(record, event)
+            return
         if kind == 'umeko_request':
             result = self._umeko_control.execute({'operation': event.get('operation'), 'arguments': event.get('arguments', {})}, record)
             self._write_pi({'type': 'umeko_response', 'id': event.get('id'), 'result': result}, record)
@@ -221,6 +229,7 @@ class PiControllerMixin:
             return
         elif kind == "ready":
             record.ready = True
+            self._subagents.process_ready(record)
             record.phase = "running" if record.action in ("prompt", "compact") else "working"
             record.tool_status = "正在压缩上下文" if record.action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
             if event.get("session"):
@@ -228,7 +237,7 @@ class PiControllerMixin:
         elif kind == "session":
             self._record_info(record, event["session"])
         elif kind in ("delta", "thinking_delta"):
-            if not record.messages or record.messages[-1]["role"] != "assistant":
+            if not record.messages or (record.messages[-1]["role"] != "assistant" or record.messages[-1].get("customType") == "umeko-compaction"):
                 record.messages.append({"role": "assistant", "text": "", "error": False})
             field = "thinking" if kind == "thinking_delta" else "text"
             record.messages[-1][field] = record.messages[-1].get(field, "") + event["text"]
@@ -248,10 +257,10 @@ class PiControllerMixin:
                         transcript = True
                         break
         elif kind == "assistant_start":
-            if event.get("retry") and record.messages and record.messages[-1]["role"] == "assistant" and not record.messages[-1].get("tools"):
+            if event.get("retry") and record.messages and (record.messages[-1]["role"] == "assistant" and record.messages[-1].get("customType") != "umeko-compaction") and not record.messages[-1].get("tools"):
                 record.messages[-1] = {"role": "assistant", "text": "", "error": False}
                 transcript = True
-            if not record.messages or record.messages[-1]["role"] != "assistant" or record.messages[-1]["text"] or record.messages[-1].get("thinking") or record.messages[-1].get("tools"):
+            if not record.messages or (record.messages[-1]["role"] != "assistant" or record.messages[-1].get("customType") == "umeko-compaction") or record.messages[-1]["text"] or record.messages[-1].get("thinking") or record.messages[-1].get("tools"):
                 record.messages.append({"role": "assistant", "text": "", "error": False})
                 transcript = True
             if record.messages and event.get("timestamp"):
@@ -267,30 +276,50 @@ class PiControllerMixin:
                 self.toast.emit(event["message"])
         elif kind == "queue_returned":
             self._restore_queued(record, [*event.get("steering", []), *event.get("followUp", [])])
-        elif kind == "message" and event.get("customType") == "umeko-compaction":
-            record.messages.append({"role": "assistant", "text": event["text"], "error": False,
-                "customType": "umeko-compaction", "compaction": event.get("compaction", {}),
-                "timestamp": event.get("timestamp"), "entryId": event.get("entryId")})
-            transcript = True
+        elif kind == "compaction_event":
+            row = compaction_view({"type": "custom", "customType": "umeko-compaction",
+                "data": event, "id": event.get("entryId"), "timestamp": event.get("timestamp")})
+            if row:
+                found = next((i for i, message in enumerate(record.messages)
+                    if message.get("compaction", {}).get("eventId") == event.get("eventId")), None)
+                if found is None:
+                    record.messages.append(row)
+                else:
+                    record.messages[found]["compaction"] = row["compaction"]
+                    dirty = min(dirty, found)
+                record.compaction_running = event.get("state") == "running"
+                record.tool_status = "正在压缩上下文" if record.compaction_running else ""
+                transcript = True
         elif kind == "message" and event.get("role") == "assistant":
             if event.get('error') or event.get('stopReason') == 'error': record.failed = True
-            if record.messages and record.messages[-1]["role"] == "assistant":
+            if record.messages and (record.messages[-1]["role"] == "assistant" and record.messages[-1].get("customType") != "umeko-compaction"):
                 record.messages[-1].update(text=event.get("text") or event.get("error") or record.messages[-1]["text"], error=bool(event.get("error")), stopReason=event.get("stopReason", ""))
                 if event.get("timestamp"): record.messages[-1]["timestamp"] = event["timestamp"]
                 if "thinking" in event:
                     record.messages[-1]["thinking"] = event["thinking"]
                 transcript = True
         elif kind == "tool":
+            if isinstance(event.get("subagent"), dict):
+                self._subagents.merge(record, event["subagent"])
+                previous = next((tool for message in record.messages for tool in message.get("tools", []) if tool["id"] == event["id"]), None)
+                # Live progress belongs to the independent side pane. Keep the
+                # main transcript card stable until its state changes.
+                if previous and previous.get("state") == event["state"]:
+                    return
             record.tool_status = event["name"] + (" · 运行中" if event["state"] == "running" else " · 失败" if event["state"] == "error" else " · 完成")
             found = next(((i, tool) for i in range(len(record.messages) - 1, -1, -1) for tool in record.messages[i].get("tools", []) if tool["id"] == event["id"]), None)
             tool = found[1] if found else None
             if found:
                 dirty = found[0]
             if tool is None:
-                if not record.messages or record.messages[-1]["role"] != "assistant":
+                if not record.messages or (record.messages[-1]["role"] != "assistant" or record.messages[-1].get("customType") == "umeko-compaction"):
                     record.messages.append({"role": "assistant", "text": "", "error": False})
                 tool = tool_view(event["id"], event["name"], event.get("args", {}), record.workspace)
                 record.messages[-1].setdefault("tools", []).append(tool)
+            if isinstance(event.get("subagent"), dict):
+                tool["subagent"] = dict(event["subagent"])
+                if isinstance(event.get("args"), dict):
+                    tool["arguments"] = dict(event["args"])
             tool["state"] = event["state"]
             if event.get("media"):
                 tool["media"] = event["media"]
@@ -343,8 +372,8 @@ class PiControllerMixin:
                 marker = re.search(r'\[Umeko:[a-f0-9-]{36}\]', message)
                 if marker:
                     message = "压缩失败：供应商请求失败，请查看请求详情 / Compaction failed: provider request failed " + marker[0]
-                record.messages.append({"role": "assistant", "text": message, "error": True})
-                transcript = True
+                record.compaction_running = False
+                record.tool_status = ""
             elif record.messages and not record.messages[-1]["text"]:
                 record.messages[-1].update(text=message, error=True)
                 transcript = True
@@ -360,6 +389,7 @@ class PiControllerMixin:
                 record.messages, record.history, record.tree = event["messages"], [], event["tree"]
                 record.transcript, record.loaded = None, True
             record.resources = event["resources"]
+            self._subagents.sync(record)
             record.context_usage = event.get("contextUsage") or {}
             if visible:
                 self.contextUsageChanged.emit()
@@ -374,15 +404,23 @@ class PiControllerMixin:
                 self.changed.emit()
             transcript = True
         elif kind in ("done", "exit"):
+            record.compaction_running = False
             record.network_retry = {}
             if visible:
                 self.retryChanged.emit()
             was_busy = record.busy
+            long_running = record.prompt_started is not None and time.monotonic() - record.prompt_started > 180
+            record.prompt_started = None
             if record.queue:
                 self._restore_queued(record, [row["text"] for row in record.queue])
                 record.queue = []
             record.phase, record.tool_status, record.approval = "idle", "", {}
+            if kind == "done":
+                self._subagents.process_ready(record)
             if kind == "exit":
+                for child in list(record.subagents.values()):
+                    if child.get("status") in ("queued", "running"):
+                        self._subagents.merge(record, {**child, "status": "stopped"})
                 record.ready = False
                 if was_busy:
                     record.failed = True
@@ -395,20 +433,12 @@ class PiControllerMixin:
             if was_busy and record.action == "prompt" and not record.cancelled and record.id:
                 self.store.data["sessionMeta"].setdefault(record.id, {})["unread"] = not (visible and self._chat_visible)
                 self.store.save()
-                self.taskFinished.emit(record.id, record.title, kind == 'done' and not record.failed)
+                self.taskFinished.emit(record.id, record.title, kind == 'done' and not record.failed, long_running)
             if visible:
                 self.approvalChanged.emit()
             if record.stale or (kind == "done" and not record.ready):
                 self._pool.retire(record)
             self._pool.trim()
-            if record.pending_compactions:
-                if kind == "exit":
-                    record.pending_compactions.clear()
-                    if visible:
-                        self.toast.emit("Pi 已退出，等待的压缩未执行 / Pi exited before the queued compaction could run")
-                else:
-                    instructions = record.pending_compactions.pop(0)
-                    self._command_pi("compact", record=record, customInstructions=instructions)
         else:
             return
         if transcript:

@@ -1,6 +1,8 @@
 # Background task notifications
 
-Both editions notify when a prompt finishes while the main window is hidden in the tray or minimized. Visible windows do not produce completion banners. Cancelling, quitting, reloading, duplicate completion events and individual tool completions do not generate a completion notification. A failed run uses a “needs attention” heading.
+Both editions notify when a prompt finishes while the main window is hidden in the tray or minimized. A prompt that runs for more than three minutes also produces a completion banner while the window is visible. Short foreground prompts remain quiet. Cancelling, quitting, reloading, duplicate completion events and individual tool completions do not generate a completion notification. A failed run uses a “needs attention” heading.
+
+The three-minute threshold measures the whole prompt, including startup, thinking, tools and network retries. Each conversation owns its start time; switching chats does not reset it. A monotonic clock is read only when a prompt starts and finishes, so clock changes and streaming redraws do not affect the timer. Completion clears the start time before notifying, and the next prompt starts fresh.
 
 Each notification retains its own conversation target. Clicking it restores the window, opens that conversation and lets the existing visible-conversation behavior mark it read. Dismissing a system notification removes its click target without marking an unseen conversation read. Text includes the conversation title and an instruction to open it, never the model response body or account keys. Keep up to 128 recent notification targets in memory.
 

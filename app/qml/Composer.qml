@@ -12,9 +12,20 @@ Item {
     function focusInput() { prompt.forceActiveFocus() }
     function setText(value) { prompt.text = value; prompt.forceActiveFocus(); prompt.cursorPosition = value.length }
     function sendMessage(steering) {
-        if (backend.kernelBusy || (backend.loading && !/^\/compact(?:\s|$)/.test(prompt.text.trim()))) return
+        if (backend.kernelBusy || backend.loading) return
         if (steering) backend.steer(prompt.text)
         else if (prompt.text.trim().length || backend.attachments.length) backend.send(prompt.text)
+    }
+    function handleEnter(event) {
+        if (prompt.inputMethodComposing) { event.accepted = false; return }
+        if (event.modifiers & Qt.AltModifier) {
+            const position = prompt.selectionStart
+            prompt.remove(position, prompt.selectionEnd)
+            prompt.insert(position, "\n")
+            prompt.cursorPosition = position + 1
+            event.accepted = true
+        } else if (event.modifiers & Qt.ShiftModifier) event.accepted = false
+        else { sendMessage(); event.accepted = true }
     }
     Connections { target: backend; function onEditorText(text) { root.setText(text) } }
     QueuedMessages { id: queued; width: parent.width }
@@ -50,8 +61,8 @@ Item {
                 background: null
                 onTextChanged: backend.setDraft(text)
                 Keys.onPressed: event => { if (event.matches(StandardKey.Paste) && backend.pasteAttachments()) event.accepted = true }
-                Keys.onReturnPressed: event => { if (!(event.modifiers & Qt.ShiftModifier) && !inputMethodComposing) { root.sendMessage(); event.accepted = true } else event.accepted = false }
-                Keys.onEnterPressed: event => { if (!(event.modifiers & Qt.ShiftModifier) && !inputMethodComposing) { root.sendMessage(); event.accepted = true } else event.accepted = false }
+                Keys.onReturnPressed: event => root.handleEnter(event)
+                Keys.onEnterPressed: event => root.handleEnter(event)
             }
         }
         Row {
@@ -76,7 +87,7 @@ Item {
         }
         Row {
             anchors.right: parent.right; anchors.rightMargin: 14; anchors.bottom: parent.bottom; anchors.bottomMargin: 12; spacing: 13
-            Text { objectName: "composerStatus"; visible: backend.compactionPending || backend.compacting || Theme.fontScale <= 1.25; text: backend.compactionPending || backend.compacting ? I18n.t(backend.toolStatus) : backend.loading ? I18n.t(backend.toolStatus || "正在加载 Pi") : backend.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
+            Text { objectName: "composerStatus"; visible: backend.compacting || Theme.fontScale <= 1.25; text: backend.compacting ? I18n.t(backend.toolStatus) : backend.loading ? I18n.t(backend.toolStatus || "正在加载 Pi") : backend.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
             Rectangle {
                 objectName: "sendButton"
                 readonly property bool stopAction: backend.running

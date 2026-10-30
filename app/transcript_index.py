@@ -22,7 +22,7 @@ from .chat_model import ChatModel
 from .message_attachments import split_attachments
 from .transcripts import content_text, content_thinking, present, compaction_view
 
-SCHEMA = 1
+SCHEMA = 3
 LARGE_FILE = 2 * 1024 * 1024
 PAGE_ROWS = 24
 GROUP_MESSAGES = 16
@@ -387,6 +387,7 @@ class TranscriptRepository:
                     meta, offset = {}, 0
                 source.seek(offset)
                 parsed, latest, cwd = 0, meta.get('latest', ''), meta.get('cwd', str(file.parent))
+                subagent_owners, compaction_events = set(), set()
                 while True:
                     if cancelled():
                         raise Cancelled()
@@ -420,10 +421,15 @@ class TranscriptRepository:
                             title, attachments = split_attachments(text)
                             title = re.sub(r'\s+', ' ', title.strip()[:500]) or '、'.join(a.get('name', '') for a in attachments) or '…'
                         data = entry.get('data') or {}
-                        tool = message.get('toolCallId', '') if role == 'toolResult' else data.get('toolCallId', '') if entry.get('customType') == 'umeko-chatbox' and isinstance(data, dict) else ''
+                        tool = message.get('toolCallId', '') if role == 'toolResult' else data.get('toolCallId', '') if entry.get('customType') in ('umeko-chatbox', 'umeko-subagent', 'umeko-subagent-link') and isinstance(data, dict) else ''
+                        if receipt and data.get('version') == 2:
+                            tool = 'umeko-compaction:' + data['eventId']
+                            compaction_events.add(tool)
+                        if entry.get('customType') == 'umeko-subagent' and isinstance(data, dict) and data.get('ownerEntryId'):
+                            subagent_owners.add(data['ownerEntryId'])
                         omitted = entry.get('targetId', '') if entry.get('type') == 'context_edit' and entry.get('replacement') is None else ''
                         db.execute('INSERT OR REPLACE INTO entries(id,parent,offset,length,kind,role,tool,omitted,eligible,tools,stop,error,title) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                                   (entry['id'], entry.get('parentId'), at, len(line), entry.get('type', ''), role, tool, omitted, int(role in ('user', 'assistant') and bool(text or thinking or tools)), int(tools), message.get('stopReason', ''), int(bool(message.get('errorMessage'))), title))
+                                   (entry['id'], entry.get('parentId'), at, len(line), entry.get('type', ''), role, tool, omitted, int(bool(receipt) or role in ('user', 'assistant') and bool(text or thinking or tools)), int(tools), message.get('stopReason', ''), int(bool(message.get('errorMessage'))), title))
                         latest = entry['id']
                 offset = source.tell()
                 source.seek(max(0, offset - 4096))
@@ -449,7 +455,10 @@ class TranscriptRepository:
                 old_count = int(meta.get('native_count', 0))
                 for first in range(0, len(new), 500):
                     identifiers = [row['id'] for row in new[first:first + 500]]
-                    additions = db.execute('SELECT e.id FROM entries e LEFT JOIN native n ON n.id=e.id WHERE e.eligible=1 AND n.id IS NULL AND e.id IN (' + ','.join('?' for _ in identifiers) + ') ORDER BY e.num', identifiers).fetchall()
+                    additions = db.execute('''SELECT e.id FROM entries e LEFT JOIN native n ON n.id=e.id WHERE e.eligible=1 AND n.id IS NULL
+                        AND NOT(e.tool LIKE 'umeko-compaction:%' AND EXISTS(
+                            SELECT 1 FROM entries prior JOIN branch b ON b.id=prior.id WHERE prior.tool=e.tool AND prior.num<e.num))
+                        AND e.id IN (''' + ','.join('?' for _ in identifiers) + ') ORDER BY e.num', identifiers).fetchall()
                     db.executemany('INSERT INTO native(pos,id) VALUES(?,?)', ((old_count + i, row[0]) for i, row in enumerate(additions)))
                     old_count += len(additions)
                 last = db.execute('SELECT first_native FROM display ORDER BY seq DESC LIMIT 1').fetchone()
@@ -457,6 +466,20 @@ class TranscriptRepository:
                 # Rebuild every fragment of the last bounded message group.
                 value = db.execute('SELECT MIN(first_native) FROM display WHERE last_native>=?', (rebuild,)).fetchone()[0]
                 rebuild = value if value is not None else rebuild
+                # Background completions and resumed children update their original
+                # launch row, which may precede the most recent message group.
+                for owner in subagent_owners:
+                    native = db.execute('SELECT pos FROM native WHERE id=?', (owner,)).fetchone()
+                    if native:
+                        value = db.execute('SELECT MIN(first_native) FROM display WHERE last_native>=?', (native[0],)).fetchone()[0]
+                        if value is not None:
+                            rebuild = min(rebuild, value)
+                for event in compaction_events:
+                    native = db.execute('''SELECT n.pos FROM native n JOIN entries e ON e.id=n.id WHERE e.tool=?''', (event,)).fetchone()
+                    if native:
+                        value = db.execute('SELECT MIN(first_native) FROM display WHERE last_native>=?', (native[0],)).fetchone()[0]
+                        if value is not None:
+                            rebuild = min(rebuild, value)
             else:
                 db.execute('DELETE FROM branch')
                 db.execute('''WITH RECURSIVE path(id) AS (
@@ -464,6 +487,8 @@ class TranscriptRepository:
                     INSERT INTO branch SELECT e.id FROM entries e JOIN path p ON e.id=p.id''', (leaf,))
                 db.execute('DELETE FROM native')
                 cursor = db.execute('''SELECT e.id FROM entries e JOIN branch b ON e.id=b.id WHERE e.eligible=1
+                    AND NOT(e.tool LIKE 'umeko-compaction:%' AND EXISTS(
+                        SELECT 1 FROM entries prior JOIN branch pb ON pb.id=prior.id WHERE prior.tool=e.tool AND prior.num<e.num))
                     AND NOT(e.stop='error' AND EXISTS(SELECT 1 FROM entries edit JOIN branch eb ON edit.id=eb.id WHERE edit.omitted=e.id)) ORDER BY e.num''')
                 db.executemany('INSERT INTO native(pos,id) VALUES(?,?)', enumerate(row[0] for row in cursor))
                 rebuild = 0
@@ -516,11 +541,18 @@ class TranscriptRepository:
                     if isinstance(content, list):
                         calls.extend(c['id'] for c in content if isinstance(c, dict) and c.get('type') == 'toolCall')
                 dependencies = []
+                for entry in group:
+                    receipt = compaction_view(entry)
+                    if receipt and receipt['compaction'].get('version') == 2:
+                        transitions = db.execute('''SELECT e.offset,e.length FROM entries e JOIN branch b ON e.id=b.id
+                            WHERE e.tool=? AND e.id!=? ORDER BY e.num''',
+                            ('umeko-compaction:' + receipt['compaction']['eventId'], entry['id']))
+                        dependencies.extend(read(source, value) for value in transitions)
                 for call in calls:
                     results = db.execute("SELECT e.offset,e.length FROM entries e JOIN branch b ON e.id=b.id WHERE e.tool=? AND e.role='toolResult' ORDER BY e.num", (call,))
                     dependencies.extend(read(source, value) for value in results)
                     prefix = call + '/'
-                    deliveries = db.execute("SELECT e.offset,e.length FROM entries e JOIN branch b ON e.id=b.id WHERE e.tool>=? AND e.tool<? AND e.kind='custom' ORDER BY e.num", (prefix, prefix + chr(0x10ffff)))
+                    deliveries = db.execute("SELECT e.offset,e.length FROM entries e JOIN branch b ON e.id=b.id WHERE ((e.tool>=? AND e.tool<?) OR e.tool=?) AND e.kind='custom' ORDER BY e.num", (prefix, prefix + chr(0x10ffff), call))
                     dependencies.extend(read(source, value) for value in deliveries)
                 messages, _ = present(group + dependencies, cwd)
                 for row in ChatModel.project(messages):

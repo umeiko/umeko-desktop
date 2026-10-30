@@ -79,10 +79,10 @@ class TaskNotifications(QObject):
         self.closing = True; self.timer.stop(); self.pending.clear()
         if hasattr(self.native, 'close'): self.native.close()
 
-    @Slot(str, str, bool)
-    def task_finished(self, session_id, title, success):
+    @Slot(str, str, bool, bool)
+    def task_finished(self, session_id, title, success, long_running=False):
         if self.closing or not session_id: return
-        if self.window.isVisible() and self.window.visibility() != QWindow.Minimized: return
+        if self.window.isVisible() and self.window.visibility() != QWindow.Minimized and not long_running: return
         english = self.language == 'en'
         heading = 'Umeko · ' + (('Task complete' if success else 'Task needs attention') if english else ('任务完成' if success else '任务未完成'))
         label = ' '.join(title.split())[:160] or ('Conversation' if english else '会话')

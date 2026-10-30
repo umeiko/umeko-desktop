@@ -20,11 +20,11 @@ FocusScope {
     property real burstProgress: 1
     readonly property bool celebrating: burst.running
     readonly property bool animating: jump.running || burst.running || springX.running || springY.running || springTilt.running || springSquashX.running || springSquashY.running
-    readonly property var tapLines: [I18n.t("欸？我在听呢。"), I18n.t("好啦，今天先从哪件事开始？"), I18n.t("再戳的话，点心要分我一半哦。"), I18n.t("我可没有在偷懒，只是休息一下！")]
+    readonly property var tapLines: Character.scene("welcome.tap", [])
     signal interaction(string kind)
     activeFocusOnTab: true
     Accessible.role: Accessible.Button
-    Accessible.name: I18n.t("八奈见：点击互动，拖拽回弹，长按有彩蛋")
+    Accessible.name: Character.id === "yanami" ? I18n.t("八奈见：点击互动，拖拽回弹，长按有彩蛋") : Character.style.name
     Accessible.onPressAction: tap()
     Component.onCompleted: ready = true
     onVisibleChanged: if (ready && !visible) reset()
@@ -49,7 +49,7 @@ FocusScope {
     }
     function celebrate() {
         combo = 0; comboTimer.stop()
-        say(I18n.t("咦，有点心吗？那我再陪你一会儿。"))
+        say(Character.scene("welcome.celebration", ""))
         returnHome(); jump.restart(); burst.restart()
     }
     function reset() {
@@ -75,11 +75,12 @@ FocusScope {
     Timer { id: comboTimer; interval: 1000; onTriggered: root.combo = 0 }
 
     Rectangle { anchors.fill: parent; radius: width / 2; color: "transparent"; border.color: Theme.accent; opacity: 0.4; visible: root.activeFocus }
-    Image {
+    CharacterArt {
         id: portrait
         x: root.offsetX; y: root.offsetY + root.hop; width: root.width; height: root.height
-        source: "../icons/portraits/" + (root.portraitIndex + 1).toString().padStart(2, "0") + ".png"
-        sourceSize: Qt.size(420,420); fillMode: Image.PreserveAspectFit; mipmap: true; cache: true
+        fallbackSource: "../icons/portraits/" + (root.portraitIndex + 1).toString().padStart(2, "0") + ".png"
+        artwork: Character.asset("welcome", fallbackSource)
+        sourceSize: Qt.size(420,420); fillMode: Image.PreserveAspectFit; mipmap: true
         transform: [
             Rotation { origin.x: portrait.width / 2; origin.y: portrait.height * 0.72; angle: root.tilt },
             Scale { origin.x: portrait.width / 2; origin.y: portrait.height * 0.72; xScale: root.squashX; yScale: root.squashY }
@@ -136,7 +137,7 @@ FocusScope {
         onReleased: {
             if (!validPress) { root.returnHome(); return }
             validPress = false
-            if (root.dragging) { root.interaction("drag"); root.say(I18n.t("好啦好啦，让我自己站稳嘛。")); root.returnHome() }
+            if (root.dragging) { root.interaction("drag"); root.say(Character.scene("welcome.dragReturn", "")); root.returnHome() }
             else if (held) root.returnHome()
             else root.tap()
         }

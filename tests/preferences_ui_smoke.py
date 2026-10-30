@@ -39,8 +39,8 @@ try:
     window.setProperty('page','settings');window.setProperty('settingsTab',0);QTest.qWait(200)
     click('editProvider_'+identifier)
     assert find('settingsPage').property('editingProvider')
-    assert find('editProvider_'+identifier).property('glyph')=='chevron-up'
-    click('editProvider_'+identifier)
+    assert find('editProvider_'+identifier).property('glyph')=='edit'
+    click('closeProviderEditorButton');QTest.qWait(350)
     assert not find('settingsPage').property('editingProvider')
     assert find('editProvider_'+identifier).property('glyph')=='edit'
     click('providerProxy_'+identifier)

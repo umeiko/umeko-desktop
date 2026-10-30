@@ -13,6 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class KernelUpdateTests(unittest.TestCase):
+    def setUp(self):
+        # Bundled release resources are covered by their own lifecycle tests.
+        bundles = patch("app.provider_plugins.BundledProviders.sync", return_value=[])
+        bundles.start()
+        self.addCleanup(bundles.stop)
+
     def test_project_entry_is_blank_and_management_preserves_native_files(self):
         from PySide6.QtCore import QUrl
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": str(Path(temp) / "data")}):
@@ -77,7 +83,7 @@ class KernelUpdateTests(unittest.TestCase):
                 controller.close()
 
     def test_provider_keeps_multiple_models_and_selected_alias(self):
-        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"CODEAGENT_DATA_DIR": temp}):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": temp}):
             controller = Controller(ROOT)
             try:
                 models = [{"upstream":"model-a","alias":"fast"},{"upstream":"model-b","alias":"reason"}]
@@ -242,7 +248,7 @@ class KernelUpdateTests(unittest.TestCase):
                 controller.close()
 
     def test_failed_download_preserves_current_kernel(self):
-        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"CODEAGENT_DATA_DIR": temp}):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": temp}):
             controller = Controller(ROOT)
             previous = controller._release
             def synchronous_job(name, action):
@@ -267,12 +273,11 @@ class KernelUpdateTests(unittest.TestCase):
     def test_old_data_migrates_without_changing_credentials_or_aliases(self):
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ):
             os.environ.pop("UMEKO_DATA_DIR", None)
-            os.environ.pop("CODEAGENT_DATA_DIR", None)
             os.environ["LOCALAPPDATA"] = temp
-            old = Store(Path(temp) / "CodeAgentStudio")
+            old = Store(Path(temp) / "Umeko")
             old.data["password"] = "synthetic-password"
             old.data["providers"] = [{"id":"internal", "name":"Fixture", "api":"internal", "baseUrl":"", "key":"", "models":[{"upstream":"default", "alias":"umeko-default"}]}]
-            old.data["providers"][0].update(name="CodeAgent",models=[{"upstream":"original-model","alias":"existing-alias"}])
+            old.data["providers"][0].update(models=[{"upstream":"original-model","alias":"existing-alias"}])
             old.data["selectedModel"] = "existing-alias"
             old.save()
             old.save_sessions([{"id":"fixture", "title":"fixture", "messages":[], "history":[]}])
@@ -282,7 +287,7 @@ class KernelUpdateTests(unittest.TestCase):
             self.assertEqual(migrated.directory.name, "desktop")
             self.assertEqual(migrated.data["password"], "synthetic-password")
             self.assertEqual(migrated.data["selectedModel"], "existing-alias")
-            self.assertEqual(migrated.data["providers"][0]["name"], "内网服务")
+            self.assertEqual(migrated.data["providers"][0]["name"], "Fixture")
             self.assertEqual(len(migrated.load_sessions()), 1)
             self.assertTrue((migrated.directory / "sessions-legacy.json").is_file())
             self.assertEqual(old.path.read_bytes(), original)

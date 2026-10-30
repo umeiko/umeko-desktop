@@ -6,7 +6,27 @@ Menu {
     property bool desiredOpen: false
     readonly property bool animating: motion.moving
     padding: 6; margins: 10
-    implicitWidth: Math.max(184, implicitContentWidth + leftPadding + rightPadding)
+    readonly property real widestAction: {
+        let widest = 0
+        for (let i = 0; i < count; i++) {
+            const action = itemAt(i)
+            if (action && action.visible) widest = Math.max(widest, action.implicitWidth)
+        }
+        return widest
+    }
+    implicitWidth: Math.ceil(Math.max(Theme.control(184), widestAction + leftPadding + rightPadding))
+    width: Math.min(implicitWidth, Overlay.overlay ? Math.max(0, Overlay.overlay.width - margins * 2) : implicitWidth)
+    height: Math.min(implicitHeight, Overlay.overlay ? Math.max(0, Overlay.overlay.height - margins * 2) : implicitHeight)
+    function fitToWindow() {
+        if (!visible || !parent || !Overlay.overlay) return
+        const point = parent.mapToItem(Overlay.overlay, x, y)
+        const edge = margins
+        x += Math.max(edge, Math.min(point.x, Overlay.overlay.width - width - edge)) - point.x
+        y += Math.max(edge, Math.min(point.y, Overlay.overlay.height - height - edge)) - point.y
+    }
+    onWidthChanged: Qt.callLater(fitToWindow)
+    onHeightChanged: Qt.callLater(fitToWindow)
+    onOpened: Qt.callLater(fitToWindow)
     transformOrigin: Popup.TopLeft
     opacity: Math.max(0,Math.min(1,motion.value.width/100))
     scale: 0.9 + motion.value.width/1000

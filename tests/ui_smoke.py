@@ -10,8 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault('UMEKO_LANGUAGE','zh')
-os.environ["CODEAGENT_DATA_DIR"] = str(Path(tempfile.mkdtemp(prefix="codeagent-ui-test-")).resolve())
-os.environ["UMEKO_DATA_DIR"] = os.environ["CODEAGENT_DATA_DIR"]
+os.environ["UMEKO_DATA_DIR"] = str(Path(tempfile.mkdtemp(prefix="umeko-ui-test-")).resolve())
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
@@ -329,7 +328,7 @@ try:
     assert app.clipboard().text() == 'def hello():\n    return "hello"'
     click("copyCode_3")
     assert app.clipboard().text() == "printf hello"
-    workspace = Path(os.environ["CODEAGENT_DATA_DIR"]) / "workspace"
+    workspace = Path(os.environ["UMEKO_DATA_DIR"]) / "workspace"
     workspace.mkdir(exist_ok=True)
     backend.setWorkspace(QUrl.fromLocalFile(str(workspace)).toString())
     for _ in range(150):
@@ -392,7 +391,7 @@ try:
     click("contextArchiveSession")
     click("archivedViewButton")
     assert any(r["id"] == first_session for r in backend.projectRows)
-    second = Path(os.environ["CODEAGENT_DATA_DIR"]) / "second-project"
+    second = Path(os.environ["UMEKO_DATA_DIR"]) / "second-project"
     second.mkdir()
     drop_urls("projectDropArea", [second])
     assert backend.config["workspace"] == str(second.resolve())

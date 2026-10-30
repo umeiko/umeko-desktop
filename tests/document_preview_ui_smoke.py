@@ -63,9 +63,9 @@ with tempfile.TemporaryDirectory(prefix='umeko-document-ui-') as temporary:
     # Drag follows the pointer and remains bounded while resizing an actual document.
     handle=find('webPaneResizeHandle');start=handle.mapToScene(QPointF(handle.width()/2,100)).toPoint();before=pane.width()
     QTest.mousePress(window,Qt.LeftButton,Qt.NoModifier,start)
-    for dx in [-40,-80,-120]:QTest.mouseMove(window,start+QPoint(dx,0));QTest.qWait(40)
-    assert handle.property('pressed') and pane.width()>before+100
-    QTest.mouseRelease(window,Qt.LeftButton,Qt.NoModifier,start+QPoint(-120,0));QTest.qWait(100)
+    for dx in [25,50,80]:QTest.mouseMove(window,start+QPoint(dx,0));QTest.qWait(40)
+    assert handle.property('pressed') and pane.width()<before-65
+    QTest.mouseRelease(window,Qt.LeftButton,Qt.NoModifier,start+QPoint(80,0));QTest.qWait(100)
     assert abs(find('chatPage').width()+pane.width()-find('mainArea').width())<0.1
     submit(large,'code');wait(lambda:controller.documentPreview.state.get('truncated'))
     state=controller.documentPreview.state;assert len(state['text'])<=48002 and not state['highlight']

@@ -4,9 +4,41 @@ from contextvars import ContextVar
 import urllib.request
 import urllib.parse
 import re
+import os
+import ssl
+from pathlib import Path
 
 policy = ContextVar('umeko_network_policy', default=None)
 trace = ContextVar('umeko_network_trace', default=None)
+
+
+def validate_ca_file(value):
+    if not value or not value.strip():
+        return ''
+    try:
+        value = value.strip()
+        if value.startswith('file:'):
+            value = urllib.request.url2pathname(urllib.parse.urlsplit(value).path)
+        path = Path(value).expanduser().resolve()
+        if not path.is_file() or path.stat().st_size > 4 * 1024 * 1024:
+            raise ValueError('Expected a readable PEM file up to 4 MiB')
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.load_verify_locations(cafile=str(path))
+        return str(path)
+    except (ValueError, OSError) as cause:
+        error = ValueError('CA 证书文件不存在、不可读或不是有效的 PEM 证书（最大 4 MiB）')
+        error.code = 'UMEKO_CA_FILE_INVALID'
+        raise error from cause
+
+
+def tls_context(settings=None):
+    """Extend platform trust for this provider only; keep peer/hostname checks."""
+    settings = policy.get() if settings is None else settings
+    context = ssl.create_default_context()
+    files = (os.environ.get('NODE_EXTRA_CA_CERTS'), os.environ.get('UMEKO_MODEL_CA_FILE'), (settings or {}).get('caFile'))
+    for path in dict.fromkeys(file for file in files if file):
+        context.load_verify_locations(cafile=validate_ca_file(path))
+    return context
 
 
 @contextmanager

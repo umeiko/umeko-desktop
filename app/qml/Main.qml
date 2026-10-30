@@ -70,8 +70,22 @@ ApplicationWindow {
     }
     Timer { interval: 16; repeat: true; running: window.sidebarSwitching; onTriggered: window.commitSidebarSelection() }
     property real webPreferredWidth: 0
-    readonly property real webMinimumWidth: 300
-    readonly property real webMaximumWidth: Math.max(webMinimumWidth, mainArea.width - 400)
+    readonly property real webMinimumWidth: 320
+    readonly property real chatMinimumWidth: 640
+    readonly property bool previewSidebarCollapsed: webPane.opened && page === "chat" && width - Math.min(sidebarPreferredWidth, sidebarMaximumWidth) < chatMinimumWidth + webMinimumWidth
+    readonly property bool sidebarLayoutCollapsed: sidebarCollapsed || previewSidebarCollapsed
+    readonly property real webMaximumWidth: Math.max(webMinimumWidth, mainArea.width - chatMinimumWidth)
+    function showChatWidthLimitHint() {
+        const text = Character.scene("layout.tooNarrow", "")
+        if (welcome.visible) { welcomeMascot.say(text); return }
+        const row = conversation.itemAtIndex(conversation.count-1)
+        const mascot = row ? row.replyMascot : null
+        if (mascot && mascot.visible) {
+            const point = mascot.mapToItem(conversation,0,0)
+            if (point.y >= 0 && point.y+mascot.height <= conversation.height) { mascot.say(text); return }
+        }
+        widthLimitMascot.say(text)
+    }
     property real sidebarPreferredWidth: backend.sidebarWidth
     property bool sidebarCollapsed: backend.sidebarCollapsed
     readonly property real sidebarMinimumWidth: 200
@@ -99,7 +113,7 @@ ApplicationWindow {
         if (window.visibility === Window.Minimized) window.showNormal()
         window.raise(); window.requestActivate(); composer.focusInput(); dropFocusTimer.restart()
     }
-    function acceptChatFiles(urls) { backend.addAttachments(JSON.stringify(urls)); modelPopup.close(); focusChatInput() }
+    function acceptChatFiles(urls) { const accepted = backend.addAttachments(JSON.stringify(urls)); if (accepted) { modelPopup.close(); focusChatInput() }; return accepted }
     function attachChatFile(path) { backend.attachChatboxFile(path); imageViewer.close(); focusChatInput() }
     function attachChatUrl(url) { backend.attachChatboxUrl(url); focusChatInput() }
     function previewChatWeb(item) {
@@ -109,6 +123,10 @@ ApplicationWindow {
         window.page = "chat"; webPane.submit(url, item.title || item.name || "")
     }
     function previewChatDocument(item) { window.page = "chat"; webPane.showDocument(item) }
+    function showSubagentGroup(agents, anchor) {
+        if (subagentMatrix.desiredOpen && subagentMatrix.parent === anchor) { subagentMatrix.close(); return }
+        subagentMatrix.agents = agents; subagentMatrix.parent = anchor; subagentMatrix.open()
+    }
     function previewChatImage(item, siblings) {
         if (item.kind === "web") { previewChatWeb(item); return }
         const info = item.url && item.preview !== undefined ? item : backend.chatboxFileInfo(item.path)
@@ -125,7 +143,7 @@ ApplicationWindow {
     onConversationVisibleChanged: backend.setConversationVisible(conversationVisible)
     Component.onCompleted: backend.setConversationVisible(conversationVisible)
     Shortcut { sequence: "Ctrl+N"; onActivated: window.startChat() }
-    Shortcut { sequence: "Ctrl+S"; enabled: window.page === "chat" && !chatCover.visible; onActivated: composer.sendMessage(true) }
+    Shortcut { sequence: "Ctrl+S"; enabled: window.page === "chat" && !chatCover.visible && !webPane.subagentInputFocused; onActivated: composer.sendMessage(true) }
     Shortcut { sequence: "Ctrl+,"; onActivated: window.settings(0) }
     Shortcut { sequence: "Ctrl+B"; onActivated: window.toggleSidebar() }
     Shortcut { sequences: [StandardKey.Copy]; enabled: chatSelection.activeFocus && chatSelection.hasSelection; onActivated: Qt.callLater(chatSelection.copy) }
@@ -147,9 +165,10 @@ ApplicationWindow {
 
     PidMotion {
         id: sidebarWidthMotion; objectName: "sidebarWidthMotion"
-        targetRect: Qt.rect(0, 0, (sidebarResizeHandle.resizing ? sidebarResizeHandle.dragWidth : window.sidebarCollapsed ? 0 : Math.min(window.sidebarPreferredWidth, window.sidebarMaximumWidth)) + 1, 1)
+        targetRect: Qt.rect(0, 0, (sidebarResizeHandle.resizing ? sidebarResizeHandle.dragWidth : window.sidebarLayoutCollapsed ? 0 : Math.min(window.sidebarPreferredWidth, window.sidebarMaximumWidth)) + 1, 1)
         onMovingChanged: if (!moving) window.showSidebarCollapseHint()
     }
+    Connections { target: backend.subagents; function onRequested() { window.page = "chat"; webPane.showSubagent() } }
     Rectangle {
         id: sidebar; objectName: "sidebar"
         width: sidebarResizeHandle.resizing ? sidebarResizeHandle.dragWidth : Math.max(0, sidebarWidthMotion.value.width - 1)
@@ -162,7 +181,7 @@ ApplicationWindow {
             width: Math.max(window.sidebarMinimumWidth, sidebarResizeHandle.resizing ? sidebarResizeHandle.dragWidth : Math.min(window.sidebarPreferredWidth, window.sidebarMaximumWidth))
             anchors.top: parent.top; anchors.bottom: parent.bottom
             enabled: !window.sidebarCollapsed && !sidebarWidthMotion.moving
-            MouseArea { width: parent.width; height: 20; enabled: !chatSelection.dragging; onPressed: window.startSystemMove(); onDoubleClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
+            TitleBarDrag { objectName: "sidebarTitleDrag"; width: parent.width; height: 20; enabled: !chatSelection.dragging; targetWindow: window }
             ActionButton {
                 objectName: "newChatButton"
                 x: 16; y: 24; width: parent.width - 32; height: Theme.control(42)
@@ -211,9 +230,10 @@ ApplicationWindow {
                 Column { anchors.centerIn: parent; spacing: 12; Glyph { name: "folder"; width: Theme.icon(26); height: Theme.icon(26); anchors.horizontalCenter: parent.horizontalCenter } Text { text: I18n.t("打开项目文件夹"); color: Theme.accent; font.pixelSize: Theme.font(12) } }
             }
             Item {
-                id: apiStatus; x: 26; anchors.bottom: settingsButton.top; anchors.bottomMargin: 9; width: parent.width - 52; height: 29
-                Rectangle { x: 1; y: 10; width: 6; height: 6; radius: 3; color: backend.serverRunning ? "#72a783" : "#a6ada5" }
-                Text { x: 17; y: 5; width: Math.max(0, apiPort.x - x - 8); elide: Text.ElideRight; text: backend.serverRunning ? I18n.t("API 代理运行中") : I18n.t("API 代理未启动"); color: Theme.muted; font.pixelSize: Theme.font(10) }
+                id: apiStatus; objectName: "apiProxySidebarStatus"; visible: backend.serverRunning
+                x: 26; anchors.bottom: settingsButton.top; anchors.bottomMargin: 9; width: parent.width - 52; height: 29
+                Rectangle { x: 1; y: 10; width: 6; height: 6; radius: 3; color: "#72a783" }
+                Text { x: 17; y: 5; width: Math.max(0, apiPort.x - x - 8); elide: Text.ElideRight; text: I18n.t("API 代理运行中"); color: Theme.muted; font.pixelSize: Theme.font(10) }
                 Text { id: apiPort; anchors.right: parent.right; y: 5; text: ":" + backend.config.server.port; color: Theme.muted; font.pixelSize: Theme.font(10); font.family: "Consolas" }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: window.settings(1) }
             }
@@ -236,10 +256,13 @@ ApplicationWindow {
         // A PID target change must not hide the active handle and cancel its grab.
         visible: resizing || !window.sidebarCollapsed && !sidebarWidthMotion.moving; enabled: !chatSelection.dragging
         cursorShape: Qt.SizeHorCursor; hoverEnabled: true; preventStealing: true
-        property bool resizing: false
-        property real pressX: 0
-        property real pressWidth: 0
-        property real dragWidth: 0
+        readonly property bool resizing: sidebarGesture.active
+        readonly property real dragWidth: sidebarGesture.dragWidth
+        PanelResizeGesture {
+            id: sidebarGesture
+            minimumWidth: window.sidebarMinimumWidth; maximumWidth: window.sidebarMaximumWidth
+            collapseThreshold: window.sidebarCollapseThreshold
+        }
         function finishResize(collapse) {
             if (!resizing) return
             if (collapse) {
@@ -247,27 +270,23 @@ ApplicationWindow {
                 window.sidebarCollapseHintPending = true
                 window.sidebarCollapsed = true
             } else {
-                window.sidebarPreferredWidth = Math.max(window.sidebarMinimumWidth, Math.min(window.sidebarMaximumWidth, dragWidth))
+                window.sidebarPreferredWidth = sidebarGesture.settledWidth
             }
-            resizing = false
+            sidebarGesture.end()
             window.saveSidebarLayout()
             window.showSidebarCollapseHint()
         }
         onPressed: mouse => {
-            pressX = mapToItem(window.contentItem, mouse.x, mouse.y).x
-            pressWidth = sidebar.width
-            dragWidth = pressWidth
-            resizing = true
+            sidebarGesture.begin(mapToItem(window.contentItem, mouse.x, mouse.y).x, sidebar.width)
             window.sidebarCollapseHintPending = false; sidebarToggle.stopCollapseHint()
             sidebarWidthMotion.snap()
         }
         onPositionChanged: mouse => {
             if (!pressed || !resizing) return
-            const delta = mapToItem(window.contentItem, mouse.x, mouse.y).x - pressX
-            dragWidth = Math.max(0, Math.min(window.sidebarMaximumWidth, pressWidth + delta))
+            sidebarGesture.move(mapToItem(window.contentItem, mouse.x, mouse.y).x)
             sidebarWidthMotion.snap()
         }
-        onReleased: finishResize(dragWidth <= window.sidebarCollapseThreshold)
+        onReleased: finishResize(sidebarGesture.collapseReady)
         onCanceled: finishResize(false)
         Rectangle { width: 2; height: parent.height; anchors.horizontalCenter: parent.horizontalCenter; color: parent.containsMouse || parent.pressed ? Theme.accent : "transparent"; opacity: 0.5 }
     }
@@ -277,7 +296,7 @@ ApplicationWindow {
         anchors.left: sidebar.right; anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
         Item {
             id: header; height: 72; width: parent.width
-            MouseArea { anchors.fill: parent; enabled: !chatSelection.dragging; onPressed: window.startSystemMove(); onDoubleClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
+            TitleBarDrag { objectName: "mainTitleDrag"; anchors.fill: parent; enabled: !chatSelection.dragging; targetWindow: window }
             Row { x: 20; anchors.verticalCenter: parent.verticalCenter; spacing: 10
                 ActionButton {
                     id: sidebarToggle; objectName: "toggleSidebarButton"; glyph: "layout"; quiet: true
@@ -309,6 +328,7 @@ ApplicationWindow {
                 ActionButton { glyph: "maximize"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最大化"); onClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
                 ActionButton { objectName: "closeToTrayButton"; glyph: "x"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("收起到托盘"); onClicked: window.close() }
             }
+            SubagentIndicator { id: subagentIndicator; anchors.right: windowControls.left; anchors.rightMargin: 13; anchors.verticalCenter: windowControls.verticalCenter; visible: window.page === "chat" && backend.subagents.activeCount > 0 }
         }
 
         Item {
@@ -323,7 +343,7 @@ ApplicationWindow {
                 Repeater { model: [{x:0.17,y:0.16,size:12},{x:0.82,y:0.30,size:17},{x:0.27,y:0.65,size:9},{x:0.73,y:0.73,size:11}]
                     Glyph { required property var modelData; x: parent.width * modelData.x; y: parent.height * modelData.y; width: modelData.size; height: modelData.size; name: "spark"; opacity: 0.28 }
                 }
-                Image { objectName: "yanamiWatermark"; anchors.fill: parent; source: "../icons/portraits/02.png"; fillMode: Image.PreserveAspectCrop; horizontalAlignment: Image.AlignHCenter; verticalAlignment: Image.AlignVCenter; mipmap: true; opacity: 0.055 }
+                CharacterArt { objectName: "yanamiWatermark"; anchors.fill: parent; fallbackSource: "../icons/portraits/02.png"; artwork: Character.asset("background", fallbackSource); fillMode: Image.PreserveAspectCrop; horizontalAlignment: Image.AlignHCenter; verticalAlignment: Image.AlignVCenter; mipmap: true; opacity: 0.055 }
             }
             Item {
                 id: welcome; width: Math.min(parent.width - 70, 620); height: 270
@@ -331,7 +351,7 @@ ApplicationWindow {
                 visible: backend.messageCount === 0
                 WelcomeMascot { id: welcomeMascot; anchors.horizontalCenter: parent.horizontalCenter; portraitIndex: backend.portrait }
                 Connections { target: backend; function onViewChanged() { welcomeMascot.reset() } }
-                Text { objectName: "welcomeGreeting"; anchors.horizontalCenter: parent.horizontalCenter; y: 231; width: parent.width; text: welcomeMascot.reactionText || I18n.t(backend.greeting); color: Theme.yanami ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(14); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; lineHeight: 1.35 }
+                Text { objectName: "welcomeGreeting"; anchors.horizontalCenter: parent.horizontalCenter; y: 231; width: parent.width; text: welcomeMascot.reactionText || Character.greeting(I18n.t(backend.greeting), welcomeMascot.portraitIndex); color: Theme.yanami ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(14); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; lineHeight: 1.35 }
             }
 
             ListView {
@@ -441,6 +461,7 @@ ApplicationWindow {
                 }
                 delegate: Column {
                     id: messageRow
+                    readonly property var replyMascot: closingMascot
                     required property var modelData
                     required property int index
                     readonly property bool compactionNotice: modelData.customType === "umeko-compaction"
@@ -485,20 +506,62 @@ ApplicationWindow {
                     ActionButton {
                         objectName: "requestDetails_" + messageRow.index
                         selectionController: chatSelection
-                        visible: !modelData._loading && !!modelData.error && (modelData.diagnosticId || "").length > 0
+                        visible: !modelData._loading && !messageRow.compactionNotice && !!modelData.error && (modelData.diagnosticId || "").length > 0
                         x: 33; text: I18n.t("查看请求与返回"); glyph: "code"; quiet: true
                         onClicked: requestInspector.show(modelData.diagnosticId)
                     }
-                    OutputLimitNotice {
-                        objectName: "compactionNotice_" + messageRow.index
+                    Column {
+                        id: compactionEvent
+                        objectName: "compactionEvent_" + messageRow.index
                         x: 33; width: parent.width - 33
                         visible: !modelData._loading && messageRow.compactionNotice
-                        text: messageRow.compactionNotice ? I18n.t(modelData.text) : ""
+                        readonly property var record: modelData.compaction || ({})
+                        readonly property string eventState: record.state || "success"
+                        readonly property string heading: eventState === "running" ? I18n.t("正在压缩上下文") : eventState === "failure" ? I18n.t("上下文压缩失败") : I18n.t("上下文已压缩")
+                        property bool expanded: false
+                        spacing: 6
+                        onExpandedChanged: if (!expanded) chatSelection.hideDetails(messageRow.index, 0, 1)
+                        Item {
+                            width: Math.min(parent.width, compactionHeading.implicitWidth); height: Theme.control(24)
+                            Row {
+                                id: compactionHeading; height: parent.height; spacing: 7
+                                ActivitySpinner { visible: compactionEvent.eventState === "running"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
+                                Text { text: compactionEvent.heading; color: compactionHover.interactionHovered ? Theme.ink : Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
+                                Glyph { name: compactionEvent.expanded ? "chevron-down" : "chevron-right"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
+                            }
+                            ChatHitArea {
+                                id: compactionHover; objectName: "compactionEventToggle_" + messageRow.index
+                                anchors.fill: parent; selectionController: chatSelection
+                                onClicked: compactionEvent.expanded = !compactionEvent.expanded
+                            }
+                            Accessible.role: Accessible.Button; Accessible.name: compactionEvent.heading
+                            Accessible.description: compactionEvent.expanded ? I18n.t("已展开") : I18n.t("已折叠")
+                        }
+                        Item {
+                            visible: compactionEvent.expanded
+                            width: parent.width; height: compactionDetails.implicitHeight
+                            Rectangle { width: 1; height: parent.height; color: Theme.line; x: 6 }
+                            SelectableText {
+                                id: compactionDetails; objectName: "compactionEventDetails_" + messageRow.index
+                                x: 23; width: parent.width - x
+                                text: {
+                                    const detail = compactionEvent.record, lines = []
+                                    if (typeof detail.before === "number") lines.push(I18n.t("压缩前：") + detail.before + " tokens")
+                                    if (typeof detail.after === "number") lines.push(I18n.t("压缩后：") + detail.after + " tokens")
+                                    if (detail.summary) lines.push("\n" + I18n.t("压缩摘要") + "\n" + detail.summary)
+                                    if (detail.error) lines.push("\n" + I18n.t(detail.error))
+                                    return lines.join("\n")
+                                }
+                                color: Theme.muted; font.pixelSize: Theme.font(13); wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText
+                                selectionController: chatSelection; messageIndex: messageRow.index; blockIndex: 0
+                                conditionalSelection: true
+                            }
+                        }
                     }
                     OutputLimitNotice {
                         objectName: "outputLimitNotice_" + messageRow.index
                         x: 33; width: parent.width - 33
-                        visible: !modelData._loading && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
+                        visible: !modelData._loading && !messageRow.compactionNotice && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
                         continuable: messageRow.index === conversation.count - 1 && !backend.busy
                         onContinued: backend.send(I18n.t("继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。"))
                     }
@@ -518,6 +581,7 @@ ApplicationWindow {
                         }
                     }
                     ReplyMascot {
+                        id: closingMascot
                         objectName: "replyEndMascot_" + messageRow.index
                         selectionController: chatSelection
                         visible: !modelData._loading && !messageRow.compactionNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !backend.running
@@ -527,6 +591,12 @@ ApplicationWindow {
             }
 
             ChatSelection { id: chatSelection; anchors.fill: conversation; view: conversation; visible: conversation.visible; enabled: !chatCover.visible }
+            ReplyMascot {
+                id: widthLimitMascot; objectName: "chatWidthLimitMascot"
+                x: composer.x+33; y: Math.max(0,composer.y-height-12); z: 50
+                visible: reaction.length > 0
+            }
+            Connections { target: backend; function onViewChanged() { widthLimitMascot.reset() } }
 
             QuestionNavigator {
                 anchors.right: parent.right
@@ -559,29 +629,43 @@ ApplicationWindow {
             id: webPane
             visible: window.page === "chat" && animatedWidth > 0.5
             anchors.right: parent.right; anchors.top: header.bottom; anchors.bottom: parent.bottom
-            preferredWidth: Math.max(window.webMinimumWidth, Math.min(window.webMaximumWidth, window.webPreferredWidth > 0 ? window.webPreferredWidth : Math.min(540, Math.max(350, parent.width * 0.46))))
-            resizing: webResizeHandle.pressed
-            blocked: window.page !== "chat" || !window.visible || window.visibility === Window.Minimized || window.mediaOverlayActive || modelPopup.visible || backend.pendingApproval.id !== undefined
+            preferredWidth: Math.max(window.webMinimumWidth, Math.min(window.webMaximumWidth, webResizeHandle.resizing ? webResizeHandle.dragWidth : window.webPreferredWidth > 0 ? window.webPreferredWidth : Math.min(540, Math.max(350, parent.width * 0.46))))
+            resizing: webResizeHandle.resizing
+            blocked: window.page !== "chat" || !window.visible || window.visibility === Window.Minimized || window.mediaOverlayActive || modelPopup.visible || (subagentMatrix.visible && (subagentMatrix.desiredOpen || subagentMatrix.animating)) || subagentIndicator.popupVisible || backend.pendingApproval.id !== undefined
         }
 
         MouseArea {
             id: webResizeHandle; objectName: "webPaneResizeHandle"
             x: webPane.x - 4; width: 8; anchors.top: header.bottom; anchors.bottom: parent.bottom; z: 40
-            visible: webPane.visible && webPane.opened && (!webPane.moving || pressed)
+            visible: resizing || webPane.visible && webPane.opened && !webPane.moving
             enabled: !webPane.blocked && !chatSelection.dragging
             cursorShape: Qt.SizeHorCursor; hoverEnabled: true; preventStealing: true
-            property real pressX: 0
-            property real pressWidth: 0
-            onPressed: mouse => {
-                pressX = mapToItem(window.contentItem, mouse.x, mouse.y).x
-                pressWidth = webPane.width
+            readonly property bool resizing: webGesture.active
+            readonly property real dragWidth: webGesture.dragWidth
+            PanelResizeGesture {
+                id: webGesture; direction: -1
+                minimumWidth: window.webMinimumWidth; maximumWidth: window.webMaximumWidth
+                onMaximumExceeded: window.showChatWidthLimitHint()
             }
-            onPositionChanged: mouse => {
-                if (!pressed) return
-                const delta = mapToItem(window.contentItem, mouse.x, mouse.y).x - pressX
-                window.webPreferredWidth = Math.max(window.webMinimumWidth, Math.min(window.webMaximumWidth, pressWidth - delta))
+            function finishResize(collapse) {
+                if (!resizing) return
+                if (collapse) {
+                    if (window.webPreferredWidth <= 0) window.webPreferredWidth = webGesture.pressWidth
+                    webPane.dismiss()
+                } else window.webPreferredWidth = webGesture.settledWidth
+                webGesture.end()
+            }
+            onPressed: mouse => {
+                webGesture.begin(mapToItem(window.contentItem,mouse.x,mouse.y).x,webPane.width)
                 webPane.snapWidth()
             }
+            onPositionChanged: mouse => {
+                if (!pressed || !resizing) return
+                webGesture.move(mapToItem(window.contentItem,mouse.x,mouse.y).x)
+                webPane.snapWidth()
+            }
+            onReleased: finishResize(webGesture.collapseReady)
+            onCanceled: finishResize(false)
             Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 2; height: parent.height; color: parent.containsMouse || parent.pressed ? Theme.accent : "transparent"; opacity: 0.5 }
         }
 
@@ -600,9 +684,12 @@ ApplicationWindow {
         parent: composer.modelAnchor
         heightLimit: window.height - 128
         onConfigure: { window.settings(0) }
+        onDismissed: Qt.callLater(function() { if (window.page === "chat" && !modelPopup.desiredOpen && !window.mediaOverlayActive) composer.focusInput() })
     }
+    SubagentMatrix { id: subagentMatrix; parent: Overlay.overlay }
+    Connections { target: backend; function onViewChanged() { subagentMatrix.close() } }
     ApprovalDialog { parent: Overlay.overlay }
-    SidebarMenus { id: sidebarMenus; parent: Overlay.overlay; anchors.fill: parent }
+    SidebarMenus { id: sidebarMenus; objectName: "sidebarMenus"; parent: Overlay.overlay; anchors.fill: parent }
     Rectangle {
         z: 100; anchors.horizontalCenter: mainArea.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 27
         width: Math.min(toastLabel.implicitWidth + 40, 750); height: toastLabel.implicitHeight + 24; radius: 10

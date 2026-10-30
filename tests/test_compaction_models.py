@@ -9,7 +9,7 @@ from app.model_context import normalize_context, provider_context_window
 from app.provider_plugins import ProviderPlugins
 
 
-class CompactionModelTests(unittest.TestCase):
+class ProviderContextModelTests(unittest.TestCase):
     def test_provider_capacities_are_independent_of_editable_window_bounds(self):
         for raw, expected in ((512, 512), ("512", 512), (512.0, 512),
                               (33554432, 33554432), ("33554432", 33554432),
@@ -26,9 +26,6 @@ class CompactionModelTests(unittest.TestCase):
                 if invalid is not None:
                     with self.assertRaises(ValueError):
                         normalize_context({"upstream": "k3", "providerContextWindow": invalid})
-        with self.assertRaisesRegex(ValueError, "512.*context limit 512"):
-            normalize_model({"upstream": "k3", "providerContextWindow": 512,
-                             "contextWindow": 65536, "contextWindowAuto": False, "compactionThreshold": 1024})
 
     def test_provider_context_shapes_and_input_limit_precedence(self):
         for key in ("max_model_len", "context_length", "context_window", "max_context_length", "max_input_tokens", "inputTokenLimit", "contextWindow"):
@@ -62,43 +59,25 @@ class CompactionModelTests(unittest.TestCase):
         self.assertEqual(changed_model["contextWindow"], 128000)
         self.assertEqual(normalize_context({"upstream": "unknown"}), {"contextWindow": 128000, "contextWindowAuto": True})
 
-    def test_threshold_blank_persistence_bounds_and_reported_cap(self):
-        model = {"upstream": "custom", "providerContextWindow": 32768, "contextWindow": 65536, "contextWindowAuto": False}
-        for value in (None, "", "   "):
-            self.assertIsNone(normalize_model({**model, "compactionThreshold": value})["compactionThreshold"])
-        for value in (1024, "2048", 32768):
-            self.assertEqual(normalize_model({**model, "compactionThreshold": value})["compactionThreshold"], int(value))
-        saved = normalize_model({**model, "compactionThreshold": 16000})
-        self.assertEqual(normalize_model({"upstream": "custom"}, saved)["compactionThreshold"], 16000)
-        self.assertIsNone(normalize_model({"upstream": "custom", "compactionThreshold": None}, saved)["compactionThreshold"])
-        for value in (True, False, 0, 1023, -1, "1K", "2048.5", 2048.0, [], {}):
-            with self.subTest(value=value), self.assertRaises(ValueError):
-                normalize_model({**model, "compactionThreshold": value})
-        with self.assertRaisesRegex(ValueError, "32768.*context limit 32768"):
-            normalize_model({**model, "compactionThreshold": 40000})
-        with self.assertRaisesRegex(ValueError, "16000"):
-            normalize_model({"upstream": "custom", "contextWindow": 16000, "compactionThreshold": 17000})
-        self.assertNotIn("compactionThreshold", normalize_model({"upstream": "unknown"}))
-
-    def test_plugin_refresh_preserves_threshold_alias_and_user_override(self):
+    def test_plugin_refresh_preserves_alias_and_user_override(self):
         old = {"upstream": "fixture", "alias": "mine", "contextWindow": 65536, "contextWindowAuto": False,
-               "contextWindowSource": "custom", "providerContextWindow": 32768, "compactionThreshold": 16000,
+               "contextWindowSource": "custom", "providerContextWindow": 32768,
                "vision": False, "visionAuto": False, "visionSource": "custom"}
         record = {"id": "provider", "models": [old]}
         manager = SimpleNamespace(c=SimpleNamespace(store=SimpleNamespace(data={"providers": [record]})))
         refreshed = ProviderPlugins._models(manager, record, [{"id": "fixture", "limits": {"max_input_tokens": 48000}}])[0]
-        self.assertEqual((refreshed["alias"], refreshed["contextWindow"], refreshed["providerContextWindow"], refreshed["compactionThreshold"]),
-                         ("mine", 65536, 48000, 16000))
+        self.assertEqual((refreshed["alias"], refreshed["contextWindow"], refreshed["providerContextWindow"]),
+                         ("mine", 65536, 48000))
         edited = ProviderPlugins.modelSettings({"upstream": "fixture", "providerContextWindow": 999999}, refreshed)
-        self.assertEqual((edited["providerContextWindow"], edited["compactionThreshold"]), (48000, 16000))
+        self.assertEqual(edited["providerContextWindow"], 48000)
         record["models"] = []
         auto = ProviderPlugins._models(manager, record, [{"id": "fixture", "top_provider": {"context_length": 16384}}])[0]
         self.assertEqual(auto["contextWindow"], 16384)
 
-    def test_gateway_delivers_compaction_metadata(self):
+    def test_gateway_delivers_provider_context_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SimpleNamespace(directory=Path(directory), data={"providers": [{"api": "openai", "name": "fixture", "models": [
-                {"upstream": "fixture", "alias": "alias", "providerContextWindow": 32768, "compactionThreshold": 16000}
+                {"upstream": "fixture", "alias": "alias", "providerContextWindow": 32768}
             ]}]})
             row = Gateway(store, SimpleNamespace()).models()[0]
-            self.assertEqual((row["contextWindow"], row["providerContextWindow"], row["compactionThreshold"]), (32768, 32768, 16000))
+            self.assertEqual((row["contextWindow"], row["providerContextWindow"]), (32768, 32768))

@@ -1,7 +1,7 @@
 """Small offline image-input defaults; explicit per-model choices always win."""
 import re
 
-from .model_context import normalize_context, normalize_compaction_threshold
+from .model_context import normalize_context
 
 
 def vision_suggestion(model_name: str) -> dict:
@@ -46,4 +46,4 @@ def normalize_vision(model: dict, previous: dict | None = None) -> dict:
 
 def normalize_model(model: dict, previous: dict | None = None) -> dict:
     context = normalize_context(model, previous)
-    return {**context, **normalize_vision(model, previous), **normalize_compaction_threshold(model, context, previous)}
+    return {**context, **normalize_vision(model, previous)}

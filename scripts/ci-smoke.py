@@ -36,7 +36,7 @@ def verify_windows_preview(executable, environment, report_dir):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     diagnostic = report_dir / 'web-preview.log'
     diagnostic.unlink(missing_ok=True)
-    env = dict(environment, QT_QPA_PLATFORM='windows', CODEAGENT_DIAGNOSTICS=str(diagnostic),
+    env = dict(environment, QT_QPA_PLATFORM='windows', UMEKO_DIAGNOSTICS=str(diagnostic),
                UMEKO_DATA_DIR=str(report_dir / 'preview-profile'), UMEKO_WEB_PREVIEW_URL=f'http://127.0.0.1:{server.server_port}/')
     user32 = ctypes.windll.user32
     callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -92,7 +92,7 @@ def main():
     diagnostic = report_dir / "application.log"
     screenshot = report_dir / "application.png"
     environment = dict(os.environ, UMEKO_DATA_DIR=str(report_dir / "profile"),
-        CODEAGENT_DIAGNOSTICS=str(diagnostic), QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software")
+        UMEKO_DIAGNOSTICS=str(diagnostic), QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software")
     environment["PATH"] = str(report_dir / "no-system-node")
     environment.pop("NODE_OPTIONS", None); environment.pop("NODE_PATH", None)
     for name in ('QT_PLUGIN_PATH', 'LD_LIBRARY_PATH', 'QML_IMPORT_PATH', 'QML2_IMPORT_PATH'):
@@ -117,16 +117,19 @@ def main():
     metadata = json.loads((resources / "build-info.json").read_text(encoding="utf-8"))
     if metadata["version"] != VERSION or metadata["commit"] != git_output(ROOT, "rev-parse", "HEAD"):
         raise RuntimeError("Frozen build provenance is missing")
-    for name in ("umeko-provider-sdk-0.2.1.zip", "develop-umeko-provider.zip"):
+    for name in ("umeko-provider-sdk-0.2.1.zip", "develop-umeko-provider.zip", "create-umeko-character.zip"):
         if not (resources / "provider-resources" / name).is_file():
             raise RuntimeError("Provider development resource is missing: " + name)
     runtime = resources / "runtime/releases" / RELEASE_NAME
     for name in ("fd", "rg"):
         tool = runtime / "bin" / (name + (".exe" if os.name == "nt" else ""))
         subprocess.run([str(tool), "--version"], check=True, capture_output=True, timeout=15)
-    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
+    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         if hashlib.sha256((runtime / name).read_bytes()).digest() != hashlib.sha256((ROOT / "runtime" / name).read_bytes()).digest():
             raise RuntimeError("Packaged Pi bridge differs from the source: " + name)
+    for name in ("subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "rpc-ui.mjs"):
+        if not (runtime / name).is_file() or not (resources / "runtime" / name).is_file():
+            raise RuntimeError("Bundled subagent runtime module is missing: " + name)
     npm = resources / "runtime/node" / ("node_modules/npm/bin/npm-cli.js" if os.name == "nt" else "lib/node_modules/npm/bin/npm-cli.js")
     for document in (ROOT/'runtime/umeko-docs').glob('*.md'):
         if (runtime/'umeko-docs'/document.name).read_bytes() != document.read_bytes():

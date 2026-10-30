@@ -2,6 +2,8 @@
 
 Umeko 主题是 JSON 配色文件，不是 Pi 终端主题或可执行扩展。先用 `themes.list` 查询已有主题；内置 ID 为 `light`、`dark`、`yanami`。可以用 `themes.prompt` 按需取得随应用附带的完整制作提示词。
 
+如果还想替换动画形象，请访问 [动画形象文档](characters.md)。
+
 文件示例：
 
 ```json

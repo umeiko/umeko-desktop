@@ -3,7 +3,9 @@
 Pi remains the sole owner of transcript writes, context assembly and branching.
 """
 import json
+import math
 from pathlib import Path
+from uuid import UUID
 from .chatbox import result_media
 
 
@@ -31,17 +33,38 @@ def content_thinking(content):
 
 
 def compaction_view(entry):
-    """Display only Pi's token counts; the summary never enters the chat view."""
+    """Read legacy receipts and typed transitions without changing native data."""
     if entry.get("type") != "custom" or entry.get("customType") != "umeko-compaction":
         return None
     details = entry.get("data")
-    if not isinstance(details, dict) or details.get("version") != 1:
+    if not isinstance(details, dict):
         return None
     before, after = details.get("before"), details.get("after")
-    if any(type(number) is not int or number < 0 for number in (before, after)):
+    if details.get("version") == 1:
+        if any(type(number) is not int or number < 0 for number in (before, after)):
+            return None
+        text = f"已压缩：{before} → {after} tokens"
+    elif details.get("version") == 2:
+        event_id = details.get("eventId")
+        try:
+            if not isinstance(event_id, str):
+                return None
+            UUID(event_id)
+        except (ValueError, AttributeError):
+            return None
+        if (details.get("state") not in ("running", "success", "failure")
+                or details.get("mode") not in ("manual", "auto")
+                or details.get("afterEstimated") is not True
+                or any(number is not None and (type(number) not in (int, float)
+                       or not math.isfinite(number) or number < 0) for number in (before, after))
+                or not isinstance(details.get("summary"), str)
+                or not isinstance(details.get("error"), str)):
+            return None
+        text = ""
+    else:
         return None
-    return {"role": "assistant", "text": f"已压缩：{before} → {after} tokens", "error": False,
-            "customType": "umeko-compaction", "compaction": details,
+    return {"role": "assistant", "text": text, "error": False,
+            "customType": "umeko-compaction", "compaction": dict(details),
             "entryId": entry["id"], "timestamp": entry.get("timestamp")}
 
 
@@ -71,15 +94,29 @@ def preview(file):
 def present(entries, cwd):
     """Project an already ordered branch or a bounded group and its tool results."""
     messages, tree = [], []
+    call_rows, subagents, compactions = {}, [], {}
+    previous_assistant = None
     omissions = {e['targetId'] for e in entries if e.get('type') == 'context_edit' and e.get('replacement') is None}
     results = {e["message"].get("toolCallId"): e["message"] for e in entries if e.get("type") == "message" and e.get("message", {}).get("role") == "toolResult"}
     deliveries = [e["data"] for e in entries if e.get("type") == "custom" and e.get("customType") == "umeko-chatbox" and isinstance(e.get("data"), dict) and e["data"].get("version") == 1 and isinstance(e["data"].get("toolCallId"), str) and isinstance(e["data"].get("items"), list)]
     for entry in entries:
         receipt = compaction_view(entry)
         if receipt:
+            details = receipt["compaction"]
+            if details.get("version") == 2:
+                previous = compactions.get(details["eventId"])
+                if previous is not None:
+                    previous["compaction"] = details
+                    continue
+                compactions[details["eventId"]] = receipt
             messages.append(receipt)
             continue
         if entry.get("type") != "message":
+            data = entry.get("data")
+            if entry.get("type") == "custom" and entry.get("customType") == "umeko-subagent" and isinstance(data, dict) and data.get("version") == 1:
+                tool = data.get("tool")
+                if isinstance(tool, dict) and tool.get("name") == "subagent" and isinstance(tool.get("id"), str) and isinstance(tool.get("subagent"), dict):
+                    subagents.append((data, previous_assistant))
             continue
         message = entry.get("message", {})
         if entry['id'] in omissions and message.get('role') == 'assistant' and message.get('stopReason') == 'error':
@@ -100,9 +137,41 @@ def present(entries, cwd):
             if calls:
                 row["tools"] = []
                 for call in calls:
+                    call_rows[call["id"]] = row
                     tool = tool_view(call["id"], call["name"], call.get("arguments", {}), cwd, results.get(call["id"]))
                     if tool["id"] not in results: tool["state"] = "interrupted"
                     row["tools"].append(tool)
                     row["tools"].extend({"id":item["toolCallId"], "name":"submit_to_chatbox", "arguments":{}, "path":"", "state":"done", "result":"已提交到聊天框", "media":item["items"][:12]} for item in deliveries if item["toolCallId"].startswith(call["id"] + "/"))
             messages.append(row)
+            if role == "assistant":
+                previous_assistant = row
+    # Pi persists snapshots separately from assistant messages. A continuation
+    # updates the original child's row even when it was launched in a later turn.
+    children = {}
+    launches = {e['data']['toolCallId'] for e in entries if e.get('type') == 'custom' and
+        e.get('customType') == 'umeko-subagent-link' and isinstance(e.get('data'), dict) and
+        e['data'].get('version') == 1 and isinstance(e['data'].get('toolCallId'), str)}
+    for data, fallback in subagents:
+        snapshot = data["tool"]
+        call_id = data.get("toolCallId")
+        owner = call_rows.get(call_id) if isinstance(call_id, str) else None
+        owner = owner if owner is not None else fallback
+        child = children.get(snapshot["id"])
+        if child is None:
+            if owner is None:
+                continue
+            child = {}
+            children[snapshot["id"]] = child
+            tools = owner.setdefault("tools", [])
+            position = next((i for i, tool in enumerate(tools) if tool["id"] == call_id), len(tools))
+            tools.insert(position, child)
+        child.update(snapshot)
+        child["arguments"] = dict(snapshot.get("arguments") or {})
+        child["subagent"] = dict(snapshot["subagent"])
+        child.setdefault("path", "")
+        if isinstance(call_id, str):
+            launches.add(call_id)
+    for row in messages:
+        if "tools" in row:
+            row["tools"] = [tool for tool in row["tools"] if not (tool.get("name") == "subagent" and tool["id"] in launches and tool["id"] not in children)]
     return messages, tree

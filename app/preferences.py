@@ -3,6 +3,7 @@ import math
 import urllib.parse
 from PySide6.QtCore import Slot
 from .gateway import validate_base_url
+from umeko_provider_sdk.network import validate_ca_file
 
 
 class PreferencesMixin:
@@ -27,6 +28,16 @@ class PreferencesMixin:
 
     @Slot(str, str, str, result=bool)
     def setProviderProxy(self, identifier, mode, address):
+        provider = self.gateway.provider(identifier) or {}
+        return self.setProviderNetwork(identifier, mode, address, provider.get('proxy', {}).get('caFile', ''))
+
+    @Slot(str, str, result=bool)
+    def setProviderCertificate(self, identifier, ca_file):
+        proxy = (self.gateway.provider(identifier) or {}).get('proxy', {})
+        return self.setProviderNetwork(identifier, proxy.get('mode', 'system'), proxy.get('url', ''), ca_file)
+
+    @Slot(str, str, str, str, result=bool)
+    def setProviderNetwork(self, identifier, mode, address, ca_file):
         try:
             provider = self.gateway.provider(identifier)
             if not provider or mode not in ('system', 'direct', 'custom'):
@@ -42,7 +53,8 @@ class PreferencesMixin:
                 port = urllib.parse.urlsplit(url).port
                 if port is not None and not 1 <= port <= 65535:
                     raise ValueError('请输入有效的 HTTP / HTTPS 代理地址')
-            provider['proxy'] = {'mode': mode, 'url': url}
+            ca_file = validate_ca_file(ca_file)
+            provider['proxy'] = {'mode': mode, 'url': url, **({'caFile': ca_file} if ca_file else {})}
             if provider['api'] == 'plugin':
                 self._provider_plugins._invalidate(identifier)
             self.store.save()

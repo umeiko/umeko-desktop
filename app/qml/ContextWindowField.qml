@@ -10,14 +10,7 @@ ColumnLayout {
     property double providerTokens: 0
     property var suggestion: backend.contextWindowSuggestion(modelName)
     readonly property double automaticTokens: providerTokens > 0 ? providerTokens : suggestion.tokens
-    readonly property double effectiveTokens: automatic ? automaticTokens : parseTokens(customText)
     signal edited(string value, bool automatic)
-    function parseTokens(value) {
-        const match = /^\s*(\d+(?:\.\d+)?)\s*([kKmM]?)\s*$/.exec(value)
-        if (!match) return 0
-        const tokens = Number(match[1]) * (match[2].toLowerCase() === "m" ? 1048576 : match[2].toLowerCase() === "k" ? 1024 : 1)
-        return Number.isInteger(tokens) && tokens >= 1024 && tokens <= 16777216 ? tokens : 0
-    }
     RowLayout {
         Layout.fillWidth: true; spacing: 4
         InputField {

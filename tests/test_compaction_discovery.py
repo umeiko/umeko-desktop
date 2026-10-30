@@ -61,7 +61,7 @@ class ModelWindowDiscoveryTests(unittest.TestCase):
             controller.toast.connect(messages.append)
             try:
                 self.assertTrue(controller.saveProvider("", "Fixture", "openai", "http://127.0.0.1:1/v1", "fixture", json.dumps([
-                    {"upstream": "known", "alias": "known", "compactionThreshold": 20000},
+                    {"upstream": "known", "alias": "known"},
                     {"upstream": "unknown", "alias": "unknown"}])))
                 provider = controller.store.data["providers"][0]
                 identifier = provider["id"]
@@ -72,20 +72,20 @@ class ModelWindowDiscoveryTests(unittest.TestCase):
                 with patch("app.controller.fetch_model_windows", return_value={"known": 64000, "unknown": None}), patch.object(controller, "_job", side_effect=synchronous_job):
                     controller.refreshProviderModels(identifier)
                 known, unknown = provider["models"]
-                self.assertEqual((known["providerContextWindow"], known["contextWindow"], known["compactionThreshold"]), (64000, 64000, 20000))
+                self.assertEqual((known["providerContextWindow"], known["contextWindow"]), (64000, 64000))
                 self.assertEqual(unknown["contextWindow"], 128000)
-                bad = [{**row, "provider": identifier} for row in provider["models"]]
-                bad[0].update(compactionThreshold=64001, contextWindow=128000, contextWindowAuto=False, providerContextWindow=999999)
-                controller.saveMappings(json.dumps(bad))
-                self.assertIn("64000", messages[-1])
-                self.assertEqual(controller.gateway.provider(identifier)["models"][0]["compactionThreshold"], 20000)
+                edited = [{**row, "provider": identifier} for row in provider["models"]]
+                edited[0].update(contextWindow=128000, contextWindowAuto=False, providerContextWindow=999999)
+                controller.saveMappings(json.dumps(edited))
+                current = controller.gateway.provider(identifier)["models"][0]
+                self.assertEqual((current["providerContextWindow"], current["contextWindow"]), (64000, 128000))
                 saved = Store(Path(temp)).data["providers"][0]["models"][0]
-                self.assertEqual((saved["providerContextWindow"], saved["compactionThreshold"]), (64000, 20000))
-                # An old name/alias-only editor keeps the server's metadata and threshold.
+                self.assertEqual((saved["providerContextWindow"], saved["contextWindow"]), (64000, 128000))
+                # An old name/alias-only editor keeps server metadata and custom context.
                 self.assertTrue(controller.saveProvider(identifier, "Fixture", "openai", "http://127.0.0.1:1/v1", "", json.dumps([
                     {"upstream": "known", "alias": "renamed"}, {"upstream": "unknown", "alias": "unknown"}])))
                 saved = controller.gateway.provider(identifier)["models"][0]
-                self.assertEqual((saved["providerContextWindow"], saved["compactionThreshold"]), (64000, 20000))
+                self.assertEqual((saved["providerContextWindow"], saved["contextWindow"]), (64000, 128000))
             finally:
                 controller.close()
 

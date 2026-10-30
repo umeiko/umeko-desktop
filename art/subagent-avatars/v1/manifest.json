@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "set": "umeko-subagent-avatars-v1",
+  "series": "負けヒロインが多すぎる！",
+  "status": "integrated-local-preview",
+  "generation_tool": "image_gen.imagegen (built-in)",
+  "style": "chibi pixel-art head avatars; aligned with the existing Anna Yanami mascot",
+  "style_reference": "../../../app/icons/yanami-pixel.png",
+  "recommended_display_sizes_px": [
+    32,
+    48,
+    64
+  ],
+  "master_assets_are_unmodified_generated_images": true,
+  "integration_status": "Python desktop subagent roster, history cards and side conversation; four reusable slots",
+  "prompts": "prompts.json",
+  "preview": "preview.html",
+  "preview_screenshot": "preview.png",
+  "verification": {
+    "alpha_and_dimensions": "passed",
+    "all_four_corners_transparent": "passed",
+    "browser_preview": "preview-checks.json",
+    "visual_review": "inspected all four masters and the complete browser preview at 32/48/64 CSS pixels on light and dark backgrounds"
+  },
+  "assets": [
+    {
+      "id": "lemon-yakishio",
+      "name_zh": "烧盐柠檬",
+      "name_ja": "焼塩檸檬",
+      "file": "lemon-yakishio.png",
+      "width": 1254,
+      "height": 1254,
+      "format": "PNG",
+      "mode": "RGBA",
+      "transparent": true,
+      "bytes": 1083309,
+      "sha256": "ed3b81e414c78fdf13987ee8599c0ca736f8e2835a64e7cf3fee2017ec9848d6",
+      "official_character_reference": "https://makeine-anime.com/assets/img/character/img_face03.png"
+    },
+    {
+      "id": "chika-komari",
+      "name_zh": "小鞠知花",
+      "name_ja": "小鞠知花",
+      "file": "chika-komari.png",
+      "width": 1254,
+      "height": 1254,
+      "format": "PNG",
+      "mode": "RGBA",
+      "transparent": true,
+      "bytes": 1132179,
+      "sha256": "369329e7aecd8976d748e7e2b9f3554fcac0610bcf733ebbce0fb042ed3b9d8d",
+      "official_character_reference": "https://makeine-anime.com/assets/img/character/img_face04.png"
+    },
+    {
+      "id": "kaju-nukumizu",
+      "name_zh": "温水佳树",
+      "name_ja": "温水佳樹",
+      "file": "kaju-nukumizu.png",
+      "width": 1254,
+      "height": 1254,
+      "format": "PNG",
+      "mode": "RGBA",
+      "transparent": true,
+      "bytes": 1165223,
+      "sha256": "c5f961f70c5cc965085eca7432584fddf6e6233cefd56d7920ac7208725738c1",
+      "official_character_reference": "https://makeine-anime.com/assets/img/character/img_face05.png"
+    },
+    {
+      "id": "yumeko-shikiya",
+      "name_zh": "志喜屋梦子",
+      "name_ja": "志喜屋夢子",
+      "file": "yumeko-shikiya.png",
+      "width": 1254,
+      "height": 1254,
+      "format": "PNG",
+      "mode": "RGBA",
+      "transparent": true,
+      "bytes": 1295426,
+      "sha256": "b3d3f118b8b545b2db9203f7ab758274935f3afedb8279bc1457cfc4ddf563b4",
+      "official_character_reference": "https://makeine-anime.com/assets/img/character/img_face14.png"
+    }
+  ],
+  "application_assets": "../../../app/icons/subagents/",
+  "application_assets_size_px": 256
+}

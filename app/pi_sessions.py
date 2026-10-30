@@ -34,6 +34,7 @@ class SessionState:
     greeting: str = ""
     phase: str = "idle"
     action: str = ""
+    prompt_started: float | None = None
     tool_status: str = ""
     process: QProcess | None = None
     buffer: bytes = b""
@@ -43,7 +44,7 @@ class SessionState:
     stale: bool = False
     operation: bool = False
     queue: list = field(default_factory=list)
-    pending_compactions: list = field(default_factory=list)
+    compaction_running: bool = False
     portrait: int = 0
     optimistic_user: bool = False
     scroll_y: float = -1
@@ -58,6 +59,8 @@ class SessionState:
     index_pending: object = None
     tail_characters: int = 0
     projection_dirty_from: int | None = None
+    subagents: dict = field(default_factory=dict)
+    subagents_active: bool = False
 
     @property
     def busy(self):
@@ -100,7 +103,7 @@ class PiSessionPool(QObject):
         record.process, record.buffer, record.ready = process, b"", False
         environment = QProcessEnvironment.systemEnvironment()
         for key in environment.keys():
-            if key.upper() in ("NODE_OPTIONS", "NODE_PATH") or key.upper().endswith(("API_KEY", "ACCESS_TOKEN")):
+            if key.upper() in ("NODE_OPTIONS", "NODE_PATH") or key.upper().endswith(("API_KEY", "ACCESS_TOKEN", "_AK", "_SK", "_SECRET_KEY", "_SECURITY_TOKEN")):
                 environment.remove(key)
         environment.remove("PI_OFFLINE")
         for key, value in npm_overrides(payload.get("agent") or {}).items():
@@ -161,7 +164,7 @@ class PiSessionPool(QObject):
 
     def trim(self):
         while sum(record.process is not None for record in self.records.values()) > self.limit:
-            oldest = next((record for record in self.records.values() if record.process and not record.busy and record is not self.current), None)
+            oldest = next((record for record in self.records.values() if record.process and not record.busy and not record.subagents_active and record is not self.current), None)
             if not oldest:
                 break  # Running/loading instances are never evicted.
             self.retire(oldest)
@@ -177,7 +180,7 @@ class PiSessionPool(QObject):
         for record in self.records.values():
             if total <= self.body_limit:
                 break
-            if record is self.current or record.busy or not record.file or not record.loaded:
+            if record is self.current or record.busy or record.subagents_active or not record.file or not record.loaded:
                 continue
             self.retire(record)
             total -= record.body_bytes
@@ -187,7 +190,7 @@ class PiSessionPool(QObject):
 
     def invalidate(self):
         for record in self.records.values():
-            if record.busy:
+            if record.busy or record.subagents_active:
                 record.stale = True
             else:
                 self.retire(record)
