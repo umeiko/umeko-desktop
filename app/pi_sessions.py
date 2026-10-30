@@ -47,6 +47,7 @@ class SessionState:
     operation: bool = False
     queue: list = field(default_factory=list)
     compaction_running: bool = False
+    compaction_event_id: str = ""
     portrait: int = 0
     optimistic_user: bool = False
     scroll_y: float = -1

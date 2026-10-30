@@ -14,6 +14,7 @@ import threading
 import urllib.request
 import uuid
 from pathlib import Path
+from dataclasses import replace
 
 from PySide6.QtCore import QObject, Property, QProcess, QProcessEnvironment, QTimer, QUrl, Signal, Slot, QBuffer, QIODevice, QMimeData
 from PySide6.QtGui import QGuiApplication, QDesktopServices, QImageReader, QWindow
@@ -302,6 +303,9 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
 
     def _update_chat_model(self):
         count = self._chat_model.rowCount()
+        active = frozenset({self._view.compaction_event_id}) if self._view.process and self._view.compaction_running else frozenset()
+        if self._view.transcript and self._view.transcript.active_compactions != active:
+            self._view.transcript = replace(self._view.transcript, active_compactions=active)
         self._chat_model.set_snapshot(self._view.transcript)
         dirty = self._view.projection_dirty_from
         if dirty is None and self._stream_projection:

@@ -2,11 +2,12 @@
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from app.chat_model import ChatModel
 from app.transcript_index import PAGE_ROWS, TranscriptRepository
-from app.transcripts import compaction_view, present
+from app.transcripts import compaction_status, compaction_view, present, preview
 
 EVENT = "01da3365-8d24-46cc-bdb1-ed1999a7231a"
 
@@ -73,7 +74,8 @@ class CompactionTranscriptTests(unittest.TestCase):
             write()
             repository = TranscriptRepository(root / "cache")
             initial = repository.open(file)
-            self.assertEqual(initial.row(1)["compaction"]["state"], "running")
+            self.assertEqual(initial.row(1)["compaction"]["state"], "failure")
+            self.assertEqual(initial.row(1)["compaction"]["error"], "Compaction interrupted")
             entries.append(transition("finish", parent, "success", after=8000, summary="Preserve decisions"))
             write()
             updated = repository.open(file)
@@ -86,8 +88,47 @@ class CompactionTranscriptTests(unittest.TestCase):
             cold = TranscriptRepository(root / "cold-cache").open(file)
             self.assertEqual(cold.row(1), row)
             earlier_branch = repository.open(file, leaf=parent)
-            self.assertEqual(earlier_branch.row(1)["compaction"]["state"], "running")
+            self.assertEqual(earlier_branch.row(1)["compaction"]["state"], "failure")
             self.assertEqual(earlier_branch.count, updated.count)
+
+    def test_unfinished_history_is_interrupted_but_live_event_is_preserved(self):
+        start = transition("start", None, "running")
+        raw = compaction_view(start)
+        cold = present([start], ".")[0][0]
+        self.assertEqual(cold["compaction"]["state"], "failure")
+        self.assertEqual(cold["compaction"]["error"], "Compaction interrupted")
+        self.assertEqual(cold["entryId"], "start")
+        self.assertEqual(cold["timestamp"], start["timestamp"])
+        self.assertEqual(present([start], ".", active_compactions={EVENT})[0][0], raw)
+        self.assertIs(compaction_status(raw, None), raw)
+        self.assertEqual(raw["compaction"]["state"], "running")
+        terminal = transition("finish", "start", "success", after=8000, summary="Completed")
+        self.assertEqual(present([start, terminal], ".", active_compactions={EVENT})[0][0]["compaction"], terminal["data"])
+
+    def test_paged_unfinished_history_is_resolved_per_snapshot_without_poisoning_cache(self):
+        with tempfile.TemporaryDirectory(prefix="umeko-compaction-interrupted-") as temp:
+            root = Path(temp)
+            file = root / "session.jsonl"
+            entries = [transition("start", None, "running")]
+            parent = "start"
+            for i in range(PAGE_ROWS * 3):
+                entries.append(message("work-" + str(i), parent))
+                parent = entries[-1]["id"]
+            file.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n", encoding="utf-8")
+            self.assertEqual(preview(file)[0][0]["compaction"]["error"], "Compaction interrupted")
+            repository = TranscriptRepository(root / "cache")
+            snapshot = repository.open(file)
+            self.assertGreater(snapshot.count, PAGE_ROWS * 3)
+            self.assertEqual(snapshot.page(0)[0]["compaction"]["state"], "failure")
+            live = replace(snapshot, active_compactions=frozenset({EVENT}))
+            self.assertEqual(live.cached(0)["compaction"]["state"], "running")
+            self.assertEqual(live.page(0)[0]["compaction"]["state"], "running")
+            self.assertEqual(snapshot.cached(0)["compaction"]["error"], "Compaction interrupted")
+            reopened = repository.open(file)
+            self.assertEqual(reopened.row(0)["compaction"]["state"], "failure")
+            fresh = TranscriptRepository(root / "cache").open(file)
+            self.assertEqual(fresh.page(0)[0]["compaction"]["state"], "failure")
+            self.assertEqual(replace(fresh, active_compactions=frozenset({EVENT})).cached(0)["compaction"]["state"], "running")
 
     def test_invalid_typed_transitions_are_ignored(self):
         for changes in ({"eventId": "not-a-uuid"}, {"state": "done"}, {"mode": "other"},

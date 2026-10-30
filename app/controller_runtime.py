@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .pi_runtime import node_executable
 from .webview import configuration as webview_configuration
-from .transcripts import tool_view, compaction_view
+from .transcripts import tool_view, compaction_view, compaction_status
 from .message_attachments import attachment_prompt, split_attachments
 
 
@@ -121,7 +121,7 @@ class PiControllerMixin:
             record.phase, record.failed = "idle", True
             record.prompt_started = None
             self.toast.emit(str(error))
-            if record.messages and not record.messages[-1]["text"]:
+            if record.messages and not record.messages[-1]["text"] and record.messages[-1].get("customType") != "umeko-compaction":
                 record.messages[-1].update(text=str(error), error=True)
             self.chatChanged.emit()
             return False
@@ -301,6 +301,7 @@ class PiControllerMixin:
                     record.messages[found]["compaction"] = row["compaction"]
                     dirty = min(dirty, found)
                 record.compaction_running = event.get("state") == "running"
+                record.compaction_event_id = event.get("eventId", "") if record.compaction_running else ""
                 record.tool_status = "正在压缩上下文" if record.compaction_running else ""
                 transcript = True
         elif kind == "message" and event.get("role") == "assistant":
@@ -386,9 +387,8 @@ class PiControllerMixin:
                 marker = re.search(r'\[Umeko:[a-f0-9-]{36}\]', message)
                 if marker:
                     message = "压缩失败：供应商请求失败，请查看请求详情 / Compaction failed: provider request failed " + marker[0]
-                record.compaction_running = False
                 record.tool_status = ""
-            elif record.messages and not record.messages[-1]["text"]:
+            elif record.messages and not record.messages[-1]["text"] and record.messages[-1].get("customType") != "umeko-compaction":
                 record.messages[-1].update(text=message, error=True)
                 transcript = True
             if visible:
@@ -400,7 +400,9 @@ class PiControllerMixin:
                 # prepared. The complete history never crosses into the UI.
                 self._queue_transcript_index(record, event['indexedHistory'].get('leafId'), canonical=True)
             else:
-                record.messages, record.history, record.tree = event["messages"], [], event["tree"]
+                active = {record.compaction_event_id} if record.process and record.compaction_running else set()
+                record.messages = [compaction_status(message, active) for message in event["messages"]]
+                record.history, record.tree = [], event["tree"]
                 record.transcript, record.loaded = None, True
             record.resources = event["resources"]
             self._subagents.sync(record)
@@ -418,7 +420,18 @@ class PiControllerMixin:
                 self.changed.emit()
             transcript = True
         elif kind in ("done", "exit"):
+            # Pi alone writes JSONL. Resolve an unfinished live transition here;
+            # cold readers derive the same failure from its missing terminal entry.
+            for index, row in enumerate(record.messages):
+                resolved = compaction_status(row)
+                if resolved is not row:
+                    record.messages[index] = resolved
+                    dirty = min(dirty, index)
+                    transcript = True
+            if record.compaction_running:
+                record.failed = True
             record.compaction_running = False
+            record.compaction_event_id = ""
             record.network_retry = {}
             if visible:
                 self.retryChanged.emit()
@@ -439,7 +452,7 @@ class PiControllerMixin:
                 if was_busy:
                     record.failed = True
                     message = event.get("message") or "Pi 内核已退出，原生会话保存在本机"
-                    if record.messages and not record.messages[-1]["text"]:
+                    if record.messages and not record.messages[-1]["text"] and record.messages[-1].get("customType") != "umeko-compaction":
                         record.messages[-1].update(text=message, error=True)
                         transcript = True
                     if visible:

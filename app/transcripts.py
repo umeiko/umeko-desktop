@@ -68,6 +68,22 @@ def compaction_view(entry):
             "entryId": entry["id"], "timestamp": entry.get("timestamp")}
 
 
+def compaction_status(row, active_compactions=()):
+    """Resolve unfinished history against this session's live event identities.
+
+    None preserves native states for the shared disposable index/cache. Returned
+    history failures are copies, so a live snapshot can read the same raw row.
+    """
+    if row is None or active_compactions is None:
+        return row
+    details = row.get("compaction")
+    if (row.get("customType") != "umeko-compaction" or not isinstance(details, dict)
+            or details.get("version") != 2 or details.get("state") != "running"
+            or details.get("eventId") in active_compactions):
+        return row
+    return {**row, "compaction": {**details, "state": "failure", "error": "Compaction interrupted"}}
+
+
 def preview(file):
     entries = []
     cwd = str(Path(file).parent)
@@ -91,7 +107,7 @@ def preview(file):
     return present(list(reversed(branch)), cwd)
 
 
-def present(entries, cwd):
+def present(entries, cwd, active_compactions=()):
     """Project an already ordered branch or a bounded group and its tool results."""
     messages, tree = [], []
     call_rows, subagents, compactions = {}, [], {}
@@ -174,4 +190,4 @@ def present(entries, cwd):
     for row in messages:
         if "tools" in row:
             row["tools"] = [tool for tool in row["tools"] if not (tool.get("name") == "subagent" and tool["id"] in launches and tool["id"] not in children)]
-    return messages, tree
+    return [compaction_status(row, active_compactions) for row in messages], tree

@@ -5,7 +5,7 @@ import urllib.request
 
 from .gateway import NoRedirect, validate_base_url
 from .model_context import provider_context_window
-from umeko_provider_sdk.network import proxy_handler
+from umeko_provider_sdk.network import proxy_handler, tls_context
 
 
 def fetch_model_windows(provider):
@@ -17,7 +17,8 @@ def fetch_model_windows(provider):
     else:
         url = base + "/models"
         headers["Authorization"] = "Bearer " + provider["key"]
-    opener = urllib.request.build_opener(proxy_handler(provider.get("proxy")), NoRedirect())
+    opener = urllib.request.build_opener(proxy_handler(provider.get("proxy")),
+                                        urllib.request.HTTPSHandler(context=tls_context(provider.get("proxy"))), NoRedirect())
     windows = {}
     # Anthropic and compatible services may paginate their model catalog.
     for _ in range(100):

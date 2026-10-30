@@ -20,7 +20,7 @@ from pathlib import Path
 
 from .chat_model import ChatModel
 from .message_attachments import split_attachments
-from .transcripts import content_text, content_thinking, present, compaction_view
+from .transcripts import content_text, content_thinking, present, compaction_view, compaction_status
 
 SCHEMA = 3
 LARGE_FILE = 2 * 1024 * 1024
@@ -226,6 +226,7 @@ class Snapshot:
     parsed_entries: int = 0
     size: int = 0
     mtime_ns: int = 0
+    active_compactions: frozenset = frozenset()
 
     def matches_source(self):
         try:
@@ -238,7 +239,7 @@ class Snapshot:
         return self.database, self.revision, row
 
     def cached(self, row):
-        return self.repository.cache.get(self.key(row))
+        return compaction_status(self.repository.cache.get(self.key(row)), self.active_compactions)
 
     def page(self, page):
         cached = {row:self.cached(row) for row in range(page * PAGE_ROWS, min(self.count, (page + 1) * PAGE_ROWS))}
@@ -251,8 +252,8 @@ class Snapshot:
             for row in db.execute('SELECT seq,body,logical,continuation,last FROM display WHERE seq>=? AND seq<?', (page * PAGE_ROWS, (page + 1) * PAGE_ROWS)):
                 value = json.loads(zlib.decompress(row['body']))
                 value.update(_logical=row['logical'], continuation=bool(row['continuation']), segmentLast=bool(row['last']))
-                result[row['seq']] = value
                 self.repository.cache.put(self.key(row['seq']), value)
+                result[row['seq']] = compaction_status(value, self.active_compactions)
         return result
 
     def row(self, row):
@@ -554,7 +555,7 @@ class TranscriptRepository:
                     prefix = call + '/'
                     deliveries = db.execute("SELECT e.offset,e.length FROM entries e JOIN branch b ON e.id=b.id WHERE ((e.tool>=? AND e.tool<?) OR e.tool=?) AND e.kind='custom' ORDER BY e.num", (prefix, prefix + chr(0x10ffff), call))
                     dependencies.extend(read(source, value) for value in deliveries)
-                messages, _ = present(group + dependencies, cwd)
+                messages, _ = present(group + dependencies, cwd, active_compactions=None)
                 for row in ChatModel.project(messages):
                     row_start = seq
                     for part, value in enumerate(display_fragments(row)):

@@ -25,7 +25,7 @@ from PySide6.QtWidgets import QApplication
 from app.controller import Controller
 from app.integration import Completion
 from app.syntax_highlight import register_text_types
-from app.transcript_index import TranscriptRepository
+from app.transcript_index import PAGE_ROWS, TranscriptRepository
 
 
 class FixtureProvider:
@@ -252,6 +252,62 @@ class ContextCompactionTests(unittest.TestCase):
         self.assertTrue(details["error"])
         self.assertFalse(details["summary"])
         self.assertNotIn("Traceback", self.find("compactionEventDetails_" + index).property("text"))
+
+    def test_process_interruption_finishes_live_and_cold_history(self):
+        self.seed()
+        self.begin_compaction()
+        record = self.backend._view
+        file = Path(record.file)
+        entries = lambda: [json.loads(line) for line in file.read_text(encoding="utf-8").splitlines()]
+        before = entries()
+        start = next(entry for entry in before if entry.get("customType") == "umeko-compaction")
+        event_id = start["data"]["eventId"]
+        model_entries = [entry for entry in before if entry.get("type") == "message"]
+        calls = len(self.adapter.calls)
+        # Move the live event into the same SQLite/paged path used by long chats.
+        self.backend._queue_transcript_index(record, canonical=True)
+        self.wait_for(lambda: not record.index_running and record.transcript is not None)
+        self.wait_for(lambda: self.event_row() is not None and self.event_row().property("eventState") == "running")
+        self.assertTrue(self.backend.busy)
+        self.assertTrue(self.backend.compacting)
+        record.process.kill()
+        self.wait_for(lambda: record.process is None and not self.backend.busy and not self.backend.compacting)
+        self.wait_for(lambda: self.event_row() is not None and self.event_row().property("eventState") == "failure")
+
+        self.adapter.release.set()
+        self.assertEqual([entry for entry in entries() if entry.get("type") == "message"], model_entries)
+        self.assertEqual(len(self.adapter.calls), calls)
+        self.assertNotIn(event_id, json.dumps([call["messages"] for call in self.adapter.calls]))
+        self.assertEqual([entry["data"]["state"] for entry in entries()
+                          if entry.get("customType") == "umeko-compaction"], ["running"])
+        # Reopen both a new index and the existing SQLite index, not just a live copy.
+        for directory in (self.path / "cold-interrupted", self.backend.transcripts.directory):
+            repository = TranscriptRepository(directory)
+            snapshot = repository.open(file)
+            rows = [value for page in range((snapshot.count + PAGE_ROWS - 1) // PAGE_ROWS)
+                    for value in snapshot.page(page).values()]
+            row = next(value for value in rows if value.get("compaction", {}).get("eventId") == event_id)
+            self.assertEqual(row["entryId"], start["id"])
+            self.assertEqual(row["compaction"]["state"], "failure")
+            self.assertIn("interrupted", row["compaction"]["error"].lower())
+        record.transcript, record.messages = snapshot, []
+        self.backend.chatChanged.emit()
+        self.wait_for(lambda: self.event_row() is not None and self.event_row().property("eventState") == "failure")
+
+    def test_process_interruption_finishes_live_tail(self):
+        self.seed()
+        row, name, index = self.begin_compaction()
+        record = self.backend._view
+        file = Path(record.file)
+        before = file.read_text(encoding="utf-8")
+        record.process.kill()
+        self.wait_for(lambda: record.process is None and not self.backend.busy and not self.backend.compacting)
+        self.wait_for(lambda: row.property("eventState") == "failure")
+        self.assertIs(self.find(name), row)
+        self.assert_local_style(index)
+        self.assertEqual(record.messages[-1]["text"], "")
+        self.assertIn("interrupted", record.messages[-1]["compaction"]["error"].lower())
+        self.assertEqual(file.read_text(encoding="utf-8"), before)
 
 
 if __name__ == "__main__":

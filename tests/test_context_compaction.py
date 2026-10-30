@@ -22,3 +22,9 @@ class ContextCompactionTests(unittest.TestCase):
 
     def test_failure_updates_the_running_row(self):
         self.run_ui_case(self._testMethodName)
+
+    def test_process_interruption_finishes_live_and_cold_history(self):
+        self.run_ui_case(self._testMethodName)
+
+    def test_process_interruption_finishes_live_tail(self):
+        self.run_ui_case(self._testMethodName)
