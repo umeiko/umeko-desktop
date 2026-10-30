@@ -483,6 +483,7 @@ ApplicationWindow {
                     readonly property var replyMascot: closingMascot
                     required property var modelData
                     required property int index
+                    readonly property bool compactionNotice: modelData.customType === "umeko-compaction"
                     readonly property point hoverPoint: chatSelection.mapToItem(messageRow, chatSelection.pointer.x, chatSelection.pointer.y)
                     readonly property bool hovered: chatSelection.hovering && hoverPoint.x >= 0 && hoverPoint.x <= width && hoverPoint.y >= 0 && hoverPoint.y <= height
                     width: conversation.width - 16; spacing: 10
@@ -496,13 +497,13 @@ ApplicationWindow {
                         }
                         ActionButton { x: 33; y: 16; visible: !!modelData._loadError; text: I18n.t("重新加载消息"); glyph: "refresh-cw"; onClicked: backend.messageModel.retryPage(messageRow.index) }
                     }
-                    Row { visible: !modelData._loading && !modelData.continuation && modelData.role !== "user"; spacing: 9
+                    Row { visible: !modelData._loading && !messageRow.compactionNotice && !modelData.continuation && modelData.role !== "user"; spacing: 9
                         AssistantAvatar { objectName: "assistantAvatar_" + messageRow.index; messageKey: window.avatarChatKey + "/" + messageRow.index }
                         SelectableText { selectionController: chatSelection; messageIndex: messageRow.index; blockIndex: -100000; text: "umeko"; anchors.verticalCenter: parent.verticalCenter; color: Theme.ink; font.pixelSize: Theme.font(11); font.weight: Font.DemiBold }
                     }
                     Rectangle {
                         objectName: "messageBubble_" + messageRow.index
-                        visible: !modelData._loading
+                        visible: !modelData._loading && !messageRow.compactionNotice
                         readonly property bool userMessage: modelData.role === "user"
                         width: userMessage ? (modelData.text.length > 512 ? messageRow.width * 0.82 : Math.min(messageRow.width * 0.82, Math.max(64, userBody.implicitWidth + 28))) : parent.width - 33
                         x: userMessage ? parent.width - width : 33
@@ -516,7 +517,7 @@ ApplicationWindow {
                             MessageBody { id: reply; width: parent.width
                                 selectionController: chatSelection; messageIndex: messageRow.index
                                 visible: modelData.role !== "user" && text.length > 0 && !(modelData.activity || []).length
-                                text: modelData.role === "user" || (modelData.activity || []).length ? "" : modelData.text || (messageRow.index === conversation.count - 1 && backend.busy ? backend.toolStatus + "…" : "")
+                                text: modelData.role === "user" || (modelData.activity || []).length ? "" : modelData.text || (messageRow.index === conversation.count - 1 && backend.busy ? I18n.t(backend.toolStatus) + "…" : "")
                                 markdown: modelData.role === "assistant" && !modelData.error
                                 textColor: modelData.error ? Theme.danger : Theme.ink }
                         }
@@ -524,20 +525,68 @@ ApplicationWindow {
                     ActionButton {
                         objectName: "requestDetails_" + messageRow.index
                         selectionController: chatSelection
-                        visible: !modelData._loading && !!modelData.error && (modelData.diagnosticId || "").length > 0
+                        visible: !modelData._loading && !messageRow.compactionNotice && !!modelData.error && (modelData.diagnosticId || "").length > 0
                         x: 33; text: I18n.t("查看请求与返回"); glyph: "code"; quiet: true
                         onClicked: requestInspector.show(modelData.diagnosticId)
+                    }
+                    Column {
+                        id: compactionEvent
+                        objectName: "compactionEvent_" + messageRow.index
+                        x: 33; width: parent.width - 33
+                        visible: !modelData._loading && messageRow.compactionNotice
+                        readonly property var record: modelData.compaction || ({})
+                        readonly property string eventState: record.state || "success"
+                        readonly property string heading: eventState === "running" ? I18n.t("正在压缩上下文") : eventState === "failure" ? I18n.t("上下文压缩失败") : I18n.t("上下文已压缩")
+                        property bool expanded: false
+                        spacing: 6
+                        onExpandedChanged: if (!expanded) chatSelection.hideDetails(messageRow.index, 0, 1)
+                        Item {
+                            width: Math.min(parent.width, compactionHeading.implicitWidth); height: Theme.control(24)
+                            Row {
+                                id: compactionHeading; height: parent.height; spacing: 7
+                                ActivitySpinner { visible: compactionEvent.eventState === "running"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
+                                Text { text: compactionEvent.heading; color: compactionHover.interactionHovered ? Theme.ink : Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
+                                Glyph { name: compactionEvent.expanded ? "chevron-down" : "chevron-right"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
+                            }
+                            ChatHitArea {
+                                id: compactionHover; objectName: "compactionEventToggle_" + messageRow.index
+                                anchors.fill: parent; selectionController: chatSelection
+                                onClicked: compactionEvent.expanded = !compactionEvent.expanded
+                            }
+                            Accessible.role: Accessible.Button; Accessible.name: compactionEvent.heading
+                            Accessible.description: compactionEvent.expanded ? I18n.t("已展开") : I18n.t("已折叠")
+                        }
+                        Item {
+                            visible: compactionEvent.expanded
+                            width: parent.width; height: compactionDetails.implicitHeight
+                            Rectangle { width: 1; height: parent.height; color: Theme.line; x: 6 }
+                            SelectableText {
+                                id: compactionDetails; objectName: "compactionEventDetails_" + messageRow.index
+                                x: 23; width: parent.width - x
+                                text: {
+                                    const detail = compactionEvent.record, lines = []
+                                    if (typeof detail.before === "number") lines.push(I18n.t("压缩前：") + detail.before + " tokens")
+                                    if (typeof detail.after === "number") lines.push(I18n.t("压缩后：") + detail.after + " tokens")
+                                    if (detail.summary) lines.push("\n" + I18n.t("压缩摘要") + "\n" + detail.summary)
+                                    if (detail.error) lines.push("\n" + I18n.t(detail.error))
+                                    return lines.join("\n")
+                                }
+                                color: Theme.muted; font.pixelSize: Theme.font(13); wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText
+                                selectionController: chatSelection; messageIndex: messageRow.index; blockIndex: 0
+                                conditionalSelection: true
+                            }
+                        }
                     }
                     OutputLimitNotice {
                         objectName: "outputLimitNotice_" + messageRow.index
                         x: 33; width: parent.width - 33
-                        visible: !modelData._loading && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
+                        visible: !modelData._loading && !messageRow.compactionNotice && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
                         continuable: messageRow.index === conversation.count - 1 && !backend.busy
                         onContinued: backend.send(I18n.t("继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。"))
                     }
                     Item {
                         objectName: "messageActions_" + messageRow.index
-                        visible: !modelData._loading && modelData.segmentLast !== false
+                        visible: !modelData._loading && !messageRow.compactionNotice && modelData.segmentLast !== false
                         width: parent.width; height: 18
                         opacity: messageRow.hovered || actionHover.hovered ? 1 : 0
                         HoverHandler { id: actionHover }
@@ -554,7 +603,7 @@ ApplicationWindow {
                         id: closingMascot
                         objectName: "replyEndMascot_" + messageRow.index
                         selectionController: chatSelection
-                        visible: !modelData._loading && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !backend.running
+                        visible: !modelData._loading && !messageRow.compactionNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !backend.running
                         x: 33
                     }
                 }

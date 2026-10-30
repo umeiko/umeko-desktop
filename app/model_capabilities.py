@@ -45,4 +45,5 @@ def normalize_vision(model: dict, previous: dict | None = None) -> dict:
 
 
 def normalize_model(model: dict, previous: dict | None = None) -> dict:
-    return {**normalize_context(model, previous), **normalize_vision(model, previous)}
+    context = normalize_context(model, previous)
+    return {**context, **normalize_vision(model, previous)}

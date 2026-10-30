@@ -61,6 +61,7 @@ class Gateway:
                 metadata = normalize_model(model)
                 rows.append({"id": model["alias"], "object": "model", "owned_by": p["name"],
                              "contextWindow": metadata["contextWindow"],
+                             **{key: metadata[key] for key in ("providerContextWindow",) if key in metadata},
                              "input": ["text", "image"] if metadata["vision"] else ["text"]})
         return rows
 

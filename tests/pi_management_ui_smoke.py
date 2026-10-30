@@ -105,7 +105,7 @@ try:
         click("openPiTerminalButton")
         wait_for(lambda: launch.call_count == 1)
         wait_for(lambda: not manager.busy)
-        launch.assert_called_once()
+        assert launch.call_count == 1, (launch.call_args_list, manager.status)
         command = launch.call_args.args[0]
         scripts=list((store.directory/"pi-console/launchers").iterdir())
         assert len(scripts)==1

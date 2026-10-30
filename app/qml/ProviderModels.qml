@@ -9,10 +9,10 @@ ColumnLayout {
     property bool fixedModels: false
     function load(models) {
         entries.clear()
-        models.forEach(m => entries.append({upstream:m.upstream, alias:m.alias || "", contextWindowText:String(m.contextWindow || ""), contextWindowAuto:m.contextWindowAuto !== false, visionValue:m.vision === true, visionAuto:m.visionAuto !== false}))
+        models.forEach(m => entries.append({upstream:m.upstream, alias:m.alias || "", contextWindowText:String(m.contextWindow || ""), contextWindowAuto:m.contextWindowAuto !== false, providerContextWindow:Number(m.providerContextWindow || 0), visionValue:m.vision === true, visionAuto:m.visionAuto !== false}))
         if (!entries.count && !fixedModels) addModel()
     }
-    function addModel() { entries.append({upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, visionValue:false, visionAuto:true}) }
+    function addModel() { entries.append({upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, providerContextWindow:0, visionValue:false, visionAuto:true}) }
     function json() {
         let rows = []
         for(let i = 0; i < entries.count; i++) {
@@ -44,6 +44,7 @@ ColumnLayout {
             required property string alias
             required property string contextWindowText
             required property bool contextWindowAuto
+            required property double providerContextWindow
             required property bool visionValue
             required property bool visionAuto
             Layout.fillWidth: true; spacing: 4
@@ -56,11 +57,12 @@ ColumnLayout {
             RowLayout {
                 Layout.fillWidth: true; spacing: 8
                 Text { text: I18n.t("上下文长度"); color: Theme.muted; font.pixelSize: Theme.font(11) }
-                HelpButton { help: I18n.t("自动按原始模型名匹配，未知名称使用 128000 token。输入整数、256K 或 1M 可自定义；K=1024，M=1048576。恢复自动后跟随模型名。请按供应商实际额度填写。") }
+                HelpButton { help: I18n.t("自动优先使用供应商提供的上下文长度；未提供时按原始模型名匹配，未知名称使用 128000 token。输入整数、256K 或 1M 可自定义；K=1024，M=1048576。供应商上限为只读信息，可在模型映射中刷新。") }
                 ContextWindowField {
+                    id: providerContext
                     objectName: "providerContext_" + index
                     Layout.preferredWidth: 190; Layout.fillWidth: false
-                    modelName: upstream; customText: contextWindowText; automatic: contextWindowAuto
+                    modelName: upstream; customText: contextWindowText; automatic: contextWindowAuto; providerTokens: providerContextWindow
                     onEdited: (value, automatic) => { entries.setProperty(index, "contextWindowText", value); entries.setProperty(index, "contextWindowAuto", automatic) }
                 }
                 VisionField {

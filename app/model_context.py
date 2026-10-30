@@ -1,9 +1,4 @@
-"""Offline model-name suggestions and persistent per-model context overrides.
-
-These are defaults, not provider capability discovery. A deployment or account
-can impose a smaller limit; an explicit user value always wins. See README for
-the dated sources behind the small family table.
-"""
+"""Provider context metadata, offline suggestions and per-model overrides."""
 from __future__ import annotations
 
 import re
@@ -31,6 +26,51 @@ _FAMILIES = (
     (r"(?:^|-)gemini-2\.5-(?:pro|flash)(?=$|-)", 1048576),
 )
 _FAMILIES = tuple((re.compile(pattern), tokens) for pattern, tokens in _FAMILIES)
+
+# Recognized model-list fields only: output limits (max_tokens, max_output_tokens)
+# are deliberately excluded. Multiple advertised input limits use the smaller cap.
+_PROVIDER_CONTEXT_KEYS = (
+    "providerContextWindow", "contextWindow", "max_model_len", "context_length",
+    "context_window", "max_context_length", "max_input_tokens", "inputTokenLimit",
+)
+_PROVIDER_CONTEXT_CONTAINERS = ("top_provider", "limits", "capabilities", "model_info", "metadata", "parameters")
+
+
+def _parse_provider_context_window(value) -> int:
+    """Provider capacities are positive JS-safe tokens, not editable UI values."""
+    message = "供应商上下文上限必须为正安全整数 / Provider context limit must be a positive safe integer"
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError(message)
+    if isinstance(value, float):
+        if not value.is_integer():
+            raise ValueError(message)
+        value = int(value)
+    if not re.fullmatch(r"\s*\d+\s*", str(value)):
+        raise ValueError(message)
+    tokens = int(value)
+    if not 0 < tokens < (1 << 53) - 1:
+        raise ValueError(message)
+    return tokens
+
+
+def provider_context_window(model: dict) -> int | None:
+    """Read supported provider model-list shapes, ignoring malformed metadata."""
+    values = []
+
+    def collect(row, depth=0):
+        if not isinstance(row, dict) or depth > 3:
+            return
+        for key in _PROVIDER_CONTEXT_KEYS:
+            if key in row:
+                try:
+                    values.append(_parse_provider_context_window(row[key]))
+                except ValueError:
+                    pass
+        for key in _PROVIDER_CONTEXT_CONTAINERS:
+            collect(row.get(key), depth + 1)
+
+    collect(model)
+    return min(values) if values else None
 
 
 def parse_context_window(value) -> int:
@@ -77,5 +117,15 @@ def normalize_context(model: dict, previous: dict | None = None) -> dict:
     automatic = source.get("contextWindowAuto", "contextWindow" not in source)
     if not isinstance(automatic, bool):
         raise ValueError("上下文长度的自动设置必须为 true 或 false")
-    tokens = context_suggestion(model.get("upstream", ""))["tokens"] if automatic else parse_context_window(source.get("contextWindow"))
-    return {"contextWindow": tokens, "contextWindowAuto": automatic}
+    # When editing a saved row, only the server's previous metadata is trusted.
+    # Discovery calls normalize_context without previous after parsing its response.
+    reported_source = previous if previous is not None else model
+    if previous is not None and previous.get("upstream", model.get("upstream")) != model.get("upstream"):
+        reported_source = {}
+    reported = reported_source.get("providerContextWindow")
+    reported = _parse_provider_context_window(reported) if reported is not None else None
+    tokens = (reported or context_suggestion(model.get("upstream", ""))["tokens"]) if automatic else parse_context_window(source.get("contextWindow"))
+    result = {"contextWindow": tokens, "contextWindowAuto": automatic}
+    if reported is not None:
+        result["providerContextWindow"] = reported
+    return result

@@ -12,6 +12,7 @@ QtObject {
         if (root.language !== "en") return text
         if (Object.prototype.hasOwnProperty.call(English.strings, text)) return English.strings[text]
         const patterns = [
+            [/^已压缩：(\d+) → (\d+) tokens$/, English.strings["已压缩：{before} → {after} tokens"].replace("{before}", "$1").replace("{after}", "$2")],
             [/^下载服务器返回 HTTP (\d+)$/, "Download server returned HTTP $1"],
             [/^系统代理返回 HTTP (\d+)$/, "System proxy returned HTTP $1"],
             [/^新版本 (.+) 可下载$/, "New version available: $1"],

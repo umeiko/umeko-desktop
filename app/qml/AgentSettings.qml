@@ -52,7 +52,7 @@ Column {
             RowLayout {
                 Layout.fillWidth: true
                 Text { text: I18n.t("自动压缩上下文"); color: Theme.ink; font.pixelSize: Theme.font(12) }
-                HelpButton { help: I18n.t("这里只控制是否启用自动压缩。压缩时机、摘要和上下文保留均由 Pi 原生机制与设置决定，使用当前配置的供应商。") }
+                HelpButton { help: I18n.t("由 Pi 原生设置决定压缩时机和上下文保留。也可点击输入框底部的上下文用量圆环手动压缩，使用当前配置的供应商。") }
                 Item { Layout.fillWidth: true }
                 Toggle { id: compaction; objectName: "piAutoCompaction"; checked: backend.config.agent.autoCompaction }
             }

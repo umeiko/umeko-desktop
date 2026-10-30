@@ -43,7 +43,9 @@ const umekoControl = createUmekoControl({ emit });
 const subagents = createSubagentExtension({ emit, restoreSession: restoreSubagentSession });
 const textOf = content => typeof content === "string" ? content : (content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
 const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
+const compactionText = data => `已压缩：${data.before} → ${data.after} tokens`;
 let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe, closing = false;
+const compactionFailures = new WeakMap();
 const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit});
 let reasoningEffort = "off";
 const effortLevels = new Set(["off", "low", "high", "max"]);
@@ -106,6 +108,32 @@ globalThis[Symbol.for("umeko:tool-permission-host")] = { getPolicy: () => permis
 
 async function bindSession(session) {
   unsubscribe?.();
+  let activeCompaction;
+  const publishCompaction = data => {
+    const entryId = session.sessionManager.appendCustomEntry("umeko-compaction", data);
+    const entry = session.sessionManager.getEntry(entryId);
+    emit({ type: "compaction_event", entryId, timestamp: entry.timestamp, ...data });
+  };
+  const startCompaction = reason => {
+    activeCompaction = { version: 2, eventId: crypto.randomUUID(), state: "running",
+      mode: reason === "manual" ? "manual" : "auto", before: session.getContextUsage()?.tokens ?? null,
+      after: null, afterEstimated: true, summary: "", error: "" };
+    publishCompaction(activeCompaction);
+  };
+  const finishCompaction = event => {
+    // Pi may report exhausted overflow recovery without a fresh start event.
+    if (!activeCompaction) startCompaction(event.reason);
+    const success = !!event.result && !event.aborted;
+    publishCompaction({ ...activeCompaction, state: success ? "success" : "failure",
+      before: event.result?.tokensBefore ?? activeCompaction.before,
+      after: event.result?.estimatedTokensAfter ?? null,
+      summary: success ? event.result.summary || "" : "",
+      error: success ? "" : event.errorMessage || (event.aborted ? "Compaction cancelled" : "Compaction failed") });
+    activeCompaction = undefined;
+  };
+  compactionFailures.set(session, error => {
+    if (activeCompaction) finishCompaction({ reason: activeCompaction.mode, errorMessage: error.message });
+  });
   let publishedFile = existsSync(session.sessionManager.getSessionFile() || "");
   let retryState = {}, retryTimer;
   const retry = state => { retryState = state; emit({ type: "network_retry", ...state }); };
@@ -160,7 +188,8 @@ async function bindSession(session) {
       isRetryableAssistantError(event.message) && !isContextOverflow(event.message, session.model?.contextWindow || 128000);
     if (event.type === "message_end" && !willRetry) emit({ type: "message", role: event.message.role,
       text: textOf(event.message.content), thinking: thinkingOf(event.message.content), stopReason: event.message.stopReason || "", error: event.message.stopReason === "aborted" ? "" : event.message.errorMessage || "", timestamp:event.message.timestamp });
-    if (event.type === "compaction_start") emit({ type: "status", text: "正在压缩上下文" });
+    if (event.type === "compaction_start") startCompaction(event.reason);
+    if (event.type === "compaction_end") finishCompaction(event);
     if (["auto_retry_start", "summarization_retry_scheduled"].includes(event.type)) {
       clearTimeout(retryTimer);
       retry({ active: true, waiting: true, attempt: event.attempt, maxAttempts: event.maxAttempts, delayMs: event.delayMs, startedAt: Date.now() });
@@ -172,6 +201,7 @@ async function bindSession(session) {
     if (["entry_appended", "message_end", "compaction_end", "agent_end"].includes(event.type)) publishContext();
   });
   unsubscribe = () => {
+    compactionFailures.delete(session);
     clearTimeout(retryTimer);
     unbind();
     if (session.agent.onPayload === configurePayload) session.agent.onPayload = originalPayload;
@@ -382,11 +412,25 @@ async function state() {
   const omittedRetries = retryOmissions(branch);
   const results = new Map(branch.filter(e => e.type === "message" && e.message.role === "toolResult").map(e => [e.message.toolCallId, e.message]));
   const deliveries = branch.filter(e => e.type === "custom" && e.customType === "umeko-chatbox" && e.data?.version === 1 && typeof e.data.toolCallId === "string" && Array.isArray(e.data.items)).map(e => e.data);
-  const candidates = branch.filter(e => e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant"].includes(e.message.role));
-  const characters = candidates.reduce((sum, e) => sum + (typeof e.message.content === "string" ? e.message.content.length : (Array.isArray(e.message.content) ? e.message.content : []).reduce((n, block) => n + (block.text || block.thinking || "").length, 0)), 0);
+  const compactions = new Map();
+  const candidates = branch.flatMap(e => {
+    if (e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant"].includes(e.message.role)) return [e];
+    if (e.type !== "custom" || e.customType !== "umeko-compaction" || ![1, 2].includes(e.data?.version)) return [];
+    if (e.data.version === 1) return [e];
+    if (compactions.has(e.data.eventId)) {
+      compactions.get(e.data.eventId).data = e.data;
+      return [];
+    }
+    const first = { ...e };
+    compactions.set(e.data.eventId, first);
+    return [first];
+  });
+  const characters = candidates.reduce((sum, e) => sum + (typeof e.message?.content === "string" ? e.message.content.length : (Array.isArray(e.message?.content) ? e.message.content : []).reduce((n, block) => n + (block.text || block.thinking || "").length, 0)), 0);
   const paged = candidates.length > 256 || characters > 1024 * 1024;
   const selected = config.globalCoordinator ? candidates.slice(-64) : paged ? candidates.slice(-128) : candidates;
   const messages = projectSubagents(branch, selected.map(e => {
+    if (e.type === "custom") return { role: "assistant", text: e.data.version === 1 ? compactionText(e.data) : "", customType: e.customType,
+      compaction: e.data, entryId: e.id, timestamp: e.timestamp };
     const message = e.message;
     const row = {role: message.role, text: textOf(message.content) || (message.stopReason === "aborted" ? "" : message.errorMessage || ""), error: message.stopReason !== "aborted" && !!message.errorMessage, entryId:e.id, timestamp:message.timestamp || e.timestamp};
     if (message.role === "assistant") row.stopReason = message.stopReason || "";
@@ -404,7 +448,7 @@ async function state() {
       return [row, ...nested];
     });
     return row;
-  }).filter(row => row.text || row.thinking || row.tools?.length));
+  }).filter(row => row.text || row.thinking || row.tools?.length || row.customType === "umeko-compaction"));
   const list = await Pi.SessionManager.listAll(config.sessionDir);
   const file = manager.getSessionFile();
   emit({ type: "state", session: { id: manager.getSessionId(), file: file && existsSync(file) ? file : undefined,
@@ -530,7 +574,7 @@ async function execute(input) {
     }
     else if (input.type === "fork") await forkSession(input.entryId || runtime.session.sessionManager.getLeafId(), { position: "at" });
     else if (input.type === "navigate") await runtime.session.navigateTree(input.entryId, { summarize: false });
-    else if (input.type === "compact") await runtime.session.compact();
+    else if (input.type === "compact") await runtime.session.compact(input.customInstructions);
     else if (input.type === "reload") await reloadSession(runtime.session);
     else if (input.type === "rename") runtime.session.setSessionName(input.title);
     else if (input.type === "mcp-command") await runtime.session.prompt(input.text);
@@ -542,7 +586,10 @@ async function execute(input) {
       await state();
       await inputQueue.chain;
     } while (inputQueue.hasInterrupts);
-  } catch (error) { emit({ type: "error", message: error.message }); }
+  } catch (error) {
+    if (input.type === "compact") compactionFailures.get(runtime?.session)?.(error);
+    emit({ type: "error", message: error.message });
+  }
   finally {
     // A failed/aborted model request can leave Pi's native pending queues intact.
     // Return them to the editor rather than displaying unserviceable queue chips.
