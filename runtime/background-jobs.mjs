@@ -85,6 +85,7 @@ export async function createJobManager({ shellPath, cwd = process.cwd() } = {}) 
   function status(id) { return snapshot(owned(id)); }
   async function read(id, { stdoutOffset = 0, stderrOffset = 0, maxBytes = 65536 } = {}) {
     const job = owned(id);
+    const finished = job.status !== "running";
     if (![stdoutOffset, stderrOffset].every(value => Number.isSafeInteger(value) && value >= 0)) throw new Error("Output offsets must be non-negative byte offsets");
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 1048576) throw new Error("maxBytes must be between 1 and 1048576");
     async function chunk(path, offset) {
@@ -103,7 +104,13 @@ export async function createJobManager({ shellPath, cwd = process.cwd() } = {}) 
           while (lead >= 0 && (buffer[lead] & 0xc0) === 0x80) lead--;
           if (lead >= 0) {
             const byte = buffer[lead], width = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
-            if (count - lead < width) count = lead === 0 && bytesRead >= width ? width : lead;
+            if (count - lead < width) {
+              if (lead === 0 && bytesRead >= width) count = width;
+              // After exit there will be no more bytes to complete this suffix.
+              // Buffer's UTF-8 decoder replaces it, and its byte cursor advances.
+              else if (finished && bytesRead < lead + width) count = bytesRead;
+              else count = lead;
+            }
           }
         }
         return { text: buffer.subarray(0, count).toString("utf8"), offset: offset + count, hasMore: offset + count < size };
@@ -187,8 +194,10 @@ export function createBackgroundJobsExtension(options = {}) {
   }
   function extension(pi) {
     pi.on("tool_call", event => {
-      if (event.toolName !== "bash" && !(event.toolName === "background_job" && event.input?.action === "start")) return;
-      const reason = blockedProcessCommand(event.input?.command);
+      // Pi's native command tools share input.command, including calls made
+      // through codemode. Other built-ins are file tools, not shell executors.
+      if (!["bash", "powershell"].includes(event.toolName) && !(event.toolName === "background_job" && event.input?.action === "start")) return;
+      const reason = blockedProcessCommand(event.input?.command, event.toolName === "powershell" ? "powershell" : "bash");
       if (reason) return { block: true, reason };
     });
     pi.on("session_before_switch", dispose);
