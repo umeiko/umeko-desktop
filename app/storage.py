@@ -70,7 +70,7 @@ DEFAULTS = {
     "selectedProvider": "", "selectedModel": "",
     "providers": [],
     "agent": {"maxTokens": 32768, "outputLimitDefaultVersion": 1, "instructions": "", "autoCompaction": True,
-              "agentDir": "", "skillPaths": [], "extensionPaths": [], "safeMode": False,
+              "agentDir": "", "skillPaths": [], "extensionPaths": [], "safeMode": False, "toolPermissionMode": "auto",
               "npmRegistry": "", "npmUserconfig": "", "npmCafile": ""},
     "server": {"port": 8787, "openai": True, "anthropic": True, "lan": False, "keys": []},
     "ui": {"sidebarWidth": 244, "sidebarCollapsed": False},

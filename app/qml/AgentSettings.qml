@@ -6,6 +6,37 @@ Column {
     id: root
     property string query: ""
     spacing: 12
+    SectionCard {
+        objectName: "toolPermissionSettings"
+        width: parent.width
+        ColumnLayout {
+            width: parent.width; spacing: 12
+            Text { text: I18n.t("工具执行权限"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
+            RowLayout {
+                Layout.fillWidth: true; spacing: 8
+                Repeater {
+                    model: [{mode:"ask",label:I18n.t("每次询问")},{mode:"auto",label:I18n.t("全自动")}]
+                    ActionButton {
+                        required property var modelData
+                        objectName: "toolPermission_" + modelData.mode
+                        text: modelData.label
+                        primary: backend.config.agent.toolPermissionMode === modelData.mode
+                        Accessible.role: Accessible.RadioButton
+                        Accessible.checked: primary
+                        onClicked: backend.setToolPermissionMode(modelData.mode)
+                    }
+                }
+                Item { Layout.fillWidth: true }
+            }
+            Text {
+                Layout.fillWidth: true; wrapMode: Text.Wrap
+                text: backend.config.agent.toolPermissionMode === "ask"
+                    ? I18n.t("每次执行命令、编辑或写入文件前询问；读取和搜索直接执行。切换立即保存并生效。")
+                    : I18n.t("工具自动执行，仅七类高风险操作需要确认。切换立即保存并生效。")
+                color: Theme.muted; font.pixelSize: Theme.font(11)
+            }
+        }
+    }
     SettingsFold { objectName: "piFold_context"; width: parent.width; title: I18n.t("上下文"); nested: true; query: root.query; searchTerms: I18n.t("自动压缩 compaction 重新加载 运行设置 自定义指令 提示词 instructions token 回答 上限")
     SectionCard {
         width: parent.width
