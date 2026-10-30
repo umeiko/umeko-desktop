@@ -23,6 +23,8 @@ Agent 入口只有一个：`umeko_desktop`。第一次使用先调用 `{"operati
 
 与 Widget 交互时先 `widgets.list`（`activeOnly:true`）发现已激活和已打开的插件，再 `widgets.docs` 读取目标插件的简短介绍、完整文档与公开方法。按文档调用 `widgets.call`，用 `widgets.result` 读取结果及期间更新。Widget 可以主动推送消息，无需轮询；`widgets.messages` 提供可按游标查询的历史记录。
 
+用户附带 `terminal-ID-...` 终端时，读取 Widget `terminal` 的文档并操作已有终端；这个终端 ID 是方法参数，不是插件包 ID。Agent 输入的命令和输出会出现在用户的同一个终端界面。
+
 ## Windows 上运行 Python 项目命令
 
 优先使用项目已有虚拟环境的 Python 路径；项目没有指定解释器且已安装 Windows Python Launcher 时，可用 `py -3`，例如 `py -3 -m unittest discover -s tests -v`。裸 `python` 可能命中 Microsoft Store 的应用执行别名，并提示 “Python was not found”；这不表示项目依赖缺失。可用 `py -3 -c "import sys; print(sys.executable)"` 查看该启动器实际选择的解释器。Umeko 自身的 Python 运行时不等于项目所需的 Python 环境。

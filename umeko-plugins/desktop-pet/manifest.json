@@ -4,6 +4,7 @@
   "id": "desktop-pet",
   "name": "桌面小宠物",
   "version": "1.0.0",
+  "icon": "pet",
   "summary": "用动作陪伴任务进展",
   "description": "官方内置桌宠。后台低频观察任务，默认不显示。支持拖动、点击互动、右键菜单与自定义动画形象。",
   "author": "Umeko",
