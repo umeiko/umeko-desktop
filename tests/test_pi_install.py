@@ -4,10 +4,11 @@ import os
 import tempfile
 import time
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
-from app.pi_install import parse_install_command, install_package
+from app.pi_install import parse_install_command, install_package, remove_package
 from app.pi_management import resource_command
 from app.pi_runtime import PACKAGE
 
@@ -30,6 +31,21 @@ class PiInstallTests(unittest.TestCase):
             self.assertTrue(started.exists(), "fixture did not start")
             time.sleep(2)
             self.assertFalse(marker.exists(), "installer descendant survived the timeout")
+
+    def test_real_zip_install_keeps_payload_after_temporary_cleanup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);cwd=root/'workspace';agent=root/'agent';cwd.mkdir();agent.mkdir()
+            archive=root/'offline plugin.zip'
+            with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as stream:
+                stream.writestr('plugin/package.json',json.dumps({'name':'@fixture/offline','version':'1.0.0','pi':{'extensions':['index.js']}}))
+                stream.writestr('plugin/index.js','throw Error("installation must not import code");')
+            output=install_package(RELEASE,cwd,agent,str(archive),True,timeout=30)
+            self.assertIn('Installed',output)
+            config=cwd/'.pi/settings.json';registered=json.loads(config.read_text())['packages'][0]
+            package=(config.parent/registered).resolve()
+            self.assertTrue(package.is_relative_to(cwd/'.pi/umeko-packages'))
+            self.assertTrue((package/'index.js').is_file())
+            self.assertFalse(any(p.name.startswith('preparing-') for p in (agent/'umeko-install-cache').iterdir()))
 
     def test_pasted_commands_preserve_native_sources_and_scope(self):
         for text, expected in [
@@ -75,6 +91,18 @@ class PiInstallTests(unittest.TestCase):
             rows = resource_command(RELEASE, cwd, agent, {}, action="scan")
             for file, scope in files:
                 self.assertTrue(any(row["path"] == file and row["scope"] == scope for row in rows), rows)
+            self.assertFalse(executed.exists())
+            # Discovery returns relative registrations too. Remove through the
+            # same embedded CLI in each scope without importing the extension.
+            for local in (False, True):
+                settings = cwd / ".pi/settings.json" if local else agent / "settings.json"
+                source = json.loads(settings.read_text())["packages"][0]
+                output = remove_package(RELEASE, cwd, agent, source, local, timeout=30,
+                                        package_root=(settings.parent/source).resolve())
+                self.assertIn("Removed", output)
+                self.assertFalse(json.loads(settings.read_text()).get("packages", []))
+            self.assertEqual(json.loads((agent / "settings.json").read_text())["theme"], "dark")
+            self.assertFalse(json.loads((cwd / ".pi/settings.json").read_text())["compaction"]["enabled"])
             self.assertFalse(executed.exists())
             with self.assertRaisesRegex(RuntimeError, "Pi 安装失败"):
                 install_package(RELEASE, cwd, agent, str(base / "does-not-exist"), timeout=30)

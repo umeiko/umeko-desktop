@@ -118,6 +118,7 @@ class ToolPermissionTests(unittest.TestCase):
         record.busy, record.stale, record.process = False, False, None
         record.model, record.reasoning_effort = "", "off"
         record.workspace, record.file, record.history = "", "", []
+        record.extension_modes = {"builtin:mcp":"disabled"}
         backend._release = self.directory / "release"
         backend._release.mkdir()
         (backend._release / "bridge.mjs").write_text("// fixture", encoding="utf-8")
@@ -129,6 +130,7 @@ class ToolPermissionTests(unittest.TestCase):
                 patch("app.controller_runtime.webview_configuration", return_value={}):
             self.assertTrue(backend._command_pi("inspect"))
         payload = backend._pool.start.call_args.args[3]
+        self.assertEqual(payload["sessionExtensions"], {"builtin:mcp":False})
         self.assertEqual(payload["permissionMode"], "ask")
         self.assertEqual(payload["language"], "en")
         self.assertEqual(payload["dataDir"], str(backend.store.directory))

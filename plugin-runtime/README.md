@@ -202,3 +202,78 @@ Rectangle {
 - 会话插件的进程和回调随聊天结束而撤销，应用服务的后台任务则持续到实例停止。所有结果保持目标聊天归属。使用 SDK 管理的进程以获得超时与清理；自行启动的线程、文件监听、进程由插件作者负责停止。
 
 开发时务必使用临时工作目录和假数据测试错误、超时、切换会话、关闭页面、卸载和大文件行为。Git 示例不会联网推送或自动清理工作文件。
+
+## 宿主服务（Widget Host API v1）
+
+QML 页可用 `sdk.hostCapabilities` 检查可用接口，用
+`request = sdk.requestHost(operation, arguments)` 发起请求，并在
+`sdk.hostResponse(request, value)` 中接收结果。返回空字符串表示未接收请求。
+不要同步等待、循环阻塞 QML，或导入宿主的 `backend`、`PiManagement`。
+
+Python 使用 `context.host_capabilities` 和
+`context.request_host(operation, arguments={}, session=target)`；返回关联 ID，
+实际响应在 `Plugin.on_event("host.response", value)` 到达。`handle()` 应立即返回，
+否则会堵住同一 worker 的事件读取。应用后台线程必须先捕获
+`target = context.capture_session()`，禁止任务完成后重新选择前台聊天。
+
+| 操作 | 清单权限 | 参数 / 结果 |
+| --- | --- | --- |
+| `pi.status` | `pi.read` | `offset` 默认 0，`limit` 默认 100、最多 200；`query` 按名称、路径或描述搜索本地清单。`details` 可指定原生 ID，仅返回该项、最多48KiB本地 Markdown、32 个已加载工具和启用覆盖项 `activationModes`。返回 `result.extensions/total/hasMore/contextCurrent/workspace/busy/status/extensionUpdate`。`contextCurrent=false` 时不返回旧工作区缓存，先扫描。 |
+| `pi.network` | `pi.read` | 返回宿主显式设置的 `npmRegistry/npmUserconfig/npmCafile`，不返回 `.npmrc` 内容、代理密钥或供应商配置。空值保留 npm 的原生配置发现行为。 |
+| `pi.scan` | `pi.read` | 使用当前内嵌 Pi 的原生扩展发现，返回宿主 `jobId`。不执行被发现的扩展。 |
+| `pi.details` | `pi.read` | `{id}`，按需读取有大小上限的本地 README；返回异步任务，完成后用 `pi.status {details:id}` 读取。不会执行扩展代码。 |
+| `pi.activation` | `pi.manage` | `{id,mode}`；`global`、`session`、`disabled` 分别为全局启用、本对话启用、本对话暂时禁用。须宿主确认；对话覆盖不改写共享 Pi 设置。 |
+| `pi.checkUpdate` | `pi.read` | `{id}` 为原生扩展 ID；原生更新检查任务。 |
+| `pi.enable` | `pi.manage` | `{id, enabled: boolean}`；宿主确认后调用原生启用/停用。 |
+| `pi.install` | `pi.manage` | `{source, project?: boolean}`；宿主确认后走现有手动安装流程。 |
+| `pi.remove` | `pi.manage` | `{id}`；宿主确认后卸载已经登记的第三方扩展包，拒绝 Pi 内置项和独立本地文件。 |
+| `pi.refresh` | `pi.manage` | 宿主确认后刷新并应用原生扩展配置。 |
+| `pi.cancel` | `pi.manage` | `{id:jobId}`；仅取消本 Widget 当前实例、同一聊天/工作区发起且仍运行的插件安装。不会再次弹确认。关闭 Widget 也会取消其未完成的安装。 |
+| `pi.job` | `pi.read` | `{id: jobId}`；只能读取本 Widget 实例、同一聊天/工作区创建的任务。返回 `jobs[].status` 和简短的 `result.ok/error`；安装过程中附带 `progress.message/state/cancellable`；完成后用 `pi.status` 读取列表。 |
+
+写操作始终通过宿主确认。确认后再次检查 Widget 激活状态、聊天、工作区和忙碌状态；
+不自动排队到另一个项目，也不开放修改安装权限、工具权限或任意桌面操作的接口。
+`accepted`/`jobId` 只是已开始，只有 `pi.job` 的 `done` 才是完成，`failed` 才是失败。
+运行中的 Agent 安装应继续调用现有 `run_pi_command` 和其权限确认、排队 `/reload`；
+Widget 管理接口会拒绝忙碌时的写操作，不能作为安装权限的替代路径。
+公开 Agent RPC 始终拒绝 `extensions.install`；确认后的 WidgetHost 使用进程内私有
+安装入口，JSON 中的 `origin` 或其他标志不能开启它。这个通道仍复用同一原生安装器和任务回执。
+
+每实例最多 8 个待处理宿主请求、全局最多保留 128 个任务关联；请求最多 16 KiB，
+响应最多 256 KiB，扩展列表分页。超过限制会拒绝请求，不静默截断文档。
+未确认操作在 Widget 停止或两分钟无人确认后取消。所属 Widget 停止时，其安装任务
+会收到取消信号；其他已经确认并交给宿主的原生任务可能继续运行，关闭页面或丢失
+UI 回执不表示其他任务已经取消。查询权限随实例停止而撤销。
+响应同时供 Python worker 和当前可见的所属页面接收；页面应按请求 ID 过滤。
+
+### 复用内嵌 Node
+
+清单可声明 `"executables": {"node": {"runtime": "node"}}`，再调用
+`context.run_executable("node", [str(context.package_dir / "vendor/registry.mjs"), ...])`。
+宿主提供其 Node 的实际路径，不依赖系统 PATH。仍需 `process.execute`，同样受执行时间、
+输出和进程清理约束；不继承 `NODE_OPTIONS/NODE_PATH`。启动前用
+`"node" in context.runtimes` 检查能力。只支持固定的 `node` 名称，不能指定宿主任意程序。
+
+这只保证 Node 运行时，不保证宿主内部 npm 依赖。Widget 应随包携带自己固定版本的
+JS 依赖和许可证，例如将入口与 `node_modules` 一起放在 `vendor/` 下；ESM 不依赖
+`NODE_PATH`。调用 `pi.network` 获取应用的 npm 覆盖项，再交给自己的 registry 客户端，
+继续让 npm 在捕获的项目中解析其正常配置。不得把完整 npm 配置或凭据写到公开结果。
+应用级后台程序默认在 `state_dir` 运行；需要项目 npm 配置时还需 `workspace.read`，
+并显式向 `run_executable(..., session=target)` 传入捕获的聊天。
+
+### 精简活动订阅
+
+需要统计扩展使用情况的 Widget 可声明 `pi.observe`。激活后在
+`on_event("pi.activity", data)` 收到至多每 200ms 一批的已结束工具元数据：
+`events[].kind/id/name/state/source/time/session`，以及本批 `dropped` 数量。
+`source` 来自当前 Pi 资源目录，可能为空；它不是包版本或经过推断的包名。
+会话 Widget 只观察绑定聊天，应用 Widget 可观察各聊天；每条携带原聊天的 token/id/workspace。
+不发送工具参数、工具结果、思考、聊天正文或 token 增量，不遍历历史。
+
+每实例最多暂存 64 条、约 64 KiB；过载会丢弃旧元数据并报告 dropped。
+它适合商店最近使用/计数展示，不是完整审计日志。按工具调用 ID 去重；计数和来源归组
+由 Widget 保存在 `state_dir`，不要把用户任务内容当使用记录保存。
+目前订阅主会话工具的结束事件，不能把它宣称为完整子代理或历史使用统计。
+
+可打包的 [Pi 管理示例](examples/pi-management/README.md) 演示实际异步接口与页面；
+内置的精简管理 Widget 位于源码仓库 `umeko-plugins/pi-manager`，可直接参考它的可关闭页面、本地搜索和详情滚动实现。

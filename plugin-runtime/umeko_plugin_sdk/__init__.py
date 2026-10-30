@@ -20,6 +20,8 @@ class Context:
     cancelled: threading.Event = field(default_factory=threading.Event)
     _processes: set = field(default_factory=set,init=False,repr=False)
     lifecycle: str = 'session'
+    host_capabilities: dict = field(default_factory=dict)
+    runtimes: dict = field(default_factory=dict)
     _request: threading.local = field(default_factory=threading.local,init=False,repr=False)
 
     @property
@@ -107,6 +109,26 @@ class Context:
     def notify(self, message):
         self.emit({'event':'notification','arguments':{'message':str(message)[:1000]}})
 
+    def request_host(self, operation, arguments=None, *, session=None):
+        """Nonblocking host request; receive on_event('host.response', result).
+
+        Return a correlation ID, never a claim that a native job completed.
+        Application background work must supply a captured target session.
+        """
+        if not isinstance(operation,str):raise PluginError('Host operation must be a string')
+        spec=self.host_capabilities.get('operations',{}).get(operation)
+        if not isinstance(spec,dict):raise PluginError('Host operation unavailable; inspect host_capabilities')
+        self.require(spec['permission'])
+        if arguments is None:arguments={}
+        if not isinstance(arguments,dict):raise PluginError('Host arguments must be a JSON object')
+        try:raw=json.dumps(arguments,ensure_ascii=False,allow_nan=False).encode('utf-8')
+        except (ValueError,TypeError):raise PluginError('Host arguments must be valid JSON') from None
+        if len(raw)>16384:raise PluginError('Host arguments exceed 16 KiB')
+        identifier=uuid.uuid4().hex
+        self.emit({'event':'host.request','arguments':{'id':identifier,'operation':operation,
+            'arguments':copy.deepcopy(arguments),'session':self._target_session(session)}})
+        return identifier
+
     def notify_agent(self, message, *, data=None, request_id=None, wake=True, session=None):
         """Push an attributed update; return its ID, not an Agent completion receipt."""
         self.require('session.write')
@@ -137,7 +159,11 @@ class Context:
     def run_executable(self, name, args=(), *, timeout=12, limit=512*1024, session=None):
         self.require('process.execute')
         spec=self.executables.get(name,{})
-        if 'system' in spec: executable=spec['system']
+        if 'runtime' in spec:
+            runtime=self.runtimes.get(spec['runtime'],{})
+            executable=runtime.get('executable','')
+            if not executable or not Path(executable).is_file():raise PluginError('Required host runtime is unavailable: '+spec['runtime'])
+        elif 'system' in spec: executable=spec['system']
         else:
             target=('windows' if os.name=='nt' else 'macos' if platform.system()=='Darwin' else 'linux')+'-'+('arm64' if platform.machine().lower() in ('arm64','aarch64') else 'x64')
             relative=spec.get(target)
@@ -146,6 +172,7 @@ class Context:
             if not Path(executable).is_relative_to(self.package_dir.resolve()): raise PluginError('可执行文件路径无效')
         if not executable or any(not isinstance(x,str) or '\0' in x for x in args): raise PluginError('可执行文件参数无效')
         env={k:v for k,v in os.environ.items() if not k.upper().endswith(('API_KEY','ACCESS_TOKEN','SECRET_KEY','PASSWORD','_AK','_SK'))}
+        env.pop('NODE_OPTIONS',None);env.pop('NODE_PATH',None)
         env.update(GIT_TERMINAL_PROMPT='0',GIT_OPTIONAL_LOCKS='0',PAGER='cat',GIT_PAGER='cat')
         cwd=self.state_dir if self.lifecycle=='application' and session is None and not self.request_session else self.resolve_workspace(session=session)
         try:

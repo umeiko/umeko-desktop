@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { umekoHelp } from './umeko-control.mjs';
+import { installPackage } from './package-install.mjs';
 
 export const PI_COMMAND_TOOL = 'run_pi_command';
 export const DESKTOP_PI_PROMPT = 'You are Umeko, powered by Pi embedded in Umeko Desktop. For Pi/MCP/extension management and slash commands, use run_pi_command; it targets this running session and its configuration. Do not invoke a system pi binary or install a separate Pi. Models and credentials are managed in Umeko settings.';
@@ -162,7 +163,13 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
     const local = scope === 'project' || scope === undefined && args.some(a => ['--local','-l'].includes(a));
     const sources = args.filter(a => !['--local','-l'].includes(a));
     if (sources.length !== 1 || !sources[0] || sources[0].startsWith('-')) throw new Error('一次操作一个 npm、Git 或本地扩展来源');
-    const result = await nativeCli([action === 'uninstall' ? 'remove' : action, sources[0], local ? '--approve' : '--no-approve', ...(local ? ['--local'] : [])], signal);
+    const context=info();
+    const result = action==='install' ? {...context,status:'completed',output:await installPackage({
+      release:fileURLToPath(new URL('../../../../',import.meta.resolve('@earendil-works/pi-coding-agent'))),
+      cwd:context.workspace,agentDir:context.agentDir,source:sources[0],local,
+      caFile:getConfig().agent?.npmCafile || '',
+    },{signal,onProgress:value=>notify(value.message)})} :
+      await nativeCli([action === 'uninstall' ? 'remove' : action, sources[0], local ? '--approve' : '--no-approve', ...(local ? ['--local'] : [])], signal);
     if (signal?.aborted) throw new Error('Pi 操作已取消');
     const applied = session.isIdle ? await slash('/reload') : queue('/reload', toolCallId);
     return { ...result, reload: applied.status || 'completed' };

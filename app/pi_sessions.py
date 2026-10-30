@@ -12,6 +12,11 @@ from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signa
 from .npm_config import npm_overrides
 
 
+def clean_extension_modes(value):
+    if not isinstance(value, dict): return {}
+    return {path:mode for path,mode in value.items() if isinstance(path,str) and 0 < len(path) <= 4096 and mode in ("session","disabled")}
+
+
 @dataclass(eq=False)
 class SessionState:
     global_agent: str = ""
@@ -28,6 +33,7 @@ class SessionState:
     resources: dict = field(default_factory=lambda: {"tools": [], "skills": [], "extensions": [], "diagnostics": []})
     context_usage: dict = field(default_factory=dict)
     network_retry: dict = field(default_factory=dict)
+    extension_modes: dict = field(default_factory=dict)
     reasoning_effort: str = "off"
     attachments: list = field(default_factory=list)
     approval: dict = field(default_factory=dict)

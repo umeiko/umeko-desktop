@@ -4,6 +4,7 @@ import threading
 
 from PySide6.QtCore import QObject, Signal, Slot
 from .transcripts import preview
+from .pi_sessions import clean_extension_modes
 
 
 class SessionPreview(QObject):
@@ -93,6 +94,7 @@ class SessionPreview(QObject):
         if not record or not record.loaded or 'snapshot' in result or 'messages' in result:
             record = record or self.controller._new_view(saved.get('workspace', ''))
             record.id, record.file, record.title = saved['id'], saved.get('file', ''), saved['title']
+            record.extension_modes = clean_extension_modes(self.controller.store.data['sessionMeta'].get(saved['id'],{}).get('extensionModes'))
             record.history = copy.deepcopy(saved.get('history', []))
             record.messages, record.tree = result.get('messages', []), result.get('tree', [])
             record.transcript, record.loaded = result.get('snapshot'), True

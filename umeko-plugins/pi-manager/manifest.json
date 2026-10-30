@@ -1,0 +1,27 @@
+{
+  "kind": "umeko-plugin",
+  "apiVersion": 1,
+  "id": "pi-manager",
+  "version": "1.0.0",
+  "name": "插件管理",
+  "description": "搜索本地 Pi 插件，查看说明、工具与来源，并管理启用范围。",
+  "summary": "管理本地 Pi 插件",
+  "author": "Umeko",
+  "icon": {
+    "path": "qml/assets/pi.svg"
+  },
+  "lifecycle": "session",
+  "entrypoint": "scripts/plugin.py:create_plugin",
+  "page": "qml/Main.qml",
+  "readme": "README.md",
+  "config": "config.json",
+  "configSchema": "config.schema.json",
+  "permissions": [
+    "pi.read",
+    "pi.manage"
+  ],
+  "agent": {
+    "document": "AGENT.md",
+    "methods": {}
+  }
+}

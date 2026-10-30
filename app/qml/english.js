@@ -1,5 +1,7 @@
 .pragma library
 var strings = {
+  "Widgets": "Widgets",
+  "请先在插件管理 Widget 中启用 builtin:mcp，再配置 MCP 服务器。已有配置会保留。": "Enable builtin:mcp in the Pi manager Widget before configuring MCP servers. Existing configuration is preserved.",
   "由 Pi 原生设置决定压缩时机和上下文保留。也可点击输入框底部的上下文用量圆环手动压缩，使用当前配置的供应商。": "Pi’s native settings control compaction timing and retention. Click the context-usage circle below the composer to compact manually using the configured provider.",
   "仅在当前任务结束后可压缩上下文。": "Context can be compacted after the current turn finishes.",
   "压缩摘要": "Compaction summary",

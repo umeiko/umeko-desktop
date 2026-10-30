@@ -21,6 +21,7 @@ class DesktopPlugins(QObject):
     response=Signal(str,"QVariantMap")
     managed=Signal(str,"QVariantMap")
     event=Signal(str,"QVariantMap")
+    hostResponse=Signal(str,str,"QVariantMap")
     def __init__(self, backend):
         super().__init__(backend)
         self.b=backend;self.root=backend.store.directory/'desktop-plugins';self.registry=self.root/'settings.json'
@@ -38,6 +39,8 @@ class DesktopPlugins(QObject):
         backend.chatChanged.connect(lambda: self.refresh.start() if not self.refresh.isActive() else None)
         from .widget_channel import WidgetChannel
         self.bridge=WidgetChannel(self)
+        from .widget_host import WidgetHost
+        self._host_services=WidgetHost(self)
         from .desktop_pet import DesktopPet
         self._pet=DesktopPet(self)
         self._pet_imports={}
@@ -52,6 +55,14 @@ class DesktopPlugins(QObject):
     def enabled(self,identifier):return self.settings.get('enabled',{}).get(identifier,not self.application(identifier) or identifier in ('desktop-pet','global-agents') and self.entries[identifier].get('builtin',False))
     @Property(QObject,constant=True)
     def pet(self):return self._pet
+    @Property(QObject,constant=True)
+    def hostServices(self):return self._host_services
+    @Slot(str,str,result=str)
+    def requestHost(self,operation,raw):
+        if len(raw.encode("utf-8"))>16384:return ""
+        try:args=json.loads(raw)
+        except ValueError:return ''
+        return self._host_services.request_for(self._page,{'operation':operation,'arguments':args,'session':self._session})
     def session_enabled(self,identifier):
         if self.application(identifier):return self.enabled(identifier)
         sessions=self.settings.get('sessions',{})
@@ -194,11 +205,11 @@ class DesktopPlugins(QObject):
         def initialize():
             e=self.entries[identifier];config=self.settings.get('config',{}).get(identifier,read(self.path(identifier)/e.get('config','config.json'),{}))
             state=self.root/'state'/identifier/('application' if application else hashlib.sha256(self.storage_key.encode()).hexdigest())
-            p.write(self.frame({'id':'initialize','operation':'initialize','arguments':{'path':str(self.path(identifier)),'stateDir':str(state),'config':config,'session':self._session}}))
+            p.write(self.frame({'id':'initialize','operation':'initialize','arguments':{'path':str(self.path(identifier)),'stateDir':str(state),'config':config,'session':self._session,'hostCapabilities':self._host_services.capabilities,'runtimes':self._host_services.runtimes()}}))
         p.started.connect(initialize);p.readyReadStandardOutput.connect(lambda:self.receive(identifier,w));p.readyReadStandardError.connect(lambda:p.readAllStandardError())
         def failed(*_):
             if self.workers.get(identifier) is not w:return
-            self.workers.pop(identifier);error='插件进程已停止，重新启用可重试'
+            self.workers.pop(identifier);self._host_services.stop(identifier);error='插件进程已停止，重新启用可重试'
             if self.application(identifier):self._failed_services.add(identifier)
             if self._page==identifier:self._error=error
             else:self._status=self.entries[identifier]['name']+'：'+error
@@ -224,6 +235,7 @@ class DesktopPlugins(QObject):
             return
         w['process'].write(self.frame(request))
     def stop(self,identifier):
+        self._host_services.stop(identifier)
         self.bridge.stop_notifications(identifier)
         w=self.workers.pop(identifier,None)
         if not w:return
@@ -322,6 +334,10 @@ class DesktopPlugins(QObject):
     def host_event(self,identifier,event):
         kind=event.get('event');args=event.get('arguments',{});perms=self.entries[identifier].get('permissions',[])
         if not isinstance(args,dict):return
+        if kind=='host.request':
+            if not self._host_services.request_for(identifier,args) and isinstance(args.get('id'),str) and re.fullmatch('[a-f0-9]{32}',args['id']):
+                self.send(identifier,{'id':uuid.uuid4().hex,'operation':'event','arguments':{'name':'host.response','data':{'requestId':args['id'],'operation':args.get('operation'),'ok':False,'error':'Host request queue is full or unavailable'}}})
+            return
         if kind=='agent.notify':
             if 'session.write' in perms:self.bridge.notify(identifier,args)
             return

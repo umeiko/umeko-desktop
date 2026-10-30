@@ -5,6 +5,9 @@ import shlex
 import signal
 import subprocess
 import tempfile
+import json
+import threading
+import time
 from pathlib import Path
 
 from .pi_runtime import CREATE_NO_WINDOW, PACKAGE, node_executable, node_environment
@@ -44,14 +47,74 @@ def _log_tail(log):
     return text.strip()[-2000:]
 
 
-def install_package(release, cwd, agent_dir, source, local=False, timeout=180, npm_config=None):
+def install_package(release, cwd, agent_dir, source, local=False, timeout=None, npm_config=None, progress=None, cancelled=None):
+    """Shared asynchronous Node engine retries routes and offline acquisition.
+
+    Called on the native management worker. Qt's desktop/PAC proxy resolution
+    therefore never blocks the UI. Only owned child processes are cancelled.
+    """
+    from .update_proxy import system_proxy
+    agent=npm_config or {}
+    environment=npm_environment(agent)
+    environment.pop('NODE_OPTIONS',None); environment.pop('NODE_PATH',None)
+    target=source if source.startswith('https://') else agent.get('npmRegistry') or 'https://registry.npmjs.org'
+    proxy=system_proxy(target)
+    driver=Path(__file__).resolve().parents[1]/'runtime/package-install.mjs'
+    job={'release':str(release),'cwd':str(cwd),'agentDir':str(agent_dir),'source':source,'local':bool(local),'proxy':proxy,'caFile':agent.get('npmCafile','')}
+    stopped=threading.Event(); timed_out=threading.Event()
+    with tempfile.TemporaryFile() as errors:
+        process=subprocess.Popen([node_executable(),str(driver)],cwd=cwd,env=environment,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=errors,
+            text=True,encoding='utf-8',creationflags=CREATE_NO_WINDOW,start_new_session=os.name!='nt')
+        process.stdin.write(json.dumps(job)+'\n');process.stdin.flush()
+        started=time.monotonic()
+        def watch():
+            while not stopped.wait(.1):
+                expired=timeout is not None and time.monotonic()-started>=timeout
+                if expired or cancelled and cancelled():
+                    if expired:timed_out.set()
+                    try:process.stdin.write('{"cancel":true}\n');process.stdin.flush()
+                    except (OSError,ValueError):pass
+                    if not stopped.wait(4) and process.poll() is None:process.kill()
+                    return
+        watcher=threading.Thread(target=watch,daemon=True);watcher.start()
+        result={}
+        try:
+            for line in process.stdout:
+                if len(line)>65536:continue
+                try:value=json.loads(line)
+                except ValueError:continue
+                if value.get('type')=='progress' and progress:progress(str(value.get('message',''))[:800])
+                elif value.get('type')=='result':result=value
+            process.wait()
+            if timed_out.is_set():raise RuntimeError('安装超时，请检查软件源或网络后重试')
+            if not result.get('ok'):raise RuntimeError('安装已取消' if result.get('cancelled') else 'Pi 安装失败：'+(result.get('error') or _log_tail(errors) or '安装引擎退出'))
+            return result.get('output','')
+        finally:
+            stopped.set();watcher.join(1)
+            if process.poll() is None:process.kill();process.wait()
+            process.stdin.close();process.stdout.close()
+
+
+def remove_package(release, cwd, agent_dir, source, local=False, timeout=180, npm_config=None, package_root=None):
+    # Native relative package registrations are relative to their settings file,
+    # while CLI local source parsing is relative to the working directory.
+    base = Path(cwd) / ".pi" if local else Path(agent_dir)
+    if source in (".", "..") or source.startswith(("./", "../", ".\\", "..\\")) or (
+            package_root and (base / source).resolve() == Path(package_root).resolve()):
+        source = str((base / source).resolve())
+    return package_operation(release, cwd, agent_dir, source, local, timeout, npm_config, operation="remove")
+
+
+def package_operation(release, cwd, agent_dir, source, local=False, timeout=180, npm_config=None, *, operation):
+    if operation not in ("install", "remove"):
+        raise ValueError("Unsupported package operation")
     environment = npm_environment(npm_config or {})
     environment.update(PI_CODING_AGENT_DIR=str(agent_dir), PI_SKIP_VERSION_CHECK="1", NO_COLOR="1")
     for key in ("NODE_OPTIONS", "NODE_PATH", "PI_OFFLINE"):
         environment.pop(key, None)
     # Explicit scope avoids the CLI's interactive project-trust prompt/hooks.
     args = [node_executable(), str(Path(release) / "node_modules" / PACKAGE / "dist/cli.js"),
-            "install", source, "--approve" if local else "--no-approve"]
+            operation, source, "--approve" if local else "--no-approve"]
     if local: args.append("--local")
     with tempfile.TemporaryFile() as log:
         process = subprocess.Popen(args, cwd=cwd, env=environment, stdin=subprocess.DEVNULL,
@@ -71,8 +134,8 @@ def install_package(release, cwd, agent_dir, source, local=False, timeout=180, n
             finally:
                 process.kill()
                 process.wait(timeout=10)
-            raise RuntimeError("安装超时，请检查软件源或网络后重试") from None
+            raise RuntimeError(("安装" if operation == "install" else "卸载") + "超时，请检查软件源或网络后重试") from None
         output = _log_tail(log)
     if code:
-        raise RuntimeError("Pi 安装失败：" + (output or "退出码 " + str(code)))
+        raise RuntimeError("Pi " + ("安装" if operation == "install" else "卸载") + "失败：" + (output or "退出码 " + str(code)))
     return output

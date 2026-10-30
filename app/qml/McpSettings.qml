@@ -34,7 +34,7 @@ SectionCard {
         }
         Text {
             objectName: "mcpDisabledReason"; Layout.fillWidth: true
-            text: !root.mcpEnabled ? I18n.t("请先在上方「Pi 扩展」中启用 builtin:mcp，再配置 MCP 服务器。已有配置会保留。") : I18n.t("连接外部工具与资源，支持全局和当前项目的 Pi 原生配置。")
+            text: !root.mcpEnabled ? I18n.t("请先在插件管理 Widget 中启用 builtin:mcp，再配置 MCP 服务器。已有配置会保留。") : I18n.t("连接外部工具与资源，支持全局和当前项目的 Pi 原生配置。")
             color: Theme.muted; font.pixelSize: Theme.font(12); wrapMode: Text.Wrap
         }
         McpPanel { id: mcpPanel; Layout.fillWidth: true; visible: root.expanded; enabled: root.configurable; opacity: enabled ? 1 : 0.45 }
