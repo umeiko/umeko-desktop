@@ -1,4 +1,4 @@
-"""Session-scoped desktop plugins, isolated workers and one reusable QML page slot."""
+"""Session Widgets and application services, isolated workers and one QML slot."""
 from __future__ import annotations
 import copy, hashlib, json, os, re, sys, uuid
 from pathlib import Path
@@ -19,6 +19,8 @@ class DesktopPlugins(QObject):
     requested=Signal()
     dismissed=Signal()
     response=Signal(str,"QVariantMap")
+    managed=Signal(str,"QVariantMap")
+    event=Signal(str,"QVariantMap")
     def __init__(self, backend):
         super().__init__(backend)
         self.b=backend;self.root=backend.store.directory/'desktop-plugins';self.registry=self.root/'settings.json'
@@ -29,22 +31,32 @@ class DesktopPlugins(QObject):
         for folder in (backend.root/'umeko-plugins').glob('*'):
             m=read(folder/'manifest.json',{}) or {}
             if m.get('kind')=='umeko-plugin' and m.get('apiVersion')==1 and m.get('id')==folder.name:self.entries[folder.name]={**m,'builtin':True}
-        self.workers={};self._page='';self._error='';self._session={};self.storage_key='';self._busy=False;self._status='';self.closed=False
+        self.workers={};self._failed_services=set();self.application_token='application:'+uuid.uuid4().hex;self._page='';self._selection='';self._error='';self._session={};self.storage_key='';self._busy=False;self._status='';self.closed=False
         self.refresh=QTimer(self);self.refresh.setSingleShot(True);self.refresh.setInterval(200);self.refresh.timeout.connect(self.synchronize)
         backend.viewChanged.connect(self.synchronize)
         backend.chatChanged.connect(lambda: self.refresh.start() if not self.refresh.isActive() else None)
+        from .widget_channel import WidgetChannel
+        self.bridge=WidgetChannel(self)
         self.synchronize()
     def path(self, identifier):
         e=self.entries[identifier]
         return self.b.root/'umeko-plugins'/identifier if e.get('builtin') else self.root/'packages'/identifier/e['version']
-    def enabled(self,identifier):return self.settings.get('enabled',{}).get(identifier,True)
+    def application(self,identifier):return self.entries.get(identifier,{}).get('lifecycle','session')=='application'
+    def enabled(self,identifier):return self.settings.get('enabled',{}).get(identifier,not self.application(identifier))
     def session_enabled(self,identifier):
+        if self.application(identifier):return self.enabled(identifier)
         sessions=self.settings.get('sessions',{})
         return identifier in sessions[self.storage_key] if self.storage_key in sessions else self.entries[identifier].get('builtin',False)
     @Property('QVariantList',notify=changed)
-    def rows(self):return sorted([{**e,'enabled':self.enabled(k),'sessionEnabled':self.session_enabled(k),'hasPage':bool(e.get('page'))} for k,e in self.entries.items()],key=lambda e:e['name'])
+    def rows(self):return sorted([{**e,'lifecycle':e.get('lifecycle','session'),'enabled':self.enabled(k),'sessionEnabled':self.session_enabled(k),'hasPage':bool(e.get('page')),'running':bool(self.workers.get(k,{}).get('ready')),'starting':k in self.workers and not self.workers[k]['ready']} for k,e in self.entries.items()],key=lambda e:e['name'])
     @Property('QVariantList',notify=changed)
     def sessionPlugins(self):return [e for e in self.rows if e['enabled'] and e['sessionEnabled'] and e['hasPage']]
+    def recent_key(self):return os.path.normcase(os.path.abspath(self._session.get('workspace') or '.'))
+    @Property('QVariantMap',notify=changed)
+    def recentPlugin(self):
+        available=self.sessionPlugins
+        identifier=self.settings.get('recentPages',{}).get(self.recent_key())
+        return next((e for e in available if e['id']==identifier),available[0] if available else {})
     @Property('QVariantMap',notify=sessionChanged)
     def session(self):
         result=dict(self._session)
@@ -54,7 +66,7 @@ class DesktopPlugins(QObject):
     def page(self):
         if not self._page:return {}
         e=self.entries[self._page];worker=self.workers.get(self._page)
-        return {'id':self._page,'title':e['name'],'url':QUrl.fromLocalFile(str(self.path(self._page)/e['page'])).toString(),'config':self.settings.get('config',{}).get(self._page,read(self.path(self._page)/e.get('config','config.json'),{})),'error':self._error,'loading':not worker or not worker['ready']}
+        return {'id':self._page,'title':e['name'],'url':QUrl.fromLocalFile(str(self.path(self._page)/e['page'])).toString(),'selection':self._selection,'config':self.settings.get('config',{}).get(self._page,read(self.path(self._page)/e.get('config','config.json'),{})),'error':self._error,'loading':not worker or not worker['ready']}
     @Property(bool,notify=changed)
     def busy(self):return self._busy
     @Property(str,notify=changed)
@@ -81,7 +93,8 @@ class DesktopPlugins(QObject):
         switched=self._session.get('token')!=view.key or self._session.get('workspace')!=view.workspace
         if switched:
             self.closePage()
-            for identifier in list(self.workers):self.stop(identifier)
+            for identifier in list(self.workers):
+                if not self.application(identifier):self.stop(identifier)
             self.storage_key=key
         elif key!=self.storage_key:
             sessions=self.settings.setdefault('sessions',{})
@@ -98,8 +111,11 @@ class DesktopPlugins(QObject):
     @Slot(str,bool)
     def setEnabled(self,identifier,value):
         if identifier not in self.entries:return
+        if value and self.application(identifier) and sum(self.application(k) and self.enabled(k) for k in self.entries if k!=identifier)>=8:
+            self.b.toast.emit('应用级后台服务最多同时启用 8 个');return
         old=copy.deepcopy(self.settings);self.settings.setdefault('enabled',{})[identifier]=value
         if not self.save():self.settings=old;return
+        if value:self._failed_services.discard(identifier)
         if not value:
             if self._page==identifier:self.closePage()
             self.stop(identifier)
@@ -108,7 +124,8 @@ class DesktopPlugins(QObject):
     @Slot(str,bool)
     def setSessionEnabled(self,identifier,value):
         if identifier not in self.entries:return
-        selected=[k for k in self.entries if self.session_enabled(k) and k!=identifier]
+        if self.application(identifier):self.setEnabled(identifier,value);return
+        selected=[k for k in self.entries if not self.application(k) and self.session_enabled(k) and k!=identifier]
         if value:selected.append(identifier)
         if len(selected)>8:self.b.toast.emit('每个会话最多启用 8 个 Umeko 插件');return
         old=copy.deepcopy(self.settings);self.settings.setdefault('sessions',{})[self.storage_key]=selected
@@ -121,11 +138,15 @@ class DesktopPlugins(QObject):
     @Slot(str,result=bool)
     def openPage(self,identifier):
         if identifier not in self.entries or not self.enabled(identifier) or not self.session_enabled(identifier) or not self.entries[identifier].get('page'):return False
-        self.closePage();self._page=identifier;self._error='';self.start(identifier);self.sessionChanged.emit();self.pageChanged.emit();self.requested.emit();return True
+        self.closePage();self._page=identifier;self._error=''
+        recent=self.settings.setdefault('recentPages',{})
+        if recent.get(self.recent_key())!=identifier:
+            recent[self.recent_key()]=identifier;self.save();self.changed.emit()
+        self.start(identifier);self.sessionChanged.emit();self.pageChanged.emit();self.requested.emit();return True
     @Slot()
     def closePage(self):
         if not self._page:return
-        old=self._page;self._page='';self._error='';self.stop(old);self.sessionChanged.emit();self.pageChanged.emit();self.dismissed.emit()
+        old=self._page;self._page='';self._selection='';self._error='';self.stop(old);self.sessionChanged.emit();self.pageChanged.emit();self.dismissed.emit()
     def command(self):
         if getattr(sys,'frozen',False):return sys.executable,['--umeko-plugin-worker']
         return sys.executable,['-B',str(self.b.root/'plugin-runtime/worker.py')]
@@ -135,22 +156,30 @@ class DesktopPlugins(QObject):
             if re.search(r'(API_KEY|ACCESS_TOKEN|SECRET_KEY|PASSWORD|_AK|_SK)$',key,re.I):env.remove(key)
         env.insert('PYTHONDONTWRITEBYTECODE','1');process.setProcessEnvironment(env);return process
     def start(self,identifier):
-        if self.closed or identifier in self.workers:return
-        p=self.process();w={'process':p,'buffer':b'','pending':set(),'queue':[],'ready':False,'token':self._session['token']};self.workers[identifier]=w
+        if self.closed or identifier in self.workers or identifier in self._failed_services:return
+        application=self.application(identifier)
+        p=self.process();w={'process':p,'buffer':b'','pending':set(),'queue':[],'ready':False,'token':self.application_token if application else self._session['token']};self.workers[identifier]=w
         def initialize():
             e=self.entries[identifier];config=self.settings.get('config',{}).get(identifier,read(self.path(identifier)/e.get('config','config.json'),{}))
-            state=self.root/'state'/identifier/hashlib.sha256(self.storage_key.encode()).hexdigest()
+            state=self.root/'state'/identifier/('application' if application else hashlib.sha256(self.storage_key.encode()).hexdigest())
             p.write(self.frame({'id':'initialize','operation':'initialize','arguments':{'path':str(self.path(identifier)),'stateDir':str(state),'config':config,'session':self._session}}))
         p.started.connect(initialize);p.readyReadStandardOutput.connect(lambda:self.receive(identifier,w));p.readyReadStandardError.connect(lambda:p.readAllStandardError())
         def failed(*_):
             if self.workers.get(identifier) is not w:return
-            self.workers.pop(identifier);self._error='插件进程已停止，点击重试可重新打开'
-            for request in w['pending']:self.response.emit(request,{'ok':False,'error':self._error})
-            self.pageChanged.emit();p.deleteLater()
+            self.workers.pop(identifier);error='插件进程已停止，重新启用可重试'
+            if self.application(identifier):self._failed_services.add(identifier)
+            if self._page==identifier:self._error=error
+            else:self._status=self.entries[identifier]['name']+'：'+error
+            for request in w['pending']:self.response.emit(request,{'ok':False,'error':error})
+            self.pageChanged.emit();self.changed.emit();p.deleteLater()
         p.finished.connect(failed);p.errorOccurred.connect(failed)
         program,args=self.command();p.start(program,args)
         def timeout():
-            if self.workers.get(identifier) is w and not w['ready']:self._error='插件启动超时';self.stop(identifier);self.pageChanged.emit()
+            if self.workers.get(identifier) is w and not w['ready']:
+                if self.application(identifier):self._failed_services.add(identifier)
+                if self._page==identifier:self._error='插件启动超时'
+                else:self._status=self.entries[identifier]['name']+'：插件启动超时'
+                self.stop(identifier);self.pageChanged.emit()
         QTimer.singleShot(20000,self,timeout)
     def frame(self,request):return (json.dumps(request,ensure_ascii=True)+'\n').encode()
     def send(self,identifier,request):
@@ -162,6 +191,7 @@ class DesktopPlugins(QObject):
             return
         w['process'].write(self.frame(request))
     def stop(self,identifier):
+        self.bridge.stop_notifications(identifier)
         w=self.workers.pop(identifier,None)
         if not w:return
         for request in w['pending']:self.response.emit(request,{'ok':False,'error':'插件任务已取消'})
@@ -179,39 +209,94 @@ class DesktopPlugins(QObject):
         p.finished.connect(p.deleteLater)
         if p.state()==QProcess.NotRunning:p.deleteLater()
         else:QTimer.singleShot(400,p,p.kill)
+        self.changed.emit()
     @Slot(str,str,result=str)
     def call(self,method,raw):
-        w=self.workers.get(self._page)
+        return self.call_for(self._page,method,raw)
+    def call_for(self,identifier,method,raw,*,agent=False,timeout_ms=20000,session=None):
+        if identifier not in self.entries or not self.enabled(identifier) or not self.session_enabled(identifier):return ''
+        if agent and method not in self.entries[identifier].get('agent',{}).get('methods',{}):return ''
+        self.start(identifier)
+        w=self.workers.get(identifier)
         if not w or len(w['pending'])>=8 or len(raw)>65536 or len(method)>128:return ''
         try:args=json.loads(raw)
         except ValueError:return ''
         if not isinstance(args,dict):return ''
-        identifier=self._page;request=uuid.uuid4().hex;w['pending'].add(request)
-        self.send(identifier,{'id':request,'operation':'call','arguments':{'method':method,'arguments':args}})
+        request=uuid.uuid4().hex;w['pending'].add(request)
+        self.send(identifier,{'id':request,'operation':'agentCall' if agent else 'call','arguments':{'method':method,'arguments':args,'session':session or self._session}})
         def timeout():
-            if self.workers.get(identifier) is w and request in w['pending']:self._error='插件操作超时，已停止';self.stop(identifier);self.pageChanged.emit()
-        QTimer.singleShot(20000,self,timeout);return request
+            if self.workers.get(identifier) is w and request in w['pending']:
+                if self.application(identifier):self._failed_services.add(identifier)
+                if self._page==identifier:self._error='插件操作超时，已停止'
+                else:self._status=self.entries[identifier]['name']+'：插件操作超时，已停止'
+                self.stop(identifier);self.pageChanged.emit()
+        QTimer.singleShot(timeout_ms,self,timeout);return request
     def receive(self,identifier,w):
         if self.workers.get(identifier) is not w:return
         w['buffer']+=bytes(w['process'].readAllStandardOutput())
-        if len(w['buffer'])>LIMIT:self._error='插件输出超过限制';self.stop(identifier);self.pageChanged.emit();return
+        if len(w['buffer'])>LIMIT:
+            if self._page==identifier:self._error='插件输出超过限制'
+            else:self._status=self.entries[identifier]['name']+'：插件输出超过限制'
+            if self.application(identifier):self._failed_services.add(identifier)
+            self.stop(identifier);self.pageChanged.emit();return
         while b'\n' in w['buffer']:
             raw,w['buffer']=w['buffer'].split(b'\n',1)
             try:value=json.loads(raw)
             except ValueError:continue
             if not isinstance(value,dict):continue
             if value.get('type')=='event':
-                if w['token']==self._session.get('token'):self.host_event(identifier,value)
+                if self.application(identifier) or w['token']==self._session.get('token'):self.host_event(identifier,value)
                 continue
             request=value.get('id')
             if request=='initialize':
-                if not value.get('ok'):self._error=value.get('error','插件启动失败');self.stop(identifier);self.pageChanged.emit();return
+                if not value.get('ok'):
+                    error=value.get('error','插件启动失败')
+                    if self._page==identifier:self._error=error
+                    else:self._status=self.entries[identifier]['name']+'：'+error
+                    if self.application(identifier):self._failed_services.add(identifier)
+                    self.stop(identifier);self.pageChanged.emit();return
                 w['ready']=True;queue=w['queue'];w['queue']=[]
                 for item in queue:self.send(identifier,item)
-                self.pageChanged.emit()
+                self.pageChanged.emit();self.changed.emit()
             elif request in w['pending']:w['pending'].remove(request);self.response.emit(request,value)
     def host_event(self,identifier,event):
         kind=event.get('event');args=event.get('arguments',{});perms=self.entries[identifier].get('permissions',[])
+        if not isinstance(args,dict):return
+        if kind=='agent.notify':
+            if 'session.write' in perms:self.bridge.notify(identifier,args)
+            return
+        if self.application(identifier) and kind!='notification':
+            target=args.get('session',{})
+            if not isinstance(target,dict) or target.get('token')!=self._session.get('token'):return
+        if kind=='widget.event':
+            if identifier==self._page and isinstance(args.get('topic'),str) and 0<len(args['topic'])<=80 and isinstance(args.get('data'),dict) and len(json.dumps(args['data']))<=65536:
+                self.event.emit(args['topic'],args['data'])
+            return
+        if kind in ('files.copy','file.openWith'):
+            if 'workspace.read' not in perms or not self._session.get('workspace'):return
+            from . import plugin_file_actions
+            root=Path(self._session['workspace']).resolve()
+            if kind=='files.copy':
+                values=args.get('paths',[])
+                if not isinstance(values,list) or not 1<=len(values)<=100:return
+                paths=[Path(value).resolve() for value in values if isinstance(value,str)]
+                if len(paths)!=len(values) or any(not path.is_relative_to(root) or not path.exists() for path in paths):return
+                if args.get('cut') and 'workspace.write' not in perms:return
+                plugin_file_actions.copy_files(paths,bool(args.get('cut')))
+            else:
+                path=Path(args.get('path','')).resolve()
+                if path.is_relative_to(root) and path.is_file():plugin_file_actions.open_with(path)
+            return
+        if kind in ('file.reveal','explorer.reveal'):
+            if 'workspace.read' not in perms or not self._session.get('workspace'):return
+            root=Path(self._session['workspace']).resolve();path=Path(args.get('path','')).resolve()
+            if not path.is_relative_to(root):return
+            if kind=='file.reveal':
+                if path.exists():self.b.openChatboxPath(str(path),True)
+                elif path.parent.is_relative_to(root) and path.parent.is_dir():self.b.openChatboxPath(str(path.parent),False)
+            elif not self.openPage('file-tree'):self.b.toast.emit('请先启用文件树插件')
+            else:self._selection=path.relative_to(root).as_posix();self.pageChanged.emit()
+            return
         if kind=='notification':self.b.toast.emit(str(args.get('message',''))[:1000]);return
         if kind in ('session.send','session.attach') and 'session.write' not in perms:return
         if kind=='session.send':
@@ -224,7 +309,8 @@ class DesktopPlugins(QObject):
             if kind=='session.attach':self.b.attachChatboxFile(str(path))
             else:self.b.documentRequested.emit(str(path),path.name,'file')
     def manage(self,request,done):
-        if self._busy or self.closed:return
+        if self._busy or self.closed:return ''
+        token=uuid.uuid4().hex
         self._busy=True;self._status='正在处理插件…';self.changed.emit();p=self.process();output=bytearray()
         p.readyReadStandardOutput.connect(lambda:output.extend(bytes(p.readAllStandardOutput())) if len(output)<=LIMIT else p.kill())
         p.readyReadStandardError.connect(lambda:p.readAllStandardError())
@@ -237,37 +323,42 @@ class DesktopPlugins(QObject):
             try:result=json.loads(output)
             except ValueError:result={'ok':False,'error':'插件管理进程失败，请检查 Python 运行环境'}
             self._busy=False;self._status='操作已完成' if result.get('ok') else result.get('error','插件操作失败')
-            if not self.closed:done(result);self.changed.emit();self.b.toast.emit(self._status)
+            if not self.closed:
+                applied=done(result)
+                if applied is False:result={'ok':False,'error':self._status or '插件设置未能保存'}
+                self.changed.emit();self.b.toast.emit(self._status);self.managed.emit(token,result)
             p.deleteLater()
         p.finished.connect(finish);p.errorOccurred.connect(finish)
-        program,args=self.command();p.start(program,args);QTimer.singleShot(30000,p,p.kill)
-    @Slot(str)
+        program,args=self.command();p.start(program,args);QTimer.singleShot(30000,p,p.kill);return token
+    @Slot(str,result=str)
     def importZip(self,url):
         path=QUrl(url).toLocalFile()
-        if not path:self._status='请选择本机插件 ZIP 文件';self.changed.emit();return
+        if not path:self._status='请选择本机插件 ZIP 文件';self.changed.emit();return ''
         def done(result):
             if not result.get('ok'):return
             value=result['result'];m={**value['manifest'],'builtin':False};identifier=m['id'];old=copy.deepcopy(self.entries);options=copy.deepcopy(self.settings)
             old_path=self.path(identifier) if identifier in self.entries else None
             if self._page==identifier:self.closePage()
             self.stop(identifier);self.entries[identifier]=m;self.settings.setdefault('config',{}).setdefault(identifier,value['config'])
-            if not self.save():self.entries=old;self.settings=options;return
+            if self.application(identifier):self.settings.setdefault('enabled',{})[identifier]=False
+            if not self.save():self.entries=old;self.settings=options;return False
             if old_path and old_path!=self.path(identifier):
                 import shutil;shutil.rmtree(old_path,ignore_errors=True)
-            self._status='插件已导入，可在当前会话启用'
-        self.manage({'id':'install','operation':'install','arguments':{'archive':path,'destination':str(self.root/'packages'),'reserved':[k for k,e in self.entries.items() if e.get('builtin')],'configs':self.settings.get('config',{})}},done)
-    @Slot(str,str)
+            self._status='后台服务已导入，请启用以随应用运行' if self.application(identifier) else '插件已导入，可在当前会话启用'
+        return self.manage({'id':'install','operation':'install','arguments':{'archive':path,'destination':str(self.root/'packages'),'reserved':[k for k,e in self.entries.items() if e.get('builtin')],'configs':self.settings.get('config',{})}},done)
+    @Slot(str,str,result=str)
     def saveConfig(self,identifier,raw):
-        if identifier not in self.entries or len(raw)>65536:return
+        if identifier not in self.entries or len(raw)>65536:return ''
         try:value=json.loads(raw);assert isinstance(value,dict)
-        except (ValueError,AssertionError):self._status='请输入有效的 JSON 配置对象';self.changed.emit();return
+        except (ValueError,AssertionError):self._status='请输入有效的 JSON 配置对象';self.changed.emit();return ''
         def done(result):
             if not result.get('ok'):return
             old=copy.deepcopy(self.settings);self.settings.setdefault('config',{})[identifier]=value
-            if not self.save():self.settings=old;return
+            if not self.save():self.settings=old;return False
             if self._page==identifier:self.closePage()
             self.stop(identifier)
-        self.manage({'id':'config','operation':'config','arguments':{'path':str(self.path(identifier)),'config':value}},done)
+            if self.application(identifier) and self.enabled(identifier):self._failed_services.discard(identifier);self.start(identifier)
+        return self.manage({'id':'config','operation':'config','arguments':{'path':str(self.path(identifier)),'config':value}},done)
     @Slot(str,result=bool)
     def uninstall(self,identifier):
         if identifier not in self.entries or self.entries[identifier].get('builtin') or self._busy:return False

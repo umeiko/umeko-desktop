@@ -1,10 +1,11 @@
 """Validate/import inert plugin ZIPs before any Python or QML is activated."""
 import json, os, re, shutil, stat, tempfile, zipfile
+import math
 from pathlib import Path, PurePosixPath
 from . import PluginError
 MAX_BYTES=128*1024*1024
 MAX_FILES=2048
-PERMISSIONS={'workspace.read','session.read','session.write','process.execute','git.read','git.write'}
+PERMISSIONS={'workspace.read','workspace.write','session.read','session.write','process.execute','git.read','git.write'}
 
 def relative(value):
     if not isinstance(value,str) or not value or '\0' in value or '\\' in value or ':' in value or value.startswith('/'):
@@ -20,6 +21,9 @@ def validate_config(value, schema):
         types={'object':dict,'array':list,'string':str,'boolean':bool,'integer':int,'number':(int,float)}
         if s.get('type') not in types or not isinstance(v,types[s['type']]) or (s['type'] in ('integer','number') and isinstance(v,bool)): raise PluginError('插件配置类型无效')
         if 'enum' in s and v not in s['enum']: raise PluginError('插件配置选项无效')
+        if isinstance(v,str) and len(v)>s.get('maxLength',65536):raise PluginError('字符串超过允许长度')
+        if type(v) in (int,float) and (not math.isfinite(v) or v<s.get('minimum',-math.inf) or v>s.get('maximum',math.inf)):raise PluginError('数值超过允许范围')
+        if isinstance(v,list) and len(v)>s.get('maxItems',10000):raise PluginError('列表超过允许长度')
         if isinstance(v,dict):
             if any(k not in v for k in s.get('required',[])):raise PluginError('插件缺少必需配置项')
             props=s.get('properties',{})
@@ -29,6 +33,22 @@ def validate_config(value, schema):
         if isinstance(v,list) and 'items' in s:
             for x in v:visit(x,s['items'])
     visit(value,schema)
+
+def validate_schema(schema, depth=0):
+    if depth>12 or not isinstance(schema,dict) or schema.get('type') not in ('object','array','string','boolean','integer','number'):
+        raise PluginError('公开方法 parameters 必须使用支持的 JSON schema')
+    if set(schema)-{'type','properties','required','additionalProperties','items','enum','description','maxLength','maxItems','minimum','maximum'}:
+        raise PluginError('公开方法使用了不支持的 schema 约束')
+    if 'properties' in schema:
+        if not isinstance(schema['properties'],dict) or len(schema['properties'])>64:raise PluginError('公开方法属性清单无效')
+        for child in schema['properties'].values():validate_schema(child,depth+1)
+    if 'required' in schema and (not isinstance(schema['required'],list) or any(not isinstance(k,str) or k not in schema.get('properties',{}) for k in schema['required'])):raise PluginError('公开方法 required 无效')
+    if 'additionalProperties' in schema and type(schema['additionalProperties']) is not bool:raise PluginError('additionalProperties 必须是布尔值')
+    if 'items' in schema:validate_schema(schema['items'],depth+1)
+    for key in ('maxLength','maxItems'):
+        if key in schema and (type(schema[key]) is not int or not 0<=schema[key]<=65536):raise PluginError(key+' 无效')
+    for key in ('minimum','maximum'):
+        if key in schema and (type(schema[key]) not in (int,float) or not math.isfinite(schema[key])):raise PluginError(key+' 无效')
 
 def validate(folder):
     root=Path(folder).resolve()
@@ -45,6 +65,12 @@ def validate(folder):
     for key in ('name','description'):
         if not isinstance(m.get(key,''),str) or len(m.get(key,''))>8000:raise PluginError('插件文案无效')
     if not m.get('name','').strip():raise PluginError('插件名称不能为空')
+    lifecycle=m.get('lifecycle','session')
+    if lifecycle not in ('session','application'):raise PluginError('lifecycle 必须为 session 或 application')
+    if lifecycle=='application' and m.get('page'):raise PluginError('应用级 Widget 是后台服务，不能声明 page')
+    m['lifecycle']=lifecycle
+    if not isinstance(m.get('summary'),str) or not m['summary'].strip() or len(m['summary'])>20 or '\n' in m['summary'] or '\r' in m['summary']:
+        raise PluginError('Widget 插件必须提供 20 字以内的单行 summary 简介')
     perms=m.get('permissions',[])
     if not isinstance(perms,list) or any(x not in PERMISSIONS for x in perms):raise PluginError('插件权限清单无效')
     entry,sep,factory=m.get('entrypoint','').partition(':')
@@ -54,6 +80,17 @@ def validate(folder):
     if m.get('page'):file(m['page'])
     m['readme']=m.get('readme','README.md')
     with file(m['readme']).open(encoding='utf-8') as document:document.read(65536)
+    agent=m.get('agent')
+    if not isinstance(agent,dict) or not isinstance(agent.get('document'),str):raise PluginError('Widget 插件必须提供 agent.document 完整使用文档')
+    document=file(agent['document'])
+    if not document.name.lower().endswith('.md') or document.stat().st_size>65536 or not document.read_text(encoding='utf-8-sig').strip():raise PluginError('Agent 使用文档必须是非空 Markdown，最多 64 KiB')
+    methods=agent.get('methods',{})
+    if not isinstance(methods,dict) or len(methods)>64:raise PluginError('Widget 公开方法清单无效')
+    for name,spec in methods.items():
+        if not isinstance(name,str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_.-]{0,63}',name) or not isinstance(spec,dict):raise PluginError('Widget 公开方法名称无效')
+        if not isinstance(spec.get('description'),str) or not spec['description'].strip() or len(spec['description'])>500:raise PluginError('公开方法必须提供 description')
+        validate_schema(spec.get('parameters'))
+        if spec['parameters'].get('type')!='object':raise PluginError('公开方法参数必须为 JSON 对象')
     m['config']=m.get('config','config.json');m['configSchema']=m.get('configSchema','config.schema.json')
     if file(m['config']).stat().st_size>65536 or file(m['configSchema']).stat().st_size>65536:raise PluginError('插件配置或 schema 超过 64 KiB')
     defaults=json.loads(file(m['config']).read_text(encoding='utf-8-sig'))

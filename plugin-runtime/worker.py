@@ -40,7 +40,7 @@ def main():
                 if 'session.read' not in m.get('permissions',[]):session.pop('messages',None)
                 state=Path(args['stateDir']);state.mkdir(parents=True,exist_ok=True)
                 context=Context(folder,state,config,session,m.get('permissions',[]),m.get('executables',{}),
-                    lambda event:emit({'type':'event',**event}))
+                    lambda event:emit({'type':'event',**event}),lifecycle=m.get('lifecycle','session'))
                 vendor=folder/'vendor'
                 if vendor.is_dir():sys.path.insert(0,str(vendor))
                 entry,_,factory=m['entrypoint'].partition(':')
@@ -52,15 +52,27 @@ def main():
                 plugin=getattr(module,factory)(context)
                 if not isinstance(plugin,Plugin):raise PluginError('插件必须继承 umeko_plugin_sdk.Plugin')
                 result={'ready':True}
-            elif op=='call':
+            elif op in ('call','agentCall'):
                 if plugin is None:raise PluginError('插件尚未启动')
-                result=plugin.handle(args['method'],args.get('arguments',{}))
+                if op=='agentCall':
+                    method=m.get('agent',{}).get('methods',{}).get(args['method'])
+                    if method is None:raise PluginError('该方法未在 Widget 的 Agent 接口中公开')
+                    validate_config(args.get('arguments',{}),method['parameters'])
+                context.request_id=str(request.get('id',''));context.call_source='agent' if op=='agentCall' else 'ui'
+                context.request_session=copy.deepcopy(args.get('session',context.session))
+                if 'session.read' not in context.permissions:context.request_session.pop('messages',None)
+                try:result=plugin.handle(args['method'],args.get('arguments',{}))
+                finally:context.request_id='';context.call_source='';context.request_session={}
             elif op=='session':
                 if context:
                     session=copy.deepcopy(args['session'])
                     if 'session.read' not in context.permissions:session.pop('messages',None)
                     context.session=session
+                    plugin.on_event('session.changed',copy.deepcopy(session))
                 result={'updated':True}
+            elif op=='event':
+                if plugin is None:raise PluginError('插件尚未启动')
+                plugin.on_event(args['name'],args.get('data',{}));result={'received':True}
             else:raise PluginError('未知插件请求')
             emit({'type':'response','id':request.get('id'),'ok':True,'result':result})
         except Exception as error:

@@ -62,10 +62,12 @@ Item {
                                 Switch {palette.windowText:Theme.ink;palette.buttonText:Theme.ink;palette.dark:Theme.accent;objectName:"desktopPluginGlobalSwitch";checked:!!root.selected && !!root.selected.enabled;onToggled:root.manager.setEnabled(root.selectedId,checked)}
                             }
                             Text {text:root.selected?"v"+root.selected.version+"  ·  "+(root.selected.author || root.selected.id):"";textFormat:Text.PlainText;color:Theme.muted;font.pixelSize:Theme.font(11)}
+                            Text {visible:!!root.selected && root.selected.lifecycle==="application";text:I18n.t("应用级后台服务")+" · "+I18n.t(root.selected && root.selected.running?"运行中":root.selected && root.selected.starting?"正在启动":"已停止");color:Theme.muted;font.pixelSize:Theme.font(11)}
                             Text {text:root.selected?root.selected.description || "":"";textFormat:Text.PlainText;color:Theme.ink;Layout.fillWidth:true;wrapMode:Text.Wrap;font.pixelSize:Theme.font(12)}
                             RowLayout {
                                 Layout.fillWidth:true;spacing:8
-                                CheckBox {palette.windowText:Theme.ink;palette.buttonText:Theme.ink;font.pixelSize:Theme.font(12);objectName:"desktopPluginSessionSwitch";text:I18n.t("在当前会话启用");checked:!!root.selected && !!root.selected.sessionEnabled;enabled:!!root.selected && !!root.selected.enabled;onToggled:root.manager.setSessionEnabled(root.selectedId,checked)}
+                                CheckBox {visible:!!root.selected && root.selected.lifecycle!=="application";palette.windowText:Theme.ink;palette.buttonText:Theme.ink;font.pixelSize:Theme.font(12);objectName:"desktopPluginSessionSwitch";text:I18n.t("在当前会话启用");checked:!!root.selected && !!root.selected.sessionEnabled;enabled:!!root.selected && !!root.selected.enabled;onToggled:root.manager.setSessionEnabled(root.selectedId,checked)}
+                                Text {visible:!!root.selected && root.selected.lifecycle==="application";text:I18n.t("启用后随应用启动，跨聊天常驻");color:Theme.muted;font.pixelSize:Theme.font(12)}
                                 Item {Layout.fillWidth:true}
                                 ActionButton {objectName:"openDesktopPluginPageButton";text:I18n.t("打开页面");glyph:"panel-right";visible:!!root.selected && !!root.selected.hasPage;enabled:!!root.selected && root.selected.enabled && root.selected.sessionEnabled;onClicked:root.manager.openPage(root.selectedId)}
                             }

@@ -45,4 +45,4 @@ Python 模型请求使用系统证书信任链，并可按供应商追加可信�
 
 `models.mappings` 的 `models` 是完整映射数组，行格式包含 `provider`、`upstream`、`alias`、`contextWindow`、`contextWindowAuto`、`vision`、`visionAuto`。这是替换操作，先读取所有供应商并保留其他映射；插件模型 ID 由刷新获取，不能在映射中凭空新增。
 
-`providers.remove` 删除一个供应商账号，参数 `id`。它不等同于卸载整个插件，参阅 [plugins.md](plugins.md)。
+`providers.remove` 删除一个供应商账号，参数 `id`。它不等同于卸载整个插件，参阅 [Provider 插件](provider-plugins.md)。

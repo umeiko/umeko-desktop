@@ -1,1 +1,11 @@
-{"kind":"umeko-plugin","apiVersion":1,"id":"file-tree","name":"文件树目录查看器","version":"1.0.0","description":"浏览当前会话工作目录。熟悉的文件树、文件类型图标、逐层展开、隐藏文件开关、搜索和文件预览，可将文件附加到当前聊天。","author":"Umeko","entrypoint":"scripts/plugin.py:create_plugin","page":"qml/Main.qml","permissions":["workspace.read","session.write"],"readme":"README.md","config":"config.json","configSchema":"config.schema.json"}
+{
+  "kind":"umeko-plugin","apiVersion":1,"id":"file-tree","name":"文件管理器","version":"1.0.0",
+  "summary":"浏览文件并附加到聊天",
+  "description":"管理当前工作目录。单击选中，双击附加文件到聊天；右键提供打开方式、系统定位、剪切、复制、路径复制、重命名与永久删除。",
+  "author":"Umeko","entrypoint":"scripts/plugin.py:create_plugin","page":"qml/Main.qml",
+  "permissions":["workspace.read","workspace.write","session.write"],"readme":"README.md","config":"config.json","configSchema":"config.schema.json",
+  "agent":{"document":"AGENT.md","methods":{
+    "list":{"description":"查询工作区内某一层目录，返回文件元数据","parameters":{"type":"object","properties":{"path":{"type":"string","maxLength":1024},"showHidden":{"type":"boolean"}},"additionalProperties":false}},
+    "focus":{"description":"在已打开的文件管理器中展开并选中文件","parameters":{"type":"object","properties":{"path":{"type":"string","maxLength":1024}},"required":["path"],"additionalProperties":false}}
+  }}
+}

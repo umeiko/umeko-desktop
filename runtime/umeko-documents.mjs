@@ -19,7 +19,7 @@ export function modelTable(models) {
     '| --- | --- | --- | --- |',
     ...rows.map(row => '| `' + cell(row.model) + '` | ' + cell(row.displayProvider) + ' | ' + row.contextWindow + ' | ' + (row.vision ? '支持' : '不支持') + ' |'),
     '', '调用示例：`' + JSON.stringify({prompt:'检查实现并报告结果',model:rows[0].model}) + '`'
-  ].join('\n') : '当前实例尚无可用模型。先在 Umeko 添加供应商并配置模型，再调用 config_umeko 的 models.list。';
+  ].join('\n') : '当前实例尚无可用模型。先在 Umeko 添加供应商并配置模型，再调用 umeko_desktop 的 models.list。';
 }
 export function prepareDocumentation({ directory, models = [] }) {
   const target = resolve(directory);

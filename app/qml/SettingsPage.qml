@@ -10,6 +10,7 @@ Item {
     property bool editingProvider: false
     property bool editingCommon: false
     property string editId: ""
+    function openPluginManagement() { agentPage.openPlugins() }
     CommonProviderDialog { id: commonProviders }
     property string mappingSignature: ""
     property string mappingProviderId: ""
@@ -106,7 +107,7 @@ Item {
                 id: tabButtons; z: 1; spacing: 8
                 Repeater {
                     id: tabItems
-                    model: [{id:0, title:I18n.t("账号与供应商")}, {id:1, title:I18n.t("API 代理服务")}, {id:3, title:"Agent"}, {id:5, title:I18n.t("外观")}, {id:7, title:I18n.t("Umeko 插件管理")}, {id:6, title:I18n.t("关于")}]
+                    model: [{id:0, title:I18n.t("账号与供应商")}, {id:1, title:I18n.t("API 代理服务")}, {id:3, title:"Agent"}, {id:5, title:I18n.t("外观")}, {id:6, title:I18n.t("关于")}]
                     onItemAdded: Qt.callLater(settingsNav.syncTarget)
                     ActionButton {
                         required property var modelData
@@ -120,9 +121,8 @@ Item {
             }
         }
         Rectangle { Layout.fillWidth: true; Layout.topMargin: 15; height: 1; color: Theme.line }
-        DesktopPluginsPage { Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 23; visible: root.tab === 7 }
         ScrollView {
-            id: settingsScroll; objectName: "settingsScroll"; visible: root.tab !== 7; Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 23
+            id: settingsScroll; objectName: "settingsScroll"; Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 23
             Connections { target: root; function onTabChanged() { settingsScroll.contentItem.contentY = 0 } }
             contentWidth: availableWidth; clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -272,7 +272,7 @@ Item {
                     }
                 }
 
-                AgentPage { visible: root.tab === 3; width: parent.width; availableHeight: settingsScroll.availableHeight; onNavigated: Qt.callLater(() => settingsScroll.contentItem.contentY = 0) }
+                AgentPage { id: agentPage; visible: root.tab === 3; width: parent.width; availableHeight: settingsScroll.availableHeight; onNavigated: Qt.callLater(() => settingsScroll.contentItem.contentY = 0) }
 
                 AppearanceSettings { visible: root.tab === 5; width: parent.width }
                 AboutPage { visible: root.tab === 6; width: parent.width }

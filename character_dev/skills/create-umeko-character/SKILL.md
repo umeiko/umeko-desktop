@@ -15,7 +15,7 @@ description: 为 Umeko Desktop 制作可导入的 ZIP 人设包，包括角色�
 
 将 `manifest.json`、可选的 `dialogue.json` 与引用图片放在同一目录。使用 `scripts/package.py <目录> <输出.zip>` 验证基本结构并打包；最终导入仍由应用验证图片解码和路径。ZIP 根目录直接放清单与资源，不要再套多层文件夹。
 
-使用 `submit_to_chatbox` 等当前环境可用的产物展示入口给用户审阅图片和 ZIP。用户要求应用角色时，通过 `config_umeko`：
+使用 `submit_to_chatbox` 等当前环境可用的产物展示入口给用户审阅图片和 ZIP。用户要求应用角色时，通过 `umeko_desktop`：
 
 ```json
 {"operation":"characters.import","arguments":{"path":"/absolute/path/my-character.zip"}}

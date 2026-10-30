@@ -1,1 +1,15 @@
-{"kind":"umeko-plugin","apiVersion":1,"id":"git-viewer","name":"Git 查看器","version":"1.0.0","description":"查看当前会话仓库的分支、暂存区、工作区、未跟踪文件、差异和提交历史。支持显式暂存、取消暂存和提交，采用熟悉的 Source Control 布局。","author":"Umeko","entrypoint":"scripts/plugin.py:create_plugin","page":"qml/Main.qml","permissions":["workspace.read","session.write","process.execute","git.read","git.write"],"executables":{"git":{"system":"git"}},"readme":"README.md","config":"config.json","configSchema":"config.schema.json"}
+{
+  "kind":"umeko-plugin","apiVersion":1,"id":"git-viewer","name":"版本管理","version":"1.0.0",
+  "summary":"查看 Git 状态、历史与差异",
+  "description":"采用 VS Code 源代码管理布局，浏览更改、暂存区、文件差异与真实提交图。支持初始化仓库、暂存、取消暂存和提交。",
+  "author":"Umeko","entrypoint":"scripts/plugin.py:create_plugin","page":"qml/Main.qml",
+  "permissions":["workspace.read","session.write","process.execute","git.read","git.write"],"executables":{"git":{"system":"git"}},
+  "readme":"README.md","config":"config.json","configSchema":"config.schema.json",
+  "agent":{"document":"AGENT.md","methods":{
+    "status":{"description":"读取当前仓库、分支和更改文件列表","parameters":{"type":"object","properties":{},"additionalProperties":false}},
+    "history":{"description":"读取有界提交历史与图形拓扑","parameters":{"type":"object","properties":{"all":{"type":"boolean"}},"additionalProperties":false}},
+    "branches":{"description":"查询本地分支、远程引用与标签","parameters":{"type":"object","properties":{},"additionalProperties":false}},
+    "diff":{"description":"读取指定工作区文件的有界文本差异","parameters":{"type":"object","properties":{"path":{"type":"string","maxLength":1024},"group":{"type":"string","enum":["staged","changes","untracked"]}},"required":["path"],"additionalProperties":false}},
+    "showDiff":{"description":"在已打开的版本管理页面中展示文件差异","parameters":{"type":"object","properties":{"path":{"type":"string","maxLength":1024},"group":{"type":"string","enum":["staged","changes","untracked"]}},"required":["path"],"additionalProperties":false}}
+  }}
+}

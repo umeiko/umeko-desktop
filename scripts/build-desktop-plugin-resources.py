@@ -1,4 +1,4 @@
-"""Export a standalone SDK and the two official, editable plugin examples."""
+"""Export the SDK with editable session UI and application service examples."""
 from pathlib import Path
 import shutil,tempfile,zipfile
 ROOT=Path(__file__).resolve().parents[1]
