@@ -77,6 +77,33 @@ class PetTests(unittest.TestCase):
         self.manager.setEnabled('desktop-pet',False);self.assertFalse(self.pet.running);self.assertFalse(self.pet.visible);self.assertFalse(self.pet.timer.isActive())
         self.manager.setEnabled('desktop-pet',True);self.assertTrue(self.pet.visible)
         self.manager.close();self.assertFalse(self.pet.running)
+    def test_builtin_komari_has_six_valid_animations_and_persists_selection(self):
+        packs = {row['id']:row for row in self.pet.appearances}
+        self.assertTrue(packs['yanami']['builtin'])
+        self.assertTrue(packs['komari']['builtin'])
+        pack = read_pack(self.host.root/'umeko-plugins/desktop-pet/assets/komari', check=True)
+        self.assertEqual(set(pack['states']), {'idle','thinking','working','waiting','done','error'})
+        self.assertTrue(all(image['animated'] and image['frames'] > 1 for image in pack['images'].values()))
+        control = self.control()
+        self.assertTrue(self.rpc(control,'selectAppearance',{'id':'komari'})['ok'])
+        self.assertEqual(self.pet.state['appearance'],'komari')
+        self.assertEqual(self.pet.state['name'],'小鞠知花')
+        self.assertFalse(self.rpc(control,'removeAppearance',{'id':'komari'})['ok'])
+        self.manager.close()
+        second = DesktopPlugins(self.host);self.addCleanup(second.close)
+        self.assertEqual(second.pet.config['appearance'],'komari')
+        self.assertFalse(second.pet.visible)
+    def test_imported_pack_cannot_shadow_builtin_komari(self):
+        folder = self.path/'shadow';folder.mkdir()
+        (folder/'one.png').write_bytes(self.image().read_bytes())
+        value = {'format':'umeko-pet','version':1,'id':'komari','name':'Shadow','states':{'idle':'one.png'}}
+        (folder/'pet.json').write_text(json.dumps(value))
+        with self.assertRaises(ValueError):import_pack(folder/'pet.json',self.pet.pack_directory)
+        self.assertFalse((self.pet.pack_directory/'komari').exists())
+        forged=self.pet.pack_directory/'komari';forged.mkdir(parents=True)
+        (forged/'pet.json').write_text(json.dumps(value));(forged/'one.png').write_bytes(self.image().read_bytes())
+        self.pet.load_packs()
+        self.assertEqual(next(row['name'] for row in self.pet.appearances if row['id']=='komari'),'小鞠知花')
     def test_activity_observer_only_reads_compact_metadata_and_background_chats(self):
         class NoTranscript:
             def __len__(self):raise AssertionError('Pet read transcript length')

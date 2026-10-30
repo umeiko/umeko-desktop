@@ -13,6 +13,7 @@ from pathlib import Path
 from PySide6.QtGui import QImageReader
 
 STATES = ('idle', 'thinking', 'working', 'waiting', 'done', 'error')
+BUILTIN_APPEARANCES = ('yanami', 'komari')
 MAX_BYTES = 128 * 1024 * 1024
 
 
@@ -133,7 +134,7 @@ def import_pack(source, destination):
             value = {'format': 'umeko-pet', 'version': 1, 'id': 'custom-' + uuid.uuid4().hex[:12], 'name': source.stem[:48], 'states': {'idle': name}}
             (stage / 'pet.json').write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
         value = read_pack(stage, check=True)
-        if value['id'] == 'yanami' or (destination / value['id']).exists():
+        if value['id'] in BUILTIN_APPEARANCES or (destination / value['id']).exists():
             raise ValueError('该形象 id 已存在，请修改 pet.json 中的 id 后再导入')
         # Retain only declared data files, never Python/QML/HTML from the ZIP.
         keep = {'pet.json', *value['states'].values()}

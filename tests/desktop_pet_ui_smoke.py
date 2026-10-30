@@ -43,7 +43,8 @@ try:
     page=find('desktopPluginsPage');page.setProperty('selectedId','desktop-pet')
     agent=page.parentItem().parentItem();agent.setProperty('pluginsOpen',True)
     wait(lambda:find('desktopPetSettings') is not None,'Pet settings did not load')
-    wait(lambda:find('desktopPetAppearancePicker').property('count')==1,'Appearance list did not load')
+    wait(lambda:find('desktopPetAppearancePicker').property('count')>=2,'Appearance list did not load')
+    assert {'yanami','komari'} <= {row['id'] for row in pet.appearances}
     main.grabWindow().save(str(out/'settings.png'))
     settings_loader=find('desktopPluginSettingsLoader')
     for identifier in ('git-viewer','file-tree','desktop-pet','git-viewer','desktop-pet'):
@@ -65,6 +66,11 @@ try:
     assert animation.property('frameCount')>1 and not animation.property('cache')
     first=animation.property('currentFrame');QTest.qWait(180)
     assert animation.property('currentFrame')!=first,'Animation is static'
+    pet.ui('selectAppearance',{'id':'komari'})
+    wait(lambda:pet.state['appearance']=='komari' and 'assets/komari/' in str(animation.property('source')),'Komari did not replace the active animation')
+    wait(lambda:animation.property('ready') and animation.property('frameCount')>1,'Komari animation did not decode')
+    first=animation.property('currentFrame')
+    wait(lambda:animation.property('currentFrame')!=first,'Komari animation is static')
     window.grabWindow().save(str(out/'pet.png'))
     pet.ui('configure',{'paused':True});QTest.qWait(100)
     frame=animation.property('currentFrame');QTest.qWait(200)

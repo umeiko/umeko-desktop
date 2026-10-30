@@ -1,0 +1,360 @@
+{
+  "format": "umeko-animation-provenance",
+  "version": 1,
+  "created": "2026-10-30",
+  "tool": "built-in image_gen",
+  "mode": "Six independently generated state sheets; deterministic sprite-sheet slicing, registration and animated WebP encoding",
+  "referenceIdentity": [
+    "app/icons/characters/komari/welcome.png",
+    "app/icons/subagents/chika-komari.png"
+  ],
+  "referenceStyle": "umeko-plugins/desktop-pet/assets/yanami/idle.webp",
+  "grid": {
+    "columns": 3,
+    "rows": 2,
+    "order": "row-major"
+  },
+  "sourceArtwork": "art/desktop-pets/komari-v1/source/",
+  "assets": [
+    {
+      "id": "idle",
+      "file": "source/idle-sheet.png",
+      "generatedFile": "exec-40d8390c-d6ab-4e7a-b2d3-353662e10194.png",
+      "prompt": "Use case: stylized-concept.\nAsset type: production animation sprite sheet for Umeko desktop pet, state IDLE.\nPrimary request: Create six registered full-body chibi animation keyframes of Chika Komari (小鞠知花) from Makeine, in a perfectly regular 3-column by 2-row sprite sheet. Canvas square, ideally 1536x1536. Each of the SIX invisible equal cells is portrait 2:3. No gutters, separators, labels or text. True transparent background in every cell, with no ground, shadows, circles or checkerboard.\nInput image 1 is STYLE AND PROPORTIONS ONLY: the existing blue-haired Yanami pet. Do not draw Yanami. Images 2 and 3 are the CHARACTER IDENTITY references for Komari.\nSubject: One and the same Komari repeated in the six cells, about 2.75 heads tall, burgundy bob-length hair, long bangs completely covering the eye on the VIEWER'S RIGHT, a single visible warm golden/amber eye on VIEWER'S LEFT, small low side hair tie with orange band on viewer's right, one curved ahoge. Beige cardigan over white collared school shirt and small burgundy ribbon, dark gray pleated skirt, dark knee socks, brown loafers. Shy gentle closed-mouth smile, very slight blush. Cute stylized teenage anime character; not toddler.\nAction and animation: quiet standing, both hands gently holding a closed small burgundy book against her chest. Feet stay planted. Almost identical pose, silhouette, scale, color, framing and foot baseline in ALL cells. Tiny breathing and shy head movement, not six different poses. Row-major temporal sequence: frame 1 eyes open neutral; frame 2 gently breathing in eyes open; frame 3 visible eye half closed; frame 4 visible eye fully CLOSED in a natural brief blink; frame 5 eye half opening; frame 6 eye open returning exactly toward frame 1 for a smooth loop. Hidden eye stays completely hidden in all frames.\nComposition: center each character at the exact same relative location within its cell. Entire hair, ahoge, hands, book, shoes visible. Figure fills about 84% of cell height, centered horizontally, shoe soles at 93% of cell height. Keep transparent margins. Consistent crisp anime cel linework and subtle pixel-edged shading matching the existing desktop pet, readable at 192px display width.\nConstraints: SIX frames in exact uniform 3x2 grid, no overlap across cells. No extra people, no high ponytail, no second visible eye, no writing on book, no new props, no background, no watermark.",
+      "references": [
+        "app/icons/characters/komari/welcome.png",
+        "app/icons/subagents/chika-komari.png",
+        "umeko-plugins/desktop-pet/assets/yanami/idle.webp"
+      ]
+    },
+    {
+      "id": "thinking",
+      "file": "source/thinking-sheet.png",
+      "generatedFile": "exec-a730d05f-7b85-4de7-8a70-bae3c46bf416.png",
+      "prompt": "Use case: stylized-concept. Production animation sprite sheet for Umeko's Chika Komari (小鞠知花, Makeine) desktop pet.\nThe input image is the approved IDENTITY, LINEWORK, COLOR, PROPORTIONS and GRID reference. Make a NEW matching state sheet, not a redesign. Keep the exact character: burgundy shoulder-length bob, bangs covering the eye on the VIEWER'S RIGHT, only one warm amber eye visible on VIEWER'S LEFT, tiny low side hair tie with orange band, ahoge, beige cardigan, white collared shirt, small burgundy ribbon, charcoal pleated skirt, dark knee socks and brown loafers. About 2.75 heads tall.\nTransparent square sprite sheet in a STRICT regular 3-column by 2-row grid (six equal portrait 2:3 cells), ideally 1536x1536. No gutters or lines. The same one character appears once per cell, entire full body including ahoge and shoes inside each cell. Character scale and feet baseline match the reference: feet at 93% cell height, body centered, generous transparent margins. Every frame registered to the same location; no large head, body or prop drifting.\nSix temporal animation frames in row-major order of ONE pose: very small coherent hand and breathing motions; open visible eye in frame 1 and 2, half closed in frame 3, closed natural blink in frame 4, half opening in frame 5, eye open and returning to frame 1 in frame 6. Fringe-covered eye never visible. Preserve identity and expression across all frames. Crisp cel-anime chibi matching the provided pet art. True alpha transparency; no background, shadows, text, watermark, extra people, floating icons, high ponytail or repeated body parts.\nState/action: THINKING. Komari stands thoughtfully, holding a small OPEN burgundy book in her left arm. Her free hand touches her cheek with one fingertip. Shy serious focused face, closed small mouth, visible amber eye looking slightly upward as she thinks. The book and hand do not obscure her face. Tiny thoughtful head tilt, then return. No question marks or symbols.",
+      "references": [
+        "art/desktop-pets/komari-v1/source/idle-sheet.png"
+      ]
+    },
+    {
+      "id": "working",
+      "file": "source/working-sheet.png",
+      "generatedFile": "exec-60b76630-e5ea-49e3-ba01-c26971f7fc3e.png",
+      "prompt": "Use case: stylized-concept. Production animation sprite sheet for Umeko's Chika Komari (小鞠知花, Makeine) desktop pet.\nThe input image is the approved IDENTITY, LINEWORK, COLOR, PROPORTIONS and GRID reference. Make a NEW matching state sheet, not a redesign. Keep the exact character: burgundy shoulder-length bob, bangs covering the eye on the VIEWER'S RIGHT, only one warm amber eye visible on VIEWER'S LEFT, tiny low side hair tie with orange band, ahoge, beige cardigan, white collared shirt, small burgundy ribbon, charcoal pleated skirt, dark knee socks and brown loafers. About 2.75 heads tall.\nTransparent square sprite sheet in a STRICT regular 3-column by 2-row grid (six equal portrait 2:3 cells), ideally 1536x1536. No gutters or lines. The same one character appears once per cell, entire full body including ahoge and shoes inside each cell. Character scale and feet baseline match the reference: feet at 93% cell height, body centered, generous transparent margins. Every frame registered to the same location; no large head, body or prop drifting.\nSix temporal animation frames in row-major order of ONE pose: very small coherent hand and breathing motions; open visible eye in frame 1 and 2, half closed in frame 3, closed natural blink in frame 4, half opening in frame 5, eye open and returning to frame 1 in frame 6. Fringe-covered eye never visible. Preserve identity and expression across all frames. Crisp cel-anime chibi matching the provided pet art. True alpha transparency; no background, shadows, text, watermark, extra people, floating icons, high ponytail or repeated body parts.\nState/action: WORKING. Komari stands concentrating, holding an OPEN small burgundy notebook at chest/waist level in her left hand, and actively writing into it with a clearly held short pencil in her right hand. Pencil tip contacts the page. Modest small wrist writing motion and focused gentle expression, not waving a prop or brandishing a tool. Keep both hands anatomically clear, one book and one pencil only, no lettering on pages. Full body, not seated, no desk.",
+      "references": [
+        "art/desktop-pets/komari-v1/source/idle-sheet.png"
+      ]
+    },
+    {
+      "id": "waiting",
+      "file": "source/waiting-sheet.png",
+      "generatedFile": "exec-06e1a517-f316-4de2-a8b9-ae8b23652987.png",
+      "prompt": "Use case: stylized-concept. Production animation sprite sheet for Umeko's Chika Komari (小鞠知花, Makeine) desktop pet.\nThe input image is the approved IDENTITY, LINEWORK, COLOR, PROPORTIONS and GRID reference. Make a NEW matching state sheet, not a redesign. Keep the exact character: burgundy shoulder-length bob, bangs covering the eye on the VIEWER'S RIGHT, only one warm amber eye visible on VIEWER'S LEFT, tiny low side hair tie with orange band, ahoge, beige cardigan, white collared shirt, small burgundy ribbon, charcoal pleated skirt, dark knee socks and brown loafers. About 2.75 heads tall.\nTransparent square sprite sheet in a STRICT regular 3-column by 2-row grid (six equal portrait 2:3 cells), ideally 1536x1536. No gutters or lines. The same one character appears once per cell, entire full body including ahoge and shoes inside each cell. Character scale and feet baseline match the reference: feet at 93% cell height, body centered, generous transparent margins. Every frame registered to the same location; no large head, body or prop drifting.\nSix temporal animation frames in row-major order of ONE pose: very small coherent hand and breathing motions; open visible eye in frame 1 and 2, half closed in frame 3, closed natural blink in frame 4, half opening in frame 5, eye open and returning to frame 1 in frame 6. Fringe-covered eye never visible. Preserve identity and expression across all frames. Crisp cel-anime chibi matching the provided pet art. True alpha transparency; no background, shadows, text, watermark, extra people, floating icons, high ponytail or repeated body parts.\nState/action: WAITING FOR THE USER. Komari stands quietly, holding a closed small burgundy book against her chest with one hand, other hand gently clutching the cardigan cuff near her collar. Slightly shy, patient and attentive expression, a small tentative head tilt looking toward the viewer, tiny breathing motion. No symbols, no clock, no impatient or scared expression.",
+      "references": [
+        "art/desktop-pets/komari-v1/source/idle-sheet.png"
+      ]
+    },
+    {
+      "id": "done",
+      "file": "source/done-sheet.png",
+      "generatedFile": "exec-c44866f4-d497-44a8-8780-14b31ebb0225.png",
+      "prompt": "Use case: stylized-concept. Production animation sprite sheet for Umeko's Chika Komari (小鞠知花, Makeine) desktop pet.\nThe input image is the approved IDENTITY, LINEWORK, COLOR, PROPORTIONS and GRID reference. Make a NEW matching state sheet, not a redesign. Keep the exact character: burgundy shoulder-length bob, bangs covering the eye on the VIEWER'S RIGHT, only one warm amber eye visible on VIEWER'S LEFT, tiny low side hair tie with orange band, ahoge, beige cardigan, white collared shirt, small burgundy ribbon, charcoal pleated skirt, dark knee socks and brown loafers. About 2.75 heads tall.\nTransparent square sprite sheet in a STRICT regular 3-column by 2-row grid (six equal portrait 2:3 cells), ideally 1536x1536. No gutters or lines. The same one character appears once per cell, entire full body including ahoge and shoes inside each cell. Character scale and feet baseline match the reference: feet at 93% cell height, body centered, generous transparent margins. Every frame registered to the same location; no large head, body or prop drifting.\nSix temporal animation frames in row-major order of ONE pose: very small coherent hand and breathing motions; open visible eye in frame 1 and 2, half closed in frame 3, closed natural blink in frame 4, half opening in frame 5, eye open and returning to frame 1 in frame 6. Fringe-covered eye never visible. Preserve identity and expression across all frames. Crisp cel-anime chibi matching the provided pet art. True alpha transparency; no background, shadows, text, watermark, extra people, floating icons, high ponytail or repeated body parts.\nState/action: TASK COMPLETED. Komari stands with a small closed burgundy book held at her side in the left hand and a modest clear THUMBS-UP with her right hand near her chest. A warm shy relieved closed-mouth smile, gentle blush. Cheerful but understated and recognizable as Komari. Tiny proud hand lift and relaxed head movement, not a big exaggerated grin, no teeth, no star eyes, no symbols or confetti.",
+      "references": [
+        "art/desktop-pets/komari-v1/source/idle-sheet.png"
+      ]
+    },
+    {
+      "id": "error",
+      "file": "source/error-sheet.png",
+      "generatedFile": "exec-30b2ec58-017a-4bab-988e-e00550714d89.png",
+      "prompt": "Use case: stylized-concept. Production animation sprite sheet for Umeko's Chika Komari (小鞠知花, Makeine) desktop pet.\nThe input image is the approved IDENTITY, LINEWORK, COLOR, PROPORTIONS and GRID reference. Make a NEW matching state sheet, not a redesign. Keep the exact character: burgundy shoulder-length bob, bangs covering the eye on the VIEWER'S RIGHT, only one warm amber eye visible on VIEWER'S LEFT, tiny low side hair tie with orange band, ahoge, beige cardigan, white collared shirt, small burgundy ribbon, charcoal pleated skirt, dark knee socks and brown loafers. About 2.75 heads tall.\nTransparent square sprite sheet in a STRICT regular 3-column by 2-row grid (six equal portrait 2:3 cells), ideally 1536x1536. No gutters or lines. The same one character appears once per cell, entire full body including ahoge and shoes inside each cell. Character scale and feet baseline match the reference: feet at 93% cell height, body centered, generous transparent margins. Every frame registered to the same location; no large head, body or prop drifting.\nSix temporal animation frames in row-major order of ONE pose: very small coherent hand and breathing motions; open visible eye in frame 1 and 2, half closed in frame 3, closed natural blink in frame 4, half opening in frame 5, eye open and returning to frame 1 in frame 6. Fringe-covered eye never visible. Preserve identity and expression across all frames. Crisp cel-anime chibi matching the provided pet art. True alpha transparency; no background, shadows, text, watermark, extra people, floating icons, high ponytail or repeated body parts.\nState/action: ERROR / NEEDS ATTENTION. Komari stands slightly flustered but composed, holding a small CLOSED burgundy book against her chest with her left arm. Her right hand lightly scratches or touches the side of her cheek in a shy embarrassed gesture. Her single visible amber eye has a softly worried brow; a small apologetic wobbly closed mouth, light blush. Friendly mild concern, NOT crying, NOT frightened, NOT angry, NOT horror. One tiny head tilt, tiny wrist movement and return. No tears, no sweat icons, no exclamation marks, no floating symbols. Keep the same tidy uniform, complete full body, all six registered frames and authentic transparent background.",
+      "references": [
+        "art/desktop-pets/komari-v1/source/idle-sheet.png"
+      ]
+    }
+  ],
+  "encoding": {
+    "canvas": [
+      384,
+      576
+    ],
+    "durationsMs": [
+      1700,
+      1200,
+      100,
+      100,
+      100,
+      1000
+    ],
+    "loopMs": 4200,
+    "frames": 6,
+    "loop": "infinite",
+    "quality": 92,
+    "assets": [
+      {
+        "id": "idle",
+        "sourceSha256": "f9ad7e40521501e936838b31a815cc69237c3cde903a5dc29884d9e24a2661ee",
+        "cellBounds": [
+          [
+            52,
+            14,
+            386,
+            626
+          ],
+          [
+            50,
+            14,
+            384,
+            626
+          ],
+          [
+            45,
+            13,
+            380,
+            626
+          ],
+          [
+            48,
+            7,
+            389,
+            618
+          ],
+          [
+            50,
+            8,
+            388,
+            618
+          ],
+          [
+            46,
+            8,
+            385,
+            618
+          ]
+        ],
+        "bytes": 283064,
+        "sha256": "308867ee91ee2dfdda990a4c8c6c0aafd8b6c809ec28e3783956aa29c792b56e"
+      },
+      {
+        "id": "thinking",
+        "sourceSha256": "4a6b79b1400fd86665d7dfa4c0d8b3539684dede81d381bc124624a23209c317",
+        "cellBounds": [
+          [
+            63,
+            10,
+            400,
+            626
+          ],
+          [
+            55,
+            10,
+            393,
+            626
+          ],
+          [
+            47,
+            9,
+            385,
+            627
+          ],
+          [
+            62,
+            5,
+            400,
+            619
+          ],
+          [
+            55,
+            5,
+            393,
+            619
+          ],
+          [
+            49,
+            5,
+            387,
+            619
+          ]
+        ],
+        "bytes": 278946,
+        "sha256": "f163f31043f66e589b11825ffb4ae8ca09046cf30eee149111f4969dd6af1ad7"
+      },
+      {
+        "id": "working",
+        "sourceSha256": "d77fc329352feea5d4015088acf1e8a51de4e976adc073db1a58964984bda22e",
+        "cellBounds": [
+          [
+            58,
+            15,
+            398,
+            627
+          ],
+          [
+            50,
+            15,
+            393,
+            627
+          ],
+          [
+            46,
+            15,
+            388,
+            627
+          ],
+          [
+            58,
+            0,
+            401,
+            618
+          ],
+          [
+            50,
+            0,
+            394,
+            617
+          ],
+          [
+            47,
+            0,
+            388,
+            617
+          ]
+        ],
+        "bytes": 289320,
+        "sha256": "f27b963fe898b447b20e621d34f0dd8913e014acbd64aad724a31720c29be3cf"
+      },
+      {
+        "id": "waiting",
+        "sourceSha256": "11a168212093fc6d4d250f2dfa43e05f7a5ccd1f0d80b239186da37c12bdc063",
+        "cellBounds": [
+          [
+            48,
+            13,
+            393,
+            627
+          ],
+          [
+            44,
+            14,
+            391,
+            627
+          ],
+          [
+            40,
+            13,
+            387,
+            627
+          ],
+          [
+            47,
+            0,
+            396,
+            618
+          ],
+          [
+            43,
+            0,
+            390,
+            617
+          ],
+          [
+            41,
+            0,
+            388,
+            617
+          ]
+        ],
+        "bytes": 278840,
+        "sha256": "8908ffa63b34c72590feb095f9e71d125f111320795321f1518b21b046103cd4"
+      },
+      {
+        "id": "done",
+        "sourceSha256": "abfada4220b9fddeecde8e056185145d896d9e0820ad2ba177d93aa23fc5aee6",
+        "cellBounds": [
+          [
+            49,
+            13,
+            391,
+            627
+          ],
+          [
+            48,
+            12,
+            388,
+            627
+          ],
+          [
+            47,
+            12,
+            388,
+            627
+          ],
+          [
+            50,
+            0,
+            393,
+            618
+          ],
+          [
+            49,
+            0,
+            391,
+            618
+          ],
+          [
+            47,
+            0,
+            389,
+            618
+          ]
+        ],
+        "bytes": 274892,
+        "sha256": "3fe47c7c05f0964fbfa36ffe9e111a7f27b901c68f51891358d5dab0b582bcc2"
+      },
+      {
+        "id": "error",
+        "sourceSha256": "527c5d41312cf4843efaf932e2959f34bf6e0f9a899e8d7ca30e2d85d907f0b7",
+        "cellBounds": [
+          [
+            44,
+            13,
+            385,
+            626
+          ],
+          [
+            44,
+            13,
+            388,
+            626
+          ],
+          [
+            44,
+            13,
+            386,
+            626
+          ],
+          [
+            45,
+            7,
+            389,
+            618
+          ],
+          [
+            45,
+            7,
+            389,
+            618
+          ],
+          [
+            44,
+            7,
+            388,
+            618
+          ]
+        ],
+        "bytes": 273316,
+        "sha256": "af4fbed8aa633d24d3311d8cb7ba90ebbda14180826a6d9fd4f23fbd6675e1e2"
+      }
+    ]
+  }
+}
