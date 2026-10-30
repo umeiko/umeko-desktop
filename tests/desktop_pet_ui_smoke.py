@@ -43,7 +43,9 @@ try:
     page=find('desktopPluginsPage');page.setProperty('selectedId','desktop-pet')
     agent=page.parentItem().parentItem();agent.setProperty('pluginsOpen',True)
     wait(lambda:find('desktopPetSettings') is not None,'Pet settings did not load')
-    wait(lambda:find('desktopPetAppearancePicker').property('count')==1,'Appearance list did not load')
+    wait(lambda:find('desktopPetAppearancePicker').property('count')==len(pet.appearances),'Appearance list did not load')
+    assert any(row['id']=='whale-girl' and row['builtin'] for row in pet.appearances)
+    pet.ui('selectAppearance',{'id':'whale-girl'})
     main.grabWindow().save(str(out/'settings.png'))
     settings_loader=find('desktopPluginSettingsLoader')
     for identifier in ('git-viewer','file-tree','desktop-pet','git-viewer','desktop-pet'):
@@ -65,6 +67,14 @@ try:
     assert animation.property('frameCount')>1 and not animation.property('cache')
     first=animation.property('currentFrame');QTest.qWait(180)
     assert animation.property('currentFrame')!=first,'Animation is static'
+    assert '/whale-girl/idle.webp' in str(animation.property('source'))
+    pet.ui('configure',{'paused':True})
+    for state in ('idle','thinking','working','waiting','done','error'):
+        pet.motion.state=state;pet.changed.emit()
+        wait(lambda:animation.property('source').toString().endswith('/'+state+'.webp') and animation.property('ready'),'Whale state did not decode: '+state)
+        assert animation.property('frameCount')>1
+        window.grabWindow().save(str(out/('whale-'+state+'.png')))
+    pet.ui('configure',{'paused':False})
     window.grabWindow().save(str(out/'pet.png'))
     pet.ui('configure',{'paused':True});QTest.qWait(100)
     frame=animation.property('currentFrame');QTest.qWait(200)
@@ -74,6 +84,14 @@ try:
     point=pointer.mapToScene(pointer.boundingRect().center()).toPoint()
     QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,point)
     wait(lambda:bool(window.property('caption')),'Click interaction did not respond')
+    bubble=window.findChild(QObject,'desktopPetSpeechBubble')
+    assert bubble is not None
+    for size in (96,192,320):
+        pet.ui('configure',{'size':size});QTest.qWait(60)
+        picture_top=loader.y()+loader.height()-animation.property('paintedHeight')*(1-pet.state['contentTop'])
+        bottom=bubble.y()+bubble.height()
+        assert 0<=picture_top-bottom<=24,'Speech bubble detached from the painted pet'
+    window.grabWindow().save(str(out/'whale-speech.png'))
     original=(window.x(),window.y())
     QTest.mousePress(window,Qt.LeftButton,Qt.NoModifier,point)
     QTest.mouseMove(window,point+QPoint(-25,-15),30)
