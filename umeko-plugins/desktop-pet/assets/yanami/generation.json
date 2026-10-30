@@ -1,0 +1,52 @@
+{
+  "format": "umeko-animation-provenance",
+  "version": 1,
+  "created": "2026-10-30",
+  "tool": "built-in image_gen",
+  "mode": "identity-preserve eyelid keyframe edits; deterministic 2D mesh animation and FFmpeg encoding",
+  "sourceArtwork": "../source/",
+  "assets": [
+    {
+      "id": "idle",
+      "file": "keyframes/idle-blink.png",
+      "generatedFile": "exec-40cd4300-b3eb-40b8-aece-6e3918649002.png",
+      "reference": "../source/idle.png",
+      "prompt": "Use case: identity-preserve. Animation keyframe edit of the supplied Anna Yanami desktop-pet artwork.\nKeep the exact canvas, camera, character size and position, silhouette, hair, face shape, nose, mouth, eyebrows, blush, costume, limbs, hands, props, shoes, colors, linework and alpha background of the supplied image. Preserve everything except the eyelids.\nClose both eyes naturally for the middle frame of a brief blink, using delicate anime curved closed eyelid lines and the existing eyelash style. If one eye is already winking, preserve that eyelid and close only the currently open eye. Keep her current expression and mouth unchanged. The eyes must be fully closed; no eyeballs or irises should remain visible.\nNo additions or layout changes. One character only, entire full body in frame. Preserve a truly transparent background. This must look like a registered animation frame of the same drawing, not a redesigned character or a new pose."
+    },
+    {
+      "id": "thinking",
+      "file": "keyframes/thinking-blink.png",
+      "generatedFile": "exec-16461812-43b3-47f0-b033-ee16ac03027f.png",
+      "reference": "../source/thinking.png",
+      "prompt": "Use case: identity-preserve. Animation keyframe edit of the supplied Anna Yanami desktop-pet artwork.\nKeep the exact canvas, camera, character size and position, silhouette, hair, face shape, nose, mouth, eyebrows, blush, costume, limbs, hands, props, shoes, colors, linework and alpha background of the supplied image. Preserve everything except the eyelids.\nClose both eyes naturally for the middle frame of a brief blink, using delicate anime curved closed eyelid lines and the existing eyelash style. If one eye is already winking, preserve that eyelid and close only the currently open eye. Keep her current expression and mouth unchanged. The eyes must be fully closed; no eyeballs or irises should remain visible.\nNo additions or layout changes. One character only, entire full body in frame. Preserve a truly transparent background. This must look like a registered animation frame of the same drawing, not a redesigned character or a new pose."
+    },
+    {
+      "id": "working",
+      "file": "keyframes/working-blink.png",
+      "generatedFile": "exec-6244c0ee-62b8-485f-bf01-69366b29c523.png",
+      "reference": "../source/working.png",
+      "prompt": "Use case: identity-preserve. Animation keyframe edit of the supplied Anna Yanami desktop-pet artwork.\nKeep the exact canvas, camera, character size and position, silhouette, hair, face shape, nose, mouth, eyebrows, blush, costume, limbs, hands, props, shoes, colors, linework and alpha background of the supplied image. Preserve everything except the eyelids.\nClose both eyes naturally for the middle frame of a brief blink, using delicate anime curved closed eyelid lines and the existing eyelash style. If one eye is already winking, preserve that eyelid and close only the currently open eye. Keep her current expression and mouth unchanged. The eyes must be fully closed; no eyeballs or irises should remain visible.\nNo additions or layout changes. One character only, entire full body in frame. Preserve a truly transparent background. This must look like a registered animation frame of the same drawing, not a redesigned character or a new pose."
+    },
+    {
+      "id": "waiting",
+      "file": "keyframes/waiting-blink.png",
+      "generatedFile": "exec-e036f779-d6a1-4c28-b5ef-f84c5b580e13.png",
+      "reference": "../source/waiting.png",
+      "prompt": "Use case: identity-preserve. Animation keyframe edit of the supplied Anna Yanami desktop-pet artwork.\nKeep the exact canvas, camera, character size and position, silhouette, hair, face shape, nose, mouth, eyebrows, blush, costume, limbs, hands, props, shoes, colors, linework and alpha background of the supplied image. Preserve everything except the eyelids.\nClose both eyes naturally for the middle frame of a brief blink, using delicate anime curved closed eyelid lines and the existing eyelash style. If one eye is already winking, preserve that eyelid and close only the currently open eye. Keep her current expression and mouth unchanged. The eyes must be fully closed; no eyeballs or irises should remain visible.\nNo additions or layout changes. One character only, entire full body in frame. Preserve a truly transparent background. This must look like a registered animation frame of the same drawing, not a redesigned character or a new pose."
+    },
+    {
+      "id": "done",
+      "file": "keyframes/done-blink.png",
+      "generatedFile": "exec-883adf24-db13-4f44-8664-0753479d8dc2.png",
+      "reference": "../source/done.png",
+      "prompt": "Use case: identity-preserve. Animation keyframe edit of the supplied Anna Yanami desktop-pet artwork.\nKeep the exact canvas, camera, character size and position, silhouette, hair, face shape, nose, mouth, eyebrows, blush, costume, limbs, hands, props, shoes, colors, linework and alpha background of the supplied image. Preserve everything except the eyelids.\nClose both eyes naturally for the middle frame of a brief blink, using delicate anime curved closed eyelid lines and the existing eyelash style. If one eye is already winking, preserve that eyelid and close only the currently open eye. Keep her current expression and mouth unchanged. The eyes must be fully closed; no eyeballs or irises should remain visible.\nNo additions or layout changes. One character only, entire full body in frame. Preserve a truly transparent background. This must look like a registered animation frame of the same drawing, not a redesigned character or a new pose."
+    },
+    {
+      "id": "error",
+      "file": "keyframes/error-blink.png",
+      "generatedFile": "exec-567f323b-56ba-4dd0-a633-226f7faffcd3.png",
+      "reference": "../source/error.png",
+      "prompt": "Use case: identity-preserve. Animation keyframe edit of the supplied Anna Yanami desktop-pet artwork.\nKeep the exact canvas, camera, character size and position, silhouette, hair, face shape, nose, mouth, eyebrows, blush, costume, limbs, hands, props, shoes, colors, linework and alpha background of the supplied image. Preserve everything except the eyelids.\nClose both eyes naturally for the middle frame of a brief blink, using delicate anime curved closed eyelid lines and the existing eyelash style. If one eye is already winking, preserve that eyelid and close only the currently open eye. Keep her current expression and mouth unchanged. The eyes must be fully closed; no eyeballs or irises should remain visible.\nNo additions or layout changes. One character only, entire full body in frame. Preserve a truly transparent background. This must look like a registered animation frame of the same drawing, not a redesigned character or a new pose."
+    }
+  ]
+}

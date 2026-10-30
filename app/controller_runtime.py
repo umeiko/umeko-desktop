@@ -82,6 +82,7 @@ class PiControllerMixin:
         if record.stale or (record.process and not record.ready):
             self._pool.retire(record)
         record.action, record.failed, record.cancelled = action, False, False
+        record.pet_activity = 'thinking'
         record.prompt_started = time.monotonic() if action in ('prompt','widget-notify') else None
         record.phase = "loading" if not record.process else "running" if action in ("prompt", "compact", "widget-notify") else "working"
         record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在生成" if record.phase == "running" else "正在处理"
@@ -225,6 +226,7 @@ class PiControllerMixin:
         elif kind == "session":
             self._record_info(record, event["session"])
         elif kind in ("delta", "thinking_delta"):
+            record.pet_activity = 'thinking' if kind == 'thinking_delta' else 'working'
             if not record.messages or record.messages[-1]["role"] != "assistant":
                 record.messages.append({"role": "assistant", "text": "", "error": False})
             field = "thinking" if kind == "thinking_delta" else "text"
@@ -273,6 +275,7 @@ class PiControllerMixin:
                     record.messages[-1]["thinking"] = event["thinking"]
                 transcript = True
         elif kind == "tool":
+            record.pet_activity = 'working'
             if isinstance(event.get("subagent"), dict):
                 self._subagents.merge(record, event["subagent"])
                 previous = next((tool for message in record.messages for tool in message.get("tools", []) if tool["id"] == event["id"]), None)

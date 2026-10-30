@@ -16,6 +16,17 @@ Item {
     onAllRowsChanged: if (!allRows.some(p=>p.id===selectedId)) selectedId=allRows.length ? allRows[0].id : ""
     FileDialog {id:picker;title:I18n.t("导入 Umeko 插件");nameFilters:["Umeko plugins (*.zip)"];onAccepted:root.manager.importZip(String(selectedFile))}
     FileDialog {id:sdkPicker;title:I18n.t("导出插件 SDK 和示例");fileMode:FileDialog.SaveFile;defaultSuffix:"zip";nameFilters:["ZIP (*.zip)"];onAccepted:root.manager.exportSdk(String(selectedFile))}
+    QtObject {
+        id:settingsSdk
+        readonly property var colors: ({bg:Theme.bg,surface:Theme.surface,ink:Theme.ink,muted:Theme.muted,line:Theme.line,hover:Theme.hover,accent:Theme.accent,accentBg:Theme.accentBg,danger:Theme.danger})
+        readonly property real scale:Theme.fontScale
+        readonly property bool active:root.visible && !!root.selected && root.selected.enabled
+        readonly property var config:root.detail.configText ? JSON.parse(root.detail.configText) : ({})
+        signal response(string request,var value)
+        function t(text){return I18n.t(text)}
+        function call(method,args){return root.manager.settingsCall(root.selectedId,method,JSON.stringify(args || {}))}
+    }
+    Connections {target:root.manager;function onResponse(request,value){settingsSdk.response(request,value)}}
     ColumnLayout {
         anchors.fill:parent;spacing:16
         RowLayout {
@@ -71,16 +82,26 @@ Item {
                                 Item {Layout.fillWidth:true}
                                 ActionButton {objectName:"openDesktopPluginPageButton";text:I18n.t("打开页面");glyph:"panel-right";visible:!!root.selected && !!root.selected.hasPage;enabled:!!root.selected && root.selected.enabled && root.selected.sessionEnabled;onClicked:root.manager.openPage(root.selectedId)}
                             }
-                            Text {text:I18n.t("声明的能力")+"\n"+(root.selected?(root.selected.permissions || []).join(" · "):"");textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.font(10)}
-                            Rectangle {Layout.fillWidth:true;height:1;color:Theme.line}
-                            Text {text:I18n.t("功能说明");color:Theme.ink;font.pixelSize:Theme.font(13);font.weight:Font.DemiBold}
+                            Text {visible:!!root.selected && (root.selected.permissions || []).length>0;text:I18n.t("声明的能力")+"\n"+(root.selected?(root.selected.permissions || []).join(" · "):"");textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.font(10)}
+                            Rectangle {objectName:"desktopPluginSettingsDivider";Layout.fillWidth:true;height:1;color:Theme.line}
+                            Loader {
+                                id:widgetSettings;objectName:"desktopPluginSettingsLoader";Layout.fillWidth:true
+                                active:root.visible && !!root.selected && root.selected.enabled && !!root.detail.settingsUrl
+                                visible:active
+                                Layout.preferredHeight:active && item ? item.implicitHeight : 0
+                                onActiveChanged:if(active)setSource(root.detail.settingsUrl,{sdk:settingsSdk})
+                                property string settingsUrl:root.detail.settingsUrl || ""
+                                onSettingsUrlChanged:if(active)setSource(settingsUrl,{sdk:settingsSdk})
+                                Component.onCompleted:if(active)setSource(settingsUrl,{sdk:settingsSdk})
+                            }
+                            Text {objectName:"desktopPluginReadmeHeading";text:I18n.t("功能说明");color:Theme.ink;font.pixelSize:Theme.font(13);font.weight:Font.DemiBold}
                             TextEdit {objectName:"desktopPluginReadme";Layout.fillWidth:true;text:String(root.detail.readmeText || "").replace(/!\[[^\]]*\]\([^)]*\)/g,"[图片]").replace(/<[^>]+>/g,"");textFormat:text.length>24000 || text.split("\n").length>400 || text.split("|").length>256 || text.split("[").length>256 ? TextEdit.PlainText : TextEdit.MarkdownText;readOnly:true;selectByMouse:true;wrapMode:TextEdit.Wrap;color:Theme.ink;font.pixelSize:Theme.font(12)}
                             Rectangle {Layout.fillWidth:true;height:1;color:Theme.line}
-                            Text {text:I18n.t("插件配置");color:Theme.ink;font.pixelSize:Theme.font(13);font.weight:Font.DemiBold}
-                            TextArea {id:config;objectName:"desktopPluginConfig";Layout.fillWidth:true;Layout.preferredHeight:160;text:root.detail.configText || "{}";textFormat:TextEdit.PlainText;wrapMode:TextEdit.WrapAnywhere;selectByMouse:true;font.family:"monospace";font.pixelSize:Theme.font(11);color:Theme.ink;background:Rectangle {color:Theme.bg;radius:8;border.color:Theme.line}}
+                            Text {visible:!root.detail.settingsUrl;text:I18n.t("插件配置");color:Theme.ink;font.pixelSize:Theme.font(13);font.weight:Font.DemiBold}
+                            TextArea {visible:!root.detail.settingsUrl;id:config;objectName:"desktopPluginConfig";Layout.fillWidth:true;Layout.preferredHeight:160;text:root.detail.configText || "{}";textFormat:TextEdit.PlainText;wrapMode:TextEdit.WrapAnywhere;selectByMouse:true;font.family:"monospace";font.pixelSize:Theme.font(11);color:Theme.ink;background:Rectangle {color:Theme.bg;radius:8;border.color:Theme.line}}
                             RowLayout {
                                 Layout.fillWidth:true
-                                ActionButton {objectName:"saveDesktopPluginConfigButton";text:I18n.t("保存配置");enabled:!root.manager.busy;onClicked:root.manager.saveConfig(root.selectedId,config.text)}
+                                ActionButton {visible:!root.detail.settingsUrl;objectName:"saveDesktopPluginConfigButton";text:I18n.t("保存配置");enabled:!root.manager.busy;onClicked:root.manager.saveConfig(root.selectedId,config.text)}
                                 Item {Layout.fillWidth:true}
                                 ActionButton {objectName:"uninstallDesktopPluginButton";text:I18n.t("卸载插件");visible:!!root.selected && !root.selected.builtin;enabled:!root.manager.busy;destructive:true;onClicked:uninstall.open()}
                             }
