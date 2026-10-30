@@ -15,7 +15,7 @@ os.environ["PI_CODING_AGENT_DIR"] = str(Path(test_profile.name) / "pi-agent")
 os.environ["UMEKO_LANGUAGE"] = "zh"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QPointF, Qt, QMetaObject, Q_ARG, Q_RETURN_ARG
 from PySide6.QtTest import QTest
 from main import create_application
 
@@ -36,7 +36,14 @@ def find(name, root=None):
 
 def tool_item(name):
     pane = find("subagentConversation")
-    return find(name, pane) if pane is not None else None
+    if pane is None:
+        return None
+    # ListView keeps pooled delegates, and each child fixture repeats the same
+    # tool IDs. Query the active assistant row rather than the first named item
+    # anywhere in the view's retained item tree.
+    message = QMetaObject.invokeMethod(pane, "itemAtIndex", Qt.DirectConnection,
+        Q_RETURN_ARG("QQuickItem*"), Q_ARG(int, 1))
+    return find(name, message) if message is not None else None
 
 
 def item_state(item):
@@ -127,6 +134,7 @@ try:
         snapshot = [{"role": "user", "text": "检查任务。"}, {"role": "assistant", "text": "", "tools": [
             {"id": "slow", "name": "bash", "arguments": {"command": "sleep 60"}, "path": "", "state": "running", "result": ""}]}]
         backend.subagents.handle(record, {"type": "subagent_context", "id": child_id, "messages": snapshot})
+        assert backend.subagents.messages[1]["tools"][0]["state"] == "running"
         wait(lambda: clickable(tool_item("toggleTools_1_0")), "Running tool header did not become clickable")
         toggle = tool_item("toggleTools_1_0")
         if not toggle.parentItem().parentItem().property("expanded"): click(toggle)
