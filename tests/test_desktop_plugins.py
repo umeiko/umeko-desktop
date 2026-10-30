@@ -32,7 +32,7 @@ class DesktopPluginTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):cls.app=QCoreApplication.instance() or QCoreApplication([])
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.path=Path(self.temp.name)
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.path=Path(self.temp.name).resolve()
         self.host=Host(self.path);self.manager=DesktopPlugins(self.host);self.addCleanup(self.manager.close)
         self.responses={};self.manager.response.connect(lambda key,value:self.responses.__setitem__(key,value))
     def wait(self,predicate):

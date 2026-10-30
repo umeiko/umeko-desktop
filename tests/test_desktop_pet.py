@@ -42,7 +42,7 @@ class PetTests(unittest.TestCase):
     def setUpClass(cls):cls.app=QCoreApplication.instance() or QCoreApplication([])
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.path=Path(self.temp.name);self.host=Host(self.path)
+        self.path=Path(self.temp.name).resolve();self.host=Host(self.path)
         self.manager=DesktopPlugins(self.host);self.addCleanup(self.manager.close)
         self.pet=self.manager.pet
     def wait(self,predicate):
