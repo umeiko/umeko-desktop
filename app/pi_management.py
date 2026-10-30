@@ -278,7 +278,8 @@ class PiManagement(QObject):
         pointer = c.store.directory / "kernels/active.json"
         old_pointer = pointer.read_bytes() if pointer.exists() else None
         old_agent = c.store.data["agent"]
-        new_agent = {**copy.deepcopy(DEFAULTS["agent"]), "agentDir": value["agentDir"], "safeMode": True}
+        new_agent = {**copy.deepcopy(DEFAULTS["agent"]), "agentDir": value["agentDir"], "safeMode": True,
+                     "toolPermissionMode": old_agent.get("toolPermissionMode", "auto")}
         try:
             c.store.data["agent"] = new_agent
             c.store.save()

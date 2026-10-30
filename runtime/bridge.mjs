@@ -9,7 +9,9 @@ import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs } from
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
+import { backgroundJobsExtension } from "./background-jobs.mjs";
 import { createWidgetMessages } from "./widget-messages.mjs";
+import { createToolPermissionExtension } from "./tool-permissions.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
@@ -34,7 +36,7 @@ const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", entry));
 const { loadMcpConfig } = await import(new URL("./extensions/mcp/config.js", entry));
 const { allToolNames } = await import(new URL("./core/tools/index.js", entry));
-const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL];
+const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, "background_job"];
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 const umekoControl = createUmekoControl({ emit });
@@ -53,6 +55,8 @@ const inputQueue=createInputQueue({getSession:()=>runtime?.session,isRunning:()=
   onReturned:items=>emit({type:"queue_returned",steering:[],followUp:items.map(item=>item.text)}),
   beforeInterrupt:()=>{clearDialogs(); commandCancellation++; piCommands.clear();}});
 const dialogs = new Map();
+let permissionPolicy = { mode: "auto", language: "en" };
+const permissionExtension = createToolPermissionExtension({ getPolicy: () => permissionPolicy });
 const commandOutput = new AsyncLocalStorage();
 const piCommands = createPiCommandController({ Pi, getRuntime: () => runtime, getConfig: () => config,
   reload: reloadSession, notify: message => emit({ type: "notice", message }),
@@ -67,10 +71,13 @@ const piCommands = createPiCommandController({ Pi, getRuntime: () => runtime, ge
 
 function ask(method, title, detail = "", options = []) {
   const id = crypto.randomUUID();
-  emit({ type: "ui_request", id, method, title, detail, options });
-  return new Promise(resolve => dialogs.set(id, resolve));
+  return new Promise(resolve => {
+    const event = { type: "ui_request", id, method, title, detail, options };
+    dialogs.set(id, { resolve, event });
+    if (dialogs.size === 1) emit(event);
+  });
 }
-function clearDialogs() { for (const done of dialogs.values()) done(undefined); dialogs.clear(); }
+function clearDialogs() { for (const dialog of dialogs.values()) dialog.resolve(undefined); dialogs.clear(); }
 function canonicalPath(path) {
   // Match Python's Path.resolve(), including Windows 8.3 names and missing leaves.
   try { return realpathSync.native(path); } catch {
@@ -93,6 +100,9 @@ const ui = {
   getEditorText: () => "", addAutocompleteProvider: () => () => {},
   custom: rpcCustom,
 };
+// The existing subagent SDK facade shares this host across ESM/Jiti modules.
+// No desktop operation or model-callable tool exposes this policy setter.
+globalThis[Symbol.for("umeko:tool-permission-host")] = { getPolicy: () => permissionPolicy, ui };
 
 async function bindSession(session) {
   unsubscribe?.();
@@ -237,6 +247,10 @@ async function restoreSubagentSession(child, context, customTools) {
   // transcripts use the standard read-only policy for Explore/Plan.
   const readonly = ["Explore","Plan"].includes(child.type);
   const loader = new Pi.DefaultResourceLoader({cwd:manager.getCwd(),agentDir:config.agentDir,settingsManager:policy,
+    extensionFactories: [
+      { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
+      { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension },
+    ],
     systemPrompt:context?.systemPrompt || `You are the ${child.type} subagent embedded in Umeko Desktop. Continue the task in this existing conversation. ${readonly ? "Inspect and report only; do not modify files." : ""}`,
     appendSystemPrompt:context?.systemPrompt?.includes(SUBAGENT_COMPLETION_HINT) ? [] : [SUBAGENT_COMPLETION_HINT],
     extensionsOverride:base=>({...base,extensions:base.extensions.filter(extension=>!String(extension.path || "").includes("pi-subagents"))})});
@@ -252,6 +266,7 @@ async function restoreSubagentSession(child, context, customTools) {
 
 async function init(input) {
   config = input;
+  permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir };
   configureUmekoDocs({directory: input.docsDir || join(input.agentDir, "cache", "umeko-docs"), models: input.models});
   reasoningEffort = effortLevels.has(input.reasoningEffort) ? input.reasoningEffort : "off";
   setGateway(input.gateway);
@@ -294,9 +309,12 @@ async function init(input) {
           additionalExtensionPaths: builtins.map(name => "builtin:" + name) } : {}),
         appendSystemPrompt: [DESKTOP_PI_PROMPT + " " + UMEKO_PROMPT + " Reply in the user's language.", input.agent?.instructions || ""],
         extensionFactories: [
+          // Mandatory inline factory: resource filters cannot disable the gate.
+          { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}) },
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },
           { name: "umeko-control", builtin: true, replaceable: false, factory: pi => umekoControl.extension(pi) },
+          { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension },
           { name: "subagents", builtin: true, replaceable: true, factory: subagents.extension },
           { name: "output-continuation", builtin: true, replaceable: false, factory: outputContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
@@ -459,7 +477,19 @@ async function execute(input) {
     }
     return;
   }
-  if (input.type === "ui_response") { dialogs.get(input.id)?.(input.value); dialogs.delete(input.id); return; }
+  if (input.type === "tool_permission_mode") {
+    if (!["auto", "ask"].includes(input.mode)) { emit({ type: "error", message: "Invalid tool permission mode" }); return; }
+    permissionPolicy = { ...permissionPolicy, mode: input.mode, language: input.language || permissionPolicy.language, dataDir: input.dataDir || permissionPolicy.dataDir };
+    return;
+  }
+  if (input.type === "ui_response") {
+    const dialog = dialogs.get(input.id);
+    if (!dialog || dialogs.keys().next().value !== input.id) return;
+    dialogs.delete(input.id); dialog.resolve(input.value);
+    const next = dialogs.values().next().value;
+    if (next) emit(next.event);
+    return;
+  }
   if (input.type === "abort") {
     commandCancellation++;
     piCommands.clear();

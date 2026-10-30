@@ -56,7 +56,7 @@ jobs:
         run: bash setup.sh
 
       - name: Node tests
-        run: node --test tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs
+        run: node --test tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs
 
       - name: Python unit tests
         run: |
@@ -75,6 +75,39 @@ jobs:
             .venv/bin/python tests/preview_resize_ui_smoke.py
             .venv/bin/python tests/motion_ui_smoke.py
           '
+
+  windows-path-checks:
+    name: Windows path regressions
+    if: github.event_name == 'pull_request'
+    runs-on: windows-2022
+    timeout-minutes: 15
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QT_QUICK_BACKEND: software
+      PYTHONUTF8: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: runtime/package-lock.json
+      - name: Set up Windows
+        shell: pwsh
+        run: ./setup.ps1
+      - name: Verify long paths, native argv and running-tool layout
+        shell: pwsh
+        run: |
+          & '.venv/Scripts/python.exe' -m unittest tests.test_runtime_paths tests.test_pi_management.NativeExtensionTests.test_factory_copies_deep_profile_and_preserves_ordinary_paths tests.test_pi_management.NativeExtensionTests.test_factory_keeps_original_configuration_sessions_and_projects tests.test_windows_python_note tests.test_running_tool_status tests.test_tool_history_layout -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows path and tool-header regression failed' }
 
   package:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -142,8 +175,8 @@ jobs:
             set -e
             python_bin=.venv/bin/python
             if [ "$RUNNER_OS" = Windows ]; then python_bin=.venv/Scripts/python.exe; fi
-            node --test tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs
-            "$python_bin" -m unittest tests.test_update tests.test_common_providers tests.test_openai_responses tests.test_platform tests.test_desktop_notifications tests.test_umeko_control tests.test_characters tests.test_terminal_widget tests.test_widget_icon_rendering -q
+            node --test tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs
+            "$python_bin" -m unittest tests.test_update tests.test_common_providers tests.test_openai_responses tests.test_platform tests.test_desktop_notifications tests.test_umeko_control tests.test_characters tests.test_tool_permissions tests.test_terminal_widget tests.test_widget_icon_rendering -q
           }
           export -f verify_desktop
           if [ "$RUNNER_OS" = Linux ]; then

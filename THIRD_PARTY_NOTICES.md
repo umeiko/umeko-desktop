@@ -1,5 +1,9 @@
 # Third-party notices
 
+## Tool permission classifier
+
+`runtime/tool-permissions.mjs` adapts the command-position guard (`AT_CMD`), quote masking (`stripQuoted`), recursive Windows deletion family (`WINDOWS_ROOT_WIPE`), critical command families and write-only normalized path-rule structure from `@xynogen/pix-gate` 0.4.5, copyright 2026 xynogen (MIT). Source: https://github.com/xynogen/pix-mono/blob/f07f04c186a8b43adb5c443ee65a2ebee53f4e0c/packages/pix-gate/src/lib.ts . The complete license appears in both that module and `licenses/pix-gate-MIT.txt`. The broader upstream default policy is intentionally not enabled; the local implementation uses the desktop's seven categories. Pi Coding Agent 1.3.0's `permission-gate` and `protected-paths` extension examples (https://github.com/earendil-works/pi/tree/main/packages/coding-agent/examples/extensions) supply the `tool_call` integration pattern under the Pi MIT notice below. `cc-safety-net` 2.7.0 (https://github.com/kenryu42/cc-safety-net/tree/v2.7.0) supplied categories and the test checklist only; no implementation code is copied or bundled.
+
 ## Desktop plugin artwork
 
 The file-tree and version-management plugins include unmodified Microsoft Codicons 0.0.46-24 (CC-BY-4.0, https://github.com/microsoft/vscode-codicons) and the Seti file icon theme shipped by VS Code 1.143.1 (MIT, https://github.com/jesseweed/seti-ui). Seti's WOFF font is repackaged as TTF with the glyph outlines unchanged. Each standalone plugin includes the full license notices and `assets/sources.json` with source versions and SHA-256 hashes. The source-control layout uses the VS Code SCM stylesheet as its sizing reference: https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/scm/browser/media/scm.css .
@@ -33,6 +37,10 @@ Dependencies retain their license files in the runtime's node_modules directory.
 ## Pi subagents
 
 Release bundles include the unmodified npm package `@gotgenes/pi-subagents` 25.0.5 (MIT) in the runtime's `node_modules` directory. Official source: https://github.com/gotgenes/pi-packages/tree/pi-subagents-v25.0.5/packages/pi-subagents . The full upstream copyright and permission notice is included in `licenses/pi-subagents-MIT.txt` and retained with the package.
+
+## Background jobs
+
+The bundled background-job extension uses `@alexlikevibe/pi-bg` 2.3.0 (MIT), specifically its per-session registry and file-backed spawn primitive. Its default extension entry is not loaded. The hidden Windows spawn implementation is adapted from that primitive; process-tree termination and cursor-based reads are Umeko adaptations. Source: https://github.com/iefnaf/pi-bg . The upstream license is retained in `licenses/pi-bg-MIT.txt` and with the npm package. The bash guard follows the `tool_call` blocking mechanism in Pi's `permission-gate.ts` example; no confirmation UI is used.
 
 ## Pygments 2.19.2
 
