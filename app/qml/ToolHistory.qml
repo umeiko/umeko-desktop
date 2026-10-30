@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Window
 
 Column {
     id: root
@@ -18,6 +19,9 @@ Column {
     visible: tools.length > 0
     onExpandedChanged: if (!expanded && selectionController) selectionController.hideDetails(messageIndex, blockOffset + 1, tools.length)
     function command(name) { return name === "bash" || name === "powershell" }
+    function openFile(path) {
+        if(root.Window.window)root.Window.window.previewChatImage({path:path})
+    }
     function action(name) { return ({read:I18n.t("读取"),write:I18n.t("写入"),edit:I18n.t("编辑"),bash:I18n.t("运行"),powershell:I18n.t("运行"),grep:I18n.t("搜索"),find:I18n.t("查找"),ls:I18n.t("浏览"),codemode:I18n.t("执行代码"),tool_search:I18n.t("查找工具"),submit_to_chatbox:I18n.t("展示附件"),subagent:I18n.t("子代理")})[name] || name }
     function agentType(value) {
         return ({"general-purpose":I18n.t("通用"), Explore:I18n.t("探索"), Plan:I18n.t("规划")})[value] || value || I18n.t("子代理")
@@ -97,9 +101,15 @@ Column {
                     elide: Text.ElideMiddle; color: pathMouse.interactionHovered ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(12); font.underline: true; anchors.verticalCenter: parent.verticalCenter
                     ChatHitArea {
                         id: pathMouse; width: Math.min(parent.width, parent.implicitWidth); height: parent.height
-                        selectionController: root.selectionController; interactionPriority: 10; onClicked: backend.copy(toolRow.tool.path)
+                        selectionController: root.selectionController; interactionPriority: 10
+                        acceptedButtons:Qt.LeftButton | Qt.RightButton
+                        onClicked:mouse=>{
+                            if(mouse.button===Qt.RightButton)fileMenu.popup(mouse.x,mouse.y)
+                            else root.openFile(toolRow.tool.path)
+                        }
                     }
-                    HoverTip { active: pathMouse.interactionHovered; text: (toolRow.tool.path || "") + I18n.t("\n点击复制路径") }
+                    HoverTip { active: pathMouse.interactionHovered && !fileMenu.visible; text: (toolRow.tool.path || "") + I18n.t("\n点击预览") }
+                    MediaContextMenu {id:fileMenu;objectName:"toolFileContext_"+toolRow.tool.id;item:({kind:"file",path:toolRow.tool.path});itemKey:"tool_"+toolRow.tool.id;chatWindow:root.Window.window}
                 }
                 Text {
                     x: verb.x + verb.width + 6; width: Math.max(0, parent.width - x - Theme.control(42)); visible: !pathLabel.visible

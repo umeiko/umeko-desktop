@@ -59,6 +59,17 @@ test("guard follows command positions across operators and nested shell strings"
   }
 });
 
+test("guard follows execution wrappers and real newlines while retaining literal arguments", () => {
+  for (const command of ['sudo pkill -f node','sudo -n pkill node','sudo -u root -- killall node',
+    'env CI=1 killall node','env -u CI pkill node','nohup pkill node','nice -n 10 killall node',
+    'command pkill node','echo ready\npkill node','echo ready # a comment\npkill node',
+    'echo ready\r\nkillall node',"cat <<'EOF'\nliteral text\nEOF\npkill node"]) assert.ok(blockedProcessCommand(command),command);
+  for (const command of ['sudo kill -9 1234','env CI=1 kill 1234','command -v pkill',
+    'echo "first\npkill node"',"printf '%s' 'first\nkillall node'",'echo ok \\\npkill node',
+    'echo "sudo pkill node"','kill -0 1234',"cat <<'EOF'\npkill node\nEOF\necho done",
+    'cat <<-EOF\n\tkillall node\n\tEOF\necho done']) assert.equal(blockedProcessCommand(command),undefined,command);
+});
+
 test("tool-call guard covers all bundled command tools, including native PowerShell", () => {
   const handlers = new Map();
   createBackgroundJobsExtension().extension({ on: (name, handler) => handlers.set(name, handler), registerTool() {} });

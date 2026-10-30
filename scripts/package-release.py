@@ -23,6 +23,7 @@ def main():
     args = parser.parse_args()
     report = json.loads((ROOT / "build/ci-smoke/result.json").read_text(encoding="utf-8"))
     if report["gui"] != "passed" or report["pi"] != "passed": raise RuntimeError("Package has not passed verification")
+    if report.get('terminal')!='passed':raise RuntimeError('Packaged terminal has not passed verification')
     actual = ("windows" if sys.platform == "win32" else "macos" if sys.platform == "darwin" else "linux")
     if not args.platform.startswith(actual + "-"): raise RuntimeError("Package platform does not match the build host")
     architecture = report["build"]["architecture"].lower()

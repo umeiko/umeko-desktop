@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { mkdtemp, open } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { createJiti } from "jiti";
@@ -209,7 +209,8 @@ export function createBackgroundJobsExtension(options = {}) {
         try {
           const jobs = await getManager();
           let result;
-          if (input.action === "start") result = await jobs.start({ command: input.command, cwd: input.cwd || ctx?.cwd || options.cwd });
+          if (input.action === "start") result = await jobs.start({ command: input.command,
+            cwd: resolve(ctx?.cwd || options.cwd || process.cwd(), input.cwd || ".") });
           else if (input.action === "list") result = jobs.list();
           else if (input.action === "status") result = jobs.status(input.id);
           else if (input.action === "read") result = await jobs.read(input.id, input);

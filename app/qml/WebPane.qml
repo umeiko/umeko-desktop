@@ -60,7 +60,8 @@ Rectangle {
         id: heading
         visible: pane.mode !== "subagent"
         width: parent.width; height: Theme.control(pane.mode === "plugin" ? 35 : 44)
-        Glyph { x: 16; anchors.verticalCenter: parent.verticalCenter; name: pane.mode === "plugin" ? (backend.desktopPlugins.page.id === "git-viewer" ? "branch" : "folder") : pane.mode === "web" ? "globe" : backend.documentPreview.state.kind === "code" ? "code" : "file"; width: Theme.icon(15); height: width }
+        WidgetIcon {visible:pane.mode==="plugin";plugin:backend.desktopPlugins.page;x:16;anchors.verticalCenter:parent.verticalCenter;width:Theme.icon(15);height:width}
+        Glyph {visible:pane.mode!=="plugin";x:16;anchors.verticalCenter:parent.verticalCenter;name:pane.mode==="web"?"globe":backend.documentPreview.state.kind==="code"?"code":"file";width:Theme.icon(15);height:width}
         Text { x: 40; width: Math.max(0, parent.width - 88); anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: pane.mode === "web" && surface.item && surface.item.title ? surface.item.title : pane.mode === "plugin" ? backend.desktopPlugins.page.title || "" : pane.pageTitle || pane.pageUrl; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: Theme.font(11) }
         ActionButton { objectName: "closeWebPaneButton"; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: width; quiet: true; glyph: "x"; hint: I18n.t("关闭预览"); onClicked: pane.dismiss() }
     }
