@@ -79,6 +79,10 @@ class NativeExtensionTests(unittest.TestCase):
     def test_structured_install_and_remove_preserve_literal_package_paths(self):
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR":temp}):
             data = Path(temp)
+            if os.name != 'nt':
+                real = data / 'real profile'; real.mkdir()
+                alias = data / 'profile alias'; alias.symlink_to(real, target_is_directory=True)
+                data = alias
             package = data / 'literal package'
             (package / 'extensions').mkdir(parents=True)
             file = package / 'extensions/example.ts'

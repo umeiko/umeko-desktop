@@ -249,7 +249,7 @@ class PiManagement(QObject):
         if agent.get('safeMode'): raise ValueError('Leave recovery mode before removing a package')
         source, local = row['source'], row.get('scope') == 'project'
         if not Path(source).is_absolute() and not re.match(r'^(npm:|git:|https?:|ssh:|git@)', source):
-            source = str(((cwd / '.pi' if local else agent_dir) / source).resolve())
+            source = os.path.abspath((cwd / '.pi' if local else agent_dir) / source)
         def uninstall():
             remove_package(release, cwd, agent_dir, source, local, npm_config=agent)
             return resource_command(*context, action='scan')

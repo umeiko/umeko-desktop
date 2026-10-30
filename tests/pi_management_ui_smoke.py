@@ -57,8 +57,12 @@ def wait_for(predicate):
 
 
 def click(name):
+    # Fold changes reposition children on the next QML polish. Scroll only
+    # after that layout is current, otherwise the click can miss the button.
+    QTest.qWait(100)
+    window.grabWindow()
     target = find(name)
-    assert target, name
+    assert target and target.isVisible() and target.isEnabled(), name
     flick = find("settingsScroll").property("contentItem")
     ancestor = target.parentItem()
     while ancestor is not None and ancestor != flick: ancestor = ancestor.parentItem()
@@ -66,6 +70,7 @@ def click(name):
         y = target.mapToItem(flick, QPointF(0, 0)).y() + flick.property("contentY") - flick.height() / 2
         flick.setProperty("contentY", max(0, min(y, flick.property("contentHeight") - flick.height())))
         QTest.qWait(100)
+    window.grabWindow()
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, target.mapToScene(target.boundingRect().center()).toPoint())
     QTest.qWait(100)
 
@@ -98,6 +103,7 @@ try:
     find("piFold_recovery").setProperty("expanded",True)
     with patch("app.pi_management.launch_terminal") as launch:
         click("openPiTerminalButton")
+        wait_for(lambda: launch.call_count == 1)
         wait_for(lambda: not manager.busy)
         launch.assert_called_once()
         command = launch.call_args.args[0]
