@@ -8,7 +8,7 @@ import { join,resolve,dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-test('real embedded Pi tool installs into its own profile, reloads the same session, and runs registered commands', {timeout:45000}, async()=>{
+test('real embedded Pi tool installs into its own profile, reloads the same session, and runs registered commands', {timeout:90000}, async()=>{
  const temp=mkdtempSync(join(tmpdir(),'umeko-pi-command-integration-'));
  const cwd=join(temp,'workspace'),agentDir=join(temp,'agent'),sessionDir=join(temp,'sessions'),source=join(temp,'extension');
  for(const p of [cwd,agentDir,sessionDir,source])mkdirSync(p);
@@ -33,10 +33,11 @@ test('real embedded Pi tool installs into its own profile, reloads the same sess
  child.stderr.on('data',data=>stderr+=data);
  child.stdout.on('data',data=>{buffer+=data;let i;while((i=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);if(line)events.push(JSON.parse(line));}});
  const send=input=>child.stdin.write(JSON.stringify(input)+'\n');
- const wait=async predicate=>{const end=Date.now()+15000;while(Date.now()<end){if(predicate())return;await new Promise(done=>setTimeout(done,20));}throw new Error('Timed out: '+JSON.stringify(events.slice(-4))+' '+stderr);};
+ const wait=async(predicate,timeout=15000)=>{const end=Date.now()+timeout;while(Date.now()<end){if(predicate())return;if(child.exitCode!==null)throw new Error('Pi exited '+child.exitCode+': '+stderr);await new Promise(done=>setTimeout(done,20));}throw new Error('Timed out: '+JSON.stringify(events.slice(-4))+' '+stderr);};
  try{
   const initial={type:'prompt',text:'Inspect this Pi',workspace:cwd,defaultCwd:cwd,agentDir,sessionDir,model:'fixture',models:[{id:'fixture',contextWindow:128000}],agent:{installPermission:'automatic'},gateway:`http://127.0.0.1:${server.address().port}/`,token:'local-fixture'};
-  send(initial);await wait(()=>events.some(e=>e.type==='done'));
+  // Cold SDK imports get the upstream startup budget; subsequent waits stay 15s.
+  send(initial);await wait(()=>events.some(e=>e.type==='done'),45000);
   const first=events.find(e=>e.type==='ready').session.id;
   const tool=events.find(e=>e.type==='tool'&&e.name==='run_pi_command'&&e.state==='done');
   assert.equal(JSON.parse(tool.result).sessionId,first);assert.equal(JSON.parse(tool.result).agentDir,agentDir);

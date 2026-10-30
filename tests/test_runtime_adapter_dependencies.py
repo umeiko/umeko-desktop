@@ -29,18 +29,52 @@ def temporary():
         shutil.rmtree("\\\\?\\" + str(base.resolve()) if os.name == "nt" else base)
 
 
-def copy_modules(source, target, *, missing_tar=False):
+def copy_modules(source, target, *, missing_tar=False, missing_background=False):
     # Hard links keep the real SDK fixture small; project_runtime still performs
     # its normal copy, and tests never modify the linked package source files.
     source_path, target_path = source.resolve(), target.resolve()
     if os.name == "nt":
         source_path, target_path = Path("\\\\?\\" + str(source_path)), Path("\\\\?\\" + str(target_path))
     def ignore(directory, names):
-        return ["tar"] if missing_tar and Path(directory) == source_path else []
+        if Path(directory) != source_path:
+            return []
+        return (["tar"] if missing_tar else []) + (["shell-quote", "@alexlikevibe"] if missing_background else [])
     shutil.copytree(source_path, target_path, copy_function=os.link, ignore=ignore)
 
 
 class RuntimeAdapterDependencyTests(unittest.TestCase):
+    def test_old_kernel_receives_background_dependencies_without_network(self):
+        with temporary() as temp:
+            base = Path(temp)
+            release = base / "old-kernel"
+            copy_modules(FACTORY / "node_modules", release / "node_modules", missing_background=True)
+            shutil.copy2(FACTORY / "manifest.json", release / "manifest.json")
+            node = os.environ.get("UMEKO_TEST_NODE") or pi_runtime.node_executable()
+            with patch.object(pi_runtime, "node_executable", return_value=node):
+                original_run, failures = pi_runtime.subprocess.run, []
+                def observe(command, **options):
+                    result = original_run(command, **options)
+                    failures.append(result.stderr)
+                    return result
+                with patch.object(pi_runtime, "ensure_adapter_dependencies"), \
+                     patch.object(pi_runtime.subprocess, "run", side_effect=observe), \
+                     self.assertRaises(RuntimeError):
+                    pi_runtime.verify_runtime(release, ROOT / "runtime/bridge.mjs")
+                self.assertIn("Cannot find package 'shell-quote'", failures[-1])
+                pi_runtime.verify_runtime(release, ROOT / "runtime/bridge.mjs")
+            for name, version in (("@alexlikevibe/pi-bg", "2.3.0"), ("shell-quote", "1.12.0")):
+                self.assertEqual(json.loads((release / "node_modules" / name / "package.json").read_text())["version"], version)
+            script = ("const {createJobManager}=await import(" + json.dumps((release / "background-jobs.mjs").as_uri()) + ");"
+                      "const manager=await createJobManager();"
+                      "if(manager.list().length)throw Error('unexpected jobs');"
+                      "await manager.dispose();console.log('OLD_KERNEL_BACKGROUND_READY');")
+            result = pi_runtime.subprocess.run([node, "--input-type=module", "-e", script],
+                cwd=base, env=dict(os.environ, TMP=temp, TEMP=temp, PI_CODING_AGENT_DIR=str(base / "agent")),
+                capture_output=True, text=True, encoding="utf-8", timeout=60,
+                creationflags=pi_runtime.CREATE_NO_WINDOW)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("OLD_KERNEL_BACKGROUND_READY", result.stdout)
+
     def test_existing_external_kernel_without_tar_is_migrated_offline(self):
         with temporary() as temp:
             release = Path(temp) / "old-kernel"

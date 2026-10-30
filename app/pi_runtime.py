@@ -11,7 +11,7 @@ from pathlib import Path
 PACKAGE = "@earendil-works/pi-coding-agent"
 PINNED_VERSION = "1.3.0"
 RELEASE_NAME = "coding-" + PINNED_VERSION
-ADAPTER_DEPENDENCIES = {"@gotgenes/pi-subagents": "25.0.5", "semver": "7.8.5", "tar": "7.5.22"}
+ADAPTER_DEPENDENCIES = {"@gotgenes/pi-subagents": "25.0.5", "@alexlikevibe/pi-bg": "2.3.0", "semver": "7.8.5", "shell-quote": "1.12.0", "tar": "7.5.22"}
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 CATALOG = '''// Umeko provider policy. Native coding-agent implementation is unchanged.
 import { createModels } from "../models.js";
@@ -159,7 +159,7 @@ def verify_runtime(release: Path, bridge_source: Path):
         raise RuntimeError("旧 Agent Core 内核不能用于完整 Pi Coding Agent")
     ensure_adapter_dependencies(release, bridge_source)
     patch_retry_diagnostics(release)
-    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json", "marketplace.mjs", "marketplace-source.mjs", "package-source.mjs", "marketplace-LICENSE.txt"):
+    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json", "marketplace.mjs", "marketplace-source.mjs", "package-source.mjs", "marketplace-LICENSE.txt"):
         shutil.copy2(bridge_source.parent / name, release / name)
     shutil.copytree(bridge_source.parent/'umeko-docs', release/'umeko-docs', dirs_exist_ok=True)
     environment = node_environment(dict(os.environ, PI_OFFLINE="1"))

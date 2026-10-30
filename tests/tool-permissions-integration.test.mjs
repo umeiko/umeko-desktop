@@ -2,11 +2,12 @@ import './tool-permissions-windowless.cjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtempSync,mkdirSync,existsSync,readFileSync,rmSync } from 'node:fs';
+import { mkdtempSync,mkdirSync,existsSync,readFileSync,writeFileSync,rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createToolPermissionExtension } from '../runtime/tool-permissions.mjs';
 import { createSubagentExtension } from '../runtime/subagents.mjs';
+import { createBackgroundJobsExtension } from '../runtime/background-jobs.mjs';
 
 // No external model: this deterministic loopback provider emits real tool calls
 // and receives the native Pi tool results through its next provider request.
@@ -18,8 +19,9 @@ const hostKey=Symbol.for('umeko:tool-permission-host');
 const processKey=Symbol.for('umeko:test:before-process');
 const textOf=message=>typeof message.content==='string'?message.content:JSON.stringify(message.content);
 
-async function harness({turns,policy={mode:'ask',language:'en'},approve,extensions=[],facade=false,child=false}={}){
+async function harness({turns,policy={mode:'ask',language:'en'},approve,extensions=[],facade=false,child=false,agentDefinitions={}}={}){
  const dir=mkdtempSync(join(tmpdir(),'umeko-permission-behavior-')),agentDir=join(dir,'agent');mkdirSync(agentDir);
+ if(Object.keys(agentDefinitions).length){mkdirSync(join(agentDir,'agents'));for(const [name,text] of Object.entries(agentDefinitions))writeFileSync(join(agentDir,'agents',name+'.md'),text);}
  const confirmations=[],notifications=[],providerResults=[],events=[];let requestCount=0,modelRuntime,session;
  const ui={confirm:async(title,message)=>{confirmations.push({title,message});return approve===true;},notify:(text,type)=>notifications.push({text,type})};
  const previousHost=globalThis[hostKey],previousProcess=globalThis[processKey];
@@ -50,7 +52,7 @@ async function harness({turns,policy={mode:'ask',language:'en'},approve,extensio
    const factories=[...(facade?[]:[{name:'permission-test',hidden:true,replaceable:false,factory:createToolPermissionExtension({getPolicy:()=>policy})}]),...extensions];
    const loader=new API.DefaultResourceLoader({cwd:dir,agentDir,settingsManager:settings(),noExtensions:true,noSkills:true,noPromptTemplates:true,noThemes:true,noContextFiles:true,additionalExtensionPaths:factories.filter(f=>f.builtin).map(f=>`builtin:${f.name}`),extensionFactories:factories});
    await loader.reload();assert.deepEqual(loader.getExtensions().errors,[]);
-   ({session}=await API.createAgentSession({cwd:dir,agentDir,modelRuntime,settingsManager:settings(),resourceLoader:loader,sessionManager:Pi.SessionManager.create(dir,join(dir,'sessions')),model:modelRuntime.getModel('umeko-permission-local','permission-test'),tools:['read','bash','edit','write','nested_fixture','subagent',...(process.platform==='win32'?['powershell']:[])]}));
+   ({session}=await API.createAgentSession({cwd:dir,agentDir,modelRuntime,settingsManager:settings(),resourceLoader:loader,sessionManager:Pi.SessionManager.create(dir,join(dir,'sessions')),model:modelRuntime.getModel('umeko-permission-local','permission-test'),tools:['read','bash','edit','write','background_job','nested_fixture','subagent',...(process.platform==='win32'?['powershell']:[])]}));
    await session.bindExtensions(approve===undefined?{}:{uiContext:ui,mode:'rpc'});
    session.subscribe(event=>{if(event.type==='tool_execution_end')events.push({name:event.toolName,isError:event.isError,text:JSON.stringify(event.result),parent:event.parentToolCallId});});
    return {dir,agentDir,session,policy,confirmations,notifications,providerResults,events,modelRuntime,requestCount:()=>requestCount,dangerousAttempts:()=>dangerousProcessAttempts,async close(){await session?.extensionRunner.emit({type:'session_shutdown'});await session?.dispose();await modelRuntime?.dispose?.();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));if(child){process.chdir(previousCwd);if(previousAgentDir===undefined)delete process.env.PI_CODING_AGENT_DIR;else process.env.PI_CODING_AGENT_DIR=previousAgentDir;}if(previousHost===undefined)delete globalThis[hostKey];else globalThis[hostKey]=previousHost;if(previousProcess===undefined)delete globalThis[processKey];else globalThis[processKey]=previousProcess;rmSync(dir,{recursive:true,force:true});}};
@@ -65,6 +67,34 @@ test('actual Pi ask approval executes a harmless native bash operation',{timeout
 test('actual Pi denial prevents native bash side effect and reaches provider context',{timeout:30000},async()=>{
  const h=await harness({turns:[{name:'bash',args:{command:'printf denied > denied-marker.txt'}}],approve:false});
  try{await h.session.prompt('Run the local fixture.');assert.equal(existsSync(join(h.dir,'denied-marker.txt')),false);assert.equal(h.confirmations.length,1);assert.ok(h.providerResults.some(t=>/User denied execution/.test(t)));assert.ok(h.events.some(e=>e.name==='bash'&&e.isError));}finally{await h.close();}
+});
+
+test('actual Pi denies a background start before any job or file is created',{timeout:30000},async()=>{
+ const adapter=createBackgroundJobsExtension();
+ const h=await harness({turns:[{name:'background_job',args:{action:'start',command:'printf denied > background-denied-marker.txt'}}],approve:false,
+   extensions:[{name:'background-jobs',builtin:true,factory:adapter.extension}]});
+ try{
+   await h.session.prompt('Run the local background fixture.');
+   assert.equal(existsSync(join(h.dir,'background-denied-marker.txt')),false);
+   assert.equal(h.confirmations.length,1);
+   assert.ok(h.events.some(e=>e.name==='background_job'&&e.isError));
+   assert.ok(h.providerResults.some(t=>/User denied execution/.test(t)));
+ }finally{await h.close();}
+});
+
+test('actual Pi approval starts the unchanged harmless background command',{timeout:30000},async()=>{
+ const adapter=createBackgroundJobsExtension();
+ const h=await harness({turns:[{name:'background_job',args:{action:'start',command:'printf approved > background-approved-marker.txt'}}],approve:true,
+   extensions:[{name:'background-jobs',builtin:true,factory:adapter.extension}]});
+ let manager;
+ try{
+   await h.session.prompt('Run the approved local background fixture.');
+   manager=await adapter.getManager();const jobs=manager.list();assert.equal(jobs.length,1);
+   assert.equal((await manager.wait(jobs[0].id,{timeoutMs:10000})).exitCode,0);
+   assert.equal(readFileSync(join(h.dir,'background-approved-marker.txt'),'utf8'),'approved');
+   assert.equal(h.confirmations.length,1);
+   assert.ok(h.events.some(e=>e.name==='background_job'&&!e.isError));
+ }finally{await h.close();if(manager)rmSync(manager.directory,{recursive:true,force:true});}
 });
 
 test('actual Pi headless native write is blocked without approval UI',{timeout:30000},async()=>{
@@ -102,6 +132,22 @@ test('real community child birth inherits mandatory SDK facade gate',{timeout:90
    const {getSubagentsService}=await jiti.import('@gotgenes/pi-subagents');const service=getSubagentsService();assert.ok(service);
    const id=service.spawn('general-purpose','Run the deterministic permission fixture.',{foreground:true});await service.waitForAll();
    const record=service.getRecord(id);assert.equal(record.status,'completed',record.error);assert.ok(h.confirmations.some(c=>c.message.includes('git push --force origin main')));assert.ok(h.providerResults.some(t=>/User denied execution/.test(t)));assert.equal(h.dangerousAttempts(),0);
+ }finally{adapter.dispose();await h.close();}
+});
+
+test('real community child background starts inherit the parent permission policy',{timeout:90000},async()=>{
+ const adapter=createSubagentExtension({emit:()=>{}});
+ const jobs=createBackgroundJobsExtension();
+ const h=await harness({facade:true,child:true,policy:{mode:'auto',language:'en'},approve:false,extensions:[{name:'subagents',builtin:true,factory:adapter.extension},{name:'background-jobs',builtin:true,factory:jobs.extension}],
+   agentDefinitions:{'background-review':'---\nname: background-review\ndescription: Local background permission test\ntools: background_job\n---\nRun the local fixture.'},
+   turns:[{name:'background_job',args:{action:'start',command:'git push --force origin main'}}]});
+ try{
+   const jiti=createJiti(new URL('../runtime/subagents.mjs',import.meta.url).href,{moduleCache:false,tryNative:false,fsCache:join(h.agentDir,'cache','permission-service')});
+   const {getSubagentsService}=await jiti.import('@gotgenes/pi-subagents');const service=getSubagentsService();assert.ok(service);
+   const id=service.spawn('background-review','Run the deterministic background permission fixture.',{foreground:true});await service.waitForAll();
+   const record=service.getRecord(id);assert.equal(record.status,'completed',record.error);
+   assert.ok(h.confirmations.some(c=>c.message.includes('git push --force origin main')),JSON.stringify({results:h.providerResults,result:record.result,prompts:h.confirmations}));
+   assert.ok(h.providerResults.some(t=>/User denied execution/.test(t)));assert.equal(h.dangerousAttempts(),0);
  }finally{adapter.dispose();await h.close();}
 });
 

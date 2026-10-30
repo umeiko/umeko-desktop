@@ -126,10 +126,10 @@ def main():
     for name in ("fd", "rg"):
         tool = runtime / "bin" / (name + (".exe" if os.name == "nt" else ""))
         subprocess.run([str(tool), "--version"], check=True, capture_output=True, timeout=15)
-    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
+    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "background-jobs.mjs", "process-guard.mjs", "tool-permissions.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         if hashlib.sha256((runtime / name).read_bytes()).digest() != hashlib.sha256((ROOT / "runtime" / name).read_bytes()).digest():
             raise RuntimeError("Packaged Pi bridge differs from the source: " + name)
-    for name in ("subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "rpc-ui.mjs", "widget-messages.mjs"):
+    for name in ("subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "rpc-ui.mjs", "widget-messages.mjs", "background-jobs.mjs", "process-guard.mjs", "tool-permissions.mjs"):
         if not (runtime / name).is_file() or not (resources / "runtime" / name).is_file():
             raise RuntimeError("Bundled subagent runtime module is missing: " + name)
     npm = resources / "runtime/node" / ("node_modules/npm/bin/npm-cli.js" if os.name == "nt" else "lib/node_modules/npm/bin/npm-cli.js")
@@ -142,6 +142,8 @@ def main():
     (report_dir / "pi.log").write_text(pi.stdout + pi.stderr, encoding="utf-8")
     if pi.returncode or '"ok":true' not in pi.stdout or '"version":"' + PINNED_VERSION + '"' not in pi.stdout:
         raise RuntimeError("Packaged Pi self-test failed: " + pi.stdout[-1500:] + pi.stderr[-1500:])
+    subprocess.run([str(node), str(ROOT / "scripts/background_jobs_smoke.mjs"), str(runtime)],
+                   env=environment, check=True, timeout=45)
     if sys.platform == "darwin":
         subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(output / "Umeko.app")], check=True)
     (report_dir / "result.json").write_text(json.dumps({"gui": "passed", "pi": "passed", "terminal":"passed", "build": metadata}, indent=2), encoding="utf-8")

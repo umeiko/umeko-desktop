@@ -11,6 +11,7 @@ import { packageSource } from "./package-source.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
+import { backgroundJobsExtension } from "./background-jobs.mjs";
 import { createWidgetMessages } from "./widget-messages.mjs";
 import { createToolPermissionExtension } from "./tool-permissions.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -37,7 +38,7 @@ const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", entry));
 const { loadMcpConfig } = await import(new URL("./extensions/mcp/config.js", entry));
 const { allToolNames } = await import(new URL("./core/tools/index.js", entry));
-const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, ...MARKETPLACE_TOOLS];
+const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, ...MARKETPLACE_TOOLS, "background_job"];
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 const umekoControl = createUmekoControl({ emit });
@@ -254,7 +255,10 @@ async function restoreSubagentSession(child, context, customTools) {
   // transcripts use the standard read-only policy for Explore/Plan.
   const readonly = ["Explore","Plan"].includes(child.type);
   const loader = new Pi.DefaultResourceLoader({cwd:manager.getCwd(),agentDir:config.agentDir,settingsManager:policy,
-    extensionFactories: [{ name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension }],
+    extensionFactories: [
+      { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
+      { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension },
+    ],
     systemPrompt:context?.systemPrompt || `You are the ${child.type} subagent embedded in Umeko Desktop. Continue the task in this existing conversation. ${readonly ? "Inspect and report only; do not modify files." : ""}`,
     appendSystemPrompt:context?.systemPrompt?.includes(SUBAGENT_COMPLETION_HINT) ? [] : [SUBAGENT_COMPLETION_HINT],
     extensionsOverride:base=>({...base,extensions:base.extensions.filter(extension=>!String(extension.path || "").includes("pi-subagents"))})});
@@ -319,6 +323,7 @@ async function init(input) {
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },
           { name: "umeko-control", builtin: true, replaceable: false, factory: pi => umekoControl.extension(pi) },
           { name: "marketplace", builtin: true, replaceable: false, factory: pi => marketplace.extension(pi) },
+          { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension },
           { name: "subagents", builtin: true, replaceable: true, factory: subagents.extension },
           { name: "output-continuation", builtin: true, replaceable: false, factory: outputContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },

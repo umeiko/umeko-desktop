@@ -18,6 +18,10 @@ MCP：`mcp.get` 的 `scope` 是 `global` 或 `project`，返回本实例文件�
 
 Umeko 的 [Provider 插件](provider-plugins.md)和 [Widget 插件](widget-plugins.md)与这些 Pi 扩展分开管理。Provider 接入模型，Widget 扩展桌面面板与当前聊天。主题与 Pi 终端配色不同，见 themes.md。
 
+## 后台命令
+
+长时间运行命令时使用内置 `background_job` 工具：启动后获得任务ID，之后可以查询状态、增量读取独立输出、限时等待，或只停止该任务的进程树。普通 bash 会拒绝按程序名称或批量结束进程的命令，具体PID仍可使用。详见 [background-jobs.md](background-jobs.md)。
+
 ## 子 Agent
 
 互不依赖、范围清楚的任务可以交给内置 `subagent` 工具。使用其他模型时，先查看 [委派子代理](delegate-subagents.md) 中当前实例的完整调用名称。主 Agent 负责汇总结果并给出最终答复。
