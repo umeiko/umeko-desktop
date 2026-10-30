@@ -164,8 +164,11 @@ class ContextCompactionTests(unittest.TestCase):
         if popup is not None and popup.property("visible") and not popup.property("desiredOpen"):
             self.wait_for(lambda: not popup.property("visible"))
         self.click("contextUsageMouse")
+        # Content becomes opaque before the PID geometry settles; the action can
+        # still be clipped then, so a real mouse click may dismiss the popup.
         self.wait_for(lambda: (popup := self.window.findChild(QObject, "compactContextPopup")) is not None
-                      and popup.property("visible") and popup.property("contentOpacity") > 0.98)
+                      and popup.property("visible") and popup.property("desiredOpen")
+                      and popup.property("contentOpacity") > 0.98 and not popup.property("animating"))
 
     def event_row(self):
         return next((item for item in items(self.window)
