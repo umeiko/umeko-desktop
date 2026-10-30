@@ -112,7 +112,9 @@ try:
     assert (workspace/'hello.md').exists() and find('fileManagerRenameField') is None
     click('fileTreeRow_hello.md',Qt.RightButton);click('fileManagerRename')
     wait(lambda:find('fileManagerRenameField') is not None and find('fileManagerRenameField').property('activeFocus'),'Inline rename did not reopen')
-    QTest.keyClick(window,Qt.Key_A,Qt.ControlModifier);QTest.keyClicks(window,'renamed.md');QTest.keyClick(window,Qt.Key_Return)
+    QTest.keyClick(window,Qt.Key_A,Qt.ControlModifier)
+    for character in 'renamed.md':QTest.keyClick(window,Qt.Key(ord(character.upper())))
+    QTest.keyClick(window,Qt.Key_Return)
     wait(lambda:(workspace/'renamed.md').exists() and find('fileTreeRow_renamed.md') is not None,'File was not renamed')
     click('fileTreeRow_delete-me.txt',Qt.RightButton);click('fileManagerDelete')
     wait(lambda:find('fileManagerDeleteDialog').property('visible'),'Delete confirmation did not open')
