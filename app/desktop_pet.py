@@ -118,7 +118,10 @@ class DesktopPet(QObject):
         pack = self._packs.get(self._config['appearance']) or self._packs.get('yanami', {})
         asset = pack.get('states', {}).get(self.motion.state) or pack.get('states', {}).get('idle', '')
         source = QUrl.fromLocalFile(str(pack['directory'] / asset)).toString() if asset else ''
+        top = pack.get('images', {}).get(asset, {}).get('contentTop', 0)
+        top = top if type(top) in (int, float) and 0 <= top <= 1 else 0
         return {'action': self.motion.state, 'source': source, 'animated': pack.get('images', {}).get(asset, {}).get('animated', True),
+                'contentTop': top,
                 'appearance': pack.get('id', 'yanami'), 'name': pack.get('name', ''), 'running': self.running,
                 'activity': copy.deepcopy(self._activity), 'importing': self.importing, 'error': self.last_error}
 
@@ -194,10 +197,13 @@ class DesktopPet(QObject):
         else:
             target = 'idle'
         activity = {'state': target, 'activeChats': len(live), 'activeSubagents': subagents}
+        announce = target in ('done', 'error') and self._activity['state'] != target
         changed = activity != self._activity
         self._activity = activity
         self.motion.request(target)
         changed = self.motion.step(self._config['minimumStateMs'] / 1000, self._config['paused']) or changed
+        if announce:
+            self._speak(target)
         if changed:
             self.changed.emit()
 
@@ -211,15 +217,18 @@ class DesktopPet(QObject):
             return
         self._last_interaction = now
         self._last_interaction_kind = kind
-        pack = self._packs.get(self._config['appearance'], {})
-        lines = pack.get('dialogue', {}).get(kind, [])
-        if lines:
-            self.reaction.emit(random.choice(lines))
+        self._speak(kind)
         if kind in ('tap', 'hover', 'drag'):
             if kind != 'hover' or self.motion.target == 'idle':
                 self.motion.interact('done' if kind == 'tap' else 'waiting', self._config['minimumStateMs'] / 1000)
                 if self.motion.step(self._config['minimumStateMs'] / 1000, self._config['paused']):
                     self.changed.emit()
+
+    def _speak(self, kind):
+        pack = self._packs.get(self._config['appearance'], {})
+        lines = pack.get('dialogue', {}).get(kind, [])
+        if lines:
+            self.reaction.emit(random.choice(lines))
 
     @Slot(str, 'QVariantMap', result='QVariantMap')
     def ui(self, method, arguments):
