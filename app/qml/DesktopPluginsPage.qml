@@ -83,16 +83,18 @@ Item {
                                 ActionButton {objectName:"openDesktopPluginPageButton";text:I18n.t("打开页面");glyph:"panel-right";visible:!!root.selected && !!root.selected.hasPage;enabled:!!root.selected && root.selected.enabled && root.selected.sessionEnabled;onClicked:root.manager.openPage(root.selectedId)}
                             }
                             Text {visible:!!root.selected && (root.selected.permissions || []).length>0;text:I18n.t("声明的能力")+"\n"+(root.selected?(root.selected.permissions || []).join(" · "):"");textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.font(10)}
-                            Rectangle {Layout.fillWidth:true;height:1;color:Theme.line}
+                            Rectangle {objectName:"desktopPluginSettingsDivider";Layout.fillWidth:true;height:1;color:Theme.line}
                             Loader {
                                 id:widgetSettings;objectName:"desktopPluginSettingsLoader";Layout.fillWidth:true
                                 active:root.visible && !!root.selected && root.selected.enabled && !!root.detail.settingsUrl
+                                visible:active
+                                Layout.preferredHeight:active && item ? item.implicitHeight : 0
                                 onActiveChanged:if(active)setSource(root.detail.settingsUrl,{sdk:settingsSdk})
                                 property string settingsUrl:root.detail.settingsUrl || ""
                                 onSettingsUrlChanged:if(active)setSource(settingsUrl,{sdk:settingsSdk})
                                 Component.onCompleted:if(active)setSource(settingsUrl,{sdk:settingsSdk})
                             }
-                            Text {text:I18n.t("功能说明");color:Theme.ink;font.pixelSize:Theme.font(13);font.weight:Font.DemiBold}
+                            Text {objectName:"desktopPluginReadmeHeading";text:I18n.t("功能说明");color:Theme.ink;font.pixelSize:Theme.font(13);font.weight:Font.DemiBold}
                             TextEdit {objectName:"desktopPluginReadme";Layout.fillWidth:true;text:String(root.detail.readmeText || "").replace(/!\[[^\]]*\]\([^)]*\)/g,"[图片]").replace(/<[^>]+>/g,"");textFormat:text.length>24000 || text.split("\n").length>400 || text.split("|").length>256 || text.split("[").length>256 ? TextEdit.PlainText : TextEdit.MarkdownText;readOnly:true;selectByMouse:true;wrapMode:TextEdit.Wrap;color:Theme.ink;font.pixelSize:Theme.font(12)}
                             Rectangle {Layout.fillWidth:true;height:1;color:Theme.line}
                             Text {visible:!root.detail.settingsUrl;text:I18n.t("插件配置");color:Theme.ink;font.pixelSize:Theme.font(13);font.weight:Font.DemiBold}
