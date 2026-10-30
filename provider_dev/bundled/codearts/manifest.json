@@ -1,0 +1,10 @@
+{
+  "apiVersion": 1,
+  "id": "codearts",
+  "version": "0.1.0",
+  "name": "CodeArts",
+  "entrypoint": "scripts/provider.py:create_provider",
+  "config": "config.json",
+  "configSchema": "config.schema.json",
+  "auth": {"fields": []}
+}

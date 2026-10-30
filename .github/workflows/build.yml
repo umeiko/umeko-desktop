@@ -63,6 +63,7 @@ jobs:
           dbus-run-session -- bash -ec '
             printf "ci-ephemeral-password" | gnome-keyring-daemon --unlock --components=secrets
             .venv/bin/python -m unittest discover -s tests -p "test_*.py" -v
+            .venv/bin/python tests/codearts_plugin_ui_smoke.py
             .venv/bin/python tests/subagent_pane_ui_smoke.py
             .venv/bin/python tests/subagent_queue_ui_smoke.py
             .venv/bin/python tests/characters_ui_smoke.py
