@@ -69,6 +69,7 @@ jobs:
             .venv/bin/python tests/provider_popup_ui_smoke.py
             .venv/bin/python tests/desktop_plugins_ui_smoke.py
             .venv/bin/python tests/desktop_pet_ui_smoke.py
+            .venv/bin/python tests/global_agents_ui_smoke.py
             .venv/bin/python tests/subagent_collection_ui_smoke.py
             .venv/bin/python tests/subagent_reaction_ui_smoke.py
             .venv/bin/python tests/model_popup_ui_smoke.py

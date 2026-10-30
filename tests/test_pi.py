@@ -108,6 +108,23 @@ class PiTests(unittest.TestCase):
         self.node_args = ['--import', (ROOT / 'tests/retry-clock.mjs').as_uri()]
         self.start()
 
+    def test_global_coordinator_has_one_tool_and_blocks_bypass(self):
+        requests=[]
+        self.desktop_control=lambda event: requests.append(event) or {'ok':True,'requestId':'fixture-request'}
+        calls=iter([
+            {'operation':'batch','arguments':{'operations':[{'operation':'sessions.list'}]}},
+            {'operation':'agent_bus.dispatch','arguments':{'targetId':'session:fixture','text':'native coordinator boundary'}},
+        ])
+        def response(_model,messages,tools,_tokens):
+            self.assertEqual({tool['name'] for tool in tools},{'umeko_desktop'})
+            self.assertNotIn('EXTENSION_MARKER_NATIVE',str(messages))
+            command=next(calls,None)
+            return Completion(tool_calls=[{'id':'gate-'+command['operation'],'name':'umeko_desktop','arguments':command}]) if command else Completion('Coordinator boundary passed')
+        self.response_fn=response
+        events=self.command({**self.payload,'type':'prompt','text':'Exercise the coordinator tool boundary','globalCoordinator':True,'agent':{'safeMode':True}})
+        self.assertEqual([e['operation'] for e in requests],['agent_bus.dispatch'])
+        self.assertTrue(any('Coordinator boundary passed' in e.get('text','') for e in events))
+
     def test_umeko_tool_round_trip_uses_desktop_protocol(self):
         requests = []
         def desktop(event):

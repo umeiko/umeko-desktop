@@ -42,12 +42,14 @@ class DesktopPlugins(QObject):
         self._pet=DesktopPet(self)
         self._pet_imports={}
         self._pet.imported.connect(self.pet_imported)
+        from .global_agents import GlobalAgents
+        self.global_agents=GlobalAgents(self)
         self.synchronize()
     def path(self, identifier):
         e=self.entries[identifier]
         return self.b.root/'umeko-plugins'/identifier if e.get('builtin') else self.root/'packages'/identifier/e['version']
     def application(self,identifier):return self.entries.get(identifier,{}).get('lifecycle','session')=='application'
-    def enabled(self,identifier):return self.settings.get('enabled',{}).get(identifier,not self.application(identifier) or identifier=='desktop-pet' and self.entries[identifier].get('builtin',False))
+    def enabled(self,identifier):return self.settings.get('enabled',{}).get(identifier,not self.application(identifier) or identifier in ('desktop-pet','global-agents') and self.entries[identifier].get('builtin',False))
     @Property(QObject,constant=True)
     def pet(self):return self._pet
     def session_enabled(self,identifier):
@@ -73,7 +75,8 @@ class DesktopPlugins(QObject):
     def recentPlugin(self):
         available=self.sessionPlugins
         identifier=self.settings.get('recentPages',{}).get(self.recent_key())
-        return next((e for e in available if e['id']==identifier),available[0] if available else {})
+        fallback=next((e for e in available if not self.application(e['id'])),available[0] if available else {})
+        return next((e for e in available if e['id']==identifier),fallback)
     @Property('QVariantMap',notify=sessionChanged)
     def session(self):
         result=dict(self._session)
@@ -112,7 +115,7 @@ class DesktopPlugins(QObject):
         key=view.id or 'draft:'+view.key
         switched=self._session.get('token')!=view.key or self._session.get('workspace')!=view.workspace
         if switched:
-            self.closePage()
+            if self._page!="global-agents": self.closePage()
             for identifier in list(self.workers):
                 if not self.application(identifier):self.stop(identifier)
             self.storage_key=key
@@ -182,9 +185,10 @@ class DesktopPlugins(QObject):
         env.insert('PYTHONDONTWRITEBYTECODE','1');process.setProcessEnvironment(env);return process
     def start(self,identifier):
         if self.closed or identifier in self.workers or identifier in self._failed_services:return
-        if identifier=='desktop-pet' and self.entries[identifier].get('builtin'):
-            self.workers[identifier]={'service':self._pet,'ready':True,'pending':set(),'token':self.application_token}
-            self._pet.start();self.changed.emit();return
+        if identifier in ('desktop-pet','global-agents') and self.entries[identifier].get('builtin'):
+            service=self._pet if identifier=='desktop-pet' else self.global_agents
+            self.workers[identifier]={'service':service,'ready':True,'pending':set(),'token':self.application_token}
+            service.start();self.changed.emit();return
         application=self.application(identifier)
         p=self.process();w={'process':p,'buffer':b'','pending':set(),'queue':[],'ready':False,'token':self.application_token if application else self._session['token']};self.workers[identifier]=w
         def initialize():
@@ -258,8 +262,8 @@ class DesktopPlugins(QObject):
             def invoke():
                 if self.workers.get(identifier) is not w:return
                 try:
-                    result=self._pet.handle(method,args)
-                    if method=='importAppearance':
+                    result=w['service'].handle(method,args,agent=agent,session=session or self._session) if identifier=='global-agents' else w['service'].handle(method,args)
+                    if identifier=='desktop-pet' and method=='importAppearance':
                         self._pet_imports[result['importId']]=(request,w);return
                     value={'ok':True,'result':result}
                 except (ValueError,OSError,TypeError) as error:value={'ok':False,'error':str(error)}
@@ -461,6 +465,7 @@ class DesktopPlugins(QObject):
     def close(self):
         if self.closed:return
         self.closed=True;self.refresh.stop()
+        self.global_agents.close()
         self._pet.close()
         processes=[w["process"] for w in self.workers.values() if 'process' in w]
         for identifier in list(self.workers):self.stop(identifier)

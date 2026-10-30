@@ -90,7 +90,11 @@
 | `updates.install` | 无 | all | 是 |
 | `kernel.check` | 无 | 无 | 是 |
 | `kernel.update` | 无 | all | 是 |
+| `agent_bus.overview` | 无 | 无 | 否 |
+| `agent_bus.requests` | 无 | 无 | 否 |
+| `agent_bus.dispatch` | `targetId: string`, `text: string` | 无 | 否 |
+| `agent_bus.reply` | `requestId: string`, `result: string`, `status: string="completed"` | 无 | 否 |
 
 Widget 只读查询：`widgets.list`、`widgets.docs`、`widgets.messages`、`widgets.result`、`widgets.resource`。
 
-`plugins.*` 管理 Provider 插件；`widgets.*` 管理桌面 Widget。`help` 的 `arguments.topic` 可为 `plugins`、`provider` 或 `widget`。
+`plugins.*` 管理 Provider 插件；`widgets.*` 管理桌面 Widget。`help` 的 `arguments.topic` 可为 `plugins`、`provider`、`widget` 或 `agents`。
