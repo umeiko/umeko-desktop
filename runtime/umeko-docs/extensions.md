@@ -18,4 +18,4 @@ MCP：`mcp.get` 的 `scope` 是 `global` 或 `project`，返回本实例文件�
 
 ## 子 Agent
 
-可把互不依赖、范围清楚的任务交给内置 `subagent` 工具。子 Agent 类型由 Agent 在项目的 `.pi/agents/*.md` 中按需定义和维护。任务可以在前台等待结果，也可以放到后台运行，后台默认最多同时运行 4 个；用 `steer_subagent` 补充当前任务，用 `subagent` 的 `resume` 接着处理已有任务。主 Agent 负责汇总结果并给出最终答复。
+互不依赖、范围清楚的任务可以交给内置 `subagent` 工具。使用其他模型时，先查看 [委派子代理](delegate-subagents.md) 中当前实例的完整调用名称。主 Agent 负责汇总结果并给出最终答复。

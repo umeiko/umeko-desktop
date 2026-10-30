@@ -42,6 +42,7 @@ from .preferences import PreferencesMixin
 from .common_providers import CommonProvidersMixin
 from .chatbox import media_view
 from .subagents import Subagents
+from .characters import CharactersMixin
 
 
 GREETINGS = (
@@ -60,9 +61,21 @@ GREETINGS = (
 )
 
 
-class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObject):
+class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObject):
     changed = Signal()
     appearanceChanged = Signal()
+
+    @Property('QVariantList', notify=changed)
+    def characterPacks(self):
+        return self._characterPacks()
+
+    @Property('QVariantMap', notify=changed)
+    def characterStyle(self):
+        return self._characterStyle()
+
+    @Property('QStringList', notify=changed)
+    def characterNames(self):
+        return self._characterNames()
 
     @Property(str, notify=appearanceChanged)
     def language(self):
@@ -118,6 +131,7 @@ class Controller(CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObj
         self.root = root
         self._app_about = AppAbout(self)
         self.store = Store()
+        self._init_characters()
         self.transcripts = TranscriptRepository(self.store.directory / 'cache/chat-index')
         self.store.data["themes"] = theme_library(self.store.data.get("themes"))
         if self.store.data["theme"] not in BASES and not any("custom:" + row["id"] == self.store.data["theme"] for row in self.store.data["themes"]):

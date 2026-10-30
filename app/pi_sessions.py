@@ -102,7 +102,7 @@ class PiSessionPool(QObject):
         record.process, record.buffer, record.ready = process, b"", False
         environment = QProcessEnvironment.systemEnvironment()
         for key in environment.keys():
-            if key.upper() in ("NODE_OPTIONS", "NODE_PATH") or key.upper().endswith(("API_KEY", "ACCESS_TOKEN")):
+            if key.upper() in ("NODE_OPTIONS", "NODE_PATH") or key.upper().endswith(("API_KEY", "ACCESS_TOKEN", "_AK", "_SK", "_SECRET_KEY", "_SECURITY_TOKEN")):
                 environment.remove(key)
         environment.remove("PI_OFFLINE")
         for key, value in npm_overrides(payload.get("agent") or {}).items():

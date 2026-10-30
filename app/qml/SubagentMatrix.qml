@@ -6,6 +6,7 @@ AnchoredPidPopup {
     id: root
     objectName: "subagentMatrix"
     property var agents: []
+    collapsedRect: Qt.rect(0,0,buttonWidth,buttonHeight)
     fullWidth: 740
     fullHeight: Math.min(560, Theme.control(52)+Math.ceil(agents.length/grid.columns)*grid.cellHeight+padding*2)
     openBelow: Overlay.overlay ? anchorPosition.y < Overlay.overlay.height/2 : false

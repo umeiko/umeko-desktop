@@ -58,6 +58,11 @@ class Subagents(QObject):
         self._deadline.start()
         self.loaded.connect(self._loaded)
         controller.viewChanged.connect(self._view_changed)
+        controller.changed.connect(self._characters_changed)
+
+    def _characters_changed(self):
+        self._projection_cache.clear()
+        self.changed.emit()
 
     def _rows(self, record):
         if not record.subagents:
@@ -82,7 +87,7 @@ class Subagents(QObject):
         projected = {}
         for row in rows.values():
             index = slot(row); counts[index] += 1
-            name = NAMES[index] + (f" · {counts[index]}" if totals[index] > 1 else "")
+            name = self.controller.characterNames[index] + (f" · {counts[index]}" if totals[index] > 1 else "")
             projected[row["id"]] = dict(row, avatar=AVATARS[index], name=name, active=row.get("status") in ACTIVE)
         self._projection_cache[record.key] = (len(rows), projected)
         return projected

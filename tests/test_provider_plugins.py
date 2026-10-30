@@ -59,7 +59,9 @@ class ProviderPluginTests(unittest.TestCase):
         (self.folder / "scripts/provider.py").write_text(code, encoding="utf-8")
         self.archive = self.path / "fixture.zip"
         pack_package(self.folder, self.archive)
-        self.controller = Controller(ROOT)
+        # Import lifecycle tests install only their synthetic package fixture.
+        with patch("app.provider_plugins.BundledProviders.sync", return_value=[]):
+            self.controller = Controller(ROOT)
         self.manager = self.controller.providerPlugins
         self.notices = []
         self.controller.toast.connect(self.notices.append)
@@ -92,6 +94,23 @@ class ProviderPluginTests(unittest.TestCase):
             time.sleep(.01)
         self.app.processEvents()
         self.assertFalse(self.controller.busy, "Pi fixture timed out")
+
+    def test_plugin_description_reaches_packages_and_accounts_without_execution(self):
+        path = self.folder / "manifest.json"
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        for index, description in enumerate((None, " \n ", "  插件说明\nUse <b>plain text</b>.  ")):
+            with self.subTest(description=description):
+                manifest["version"] = f"0.1.{index}"
+                manifest.pop("description", None)
+                if description is not None: manifest["description"] = description
+                path.write_text(json.dumps(manifest), encoding="utf-8")
+                pack_package(self.folder, self.archive)
+                self.install()
+                expected = (description or "").strip()
+                self.assertEqual(self.manager.rows[-1]["description"], expected)
+                package = next(row for row in self.manager.packages if row["version"] == manifest["version"])
+                self.assertEqual(package["description"], expected)
+                self.assertFalse(self.marker.exists(), "Reading metadata must not activate the plugin")
 
     def test_history_with_removed_model_continues_through_imported_provider(self):
         provider_id = self.install()

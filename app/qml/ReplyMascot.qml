@@ -3,10 +3,10 @@ import QtQuick
 FocusScope {
     id: root
     property var selectionController: null
-    property url portraitSource: "../icons/yanami-pixel.png"
-    property string interactionLabel: I18n.t("八奈见：点击互动，连续点击或长按有彩蛋")
-    property var tapLines: [I18n.t("我在呢～"), I18n.t("点心分我一半？"), I18n.t("好啦，继续陪你！")]
-    property string celebrationLine: I18n.t("发现一块小饼干！🍪")
+    property url portraitSource: Character.asset("reply", "../icons/yanami-pixel.png")
+    property string interactionLabel: Character.id === "yanami" ? I18n.t("八奈见：点击互动，连续点击或长按有彩蛋") : Character.style.name
+    property var tapLines: Character.scene("reply.tap", [])
+    property string celebrationLine: Character.scene("reply.celebration", "")
     property real captionMaxWidth: parent ? Math.max(1,parent.width-x-width-8) : 240
     readonly property bool loaded: portrait.status === Image.Ready
     readonly property bool animating: wiggle.running || burst.running
@@ -43,8 +43,8 @@ FocusScope {
     NumberAnimation { id: burst; target: root; property: "progress"; from: 0; to: 1; duration: 850; easing.type: Easing.OutQuad }
     Timer { id: reactionTimer; interval: 1800; onTriggered: root.reaction = "" }
     Timer { id: comboTimer; interval: 900; onTriggered: root.combo = 0 }
-    Image {
-        id: portrait; anchors.centerIn: parent; width: root.width; height: width; source: root.portraitSource; sourceSize: Qt.size(224,224)
+    CharacterArt {
+        id: portrait; anchors.centerIn: parent; width: root.width; height: width; artwork: root.portraitSource; fallbackSource: "../icons/yanami-pixel.png"; sourceSize: Qt.size(224,224)
         fillMode: Image.PreserveAspectFit; smooth: false; mipmap: false; rotation: root.tilt
         scale: pointer.pressed ? 0.87 : pointer.interactionHovered || root.activeFocus ? 1.08 : 1
         Behavior on scale { SpringAnimation { spring: 4; damping: 0.25; epsilon: 0.005 } }

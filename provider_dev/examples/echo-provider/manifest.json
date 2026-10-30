@@ -2,6 +2,7 @@
   "apiVersion": 1,
   "id": "example-echo",
   "name": "Local Echo Example",
+  "description": "Offline example provider that echoes messages locally. No network service or API key is required.",
   "version": "0.1.0",
   "entrypoint": "scripts/provider.py:create_provider",
   "config": "config.json",

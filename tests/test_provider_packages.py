@@ -1,17 +1,39 @@
 """ZIP diagnostics and benign path normalization, without executing provider code."""
 import json
+import shutil
 import stat
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 
-from umeko_provider_sdk.packages import PackageValidationError, pack_package, unpack_package
+from umeko_provider_sdk import ProviderError
+from umeko_provider_sdk.packages import PackageValidationError, pack_package, unpack_package, validate_folder
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class PackagePathsTests(unittest.TestCase):
+    def test_optional_description_is_plain_text_and_rejects_other_types(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder) / "provider"
+            shutil.copytree(ROOT / "provider_dev/examples/echo-provider", folder)
+            path = folder / "manifest.json"
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            manifest.pop("description", None)
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertEqual(validate_folder(folder)[0]["description"], "")
+            for value in ("", " \n ", "  插件说明\nUse <b>plain text</b>.  "):
+                manifest["description"] = value
+                path.write_text(json.dumps(manifest), encoding="utf-8")
+                self.assertEqual(validate_folder(folder)[0]["description"], value.strip())
+            for value in (None, 42, True, [], {}):
+                with self.subTest(value=value):
+                    manifest["description"] = value
+                    path.write_text(json.dumps(manifest), encoding="utf-8")
+                    with self.assertRaisesRegex(ProviderError, "description must be a string"):
+                        validate_folder(folder)
+
     def test_dot_paths_and_wrapper_are_normalized_in_archive_and_manifest(self):
         for prefix in ("./", "./provider/"):
             with self.subTest(prefix=prefix), tempfile.TemporaryDirectory() as folder:

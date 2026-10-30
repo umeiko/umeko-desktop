@@ -72,7 +72,12 @@ def project_runtime(source: Path, destination: Path):
     modules = source / "node_modules"
     version = json.loads((modules / PACKAGE / "package.json").read_text(encoding="utf-8"))["version"]
     # Preserve the complete upstream SDK, native tools, resource loader and dependencies.
-    shutil.copytree(modules, destination / "node_modules")
+    # The source checkout can live under a long Windows workspace path. npm
+    # installs nested SDK type declarations beyond MAX_PATH; preserve them too.
+    source_modules, target_modules = modules.resolve(), (destination / "node_modules").resolve()
+    if os.name == "nt":
+        source_modules, target_modules = "\\\\?\\" + str(source_modules), "\\\\?\\" + str(target_modules)
+    shutil.copytree(source_modules, target_modules)
     ai = destination / "node_modules/@earendil-works/pi-ai/dist"
     if not (ai / "providers/all.js").is_file() or not (ai / "models.generated.js").is_file():
         raise RuntimeError("Pi provider 接口已变化，需要更新桥接适配")
@@ -102,7 +107,7 @@ def verify_runtime(release: Path, bridge_source: Path):
     if manifest.get("package") != PACKAGE or manifest.get("projection") != 2:
         raise RuntimeError("旧 Agent Core 内核不能用于完整 Pi Coding Agent")
     patch_retry_diagnostics(release)
-    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
+    for name in ("bridge.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         shutil.copy2(bridge_source.parent / name, release / name)
     shutil.copytree(bridge_source.parent/'umeko-docs', release/'umeko-docs', dirs_exist_ok=True)
     environment = node_environment(dict(os.environ, PI_OFFLINE="1"))

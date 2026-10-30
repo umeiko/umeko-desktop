@@ -23,9 +23,11 @@ var items = [
     "想试试另一个思路，又舍不得这段上下文？点一下“分支”，我们换条路继续！"
 ]
 
-function choose(previous, randomValue) {
-    var valid = previous >= 0 && previous < items.length
+function choose(previous, randomValue, configured) {
+    var count = configured && configured.length ? configured.length : items.length
+    if (count === 1) return 0
+    var valid = previous >= 0 && previous < count
     var random = randomValue === undefined ? Math.random() : Math.max(0,Math.min(0.999999999,randomValue))
-    var next = Math.floor(random * (items.length - (valid ? 1 : 0)))
+    var next = Math.floor(random * (count - (valid ? 1 : 0)))
     return valid && next >= previous ? next + 1 : next
 }

@@ -169,6 +169,7 @@ Rectangle {
     ChatFileDrop {
         anchors.fill: parent; z: 70; chatWindow: root
         objectName: "subagentFileDropArea"; overlayName: "subagentFileDropOverlay"; mascotName: "subagentFileCatchMascot"
-        mascotSource: "../icons/subagents/" + ["lemon-yakishio","chika-komari","kaju-nukumizu","yumeko-shikiya"][root.agent.avatarSlot || 0] + "-catch.png"
+        mascotSource: Character.roleAsset(root.agent.avatarSlot || 0, "catch", "../icons/subagents/" + ["lemon-yakishio","chika-komari","kaju-nukumizu","yumeko-shikiya"][root.agent.avatarSlot || 0] + "-catch.png")
+        promptText: Character.roleLine(root.agent.avatarSlot || 0, "fileDrop", Character.scene("files.drop", ""))
     }
 }

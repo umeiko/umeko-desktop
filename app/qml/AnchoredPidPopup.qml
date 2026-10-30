@@ -13,6 +13,8 @@ Popup {
     readonly property real buttonWidth: parent ? parent.width : 180
     readonly property real buttonHeight: parent ? parent.height : 31
     property point anchorPosition: Qt.point(0,0)
+    property bool resetBeforeOpen: true
+    property rect collapsedRect: Qt.rect(0,openBelow ? buttonHeight+8 : -buttonHeight-8,buttonWidth,buttonHeight)
     readonly property var anchorWindow: parent ? parent.Window.window : null
     function refreshAnchor() { anchorPosition = parent && Overlay.overlay ? parent.mapToItem(Overlay.overlay,0,0) : Qt.point(0,0) }
     readonly property real expandedWidth: Math.max(1, Math.min(fullWidth, Overlay.overlay ? Overlay.overlay.width - 24 : fullWidth))
@@ -31,9 +33,14 @@ Popup {
     // in connections so their signal handlers cannot replace this behavior.
     Connections {
         target: root
-        function onAboutToShow() { root.refreshAnchor(); root.desiredOpen = true }
+        function onAboutToShow() {
+            root.refreshAnchor()
+            if (root.resetBeforeOpen) motion.snapTo(root.collapsedRect)
+            root.resetBeforeOpen = false
+            root.desiredOpen = true
+        }
         function onAboutToHide() { root.desiredOpen = false }
-        function onClosed() { motion.snap() }
+        function onClosed() { root.resetBeforeOpen = true; motion.snap() }
     }
     Connections {
         target: root.anchorWindow
@@ -43,6 +50,6 @@ Popup {
     PidMotion {
         id: motion
         targetRect: root.desiredOpen ? Qt.rect(root.openX, root.openBelow ? root.buttonHeight+8 : -root.expandedHeight-8, root.expandedWidth, root.expandedHeight)
-                                    : Qt.rect(0,root.openBelow ? root.buttonHeight+8 : -root.buttonHeight-8,root.buttonWidth,root.buttonHeight)
+                                    : root.collapsedRect
     }
 }

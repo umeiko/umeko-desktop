@@ -16,7 +16,9 @@ class CommonProviderTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.environment = patch.dict(os.environ, {'UMEKO_DATA_DIR': self.temp.name})
         self.environment.start()
-        self.controller = Controller(ROOT)
+        # This fixture tests only the accounts it explicitly adds.
+        with patch("app.provider_plugins.BundledProviders.sync", return_value=[]):
+            self.controller = Controller(ROOT)
 
     def tearDown(self):
         self.controller.close()
