@@ -126,6 +126,7 @@ def create_plugin(context):
 | `session.read` 权限 | 额外提供最近 8 条消息的角色和文本，每条最多 2000 字符 |
 | `sdk.config` / `context.config` | 按插件 schema 验证后的配置 |
 | `sdk.colors`、`sdk.scale`、`sdk.language`、`sdk.active` | 页面主题、字号缩放、当前界面语言（`zh` / `en`）和当前是否可交互 |
+| `sdk.chatMessageComponent` | 聊天侧栏页面的宿主消息组件，复用主聊天的 Markdown、代码高亮、思考和工具过程渲染。Loader 加载后设置 `message`（含 `activity`）、`messageIndex`、`assistantName`、`portrait`、`replyPortrait`（可选）、`busy`、`last`；由 Widget 提供有界消息数据。 |
 | `context.resolve_workspace(relative)` | 在授权工作区内解析文件路径，要求 `workspace.read` |
 | `context.state_dir` | 按插件和会话划分的持久状态目录 |
 
@@ -144,3 +145,5 @@ Agent 可调用插件公开方法传入结构化数据。插件通过 `context.p
 - Widget 的 Python、QML 和所附程序属于用户选择执行的本机代码；独立进程和 SDK 权限检查不等同于操作系统沙箱。
 
 通信使用宿主生成的请求 ID、插件声明的参数 schema 和当前会话绑定。完整接口说明应放在包内的 Agent 文档中，供模型按需读取。
+
+`sdk.queuedMessagesComponent` 复用主聊天的 `QueuedMessages` 组件。Loader 加载后设置 `controller`（`queuedMessages` 数组与 `steerQueued(id)`、`removeQueued(id)`、`editQueued(id)`、`copy(text)` 方法），可设置 `objectPrefix`、`primaryActionText`、`editEnabled`、`showSourceNames` 和 `heightLimit`。组件通过 `implicitHeight` 提供队列高度；禁用编辑时点击行触发 `inspected(message)`，供 Widget 展示只读完整消息。默认行为与主聊天一致。

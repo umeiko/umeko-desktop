@@ -167,7 +167,7 @@ try:
     window.grabWindow().save(str(out/'git-diff.png'))
     window.setProperty('page','settings');QTest.qWait(200);assert not manager.page;assert not find('webPane').property('opened')
     window.setProperty('page','chat');assert manager.openPage('file-tree');QTest.qWait(200);backend.newSession();QTest.qWait(250);assert not manager.page and set(manager.workers)=={'desktop-pet','global-agents'}
-    manager.setSessionEnabled('file-tree',False);manager.setSessionEnabled('git-viewer',False);manager.setSessionEnabled('pi-manager',False);manager.setEnabled('global-agents',False)
+    manager.setSessionEnabled('file-tree',False);manager.setSessionEnabled('git-viewer',False);manager.setEnabled('global-agents',False);manager.setSessionEnabled('pi-manager',False)
     click('desktopPluginMenuButton')
     wait(lambda:find('desktopPluginSessionMenu').property('desiredOpen') and not find('desktopPluginSessionMenu').property('animating'),'Empty plugin menu did not open')
     assert find('desktopPluginQuickList').property('count')==0

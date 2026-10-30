@@ -25,7 +25,7 @@ Agent 入口只有一个：`umeko_desktop`。第一次使用先调用 `{"operati
 
 用户附带 `terminal-ID-...` 终端时，读取 Widget `terminal` 的文档并操作已有终端；这个终端 ID 是方法参数，不是插件包 ID。Agent 输入的命令和输出会出现在用户的同一个终端界面。
 
-- [全局子智能体 Widget 与选择性开启的会话桥](global-agents.md)
+- [全局子智能体、双向智能体总线与消息队列](global-agents.md)
 
 ## Windows 上运行 Python 项目命令
 
