@@ -195,11 +195,12 @@ def check_popup_lifecycle(name, button):
     assert target.property("contentOpacity") > .98
     QTest.keyClick(window, Qt.Key_Escape)
     closed(target)
-    assert find("promptInput").hasActiveFocus(), name + " Escape lost typing focus"
+    # Dismissal restores focus through Qt.callLater, after visibility changes.
+    wait(lambda: find("promptInput").hasActiveFocus(), name + " Escape lost typing focus")
     open_popup(name, button)
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, QPoint(400, 90))
     closed(target)
-    assert find("promptInput").hasActiveFocus(), name + " outside click lost typing focus"
+    wait(lambda: find("promptInput").hasActiveFocus(), name + " outside click lost typing focus")
     observations.append(name + ": rapid anchor reversal, Escape/outside dismissal, typing focus")
 
 
