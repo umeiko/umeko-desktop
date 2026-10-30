@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 PACKAGE = "_codearts_plugin_account_tests"
 package = types.ModuleType(PACKAGE)
-package.__path__ = [str(Path(__file__).resolve().parents[1] / "provider_dev/bundled/codearts/scripts")]
+package.__path__ = [str(Path(__file__).resolve().parents[1] / "provider_dev/plugins/codearts/scripts")]
 sys.modules[PACKAGE] = package
 account_module = __import__(PACKAGE + ".account", fromlist=["CodeartsAccount"])
 CodeartsAccount = account_module.CodeartsAccount

@@ -55,6 +55,17 @@ jobs:
       - name: Set up Linux
         run: bash setup.sh
 
+      - name: Package optional CodeArts provider
+        run: .venv/bin/python scripts/package-codearts-provider.py
+
+      - name: Upload optional CodeArts provider
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Umeko-codearts-provider
+          path: build/optional-providers/umeko-codearts-provider-*.zip
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Node tests
         run: node --test tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/umeko-documents.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs
 

@@ -1,6 +1,7 @@
 """CodeArts plugin strings; host and SDK stay provider independent."""
 
 STRINGS = {
+    "upgrade_required": ("请升级 Umeko 至包含 #10 账户卡片功能的构建（facef966 或更新）；已发布的 v0.6.0 不支持 CodeArts 插件。", "Upgrade Umeko to a build with #10 account-card support (facef966 or later); the released v0.6.0 does not support the CodeArts plugin."),
     "title": ("连接 CodeArts", "Connect CodeArts"),
     "checking": ("正在检查 CodeArts CLI…", "Checking CodeArts CLI…"),
     "guide": ("右上角用户名 → 我的凭证 → 访问密钥 → 新增访问密钥 → 下载访问密钥\n访问密钥仅能下载一次；验证成功并安全保存后，本插件会删除本次下载的 CSV。也可在此私密粘贴 CSV 内容或依次粘贴 AK、SK。", "In Huawei Cloud Console, choose Username → My Credentials → Access Keys → Create Access Key → Download Access Key. The key can only be downloaded once. After verification and protected storage succeed, this plugin deletes the newly downloaded CSV. You can also privately paste its contents or AK followed by SK here."),

@@ -1,13 +1,58 @@
 """CodeArts Provider SDK API v1 entrypoint, account card and model transport."""
 from __future__ import annotations
 
+import inspect
 import threading
 
-from umeko_provider_sdk import Provider, ProviderError
+from umeko_provider_sdk import HttpSession, Provider, ProviderError
 
 from .account import CodeartsAccount
 from .i18n import CONSOLE_URL, tr
 from .transport import CodeartsTransport
+
+
+def _supports_account_cards(context):
+    """Detect API capabilities, since released clients share SDK version strings."""
+    try:
+        scoped_http = "allowed_http_urls" in inspect.signature(HttpSession.__init__).parameters
+    except (TypeError, ValueError):
+        return False
+    return (scoped_http
+            and all(callable(getattr(Provider, name, None)) for name in (
+                "card_actions", "card_action", "card_status", "card_fields", "set_card_secret"))
+            and all(hasattr(context, name) for name in (
+                "profile_dir", "downloads_dir", "language", "notify", "request_cancelled")))
+
+
+class UpgradeRequiredProvider(Provider):
+    """Load safely in old hosts without creating accounts, servers or CLI work."""
+    def __init__(self, context):
+        super().__init__(context)
+        self._message = tr(getattr(context, "language", "zh"), "upgrade_required")
+
+    def authenticate(self, credentials):
+        return {"label": self._message}
+
+    def list_models(self, refresh=False):
+        return []
+
+    def card_status(self):
+        return ""
+
+    def card_fields(self):
+        return []
+
+    def card_actions(self):
+        return []
+
+    def card_action(self, key):
+        raise ProviderError(self._message)
+
+    def set_card_secret(self, key, value):
+        raise ProviderError(self._message)
+
+    def events(self, model, messages, tools, max_tokens, parameters):
+        raise ProviderError(self._message)
 
 
 class CodeartsProvider(Provider):
@@ -124,4 +169,6 @@ class CodeartsProvider(Provider):
 
 
 def create_provider(context):
+    if not _supports_account_cards(context):
+        return UpgradeRequiredProvider(context)
     return CodeartsProvider(context)

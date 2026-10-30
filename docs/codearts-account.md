@@ -1,16 +1,31 @@
 # CodeArts provider plugin
 
-CodeArts is a public **Provider SDK API v1 package** in
-[`provider_dev/bundled/codearts`](../provider_dev/bundled/codearts/PROVIDER.md).
-Release builds pack it alongside the provider resources. It is installed on first
-run and upgraded when a newer bundled version is available. **Settings → Accounts
-& Providers → Installed plugins → Uninstall plugin** removes it and its accounts.
-The saved uninstall choice survives restarts and application upgrades. The same
-page's **+** menu offers one-click reinstallation.
+CodeArts is an **unofficial, optional Provider SDK API v1 plugin** in
+[`provider_dev/plugins/codearts`](../provider_dev/plugins/codearts/PROVIDER.md),
+distributed separately from the desktop installer as a Provider ZIP Release
+attachment for personal research, learning and exchange. It is not an official
+default Umeko provider. This is the project's integration and distribution
+boundary; the research, learning and exchange description is not any authorization
+or exemption from risk.
 
-Connect on the plugin's account card with **Log in and refresh models**. The
-plugin installs the official China-site CLI if missing, reporting progress on the
-card. Its **Open Huawei Cloud console** action opens the
+Use an Umeko build containing PR #10 (`facef966` or later) and its required SDK
+capabilities. The published **v0.6.0 is unsupported** for this plugin: it predates
+those changes. The current source version still reads `0.6.0`, so the numeric
+client version alone cannot establish compatibility. The plugin checks SDK
+capabilities at runtime.
+
+Download `umeko-codearts-provider-<version>.zip` from the Release attachments when
+available. In **Settings → Accounts & Providers → + → Import custom provider
+implementation**, select the ZIP. Then explicitly activate the imported account
+with **Log in and refresh models**. Importing the ZIP does not execute plugin code.
+Umeko does not install this plugin, create a CodeArts account or download its CLI
+on first startup. Only the explicit login action may install the official
+China-site CLI if missing, with progress shown on the card. Next, use the card to
+import the downloaded access-key CSV, or paste it into the card's private field.
+**Installed plugins → Uninstall plugin** removes the installed plugin version,
+its accounts and credentials; removing an account alone preserves the plugin.
+
+The card's **Open Huawei Cloud console** action opens the
 [official console](https://console.huaweicloud.com/console/?locale=zh-cn):
 
 **右上角用户名 → 我的凭证 → 访问密钥 → 新增访问密钥 → 下载访问密钥**
@@ -57,11 +72,23 @@ measured context-window limits.
 The Python broker/event/process structure is ported from this PR's earlier Node
 bridge and CLI service, adapted from `@saccolabs/pi-claude-cli` 0.10.0,
 `pi-claude-cli` 0.3.1 and `claude-code-pi`. See the
-[MIT notice](../licenses/pi-claude-cli-MIT.txt). HTTP/SSE follows the official
+[MIT notice](../provider_dev/plugins/codearts/licenses/pi-claude-cli-MIT.txt). HTTP/SSE follows the official
 OpenCode server API, with OpenCode 1.2.27 used only as a labelled comparison;
 the fork's exact base remains unknown. CodeArts-specific strings and protocol
 logic live in the plugin. The host supplies generic cards, protected secrets,
-bundled-package lifecycle and request cancellation.
+explicit plugin import lifecycle and request cancellation.
 
-Start a source checkout with **Start-Umeko.cmd** after normal setup. Setup builds
-the public provider resources; release packaging includes them automatically.
+From a source checkout, build the optional ZIP separately:
+
+```bash
+python scripts/package-codearts-provider.py
+```
+
+This standard-library command uses the current Python interpreter to run the
+SDK's `validate` and `pack` commands and writes
+`build/optional-providers/umeko-codearts-provider-<version>.zip`. For an isolated
+output directory, pass `--output-dir <directory>`. The checks CI job builds and
+uploads this ZIP as a separate workflow artifact. It does not publish a Release.
+Maintainers can attach the ZIP to a Release separately; no Release is created by
+this packaging command. The optional ZIP is outside `build/provider-resources`
+and the empty `provider_dev/default-providers.json` default-install list.

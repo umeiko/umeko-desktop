@@ -18,7 +18,7 @@ import unittest
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "provider_dev/bundled/codearts/scripts"
+SCRIPTS = ROOT / "provider_dev/plugins/codearts/scripts"
 package = types.ModuleType("codearts_transport_fixture")
 package.__path__ = [str(SCRIPTS)]
 sys.modules[package.__name__] = package
@@ -232,7 +232,8 @@ def collect(events):
 
 class TransportTests(unittest.TestCase):
     def setup_fixture(self, mode="tools", **options):
-        root = Path("C:/UmekoTests/codearts-transport")
+        root = (Path("C:/UmekoTests/codearts-transport") if os.name == "nt"
+                else Path(tempfile.gettempdir()) / "UmekoTests/codearts-transport")
         root.mkdir(parents=True, exist_ok=True)
         temp = tempfile.TemporaryDirectory(dir=root)
         fake = FakeServer(mode)

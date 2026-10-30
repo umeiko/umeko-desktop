@@ -19,7 +19,7 @@ from umeko_provider_sdk import ProviderContext, ProviderError
 
 PACKAGE = "_codearts_wrapper_source_tests"
 package = types.ModuleType(PACKAGE)
-package.__path__ = [str(Path(__file__).resolve().parents[1] / "provider_dev/bundled/codearts/scripts")]
+package.__path__ = [str(Path(__file__).resolve().parents[1] / "provider_dev/plugins/codearts/scripts")]
 sys.modules[PACKAGE] = package
 plugin = importlib.import_module(PACKAGE + ".provider")
 Account = importlib.import_module(PACKAGE + ".account").CodeartsAccount

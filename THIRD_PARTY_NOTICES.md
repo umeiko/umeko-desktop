@@ -1,15 +1,5 @@
 # Third-party notices
 
-## CodeArts provider handoff
-
-The schema-only MCP handoff, parked request lifecycle and inactivity handling in
-`runtime/codearts.mjs` adapt the structure of `@saccolabs/pi-claude-cli` 0.10.0
-([source](https://github.com/agustinsacco/pi-claude-cli)) and `pi-claude-cli` 0.3.1
-([source](https://github.com/rchern/pi-claude-cli)). Both published distributions
-carry MIT, Copyright (c) 2026 Rebecca Chernoff; the full notice is retained in
-`licenses/pi-claude-cli-MIT.txt`. The wire adapter uses the OpenCode server API
-and Pi 1.3.0 provider contract. CodeArts and OpenCode executables are not bundled.
-
 ## Bundled search tools
 
 Release bundles include fd 10.3.0 (MIT or Apache-2.0, https://github.com/sharkdp/fd/tree/v10.3.0) and ripgrep 14.1.1 (MIT or Unlicense, https://github.com/BurntSushi/ripgrep/tree/14.1.1) so Pi's find/grep tools work without a first-run download. Their upstream license files accompany the binaries under `runtime/releases/coding-1.3.0/bin`. Archive SHA-256 values are pinned in `scripts/search-tools.json`.
