@@ -76,10 +76,7 @@ def project_runtime(source: Path, destination: Path):
     # Preserve the complete upstream SDK, native tools, resource loader and dependencies.
     # The source checkout can live under a long Windows workspace path. npm
     # installs nested SDK type declarations beyond MAX_PATH; preserve them too.
-    source_modules, target_modules = modules.resolve(), (destination / "node_modules").resolve()
-    if os.name == "nt":
-        source_modules, target_modules = "\\\\?\\" + str(source_modules), "\\\\?\\" + str(target_modules)
-    shutil.copytree(source_modules, target_modules)
+    shutil.copytree(modules, destination / "node_modules")
     ai = destination / "node_modules/@earendil-works/pi-ai/dist"
     if not (ai / "providers/all.js").is_file() or not (ai / "models.generated.js").is_file():
         raise RuntimeError("Pi provider 接口已变化，需要更新桥接适配")
