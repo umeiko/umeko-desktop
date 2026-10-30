@@ -180,7 +180,6 @@ Rectangle {
                             onVisibleChanged:if(visible)Qt.callLater(function(){root.focusRename(true)})
                             onTextEdited:{root.renameDraft=text;root.renameError=""}
                             onAccepted:root.submitRename()
-                            Keys.onShortcutOverride:event=>{if(event.key===Qt.Key_Escape)event.accepted=true}
                             Keys.onEscapePressed:event=>{root.cancelRename(true);event.accepted=true}
                             ToolTip.visible:row.editing && !!root.renameError
                             ToolTip.text:root.renameError
