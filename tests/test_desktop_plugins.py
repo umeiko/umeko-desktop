@@ -87,13 +87,13 @@ def create_plugin(context):return Fixture(context)
         return archive,marker
     def test_official_tree_is_lazy_bounded_and_closes_worker(self):
         directory=Path(self.host._view.workspace);(directory/'a.py').write_text('print(1)');(directory/'nested').mkdir();(directory/'nested/x.txt').write_text('hello')
-        self.assertEqual(len(self.manager.sessionPlugins),2)
+        self.assertEqual(len(self.manager.sessionPlugins),3)
         self.assertTrue(self.manager.openPage('file-tree'));result=self.call('list',{'path':'.'})
         self.assertTrue(result['ok']);entries=result['result']['entries'];self.assertEqual(entries[0]['name'],'nested')
         self.assertNotIn('x.txt',str(entries))
         self.assertNotIn('messages',self.manager.session)
         self.assertFalse(self.call('list',{'path':'..'})['ok'])
-        self.manager.closePage();self.assertEqual(set(self.manager.workers),{'desktop-pet'});self.app.processEvents()
+        self.manager.closePage();self.assertEqual(set(self.manager.workers),{'desktop-pet','global-agents'});self.app.processEvents()
 
     def test_widget_icons_have_a_shared_catalog_and_validate_custom_assets(self):
         rows={row['id']:row for row in self.manager.rows}
@@ -360,7 +360,7 @@ def create_plugin(context):return Fixture(context)
         self.assertEqual(self.host.sent,[('session-one','from-plugin',True)])
         self.assertTrue(marker.exists())
         self.manager.call('late','{}');self.host._view.key='token-two';self.host._view.id='session-two';self.host.viewChanged.emit()
-        self.assertFalse(self.manager.page);self.assertEqual(set(self.manager.workers),{'desktop-pet'})
+        self.assertFalse(self.manager.page);self.assertEqual(set(self.manager.workers),{'desktop-pet','global-agents'})
         deadline=time.monotonic()+1
         while time.monotonic()<deadline:self.app.processEvents();time.sleep(.01)
         self.assertEqual(len(self.host.sent),1)
@@ -415,6 +415,8 @@ def create_plugin(context):return Fixture(context)
         self.manager.setSessionEnabled('file-tree',False)
         self.assertEqual(self.manager.recentPlugin['id'],'git-viewer')
         self.manager.setEnabled('git-viewer',False)
+        self.assertEqual(self.manager.recentPlugin['id'],'global-agents')
+        self.manager.setEnabled('global-agents',False)
         self.assertEqual(self.manager.recentPlugin,{})
         self.manager.setSessionEnabled('file-tree',True)
         persisted=DesktopPlugins(self.host)

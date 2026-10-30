@@ -56,7 +56,7 @@ jobs:
         run: bash setup.sh
 
       - name: Node tests
-        run: node --test tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs tests/marketplace.test.mjs tests/marketplace-source.test.mjs tests/marketplace-limits.test.mjs tests/marketplace-cache.test.mjs tests/marketplace-version-integration.test.mjs tests/marketplace-audit-summary.test.mjs tests/marketplace-npm-resolution.test.mjs
+        run: node --test tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/global-agents.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs tests/marketplace.test.mjs tests/marketplace-source.test.mjs tests/marketplace-limits.test.mjs tests/marketplace-cache.test.mjs tests/marketplace-version-integration.test.mjs tests/marketplace-audit-summary.test.mjs tests/marketplace-npm-resolution.test.mjs
 
       - name: Python unit tests
         run: |
@@ -69,6 +69,7 @@ jobs:
             .venv/bin/python tests/provider_popup_ui_smoke.py
             .venv/bin/python tests/desktop_plugins_ui_smoke.py
             .venv/bin/python tests/desktop_pet_ui_smoke.py
+            .venv/bin/python tests/global_agents_ui_smoke.py
             .venv/bin/python tests/subagent_collection_ui_smoke.py
             .venv/bin/python tests/subagent_reaction_ui_smoke.py
             .venv/bin/python tests/model_popup_ui_smoke.py
@@ -177,7 +178,7 @@ jobs:
             set -e
             python_bin=.venv/bin/python
             if [ "$RUNNER_OS" = Windows ]; then python_bin=.venv/Scripts/python.exe; fi
-            node --test tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs tests/marketplace.test.mjs tests/marketplace-source.test.mjs tests/marketplace-limits.test.mjs tests/marketplace-cache.test.mjs tests/marketplace-version-integration.test.mjs tests/marketplace-audit-summary.test.mjs tests/marketplace-npm-resolution.test.mjs
+            node --test tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/global-agents.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs tests/marketplace.test.mjs tests/marketplace-source.test.mjs tests/marketplace-limits.test.mjs tests/marketplace-cache.test.mjs tests/marketplace-version-integration.test.mjs tests/marketplace-audit-summary.test.mjs tests/marketplace-npm-resolution.test.mjs
             "$python_bin" -m unittest tests.test_update tests.test_common_providers tests.test_openai_responses tests.test_platform tests.test_desktop_notifications tests.test_umeko_control tests.test_characters tests.test_tool_permissions tests.test_terminal_widget tests.test_widget_icon_rendering -q
           }
           export -f verify_desktop

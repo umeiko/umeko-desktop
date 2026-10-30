@@ -8,7 +8,7 @@ export const UMEKO_TOOL = 'umeko_desktop';
 let instanceDocs;
 export const umekoDocs = () => instanceDocs?.docsRoot || fileURLToPath(new URL('./umeko-docs/', import.meta.url));
 export const umekoHelp = () => ({...(instanceDocs || { docsRoot: umekoDocs(), entry: fileURLToPath(new URL('./umeko-docs/README.md', import.meta.url)) }),
-  topics:{plugins:'plugins.md',provider:'provider-plugins.md',widget:'widget-plugins.md'}});
+  topics:{plugins:'plugins.md',provider:'provider-plugins.md',widget:'widget-plugins.md',agents:'global-agents.md'}});
 export function configureUmekoDocs(options) { instanceDocs = prepareDocumentation(options); }
 export const UMEKO_PROMPT = 'Umeko owns providers, credentials, themes, desktop settings, projects and chats; Pi provider configuration does not apply. Umeko plugins have two types: Provider plugins (plugins.*) and desktop Widget plugins (widgets.*). First call umeko_desktop operation help; arguments.topic provider or widget locates the relevant guide. For active Widgets call widgets.list with activeOnly true, then widgets.docs for their documented public methods and communication. Use widgets.call and widgets.result for asynchronous Widget RPC; Widget pushes arrive as attributed custom messages and remain queryable through widgets.messages. Use umeko_desktop to apply changes to the running desktop. Do not edit its settings files behind the UI.';
 
@@ -49,3 +49,10 @@ export function createUmekoControl({ emit, timeoutMs = 90000 }) {
     },
   };
 }
+
+// Mandatory coordinator boundary, independent of user extension/tool filters.
+export function coordinatorToolGate(event) {
+  if (event.toolName !== UMEKO_TOOL || !['agent_bus.overview','agent_bus.dispatch','agent_bus.requests','agent_bus.reply','help','models.list'].includes(event.input?.operation))
+    return { block: true, reason: 'Global coordinators use the opt-in agent_bus.* API; delegate workspace work to a bridged session.' };
+}
+export function coordinatorExtension(pi) { pi.on('tool_call', coordinatorToolGate); }

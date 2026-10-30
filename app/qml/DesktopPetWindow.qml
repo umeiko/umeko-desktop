@@ -65,7 +65,9 @@ Window {
         NumberAnimation {target:root;property:"tilt";to:0;duration:200;easing.type:Easing.OutCubic}
     }
     Rectangle {
-        id:bubble; anchors.top:parent.top; anchors.horizontalCenter:parent.horizontalCenter
+        id:bubble; objectName:"desktopPetSpeechBubble"; anchors.horizontalCenter:parent.horizontalCenter
+        // Respect both letterboxing and the transparent margin inside the art.
+        y:Math.max(4,art.y+art.height-(art.item?art.item.paintedHeight:art.height)*(1-(root.state.contentTop || 0))-height-8)
         width:Math.min(root.width,spoken.implicitWidth+24);height:spoken.implicitHeight+16;radius:12
         color:Theme.surface;border.color:Theme.line;visible:!!root.caption
         Text {id:spoken;anchors.centerIn:parent;width:Math.min(implicitWidth,root.width-24);text:root.caption;textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.ink;font.pixelSize:Theme.font(11)}
@@ -78,15 +80,17 @@ Window {
         sourceComponent:Component {
             Item {
                 rotation:root.tilt
+                readonly property real paintedHeight:picture.item && picture.item.paintedHeight>0?picture.item.paintedHeight:height
                 Loader {
+                    id:picture
                     anchors.fill:parent
                     sourceComponent:root.state.animated ? animation : still
                 }
                 Component {
                     id:animation
-                    AnimatedImage {objectName:"desktopPetAnimation";readonly property bool ready:status===Image.Ready;source:root.state.source;fillMode:Image.PreserveAspectFit;cache:false;asynchronous:true;playing:root.visible && !root.config.paused;mipmap:false;onStatusChanged:if(status===Image.Error)root.caption=I18n.t("形象加载失败，请在桌宠设置中更换形象")}
+                    AnimatedImage {objectName:"desktopPetAnimation";readonly property bool ready:status===Image.Ready;source:root.state.source;fillMode:Image.PreserveAspectFit;verticalAlignment:Image.AlignBottom;cache:false;asynchronous:true;playing:root.visible && !root.config.paused;mipmap:false;onStatusChanged:if(status===Image.Error)root.caption=I18n.t("形象加载失败，请在桌宠设置中更换形象")}
                 }
-                Component {id:still;Image {source:root.state.source;fillMode:Image.PreserveAspectFit;asynchronous:true;cache:false;mipmap:true}}
+                Component {id:still;Image {source:root.state.source;fillMode:Image.PreserveAspectFit;verticalAlignment:Image.AlignBottom;asynchronous:true;cache:false;mipmap:true}}
             }
         }
     }

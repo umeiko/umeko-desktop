@@ -30,7 +30,7 @@ class ToolPermissionTests(unittest.TestCase):
         backend.store = Store(self.directory / "profile")
         backend.store.data["ui"]["language"] = "en"
         backend.adapter = object()
-        backend._view = SimpleNamespace(key="current", busy=True, process=object())
+        backend._view = SimpleNamespace(key="current", busy=True, process=object(), global_agent="")
         background = SimpleNamespace(key="background", busy=True, process=object())
         unloaded = SimpleNamespace(key="unloaded", busy=False, process=None)
         backend._pool = SimpleNamespace(records={r.key: r for r in (backend._view, background, unloaded)},
@@ -132,6 +132,7 @@ class ToolPermissionTests(unittest.TestCase):
         self.assertEqual(payload["permissionMode"], "ask")
         self.assertEqual(payload["language"], "en")
         self.assertEqual(payload["dataDir"], str(backend.store.directory))
+        self.assertFalse(payload.get("globalCoordinator", False))
 
     def test_factory_restore_preserves_user_permission_mode(self):
         from app.pi_management import PiManagement

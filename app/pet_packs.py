@@ -13,6 +13,7 @@ from pathlib import Path
 from PySide6.QtGui import QImageReader
 
 STATES = ('idle', 'thinking', 'working', 'waiting', 'done', 'error')
+BUILTIN_APPEARANCES = ('yanami', 'komari', 'whale-girl')
 MAX_BYTES = 128 * 1024 * 1024
 
 
@@ -73,8 +74,8 @@ def read_pack(folder, check=False):
     if total > MAX_BYTES or pixels > 220_000_000:
         raise ValueError('形象资源总量超过 128 MiB 或 2.2 亿像素')
     dialogue = value.get('dialogue', {})
-    if not isinstance(dialogue, dict) or dialogue.keys() - {'tap', 'hover', 'drag'}:
-        raise ValueError('dialogue 支持 tap、hover、drag')
+    if not isinstance(dialogue, dict) or dialogue.keys() - {'tap', 'hover', 'drag', 'done', 'error'}:
+        raise ValueError('dialogue 支持 tap、hover、drag、done、error')
     for lines in dialogue.values():
         if not isinstance(lines, list) or not 1 <= len(lines) <= 16 or any(not isinstance(s, str) or not s.strip() or len(s) > 120 for s in lines):
             raise ValueError('每种互动台词需要 1–16 条、每条最多 120 字')
@@ -133,7 +134,7 @@ def import_pack(source, destination):
             value = {'format': 'umeko-pet', 'version': 1, 'id': 'custom-' + uuid.uuid4().hex[:12], 'name': source.stem[:48], 'states': {'idle': name}}
             (stage / 'pet.json').write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
         value = read_pack(stage, check=True)
-        if value['id'] == 'yanami' or (destination / value['id']).exists():
+        if value['id'] in BUILTIN_APPEARANCES or (destination / value['id']).exists():
             raise ValueError('该形象 id 已存在，请修改 pet.json 中的 id 后再导入')
         # Retain only declared data files, never Python/QML/HTML from the ZIP.
         keep = {'pet.json', *value['states'].values()}

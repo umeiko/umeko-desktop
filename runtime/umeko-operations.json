@@ -79,6 +79,10 @@
     "updates.cancel": {"target":"about","method":"cancelUpdate","args":[]},
     "updates.install": {"target":"about","method":"installUpdate","idle":"all","async":true,"args":[]},
     "kernel.check": {"target":"backend","method":"checkKernel","async":true,"args":[]},
-    "kernel.update": {"target":"backend","method":"updateKernel","idle":"all","async":true,"args":[]}
+    "kernel.update": {"target":"backend","method":"updateKernel","idle":"all","async":true,"args":[]},
+    "agent_bus.overview": {"target":"global-agents","read":true,"args":[]},
+    "agent_bus.requests": {"target":"global-agents","read":true,"args":[]},
+    "agent_bus.dispatch": {"target":"global-agents","args":[["targetId","string"],["text","string"]]},
+    "agent_bus.reply": {"target":"global-agents","args":[["requestId","string"],["result","string"],["status","string","completed"]]}
   }
 }
