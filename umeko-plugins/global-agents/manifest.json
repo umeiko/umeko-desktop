@@ -1,0 +1,6 @@
+{
+  "kind":"umeko-plugin","apiVersion":1,"id":"global-agents","name":"全局子智能体","version":"1.0.0","icon":"layers",
+  "summary":"管理全局子智能体","description":"具有独立持久上下文的全局协调子智能体。由用户选择形象和模型，管理已开启智能体总线的会话，关联跟踪指令、进度与结果。",
+  "author":"Umeko","lifecycle":"application","entrypoint":"scripts/plugin.py:create_plugin","page":"qml/Main.qml",
+  "permissions":[],"readme":"README.md","agent":{"document":"AGENT.md","methods":{}}
+}

@@ -5,7 +5,7 @@ import { prepareNativeSettings, builtins, extensionName, SUBAGENT_COMPLETION_HIN
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
-import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs } from "./umeko-control.mjs";
+import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
@@ -198,6 +198,7 @@ function contextUsage(session) {
 function exposeNativeTools(session) {
   // Use Pi's registry, schemas and execution. Deferred/codemode tools remain reachable
   // through the native discovery tools; explicitly hidden tools stay hidden.
+  if (config?.globalCoordinator) { session.setActiveToolsByName([UMEKO_TOOL]); return; }
   const declared = session.getAllTools().filter(tool => ["direct", "model-only"].includes(tool.exposure));
   session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...declared.map(tool => tool.name)])]);
 }
@@ -305,10 +306,11 @@ async function init(input) {
     }, { projectTrusted: !input.agent?.safeMode });
     const services = await Pi.createAgentSessionServices({ cwd, agentDir, modelRuntime, settingsManager,
       resourceLoaderOptions: {
-        ...(input.agent?.safeMode ? { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+        ...(input.agent?.safeMode || input.globalCoordinator ? { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
           additionalExtensionPaths: builtins.map(name => "builtin:" + name) } : {}),
         appendSystemPrompt: [DESKTOP_PI_PROMPT + " " + UMEKO_PROMPT + " Reply in the user's language.", input.agent?.instructions || ""],
         extensionFactories: [
+          ...(input.globalCoordinator ? [{name:"global-coordinator-boundary",hidden:true,replaceable:false,factory:coordinatorExtension}] : []),
           // Mandatory inline factory: resource filters cannot disable the gate.
           { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}) },
@@ -381,7 +383,7 @@ async function state() {
   const candidates = branch.filter(e => e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant"].includes(e.message.role));
   const characters = candidates.reduce((sum, e) => sum + (typeof e.message.content === "string" ? e.message.content.length : (Array.isArray(e.message.content) ? e.message.content : []).reduce((n, block) => n + (block.text || block.thinking || "").length, 0)), 0);
   const paged = candidates.length > 256 || characters > 1024 * 1024;
-  const selected = paged ? candidates.slice(-128) : candidates;
+  const selected = config.globalCoordinator ? candidates.slice(-64) : paged ? candidates.slice(-128) : candidates;
   const messages = projectSubagents(branch, selected.map(e => {
     const message = e.message;
     const row = {role: message.role, text: textOf(message.content) || (message.stopReason === "aborted" ? "" : message.errorMessage || ""), error: message.stopReason !== "aborted" && !!message.errorMessage, entryId:e.id, timestamp:message.timestamp || e.timestamp};
@@ -405,10 +407,10 @@ async function state() {
   const file = manager.getSessionFile();
   emit({ type: "state", session: { id: manager.getSessionId(), file: file && existsSync(file) ? file : undefined,
     title: manager.getSessionName() || messages.find(m => m.role === "user")?.text.slice(0, 28) || "新会话", workspace: manager.getCwd() },
-    sessions: list.map(s => ({ id: s.id, title: s.name || s.firstMessage.slice(0, 28) || "新会话", file: s.path, workspace: s.cwd })), messages,
+    sessions: (config.globalCoordinator ? [] : list).map(s => ({ id: s.id, title: s.name || s.firstMessage.slice(0, 28) || "新会话", file: s.path, workspace: s.cwd })), messages: config.globalCoordinator ? messages.map(row=>({...row,text:row.text?.slice(0,6000),thinking:row.thinking?.slice(0,6000),tools:row.tools?.slice(0,8)})) : messages,
     resources: await capabilities(),
     contextUsage: contextUsage(session),
-    tree: paged ? [] : branch.filter(e => e.type === "message").map(e => ({ id: e.id, role: e.message.role, text: textOf(e.message.content).slice(0, 80) })),
+    tree: paged || config.globalCoordinator ? [] : branch.filter(e => e.type === "message").map(e => ({ id: e.id, role: e.message.role, text: textOf(e.message.content).slice(0, 80) })),
     ...(paged ? {indexedHistory:{leafId:manager.getLeafId(), totalMessages:candidates.length}} : {}),
   });
 }

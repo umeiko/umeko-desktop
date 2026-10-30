@@ -53,6 +53,9 @@ class PiControllerMixin:
                 self._ensure_project(session["workspace"])
 
     def _record_info(self, record, info):
+        if record.global_agent:
+            record.id=info["id"]; record.file=info.get("file") or record.file
+            return
         old_id = record.id
         record.id = info["id"]
         self.store.data["sessionMeta"].setdefault(record.id, {})["reasoningEffort"] = record.reasoning_effort
@@ -67,6 +70,7 @@ class PiControllerMixin:
             self._index_record(record)
 
     def _index_record(self, record):
+        if record.global_agent: return
         row = next((s for s in self._sessions if s["id"] == record.id), None)
         values = {"id": record.id, "file": record.file, "workspace": record.workspace, "title": record.title,
             "model": record.model, "provider": record.provider}
@@ -107,6 +111,10 @@ class PiControllerMixin:
                     permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,
                     dataDir=str(self.store.directory),
                     mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration())
+                if record.global_agent:
+                    service=self._desktop_plugins.global_agents
+                    payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(service.root/"sessions"/record.global_agent),
+                        agent={**agent,"safeMode":True,"instructions":service.prompt(record)})
                 self._pool.start(record, node_executable(), bridge, payload)
         except (RuntimeError, OSError) as error:
             record.phase, record.failed = "idle", True
@@ -363,7 +371,7 @@ class PiControllerMixin:
             record.context_usage = event.get("contextUsage") or {}
             if visible:
                 self.contextUsageChanged.emit()
-            self._merge_native_sessions(event["sessions"])
+            if not record.global_agent: self._merge_native_sessions(event["sessions"])
             # A stale list captured by another process must not overwrite a live view.
             for live in self._pool.records.values():
                 if live.id and (live.file or live.messages):
@@ -399,7 +407,7 @@ class PiControllerMixin:
                         transcript = True
                     if visible:
                         self.toast.emit(message)
-            if was_busy and record.action == "prompt" and not record.cancelled and record.id:
+            if was_busy and not record.global_agent and record.action == "prompt" and not record.cancelled and record.id:
                 self.store.data["sessionMeta"].setdefault(record.id, {})["unread"] = not (visible and self._chat_visible)
                 self.store.save()
                 self.taskFinished.emit(record.id, record.title, kind == 'done' and not record.failed, long_running)
