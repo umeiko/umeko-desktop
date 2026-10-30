@@ -6,14 +6,18 @@ import { createAgentSession as nativeCreateAgentSession } from "./node_modules/@
 import { DefaultResourceLoader as NativeResourceLoader } from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { NETWORK_RETRY } from "./network-retry.mjs";
 import { SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
+import { backgroundJobsExtension } from "./background-jobs.mjs";
 import { createToolPermissionExtension } from "./tool-permissions.mjs";
 
 const permissionHost = () => globalThis[Symbol.for("umeko:tool-permission-host")];
 
 export class DefaultResourceLoader extends NativeResourceLoader {
-  constructor(options) {
+  constructor(options = {}) {
+    const factories = options.extensionFactories || [];
     super({ ...options, extensionFactories: [
-      ...(options?.extensionFactories || []),
+      ...factories,
+      ...(factories.some(item => item.name === "background-jobs") ? [] :
+        [{ name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension }]),
       { name: "tool-permissions", hidden: true, replaceable: false,
         factory: createToolPermissionExtension({ getPolicy: () => permissionHost()?.getPolicy() || { mode: "auto" } }) },
     ] });

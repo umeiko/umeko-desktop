@@ -370,8 +370,10 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        // Product configuration tools retain their own operation dispatch.
        if(name==='umeko_desktop'||name==='pi'||name==='pi_commands')return undefined;
        const input=event.input||{};
-       const context={...policy,cwd:ctx.cwd||policy.cwd||process.cwd()};
-       const shell=name==='bash'||name==='powershell';
+       const backgroundStart=name==='background_job'&&input.action==='start';
+       const baseCwd=ctx.cwd||policy.cwd||process.cwd();
+       const context={...policy,cwd:backgroundStart&&input.cwd ? path.resolve(baseCwd,input.cwd) : baseCwd};
+       const shell=name==='bash'||name==='powershell'||backgroundStart;
        const file=name==='write'||name==='edit';
        let hit=null;
        if(shell)hit=await classify(String(input.command??input.script??''),context);
