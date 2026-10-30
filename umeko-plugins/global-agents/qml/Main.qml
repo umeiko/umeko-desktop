@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Controls.impl
 import QtQuick.Layouts
 Rectangle {
     id: root
@@ -18,6 +19,8 @@ Rectangle {
     property string deleteId: ""
     property var collapsedProjects: ({})
     readonly property var current: state.agents.find(row => row.id===selected) || ({})
+    readonly property string helpTitle: selected?"与子智能体对话":section==="bridge"?"Agent Bus（智能体总线）":section==="requests"?"请求":"全局子智能体"
+    readonly property string helpText: selected?"在这里给子智能体分派任务。运行中发送消息可以补充要求或调整方向；停止会取消其未完成的总线请求。":section==="bridge"?"按项目展开对话，勾选后允许全局子智能体向该对话分派任务。任务仍遵守原对话的权限。":section==="requests"?"记录通过智能体总线分派的任务，查看投递状态、执行进度和返回结果。已投递不代表已完成；取消未完成的请求不会撤销已执行的操作。":"创建拥有独立上下文的子智能体，通过智能体总线向已授权的对话分派任务。"
     color: c.surface
     function bridgeTree(projects, targets, query, collapsed) {
         const names=Object.create(null), groups=Object.create(null)
@@ -46,6 +49,24 @@ Rectangle {
     function toggleProject(key) {
         const next=Object.assign({},collapsedProjects);next[key]=!next[key];collapsedProjects=next
     }
+    ListModel {id:busRows;dynamicRoles:true}
+    function updateBusTree() {
+        const rows=bridgeTree(state.projects || [],state.targets,bridgeSearch.text,collapsedProjects)
+        // Keep delegates and the visible project anchored while a background
+        // snapshot changes status or the user expands/collapses a long tree.
+        for(let i=0;i<rows.length;i++) {
+            let existing=i
+            while(existing<busRows.count && busRows.get(existing).rowData.key!==rows[i].key)existing++
+            if(existing===busRows.count)busRows.insert(i,{rowData:rows[i]})
+            else {
+                if(existing!==i)busRows.move(existing,i,1)
+                if(JSON.stringify(busRows.get(i).rowData)!==JSON.stringify(rows[i]))busRows.setProperty(i,"rowData",rows[i])
+            }
+        }
+        if(busRows.count>rows.length)busRows.remove(rows.length,busRows.count-rows.length)
+    }
+    onStateChanged:updateBusTree()
+    onCollapsedProjectsChanged:updateBusTree()
     function call(method,args) {
         const id=sdk.call(method,args || {})
         if(!id){error="服务忙，请稍后重试";return}
@@ -128,6 +149,11 @@ Rectangle {
         placeholderTextColor:root.c.muted;implicitHeight:42;leftPadding:12;rightPadding:12
         background:Rectangle {radius:10;color:root.c.bg;border.color:parent.activeFocus?root.c.accent:root.c.line}
     }
+    component TreeIcon: IconImage {
+        property string iconName
+        source:"../assets/"+iconName+".svg";color:root.c.muted
+        sourceSize:Qt.size(32,32);Layout.preferredWidth:16*root.sdk.scale;Layout.preferredHeight:16*root.sdk.scale
+    }
     ColumnLayout {
         anchors.fill:parent;anchors.margins:18;spacing:14
         RowLayout {
@@ -157,7 +183,7 @@ Rectangle {
             visible:!root.selected;spacing:8
             SmallButton {objectName:"globalSubagentsTabButton";text:"子智能体  "+root.state.agents.length;primary:root.section==="agents";onClicked:root.section="agents"}
             SmallButton {objectName:"agentBusTabButton";text:"智能体总线";primary:root.section==="bridge";onClicked:root.section="bridge"}
-            SmallButton {text:"请求";primary:root.section==="requests";onClicked:root.section="requests"}
+            SmallButton {objectName:"agentBusRequestsTabButton";text:"请求";primary:root.section==="requests";onClicked:root.section="requests"}
         }
         LabelText {visible:!!root.error || !!root.state.error;text:root.error || root.state.error || "";color:root.c.danger;wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true}
         StackLayout {
@@ -187,33 +213,47 @@ Rectangle {
                 }
             }
             ColumnLayout {
-                spacing:10
-                Field {id:bridgeSearch;objectName:"agentBusSearch";Layout.fillWidth:true;placeholderText:"搜索项目或对话"}
+                spacing:8
+                Field {id:bridgeSearch;objectName:"agentBusSearch";Layout.fillWidth:true;implicitHeight:32*root.sdk.scale;font.pixelSize:13*root.sdk.scale;placeholderText:"搜索项目或对话";onTextChanged:root.updateBusTree()}
                 ListView {
                     objectName:"agentBusProjectTree"
-                    Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:2
-                    model:root.bridgeTree(root.state.projects || [],root.state.targets,bridgeSearch.text,root.collapsedProjects)
+                    Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:0
+                    boundsBehavior:Flickable.StopAtBounds
+                    ScrollBar.vertical:ScrollBar{}
+                    model:busRows
                     delegate:Item {
                         id:treeRow
-                        required property var modelData
+                        required property var rowData
+                        readonly property var modelData:rowData
                         readonly property bool project:modelData.kind==="project"
                         objectName:project?"agentBusProject_"+modelData.key:"agentBusConversation_"+modelData.id
-                        width:ListView.view.width;height:project?44:56
-                        Rectangle {anchors.fill:parent;radius:10;color:treeHover.hovered?root.c.hover:"transparent"}
+                        width:ListView.view.width;height:26*root.sdk.scale
+                        Rectangle {anchors.fill:parent;radius:3;color:treeHover.hovered?root.c.hover:"transparent"}
+                        Rectangle {visible:!treeRow.project;x:12*root.sdk.scale;width:1;height:parent.height;color:root.c.line;opacity:0.6}
                         HoverHandler {id:treeHover}
                         TapHandler {enabled:treeRow.project;onTapped:root.toggleProject(modelData.key)}
                         ToolTip.visible:treeHover.hovered && treeRow.project && !!modelData.path
                         ToolTip.delay:600;ToolTip.timeout:5000;ToolTip.text:modelData.path || ""
                         RowLayout {
-                            anchors.fill:parent;anchors.leftMargin:treeRow.project?8:30;anchors.rightMargin:8;spacing:8
-                            LabelText {visible:treeRow.project;text:modelData.collapsed?"▸":"▾";color:root.c.muted;Layout.preferredWidth:16}
-                            Rectangle {visible:!treeRow.project && !!modelData.busy;Layout.preferredWidth:6;Layout.preferredHeight:6;radius:3;color:root.c.accent}
-                            LabelText {text:modelData.title || "新会话";font.weight:treeRow.project?Font.Medium:Font.Normal;Layout.fillWidth:true}
+                            anchors.fill:parent;anchors.leftMargin:(treeRow.project?2:26)*root.sdk.scale;anchors.rightMargin:4*root.sdk.scale;spacing:5*root.sdk.scale
+                            TreeIcon {visible:treeRow.project;iconName:modelData.collapsed?"chevron-right":"chevron-down"}
+                            TreeIcon {iconName:treeRow.project?"folder":"chat";color:!treeRow.project && !!modelData.busy?root.c.accent:root.c.muted}
+                            LabelText {text:modelData.title || "新会话";font.pixelSize:13*root.sdk.scale;font.weight:treeRow.project?Font.Medium:Font.Normal;Layout.fillWidth:true}
                             LabelText {visible:treeRow.project;text:treeRow.project?String(modelData.count):"";color:root.c.muted;font.pixelSize:12*root.sdk.scale}
-                            Switch {
-                                objectName:treeRow.project?"":"agentBusSwitch_"+modelData.id
+                            CheckBox {
+                                id:authorization
+                                objectName:treeRow.project?"":"agentBusCheckbox_"+modelData.id
                                 visible:!treeRow.project;checked:!!modelData.bridge
                                 Accessible.name:(modelData.title || "新会话")+" · 智能体总线授权"
+                                Layout.preferredWidth:24*root.sdk.scale;Layout.preferredHeight:26*root.sdk.scale
+                                padding:0;spacing:0;contentItem:Item{}
+                                background:Rectangle {radius:3;color:authorization.hovered?root.c.hover:"transparent";border.color:authorization.activeFocus?root.c.accent:"transparent"}
+                                indicator:Rectangle {
+                                    anchors.centerIn:parent;width:16*root.sdk.scale;height:width;radius:3
+                                    color:authorization.checked?root.c.accent:root.c.surface
+                                    border.color:authorization.checked?root.c.accent:root.c.muted
+                                    TreeIcon {anchors.fill:parent;anchors.margins:1;iconName:"check";color:"white";visible:authorization.checked}
+                                }
                                 onToggled:root.call("setBridge",{id:modelData.id,enabled:checked})
                             }
                         }
@@ -301,8 +341,8 @@ Rectangle {
         padding:14;focus:true;closePolicy:Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background:Rectangle {radius:12;color:root.c.surface;border.color:root.c.line}
         contentItem:ColumnLayout {spacing:8
-            LabelText {text:root.section==="bridge"?"Agent Bus（智能体总线）":"全局子智能体";font.weight:Font.Medium;Layout.fillWidth:true}
-            LabelText {text:root.section==="bridge"?"按项目展开对话，开启开关后允许全局子智能体向该对话分派任务。任务仍遵守原对话的权限。":"创建拥有独立上下文的子智能体，通过智能体总线向已授权的对话分派任务。";wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale}
+            LabelText {objectName:"globalSubagentsHelpTitle";text:root.helpTitle;font.weight:Font.Medium;Layout.fillWidth:true}
+            LabelText {objectName:"globalSubagentsHelpText";text:root.helpText;wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale}
         }
     }
     Dialog {

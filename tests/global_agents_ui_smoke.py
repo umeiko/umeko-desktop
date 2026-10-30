@@ -93,23 +93,48 @@ try:
     window.grabWindow().save(str(out/'list.png'))
     click('agentBusTabButton')
     wait(lambda:find('agentBusProject_'+str(first)) is not None,'Project grouping missing')
-    wait(lambda:find('agentBusSwitch_session:tree-client-one') is not None,'Conversation switch missing')
-    click('agentBusSwitch_session:tree-client-one')
-    wait(lambda:g.bridges.get('tree-client-one') is True,'Switch granted the wrong conversation')
+    wait(lambda:find('agentBusCheckbox_session:tree-client-one') is not None,'Conversation checkbox missing')
+    click('agentBusCheckbox_session:tree-client-one')
+    wait(lambda:g.bridges.get('tree-client-one') is True,'Checkbox granted the wrong conversation')
     assert not g.bridges.get('tree-client-two') and not g.bridges.get('tree-server')
     click('agentBusProject_'+str(first))
-    wait(lambda:find('agentBusSwitch_session:tree-client-one') is None,'Project did not collapse')
-    assert find('agentBusSwitch_session:tree-server') is not None
+    wait(lambda:find('agentBusCheckbox_session:tree-client-one') is None,'Project did not collapse')
+    assert find('agentBusCheckbox_session:tree-server') is not None
     find('agentBusSearch').setProperty('text','修复输入框')
     wait(lambda:find('agentBusProjectTree').property('count')==2,'Conversation search did not expand its project')
-    assert find('agentBusSwitch_session:tree-client-one') is not None
+    assert find('agentBusCheckbox_session:tree-client-one') is not None
     find('agentBusSearch').setProperty('text','')
-    wait(lambda:find('agentBusSwitch_session:tree-client-one') is None,'Search changed the saved collapse state')
+    wait(lambda:find('agentBusCheckbox_session:tree-client-one') is None,'Search changed the saved collapse state')
     click('agentBusProject_'+str(first));QTest.qWait(150)
     window.grabWindow().save(str(out/'agent-bus-projects.png'))
     click('globalSubagentsHelpButton')
     wait(lambda:find('globalSubagentsHelpPopup').property('opened'),'Help did not open')
+    assert find('globalSubagentsHelpTitle').property('text')=='Agent Bus（智能体总线）'
+    assert '勾选' in find('globalSubagentsHelpText').property('text')
+    QTest.keyClick(window,Qt.Key_Escape);QTest.qWait(150)
+    click('agentBusRequestsTabButton');click('globalSubagentsHelpButton')
+    wait(lambda:find('globalSubagentsHelpPopup').property('opened'),'Request help did not open')
+    assert find('globalSubagentsHelpTitle').property('text')=='请求'
+    assert '返回结果' in find('globalSubagentsHelpText').property('text')
+    assert '不会撤销' in find('globalSubagentsHelpText').property('text')
+    window.grabWindow().save(str(out/'requests-help.png'))
     assert g.bridges.get('tree-client-one') is True
+    QTest.keyClick(window,Qt.Key_Escape);QTest.qWait(150)
+    # A project near the end of a long, virtualized tree must not jump back to
+    # the top when it is collapsed or a background snapshot updates.
+    for index in range(60):
+        b._sessions.append({'id':f'long-tree-{index}','title':'后台对话','workspace':str(base/f'aaa-{index:02}'),'model':'fixture','provider':'internal','file':''})
+    b.changed.emit();click('agentBusTabButton')
+    wait(lambda:find('agentBusProjectTree').property('count')>120,'Long tree snapshot missing')
+    from PySide6.QtCore import QMetaObject
+    assert QMetaObject.invokeMethod(find('agentBusProjectTree'),'positionViewAtEnd')
+    wait(lambda:find('agentBusProject_'+str(first)) is not None,'Could not scroll to the project')
+    QTest.qWait(200);click('agentBusProject_'+str(first))
+    wait(lambda:find('agentBusCheckbox_session:tree-client-one') is None,'Long project did not collapse')
+    QTest.qWait(800)
+    assert find('agentBusProject_'+str(first)) is not None,'Collapsing or polling jumped away from the project'
+    click('agentBusProject_'+str(first))
+    wait(lambda:find('agentBusCheckbox_session:tree-client-one') is not None,'Long project did not reopen')
     assert not [w for w in warnings if 'global-agents/qml' in w],warnings
     print('PASS: real Widget creation, current-character default, native cross-session dispatch/reply/wakeup, scoped tools, durable contexts and searchable project-tree bus authorizations.')
 finally:
