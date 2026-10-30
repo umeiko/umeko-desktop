@@ -121,7 +121,8 @@ class CodeartsCompatibilityTests(unittest.TestCase):
         value = modern_context()
         instance = plugin.create_provider(value)
         self.assertIsInstance(instance, plugin.CodeartsProvider)
-        account.assert_called_once_with(value, progress=instance._progress)
+        account.assert_called_once_with(value, progress=instance._progress,
+                                        credentials_changed=instance._credentials_changed)
         transport.assert_called_once_with(value, account.return_value)
         self.assertEqual(instance.card_status(), "")
         self.assertEqual([action["key"] for action in instance.card_actions()], ["open_console"])

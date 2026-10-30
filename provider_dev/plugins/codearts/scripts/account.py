@@ -81,7 +81,8 @@ class CodeartsAccount:
     context owns protected secrets. Status dictionaries never include keys.
     """
 
-    def __init__(self, context, downloads_dir=None, legacy_store=None, runner=None, progress=None):
+    def __init__(self, context, downloads_dir=None, legacy_store=None, runner=None, progress=None,
+                 credentials_changed=None):
         self.context = context
         self.profile_dir = Path(context.state_dir).resolve()
         self.downloads_dir = Path(downloads_dir or getattr(context, "downloads_dir", None) or Path.home() / "Downloads")
@@ -89,6 +90,8 @@ class CodeartsAccount:
         self._legacy_store = legacy_store
         self._runner = runner
         self._progress = progress or getattr(context, "progress", None) or (lambda message: None)
+        self._credentials_changed = credentials_changed or (lambda: None)
+        self._import_lock = threading.Lock()
         self._cli = None
         self._baseline = None
         self._baseline_ids = set()
@@ -359,12 +362,21 @@ class CodeartsAccount:
         return self._import_credentials(credentials)
 
     def _import_credentials(self, credentials):
+        # Paste and Downloads imports share one verified, persisted update path.
+        # Do not retire a working service when verification or storage fails.
+        with self._import_lock:
+            return self._save_credentials(credentials)
+
+    def _save_credentials(self, credentials):
         try:
+            previous = self._credentials()
             result = self._verify(credentials)
             if self._cancelled.is_set():
                 return self._status(message=self._text("cancelled_file"))
             if result["ready"]:
                 self._store.set("account", dict(zip(("ak", "sk"), credentials)))
+                if previous != credentials:
+                    self._credentials_changed()
                 result["message"] = self._text("saved")
             return result
         except Exception:

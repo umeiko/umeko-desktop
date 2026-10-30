@@ -127,7 +127,7 @@ class CodeartsServer:
             "package_tag": "undefined",
             "OMO_SEND_ANONYMOUS_TELEMETRY": "0", "SCENARIO": "codeartsdoer",
             "OPENCODE_CHANNEL": "latest", "OPENCODE_MODE": "tui", "PLUGIN_ENV": "hc",
-            "NODE_TLS_REJECT_UNAUTHORIZED": "0", "OPENCODE_DISABLE_MODELS_FETCH": "1",
+            "OPENCODE_DISABLE_MODELS_FETCH": "1",
             "OPENCODE_DISABLE_AUTOUPDATE": "true", "OPENCODE_ALWAYS_NOTIFY_UPDATE": "false",
             "CODEARTS_DISABLE_AUTO_UPDATE": "true", "KERNEL_ACP": "",
             # The fork otherwise hides MCP schemas behind its own tool search.

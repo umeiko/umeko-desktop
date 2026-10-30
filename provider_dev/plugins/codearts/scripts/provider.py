@@ -64,8 +64,17 @@ class CodeartsProvider(Provider):
         self._connected = False
         self._watch_stop = threading.Event()
         self._watcher = None
-        self.account = CodeartsAccount(context, progress=self._progress)
+        self._transport_lock = threading.RLock()
+        self.account = CodeartsAccount(context, progress=self._progress,
+                                       credentials_changed=self._credentials_changed)
         self.transport = CodeartsTransport(context, self.account)
+
+    def _credentials_changed(self):
+        with self._transport_lock:
+            # close settles held calls, deletes sessions and stops only our
+            # service; the replacement reads the newly persisted credentials.
+            self.transport.close()
+            self.transport = CodeartsTransport(self.context, self.account)
 
     def _text(self, key):
         return tr(getattr(self.context, "language", "zh"), key)
@@ -158,13 +167,16 @@ class CodeartsProvider(Provider):
         return {"message": result["message"]}
 
     def events(self, model, messages, tools, max_tokens, parameters):
-        yield from self.transport.events(model, messages, tools, max_tokens, parameters)
+        with self._transport_lock:
+            transport = self.transport
+        yield from transport.events(model, messages, tools, max_tokens, parameters)
 
     def close(self):
         super().close()
         self._watch_stop.set()
         self.account.close()
-        self.transport.close()
+        with self._transport_lock:
+            self.transport.close()
         self._stop_watch()
 
 
