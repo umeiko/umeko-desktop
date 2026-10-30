@@ -1,0 +1,65 @@
+{
+  "format": "umeko-pet",
+  "version": 1,
+  "id": "komari",
+  "name": "小鞠知花",
+  "states": {
+    "idle": "idle.webp",
+    "thinking": "thinking.webp",
+    "working": "working.webp",
+    "waiting": "waiting.webp",
+    "done": "done.webp",
+    "error": "error.webp"
+  },
+  "images": {
+    "idle.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 6
+    },
+    "thinking.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 6
+    },
+    "working.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 6
+    },
+    "waiting.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 6
+    },
+    "done.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 6
+    },
+    "error.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 6
+    }
+  },
+  "dialogue": {
+    "tap": [
+      "有、有在认真帮忙的。",
+      "再检查一遍……就好了。",
+      "你叫我？我在。"
+    ],
+    "hover": [
+      "我会在这里等你。"
+    ],
+    "drag": [
+      "这、这里也可以。"
+    ]
+  }
+}

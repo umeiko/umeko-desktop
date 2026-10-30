@@ -13,6 +13,7 @@ from pathlib import Path
 from PySide6.QtGui import QImageReader
 
 STATES = ('idle', 'thinking', 'working', 'waiting', 'done', 'error')
+BUILTIN_APPEARANCES = ('yanami', 'komari', 'whale-girl')
 MAX_BYTES = 128 * 1024 * 1024
 
 
@@ -81,7 +82,7 @@ def read_pack(folder, check=False):
     return {**value, 'images': info or value.get('images', {})}
 
 
-def import_pack(source, destination, reserved_ids=('yanami',)):
+def import_pack(source, destination):
     source, destination = Path(source).expanduser().resolve(), Path(destination)
     if not source.is_file():
         raise ValueError('请选择本机形象 ZIP、pet.json 或动画文件')
@@ -133,7 +134,7 @@ def import_pack(source, destination, reserved_ids=('yanami',)):
             value = {'format': 'umeko-pet', 'version': 1, 'id': 'custom-' + uuid.uuid4().hex[:12], 'name': source.stem[:48], 'states': {'idle': name}}
             (stage / 'pet.json').write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
         value = read_pack(stage, check=True)
-        if value['id'] in reserved_ids or (destination / value['id']).exists():
+        if value['id'] in BUILTIN_APPEARANCES or (destination / value['id']).exists():
             raise ValueError('该形象 id 已存在，请修改 pet.json 中的 id 后再导入')
         # Retain only declared data files, never Python/QML/HTML from the ZIP.
         keep = {'pet.json', *value['states'].values()}

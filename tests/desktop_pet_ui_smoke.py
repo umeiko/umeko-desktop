@@ -44,7 +44,8 @@ try:
     agent=page.parentItem().parentItem();agent.setProperty('pluginsOpen',True)
     wait(lambda:find('desktopPetSettings') is not None,'Pet settings did not load')
     wait(lambda:find('desktopPetAppearancePicker').property('count')==len(pet.appearances),'Appearance list did not load')
-    assert any(row['id']=='whale-girl' and row['builtin'] for row in pet.appearances)
+    assert {'yanami','komari','whale-girl'} <= {row['id'] for row in pet.appearances}
+    assert all(row['builtin'] for row in pet.appearances)
     pet.ui('selectAppearance',{'id':'whale-girl'})
     main.grabWindow().save(str(out/'settings.png'))
     settings_loader=find('desktopPluginSettingsLoader')
@@ -67,6 +68,13 @@ try:
     assert animation.property('frameCount')>1 and not animation.property('cache')
     first=animation.property('currentFrame');QTest.qWait(180)
     assert animation.property('currentFrame')!=first,'Animation is static'
+    pet.ui('selectAppearance',{'id':'komari'})
+    wait(lambda:pet.state['appearance']=='komari' and 'assets/komari/' in str(animation.property('source')),'Komari did not replace the active animation')
+    wait(lambda:animation.property('ready') and animation.property('frameCount')>1,'Komari animation did not decode')
+    first=animation.property('currentFrame')
+    wait(lambda:animation.property('currentFrame')!=first,'Komari animation is static')
+    pet.ui('selectAppearance',{'id':'whale-girl'})
+    wait(lambda:animation.property('ready') and 'assets/whale-girl/' in str(animation.property('source')),'Whale did not replace Komari')
     assert '/whale-girl/idle.webp' in str(animation.property('source'))
     pet.ui('configure',{'paused':True})
     for state in ('idle','thinking','working','waiting','done','error'):

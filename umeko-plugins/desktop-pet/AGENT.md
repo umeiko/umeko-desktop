@@ -9,7 +9,7 @@
 - `configure {"size":192,"alwaysOnTop":true,"paused":false,"sampleIntervalMs":1500,"minimumStateMs":3000}`：局部更新，立即生效。size 96–320px；观察间隔 1000–2000ms；状态保持 3000–30000ms。`visible` 与 `appearance` 也可配置。
 - `appearances {}`：列出可用 id、名称、是否内置。
 - `importAppearance {"path":"C:/absolute/path/pet.zip"}`：异步导入本机形象。Widget 请求完成后结果包含新 id；导入不会自动改选、显示或执行任何代码。导入失败保留现有形象。
-- `selectAppearance {"id":"my-pet"}`：切换形象，偏好跨重启保存。
+- `selectAppearance {"id":"my-pet"}`：切换形象，偏好跨重启保存。内置 id 为 `yanami`（八奈见杏菜）和 `komari`（小鞠知花），均不可删除、不可通过导入覆盖。
 - `removeAppearance {"id":"my-pet"}`：删除用户形象；当前形象先切回八奈见。不能删除内置资源。
 - `interact {"kind":"tap"}`：可选 tap、hover、drag；仍遵守最短状态保持。
 - `resetPosition {}`：回到屏幕右下方。
