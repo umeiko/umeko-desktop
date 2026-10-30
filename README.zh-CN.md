@@ -41,7 +41,7 @@ Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原�
 <details>
 <summary>展开看看 · 工具记录、子智能体与自定义供应商</summary>
 
-**过程看得见，阅读不打断。** 思考和连续工具调用可以逐级展开，点击文件名即可复制路径。
+**过程看得见，阅读不打断。** 思考和连续工具调用可以逐级展开，点击文件名直接预览，右键可附加到聊天、复制或在文件管理器中打开。
 
 ![纯白主题下展开的思考与工具过程 · 中文界面](docs/images/process-white-zh.png)
 
@@ -99,6 +99,7 @@ Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原�
 
 ## 扩展你的工作方式
 
+- **桌面小宠物：** 官方 Widget 默认加载、默认隐藏。在 **设置 → Agent → 插件管理 → 桌面小宠物** 中开启显示，可拖动、点击互动、使用右键菜单，并导入自己的 WebP / GIF / PNG 或多动作形象 ZIP。Agent 通过已有的 [Widget 接口](runtime/umeko-docs/widget-plugins.md) 管理它。
 - **配置 Agent：** 在 **设置 → Agent → Pi** 管理扩展、MCP 与工具，粘贴 `pi install npm:<package>` 安装扩展，或在本机终端打开内嵌 Pi。
 - **接入账号服务：** 用 [umeko-provider-sdk](provider_dev/README.md) 开发供应商 ZIP，也可以把[开发 Skill](provider_dev/skills/develop-umeko-provider/SKILL.md) 交给 AI。登录实现独立放在插件中。
 - **连接其他客户端：** 在 **API 代理服务** 中配置模型映射、创建 API Key 并启动服务。

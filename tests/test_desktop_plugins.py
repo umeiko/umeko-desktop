@@ -33,7 +33,7 @@ class DesktopPluginTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):cls.app=QCoreApplication.instance() or QCoreApplication([])
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.path=Path(self.temp.name)
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.path=Path(self.temp.name).resolve()
         self.host=Host(self.path);self.manager=DesktopPlugins(self.host);self.addCleanup(self.manager.close)
         self.responses={};self.manager.response.connect(lambda key,value:self.responses.__setitem__(key,value))
     def wait(self,predicate):
@@ -93,14 +93,15 @@ def create_plugin(context):return Fixture(context)
         self.assertNotIn('x.txt',str(entries))
         self.assertNotIn('messages',self.manager.session)
         self.assertFalse(self.call('list',{'path':'..'})['ok'])
-        self.manager.closePage();self.assertFalse(self.manager.workers);self.app.processEvents()
+        self.manager.closePage();self.assertEqual(set(self.manager.workers),{'desktop-pet'});self.app.processEvents()
 
     def test_widget_icons_have_a_shared_catalog_and_validate_custom_assets(self):
         rows={row['id']:row for row in self.manager.rows}
         self.assertEqual(rows['terminal']['iconGlyph'],'terminal')
         self.assertEqual(rows['file-tree']['iconGlyph'],'folder')
         self.assertEqual(rows['git-viewer']['iconGlyph'],'branch')
-        self.assertEqual(len(self.manager.iconCatalog),20)
+        self.assertEqual(rows['desktop-pet']['iconGlyph'],'pet')
+        self.assertEqual(len(self.manager.iconCatalog),21)
         for icon in self.manager.iconCatalog:self.assertTrue((ROOT/'app/icons'/(icon['glyph']+'.svg')).is_file())
         self.fixture();folder=self.path/'session-demo-1.0.0';manifest=json.loads((folder/'manifest.json').read_text())
         manifest['icon']='does-not-exist';(folder/'manifest.json').write_text(json.dumps(manifest))
@@ -112,6 +113,8 @@ def create_plugin(context):return Fixture(context)
         with self.assertRaises(PluginError):validate(folder)
 
     def test_terminal_worker_grants_the_composer_chat_and_executes_in_the_visible_pty(self):
+        pet_worker=self.manager.workers['desktop-pet']
+        self.manager.pet.configure({'visible':True})
         config=json.loads((ROOT/'umeko-plugins/terminal/config.json').read_text());config['useShellProfile']=False
         self.manager.settings.setdefault('config',{})['terminal']=config
         self.manager.setEnabled('terminal',True);self.assertTrue(self.manager.openPage('terminal'))
@@ -130,9 +133,13 @@ def create_plugin(context):return Fixture(context)
             return 'HOST_SHARED_PTY' in output.get('text','')
         self.wait(has_output);self.assertEqual(output['pid'],pid)
         self.manager.closePage();self.assertIn('terminal',self.manager.workers)
+        self.host._view.key='another-chat';self.host._view.id='session-after-switch';self.host.viewChanged.emit()
+        self.assertIs(self.manager.workers['desktop-pet'],pet_worker);self.assertTrue(self.manager.pet.visible)
+        self.assertIn('terminal',self.manager.workers)
         stopped=[];self.manager.workers['terminal']['process'].finished.connect(lambda *_:stopped.append(True))
         self.manager.setEnabled('terminal',False);self.assertNotIn('terminal',self.manager.workers)
         self.wait(lambda:bool(stopped))
+        self.assertIs(self.manager.workers['desktop-pet'],pet_worker);self.assertTrue(self.manager.pet.running)
 
     def desktop_control(self):
         from app.umeko_control import UmekoControl
@@ -353,7 +360,7 @@ def create_plugin(context):return Fixture(context)
         self.assertEqual(self.host.sent,[('session-one','from-plugin',True)])
         self.assertTrue(marker.exists())
         self.manager.call('late','{}');self.host._view.key='token-two';self.host._view.id='session-two';self.host.viewChanged.emit()
-        self.assertFalse(self.manager.page);self.assertFalse(self.manager.workers)
+        self.assertFalse(self.manager.page);self.assertEqual(set(self.manager.workers),{'desktop-pet'})
         deadline=time.monotonic()+1
         while time.monotonic()<deadline:self.app.processEvents();time.sleep(.01)
         self.assertEqual(len(self.host.sent),1)

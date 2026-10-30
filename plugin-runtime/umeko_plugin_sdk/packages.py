@@ -86,6 +86,7 @@ def validate(folder):
     file(entry)
     for key in ('builtin','enabled','sessionEnabled','hasPage','path','readmeText','configText'):m.pop(key,None)
     if m.get('page'):file(m['page'])
+    if m.get('settingsPage'):file(m['settingsPage'])
     m['readme']=m.get('readme','README.md')
     with file(m['readme']).open(encoding='utf-8') as document:document.read(65536)
     agent=m.get('agent')

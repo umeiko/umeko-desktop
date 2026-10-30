@@ -1,0 +1,9 @@
+{
+  "visible": false,
+  "appearance": "yanami",
+  "size": 192,
+  "alwaysOnTop": true,
+  "paused": false,
+  "sampleIntervalMs": 1500,
+  "minimumStateMs": 3000
+}

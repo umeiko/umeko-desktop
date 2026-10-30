@@ -41,7 +41,7 @@ Umeko is a native desktop app for working with [Pi Coding Agent](https://github.
 <details>
 <summary>Explore the workflow · tools, subagents and custom providers</summary>
 
-**See the work without losing the conversation.** Thinking and tool batches expand in place; file actions expose copyable paths.
+**See the work without losing the conversation.** Thinking and tool batches expand in place; click tool files to preview them, or right-click for file actions.
 
 ![Pure white theme with expanded thinking and grouped tool calls — English interface](docs/images/process-white-en.png)
 
@@ -101,6 +101,7 @@ No model account is included. Configure the services you want to use.
 
 ## Make it yours
 
+- **Keep a desktop companion:** the official desktop-pet Widget is loaded by default with its window hidden. Enable the pet under **Settings → Agent → Plugin management → Desktop pet**. It follows task activity at a gentle pace, supports drag/click/right-click interactions, and accepts your own WebP/GIF/PNG or multi-action appearance ZIP. Agents manage it through the existing [Widget interface](runtime/umeko-docs/widget-plugins.md).
 - **Extend the agent:** open **Settings → Agent → Pi** to manage extensions, MCP and tools, install a package such as `pi install npm:<package>`, or open the embedded Pi in a terminal.
 - **Connect an account service:** build a provider ZIP with [umeko-provider-sdk](provider_dev/README.md). The [developer Skill](provider_dev/skills/develop-umeko-provider/SKILL.md) guides an AI through the same public interface; login implementations live in plugins.
 - **Use Umeko as a gateway:** enable **Settings → API Proxy Service**, configure model aliases and create an API key for your other clients.

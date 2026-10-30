@@ -1,5 +1,6 @@
 [
   {"id":"terminal","label":"终端","glyph":"terminal"},
+  {"id":"pet","label":"桌宠","glyph":"pet"},
   {"id":"folder","label":"文件","glyph":"folder"},
   {"id":"branch","label":"版本管理","glyph":"branch"},
   {"id":"code","label":"代码","glyph":"code"},

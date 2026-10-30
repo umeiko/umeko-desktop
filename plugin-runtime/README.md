@@ -65,6 +65,7 @@ my-plugin/
 | `sliders` | 控制 | `archive` | 归档 |
 | `download` | 下载 | `lock` | 安全 |
 | `hourglass` | 任务 | `puzzle` | 通用插件 |
+| `pet` | 桌面宠物 | | |
 
 完整列表保存在 `umeko_plugin_sdk/icons.json`。如需自带美术资源，使用 `"icon": {"path": "assets/icon.svg"}`；路径必须是包内相对路径，支持 SVG、PNG、WebP、JPEG，最多 512 KiB。自带图标保留原色；内置线条图标自动跟随宿主主题颜色。不要填写网络地址。
 

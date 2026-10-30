@@ -14,6 +14,20 @@ ApplicationWindow {
     color: Theme.bg
     flags: Qt.Window | Qt.FramelessWindowHint
     property string page: "chat"
+    Loader {
+        id:petWindowLoader;objectName:"desktopPetWindowLoader"
+        active:backend.desktopPlugins.pet.visible
+        sourceComponent:Component { DesktopPetWindow { pet:backend.desktopPlugins.pet } }
+    }
+    Connections {
+        target:backend.desktopPlugins.pet
+        function onRestoreRequested() { window.showNormal();window.raise();window.requestActivate() }
+        function onSettingsRequested() {
+            window.showNormal();window.raise();window.requestActivate()
+            window.settingsTab=3;window.page="settings"
+            settingsPage.openPluginManagement("desktop-pet")
+        }
+    }
     readonly property bool mediaOverlayActive: imageViewer.visible || chatDrop.containsDrag
     property int settingsTab: 0
     property string notification: ""

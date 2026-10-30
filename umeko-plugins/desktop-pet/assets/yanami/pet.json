@@ -1,0 +1,65 @@
+{
+  "format": "umeko-pet",
+  "version": 1,
+  "id": "yanami",
+  "name": "八奈见杏菜",
+  "states": {
+    "idle": "idle.webp",
+    "thinking": "thinking.webp",
+    "working": "working.webp",
+    "waiting": "waiting.webp",
+    "done": "done.webp",
+    "error": "error.webp"
+  },
+  "images": {
+    "idle.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 115
+    },
+    "thinking.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 115
+    },
+    "working.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 96
+    },
+    "waiting.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 115
+    },
+    "done.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 77
+    },
+    "error.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 96
+    }
+  },
+  "dialogue": {
+    "tap": [
+      "嗯？是在叫我吗？",
+      "任务我有在看啦。",
+      "休息一下，也没关系吧？"
+    ],
+    "hover": [
+      "我在这里。"
+    ],
+    "drag": [
+      "换个位置继续看着。"
+    ]
+  }
+}

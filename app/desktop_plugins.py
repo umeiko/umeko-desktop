@@ -38,12 +38,18 @@ class DesktopPlugins(QObject):
         backend.chatChanged.connect(lambda: self.refresh.start() if not self.refresh.isActive() else None)
         from .widget_channel import WidgetChannel
         self.bridge=WidgetChannel(self)
+        from .desktop_pet import DesktopPet
+        self._pet=DesktopPet(self)
+        self._pet_imports={}
+        self._pet.imported.connect(self.pet_imported)
         self.synchronize()
     def path(self, identifier):
         e=self.entries[identifier]
         return self.b.root/'umeko-plugins'/identifier if e.get('builtin') else self.root/'packages'/identifier/e['version']
     def application(self,identifier):return self.entries.get(identifier,{}).get('lifecycle','session')=='application'
-    def enabled(self,identifier):return self.settings.get('enabled',{}).get(identifier,not self.application(identifier))
+    def enabled(self,identifier):return self.settings.get('enabled',{}).get(identifier,not self.application(identifier) or identifier=='desktop-pet' and self.entries[identifier].get('builtin',False))
+    @Property(QObject,constant=True)
+    def pet(self):return self._pet
     def session_enabled(self,identifier):
         if self.application(identifier):return self.enabled(identifier)
         sessions=self.settings.get('sessions',{})
@@ -90,7 +96,10 @@ class DesktopPlugins(QObject):
             with (path/e.get('readme','README.md')).open('r',encoding='utf-8') as f:doc=f.read(65536)
         except OSError:doc=''
         config=self.settings.get('config',{}).get(identifier,read(path/e.get('config','config.json'),{}))
-        return {**e,'readmeText':doc,'configText':json.dumps(config,ensure_ascii=False,indent=2)}
+        return {**e,'readmeText':doc,'configText':json.dumps(config,ensure_ascii=False,indent=2),'settingsUrl':QUrl.fromLocalFile(str(path/e['settingsPage'])).toString() if e.get('settingsPage') else ''}
+    @Slot(str,str,str,result=str)
+    def settingsCall(self,identifier,method,raw):
+        return self.call_for(identifier,method,raw)
     def save(self):
         try:
             self.root.mkdir(parents=True,exist_ok=True)
@@ -173,6 +182,9 @@ class DesktopPlugins(QObject):
         env.insert('PYTHONDONTWRITEBYTECODE','1');process.setProcessEnvironment(env);return process
     def start(self,identifier):
         if self.closed or identifier in self.workers or identifier in self._failed_services:return
+        if identifier=='desktop-pet' and self.entries[identifier].get('builtin'):
+            self.workers[identifier]={'service':self._pet,'ready':True,'pending':set(),'token':self.application_token}
+            self._pet.start();self.changed.emit();return
         application=self.application(identifier)
         p=self.process();w={'process':p,'buffer':b'','pending':set(),'queue':[],'ready':False,'token':self.application_token if application else self._session['token']};self.workers[identifier]=w
         def initialize():
@@ -201,6 +213,7 @@ class DesktopPlugins(QObject):
     def send(self,identifier,request):
         w=self.workers.get(identifier)
         if not w:return
+        if 'service' in w:return
         if not w['ready']:
             if request.get('operation')=='session':w['queue']=[item for item in w['queue'] if item.get('operation')!='session']
             if len(w['queue'])<16:w['queue'].append(request)
@@ -211,6 +224,8 @@ class DesktopPlugins(QObject):
         w=self.workers.pop(identifier,None)
         if not w:return
         for request in w['pending']:self.response.emit(request,{'ok':False,'error':'插件任务已取消'})
+        if 'service' in w:
+            w['service'].stop();self.changed.emit();return
         p=w['process']
         if p.state()==QProcess.Starting:p.kill()
         else:
@@ -239,6 +254,23 @@ class DesktopPlugins(QObject):
         except ValueError:return ''
         if not isinstance(args,dict):return ''
         request=uuid.uuid4().hex;w['pending'].add(request)
+        if 'service' in w:
+            def invoke():
+                if self.workers.get(identifier) is not w:return
+                try:
+                    result=self._pet.handle(method,args)
+                    if method=='importAppearance':
+                        self._pet_imports[result['importId']]=(request,w);return
+                    value={'ok':True,'result':result}
+                except (ValueError,OSError,TypeError) as error:value={'ok':False,'error':str(error)}
+                w['pending'].discard(request);self.response.emit(request,value)
+            QTimer.singleShot(0,self,invoke)
+            def service_timeout():
+                if self.workers.get(identifier) is w and request in w['pending']:
+                    w['pending'].discard(request)
+                    self.response.emit(request,{'ok':False,'error':'桌宠操作超时，可通过 status 查看导入结果'})
+            QTimer.singleShot(timeout_ms,self,service_timeout)
+            return request
         snapshot={**(session or self._session),'language':getattr(self.b,'language','zh')}
         self.send(identifier,{'id':request,'operation':'agentCall' if agent else 'call','arguments':{'method':method,'arguments':args,'session':snapshot}})
         def timeout():
@@ -248,6 +280,13 @@ class DesktopPlugins(QObject):
                 else:self._status=self.entries[identifier]['name']+'：插件操作超时，已停止'
                 self.stop(identifier);self.pageChanged.emit()
         QTimer.singleShot(timeout_ms,self,timeout);return request
+    def pet_imported(self,token,result):
+        pending=self._pet_imports.pop(token,None)
+        if pending:
+            request,worker=pending
+            if self.workers.get('desktop-pet') is worker and request in worker['pending']:
+                worker['pending'].discard(request)
+                self.response.emit(request,{'ok':True,'result':{'appearance':result['appearance']['id'],'appearances':self._pet.appearances}} if result['ok'] else result)
     def receive(self,identifier,w):
         if self.workers.get(identifier) is not w:return
         w['buffer']+=bytes(w['process'].readAllStandardOutput())
@@ -381,6 +420,13 @@ class DesktopPlugins(QObject):
         if identifier not in self.entries or len(raw)>65536:return ''
         try:value=json.loads(raw);assert isinstance(value,dict)
         except (ValueError,AssertionError):self._status='请输入有效的 JSON 配置对象';self.changed.emit();return ''
+        if identifier=='desktop-pet' and self.entries[identifier].get('builtin'):
+            token=uuid.uuid4().hex
+            def apply():
+                try:result={'ok':True,'result':self._pet.configure(value)}
+                except (ValueError,OSError) as error:result={'ok':False,'error':str(error)}
+                self._status='操作已完成' if result['ok'] else result['error'];self.changed.emit();self.managed.emit(token,result)
+            QTimer.singleShot(0,self,apply);return token
         def done(result):
             if not result.get('ok'):return
             old=copy.deepcopy(self.settings);self.settings.setdefault('config',{})[identifier]=value
@@ -415,7 +461,8 @@ class DesktopPlugins(QObject):
     def close(self):
         if self.closed:return
         self.closed=True;self.refresh.stop()
-        processes=[w["process"] for w in self.workers.values()]
+        self._pet.close()
+        processes=[w["process"] for w in self.workers.values() if 'process' in w]
         for identifier in list(self.workers):self.stop(identifier)
         for process in processes:
             if process.state()!=QProcess.NotRunning and not process.waitForFinished(300):process.kill();process.waitForFinished(100)

@@ -11,6 +11,14 @@ Widget 扩展 Umeko 的桌面界面和当前会话，例如文件管理器、版
 
 ## 开发与使用
 
+### 官方桌面小宠物
+
+`desktop-pet` 是默认启用、默认隐藏的官方应用级 Widget。到“设置 → Agent → 插件管理 → 桌面小宠物”打开显示或导入形象；Agent 使用 `widgets.docs {"id":"desktop-pet"}` 获取管理和制作动画形象的完整文档，之后通过 `widgets.call` 调用 `show`、`hide`、`configure`、`importAppearance`、`selectAppearance` 等方法。形象支持透明 WebP / GIF / PNG 或 `umeko-pet` ZIP，独立于聊天角色配置。
+
+后台观察每 1–2 秒读取活动摘要，所有动作至少保持 3 秒。它不调用模型、不扫描聊天历史、不向上下文推送活动通知。隐藏时卸载动画解码器，停用 Widget 时停止观察。该官方 Widget 使用宿主内置适配器；第三方 Widget 不能声明或取得同等宿主访问权限。
+
+Widget 可以用 `settingsPage` 声明包内的 QML 设置页，根项同样声明 `required property var sdk`。设置页由插件管理加载，`sdk.call` 定向调用选中 Widget，`sdk.response` 接收结果，`sdk.colors` / `scale` / `t(text)` 提供样式和翻译，`sdk.active` 表明服务是否可用。没有设置页的 Widget 继续使用原来的 JSON 配置编辑器。应用服务的 `settingsPage` 不会创建聊天侧栏页面。
+
 从“设置 → Agent → 插件管理 → 导出 SDK 和示例”取得当前版本的 SDK、协议和完整示例。先阅读导出包的 `README.md`，以其中接口为准。典型结构：
 
 ```text
@@ -34,7 +42,7 @@ python -m umeko_plugin_sdk pack my-widget my-widget.zip
 
 所有 Widget 管理和通信复用 `umeko_desktop` 的 `widgets.*` 操作；`plugins.import`、`plugins.login`、`plugins.resource` 等仍只属于 Provider 插件。每个 Widget ZIP 必须包含 20 字以内的单行 `summary`、`agent.document` 指向的完整非空 Markdown，以及 `agent.methods` 公开方法清单；文档最多 64 KiB。缺少这些材料会在安装时拒绝。
 
-Widget 清单可选 `icon`：填写 `"terminal"`、`"folder"`、`"branch"`、`"code"` 等内置名称，或 `{"path":"assets/icon.svg"}` 使用包内图标。插件管理的“内置图标”可以预览并复制清单配置；SDK 的 `umeko_plugin_sdk/icons.json` 列出全部 20 个选项。未填写时使用通用插件图标。自带图标最多 512 KiB，支持 SVG/PNG/WebP/JPEG。
+Widget 清单可选 `icon`：填写 `"terminal"`、`"folder"`、`"branch"`、`"code"`、`"pet"` 等内置名称，或 `{"path":"assets/icon.svg"}` 使用包内图标。插件管理的“内置图标”可以预览并复制清单配置；SDK 的 `umeko_plugin_sdk/icons.json` 列出全部 21 个选项。未填写时使用通用插件图标。自带图标最多 512 KiB，支持 SVG/PNG/WebP/JPEG。
 
 ## Agent 如何发现、管理和调用 Widget
 

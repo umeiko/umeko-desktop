@@ -9,7 +9,8 @@ subprocess.run(['git','init','-q',str(workspace)],check=True)
 subprocess.run(['git','-C',str(workspace),'add','baseline.py'],check=True)
 subprocess.run(['git','-C',str(workspace),'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-q','-m','Initial fixture'],check=True)
 os.environ.update(UMEKO_DATA_DIR=str(base/'profile'),PI_CODING_AGENT_DIR=str(base/'agent'),UMEKO_LANGUAGE='zh',QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software')
-from PySide6.QtCore import QUrl,Qt,QObject
+from PySide6.QtCore import QUrl,Qt,QObject,QCoreApplication,QEvent
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtTest import QTest
 from main import create_application
 app,engine,backend=create_application();window=engine.rootObjects()[0];warnings=[]
@@ -30,7 +31,10 @@ def wait(check,message):
     print({name: ({p:str(find(name).property(p)) for p in ('visible','opened','mode','moving','source','width','height')} if find(name) else None) for name in ('webPane','desktopPluginSurfaceLoader','desktopPluginSurface','desktopPluginPageLoader','fileTreePluginPage')},flush=True)
     raise AssertionError(message+'\n'+str(backend.desktopPlugins.page)+'\n'+'\n'.join(warnings))
 def click(name,button=Qt.LeftButton):
-    item=find(name);assert item is not None,name
+    # A ListView model can be populated before its visible delegates are
+    # materialized on the next polish. Wait for the actual click target.
+    wait(lambda:find(name) is not None,'Control did not appear: '+name)
+    item=find(name)
     window.grabWindow();QTest.mouseClick(window,button,Qt.NoModifier,item.mapToScene(item.boundingRect().center()).toPoint());QTest.qWait(120)
 def check_launcher_boundary():
     launcher=find('desktopPluginLauncher');chat=find('chatPage');composer=find('composer')
@@ -49,7 +53,9 @@ try:
     wait(lambda:find('pluginManagerArtwork').property('progress')==1 and find('pluginManagerArtwork').property('implicitWidth')>0,'Plugin illustration did not load')
     window.grabWindow().save(str(out/'agent-plugin-entry.png'))
     click('openDesktopPluginsButton')
-    assert find('desktopPluginsPage').isVisible();assert find('desktopPluginInstalledList').property('count')==2
+    assert find('desktopPluginsPage').isVisible()
+    assert {row['id'] for row in backend.desktopPlugins.rows}=={'file-tree','git-viewer','desktop-pet','terminal'}
+    assert find('desktopPluginInstalledList').property('count')==len(backend.desktopPlugins.rows)
     search=find('desktopPluginSearch');search.setProperty('text','Git');QTest.qWait(50);assert find('desktopPluginInstalledList').property('count')==1
     search.setProperty('text','');QTest.qWait(50);window.grabWindow().save(str(out/'manager.png'))
     manager=backend.desktopPlugins
@@ -109,10 +115,10 @@ try:
     assert find('fileManagerRenameDialog') is None
     assert find('fileManagerRenameField').property('selectedText')=='hello'
     QTest.keyClick(window,Qt.Key_Escape)
-    assert (workspace/'hello.md').exists() and find('fileManagerRenameField') is None
+    wait(lambda:(workspace/'hello.md').exists() and find('fileManagerRenameField') is None,'Escape did not cancel inline rename')
     click('fileTreeRow_hello.md',Qt.RightButton);click('fileManagerRename')
     wait(lambda:find('fileManagerRenameField') is not None and find('fileManagerRenameField').property('activeFocus'),'Inline rename did not reopen')
-    QTest.keyClick(window,Qt.Key_A,Qt.ControlModifier);QTest.keyClicks(window,'renamed.md');QTest.keyClick(window,Qt.Key_Return)
+    QTest.keyClick(window,Qt.Key_A,Qt.ControlModifier);QCoreApplication.sendEvent(window,QKeyEvent(QEvent.KeyPress,0,Qt.NoModifier,'renamed.md'));QTest.keyClick(window,Qt.Key_Return)
     wait(lambda:(workspace/'renamed.md').exists() and find('fileTreeRow_renamed.md') is not None,'File was not renamed')
     click('fileTreeRow_delete-me.txt',Qt.RightButton);click('fileManagerDelete')
     wait(lambda:find('fileManagerDeleteDialog').property('visible'),'Delete confirmation did not open')
@@ -120,7 +126,7 @@ try:
     click('fileManagerDeleteConfirm');wait(lambda:not (workspace/'delete-me.txt').exists(),'Confirmed file was not deleted')
     click('fileTreeRow_renamed.md',Qt.RightButton);click('fileManagerPreview')
     wait(lambda:find('webPane').property('mode')=='document','File did not open in document preview')
-    assert not manager.page and not manager.workers
+    assert not manager.page and set(manager.workers)=={'desktop-pet'}
     click('desktopPluginRecentButton')
     wait(lambda:manager.page.get('id')=='file-tree' and find('fileTreeEntries') is not None,'Left click did not reopen recent widget')
     manager.setSessionEnabled('git-viewer',True)
@@ -160,7 +166,7 @@ try:
     wait(lambda:find('gitDiffText') is not None and 'hello' in find('gitDiffText').property('text'),'Git diff did not open')
     window.grabWindow().save(str(out/'git-diff.png'))
     window.setProperty('page','settings');QTest.qWait(200);assert not manager.page;assert not find('webPane').property('opened')
-    window.setProperty('page','chat');assert manager.openPage('file-tree');QTest.qWait(200);backend.newSession();QTest.qWait(250);assert not manager.page and not manager.workers
+    window.setProperty('page','chat');assert manager.openPage('file-tree');QTest.qWait(200);backend.newSession();QTest.qWait(250);assert not manager.page and set(manager.workers)=={'desktop-pet'}
     manager.setSessionEnabled('file-tree',False);manager.setSessionEnabled('git-viewer',False)
     click('desktopPluginMenuButton')
     wait(lambda:find('desktopPluginSessionMenu').property('desiredOpen') and not find('desktopPluginSessionMenu').property('animating'),'Empty plugin menu did not open')
