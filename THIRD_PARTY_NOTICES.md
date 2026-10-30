@@ -1,5 +1,11 @@
 # Third-party notices
 
+## Desktop plugin artwork
+
+The file-tree and version-management plugins include unmodified Microsoft Codicons 0.0.46-24 (CC-BY-4.0, https://github.com/microsoft/vscode-codicons) and the Seti file icon theme shipped by VS Code 1.143.1 (MIT, https://github.com/jesseweed/seti-ui). Seti's WOFF font is repackaged as TTF with the glyph outlines unchanged. Each standalone plugin includes the full license notices and `assets/sources.json` with source versions and SHA-256 hashes. The source-control layout uses the VS Code SCM stylesheet as its sizing reference: https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/scm/browser/media/scm.css .
+
+The plugin-management illustration is the unmodified Puzzle Piece 3D asset from Microsoft Fluent Emoji (MIT, https://github.com/microsoft/fluentui-emoji). Its pinned source and SHA-256 are in `app/icons/fluent/sources.json`; the complete license is in `licenses/Fluent-Emoji-MIT.txt`.
+
 ## Bundled search tools
 
 Release bundles include fd 10.3.0 (MIT or Apache-2.0, https://github.com/sharkdp/fd/tree/v10.3.0) and ripgrep 14.1.1 (MIT or Unlicense, https://github.com/BurntSushi/ripgrep/tree/14.1.1) so Pi's find/grep tools work without a first-run download. Their upstream license files accompany the binaries under `runtime/releases/coding-1.3.0/bin`. Archive SHA-256 values are pinned in `scripts/search-tools.json`.

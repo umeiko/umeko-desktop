@@ -115,13 +115,51 @@ class PiTests(unittest.TestCase):
             return {'ok': True, 'status': 'applied', 'operation': event['operation']}
         self.desktop_control = desktop
         self.response_fn = lambda _model, messages, *_: Completion('Desktop applied') if messages[-1]['role'] == 'tool' else Completion(tool_calls=[{
-            'id': 'control-fixture', 'name': 'config_umeko', 'arguments': {'operation': 'appearance.fontScale', 'arguments': {'scale': 1.25}}}])
+            'id': 'control-fixture', 'name': 'umeko_desktop', 'arguments': {'operation': 'appearance.fontScale', 'arguments': {'scale': 1.25}}}])
         events = self.command({**self.payload, 'type': 'prompt', 'text': 'Adjust Umeko text size'})
         self.assertEqual(len(requests), 1)
         self.assertEqual(requests[0]['operation'], 'appearance.fontScale')
         self.assertEqual(requests[0]['arguments'], {'scale': 1.25})
-        self.assertTrue(any(e.get('name') == 'config_umeko' and e.get('state') == 'done' for e in events))
+        self.assertTrue(any(e.get('name') == 'umeko_desktop' and e.get('state') == 'done' for e in events))
         self.assertTrue(any(e.get('text') == 'Desktop applied' for e in events))
+
+    def test_widget_push_reaches_running_native_agent_without_polling(self):
+        started,release=threading.Event(),threading.Event()
+        def response(_model,messages,*_):
+            if len(self.calls)==1:
+                started.set();self.assertTrue(release.wait(10))
+            return Completion('Widget update processed',input_tokens=10,output_tokens=3)
+        self.response_fn=response
+        self.command(self.payload)
+        self.send({'type':'prompt','text':'Continue the current task'})
+        try:
+            self.assertTrue(started.wait(10))
+            self.send({'type':'widget-notify','notification':{'id':'a'*32,'widgetId':'fixture','name':'Fixture','requestId':'rpc-one','message':'WIDGET_PUSH_MARKER','data':{'answer':42},'wake':True}})
+            events=[]
+            while True:
+                event=self.events.get(timeout=15);events.append(event)
+                self.assertNotEqual(event.get('type'),'error',event)
+                if event.get('type')=='widget_delivery' and event.get('status')=='queued':break
+            release.set()
+            while not any(e.get('type')=='done' for e in events):
+                event=self.events.get(timeout=15);events.append(event)
+                self.assertNotEqual(event.get('type'),'error',event)
+            self.assertTrue(any(e.get('type')=='widget_delivery' and e.get('status')=='delivered' for e in events),events)
+            self.assertTrue(any('WIDGET_PUSH_MARKER' in json.dumps(messages) and '42' in json.dumps(messages) for _,messages,_ in self.calls[1:]))
+        finally:release.set()
+
+    def test_widget_idle_wake_and_passive_delivery_use_native_context(self):
+        self.response_fn=lambda *_:Completion('Widget context received',input_tokens=10,output_tokens=3)
+        self.command(self.payload)
+        update={'id':'b'*32,'widgetId':'fixture','name':'Fixture','requestId':'','message':'PASSIVE_WIDGET_CONTEXT','data':{},'wake':False}
+        self.send({'type':'widget-notify','notification':update})
+        while True:
+            event=self.events.get(timeout=15)
+            if event.get('type')=='widget_delivery' and event.get('status')=='delivered':break
+        self.assertFalse(self.calls)
+        events=self.command({'type':'widget-notify','notification':{**update,'id':'c'*32,'message':'WAKE_WIDGET_CONTEXT','wake':True}})
+        self.assertTrue(any(e.get('type')=='widget_delivery' and e.get('status')=='delivered' for e in events))
+        content=json.dumps(self.calls[-1][1]);self.assertIn('PASSIVE_WIDGET_CONTEXT',content);self.assertIn('WAKE_WIDGET_CONTEXT',content)
 
     def test_help_returns_umeko_docs_directory_without_model_request(self):
         events = self.command({**self.payload, 'type': 'prompt', 'text': '/help'})

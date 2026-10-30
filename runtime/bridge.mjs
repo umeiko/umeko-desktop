@@ -9,6 +9,7 @@ import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs } from
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
+import { createWidgetMessages } from "./widget-messages.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
@@ -43,6 +44,7 @@ const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.typ
 const compactionText = data => `已压缩：${data.before} → ${data.after} tokens`;
 let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe, closing = false;
 const compactionFailures = new WeakMap();
+const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit});
 let reasoningEffort = "off";
 const effortLevels = new Set(["off", "low", "high", "max"]);
 let mcpEntries = [], mcpStatus = "", capturingMcp = false, pollingResources = false;
@@ -157,6 +159,7 @@ async function bindSession(session) {
     if (event.type === "turn_end") queueMicrotask(() => {
       if (runtime?.session === session) emit({type:"history_checkpoint", leafId:session.sessionManager.getLeafId()});
     });
+    widgetMessages.observe(event);
     if (event.type === "queue_update") {
       inputQueue.sync(event.steering, event.followUp);
     }
@@ -479,6 +482,10 @@ async function promptWithInterrupts(first) {
 
 async function execute(input) {
   if (input.type === "umeko_response") { umekoControl.response(input); return; }
+  if(input.type==='widget-notify' && runtime && (executing || input.notification?.wake===false)) {
+    try {await widgetMessages.deliver(input.notification);}catch(error){emit({type:'widget_delivery',id:input.notification?.id,status:'failed',error:error.message});}
+    return;
+  }
   if (input.type === "subagent-command") { await subagents.command(input); return; }
   if (input.type === "reasoning_effort") {
     if (effortLevels.has(input.value)) reasoningEffort = input.value;
@@ -524,6 +531,7 @@ async function execute(input) {
       emit({ type: "session", session: sessionInfo() });
       await promptWithInterrupts(input);
     }
+    else if (input.type === "widget-notify") await widgetMessages.deliver(input.notification);
     else if (input.type === "new") await runtime.newSession();
     else if (input.type === "open") await runtime.switchSession(input.path);
     else if (input.type === "subagent-open") {

@@ -83,8 +83,8 @@ class PiControllerMixin:
         if record.stale or (record.process and not record.ready):
             self._pool.retire(record)
         record.action, record.failed, record.cancelled = action, False, False
-        record.prompt_started = time.monotonic() if action == 'prompt' else None
-        record.phase = "loading" if not record.process else "running" if action in ("prompt", "compact") else "working"
+        record.prompt_started = time.monotonic() if action in ('prompt','widget-notify') else None
+        record.phase = "loading" if not record.process else "running" if action in ("prompt", "compact", "widget-notify") else "working"
         record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在压缩上下文" if action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
         payload = {"type": action, "model": record.model or self.store.data["selectedModel"], "reasoningEffort": record.reasoning_effort, **values}
         try:
@@ -208,6 +208,7 @@ class PiControllerMixin:
         if self._closing:
             return
         kind, visible = event.get("type"), record is self._view
+        if kind=='widget_delivery':return  # WidgetChannel observes the same pool event.
         if kind in ("subagents", "subagent_context", "subagent_event", "subagent_command", "subagent_queue", "subagent_queue_edited", "subagent_queue_returned"):
             self._subagents.handle(record, event)
             return
@@ -230,7 +231,7 @@ class PiControllerMixin:
         elif kind == "ready":
             record.ready = True
             self._subagents.process_ready(record)
-            record.phase = "running" if record.action in ("prompt", "compact") else "working"
+            record.phase = "running" if record.action in ("prompt", "compact", "widget-notify") else "working"
             record.tool_status = "正在压缩上下文" if record.action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
             if event.get("session"):
                 self._record_info(record, event["session"])

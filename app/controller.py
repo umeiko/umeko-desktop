@@ -218,6 +218,8 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self._pi_management = PiManagement(self)
         from .umeko_control import UmekoControl
         self._umeko_control = UmekoControl(self)
+        from .desktop_plugins import DesktopPlugins
+        self._desktop_plugins = DesktopPlugins(self)
 
     @Property(QObject, constant=True)
     def piManagement(self):
@@ -238,6 +240,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     @Property(QObject, constant=True)
     def providerPlugins(self):
         return self._provider_plugins
+
+    @Property(QObject, constant=True)
+    def desktopPlugins(self):
+        return self._desktop_plugins
 
     def _new_view(self, workspace=None):
         if not self._welcome_greetings:
@@ -1836,6 +1842,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         if self._closing:
             return
         self._closing = True
+        self._desktop_plugins.close()
         self._appearance_save.stop()
         self._streaming_timer.stop()
         self._session_preview.cancel()

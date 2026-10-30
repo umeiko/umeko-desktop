@@ -1,0 +1,1 @@
+{"type":"object","properties":{"intervalSeconds":{"type":"integer","minimum":1,"maximum":3600}},"required":["intervalSeconds"],"additionalProperties":false}

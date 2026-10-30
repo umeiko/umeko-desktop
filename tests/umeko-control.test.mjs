@@ -6,7 +6,7 @@ import { createUmekoControl, umekoHelp, UMEKO_PROMPT } from '../runtime/releases
 test('one desktop tool and a directory-only help keep management instructions on demand', async () => {
   const tools = [], commands = [], control = createUmekoControl({ emit() { throw new Error('help must be local'); } });
   control.extension({ registerTool: tool => tools.push(tool), registerCommand: (name, body) => commands.push({ name, body }) });
-  assert.deepEqual(tools.map(tool => tool.name), ['config_umeko']);
+  assert.deepEqual(tools.map(tool => tool.name), ['umeko_desktop']);
   assert.deepEqual(commands.map(command => command.name), ['help']);
   const result = await tools[0].execute('help', { operation: 'help' });
   const help = JSON.parse(result.content[0].text);
@@ -25,6 +25,17 @@ test('desktop requests correlate out-of-order replies and retain explicit failur
   assert.deepEqual(await first, { ok: true, providers: [] });
   assert.equal((await second).ok, false);
   control.response({ id: emitted[0].id, result: { ok: true } });
+});
+
+test('Widget help queries the live desktop and the public tool keeps one name',async()=>{
+  const events=[],control=createUmekoControl({emit:event=>events.push(event)});
+  assert.equal(umekoHelp().topics.provider,'provider-plugins.md');
+  assert.equal(umekoHelp().topics.widget,'widget-plugins.md');
+  const result=control.request('help',{topic:'widget'});
+  assert.equal(events[0].operation,'help');assert.equal(events[0].arguments.topic,'widget');
+  control.response({id:events[0].id,result:{ok:true,activeWidgets:[{id:'file-tree',summary:'browse files',document:'AGENT.md'}]}});
+  assert.equal((await result).activeWidgets[0].id,'file-tree');
+  assert.match(UMEKO_PROMPT,/widgets\.docs/);assert.match(UMEKO_PROMPT,/umeko_desktop/);
 });
 
 test('cancel, timeout and shutdown release outstanding desktop requests', async () => {

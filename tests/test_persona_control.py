@@ -1,4 +1,4 @@
-"""Observable config_umeko job completion without network or child processes."""
+"""Observable umeko_desktop job completion without network or child processes."""
 import copy
 import unittest
 from pathlib import Path
@@ -121,7 +121,7 @@ class PersonaControlTests(unittest.TestCase):
         self.control._drain()
         self.assertEqual(self.job(first['jobId'])['status'], 'running')
         self.assertEqual(self.job(second['jobId'])['status'], 'queued')
-        resources = {'tools': [{'name': 'config_umeko'}], 'skills': []}
+        resources = {'tools': [{'name': 'umeko_desktop'}], 'skills': []}
         self.backend._pool.event.emit(self.backend._view, {'type': 'state', 'resources': resources})
         self.assertEqual(self.job(first['jobId'])['status'], 'running')
         self.backend._view.busy = False
