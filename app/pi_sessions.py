@@ -36,6 +36,7 @@ class SessionState:
     action: str = ""
     prompt_started: float | None = None
     tool_status: str = ""
+    pet_activity: str = "thinking"
     process: QProcess | None = None
     buffer: bytes = b""
     ready: bool = False

@@ -10,6 +10,9 @@ def main():
         with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as stream:
             for source,prefix in ((ROOT/'plugin-runtime',''),(ROOT/'umeko-plugins','examples')):
                 for p in sorted(source.rglob('*')):
+                    # The native official pet is not a portable Python worker
+                    # example; do not duplicate its 25 MiB of art into the SDK.
+                    if prefix=='examples' and p.relative_to(source).parts[0]=='desktop-pet':continue
                     if p.is_file() and '__pycache__' not in p.parts and p.suffix!='.pyc':stream.write(p,str(Path(prefix)/p.relative_to(source)))
         OUT.mkdir(exist_ok=True);shutil.copy2(output,OUT/output.name)
     print(OUT/'umeko-plugin-sdk.zip')

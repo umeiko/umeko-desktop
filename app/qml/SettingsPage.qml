@@ -10,7 +10,7 @@ Item {
     property bool editingProvider: false
     property bool editingCommon: false
     property string editId: ""
-    function openPluginManagement() { agentPage.openPlugins() }
+    function openPluginManagement(identifier) { agentPage.openPlugins(identifier) }
     CommonProviderDialog { id: commonProviders }
     property string mappingSignature: ""
     property string mappingProviderId: ""

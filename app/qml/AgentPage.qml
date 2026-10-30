@@ -9,7 +9,7 @@ Column {
     property bool pluginsOpen: false
     property real availableHeight: 600
     signal navigated()
-    function openPlugins() { piOpen = false; pluginsOpen = true }
+    function openPlugins(identifier) { piOpen = false; pluginsOpen = true; if(identifier)pluginManager.selectedId=identifier }
     spacing: 18
     onPiOpenChanged: { if (!piOpen) toolsOpen = false; else { pluginsOpen = false; backend.piManagement.scan() }; navigated() }
     onToolsOpenChanged: navigated()
@@ -78,7 +78,7 @@ Column {
             Text { text: I18n.t("插件管理"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.Medium }
             Item { Layout.fillWidth: true }
         }
-        DesktopPluginsPage { width: parent.width; height: Math.max(360, root.availableHeight - 64) }
+        DesktopPluginsPage { id:pluginManager; width: parent.width; height: Math.max(360, root.availableHeight - 64) }
     }
     Column {
         width: parent.width; visible: root.piOpen && !root.toolsOpen; spacing: 18
