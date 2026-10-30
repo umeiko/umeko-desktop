@@ -112,7 +112,11 @@ try:
     assert (workspace/'hello.md').exists() and find('fileManagerRenameField') is None
     click('fileTreeRow_hello.md',Qt.RightButton);click('fileManagerRename')
     wait(lambda:find('fileManagerRenameField') is not None and find('fileManagerRenameField').property('activeFocus'),'Inline rename did not reopen')
-    QTest.keyClick(window,Qt.Key_A,Qt.ControlModifier);QTest.keyClicks(window,'renamed.md');QTest.keyClick(window,Qt.Key_Return)
+    QTest.keyClick(window,Qt.Key_A,Qt.ControlModifier)
+    # QTest.keyClicks accepts QWidget; use the same QWindow keyClick path as
+    # model_popup_ui_smoke for this actual QQuickWindow.
+    for character in 'renamed.md':QTest.keyClick(window,Qt.Key(ord(character.upper())))
+    QTest.keyClick(window,Qt.Key_Return)
     wait(lambda:(workspace/'renamed.md').exists() and find('fileTreeRow_renamed.md') is not None,'File was not renamed')
     click('fileTreeRow_delete-me.txt',Qt.RightButton);click('fileManagerDelete')
     wait(lambda:find('fileManagerDeleteDialog').property('visible'),'Delete confirmation did not open')
@@ -147,7 +151,18 @@ try:
     click('gitBranchAction_create')
     wait(lambda:find('gitCreateBranchDialog').property('visible'),'Create branch prompt did not open')
     find('gitNewBranchName').setProperty('text','ui-preview-branch');click('gitCreateBranchConfirm')
-    wait(lambda:find('gitViewerPluginPage').property('branch')=='ui-preview-branch','Branch was not created and checked out')
+    # A branch response also refreshes status/history and rebuilds delegates.
+    # Wait for that actual row, rather than clicking a retiring old delegate.
+    wait(lambda:find('gitViewerPluginPage').property('branch')=='ui-preview-branch'
+         and find('gitViewerPluginPage').property('loading')==0
+         and not find('gitCreateBranchDialog').property('visible')
+         and not find('gitBranchPicker').property('visible')
+         and find('gitChange_untracked_example.py') is not None
+         and find('gitChange_untracked_example.py').isVisible()
+         and find('gitChange_untracked_example.py').width()>0
+         and find('gitChange_untracked_example.py').mapToScene(find('gitChange_untracked_example.py').boundingRect().center()).x()
+             >=find('webPane').mapToScene(find('webPane').boundingRect().topLeft()).x(),
+         'Branch refresh did not produce a visible current file row')
     click('gitChange_untracked_example.py',Qt.RightButton)
     wait(lambda:find('gitFileContextMenu').property('visible'),'File context menu did not open')
     window.grabWindow().save(str(out/'git-file-context-menu.png'))
