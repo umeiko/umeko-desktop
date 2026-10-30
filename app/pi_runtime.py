@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from .filesystem_paths import filesystem_path, ordinary_path
 
 PACKAGE = "@earendil-works/pi-coding-agent"
 PINNED_VERSION = "1.3.0"
@@ -68,6 +69,7 @@ def npm_command():
 
 
 def project_runtime(source: Path, destination: Path):
+    source, destination = filesystem_path(source), filesystem_path(destination)
     if destination.exists():
         raise ValueError("内核目标目录已存在")
     modules = source / "node_modules"
@@ -75,10 +77,7 @@ def project_runtime(source: Path, destination: Path):
     # Preserve the complete upstream SDK, native tools, resource loader and dependencies.
     # The source checkout can live under a long Windows workspace path. npm
     # installs nested SDK type declarations beyond MAX_PATH; preserve them too.
-    source_modules, target_modules = modules.resolve(), (destination / "node_modules").resolve()
-    if os.name == "nt":
-        source_modules, target_modules = "\\\\?\\" + str(source_modules), "\\\\?\\" + str(target_modules)
-    shutil.copytree(source_modules, target_modules)
+    shutil.copytree(modules, destination / "node_modules")
     ai = destination / "node_modules/@earendil-works/pi-ai/dist"
     if not (ai / "providers/all.js").is_file() or not (ai / "models.generated.js").is_file():
         raise RuntimeError("Pi provider 接口已变化，需要更新桥接适配")
@@ -93,7 +92,7 @@ def project_runtime(source: Path, destination: Path):
 def patch_retry_diagnostics(release: Path):
     # Pi recognizes transient errors from text. Random report IDs can contain
     # status digits such as 503; exclude only that opaque marker from matching.
-    path = release / "node_modules/@earendil-works/pi-ai/dist/utils/retry.js"
+    path = filesystem_path(release) / "node_modules/@earendil-works/pi-ai/dist/utils/retry.js"
     original = "const errorMessage = message.errorMessage;"
     replacement = r'const errorMessage = message.errorMessage.replace(/\[Umeko:[a-f0-9-]{36}\]/gi, "[Umeko report]");'
     text = path.read_text(encoding="utf-8")
@@ -154,6 +153,8 @@ def ensure_adapter_dependencies(release: Path, bridge_source: Path):
 
 
 def verify_runtime(release: Path, bridge_source: Path):
+    node_release = ordinary_path(release)
+    release, bridge_source = filesystem_path(release), filesystem_path(bridge_source)
     manifest = json.loads((release / "manifest.json").read_text(encoding="utf-8"))
     if manifest.get("package") != PACKAGE or manifest.get("projection") != 2:
         raise RuntimeError("旧 Agent Core 内核不能用于完整 Pi Coding Agent")
@@ -165,7 +166,7 @@ def verify_runtime(release: Path, bridge_source: Path):
     environment = node_environment(dict(os.environ, PI_OFFLINE="1"))
     environment.pop("NODE_OPTIONS", None)
     environment.pop("NODE_PATH", None)
-    result = subprocess.run([node_executable(), str(release / "bridge.mjs"), "--self-test"],
+    result = subprocess.run([node_executable(), str(node_release / "bridge.mjs"), "--self-test"],
                             capture_output=True, text=True, encoding="utf-8", timeout=60,
                             env=environment, creationflags=CREATE_NO_WINDOW)
     if result.returncode or '"ok":true' not in result.stdout:
@@ -173,4 +174,4 @@ def verify_runtime(release: Path, bridge_source: Path):
 
 
 def installed_version(release: Path):
-    return json.loads((release / "manifest.json").read_text(encoding="utf-8"))["version"]
+    return json.loads((filesystem_path(release) / "manifest.json").read_text(encoding="utf-8"))["version"]
