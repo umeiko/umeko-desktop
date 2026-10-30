@@ -33,6 +33,17 @@ def wait(check,message):
 def click(name,button=Qt.LeftButton):
     item=find(name);assert item is not None,name
     window.grabWindow();QTest.mouseClick(window,button,Qt.NoModifier,item.mapToScene(item.boundingRect().center()).toPoint());QTest.qWait(120)
+def clickable(item):
+    if item is None or not item.isVisible() or not item.isEnabled() or item.width()<=0 or item.height()<=0:return False
+    point=item.mapToScene(item.boundingRect().center())
+    if not (0<point.x()<window.width() and 0<point.y()<window.height()):return False
+    ancestor=item.parentItem()
+    while ancestor is not None:
+        if ancestor.property('clip'):
+            local=ancestor.mapFromScene(point)
+            if not (0<=local.x()<ancestor.width() and 0<=local.y()<ancestor.height()):return False
+        ancestor=ancestor.parentItem()
+    return True
 def check_launcher_boundary():
     launcher=find('desktopPluginLauncher');chat=find('chatPage');composer=find('composer')
     corner=launcher.mapToScene(launcher.boundingRect().bottomRight());edge=chat.mapToScene(chat.boundingRect().bottomRight())
@@ -159,6 +170,7 @@ try:
     wait(lambda:find('fileTreePluginPage') is not None and find('fileTreePluginPage').property('selectedPath')=='example.py','Explorer did not select requested file')
     assert manager.openPage('git-viewer')
     wait(lambda:find('gitChangesList') is not None and find('gitChangesList').property('count')>=3,'Git changes did not reload')
+    wait(lambda:clickable(find('gitChange_untracked_example.py')),'Git example.py row did not become clickable')
     click('gitChange_untracked_example.py')
     wait(lambda:find('gitDiffText') is not None and 'hello' in find('gitDiffText').property('text'),'Git diff did not open')
     window.grabWindow().save(str(out/'git-diff.png'))
