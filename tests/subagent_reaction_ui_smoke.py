@@ -15,8 +15,7 @@ os.environ["PI_CODING_AGENT_DIR"] = str(Path(test_profile.name) / "pi-agent")
 os.environ["UMEKO_LANGUAGE"] = "zh"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
-from PySide6.QtCore import QPointF, Qt, QMetaObject, Q_ARG, Q_RETURN_ARG
-from PySide6.QtQuick import QQuickItem
+from PySide6.QtCore import QPointF, Qt
 from PySide6.QtTest import QTest
 from main import create_application
 
@@ -37,12 +36,7 @@ def find(name, root=None):
 
 def tool_item(name):
     pane = find("subagentConversation")
-    if pane is None: return None
-    # Pooled delegates can retain the preceding child's identically named tools.
-    # Ask the ListView for the current assistant row instead of walking its pool.
-    row = QMetaObject.invokeMethod(pane, "itemAtIndex", Qt.DirectConnection,
-                                  Q_RETURN_ARG(QQuickItem), Q_ARG(int, 1))
-    return find(name, row) if row is not None else None
+    return find(name, pane) if pane is not None else None
 
 
 def item_state(item):
