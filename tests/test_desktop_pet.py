@@ -77,6 +77,57 @@ class PetTests(unittest.TestCase):
         self.manager.setEnabled('desktop-pet',False);self.assertFalse(self.pet.running);self.assertFalse(self.pet.visible);self.assertFalse(self.pet.timer.isActive())
         self.manager.setEnabled('desktop-pet',True);self.assertTrue(self.pet.visible)
         self.manager.close();self.assertFalse(self.pet.running)
+    def test_whale_builtin_has_all_animated_states_and_cannot_be_replaced(self):
+        appearances = {row['id']: row for row in self.pet.appearances}
+        self.assertTrue(appearances['yanami']['builtin'])
+        self.assertTrue(appearances['whale-girl']['builtin'])
+        pack = self.host.root/'umeko-plugins/desktop-pet/assets/whale-girl'
+        checked = read_pack(pack, check=True)
+        self.assertEqual(set(checked['states']), {'idle','thinking','working','waiting','done','error'})
+        self.assertTrue(all(row['animated'] for row in checked['images'].values()))
+        self.assertLess(sum((pack/name).stat().st_size for name in checked['states'].values()), 24*1024*1024)
+        self.pet.configure({'appearance':'whale-girl'})
+        for state in checked['states']:
+            self.pet.motion.state = state
+            self.assertTrue(self.pet.state['source'].endswith('/whale-girl/'+state+'.webp'))
+            self.assertTrue(self.pet.state['animated'])
+        with self.assertRaises(ValueError):self.pet.handle('removeAppearance', {'id':'whale-girl'})
+        forged = self.path/'forged';forged.mkdir()
+        (forged/'pet.json').write_text(json.dumps({'format':'umeko-pet','version':1,'id':'whale-girl','name':'forged','states':{'idle':'one.png'}}))
+        (forged/'one.png').write_bytes(self.image().read_bytes())
+        self.pet.begin_import(str(forged/'pet.json'))
+        self.wait(lambda:not self.pet.importing)
+        self.assertIn('id', self.pet.last_error)
+        self.assertEqual(self.pet._packs['whale-girl']['directory'], pack)
+        self.manager.close();second=DesktopPlugins(self.host);self.addCleanup(second.close)
+        self.assertEqual(second.pet.config['appearance'],'whale-girl')
+    def test_builtin_komari_has_six_valid_animations_and_persists_selection(self):
+        packs = {row['id']:row for row in self.pet.appearances}
+        self.assertTrue(packs['yanami']['builtin'])
+        self.assertTrue(packs['komari']['builtin'])
+        pack = read_pack(self.host.root/'umeko-plugins/desktop-pet/assets/komari', check=True)
+        self.assertEqual(set(pack['states']), {'idle','thinking','working','waiting','done','error'})
+        self.assertTrue(all(image['animated'] and image['frames'] > 1 for image in pack['images'].values()))
+        control = self.control()
+        self.assertTrue(self.rpc(control,'selectAppearance',{'id':'komari'})['ok'])
+        self.assertEqual(self.pet.state['appearance'],'komari')
+        self.assertEqual(self.pet.state['name'],'小鞠知花')
+        self.assertFalse(self.rpc(control,'removeAppearance',{'id':'komari'})['ok'])
+        self.manager.close()
+        second = DesktopPlugins(self.host);self.addCleanup(second.close)
+        self.assertEqual(second.pet.config['appearance'],'komari')
+        self.assertFalse(second.pet.visible)
+    def test_imported_pack_cannot_shadow_builtin_komari(self):
+        folder = self.path/'shadow';folder.mkdir()
+        (folder/'one.png').write_bytes(self.image().read_bytes())
+        value = {'format':'umeko-pet','version':1,'id':'komari','name':'Shadow','states':{'idle':'one.png'}}
+        (folder/'pet.json').write_text(json.dumps(value))
+        with self.assertRaises(ValueError):import_pack(folder/'pet.json',self.pet.pack_directory)
+        self.assertFalse((self.pet.pack_directory/'komari').exists())
+        forged=self.pet.pack_directory/'komari';forged.mkdir(parents=True)
+        (forged/'pet.json').write_text(json.dumps(value));(forged/'one.png').write_bytes(self.image().read_bytes())
+        self.pet.load_packs()
+        self.assertEqual(next(row['name'] for row in self.pet.appearances if row['id']=='komari'),'小鞠知花')
     def test_activity_observer_only_reads_compact_metadata_and_background_chats(self):
         class NoTranscript:
             def __len__(self):raise AssertionError('Pet read transcript length')
@@ -91,6 +142,27 @@ class PetTests(unittest.TestCase):
         self.pet.sample();self.assertEqual(self.pet.state['activity']['state'],'done')
         record.busy=True;self.pet.sample();record.failed=True;record.busy=False;self.pet.sample()
         self.assertEqual(self.pet.state['activity']['state'],'error')
+    def test_whale_uses_only_user_dialogue_and_announces_actual_task_outcomes_once(self):
+        self.pet.configure({'appearance':'whale-girl'})
+        dialogue=self.pet._packs['whale-girl']['dialogue']
+        self.assertEqual({line for lines in dialogue.values() for line in lines},
+                         {'要米','米','饿，饿','米呢','好了米','有问题了','米？','没问题了米','米！'})
+        spoken=[];self.pet.reaction.connect(spoken.append)
+        for kind in ('tap','hover','drag'):
+            self.pet.interact(kind)
+            self.assertIn(spoken[-1],dialogue[kind])
+            self.assertNotIn(spoken[-1],dialogue['done']+dialogue['error'])
+        spoken.clear();self.pet.sample()
+        self.assertEqual(spoken,[],'An interaction must not announce task completion')
+        record=self.host._view
+        record.busy=True;self.pet.sample()
+        record.busy=False;self.pet.sample()
+        self.assertEqual(len(spoken),1);self.assertIn(spoken[0],dialogue['done'])
+        self.pet.sample();self.assertEqual(len(spoken),1,'Polling repeated the completion line')
+        record.busy=True;self.pet.sample()
+        record.busy=False;record.failed=True;self.pet.sample()
+        self.assertEqual(spoken[-1],'有问题了')
+        self.pet.sample();self.assertEqual(len(spoken),2,'Polling repeated the error line')
     def test_agent_import_select_config_and_result_use_existing_widget_channel(self):
         control=self.control();docs=control.execute({'operation':'widgets.docs','arguments':{'id':'desktop-pet'}})
         self.assertIn('importAppearance',docs['methods']);self.assertIn('umeko-pet',docs['document']['text'])

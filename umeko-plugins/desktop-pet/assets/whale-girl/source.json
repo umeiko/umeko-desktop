@@ -1,0 +1,52 @@
+{
+  "format": "umeko-community-art-provenance",
+  "version": 1,
+  "repository": "https://github.com/yanzwzz/dsh-whale-girl-pet",
+  "commit": "53e9ab8e2c779f4c0feb902cfa940c098c83d228",
+  "license": "MIT",
+  "conversion": "Original 360x360 VP9 alpha animations, 10 fps animated WebP, quality 80, looping; no visual redesign.",
+  "assets": {
+    "idle": {
+      "path": "assets/thumb/待机呼吸休闲.webm",
+      "sourceSha256": "ee459a2e181c2b3d0d9ede9559319b7a2ea6b9f21d9a395a4754ffe5c770adde",
+      "sha256": "05a82811b68c3b12a2b3e768c8ee84c1fda04875134aab1d804b9e1c2c018762",
+      "bytes": 1837374,
+      "url": "https://raw.githubusercontent.com/yanzwzz/dsh-whale-girl-pet/53e9ab8e2c779f4c0feb902cfa940c098c83d228/assets/thumb/%E5%BE%85%E6%9C%BA%E5%91%BC%E5%90%B8%E4%BC%91%E9%97%B2.webm"
+    },
+    "thinking": {
+      "path": "assets/thumb/工作思考.webm",
+      "sourceSha256": "619370c39cf9090367d8c21e5fb2df30b41b991b18d71a177941e2bcac05a74f",
+      "sha256": "bb8b9e985db2b5d21433ec245ec187623378a9a8da5f5bba1e4005debdc261e6",
+      "bytes": 4083036,
+      "url": "https://raw.githubusercontent.com/yanzwzz/dsh-whale-girl-pet/53e9ab8e2c779f4c0feb902cfa940c098c83d228/assets/thumb/%E5%B7%A5%E4%BD%9C%E6%80%9D%E8%80%83.webm"
+    },
+    "working": {
+      "path": "assets/thumb/认真工作.webm",
+      "sourceSha256": "127fffa3844d91b3887bb85e1aebc26e5a888ba933e752132565ff9a8eccfefa",
+      "sha256": "9a2cff2466e024eae11f391fb25dc76145c978d51683119490e47da411efa4c4",
+      "bytes": 3949928,
+      "url": "https://raw.githubusercontent.com/yanzwzz/dsh-whale-girl-pet/53e9ab8e2c779f4c0feb902cfa940c098c83d228/assets/thumb/%E8%AE%A4%E7%9C%9F%E5%B7%A5%E4%BD%9C.webm"
+    },
+    "waiting": {
+      "path": "assets/thumb/看表叹气.webm",
+      "sourceSha256": "01390209a6661a74c90342e02c9b472147f4f46265ecb096169afa9480ad036b",
+      "sha256": "7d0d52bcf3f1cb61471e376b8d9f100cd53363ccaa0b5c5af17b7c81fc2bdc55",
+      "bytes": 1873818,
+      "url": "https://raw.githubusercontent.com/yanzwzz/dsh-whale-girl-pet/53e9ab8e2c779f4c0feb902cfa940c098c83d228/assets/thumb/%E7%9C%8B%E8%A1%A8%E5%8F%B9%E6%B0%94.webm"
+    },
+    "done": {
+      "path": "assets/thumb/工作结束.webm",
+      "sourceSha256": "6f4b5aeda10ea925cf1067cf9516847241bbd18e6a64d0303ec8c0fa5a1ce59a",
+      "sha256": "fa8d48574e731018c512aaf0ca9396f6ec0674ab91ba60f29b0aa71fe01d563d",
+      "bytes": 3359938,
+      "url": "https://raw.githubusercontent.com/yanzwzz/dsh-whale-girl-pet/53e9ab8e2c779f4c0feb902cfa940c098c83d228/assets/thumb/%E5%B7%A5%E4%BD%9C%E7%BB%93%E6%9D%9F.webm"
+    },
+    "error": {
+      "path": "assets/thumb/摸鱼被抓.webm",
+      "sourceSha256": "0c363a0d23f78e73099f1398e3a550311741c386418d62770f0dcc84f7b17b7b",
+      "sha256": "82e479b516e6a3bc8c41865393173dc798d90c802f79f6024d9d0b4a200ef2d0",
+      "bytes": 3850156,
+      "url": "https://raw.githubusercontent.com/yanzwzz/dsh-whale-girl-pet/53e9ab8e2c779f4c0feb902cfa940c098c83d228/assets/thumb/%E6%91%B8%E9%B1%BC%E8%A2%AB%E6%8A%93.webm"
+    }
+  }
+}

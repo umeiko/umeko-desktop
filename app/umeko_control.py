@@ -211,13 +211,17 @@ class UmekoControl(QObject):
 
     def _execute(self, operation, args, caller, queue, job_id=None):
         b = self.b
+        if operation.startswith('agent_bus.'):
+            return b.desktopPlugins.global_agents.execute(operation,args,caller)
+        if caller and getattr(caller,'global_agent','') and operation not in ('help','models.list'):
+            raise ValueError('全局协调子智能体只能使用 agent_bus.* 和 models.list；其他任务请委派给已开启桥的工作区代理')
         if operation == 'help':
             docs = b.store.directory/'agent-docs'
             if not (docs/'README.md').is_file(): docs = b._release/'umeko-docs'
-            topics={'plugins':'plugins.md','provider':'provider-plugins.md','widget':'widget-plugins.md'}
+            topics={'plugins':'plugins.md','provider':'provider-plugins.md','widget':'widget-plugins.md','agents':'global-agents.md'}
             topic=args.get('topic','')
             topic={'插件':'plugins','provider插件':'provider','widget插件':'widget','供应商':'provider'}.get(str(topic).lower(),str(topic).lower())
-            if topic and topic not in topics:raise ValueError('topic 请选择 plugins、provider 或 widget')
+            if topic and topic not in topics:raise ValueError('topic 请选择 plugins、provider、widget 或 agents')
             result={'docsRoot':str(docs),'entry':str(docs/(topics[topic] if topic else 'README.md')),'topics':{key:str(docs/value) for key,value in topics.items()}}
             if topic in ('widget','plugins'):result['activeWidgets']=b.desktopPlugins.bridge.list(True,caller)
             return result

@@ -12,9 +12,10 @@ Column {
     property int messageIndex: -1
     property int blockOffset: 0
     readonly property bool running: tools.some(tool => tool.state === "running")
+    readonly property string runningNames: tools.filter(tool => tool.state === "running").map(tool => tool.name).join(", ")
     readonly property int failures: tools.filter(tool => tool.state === "error").length
     readonly property bool commandsOnly: tools.length > 0 && tools.every(tool => command(tool.name))
-    readonly property string summary: (running ? (commandsOnly ? I18n.t("正在运行 ") : I18n.t("正在执行 ")) : (commandsOnly ? I18n.t("运行了 ") : I18n.t("执行了 "))) + tools.length + (commandsOnly ? I18n.t(" 条命令") : I18n.t(" 项操作")) + (failures ? "（" + failures + I18n.t(" 失败）") : "")
+    readonly property string summary: (running ? (commandsOnly ? I18n.t("正在运行 ") : I18n.t("正在执行 ")) : (commandsOnly ? I18n.t("运行了 ") : I18n.t("执行了 "))) + tools.length + (commandsOnly ? I18n.t(" 条命令") : I18n.t(" 项操作")) + (failures ? "（" + failures + I18n.t(" 失败）") : "") + (runningNames ? " · " + runningNames : "")
     spacing: 2
     visible: tools.length > 0
     onExpandedChanged: if (!expanded && selectionController) selectionController.hideDetails(messageIndex, blockOffset + 1, tools.length)
@@ -57,12 +58,26 @@ Column {
         return JSON.stringify(tool.arguments || {}, null, 2) + (tool.result ? "\n\n" + tool.result : "")
     }
     Item {
-        width: headerRow.implicitWidth; height: Theme.control(22)
-        Row {
-            id: headerRow; height: parent.height; spacing: 7
-            ActivitySpinner { visible: root.running; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
-            Text { text: root.summary; color: headerMouse.interactionHovered ? Theme.ink : Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
-            Glyph { name: root.expanded ? "chevron-down" : "chevron-right"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
+        objectName: "toolHistoryHeader"
+        width: Math.min(root.width, headerLabel.implicitWidth + headerArrow.width + 7 + (headerSpinner.visible ? headerSpinner.width + 7 : 0))
+        height: Theme.control(22)
+        ActivitySpinner {
+            id: headerSpinner; visible: root.running
+            width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter
+        }
+        Text {
+            id: headerLabel; objectName: "toolHistorySummary"
+            x: headerSpinner.visible ? headerSpinner.width + 7 : 0
+            width: Math.max(0, headerArrow.x - 7 - x)
+            text: root.summary; elide: Text.ElideRight; wrapMode: Text.NoWrap; maximumLineCount: 1
+            color: headerMouse.interactionHovered ? Theme.ink : Theme.muted
+            font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter
+        }
+        Glyph {
+            id: headerArrow; objectName: "toolHistoryArrow"
+            name: root.expanded ? "chevron-down" : "chevron-right"
+            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            width: Theme.icon(12); height: Theme.icon(12)
         }
         ChatHitArea {
             id: headerMouse; objectName: "toggleTools_" + root.messageIndex + "_" + root.blockOffset

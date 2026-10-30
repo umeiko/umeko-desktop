@@ -1,0 +1,87 @@
+{
+  "format": "umeko-pet",
+  "version": 1,
+  "id": "whale-girl",
+  "name": "鲸鱼娘",
+  "author": "dsh-whale-girl-pet contributors",
+  "license": "MIT",
+  "source": "https://github.com/yanzwzz/dsh-whale-girl-pet",
+  "sourceCommit": "53e9ab8e2c779f4c0feb902cfa940c098c83d228",
+  "states": {
+    "idle": "idle.webp",
+    "thinking": "thinking.webp",
+    "working": "working.webp",
+    "waiting": "waiting.webp",
+    "done": "done.webp",
+    "error": "error.webp"
+  },
+  "images": {
+    "idle.webp": {
+      "animated": true,
+      "width": 360,
+      "height": 360,
+      "frames": 100,
+      "contentTop": 0.1527777777777778
+    },
+    "thinking.webp": {
+      "animated": true,
+      "width": 360,
+      "height": 360,
+      "frames": 100,
+      "contentTop": 0.1111111111111111
+    },
+    "working.webp": {
+      "animated": true,
+      "width": 360,
+      "height": 360,
+      "frames": 100,
+      "contentTop": 0.15833333333333333
+    },
+    "waiting.webp": {
+      "animated": true,
+      "width": 360,
+      "height": 360,
+      "frames": 100,
+      "contentTop": 0.15555555555555556
+    },
+    "done.webp": {
+      "animated": true,
+      "width": 360,
+      "height": 360,
+      "frames": 100,
+      "contentTop": 0.13055555555555556
+    },
+    "error.webp": {
+      "animated": true,
+      "width": 360,
+      "height": 360,
+      "frames": 100,
+      "contentTop": 0.1111111111111111
+    }
+  },
+  "dialogue": {
+    "tap": [
+      "要米",
+      "米",
+      "米呢",
+      "米？",
+      "米！"
+    ],
+    "hover": [
+      "饿，饿",
+      "米呢",
+      "米？"
+    ],
+    "drag": [
+      "米",
+      "米！"
+    ],
+    "done": [
+      "好了米",
+      "没问题了米"
+    ],
+    "error": [
+      "有问题了"
+    ]
+  }
+}

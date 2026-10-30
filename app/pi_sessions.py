@@ -14,6 +14,7 @@ from .npm_config import npm_overrides
 
 @dataclass(eq=False)
 class SessionState:
+    global_agent: str = ""
     key: str = field(default_factory=lambda: uuid.uuid4().hex)
     id: str = ""
     file: str = ""

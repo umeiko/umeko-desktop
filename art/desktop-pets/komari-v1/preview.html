@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>小鞠桌宠 · 六种状态预览</title>
+<style>
+:root{color-scheme:light dark;font:15px system-ui,sans-serif;background:#f4f1ed;color:#403b38}body{max-width:1000px;margin:36px auto;padding:0 24px}h1{font-size:25px;letter-spacing:.02em}header{display:flex;gap:24px;align-items:center;justify-content:space-between}p{color:#796b69;line-height:1.65}button{font:inherit;border:1px solid #c7b6b6;border-radius:9px;padding:9px 14px;background:transparent;color:inherit;cursor:pointer}main{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}article{background:#fff8;border:1px solid #e1d6d6;border-radius:16px;text-align:center;padding:10px 12px 20px}img{width:166px;height:249px;max-width:100%;object-fit:contain}h2{font-size:16px;margin:0}small{color:#857572}body.dark{background:#1d1b23;color:#eee7eb}body.dark article{background:#292530;border-color:#443c49}body.dark p,body.dark small{color:#c1b4c1}html:has(body.dark){background:#1d1b23}@media(max-width:620px){main{grid-template-columns:repeat(2,minmax(0,1fr))}header{align-items:start;flex-direction:column;gap:0}}
+</style>
+<header><div><h1>小鞠知花 · 桌宠形象</h1><p>六种状态，透明循环动画。沿用 Umeko 桌宠的状态、互动和隐藏释放机制。</p></div><button onclick="document.body.classList.toggle('dark')">切换明暗背景</button></header>
+<main id="states"></main>
+<p>AI 美术：内置 image_gen。原始状态图、完整提示词及打包脚本保存在本目录。每段 384 × 576，6 个生成关键帧，4.2 秒循环。正式资源共约 1.6 MiB。</p>
+<script>
+const states=[['idle','待机','安静抱着书'],['thinking','思考','翻开书，认真想一想'],['working','工作','拿笔记录和检查'],['waiting','等待确认','有点害羞地等你'],['done','完成','放心地竖起拇指'],['error','出错','遇到一点小困难']];
+for(const [id,name,detail] of states){const article=document.createElement('article');const image=new Image();image.src='../../../umeko-plugins/desktop-pet/assets/komari/'+id+'.webp';image.alt=name;article.append(image);const heading=document.createElement('h2');heading.textContent=name;article.append(heading);const note=document.createElement('small');note.textContent=detail;article.append(note);document.querySelector('main').append(article)}
+</script>
+</html>
