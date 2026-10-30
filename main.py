@@ -64,6 +64,8 @@ def create_application():
         font.setFamily(saved_family)
         app.setFont(font)
     register_text_types()
+    from app.terminal_view import register_terminal_types
+    register_terminal_types()
     engine = QQmlApplicationEngine()
     configure_engine(engine)
     engine.warnings.connect(lambda errors: diagnostic("\n".join(e.toString() for e in errors)))

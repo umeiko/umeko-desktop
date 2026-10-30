@@ -41,7 +41,7 @@ Umeko is a native desktop app for working with [Pi Coding Agent](https://github.
 <details>
 <summary>Explore the workflow · tools, subagents and custom providers</summary>
 
-**See the work without losing the conversation.** Thinking and tool batches expand in place; file actions expose copyable paths.
+**See the work without losing the conversation.** Thinking and tool batches expand in place; click tool files to preview them, or right-click for file actions.
 
 ![Pure white theme with expanded thinking and grouped tool calls — English interface](docs/images/process-white-en.png)
 
