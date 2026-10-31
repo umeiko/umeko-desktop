@@ -10,6 +10,7 @@ sys.path.insert(0,str(ROOT))
 temp=tempfile.TemporaryDirectory(prefix='umeko-pet-ui-')
 os.environ.update(UMEKO_DATA_DIR=str(Path(temp.name)/'profile'),PI_CODING_AGENT_DIR=str(Path(temp.name)/'agent'),UMEKO_LANGUAGE='zh',QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software')
 from PySide6.QtCore import QObject, QPoint, Qt
+from PySide6.QtQml import QQmlEngine, QQmlExpression
 from PySide6.QtTest import QTest
 from main import create_application
 
@@ -34,6 +35,22 @@ def wait(predicate,description):
         QTest.qWait(20)
         if predicate():return
     raise AssertionError(description+'\n'+'\n'.join(warnings))
+
+def menu_object(menu, expression):
+    query=QQmlExpression(QQmlEngine.contextForObject(menu),menu,expression)
+    value=query.evaluate()[0]
+    assert not query.hasError(),query.error().toString()
+    return value
+
+def activate_menu_item(menu,index):
+    assert menu_object(menu,'contentItem.Window.window !== parent.Window.window && contentItem.Window.window.transientParent === parent.Window.window'),'Menu lost its transient parent'
+    menu_object(menu,'itemAt('+str(index)+').click()')
+    wait(lambda:not menu.property('visible'),'Menu did not close after activation')
+
+def open_pet_menu():
+    QTest.mouseClick(window,Qt.RightButton,Qt.NoModifier,point)
+    wait(lambda:menu.property('opened'),'Context menu did not reopen')
+    assert menu_object(menu,'contentItem.Window.window.flags & Qt.WindowStaysOnTopHint'),'Pet menu lost its explicit stay-on-top flag'
 
 try:
     window_loader=main.findChild(QObject,'desktopPetWindowLoader')
@@ -109,6 +126,30 @@ try:
     menu=window.findChild(QObject,'desktopPetContextMenu')
     wait(lambda:menu.property('opened'),'Context menu did not open')
     menu.close()
+    wait(lambda:not menu.property('visible'),'Context menu did not close')
+    restored=[]
+    pet.restoreRequested.connect(lambda:restored.append(True))
+    for toggle in range(50):
+        open_pet_menu()
+        pinned=pet.config['alwaysOnTop']
+        activate_menu_item(menu,5)
+        assert pet.config['alwaysOnTop'] is not pinned,'Pin menu action did not toggle the pet'
+        open_pet_menu()
+        # The first row used to be covered by the pet on Windows.
+        activate_menu_item(menu,0)
+        assert len(restored)==toggle+1,'Top menu row did not activate'
+    open_pet_menu()
+    paused=pet.config['paused']
+    activate_menu_item(menu,4)
+    assert pet.config['paused'] is not paused,'Pause menu action did not respond'
+    open_pet_menu()
+    appearance_menu=menu_object(menu,'menuAt(3)')
+    menu_object(menu,'itemAt(3).click()')
+    wait(lambda:appearance_menu.property('opened'),'Appearance submenu did not open')
+    assert menu_object(appearance_menu,'contentItem.Window.window.flags & Qt.WindowStaysOnTopHint'),'Appearance submenu lost its explicit stay-on-top flag'
+    activate_menu_item(appearance_menu,0)
+    wait(lambda:not menu.property('visible'),'Appearance selection did not dismiss the menu')
+    assert pet.config['appearance']==pet.appearances[0]['id'],'Appearance submenu selection did not respond'
     pet.ui('hide',{})
     wait(lambda:window_loader.property('item') is None,'Hidden pet retained decoder')
     assert pet.running and pet.timer.isActive()
@@ -117,7 +158,7 @@ try:
     assert find('desktopPluginSettingsLoader').property('item') is None
     relevant=[w for w in warnings if any(s in w for s in ('DesktopPet','desktop-pet','DesktopPlugin','ReferenceError','TypeError'))]
     assert not relevant,'\n'.join(relevant)
-    (out/'result.json').write_text(json.dumps({'settings':'passed','animation':'passed','click':'passed','drag':'passed','contextMenu':'passed','hiddenDecoderReleased':True,'warnings':relevant},indent=2),encoding='utf-8')
+    (out/'result.json').write_text(json.dumps({'settings':'passed','animation':'passed','click':'passed','drag':'passed','contextMenu':'passed','pinToggles':50,'menuActionsAfterPinToggles':len(restored),'appearanceSubmenu':'passed','hiddenDecoderReleased':True,'warnings':relevant},indent=2),encoding='utf-8')
     print('Desktop pet offscreen Qt acceptance passed')
 finally:
     backend.close()

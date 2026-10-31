@@ -117,12 +117,21 @@ Window {
         }
         onCanceled:if(root.dragged){root.constrain();root.pet.savePosition(root.x,root.y)}
     }
-    Menu {
-        id:menu;objectName:"desktopPetContextMenu";popupType:Popup.Window
+    component PetMenu: Menu {
+        popupType:Popup.Window
+        onAboutToShow: {
+            // Windows popups have no native owner; a pin toggle can raise the pet above a reused menu.
+            const popupWindow=contentItem.Window.window
+            popupWindow.flags |= Qt.WindowStaysOnTopHint
+            popupWindow.raise()
+        }
+    }
+    PetMenu {
+        id:menu;objectName:"desktopPetContextMenu"
         MenuItem {text:I18n.t("打开 Umeko");onTriggered:root.pet.restoreRequested()}
         MenuItem {text:I18n.t("桌宠设置");onTriggered:root.pet.settingsRequested()}
         MenuSeparator {}
-        Menu {
+        PetMenu {
             title:I18n.t("动画形象")
             Repeater {model:root.pet.appearances;MenuItem {required property var modelData;text:modelData.name;checkable:true;checked:root.config.appearance===modelData.id;onTriggered:root.pet.ui("selectAppearance",{id:modelData.id})}}
         }
