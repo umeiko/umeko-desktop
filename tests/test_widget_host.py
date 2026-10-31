@@ -20,7 +20,7 @@ class Manager(QObject):
 
     def __init__(self):
         super().__init__()
-        management = SimpleNamespace(busy=False, status='idle', extensionUpdate={}, extensionsCurrent=True, npmConfig={'npmRegistry':'https://registry.example/','npmUserconfig':'/fixture/npmrc','npmCafile':'/fixture/ca.pem','privateKey':'must-not-leak'},
+        management = SimpleNamespace(busy=False, status='idle', extensionUpdate={}, extensionDetails={}, extensionsCurrent=True, npmConfig={'npmRegistry':'https://registry.example/','npmUserconfig':'/fixture/npmrc','npmCafile':'/fixture/ca.pem','privateKey':'must-not-leak'},
             extensions=[{'id': str(n), 'path':'builtin:fixture'+str(n), 'name': 'fixture', 'info':{'description':'Local example'}} for n in range(250)],
             uninstallPackage=lambda identifier: None)
         self.calls, self.frames, self.replies = [], [], {}
@@ -126,6 +126,75 @@ class WidgetHostTests(unittest.TestCase):
         self.assertTrue(self.manager.replies[identifier]['ok']);self.assertEqual(cancelled,[True])
         self.assertFalse(self.host.pendingApproval)
         self.host.stop('a');self.assertEqual(cancelled,[True,True])
+
+    def test_tool_visibility_is_owner_checked_confirmed_and_includes_banned_tools(self):
+        view=self.manager.b._view
+        view.blocked_tools=['local_tool']
+        view.resources={'allTools':[{'name':'local_tool','description':'Local tool','source':'builtin:fixture17','exposure':'deferred'}]}
+        self.manager.b.piManagement.extensions[17]['enabled']=True
+        changed=[]
+        self.manager.b.piManagement.set_tool_visible=lambda name,visible:changed.append((name,visible))
+        identifier=self.request('pi.status',{'details':'17'})
+        tool=self.manager.replies[identifier]['result']['tools'][0]
+        self.assertFalse(tool['visible']);self.assertTrue(tool['editable'])
+        identifier=self.request('pi.toolVisibility',{'id':'18','name':'local_tool','visible':True})
+        self.assertFalse(self.manager.replies[identifier]['ok'])
+        self.assertFalse(self.host.pendingApproval)
+        identifier=self.request('pi.toolVisibility',{'id':'17','name':'local_tool','visible':True})
+        self.assertEqual(changed,[])
+        self.assertTrue(self.host.pendingApproval)
+        self.manager._session={'token':'another-chat','workspace':'/fixture'}
+        self.host.respondApproval(True)
+        self.assertFalse(self.manager.replies[identifier]['ok']);self.assertEqual(changed,[])
+        self.manager._session={'token':'chat-one','workspace':'/fixture'}
+        identifier=self.request('pi.toolVisibility',{'id':'17','name':'local_tool','visible':True})
+        self.host.respondApproval(True)
+        self.assertTrue(self.manager.replies[identifier]['ok'])
+        self.assertEqual(changed,[('local_tool',True)])
+
+    def test_tool_details_are_paginated_and_tags_bounded(self):
+        self.manager.b._view.resources={'allTools':[{'name':'tool_'+str(n),'description':'x'*8000,'source':'builtin:fixture17'} for n in range(95)]}
+        self.manager.b.piManagement.extensions[17]['enabled']=True
+        identifier=self.request('pi.status',{'details':'17','toolOffset':40})
+        result=self.manager.replies[identifier]['result']
+        self.assertEqual(len(result['tools']),40);self.assertEqual(result['toolTotal'],95)
+        self.assertEqual(result['tools'][0]['name'],'tool_40');self.assertTrue(result['toolsHasMore'])
+        self.assertEqual(len(result['extensions'][0]['tools']),12)
+
+    def test_real_visibility_persists_only_in_target_session_and_retires_its_runtime(self):
+        from app.controller import Controller
+        from app.pi_sessions import SessionState, clean_blocked_tools
+        from app.storage import Store
+        root=Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ,{'UMEKO_DATA_DIR':temp}):
+            controller=Controller(root)
+            try:
+                owner=controller._view;owner.id='visibility-owner'
+                owner.resources={'allTools':[{'name':'write','source':'builtin:write','exposure':'direct'}]}
+                with patch.object(controller._pool,'retire') as retire:
+                    controller.piManagement.set_tool_visible('write',False)
+                    retire.assert_called_once_with(owner)
+                self.assertEqual(owner.blocked_tools,['write'])
+                self.assertEqual(Store().data['sessionMeta'][owner.id]['blockedTools'],['write'])
+                self.assertNotIn('blockedTools',controller.store.data['agent'])
+                self.assertFalse(owner.resources['allTools'][0]['visible'])
+                control=controller._umeko_control
+                control._native[owner.key]=('visibility-list','reload');control.jobs['visibility-list']={}
+                control._native_event(owner,{'type':'resources','resources':owner.resources})
+                self.assertEqual(control.jobs['visibility-list']['resources']['allTools'],[])
+                control._native.pop(owner.key)
+                other=SessionState()
+                self.assertEqual(other.blocked_tools,[])
+                owner.subagents_active=True
+                with self.assertRaises(ValueError): controller.piManagement.set_tool_visible('write',True)
+                owner.subagents_active=False
+                with patch.object(controller.store,'save',side_effect=OSError('disk full')):
+                    with self.assertRaises(ValueError):controller.piManagement.set_tool_visible('write',True)
+                self.assertEqual(owner.blocked_tools,['write'])
+                controller.piManagement.set_tool_visible('write',True)
+                self.assertEqual(Store().data['sessionMeta'][owner.id]['blockedTools'],[])
+                self.assertEqual(clean_blocked_tools(['write','*','write',{},'bad name']),['write'])
+            finally:controller.close()
 
     def test_previous_workspace_inventory_is_not_returned_as_current(self):
         self.manager.b.piManagement.extensionsCurrent = False

@@ -220,7 +220,9 @@ Python 使用 `context.host_capabilities` 和
 
 | 操作 | 清单权限 | 参数 / 结果 |
 | --- | --- | --- |
-| `pi.status` | `pi.read` | `offset` 默认 0，`limit` 默认 100、最多 200；`query` 按名称、路径或描述搜索本地清单。`details` 可指定原生 ID，仅返回该项、最多48KiB本地 Markdown、32 个已加载工具和启用覆盖项 `activationModes`。返回 `result.extensions/total/hasMore/contextCurrent/workspace/busy/status/extensionUpdate`。`contextCurrent=false` 时不返回旧工作区缓存，先扫描。 |
+| `pi.status` | `pi.read` | `offset` 默认 0，`limit` 默认 100、最多 200；`query` 按名称、路径或描述搜索本地清单。`details` 可指定原生 ID，仅返回该项、最多48KiB本地 Markdown、每页 40 个工具（`toolOffset` 默认 0，`toolsHasMore/toolTotal` 用于分页）和启用覆盖项 `activationModes`。扩展项附带最多 12 个 `tools[{name,visible}]` 标签与 `toolCount`。详情工具包含 `name/description/visible/editable`。返回 `result.extensions/total/hasMore/contextCurrent/inventoryReady/agentBusy/workspace/busy/status/extensionUpdate`。`contextCurrent=false` 时不返回旧工作区缓存，先扫描。 |
+| `pi.inventory` | `pi.read` | 加载当前会话的实际工具清单；允许初始化已启用的扩展，不发送模型请求。完成后用 `pi.status` 查看。 |
+| `pi.toolVisibility` | `pi.manage` | `{id:扩展ID,name:工具名,visible:boolean}`。宿主确认后仅修改当前会话；原生、Umeko 内置与第三方工具均适用。任务及子代理运行中拒绝修改。隐藏工具从 Pi 注册清单中排除，无法通过搜索或嵌套调用恢复。须来自当前扩展的实际工具清单。 |
 | `pi.network` | `pi.read` | 返回宿主显式设置的 `npmRegistry/npmUserconfig/npmCafile`，不返回 `.npmrc` 内容、代理密钥或供应商配置。空值保留 npm 的原生配置发现行为。 |
 | `pi.scan` | `pi.read` | 使用当前内嵌 Pi 的原生扩展发现，返回宿主 `jobId`。不执行被发现的扩展。 |
 | `pi.details` | `pi.read` | `{id}`，按需读取有大小上限的本地 README；返回异步任务，完成后用 `pi.status {details:id}` 读取。不会执行扩展代码。 |

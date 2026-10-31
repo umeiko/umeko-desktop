@@ -17,7 +17,7 @@ function entries(resources, section, query) {
 }
 
 function status(tool) {
-    if (tool.exposure === "hidden") return "已隐藏"
+    if (tool.visible === false || tool.exposure === "hidden") return "已隐藏"
     if (tool.active) return "当前启用"
     if (["codemode", "deferred"].indexOf(tool.exposure) >= 0) return "按需调用"
     return "未启用"
