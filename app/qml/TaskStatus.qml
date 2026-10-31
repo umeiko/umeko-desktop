@@ -22,7 +22,7 @@ Item {
         id: statusRow; spacing: 6; anchors.verticalCenter: parent.verticalCenter
         ActivitySpinner { objectName: "taskStatusSpinner"; visible: root.live; running: visible; width: Theme.icon(13); height: width; anchors.verticalCenter: parent.verticalCenter; color: root.tint }
         Glyph { objectName: "taskStatusIcon"; visible: !root.live; name: root.state === "finished" ? "check" : root.state === "failed" ? "x" : root.state === "unread" ? "chat" : "stop"; width: Theme.icon(13); height: width; anchors.verticalCenter: parent.verticalCenter; color: root.tint }
-        Text { font.family: Theme.fontFamily; objectName: "taskStatusText"; text: root.text; color: root.tint; font.pixelSize: Theme.font(root.compact ? 10 : 12); font.weight: root.unread ? Font.DemiBold : Font.Normal }
+        Text { font.family: Theme.fontFamily; objectName: "taskStatusText"; text: root.text; color: root.tint; font.pixelSize: Theme.font(root.compact ? 10 : 12, visible); font.weight: root.unread ? Font.DemiBold : Font.Normal }
     }
     Accessible.role: Accessible.StaticText
     Accessible.name: text

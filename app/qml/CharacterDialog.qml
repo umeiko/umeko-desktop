@@ -36,8 +36,8 @@ PidPopup {
         ColumnLayout {
             id: removalContent
             width: parent.width; spacing: 18
-            Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: I18n.t("删除角色") + " · " + (root.removal.name || ""); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.ink; font.pixelSize: Theme.font(15) }
-            Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: I18n.t("删除当前角色后，将恢复八奈见。原始 ZIP 文件会保留。"); wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(12) }
+            Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: I18n.t("删除角色") + " · " + (root.removal.name || ""); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.ink; font.pixelSize: Theme.font(15, visible) }
+            Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: I18n.t("删除当前角色后，将恢复八奈见。原始 ZIP 文件会保留。"); wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(12, visible) }
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
@@ -55,10 +55,10 @@ PidPopup {
         RowLayout {
             id: heading
             Layout.fillWidth: true
-            Text { font.family: Theme.fontFamily; text: I18n.t("主角色"); color: Theme.ink; font.pixelSize: Theme.font(18); font.weight: Font.DemiBold; Layout.fillWidth: true }
+            Text { font.family: Theme.fontFamily; text: I18n.t("主角色"); color: Theme.ink; font.pixelSize: Theme.font(18, visible); font.weight: Font.DemiBold; Layout.fillWidth: true }
             ActionButton { objectName: "closeCharacterDialog"; glyph: "x"; quiet: true; hint: I18n.t("关闭"); onClicked: root.close() }
         }
-        Text { font.family: Theme.fontFamily; id: description; text: I18n.t("独立于主题，即时切换形象与互动台词。"); color: Theme.muted; font.pixelSize: Theme.font(12); Layout.fillWidth: true; wrapMode: Text.Wrap }
+        Text { font.family: Theme.fontFamily; id: description; text: I18n.t("独立于主题，即时切换形象与互动台词。"); color: Theme.muted; font.pixelSize: Theme.font(12, visible); Layout.fillWidth: true; wrapMode: Text.Wrap }
         Flickable {
             id: scroll
             objectName: "characterList"
@@ -98,8 +98,8 @@ PidPopup {
                         }
                         RowLayout {
                             Layout.fillWidth: true; spacing: 4
-                            Text { font.family: Theme.fontFamily; text: I18n.t(entry.modelData.name); textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12); elide: Text.ElideRight; Layout.fillWidth: true }
-                            Text { font.family: Theme.fontFamily; visible: entry.modelData.builtin; text: I18n.t("内置"); color: Theme.muted; font.pixelSize: Theme.font(10) }
+                            Text { font.family: Theme.fontFamily; text: I18n.t(entry.modelData.name); textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12, visible); elide: Text.ElideRight; Layout.fillWidth: true }
+                            Text { font.family: Theme.fontFamily; visible: entry.modelData.builtin; text: I18n.t("内置"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
                             ActionButton { objectName: "deleteCharacter_" + entry.modelData.id; visible: !entry.modelData.builtin; glyph: "trash"; quiet: true; destructive: true; implicitWidth: 24; implicitHeight: 24; hint: I18n.t("删除角色"); onClicked: { root.removal = entry.modelData; confirmRemoval.open() } }
                         }
                     }

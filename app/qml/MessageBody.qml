@@ -26,13 +26,13 @@ Column {
                 visible: !modelData.code; width: parent.width
                 text: modelData.code ? "" : root.markdown ? Markdown.forQt(modelData.text) : modelData.text; color: root.textColor
                 wrapMode: TextEdit.Wrap; textFormat: root.markdown ? TextEdit.MarkdownText : TextEdit.PlainText
-                font.pixelSize: Theme.font(13)
+                font.pixelSize: Theme.font(13, visible)
                 TextSpacing { document: proseText.textDocument; factor: Theme.proseLineHeight }
             }
             Rectangle {
                 visible: modelData.code; width: parent.width; height: codeText.contentHeight + 60
                 radius: 9; color: Theme.dark ? "#171c19" : "#f3f5f0"; border.color: Theme.line
-                Text { x: 14; y: 12; text: modelData.language || I18n.t("代码"); font.pixelSize: Theme.font(10); color: Theme.muted; font.family: "Consolas" }
+                Text { x: 14; y: 12; text: modelData.language || I18n.t("代码"); font.pixelSize: Theme.font(10, visible); color: Theme.muted; font.family: "Consolas" }
                 ActionButton {
                     id: copyButton; objectName: "copyCode_" + index
                     selectionController: root.selectionController
@@ -49,7 +49,7 @@ Column {
                     x: 14; y: 42; width: parent.width - 28
                     text: modelData.code ? modelData.text : ""; color: Theme.ink
                     wrapMode: TextEdit.WrapAnywhere; textFormat: TextEdit.PlainText
-                    font.family: "Consolas"; font.pixelSize: Theme.font(12)
+                    font.family: "Consolas"; font.pixelSize: Theme.font(12, visible)
                     SyntaxHighlighter {
                         id: codeColors
                         objectName: "syntax_" + root.messageIndex + "_" + (root.blockOffset + index)

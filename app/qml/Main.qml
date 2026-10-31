@@ -232,10 +232,10 @@ ApplicationWindow {
                 x: 16; y: 24; width: parent.width - 32; height: Theme.control(42)
                 text: I18n.t("搜索会话"); glyph: "search"; hint: I18n.t("搜索") + " Ctrl+K"
                 onClicked: window.openConversationSearch()
-                Text { font.family: Theme.fontFamily; anchors.right: parent.right; anchors.rightMargin: 13; anchors.verticalCenter: parent.verticalCenter; visible: Theme.fontScale <= 1.25; text: "Ctrl K"; color: Theme.muted; font.pixelSize: Theme.font(10) }
-                contentItem: Item { Row { x: 13; width: parent.width - (Theme.fontScale <= 1.25 ? 65 : 26); spacing: 9; anchors.verticalCenter: parent.verticalCenter; Glyph { name: "search"; width: Theme.icon(18); height: Theme.icon(18) } Text { font.family: Theme.fontFamily; width: Math.max(0, parent.width - Theme.icon(18) - 9); elide: Text.ElideRight; text: I18n.t("搜索会话"); font.pixelSize: Theme.font(12); color: Theme.ink; anchors.verticalCenter: parent.verticalCenter } } }
+                Text { font.family: Theme.fontFamily; anchors.right: parent.right; anchors.rightMargin: 13; anchors.verticalCenter: parent.verticalCenter; visible: Theme.fontScale <= 1.25; text: "Ctrl K"; color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
+                contentItem: Item { Row { x: 13; width: parent.width - (Theme.fontScale <= 1.25 ? 65 : 26); spacing: 9; anchors.verticalCenter: parent.verticalCenter; Glyph { name: "search"; width: Theme.icon(18); height: Theme.icon(18) } Text { font.family: Theme.fontFamily; width: Math.max(0, parent.width - Theme.icon(18) - 9); elide: Text.ElideRight; text: I18n.t("搜索会话"); font.pixelSize: Theme.font(12, visible); color: Theme.ink; anchors.verticalCenter: parent.verticalCenter } } }
             }
-            Text { font.family: Theme.fontFamily; id: recentLabel; x: 29; y: 52 + Theme.control(42); text: backend.showArchived ? I18n.t("已归档") : I18n.t("项目"); font.pixelSize: Theme.font(10); color: Theme.muted; font.letterSpacing: 1 }
+            Text { font.family: Theme.fontFamily; id: recentLabel; x: 29; y: 52 + Theme.control(42); text: backend.showArchived ? I18n.t("已归档") : I18n.t("项目"); font.pixelSize: Theme.font(10, visible); color: Theme.muted; font.letterSpacing: 1 }
             ActionButton { objectName: "archivedViewButton"; anchors.right: parent.right; anchors.rightMargin: 28 + Theme.control(26); y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "archive"; quiet: true; hint: backend.showArchived ? I18n.t("返回项目") : I18n.t("查看归档会话"); onClicked: backend.toggleArchived() }
             ActionButton { anchors.right: parent.right; anchors.rightMargin: 22; y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "plus"; quiet: true; hint: I18n.t("打开项目文件夹"); onClicked: folderDialog.open() }
             ListView {
@@ -247,7 +247,7 @@ ApplicationWindow {
                 PidMotion { id: sidebarMotion; objectName: "sidebarPidMotion"; targetRect: Qt.rect(0,sessionList.currentItem ? sessionList.currentItem.y : 0,sessionList.width,sessionList.currentItem ? sessionList.currentItem.height : 34) }
                 highlight: Rectangle { objectName: "sidebarHighlight"; x: sidebarMotion.value.x; y: sidebarMotion.value.y; width: sidebarMotion.value.width; height: sidebarMotion.value.height; radius: 7; color: Theme.surface; visible: sessionList.currentIndex >= 0 && window.page === "chat"; z: -1 }
 
-                Text { font.family: Theme.fontFamily; visible: sessionList.count === 0; x: 17; y: 8; text: backend.showArchived ? I18n.t("暂无归档会话") : I18n.t("暂无项目"); font.pixelSize: Theme.font(11); color: Theme.muted }
+                Text { font.family: Theme.fontFamily; visible: sessionList.count === 0; x: 17; y: 8; text: backend.showArchived ? I18n.t("暂无归档会话") : I18n.t("暂无项目"); font.pixelSize: Theme.font(11, visible); color: Theme.muted }
                 delegate: Item {
                     required property var modelData
                     objectName: "sidebarRow_" + modelData.id
@@ -257,7 +257,7 @@ ApplicationWindow {
                         onClicked: mouse => { if (mouse.button === Qt.RightButton) { sidebarMenus.openFor(modelData, mapToItem(sidebarMenus, mouse.x, mouse.y)); return } window.selectSidebar(modelData) }
                     }
                     Glyph { visible: modelData.kind === "project"; name: "folder"; x: 15; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(16); height: Theme.icon(16) }
-                    Text { font.family: Theme.fontFamily; x: modelData.kind === "label" ? 17 : 42; width: Math.max(0, parent.width - x - (modelData.kind === "project" ? Theme.control(56) + (modelData.pinned ? Theme.icon(12) + 12 : 8) : (sidebarStatus.visible ? sidebarStatus.implicitWidth + 20 + (modelData.pinned ? Theme.icon(12) + 6 : 0) : 32))); anchors.verticalCenter: parent.verticalCenter; text: modelData.kind === "label" ? I18n.t(modelData.title) : modelData.title; elide: Text.ElideRight; font.pixelSize: Theme.font(modelData.kind === "label" ? 10 : 11); color: modelData.kind === "label" ? Theme.muted : Theme.ink }
+                    Text { font.family: Theme.fontFamily; x: modelData.kind === "label" ? 17 : 42; width: Math.max(0, parent.width - x - (modelData.kind === "project" ? Theme.control(56) + (modelData.pinned ? Theme.icon(12) + 12 : 8) : (sidebarStatus.visible ? sidebarStatus.implicitWidth + 20 + (modelData.pinned ? Theme.icon(12) + 6 : 0) : 32))); anchors.verticalCenter: parent.verticalCenter; text: modelData.kind === "label" ? I18n.t(modelData.title) : modelData.title; elide: Text.ElideRight; font.pixelSize: Theme.font(modelData.kind === "label" ? 10 : 11, visible); color: modelData.kind === "label" ? Theme.muted : Theme.ink }
                     TaskStatus { id: sidebarStatus; objectName: "sessionStatus_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; compact: true; status: ({state: modelData.kind === "session" ? (modelData.running ? (modelData.outcome === "stopping" ? "stopping" : "running") : modelData.outcome || "") : ""}); unread: modelData.unread === true && !modelData.running }
                     Glyph { anchors.right: parent.right; anchors.rightMargin: modelData.kind === "project" ? Theme.control(56) + 4 : sidebarStatus.visible ? sidebarStatus.implicitWidth + 17 : 11; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(12); height: Theme.icon(12); name: "pin"; visible: modelData.pinned === true && !modelData.running && !modelData.unread && !(rowMouse.containsMouse) }
                     Accessible.role: Accessible.Button
@@ -273,14 +273,14 @@ ApplicationWindow {
             }
             Rectangle {
                 anchors.fill: parent; anchors.margins: 7; radius: 10; z: 21; visible: projectDrop.containsDrag; color: Theme.accentBg; border.color: Theme.accent
-                Column { anchors.centerIn: parent; spacing: 12; Glyph { name: "folder"; width: Theme.icon(26); height: Theme.icon(26); anchors.horizontalCenter: parent.horizontalCenter } Text { font.family: Theme.fontFamily; text: I18n.t("打开项目文件夹"); color: Theme.accent; font.pixelSize: Theme.font(12) } }
+                Column { anchors.centerIn: parent; spacing: 12; Glyph { name: "folder"; width: Theme.icon(26); height: Theme.icon(26); anchors.horizontalCenter: parent.horizontalCenter } Text { font.family: Theme.fontFamily; text: I18n.t("打开项目文件夹"); color: Theme.accent; font.pixelSize: Theme.font(12, visible) } }
             }
             Item {
                 id: apiStatus; objectName: "apiProxySidebarStatus"; visible: backend.serverRunning
                 x: 26; anchors.bottom: settingsButton.top; anchors.bottomMargin: 9; width: parent.width - 52; height: 29
                 Rectangle { x: 1; y: 10; width: 6; height: 6; radius: 3; color: "#72a783" }
-                Text { font.family: Theme.fontFamily; x: 17; y: 5; width: Math.max(0, apiPort.x - x - 8); elide: Text.ElideRight; text: I18n.t("API 代理运行中"); color: Theme.muted; font.pixelSize: Theme.font(10) }
-                Text { id: apiPort; anchors.right: parent.right; y: 5; text: ":" + backend.config.server.port; color: Theme.muted; font.pixelSize: Theme.font(10); font.family: "Consolas" }
+                Text { font.family: Theme.fontFamily; x: 17; y: 5; width: Math.max(0, apiPort.x - x - 8); elide: Text.ElideRight; text: I18n.t("API 代理运行中"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
+                Text { id: apiPort; anchors.right: parent.right; y: 5; text: ":" + backend.config.server.port; color: Theme.muted; font.pixelSize: Theme.font(10, visible); font.family: "Consolas" }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: window.settings(1) }
             }
             ActionButton {
@@ -289,7 +289,7 @@ ApplicationWindow {
                 onClicked: window.page === "settings" ? window.page = "chat" : window.settings(0)
                 contentItem: Item { Row { x: 16; spacing: 12; anchors.verticalCenter: parent.verticalCenter
                     Glyph { name: "settings"; width: Theme.icon(18); height: Theme.icon(18) }
-                    Text { font.family: Theme.fontFamily; text: I18n.t("设置"); color: Theme.ink; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
+                    Text { font.family: Theme.fontFamily; text: I18n.t("设置"); color: Theme.ink; font.pixelSize: Theme.font(12, visible); anchors.verticalCenter: parent.verticalCenter }
                 } }
                 AppUpdateBadge { anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter }
             }
@@ -374,9 +374,9 @@ ApplicationWindow {
                     }
                     onClicked: window.toggleSidebar()
                 }
-                Text { font.family: Theme.fontFamily; text: window.page === "chat" ? I18n.t("工作空间") : I18n.t("偏好设置"); color: Theme.muted; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
-                Text { font.family: Theme.fontFamily; text: "/"; color: Theme.line; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
-                Text { font.family: Theme.fontFamily; text: window.page === "chat" ? (window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle) : [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于"), I18n.t("Umeko 插件管理")][window.settingsTab]; color: Theme.ink; font.pixelSize: Theme.font(11); width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
+                Text { font.family: Theme.fontFamily; text: window.page === "chat" ? I18n.t("工作空间") : I18n.t("偏好设置"); color: Theme.muted; font.pixelSize: Theme.font(11, visible); anchors.verticalCenter: parent.verticalCenter }
+                Text { font.family: Theme.fontFamily; text: "/"; color: Theme.line; font.pixelSize: Theme.font(12, visible); anchors.verticalCenter: parent.verticalCenter }
+                Text { font.family: Theme.fontFamily; text: window.page === "chat" ? (window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle) : [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于"), I18n.t("Umeko 插件管理")][window.settingsTab]; color: Theme.ink; font.pixelSize: Theme.font(11, visible); width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
             }
             Row { id: windowControls; anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 18; spacing: 2
                 ActionButton { glyph: "minus"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最小化"); onClicked: window.showMinimized() }
@@ -406,7 +406,7 @@ ApplicationWindow {
                 visible: backend.messageCount === 0
                 WelcomeMascot { id: welcomeMascot; anchors.horizontalCenter: parent.horizontalCenter; portraitIndex: backend.portrait }
                 Connections { target: backend; function onViewChanged() { welcomeMascot.reset() } }
-                Text { font.family: Theme.fontFamily; objectName: "welcomeGreeting"; anchors.horizontalCenter: parent.horizontalCenter; y: 231; width: parent.width; text: welcomeMascot.reactionText || Character.greeting(I18n.t(backend.greeting), welcomeMascot.portraitIndex); color: Theme.yanami ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(14); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; lineHeight: 1.35 }
+                Text { font.family: Theme.fontFamily; objectName: "welcomeGreeting"; anchors.horizontalCenter: parent.horizontalCenter; y: 231; width: parent.width; text: welcomeMascot.reactionText || Character.greeting(I18n.t(backend.greeting), welcomeMascot.portraitIndex); color: Theme.yanami ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(14, visible); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; lineHeight: 1.35 }
             }
 
             ListView {
@@ -539,7 +539,7 @@ ApplicationWindow {
                     }
                     Row { visible: !modelData._loading && !messageRow.compactionNotice && !modelData.continuation && modelData.role !== "user"; spacing: 9
                         AssistantAvatar { objectName: "assistantAvatar_" + messageRow.index; messageKey: window.avatarChatKey + "/" + messageRow.index }
-                        SelectableText { selectionController: chatSelection; messageIndex: messageRow.index; blockIndex: -100000; text: "umeko"; anchors.verticalCenter: parent.verticalCenter; color: Theme.ink; font.pixelSize: Theme.font(11); font.weight: Font.DemiBold }
+                        SelectableText { selectionController: chatSelection; messageIndex: messageRow.index; blockIndex: -100000; text: "umeko"; anchors.verticalCenter: parent.verticalCenter; color: Theme.ink; font.pixelSize: Theme.font(11, visible); font.weight: Font.DemiBold }
                     }
                     Rectangle {
                         objectName: "messageBubble_" + messageRow.index
@@ -587,7 +587,7 @@ ApplicationWindow {
                             Row {
                                 id: compactionHeading; height: parent.height; spacing: 7
                                 ActivitySpinner { visible: compactionEvent.eventState === "running"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
-                                Text { font.family: Theme.fontFamily; text: compactionEvent.heading; color: compactionHover.interactionHovered ? Theme.ink : Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
+                                Text { font.family: Theme.fontFamily; text: compactionEvent.heading; color: compactionHover.interactionHovered ? Theme.ink : Theme.muted; font.pixelSize: Theme.font(12, visible); anchors.verticalCenter: parent.verticalCenter }
                                 Glyph { name: compactionEvent.expanded ? "chevron-down" : "chevron-right"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
                             }
                             ChatHitArea {
@@ -613,7 +613,7 @@ ApplicationWindow {
                                     if (detail.error) lines.push("\n" + I18n.t(detail.error))
                                     return lines.join("\n")
                                 }
-                                color: Theme.muted; font.pixelSize: Theme.font(13); wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText
+                                color: Theme.muted; font.pixelSize: Theme.font(13, visible); wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText
                                 selectionController: chatSelection; messageIndex: messageRow.index; blockIndex: 0
                                 conditionalSelection: true
                             }
@@ -635,7 +635,7 @@ ApplicationWindow {
                         Row {
                             x: modelData.role === "user" ? parent.width - width : 33
                             height: parent.height; spacing: 7
-                            Text { font.family: Theme.fontFamily; objectName: "messageTime_" + messageRow.index; anchors.verticalCenter: parent.verticalCenter; color: Theme.muted; font.pixelSize: Theme.font(11)
+                            Text { font.family: Theme.fontFamily; objectName: "messageTime_" + messageRow.index; anchors.verticalCenter: parent.verticalCenter; color: Theme.muted; font.pixelSize: Theme.font(11, visible)
                                 text: { if (!modelData.timestamp) return ""; const date = new Date(modelData.timestamp); if (isNaN(date.getTime())) return ""; return Qt.formatDateTime(date, date.toDateString() === new Date().toDateString() ? "hh:mm" : "MM-dd hh:mm") } }
                             ActionButton { objectName: "copyMessage_" + messageRow.index; selectionController: chatSelection; glyph: "copy"; width: Theme.control(22); height: Theme.control(18); quiet: true; enabled: parent.parent.opacity > 0; hint: I18n.t("复制消息")
                                 onClicked: backend.copyDisplayMessage(messageRow.index) }
@@ -771,6 +771,6 @@ ApplicationWindow {
         width: Math.min(toastLabel.implicitWidth + 40, 750); height: toastLabel.implicitHeight + 24; radius: 10
         color: Theme.ink; visible: window.notification !== ""
         opacity: visible ? 1 : 0
-        Text { font.family: Theme.fontFamily; id: toastLabel; anchors.centerIn: parent; text: I18n.t(window.notification); color: Theme.bg; font.pixelSize: Theme.font(12); width: Math.min(implicitWidth, 710); wrapMode: Text.Wrap }
+        Text { font.family: Theme.fontFamily; id: toastLabel; anchors.centerIn: parent; text: I18n.t(window.notification); color: Theme.bg; font.pixelSize: Theme.font(12, visible); width: Math.min(implicitWidth, 710); wrapMode: Text.Wrap }
     }
 }

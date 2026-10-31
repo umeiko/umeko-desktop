@@ -13,7 +13,7 @@ SectionCard {
         width: parent.width; spacing: 18
         RowLayout {
             Layout.fillWidth: true
-            Text { font.family: Theme.fontFamily; text: I18n.t("主题"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
+            Text { font.family: Theme.fontFamily; text: I18n.t("主题"); color: Theme.ink; font.pixelSize: Theme.font(14, visible); font.weight: Font.DemiBold }
             Item { Layout.fillWidth: true }
             ActionButton { objectName: "chooseCharacterButton"; glyph: "user"; text: I18n.t("主角色"); quiet: true; hint: I18n.t("当前角色") + " · " + I18n.t(backend.characterStyle.name); onClicked: characterDialog.open() }
             ActionButton { objectName: "copyThemePrompt"; glyph: "copy"; text: I18n.t("制作提示词"); quiet: true; hint: I18n.t("复制完整格式、示例与制作提示词"); onClicked: backend.copyThemePrompt() }
@@ -42,7 +42,7 @@ SectionCard {
                     }
                     RowLayout {
                         Layout.fillWidth: true; spacing: 6
-                        Text { font.family: Theme.fontFamily; text: choice.modelData.name; textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12); elide: Text.ElideRight; Layout.fillWidth: true }
+                        Text { font.family: Theme.fontFamily; text: choice.modelData.name; textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12, visible); elide: Text.ElideRight; Layout.fillWidth: true }
                         Glyph { name: "check"; width: Theme.icon(15); height: Theme.icon(15); color: Theme.accent; visible: backend.config.theme === choice.modelData.id }
                         ActionButton { objectName: "deleteTheme_" + choice.modelData.id; glyph: "trash"; quiet: true; destructive: true; width: Theme.control(24); height: Theme.control(24); visible: choice.modelData.id.startsWith("custom:"); hint: I18n.t("删除主题"); onClicked: backend.removeTheme(choice.modelData.id) }
                     }

@@ -54,7 +54,7 @@ Item {
         onOpened: { renameField.forceActiveFocus(); renameField.selectAll() }
         ColumnLayout {
             anchors.fill: parent; spacing: 15
-            Text { font.family: Theme.fontFamily; text: root.target.kind === "project" ? I18n.t("重命名项目") : I18n.t("重命名会话"); color: Theme.ink; font.pixelSize: Theme.font(15); font.weight: Font.Medium }
+            Text { font.family: Theme.fontFamily; text: root.target.kind === "project" ? I18n.t("重命名项目") : I18n.t("重命名会话"); color: Theme.ink; font.pixelSize: Theme.font(15, visible); font.weight: Font.Medium }
             InputField { id: renameField; objectName: "renameInput"; Layout.fillWidth: true; maximumLength: 120; Keys.onReturnPressed: root.saveRename() }
             RowLayout { Layout.fillWidth: true; Item { Layout.fillWidth: true }
                 ActionButton { text: I18n.t("取消"); quiet: true; onClicked: renamePopup.close() }
@@ -68,7 +68,7 @@ Item {
         x: (parent.width-width)/2; y: (parent.height-height)/2
         background: Rectangle { radius: 12; color: Theme.surface; border.color: Theme.line }
         ColumnLayout { anchors.fill: parent; spacing: 18
-            Text { font.family: Theme.fontFamily; text: I18n.t("删除这条会话？"); color: Theme.ink; font.pixelSize: Theme.font(15) }
+            Text { font.family: Theme.fontFamily; text: I18n.t("删除这条会话？"); color: Theme.ink; font.pixelSize: Theme.font(15, visible) }
             RowLayout { Layout.fillWidth: true; Item { Layout.fillWidth: true }
                 ActionButton { text: I18n.t("取消"); quiet: true; onClicked: deletePopup.close() }
                 ActionButton { objectName: "confirmDeleteSessionButton"; text: I18n.t("删除"); destructive: true; onClicked: { backend.deleteSession(root.target.id); deletePopup.close() } }

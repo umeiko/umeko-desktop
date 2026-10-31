@@ -17,13 +17,13 @@ Row {
         onClicked: ready ? installConfirmation.open() : about.downloadUpdate()
         contentItem: Item {
             Glyph { anchors.centerIn: parent; name: updateButton.ready ? "refresh" : "download"; color: Theme.accent; width: Theme.icon(17); height: width; visible: !updateButton.downloading }
-            Text { font.family: Theme.fontFamily; anchors.centerIn: parent; text: about.download.state === "verifying" ? "…" : (about.download.progress || 0) + "%"; color: Theme.accent; font.pixelSize: Theme.font(9); visible: updateButton.downloading }
+            Text { font.family: Theme.fontFamily; anchors.centerIn: parent; text: about.download.state === "verifying" ? "…" : (about.download.progress || 0) + "%"; color: Theme.accent; font.pixelSize: Theme.font(9, visible); visible: updateButton.downloading }
         }
     }
     Text { font.family: Theme.fontFamily;
         anchors.verticalCenter: parent.verticalCenter
         visible: Theme.fontScale <= 1.5
         text: "v" + about.info.version
-        color: Theme.muted; font.pixelSize: Theme.font(10)
+        color: Theme.muted; font.pixelSize: Theme.font(10, visible)
     }
 }

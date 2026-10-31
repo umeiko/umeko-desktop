@@ -44,7 +44,7 @@ Column {
                         id: filename; objectName: "chatboxLabel_" + card.key
                         x: card.inlineImage ? 0 : 16 + Theme.icon(14); width: parent.width - x - 8; anchors.verticalCenter: parent.verticalCenter
                         text: card.inlineImage ? [card.item.name || card.item.title, card.item.mime || "image/" + (card.item.name || "").split(".").pop().toLowerCase(), root.sizeLabel(card.item.bytes || 0)].join(" · ") : card.item.title || card.item.name || I18n.t("文件")
-                        textFormat: Text.PlainText; elide: Text.ElideMiddle; color: card.inlineImage ? Theme.muted : Theme.ink; font.pixelSize: Theme.font(card.inlineImage ? 11 : 12)
+                        textFormat: Text.PlainText; elide: Text.ElideMiddle; color: card.inlineImage ? Theme.muted : Theme.ink; font.pixelSize: Theme.font(card.inlineImage ? 11 : 12, visible)
                     }
                     ChatHitArea {
                         id: headerArea; objectName: "openChatbox_" + card.key
@@ -65,7 +65,7 @@ Column {
                         sourceSize: Qt.size(Math.min(1200, card.item.pixelWidth || 1200), Math.min(900, card.item.pixelHeight || 900)); fillMode: Image.PreserveAspectFit
                     }
                     BusyIndicator { anchors.centerIn: parent; running: preview.status === Image.Loading; visible: running; width: 26; height: 26 }
-                    Text { font.family: Theme.fontFamily; anchors.centerIn: parent; visible: preview.status === Image.Error; text: I18n.t("图片暂不可预览，点击打开"); color: Theme.muted; font.pixelSize: Theme.font(11) }
+                    Text { font.family: Theme.fontFamily; anchors.centerIn: parent; visible: preview.status === Image.Error; text: I18n.t("图片暂不可预览，点击打开"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
                     ChatHitArea {
                         objectName: "previewChatbox_" + card.key; selectionController: root.selectionController
                         anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -74,7 +74,7 @@ Column {
                 }
                 SelectableText {
                     visible: card.inlineImage && text.length > 0; width: parent.width; text: card.item.caption || ""; textFormat: TextEdit.PlainText; color: Theme.muted
-                    font.pixelSize: Theme.font(11); wrapMode: TextEdit.Wrap
+                    font.pixelSize: Theme.font(11, visible); wrapMode: TextEdit.Wrap
                     selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset + card.index * 3 + 1
                 }
             }

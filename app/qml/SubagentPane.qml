@@ -31,8 +31,8 @@ Rectangle {
         id: header; width: parent.width; height: Theme.control(76)
         SubagentAvatar { x: Theme.control(16); anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(41); height: width; slot: root.agent.avatarSlot || 0 }
         Column { x: Theme.control(68); width: Math.max(0,parent.width-x-Theme.control(55)); anchors.verticalCenter: parent.verticalCenter; spacing: 6
-            Text { font.family: Theme.fontFamily; width: parent.width; text: (root.agent.name || I18n.t("子代理")) + " · " + root.statusLabel(root.agent.status); textFormat: Text.PlainText; maximumLineCount: 1; wrapMode: Text.NoWrap; color: Theme.ink; font.pixelSize: Theme.font(12); elide: Text.ElideRight }
-            Text { font.family: Theme.fontFamily; objectName: "subagentHeaderSummary"; width: parent.width; text: String(root.agent.task || root.agent.type || "").replace(/\s+/g," "); maximumLineCount: 1; wrapMode: Text.NoWrap; textFormat: Text.PlainText; color: Theme.muted; font.pixelSize: Theme.font(10); elide: Text.ElideRight }
+            Text { font.family: Theme.fontFamily; width: parent.width; text: (root.agent.name || I18n.t("子代理")) + " · " + root.statusLabel(root.agent.status); textFormat: Text.PlainText; maximumLineCount: 1; wrapMode: Text.NoWrap; color: Theme.ink; font.pixelSize: Theme.font(12, visible); elide: Text.ElideRight }
+            Text { font.family: Theme.fontFamily; objectName: "subagentHeaderSummary"; width: parent.width; text: String(root.agent.task || root.agent.type || "").replace(/\s+/g," "); maximumLineCount: 1; wrapMode: Text.NoWrap; textFormat: Text.PlainText; color: Theme.muted; font.pixelSize: Theme.font(10, visible); elide: Text.ElideRight }
         }
         ActionButton { objectName: "closeSubagentPaneButton"; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(29); height: width; quiet: true; glyph: "x"; hint: I18n.t("关闭子代理对话"); onClicked: root.closed() }
     }
@@ -69,7 +69,7 @@ Rectangle {
                 color: message.user ? Theme.userBubble : "transparent"
                 Column {
                     id: body; x: 10; y: 10; width: parent.width-20; spacing: 6
-                    Text { font.family: Theme.fontFamily; visible: !!message.modelData._loading; text: I18n.t("正在加载历史…"); color: Theme.muted; font.pixelSize: Theme.font(11) }
+                    Text { font.family: Theme.fontFamily; visible: !!message.modelData._loading; text: I18n.t("正在加载历史…"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
                     UserMessageBody { visible: message.user; width: parent.width; text: message.modelData.text || ""; attachments: message.modelData.attachments || []; selectionController: selection; messageIndex: message.index }
                     ActivityHistory { visible: !message.user; width: parent.width; activity: message.modelData.activity || []; selectionController: selection; messageIndex: message.index }
                     MessageBody { width: parent.width; text: !message.user && !(message.modelData.activity || []).length ? message.modelData.text || "" : ""; visible: text.length>0; markdown: true; selectionController: selection; messageIndex: message.index }
@@ -94,13 +94,13 @@ Rectangle {
         id: empty; anchors.fill: conversation; visible: root.contextState.loading || !!root.contextState.error || conversation.count === 0
         Column { anchors.centerIn: parent; width: parent.width-48; spacing: 15
             ActivitySpinner { anchors.horizontalCenter: parent.horizontalCenter; width: 20; height: 20; visible: root.contextState.loading }
-            Text { font.family: Theme.fontFamily; width: parent.width; text: root.contextState.error || (root.contextState.loading ? I18n.t("正在加载子代理上下文…") : root.running ? I18n.t("子代理已开始工作…") : I18n.t("发送消息继续这个子代理的工作")); color: Theme.muted; font.pixelSize: Theme.font(12); wrapMode: Text.WrapAnywhere; horizontalAlignment: Text.AlignHCenter }
+            Text { font.family: Theme.fontFamily; width: parent.width; text: root.contextState.error || (root.contextState.loading ? I18n.t("正在加载子代理上下文…") : root.running ? I18n.t("子代理已开始工作…") : I18n.t("发送消息继续这个子代理的工作")); color: Theme.muted; font.pixelSize: Theme.font(12, visible); wrapMode: Text.WrapAnywhere; horizontalAlignment: Text.AlignHCenter }
         }
     }
     Text { font.family: Theme.fontFamily;
         id: activity; x: 20; width: Math.max(0,parent.width-40); anchors.bottom: queued.top; anchors.bottomMargin: 10
         text: root.running ? (root.agent.activity || I18n.t("正在工作")) + " · " + I18n.t("调用工具 %1 次").replace("%1",root.agent.toolUses || 0) : root.contextState.truncated ? I18n.t("当前显示最近的对话内容") : ""
-        textFormat: Text.PlainText; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(10)
+        textFormat: Text.PlainText; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(10, visible)
     }
     QueuedMessages {
         id: queued; objectName: "subagentQueuedMessages"
@@ -124,7 +124,7 @@ Rectangle {
                     Rectangle {
                         required property var modelData
                         width: Math.min(label.implicitWidth,160) + Theme.control(44); height: Theme.control(32); radius: 6; color: Theme.accentBg
-                        Text { font.family: Theme.fontFamily; id: label; x: 9; width: Math.min(implicitWidth,160); anchors.verticalCenter: parent.verticalCenter; text: modelData.name; font.pixelSize: Theme.font(10); color: Theme.ink; textFormat: Text.PlainText; elide: Text.ElideMiddle }
+                        Text { font.family: Theme.fontFamily; id: label; x: 9; width: Math.min(implicitWidth,160); anchors.verticalCenter: parent.verticalCenter; text: modelData.name; font.pixelSize: Theme.font(10, visible); color: Theme.ink; textFormat: Text.PlainText; elide: Text.ElideMiddle }
                         ActionButton { objectName: "removeSubagentAttachment_" + modelData.id; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; glyph: "x"; quiet: true; width: Theme.control(27); height: width; onClicked: backend.subagents.removeAttachment(modelData.id) }
                     }
                 }
@@ -134,7 +134,7 @@ Rectangle {
             TextArea { font.family: Theme.fontFamily;
                 id: prompt; objectName: "subagentPromptInput"
                 text: root.contextState.draft || ""; selectByMouse: true; wrapMode: TextArea.Wrap
-                color: Theme.ink; placeholderTextColor: Theme.muted; font.pixelSize: Theme.font(12)
+                color: Theme.ink; placeholderTextColor: Theme.muted; font.pixelSize: Theme.font(12, visible)
                 placeholderText: root.running ? I18n.t("向这个子代理发送指引…") : I18n.t("发送消息，从当前上下文继续…")
                 background: null; padding: 0
                 onTextChanged: backend.subagents.setDraft(text)
@@ -159,7 +159,7 @@ Rectangle {
             ActionButton { objectName: "sendSubagentButton"; primary: true; width: Theme.control(32); height: width; glyph: root.running ? "queue" : "arrow-up"; enabled: !root.contextState.loading && !root.contextState.pending && root.agent.status !== "queued" && (prompt.text.trim().length>0 || root.attachments.length>0); hint: root.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("继续子代理"); onClicked: composer.send(false) }
         }
         ActionButton { objectName: "addSubagentAttachmentButton"; x: 9; anchors.bottom: parent.bottom; anchors.bottomMargin: 9; width: Theme.control(30); height: width; glyph: "plus"; quiet: true; hint: I18n.t("添加文件"); onClicked: files.open() }
-        Text { font.family: Theme.fontFamily; x: Theme.control(47); anchors.bottom: parent.bottom; anchors.bottomMargin: 17; width: Math.max(0,parent.width-x-105); visible: Theme.fontScale <= 1.25; text: root.contextState.pending ? I18n.t("正在发送…") : root.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("继续当前上下文"); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(10) }
+        Text { font.family: Theme.fontFamily; x: Theme.control(47); anchors.bottom: parent.bottom; anchors.bottomMargin: 17; width: Math.max(0,parent.width-x-105); visible: Theme.fontScale <= 1.25; text: root.contextState.pending ? I18n.t("正在发送…") : root.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("继续当前上下文"); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
     }
     Connections { target: backend.subagents
         function onMessageSent(id) { if (id === root.agent.id) prompt.text = backend.subagents.context.draft || "" }
