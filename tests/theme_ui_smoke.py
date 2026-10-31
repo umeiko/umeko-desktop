@@ -65,7 +65,7 @@ try:
     click('deleteTheme_custom:moon-violet');assert not backend.customThemes and backend.config['theme']=='dark'
     assert not Store().data['themes']
     backend.setTheme('yanami');window.setProperty('page','chat')
-    backend._view.messages=[{'role':'assistant','text':'点一下小八奈见试试。','error':False}]
+    backend._view.messages=[{'role':'assistant','text':'点一下小八奈见试试。','error':False,'stopReason':'stop'}]
     backend.chatChanged.emit();backend.transcriptChanged.emit();QTest.qWait(350)
     mascot=find('replyEndMascot_0');assert mascot.property('loaded')
     for _ in range(3):click(mascot)

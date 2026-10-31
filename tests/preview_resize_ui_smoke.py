@@ -64,7 +64,7 @@ try:
     window.resize(1700, 1050)
     record = backend._view
     record.id = "preview-resize-fixture"
-    record.messages = [{"role": "user", "text": "检查界面。"}, {"role": "assistant", "text": "任务已经完成。"}]
+    record.messages = [{"role": "user", "text": "检查界面。"}, {"role": "assistant", "text": "任务已经完成。", "stopReason": "stop"}]
     backend.chatChanged.emit()
     file = backend.store.directory / "completed.jsonl"
     file.write_text("\n".join(json.dumps(row, ensure_ascii=False) for row in [
