@@ -64,13 +64,13 @@ Popup {
                 }
             }
             BusyIndicator { anchors.centerIn: parent; visible: picture.status === Image.Loading; running: visible }
-            Text { font.family: Theme.fontFamily; anchors.centerIn: parent; visible: picture.status === Image.Error; text: I18n.t("图片暂不可预览，点击打开"); color: "white"; font.pixelSize: Theme.font(13) }
+            Text { font.family: Theme.fontFamily; anchors.centerIn: parent; visible: picture.status === Image.Error; text: I18n.t("图片暂不可预览，点击打开"); color: "white"; font.pixelSize: Theme.font(13, visible) }
         }
-        Text { font.family: Theme.fontFamily; x: 24; y: 22; text: (root.currentIndex + 1) + " / " + root.images.length; visible: root.images.length > 1; color: "white"; font.pixelSize: Theme.font(12) }
+        Text { font.family: Theme.fontFamily; x: 24; y: 22; text: (root.currentIndex + 1) + " / " + root.images.length; visible: root.images.length > 1; color: "white"; font.pixelSize: Theme.font(12, visible) }
         ActionButton { objectName: "closeImagePreview"; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 20; width: Theme.control(36); height: Theme.control(36); glyph: "x"; hint: I18n.t("关闭预览"); background: Rectangle { radius: width / 2; color: "#fafbfc" } onClicked: root.close() }
         ActionButton { objectName: "previousPreviewImage"; x: 12; anchors.verticalCenter: parent.verticalCenter; visible: root.images.length > 1; width: Theme.control(38); height: Theme.control(48); primary: true; background: Rectangle { radius: 8; color: parent.hovered ? "#22ffffff" : "transparent" } glyph: "chevron-right"; rotation: 180; onClicked: root.step(-1) }
         ActionButton { objectName: "nextPreviewImage"; anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; visible: root.images.length > 1; width: Theme.control(38); height: Theme.control(48); primary: true; background: Rectangle { radius: 8; color: parent.hovered ? "#22ffffff" : "transparent" } glyph: "chevron-right"; onClicked: root.step(1) }
-        Text { font.family: Theme.fontFamily; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 22; width: parent.width - 100; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideMiddle; text: (root.current.path || root.current.name || "") + "  ·  " + Math.round(root.zoom * 100) + "%"; color: "#f0f2f6"; font.pixelSize: Theme.font(11); textFormat: Text.PlainText }
+        Text { font.family: Theme.fontFamily; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 22; width: parent.width - 100; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideMiddle; text: (root.current.path || root.current.name || "") + "  ·  " + Math.round(root.zoom * 100) + "%"; color: "#f0f2f6"; font.pixelSize: Theme.font(11, visible); textFormat: Text.PlainText }
         MediaContextMenu { id: previewMenu; item: root.current; itemKey: "imagePreview"; chatWindow: root.parent ? root.parent.Window.window : null }
     }
 }

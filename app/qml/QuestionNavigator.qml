@@ -130,13 +130,13 @@ Item {
                     Text { font.family: Theme.fontFamily;
                         id: ordinal
                         width: Math.max(18, String(root.questionCount).length * Theme.font(7)); anchors.verticalCenter: parent.verticalCenter
-                        text: option.index + 1; color: Theme.muted; font.pixelSize: Theme.font(10)
+                        text: option.index + 1; color: Theme.muted; font.pixelSize: Theme.font(10, visible)
                         horizontalAlignment: Text.AlignRight
                     }
                     Text { font.family: Theme.fontFamily;
                         width: Math.max(0, questionLine.width - ordinal.width - questionLine.spacing); anchors.verticalCenter: parent.verticalCenter
                         text: option.questionData.title || ""; textFormat: Text.PlainText
-                        font.pixelSize: Theme.font(12); color: Theme.ink; elide: Text.ElideRight
+                        font.pixelSize: Theme.font(12, visible); color: Theme.ink; elide: Text.ElideRight
                     }
                 }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }

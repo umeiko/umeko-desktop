@@ -21,13 +21,13 @@ Popup {
         anchors.fill: parent; contentWidth: availableWidth; clip: true
         ColumnLayout {
             id: content; width: parent.width; spacing: 18
-            Text { font.family: Theme.fontFamily; text: I18n.t("添加 MCP 服务器"); color: Theme.ink; font.pixelSize: Theme.font(19); font.weight: Font.Medium }
-            Text { font.family: Theme.fontFamily; text: I18n.t("粘贴 pi mcp add 命令，或服务器 JSON 配置。"); Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(12) }
+            Text { font.family: Theme.fontFamily; text: I18n.t("添加 MCP 服务器"); color: Theme.ink; font.pixelSize: Theme.font(19, visible); font.weight: Font.Medium }
+            Text { font.family: Theme.fontFamily; text: I18n.t("粘贴 pi mcp add 命令，或服务器 JSON 配置。"); Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(12, visible) }
             ScrollView {
                 Layout.fillWidth: true; Layout.preferredHeight: 110; contentWidth: availableWidth; clip: true
                 TextArea {
                     id: command; objectName: "mcpInstallCommand"
-                    textFormat: TextEdit.PlainText; color: Theme.ink; font.family: "Consolas"; font.pixelSize: Theme.font(12)
+                    textFormat: TextEdit.PlainText; color: Theme.ink; font.family: "Consolas"; font.pixelSize: Theme.font(12, visible)
                     selectByMouse: true; wrapMode: TextEdit.Wrap; padding: 14
                     placeholderText: "pi mcp add tools -- npx -y @example/mcp-server"
                     enabled: !root.manager.busy && !backend.kernelBusy
@@ -37,14 +37,14 @@ Popup {
             }
             RowLayout {
                 Layout.fillWidth: true; spacing: 15
-                Text { font.family: Theme.fontFamily; text: I18n.t("添加范围"); color: Theme.ink; font.pixelSize: Theme.font(12) }
+                Text { font.family: Theme.fontFamily; text: I18n.t("添加范围"); color: Theme.ink; font.pixelSize: Theme.font(12, visible) }
                 Picker { id: scope; objectName: "mcpInstallScope"; Layout.fillWidth: true; model: [I18n.t("全局 · 所有项目"), I18n.t("项目 · ") + backend.workspaceName]; enabled: !root.manager.busy && !backend.kernelBusy }
             }
-            Text { font.family: Theme.fontFamily; text: scope.currentIndex === 1 ? I18n.t("写入当前项目的 .pi/mcp.json。") : I18n.t("写入当前 Pi 配置目录的 mcp.json。"); Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(11) }
+            Text { font.family: Theme.fontFamily; text: scope.currentIndex === 1 ? I18n.t("写入当前项目的 .pi/mcp.json。") : I18n.t("写入当前 Pi 配置目录的 mcp.json。"); Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
             RowLayout {
                 Layout.fillWidth: true; visible: root.manager.installMessage.length > 0
                 BusyIndicator { visible: root.manager.installState === "installing"; running: visible; implicitWidth: 24; implicitHeight: 24 }
-                Text { font.family: Theme.fontFamily; objectName: "mcpInstallResult"; Layout.fillWidth: true; text: root.manager.installMessage; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: root.manager.installState === "failed" ? Theme.danger : Theme.accent; font.pixelSize: Theme.font(12) }
+                Text { font.family: Theme.fontFamily; objectName: "mcpInstallResult"; Layout.fillWidth: true; text: root.manager.installMessage; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: root.manager.installState === "failed" ? Theme.danger : Theme.accent; font.pixelSize: Theme.font(12, visible) }
             }
             RowLayout {
                 Layout.fillWidth: true

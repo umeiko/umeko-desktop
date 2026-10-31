@@ -78,12 +78,12 @@ Item {
                         contentItem: RowLayout {
                             spacing: 9
                             WidgetIcon { plugin:entry.modelData; width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }
-                            Text { font.family: Theme.fontFamily; text: entry.modelData.name; textFormat: Text.PlainText; font.pixelSize: Theme.font(12); color: Theme.ink; elide: Text.ElideRight; Layout.fillWidth: true }
+                            Text { font.family: Theme.fontFamily; text: entry.modelData.name; textFormat: Text.PlainText; font.pixelSize: Theme.font(12, visible); color: Theme.ink; elide: Text.ElideRight; Layout.fillWidth: true }
                             Glyph { name: "check"; visible: root.manager.page.id === entry.modelData.id; width: Theme.icon(14); height: Theme.icon(14); color: Theme.accent }
                         }
                         onClicked: { const id = modelData.id; menu.close(); root.manager.openPage(id) }
                     }
-                    Text { font.family: Theme.fontFamily; anchors.centerIn: parent; visible: pluginList.count === 0; text: I18n.t("暂无已启用的插件"); color: Theme.muted; font.pixelSize: Theme.font(11) }
+                    Text { font.family: Theme.fontFamily; anchors.centerIn: parent; visible: pluginList.count === 0; text: I18n.t("暂无已启用的插件"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
                 }
                 Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
                 ItemDelegate {
@@ -95,7 +95,7 @@ Item {
                     contentItem: RowLayout {
                         spacing: 9
                         Glyph { name: "settings"; width: Theme.icon(16); height: Theme.icon(16) }
-                        Text { font.family: Theme.fontFamily; text: I18n.t("设置"); font.pixelSize: Theme.font(12); color: Theme.ink; Layout.fillWidth: true }
+                        Text { font.family: Theme.fontFamily; text: I18n.t("设置"); font.pixelSize: Theme.font(12, visible); color: Theme.ink; Layout.fillWidth: true }
                     }
                     onClicked: { menu.close(); root.manageRequested() }
                 }
