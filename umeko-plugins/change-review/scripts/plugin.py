@@ -79,7 +79,8 @@ class ChangeReview(Plugin):
                     self.capture_error(item, error)
             self.latest = (key, item)
             self.changed()
-            self.context.open_page()
+            if self.context.config.get('autoOpen',True):
+                self.context.open_page()
             return {'reviewed': True, 'files': len(item['entries']), 'error': item['error']}
         if method == 'refresh':
             if item and item.get('snapshot') and not item['active']:

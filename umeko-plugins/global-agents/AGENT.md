@@ -1,6 +1,10 @@
 # 全局子智能体与 Agent Bus（智能体总线）
 
-可以创建。调用宿主工具 `umeko_desktop` 的 `agent_bus.create`；`widgets.docs` 中的 `methods:{}` 仅表示没有 `widgets.call` 管理方法，不表示没有创建能力。
+这是可选 Widget 的能力，普通会话通过 `widgets.list`（`activeOnly:true`）发现启用状态后再使用。
+
+**只有普通聊天会话中的 Agent 可以申请创建全局子智能体。全局子智能体不能再创建全局子智能体，也不要通过委派绕过限制。** 宿主按真实会话身份强制执行，开启“允许自动被创建”不会解除限制。`agent_bus.overview` 的 `creation.canCreate` 表示当前调用者是否可创建，`automaticAllowed` 表示是否可免确认创建。
+
+普通会话调用宿主工具 `umeko_desktop` 的 `agent_bus.create`；`widgets.docs` 中的 `methods:{}` 仅表示没有 `widgets.call` 管理方法，不表示普通会话没有创建能力。
 
 直接使用以下调用（下一次独立创建换一个 `requestKey`；同一次重试复用它）：
 
@@ -27,4 +31,4 @@
 
 用户在 Widget 的“智能体总线”中展开项目，点击会话进入二级列表，逐个勾选全局子智能体。关闭链路会取消这条链路上的未完成请求，不撤销已执行的操作。关闭 Widget 页面不会停止全局子智能体。
 
-更多参数、边界与重试规则：`umeko_desktop` 调用 `{"operation":"help","arguments":{"topic":"agents"}}`，然后读取返回的文档文件。
+更多参数、边界与重试规则：`umeko_desktop` 调用 `{"operation":"help","arguments":{"topic":"agents"}}`，读取返回的 `document` 正文或文档文件。全局子智能体自身也通过该入口按需获取指南，无需文件读取工具。

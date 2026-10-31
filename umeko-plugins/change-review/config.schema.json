@@ -1,1 +1,1 @@
-{"type":"object","properties":{},"additionalProperties":false}
+{"type":"object","properties":{"autoOpen":{"type":"boolean"}},"additionalProperties":false}

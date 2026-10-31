@@ -473,6 +473,11 @@ class DesktopPlugins(QObject):
             if not result.get('ok'):return
             old=copy.deepcopy(self.settings);self.settings.setdefault('config',{})[identifier]=value
             if not self.save():self.settings=old;return False
+            if self.entries[identifier].get('liveConfig') is True:
+                if identifier in self.workers:
+                    self.send(identifier,{'id':uuid.uuid4().hex,'operation':'configure','arguments':{'config':value}})
+                if self._page==identifier:self.pageChanged.emit()
+                return
             if self._page==identifier:self.closePage()
             self.stop(identifier)
             if self.application(identifier) and self.enabled(identifier):self._failed_services.discard(identifier);self.start(identifier)

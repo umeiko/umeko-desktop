@@ -967,6 +967,8 @@ var strings = {
   "声明的能力": "Declared capabilities",
   "功能说明": "Description",
   "插件配置": "Plugin configuration",
+  "每次变更后自动打开": "Automatically open after each change",
+  "保存失败，请重试": "Could not save. Try again.",
   "导出 SDK 和示例": "Export SDK and examples",
   "导出插件 SDK 和示例": "Export plugin SDK and examples",
   "插件": "Plugins",

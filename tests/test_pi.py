@@ -158,6 +158,7 @@ class PiTests(unittest.TestCase):
         self.desktop_control=lambda event: requests.append(event) or {'ok':True,'requestId':'fixture-request'}
         calls=iter([
             {'operation':'batch','arguments':{'operations':[{'operation':'sessions.list'}]}},
+            {'operation':'agent_bus.create','arguments':{'requestKey':'recursive-global'}},
             {'operation':'agent_bus.dispatch','arguments':{'targetId':'session:fixture','text':'native coordinator boundary'}},
         ])
         def response(_model,messages,tools,_tokens):

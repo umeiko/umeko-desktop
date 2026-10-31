@@ -77,12 +77,33 @@ try:
     assert menu.property('readOnly') and not find('gitContextDiscard').isVisible() and not find('gitContextIgnore').isVisible()
     menu.close();manager.closePage()
     assert 'change-review' in manager.workers,'Closing the page stopped the application service'
+    window.setProperty('settingsTab',3);window.setProperty('page','settings');QTest.qWait(100)
+    page=find('desktopPluginsPage');page.setProperty('selectedId','change-review')
+    page.parentItem().parentItem().setProperty('pluginsOpen',True)
+    wait(lambda:find('changeReviewAutoOpenSwitch') is not None,'Review setting did not load')
+    toggle=find('changeReviewAutoOpenSwitch');assert toggle.property('checked')
+    worker=manager.workers['change-review']
+    click('changeReviewAutoOpenSwitch')
+    wait(lambda:manager.settings.get('config',{}).get('change-review',{}).get('autoOpen') is False and not manager.busy,'Setting did not save')
+    assert manager.workers['change-review'] is worker,'Setting restarted snapshot service'
+    assert call('status',{})['total']==2,'Setting discarded the completed review'
+    window.grabWindow().save(str(out/'settings.png'))
+    for selected in ('desktop-pet','change-review'):
+        page.setProperty('selectedId',selected);QTest.qWait(60)
+    wait(lambda:find('changeReviewAutoOpenSwitch') is not None,'Review setting did not reload')
+    assert not find('changeReviewAutoOpenSwitch').property('checked'),'Setting was not restored'
+    window.setProperty('page','chat');QTest.qWait(150)
+    call('begin',{'loopId':'manual-open'});file.write_text('manual = 3\n',encoding='utf-8')
+    call('finish',{'loopId':'manual-open'})
+    assert not manager.page,'Disabled auto-open still opened a pane'
+    assert manager.openPage('change-review')
+    wait(lambda:find('changeReviewRow_src') is not None,'Manual review did not populate')
     manager.setEnabled('change-review',False)
     wait(lambda:not any((manager.root/'state'/'change-review').rglob('review-*')),'Stopping retained temporary snapshots')
-    assert file.read_text(encoding='utf-8')=='after = 2\n'
+    assert file.read_text(encoding='utf-8')=='manual = 3\n'
     assert not (workspace/'.git').exists(),'Review created a repository in the project'
     assert not warnings,'\n'.join(warnings)
-    print('CHANGE_REVIEW_UI_OK: opt-in, cancellation, automatic pane, tree/diff/back/copy, read-only menu and cleanup')
+    print('CHANGE_REVIEW_UI_OK: automatic/manual pane, live persistent setting, retained snapshot, tree/diff/back/copy, read-only menu and cleanup')
 finally:
     app.clipboard().clear();backend.close()
     import shiboken6

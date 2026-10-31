@@ -54,6 +54,12 @@ def main():
                 plugin=getattr(module,factory)(context)
                 if not isinstance(plugin,Plugin):raise PluginError('插件必须继承 umeko_plugin_sdk.Plugin')
                 result={'ready':True}
+            elif op=='configure':
+                if plugin is None or m.get('liveConfig') is not True:raise PluginError('插件不支持动态配置')
+                config=args.get('config');validate_config(config,schema)
+                context.config=copy.deepcopy(config)
+                plugin.on_event('config.changed',copy.deepcopy(config))
+                result={'configured':True}
             elif op in ('call','agentCall'):
                 if plugin is None:raise PluginError('插件尚未启动')
                 if op=='agentCall':

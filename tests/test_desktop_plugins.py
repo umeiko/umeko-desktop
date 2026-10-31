@@ -125,6 +125,34 @@ def create_plugin(context):return Fixture(context)
         request=self.manager.call_for('change-review',method,json.dumps(args))
         self.wait(lambda:request in self.responses);return self.responses[request]
 
+    def test_review_auto_open_setting_is_persistent_and_preserves_active_baseline(self):
+        manager=self.manager;manager.setEnabled('change-review',True)
+        managed={};manager.managed.connect(lambda key,value:managed.__setitem__(key,value))
+        file=Path(self.host._view.workspace)/'proof.txt';file.write_text('before\n')
+        self.assertTrue(self.call_for_review('begin',{'loopId':'manual'})['result']['captured'])
+        worker=manager.workers['change-review']
+        def save(config):
+            key=manager.saveConfig('change-review',json.dumps(config));self.assertTrue(key)
+            self.wait(lambda:key in managed);return managed[key]
+        self.assertTrue(save({'autoOpen':False})['ok'])
+        self.assertIs(manager.workers['change-review'],worker)
+        self.assertFalse(json.loads(manager.registry.read_text())['config']['change-review']['autoOpen'])
+        file.write_text('after\n')
+        result=self.call_for_review('finish',{'loopId':'manual'})
+        self.assertEqual(result['result']['files'],1);self.assertEqual(manager.page,{})
+        self.assertTrue(manager.openPage('change-review'))
+        self.assertIn('-before',self.call_for_review('diff',{'path':'proof.txt'})['result']['text'])
+        self.assertFalse(save({'autoOpen':'invalid'})['ok'])
+        self.assertFalse(manager.settings['config']['change-review']['autoOpen'])
+        self.assertTrue(save({'autoOpen':True})['ok'])
+        self.assertIs(manager.workers['change-review'],worker)
+        self.assertIn('+after',self.call_for_review('diff',{'path':'proof.txt'})['result']['text'])
+        manager.closePage()
+        self.call_for_review('begin',{'loopId':'automatic'})
+        file.write_text('automatic\n')
+        self.call_for_review('finish',{'loopId':'automatic'})
+        self.wait(lambda:manager.page.get('id')=='change-review')
+
     def test_official_tree_is_lazy_bounded_and_closes_worker(self):
         directory=Path(self.host._view.workspace);(directory/'a.py').write_text('print(1)');(directory/'nested').mkdir();(directory/'nested/x.txt').write_text('hello')
         self.assertEqual({row['id'] for row in self.manager.sessionPlugins},{'file-tree','git-viewer','global-agents','pi-manager'})

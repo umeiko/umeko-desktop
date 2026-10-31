@@ -19,6 +19,8 @@ Widget 扩展 Umeko 的桌面界面和当前会话，例如文件管理器、版
 
 Widget 可以用 `settingsPage` 声明包内的 QML 设置页，根项同样声明 `required property var sdk`。设置页由插件管理加载，`sdk.call` 定向调用选中 Widget，`sdk.response` 接收结果，`sdk.colors` / `scale` / `t(text)` 提供样式和翻译，`sdk.active` 表明服务是否可用。没有设置页的 Widget 继续使用原来的 JSON 配置编辑器。应用服务的 `settingsPage` 不会创建聊天侧栏页面。
 
+设置页可用 `sdk.saveConfig(object)` 保存完整配置，返回请求 ID，通过 `sdk.configSaved(id,value)` 接收成功或失败；保存成功后 `sdk.config` 更新。清单可选 `liveConfig:true`：宿主先校验并保存配置，再更新运行中 worker 的 `context.config`，发送 `Plugin.on_event("config.changed",config)`，不重启、不清空临时状态。缺省仍按原方式重启服务。耗时的 `handle` 结束后才处理配置帧。
+
 从“设置 → Agent → 插件管理 → 导出 SDK 和示例”取得当前版本的 SDK、协议和完整示例。先阅读导出包的 `README.md`，以其中接口为准。典型结构：
 
 ```text

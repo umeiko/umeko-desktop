@@ -2,6 +2,8 @@
 
 默认停用，按用户意愿通过 widgets.enable 开启。宿主自动在主 Agent loop 开始和结束时驱动采集，无需调用 begin/finish；这些方法不是 Agent API。不要自行执行 git init/add/commit 来协助此 Widget。
 
+`widgets.config` 的 `config` 对象支持 `autoOpen:boolean`（缺省 true）。它控制完成时是否自动展开面板；false 时仍采集结果，用户可手动打开。配置立即生效且保留当前基线与结果。
+
 - status({offset?:integer}) 返回当前聊天拥有的最近一轮的 entries、total、hasMore、active、reason、limited、error，列表每页 200 项。
 - diff({path:string}) 返回该文件的有界只读 unified diff 和 truncated。
 

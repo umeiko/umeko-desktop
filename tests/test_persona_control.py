@@ -92,6 +92,19 @@ class PersonaControlTests(unittest.TestCase):
     def job(self, identifier):
         return self.submit('jobs.get', {'id': identifier})['jobs'][0]
 
+    def test_coordinator_can_load_its_guide_on_demand_without_file_tools(self):
+        self.backend.store.directory=ROOT/'build'/'unused-help-profile'
+        self.backend._release=ROOT/'runtime'
+        caller=SimpleNamespace(global_agent='fixture-global')
+        index=self.control.execute({'operation':'help'},caller)
+        self.assertTrue(index['ok']);self.assertNotIn('document',index)
+        guide=self.control.execute({'operation':'help','arguments':{'topic':'agents'}},caller)
+        self.assertTrue(guide['ok'],guide)
+        self.assertEqual(guide['document'],(ROOT/'runtime/umeko-docs/global-agents.md').read_text(encoding='utf-8'))
+        self.assertIn('全局子智能体不能再创建',guide['document'])
+        denied=self.control.execute({'operation':'batch','arguments':{'operations':[{'operation':'agent_bus.create','arguments':{'requestKey':'bypass'}}]}},caller)
+        self.assertFalse(denied['ok'])
+
     def test_accepted_and_queued_kernel_report_worker_terminal_results(self):
         direct = self.submit('kernel.check')
         self.assertEqual(direct['status'], 'accepted')
