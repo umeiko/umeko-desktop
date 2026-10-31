@@ -19,6 +19,7 @@ def clean_extension_modes(value):
 
 @dataclass(eq=False)
 class SessionState:
+    search_leaf: str = ""
     global_agent: str = ""
     key: str = field(default_factory=lambda: uuid.uuid4().hex)
     id: str = ""

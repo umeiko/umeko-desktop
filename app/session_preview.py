@@ -83,7 +83,7 @@ class SessionPreview(QObject):
         self._start()
 
     @Slot(int, result=bool)
-    def activate(self, token):
+    def activate(self, token, read_only=False):
         result = self.prepared
         if not result or token != self.request or result['token'] != token:
             return False
@@ -104,8 +104,14 @@ class SessionPreview(QObject):
             # still pinned could immediately evict this prepared selection.
             self.controller._pool.records[record.key] = record
         self.cancel()
-        self.controller.openSession(saved['id'])
+        if read_only:
+            self.controller._activate(record)
+        else:
+            self.controller.openSession(saved['id'])
         return True
+
+    def activate_read_only(self, token):
+        return self.activate(token, read_only=True)
 
     def open_direct(self, session_id):
         self.direct_token -= 1

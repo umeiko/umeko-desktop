@@ -10,9 +10,10 @@ Item {
     function openFor(item, point) {
         target = item
         let menu = item.kind === "project" ? projectMenu : sessionMenu
-        menu.x = Math.max(8, Math.min(point.x, width - menu.width - 8))
-        menu.y = Math.max(8, Math.min(point.y, height - menu.implicitHeight - 8))
-        menu.open()
+        // The first implicit size still contains unpolished, wrapped labels.
+        // Keep the actual click as Popup's requested position; Qt and
+        // FloatingMenu fit it to the window again when its final size is known.
+        menu.openAt(point)
     }
     function rename() { renameField.text = target.title; renamePopup.open() }
     function saveRename() {

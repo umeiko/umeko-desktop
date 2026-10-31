@@ -431,7 +431,7 @@ try:
     assert backend.activeSession == first_session
     assert len([r for r in backend.projectRows if r["kind"] == "project"]) >= 2
     capture("19-project-history")
-    click("newChatButton")
+    QTest.keyClick(window, Qt.Key_N, Qt.ControlModifier)
     for _ in range(100):
         QTest.qWait(50)
         if not backend.busy: break
@@ -459,7 +459,7 @@ try:
         a_id, a_pid = a.id, a.process.processId()
         assert find_item("sessionSpinner_" + a_id).isVisible()
         capture("26-task-running")
-        click("newChatButton")
+        QTest.keyClick(window, Qt.Key_N, Qt.ControlModifier)
         assert not backend.busy and not backend.messages
         assert backend.send("async B")
         b = backend._view
@@ -508,7 +508,7 @@ try:
     click("theme_yanami")
     assert backend.config["theme"] == "yanami" and not backend.config["dark"]
     capture("29-yanami-theme-settings")
-    click("newChatButton")
+    QTest.keyClick(window, Qt.Key_N, Qt.ControlModifier)
     greeting, portrait = backend.greeting, backend.portrait
     assert find_item("welcomeGreeting").property("text") == greeting
     assert find_item("welcomeMascot").property("loaded")
@@ -554,7 +554,7 @@ try:
         assert abs(conversation.property("contentY") - position) < 2, (position, conversation.property("contentY"))
         anchor, inner_offset = backend.scrollAnchor, backend.scrollPosition
         capture("31-stream-reading-stable")
-        click("newChatButton")
+        QTest.keyClick(window, Qt.Key_N, Qt.ControlModifier)
         backend.openSession(stream_id)
         QTest.qWait(200)
         assert backend.scrollAnchor == anchor and abs(backend.scrollPosition - inner_offset) < 2, ("switching lost visible message anchor", anchor, inner_offset, backend.scrollAnchor, backend.scrollPosition)
@@ -564,7 +564,7 @@ try:
         assert conversation.property("followTail"), "reaching bottom did not resume follow"
     finally:
         stream.advance.set()
-    click("newChatButton")
+    QTest.keyClick(window, Qt.Key_N, Qt.ControlModifier)
     window.resize(1060, 700)
     capture("11-compact")
     assert not warnings, "\n".join(warnings)

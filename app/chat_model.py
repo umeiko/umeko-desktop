@@ -249,12 +249,29 @@ class ChatModel(QAbstractListModel):
                 self._questions = questions
                 self.questionsChanged.emit()
 
+    def row_for_entry(self, entry_id):
+        if self.snapshot:
+            from .transcript_index import connect
+            with connect(self.snapshot.database) as db:
+                revision = db.execute("SELECT value FROM meta WHERE key='revision'").fetchone()
+                if revision is None or int(revision[0]) != self.snapshot.revision:
+                    return -1
+                row = db.execute('''SELECT d.seq FROM native n JOIN display d
+                    ON n.pos BETWEEN d.first_native AND d.last_native WHERE n.id=? ORDER BY d.seq LIMIT 1''', (entry_id,)).fetchone()
+                if row is not None:
+                    return row[0]
+        for row, message in enumerate(self.rows):
+            if entry_id in message.get('_entries', []) or entry_id == message.get('entryId'):
+                return self.base_count + row
+        return -1
+
     @staticmethod
     def project(messages, with_starts=False, max_group=None):
         """Keep ordered process steps under one assistant, leaving Pi's log intact."""
         rows, starts, compactions = [], [], {}
         for source_index, message in enumerate(messages):
             current = dict(message)
+            current['_entries'] = [value for value in (message.get('entryId'), message.get('_searchId')) if value]
             if current.get('customType') == 'umeko-compaction':
                 current.pop('activity', None)
                 details = current.get('compaction', {})
@@ -305,6 +322,7 @@ class ChatModel(QAbstractListModel):
                     and (continuing or rows[-1].get("tools") or rows[-1].get('_chain_tools') or current.get("tools")))
             if merging and (max_group is None or source_index - starts[-1] < max_group):
                 group = rows[-1]
+                group['_entries'] = group.get('_entries', []) + current['_entries']
                 if current.get('diagnosticId'): group['diagnosticId'] = current['diagnosticId']
                 steps = current["activity"]
                 if continuing:

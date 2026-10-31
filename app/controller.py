@@ -177,6 +177,8 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self._closing = False
         self._copy_request = 0
         self._session_preview = SessionPreview(self)
+        from .conversation_search import ConversationSearch
+        self._chat_search = ConversationSearch(self)
         self._document_preview = DocumentPreview(self, store=self.store)
         self._subagents = Subagents(self)
         self._view.id = ""
@@ -229,6 +231,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     @Property(QObject, constant=True)
     def sessionPreview(self):
         return self._session_preview
+
+    @Property(QObject, constant=True)
+    def chatSearch(self):
+        return self._chat_search
 
     @Property(QObject, constant=True)
     def documentPreview(self):
@@ -1866,6 +1872,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self._job("update", update)
 
     def close(self):
+        self._chat_search.close()
         self.piManagement.cancelInstall()
         if self._closing:
             return

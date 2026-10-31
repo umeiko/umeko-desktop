@@ -14,6 +14,29 @@ ApplicationWindow {
     color: Theme.bg
     flags: Qt.Window | Qt.FramelessWindowHint
     property string page: "chat"
+    property bool searchVisible: false
+    property bool searchFocusPending: false
+    property int searchHighlightRow: -1
+    function openConversationSearch() {
+        cancelSidebarSelection(); page = "chat"; searchVisible = true; searchFocusPending = true
+    }
+    function closeConversationSearch(clear) {
+        if (clear) searchPane.reset()
+        searchVisible = false
+        searchFocusPending = false
+        composer.focusInput()
+    }
+    onActiveChanged: if (!active && searchVisible) closeConversationSearch(false)
+    Timer { id: searchHighlightTimer; interval: 2000; onTriggered: window.searchHighlightRow = -1 }
+    Timer { interval: 16; repeat: true; running: window.searchVisible && window.searchFocusPending
+        onTriggered: if (!sidebarWidthMotion.moving) { searchPane.focusSearch(); window.searchFocusPending = false } }
+    Connections { target: backend.chatSearch
+        function onJumpReady(row, entryId) {
+            window.page = "chat"; window.searchVisible = false
+            chatCover.contentReady()
+            if (row >= 0) Qt.callLater(() => { conversation.jumpToMessage(row); window.searchHighlightRow = row; searchHighlightTimer.restart() })
+        }
+    }
     Loader {
         id:petWindowLoader;objectName:"desktopPetWindowLoader"
         active:backend.desktopPlugins.pet.visible
@@ -87,7 +110,7 @@ ApplicationWindow {
     readonly property real webMinimumWidth: 320
     readonly property real chatMinimumWidth: 640
     readonly property bool previewSidebarCollapsed: webPane.opened && page === "chat" && width - Math.min(sidebarPreferredWidth, sidebarMaximumWidth) < chatMinimumWidth + webMinimumWidth
-    readonly property bool sidebarLayoutCollapsed: sidebarCollapsed || previewSidebarCollapsed
+    readonly property bool sidebarLayoutCollapsed: !searchVisible && (sidebarCollapsed || previewSidebarCollapsed)
     readonly property real webMaximumWidth: Math.max(webMinimumWidth, mainArea.width - chatMinimumWidth)
     function showChatWidthLimitHint() {
         const text = Character.scene("layout.tooNarrow", "")
@@ -125,7 +148,7 @@ ApplicationWindow {
         page = "settings"
         if (tab === 7) Qt.callLater(() => settingsPage.openPluginManagement())
     }
-    function startChat() { cancelSidebarSelection(); backend.newSession(); page = "chat"; composer.focusInput() }
+    function startChat() { searchVisible = false; cancelSidebarSelection(); backend.newSession(); page = "chat"; composer.focusInput() }
     function startProjectChat(row) { cancelSidebarSelection(); backend.openProject(row.id); backend.newSession(); if (row.collapsed) backend.toggleProject(row.id); page = "chat"; composer.focusInput() }
     function focusChatInput() {
         if (window.visibility === Window.Minimized) window.showNormal()
@@ -161,12 +184,13 @@ ApplicationWindow {
     onConversationVisibleChanged: backend.setConversationVisible(conversationVisible)
     Component.onCompleted: backend.setConversationVisible(conversationVisible)
     Shortcut { sequence: "Ctrl+N"; onActivated: window.startChat() }
+    Shortcut { sequence: "Ctrl+K"; onActivated: window.openConversationSearch() }
     Shortcut { sequence: "Ctrl+S"; enabled: window.page === "chat" && !chatCover.visible && !webPane.subagentInputFocused && !webPane.pluginInputFocused; onActivated: composer.sendMessage(true) }
     Shortcut { sequence: "Ctrl+,"; onActivated: window.settings(0) }
     Shortcut { sequence: "Ctrl+B"; onActivated: window.toggleSidebar() }
     Shortcut { sequences: [StandardKey.Copy]; enabled: chatSelection.activeFocus && chatSelection.hasSelection; onActivated: Qt.callLater(chatSelection.copy) }
     Shortcut { sequences: [StandardKey.SelectAll]; enabled: chatSelection.activeFocus; onActivated: chatSelection.selectAll() }
-    Shortcut { sequence: "Escape"; enabled: backend.pendingApproval.id === undefined && backend.desktopPlugins.hostServices.pendingApproval.id === undefined && !imageViewer.visible; onActivated: { if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
+    Shortcut { sequence: "Escape"; enabled: backend.pendingApproval.id === undefined && backend.desktopPlugins.hostServices.pendingApproval.id === undefined && !imageViewer.visible; onActivated: { if (window.searchVisible) window.closeConversationSearch(false); else if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
     Connections { target: backend; function onToast(message) { window.notification = message; toastTimer.restart() }
         function onViewChanged() { window.avatarChatKey = String(Math.random()); if (backend.desktopPlugins.page.id !== "global-agents") webPane.dismiss() }
         function onWebRequested(url, title) { window.page = "chat"; webPane.submit(url, title) }
@@ -199,15 +223,16 @@ ApplicationWindow {
             // Keep content at its expanded width while the outer panel reveals or clips it.
             width: Math.max(window.sidebarMinimumWidth, sidebarResizeHandle.resizing ? sidebarResizeHandle.dragWidth : Math.min(window.sidebarPreferredWidth, window.sidebarMaximumWidth))
             anchors.top: parent.top; anchors.bottom: parent.bottom
-            enabled: !window.sidebarCollapsed && !sidebarWidthMotion.moving
+            enabled: (!window.sidebarCollapsed || window.searchVisible) && !sidebarWidthMotion.moving
             TitleBarDrag { objectName: "sidebarTitleDrag"; width: parent.width; height: 20; enabled: !chatSelection.dragging; targetWindow: window }
+            Item { anchors.fill: parent; visible: !window.searchVisible
             ActionButton {
-                objectName: "newChatButton"
+                objectName: "searchChatsButton"
                 x: 16; y: 24; width: parent.width - 32; height: Theme.control(42)
-                text: I18n.t("新建会话"); glyph: "plus"
-                onClicked: window.startChat()
-                Text { anchors.right: parent.right; anchors.rightMargin: 13; anchors.verticalCenter: parent.verticalCenter; visible: Theme.fontScale <= 1.25; text: "Ctrl N"; color: Theme.muted; font.pixelSize: Theme.font(10) }
-                contentItem: Item { Row { x: 13; width: parent.width - (Theme.fontScale <= 1.25 ? 65 : 26); spacing: 9; anchors.verticalCenter: parent.verticalCenter; Glyph { name: "plus"; width: Theme.icon(18); height: Theme.icon(18) } Text { width: Math.max(0, parent.width - Theme.icon(18) - 9); elide: Text.ElideRight; text: I18n.t("新建会话"); font.pixelSize: Theme.font(12); color: Theme.ink; anchors.verticalCenter: parent.verticalCenter } } }
+                text: I18n.t("搜索会话"); glyph: "search"; hint: I18n.t("搜索") + " Ctrl+K"
+                onClicked: window.openConversationSearch()
+                Text { anchors.right: parent.right; anchors.rightMargin: 13; anchors.verticalCenter: parent.verticalCenter; visible: Theme.fontScale <= 1.25; text: "Ctrl K"; color: Theme.muted; font.pixelSize: Theme.font(10) }
+                contentItem: Item { Row { x: 13; width: parent.width - (Theme.fontScale <= 1.25 ? 65 : 26); spacing: 9; anchors.verticalCenter: parent.verticalCenter; Glyph { name: "search"; width: Theme.icon(18); height: Theme.icon(18) } Text { width: Math.max(0, parent.width - Theme.icon(18) - 9); elide: Text.ElideRight; text: I18n.t("搜索会话"); font.pixelSize: Theme.font(12); color: Theme.ink; anchors.verticalCenter: parent.verticalCenter } } }
             }
             Text { id: recentLabel; x: 29; y: 52 + Theme.control(42); text: backend.showArchived ? I18n.t("已归档") : I18n.t("项目"); font.pixelSize: Theme.font(10); color: Theme.muted; font.letterSpacing: 1 }
             ActionButton { objectName: "archivedViewButton"; anchors.right: parent.right; anchors.rightMargin: 28 + Theme.control(26); y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "archive"; quiet: true; hint: backend.showArchived ? I18n.t("返回项目") : I18n.t("查看归档会话"); onClicked: backend.toggleArchived() }
@@ -266,6 +291,14 @@ ApplicationWindow {
                 } }
                 AppUpdateBadge { anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter }
             }
+            }
+            ConversationSearch {
+                id: searchPane; anchors.fill: parent; visible: window.searchVisible
+                onBackRequested: window.closeConversationSearch(false)
+                onDismissRequested: window.closeConversationSearch(false)
+                onNewChatRequested: window.startChat()
+                onResultRequested: row => { window.closeConversationSearch(false); chatCover.begin(); backend.chatSearch.open(row) }
+            }
         }
     }
 
@@ -312,6 +345,7 @@ ApplicationWindow {
 
     Item {
         id: mainArea; objectName: "mainArea"
+        TapHandler { acceptedButtons: Qt.LeftButton; onPressedChanged: if (pressed && window.searchVisible) window.closeConversationSearch(false) }
         anchors.left: sidebar.right; anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
         Item {
             id: header; height: 72; width: parent.width
@@ -503,6 +537,8 @@ ApplicationWindow {
                     }
                     Rectangle {
                         objectName: "messageBubble_" + messageRow.index
+                        border.width: 1; border.color: window.searchHighlightRow === messageRow.index ? Theme.accent : "transparent"
+                        Behavior on border.color { ColorAnimation { duration: 180 } }
                         visible: !modelData._loading && !messageRow.compactionNotice
                         readonly property bool userMessage: modelData.role === "user"
                         width: userMessage ? (modelData.text.length > 512 ? messageRow.width * 0.82 : Math.min(messageRow.width * 0.82, Math.max(64, userBody.implicitWidth + 28))) : parent.width - 33

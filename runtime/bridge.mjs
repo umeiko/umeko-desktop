@@ -456,6 +456,7 @@ async function state() {
     sessions: (config.globalCoordinator ? [] : list).map(s => ({ id: s.id, title: s.name || s.firstMessage.slice(0, 28) || "新会话", file: s.path, workspace: s.cwd })), messages: config.globalCoordinator ? messages.map(row=>({...row,text:row.text?.slice(0,6000),thinking:row.thinking?.slice(0,6000),tools:row.tools?.slice(0,8)})) : messages,
     resources: await capabilities(),
     contextUsage: contextUsage(session),
+    leafId: manager.getLeafId(),
     tree: paged || config.globalCoordinator ? [] : branch.filter(e => e.type === "message").map(e => ({ id: e.id, role: e.message.role, text: textOf(e.message.content).slice(0, 80) })),
     ...(paged ? {indexedHistory:{leafId:manager.getLeafId(), totalMessages:candidates.length}} : {}),
   });

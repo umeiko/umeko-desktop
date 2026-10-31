@@ -233,12 +233,14 @@ class PiControllerMixin:
         transcript = False
         dirty = max(0, len(record.messages) - 2)
         if kind == 'native_entry':
+            record.search_leaf = event['entryId']
             for message in reversed(record.messages):
                 if message.get('role') == event.get('role') and message.get('timestamp') == event.get('timestamp'):
                     message['entryId'] = event['entryId']
                     break
             return
         elif kind == 'history_checkpoint':
+            record.search_leaf = event.get('leafId', '')
             if record.file and (len(record.messages) > 256 or record.tail_characters > 1024 * 1024):
                 self._queue_transcript_index(record, event.get('leafId'))
             return
@@ -397,6 +399,7 @@ class PiControllerMixin:
             if visible:
                 self.toast.emit(message)
         elif kind == "state":
+            record.search_leaf = event.get('leafId', '')
             self._record_info(record, event["session"])
             if event.get('indexedHistory'):
                 # Keep the already visible live tail while its durable index is
