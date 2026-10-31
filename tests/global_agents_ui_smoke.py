@@ -228,7 +228,9 @@ try:
     for request in (requests[0],requests[2]):g.handle('cancelRequest',{'id':request})
     queued_target.busy=False;g.outbox.clear();g.timer.start()
     kazuhiko=g.handle('create',{'character':'kazuhiko'})
-    assert g.agents[kazuhiko['id']]['name']=='温水和彦'
+    kazuhiko_row=g.agents[kazuhiko['id']]
+    # Automatic creation above may already have picked this character.
+    assert kazuhiko_row['character']=='kazuhiko' and re.fullmatch(r'温水和彦(?:-[1-9]\d*)?',kazuhiko_row['name'])
     for remaining in list(g.agents):g.handle('delete',{'id':remaining})
     page.setProperty('selected','');page.setProperty('section','agents')
     wait(lambda:find('createFirstGlobalAgentButton').isVisible() and not find('globalAgentsList').isVisible(),'Deleting the final agent did not restore the empty state')
