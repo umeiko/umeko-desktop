@@ -395,7 +395,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         status = self._turn_status(record) if record else meta.get('lastTurn', {})
         return {"running": bool(record and (record.phase == "running" or status.get('state') in ('running', 'stopping'))), "loading": bool(record and record.phase in ("loading", "working")),
             "waiting": bool(record and record.approval), "unread": bool(meta.get("unread")),
-            "outcome": status.get('state', ''),
+            "outcome": status.get('state', '') or ('unread' if meta.get('unread') else ''),
             "busy": bool(record and record.busy) or session_id in self._management_jobs}
 
     def _models_busy(self, provider_id=None):

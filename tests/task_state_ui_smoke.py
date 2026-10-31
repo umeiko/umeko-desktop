@@ -175,10 +175,26 @@ def check_child_status_and_translations():
         backend.appearanceChanged.emit()
 
 
+def check_legacy_unread():
+    backend._sessions.append({"id": "legacy-unread", "title": "Older unread session", "file": "", "workspace": ""})
+    backend.store.data['sessionMeta']['legacy-unread'] = {'unread': True}
+    backend.changed.emit()
+    backend.chatChanged.emit()
+    settle()
+    status = find('sessionStatus_legacy-unread')
+    assert status.isVisible() and status.property('state') == 'unread'
+    assert find('taskStatusText', status).property('text') == '未读'
+    assert find('taskStatusIcon', status).property('name') == 'chat'
+    print('LEGACY_UNREAD_UI_OK', flush=True)
+
+
 try:
-    if "--extra-only" not in sys.argv:
+    if "--legacy-only" not in sys.argv and "--extra-only" not in sys.argv:
         check_turn_lifecycle()
-    check_child_status_and_translations()
+    if "--legacy-only" not in sys.argv:
+        check_child_status_and_translations()
+    if "--extra-only" not in sys.argv:
+        check_legacy_unread()
 finally:
     backend.close()
     import shiboken6
