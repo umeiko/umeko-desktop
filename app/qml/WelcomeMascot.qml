@@ -5,6 +5,8 @@ FocusScope {
     objectName: "welcomeMascot"
     width: 210; height: 210
     property int portraitIndex: 0
+    readonly property var rareScene: Character.rareCover(backend.conversationToken)
+    readonly property string rareGreeting: rareScene.line ? I18n.t(rareScene.line) : ""
     readonly property bool loaded: portrait.status === Image.Ready
     property string reactionText: ""
     property bool dragging: false
@@ -78,8 +80,8 @@ FocusScope {
     CharacterArt {
         id: portrait
         x: root.offsetX; y: root.offsetY + root.hop; width: root.width; height: root.height
-        fallbackSource: "../icons/portraits/" + (root.portraitIndex + 1).toString().padStart(2, "0") + ".png"
-        artwork: Character.asset("welcome", fallbackSource)
+        fallbackSource: "../icons/portraits/" + (root.portraitIndex + 1).toString().padStart(2, "0") + ".webp"
+        artwork: root.rareScene.source || Character.asset("welcome", fallbackSource)
         sourceSize: Qt.size(420,420); fillMode: Image.PreserveAspectFit; mipmap: true
         transform: [
             Rotation { origin.x: portrait.width / 2; origin.y: portrait.height * 0.72; angle: root.tilt },
@@ -97,17 +99,6 @@ FocusScope {
             y: root.height * 0.4 + Math.sin(angle) * (65 + root.burstProgress * 28) - root.burstProgress * 26
             opacity: 0.9 * (1 - root.burstProgress); rotation: root.burstProgress * 55
             scale: 0.7 + root.burstProgress * 0.5
-        }
-    }
-    Rectangle {
-        objectName: "welcomeCookie"
-        width: 32; height: 32; radius: 16; color: "#f2c47a"; border.color: "#bb8447"; border.width: 1.5
-        visible: root.celebrating
-        x: root.width / 2 - width / 2; y: -10 - root.burstProgress * 46
-        rotation: -12 + root.burstProgress * 35; opacity: 1 - root.burstProgress
-        Repeater {
-            model: [{x:9,y:8},{x:21,y:11},{x:14,y:18},{x:7,y:23},{x:22,y:24}]
-            Rectangle { required property var modelData; x: modelData.x; y: modelData.y; width: 3.5; height: 3.5; radius: 1.5; color: "#99653b" }
         }
     }
     MouseArea {

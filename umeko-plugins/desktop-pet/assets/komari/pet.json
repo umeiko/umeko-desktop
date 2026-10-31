@@ -47,6 +47,13 @@
       "width": 384,
       "height": 576,
       "frames": 6
+    },
+    "idle-rare.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 6,
+      "contentTop": 0.09722222222222222
     }
   },
   "dialogue": {
@@ -61,5 +68,10 @@
     "drag": [
       "这、这里也可以。"
     ]
+  },
+  "rareIdle": {
+    "image": "idle-rare.webp",
+    "line": "那家伙就总是让我烦躁、让我感到不爽、让我很在意。但是那家伙，却表现得一点都不在乎。我、我就感觉很恼火。",
+    "title": "说不清的在意"
   }
 }

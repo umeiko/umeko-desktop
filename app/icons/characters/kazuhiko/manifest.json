@@ -1,0 +1,11 @@
+{
+  "format": "umeko-character",
+  "version": 1,
+  "id": "kazuhiko",
+  "name": "温水和彦",
+  "assets": {
+    "avatarSmile": "avatarSmile.png",
+    "reply": "reply.png",
+    "catch": "catch.png"
+  }
+}

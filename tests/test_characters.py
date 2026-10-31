@@ -134,8 +134,8 @@ class CharacterTests(unittest.TestCase):
 
     def test_all_builtin_characters_are_complete_and_protected(self):
         b=self.backend
-        self.assertEqual({row['id'] for row in b.characterPacks if row['builtin']},{'yanami','komari','kaju'})
-        for identifier in ('yanami','komari','kaju'):
+        self.assertEqual({row['id'] for row in b.characterPacks if row['builtin']},{'yanami','komari','kaju','tiara','whale-girl'})
+        for identifier in ('yanami','komari','kaju','tiara','whale-girl'):
             self.assertFalse(b.removeCharacter(identifier))
             self.manifest['id']=identifier;self.write()
             self.assertFalse(b.importCharacter(str(self.make_zip(self.zip_entries()))))
@@ -148,6 +148,82 @@ class CharacterTests(unittest.TestCase):
         self.assertEqual(b.characterStyle['id'],'kaju')
         self.assertEqual(json.loads(b.store.path.read_text())['character'],'kaju')
         self.assertTrue(all(row['portrait'].startswith('file:') for row in b.characterPacks))
+
+    def test_whale_girl_main_art_dialogue_and_subagent_are_independent(self):
+        b = self.backend
+        pack = read_character(ROOT/'app/icons/characters/whale-girl/manifest.json',
+                              check_images=True)
+        self.assertEqual(len(pack['assets']), 10)
+        self.assertTrue(b.selectCharacter('whale-girl'))
+        self.assertEqual(b.characterStyle['name'], '鲸鱼娘')
+        for text in b.characterStyle['dialogue']['welcome']['greetings']:
+            self.assertTrue(text.startswith('人，'))
+        self.assertTrue(any('Pi Agent' in text for text in
+                            b.characterStyle['dialogue']['loading']['tips']))
+        self.assertEqual(b.characterStyle['easterEgg']['line'],
+                         '人，你给我吃米，人，日后我会放你一马的')
+        self.assertTrue(b.selectSubagentCharacter(3, 'whale-girl'))
+        self.assertTrue(b.selectCharacter('tiara'))
+        self.assertEqual(b.characterNames[3], '鲸鱼娘')
+        self.assertFalse(b.removeCharacter('whale-girl'))
+
+    def test_kazuhiko_is_subagent_only_and_is_protected(self):
+        b = self.backend
+        self.assertNotIn('kazuhiko', {row['id'] for row in b.characterPacks})
+        self.assertIn('kazuhiko', {row['id'] for row in b.subagentCharacterPacks})
+        pack = read_character(ROOT/'app/icons/characters/kazuhiko/manifest.json', check_images=True)
+        self.assertEqual(set(pack['assets']), {'avatarSmile', 'reply', 'catch'})
+        self.assertFalse(b.selectCharacter('kazuhiko'))
+        self.assertTrue(b.selectSubagentCharacter(0, 'kazuhiko'))
+        self.assertEqual(b.characterNames[0], '温水和彦')
+        self.assertFalse(b.removeCharacter('kazuhiko'))
+        self.manifest['id'] = 'kazuhiko'
+        self.write()
+        self.assertFalse(b.importCharacter(str(self.file)))
+        self.backend.close()
+        self.backend = Controller(ROOT)
+        self.assertEqual(self.backend.characterNames[0], '温水和彦')
+        self.assertEqual(self.backend.characterStyle['id'], 'yanami')
+
+    def test_tiara_main_and_subagent_selection_are_independent_and_persist(self):
+        b=self.backend
+        self.assertTrue(b.selectCharacter('tiara'))
+        self.assertEqual(b.characterStyle['name'],'马剃天爱星')
+        pack=read_character(ROOT/'app/icons/characters/tiara/manifest.json',check_images=True)
+        self.assertEqual(len(pack['assets']),10)
+        self.assertIn('天爱星',b.characterStyle['dialogue']['welcome']['greetings'][0])
+        original=b.characterStyle['subagents']
+        self.assertTrue(b.configureCharacter(json.dumps({'scenes':{'welcome':{'tap':['keep my line']}}})))
+        self.assertTrue(b.selectSubagentCharacter(2,'tiara'))
+        self.assertEqual(b.characterStyle['id'],'tiara')
+        roles=b.characterStyle['subagents']
+        self.assertEqual(len(roles),4)
+        self.assertEqual(roles[2]['name'],'马剃天爱星')
+        self.assertEqual(roles[0],original[0])
+        for key in ('avatar','catch'):
+            self.assertTrue(Path(QUrl(roles[2][key]).toLocalFile()).is_file())
+            self.assertIn('/character-assets/',roles[2][key])
+        self.assertEqual(b.characterStyle['dialogue']['welcome']['tap'],['keep my line'])
+        b._init_characters()
+        self.assertEqual(b.characterStyle['subagents'][2],roles[2])
+        for slot,identifier in [(-1,'tiara'),(4,'tiara'),(0,'missing')]:
+            self.assertFalse(b.selectSubagentCharacter(slot,identifier))
+        self.assertEqual(b.characterStyle['subagents'],roles)
+        self.assertTrue(b.selectCharacter('komari'))
+        self.assertEqual(b.characterStyle['subagents'][2]['name'],'马剃天爱星')
+        self.assertTrue(b.selectSubagentCharacter(2,''))
+        self.assertEqual(b.characterStyle['subagents'][2],original[2])
+        self.assertEqual(b.characterStyle['subagents'][0],original[0])
+
+    def test_subagent_picker_caches_partial_pack_portrait_before_removal(self):
+        b=self.backend
+        self.assertTrue(b.importCharacter(str(self.file)))
+        self.assertTrue(b.selectSubagentCharacter(0,'test-character'))
+        portrait=Path(QUrl(b.characterStyle['subagents'][0]['avatar']).toLocalFile())
+        self.assertEqual(portrait.read_bytes(),(self.folder/'portrait.png').read_bytes())
+        self.assertTrue(b.removeCharacter('test-character'))
+        self.assertTrue(portrait.is_file())
+        self.assertEqual(b.characterStyle['subagents'][0]['name'],'Test Character')
 
     def test_zip_import_root_wrapped_reimport_and_cleanup(self):
         b=self.backend

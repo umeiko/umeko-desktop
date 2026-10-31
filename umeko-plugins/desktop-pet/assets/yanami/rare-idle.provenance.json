@@ -1,0 +1,64 @@
+{
+  "id": "yanami",
+  "file": "source/yanami-sheet.png",
+  "prompt": "Use case: identity-preserve / stylized-concept.\nAsset type: SIX animation keyframes of one existing Umeko desktop pet, in a 3-column by 2-row sprite sheet. Reference image is the CURRENT DESKTOP PET ITSELF: it is the authority for identity, ART STYLE, COLOR PALETTE, FULL-BODY PROPORTIONS and apparent size. The user explicitly wants a rare idle animation that does not look like switching to a different artist, a different head/body ratio or a waist-up portrait.\nAnna Yanami. Preserve short blue hair, ahoge, blue eyes, white short-sleeved blouse with BLUE AND YELLOW stacked bows, gray pleated skirt, short white socks, brown shoes. Keep exactly the reference's slightly pixel-edged crisp outlines, simple restrained cel shading and full-body chibi head/body ratio. Animation: a quiet earnest moment, moving one hand from resting at her side to lightly touching her chest, a small composed half-lidded knowing gaze and tiny closed-mouth smile; gentle nod and blink, then return hand to the starting position. Calm resolve, not a crying or cheerful grin. The other hand stays at side. No props. Six frames: 1 familiar idle stance, 2 hand starts rising, 3 hand over heart/gaze steady, 4 natural blink/small nod at same pose, 5 eyes reopen/hand lowers, 6 nearly back to original idle.\nComposition: perfect regular 3x2 grid, row-major time order, each equal cell contains the SAME COMPLETE FULL-BODY character from hair top to both shoe soles. Keep exact same scale and shoe baseline through the six cells, feet planted, torso posture stable, smooth very small motion. Center in each cell with ample transparent margins, no overlap between cells; leave transparent gutters between the two rows. Square sheet. Do not use panels, labels or lines. True transparent alpha background in every cell. Character only: no ground, scenery, shadows, stars, floating decorations, text, speech bubbles or watermark. Six consistent frames that form one gentle looping gesture, NOT six unrelated drawings or poses. All heads, hands and feet remain fully visible. Accurate anatomy, two arms, five digits per hand with natural occlusion.",
+  "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-7342902e-5b65-42de-95fa-2b3da270e336.png",
+  "reference": "reference/yanami-idle.png",
+  "line": "真正重要的东西，就算用最笨的方法也要紧紧抓住——这话是你说的吧？那我现在就要做全世界最笨的人。",
+  "title": "最笨的人",
+  "sourceAsset": "art/desktop-pets/rare-idle-v1/source/yanami-sheet.png",
+  "tool": "built-in image_gen",
+  "canvas": [
+    384,
+    576
+  ],
+  "durationsMs": [
+    600,
+    500,
+    1400,
+    120,
+    880,
+    700
+  ],
+  "baseline": 546,
+  "cellBounds": [
+    [
+      76,
+      20,
+      352,
+      597
+    ],
+    [
+      75,
+      20,
+      353,
+      596
+    ],
+    [
+      69,
+      19,
+      347,
+      597
+    ],
+    [
+      76,
+      25,
+      358,
+      603
+    ],
+    [
+      72,
+      24,
+      357,
+      603
+    ],
+    [
+      70,
+      25,
+      352,
+      603
+    ]
+  ],
+  "sha256": "de8330ab8392334d9f53810087392a6104a75f4bfc4bba1ca2630e3aab8088c4",
+  "bytes": 291264
+}

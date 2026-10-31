@@ -1,0 +1,5 @@
+Use case: identity-preserve.
+Edit target: image 1 is the existing Kazuhiko Nukumizu / 温水和彦 subagent avatarSmile portrait. Preserve the same boy identity, short tousled charcoal-brown hair, asymmetric fringe/crown tuft, gray-brown eyes, white short-sleeved school shirt and straight grass-green necktie, clean chibi anime cel shading.
+User correction: he must look awkward, flustered, scrambling or fatigued, not like a calm smiling male idol.
+Requested state: Compact head-and-collar avatar, shoulders slightly hunched, eyebrows raised unevenly in anxious surprise, wide worried gray-brown eyes looking sideways, one small sweat bead at temple, tense wobbly partly open mouth as though caught off guard. Awkward and panicky rather than confident or handsome. No hands or large props; the face must read at 40 pixels.
+Same clean polished outlines and restrained cel-shaded highlights. TRUE transparent background, square canvas, generous 5% transparent margins. No text, speech bubble, watermark, extra people, glasses, suit jacket or feminine eyelashes. Preserve recognizable identity and anatomy.

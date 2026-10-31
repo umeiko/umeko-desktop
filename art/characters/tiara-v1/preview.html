@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>马剃天爱星 · Umeko 角色验收</title>
+<style>
+:root{font:15px system-ui,sans-serif;background:#f1f4f8;color:#26344d}body{max-width:1140px;margin:40px auto;padding:0 24px}header{display:flex;align-items:center;justify-content:space-between;gap:24px}h1{font-size:28px;margin:0 0 10px}p{color:#6d7c91;line-height:1.7}button{font:inherit;background:transparent;border:1px solid #bac8dc;color:inherit;border-radius:10px;padding:10px 15px;cursor:pointer}h2{font-size:18px;margin-top:35px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}article{border:1px solid #d5deea;border-radius:16px;background:#fff9;padding:16px;text-align:center}article img{width:100%;height:225px;object-fit:contain}article p{margin:12px 0 0}.pets img{height:260px}.sizes{display:flex;gap:20px;align-items:center;justify-content:center}.sizes img{height:auto}body.dark{background:#18202e;color:#e7edf8}body.dark article{background:#242e40;border-color:#3d4b61}body.dark p{color:#a8b7cd}html:has(body.dark){background:#18202e}@media(max-width:650px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}header{align-items:start;flex-direction:column}article img{height:170px}}
+</style>
+<header><div><h1>马剃天爱星</h1><p>主界面 · 子智能体 · 桌面小宠物<br>统一形象，透明背景；在浅色与深色背景下检查边缘和小尺寸辨识度。</p></div><button onclick="document.body.classList.toggle('dark')">切换明暗背景</button></header>
+<h2>主界面 · 九种场景</h2><main class="grid" id="main"></main>
+<h2>子智能体 · 小尺寸头像</h2><article class="sizes" id="sizes"></article>
+<h2>桌面小宠物 · 六种动画</h2><section class="grid pets" id="pets"></section>
+<p>美术由内置 image_gen 生成。完整提示词、原始透明图和打包脚本保存在本目录及 art/desktop-pets/tiara-v1。动画按现有桌宠机制播放，隐藏时释放解码器。</p>
+<script>
+function card(target,src,label){const a=document.createElement('article'),i=new Image(),p=document.createElement('p');i.src=src;i.alt=label;p.textContent=label;a.append(i,p);target.append(a)}
+const base='../../../app/icons/characters/tiara/';
+for(const [id,label] of [['welcome','欢迎'],['avatarSmile','微笑'],['avatarWink','眨眼'],['avatarHappy','开心'],['reply','回复完成'],['loading','加载 / 思考'],['catch','接文件'],['push','展开'],['pull','收起']])card(document.querySelector('#main'),base+id+'.png',label);
+for(const width of [24,40,64,96]){const i=new Image();i.src=base+'avatarSmile.png';i.style.width=width+'px';i.alt=width+'px 头像';document.querySelector('#sizes').append(i)}
+for(const [id,label] of [['idle','待机'],['thinking','思考'],['working','工作'],['waiting','等待确认'],['done','完成'],['error','遇到问题']])card(document.querySelector('#pets'),'../../../umeko-plugins/desktop-pet/assets/tiara/'+id+'.webp',label);
+</script>
+</html>

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>角色修订 · 温水和彦 · 稀有场景验收</title>
+<style>
+:root{font:15px system-ui,sans-serif;background:#f1f4f8;color:#26344d}body{max-width:1140px;margin:40px auto;padding:0 24px}header{display:flex;align-items:center;justify-content:space-between;gap:24px}h1{font-size:28px;margin:0 0 10px}p{color:#6d7c91;line-height:1.7}button{font:inherit;background:transparent;border:1px solid #bac8dc;color:inherit;border-radius:10px;padding:10px 15px;cursor:pointer}h2{font-size:18px;margin-top:35px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}article{border:1px solid #d5deea;border-radius:16px;background:#fff9;padding:16px;text-align:center}article img{width:100%;height:225px;object-fit:contain}article p{margin:12px 0 0}.pets img{height:260px}.sizes{display:flex;gap:20px;align-items:center;justify-content:center}.sizes img{height:auto}body.dark{background:#18202e;color:#e7edf8}body.dark article{background:#242e40;border-color:#3d4b61}body.dark p{color:#a8b7cd}html:has(body.dark){background:#18202e}@media(max-width:650px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}header{align-items:start;flex-direction:column}article img{height:170px}}
+</style>
+<header><div><h1>马剃天爱星</h1><p>主界面 · 子智能体 · 桌面小宠物<br>修正粗眉与桌宠腿身比例；在明暗背景下对比检查。</p></div><button onclick="document.body.classList.toggle('dark')">切换明暗背景</button></header>
+<h2>修订对比</h2><section class="grid" id="comparison" style="grid-template-columns:repeat(2,minmax(0,1fr))"></section>
+<h2>温水和彦 · 子智能体专用</h2><section class="grid" id="kazuhiko"></section>
+<h2>千分之五 · 半身彩蛋</h2><p>主页使用透明半身插画；<a href="../../desktop-pets/rare-idle-v1/preview.html">桌宠彩蛋另用全身动画，点击对比</a>。实际应用以 0.5% 概率触发；对白可能涉及小说后续剧情。</p><section class="grid" id="rare"></section>
+<h2>主界面 · 九种场景</h2><main class="grid" id="main"></main>
+<h2>子智能体 · 小尺寸头像</h2><article class="sizes" id="sizes"></article>
+<h2>桌面小宠物 · 六种动画</h2><section class="grid pets" id="pets"></section>
+<p>美术由内置 image_gen 生成。完整提示词、原始透明图和打包脚本保存在本目录及 art/desktop-pets/tiara-v2。动画按现有桌宠机制播放，隐藏时释放解码器。</p>
+<script>
+function card(target,src,label){const a=document.createElement('article'),i=new Image(),p=document.createElement('p');i.src=src;i.alt=label;p.textContent=label;a.append(i,p);target.append(a)}
+for(const [id,label] of [['avatarSmile','慌张'],['reply','疲乏'],['catch','手忙脚乱']])card(document.querySelector('#kazuhiko'),'../../../app/icons/characters/kazuhiko/'+id+'.png?v=2',label);
+fetch('../../rare-scenes/v5/generation.json').then(r=>r.json()).then(v=>{for(const s of v.assets)card(document.querySelector('#rare'),'../../rare-scenes/v5/'+s.file,s.title+' · '+s.line)});
+const base='../../../app/icons/characters/tiara/';
+for(const [src,label] of [['reference/avatar-before.png','原版眉形'],[base+'avatarSmile.png','修正眉形'],['reference/idle-before.webp','原版桌宠'],['../../../umeko-plugins/desktop-pet/assets/tiara/idle.webp','修正桌宠']])card(document.querySelector('#comparison'),src,label);
+for(const [id,label] of [['welcome','欢迎'],['avatarSmile','微笑'],['avatarWink','眨眼'],['avatarHappy','开心'],['reply','回复完成'],['loading','加载 / 思考'],['catch','接文件'],['push','展开'],['pull','收起']])card(document.querySelector('#main'),base+id+'.png',label);
+for(const width of [24,40,64,96]){const i=new Image();i.src=base+'avatarSmile.png';i.style.width=width+'px';i.alt=width+'px 头像';document.querySelector('#sizes').append(i)}
+for(const [id,label] of [['idle','待机'],['thinking','思考'],['working','工作'],['waiting','等待确认'],['done','完成'],['error','遇到问题']])card(document.querySelector('#pets'),'../../../umeko-plugins/desktop-pet/assets/tiara/'+id+'.webp',label);
+</script>
+</html>

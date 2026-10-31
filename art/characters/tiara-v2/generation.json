@@ -1,0 +1,73 @@
+{
+  "tool": "built-in image_gen",
+  "created": "2026-10-31",
+  "revision": 2,
+  "transparentBackground": true,
+  "character": {
+    "id": "tiara",
+    "name": "马剃天爱星",
+    "englishName": "Tiara Basori"
+  },
+  "correction": "Match the official short thick eyebrows partly hidden underneath the fringe; preserve every existing pose and expression.",
+  "reference": {
+    "novel": "https://gagagabunko.jp/special/makeine/img/chara/chara_m_08.png",
+    "anime": "https://makeine-anime.com/assets/img/character/img_face17.png"
+  },
+  "previousGeneration": "art/characters/tiara-v1/generation.json",
+  "assets": [
+    {
+      "id": "avatarSmile",
+      "file": "avatarSmile.png",
+      "prompt": "Use case: identity-preserve. EDIT the FIRST image, the approved transparent chibi Tiara Basori avatar. The SECOND image is an official character reference, ONLY for her distinctive eyebrow shape.\nChange ONLY the eyebrows. Preserve the first image's face proportions, gray-blue eyes, nose, smile, blush, head angle, hair and low bun silhouette, uniform, bows, composition, crisp cel shading and genuine alpha transparency exactly.\nTiara's signature eyebrows are short THICK bushy dark navy-black brows, fairly straight with a gentle natural bend, partly tucked underneath her bangs; they have solid visible thickness and a few subtle horizontal hair strokes, as in the second reference. They are NOT the generic long thin finely arched eyebrows in the current chibi. Give them about 4–5 times the present stroke thickness and a more compact, straighter, slightly blunt tapered shape, clearly recognizable but not oversized comical blocks. Keep them relaxed and friendly, not angry. Allow the bangs to naturally cover part of each brow. The faint warm upper-eyelid crease is separate and should not be thickened. Do not add extra pairs of eyebrows.\nOutput just the same single head-and-collar avatar on a truly transparent square canvas. No text, watermark, background or border.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-de17e94a-29f5-432e-855a-731c23d732ed.png"
+    },
+    {
+      "id": "welcome",
+      "file": "welcome.png",
+      "prompt": "Use case: identity-preserve. EDIT the FIRST image, an existing approved Tiara Basori character asset for Umeko Desktop. The SECOND image is the corrected eyebrow identity guide ONLY.\nChange ONLY the character's eyebrows to match image 2: short THICK dark navy-black eyebrows, fairly straight with a gentle natural bend and a few subtle horizontal hair strokes, partly hidden under her bangs. Clear solid thickness, about 4–5 times the old thin line, not generic thin arch brows. Keep the original facial expression and brow emotion appropriate to the first image, without making a smiling face angry. Do not thicken the warm eyelid crease or add a second pair of brows.\nPRESERVE the first image's exact pose, gesture, face proportions, head angle, gray-blue eye color and eye-open/wink/closed state, mouth expression, blush, dark low bun and hair silhouette, uniform, blue ribbons, hands, props or thin divider if present, composition, scale, margins and clean cel shading. Do NOT copy the second image's pose or crop. Keep the existing true transparent background. No text, watermark, scenery, frame, extra people or new props.\nAsset being edited: welcome. Preserve its original scene action exactly.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-8427a094-1c98-403d-ac00-4643be331fd3.png"
+    },
+    {
+      "id": "avatarHappy",
+      "file": "avatarHappy.png",
+      "prompt": "Use case: identity-preserve. EDIT the FIRST image, an existing approved Tiara Basori character asset for Umeko Desktop. The SECOND image is the corrected eyebrow identity guide ONLY.\nChange ONLY the character's eyebrows to match image 2: short THICK dark navy-black eyebrows, fairly straight with a gentle natural bend and a few subtle horizontal hair strokes, partly hidden under her bangs. Clear solid thickness, about 4–5 times the old thin line, not generic thin arch brows. Keep the original facial expression and brow emotion appropriate to the first image, without making a smiling face angry. Do not thicken the warm eyelid crease or add a second pair of brows.\nPRESERVE the first image's exact pose, gesture, face proportions, head angle, gray-blue eye color and eye-open/wink/closed state, mouth expression, blush, dark low bun and hair silhouette, uniform, blue ribbons, hands, props or thin divider if present, composition, scale, margins and clean cel shading. Do NOT copy the second image's pose or crop. Keep the existing true transparent background. No text, watermark, scenery, frame, extra people or new props.\nAsset being edited: avatarHappy. Preserve its original scene action exactly.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-c2382a93-5b37-4e36-a642-35521f112ede.png"
+    },
+    {
+      "id": "reply",
+      "file": "reply.png",
+      "prompt": "Use case: identity-preserve. EDIT the FIRST image, an existing approved Tiara Basori character asset for Umeko Desktop. The SECOND image is the corrected eyebrow identity guide ONLY.\nChange ONLY the character's eyebrows to match image 2: short THICK dark navy-black eyebrows, fairly straight with a gentle natural bend and a few subtle horizontal hair strokes, partly hidden under her bangs. Clear solid thickness, about 4–5 times the old thin line, not generic thin arch brows. Keep the original facial expression and brow emotion appropriate to the first image, without making a smiling face angry. Do not thicken the warm eyelid crease or add a second pair of brows.\nPRESERVE the first image's exact pose, gesture, face proportions, head angle, gray-blue eye color and eye-open/wink/closed state, mouth expression, blush, dark low bun and hair silhouette, uniform, blue ribbons, hands, props or thin divider if present, composition, scale, margins and clean cel shading. Do NOT copy the second image's pose or crop. Keep the existing true transparent background. No text, watermark, scenery, frame, extra people or new props.\nAsset being edited: reply. Preserve its original scene action exactly.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-9bfba886-cfb9-43c8-b6a5-ee03023d79be.png"
+    },
+    {
+      "id": "avatarWink",
+      "file": "avatarWink.png",
+      "prompt": "Use case: identity-preserve. EDIT the FIRST image, an existing approved Tiara Basori character asset for Umeko Desktop. The SECOND image is the corrected eyebrow identity guide ONLY.\nChange ONLY the character's eyebrows to match image 2: short THICK dark navy-black eyebrows, fairly straight with a gentle natural bend and a few subtle horizontal hair strokes, partly hidden under her bangs. Clear solid thickness, about 4–5 times the old thin line, not generic thin arch brows. Keep the original facial expression and brow emotion appropriate to the first image, without making a smiling face angry. Do not thicken the warm eyelid crease or add a second pair of brows.\nPRESERVE the first image's exact pose, gesture, face proportions, head angle, gray-blue eye color and eye-open/wink/closed state, mouth expression, blush, dark low bun and hair silhouette, uniform, blue ribbons, hands, props or thin divider if present, composition, scale, margins and clean cel shading. Do NOT copy the second image's pose or crop. Keep the existing true transparent background. No text, watermark, scenery, frame, extra people or new props.\nAsset being edited: avatarWink. Preserve its original scene action exactly.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-66a218cd-682f-4b57-b5eb-7ae66f13bb90.png"
+    },
+    {
+      "id": "loading",
+      "file": "loading.png",
+      "prompt": "Use case: identity-preserve. EDIT the FIRST image, an existing approved Tiara Basori character asset for Umeko Desktop. The SECOND image is the corrected eyebrow identity guide ONLY.\nChange ONLY the character's eyebrows to match image 2: short THICK dark navy-black eyebrows, fairly straight with a gentle natural bend and a few subtle horizontal hair strokes, partly hidden under her bangs. Clear solid thickness, about 4–5 times the old thin line, not generic thin arch brows. Keep the original facial expression and brow emotion appropriate to the first image, without making a smiling face angry. Do not thicken the warm eyelid crease or add a second pair of brows.\nPRESERVE the first image's exact pose, gesture, face proportions, head angle, gray-blue eye color and eye-open/wink/closed state, mouth expression, blush, dark low bun and hair silhouette, uniform, blue ribbons, hands, props or thin divider if present, composition, scale, margins and clean cel shading. Do NOT copy the second image's pose or crop. Keep the existing true transparent background. No text, watermark, scenery, frame, extra people or new props.\nAsset being edited: loading. Preserve its original scene action exactly.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-cbb3264b-c5aa-49a2-91df-b4874aee0935.png"
+    },
+    {
+      "id": "push",
+      "file": "push.png",
+      "prompt": "Use case: identity-preserve. EDIT the FIRST image, an existing approved Tiara Basori character asset for Umeko Desktop. The SECOND image is the corrected eyebrow identity guide ONLY.\nChange ONLY the character's eyebrows to match image 2: short THICK dark navy-black eyebrows, fairly straight with a gentle natural bend and a few subtle horizontal hair strokes, partly hidden under her bangs. Clear solid thickness, about 4–5 times the old thin line, not generic thin arch brows. Keep the original facial expression and brow emotion appropriate to the first image, without making a smiling face angry. Do not thicken the warm eyelid crease or add a second pair of brows.\nPRESERVE the first image's exact pose, gesture, face proportions, head angle, gray-blue eye color and eye-open/wink/closed state, mouth expression, blush, dark low bun and hair silhouette, uniform, blue ribbons, hands, props or thin divider if present, composition, scale, margins and clean cel shading. Do NOT copy the second image's pose or crop. Keep the existing true transparent background. No text, watermark, scenery, frame, extra people or new props.\nAsset being edited: push. Preserve its original scene action exactly.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-c587da12-626c-4971-bf94-004ef4352d43.png"
+    },
+    {
+      "id": "pull",
+      "file": "pull.png",
+      "prompt": "Use case: identity-preserve. EDIT the FIRST image, an existing approved Tiara Basori character asset for Umeko Desktop. The SECOND image is the corrected eyebrow identity guide ONLY.\nChange ONLY the character's eyebrows to match image 2: short THICK dark navy-black eyebrows, fairly straight with a gentle natural bend and a few subtle horizontal hair strokes, partly hidden under her bangs. Clear solid thickness, about 4–5 times the old thin line, not generic thin arch brows. Keep the original facial expression and brow emotion appropriate to the first image, without making a smiling face angry. Do not thicken the warm eyelid crease or add a second pair of brows.\nPRESERVE the first image's exact pose, gesture, face proportions, head angle, gray-blue eye color and eye-open/wink/closed state, mouth expression, blush, dark low bun and hair silhouette, uniform, blue ribbons, hands, props or thin divider if present, composition, scale, margins and clean cel shading. Do NOT copy the second image's pose or crop. Keep the existing true transparent background. No text, watermark, scenery, frame, extra people or new props.\nAsset being edited: pull. Preserve its original scene action exactly.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-56e14051-7408-40aa-a079-ff76d32c0ef1.png"
+    },
+    {
+      "id": "catch",
+      "file": "catch.png",
+      "prompt": "Use case: identity-preserve. EDIT the FIRST image, an existing approved Tiara Basori character asset for Umeko Desktop. The SECOND image is the corrected eyebrow identity guide ONLY.\nChange ONLY the character's eyebrows to match image 2: short THICK dark navy-black eyebrows, fairly straight with a gentle natural bend and a few subtle horizontal hair strokes, partly hidden under her bangs. Clear solid thickness, about 4–5 times the old thin line, not generic thin arch brows. Keep the original facial expression and brow emotion appropriate to the first image, without making a smiling face angry. Do not thicken the warm eyelid crease or add a second pair of brows.\nPRESERVE the first image's exact pose, gesture, face proportions, head angle, gray-blue eye color and eye-open/wink/closed state, mouth expression, blush, dark low bun and hair silhouette, uniform, blue ribbons, hands, props or thin divider if present, composition, scale, margins and clean cel shading. Do NOT copy the second image's pose or crop. Keep the existing true transparent background. No text, watermark, scenery, frame, extra people or new props.\nAsset being edited: catch. Preserve its original scene action exactly.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-b46024e9-432f-4239-9ef8-e1f9a837f21d.png"
+    }
+  ]
+}

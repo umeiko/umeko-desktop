@@ -1,0 +1,77 @@
+{
+  "format": "umeko-pet",
+  "version": 1,
+  "id": "tiara",
+  "name": "马剃天爱星",
+  "states": {
+    "idle": "idle.webp",
+    "working": "working.webp",
+    "done": "done.webp",
+    "waiting": "waiting.webp",
+    "thinking": "thinking.webp",
+    "error": "error.webp"
+  },
+  "images": {
+    "idle.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 6
+    },
+    "working.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 6
+    },
+    "done.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 6
+    },
+    "waiting.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 6
+    },
+    "thinking.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 6
+    },
+    "error.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 6
+    },
+    "idle-rare.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 6,
+      "contentTop": 0.0920138888888889
+    }
+  },
+  "dialogue": {
+    "tap": [
+      "清单上的事项，逐一完成吧。",
+      "再核对一次，不会耽误太久。",
+      "有事请说，我在听。"
+    ],
+    "hover": [
+      "确认之后，我们再继续。"
+    ],
+    "drag": [
+      "位置调整好了。"
+    ]
+  },
+  "rareIdle": {
+    "image": "idle-rare.webp",
+    "line": "早一点喜欢上我会比较好哦？",
+    "title": "早一点喜欢上我"
+  }
+}

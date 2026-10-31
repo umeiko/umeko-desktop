@@ -47,6 +47,13 @@
       "width": 384,
       "height": 576,
       "frames": 96
+    },
+    "idle-rare.webp": {
+      "animated": true,
+      "width": 384,
+      "height": 576,
+      "frames": 6,
+      "contentTop": 0.09027777777777778
     }
   },
   "dialogue": {
@@ -61,5 +68,10 @@
     "drag": [
       "换个位置继续看着。"
     ]
+  },
+  "rareIdle": {
+    "image": "idle-rare.webp",
+    "line": "真正重要的东西，就算用最笨的方法也要紧紧抓住——这话是你说的吧？那我现在就要做全世界最笨的人。",
+    "title": "最笨的人"
   }
 }

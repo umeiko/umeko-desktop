@@ -1,0 +1,322 @@
+{
+  "tool": "built-in image_gen",
+  "revision": 2,
+  "correction": "Short thick eyebrows beneath fringe; longer slimmer legs. All poses use the approved refined idle master to lock proportions.",
+  "sourceArtwork": "art/desktop-pets/tiara-v2/source/",
+  "assets": [
+    {
+      "id": "idle",
+      "file": "source/idle-sheet-refined.png",
+      "prompt": "Use case: identity-preserve. Edit this transparent six-frame Tiara Basori desktop-pet sheet. Keep her corrected thick eyebrows and all face details, hair, low bun, clothing designs, opaque black tights, white shoes, clipboard, idle pose, cel shading and blink sequence.\nThe sole remaining correction is BODY PROPORTIONS: her legs still look too short. Make the chibi more graceful and noticeably longer-legged, about THREE heads tall.\nUse these clear figure landmarks in EVERY frame (measured from the top of her hair to the soles, excluding transparent margin): head including hair about 32–34% of figure height; skirt HEM near 64–65% of figure height; soles at 100%. Thus her legs from skirt hem to soles occupy 35–36% of total figure height. Compared with the current sheet, reduce the head's relative size by about 15–20%, lengthen thighs and calves by about 30%, and keep torso compact. The current skirt hem is too low on her body; fix the overall proportions rather than merely stretching the torso. Keep the skirt itself a modest normal school uniform skirt. Slender knees and gently tapered calves/ankles, feet close in a natural upright stance, streamlined white shoes, not chunky boots. The result should still have a cute oversized chibi head, never realistic adult proportions or a sexualized pose.\nSix COMPLETE full-body independent figures on the same invisible 3-column by 2-row square grid. Fit the entire revised figure inside each cell with clear margins, consistent scale and baseline, soles around 93% of each cell height. Keep each frame's expression sequence open/open/half/closed/half/open. Absolutely no clipping, overlapping cells, background, text, labels, grid lines, extra props, shadows or watermark. Preserve true alpha transparency."
+    },
+    {
+      "id": "working",
+      "file": "source/working-refined-sheet.png",
+      "prompt": "Use case: identity-preserve. Edit this APPROVED six-frame Tiara Basori sprite sheet to create one new desktop-pet state.\nMOST IMPORTANT: Preserve the lower body beneath the waist EXACTLY: the same modest gray pleated skirt, SAME LONG SLENDER black-tights legs, knee/ankle silhouette, leg length, feet positions, white shoe size and foot baseline, in all six frames. Do not shorten, thicken or redesign the legs. Preserve the SAME relative head size, hairstyle/low bun, thick short brows, gray-blue eyes, uniform and clean cel shading. This approved image already has the correct body proportions; change ONLY her arms/hand gesture and facial expression for the new state, not body geometry. Do not enlarge her head or stretch her torso.\nKeep the exact same square invisible 3-column by 2-row sheet layout and character scale. Each frame contains one complete full-body figure with safe transparent margins and uncut shoes. Preserve the blink sequence open/open/half/closed/half/open with tiny breathing and no character-size drift. Keep true alpha transparency. No grid lines, labels, readable text, floor, shadow, watermark or extra characters.\nNEW STATE ACTION: WORKING: bend her arms slightly to hold the navy clipboard in front of her at waist/chest height, with the other hand writing on it using a short pencil; eyes softly focused down on the clipboard. No readable text."
+    },
+    {
+      "id": "done",
+      "file": "source/done-refined-sheet.png",
+      "prompt": "Use case: identity-preserve. Edit this APPROVED six-frame Tiara Basori sprite sheet to create one new desktop-pet state.\nMOST IMPORTANT: Preserve the lower body beneath the waist EXACTLY: the same modest gray pleated skirt, SAME LONG SLENDER black-tights legs, knee/ankle silhouette, leg length, feet positions, white shoe size and foot baseline, in all six frames. Do not shorten, thicken or redesign the legs. Preserve the SAME relative head size, hairstyle/low bun, thick short brows, gray-blue eyes, uniform and clean cel shading. This approved image already has the correct body proportions; change ONLY her arms/hand gesture and facial expression for the new state, not body geometry. Do not enlarge her head or stretch her torso.\nKeep the exact same square invisible 3-column by 2-row sheet layout and character scale. Each frame contains one complete full-body figure with safe transparent margins and uncut shoes. Preserve the blink sequence open/open/half/closed/half/open with tiny breathing and no character-size drift. Keep true alpha transparency. No grid lines, labels, readable text, floor, shadow, watermark or extra characters.\nNEW STATE ACTION: DONE: keep the clipboard held against her chest by one arm, and make the other hand give a small thumbs-up. A proud gentle smile with a little blush."
+    },
+    {
+      "id": "waiting",
+      "file": "source/waiting-refined-sheet.png",
+      "prompt": "Use case: identity-preserve. Edit this APPROVED six-frame Tiara Basori sprite sheet to create one new desktop-pet state.\nMOST IMPORTANT: Preserve the lower body beneath the waist EXACTLY: the same modest gray pleated skirt, SAME LONG SLENDER black-tights legs, knee/ankle silhouette, leg length, feet positions, white shoe size and foot baseline, in all six frames. Do not shorten, thicken or redesign the legs. Preserve the SAME relative head size, hairstyle/low bun, thick short brows, gray-blue eyes, uniform and clean cel shading. This approved image already has the correct body proportions; change ONLY her arms/hand gesture and facial expression for the new state, not body geometry. Do not enlarge her head or stretch her torso.\nKeep the exact same square invisible 3-column by 2-row sheet layout and character scale. Each frame contains one complete full-body figure with safe transparent margins and uncut shoes. Preserve the blink sequence open/open/half/closed/half/open with tiny breathing and no character-size drift. Keep true alpha transparency. No grid lines, labels, readable text, floor, shadow, watermark or extra characters.\nNEW STATE ACTION: WAITING: tuck the clipboard under one arm and raise the other hand with a gently open questioning palm, mild expectant eyebrows, politely looking at the viewer."
+    },
+    {
+      "id": "thinking",
+      "file": "source/thinking-refined-sheet.png",
+      "prompt": "Use case: identity-preserve. Edit this APPROVED six-frame Tiara Basori sprite sheet to create one new desktop-pet state.\nMOST IMPORTANT: Preserve the lower body beneath the waist EXACTLY: the same modest gray pleated skirt, SAME LONG SLENDER black-tights legs, knee/ankle silhouette, leg length, feet positions, white shoe size and foot baseline, in all six frames. Do not shorten, thicken or redesign the legs. Preserve the SAME relative head size, hairstyle/low bun, thick short brows, gray-blue eyes, uniform and clean cel shading. This approved image already has the correct body proportions; change ONLY her arms/hand gesture and facial expression for the new state, not body geometry. Do not enlarge her head or stretch her torso.\nKeep the exact same square invisible 3-column by 2-row sheet layout and character scale. Each frame contains one complete full-body figure with safe transparent margins and uncut shoes. Preserve the blink sequence open/open/half/closed/half/open with tiny breathing and no character-size drift. Keep true alpha transparency. No grid lines, labels, readable text, floor, shadow, watermark or extra characters.\nNEW STATE ACTION: THINKING: keep the clipboard held in one arm, with the other index finger lightly touching her chin. Eyes look slightly up in thought, small thoughtful mouth, calm composed expression."
+    },
+    {
+      "id": "error",
+      "file": "source/error-refined-sheet.png",
+      "prompt": "Use case: identity-preserve. Edit this APPROVED six-frame Tiara Basori sprite sheet to create one new desktop-pet state.\nMOST IMPORTANT: Preserve the lower body beneath the waist EXACTLY: the same modest gray pleated skirt, SAME LONG SLENDER black-tights legs, knee/ankle silhouette, leg length, feet positions, white shoe size and foot baseline, in all six frames. Do not shorten, thicken or redesign the legs. Preserve the SAME relative head size, hairstyle/low bun, thick short brows, gray-blue eyes, uniform and clean cel shading. This approved image already has the correct body proportions; change ONLY her arms/hand gesture and facial expression for the new state, not body geometry. Do not enlarge her head or stretch her torso.\nKeep the exact same square invisible 3-column by 2-row sheet layout and character scale. Each frame contains one complete full-body figure with safe transparent margins and uncut shoes. Preserve the blink sequence open/open/half/closed/half/open with tiny breathing and no character-size drift. Keep true alpha transparency. No grid lines, labels, readable text, floor, shadow, watermark or extra characters.\nNEW STATE ACTION: ERROR: hold the clipboard with one hand and rest the other hand at her cheek, mildly worried embarrassed eyebrows and a tiny wavy mouth. Composed cute concern, no tears or anger."
+    }
+  ],
+  "encoding": {
+    "canvas": [
+      384,
+      576
+    ],
+    "durationsMs": [
+      1700,
+      1200,
+      100,
+      100,
+      100,
+      1000
+    ],
+    "loopMs": 4200,
+    "frames": 6,
+    "loop": "infinite",
+    "quality": 92,
+    "assets": [
+      {
+        "id": "idle",
+        "sourceSha256": "bfd0145cc9972728a1133733e6949190d4a338c51701d330c97bf706a370888e",
+        "cellBounds": [
+          [
+            100,
+            25,
+            365,
+            638
+          ],
+          [
+            74,
+            25,
+            338,
+            638
+          ],
+          [
+            50,
+            25,
+            316,
+            638
+          ],
+          [
+            100,
+            7,
+            365,
+            596
+          ],
+          [
+            74,
+            7,
+            339,
+            596
+          ],
+          [
+            49,
+            7,
+            316,
+            596
+          ]
+        ],
+        "bytes": 217702,
+        "sha256": "08226da76164e1ded02ae1bfffe9d086abf2dd367e3d62f15150d14dc9596e5e"
+      },
+      {
+        "id": "working",
+        "sourceSha256": "ca0f944c192ef4ec60cc4317a08d737300ef85c529a300577b6a4efd11805a47",
+        "cellBounds": [
+          [
+            94,
+            24,
+            366,
+            637
+          ],
+          [
+            70,
+            24,
+            341,
+            637
+          ],
+          [
+            53,
+            24,
+            324,
+            637
+          ],
+          [
+            95,
+            5,
+            371,
+            598
+          ],
+          [
+            71,
+            6,
+            346,
+            599
+          ],
+          [
+            52,
+            7,
+            330,
+            599
+          ]
+        ],
+        "bytes": 221456,
+        "sha256": "63858fbaa155b528cf46ab6853dfdcb9b82832a2dc29692cfb8b2eff80298b72"
+      },
+      {
+        "id": "done",
+        "sourceSha256": "89ed8add0007716264c027039075282793cb0d142fac943c7165d71345fa2193",
+        "cellBounds": [
+          [
+            99,
+            25,
+            366,
+            638
+          ],
+          [
+            73,
+            25,
+            339,
+            638
+          ],
+          [
+            47,
+            25,
+            314,
+            638
+          ],
+          [
+            99,
+            7,
+            366,
+            596
+          ],
+          [
+            73,
+            7,
+            339,
+            596
+          ],
+          [
+            47,
+            7,
+            314,
+            596
+          ]
+        ],
+        "bytes": 221738,
+        "sha256": "1f0021850127c85b90729439401aa2c1da181c137851d0f21cfe22423d5eeaad"
+      },
+      {
+        "id": "waiting",
+        "sourceSha256": "1fd755d756426cc9c0fe608361825947ee7ed887ac076cac04f4642958eeb049",
+        "cellBounds": [
+          [
+            99,
+            25,
+            369,
+            639
+          ],
+          [
+            73,
+            25,
+            341,
+            639
+          ],
+          [
+            49,
+            25,
+            319,
+            639
+          ],
+          [
+            99,
+            6,
+            371,
+            598
+          ],
+          [
+            71,
+            6,
+            345,
+            598
+          ],
+          [
+            48,
+            5,
+            323,
+            597
+          ]
+        ],
+        "bytes": 228520,
+        "sha256": "7332cbb38ca50ccdde8666f7ba93497dac8b3e58895e739ecb62af7d9fa74958"
+      },
+      {
+        "id": "thinking",
+        "sourceSha256": "6a1703c85627fe00d884cac31b412bd6aa591bc769e1175027c5934bd504c246",
+        "cellBounds": [
+          [
+            101,
+            24,
+            373,
+            639
+          ],
+          [
+            72,
+            23,
+            343,
+            639
+          ],
+          [
+            49,
+            23,
+            321,
+            639
+          ],
+          [
+            99,
+            6,
+            371,
+            596
+          ],
+          [
+            74,
+            5,
+            347,
+            596
+          ],
+          [
+            50,
+            6,
+            322,
+            597
+          ]
+        ],
+        "bytes": 220048,
+        "sha256": "ad651eafcdea29be912ff1a2b77f39c8bcae2c0a912a42ee684656bd2b3fa1f9"
+      },
+      {
+        "id": "error",
+        "sourceSha256": "2035dbe1a233e51770b526faece72c2ddeff2174ec8e7910ab48e04c6934ef73",
+        "cellBounds": [
+          [
+            97,
+            25,
+            370,
+            638
+          ],
+          [
+            71,
+            25,
+            344,
+            639
+          ],
+          [
+            44,
+            25,
+            318,
+            638
+          ],
+          [
+            97,
+            7,
+            370,
+            597
+          ],
+          [
+            71,
+            6,
+            344,
+            596
+          ],
+          [
+            44,
+            6,
+            318,
+            596
+          ]
+        ],
+        "bytes": 214588,
+        "sha256": "0cacebc78b1628ea9e63b0fc5a50570cd5bb81c2f6d03008cf696a947e325241"
+      }
+    ]
+  }
+}

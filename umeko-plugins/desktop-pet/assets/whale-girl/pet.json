@@ -57,6 +57,13 @@
       "height": 360,
       "frames": 100,
       "contentTop": 0.1111111111111111
+    },
+    "idle-rare.webp": {
+      "animated": true,
+      "width": 360,
+      "height": 360,
+      "frames": 6,
+      "contentTop": 0.15833333333333333
     }
   },
   "dialogue": {
@@ -83,5 +90,10 @@
     "error": [
       "有问题了"
     ]
+  },
+  "rareIdle": {
+    "image": "idle-rare.webp",
+    "line": "人，你给我吃米，人，日后我会放你一马的",
+    "title": "人，你给我吃米"
   }
 }

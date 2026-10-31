@@ -1,0 +1,67 @@
+{
+  "tool": "built-in image_gen",
+  "created": "2026-10-31",
+  "transparentBackground": true,
+  "assets": [
+    {
+      "kind": "scene",
+      "id": "tiara",
+      "title": "只在此刻的请求",
+      "line": "只在这一刻，可以只支持我吗？",
+      "source": "https://shogakukan-comic.jp/book?isbn=9784094532425",
+      "motif": "Inspired by volume 8's student-council election and Tiara asking Kazuhiko for his endorsement. Tiara Basori, navy-black hair in compact low bun, short bangs and short THICK nearly straight eyebrows partly tucked under fringe, gray-blue eyes, light-gray blazer with navy piping and vertically stacked pale-blue ribbon bows. Clutching speech papers to chest with one arm and reaching the other hand toward the viewer, earnest vulnerable gaze and soft blush. Small student-council-room window and amber afternoon light in a compact vignette.",
+      "reference": "app/icons/characters/tiara/welcome.png",
+      "prompt": "Use case: illustration-story.\nAsset: rare character scene for a small new-task cover and desktop-pet idle easter egg.\nReference image is the exact character identity, hair, costume and established clean chibi anime rendering style. Keep that identity.\nScene: Inspired by volume 8's student-council election and Tiara asking Kazuhiko for his endorsement. Tiara Basori, navy-black hair in compact low bun, short bangs and short THICK nearly straight eyebrows partly tucked under fringe, gray-blue eyes, light-gray blazer with navy piping and vertically stacked pale-blue ribbon bows. Clutching speech papers to chest with one arm and reaching the other hand toward the viewer, earnest vulnerable gaze and soft blush. Small student-council-room window and amber afternoon light in a compact vignette.\nComposition: one complete chibi character, approximately 3 heads tall with graceful slim legs, full head/hands/shoes visible, central figure occupying 80% height. Minimal scene fragments stay compact directly behind the figure and fade into TRUE TRANSPARENT space around the silhouette. Square canvas, generous transparent margins. Scene must read clearly at 210 pixels. Carefully drawn expressive face, crisp linework, cel shading, soft cinematic light. Emotional, sincere, not exaggerated.\nNo lettering, speech bubbles, watermarks, logos, rectangular opaque background, or additional people. The dialogue will be rendered separately by the application.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-2b8fcfd6-3d44-435e-9016-f5ffc140d6e1.png",
+      "file": "tiara.png"
+    },
+    {
+      "kind": "scene",
+      "id": "yanami",
+      "title": "海风里的告别",
+      "line": "没被选中，也要好好往前走。",
+      "source": "https://makeine-anime.com/news/?id=65918",
+      "motif": "Inspired by the official episode-4 aftermath key visual: a bittersweet seaside farewell to a first love. Anna Yanami, recognizable short blue hair, blue eyes, school blouse and blue ribbon, holding a small chikuwa snack, one tear at the corner of her eye but a brave little smile. Small sea rail, warm sunset and sea breeze form a compact vignette behind her.",
+      "reference": "app/icons/portraits/01.webp",
+      "prompt": "Use case: illustration-story.\nAsset: rare character scene for a small new-task cover and desktop-pet idle easter egg.\nReference image is the exact character identity, hair, costume and established clean chibi anime rendering style. Keep that identity.\nScene: Inspired by the official episode-4 aftermath key visual: a bittersweet seaside farewell to a first love. Anna Yanami, recognizable short blue hair, blue eyes, school blouse and blue ribbon, holding a small chikuwa snack, one tear at the corner of her eye but a brave little smile. Small sea rail, warm sunset and sea breeze form a compact vignette behind her.\nComposition: one complete chibi character, approximately 3 heads tall with graceful slim legs, full head/hands/shoes visible, central figure occupying 80% height. Minimal scene fragments stay compact directly behind the figure and fade into TRUE TRANSPARENT space around the silhouette. Square canvas, generous transparent margins. Scene must read clearly at 210 pixels. Carefully drawn expressive face, crisp linework, cel shading, soft cinematic light. Emotional, sincere, not exaggerated.\nNo lettering, speech bubbles, watermarks, logos, rectangular opaque background, or additional people. The dialogue will be rendered separately by the application.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-5dd0480b-08a2-49b3-974d-7348729f4be2.png",
+      "file": "yanami.png"
+    },
+    {
+      "kind": "scene",
+      "id": "kaju",
+      "title": "手作的心意",
+      "line": "这份心意，一直都有留给你哦。",
+      "source": "https://shogakukan-comic.jp/book?isbn=9784094531183",
+      "motif": "Inspired by volume 5's handmade Valentine chocolates motif, not an exact reproduced panel. Kaju Nukumizu, straight long black hair and neat blunt bangs, warm brown eyes, dark navy sailor uniform with cream trim. Tender, slightly bashful smile while offering a small neatly tied box of homemade chocolate with both hands. A compact warm kitchen window vignette with a few chocolate-making utensils behind her. Familial affection, no suggestive romantic imagery.",
+      "reference": "app/icons/characters/kaju/welcome.png",
+      "prompt": "Use case: illustration-story.\nAsset: rare character scene for a small new-task cover and desktop-pet idle easter egg.\nReference image is the exact character identity, hair, costume and established clean chibi anime rendering style. Keep that identity.\nScene: Inspired by volume 5's handmade Valentine chocolates motif, not an exact reproduced panel. Kaju Nukumizu, straight long black hair and neat blunt bangs, warm brown eyes, dark navy sailor uniform with cream trim. Tender, slightly bashful smile while offering a small neatly tied box of homemade chocolate with both hands. A compact warm kitchen window vignette with a few chocolate-making utensils behind her. Familial affection, no suggestive romantic imagery.\nComposition: one complete chibi character, approximately 3 heads tall with graceful slim legs, full head/hands/shoes visible, central figure occupying 80% height. Minimal scene fragments stay compact directly behind the figure and fade into TRUE TRANSPARENT space around the silhouette. Square canvas, generous transparent margins. Scene must read clearly at 210 pixels. Carefully drawn expressive face, crisp linework, cel shading, soft cinematic light. Emotional, sincere, not exaggerated.\nNo lettering, speech bubbles, watermarks, logos, rectangular opaque background, or additional people. The dialogue will be rendered separately by the application.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-ca8ea65a-e0ff-4a36-b30e-0afe5e56c076.png",
+      "file": "kaju.png"
+    },
+    {
+      "kind": "scene",
+      "id": "whale-girl",
+      "title": "潮声会带你回家",
+      "line": "远方的潮声，也会把你带回家。",
+      "source": null,
+      "motif": "An ORIGINAL moving scene for the existing whale-girl desktop mascot, not from Makeine. Preserve the reference's blue long-haired chibi whale maid with white lace headdress, bright blue eyes, dark navy and white apron, small whale emblem. She cradles a tiny glowing seashell with a peaceful encouraging smile, a few tears of joy. A crescent moon and a small gentle sea-wave vignette behind her. No other character.",
+      "reference": "umeko-plugins/desktop-pet/assets/whale-girl/idle.webp",
+      "prompt": "Use case: illustration-story.\nAsset: rare character scene for a small new-task cover and desktop-pet idle easter egg.\nReference image is the exact character identity, hair, costume and established clean chibi anime rendering style. Keep that identity.\nScene: An ORIGINAL moving scene for the existing whale-girl desktop mascot, not from Makeine. Preserve the reference's blue long-haired chibi whale maid with white lace headdress, bright blue eyes, dark navy and white apron, small whale emblem. She cradles a tiny glowing seashell with a peaceful encouraging smile, a few tears of joy. A crescent moon and a small gentle sea-wave vignette behind her. No other character.\nComposition: one complete chibi character, approximately 3 heads tall with graceful slim legs, full head/hands/shoes visible, central figure occupying 80% height. Minimal scene fragments stay compact directly behind the figure and fade into TRUE TRANSPARENT space around the silhouette. Square canvas, generous transparent margins. Scene must read clearly at 210 pixels. Carefully drawn expressive face, crisp linework, cel shading, soft cinematic light. Emotional, sincere, not exaggerated.\nNo lettering, speech bubbles, watermarks, logos, rectangular opaque background, or additional people. The dialogue will be rendered separately by the application.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-e7689e87-d00b-4128-8dde-af2b089ebc7b.png",
+      "file": "whale-girl.png"
+    },
+    {
+      "kind": "scene",
+      "id": "komari",
+      "title": "请不要留下我一个人",
+      "line": "别让我独自一人。",
+      "source": "https://makeine-anime.com/story/?id=ep11",
+      "motif": "Chika Komari's vulnerability around becoming literature-club president and fear of being left alone. Red-burgundy side ponytail, bangs covering one eye, amber-green visible eye, beige cardigan and maroon ribbon. Holding a beloved book close, teary-eyed, reaching one tentative hand towards the viewer. A small school stair landing and late-afternoon window glow behind her, hopeful rather than bleak.",
+      "reference": "app/icons/characters/komari/welcome.png",
+      "prompt": "Use case: illustration-story.\nAsset: rare character scene for a small new-task cover and desktop-pet idle easter egg.\nReference image is the exact character identity, hair, costume and established clean chibi anime rendering style. Keep that identity.\nScene: Chika Komari's vulnerability around becoming literature-club president and fear of being left alone. Red-burgundy side ponytail, bangs covering one eye, amber-green visible eye, beige cardigan and maroon ribbon. Holding a beloved book close, teary-eyed, reaching one tentative hand towards the viewer. A small school stair landing and late-afternoon window glow behind her, hopeful rather than bleak.\nComposition: one complete chibi character, approximately 3 heads tall with graceful slim legs, full head/hands/shoes visible, central figure occupying 80% height. Minimal scene fragments stay compact directly behind the figure and fade into TRUE TRANSPARENT space around the silhouette. Square canvas, generous transparent margins. Scene must read clearly at 210 pixels. Carefully drawn expressive face, crisp linework, cel shading, soft cinematic light. Emotional, sincere, not exaggerated.\nNo lettering, speech bubbles, watermarks, logos, rectangular opaque background, or additional people. The dialogue will be rendered separately by the application.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-7ea70da2-a741-43cb-816f-a00c6c2b3945.png",
+      "file": "komari.png"
+    }
+  ]
+}

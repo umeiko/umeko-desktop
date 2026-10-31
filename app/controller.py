@@ -71,6 +71,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     def characterPacks(self):
         return self._characterPacks()
 
+    @Property('QVariantList', notify=changed)
+    def subagentCharacterPacks(self):
+        return self._characterPacks(True)
+
     @Property('QVariantMap', notify=changed)
     def characterStyle(self):
         return self._characterStyle()
@@ -905,6 +909,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     @Property(str, notify=chatChanged)
     def activeSession(self):
         return self._view.id
+
+    @Property(str, notify=viewChanged)
+    def conversationToken(self):
+        return self._view.key
 
     @Property(str, notify=chatChanged)
     def sessionTitle(self):

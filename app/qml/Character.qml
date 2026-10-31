@@ -6,6 +6,19 @@ QtObject {
     readonly property string id: style.id || "yanami"
     readonly property var assets: style.assets || ({})
     readonly property var lines: style.lines || ({})
+    // A bounded per-conversation cache: UI updates and settings navigation never reroll.
+    property var rareCoverCache: ({})
+    property var rareCoverOrder: []
+    function rareCover(token, randomSource) {
+        if (!style.easterEgg || !style.easterEgg.source || !token) return ({})
+        const key = JSON.stringify([id, token])
+        if (rareCoverCache[key] !== undefined) return rareCoverCache[key]
+        const chosen = (randomSource || Math.random)() < 0.005 ? style.easterEgg : ({})
+        rareCoverCache[key] = chosen
+        rareCoverOrder.push(key)
+        if (rareCoverOrder.length > 128) delete rareCoverCache[rareCoverOrder.shift()]
+        return chosen
+    }
     function has(slot) { return !!assets[slot] }
     function asset(slot, fallback) { return assets[slot] || fallback }
     function isAnimated(source) { return /\.gif(?:\?|$)/i.test(String(source)) || Array.prototype.indexOf.call(style.animatedSources || [], String(source)) >= 0 }

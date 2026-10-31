@@ -13,8 +13,13 @@ from pathlib import Path
 from PySide6.QtGui import QImageReader
 
 STATES = ('idle', 'thinking', 'working', 'waiting', 'done', 'error')
-BUILTIN_APPEARANCES = ('yanami', 'komari', 'whale-girl')
+BUILTIN_APPEARANCES = ('yanami', 'komari', 'tiara', 'whale-girl')
 MAX_BYTES = 128 * 1024 * 1024
+
+
+def image_files(value):
+    return dict.fromkeys([*value['states'].values(),
+                          *([value['rareIdle']['image']] if 'rareIdle' in value else [])])
 
 
 def relative(name):
@@ -60,10 +65,16 @@ def read_pack(folder, check=False):
     states = value.get('states')
     if not isinstance(states, dict) or 'idle' not in states or states.keys() - set(STATES):
         raise ValueError('states 必须包含 idle，其余可选状态为 thinking、working、waiting、done、error')
+    if 'rareIdle' in value:
+        rare = value['rareIdle']
+        if (not isinstance(rare, dict) or not isinstance(rare.get('image'), str)
+                or not isinstance(rare.get('line'), str) or not rare['line'].strip()
+                or len(rare['line']) > 120):
+            raise ValueError('rareIdle 需要包内 image 和最多 120 字的 line')
     info = {}
     total = 0
     pixels = 0
-    for name in dict.fromkeys(states.values()):
+    for name in image_files(value):
         path = folder / relative(name)
         if not path.resolve().is_relative_to(folder) or any(p.is_symlink() for p in (path, *path.parents) if p != folder and p.is_relative_to(folder)):
             raise ValueError('形象不能使用链接或指向包外：' + name)
@@ -123,7 +134,7 @@ def import_pack(source, destination):
         elif source.name.lower() == 'pet.json':
             value = read_pack(source.parent)
             (stage / 'pet.json').write_bytes(source.read_bytes())
-            for name in dict.fromkeys(value['states'].values()):
+            for name in image_files(value):
                 target = stage / relative(name)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source.parent / name, target)
@@ -137,7 +148,7 @@ def import_pack(source, destination):
         if value['id'] in BUILTIN_APPEARANCES or (destination / value['id']).exists():
             raise ValueError('该形象 id 已存在，请修改 pet.json 中的 id 后再导入')
         # Retain only declared data files, never Python/QML/HTML from the ZIP.
-        keep = {'pet.json', *value['states'].values()}
+        keep = {'pet.json', *image_files(value)}
         for path in stage.rglob('*'):
             if path.is_file() and path.relative_to(stage).as_posix() not in keep:
                 path.unlink()

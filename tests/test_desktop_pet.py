@@ -85,7 +85,7 @@ class PetTests(unittest.TestCase):
         pack = self.host.root/'umeko-plugins/desktop-pet/assets/whale-girl'
         checked = read_pack(pack, check=True)
         self.assertEqual(set(checked['states']), {'idle','thinking','working','waiting','done','error'})
-        self.assertTrue(all(row['animated'] for row in checked['images'].values()))
+        self.assertTrue(all(checked['images'][name]['animated'] for name in checked['states'].values()))
         self.assertLess(sum((pack/name).stat().st_size for name in checked['states'].values()), 24*1024*1024)
         self.pet.configure({'appearance':'whale-girl'})
         for state in checked['states']:
@@ -108,7 +108,7 @@ class PetTests(unittest.TestCase):
         self.assertTrue(packs['komari']['builtin'])
         pack = read_pack(self.host.root/'umeko-plugins/desktop-pet/assets/komari', check=True)
         self.assertEqual(set(pack['states']), {'idle','thinking','working','waiting','done','error'})
-        self.assertTrue(all(image['animated'] and image['frames'] > 1 for image in pack['images'].values()))
+        self.assertTrue(all(pack['images'][name]['animated'] and pack['images'][name]['frames'] > 1 for name in pack['states'].values()))
         control = self.control()
         self.assertTrue(self.rpc(control,'selectAppearance',{'id':'komari'})['ok'])
         self.assertEqual(self.pet.state['appearance'],'komari')
@@ -118,6 +118,96 @@ class PetTests(unittest.TestCase):
         second = DesktopPlugins(self.host);self.addCleanup(second.close)
         self.assertEqual(second.pet.config['appearance'],'komari')
         self.assertFalse(second.pet.visible)
+    def test_tiara_has_six_alpha_animations_and_is_protected(self):
+        from PySide6.QtGui import QImageReader
+        packs={row['id']:row for row in self.pet.appearances}
+        self.assertTrue(packs['tiara']['builtin'])
+        self.assertEqual(packs['tiara']['name'],'马剃天爱星')
+        pack=read_pack(self.host.root/'umeko-plugins/desktop-pet/assets/tiara',check=True)
+        self.assertEqual(set(pack['states']),{'idle','thinking','working','waiting','done','error'})
+        for state,file in pack['states'].items():
+            reader=QImageReader(str(self.host.root/'umeko-plugins/desktop-pet/assets/tiara'/file))
+            self.assertEqual(reader.imageCount(),6,state)
+            image=reader.read()
+            self.assertEqual((image.width(),image.height()),(384,576))
+            self.assertTrue(image.hasAlphaChannel())
+            self.assertEqual(image.pixelColor(0,0).alpha(),0)
+        control=self.control()
+        self.assertTrue(self.rpc(control,'selectAppearance',{'id':'tiara'})['ok'])
+        self.assertEqual(self.pet.state['appearance'],'tiara')
+        self.assertFalse(self.rpc(control,'removeAppearance',{'id':'tiara'})['ok'])
+        second=DesktopPlugins(self.host);self.addCleanup(second.close)
+        self.assertEqual(second.pet.config['appearance'],'tiara')
+
+    def test_rare_idle_threshold_lifecycle_and_no_poll_rerolls(self):
+        from unittest.mock import patch
+        self.pet.configure({'visible':True, 'appearance':'tiara'})
+        spoken=[];self.pet.reaction.connect(spoken.append)
+        with patch('app.desktop_pet.random.random', return_value=.004999) as draw:
+            self.pet.idleCycle()
+            self.assertTrue(self.pet.state['rareIdle'])
+            self.assertTrue(self.pet.state['animated'])
+            self.assertTrue(self.pet.state['source'].endswith('/idle-rare.webp'))
+            self.assertEqual(spoken[-1], self.pet._packs['tiara']['rareIdle']['line'])
+            for _ in range(20): self.pet.sample()
+            self.assertEqual(draw.call_count, 1, 'Observer polling must not reroll')
+            self.pet.configure({'paused':True})
+            self.pet.idleCycle();self.assertEqual(draw.call_count, 1)
+            self.pet.configure({'paused':False})
+        with patch('app.desktop_pet.random.random', return_value=.005):
+            self.pet.idleCycle()
+            self.assertFalse(self.pet.state['rareIdle'])
+            self.assertTrue(self.pet.state['animated'])
+        with patch('app.desktop_pet.random.random', return_value=0) as draw:
+            self.pet.idleCycle();self.assertTrue(self.pet.state['rareIdle'])
+            self.host._view.busy=True;self.pet.sample()
+            self.assertFalse(self.pet.state['rareIdle'])
+            self.pet.idleCycle();self.assertEqual(draw.call_count, 1)
+            self.pet.configure({'visible':False});self.pet.idleCycle()
+            self.assertEqual(draw.call_count, 1)
+
+    def test_builtin_rare_animations_match_normal_pet_canvas(self):
+        from PySide6.QtGui import QImageReader
+        import hashlib
+        root = Path(__file__).resolve().parents[1]
+        for identifier in ('yanami', 'komari', 'tiara', 'whale-girl'):
+            folder = root / 'umeko-plugins/desktop-pet/assets' / identifier
+            pack = read_pack(folder, check=True)
+            rare = folder / pack['rareIdle']['image']
+            normal = QImageReader(str(folder / pack['states']['idle']))
+            reader = QImageReader(str(rare))
+            self.assertEqual(reader.size(), normal.size(), identifier)
+            self.assertEqual(reader.imageCount(), 6, identifier)
+            self.assertTrue(pack['images'][rare.name]['animated'], identifier)
+            hashes = set()
+            for _ in range(reader.imageCount()):
+                image = reader.read()
+                self.assertFalse(image.isNull(), identifier)
+                self.assertTrue(image.hasAlphaChannel(), identifier)
+                self.assertEqual(image.pixelColor(0, 0).alpha(), 0, identifier)
+                hashes.add(hashlib.sha256(bytes(image.constBits())).hexdigest())
+            self.assertGreater(len(hashes), 1, identifier)
+
+    def test_rare_asset_import_retains_only_declared_data_and_validates_paths(self):
+        folder=self.path/'rare';folder.mkdir()
+        (folder/'one.png').write_bytes(self.image().read_bytes())
+        (folder/'rare.png').write_bytes(self.image().read_bytes())
+        (folder/'drop.py').write_text('raise RuntimeError()')
+        value={'format':'umeko-pet','version':1,'id':'rare-fixture','name':'Rare',
+               'states':{'idle':'one.png'},'rareIdle':{'image':'rare.png','line':'Hello'}}
+        manifest=folder/'pet.json'
+        manifest.write_text(json.dumps(value))
+        installed=import_pack(manifest,self.pet.pack_directory)
+        self.assertIn('rare.png',installed['images'])
+        self.assertTrue((self.pet.pack_directory/'rare-fixture/rare.png').is_file())
+        self.assertFalse((self.pet.pack_directory/'rare-fixture/drop.py').exists())
+        for invalid in ('../outside.png','/tmp/rare.png','https://example.com/rare.png'):
+            value['rareIdle']['image']=invalid;manifest.write_text(json.dumps(value))
+            with self.assertRaises(ValueError):read_pack(folder,check=True)
+        value['rareIdle']={'image':'rare.png','line':'x'*121}
+        manifest.write_text(json.dumps(value))
+        with self.assertRaises(ValueError):read_pack(folder)
+
     def test_imported_pack_cannot_shadow_builtin_komari(self):
         folder = self.path/'shadow';folder.mkdir()
         (folder/'one.png').write_bytes(self.image().read_bytes())

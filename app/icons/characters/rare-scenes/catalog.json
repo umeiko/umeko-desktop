@@ -1,0 +1,33 @@
+{
+  "yanami": {
+    "title": "最笨的人",
+    "line": "真正重要的东西，就算用最笨的方法也要紧紧抓住——这话是你说的吧？那我现在就要做全世界最笨的人。",
+    "sourceStatus": "User-supplied Chinese wording; exact novel volume/page not verified.",
+    "adaptedDialogue": false
+  },
+  "komari": {
+    "title": "说不清的在意",
+    "line": "那家伙就总是让我烦躁、让我感到不爽、让我很在意。但是那家伙，却表现得一点都不在乎。我、我就感觉很恼火。",
+    "sourceUrl": "https://note.com/kyoto_nyannyan/n/nca9d9bd989e0",
+    "sourceStatus": "User-supplied Chinese wording; Japanese context noted for novel volume 6 pages 203–204.",
+    "adaptedDialogue": false
+  },
+  "kaju": {
+    "title": "非常、非常了不起喔",
+    "line": "你真的很努力了喔。非常、非常了不起喔。",
+    "sourceStatus": "User-supplied Chinese wording; exact novel volume/page not verified.",
+    "adaptedDialogue": false
+  },
+  "tiara": {
+    "title": "早一点喜欢上我",
+    "line": "早一点喜欢上我会比较好哦？",
+    "sourceStatus": "User-supplied volume-8 illustration and Chinese wording.",
+    "adaptedDialogue": false
+  },
+  "whale-girl": {
+    "title": "人，你给我吃米",
+    "line": "人，你给我吃米，人，日后我会放你一马的",
+    "sourceStatus": "Original dialogue supplied by user.",
+    "adaptedDialogue": false
+  }
+}

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>桌宠彩蛋 · 全身动画对比</title>
+<style>
+:root{font:16px/1.6 system-ui,sans-serif;background:#f3f5f9;color:#26374a}body{max-width:1080px;margin:36px auto;padding:0 24px 50px}header{display:flex;align-items:center;justify-content:space-between;gap:24px}h1{font-size:27px;margin:10px 0}p{color:#6d7c8d}a{color:inherit;text-underline-offset:4px}button{font:inherit;white-space:nowrap;color:inherit;background:transparent;border:1px solid #bac8d8;border-radius:10px;padding:9px 15px;cursor:pointer}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}article{background:#fff9;border:1px solid #d6dfeb;border-radius:16px;padding:18px;text-align:center}h2{font-size:19px;margin:0 0 12px}.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}.art{height:270px;display:flex;align-items:end;justify-content:center}.art img{max-width:100%;max-height:100%;object-fit:contain}small{color:#7d8b9a}blockquote{font-size:14px;color:#6d7c8d;margin:15px 0 0;line-height:1.65}body.dark{background:#192331;color:#e7edf7}body.dark article{background:#243244;border-color:#40536b}body.dark p,body.dark small,body.dark blockquote{color:#acbbce}html:has(body.dark){background:#192331}@media(max-width:680px){.grid{grid-template-columns:1fr}header{align-items:start;flex-direction:column}.art{height:230px}}
+</style>
+<header><div><a href="../../characters/tiara-v2/preview.html#rare">主页彩蛋插画</a><h1>桌宠彩蛋 · 全身动画</h1></div><button onclick="document.body.classList.toggle('dark')">切换明暗背景</button></header>
+<p>左侧普通待机，右侧彩蛋动作。两侧采用相同画布与脚底基线。实际应用仍以每轮待机 0.5% 的概率触发。</p>
+<main class="grid" id="pets"></main>
+<p>6 帧 / 4.2 秒。主页继续用半身插画；桌宠使用独立的全身动画。</p>
+<script>
+const names={yanami:'八奈见杏菜',komari:'小鞠知花',tiara:'马剃天爱星','whale-girl':'鲸鱼娘'};
+fetch('generation.json').then(r=>r.json()).then(value=>{
+ for(const asset of value.assets){
+  const card=document.createElement('article'),title=document.createElement('h2');title.textContent=names[asset.id];card.append(title);
+  const pair=document.createElement('div');pair.className='pair';
+  for(const [file,label] of [['idle.webp','普通待机'],['idle-rare.webp','彩蛋动作']]){
+   const col=document.createElement('div'),art=document.createElement('div'),image=new Image(),caption=document.createElement('small');art.className='art';
+   image.src='../../../umeko-plugins/desktop-pet/assets/'+asset.id+'/'+file;image.alt=names[asset.id]+' · '+label;art.append(image);caption.textContent=label;col.append(art,caption);pair.append(col);
+  }
+  const line=document.createElement('blockquote');line.textContent=asset.line;card.append(pair,line);document.querySelector('#pets').append(card);
+ }
+});
+</script>
+</html>

@@ -1,0 +1,76 @@
+{
+  "id": "whale-girl",
+  "file": "source/whale-girl-separated-sheet.png",
+  "prompt": "Use case: identity-preserve / stylized-concept.\nAsset: six-frame animation sheet of the existing Whale-girl desktop pet. The attached image is the EXACT current idle mascot and authority for style, colors, costume and giant-head/tiny-body proportions.\nCRITICAL LAYOUT CORRECTION: create a WIDE LANDSCAPE sheet with aspect ratio 3:2, ideally 1536x1024. EXACT 3 columns by 2 rows; SIX EQUAL SQUARE invisible cells. Each complete pet must fit inside the CENTRAL 75% WIDTH and 75% HEIGHT of its own square cell, with at least 12% clear fully transparent margin on all four sides. Long hair and headdress MUST NOT touch or cross ANY cell edge. No overlapping hair between adjacent cells, no loose fragments, no floating marks, no stars, no labels, no grid lines, no background. Every cell genuinely transparent around the isolated complete pet. Keep identical scale, center and feet baseline across all six cells.\nExisting Whale-girl mascot. Match the reference EXACTLY: super-deformed VERY LARGE HEAD and tiny short body/legs, long wavy blue hair, lace maid headdress, small blue side ribbon, navy-white maid dress and whale apron, blue eyes. Keep its softer muted blue palette, relatively matte low-detail shading and thin dark outlines; NOT the glossy vivid high-detail homepage portrait. Do not enlarge torso or lengthen legs. Animation: gently lift one open palm asking the human for rice, the other tiny hand on hip, half-lidded deadpan/imperious expression, a little expectant head tilt, blink, then return. Six frames:1 original familiar idle stance,2 tiny hand begins lifting,3 open asking palm/half-lidded eyes,4 brief blink/small head tilt,5 reopen and lower palm,6 near original idle. One thumb and four fingers on the open hand. No rice bowl or other new props, no tears.\nFrame 1 original idle, frame2 starts lifting hand, frame3 asks with open palm/half-lidded eyes, frame4 blinks and small tilt, frame5 lowers hand, frame6 returns to idle. Small natural movement only, no dramatic hair spreading. Exact same full-body mascot style as reference: muted matte blue, simple fine dark outlines, low-detail shading, tiny legs, same proportions. One thumb and four fingers per hand with natural occlusion. Whole headdress/hair/hands/shoes visible in EVERY cell. No captions, letters, watermarks or extra objects. A single animation sequence, not different character designs.",
+  "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-1e2a436f-2568-403e-95cc-1bd7e0c7b8aa.png",
+  "reference": "reference/whale-girl-idle.png",
+  "line": "人，你给我吃米，人，日后我会放你一马的",
+  "title": "人，你给我吃米",
+  "revisions": [
+    {
+      "file": "source/whale-girl-sheet.png",
+      "prompt": "Use case: identity-preserve / stylized-concept.\nAsset type: SIX animation keyframes of one existing Umeko desktop pet, in a 3-column by 2-row sprite sheet. Reference image is the CURRENT DESKTOP PET ITSELF: it is the authority for identity, ART STYLE, COLOR PALETTE, FULL-BODY PROPORTIONS and apparent size. The user explicitly wants a rare idle animation that does not look like switching to a different artist, a different head/body ratio or a waist-up portrait.\nExisting Whale-girl mascot. Match the reference EXACTLY: super-deformed VERY LARGE HEAD and tiny short body/legs, long wavy blue hair, lace maid headdress, small blue side ribbon, navy-white maid dress and whale apron, blue eyes. Keep its softer muted blue palette, relatively matte low-detail shading and thin dark outlines; NOT the glossy vivid high-detail homepage portrait. Do not enlarge torso or lengthen legs. Animation: gently lift one open palm asking the human for rice, the other tiny hand on hip, half-lidded deadpan/imperious expression, a little expectant head tilt, blink, then return. Six frames:1 original familiar idle stance,2 tiny hand begins lifting,3 open asking palm/half-lidded eyes,4 brief blink/small head tilt,5 reopen and lower palm,6 near original idle. One thumb and four fingers on the open hand. No rice bowl or other new props, no tears.\nComposition: perfect regular 3x2 grid, row-major time order, each equal cell contains the SAME COMPLETE FULL-BODY character from hair top to both shoe soles. Keep exact same scale and shoe baseline through the six cells, feet planted, torso posture stable, smooth very small motion. Center in each cell with ample transparent margins, no overlap between cells; leave transparent gutters between the two rows. Square sheet. Do not use panels, labels or lines. True transparent alpha background in every cell. Character only: no ground, scenery, shadows, stars, floating decorations, text, speech bubbles or watermark. Six consistent frames that form one gentle looping gesture, NOT six unrelated drawings or poses. All heads, hands and feet remain fully visible. Accurate anatomy, two arms, five digits per hand with natural occlusion.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-4673643a-da4a-4642-970f-8d878e0531bb.png"
+    }
+  ],
+  "grid": {
+    "columns": 3,
+    "rows": 2,
+    "cellAspect": "square"
+  },
+  "sourceAsset": "art/desktop-pets/rare-idle-v1/source/whale-girl-separated-sheet.png",
+  "tool": "built-in image_gen",
+  "canvas": [
+    360,
+    360
+  ],
+  "durationsMs": [
+    600,
+    500,
+    1400,
+    120,
+    880,
+    700
+  ],
+  "baseline": 330,
+  "cellBounds": [
+    [
+      85,
+      34,
+      476,
+      498
+    ],
+    [
+      58,
+      35,
+      447,
+      498
+    ],
+    [
+      40,
+      37,
+      434,
+      498
+    ],
+    [
+      74,
+      13,
+      471,
+      482
+    ],
+    [
+      62,
+      15,
+      457,
+      481
+    ],
+    [
+      54,
+      14,
+      449,
+      482
+    ]
+  ],
+  "sha256": "308c771cfabd898259a883a15fda4ca3e8ea0f6a8e9d28a1fba12e9e3b105e2e",
+  "bytes": 177290
+}
