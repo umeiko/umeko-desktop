@@ -33,6 +33,8 @@ class DesktopPlugins(QObject):
         for folder in (backend.root/'umeko-plugins').glob('*'):
             m=read(folder/'manifest.json',{}) or {}
             if m.get('kind')=='umeko-plugin' and m.get('apiVersion')==1 and m.get('id')==folder.name:self.entries[folder.name]={**m,'builtin':True}
+        self._review_loops={};self._review_requests={}
+        self.response.connect(self.review_response)
         self.workers={};self._failed_services=set();self.application_token='application:'+uuid.uuid4().hex;self._page='';self._selection='';self._error='';self._session={};self.storage_key='';self._busy=False;self._status='';self.closed=False
         self.refresh=QTimer(self);self.refresh.setSingleShot(True);self.refresh.setInterval(200);self.refresh.timeout.connect(self.synchronize)
         backend.viewChanged.connect(self.synchronize)
@@ -48,6 +50,26 @@ class DesktopPlugins(QObject):
         from .global_agents import GlobalAgents
         self.global_agents=GlobalAgents(self)
         self.synchronize()
+    def review_response(self,request,value):
+        target=self._review_requests.pop(request,None)
+        if target:self.b._pool.write(target[0],{'type':'loop_review_response','id':target[1]})
+    def review_event(self,record,event):
+        kind=event.get('type');identifier='change-review'
+        if kind=='exit':
+            loop=self._review_loops.pop(record.key,None)
+            if loop and self.enabled(identifier):
+                self.call_for(identifier,'finish',json.dumps({'loopId':loop,'reason':'exited'}),timeout_ms=10000,session=self.bridge.snapshot(record))
+            return
+        if kind!='loop_review':return
+        phase=event.get('phase')
+        if phase not in ('begin','finish') or not isinstance(event.get('loopId'),str):return
+        if phase=='begin':self._review_loops[record.key]=event['loopId']
+        else:self._review_loops.pop(record.key,None)
+        request=''
+        if identifier in self.entries and self.enabled(identifier):
+            request=self.call_for(identifier,phase,json.dumps({'loopId':event['loopId'],'reason':event.get('reason','completed')}),timeout_ms=10000,session=self.bridge.snapshot(record))
+        if request:self._review_requests[request]=(record,event.get('id'))
+        else:self.b._pool.write(record,{'type':'loop_review_response','id':event.get('id')})
     def path(self, identifier):
         e=self.entries[identifier]
         return self.b.root/'umeko-plugins'/identifier if e.get('builtin') else self.root/'packages'/identifier/e['version']

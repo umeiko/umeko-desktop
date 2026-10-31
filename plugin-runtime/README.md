@@ -65,7 +65,7 @@ my-plugin/
 | `sliders` | 控制 | `archive` | 归档 |
 | `download` | 下载 | `lock` | 安全 |
 | `hourglass` | 任务 | `puzzle` | 通用插件 |
-| `pet` | 桌面宠物 | | |
+| `pet` | 桌面宠物 | `diff` | 差异审查 |
 
 完整列表保存在 `umeko_plugin_sdk/icons.json`。如需自带美术资源，使用 `"icon": {"path": "assets/icon.svg"}`；路径必须是包内相对路径，支持 SVG、PNG、WebP、JPEG，最多 512 KiB。自带图标保留原色；内置线条图标自动跟随宿主主题颜色。不要填写网络地址。
 
@@ -277,3 +277,9 @@ JS 依赖和许可证，例如将入口与 `node_modules` 一起放在 `vendor/`
 
 可打包的 [Pi 管理示例](examples/pi-management/README.md) 演示实际异步接口与页面；
 内置的精简管理 Widget 位于源码仓库 `umeko-plugins/pi-manager`，可直接参考它的可关闭页面、本地搜索和详情滚动实现。
+
+## 官方本轮变更审查 Widget
+
+`change-review` 是默认关闭的内置应用服务。在插件管理启用后，宿主在 Pi 原生 `agent_start` 边界等待独立 Git 基线采集，在 `agent_end`、用户中止或主 Agent 进程退出后比较并请求打开页面。关闭页面不停止采集，停用清理临时快照。仅对应当前聊天可自动打开。全应用只保留最近一轮的临时结果，下一轮开始或退出后清除；不保存历史。页面以文件树展示，点击进入 Widget 内的 diff，再返回文件树；图标、按钮和只读菜单复用官方 Git Widget。
+
+基线是本轮开始前的工作目录，而非 HEAD，可能包含并发编辑。采集最多 5 秒、4000 文件、单文件 2 MiB、总内容 32 MiB；二进制和受限文件只显示状态。使用独立 Git 对象/索引，不改项目暂存区和历史。Git 缺失或采集失败不阻止正常 Agent 工作。详情见内置包的 README.md。

@@ -90,10 +90,55 @@ class PiTests(unittest.TestCase):
                 self.send({"type": "ui_response", "id": event["id"], "value": True})
             if event.get("type") == "umeko_request" and hasattr(self, 'desktop_control'):
                 self.send({"type": "umeko_response", "id": event["id"], "result": self.desktop_control(event)})
+            if event.get("type") == "loop_review":
+                if hasattr(self, 'loop_review'):
+                    self.loop_review(event)
+                self.send({"type": "loop_review_response", "id": event["id"]})
             if event.get("type") == "done":
                 break
         self.assertFalse([e for e in output if e.get("type") == "error"], output)
         return output
+
+    def test_loop_review_wraps_main_agent_tools_and_survives_reload(self):
+        file = self.path / 'native.txt'
+        file.write_text('before loop', encoding='utf-8')
+        observations = []
+        self.loop_review = lambda event: observations.append((event, file.read_text(encoding='utf-8'), len(self.calls)))
+        self.command({**self.payload, 'loopReview': True, 'type': 'prompt', 'text': 'Write native.txt'})
+        self.assertEqual([event['phase'] for event, _, _ in observations], ['begin', 'finish'])
+        self.assertEqual(observations[0][1:], ('before loop', 0))
+        self.assertEqual(observations[1][1], 'native tool result')
+        self.assertEqual(observations[1][0]['reason'], 'completed')
+        self.assertEqual(observations[0][0]['loopId'], observations[1][0]['loopId'])
+        self.command({'type': 'reload'})
+        calls_before = len(self.calls)
+        self.command({'type': 'prompt', 'text': 'Write it again after reload'})
+        self.assertEqual([event['phase'] for event, _, _ in observations], ['begin', 'finish', 'begin', 'finish'])
+        self.assertEqual(observations[2][2], calls_before)
+        self.assertNotEqual(observations[0][0]['loopId'], observations[2][0]['loopId'])
+
+    def test_loop_review_finishes_when_user_aborts_the_main_agent(self):
+        started, release = threading.Event(), threading.Event()
+        observations = []
+        self.loop_review = observations.append
+        def respond(*_):
+            started.set()
+            release.wait(10)
+            return Completion('late response')
+        self.response_fn = respond
+        def abort():
+            if started.wait(10): self.send({'type': 'abort'})
+        stopper = threading.Thread(target=abort, daemon=True)
+        stopper.start()
+        try:
+            self.command({**self.payload, 'loopReview': True, 'type': 'prompt', 'text': 'Wait for cancellation'})
+            self.assertTrue(started.is_set())
+            self.assertEqual([event['phase'] for event in observations], ['begin', 'finish'])
+            self.assertEqual(observations[1]['reason'], 'cancelled')
+            self.assertEqual(observations[0]['loopId'], observations[1]['loopId'])
+        finally:
+            release.set()
+            stopper.join(timeout=2)
 
     def stop(self):
         if self.process.poll() is None:

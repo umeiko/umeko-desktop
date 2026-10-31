@@ -13,6 +13,7 @@ Column {
     property bool draftKeyVisible: false
     property string createdKey: ""
     property double now: Date.now()
+    TextMetrics { id: addressLabelMetrics; text: "Anthropic Base URL"; font.pixelSize: Theme.font(11) }
     Timer { interval: 30000; running: root.visible; repeat: true; onTriggered: { root.now = Date.now(); backend.refreshProxyAddresses() } }
     function lastUsed(value) {
         if (!value) return I18n.t("尚未使用")
@@ -83,6 +84,7 @@ Column {
         }
     }
     SectionCard {
+        objectName: "proxyAddressesCard"
         width: root.width
         ColumnLayout { width: parent.width; spacing: 16
             RowLayout { Layout.fillWidth: true
@@ -93,13 +95,20 @@ Column {
             }
             Repeater {
                 model: [{label:"OpenAI Base URL", suffix:"/v1", enabled:backend.config.server.openai}, {label:"Anthropic Base URL", suffix:"", enabled:backend.config.server.anthropic}]
-                RowLayout {
+                GridLayout {
+                    id: addressRow
                     required property var modelData
                     visible: modelData.enabled; Layout.fillWidth: true
+                    objectName: modelData.suffix ? "proxyOpenaiAddressRow" : "proxyAnthropicAddressRow"
+                    readonly property bool stacked: width < addressLabelMetrics.advanceWidth + 12 + 220 * Theme.fontScale + copyAddress.implicitWidth + 8
+                    columns: stacked ? 1 : 2; columnSpacing: 12; rowSpacing: 8
                     readonly property string url: root.currentAddress ? "http://" + root.currentAddress + ":" + backend.config.server.port + modelData.suffix : ""
-                    Text { text: modelData.label; color: Theme.muted; font.pixelSize: Theme.font(11); Layout.preferredWidth: 135 }
-                    InputField { objectName: modelData.suffix ? "proxyOpenaiBaseUrl" : "proxyAnthropicBaseUrl"; Layout.fillWidth: true; text: parent.url; readOnly: true; placeholderText: I18n.t("未找到局域网 IP"); font.family: "Consolas" }
-                    ActionButton { objectName: modelData.suffix ? "copyProxyOpenaiBaseUrl" : "copyProxyAnthropicBaseUrl"; glyph: "copy"; quiet: true; enabled: !!parent.url; hint: I18n.t("复制地址"); onClicked: backend.copy(parent.url) }
+                    Text { objectName: modelData.suffix ? "proxyOpenaiAddressLabel" : "proxyAnthropicAddressLabel"; text: modelData.label; color: Theme.muted; font.pixelSize: Theme.font(11); Layout.minimumWidth: implicitWidth; Layout.preferredWidth: Math.ceil(addressLabelMetrics.advanceWidth); Layout.fillWidth: addressRow.stacked }
+                    RowLayout {
+                        Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 8
+                        InputField { objectName: modelData.suffix ? "proxyOpenaiBaseUrl" : "proxyAnthropicBaseUrl"; Layout.fillWidth: true; Layout.minimumWidth: 0; text: addressRow.url; readOnly: true; placeholderText: I18n.t("未找到局域网 IP"); font.family: "Consolas" }
+                        ActionButton { id: copyAddress; objectName: modelData.suffix ? "copyProxyOpenaiBaseUrl" : "copyProxyAnthropicBaseUrl"; glyph: "copy"; quiet: true; enabled: !!addressRow.url; hint: I18n.t("复制地址"); onClicked: backend.copy(addressRow.url) }
+                    }
                 }
             }
             Text { visible: backend.config.server.lan && backend.proxyAddresses.length === 1; text: I18n.t("未找到其他 IPv4 网卡地址，请检查本机网络。"); color: Theme.muted; font.pixelSize: Theme.font(11) }

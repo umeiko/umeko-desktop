@@ -28,3 +28,34 @@ export function createWidgetMessages({getSession,emit}) {
   }
   return {deliver,observe};
 }
+
+// Await Pi's native run boundary before any model request/tool can mutate files.
+// The desktop acknowledges immediately while the optional Widget is disabled.
+export function createLoopReview({emit,timeoutMs=12000}) {
+  const pending=new Map();
+  function response(event) {
+    const item=pending.get(event.id);
+    if(item){pending.delete(event.id);clearTimeout(item.timer);item.resolve();}
+  }
+  function request(phase,loopId,reason) {
+    const id=crypto.randomUUID();
+    return new Promise(resolve=>{
+      const timer=setTimeout(()=>{pending.delete(id);resolve();},timeoutMs);
+      pending.set(id,{resolve,timer});
+      emit({type:'loop_review',id,phase,loopId,reason});
+    });
+  }
+  return {
+    response,
+    clear(){for(const id of [...pending.keys()])response({id});},
+    extension(pi){
+      let loopId='';
+      pi.on('agent_start',async()=>{loopId=crypto.randomUUID();await request('begin',loopId);});
+      pi.on('agent_end',async event=>{
+        const current=loopId;loopId='';if(!current)return;
+        const last=[...(event.messages||[])].reverse().find(m=>m.role==='assistant');
+        await request('finish',current,last?.stopReason==='aborted'?'cancelled':last?.stopReason==='error'?'error':'completed');
+      });
+    }
+  };
+}

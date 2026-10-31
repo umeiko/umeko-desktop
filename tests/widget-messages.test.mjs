@@ -26,3 +26,24 @@ test('passive updates do not wake the model and failures have explicit receipts'
   await assert.rejects(channel.deliver({...update('d'),message:''}),/Invalid Widget/);
   assert.equal(sent.length,1);
 });
+
+import {createLoopReview} from '../runtime/widget-messages.mjs';
+test('loop boundaries await snapshots, correlate replies, and include cancellation',async()=>{
+  const handlers={},events=[];
+  const review=createLoopReview({emit:event=>events.push(event),timeoutMs:1000});
+  review.extension({on:(name,handler)=>handlers[name]=handler});
+  let started=false;
+  const start=handlers.agent_start().then(()=>started=true);
+  await Promise.resolve();assert.equal(started,false);assert.equal(events[0].phase,'begin');
+  review.response({id:'other'});assert.equal(started,false);
+  review.response({id:events[0].id});await start;assert.equal(started,true);
+  const finish=handlers.agent_end({messages:[{role:'assistant',stopReason:'aborted'}]});
+  assert.equal(events[1].loopId,events[0].loopId);assert.equal(events[1].reason,'cancelled');
+  review.response({id:events[1].id});await finish;
+  await handlers.agent_end({messages:[]});assert.equal(events.length,2);
+});
+test('disconnected review hooks have a bounded wait and shutdown releases pending hooks',async()=>{
+  const handlers={};const review=createLoopReview({emit:()=>{},timeoutMs:10});
+  review.extension({on:(name,handler)=>handlers[name]=handler});
+  await handlers.agent_start();const end=handlers.agent_end({messages:[]});review.clear();await end;
+});
