@@ -1,4 +1,4 @@
-"""Official application-lifetime Widget: a low-frequency activity companion.
+"""Official application-lifetime Widget: activity companion and local reminders.
 
 No model calls, token listeners or transcript scans. Only the current animation
 is decoded by QML; hiding the window unloads its decoder.
@@ -16,10 +16,12 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QPoint, Property, QTimer, QUrl, Qt, Signal, Slot
 
 from .pet_packs import BUILTIN_APPEARANCES, STATES, import_pack, read_pack
+from .pet_reminders import PetReminders
 
 ID = 'desktop-pet'
 DEFAULTS = {'visible': False, 'appearance': 'yanami', 'size': 192, 'alwaysOnTop': True,
-            'paused': False, 'sampleIntervalMs': 1500, 'minimumStateMs': 3000}
+            'paused': False, 'sampleIntervalMs': 1500, 'minimumStateMs': 3000,
+            'reminderNotificationsEnabled': True}
 
 
 class PetMotion:
@@ -57,6 +59,8 @@ class DesktopPet(QObject):
     settingsRequested = Signal()
     resetPositionRequested = Signal()
     imported = Signal(str, object)
+    reminderCardChanged = Signal()
+    reminderPresented = Signal(object)
 
     def __init__(self, manager):
         super().__init__(manager)
@@ -77,6 +81,13 @@ class DesktopPet(QObject):
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='pet-import')
         self._future = None
         self.directory = manager.root / 'state' / ID
+        self._reminder_card = []
+        self._reminder_selection = {'id': '', 'create': False, 'serial': 0}
+        self.reminders = PetReminders(self.directory, self,
+                                      visible=lambda: self.visible,
+                                      notifications=lambda: self._config['reminderNotificationsEnabled'])
+        self.reminders.changed.connect(self._reminders_changed)
+        self.reminders.due.connect(self._present_reminders)
         self.pack_directory = self.directory / 'appearances'
         self.timer = QTimer(self)
         self.timer.setTimerType(Qt.CoarseTimer)
@@ -88,6 +99,10 @@ class DesktopPet(QObject):
         except ValueError:
             self.last_error = '桌宠配置或形象不可用，已恢复默认设置'
             self.configure(DEFAULTS, persist=False)
+        from PySide6.QtGui import QGuiApplication
+        application = QGuiApplication.instance()
+        if isinstance(application, QGuiApplication):
+            application.applicationStateChanged.connect(self._application_state_changed)
 
     def load_packs(self):
         assets = self.b.root / 'umeko-plugins' / ID / 'assets'
@@ -129,25 +144,29 @@ class DesktopPet(QObject):
         if self.running or self.closed:
             return
         self.running = True
+        self.reminders.start()
         self.timer.start(self._config['sampleIntervalMs'])
         self.sample()
         self.changed.emit()
 
     def stop(self):
         self.running = False
+        self.reminders.stop()
+        self.dismissReminders()
         self.timer.stop()
         self.changed.emit()
 
     def close(self):
         self.closed = True
         self.stop()
+        self.reminders.close()
         self._executor.shutdown(wait=False, cancel_futures=True)
 
     def configure(self, patch, persist=True):
         if not isinstance(patch, dict) or patch.keys() - DEFAULTS.keys():
             raise ValueError('未知的桌宠配置项')
         value = {**self._config, **patch}
-        for name in ('visible', 'alwaysOnTop', 'paused'):
+        for name in ('visible', 'alwaysOnTop', 'paused', 'reminderNotificationsEnabled'):
             if type(value[name]) is not bool:
                 raise ValueError(name + ' 必须是布尔值')
         for name, low, high in (('size', 96, 320), ('sampleIntervalMs', 1000, 2000), ('minimumStateMs', 3000, 30000)):
@@ -162,6 +181,8 @@ class DesktopPet(QObject):
                 self.manager.settings = old
                 raise ValueError('桌宠设置保存失败')
         self._config = value
+        if not self.visible or not value['reminderNotificationsEnabled']:
+            self.dismissReminders()
         self.timer.setInterval(value['sampleIntervalMs'])
         self.changed.emit()
         self.manager.changed.emit()
@@ -208,7 +229,74 @@ class DesktopPet(QObject):
             self.changed.emit()
 
     def status(self):
-        return {'config': self.config, 'state': self.state, 'appearances': self.appearances, 'visible': self.visible}
+        return {'config': self.config, 'state': self.state, 'appearances': self.appearances, 'visible': self.visible,
+                'reminders': self.reminders.summary(), 'reminderSelection': self.reminderSelection,
+                **self.reminders.time_info()}
+
+    @Property('QVariantList', notify=changed)
+    def reminderItems(self):
+        try:
+            return self.reminders.handle('listItems', {})['items']
+        except (ValueError, OSError):
+            return []
+
+    @Property('QVariantList', notify=reminderCardChanged)
+    def reminderCard(self):
+        return copy.deepcopy(self._reminder_card)
+
+    @Property('QVariantMap', notify=changed)
+    def reminderSelection(self):
+        return dict(self._reminder_selection)
+
+    def _reminders_changed(self):
+        try:
+            current = {item['id']: item for item in self.reminders.handle('listItems', {})['items']}
+        except (ValueError, OSError):
+            current = {}
+        card = [current[item['id']] for item in self._reminder_card
+                if item['id'] in current and current[item['id']]['revision'] == item['revision']]
+        if card != self._reminder_card:
+            self._reminder_card = card
+            self.reminderCardChanged.emit()
+        self.changed.emit()
+
+    def _present_reminders(self, items):
+        if not self.visible or not self._config['reminderNotificationsEnabled']:
+            return
+        current = {item['id']: item for item in self._reminder_card}
+        current.update({item['id']: item for item in items})
+        self._reminder_card = list(current.values())
+        self.reminderCardChanged.emit()
+        self.reminderPresented.emit(copy.deepcopy(items))
+
+    def _application_state_changed(self, state):
+        if state == Qt.ApplicationActive and self.running:
+            self.reminders.check()
+
+    @Slot(str, bool)
+    def openReminders(self, identifier, create):
+        self._reminder_selection = {'id': identifier, 'create': create,
+                                    'serial': self._reminder_selection['serial'] + 1}
+        self.changed.emit()
+        self.settingsRequested.emit()
+
+    @Slot()
+    def dismissReminders(self):
+        if self._reminder_card:
+            self._reminder_card = []
+            self.reminderCardChanged.emit()
+
+    @Slot(str, int)
+    def completeReminder(self, identifier, revision):
+        try:
+            item = self.reminders.handle('getItem', {'id': identifier})['item']
+            if item['revision'] == revision:
+                self.reminders.handle('completeItem', {'id': identifier})
+            else:
+                self._reminders_changed()
+        except (ValueError, OSError) as error:
+            self.last_error = str(error)
+            self.changed.emit()
 
     @Slot(str)
     def interact(self, kind):
@@ -243,6 +331,8 @@ class DesktopPet(QObject):
         specification=self.manager.entries[ID].get('agent',{}).get('methods',{}).get(method)
         if not specification or not isinstance(args,dict):
             raise ValueError('未知的桌宠方法或无效参数，请读取 widgets.docs')
+        if method in ('listItems', 'getItem', 'createItem', 'updateItem', 'completeItem', 'deleteItem'):
+            return self.reminders.handle(method, args)
         schema=specification['parameters']
         if args.keys()-schema.get('properties',{}).keys() or any(key not in args for key in schema.get('required',[])):
             raise ValueError('桌宠方法参数缺失或包含未知字段')

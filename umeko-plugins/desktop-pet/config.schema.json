@@ -1,6 +1,9 @@
 {
   "type": "object",
   "properties": {
+    "reminderNotificationsEnabled": {
+      "type": "boolean"
+    },
     "visible": {
       "type": "boolean"
     },

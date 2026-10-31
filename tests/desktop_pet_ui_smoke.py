@@ -3,15 +3,29 @@ import json
 import os
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 temp=tempfile.TemporaryDirectory(prefix='umeko-pet-ui-')
 os.environ.update(UMEKO_DATA_DIR=str(Path(temp.name)/'profile'),PI_CODING_AGENT_DIR=str(Path(temp.name)/'agent'),UMEKO_LANGUAGE='zh',QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software')
-from PySide6.QtCore import QObject, QPoint, Qt
+from PySide6.QtCore import QObject, QPoint, QPointF, Qt, QMetaObject, Q_ARG
 from PySide6.QtQml import QQmlEngine, QQmlExpression
 from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QSystemTrayIcon
+# Stub native and fallback notification routes before application construction.
+notification_calls=[]
+class SilentNativeCenter:
+    def __init__(self,*args):pass
+    def send(self,*args):notification_calls.append(('native',args));return 1
+    def poll(self):return None
+    def close(self):pass
+import app.notifications as notifications
+notifications.NativeCenter=SilentNativeCenter
+notifications.TaskNotifications.task_finished=lambda *args:notification_calls.append(('task',args[1:]))
+QSystemTrayIcon.showMessage=lambda *args:notification_calls.append(('tray',args[1:]))
+QSystemTrayIcon.show=lambda *args:None
 from main import create_application
 
 app,engine,backend=create_application()
@@ -20,7 +34,8 @@ warnings=[]
 engine.warnings.connect(lambda values:warnings.extend(e.toString() for e in values))
 pet=backend.desktopPlugins.pet
 window=None
-out=ROOT/'build/desktop-pet-ui';out.mkdir(parents=True,exist_ok=True)
+assert app.platformName()=='offscreen'
+out=Path(os.environ.get('UMEKO_PET_UI_OUTPUT',str(ROOT/'build/desktop-pet-ui')));out.mkdir(parents=True,exist_ok=True)
 
 def find(name):
     stack=[main.contentItem()]
@@ -51,6 +66,128 @@ def open_pet_menu():
     QTest.mouseClick(window,Qt.RightButton,Qt.NoModifier,point)
     wait(lambda:menu.property('opened'),'Context menu did not reopen')
     assert menu_object(menu,'contentItem.Window.window.flags & Qt.WindowStaysOnTopHint'),'Pet menu lost its explicit stay-on-top flag'
+def variant(value):
+    return value.toVariant() if hasattr(value,'toVariant') else value
+
+def invoke(obj,method,*args):
+    assert QMetaObject.invokeMethod(obj,method,*[Q_ARG('QVariant',arg) for arg in args]),method
+
+def click(name):
+    invoke(find(name),'clicked')
+
+def all_items():
+    return pet.handle('listItems',{'status':'all'})['items']
+
+def edit_item(item=None):
+    invoke(find('desktopPetSettings'),'beginEdit',item)
+
+def fill_item(title,notes='',due=None):
+    find('desktopPetReminderTitle').setProperty('text',title)
+    find('desktopPetReminderNotes').setProperty('text',notes)
+    find('desktopPetReminderTimed').setProperty('checked',due is not None)
+    if due:
+        find('desktopPetReminderDate').setProperty('text',due.strftime('%Y-%m-%d'))
+        find('desktopPetReminderTime').setProperty('text',due.strftime('%H:%M'))
+
+def reminder_settings_smoke():
+    settings=find('desktopPetSettings')
+    click('desktopPetNewReminder')
+    fill_item('  离线待办 <b>纯文本</b>  ','带取件码')
+    click('desktopPetReminderSave')
+    wait(lambda:len(all_items())==1,'QML create did not persist')
+    item=all_items()[0]
+    assert item['title']=='离线待办 <b>纯文本</b>' and item['dueAt'] is None
+    edit_item(item);fill_item('未来提醒','编辑备注',datetime.now()+timedelta(days=3))
+    click('desktopPetReminderSave')
+    wait(lambda:all_items()[0]['title']=='未来提醒' and all_items()[0]['dueAt'] is not None,'QML update did not persist')
+    item=all_items()[0]
+    edit_item(item);find('desktopPetReminderDate').setProperty('text','2026-02-30')
+    click('desktopPetReminderSave')
+    assert settings.property('formError') and all_items()[0]['revision']==item['revision']
+    assert find('desktopPetReminderDate').property('text')=='2026-02-30'
+    edit_item(item);invoke(settings,'resolveLocalTime')
+    candidates=variant(settings.property('localCandidates'))
+    assert candidates and all(isinstance(row['epoch'],(int,float)) for row in candidates)
+    for language in ('zh','en'):
+        backend.setLanguage(language);QTest.qWait(80)
+        # Use the existing settings scroll area to show the list and editor,
+        # then capture the real window, including its opaque theme background.
+        viewport=settings.parentItem()
+        while viewport is not None:
+            if viewport.metaObject().indexOfProperty('contentY')>=0:
+                title=find('desktopPetReminderTitle')
+                target=viewport.property('contentY')+title.mapToItem(viewport,QPointF()).y()-viewport.height()*.35
+                maximum=max(0,viewport.property('contentHeight')-viewport.height())
+                viewport.setProperty('contentY',max(0,min(maximum,target)))
+                QTest.qWait(50)
+                break
+            viewport=viewport.parentItem()
+        assert main.grabWindow().save(str(out/('reminder-settings-'+language+'.png')))
+    backend.setLanguage('zh')
+    main.setProperty('page','chat');pet.openReminders(item['id'],False)
+    wait(lambda:main.property('page')=='settings' and (current:=find('desktopPetSettings')) is not None and current.property('editId')==item['id'],'Reminder navigation did not select the item')
+    pet.openReminders('',True)
+    wait(lambda:(current:=find('desktopPetSettings')) is not None and current.property('editing') and current.property('editId')=='','New-item navigation did not open the form')
+    settings=find('desktopPetSettings')
+    invoke(settings,'call','completeItem',{'id':item['id']})
+    wait(lambda:all_items()[0]['completed'],'QML complete did not persist')
+    click('desktopPetCompletedFilter')
+    wait(lambda:len(variant(settings.property('items')))==1 and variant(settings.property('items'))[0]['completed'],'Completed filter did not refresh')
+    settings.setProperty('deleteId',item['id']);dialog=find('desktopPetDeleteReminderDialog');invoke(dialog,'open');invoke(dialog,'accepted')
+    wait(lambda:not all_items(),'Confirmed deletion did not persist')
+    invoke(dialog,'close');click('desktopPetOpenFilter')
+
+def reminder_card_smoke():
+    clock=[datetime.now(timezone.utc).replace(second=0,microsecond=0)]
+    pet.reminders.clock=lambda:clock[0]
+    pet.ui('configure',{'paused':True})
+    due=(clock[0]+timedelta(minutes=2)).isoformat()
+    item=pet.handle('createItem',{'title':'提醒 <b>纯文本</b>','dueAt':due})['item']
+    clock[0]+=timedelta(minutes=2);pet.reminders.check()
+    card=window.findChild(QObject,'desktopPetReminderCard')
+    wait(lambda:card.isVisible(),'Paused animation suppressed reminder card')
+    assert not window.property('caption')
+    pet.reaction.emit('不应补播的旧台词');assert not window.property('caption')
+    for language in ('zh','en'):
+        backend.setLanguage(language)
+        rendered={}
+        def capture_rendered_pet():
+            animation=window.findChild(QObject,'desktopPetAnimation')
+            if animation is None or not animation.property('ready') or animation.property('paintedHeight')<=0:
+                return False
+            # grabWindow renders the actual scene. Ready alone does not establish
+            # that the asynchronously decoded pet has reached the screenshot.
+            window.requestUpdate()
+            image=window.grabWindow()
+            if image.isNull() or not card.isVisible():return False
+            scale=image.height()/window.height()
+            below_card=int((card.y()+card.height()+2)*scale)
+            pixels=sum(image.pixelColor(x,y).alpha()>0
+                       for y in range(max(0,below_card),image.height(),2)
+                       for x in range(0,image.width(),2))
+            if not pixels:return False
+            rendered.update(image=image,petPixels=pixels)
+            return True
+        wait(capture_rendered_pet,'Reminder '+language+' screenshot has no rendered pet below the card')
+        assert rendered['image'].save(str(out/('reminder-card-'+language+'.png')))
+        print('Reminder card screenshot '+language+': '+str(rendered['petPixels'])+' nontransparent pet samples below card')
+    backend.setLanguage('zh')
+    stale=item['revision']
+    pet.handle('updateItem',{'id':item['id'],'title':'更新后的标题'})
+    pet.completeReminder(item['id'],stale)
+    assert not pet.handle('getItem',{'id':item['id']})['item']['completed']
+    pet.handle('deleteItem',{'id':item['id']})
+    wait(lambda:not card.isVisible(),'Deleted item remained in reminder card')
+    due=(clock[0]+timedelta(minutes=2)).isoformat()
+    ids=[pet.handle('createItem',{'title':title,'dueAt':due})['item']['id'] for title in ('合并提醒一','合并提醒二')]
+    clock[0]+=timedelta(minutes=2);pet.reminders.check()
+    wait(lambda:len(pet.reminderCard)==2 and card.isVisible(),'Due items did not merge into one card')
+    invoke(window.findChild(QObject,'desktopPetReminderView'),'clicked')
+    wait(lambda:not card.isVisible() and main.property('page')=='settings','View card did not navigate and dismiss')
+    pet.reminders.check();assert not card.isVisible(),'Processed reminders replayed'
+    for identifier in ids:pet.handle('deleteItem',{'id':identifier})
+    pet.reminders.clock=lambda:datetime.now(timezone.utc)
+    pet.ui('configure',{'paused':False})
 
 try:
     window_loader=main.findChild(QObject,'desktopPetWindowLoader')
@@ -65,6 +202,8 @@ try:
     assert all(row['builtin'] for row in pet.appearances)
     pet.ui('selectAppearance',{'id':'whale-girl'})
     main.grabWindow().save(str(out/'settings.png'))
+    reminder_settings_smoke()
+    page=find('desktopPluginsPage')
     settings_loader=find('desktopPluginSettingsLoader')
     for identifier in ('git-viewer','file-tree','desktop-pet','git-viewer','desktop-pet'):
         page.setProperty('selectedId',identifier);QTest.qWait(50)
@@ -83,6 +222,7 @@ try:
     animation=window.findChild(QObject,'desktopPetAnimation')
     wait(lambda:animation.property('ready'),'Animation did not decode')
     assert animation.property('frameCount')>1 and not animation.property('cache')
+    reminder_card_smoke()
     first=animation.property('currentFrame');QTest.qWait(180)
     assert animation.property('currentFrame')!=first,'Animation is static'
     pet.ui('selectAppearance',{'id':'komari'})
@@ -132,7 +272,7 @@ try:
     for toggle in range(50):
         open_pet_menu()
         pinned=pet.config['alwaysOnTop']
-        activate_menu_item(menu,5)
+        activate_menu_item(menu,6)
         assert pet.config['alwaysOnTop'] is not pinned,'Pin menu action did not toggle the pet'
         open_pet_menu()
         # The first row used to be covered by the pet on Windows.
@@ -140,16 +280,24 @@ try:
         assert len(restored)==toggle+1,'Top menu row did not activate'
     open_pet_menu()
     paused=pet.config['paused']
-    activate_menu_item(menu,4)
+    activate_menu_item(menu,5)
     assert pet.config['paused'] is not paused,'Pause menu action did not respond'
     open_pet_menu()
-    appearance_menu=menu_object(menu,'menuAt(3)')
-    menu_object(menu,'itemAt(3).click()')
+    appearance_menu=menu_object(menu,'menuAt(4)')
+    menu_object(menu,'itemAt(4).click()')
     wait(lambda:appearance_menu.property('opened'),'Appearance submenu did not open')
     assert menu_object(appearance_menu,'contentItem.Window.window.flags & Qt.WindowStaysOnTopHint'),'Appearance submenu lost its explicit stay-on-top flag'
     activate_menu_item(appearance_menu,0)
     wait(lambda:not menu.property('visible'),'Appearance selection did not dismiss the menu')
     assert pet.config['appearance']==pet.appearances[0]['id'],'Appearance submenu selection did not respond'
+    open_pet_menu()
+    reminder_menu=window.findChild(QObject,'desktopPetReminderMenu')
+    menu_object(menu,'itemAt(1).click()')
+    wait(lambda:reminder_menu.property('opened'),'Reminder submenu did not open')
+    assert menu_object(reminder_menu,'contentItem.Window.window.flags & Qt.WindowStaysOnTopHint'),'Reminder submenu lost its explicit stay-on-top flag'
+    invoke(reminder_menu.findChild(QObject,'desktopPetReminderNewMenu'),'clicked')
+    wait(lambda:not menu.property('visible'),'New reminder did not dismiss the menu')
+    wait(lambda:(current:=find('desktopPetSettings')) is not None and current.property('editing') and current.property('editId')=='','Reminder submenu did not open the new-item form')
     pet.ui('hide',{})
     wait(lambda:window_loader.property('item') is None,'Hidden pet retained decoder')
     assert pet.running and pet.timer.isActive()
@@ -158,7 +306,8 @@ try:
     assert find('desktopPluginSettingsLoader').property('item') is None
     relevant=[w for w in warnings if any(s in w for s in ('DesktopPet','desktop-pet','DesktopPlugin','ReferenceError','TypeError'))]
     assert not relevant,'\n'.join(relevant)
-    (out/'result.json').write_text(json.dumps({'settings':'passed','animation':'passed','click':'passed','drag':'passed','contextMenu':'passed','pinToggles':50,'menuActionsAfterPinToggles':len(restored),'appearanceSubmenu':'passed','hiddenDecoderReleased':True,'warnings':relevant},indent=2),encoding='utf-8')
+    assert not notification_calls,'Reminder UI used a task/native/tray notification sender'
+    (out/'result.json').write_text(json.dumps({'settings':'passed','reminderCrud':'passed','localDateValidation':'passed','reminderNavigation':'passed','reminderCardStaleAndRemove':'passed','reminderBilingualScreenshots':'passed','notificationCalls':len(notification_calls),'animation':'passed','click':'passed','drag':'passed','contextMenu':'passed','pinToggles':50,'menuActionsAfterPinToggles':len(restored),'appearanceSubmenu':'passed','reminderSubmenu':'passed','hiddenDecoderReleased':True,'warnings':relevant},indent=2),encoding='utf-8')
     print('Desktop pet offscreen Qt acceptance passed')
 finally:
     backend.close()
