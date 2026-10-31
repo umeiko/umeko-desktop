@@ -68,11 +68,12 @@ FocusScope {
             spacing: 10
             RowLayout {
                 Glyph { name: "lock"; width: Theme.icon(16); height: Theme.icon(16) }
-                Text { text: panelConfirmation.tr("由 Umeko 确认", "Confirm with Umeko"); color: Theme.ink; font.pixelSize: Theme.font(13); font.bold: true }
+                Text { font.family: Theme.fontFamily; text: panelConfirmation.tr("由 Umeko 确认", "Confirm with Umeko"); color: Theme.ink; font.pixelSize: Theme.font(13); font.bold: true }
             }
-            Text { text: panelConfirmation.actionText(); color: Theme.ink; font.pixelSize: Theme.font(12); wrapMode: Text.Wrap; Layout.fillWidth: true }
-            Text { text: panelConfirmation.approval.name || ""; textFormat: Text.PlainText; color: Theme.muted; font.pixelSize: Theme.font(11); elide: Text.ElideMiddle; Layout.fillWidth: true }
+            Text { font.family: Theme.fontFamily; text: panelConfirmation.actionText(); color: Theme.ink; font.pixelSize: Theme.font(12); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Text { font.family: Theme.fontFamily; text: panelConfirmation.approval.name || ""; textFormat: Text.PlainText; color: Theme.muted; font.pixelSize: Theme.font(11); elide: Text.ElideMiddle; Layout.fillWidth: true }
             Text {
+                font.family: Theme.fontFamily
                 text: panelConfirmation.approval.operation === "skills.attach" ? panelConfirmation.tr("只改变此聊天可用的技能；已读取的内容不会被清除。", "Changes skills available to this chat. Content already read stays in its history.") : panelConfirmation.approval.operation === "skills.remove" ? panelConfirmation.tr("包内的其他技能和扩展也会一并卸载。", "Other skills and extensions in this package will also be removed.") : panelConfirmation.tr("此操作由宿主执行。", "Umeko will perform this operation.")
                 color: Theme.muted; font.pixelSize: Theme.font(11); wrapMode: Text.Wrap; Layout.fillWidth: true
             }

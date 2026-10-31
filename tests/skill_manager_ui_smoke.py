@@ -8,13 +8,16 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
 from PySide6.QtCore import QObject, Property, QPointF, QTimer, Qt, QUrl, Signal, Slot
-from PySide6.QtGui import QFont, QFontDatabase, QGuiApplication
+from PySide6.QtGui import QFont, QFontDatabase, QGuiApplication, QTextBlockFormat
 from PySide6.QtQuick import QQuickItem, QQuickTextDocument, QQuickView
 from PySide6.QtQuickControls2 import QQuickStyle
-from PySide6.QtQml import QQmlExpression
+from PySide6.QtQml import QQmlExpression, qmlRegisterType
 from PySide6.QtTest import QTest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from app.text_spacing import TextSpacing
+
 SOURCES = ["global", "project", "package", "extension", "extra"]
 
 
@@ -23,10 +26,14 @@ class FakeSdk(QObject):
     activeChanged = Signal()
     languageChanged = Signal()
     capabilitiesChanged = Signal()
+    appearanceChanged = Signal()
 
     def __init__(self):
         super().__init__()
         self._language = "en"
+        self._scale = 1.0
+        self._font_family = ""
+        self._line_spacing = "standard"
         self._operations = {name: True for name in [
             "skills.list", "skills.details", "skills.attach", "skills.default",
             "skills.reveal", "skills.remove", "skills.job", "skills.importPreview", "skills.import", "pi.install", "pi.job", "pi.cancel",
@@ -51,8 +58,20 @@ class FakeSdk(QObject):
     @Property(bool, notify=activeChanged)
     def active(self): return True
 
-    @Property(float, constant=True)
-    def scale(self): return 1.0
+    @Property(float, notify=appearanceChanged)
+    def scale(self): return self._scale
+
+    @Property(float, notify=appearanceChanged)
+    def fontScale(self): return self._scale
+
+    @Property("QVariantMap", notify=appearanceChanged)
+    def config(self): return {"fontFamily": self._font_family, "theme": "dark"}
+
+    @Property("QVariantMap", constant=True)
+    def themeStyle(self): return {"base": "dark"}
+
+    @Property(str, notify=appearanceChanged)
+    def lineSpacing(self): return self._line_spacing
 
     @Property(str, notify=languageChanged)
     def language(self): return self._language
@@ -131,7 +150,9 @@ for font in ("C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/msyh.ttc"):
     if Path(font).is_file(): QFontDatabase.addApplicationFont(font)
 app.setFont(QFont("Segoe UI", 10))
 sdk = FakeSdk()
+qmlRegisterType(TextSpacing, "Umeko.Text", 1, 0, "TextSpacing")
 view = QQuickView()
+view.engine().rootContext().setContextProperty("backend", sdk)
 warnings = []
 view.engine().warnings.connect(lambda values: warnings.extend(value.toString() for value in values))
 view.setResizeMode(QQuickView.SizeRootObjectToView)
@@ -181,6 +202,37 @@ def js(expression):
     result = code.evaluate()
     assert not code.hasError(), code.error().toString()
     return result[0] if isinstance(result, tuple) else result
+
+
+def assert_appearance(family, scale, spacing):
+    # Change the same live appearance inputs used by the application's Theme.
+    # Logical property changes do not inject mouse or keyboard input.
+    sdk._font_family, sdk._scale, sdk._line_spacing = family, scale, spacing
+    sdk.appearanceChanged.emit()
+    QTest.qWait(30)
+    pending = [root]
+    seen = 0
+    while pending:
+        item = pending.pop()
+        pending.extend(item.childItems())
+        if item.property("font") is not None and item.property("text"):
+            assert item.property("font").family() == family, (item.objectName(), item.property("font").family(), family)
+            seen += 1
+    assert seen > 15, seen
+    for name in ("skillManagerSearch", "skillManagerImportSource", "skillManagerInstallSource"):
+        assert find(name).property("font").pixelSize() == int(12 * scale + .5), name
+    markdown = find("skillManagerMarkdown")
+    assert markdown.property("font").pixelSize() == int(11 * scale + .5)
+    block = markdown.property("textDocument").textDocument().begin()
+    count = 0
+    while block.isValid():
+        if block.text().strip():
+            style = block.blockFormat()
+            assert style.lineHeightType() == QTextBlockFormat.ProportionalHeight.value
+            assert abs(style.lineHeight() - {"compact": 100, "standard": 120, "relaxed": 150}[spacing]) < .01
+            count += 1
+        block = block.next()
+    assert count, "Markdown spacing checked no content"
 
 
 def run_import_cases():
@@ -289,6 +341,9 @@ try:
     assert "Fixture guide" in rendered and "**" not in rendered and "# " not in rendered
     assert "1,536 bytes" in find("skillManagerSize").property("text")
     assert find("skillManagerEntry_skill-00").height() == 26
+    for family, scale, spacing in (("Microsoft YaHei UI", 1.17, "relaxed"), ("Segoe UI", 1.0, "compact")):
+        assert_appearance(family, scale, spacing)
+    assert find("skillManagerEntry_skill-00").height() == 26
     check = find("skillManagerAttach_skill-00")
     assert check.mapToItem(listing, QPointF()).x() > listing.width() - 40
     assert find("skillManagerRemove").isVisible() is False
@@ -339,7 +394,7 @@ try:
     # The widget retains its own menus and fixed detail content inside its bounds.
     assert root.property("clip") and find("skillManagerFilterMenu").property("clip")
     assert not warnings, "\n".join(warnings)
-    print("SKILL_MANAGER_UI_OK: 40-row async fixture, dense rows, keyboard, filters, grouping, Markdown/files, chat/default requests, install cancellation/failure, i18n")
+    print("SKILL_MANAGER_UI_OK: 40-row async fixture, dense rows, keyboard, filters, grouping, Markdown/files, live font family/rounded scale/prose spacing, chat/default requests, install cancellation/failure, i18n")
     root.setProperty("route", "main")
     run_import_cases()
 finally:

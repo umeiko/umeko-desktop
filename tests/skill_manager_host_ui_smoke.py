@@ -35,7 +35,7 @@ def wait_for(predicate, message, seconds=45):
         time.sleep(.005)  # Allow native worker threads to run between Qt events.
         if predicate():
             return
-    raise AssertionError(message)
+    raise AssertionError(message() if callable(message) else message)
 
 
 def markdown(name):
@@ -85,6 +85,16 @@ def main():
                 and not host.panelApproval and widget is not None and not widget.property('working')
                 and (host._skills is None or not any(row['status'] == 'running' for row in host._skills.jobs.values())))
 
+        def assert_font_family(container, family):
+            pending, count = [container], 0
+            while pending:
+                item = pending.pop()
+                pending.extend(item.childItems())
+                if item.isVisible() and item.property('text') and item.property('font') is not None:
+                    assert item.property('font').family() == family, (item.objectName(), item.property('font').family(), family)
+                    count += 1
+            assert count >= 4, count
+
         def request(operation, args, *, confirm=False):
             wait_for(idle, 'The skill panel did not become idle')
             identifier = manager.requestHost(operation, json.dumps(args))
@@ -99,6 +109,7 @@ def main():
                 allow = find('widgetPanelAllow')
                 assert confirmation is not None and confirmation.isVisible()
                 assert allow is not None and allow.isVisible() and allow.isEnabled()
+                assert_font_family(confirmation, 'serif')
                 return identifier, allow
             wait_for(lambda: identifier in replies, 'Host response missing: ' + operation)
             assert replies[identifier]['ok'], replies[identifier]
@@ -128,8 +139,21 @@ def main():
             assert not backend.store.data['providers'], 'Fixture configured a provider'
             assert backend.public_server is None, 'Fixture started a public server'
             assert manager.openPage('skill-manager'), 'Built-in skill panel did not open'
-            wait_for(lambda: manager.workers.get('skill-manager', {}).get('ready') and idle(),
-                     'Actual skill widget did not initialize')
+            wait_for(lambda: bool(manager.page.get('error')) or manager.workers.get('skill-manager', {}).get('ready') and idle(),
+                     lambda: 'Actual skill widget did not initialize: ' + repr({
+                         'page': manager.page,
+                         'ready': manager.workers.get('skill-manager', {}).get('ready'),
+                         'backendBusy': backend.busy, 'kernelBusy': backend.kernelBusy,
+                         'managementBusy': backend.piManagement.busy,
+                         'widgetWorking': find('skillManagerWidget').property('working') if find('skillManagerWidget') else None,
+                     }))
+            assert not manager.page.get('error'), manager.page
+            backend.setFontFamily('serif')
+            backend.setFontScale(1.17)
+            QTest.qWait(100)
+            widget = find('skillManagerWidget')
+            assert_font_family(widget, 'serif')
+            assert find('skillManagerSearch').property('font').pixelSize() == 14
             settings = agent / 'settings.json'
             before = settings.read_bytes() if settings.exists() else None
             identifier, allow = request('pi.install', {'source': str(package), 'project': False}, confirm=True)
@@ -172,7 +196,7 @@ def main():
             relevant_warnings = [warning for warning in warnings if 'skill-manager' in warning
                                  or 'DesktopPluginSurface' in warning]
             assert not relevant_warnings, relevant_warnings
-            print('SKILL_MANAGER_HOST_UI_OK: actual App/QML confirmation, native local package, '
+            print('SKILL_MANAGER_HOST_UI_OK: actual App/QML confirmation and live font propagation, native local package, '
                   'ZIP/global and folder/project imports, native catalog; model calls=0')
         finally:
             backend.close()

@@ -1,6 +1,8 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Umeko.Text 1.0
+import "../../../app/qml" as Umeko
 
 FocusScope {
     id: root
@@ -214,27 +216,28 @@ FocusScope {
     }
     Rectangle { anchors.fill:parent; color:root.sdk.colors.surface; z:-1 }
     component Label: Text {
-        color:root.sdk.colors.ink; font.pixelSize:12*root.sdk.scale; textFormat:Text.PlainText
+        color:root.sdk.colors.ink; font.family:Umeko.Theme.fontFamily; font.pixelSize:Umeko.Theme.font(12); textFormat:Text.PlainText
         verticalAlignment:Text.AlignVCenter; elide:Text.ElideRight
     }
     component SmallButton: Button {
         id:button
+        font.family:Umeko.Theme.fontFamily
         property bool selected:false
         implicitHeight:28*root.sdk.scale; implicitWidth:Math.max(26*root.sdk.scale, label.implicitWidth+18*root.sdk.scale)
         padding:5*root.sdk.scale; leftPadding:8*root.sdk.scale; rightPadding:8*root.sdk.scale
         background:Rectangle {radius:5*root.sdk.scale; color:button.selected ? root.sdk.colors.accentBg : button.hovered ? root.sdk.colors.hover : "transparent"; border.color:button.selected ? root.sdk.colors.accent : root.sdk.colors.line}
-        contentItem:Label {id:label;text:button.text;font.pixelSize:11*root.sdk.scale;horizontalAlignment:Text.AlignHCenter;color:!button.enabled ? root.sdk.colors.muted : button.selected ? root.sdk.colors.accent : root.sdk.colors.ink}
+        contentItem:Label {id:label;text:button.text;font.pixelSize:Umeko.Theme.font(11);horizontalAlignment:Text.AlignHCenter;color:!button.enabled ? root.sdk.colors.muted : button.selected ? root.sdk.colors.accent : root.sdk.colors.ink}
     }
     component SourceBadge: Rectangle {
         property string text:""
         implicitHeight:17*root.sdk.scale; implicitWidth:Math.min(74*root.sdk.scale,badge.implicitWidth+10*root.sdk.scale)
         radius:4*root.sdk.scale; color:root.sdk.colors.bg
-        Label {id:badge;anchors.centerIn:parent;width:parent.width-8*root.sdk.scale;text:parent.text;font.pixelSize:9*root.sdk.scale;color:root.sdk.colors.muted;horizontalAlignment:Text.AlignHCenter}
+        Label {id:badge;anchors.centerIn:parent;width:parent.width-8*root.sdk.scale;text:parent.text;font.pixelSize:Umeko.Theme.font(9);color:root.sdk.colors.muted;horizontalAlignment:Text.AlignHCenter}
     }
     component Input: TextField {
         id:field
         implicitHeight:32*root.sdk.scale; selectByMouse:true; color:root.sdk.colors.ink
-        font.pixelSize:12*root.sdk.scale; leftPadding:9*root.sdk.scale
+        font.family:Umeko.Theme.fontFamily; font.pixelSize:Umeko.Theme.font(12); leftPadding:9*root.sdk.scale
         background:Rectangle {radius:6*root.sdk.scale;color:root.sdk.colors.bg;border.color:field.activeFocus ? root.sdk.colors.accent : root.sdk.colors.line}
     }
     ColumnLayout {
@@ -242,8 +245,8 @@ FocusScope {
         RowLayout {
             Layout.fillWidth:true; spacing:7*root.sdk.scale
             Image {source:"../assets/layers.svg";Layout.preferredWidth:18*root.sdk.scale;Layout.preferredHeight:18*root.sdk.scale;sourceSize.width:36;sourceSize.height:36}
-            Label {text:root.route==="install" ? root.t("安装 Skill 包","Install a skill package") : root.route==="import" ? root.t("导入本地 Skill","Import local skills") : root.t("当前聊天","This chat");font.pixelSize:16*root.sdk.scale;font.bold:true;Layout.fillWidth:true}
-            Label {visible:root.route==="main";text:root.attachedCount+root.t(" 项可用 / "," available / ")+root.skills.length;font.pixelSize:10*root.sdk.scale;color:root.sdk.colors.muted}
+            Label {text:root.route==="install" ? root.t("安装 Skill 包","Install a skill package") : root.route==="import" ? root.t("导入本地 Skill","Import local skills") : root.t("当前聊天","This chat");font.pixelSize:Umeko.Theme.font(16);font.bold:true;Layout.fillWidth:true}
+            Label {visible:root.route==="main";text:root.attachedCount+root.t(" 项可用 / "," available / ")+root.skills.length;font.pixelSize:Umeko.Theme.font(10);color:root.sdk.colors.muted}
             SmallButton {objectName:"skillManagerInstall";visible:root.route==="main";text:"＋";enabled:!root.working;Accessible.name:root.t("安装 Skill 包","Install skill package");onClicked:{root.openMenu="";root.route="install";root.notice="";installSource.forceActiveFocus()}}
             SmallButton {objectName:"skillManagerImport";visible:root.route==="main";text:root.t("导入","Import");enabled:!root.working;onClicked:{root.openMenu="";root.route="import";root.notice="";root.noticeError=false;root.clearImportPreview();importSource.forceActiveFocus()}}
             SmallButton {objectName:"skillManagerRefresh";visible:root.route==="main";text:"↻";enabled:!root.working;Accessible.name:root.t("刷新","Refresh");onClicked:root.reload()}
@@ -251,7 +254,7 @@ FocusScope {
         }
         RowLayout {
             visible:root.notice!==""; Layout.fillWidth:true
-            Label {objectName:"skillManagerNotice";text:root.notice;Layout.fillWidth:true;wrapMode:Text.Wrap;maximumLineCount:3;color:root.noticeError ? root.sdk.colors.danger : root.sdk.colors.muted;font.pixelSize:11*root.sdk.scale}
+            Label {objectName:"skillManagerNotice";text:root.notice;Layout.fillWidth:true;wrapMode:Text.Wrap;maximumLineCount:3;color:root.noticeError ? root.sdk.colors.danger : root.sdk.colors.muted;font.pixelSize:Umeko.Theme.font(11)}
             SmallButton {objectName:"skillManagerRetry";visible:root.noticeError && !root.working;text:root.t("重试","Retry");onClicked:root.route==="import" ? root.previewImport() : root.route==="install" ? root.startInstall() : (root.detailOpen && root.selected ? root.readDetails() : root.reload())}
         }
         ColumnLayout {
@@ -273,9 +276,9 @@ FocusScope {
             }
             RowLayout {
                 Layout.fillWidth:true;Layout.preferredHeight:17*root.sdk.scale
-                Label {text:root.t("名称","Name");font.pixelSize:10*root.sdk.scale;color:root.sdk.colors.muted;Layout.fillWidth:true;Layout.leftMargin:23*root.sdk.scale}
-                Label {text:root.t("来源","Source");font.pixelSize:10*root.sdk.scale;color:root.sdk.colors.muted;Layout.preferredWidth:70*root.sdk.scale}
-                Label {text:root.t("附带","Use");font.pixelSize:10*root.sdk.scale;color:root.sdk.colors.muted;Layout.preferredWidth:30*root.sdk.scale;horizontalAlignment:Text.AlignHCenter}
+                Label {text:root.t("名称","Name");font.pixelSize:Umeko.Theme.font(10);color:root.sdk.colors.muted;Layout.fillWidth:true;Layout.leftMargin:23*root.sdk.scale}
+                Label {text:root.t("来源","Source");font.pixelSize:Umeko.Theme.font(10);color:root.sdk.colors.muted;Layout.preferredWidth:70*root.sdk.scale}
+                Label {text:root.t("附带","Use");font.pixelSize:Umeko.Theme.font(10);color:root.sdk.colors.muted;Layout.preferredWidth:30*root.sdk.scale;horizontalAlignment:Text.AlignHCenter}
             }
             ListView {
                 id:list;objectName:"skillManagerList";Layout.fillWidth:true;Layout.fillHeight:true;Layout.minimumHeight:52*root.sdk.scale
@@ -299,13 +302,13 @@ FocusScope {
                     RowLayout {
                         visible:entry.group;anchors.fill:parent;anchors.leftMargin:6*root.sdk.scale;anchors.rightMargin:8*root.sdk.scale
                         Label {text:root.collapsedGroups.indexOf(entry.modelData.key)>=0 ? "›" : "⌄";color:root.sdk.colors.muted}
-                        Label {text:entry.group ? root.sourceLabel(entry.modelData.key) : "";font.pixelSize:11*root.sdk.scale;font.bold:true;Layout.fillWidth:true}
-                        Label {text:entry.modelData.count || "";font.pixelSize:10*root.sdk.scale;color:root.sdk.colors.muted}
+                        Label {text:entry.group ? root.sourceLabel(entry.modelData.key) : "";font.pixelSize:Umeko.Theme.font(11);font.bold:true;Layout.fillWidth:true}
+                        Label {text:entry.modelData.count || "";font.pixelSize:Umeko.Theme.font(10);color:root.sdk.colors.muted}
                     }
                     RowLayout {
                         visible:!entry.group;anchors.fill:parent;anchors.leftMargin:4*root.sdk.scale;anchors.rightMargin:4*root.sdk.scale;spacing:6*root.sdk.scale
                         Image {source:"../assets/layers.svg";Layout.preferredWidth:13*root.sdk.scale;Layout.preferredHeight:13*root.sdk.scale;sourceSize.width:26;sourceSize.height:26}
-                        Label {text:entry.group ? "" : entry.modelData.skill.name;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale}
+                        Label {text:entry.group ? "" : entry.modelData.skill.name;Layout.fillWidth:true;font.pixelSize:Umeko.Theme.font(12)}
                         SourceBadge {text:entry.group ? "" : root.sourceLabel(entry.modelData.skill.source);Layout.preferredWidth:70*root.sdk.scale}
                         Button {
                             id:mark;objectName:entry.group ? "" : "skillManagerAttach_"+entry.modelData.skill.id
@@ -314,14 +317,14 @@ FocusScope {
                             background:Item {}
                             contentItem:Item {
                                 Rectangle {width:14*root.sdk.scale;height:14*root.sdk.scale;anchors.centerIn:parent;radius:3*root.sdk.scale;color:!entry.group && entry.modelData.skill.attached ? root.sdk.colors.accent : root.sdk.colors.surface;border.color:root.sdk.colors.line
-                                    Label {anchors.centerIn:parent;text:!entry.group && entry.modelData.skill.attached ? "✓" : "";font.pixelSize:11*root.sdk.scale;color:"white"}
+                                    Label {anchors.centerIn:parent;text:!entry.group && entry.modelData.skill.attached ? "✓" : "";font.pixelSize:Umeko.Theme.font(11);color:"white"}
                                 }
                             }
                             onClicked:root.toggle(entry.modelData.skill)
                         }
                     }
                 }
-                Label {anchors.centerIn:parent;width:parent.width;horizontalAlignment:Text.AlignHCenter;visible:root.entries.length===0 && !root.working;text:root.skills.length===0 ? root.t("暂无本地 Skill。可安装来源包后刷新。","No local skills. Install a package, then refresh.") : root.t("没有匹配的 Skill","No matching skills");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:11*root.sdk.scale}
+                Label {anchors.centerIn:parent;width:parent.width;horizontalAlignment:Text.AlignHCenter;visible:root.entries.length===0 && !root.working;text:root.skills.length===0 ? root.t("暂无本地 Skill。可安装来源包后刷新。","No local skills. Install a package, then refresh.") : root.t("没有匹配的 Skill","No matching skills");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:Umeko.Theme.font(11)}
             }
             Rectangle {
                 id:detailPanel;objectName:"skillManagerDetails";visible:root.detailOpen && !!root.selected
@@ -332,49 +335,51 @@ FocusScope {
                     anchors.fill:parent;anchors.margins:9*root.sdk.scale;spacing:5*root.sdk.scale
                     RowLayout {
                         Layout.fillWidth:true
-                        Label {objectName:"skillManagerName";text:root.selected ? root.selected.name : "";font.pixelSize:15*root.sdk.scale;font.bold:true;Layout.fillWidth:true}
+                        Label {objectName:"skillManagerName";text:root.selected ? root.selected.name : "";font.pixelSize:Umeko.Theme.font(15);font.bold:true;Layout.fillWidth:true}
                         SourceBadge {text:root.selected ? root.sourceLabel(root.selected.source) : ""}
                         SmallButton {objectName:"skillManagerCloseDetails";text:"×";onClicked:root.detailOpen=false;Accessible.name:root.t("关闭详情","Close details")}
                     }
-                    Label {objectName:"skillManagerDescription";Layout.fillWidth:true;text:root.selected ? root.selected.description || "" : "";wrapMode:Text.Wrap;maximumLineCount:2;color:root.sdk.colors.muted;font.pixelSize:11*root.sdk.scale}
+                    Label {objectName:"skillManagerDescription";Layout.fillWidth:true;text:root.selected ? root.selected.description || "" : "";wrapMode:Text.Wrap;maximumLineCount:2;color:root.sdk.colors.muted;font.pixelSize:Umeko.Theme.font(11)}
                     RowLayout {
                         Layout.fillWidth:true
                         SmallButton {objectName:"skillManagerMarkdownTab";text:"SKILL.md";selected:!root.filesOpen;onClicked:root.filesOpen=false}
                         SmallButton {objectName:"skillManagerFilesTab";text:root.t("文件 ","Files ")+(root.details.files || []).length;selected:root.filesOpen;onClicked:root.filesOpen=true}
                         Item {Layout.fillWidth:true}
-                        Label {objectName:"skillManagerSize";text:root.t("所列文件：","Listed files: ")+root.sizeLabel(root.details.size);font.pixelSize:10*root.sdk.scale;color:root.sdk.colors.muted}
+                        Label {objectName:"skillManagerSize";text:root.t("所列文件：","Listed files: ")+root.sizeLabel(root.details.size);font.pixelSize:Umeko.Theme.font(10);color:root.sdk.colors.muted}
                     }
                     ScrollView {
                         id:detailScroll;Layout.fillWidth:true;Layout.fillHeight:true;clip:true;contentWidth:availableWidth;ScrollBar.horizontal.policy:ScrollBar.AlwaysOff
                         Column {
                             width:detailScroll.availableWidth;spacing:3*root.sdk.scale
-                            TextEdit {objectName:"skillManagerMarkdown";visible:!root.filesOpen;width:parent.width;height:visible ? Math.max(24*root.sdk.scale,contentHeight) : 0;text:root.displayMarkdown(root.details.markdown) || (root.working ? root.t("正在读取说明…","Reading documentation…") : root.t("暂无说明。","No documentation."));textFormat:TextEdit.MarkdownText;readOnly:true;selectByMouse:true;wrapMode:TextEdit.WrapAnywhere;color:root.sdk.colors.ink;font.pixelSize:11*root.sdk.scale;selectionColor:root.sdk.colors.accentBg}
-                            Repeater {model:root.filesOpen ? root.details.files || [] : [];delegate:Label {required property var modelData;width:parent.width;text:modelData.path+" · "+root.sizeLabel(modelData.size);font.pixelSize:10*root.sdk.scale;color:root.sdk.colors.muted;wrapMode:Text.WrapAnywhere}}
-                            Label {visible:!!root.details.truncated;width:parent.width;text:root.t("仅显示部分正文或文件；字节数只计所列文件。可打开目录查看完整内容。","Some text or files are omitted. Bytes count only the listed files. Open the folder for complete content.");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:10*root.sdk.scale}
+                            TextEdit {id:markdown;objectName:"skillManagerMarkdown";font.family:Umeko.Theme.fontFamily;visible:!root.filesOpen;width:parent.width;height:visible ? Math.max(24*root.sdk.scale,contentHeight) : 0;text:root.displayMarkdown(root.details.markdown) || (root.working ? root.t("正在读取说明…","Reading documentation…") : root.t("暂无说明。","No documentation."));textFormat:TextEdit.MarkdownText;readOnly:true;selectByMouse:true;wrapMode:TextEdit.WrapAnywhere;color:root.sdk.colors.ink;font.pixelSize:Umeko.Theme.font(11);selectionColor:root.sdk.colors.accentBg
+                                TextSpacing { document:markdown.textDocument; factor:Umeko.Theme.proseLineHeight }
+                            }
+                            Repeater {model:root.filesOpen ? root.details.files || [] : [];delegate:Label {required property var modelData;width:parent.width;text:modelData.path+" · "+root.sizeLabel(modelData.size);font.pixelSize:Umeko.Theme.font(10);color:root.sdk.colors.muted;wrapMode:Text.WrapAnywhere}}
+                            Label {visible:!!root.details.truncated;width:parent.width;text:root.t("仅显示部分正文或文件；字节数只计所列文件。可打开目录查看完整内容。","Some text or files are omitted. Bytes count only the listed files. Open the folder for complete content.");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:Umeko.Theme.font(10)}
                         }
                     }
-                    Label {objectName:"skillManagerPath";Layout.fillWidth:true;text:root.details.path || (root.selected ? root.selected.path : "");font.pixelSize:9*root.sdk.scale;color:root.sdk.colors.muted;elide:Text.ElideMiddle}
+                    Label {objectName:"skillManagerPath";Layout.fillWidth:true;text:root.details.path || (root.selected ? root.selected.path : "");font.pixelSize:Umeko.Theme.font(9);color:root.sdk.colors.muted;elide:Text.ElideMiddle}
                     RowLayout {
                         Layout.fillWidth:true;spacing:5*root.sdk.scale
-                        Label {objectName:"skillManagerChatState";text:root.selected && root.selected.attached ? root.t("本聊天可用","Available in this chat") : root.t("本聊天未附带","Excluded from this chat");font.pixelSize:10*root.sdk.scale;Layout.fillWidth:true}
+                        Label {objectName:"skillManagerChatState";text:root.selected && root.selected.attached ? root.t("本聊天可用","Available in this chat") : root.t("本聊天未附带","Excluded from this chat");font.pixelSize:Umeko.Theme.font(10);Layout.fillWidth:true}
                         SmallButton {objectName:"skillManagerDetailAttach";text:root.selected && root.selected.attached ? root.t("移出聊天","Exclude") : root.t("附带到聊天","Include");enabled:!root.working;onClicked:root.toggle(root.selected)}
                         SmallButton {objectName:"skillManagerReveal";text:root.t("打开目录","Open folder");enabled:!root.working;onClicked:root.request("skills.reveal",{id:root.selectedId})}
                     }
                     RowLayout {
                         Layout.fillWidth:true;spacing:5*root.sdk.scale
-                        Label {objectName:"skillManagerDefaultLabel";text:root.defaultLabel();font.pixelSize:10*root.sdk.scale;color:root.sdk.colors.muted;Layout.fillWidth:true}
+                        Label {objectName:"skillManagerDefaultLabel";text:root.defaultLabel();font.pixelSize:Umeko.Theme.font(10);color:root.sdk.colors.muted;Layout.fillWidth:true}
                         SmallButton {objectName:"skillManagerDefault";text:root.t("更改默认…","Change default…");enabled:!root.working && !!root.selected && root.selected.defaultMutable===true;onClicked:root.request("skills.default",{id:root.selectedId,enabled:!root.selected.enabled})}
                         SmallButton {objectName:"skillManagerRemove";visible:!!root.selected && root.selected.removable===true && !!root.selected.packageSource;text:root.t("卸载包…","Remove package…");enabled:!root.working;onClicked:root.request("skills.remove",{id:root.selectedId})}
                     }
-                    Label {objectName:"skillManagerDefaultReason";visible:text!=="";Layout.fillWidth:true;text:root.defaultExplanation();wrapMode:Text.Wrap;font.pixelSize:9*root.sdk.scale;color:root.sdk.colors.muted}
+                    Label {objectName:"skillManagerDefaultReason";visible:text!=="";Layout.fillWidth:true;text:root.defaultExplanation();wrapMode:Text.Wrap;font.pixelSize:Umeko.Theme.font(9);color:root.sdk.colors.muted}
                 }
             }
-            Label {Layout.fillWidth:true;text:root.t("↑↓ 选择 · Space 附带 · Enter 详情","↑↓ select · Space toggle · Enter details");font.pixelSize:9*root.sdk.scale;color:root.sdk.colors.muted}
-            Label {objectName:"skillManagerContextHint";Layout.fillWidth:true;text:root.t("名称和简介可用，正文按需读取。移出不清除已读内容；字节数不是 token 用量。","Names and descriptions are available; bodies load on demand. Exclusion keeps content already read. Bytes are not token usage.");wrapMode:Text.Wrap;font.pixelSize:9*root.sdk.scale;color:root.sdk.colors.muted}
+            Label {Layout.fillWidth:true;text:root.t("↑↓ 选择 · Space 附带 · Enter 详情","↑↓ select · Space toggle · Enter details");font.pixelSize:Umeko.Theme.font(9);color:root.sdk.colors.muted}
+            Label {objectName:"skillManagerContextHint";Layout.fillWidth:true;text:root.t("名称和简介可用，正文按需读取。移出不清除已读内容；字节数不是 token 用量。","Names and descriptions are available; bodies load on demand. Exclusion keeps content already read. Bytes are not token usage.");wrapMode:Text.Wrap;font.pixelSize:Umeko.Theme.font(9);color:root.sdk.colors.muted}
         }
         ColumnLayout {
             visible:root.route==="import";Layout.fillWidth:true;Layout.fillHeight:true;spacing:9*root.sdk.scale
-            Label {Layout.fillWidth:true;text:root.t("粘贴本地 Skill 文件夹、ZIP 或 .skill 路径，也可拖到面板中。先预览，再由宿主确认写入。","Paste a local skill folder, ZIP or .skill path, or drop one onto this panel. Preview first; the host confirms before writing.");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:11*root.sdk.scale}
+            Label {Layout.fillWidth:true;text:root.t("粘贴本地 Skill 文件夹、ZIP 或 .skill 路径，也可拖到面板中。先预览，再由宿主确认写入。","Paste a local skill folder, ZIP or .skill path, or drop one onto this panel. Preview first; the host confirms before writing.");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:Umeko.Theme.font(11)}
             Input {id:importSource;objectName:"skillManagerImportSource";Layout.fillWidth:true;placeholderText:root.t("本地文件夹或归档路径","Local folder or archive path");enabled:!root.working;onTextChanged:root.clearImportPreview();onAccepted:root.previewImport()}
             RowLayout {
                 Layout.fillWidth:true;spacing:5*root.sdk.scale
@@ -383,8 +388,8 @@ FocusScope {
                 Item {Layout.fillWidth:true}
                 SmallButton {objectName:"skillManagerImportPreview";text:root.t("预览","Preview");enabled:!root.working && importSource.text.trim()!=="";onClicked:root.previewImport()}
             }
-            Label {objectName:"skillManagerImportSourceName";visible:!!root.importPreview.id;Layout.fillWidth:true;text:(root.importPreview.sourceName || "")+" · "+(root.importPreview.skills || []).length+root.t(" 项"," skills");font.pixelSize:11*root.sdk.scale}
-            Repeater {model:(root.importPreview.errors || []).slice(0,12);delegate:Label {required property var modelData;Layout.fillWidth:true;text:root.importError(modelData);wrapMode:Text.Wrap;color:root.sdk.colors.danger;font.pixelSize:11*root.sdk.scale;maximumLineCount:4}}
+            Label {objectName:"skillManagerImportSourceName";visible:!!root.importPreview.id;Layout.fillWidth:true;text:(root.importPreview.sourceName || "")+" · "+(root.importPreview.skills || []).length+root.t(" 项"," skills");font.pixelSize:Umeko.Theme.font(11)}
+            Repeater {model:(root.importPreview.errors || []).slice(0,12);delegate:Label {required property var modelData;Layout.fillWidth:true;text:root.importError(modelData);wrapMode:Text.Wrap;color:root.sdk.colors.danger;font.pixelSize:Umeko.Theme.font(11);maximumLineCount:4}}
             ListView {
                 id:importList;objectName:"skillManagerImportList";Layout.fillWidth:true;Layout.fillHeight:true;Layout.minimumHeight:70*root.sdk.scale;clip:true
                 model:root.importPreview.skills || [];spacing:7*root.sdk.scale;boundsBehavior:Flickable.StopAtBounds
@@ -395,9 +400,9 @@ FocusScope {
                     ColumnLayout {
                         id:importBody;x:8*root.sdk.scale;y:8*root.sdk.scale;width:parent.width-16*root.sdk.scale;spacing:5*root.sdk.scale
                         Label {Layout.fillWidth:true;text:importEntry.modelData.name || root.t("无效 Skill","Invalid skill");font.bold:true}
-                        Label {Layout.fillWidth:true;text:importEntry.modelData.description || "";wrapMode:Text.Wrap;maximumLineCount:3;color:root.sdk.colors.muted;font.pixelSize:10*root.sdk.scale}
-                        Label {objectName:"skillManagerImportError_"+importEntry.modelData.name;visible:!!importEntry.modelData.error;Layout.fillWidth:true;text:root.importError(importEntry.modelData.error);wrapMode:Text.Wrap;maximumLineCount:4;color:root.sdk.colors.danger;font.pixelSize:10*root.sdk.scale}
-                        Label {visible:!!importEntry.modelData.conflict;Layout.fillWidth:true;text:importEntry.modelData.replaceable ? root.t("同名 Skill 已存在：跳过或替换。","A skill with this name exists: skip or replace.") : root.t("同名 Skill 来自不可替换的来源，将跳过。","The existing skill belongs to a source that cannot be replaced; skip it.");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:10*root.sdk.scale}
+                        Label {Layout.fillWidth:true;text:importEntry.modelData.description || "";wrapMode:Text.Wrap;maximumLineCount:3;color:root.sdk.colors.muted;font.pixelSize:Umeko.Theme.font(10)}
+                        Label {objectName:"skillManagerImportError_"+importEntry.modelData.name;visible:!!importEntry.modelData.error;Layout.fillWidth:true;text:root.importError(importEntry.modelData.error);wrapMode:Text.Wrap;maximumLineCount:4;color:root.sdk.colors.danger;font.pixelSize:Umeko.Theme.font(10)}
+                        Label {visible:!!importEntry.modelData.conflict;Layout.fillWidth:true;text:importEntry.modelData.replaceable ? root.t("同名 Skill 已存在：跳过或替换。","A skill with this name exists: skip or replace.") : root.t("同名 Skill 来自不可替换的来源，将跳过。","The existing skill belongs to a source that cannot be replaced; skip it.");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:Umeko.Theme.font(10)}
                         RowLayout {
                             Layout.fillWidth:true
                             SmallButton {objectName:"skillManagerImportSkip_"+importEntry.modelData.name;text:root.t("跳过","Skip");selected:root.importDecisions[importEntry.modelData.name]==="skip";enabled:!root.working;onClicked:root.decideImport(importEntry.modelData.name,"skip")}
@@ -406,21 +411,21 @@ FocusScope {
                     }
                 }
             }
-            Repeater {model:(root.importResult.errors || []).slice(0,12);delegate:Label {required property var modelData;Layout.fillWidth:true;text:(modelData.name || "")+": "+root.importError(modelData.error);wrapMode:Text.Wrap;maximumLineCount:4;color:root.sdk.colors.danger;font.pixelSize:11*root.sdk.scale}}
+            Repeater {model:(root.importResult.errors || []).slice(0,12);delegate:Label {required property var modelData;Layout.fillWidth:true;text:(modelData.name || "")+": "+root.importError(modelData.error);wrapMode:Text.Wrap;maximumLineCount:4;color:root.sdk.colors.danger;font.pixelSize:Umeko.Theme.font(11)}}
             ProgressBar {objectName:"skillManagerImportProgress";visible:root.working;Layout.fillWidth:true;indeterminate:true}
-            Label {Layout.fillWidth:true;visible:!!root.importPreview.id;text:root.t("确认前不会写入。跳过的条目保持原样；导入不执行 Skill 脚本。","Nothing is written before confirmation. Skipped entries stay unchanged; import does not run skill scripts.");wrapMode:Text.Wrap;font.pixelSize:10*root.sdk.scale;color:root.sdk.colors.muted}
+            Label {Layout.fillWidth:true;visible:!!root.importPreview.id;text:root.t("确认前不会写入。跳过的条目保持原样；导入不执行 Skill 脚本。","Nothing is written before confirmation. Skipped entries stay unchanged; import does not run skill scripts.");wrapMode:Text.Wrap;font.pixelSize:Umeko.Theme.font(10);color:root.sdk.colors.muted}
             SmallButton {objectName:"skillManagerImportSubmit";text:root.t("请求导入…","Request import…");enabled:!root.working && root.importReady;onClicked:root.submitImport()}
         }
         ColumnLayout {
             visible:root.route==="install";Layout.fillWidth:true;Layout.fillHeight:true;spacing:12*root.sdk.scale
             Label {Layout.fillWidth:true;text:root.t("输入 npm、Git 或本地包来源。Pi 会安装整个包，可能同时包含扩展、模板和其他 Skill。","Enter an npm, Git or local package source. Pi installs the whole package, which may include extensions, templates and other skills.");wrapMode:Text.Wrap;color:root.sdk.colors.muted}
             Input {id:installSource;objectName:"skillManagerInstallSource";Layout.fillWidth:true;placeholderText:"npm:package-name";enabled:!root.working;onAccepted:root.startInstall()}
-            Label {text:root.t("安装范围","Install scope");font.pixelSize:11*root.sdk.scale}
+            Label {text:root.t("安装范围","Install scope");font.pixelSize:Umeko.Theme.font(11)}
             RowLayout {
                 SmallButton {objectName:"skillManagerInstallProject";text:root.t("当前项目","Current project");selected:root.installProject;enabled:!root.working;onClicked:root.installProject=true}
                 SmallButton {objectName:"skillManagerInstallGlobal";text:root.t("全局","Global");selected:!root.installProject;enabled:!root.working;onClicked:root.installProject=false}
             }
-            Label {Layout.fillWidth:true;text:root.t("提交后由宿主在本面板内确认。安装进度和错误会显示在这里。","The host asks for confirmation inside this panel. Progress and errors appear here.");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:11*root.sdk.scale}
+            Label {Layout.fillWidth:true;text:root.t("提交后由宿主在本面板内确认。安装进度和错误会显示在这里。","The host asks for confirmation inside this panel. Progress and errors appear here.");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:Umeko.Theme.font(11)}
             ProgressBar {objectName:"skillManagerInstallProgress";visible:root.working;Layout.fillWidth:true;indeterminate:true}
             RowLayout {
                 Layout.fillWidth:true
@@ -438,7 +443,7 @@ FocusScope {
     Rectangle {
         objectName:"skillManagerDropPreview";anchors.fill:parent;z:20;visible:skillDrop.containsDrag || root.dropPreview
         color:root.sdk.colors.accentBg;border.color:root.sdk.colors.accent;border.width:2
-        Label {anchors.centerIn:parent;width:parent.width-40*root.sdk.scale;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap;text:root.t("松开以预览本地 Skill\n文件夹、ZIP 或 .skill 文件","Drop to preview local skills\nFolder, ZIP or .skill file");font.pixelSize:16*root.sdk.scale}
+        Label {anchors.centerIn:parent;width:parent.width-40*root.sdk.scale;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap;text:root.t("松开以预览本地 Skill\n文件夹、ZIP 或 .skill 文件","Drop to preview local skills\nFolder, ZIP or .skill file");font.pixelSize:Umeko.Theme.font(16)}
     }
     function startInstall() {
         if (!installSource.text.trim() || working) return

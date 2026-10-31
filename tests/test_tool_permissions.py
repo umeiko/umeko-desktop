@@ -119,6 +119,7 @@ class ToolPermissionTests(unittest.TestCase):
         record.model, record.reasoning_effort = "", "off"
         record.workspace, record.file, record.history = "", "", []
         record.extension_modes = {"builtin:mcp":"disabled"}
+        record.skill_modes = {}
         backend._release = self.directory / "release"
         backend._release.mkdir()
         (backend._release / "bridge.mjs").write_text("// fixture", encoding="utf-8")
