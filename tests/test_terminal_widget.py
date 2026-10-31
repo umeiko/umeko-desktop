@@ -106,7 +106,10 @@ class TerminalTests(unittest.TestCase):
         self.context.config['scrollback']=100;identifier=self.create();terminal=self.plugin.terminals[identifier]
         with terminal.lock:
             terminal.stream.feed(''.join('line-%04d\r\n'%index for index in range(500)));terminal.revision+=1
-        value=self.call('read',{'terminalId':identifier,'lines':20});self.assertTrue(value['truncated']);self.assertIn('line-0499',value['text'])
+            # Keep synthetic buffer input and its assertion atomic: ConPTY's
+            # asynchronous shell startup may otherwise clear the screen here.
+            value=self.call('read',{'terminalId':identifier,'lines':20})
+            self.assertTrue(value['truncated']);self.assertIn('line-0499',value['text'])
         self.assertLessEqual(len(terminal.screen.history.top),100)
         with terminal.lock:
             stable=terminal.contents(20)
