@@ -35,15 +35,15 @@ Column {
                 anchors.right: piAction.left; anchors.rightMargin: 24
                 anchors.verticalCenter: parent.verticalCenter; spacing: 7
                 Row { spacing: 10
-                    Text { text: "Pi Coding Agent"; color: Theme.ink; font.pixelSize: Theme.font(16); font.weight: Font.DemiBold }
-                    Text { text: "v" + backend.kernelVersion; color: Theme.muted; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
+                    Text { font.family: Theme.fontFamily; text: "Pi Coding Agent"; color: Theme.ink; font.pixelSize: Theme.font(16); font.weight: Font.DemiBold }
+                    Text { font.family: Theme.fontFamily; text: "v" + backend.kernelVersion; color: Theme.muted; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
                 }
-                Text { width: parent.width; text: I18n.t("能力、扩展、MCP 与运行配置"); color: Theme.muted; font.pixelSize: Theme.font(12); elide: Text.ElideRight }
+                Text { font.family: Theme.fontFamily; width: parent.width; text: I18n.t("能力、扩展、MCP 与运行配置"); color: Theme.muted; font.pixelSize: Theme.font(12); elide: Text.ElideRight }
             }
             Row {
                 id: piAction; spacing: 7
                 anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                Text { text: I18n.t("配置"); color: Theme.accent; font.pixelSize: Theme.font(12) }
+                Text { font.family: Theme.fontFamily; text: I18n.t("配置"); color: Theme.accent; font.pixelSize: Theme.font(12) }
                 Glyph { name: "chevron-right"; width: Theme.icon(14); height: Theme.icon(14); anchors.verticalCenter: parent.verticalCenter }
             }
         }
@@ -64,7 +64,7 @@ Column {
                 radius: 10; color: "transparent"
                 Image { objectName: "pluginManagerArtwork"; anchors.centerIn: parent; source: "../icons/fluent/plugin-manager.png"; width: Theme.icon(42); height: Theme.icon(42); sourceSize: Qt.size(128,128); fillMode: Image.PreserveAspectFit; mipmap: true }
             }
-            Text { text: I18n.t("Widgets"); color: Theme.ink; font.pixelSize: Theme.font(16); font.weight: Font.DemiBold; Layout.fillWidth: true }
+            Text { font.family: Theme.fontFamily; text: I18n.t("Widgets"); color: Theme.ink; font.pixelSize: Theme.font(16); font.weight: Font.DemiBold; Layout.fillWidth: true }
             Glyph { name: "chevron-right"; width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }
         }
         onClicked: root.openPlugins()
@@ -75,7 +75,7 @@ Column {
             width: parent.width; spacing: 8
             ActionButton { objectName: "backFromDesktopPluginsButton"; text: "Agent"; glyph: "arrow-left"; quiet: true; onClicked: root.pluginsOpen = false }
             Glyph { name: "chevron-right"; width: Theme.icon(13); height: Theme.icon(13) }
-            Text { text: I18n.t("Widgets"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.Medium }
+            Text { font.family: Theme.fontFamily; text: I18n.t("Widgets"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.Medium }
             Item { Layout.fillWidth: true }
         }
         DesktopPluginsPage { id:pluginManager; width: parent.width; height: Math.max(360, root.availableHeight - 64) }
@@ -85,7 +85,7 @@ Column {
         RowLayout { width: parent.width; spacing: 8
             ActionButton { objectName: "backToAgentButton"; text: "Agent"; glyph: "arrow-left"; quiet: true; onClicked: root.piOpen = false }
             Glyph { name: "chevron-right"; width: Theme.icon(13); height: Theme.icon(13) }
-            Text { text: I18n.t("Pi 配置"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.Medium }
+            Text { font.family: Theme.fontFamily; text: I18n.t("Pi 配置"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.Medium }
             Item { Layout.fillWidth: true }
             ActionButton { text: "GitHub"; glyph: "external-link"; quiet: true; onClicked: backend.openPiGithub() }
         }
@@ -121,7 +121,7 @@ Column {
             width: parent.width; spacing: 8
             ActionButton { objectName: "backToPiButton"; text: I18n.t("Pi 配置"); glyph: "arrow-left"; quiet: true; onClicked: root.toolsOpen = false }
             Glyph { name: "chevron-right"; width: Theme.icon(13); height: Theme.icon(13) }
-            Text { text: I18n.t("工具与资源"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.Medium }
+            Text { font.family: Theme.fontFamily; text: I18n.t("工具与资源"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.Medium }
             Item { Layout.fillWidth: true }
         }
         ToolCatalog { width: parent.width; height: Math.max(360, root.availableHeight - 64) }

@@ -44,7 +44,7 @@ FocusScope {
     ColumnLayout {
         anchors.centerIn: parent; width: Math.max(0,parent.width-48); spacing:14
         visible: !!root.page.error || content.status===Loader.Error
-        Text {text:root.page.error || I18n.t("插件页面加载失败，请检查 QML 文件");textFormat:Text.PlainText;color:Theme.muted;wrapMode:Text.Wrap;Layout.fillWidth:true;font.pixelSize:Theme.font(12)}
+        Text { font.family: Theme.fontFamily;text:root.page.error || I18n.t("插件页面加载失败，请检查 QML 文件");textFormat:Text.PlainText;color:Theme.muted;wrapMode:Text.Wrap;Layout.fillWidth:true;font.pixelSize:Theme.font(12)}
         ActionButton {text:I18n.t("重试");onClicked:root.manager.openPage(root.page.id)}
     }
 }

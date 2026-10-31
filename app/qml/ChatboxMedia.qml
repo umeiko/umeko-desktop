@@ -40,7 +40,7 @@ Column {
                 Item {
                     width: parent.width; height: Theme.control(card.inlineImage ? 23 : 30)
                     Glyph { visible: !card.inlineImage; x: 9; width: Theme.icon(14); height: Theme.icon(14); anchors.verticalCenter: parent.verticalCenter; name: card.item.kind === "web" ? "globe" : card.item.kind === "code" ? "code" : card.item.kind === "folder" ? "folder" : "file" }
-                    Text {
+                    Text { font.family: Theme.fontFamily;
                         id: filename; objectName: "chatboxLabel_" + card.key
                         x: card.inlineImage ? 0 : 16 + Theme.icon(14); width: parent.width - x - 8; anchors.verticalCenter: parent.verticalCenter
                         text: card.inlineImage ? [card.item.name || card.item.title, card.item.mime || "image/" + (card.item.name || "").split(".").pop().toLowerCase(), root.sizeLabel(card.item.bytes || 0)].join(" · ") : card.item.title || card.item.name || I18n.t("文件")
@@ -65,7 +65,7 @@ Column {
                         sourceSize: Qt.size(Math.min(1200, card.item.pixelWidth || 1200), Math.min(900, card.item.pixelHeight || 900)); fillMode: Image.PreserveAspectFit
                     }
                     BusyIndicator { anchors.centerIn: parent; running: preview.status === Image.Loading; visible: running; width: 26; height: 26 }
-                    Text { anchors.centerIn: parent; visible: preview.status === Image.Error; text: I18n.t("图片暂不可预览，点击打开"); color: Theme.muted; font.pixelSize: Theme.font(11) }
+                    Text { font.family: Theme.fontFamily; anchors.centerIn: parent; visible: preview.status === Image.Error; text: I18n.t("图片暂不可预览，点击打开"); color: Theme.muted; font.pixelSize: Theme.font(11) }
                     ChatHitArea {
                         objectName: "previewChatbox_" + card.key; selectionController: root.selectionController
                         anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton

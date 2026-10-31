@@ -21,7 +21,7 @@ Popup {
         anchors.fill: parent; spacing: 19
         RowLayout {
             Glyph { name: "lock"; width: Theme.icon(20); height: Theme.icon(20) }
-            Text { text: root.approvalBackend.pendingApproval.title || I18n.t("操作确认"); color: Theme.ink; font.pixelSize: Theme.font(17); font.weight: Font.Medium }
+            Text { font.family: Theme.fontFamily; text: root.approvalBackend.pendingApproval.title || I18n.t("操作确认"); color: Theme.ink; font.pixelSize: Theme.font(17); font.weight: Font.Medium }
         }
         ScrollView {
             visible: root.approvalBackend.pendingApproval.method === "confirm"
@@ -34,7 +34,7 @@ Popup {
         ScrollView {
             visible: root.approvalBackend.pendingApproval.method === "input" || root.approvalBackend.pendingApproval.method === "editor"
             Layout.fillWidth: true; Layout.fillHeight: true; clip: true
-            TextArea { id: dialogInput; color: Theme.ink; font.pixelSize: Theme.font(12); selectByMouse: true; wrapMode: TextArea.Wrap; placeholderText: root.approvalBackend.pendingApproval.method === "input" ? root.approvalBackend.pendingApproval.detail || "" : "" }
+            TextArea { font.family: Theme.fontFamily; id: dialogInput; color: Theme.ink; font.pixelSize: Theme.font(12); selectByMouse: true; wrapMode: TextArea.Wrap; placeholderText: root.approvalBackend.pendingApproval.method === "input" ? root.approvalBackend.pendingApproval.detail || "" : "" }
         }
         RowLayout {
             Layout.fillWidth: true

@@ -21,8 +21,8 @@ SectionCard {
         width: parent.width; spacing: 14
         RowLayout {
             Layout.fillWidth: true; spacing: 10
-            Text { text: "MCP"; color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
-            Text { objectName: "mcpAvailability"; text: root.manager.busy ? I18n.t("正在读取扩展状态…") : root.extension === null ? I18n.t("未检测到 builtin:mcp") : root.mcpEnabled ? I18n.t("已启用") : I18n.t("已停用"); color: root.mcpEnabled ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(11) }
+            Text { font.family: Theme.fontFamily; text: "MCP"; color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
+            Text { font.family: Theme.fontFamily; objectName: "mcpAvailability"; text: root.manager.busy ? I18n.t("正在读取扩展状态…") : root.extension === null ? I18n.t("未检测到 builtin:mcp") : root.mcpEnabled ? I18n.t("已启用") : I18n.t("已停用"); color: root.mcpEnabled ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(11) }
             Item { Layout.fillWidth: true }
             ActionButton { objectName: "addMcpButton"; text: I18n.t("添加服务器"); glyph: "plus"; enabled: root.configurable; onClicked: mcpInstaller.open() }
             ActionButton {
@@ -32,7 +32,7 @@ SectionCard {
                 onClicked: { root.expanded = !root.expanded; if (root.expanded) backend.loadCapabilities() }
             }
         }
-        Text {
+        Text { font.family: Theme.fontFamily;
             objectName: "mcpDisabledReason"; Layout.fillWidth: true
             text: !root.mcpEnabled ? I18n.t("请先在插件管理 Widget 中启用 builtin:mcp，再配置 MCP 服务器。已有配置会保留。") : I18n.t("连接外部工具与资源，支持全局和当前项目的 Pi 原生配置。")
             color: Theme.muted; font.pixelSize: Theme.font(12); wrapMode: Text.Wrap

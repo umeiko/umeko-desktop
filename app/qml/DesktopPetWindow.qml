@@ -86,7 +86,7 @@ Window {
         y:Math.max(4,art.y+art.height-(art.item?art.item.paintedHeight:art.height)*(1-(root.state.contentTop || 0))-height-8)
         width:Math.min(root.width,spoken.implicitWidth+24);height:spoken.implicitHeight+16;radius:12
         color:Theme.surface;border.color:Theme.line;visible:!!root.caption && !root.reminderCard.length
-        Text {id:spoken;anchors.centerIn:parent;width:Math.min(implicitWidth,root.width-24);text:root.caption;textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.ink;font.pixelSize:Theme.font(11)}
+        Text { font.family: Theme.fontFamily;id:spoken;anchors.centerIn:parent;width:Math.min(implicitWidth,root.width-24);text:root.caption;textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.ink;font.pixelSize:Theme.font(11)}
     }
     Rectangle {
         objectName:"desktopPetReminderCard";z:4;anchors.horizontalCenter:parent.horizontalCenter
@@ -95,9 +95,9 @@ Window {
         color:Theme.surface;border.color:Theme.line;visible:root.reminderCard.length>0
         ColumnLayout {
             id:reminderContents;anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.margins:10;spacing:6
-            Text {Layout.fillWidth:true;text:root.reminderCard.length===1?I18n.t("提醒到期"):I18n.t("有 {count} 项提醒已到期").replace("{count}",root.reminderCard.length);textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.ink;font.bold:true;font.pixelSize:Theme.font(11)}
-            Text {objectName:"desktopPetReminderCardTitle";Layout.fillWidth:true;text:root.reminderCard.length?root.reminderCard[0].title:"";textFormat:Text.PlainText;wrapMode:Text.Wrap;maximumLineCount:3;elide:Text.ElideRight;color:Theme.ink;font.pixelSize:Theme.font(11)}
-            Text {Layout.fillWidth:true;visible:root.reminderCard.length===1;text:root.reminderCard.length?root.localTime(root.reminderCard[0].dueAt):"";textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.font(10)}
+            Text { font.family: Theme.fontFamily;Layout.fillWidth:true;text:root.reminderCard.length===1?I18n.t("提醒到期"):I18n.t("有 {count} 项提醒已到期").replace("{count}",root.reminderCard.length);textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.ink;font.bold:true;font.pixelSize:Theme.font(11)}
+            Text { font.family: Theme.fontFamily;objectName:"desktopPetReminderCardTitle";Layout.fillWidth:true;text:root.reminderCard.length?root.reminderCard[0].title:"";textFormat:Text.PlainText;wrapMode:Text.Wrap;maximumLineCount:3;elide:Text.ElideRight;color:Theme.ink;font.pixelSize:Theme.font(11)}
+            Text { font.family: Theme.fontFamily;Layout.fillWidth:true;visible:root.reminderCard.length===1;text:root.reminderCard.length?root.localTime(root.reminderCard[0].dueAt):"";textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.font(10)}
             Flow {
                 Layout.fillWidth:true;spacing:4
                 Button {objectName:"desktopPetReminderComplete";visible:root.reminderCard.length===1;text:I18n.t("完成");font.pixelSize:Theme.font(10);onClicked:if(root.reminderCard.length===1){const item=root.reminderCard[0];root.pet.completeReminder(item.id,item.revision)}}
@@ -171,7 +171,7 @@ Window {
                 MenuItem {
                     required property var modelData
                     text:modelData.title+" · "+root.localTime(modelData.dueAt)
-                    contentItem:Text {text:parent.text;textFormat:Text.PlainText;elide:Text.ElideRight;color:Theme.ink;font.pixelSize:Theme.font(11);verticalAlignment:Text.AlignVCenter}
+                    contentItem:Text { font.family: Theme.fontFamily;text:parent.text;textFormat:Text.PlainText;elide:Text.ElideRight;color:Theme.ink;font.pixelSize:Theme.font(11);verticalAlignment:Text.AlignVCenter}
                     implicitWidth:Math.min(360,Math.max(220,implicitContentWidth+leftPadding+rightPadding))
                     onTriggered:root.pet.openReminders(modelData.id,false)
                 }

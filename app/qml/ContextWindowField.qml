@@ -31,7 +31,7 @@ ColumnLayout {
             onClicked: root.edited(root.automaticTokens.toString(), true)
         }
     }
-    Text {
+    Text { font.family: Theme.fontFamily;
         visible: root.providerTokens > 0
         text: I18n.t("供应商上限：") + root.providerTokens + " tokens"
         color: Theme.muted; font.pixelSize: Theme.font(10)

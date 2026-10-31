@@ -65,7 +65,7 @@ Column {
             id: headerSpinner; visible: root.running
             width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter
         }
-        Text {
+        Text { font.family: Theme.fontFamily;
             id: headerLabel; objectName: "toolHistorySummary"
             x: headerSpinner.visible ? headerSpinner.width + 7 : 0
             width: Math.max(0, headerArrow.x - 7 - x)
@@ -107,8 +107,8 @@ Column {
                     name: root.command(toolRow.tool.name) ? "terminal" : toolRow.tool.name === "edit" || toolRow.tool.name === "write" ? "edit" : "file"
                     width: Theme.icon(14); height: Theme.icon(14); anchors.verticalCenter: parent.verticalCenter
                 }
-                Text { id: verb; x: Theme.icon(14) + 8; text: root.action(toolRow.tool.name); color: Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
-                Text {
+                Text { font.family: Theme.fontFamily; id: verb; x: Theme.icon(14) + 8; text: root.action(toolRow.tool.name); color: Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
+                Text { font.family: Theme.fontFamily;
                     id: pathLabel; objectName: "toolPath_" + toolRow.tool.id
                     x: verb.x + verb.width + 6; width: Math.max(0, parent.width - x - Theme.control(42))
                     visible: !!toolRow.tool.path
@@ -126,7 +126,7 @@ Column {
                     HoverTip { active: pathMouse.interactionHovered && !fileMenu.visible; text: (toolRow.tool.path || "") + I18n.t("\n点击预览") }
                     MediaContextMenu {id:fileMenu;objectName:"toolFileContext_"+toolRow.tool.id;item:({kind:"file",path:toolRow.tool.path});itemKey:"tool_"+toolRow.tool.id;chatWindow:root.Window.window}
                 }
-                Text {
+                Text { font.family: Theme.fontFamily;
                     x: verb.x + verb.width + 6; width: Math.max(0, parent.width - x - Theme.control(42)); visible: !pathLabel.visible
                     text: root.preview(toolRow.tool); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter
                 }

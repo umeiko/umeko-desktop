@@ -15,8 +15,8 @@ Popup {
     Overlay.modal: Rectangle { color: "#66000000" }
     contentItem: ColumnLayout {
         spacing: 18
-        Text { text: I18n.t("安装更新？"); color: Theme.ink; font.pixelSize: Theme.font(18); font.weight: Font.DemiBold }
-        Text { Layout.fillWidth: true; text: I18n.t("将停止所有 Agent 并关闭 Umeko。工作记录与设置会保存，未完成任务需重新发起。"); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(13) }
+        Text { font.family: Theme.fontFamily; text: I18n.t("安装更新？"); color: Theme.ink; font.pixelSize: Theme.font(18); font.weight: Font.DemiBold }
+        Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: I18n.t("将停止所有 Agent 并关闭 Umeko。工作记录与设置会保存，未完成任务需重新发起。"); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(13) }
         RowLayout {
             Layout.alignment: Qt.AlignRight; spacing: 10
             ActionButton { objectName: "cancelAppInstallButton"; text: I18n.t("取消"); onClicked: root.close() }

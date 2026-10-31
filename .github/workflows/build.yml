@@ -97,6 +97,7 @@ jobs:
             .venv/bin/python tests/model_popup_ui_smoke.py
             .venv/bin/python tests/preview_resize_ui_smoke.py
             .venv/bin/python tests/motion_ui_smoke.py
+            .venv/bin/python tests/appearance_ui_smoke.py
             .venv/bin/python tests/task_state_ui_smoke.py
           '
 

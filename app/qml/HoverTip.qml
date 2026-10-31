@@ -70,13 +70,13 @@ Item {
                 id: content
                 objectName: "hoverTipContent_" + root.objectName
                 x: 12; y: 12; width: visual.width - 24; spacing: 5
-                Text {
+                Text { font.family: Theme.fontFamily;
                     width: parent.width; visible: root.heading.length > 0
                     text: root.heading; textFormat: Text.PlainText
                     color: Theme.ink; font.pixelSize: Theme.font(12); font.weight: Font.DemiBold
                     elide: Text.ElideMiddle
                 }
-                Text {
+                Text { font.family: Theme.fontFamily;
                     id: details
                     width: parent.width; text: root.text; textFormat: Text.PlainText
                     color: Theme.muted; font.pixelSize: Theme.font(11); lineHeight: 1.3
