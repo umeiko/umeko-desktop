@@ -10,10 +10,16 @@ Rectangle {
     color: sdk.colors.surface
     clip: true
     property bool initialized: false
+    property string sessionKey: ""
     property var rows: []
     property var selected: null
     property var details: ({})
     property var tools: []
+    property bool agentBusy: false
+    property bool inventoryRequested: false
+    property bool inventoryLoading: false
+    property bool toolsHasMore: false
+    property int toolTotal: 0
     property var modes: ({})
     property var update: ({})
     property var pending: ({})
@@ -29,6 +35,7 @@ Rectangle {
     readonly property bool working: job!=="" || hostBusy || Object.keys(pending).length>0
     readonly property var paletteColors: sdk.colors
     function t(zh,en) { return sdk.language.indexOf("zh")===0 ? zh : en }
+    function toolColor(visible) { return sdk.colors.dark ? (visible ? "#8acfa2" : "#f49298") : (visible ? "#287746" : "#ba3c42") }
     function request(operation,args,kind) {
         if (!sdk.active) return
         if (!sdk.hostCapabilities || !sdk.hostCapabilities.operations[operation]) {
@@ -36,18 +43,23 @@ Rectangle {
         }
         const id=sdk.requestHost(operation,args || {})
         if (!id) {notice=t("宿主忙碌，请稍后重试","Host is busy; please retry");return}
-        const next=Object.assign({},pending);next[id]={operation:operation,kind:kind || "",detail:root.selected ? root.selected.id : "",query:root.query};pending=next
+        const next=Object.assign({},pending);next[id]={operation:operation,kind:kind || "",args:args || {},detail:root.selected ? root.selected.id : "",query:root.query};pending=next
     }
-    function status(append) {
-        const args=selected ? {details:selected.id,limit:1} : {query:query,offset:append ? rows.length : 0,limit:12}
-        request("pi.status",args,append ? "append" : "status")
+    function status(append, moreTools) {
+        const args=selected ? {details:selected.id,limit:1,toolOffset:moreTools ? tools.length : 0} : {query:query,offset:append ? rows.length : 0,limit:12}
+        request("pi.status",args,moreTools ? "tools" : append ? "append" : "status")
     }
-    function scan() { selected=null; notice=""; request("pi.scan") }
+    function scan() { selected=null; inventoryRequested=false; notice=""; request("pi.scan") }
     function select(row) {
         selected=row;details={};tools=[];update={};notice=""
         request("pi.details",{id:row.id})
     }
     function back() { selected=null;notice="";status(false) }
+    function setTool(tool, visible) { request("pi.toolVisibility",{id:selected.id,name:tool.name,visible:visible}) }
+    function updateTool(name, visible) {
+        tools=tools.map(tool=>tool.name===name ? Object.assign({},tool,{visible:visible}) : tool)
+        rows=rows.map(row=>Object.assign({},row,{tools:(row.tools || []).map(tool=>tool.name===name ? Object.assign({},tool,{visible:visible}) : tool)}))
+    }
     function openLink(url) { if(/^https?:\/\//i.test(url)) Qt.openUrlExternally(url) }
     function modeIndex() {
         if(!selected) return -1
@@ -58,7 +70,13 @@ Rectangle {
         return selected.enabled && selected.scope==="global" ? 0 : -1
     }
     function activate(index) { if(!selected || selected.info.required)return; request("pi.activation",{id:selected.id,mode:["global","session","disabled"][index]}) }
-    function initialize() { if (sdk.active && !initialized) {initialized=true;status(false)} }
+    function initialize() {
+        const key=JSON.stringify([sdk.session.token,sdk.session.workspace])
+        if(sessionKey!==key) {
+            sessionKey=key;initialized=false;selected=null;rows=[];tools=[];pending={};job="";hostBusy=false;agentBusy=false;inventoryLoading=false;inventoryRequested=false
+        }
+        if (sdk.active && !initialized) {initialized=true;status(false)}
+    }
     Component.onCompleted: initialize()
     component SmallButton: Button {
         id: button
@@ -118,17 +136,32 @@ Rectangle {
                 delegate:ItemDelegate {
                     id:entry;required property var modelData
                     objectName:"piManagerEntry_"+modelData.id
-                    width:list.width;height:80
+                    width:list.width;height:Math.max(80,entryColumn.implicitHeight+16)
                     padding:8
                     background:Rectangle {radius:10;color:entry.hovered ? root.sdk.colors.hover : "transparent"}
                     contentItem:RowLayout {
                         spacing:12
                         ExtensionIcon {colors:root.paletteColors;iconName:entry.modelData.info.icon || "package";Layout.preferredWidth:40;Layout.preferredHeight:40}
                         ColumnLayout {
-                            Layout.fillWidth:true;spacing:4
+                            id:entryColumn;Layout.fillWidth:true;spacing:6
                             Text {text:entry.modelData.name;textFormat:Text.PlainText;elide:Text.ElideRight;Layout.fillWidth:true;color:root.sdk.colors.ink;font.pixelSize:13*root.sdk.scale;font.bold:true}
                             Text {text:entry.modelData.info.description || entry.modelData.path;textFormat:Text.PlainText;elide:Text.ElideRight;Layout.fillWidth:true;color:root.sdk.colors.muted;font.pixelSize:11*root.sdk.scale}
                             Text {text:(entry.modelData.info.version || (entry.modelData.info.bundled ? root.t("内置","Bundled") : root.t("本地","Local")))+" · "+(entry.modelData.enabled ? root.t("已启用","Enabled") : root.t("已停用","Disabled"));textFormat:Text.PlainText;color:root.sdk.colors.muted;font.pixelSize:10*root.sdk.scale}
+                            Flow {
+                                Layout.fillWidth:true;spacing:4
+                                Repeater {
+                                    model:entry.modelData.tools || []
+                                    delegate:Rectangle {
+                                        required property var modelData
+                                        objectName:"piManagerToolTag_"+modelData.name
+                                        property color ink:root.toolColor(modelData.visible)
+                                        width:Math.min(implicitWidth,Math.max(40,entryColumn.width));implicitWidth:tagText.implicitWidth+12;height:22;radius:5
+                                        color:Qt.rgba(ink.r,ink.g,ink.b,0.10)
+                                        Text {id:tagText;anchors.fill:parent;anchors.margins:6;anchors.topMargin:0;anchors.bottomMargin:0;text:modelData.name;textFormat:Text.PlainText;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;color:parent.ink;font.pixelSize:10*root.sdk.scale}
+                                    }
+                                }
+                                Text {visible:entry.modelData.toolCount>(entry.modelData.tools || []).length;text:"+"+(entry.modelData.toolCount-(entry.modelData.tools || []).length);color:root.sdk.colors.muted;font.pixelSize:11*root.sdk.scale}
+                            }
                         }
                         Text {text:"›";color:root.sdk.colors.muted;font.pixelSize:20}
                     }
@@ -155,70 +188,101 @@ Rectangle {
                 }
                 Text {width:parent.width;text:root.selected ? root.selected.info.description || "" : "";textFormat:Text.PlainText;wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:12*root.sdk.scale}
                 ScopePicker {
-                    id:activation;objectName:"piManagerActivation";width:parent.width
+                    id:activation;objectName:"piManagerActivation";width:parent.width;visible:!root.selected || root.selected.id!=="builtin:pi-tools"
                     model:[root.t("全局启用","Enable globally"),root.t("本对话中启用","Enable in this chat"),root.t("本对话暂时禁用","Disable in this chat")]
                     currentIndex:root.modeIndex();enabled:!root.working && !!root.selected && !root.selected.info.required
                     displayText:root.selected && root.selected.info.required ? root.t("基础能力 · 固定启用","Required · always enabled") : currentIndex<0 ? (root.selected && root.selected.enabled ? root.t("项目中已启用","Enabled for this project") : root.t("已停用 · 选择启用范围","Disabled · choose a scope")) : currentText
                     onActivated:index=>root.activate(index)
                 }
-                Text {objectName:"piManagerActivationHint";width:parent.width;text:root.selected && root.selected.info.required ? root.t("Umeko 运行所需，无法停用。","Required by Umeko and cannot be disabled.") : root.t("任务结束后生效；对话设置仅影响当前对话。","Changes apply after the task; chat overrides affect only this chat.");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:11*root.sdk.scale}
+                Text {objectName:"piManagerActivationHint";width:parent.width;visible:!root.selected || root.selected.id!=="builtin:pi-tools";text:root.selected && root.selected.info.required ? root.t("扩展保持加载；下方可单独设置工具可见性。","The extension stays loaded; control individual tools below.") : root.t("任务结束后生效；对话设置仅影响当前对话。","Changes apply after the task; chat overrides affect only this chat.");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:11*root.sdk.scale}
                 Flow {
                     width:parent.width;spacing:8
                     SmallButton {objectName:"piManagerHomepage";visible:!!(root.selected && root.selected.info.homepage);text:root.t("↗ 主页","↗ Homepage");onClicked:root.openLink(root.selected.info.homepage)}
                     SmallButton {objectName:"piManagerRepository";visible:!!(root.selected && root.selected.info.repository);text:"↗ GitHub";onClicked:root.openLink(root.selected.info.repository)}
                     SmallButton {objectName:"piManagerCheckUpdate";visible:!!(root.selected && ["npm","git"].indexOf(root.selected.info.updateKind)>=0);enabled:!root.working;text:root.t("检查更新","Check for updates");onClicked:root.request("pi.checkUpdate",{id:root.selected.id})}
                 }
-                Text {objectName:"piManagerUpdate";width:parent.width;visible:text!=="";text:root.update.message ? root.update.message+(root.update.latest ? " · "+root.update.latest : "") : (root.selected && root.selected.info.updateKind==="desktop" ? root.t("随 Umeko 更新","Updated with Umeko") : "");textFormat:Text.PlainText;wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:12*root.sdk.scale}
+                Text {objectName:"piManagerUpdate";width:parent.width;visible:text!=="" && (!root.selected || root.selected.id!=="builtin:pi-tools");text:root.update.message ? root.update.message+(root.update.latest ? " · "+root.update.latest : "") : (root.selected && root.selected.info.updateKind==="desktop" ? root.t("随 Umeko 更新","Updated with Umeko") : "");textFormat:Text.PlainText;wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:12*root.sdk.scale}
                 Rectangle {width:parent.width;height:1;color:root.sdk.colors.line}
+                Text {visible:root.tools.length>0;text:root.t("工具 · 仅当前会话","Tools · this chat only")+" · "+root.toolTotal;color:root.sdk.colors.ink;font.pixelSize:14*root.sdk.scale;font.bold:true}
+                Text {visible:root.tools.length>0;width:parent.width;text:root.agentBusy ? root.t("任务结束后可修改。","Wait for the task to finish before changing visibility.") : root.t("勾选后 Agent 可发现并调用。","Checked tools can be discovered and called by the Agent.");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:11*root.sdk.scale}
+                Repeater {
+                    model:root.tools
+                    delegate:Column {
+                        id:toolEntry
+                        required property var modelData;width:detailBody.width;spacing:6
+                        RowLayout {
+                            width:parent.width;spacing:8
+                            Text {Layout.maximumWidth:Math.max(40,toolEntry.width-42);text:toolEntry.modelData.name;textFormat:Text.PlainText;elide:Text.ElideRight;color:root.toolColor(toolEntry.modelData.visible);font.pixelSize:12*root.sdk.scale}
+                            CheckBox {
+                                id:visibilityCheck;objectName:"piManagerToolVisible_"+toolEntry.modelData.name
+                                checked:toolEntry.modelData.visible
+                                enabled:toolEntry.modelData.editable && !root.working && !root.agentBusy
+                                padding:2;spacing:0
+                                indicator:Rectangle {implicitWidth:20;implicitHeight:20;x:visibilityCheck.leftPadding;y:(visibilityCheck.height-height)/2;radius:4;border.color:visibilityCheck.enabled ? root.sdk.colors.accent : root.sdk.colors.line;color:visibilityCheck.checked ? root.sdk.colors.accent : "transparent";Text {anchors.centerIn:parent;text:"✓";visible:visibilityCheck.checked;color:"white";font.pixelSize:14}}
+                                onClicked:{const value=checked;checked=Qt.binding(()=>toolEntry.modelData.visible);root.setTool(toolEntry.modelData,value)}
+                                Accessible.name:toolEntry.modelData.name+root.t(" 对 Agent 可见"," visible to Agent")
+                                ToolTip.visible:hovered;ToolTip.text:root.t("仅影响当前会话","Only affects this chat")
+                            }
+                            Item {Layout.fillWidth:true}
+                        }
+                        Text {width:parent.width;text:modelData.description;textFormat:Text.PlainText;wrapMode:Text.WrapAnywhere;color:root.sdk.colors.muted;font.pixelSize:12*root.sdk.scale}
+                    }
+                }
+                SmallButton {visible:root.toolsHasMore;text:root.t("更多工具","More tools");enabled:!root.working;onClicked:root.status(false,true)}
+                Text {visible:root.tools.length===0;width:parent.width;text:root.t("尚无已加载工具","No loaded tools");color:root.sdk.colors.muted;font.pixelSize:12*root.sdk.scale}
+                Rectangle {visible:root.tools.length>0 && !!root.selected && root.selected.id!=="builtin:pi-tools";width:parent.width;height:1;color:root.sdk.colors.line}
                 TextEdit {
-                    objectName:"piManagerReadme";width:parent.width;height:Math.max(32,contentHeight)
+                    objectName:"piManagerReadme";visible:!root.selected || root.selected.id!=="builtin:pi-tools";width:parent.width;height:Math.max(32,contentHeight)
                     text:root.details.markdown || root.t("正在读取本地说明…","Reading local documentation…")
                     textFormat:TextEdit.MarkdownText;readOnly:true;selectByMouse:true;wrapMode:TextEdit.WrapAnywhere
                     color:root.sdk.colors.ink;selectionColor:root.sdk.colors.accentBg;font.pixelSize:13*root.sdk.scale
                     onLinkActivated:link=>root.openLink(link)
-                }
-                Text {visible:root.tools.length>0;text:root.t("当前已加载的工具","Currently loaded tools");color:root.sdk.colors.ink;font.pixelSize:14*root.sdk.scale;font.bold:true}
-                Repeater {
-                    model:root.tools
-                    delegate:Column {
-                        required property var modelData;width:detailBody.width;spacing:6
-                        Text {width:parent.width;text:modelData.name;textFormat:Text.PlainText;wrapMode:Text.WrapAnywhere;color:root.sdk.colors.accent;font.pixelSize:12*root.sdk.scale}
-                        Text {width:parent.width;text:modelData.description;textFormat:Text.PlainText;wrapMode:Text.WrapAnywhere;color:root.sdk.colors.muted;font.pixelSize:12*root.sdk.scale}
-                    }
                 }
                 Item {width:1;height:8}
             }
         }
     }
     Timer {id:filterTimer;interval:180;onTriggered:{root.query=search.text;root.status(false)}}
-    Timer {interval:400;repeat:true;running:root.sdk.active && (!!root.job || root.hostBusy);onTriggered:{if(root.job && !root.polling){root.polling=true;root.request("pi.job",{id:root.job})}else if(!root.job && root.hostBusy && Object.keys(root.pending).length===0)root.status(false)}}
+    Timer {interval:400;repeat:true;running:root.sdk.active && (!!root.job || root.hostBusy || root.inventoryLoading || root.agentBusy);onTriggered:{if(root.job && !root.polling){root.polling=true;root.request("pi.job",{id:root.job})}else if(!root.job && (root.hostBusy || root.inventoryLoading || root.agentBusy) && Object.keys(root.pending).length===0)root.status(false)}}
     Connections {
         target:root.sdk;ignoreUnknownSignals:true
         function onActiveChanged() { root.initialize() }
+        function onSessionChanged() { root.initialize();if(root.sdk.session.busy)root.agentBusy=true }
         function onHostResponse(id,value) {
             const entry=root.pending[id];if(!entry)return
             const next=Object.assign({},root.pending);delete next[id];root.pending=next
             const op=entry.operation
             if(op==="pi.job")root.polling=false
-            if(!value.ok){root.notice=value.error || value.status;root.job="";return}
+            if(!value.ok){root.notice=value.error || value.status;root.job="";root.inventoryLoading=false;return}
             if(value.jobId){root.job=value.jobId;root.jobOperation=op;root.notice=root.t("处理中…","Working…");return}
             if(op==="pi.status") {
                 if(entry.detail!==(root.selected ? root.selected.id : "") || (!root.selected && entry.query!==root.query))return
                 const result=value.result
                 root.hostBusy=!!result.busy
+                root.agentBusy=!!result.agentBusy
+                if(result.inventoryReady || (!root.agentBusy && root.inventoryRequested)) root.inventoryLoading=false
+                if(result.contextCurrent && !root.inventoryRequested && !root.agentBusy && !root.hostBusy) {
+                    root.inventoryRequested=true;root.inventoryLoading=true;root.request("pi.inventory")
+                }
                 if(!result.contextCurrent){if(!root.job && !root.hostBusy)root.request("pi.scan");return}
                 root.notice=root.hostBusy && !root.job ? root.t("正在同步本地插件…","Synchronizing installed extensions…") : ""
                 if(root.selected) {
                     const row=(result.extensions || [])[0];if(row)root.selected=row
-                    root.details=result.details || {};root.tools=result.tools || [];root.modes=result.activationModes || {}
+                    root.details=result.details || {};root.tools=entry.kind==="tools" ? root.tools.concat(result.tools || []) : result.tools || [];root.toolTotal=result.toolTotal || 0;root.toolsHasMore=!!result.toolsHasMore;root.modes=result.activationModes || {}
                     root.update=result.extensionUpdate && result.extensionUpdate.id===root.selected.id ? result.extensionUpdate : {}
                 } else {root.rows=entry.kind==="append" ? root.rows.concat(result.extensions || []) : result.extensions || [];root.total=result.total;root.hasMore=result.hasMore}
+            } else if(op==="pi.toolVisibility") {
+                root.updateTool(entry.args.name,entry.args.visible)
+            } else if(op==="pi.inventory") {
+                root.status(false)
+            } else if(op==="pi.details") {
+                root.status(false)
             } else if(op==="pi.job") {
                 if(value.progress){root.notice=value.progress.message;root.canCancel=value.progress.cancellable}
                 const item=(value.jobs || [])[0]
                 if(item && (item.status==="done" || item.status==="failed")) {
                     root.job="";root.notice=item.result.error || ""
-                    if(item.status==="done")root.status(false)
+                    if(item.status==="done"){if(["pi.scan","pi.install","pi.refresh","pi.activation","pi.enable","pi.remove"].indexOf(root.jobOperation)>=0)root.inventoryRequested=false;root.status(false)}
                 }
             }
         }

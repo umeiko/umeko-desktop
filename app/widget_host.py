@@ -10,6 +10,7 @@ import json
 import re
 import uuid
 from datetime import datetime, timezone
+from .tool_visibility import catalog, NATIVE_ID
 from collections import OrderedDict
 
 from PySide6.QtCore import QObject, Property, QTimer, Signal, Slot
@@ -18,6 +19,8 @@ from PySide6.QtCore import QObject, Property, QTimer, Signal, Slot
 OPERATIONS = {
     'pi.status': ('pi.read', None),
     'pi.network': ('pi.read', None),
+    'pi.inventory': ('pi.read', None),
+    'pi.toolVisibility': ('pi.manage', None),
     'pi.scan': ('pi.read', 'extensions.scan'),
     'pi.checkUpdate': ('pi.read', 'extensions.checkUpdate'),
     'pi.details': ('pi.read', 'extensions.details'),
@@ -163,7 +166,7 @@ class WidgetHost(QObject):
             permission, _ = OPERATIONS[operation]
             if permission not in self.m.entries[identifier].get('permissions', []):
                 raise ValueError('Widget permission is required: ' + permission)
-            fields = {'pi.status': {'offset', 'limit', 'query', 'details'}, 'pi.network': set(), 'pi.scan': set(), 'pi.refresh': set(),
+            fields = {'pi.status': {'offset', 'limit', 'query', 'details', 'toolOffset'}, 'pi.inventory': set(), 'pi.toolVisibility': {'id','name','visible'}, 'pi.network': set(), 'pi.scan': set(), 'pi.refresh': set(),
                       'pi.enable': {'id', 'enabled'}, 'pi.install': {'source', 'project'},
                       'pi.remove': {'id'}, 'pi.job': {'id'}, 'pi.cancel': {'id'}, 'pi.checkUpdate': {'id'}, 'pi.details': {'id'}, 'pi.activation': {'id','mode'}}[operation]
             if set(args) - fields:
@@ -175,6 +178,10 @@ class WidgetHost(QObject):
                 raise ValueError('enabled must be boolean')
             if operation == 'pi.activation' and args.get('mode') not in ('global','session','disabled'):
                 raise ValueError('Invalid activation mode')
+            if operation == 'pi.toolVisibility':
+                if not isinstance(args.get('id'),str) or not isinstance(args.get('name'),str) or not 0<len(args['name'])<=256 or type(args.get('visible')) is not bool:
+                    raise ValueError('Invalid tool visibility arguments')
+                self._tool_target(args)
             if operation == 'pi.install':
                 if not isinstance(args.get('source'), str) or not args['source'].strip() or len(args['source']) > 4096:
                     raise ValueError('A valid package source is required')
@@ -183,6 +190,8 @@ class WidgetHost(QObject):
             if operation == 'pi.status':
                 if any(key in args and (not isinstance(args[key],str) or len(args[key]) > 256) for key in ('query','details')):
                     raise ValueError('Invalid local catalog query')
+                if type(args.get('toolOffset', 0)) is not int or not 0 <= args.get('toolOffset', 0) <= 1000000:
+                    raise ValueError('Invalid tool offset')
                 if type(args.get('offset', 0)) is not int or not 0 <= args.get('offset', 0) <= 1000000:
                     raise ValueError('offset must be an integer from 0 to 1000000')
                 if type(args.get('limit', 100)) is not int or not 1 <= args.get('limit', 100) <= 200:
@@ -223,9 +232,34 @@ class WidgetHost(QObject):
         except (ValueError, TypeError, KeyError) as error:
             self._reply(request, {'ok': False, 'error': str(error)})
 
+    def _tool_target(self, args):
+        if not self.b.piManagement.extensionsCurrent:
+            raise ValueError('Refresh the current local inventory first')
+        row = next((row for row in catalog(self.b._view, self.b.piManagement.extensions) if row['id'] == args['id']), {})
+        if not any(tool['name']==args['name'] and tool['editable'] for tool in row.get('tools',[])):
+            raise ValueError('Tool does not belong to this loaded package')
+
     def _execute(self, request):
         self._owner(request)  # Revalidate after the user spends time in confirmation.
         operation, args = request['operation'], request['arguments']
+        if operation == 'pi.toolVisibility':
+            self._tool_target(args)
+            self.b.piManagement.set_tool_visible(args['name'], args['visible'])
+            self._reply(request, {'ok': True})
+            return
+        if operation == 'pi.inventory':
+            record=self.b._view
+            if not record.resources.get('allTools') or record.stale or (not record.process and record.model):
+                if self.b.busy or record.subagents_active or self.b.kernelBusy:
+                    raise ValueError('请等待当前任务结束后刷新工具列表')
+                if not getattr(record,'model',''):
+                    raise ValueError('请先选择模型，再刷新工具列表')
+                self.b._command_pi('load', record)
+            self._reply(request, {'ok':True})
+            return
+        if operation == 'pi.details' and args['id'] == NATIVE_ID:
+            self._reply(request, {'ok':True})
+            return
         if operation in ('pi.activation','pi.details'):
             if not self.b.piManagement.extensionsCurrent or not any(row.get('id')==args['id'] for row in self.b.piManagement.extensions):
                 raise ValueError('Refresh the current local inventory first')
@@ -243,23 +277,28 @@ class WidgetHost(QObject):
         if operation == 'pi.status':
             management = self.b.piManagement
             current = management.extensionsCurrent
-            all_rows = management.extensions if current else []
+            all_rows = catalog(self.b._view, management.extensions) if current else []
             query=args.get('query','').casefold()
             detail_id=args.get('details','')
             rows=[row for row in all_rows if row['id']==detail_id] if detail_id else [row for row in all_rows if not query or query in (str(row.get('name',''))+' '+str(row.get('path',''))+' '+str(row.get('info',{}).get('description',''))).casefold()]
             offset, limit = args.get('offset', 0), args.get('limit', 100)
-            page=rows[offset:offset+limit]
+            page=[{**row,'tools':[{key:tool[key] for key in ('name','visible')} for tool in row['tools'][:12]]} for row in rows[offset:offset+limit]]
             paths={row['path'] for row in page}
             modes={path:mode for path,mode in self.b._view.extension_modes.items() if path in paths}
             result={'busy':management.busy, 'status':management.status if current else '',
                 'extensions':page,'total':len(rows),'catalogTotal':len(all_rows), 'hasMore':offset+limit<len(rows),
-                'contextCurrent':current, 'workspace':request['session'].get('workspace',''),
+                'contextCurrent':current, 'inventoryReady':bool(self.b._view.resources.get('allTools')),
+                'agentBusy':self.b.busy or bool(getattr(self.b._view,'subagents_active',False)), 'workspace':request['session'].get('workspace',''),
                 'activationModes':modes,'extensionUpdate':management.extensionUpdate if current else {}}
             if detail_id:
                 doc=management.extensionDetails
                 result['details']=doc if doc.get('id')==detail_id and current else {}
-                result['tools']=[{key:str(tool.get(key,''))[:4096 if key=='description' else 256] for key in ('name','description')}
-                    for tool in self.b._view.resources.get('allTools',[]) if tool.get('source') in paths][:32]
+                if detail_id == NATIVE_ID: result['details']={'id':NATIVE_ID,'markdown':'Pi 内置工具，可按当前会话分别设置对 Agent 的可见性。'}
+                tools=rows[0]['tools'] if rows else []
+                start=args.get('toolOffset',0)
+                result['tools']=tools[start:start+40]
+                result['toolTotal']=len(tools)
+                result['toolsHasMore']=start+40<len(tools)
             self._reply(request,{'ok':True,'result':result})
             return
         control = self.b._umeko_control

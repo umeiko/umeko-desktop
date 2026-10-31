@@ -24,7 +24,7 @@ from .integration import load_adapter, UnconfiguredAdapter
 from .pi_runtime import PACKAGE, RELEASE_NAME, CREATE_NO_WINDOW, installed_version, node_executable, npm_command, project_runtime, verify_runtime
 from .npm_config import npm_environment
 from .storage import Store
-from .pi_sessions import PiSessionPool, SessionState, clean_extension_modes
+from .pi_sessions import PiSessionPool, SessionState, clean_extension_modes, clean_blocked_tools
 from .controller_runtime import PiControllerMixin
 from .transcripts import preview
 from .chat_model import ChatModel
@@ -1588,6 +1588,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
             record = self._new_view(session.get("workspace", ""))
             record.id, record.file, record.title = session_id, session.get("file", ""), session["title"]
             record.extension_modes = clean_extension_modes(self.store.data["sessionMeta"].get(session_id, {}).get("extensionModes"))
+            record.blocked_tools = clean_blocked_tools(self.store.data["sessionMeta"].get(session_id, {}).get("blockedTools"))
             effort = self.store.data["sessionMeta"].get(session_id, {}).get("reasoningEffort", record.reasoning_effort)
             record.reasoning_effort = effort if effort in ("off", "low", "high", "max") else "off"
             record.history = copy.deepcopy(session.get("history", []))
