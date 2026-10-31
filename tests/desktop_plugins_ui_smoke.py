@@ -64,7 +64,7 @@ try:
     check_launcher_boundary()
     click('desktopPluginMenuButton')
     wait(lambda:find('desktopPluginSessionMenu').property('desiredOpen') and not find('desktopPluginSessionMenu').property('animating'),'Plugin menu did not open')
-    assert find('desktopPluginQuickList').property('count')==4
+    assert find('desktopPluginQuickList').property('count')==5
     window.grabWindow().save(str(out/'quick-menu.png'))
     click('desktopPluginMenuButton')
     wait(lambda:not find('desktopPluginSessionMenu').property('visible'),'Second click did not close menu')
@@ -77,7 +77,7 @@ try:
     manager.setSessionEnabled('git-viewer',False)
     click('desktopPluginMenuButton')
     wait(lambda:not find('desktopPluginSessionMenu').property('animating'),'Filtered menu did not settle')
-    assert find('desktopPluginQuickList').property('count')==3
+    assert find('desktopPluginQuickList').property('count')==4
     click('openDesktopPlugin_file-tree')
     wait(lambda:find('fileTreeEntries') is not None and find('fileTreeEntries').property('count')>=3,'Tree did not load')
     assert window.property('page')=='chat';assert find('webPane').property('mode')=='plugin'
