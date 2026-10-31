@@ -26,7 +26,7 @@ Column {
             width: Math.max(0,root.width-Theme.icon(40)-9);elide: Text.ElideRight
             text: root.message.role === "custom" ? I18n.t("智能体总线") : root.assistantName
             textFormat: Text.PlainText; color: Theme.ink
-            font.pixelSize: Theme.font(11); font.weight: Font.DemiBold
+            font.pixelSize: Theme.font(11, visible); font.weight: Font.DemiBold
         }
     }
     Rectangle {

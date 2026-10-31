@@ -47,7 +47,7 @@ ToolButton {
             TextArea { font.family: Theme.fontFamily;
                 width: helpScroll.availableWidth
                 id: explanation; objectName: "helpText_" + control.objectName
-                text: control.help; color: Theme.bg; font.pixelSize: Theme.font(11); wrapMode: TextEdit.Wrap
+                text: control.help; color: Theme.bg; font.pixelSize: Theme.font(11, visible); wrapMode: TextEdit.Wrap
                 readOnly: true; selectByMouse: true; textFormat: TextEdit.PlainText; padding: 0
                 selectionColor: Theme.accent; selectedTextColor: "white"
                 background: null

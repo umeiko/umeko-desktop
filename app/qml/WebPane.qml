@@ -62,7 +62,7 @@ Rectangle {
         width: parent.width; height: Theme.control(pane.mode === "plugin" ? 35 : 44)
         WidgetIcon {visible:pane.mode==="plugin";plugin:backend.desktopPlugins.page;x:16;anchors.verticalCenter:parent.verticalCenter;width:Theme.icon(15);height:width}
         Glyph {visible:pane.mode!=="plugin";x:16;anchors.verticalCenter:parent.verticalCenter;name:pane.mode==="web"?"globe":backend.documentPreview.state.kind==="code"?"code":"file";width:Theme.icon(15);height:width}
-        Text { font.family: Theme.fontFamily; x: 40; width: Math.max(0, parent.width - 88); anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: pane.mode === "web" && surface.item && surface.item.title ? surface.item.title : pane.mode === "plugin" ? I18n.widgetText(backend.desktopPlugins.page, backend.desktopPlugins.page.title || "") : pane.pageTitle || pane.pageUrl; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: Theme.font(11) }
+        Text { font.family: Theme.fontFamily; x: 40; width: Math.max(0, parent.width - 88); anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: pane.mode === "web" && surface.item && surface.item.title ? surface.item.title : pane.mode === "plugin" ? I18n.widgetText(backend.desktopPlugins.page, backend.desktopPlugins.page.title || "") : pane.pageTitle || pane.pageUrl; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: Theme.font(11, visible) }
         ActionButton { objectName: "closeWebPaneButton"; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: width; quiet: true; glyph: "x"; hint: I18n.t("关闭预览"); onClicked: pane.dismiss() }
     }
     Row {
@@ -74,7 +74,7 @@ Rectangle {
         TextField { font.family: Theme.fontFamily;
             id: address; objectName: "webAddress"
             width: Math.max(80, pane.width - toolbar.x * 2 - Theme.control(96)); height: Theme.control(30)
-            text: pane.pageUrl; selectByMouse: true; font.pixelSize: Theme.font(11); color: Theme.ink; leftPadding: 11; rightPadding: 11
+            text: pane.pageUrl; selectByMouse: true; font.pixelSize: Theme.font(11, visible); color: Theme.ink; leftPadding: 11; rightPadding: 11
             background: Rectangle { radius: 15; color: Theme.bg; border.color: address.activeFocus ? Theme.accent : Theme.line }
             onActiveFocusChanged: if (activeFocus) Qt.callLater(function() { if (address.activeFocus) address.selectAll() })
             onAccepted: { pane.navigate(); focus = false }
@@ -104,7 +104,7 @@ Rectangle {
     }
     Item {
         id: fileToolbar; x: 12; y: heading.height + viewSwitch.height; width: parent.width - 24; height: pane.mode === "document" ? Theme.control(36) : 0; visible: pane.mode === "document"
-        Text { font.family: Theme.fontFamily; anchors.left: parent.left; anchors.right: fileActions.left; anchors.verticalCenter: parent.verticalCenter; text: pane.documentPath; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.muted; font.pixelSize: Theme.font(10) }
+        Text { font.family: Theme.fontFamily; anchors.left: parent.left; anchors.right: fileActions.left; anchors.verticalCenter: parent.verticalCenter; text: pane.documentPath; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
         Row {
             id: fileActions; anchors.right: parent.right; spacing: 2
             ActionButton { objectName: "copyDocumentPreviewButton"; glyph: "copy"; quiet: true; width: Theme.control(30); height: Theme.control(30); enabled: !backend.documentPreview.state.busy && !backend.documentPreview.state.error; hint: I18n.t("复制预览内容"); onClicked: backend.copy(backend.documentPreview.state.text || "") }
@@ -136,8 +136,8 @@ Rectangle {
                  && (surface.status === Loader.Error || !!surface.item && !!surface.item.errorMessage)
         Column {
             anchors.centerIn: parent; width: Math.max(0, Math.min(parent.width - 48, 420)); spacing: 16
-            Text { font.family: Theme.fontFamily; width: parent.width; text: I18n.t("网页加载失败"); color: Theme.ink; font.pixelSize: Theme.font(15); wrapMode: Text.Wrap }
-            Text { font.family: Theme.fontFamily; width: parent.width; text: surface.item ? surface.item.errorMessage : I18n.t("网页组件加载失败，请重新安装最新版本。"); color: Theme.muted; font.pixelSize: Theme.font(12); wrapMode: Text.WrapAnywhere }
+            Text { font.family: Theme.fontFamily; width: parent.width; text: I18n.t("网页加载失败"); color: Theme.ink; font.pixelSize: Theme.font(15, visible); wrapMode: Text.Wrap }
+            Text { font.family: Theme.fontFamily; width: parent.width; text: surface.item ? surface.item.errorMessage : I18n.t("网页组件加载失败，请重新安装最新版本。"); color: Theme.muted; font.pixelSize: Theme.font(12, visible); wrapMode: Text.WrapAnywhere }
             ActionButton {
                 objectName: "retryWebLoadButton"; text: I18n.t("重试"); glyph: "refresh-cw"
                 onClicked: {

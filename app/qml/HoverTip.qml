@@ -73,13 +73,13 @@ Item {
                 Text { font.family: Theme.fontFamily;
                     width: parent.width; visible: root.heading.length > 0
                     text: root.heading; textFormat: Text.PlainText
-                    color: Theme.ink; font.pixelSize: Theme.font(12); font.weight: Font.DemiBold
+                    color: Theme.ink; font.pixelSize: Theme.font(12, visible); font.weight: Font.DemiBold
                     elide: Text.ElideMiddle
                 }
                 Text { font.family: Theme.fontFamily;
                     id: details
                     width: parent.width; text: root.text; textFormat: Text.PlainText
-                    color: Theme.muted; font.pixelSize: Theme.font(11); lineHeight: 1.3
+                    color: Theme.muted; font.pixelSize: Theme.font(11, visible); lineHeight: 1.3
                     wrapMode: Text.WrapAnywhere; maximumLineCount: 6; elide: Text.ElideRight
                 }
             }

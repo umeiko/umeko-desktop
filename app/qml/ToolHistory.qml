@@ -71,7 +71,7 @@ Column {
             width: Math.max(0, headerArrow.x - 7 - x)
             text: root.summary; elide: Text.ElideRight; wrapMode: Text.NoWrap; maximumLineCount: 1
             color: headerMouse.interactionHovered ? Theme.ink : Theme.muted
-            font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter
+            font.pixelSize: Theme.font(12, visible); anchors.verticalCenter: parent.verticalCenter
         }
         Glyph {
             id: headerArrow; objectName: "toolHistoryArrow"
@@ -107,13 +107,13 @@ Column {
                     name: root.command(toolRow.tool.name) ? "terminal" : toolRow.tool.name === "edit" || toolRow.tool.name === "write" ? "edit" : "file"
                     width: Theme.icon(14); height: Theme.icon(14); anchors.verticalCenter: parent.verticalCenter
                 }
-                Text { font.family: Theme.fontFamily; id: verb; x: Theme.icon(14) + 8; text: root.action(toolRow.tool.name); color: Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
+                Text { font.family: Theme.fontFamily; id: verb; x: Theme.icon(14) + 8; text: root.action(toolRow.tool.name); color: Theme.muted; font.pixelSize: Theme.font(12, visible); anchors.verticalCenter: parent.verticalCenter }
                 Text { font.family: Theme.fontFamily;
                     id: pathLabel; objectName: "toolPath_" + toolRow.tool.id
                     x: verb.x + verb.width + 6; width: Math.max(0, parent.width - x - Theme.control(42))
                     visible: !!toolRow.tool.path
                     text: toolRow.tool.path ? toolRow.tool.path.split(/[\\/]/).pop() || toolRow.tool.path : ""
-                    elide: Text.ElideMiddle; color: pathMouse.interactionHovered ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(12); font.underline: true; anchors.verticalCenter: parent.verticalCenter
+                    elide: Text.ElideMiddle; color: pathMouse.interactionHovered ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(12, visible); font.underline: true; anchors.verticalCenter: parent.verticalCenter
                     ChatHitArea {
                         id: pathMouse; width: Math.min(parent.width, parent.implicitWidth); height: parent.height
                         selectionController: root.selectionController; interactionPriority: 10
@@ -128,7 +128,7 @@ Column {
                 }
                 Text { font.family: Theme.fontFamily;
                     x: verb.x + verb.width + 6; width: Math.max(0, parent.width - x - Theme.control(42)); visible: !pathLabel.visible
-                    text: root.preview(toolRow.tool); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter
+                    text: root.preview(toolRow.tool); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(12, visible); anchors.verticalCenter: parent.verticalCenter
                 }
                 Glyph { x: parent.width - width - Theme.control(22); width: Theme.icon(12); height: Theme.icon(12); name: toolRow.details ? "chevron-down" : "chevron-right"; anchors.verticalCenter: parent.verticalCenter }
                 Glyph {
@@ -152,7 +152,7 @@ Column {
                     selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset + toolRow.index + 1
                     conditionalSelection: true
                     text: root.detail(toolRow.tool)
-                    font.family: "Consolas"; font.pixelSize: Theme.font(11); color: Theme.muted
+                    font.family: "Consolas"; font.pixelSize: Theme.font(11, visible); color: Theme.muted
                 }
             }
         }

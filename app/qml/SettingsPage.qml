@@ -74,7 +74,7 @@ Item {
         anchors.fill: parent; anchors.leftMargin: 40; anchors.rightMargin: 40; anchors.topMargin: 19; anchors.bottomMargin: 24; spacing: 0
         RowLayout {
             Layout.fillWidth: true
-            Text { font.family: Theme.fontFamily; text: I18n.t("设置"); font.pixelSize: Theme.font(24); font.weight: Font.Medium; color: Theme.ink }
+            Text { font.family: Theme.fontFamily; text: I18n.t("设置"); font.pixelSize: Theme.font(24, visible); font.weight: Font.Medium; color: Theme.ink }
             Item { Layout.fillWidth: true }
             ActionButton { text: I18n.t("返回会话"); glyph: "arrow-left"; quiet: true; onClicked: root.back() }
         }
@@ -143,8 +143,8 @@ Item {
                                 Layout.fillWidth: true; spacing: 16
                                 ColumnLayout {
                                     Layout.fillWidth: true; spacing: 5
-                                    Text { font.family: Theme.fontFamily; text: I18n.t("常见供应商"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
-                                    Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: I18n.t("填写 API Key，快速接入常见模型服务"); color: Theme.muted; font.pixelSize: Theme.font(11); wrapMode: Text.Wrap }
+                                    Text { font.family: Theme.fontFamily; text: I18n.t("常见供应商"); color: Theme.ink; font.pixelSize: Theme.font(14, visible); font.weight: Font.DemiBold }
+                                    Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: I18n.t("填写 API Key，快速接入常见模型服务"); color: Theme.muted; font.pixelSize: Theme.font(11, visible); wrapMode: Text.Wrap }
                                 }
                                 ActionButton { objectName: "addCommonProviderButton"; glyph: "plus"; hint: I18n.t("添加常见供应商"); onClicked: commonProviders.open() }
                             }
@@ -161,12 +161,12 @@ Item {
                         width: parent.width
                         ColumnLayout { id: apiProviderContent; width: parent.width; spacing: 18
                             RowLayout { Layout.fillWidth: true
-                                Text { font.family: Theme.fontFamily; text: I18n.t("API 供应商"); color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
+                                Text { font.family: Theme.fontFamily; text: I18n.t("API 供应商"); color: Theme.ink; font.pixelSize: Theme.font(14, visible); font.weight: Font.DemiBold }
                                 HelpButton { help: I18n.t("手动配置 API 地址和密钥。一个供应商可以添加多个模型，在聊天框底部选择使用。只连接你明确保存的服务地址。") }
                                 Item { Layout.fillWidth: true }
                                 ActionButton { objectName: "addProviderButton"; text: I18n.t("添加供应商"); glyph: "plus"; onClicked: root.editProvider(null) }
                             }
-                            Text { font.family: Theme.fontFamily; visible: backend.config.providers.filter(p => (p.api === "openai" || p.api === "anthropic") && !p.presetId).length === 0 && (!root.editingProvider || root.editingCommon); text: I18n.t("暂无 API 供应商"); color: Theme.muted; font.pixelSize: Theme.font(11); Layout.topMargin: 8; Layout.bottomMargin: 8 }
+                            Text { font.family: Theme.fontFamily; visible: backend.config.providers.filter(p => (p.api === "openai" || p.api === "anthropic") && !p.presetId).length === 0 && (!root.editingProvider || root.editingCommon); text: I18n.t("暂无 API 供应商"); color: Theme.muted; font.pixelSize: Theme.font(11, visible); Layout.topMargin: 8; Layout.bottomMargin: 8 }
                             ProviderAccountList {
                                 objectName: "apiProviderAccounts"; Layout.fillWidth: true
                                 accounts: backend.config.providers.filter(p => (p.api === "openai" || p.api === "anthropic") && !p.presetId)
@@ -187,11 +187,11 @@ Item {
                         ColumnLayout { width: parent.width; spacing: 20
                             RowLayout { Layout.fillWidth: true
                                 ActionButton { objectName: "backToMappingProviders"; visible: !!root.mappingAccount; glyph: "arrow-left"; quiet: true; hint: I18n.t("返回供应商"); onClicked: root.openMappingProvider("") }
-                                Text { font.family: Theme.fontFamily; text: root.mappingAccount ? root.mappingAccount.name : I18n.t("模型映射"); textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold; Layout.fillWidth: true; elide: Text.ElideRight }
+                                Text { font.family: Theme.fontFamily; text: root.mappingAccount ? root.mappingAccount.name : I18n.t("模型映射"); textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(14, visible); font.weight: Font.DemiBold; Layout.fillWidth: true; elide: Text.ElideRight }
                                 HelpButton { objectName: "mappingHelp"; help: I18n.t("左侧填写供应商的原始模型名称，右侧是聊天与 API 代理服务使用的别名。每个供应商可有多条映射，别名必须唯一。插件供应商的模型 ID 由模型发现提供。") }
                             }
                             ColumnLayout { visible: !root.mappingAccount; Layout.fillWidth: true; spacing: 8
-                                Text { font.family: Theme.fontFamily; visible: backend.config.providers.length === 0; text: I18n.t("添加供应商后设置模型别名"); color: Theme.muted; font.pixelSize: Theme.font(11) }
+                                Text { font.family: Theme.fontFamily; visible: backend.config.providers.length === 0; text: I18n.t("添加供应商后设置模型别名"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
                                 Repeater { model: backend.config.providers
                                     ItemDelegate {
                                         required property var modelData
@@ -200,8 +200,8 @@ Item {
                                         background: Rectangle { radius: 9; color: parent.hovered ? Theme.accentBg : Theme.bg }
                                         contentItem: RowLayout { spacing: 12
                                             ColumnLayout { id: providerLabel; Layout.fillWidth: true; spacing: 3
-                                                Text { font.family: Theme.fontFamily; text: modelData.name; textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12); Layout.fillWidth: true; elide: Text.ElideRight }
-                                                Text { font.family: Theme.fontFamily; text: modelData.models.length + I18n.t(" 个模型"); color: Theme.muted; font.pixelSize: Theme.font(10) }
+                                                Text { font.family: Theme.fontFamily; text: modelData.name; textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12, visible); Layout.fillWidth: true; elide: Text.ElideRight }
+                                                Text { font.family: Theme.fontFamily; text: modelData.models.length + I18n.t(" 个模型"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
                                             }
                                             Glyph { name: "chevron-right"; width: Theme.icon(18); height: Theme.icon(18); color: Theme.muted }
                                         }
@@ -211,9 +211,9 @@ Item {
                             }
                             ColumnLayout { visible: !!root.mappingAccount; Layout.fillWidth: true; spacing: 20
                             RowLayout { Layout.fillWidth: true; spacing: 14
-                                Text { font.family: Theme.fontFamily; text: I18n.t("原始模型名称"); color: Theme.muted; font.pixelSize: Theme.font(10); Layout.fillWidth: true; Layout.preferredWidth: 1 }
+                                Text { font.family: Theme.fontFamily; text: I18n.t("原始模型名称"); color: Theme.muted; font.pixelSize: Theme.font(10, visible); Layout.fillWidth: true; Layout.preferredWidth: 1 }
                                 Item { Layout.preferredWidth: 24 }
-                                Text { font.family: Theme.fontFamily; text: I18n.t("对外模型别名"); color: Theme.muted; font.pixelSize: Theme.font(10); Layout.fillWidth: true; Layout.preferredWidth: 1 }
+                                Text { font.family: Theme.fontFamily; text: I18n.t("对外模型别名"); color: Theme.muted; font.pixelSize: Theme.font(10, visible); Layout.fillWidth: true; Layout.preferredWidth: 1 }
                                 Item { Layout.preferredWidth: 34 }
                             }
                             Repeater {
@@ -244,7 +244,7 @@ Item {
                                     }
                                     RowLayout {
                                         Layout.fillWidth: true; spacing: 8
-                                        Text { font.family: Theme.fontFamily; text: I18n.t("上下文长度"); color: Theme.muted; font.pixelSize: Theme.font(11) }
+                                        Text { font.family: Theme.fontFamily; text: I18n.t("上下文长度"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
                                         HelpButton { help: I18n.t("自动优先使用供应商提供的上下文长度；未提供时按原始模型名匹配，未知名称使用 128000 token。输入整数、256K 或 1M 可自定义；K=1024，M=1048576。供应商上限为只读信息，可在模型映射中刷新。") }
                                         ContextWindowField {
                                             id: mappingContext
@@ -301,7 +301,7 @@ Item {
             spacing: 20
             RowLayout {
                 id: providerHeader; Layout.fillWidth: true; spacing: 16
-                Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: root.editId ? I18n.t("编辑供应商与模型") : I18n.t("添加供应商"); color: Theme.ink; font.pixelSize: Theme.font(18); font.weight: Font.DemiBold; wrapMode: Text.Wrap }
+                Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: root.editId ? I18n.t("编辑供应商与模型") : I18n.t("添加供应商"); color: Theme.ink; font.pixelSize: Theme.font(18, visible); font.weight: Font.DemiBold; wrapMode: Text.Wrap }
                 ActionButton { objectName: "closeProviderEditorButton"; glyph: "x"; quiet: true; hint: I18n.t("关闭"); onClicked: providerPopup.close() }
             }
             ScrollView {
@@ -315,20 +315,20 @@ Item {
                     width: providerFormScroll.availableWidth; spacing: 18
                     RowLayout { Layout.fillWidth: true; spacing: 16
                         ColumnLayout { Layout.fillWidth: true; spacing: 8
-                            Text { font.family: Theme.fontFamily; text: I18n.t("供应商名称"); color: Theme.ink; font.pixelSize: Theme.font(11) }
+                            Text { font.family: Theme.fontFamily; text: I18n.t("供应商名称"); color: Theme.ink; font.pixelSize: Theme.font(11, visible) }
                             InputField { id: providerName; objectName: "providerName"; Layout.fillWidth: true; placeholderText: I18n.t("例如：我的模型服务") }
                         }
                         ColumnLayout { Layout.preferredWidth: Theme.control(220); Layout.fillWidth: false; spacing: 8
-                            Text { font.family: Theme.fontFamily; text: I18n.t("API 协议"); color: Theme.ink; font.pixelSize: Theme.font(11) }
+                            Text { font.family: Theme.fontFamily; text: I18n.t("API 协议"); color: Theme.ink; font.pixelSize: Theme.font(11, visible) }
                             Picker { id: providerProtocol; Layout.fillWidth: true; model: [I18n.t("OpenAI 兼容"), I18n.t("Anthropic 兼容")] }
                         }
                     }
                     ColumnLayout { Layout.fillWidth: true; spacing: 8
-                        RowLayout { Text { font.family: Theme.fontFamily; text: "Base URL"; color: Theme.ink; font.pixelSize: Theme.font(11) } HelpButton { help: I18n.t("OpenAI 兼容地址需包含服务的版本路径，例如 /v1；Anthropic 地址可填根路径或 /v1。") } }
+                        RowLayout { Text { font.family: Theme.fontFamily; text: "Base URL"; color: Theme.ink; font.pixelSize: Theme.font(11, visible) } HelpButton { help: I18n.t("OpenAI 兼容地址需包含服务的版本路径，例如 /v1；Anthropic 地址可填根路径或 /v1。") } }
                         InputField { id: providerUrl; objectName: "providerUrl"; Layout.fillWidth: true; placeholderText: I18n.t("https://你的服务地址/v1") }
                     }
                     ColumnLayout { Layout.fillWidth: true; spacing: 8
-                        RowLayout { Text { font.family: Theme.fontFamily; text: "API Key"; color: Theme.ink; font.pixelSize: Theme.font(11) } HelpButton { help: I18n.t("密钥使用系统凭据保护保存。编辑供应商时留空可保持已有密钥。") } }
+                        RowLayout { Text { font.family: Theme.fontFamily; text: "API Key"; color: Theme.ink; font.pixelSize: Theme.font(11, visible) } HelpButton { help: I18n.t("密钥使用系统凭据保护保存。编辑供应商时留空可保持已有密钥。") } }
                         InputField { id: providerKey; objectName: "providerKey"; Layout.fillWidth: true; echoMode: TextInput.Password; placeholderText: I18n.t("输入 API Key") }
                     }
                     ProviderModels { id: providerModels; objectName: "providerModelsEditor"; Layout.fillWidth: true }

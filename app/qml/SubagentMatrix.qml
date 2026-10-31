@@ -18,7 +18,7 @@ AnchoredPidPopup {
             opacity: root.contentOpacity; spacing: 10
             RowLayout {
                 Layout.fillWidth: true
-                Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: I18n.t("%1 个子智能体").replace("%1",root.agents.length); color: Theme.ink; font.pixelSize: Theme.font(13); elide: Text.ElideRight }
+                Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: I18n.t("%1 个子智能体").replace("%1",root.agents.length); color: Theme.ink; font.pixelSize: Theme.font(13, visible); elide: Text.ElideRight }
                 ActionButton { objectName: "closeSubagentMatrix"; glyph: "x"; quiet: true; width: Theme.control(28); height: width; onClicked: root.close() }
             }
             GridView {

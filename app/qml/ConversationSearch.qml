@@ -62,7 +62,7 @@ FocusScope {
         background: Rectangle { radius: 3; color: parent.down || parent.checked ? Theme.accentBg : parent.hovered ? Theme.hover : "transparent"; border.color: parent.checked ? Theme.accent : "transparent" }
     }
     component SearchField: TextField { font.family: Theme.fontFamily;
-        height: Theme.control(25); font.pixelSize: Theme.font(11); color: Theme.ink
+        height: Theme.control(25); font.pixelSize: Theme.font(11, visible); color: Theme.ink
         selectByMouse: true; selectionColor: Theme.selectionBg; selectedTextColor: Theme.selectionText
         leftPadding: 6; rightPadding: 6
         background: Rectangle { radius: 2; color: Theme.surface; border.color: parent.activeFocus ? Theme.accent : Theme.line }
@@ -70,7 +70,7 @@ FocusScope {
         onAccepted: root.execute()
     }
     component SearchCombo: ComboBox {
-        id: combo; implicitHeight: Theme.control(26); font.pixelSize: Theme.font(10)
+        id: combo; implicitHeight: Theme.control(26); font.pixelSize: Theme.font(10, visible)
         background: Rectangle { radius: 2; color: Theme.surface; border.color: combo.activeFocus ? Theme.accent : Theme.line }
         indicator: Glyph { name: "chevron-down"; width: Theme.icon(12); height: width; x: combo.width-width-6; y: (combo.height-height)/2 }
         contentItem: Text { leftPadding: 7; rightPadding: Theme.icon(18)+5; text: combo.displayText; font: combo.font; color: Theme.ink; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter }
@@ -86,7 +86,7 @@ FocusScope {
     RowLayout {
         id: header; x: 12; y: 19; width: parent.width - 24; height: Theme.control(30); spacing: 1
         SearchAction { objectName: "searchBackButton"; glyph: "arrow-left"; hint: I18n.t("返回并清空搜索"); onClicked: { root.reset(); root.backRequested() } }
-        Text { font.family: Theme.fontFamily; text: I18n.t("搜索"); color: Theme.ink; font.pixelSize: Theme.font(11); Layout.fillWidth: true; elide: Text.ElideRight; leftPadding: 5 }
+        Text { font.family: Theme.fontFamily; text: I18n.t("搜索"); color: Theme.ink; font.pixelSize: Theme.font(11, visible); Layout.fillWidth: true; elide: Text.ElideRight; leftPadding: 5 }
         SearchAction { objectName: "searchRefreshButton"; glyph: root.service.busy ? "stop" : "refresh-cw"; hint: root.service.busy ? I18n.t("停止搜索") : I18n.t("重新搜索"); onClicked: root.service.busy ? root.service.cancel() : root.execute() }
         SearchAction { objectName: "searchClearButton"; visible: !root.compactHeader; glyph: "x"; hint: I18n.t("清空搜索结果"); onClicked: { root.reset(); root.focusSearch() } }
         SearchAction { objectName: "searchCollapseButton"; visible: !root.compactHeader; glyph: "layers"; hint: I18n.t("展开或折叠全部会话"); onClicked: root.service.collapseAll() }
@@ -110,9 +110,9 @@ FocusScope {
             }
             Row {
                 id: switches; anchors.right: parent.right; anchors.rightMargin: 2; anchors.verticalCenter: parent.verticalCenter; spacing: 1
-                SearchAction { id: matchCase; objectName: "searchMatchCase"; checkable: true; hint: I18n.t("区分大小写"); onToggled: debounce.restart(); contentItem: Text { font.family: Theme.fontFamily; text: "Aa"; color: Theme.ink; font.pixelSize: Theme.font(11); horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter } }
-                SearchAction { id: wholeWord; objectName: "searchWholeWord"; checkable: true; hint: I18n.t("全词匹配"); onToggled: debounce.restart(); contentItem: Text { font.family: Theme.fontFamily; text: "ab"; font.underline: true; color: Theme.ink; font.pixelSize: Theme.font(11); horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter } }
-                SearchAction { id: regex; objectName: "searchRegex"; checkable: true; hint: I18n.t("使用正则表达式"); onToggled: debounce.restart(); contentItem: Text { text: ".*"; color: Theme.ink; font.pixelSize: Theme.font(12); font.family: "monospace"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter } }
+                SearchAction { id: matchCase; objectName: "searchMatchCase"; checkable: true; hint: I18n.t("区分大小写"); onToggled: debounce.restart(); contentItem: Text { font.family: Theme.fontFamily; text: "Aa"; color: Theme.ink; font.pixelSize: Theme.font(11, visible); horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter } }
+                SearchAction { id: wholeWord; objectName: "searchWholeWord"; checkable: true; hint: I18n.t("全词匹配"); onToggled: debounce.restart(); contentItem: Text { font.family: Theme.fontFamily; text: "ab"; font.underline: true; color: Theme.ink; font.pixelSize: Theme.font(11, visible); horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter } }
+                SearchAction { id: regex; objectName: "searchRegex"; checkable: true; hint: I18n.t("使用正则表达式"); onToggled: debounce.restart(); contentItem: Text { text: ".*"; color: Theme.ink; font.pixelSize: Theme.font(12, visible); font.family: "monospace"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter } }
             }
         }
         RowLayout {
@@ -122,9 +122,9 @@ FocusScope {
         }
         Column {
             width: parent.width; spacing: 6; visible: root.filtersOpen
-            Text { font.family: Theme.fontFamily; text: I18n.t("包含的会话"); color: Theme.muted; font.pixelSize: Theme.font(10) }
+            Text { font.family: Theme.fontFamily; text: I18n.t("包含的会话"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
             SearchField { id: includeInput; objectName: "searchInclude"; width: parent.width; placeholderText: I18n.t("会话标题，逗号分隔") }
-            Text { font.family: Theme.fontFamily; text: I18n.t("排除的会话"); color: Theme.muted; font.pixelSize: Theme.font(10) }
+            Text { font.family: Theme.fontFamily; text: I18n.t("排除的会话"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
             SearchField { id: excludeInput; objectName: "searchExclude"; width: parent.width; placeholderText: I18n.t("会话标题，逗号分隔") }
             SearchCombo { id: role; objectName: "searchRole"; width: parent.width; model: [I18n.t("所有角色"),I18n.t("用户"),I18n.t("助手")]; onActivated: debounce.restart() }
             Row { width: parent.width; spacing: 5
@@ -135,14 +135,14 @@ FocusScope {
         Row {
             width: parent.width; spacing: 6; visible: root.service.busy
             ActivitySpinner { width: Theme.icon(13); height: Theme.icon(13); anchors.verticalCenter: parent.verticalCenter }
-            Text { font.family: Theme.fontFamily; text: root.service.phase === "preparing" ? I18n.t("正在读取会话…") : I18n.t("正在搜索…"); color: Theme.muted; font.pixelSize: Theme.font(10) }
+            Text { font.family: Theme.fontFamily; text: root.service.phase === "preparing" ? I18n.t("正在读取会话…") : I18n.t("正在搜索…"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
         }
         Text { font.family: Theme.fontFamily;
-            width: parent.width; wrapMode: Text.Wrap; color: root.validationError || root.service.error ? Theme.danger : Theme.muted; font.pixelSize: Theme.font(10)
+            width: parent.width; wrapMode: Text.Wrap; color: root.validationError || root.service.error ? Theme.danger : Theme.muted; font.pixelSize: Theme.font(10, visible)
             text: root.validationError || I18n.t(root.service.error) || (root.service.phase === "stopped" ? I18n.t("搜索已停止") : root.service.count > 0 ? root.service.count + " " + I18n.t("个匹配，来自") + " " + root.service.conversationCount + " " + I18n.t("个会话") : !root.service.busy && root.service.query ? I18n.t("未找到匹配结果") : I18n.t("在当前项目的聊天正文中搜索"))
         }
-        Text { font.family: Theme.fontFamily; width: parent.width; wrapMode: Text.Wrap; visible: root.service.limitHit; text: I18n.t("已达到 20,000 条结果上限，请缩小搜索范围"); color: Theme.muted; font.pixelSize: Theme.font(10) }
-        Text { font.family: Theme.fontFamily; width: parent.width; wrapMode: Text.Wrap; visible: root.service.skipped > 0; text: I18n.t("部分会话暂时无法读取，请刷新重试"); color: Theme.muted; font.pixelSize: Theme.font(10) }
+        Text { font.family: Theme.fontFamily; width: parent.width; wrapMode: Text.Wrap; visible: root.service.limitHit; text: I18n.t("已达到 20,000 条结果上限，请缩小搜索范围"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
+        Text { font.family: Theme.fontFamily; width: parent.width; wrapMode: Text.Wrap; visible: root.service.skipped > 0; text: I18n.t("部分会话暂时无法读取，请刷新重试"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
     }
     ListView {
         id: results; objectName: "conversationSearchResults"; x: 5; width: parent.width - 10
@@ -161,13 +161,13 @@ FocusScope {
             Text { font.family: Theme.fontFamily;
                 x: Theme.control(resultRow.group ? 27 : 39); y: resultRow.group ? (parent.height-height)/2 : Theme.control(3)
                 width: Math.max(0,parent.width-x-Theme.control(resultRow.group ? 32 : 8)); elide: Text.ElideRight
-                font.pixelSize: Theme.font(11); color: Theme.ink; textFormat: resultRow.group ? Text.PlainText : Text.RichText
+                font.pixelSize: Theme.font(11, visible); color: Theme.ink; textFormat: resultRow.group ? Text.PlainText : Text.RichText
                 clip: true
                 function escaped(value) { return String(value || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\"/g,"&quot;") }
                 text: resultRow.group ? modelData.title : escaped(modelData.before) + "<b style='background-color:" + (Theme.dark ? "#714713" : "#ffe0a1") + ";color:" + (Theme.dark ? "#ffffff" : "#342300") + "'>" + escaped(modelData.hit) + "</b>" + escaped(modelData.after)
             }
-            Text { visible: resultRow.group; anchors.right: parent.right; anchors.rightMargin: 9; anchors.verticalCenter: parent.verticalCenter; text: modelData.count || ""; color: Theme.muted; font.pixelSize: Theme.font(10) }
-            Text { visible: !resultRow.group; x: Theme.control(39); y: Theme.control(21); width: parent.width-x-8; elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(9)
+            Text { visible: resultRow.group; anchors.right: parent.right; anchors.rightMargin: 9; anchors.verticalCenter: parent.verticalCenter; text: modelData.count || ""; color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
+            Text { visible: !resultRow.group; x: Theme.control(39); y: Theme.control(21); width: parent.width-x-8; elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(9, visible)
                 text: (modelData.role === "user" ? I18n.t("用户") : I18n.t("助手")) + " · " + (modelData.timestamp ? Qt.formatDateTime(new Date(modelData.timestamp),"MM-dd hh:mm") : "") + " · " + I18n.t("行") + " " + (modelData.line || 1) }
             HoverTip { active: hover.hovered; text: resultRow.group ? modelData.title : (modelData.before || "") + (modelData.hit || "") + (modelData.after || "") }
         }

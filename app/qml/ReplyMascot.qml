@@ -65,7 +65,7 @@ FocusScope {
         x: root.width + 8; anchors.verticalCenter: parent.verticalCenter
         width: Math.max(1,Math.min(caption.implicitWidth + 20,root.captionMaxWidth)); height: Math.max(30,caption.implicitHeight+12); radius: 9
         visible: root.reaction.length > 0; color: Theme.surface; border.color: Theme.line
-        Text { font.family: Theme.fontFamily; id: caption; anchors.centerIn: parent; width: Math.max(0,parent.width-20); text: root.reaction; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.ink; font.pixelSize: Theme.font(11) }
+        Text { font.family: Theme.fontFamily; id: caption; anchors.centerIn: parent; width: Math.max(0,parent.width-20); text: root.reaction; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.ink; font.pixelSize: Theme.font(11, visible) }
     }
     ChatHitArea {
         id: pointer; objectName: "replyMascotPointer"; anchors.fill: parent; selectionController: root.selectionController

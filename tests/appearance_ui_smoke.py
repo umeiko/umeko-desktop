@@ -20,7 +20,7 @@ os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
 from PySide6.QtCore import Q_ARG, QMetaObject, QObject, QPointF, Qt, Signal, Slot
 from PySide6.QtGui import QTextBlockFormat, QTextTable
-from PySide6.QtTest import QTest
+from PySide6.QtTest import QSignalSpy, QTest
 from app.storage import Store
 from app.terminal_view import TerminalView
 from main import create_application
@@ -147,7 +147,10 @@ def assert_row(names):
 
 def assert_text_fits(item):
     assert item.property("contentHeight") <= item.height() + 2, item.objectName()
-    assert document(item).documentLayout().documentSize().width() <= item.width() + 2, item.objectName()
+    # Keep the Quick/document wrappers alive throughout the layout query.
+    quick = item.property("textDocument")
+    doc = quick.textDocument()
+    assert doc.documentLayout().documentSize().width() <= item.width() + 2, item.objectName()
 
 
 USER = "User long wrapped text with punctuation and readable lines. " * 16
@@ -205,7 +208,7 @@ with ExitStack() as mocks:
         backend.setFontScale(1)
         record = backend._view
         record.messages = [
-            {"role": "user", "text": USER},
+            {"role": "user", "text": USER, "attachments": [{"kind": "file", "name": "example.py", "path": str(ROOT / "tests/fixtures/preview/example.py")}]},
             {"role": "assistant", "text": PROSE, "error": False},
             {"role": "assistant", "text": "", "error": False, "thinking": THINKING},
         ]
@@ -215,6 +218,37 @@ with ExitStack() as mocks:
         terminal = TerminalView(window.contentItem())
         terminal.setVisible(False)
         terminal_metrics = (terminal._ch, terminal._cw, terminal.fontFamily)
+
+        # Changing size in Appearance must not reformat unopened pages or chat.
+        show_message(1)
+        window.setProperty("page", "settings")
+        settle()
+        # The virtualized conversation may recycle delegates when it is hidden;
+        # observe stable text controls, then reacquire prose on its next show.
+        hidden_text = [find("promptInput"), find("desktopPluginReadme"), find("aboutVersion")]
+        spies = []
+        for item in hidden_text:
+            assert not item.isVisible(), item.objectName()
+            font_property = item.metaObject().property(item.metaObject().indexOfProperty("font"))
+            spies.append(QSignalSpy(item, font_property.notifySignal()))
+        for percentage in range(75, 126):
+            backend.setFontScale(percentage / 100)
+            app.processEvents()
+        assert all(spy.count() == 0 for spy in spies), [spy.count() for spy in spies]
+        show_message(1)
+        shown_prose = find("selectText_1_0")
+        assert shown_prose.property("font").pixelSize() == 16
+        assert spies[0].count() > 0
+        assert_text_fits(shown_prose)
+        window.setProperty("page", "settings")
+        window.setProperty("settingsTab", 6)
+        settle()
+        assert find("aboutVersion").isVisible()
+        assert find("aboutVersion").property("font").pixelSize() == 16
+        window.setProperty("settingsTab", 5)
+        backend.setFontScale(1)
+        settle()
+
         heights = {}
         for setting, percent in (("standard", 120), ("compact", 100), ("relaxed", 150)):
             window.setProperty("page", "settings")
@@ -286,7 +320,7 @@ with ExitStack() as mocks:
             assert_font(find("fontScaleLabel"), chosen)
 
         # Exercise extreme requested presets on full long-chat and settings layouts.
-        record.messages = [{"role": "user", "text": USER}, {"role": "assistant", "text": PROSE, "error": False}]
+        record.messages = [{"role": "user", "text": USER, "attachments": [{"kind": "file", "name": "example.py", "path": str(ROOT / "tests/fixtures/preview/example.py")}]}, {"role": "assistant", "text": PROSE, "error": False}]
         backend.chatChanged.emit()
         backend.transcriptChanged.emit()
         for scale in (.75, 1.25):
@@ -298,6 +332,10 @@ with ExitStack() as mocks:
             for index in (0, 1):
                 bubble = show_message(index)
                 assert_inside(bubble, bubble.parentItem())
+                if index == 0:
+                    filename = find("userAttachmentName_0_0")
+                    assert filename.property("font").pixelSize() == int(12 * scale)
+                    assert_inside(find("userAttachment_0_0"), bubble)
                 for item in descendants(bubble):
                     if item.isVisible() and item.property("textDocument") is not None and item.property("text"):
                         assert_text_fits(item)
@@ -321,7 +359,7 @@ with ExitStack() as mocks:
                 control = find(name)
                 assert_inside(control, control.parentItem())
         assert not warnings, "\n".join(warnings)
-        print("APPEARANCE_UI_OK: controls, editable percent, all prose spacing, streaming, font propagation/reset and 75%/125% layouts")
+        print("APPEARANCE_UI_OK: controls, hidden-font deferral/reveal, attachment sizing, prose spacing, streaming, font propagation/reset and 75%/125% layouts")
     finally:
         if terminal is not None:
             terminal.timer.stop()
