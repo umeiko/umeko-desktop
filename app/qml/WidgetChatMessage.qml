@@ -52,6 +52,13 @@ Column {
         }
     }
     ActionButton {
+        objectName: "widgetRequestDetails_" + root.messageIndex
+        x: 33
+        visible: !root.user && !!root.message.error && (root.message.diagnosticId || "").length > 0
+        text: I18n.t("查看请求与返回"); glyph: "code"; quiet: true
+        onClicked: backend.showRequestDetails(root.message.diagnosticId)
+    }
+    ActionButton {
         objectName: "widgetCopyMessage_" + root.messageIndex
         x: root.user ? root.width-width : 33
         glyph: "copy"; quiet: true; width: Theme.control(22); height: Theme.control(22)

@@ -149,6 +149,16 @@ test("live snapshot bounds tool arguments and text without changing native histo
   assert.equal(messages[0].content[0].text.length,before);
 });
 
+test("child snapshot preserves provider errors independently of partial or empty content",()=>{
+  const failure = "Provider failed [Umeko:12345678-1234-1234-1234-123456789abc]";
+  const messages = ["partial answer", ""].map(text=>({role:"assistant",content:[{type:"text",text}],stopReason:"error",errorMessage:failure}));
+  const original = JSON.stringify(messages);
+  const snapshot = childMessages({messages});
+  assert.deepEqual(snapshot.messages.map(row=>row.errorMessage),[failure,failure]);
+  assert.deepEqual(snapshot.messages.map(row=>row.text),["partial answer",""]);
+  assert.equal(JSON.stringify(messages),original);
+});
+
 test("opening an executing child preserves pending tool state and real completion/errors",()=>{
   const messages=[{role:"assistant",content:[{type:"toolCall",id:"sleep",name:"bash",arguments:{command:"sleep 60"}},
     {type:"toolCall",id:"finished",name:"read",arguments:{path:"fixture.txt"}},

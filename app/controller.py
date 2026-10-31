@@ -109,6 +109,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     sidebarChanged = Signal()
     layoutChanged = Signal()
     toast = Signal(str)
+    requestDetailsRequested = Signal(str)
     webRequested = Signal(str, str)
     documentRequested = Signal(str, str, str)
     taskFinished = Signal(str, str, bool, bool)

@@ -435,6 +435,7 @@ async function state() {
       compaction: e.data, entryId: e.id, timestamp: e.timestamp };
     const message = e.message;
     const row = {role: message.role, text: textOf(message.content) || (message.stopReason === "aborted" ? "" : message.errorMessage || ""), error: message.stopReason !== "aborted" && !!message.errorMessage, entryId:e.id, timestamp:message.timestamp || e.timestamp};
+    if (row.error) row.errorMessage = message.errorMessage;
     if (message.role === "assistant") row.stopReason = message.stopReason || "";
     const thinking = thinkingOf(message.content);
     if (thinking) row.thinking = thinking;

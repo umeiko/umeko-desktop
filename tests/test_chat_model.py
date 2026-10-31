@@ -5,6 +5,37 @@ from app.chat_model import ChatModel
 
 
 class ChatModelTests(unittest.TestCase):
+    def test_partial_response_keeps_failure_separate_and_request_details_discoverable(self):
+        identifier = '12345678-1234-1234-1234-123456789abc'
+        failure = 'Provider failed [Umeko:' + identifier + ']'
+        messages = [{'role':'assistant', 'text':'```rust\nfn main() {}\n```',
+                     'thinking':'plan', 'error':True, 'errorMessage':failure, 'stopReason':'error'}]
+        original = copy.deepcopy(messages)
+        row = ChatModel.project(messages)[0]
+        self.assertEqual(row['diagnosticId'], identifier)
+        self.assertEqual(row['text'], messages[0]['text'])
+        self.assertEqual([step['kind'] for step in row['activity']], ['thinking','text','text'])
+        self.assertFalse(row['activity'][1]['error'])
+        self.assertTrue(row['activity'][2]['error'])
+        self.assertEqual(row['activity'][2]['text'], '供应商请求失败，请查看请求详情')
+        self.assertEqual(messages, original)
+        legacy = ChatModel.project([{'role':'assistant','text':failure,'error':True}])[0]
+        self.assertEqual(legacy['diagnosticId'], identifier)
+        self.assertEqual(len(legacy['activity']), 1)
+        empty = ChatModel.project([{'role':'assistant','text':'','error':True,'errorMessage':failure}])[0]
+        self.assertEqual(empty['diagnosticId'], identifier)
+        self.assertTrue(empty['activity'][0]['error'])
+
+    def test_plain_failures_and_report_markers_in_successful_text_are_not_confused(self):
+        row = ChatModel.project([{'role':'assistant','text':'partial', 'error':True,
+                                 'errorMessage':'Connection timeout'}])[0]
+        self.assertEqual([(step['text'], step['error']) for step in row['activity']],
+                         [('partial',False),('Connection timeout',True)])
+        text = 'Example [Umeko:12345678-1234-1234-1234-123456789abc]'
+        row = ChatModel.project([{'role':'assistant','text':text}])[0]
+        self.assertNotIn('diagnosticId', row)
+        self.assertEqual(row['text'], text)
+
     def test_length_continuations_keep_markdown_and_completed_tools_intact(self):
         messages = [
             {'role':'assistant', 'text':'Inspect', 'tools':[{'id':'one'}]},

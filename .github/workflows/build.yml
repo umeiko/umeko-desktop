@@ -80,6 +80,7 @@ jobs:
             .venv/bin/python -m unittest discover -s tests -p "test_*.py" -v
             .venv/bin/python tests/codearts_plugin_ui_smoke.py
             .venv/bin/python tests/subagent_pane_ui_smoke.py
+            .venv/bin/python tests/request_details_ui_smoke.py
             .venv/bin/python tests/subagent_queue_ui_smoke.py
             .venv/bin/python tests/characters_ui_smoke.py
             .venv/bin/python tests/provider_popup_ui_smoke.py

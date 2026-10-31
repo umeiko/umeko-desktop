@@ -252,6 +252,24 @@ class PiTests(unittest.TestCase):
         self.assertEqual([m['text'] for m in state['messages'] if m['role'] == 'assistant'], ['Recovered'])
         self.assertEqual([m['text'] for m in preview(state['session']['file'])[0] if m['role'] == 'assistant'], ['Recovered'])
 
+    def test_partial_failure_preserves_report_in_live_event_and_restored_history(self):
+        from types import SimpleNamespace
+        from app.chat_model import ChatModel
+        def stream(*args):
+            yield {'choices':[{'index':0,'delta':{'content':'partial answer'},'finish_reason':None}]}
+            raise ValueError('invalid api key')
+        self.gateway.adapter = SimpleNamespace(events=stream)
+        output = self.command({**self.payload, 'type':'prompt', 'text':'failure details fixture'})
+        live = next(event for event in output if event['type']=='message' and event.get('error'))
+        self.assertIn('[Umeko:', live['error'])
+        state = next(event for event in output if event['type']=='state')
+        restored = ChatModel.project(state['messages'])[-1]
+        native = ChatModel.project(preview(state['session']['file'])[0])[-1]
+        self.assertEqual(restored['text'], 'partial answer')
+        self.assertEqual(restored['diagnosticId'], native['diagnosticId'])
+        self.assertIn(restored['diagnosticId'], live['error'])
+        self.assertIn('invalid api key', self.gateway.diagnostics.read(restored['diagnosticId']))
+
     def test_default_output_budget_is_maximum(self):
         limits = []
         def response(model, messages, tools, max_tokens):

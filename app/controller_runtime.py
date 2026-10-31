@@ -312,7 +312,7 @@ class PiControllerMixin:
         elif kind == "message" and event.get("role") == "assistant":
             if event.get('error') or event.get('stopReason') == 'error': record.failed = True
             if record.messages and (record.messages[-1]["role"] == "assistant" and record.messages[-1].get("customType") != "umeko-compaction"):
-                record.messages[-1].update(text=event.get("text") or event.get("error") or record.messages[-1]["text"], error=bool(event.get("error")), stopReason=event.get("stopReason", ""))
+                record.messages[-1].update(text=event.get("text") or event.get("error") or record.messages[-1]["text"], error=bool(event.get("error")), errorMessage=event.get("error") or "", stopReason=event.get("stopReason", ""))
                 if event.get("timestamp"): record.messages[-1]["timestamp"] = event["timestamp"]
                 if "thinking" in event:
                     record.messages[-1]["thinking"] = event["thinking"]
@@ -393,8 +393,8 @@ class PiControllerMixin:
                 if marker:
                     message = "压缩失败：供应商请求失败，请查看请求详情 / Compaction failed: provider request failed " + marker[0]
                 record.tool_status = ""
-            elif record.messages and not record.messages[-1]["text"] and record.messages[-1].get("customType") != "umeko-compaction":
-                record.messages[-1].update(text=message, error=True)
+            elif record.messages and record.messages[-1].get('role') == 'assistant' and record.messages[-1].get("customType") != "umeko-compaction":
+                record.messages[-1].update(text=record.messages[-1]['text'] or message, error=True, errorMessage=message)
                 transcript = True
             if visible:
                 self.toast.emit(message)

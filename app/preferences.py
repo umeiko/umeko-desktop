@@ -68,3 +68,7 @@ class PreferencesMixin:
     @Slot(str, result=str)
     def requestReport(self, identifier):
         return self.gateway.diagnostics.read(identifier)
+
+    @Slot(str)
+    def showRequestDetails(self, identifier):
+        self.requestDetailsRequested.emit(identifier)

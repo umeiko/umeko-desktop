@@ -13,6 +13,28 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class KernelUpdateTests(unittest.TestCase):
+    def test_live_partial_failure_keeps_error_report_independent_from_prose(self):
+        from app.chat_model import ChatModel
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": temp}):
+            controller = Controller(ROOT)
+            try:
+                record = controller._view
+                record.messages = [{'role':'assistant','text':'partial response'}]
+                failure = 'Provider failed [Umeko:12345678-1234-1234-1234-123456789abc]'
+                controller._handle_pi_event(record, {'type':'message','role':'assistant',
+                    'text':'partial response','error':failure,'stopReason':'error'})
+                self.assertEqual(record.messages[-1]['errorMessage'], failure)
+                row = ChatModel.project(record.messages)[-1]
+                self.assertEqual(row['diagnosticId'], '12345678-1234-1234-1234-123456789abc')
+                self.assertEqual(row['activity'][0]['text'], 'partial response')
+                self.assertTrue(row['activity'][-1]['error'])
+                # Exceptions which bypass message_end must retain the same link.
+                controller._handle_pi_event(record, {'type':'error','message':failure})
+                self.assertEqual(ChatModel.project(record.messages)[-1]['diagnosticId'], row['diagnosticId'])
+                self.assertEqual(record.messages[-1]['text'], 'partial response')
+            finally:
+                controller.close()
+
     def setUp(self):
         # Bundled release resources are covered by their own lifecycle tests.
         bundles = patch("app.provider_plugins.BundledProviders.sync", return_value=[])

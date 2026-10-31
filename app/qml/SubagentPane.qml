@@ -73,6 +73,12 @@ Rectangle {
                     UserMessageBody { visible: message.user; width: parent.width; text: message.modelData.text || ""; attachments: message.modelData.attachments || []; selectionController: selection; messageIndex: message.index }
                     ActivityHistory { visible: !message.user; width: parent.width; activity: message.modelData.activity || []; selectionController: selection; messageIndex: message.index }
                     MessageBody { width: parent.width; text: !message.user && !(message.modelData.activity || []).length ? message.modelData.text || "" : ""; visible: text.length>0; markdown: true; selectionController: selection; messageIndex: message.index }
+                    ActionButton {
+                        objectName: "subagentRequestDetails_" + message.index
+                        visible: !message.modelData._loading && !!message.modelData.error && (message.modelData.diagnosticId || "").length > 0
+                        text: I18n.t("查看请求与返回"); glyph: "code"; quiet: true
+                        onClicked: backend.showRequestDetails(message.modelData.diagnosticId)
+                    }
                 }
             }
             SubagentReplyMascot {

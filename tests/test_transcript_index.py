@@ -37,6 +37,28 @@ class TranscriptIndexTests(unittest.TestCase):
             result.append(row)
         return result
 
+    def test_partial_failed_response_recovers_report_from_native_history_and_old_cache(self):
+        from app.transcript_index import connect
+        identifier = '12345678-1234-1234-1234-123456789abc'
+        failure = 'Provider failed [Umeko:' + identifier + ']'
+        self.write([self.message('u', None, 'user', 'task'),
+                    self.message('a', 'u', 'assistant', 'partial answer',
+                                 errorMessage=failure, stopReason='error')])
+        before = self.file.read_bytes()
+        preview_row = ChatModel.project(preview(self.file)[0])[-1]
+        snapshot = self.repo.open(self.file)
+        self.assertEqual(snapshot.row(snapshot.count-1)['diagnosticId'], identifier)
+        self.assertEqual(snapshot.row(snapshot.count-1)['activity'], preview_row['activity'])
+        with connect(snapshot.database) as db:
+            db.execute("UPDATE meta SET value='3' WHERE key='schema'")
+        refreshed = self.repo.open(self.file)
+        self.assertGreater(refreshed.revision, snapshot.revision)
+        row = refreshed.row(refreshed.count-1)
+        self.assertEqual(row['diagnosticId'], identifier)
+        self.assertEqual(row['text'], 'partial answer')
+        self.assertEqual(row['activity'][-1]['error'], True)
+        self.assertEqual(self.file.read_bytes(), before)
+
     def test_active_branch_tools_deliveries_and_original_file_are_preserved(self):
         entries = [self.message('u', None, 'user', 'task'),
                    self.message('old', 'u', 'assistant', 'unselected branch'),
