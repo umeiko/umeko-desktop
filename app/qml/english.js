@@ -1,5 +1,8 @@
 .pragma library
 var strings = {
+"正在停止": "Stopping",
+"未读": "Unread",
+"失败": "Failed",
 "自动展开本轮变更审查面板": "Automatically open the change review panel",
   "Widgets": "Widgets",
   "请先在插件管理 Widget 中启用 builtin:mcp，再配置 MCP 服务器。已有配置会保留。": "Enable builtin:mcp in the Pi manager Widget before configuring MCP servers. Existing configuration is preserved.",
