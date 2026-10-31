@@ -80,7 +80,7 @@ FocusScope {
     CharacterArt {
         id: portrait
         x: root.offsetX; y: root.offsetY + root.hop; width: root.width; height: root.height
-        fallbackSource: "../icons/portraits/" + (root.portraitIndex + 1).toString().padStart(2, "0") + ".webp"
+        fallbackSource: "../icons/portraits/" + (root.portraitIndex + 1).toString().padStart(2, "0") + ".png"
         artwork: root.rareScene.source || Character.asset("welcome", fallbackSource)
         sourceSize: Qt.size(420,420); fillMode: Image.PreserveAspectFit; mipmap: true
         transform: [
