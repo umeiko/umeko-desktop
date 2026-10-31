@@ -199,7 +199,7 @@ try:
     # Only a real user checkbox action enables direct creation.
     click('allowAutomaticGlobalCreation');wait(lambda:g.allow_automatic_creation,'User checkbox did not enable auto creation')
     automatic=g.execute('agent_bus.create',{'requestKey':'ui-direct'},caller)
-    assert automatic['status']=='created' and automatic['character'] in {row['id'] for row in b.characterPacks}
+    assert automatic['status']=='created' and automatic['character'] in {row['id'] for row in b.subagentCharacterPacks}
     assert len(g.agents)==before+2
     QTest.qWait(800);assert not page.property('proposalId')
     window.grabWindow().save(str(out/'automatic-creation.png'))
@@ -222,6 +222,8 @@ try:
     QTest.qWait(750);window.grabWindow().save(str(out/'pending-bus-queue.png'))
     for request in (requests[0],requests[2]):g.handle('cancelRequest',{'id':request})
     queued_target.busy=False;g.outbox.clear();g.timer.start()
+    kazuhiko=g.handle('create',{'character':'kazuhiko'})
+    assert g.agents[kazuhiko['id']]['name']=='温水和彦'
     assert not [w for w in warnings if 'global-agents/qml' in w],warnings
     print('PASS: real Widget creation, current-character default, native cross-session dispatch/reply/wakeup, scoped tools, durable contexts and searchable project-tree bus authorizations.')
 finally:
