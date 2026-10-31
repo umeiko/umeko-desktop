@@ -1,6 +1,6 @@
 import QtQuick
 
-Text {
+Text { font.family: Theme.fontFamily;
     id: root
     objectName: "networkRetryStatus"
     property var retryState: backend.networkRetry

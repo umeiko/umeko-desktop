@@ -17,7 +17,7 @@ MenuItem {
         id: row
         spacing: control.glyph ? 8 : 0
         Glyph { name: control.glyph; color: control.destructive ? Theme.danger : Theme.ink; visible: !!control.glyph; Layout.preferredWidth: control.glyph ? Theme.icon(14) : 0; Layout.preferredHeight: Theme.icon(14) }
-        Text { id: label; objectName: control.objectName + "Label"; text: control.text; Layout.fillWidth: true; wrapMode: Text.Wrap; color: control.destructive ? Theme.danger : Theme.ink; font.pixelSize: Theme.font(12); verticalAlignment: Text.AlignVCenter }
+        Text { font.family: Theme.fontFamily; id: label; objectName: control.objectName + "Label"; text: control.text; Layout.fillWidth: true; wrapMode: Text.Wrap; color: control.destructive ? Theme.danger : Theme.ink; font.pixelSize: Theme.font(12); verticalAlignment: Text.AlignVCenter }
     }
     background: Rectangle { radius: 6; color: control.down ? Theme.accentBg : control.highlighted || control.hovered ? Theme.hover : "transparent"; Behavior on color { ColorAnimation { duration: 90 } } }
 }

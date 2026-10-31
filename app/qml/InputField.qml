@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Controls
-TextField {
+TextField { font.family: Theme.fontFamily;
     implicitHeight: Math.max(42, font.pixelSize + 22)
     selectByMouse: true
     color: Theme.ink

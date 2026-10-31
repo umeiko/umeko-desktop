@@ -36,8 +36,8 @@ Rectangle {
         anchors.centerIn: parent; anchors.verticalCenterOffset: -35; spacing: 20
         width: Math.max(0,Math.min(parent.width-64,560))
         LoadingMascot { id: mascot; anchors.horizontalCenter: parent.horizontalCenter; running: root.visible }
-        Text { anchors.horizontalCenter: parent.horizontalCenter; text: Character.scene("loading.title", ""); color: Theme.muted; font.pixelSize: Theme.font(13); textFormat: Text.PlainText }
-        Text { objectName: "chatLoadingTip"; width: parent.width; text: root.tip; textFormat: Text.PlainText; color: Theme.muted; opacity: 0.85; font.pixelSize: Theme.font(12); wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; lineHeight: 1.5 }
+        Text { font.family: Theme.fontFamily; anchors.horizontalCenter: parent.horizontalCenter; text: Character.scene("loading.title", ""); color: Theme.muted; font.pixelSize: Theme.font(13); textFormat: Text.PlainText }
+        Text { font.family: Theme.fontFamily; objectName: "chatLoadingTip"; width: parent.width; text: root.tip; textFormat: Text.PlainText; color: Theme.muted; opacity: 0.85; font.pixelSize: Theme.font(12); wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; lineHeight: 1.5 }
     }
     Accessible.role: Accessible.Indicator; Accessible.name: I18n.t("正在打开聊天")
 }

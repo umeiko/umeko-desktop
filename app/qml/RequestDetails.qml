@@ -62,7 +62,7 @@ Popup {
         spacing: 14
         RowLayout {
             Layout.fillWidth: true
-            Text { text: I18n.t("请求与返回详情"); color: Theme.ink; font.pixelSize: Theme.font(17); font.weight: Font.DemiBold }
+            Text { font.family: Theme.fontFamily; text: I18n.t("请求与返回详情"); color: Theme.ink; font.pixelSize: Theme.font(17); font.weight: Font.DemiBold }
             HelpButton { help: I18n.t("完整请求正文、HTTP 状态、响应与异常。密钥和登录凭据已隐藏，仅保存在本机。") }
             Item { Layout.fillWidth: true }
             ActionButton { objectName: "copyRequestDetails"; text: I18n.t("复制完整详情"); glyph: "copy"; enabled: root.report.length > 0; onClicked: backend.copy(root.report) }

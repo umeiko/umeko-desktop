@@ -21,11 +21,13 @@ Column {
             property var modelData: root.blocks[index] || ({code:false, text:"", language:""})
             width: root.width
             SelectableText {
+                id: proseText
                 selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset + index
                 visible: !modelData.code; width: parent.width
                 text: modelData.code ? "" : root.markdown ? Markdown.forQt(modelData.text) : modelData.text; color: root.textColor
                 wrapMode: TextEdit.Wrap; textFormat: root.markdown ? TextEdit.MarkdownText : TextEdit.PlainText
                 font.pixelSize: Theme.font(13)
+                TextSpacing { document: proseText.textDocument; factor: Theme.proseLineHeight }
             }
             Rectangle {
                 visible: modelData.code; width: parent.width; height: codeText.contentHeight + 60

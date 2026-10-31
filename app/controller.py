@@ -17,7 +17,7 @@ from pathlib import Path
 from dataclasses import replace
 
 from PySide6.QtCore import QObject, Property, QProcess, QProcessEnvironment, QTimer, QUrl, Signal, Slot, QBuffer, QIODevice, QMimeData
-from PySide6.QtGui import QGuiApplication, QDesktopServices, QImageReader, QWindow
+from PySide6.QtGui import QGuiApplication, QDesktopServices, QFont, QFontDatabase, QImageReader, QWindow
 
 from .gateway import Gateway, LocalServer, validate_base_url
 from .integration import load_adapter, UnconfiguredAdapter
@@ -86,6 +86,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     @Property(float, notify=appearanceChanged)
     def fontScale(self):
         return self.store.data['ui']['fontScale']
+
+    @Property(str, notify=appearanceChanged)
+    def lineSpacing(self):
+        return self.store.data['ui']['lineSpacing']
 
     @Property(bool, constant=True)
     def webviewAvailable(self):
@@ -1283,9 +1287,12 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self.store.save()
         app = QGuiApplication.instance()
         family = self.store.data["fontFamily"]
-        if isinstance(app, QGuiApplication) and family:
-            font = app.font()
-            font.setFamily(family)
+        if isinstance(app, QGuiApplication):
+            if family:
+                font = app.font()
+                font.setFamily(family)
+            else:
+                font = QFont("Microsoft YaHei UI", 10) if os.name == "nt" else QFontDatabase.systemFont(QFontDatabase.GeneralFont)
             app.setFont(font)
         self.changed.emit()
 

@@ -21,7 +21,7 @@ Column {
             width: Theme.icon(40); height: width; sourceSize: Qt.size(96,96)
             fillMode: Image.PreserveAspectFit; smooth: false
         }
-        Text {
+        Text { font.family: Theme.fontFamily;
             anchors.verticalCenter: parent.verticalCenter
             width: Math.max(0,root.width-Theme.icon(40)-9);elide: Text.ElideRight
             text: root.message.role === "custom" ? I18n.t("智能体总线") : root.assistantName

@@ -5,7 +5,7 @@ RowLayout {
     property bool continuable: false
     signal continued()
     spacing: 10
-    Text {
+    Text { font.family: Theme.fontFamily;
         Layout.fillWidth: true
         text: I18n.t("已达到本次输出上限，内容可能尚未完成")
         color: Theme.muted; font.pixelSize: Theme.font(12)

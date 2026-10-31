@@ -188,7 +188,7 @@ Item {
     }
     Timer { interval: 16; repeat: true; running: root.dragging; onTriggered: Qt.callLater(root.autoScroll) }
     Timer { id: refreshTimer; interval: 0; onTriggered: root.refresh() }
-    TextEdit { id: renderer; visible: false; readOnly: true }
+    TextEdit { font.family: Theme.fontFamily; id: renderer; visible: false; readOnly: true }
     FloatingMenu {
         id: selectionMenu; objectName: "selectionContextMenu"
         ContextAction { objectName: "copySelectedText"; text: I18n.t("复制"); glyph: "copy"; enabled: root.hasSelection; onTriggered: root.copy() }

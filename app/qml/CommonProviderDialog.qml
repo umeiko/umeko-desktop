@@ -40,7 +40,7 @@ Popup {
             RowLayout {
                 Layout.fillWidth: true; spacing: 10
                 ActionButton { objectName: "commonProviderBack"; visible: !!root.selected; glyph: "arrow-left"; quiet: true; hint: I18n.t("返回"); onClicked: { apiKey.clear(); accountAlias.clear(); root.selected = null; site.currentIndex = 0; providerScroll.contentY = 0 } }
-                Text { Layout.fillWidth: true; text: root.selected ? I18n.t(root.selected.label) : I18n.t("添加常见供应商"); color: Theme.ink; font.pixelSize: Theme.font(18); font.weight: Font.DemiBold }
+                Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: root.selected ? I18n.t(root.selected.label) : I18n.t("添加常见供应商"); color: Theme.ink; font.pixelSize: Theme.font(18); font.weight: Font.DemiBold }
                 ActionButton { glyph: "x"; quiet: true; hint: I18n.t("关闭"); onClicked: root.close() }
             }
             ColumnLayout {
@@ -60,7 +60,7 @@ Popup {
                                 width: 34; height: 34; radius: 8; color: "white"
                                 Image { anchors.centerIn: parent; width: 24; height: 24; source: "../icons/providers/" + vendorButton.modelData.icon; fillMode: Image.PreserveAspectFit }
                             }
-                            Text { Layout.fillWidth: true; text: I18n.t(vendorButton.modelData.label); color: Theme.ink; font.pixelSize: Theme.font(13) }
+                            Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: I18n.t(vendorButton.modelData.label); color: Theme.ink; font.pixelSize: Theme.font(13) }
                             Glyph { name: "chevron-right"; width: Theme.icon(16); height: width }
                         }
                     }
@@ -81,7 +81,7 @@ Popup {
                 }
                 Flow {
                     Layout.fillWidth: true; spacing: 6
-                    Text { objectName: "commonProviderKeyHint"; width: Math.min(implicitWidth, parent.width); text: root.keyHint(); color: Theme.muted; font.pixelSize: Theme.font(12); wrapMode: Text.Wrap }
+                    Text { font.family: Theme.fontFamily; objectName: "commonProviderKeyHint"; width: Math.min(implicitWidth, parent.width); text: root.keyHint(); color: Theme.muted; font.pixelSize: Theme.font(12); wrapMode: Text.Wrap }
                     Button {
                         id: keyLink
                         objectName: "commonProviderKeyLink"
@@ -91,22 +91,22 @@ Popup {
                         padding: 0; implicitWidth: linkLabel.implicitWidth; implicitHeight: linkLabel.implicitHeight
                         Accessible.role: Accessible.Link
                         background: Rectangle { color: "transparent"; radius: 2; border.color: keyLink.activeFocus ? Theme.accent : "transparent" }
-                        contentItem: Text { id: linkLabel; text: keyLink.text; color: Theme.accent; font.pixelSize: Theme.font(12); font.underline: true }
+                        contentItem: Text { font.family: Theme.fontFamily; id: linkLabel; text: keyLink.text; color: Theme.accent; font.pixelSize: Theme.font(12); font.underline: true }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         onClicked: Qt.openUrlExternally(targetUrl)
                     }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 7
-                    Text { text: "API Key"; color: Theme.ink; font.pixelSize: Theme.font(12) }
+                    Text { font.family: Theme.fontFamily; text: "API Key"; color: Theme.ink; font.pixelSize: Theme.font(12) }
                     InputField { id: apiKey; objectName: "commonProviderKey"; Layout.fillWidth: true; echoMode: TextInput.Password; placeholderText: I18n.t("输入 API Key"); onAccepted: if (addButton.enabled) addButton.clicked() }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 7
-                    Text { text: I18n.t("账号别名（可选）"); color: Theme.ink; font.pixelSize: Theme.font(12) }
+                    Text { font.family: Theme.fontFamily; text: I18n.t("账号别名（可选）"); color: Theme.ink; font.pixelSize: Theme.font(12) }
                     InputField { id: accountAlias; objectName: "commonProviderAlias"; Layout.fillWidth: true; maximumLength: 60; placeholderText: I18n.t("例如：工作号"); onAccepted: if (addButton.enabled) addButton.clicked() }
                 }
-                Text { objectName: "commonProviderNamePreview"; visible: accountAlias.text.trim().length > 0; Layout.fillWidth: true; text: root.effectivePreset ? root.effectivePreset.name + (accountAlias.text.trim() ? "(" + accountAlias.text.trim() + ")" : "") : ""; color: Theme.muted; font.pixelSize: Theme.font(11); elide: Text.ElideRight }
+                Text { font.family: Theme.fontFamily; objectName: "commonProviderNamePreview"; visible: accountAlias.text.trim().length > 0; Layout.fillWidth: true; text: root.effectivePreset ? root.effectivePreset.name + (accountAlias.text.trim() ? "(" + accountAlias.text.trim() + ")" : "") : ""; color: Theme.muted; font.pixelSize: Theme.font(11); elide: Text.ElideRight }
                 RowLayout {
                     Layout.fillWidth: true; Layout.topMargin: 4
                     Item { Layout.fillWidth: true }

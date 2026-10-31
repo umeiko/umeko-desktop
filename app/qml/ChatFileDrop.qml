@@ -32,7 +32,7 @@ DropArea {
                 transform: Translate { y: mascot.lift }
                 SequentialAnimation on lift { running: root.containsDrag; loops: Animation.Infinite; NumberAnimation { from: 0; to: -5; duration: 850; easing.type: Easing.InOutSine } NumberAnimation { from: -5; to: 0; duration: 850; easing.type: Easing.InOutSine } }
             }
-            Text { width: parent.width; text: root.promptText; color: Theme.ink; font.pixelSize: Theme.font(14); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap }
+            Text { font.family: Theme.fontFamily; width: parent.width; text: root.promptText; color: Theme.ink; font.pixelSize: Theme.font(14); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap }
         }
     }
 }

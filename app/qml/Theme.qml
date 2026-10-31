@@ -3,6 +3,8 @@ import QtQuick
 import "theme.js" as Colors
 QtObject {
     readonly property real fontScale: backend.fontScale
+    readonly property string fontFamily: backend.config.fontFamily || Qt.application.font.family
+    readonly property real proseLineHeight: ({compact: 1.0, standard: 1.2, relaxed: 1.5})[backend.lineSpacing]
     function font(size) { return Math.max(1, Math.round(size * fontScale)) }
     function icon(size) { return Math.max(1, Math.round(size * fontScale)) }
     function control(size) { return Math.round(size * Math.max(1, fontScale)) }
