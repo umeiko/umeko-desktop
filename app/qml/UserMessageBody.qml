@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import Umeko.Text 1.0
 
 Item {
     id: root
@@ -28,6 +29,7 @@ Item {
             width: Math.min(root.width, Math.max(1, Math.ceil(textMeasure.advanceWidth) + 1))
             text: root.text; color: Theme.ink; textFormat: TextEdit.PlainText
             font.pixelSize: Theme.font(13); wrapMode: TextEdit.Wrap; topPadding: 3; bottomPadding: 3
+            TextSpacing { document: prose.textDocument; factor: Theme.proseLineHeight }
             selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: 0
         }
         Repeater {

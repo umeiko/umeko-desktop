@@ -20,7 +20,7 @@ Column {
         color: area.containsMouse ? Theme.hover : root.nested ? "transparent" : Theme.surface
         border.color: root.nested ? "transparent" : Theme.line
         Glyph { x: 12; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right"; width: Theme.icon(14); height: Theme.icon(14); rotation: root.opened ? 90 : 0; Behavior on rotation { NumberAnimation { duration: 120 } } }
-        Text { x: 22 + Theme.icon(14); anchors.verticalCenter: parent.verticalCenter; text: root.title; color: Theme.ink; font.pixelSize: Theme.font(root.nested ? 12 : 14); font.weight: root.nested ? Font.Medium : Font.DemiBold }
+        Text { font.family: Theme.fontFamily; x: 22 + Theme.icon(14); anchors.verticalCenter: parent.verticalCenter; text: root.title; color: Theme.ink; font.pixelSize: Theme.font(root.nested ? 12 : 14); font.weight: root.nested ? Font.Medium : Font.DemiBold }
         MouseArea { id: area; objectName: root.objectName + "Toggle"; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { if (root.query.trim()) root.searchExpanded = !root.searchExpanded; else root.expanded = !root.expanded } }
         Accessible.role: Accessible.Button; Accessible.name: root.title
     },

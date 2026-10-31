@@ -8,8 +8,10 @@ import threading
 import unittest
 import ast
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from unittest.mock import patch
-from PySide6.QtCore import QLocale
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+from PySide6.QtCore import QObject, QLocale
+from PySide6.QtGui import QFont, QGuiApplication
 from app.platform_support import migrate_profile
 from app.storage import Store
 from app.gateway import Gateway
@@ -18,6 +20,63 @@ from app.request_diagnostics import RequestFailure
 
 
 class PreferencesTests(unittest.TestCase):
+    def test_line_spacing_defaults_to_standard(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = Store(Path(temp))
+            self.assertEqual(store.data['ui']['lineSpacing'], 'standard')
+
+    def test_line_spacing_migrates_missing_and_invalid_values(self):
+        for value in ('missing', '', 'wide', None, 1.2, [], {}):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as temp:
+                path = Path(temp) / 'settings.json'
+                ui = {'language': 'zh', 'fontScale': 1.3, 'sidebarWidth': 300}
+                if value != 'missing':
+                    ui['lineSpacing'] = value
+                path.write_text(json.dumps({'ui': ui, 'server': {'keys': []},
+                                           'agent': {'outputLimitDefaultVersion': 1}}), encoding='utf-8')
+                store = Store(Path(temp))
+                self.assertEqual(store.data['ui'], {**ui, 'sidebarCollapsed': False, 'lineSpacing': 'standard'})
+                self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['ui']['lineSpacing'], 'standard')
+
+    def test_line_spacing_updates_immediately_and_round_trips(self):
+        from app.controller import Controller
+
+        class AppearanceController(Controller):
+            def __init__(self, store):
+                QObject.__init__(self)
+                self.store = store
+                self._appearance_save = Mock()
+
+        with tempfile.TemporaryDirectory() as temp:
+            store = Store(Path(temp))
+            controller = AppearanceController(store)
+            changes = []
+            controller.appearanceChanged.connect(lambda: changes.append(controller.lineSpacing))
+            for spacing in ('compact', 'standard', 'relaxed'):
+                controller.setLineSpacing(spacing)
+                self.assertEqual(changes[-1], spacing)
+                store.save()
+                self.assertEqual(Store(Path(temp)).data['ui']['lineSpacing'], spacing)
+            for invalid in ('', 'wide', 'RELAXED', None, 1.2, [], {}):
+                controller.setLineSpacing(invalid)
+            controller.setLineSpacing('relaxed')
+            self.assertEqual(changes, ['compact', 'standard', 'relaxed'])
+            self.assertEqual(controller._appearance_save.start.call_count, 3)
+
+    def test_reset_font_family_restores_platform_default(self):
+        from app.controller import Controller
+        for platform_name, expected in (('nt', 'Microsoft YaHei UI'), ('posix', 'Fixture Default')):
+            with self.subTest(platform=platform_name):
+                application = Mock(spec=QGuiApplication)
+                controller = SimpleNamespace(store=SimpleNamespace(data={'fontFamily': 'Custom Font'}, save=Mock()),
+                                             changed=Mock())
+                with patch('app.controller.QGuiApplication.instance', return_value=application), \
+                     patch('app.controller.os.name', platform_name), \
+                     patch('app.controller.QFontDatabase.systemFont', return_value=QFont('Fixture Default', 10)):
+                    Controller.setFontFamily(controller, '系统默认')
+                self.assertEqual(controller.store.data['fontFamily'], '')
+                self.assertEqual(application.setFont.call_args.args[0].family(), expected)
+
     def test_output_default_migrates_once_and_keeps_other_custom_limits(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp)

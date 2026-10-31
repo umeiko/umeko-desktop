@@ -17,7 +17,7 @@ from pathlib import Path
 from dataclasses import replace
 
 from PySide6.QtCore import QObject, Property, QProcess, QProcessEnvironment, QTimer, QUrl, Signal, Slot, QBuffer, QIODevice, QMimeData
-from PySide6.QtGui import QGuiApplication, QDesktopServices, QImageReader, QWindow
+from PySide6.QtGui import QGuiApplication, QDesktopServices, QFont, QFontDatabase, QImageReader, QWindow
 
 from .gateway import Gateway, LocalServer, validate_base_url
 from .integration import load_adapter, UnconfiguredAdapter
@@ -86,6 +86,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     @Property(float, notify=appearanceChanged)
     def fontScale(self):
         return self.store.data['ui']['fontScale']
+
+    @Property(str, notify=appearanceChanged)
+    def lineSpacing(self):
+        return self.store.data['ui']['lineSpacing']
 
     @Property(bool, constant=True)
     def webviewAvailable(self):
@@ -379,7 +383,11 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
 
     @Property(bool, notify=chatChanged)
     def running(self):
-        return self._view.phase == "running"
+        return self._view.phase == "running" or (self._view.busy and self._view.action in ('prompt', 'widget-notify') and self._view.prompt_started is not None)
+
+    @Property("QVariantMap", notify=chatChanged)
+    def turnStatus(self):
+        return self._turn_status(self._view)
 
     @Property(int, notify=chatChanged)
     def runningCount(self):
@@ -388,8 +396,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     def _session_flags(self, session_id):
         record = self._pool.find(session_id)
         meta = self.store.data["sessionMeta"].get(session_id, {})
-        return {"running": bool(record and record.phase == "running"), "loading": bool(record and record.phase in ("loading", "working")),
+        status = self._turn_status(record) if record else meta.get('lastTurn', {})
+        return {"running": bool(record and (record.phase == "running" or status.get('state') in ('running', 'stopping'))), "loading": bool(record and record.phase in ("loading", "working")),
             "waiting": bool(record and record.approval), "unread": bool(meta.get("unread")),
+            "outcome": status.get('state', '') or ('unread' if meta.get('unread') else ''),
             "busy": bool(record and record.busy) or session_id in self._management_jobs}
 
     def _models_busy(self, provider_id=None):
@@ -1283,9 +1293,12 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self.store.save()
         app = QGuiApplication.instance()
         family = self.store.data["fontFamily"]
-        if isinstance(app, QGuiApplication) and family:
-            font = app.font()
-            font.setFamily(family)
+        if isinstance(app, QGuiApplication):
+            if family:
+                font = app.font()
+                font.setFamily(family)
+            else:
+                font = QFont("Microsoft YaHei UI", 10) if os.name == "nt" else QFontDatabase.systemFont(QFontDatabase.GeneralFont)
             app.setFont(font)
         self.changed.emit()
 

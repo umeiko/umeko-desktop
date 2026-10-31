@@ -36,7 +36,7 @@ ColumnLayout {
         Item { Layout.fillWidth: true }
         ActionButton { objectName: "mcpSaveButton"; text: I18n.t("保存并连接"); primary: true; enabled: !backend.busy; onClicked: backend.saveMcp(root.scope, editor.text) }
     }
-    Text { Layout.fillWidth: true; text: backend.mcpConfigPath(root.scope); color: Theme.muted; font.pixelSize: Theme.font(10); elide: Text.ElideMiddle }
+    Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: backend.mcpConfigPath(root.scope); color: Theme.muted; font.pixelSize: Theme.font(10); elide: Text.ElideMiddle }
     InlineScrollView {
         objectName: "mcpEditorScroll"
         Layout.fillWidth: true; Layout.preferredHeight: 230; clip: true
@@ -54,9 +54,9 @@ ColumnLayout {
             Layout.fillWidth: true; spacing: 7
             RowLayout {
                 Layout.fillWidth: true
-                Text { text: modelData.name; color: Theme.ink; font.pixelSize: Theme.font(12); font.weight: Font.Medium }
-                Text { text: modelData.scope === "project" ? I18n.t("项目") : I18n.t("全局"); color: Theme.muted; font.pixelSize: Theme.font(10) }
-                Text { Layout.fillWidth: true; text: modelData.state; color: Theme.muted; font.pixelSize: Theme.font(10); elide: Text.ElideRight }
+                Text { font.family: Theme.fontFamily; text: modelData.name; color: Theme.ink; font.pixelSize: Theme.font(12); font.weight: Font.Medium }
+                Text { font.family: Theme.fontFamily; text: modelData.scope === "project" ? I18n.t("项目") : I18n.t("全局"); color: Theme.muted; font.pixelSize: Theme.font(10) }
+                Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: modelData.state; color: Theme.muted; font.pixelSize: Theme.font(10); elide: Text.ElideRight }
                 ActionButton { text: I18n.t("重新连接"); glyph: "refresh"; quiet: true; enabled: !backend.busy; onClicked: backend.reconnectMcp(modelData.name) }
             }
             Repeater {
@@ -65,5 +65,5 @@ ColumnLayout {
             }
         }
     }
-    Text { visible: !(backend.agentResources.mcp || []).length; text: I18n.t("暂无 MCP 服务器"); color: Theme.muted; font.pixelSize: Theme.font(11) }
+    Text { font.family: Theme.fontFamily; visible: !(backend.agentResources.mcp || []).length; text: I18n.t("暂无 MCP 服务器"); color: Theme.muted; font.pixelSize: Theme.font(11) }
 }

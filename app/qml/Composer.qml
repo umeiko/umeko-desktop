@@ -44,7 +44,7 @@ Item {
                         required property var modelData
                         width: Math.min(attachmentName.implicitWidth, 165) + Theme.control(63); height: Theme.control(33); radius: 7; color: Theme.accentBg
                         Glyph { x: 9; anchors.verticalCenter: parent.verticalCenter; name: modelData.kind === "web" ? "globe" : modelData.kind === "folder" ? "folder" : modelData.kind === "image" ? "image" : "file"; width: Theme.icon(15); height: Theme.icon(15) }
-                        Text { id: attachmentName; x: Theme.control(31); anchors.verticalCenter: parent.verticalCenter; width: Math.min(implicitWidth, 165); text: modelData.name; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.ink; font.pixelSize: Theme.font(10) }
+                        Text { font.family: Theme.fontFamily; id: attachmentName; x: Theme.control(31); anchors.verticalCenter: parent.verticalCenter; width: Math.min(implicitWidth, 165); text: modelData.name; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.ink; font.pixelSize: Theme.font(10) }
                         ActionButton { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(27); height: Theme.control(27); quiet: true; glyph: "x"; onClicked: backend.removeAttachment(modelData.id) }
                     }
                 }
@@ -58,6 +58,7 @@ Item {
                 placeholderText: backend.config.workspace ? I18n.t("在 ") + backend.workspaceName + I18n.t(" 项目下开展工作") : I18n.t("输入任务…")
                 wrapMode: TextArea.Wrap; selectByMouse: true
                 padding: 0; topPadding: 3; font.pixelSize: Theme.font(13)
+                font.family: Theme.fontFamily
                 background: null
                 onTextChanged: backend.setDraft(text)
                 Keys.onPressed: event => { if (event.matches(StandardKey.Paste) && backend.pasteAttachments()) event.accepted = true }
@@ -77,21 +78,25 @@ Item {
                 onClicked: root.openModels()
                 contentItem: Item { Row {
                     id: modelRow; spacing: 7; anchors.verticalCenter: parent.verticalCenter; x: 10
-                    Text { text: { let p = backend.config.providers.find(p => p.id === backend.config.selectedProvider); return p ? p.name : I18n.t("选择供应商") } color: Theme.ink; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
-                    Text { text: "/"; font.pixelSize: Theme.font(11); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
-                    Text { text: backend.config.selectedModel; width: Math.min(implicitWidth, 135); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
-                    Text { objectName: "reasoningEffortBadge"; visible: backend.reasoningEffort !== "off"; text: "· " + ({low:"Low",high:"High",max:"Max"}[backend.reasoningEffort] || ""); color: Theme.accent; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
+                    Text { font.family: Theme.fontFamily; text: { let p = backend.config.providers.find(p => p.id === backend.config.selectedProvider); return p ? p.name : I18n.t("选择供应商") } color: Theme.ink; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
+                    Text { font.family: Theme.fontFamily; text: "/"; font.pixelSize: Theme.font(11); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
+                    Text { font.family: Theme.fontFamily; text: backend.config.selectedModel; width: Math.min(implicitWidth, 135); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
+                    Text { font.family: Theme.fontFamily; objectName: "reasoningEffortBadge"; visible: backend.reasoningEffort !== "off"; text: "· " + ({low:"Low",high:"High",max:"Max"}[backend.reasoningEffort] || ""); color: Theme.accent; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
                     Glyph { name: "chevron-down"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
                 } }
             }
         }
         Row {
             anchors.right: parent.right; anchors.rightMargin: 14; anchors.bottom: parent.bottom; anchors.bottomMargin: 12; spacing: 13
-            Text { objectName: "composerStatus"; visible: backend.compacting || Theme.fontScale <= 1.25; text: backend.compacting ? I18n.t(backend.toolStatus) : backend.loading ? I18n.t(backend.toolStatus || "正在加载 Pi") : backend.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
+            TaskStatus { objectName: "composerTaskStatus"; status: backend.turnStatus; compact: true; anchors.verticalCenter: parent.verticalCenter }
+            Text { font.family: Theme.fontFamily; objectName: "composerStatus"; visible: backend.compacting || Theme.fontScale <= 1.25; text: backend.compacting ? I18n.t(backend.toolStatus) : backend.loading ? I18n.t(backend.toolStatus || "正在加载 Pi") : backend.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
             Rectangle {
                 objectName: "sendButton"
                 readonly property bool stopAction: backend.running
                 readonly property bool disabled: backend.loading || backend.kernelBusy || (!stopAction && !prompt.text.trim().length && !backend.attachments.length)
+                Accessible.role: Accessible.Button
+                Accessible.name: backend.running ? I18n.t("停止当前会话任务") : I18n.t("发送消息")
+                Accessible.onPressAction: { if (!disabled) { if (backend.running) backend.stop(); else root.sendMessage(false) } }
                 width: Theme.control(33); height: Theme.control(33); radius: Theme.control(11)
                 color: !disabled ? Theme.button : Theme.accentBg
                 opacity: disabled ? 0.5 : 1

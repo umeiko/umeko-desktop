@@ -265,7 +265,7 @@ def scenario():
     code = 'def greet(name):\n    label = "中文𠮷 <tag> & value"\n    return f"Hello, {name}!"  # Keep the original text\n'
     backend._view.messages = [
         {"role": "user", "text": "给我一个带中文输出的 Python 示例。", "error": False},
-        {"role": "assistant", "text": "下面是示例：\n\n```python\n" + code + "```", "error": False},
+        {"role": "assistant", "text": "下面是示例：\n\n```python\n" + code + "```", "error": False, "stopReason": "stop"},
     ]
     backend.chatChanged.emit(); backend.transcriptChanged.emit(); backend.viewChanged.emit()
     yield 650
