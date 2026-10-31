@@ -48,6 +48,7 @@ class RuntimePathTests(unittest.TestCase):
         source_io.mkdir(parents=True)
         for name in ("bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
             (source_io / name).write_text("fixture")
+        (source_io / "skills.mjs").write_text("fixture")
         (source_io / "umeko-docs").mkdir()
         (source_io / "umeko-docs/guide.md").write_text("deep docs")
         with patch("app.pi_runtime.node_executable", return_value="node.exe"), patch("app.pi_runtime.node_environment", return_value={}), patch("app.pi_runtime.subprocess.run", return_value=subprocess.CompletedProcess([], 0, '{"ok":true}', '')) as run:

@@ -232,6 +232,19 @@ Python 使用 `context.host_capabilities` 和
 | `pi.refresh` | `pi.manage` | 宿主确认后刷新并应用原生扩展配置。 |
 | `pi.cancel` | `pi.manage` | `{id:jobId}`；仅取消本 Widget 当前实例、同一聊天/工作区发起且仍运行的插件安装。不会再次弹确认。关闭 Widget 也会取消其未完成的安装。 |
 | `pi.job` | `pi.read` | `{id: jobId}`；只能读取本 Widget 实例、同一聊天/工作区创建的任务。返回 `jobs[].status` 和简短的 `result.ok/error`；安装过程中附带 `progress.message/state/cancellable`；完成后用 `pi.status` 读取列表。 |
+| `skills.list` | `skills.read` | `{}`；原生发现包括停用、尚未加载的技能。异步任务结果含 `skills[]`，每项有不透明 `id`、名称、描述、路径、来源、范围、`enabled` 默认状态、`attached` 本聊天可用状态、`defaultMutable` 和已登记包的 `removable/packageSource`。动态扩展技能来自本聊天已发现的资源，不通过扫描执行扩展。 |
+| `skills.details` | `skills.read` | `{id}`；异步返回 `details`：有界本地 Markdown、相对文件清单、字节大小、来源路径、目录及 `truncated`。字节不等于 token，截断时大小仅表示已列出的文件。 |
+| `skills.attach` | `skills.manage` | `{id,enabled:boolean}`；确认后持久化本聊天覆盖，通过 Pi 原生 `skillsOverride` 在下次加载应用。不会清除已读的历史内容，不改其他聊天或全局默认。 |
+| `skills.default` | `skills.manage` | `{id,enabled:boolean}`；仅允许有全局默认的来源，确认后更新 Pi 原生全局设置，保留聊天覆盖。项目和动态来源不显示此开关。 |
+| `skills.reveal` | `skills.manage` | `{id}`；确认后打开该目录，不接受任意路径。 |
+| `skills.remove` | `skills.manage` | `{id}`；确认后卸载技能所属的整个已登记 Pi 包；独立技能不提供卸载。 |
+| `skills.job` | `skills.read` | `{id:jobId}`；归属检查同 `pi.job`。返回 `jobs[].status`（`running/completed/failed`）和 `result`。除任务查询外，技能读写均要求聊天和管理任务空闲。 |
+| `skills.importPreview` | `skills.read` | `{source,project:boolean}`；本地文件夹、`.zip` 或 `.skill` 的只读预览，返回异步任务。结果 `preview.id/skills/errors/project/sourceName`；技能项有名称、简介、重名状态及是否可替换。预览不写入文件；归档沿用现有安全路径、大小和条目限制。 |
+| `skills.import` | `skills.manage` | `{id:previewId,decisions:{name:"skip"或"replace"}}`；确认后导入到所选全局或项目标准技能目录。每个重名项必须明确选择；不会替换包内或目标目录外的技能。结果含 `imported/skipped`。预览与任务同样绑定 Widget 实例、聊天及工作区；不能提交其他实例的预览。 |
+
+技能写入的确认区由宿主绘制在所属 Widget 面板内；官方技能 Widget 的 `pi.install`
+也使用该区域。页面在确认期间不能交互，SDK 和公开 Agent RPC 没有批准接口。
+其他 Widget 的现有确认流程保持原样。`accepted/jobId` 仅表示接收任务，页面应查询到完成或失败。
 
 写操作始终通过宿主确认。确认后再次检查 Widget 激活状态、聊天、工作区和忙碌状态；
 不自动排队到另一个项目，也不开放修改安装权限、工具权限或任意桌面操作的接口。

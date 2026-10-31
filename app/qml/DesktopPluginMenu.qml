@@ -30,11 +30,11 @@ Item {
         objectName: "desktopPluginRecentButton"
         x: 2; y: 2; width: parent.width - moreButton.width - 4; height: parent.height - 4
         hoverEnabled: true
-        Accessible.name: I18n.t(root.recentOpen ? "收起插件" : "打开最近使用的插件") + (root.recent.name ? " · " + root.recent.name : "")
+        Accessible.name: I18n.t(root.recentOpen ? "收起插件" : "打开最近使用的插件") + (root.recent.name ? " · " + I18n.widgetText(root.recent, root.recent.name) : "")
         HoverHandler { cursorShape: Qt.PointingHandCursor }
         background: Rectangle { radius: 5; color: recentButton.down ? Theme.accentBg : recentButton.hovered ? Theme.hover : "transparent" }
         contentItem: Item { WidgetIcon { plugin:root.recent; color: root.manager.page.id ? Theme.accent : Theme.muted; anchors.centerIn: parent; width: Theme.icon(17); height: Theme.icon(17) } }
-        HoverTip { active: recentButton.hovered && !recentButton.down; text: root.recent.name ? I18n.t(root.recentOpen ? "收起插件" : "打开最近使用的插件") + " · " + root.recent.name : I18n.t("插件管理") }
+        HoverTip { active: recentButton.hovered && !recentButton.down; text: root.recent.name ? I18n.t(root.recentOpen ? "收起插件" : "打开最近使用的插件") + " · " + I18n.widgetText(root.recent, root.recent.name) : I18n.t("插件管理") }
         onClicked: root.openRecent()
     }
     Rectangle { width: 1; height: parent.height - 12; x: moreButton.x - 1; anchors.verticalCenter: parent.verticalCenter; color: Theme.line }
@@ -78,7 +78,7 @@ Item {
                         contentItem: RowLayout {
                             spacing: 9
                             WidgetIcon { plugin:entry.modelData; width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }
-                            Text { font.family: Theme.fontFamily; text: entry.modelData.name; textFormat: Text.PlainText; font.pixelSize: Theme.font(12, visible); color: Theme.ink; elide: Text.ElideRight; Layout.fillWidth: true }
+                            Text { font.family: Theme.fontFamily; text: I18n.widgetText(entry.modelData, entry.modelData.name); textFormat: Text.PlainText; font.pixelSize: Theme.font(12, visible); color: Theme.ink; elide: Text.ElideRight; Layout.fillWidth: true }
                             Glyph { name: "check"; visible: root.manager.page.id === entry.modelData.id; width: Theme.icon(14); height: Theme.icon(14); color: Theme.accent }
                         }
                         onClicked: { const id = modelData.id; menu.close(); root.manager.openPage(id) }

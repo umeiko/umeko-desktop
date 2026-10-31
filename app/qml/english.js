@@ -1,5 +1,8 @@
 .pragma library
 var strings = {
+  "Skill 管理": "Skill manager",
+  "管理聊天可用 Skill": "Manage chat skills",
+  "查看本地 Skill、当前聊天可用状态、文件与全局默认，安装或移除来源包。": "Manage local skills, chat availability, files, defaults and source packages.",
 "正在停止": "Stopping",
 "未读": "Unread",
 "失败": "Failed",
