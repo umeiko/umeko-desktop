@@ -1,5 +1,8 @@
 .pragma library
 var strings = {
+"正在停止": "Stopping",
+"未读": "Unread",
+"失败": "Failed",
   "提醒与待办": "Reminders and to-dos",
   "新增事项": "New item",
   "新增事项…": "New item…",

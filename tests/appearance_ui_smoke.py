@@ -276,6 +276,7 @@ with ExitStack() as mocks:
             show_message(0)
             assert_font(find("selectText_0_0"), chosen)
             assert_font(find("promptInput"), chosen)
+            assert_font(find("taskStatusText", find("composerTaskStatus")), chosen)
             sidebar_labels = text_items(find("settingsButton"))
             assert sidebar_labels
             for label in sidebar_labels:

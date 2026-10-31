@@ -4,6 +4,7 @@ Rectangle {
     id: root
     property var agent: ({})
     property bool showStatus: false
+    readonly property string statusLabel: I18n.t(({running: "运行中", queued: "排队中", completed: "已完成", error: "失败", stopped: "已停止", aborted: "已停止"})[agent.status] || "")
     property var selectionController: null
     signal activated()
     width: 300; height: Math.max(Theme.control(70), summary.implicitHeight + Theme.control(22))
@@ -17,7 +18,7 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter; spacing: 5
         Text { font.family: Theme.fontFamily;
             objectName: "subagentTitle_" + (root.agent.id || "")
-            width: parent.width; text: (root.agent.name || I18n.t("子代理")) + (root.showStatus ? " · " + I18n.t(root.agent.status === "queued" ? "排队中" : "运行中") : "")
+            width: parent.width; text: (root.agent.name || I18n.t("子代理")) + (root.statusLabel ? " · " + root.statusLabel : "")
             textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12)
             maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight
         }
@@ -31,5 +32,5 @@ Rectangle {
     Glyph { anchors.right: parent.right; anchors.rightMargin: Theme.control(9); anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(12); height: width; name: "chevron-right" }
     ChatHitArea { id: hit; anchors.fill: parent; selectionController: root.selectionController; onClicked: root.activated() }
     Accessible.role: Accessible.Button
-    Accessible.name: (agent.name || I18n.t("子代理")) + " · " + (agent.task || "")
+    Accessible.name: (agent.name || I18n.t("子代理")) + " · " + statusLabel + " · " + (agent.task || "")
 }

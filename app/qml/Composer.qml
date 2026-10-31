@@ -88,11 +88,15 @@ Item {
         }
         Row {
             anchors.right: parent.right; anchors.rightMargin: 14; anchors.bottom: parent.bottom; anchors.bottomMargin: 12; spacing: 13
+            TaskStatus { objectName: "composerTaskStatus"; status: backend.turnStatus; compact: true; anchors.verticalCenter: parent.verticalCenter }
             Text { font.family: Theme.fontFamily; objectName: "composerStatus"; visible: backend.compacting || Theme.fontScale <= 1.25; text: backend.compacting ? I18n.t(backend.toolStatus) : backend.loading ? I18n.t(backend.toolStatus || "正在加载 Pi") : backend.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
             Rectangle {
                 objectName: "sendButton"
                 readonly property bool stopAction: backend.running
                 readonly property bool disabled: backend.loading || backend.kernelBusy || (!stopAction && !prompt.text.trim().length && !backend.attachments.length)
+                Accessible.role: Accessible.Button
+                Accessible.name: backend.running ? I18n.t("停止当前会话任务") : I18n.t("发送消息")
+                Accessible.onPressAction: { if (!disabled) { if (backend.running) backend.stop(); else root.sendMessage(false) } }
                 width: Theme.control(33); height: Theme.control(33); radius: Theme.control(11)
                 color: !disabled ? Theme.button : Theme.accentBg
                 opacity: disabled ? 0.5 : 1
