@@ -8,15 +8,20 @@ default Umeko provider. This is the project's integration and distribution
 boundary; the research, learning and exchange description is not any authorization
 or exemption from risk.
 
-Use an Umeko build containing PR #10 (`facef966` or later) and its required SDK
-capabilities. The published **v0.6.0 is unsupported** for this plugin: it predates
-those changes. The current source version still reads `0.6.0`, so the numeric
-client version alone cannot establish compatibility. The plugin checks SDK
-capabilities at runtime.
+Requires **Umeko v0.6.1 or newer**, including the Provider SDK card capabilities
+from PR #10 (`facef966`). **v0.6.0 is unsupported**. The plugin also checks the
+required SDK capabilities at runtime.
 
-Download `umeko-codearts-provider-<version>.zip` from the Release attachments when
-available. In **Settings → Accounts & Providers → + → Import custom provider
-implementation**, select the ZIP. Then explicitly activate the imported account
+Download the ZIP from the personally maintained
+[CodeArts plugin Release](https://github.com/creegon2/umeko-codearts-provider/releases/tag/v0.1.0):
+[umeko-codearts-provider-0.1.0.zip](https://github.com/creegon2/umeko-codearts-provider/releases/download/v0.1.0/umeko-codearts-provider-0.1.0.zip).
+The [source and bilingual guide](https://github.com/creegon2/umeko-codearts-provider)
+are maintained separately from Umeko. This download does not depend on an Actions
+artifact or an official Umeko Release.
+
+In Umeko's model/account settings, **drag the ZIP onto the custom provider area**,
+or use **+ → Import custom provider implementation** to select it.
+Then explicitly activate the imported account
 with **Log in and refresh models**. Importing the ZIP does not execute plugin code.
 Umeko does not install this plugin, create a CodeArts account or download its CLI
 on first startup. Only the explicit login action may install the official
@@ -88,7 +93,9 @@ This standard-library command uses the current Python interpreter to run the
 SDK's `validate` and `pack` commands and writes
 `build/optional-providers/umeko-codearts-provider-<version>.zip`. For an isolated
 output directory, pass `--output-dir <directory>`. The checks CI job builds and
-uploads this ZIP as a separate workflow artifact. It does not publish a Release.
-Maintainers can attach the ZIP to a Release separately; no Release is created by
-this packaging command. The optional ZIP is outside `build/provider-resources`
-and the empty `provider_dev/default-providers.json` default-install list.
+uploads a development artifact; that artifact is not the user download channel.
+Version tags in the [personal plugin repository](https://github.com/creegon2/umeko-codearts-provider)
+validate, test and pack with a pinned SDK, then publish the ZIP and its SHA-256
+file on that repository's Release. The local packaging command does not publish.
+The optional ZIP is outside `build/provider-resources` and the empty
+`provider_dev/default-providers.json` default-install list.
