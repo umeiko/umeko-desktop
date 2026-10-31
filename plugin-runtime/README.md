@@ -65,7 +65,7 @@ my-plugin/
 | `sliders` | 控制 | `archive` | 归档 |
 | `download` | 下载 | `lock` | 安全 |
 | `hourglass` | 任务 | `puzzle` | 通用插件 |
-| `pet` | 桌面宠物 | | |
+| `pet` | 桌面宠物 | `diff` | 差异审查 |
 
 完整列表保存在 `umeko_plugin_sdk/icons.json`。如需自带美术资源，使用 `"icon": {"path": "assets/icon.svg"}`；路径必须是包内相对路径，支持 SVG、PNG、WebP、JPEG，最多 512 KiB。自带图标保留原色；内置线条图标自动跟随宿主主题颜色。不要填写网络地址。
 
@@ -187,6 +187,8 @@ Rectangle {
 
 `sdk.call(method, arguments)` 立即返回请求 ID，结果通过 `sdk.response(id, value)` 异步送达。`sdk.session` 是当前绑定的会话快照；`sdk.config` 是只读的已校验配置；`sdk.colors` 提供 bg、surface、ink、muted、line、hover、accent、accentBg、danger、dark；`sdk.scale` 为字体比例；`sdk.language` 是当前界面语言（`zh` / `en`）；`sdk.active` 表示页面当前可交互；`sdk.copyText(text)` 供用户操作复制内容。不要依赖宿主内部 backend、私有 QML 组件或未公开路径。
 
+插件管理中的 `settingsPage` 另有 `sdk.saveConfig(object)` 与 `sdk.configSaved(id,value)`，用于保存完整配置并接收结果；`sdk.config` 随保存结果更新。清单可声明 `liveConfig:true`，使已校验、已保存的配置通过 worker 的 `configure` 帧更新 `context.config` 并触发 `on_event("config.changed",config)`，保持当前进程和临时状态；未声明时保存配置仍重启服务。配置帧在当前 `handle` 返回后处理。
+
 终端示例使用公开的 `import Umeko.Terminal 1.0` 与 `TerminalView` 原生网格组件。`input(text)`、`resized(columns,rows)` 和 `contextMenuRequested(x,y)` 传给 Python；`applyFrame(frame)` 更新有界屏幕和滚动历史。完整帧协议与 IME、选择、剪贴板接线见 `examples/terminal/qml/TerminalPane.qml`，真实 PTY 实现及 Agent 文档也随示例提供，无需启动另一份命令执行工具。
 
 页面的打开、收起和拖动宽度复用 Umeko 现有 PID 右侧栏。网页、文档、子代理、插件四种模式互斥。会话级页面随切换会话、进入设置、关闭页面而撤销；应用级页面可以撤销后重新打开，后台进程持续运行。Python 接收 `Plugin.on_event("page.visibility", {"visible": bool})`，可暂停隐藏页面的帧传输并在打开后补发快照。
@@ -277,3 +279,9 @@ JS 依赖和许可证，例如将入口与 `node_modules` 一起放在 `vendor/`
 
 可打包的 [Pi 管理示例](examples/pi-management/README.md) 演示实际异步接口与页面；
 内置的精简管理 Widget 位于源码仓库 `umeko-plugins/pi-manager`，可直接参考它的可关闭页面、本地搜索和详情滚动实现。
+
+## 官方本轮变更审查 Widget
+
+`change-review` 是默认关闭的内置应用服务。在插件管理启用后，宿主在 Pi 原生 `agent_start` 边界等待独立 Git 基线采集，在 `agent_end`、用户中止或主 Agent 进程退出后比较并请求打开页面。关闭页面不停止采集，停用清理临时快照。仅对应当前聊天可自动打开。全应用只保留最近一轮的临时结果，下一轮开始或退出后清除；不保存历史。页面以文件树展示，点击进入 Widget 内的 diff，再返回文件树；图标、按钮和只读菜单复用官方 Git Widget。
+
+基线是本轮开始前的工作目录，而非 HEAD，可能包含并发编辑。采集最多 5 秒、4000 文件、单文件 2 MiB、总内容 32 MiB；二进制和受限文件只显示状态。使用独立 Git 对象/索引，不改项目暂存区和历史。Git 缺失或采集失败不阻止正常 Agent 工作。详情见内置包的 README.md。

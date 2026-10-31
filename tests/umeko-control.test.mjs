@@ -13,6 +13,11 @@ test('one desktop tool and a directory-only help keep management instructions on
   assert.ok(existsSync(help.entry)); assert.ok(existsSync(help.docsRoot));
   assert.equal(Object.hasOwn(help, 'commands'), false);
   assert.match(UMEKO_PROMPT, /Pi provider configuration does not apply/);
+  for (const text of [UMEKO_PROMPT, tools[0].description]) {
+    assert.doesNotMatch(text, /agent_bus|global.subagent|coordinator|requestKey/i);
+    assert.match(text, /widgets\.docs/);
+  }
+  assert.equal(help.topics.agents, 'global-agents.md');
   assert.ok(readFileSync(help.entry, 'utf8').includes('providers.md'));
 });
 

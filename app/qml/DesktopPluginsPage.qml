@@ -23,10 +23,16 @@ Item {
         readonly property bool active:root.visible && !!root.selected && root.selected.enabled
         readonly property var config:root.detail.configText ? JSON.parse(root.detail.configText) : ({})
         signal response(string request,var value)
+        signal configSaved(string request,var value)
         function t(text){return I18n.t(text)}
         function call(method,args){return root.manager.settingsCall(root.selectedId,method,JSON.stringify(args || {}))}
+        function saveConfig(value){return root.manager.saveConfig(root.selectedId,JSON.stringify(value))}
     }
-    Connections {target:root.manager;function onResponse(request,value){settingsSdk.response(request,value)}}
+    Connections {
+        target:root.manager
+        function onResponse(request,value){settingsSdk.response(request,value)}
+        function onManaged(request,value){settingsSdk.configSaved(request,value)}
+    }
     ColumnLayout {
         anchors.fill:parent;spacing:16
         RowLayout {

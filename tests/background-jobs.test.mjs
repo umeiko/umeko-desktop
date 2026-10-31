@@ -153,15 +153,23 @@ console.log(child.pid);setInterval(()=>{},1000);`);
     }
     assert.ok(Number.isInteger(childPid) && childPid > 0);
     assert.equal((await jobs.kill(tree.id)).status, "killed");
-    try {
-      process.kill(childPid, 0);
-      // Linux can retain a terminated orphan as a zombie until init reaps it.
-      // Z proves exit even though signal 0 can still find its process-table row.
-      if (process.platform !== "linux") assert.fail("Owned child is still alive");
-      assert.match(await readFile(`/proc/${childPid}/stat`, "utf8"), /^\d+ \(.*\) Z /);
-    } catch (error) {
-      if (!['ESRCH', 'ENOENT'].includes(error.code)) throw error;
+    // kill waits for the owning process; descendants can observe SIGKILL a
+    // scheduler tick later. Still require their actual exit within a bound.
+    let childStopped = false;
+    const stoppedDeadline = Date.now() + 5000;
+    while (!childStopped && Date.now() < stoppedDeadline) {
+      try {
+        process.kill(childPid, 0);
+        // Linux can retain a terminated orphan until init reaps it. A zombie
+        // has exited even though signal 0 still finds its process-table row.
+        if (process.platform === "linux") childStopped = /^\d+ \(.*\) Z /.test(await readFile(`/proc/${childPid}/stat`, "utf8"));
+      } catch (error) {
+        if (!['ESRCH', 'ENOENT'].includes(error.code)) throw error;
+        childStopped = true;
+      }
+      if (!childStopped) await new Promise(resolve => setTimeout(resolve, 25));
     }
+    assert.ok(childStopped, "Owned child is still alive after stopping its tree");
     const ownSecond = await jobs.start({ command: nodeCommand("setInterval(()=>{},1000)") });
     await jobs.dispose();
     assert.equal(jobs.status(ownSecond.id).status, "killed");

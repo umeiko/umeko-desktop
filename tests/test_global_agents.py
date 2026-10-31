@@ -30,6 +30,33 @@ class GlobalAgentTests(unittest.TestCase):
         return self.g.execute('agent_bus.create',{'requestKey':key,**fields},self.b._view)
     def creation_status(self,row,caller=None):
         return self.g.execute('agent_bus.creation_status',{'requestId':row['requestId']},caller or self.b._view)
+    def test_global_agents_cannot_create_even_when_user_allows_automatic_creation(self):
+        for automatic in (False,True):
+            self.g.handle('setAutomaticCreation',{'enabled':automatic})
+            self.assertTrue(self.g.overview(self.b._view)['creation']['canCreate'])
+            self.assertEqual(self.g.overview(self.b._view)['creation']['automaticAllowed'],automatic)
+            discovery=self.g.overview(self.source)['creation']
+            self.assertFalse(discovery['canCreate']);self.assertFalse(discovery['automaticAllowed'])
+            before=self.g.registry.read_bytes()
+            with patch('app.global_agents.secrets.choice') as choose:
+                for invoke in (lambda:self.g.execute('agent_bus.create',{'requestKey':'recursive'},self.source),
+                               lambda:self.g.request_creation({'requestKey':'recursive'},self.source),
+                               lambda:self.g.request_creation({},self.source)):
+                    with self.assertRaisesRegex(ValueError,'禁止递归创建'):invoke()
+                choose.assert_not_called()
+            self.assertEqual(self.g.registry.read_bytes(),before)
+            self.assertEqual(len(self.g.agents),1);self.assertFalse(self.g.creation_requests)
+            self.m.openPage.assert_not_called();self.m.bridge.notify.assert_not_called()
+    def test_legacy_global_creation_request_cannot_be_confirmed_or_reused(self):
+        request=self.create_request()
+        row=self.g.creation_requests[request['requestId']]
+        row.update(source=self.g.identifier(self.source),sourceKey=self.source.key)
+        with self.assertRaisesRegex(ValueError,'仅普通会话'):
+            self.g.handle('confirmCreation',{'requestId':request['requestId']})
+        with self.assertRaisesRegex(ValueError,'禁止递归创建'):
+            self.g.request_creation({'requestKey':row['requestKey']},self.source)
+        self.assertEqual(len(self.g.agents),1)
+        self.assertEqual(self.g.handle('cancelCreation',{'requestId':request['requestId']})['status'],'cancelled')
     def test_model_creation_requires_user_confirmation_and_randomizes_once(self):
         with patch('app.global_agents.secrets.choice',return_value=self.b.characterPacks[2]) as choose:
             result=self.create_request(name='helper',instructions='test')

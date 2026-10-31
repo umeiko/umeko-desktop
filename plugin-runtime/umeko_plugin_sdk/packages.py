@@ -87,6 +87,7 @@ def validate(folder):
     for key in ('builtin','enabled','sessionEnabled','hasPage','path','readmeText','configText'):m.pop(key,None)
     if m.get('page'):file(m['page'])
     if m.get('settingsPage'):file(m['settingsPage'])
+    if 'liveConfig' in m and type(m['liveConfig']) is not bool:raise PluginError('liveConfig 必须为 boolean')
     m['readme']=m.get('readme','README.md')
     with file(m['readme']).open(encoding='utf-8') as document:document.read(65536)
     agent=m.get('agent')

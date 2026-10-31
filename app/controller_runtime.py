@@ -114,7 +114,7 @@ class PiControllerMixin:
                     legacyHistory=record.history, models=self.gateway.models(), agent=agent,
                     permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,
                     dataDir=str(self.store.directory),
-                    mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration())
+                    mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(), loopReview=True)
                 if record.global_agent:
                     service=self._desktop_plugins.global_agents
                     payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(service.root/"sessions"/record.global_agent),

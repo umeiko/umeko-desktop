@@ -13,14 +13,15 @@ from app.desktop_plugins import DesktopPlugins
 
 class Pool(QObject):
     event=Signal(object,object)
-    def __init__(self,record):super().__init__();self.records={record.key:record}
+    def __init__(self,record):super().__init__();self.records={record.key:record};self.writes=[]
+    def write(self,record,event):self.writes.append((record.key,event))
     def find(self,identifier):return next((row for row in self.records.values() if row.id==identifier),None)
 
 class Host(QObject):
     viewChanged=Signal();chatChanged=Signal();toast=Signal(str);documentRequested=Signal(str,str,str);editorText=Signal(str)
     def __init__(self,directory):
         super().__init__();self.root=ROOT;self.store=SimpleNamespace(directory=directory/'profile')
-        self._view=SimpleNamespace(key='token-one',id='session-one',workspace=str(directory/'workspace'),title='Fixture',busy=False,messages=[{'role':'user','text':'fixture context'}])
+        self._view=SimpleNamespace(key='token-one',id='session-one',workspace=str(directory/'workspace'),title='Fixture',busy=False,global_agent='',failed=False,cancelled=False,messages=[{'role':'user','text':'fixture context'}])
         self._pool=Pool(self._view)
         Path(self._view.workspace).mkdir();self.sent=[];self.attached=[];self.revealed=[]
     def send(self,text):self.sent.append((self._view.id,text,False))
@@ -85,6 +86,73 @@ def create_plugin(context):return Fixture(context)
             for p in folder.rglob('*'):
                 if p.is_file():stream.write(p,p.relative_to(folder).as_posix())
         return archive,marker
+    def test_loop_review_is_opt_in_captures_before_tools_and_opens_on_cancellation(self):
+        self.assertFalse(self.manager.enabled('change-review'))
+        self.assertNotIn('change-review',self.manager.workers)
+        record=self.host._view
+        begin={'type':'loop_review','id':'begin-1','phase':'begin','loopId':'one'}
+        self.host._pool.event.emit(record,begin)
+        self.assertEqual(self.host._pool.writes[-1][1]['id'],'begin-1')
+        self.assertNotIn('change-review',self.manager.workers)
+        self.manager.setEnabled('change-review',True)
+        file=Path(record.workspace)/'proof.txt';file.write_text('before\n')
+        self.host._pool.event.emit(record,{**begin,'id':'begin-2','loopId':'two'})
+        self.wait(lambda:any(event['id']=='begin-2' for _,event in self.host._pool.writes))
+        file.write_text('after\n')
+        self.host._pool.event.emit(record,{'type':'loop_review','id':'end-2','phase':'finish','loopId':'two','reason':'cancelled'})
+        self.wait(lambda:self.manager.page.get('id')=='change-review')
+        value=self.call('status')['result'];self.assertEqual(value['reason'],'cancelled');self.assertEqual(value['total'],1)
+        self.manager.closePage();self.assertIn('change-review',self.manager.workers)
+        self.assertIn('-before',self.call_for_review('diff',{'path':'proof.txt'})['result']['text'])
+        self.manager.setEnabled('change-review',False);self.assertNotIn('change-review',self.manager.workers)
+    def test_review_process_exit_retains_background_chat_without_stealing_panel(self):
+        self.manager.setEnabled('change-review',True);record=self.host._view
+        file=Path(record.workspace)/'proof.txt';file.write_text('before\n')
+        self.host._pool.event.emit(record,{'type':'loop_review','id':'start-exit','phase':'begin','loopId':'exit-loop'})
+        self.wait(lambda:any(event['id']=='start-exit' for _,event in self.host._pool.writes))
+        file.write_text('after\n')
+        self.host._view=copy.copy(record);self.host._view.key='foreground';self.host._view.id='foreground'
+        self.host._pool.records['foreground']=self.host._view;self.host.viewChanged.emit()
+        self.host._pool.event.emit(record,{'type':'exit'})
+        snapshot=self.manager.bridge.snapshot(record)
+        request=self.manager.call_for('change-review','status','{}',session=snapshot)
+        self.wait(lambda:request in self.responses)
+        self.assertEqual(self.responses[request]['result']['reason'],'exited')
+        self.assertEqual(self.responses[request]['result']['total'],1)
+        self.assertEqual(self.manager.page,{})
+
+    def call_for_review(self,method,args):
+        request=self.manager.call_for('change-review',method,json.dumps(args))
+        self.wait(lambda:request in self.responses);return self.responses[request]
+
+    def test_review_auto_open_setting_is_persistent_and_preserves_active_baseline(self):
+        manager=self.manager;manager.setEnabled('change-review',True)
+        managed={};manager.managed.connect(lambda key,value:managed.__setitem__(key,value))
+        file=Path(self.host._view.workspace)/'proof.txt';file.write_text('before\n')
+        self.assertTrue(self.call_for_review('begin',{'loopId':'manual'})['result']['captured'])
+        worker=manager.workers['change-review']
+        def save(config):
+            key=manager.saveConfig('change-review',json.dumps(config));self.assertTrue(key)
+            self.wait(lambda:key in managed);return managed[key]
+        self.assertTrue(save({'autoOpen':False})['ok'])
+        self.assertIs(manager.workers['change-review'],worker)
+        self.assertFalse(json.loads(manager.registry.read_text())['config']['change-review']['autoOpen'])
+        file.write_text('after\n')
+        result=self.call_for_review('finish',{'loopId':'manual'})
+        self.assertEqual(result['result']['files'],1);self.assertEqual(manager.page,{})
+        self.assertTrue(manager.openPage('change-review'))
+        self.assertIn('-before',self.call_for_review('diff',{'path':'proof.txt'})['result']['text'])
+        self.assertFalse(save({'autoOpen':'invalid'})['ok'])
+        self.assertFalse(manager.settings['config']['change-review']['autoOpen'])
+        self.assertTrue(save({'autoOpen':True})['ok'])
+        self.assertIs(manager.workers['change-review'],worker)
+        self.assertIn('+after',self.call_for_review('diff',{'path':'proof.txt'})['result']['text'])
+        manager.closePage()
+        self.call_for_review('begin',{'loopId':'automatic'})
+        file.write_text('automatic\n')
+        self.call_for_review('finish',{'loopId':'automatic'})
+        self.wait(lambda:manager.page.get('id')=='change-review')
+
     def test_official_tree_is_lazy_bounded_and_closes_worker(self):
         directory=Path(self.host._view.workspace);(directory/'a.py').write_text('print(1)');(directory/'nested').mkdir();(directory/'nested/x.txt').write_text('hello')
         self.assertEqual({row['id'] for row in self.manager.sessionPlugins},{'file-tree','git-viewer','global-agents','pi-manager'})
@@ -102,7 +170,7 @@ def create_plugin(context):return Fixture(context)
         self.assertEqual(rows['file-tree']['iconGlyph'],'folder')
         self.assertEqual(rows['git-viewer']['iconGlyph'],'branch')
         self.assertEqual(rows['desktop-pet']['iconGlyph'],'pet')
-        self.assertEqual(len(self.manager.iconCatalog),21)
+        self.assertEqual(len(self.manager.iconCatalog),22)
         for icon in self.manager.iconCatalog:self.assertTrue((ROOT/'app/icons'/(icon['glyph']+'.svg')).is_file())
         self.fixture();folder=self.path/'session-demo-1.0.0';manifest=json.loads((folder/'manifest.json').read_text())
         manifest['icon']='does-not-exist';(folder/'manifest.json').write_text(json.dumps(manifest))

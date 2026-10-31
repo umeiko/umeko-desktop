@@ -3,6 +3,7 @@
   {"id":"pet","label":"桌宠","glyph":"pet"},
   {"id":"folder","label":"文件","glyph":"folder"},
   {"id":"branch","label":"版本管理","glyph":"branch"},
+  {"id":"diff","label":"差异","glyph":"diff"},
   {"id":"code","label":"代码","glyph":"code"},
   {"id":"globe","label":"网页","glyph":"globe"},
   {"id":"search","label":"搜索","glyph":"search"},

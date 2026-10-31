@@ -59,6 +59,17 @@ jobs:
       - name: Set up Linux
         run: bash setup.sh
 
+      - name: Package optional CodeArts provider
+        run: .venv/bin/python scripts/package-codearts-provider.py
+
+      - name: Upload optional CodeArts provider
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Umeko-codearts-provider
+          path: build/optional-providers/umeko-codearts-provider-*.zip
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Node tests
         run: node --test tests/conversation-search.test.mjs tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/package-install.test.mjs tests/pi-widget-command.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/global-agents.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs tests/compaction-bridge.test.mjs
 
@@ -67,13 +78,16 @@ jobs:
           dbus-run-session -- bash -ec '
             printf "ci-ephemeral-password" | gnome-keyring-daemon --unlock --components=secrets
             .venv/bin/python -m unittest discover -s tests -p "test_*.py" -v
+            .venv/bin/python tests/codearts_plugin_ui_smoke.py
             .venv/bin/python tests/subagent_pane_ui_smoke.py
             .venv/bin/python tests/subagent_queue_ui_smoke.py
             .venv/bin/python tests/characters_ui_smoke.py
             .venv/bin/python tests/provider_popup_ui_smoke.py
+            .venv/bin/python tests/api_proxy_layout_ui_smoke.py
             .venv/bin/python tests/desktop_plugins_ui_smoke.py
             .venv/bin/python tests/conversation_search_ui_smoke.py
             .venv/bin/python tests/sidebar_menu_position_ui_smoke.py
+            .venv/bin/python tests/change_review_ui_smoke.py
             .venv/bin/python tests/extension_details_ui_smoke.py
             .venv/bin/python tests/pi_management_ui_smoke.py
             .venv/bin/python tests/desktop_pet_ui_smoke.py

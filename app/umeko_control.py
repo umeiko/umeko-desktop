@@ -234,6 +234,8 @@ class UmekoControl(QObject):
             topic={'插件':'plugins','provider插件':'provider','widget插件':'widget','供应商':'provider'}.get(str(topic).lower(),str(topic).lower())
             if topic and topic not in topics:raise ValueError('topic 请选择 plugins、provider、widget 或 agents')
             result={'docsRoot':str(docs),'entry':str(docs/(topics[topic] if topic else 'README.md')),'topics':{key:str(docs/value) for key,value in topics.items()}}
+            # Coordinators cannot use file tools. Supply their guide only on demand.
+            if topic=='agents':result['document']=(docs/topics[topic]).read_text(encoding='utf-8')[:65536]
             if topic in ('widget','plugins'):result['activeWidgets']=b.desktopPlugins.bridge.list(True,caller)
             return result
         if operation.startswith('widgets.'):

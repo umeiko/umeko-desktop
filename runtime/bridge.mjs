@@ -10,7 +10,7 @@ import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
 import { backgroundJobsExtension } from "./background-jobs.mjs";
-import { createWidgetMessages } from "./widget-messages.mjs";
+import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
 import { createToolPermissionExtension } from "./tool-permissions.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
@@ -46,6 +46,7 @@ const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.typ
 const compactionText = data => `已压缩：${data.before} → ${data.after} tokens`;
 let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe, closing = false;
 const compactionFailures = new WeakMap();
+const loopReview=createLoopReview({emit});
 const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit});
 let reasoningEffort = "off";
 const effortLevels = new Set(["off", "low", "high", "max"]);
@@ -343,6 +344,7 @@ async function init(input) {
         appendSystemPrompt: [DESKTOP_PI_PROMPT + " " + UMEKO_PROMPT + " Reply in the user's language.", input.agent?.instructions || ""],
         extensionFactories: [
           ...(input.globalCoordinator ? [{name:"global-coordinator-boundary",hidden:true,replaceable:false,factory:coordinatorExtension}] : []),
+          ...(input.loopReview ? [{name:"loop-review",hidden:true,replaceable:false,factory:loopReview.extension}] : []),
           // Mandatory inline factory: resource filters cannot disable the gate.
           { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}) },
@@ -504,6 +506,7 @@ async function promptWithInterrupts(first) {
 }
 
 async function execute(input) {
+  if (input.type === "loop_review_response") { loopReview.response(input); return; }
   if (input.type === "umeko_response") { umekoControl.response(input); return; }
   if(input.type==='widget-notify' && runtime && (executing || input.notification?.wake===false)) {
     try {await widgetMessages.deliver(input.notification);}catch(error){emit({type:'widget_delivery',id:input.notification?.id,status:'failed',error:error.message});}
@@ -605,6 +608,7 @@ let rl;
 async function shutdown() {
   if (closing) return;
   closing = true;
+  loopReview.clear();
   umekoControl.clear();
   subagents.dispose();
   piCommands.clear();
