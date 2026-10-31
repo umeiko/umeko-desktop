@@ -5,8 +5,8 @@
   "name": "桌面小宠物",
   "version": "1.0.0",
   "icon": "pet",
-  "summary": "用动作陪伴任务进展",
-  "description": "官方内置桌宠。后台低频观察任务，默认不显示。支持拖动、点击互动、右键菜单与自定义动画形象。",
+  "summary": "桌宠陪伴、提醒与待办",
+  "description": "官方内置桌宠。后台观察任务并管理本机提醒与待办，默认不显示。支持拖动、点击互动、右键菜单与自定义动画形象。",
   "author": "Umeko",
   "lifecycle": "application",
   "entrypoint": "scripts/plugin.py:create_plugin",
@@ -16,7 +16,7 @@
     "document": "AGENT.md",
     "methods": {
       "status": {
-        "description": "查看实际显示状态、活动摘要、导入进度和设置",
+        "description": "查看实际显示状态、活动摘要、导入进度、提醒统计、宿主时间和设置",
         "parameters": {
           "type": "object",
           "properties": {},
@@ -61,6 +61,9 @@
           "type": "object",
           "properties": {
             "visible": {
+              "type": "boolean"
+            },
+            "reminderNotificationsEnabled": {
               "type": "boolean"
             },
             "alwaysOnTop": {
@@ -138,6 +141,62 @@
           "required": [
             "id"
           ]
+        }
+      },
+      "listItems": {
+        "description": "列出本机待办和一次性提醒，返回宿主当前时间；不需要模型轮询计时",
+        "parameters": {
+          "type": "object",
+          "properties": {"status": {"type": "string", "enum": ["open", "completed", "all"]}},
+          "additionalProperties": false
+        }
+      },
+      "getItem": {
+        "description": "按 id 查看一条本机事项及宿主当前时间",
+        "parameters": {
+          "type": "object",
+          "properties": {"id": {"type": "string", "maxLength": 36}},
+          "required": ["id"], "additionalProperties": false
+        }
+      },
+      "createItem": {
+        "description": "新增本机待办；可选 dueAt 设置一次性提醒，时间须包含 Z 或 UTC 偏移",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "title": {"type": "string", "maxLength": 200},
+            "notes": {"type": "string", "maxLength": 2000},
+            "dueAt": {"type": "string", "maxLength": 64, "description": "带时区的 ISO 8601 时间；普通待办省略此字段"}
+          },
+          "required": ["title"], "additionalProperties": false
+        }
+      },
+      "updateItem": {
+        "description": "修改本机事项；改期使旧提醒失效，clearDueAt=true 清除提醒时间",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "id": {"type": "string", "maxLength": 36},
+            "title": {"type": "string", "maxLength": 200},
+            "notes": {"type": "string", "maxLength": 2000},
+            "dueAt": {"type": "string", "maxLength": 64},
+            "clearDueAt": {"type": "boolean", "description": "true 清除提醒；不能与非空 dueAt 同时设置"}
+          },
+          "required": ["id"], "additionalProperties": false
+        }
+      },
+      "completeItem": {
+        "description": "完成事项并取消未触发的提醒；已完成时返回原事项",
+        "parameters": {
+          "type": "object", "properties": {"id": {"type": "string", "maxLength": 36}},
+          "required": ["id"], "additionalProperties": false
+        }
+      },
+      "deleteItem": {
+        "description": "删除本机事项并使旧提醒失效；不存在的 id 返回错误",
+        "parameters": {
+          "type": "object", "properties": {"id": {"type": "string", "maxLength": 36}},
+          "required": ["id"], "additionalProperties": false
         }
       },
       "interact": {
