@@ -245,9 +245,12 @@ Rectangle {
             Item {
                 ColumnLayout {anchors.centerIn:parent;spacing:12;visible:!root.state.agents.length
                     LabelText {text:"暂无全局子智能体";color:root.c.muted;Layout.alignment:Qt.AlignHCenter}
-                    SmallButton {text:"创建第一个全局子智能体";primary:true;Layout.alignment:Qt.AlignHCenter;onClicked:root.form("")}
+                    SmallButton {objectName:"createFirstGlobalAgentButton";text:"创建第一个全局子智能体";primary:true;Layout.alignment:Qt.AlignHCenter;onClicked:root.form("")}
                 }
                 ListView {
+                    objectName:"globalAgentsList"
+                    // An empty Flickable still grabs presses over the empty-state button.
+                    visible:count>0
                     anchors.fill:parent;spacing:10;clip:true;model:root.state.agents
                     delegate:Rectangle {
                         required property var modelData

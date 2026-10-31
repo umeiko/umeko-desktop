@@ -57,7 +57,12 @@ try:
     assert b.desktopPlugins.openPage('global-agents')
     wait(lambda:find('globalAgentsPage') is not None,'Widget did not load')
     page=find('globalAgentsPage');wait(lambda:(page.property('state').toVariant() if hasattr(page.property('state'),'toVariant') else page.property('state')).get('defaultCharacter'),'Snapshot missing')
-    QTest.qWait(1000);click('newGlobalAgentButton');assert page.property('chosenCharacter')==b.characterStyle['id']
+    QTest.qWait(1000);click('createFirstGlobalAgentButton')
+    assert find('createGlobalAgentDialog').property('opened'),'Empty-state create button did not open the dialog'
+    assert not find('globalAgentsList').isVisible()
+    click('cancelGlobalCreation');wait(lambda:not find('createGlobalAgentDialog').property('opened'),'Creation dialog did not close')
+    click('newGlobalAgentButton');assert find('createGlobalAgentDialog').property('opened')
+    assert page.property('chosenCharacter')==b.characterStyle['id']
     assert not find('globalAgentName').property('text')
     find('globalAgentInstructions').setProperty('text','关注所有已开启智能体总线的工作区任务，委派后主动汇总结果。')
     window.grabWindow().save(str(out/'create.png'));click('confirmCreateGlobalAgent')
@@ -224,6 +229,11 @@ try:
     queued_target.busy=False;g.outbox.clear();g.timer.start()
     kazuhiko=g.handle('create',{'character':'kazuhiko'})
     assert g.agents[kazuhiko['id']]['name']=='温水和彦'
+    for remaining in list(g.agents):g.handle('delete',{'id':remaining})
+    page.setProperty('selected','');page.setProperty('section','agents')
+    wait(lambda:find('createFirstGlobalAgentButton').isVisible() and not find('globalAgentsList').isVisible(),'Deleting the final agent did not restore the empty state')
+    click('createFirstGlobalAgentButton');assert find('createGlobalAgentDialog').property('opened')
+    click('cancelGlobalCreation')
     assert not [w for w in warnings if 'global-agents/qml' in w],warnings
     print('PASS: real Widget creation, current-character default, native cross-session dispatch/reply/wakeup, scoped tools, durable contexts and searchable project-tree bus authorizations.')
 finally:
