@@ -8,6 +8,7 @@ TextEdit {
     property int blockIndex: 0
     property bool conditionalSelection: false
     readOnly: true
+    font.family: Theme.fontFamily
     selectByMouse: !selectionController
     persistentSelection: true
     selectionColor: Theme.selectionBg

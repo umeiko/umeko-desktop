@@ -38,8 +38,8 @@ PidPopup {
         ColumnLayout {
             id: removalContent
             width: parent.width; spacing: 18
-            Text { Layout.fillWidth: true; text: I18n.t("删除角色") + " · " + (root.removal.name || ""); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.ink; font.pixelSize: Theme.font(15) }
-            Text { Layout.fillWidth: true; text: I18n.t("删除当前角色后，将恢复八奈见。原始 ZIP 文件会保留。"); wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(12) }
+            Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: I18n.t("删除角色") + " · " + (root.removal.name || ""); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.ink; font.pixelSize: Theme.font(15, visible) }
+            Text { font.family: Theme.fontFamily; Layout.fillWidth: true; text: I18n.t("删除当前角色后，将恢复八奈见。原始 ZIP 文件会保留。"); wrapMode: Text.Wrap; color: Theme.muted; font.pixelSize: Theme.font(12, visible) }
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
@@ -57,7 +57,7 @@ PidPopup {
         RowLayout {
             id: heading
             Layout.fillWidth: true
-            Text { text: I18n.t(root.roleMode ? "子智能体形象" : "主角色"); color: Theme.ink; font.pixelSize: Theme.font(18); font.weight: Font.DemiBold; Layout.fillWidth: true }
+            Text { font.family: Theme.fontFamily; text: I18n.t(root.roleMode ? "子智能体形象" : "主角色"); color: Theme.ink; font.pixelSize: Theme.font(18, visible); font.weight: Font.DemiBold; Layout.fillWidth: true }
             ActionButton { objectName: "closeCharacterDialog"; glyph: "x"; quiet: true; hint: I18n.t("关闭"); onClicked: root.close() }
         }
         RowLayout {
@@ -66,12 +66,13 @@ PidPopup {
             ActionButton { objectName: "subagentCharacterTab"; text: I18n.t("子智能体"); primary: root.roleMode; quiet: !root.roleMode; onClicked: root.roleMode = true }
             Item { Layout.fillWidth: true }
         }
-        Text { id: description; text: I18n.t(root.roleMode ? "选择一个槽位，再点击形象。全局子智能体可在创建时单独选择。" : "独立于主题，即时切换形象与互动台词。"); color: Theme.muted; font.pixelSize: Theme.font(12); Layout.fillWidth: true; wrapMode: Text.Wrap }
+        Text { font.family: Theme.fontFamily; id: description; text: I18n.t(root.roleMode ? "选择一个槽位，再点击形象。全局子智能体可在创建时单独选择。" : "独立于主题，即时切换形象与互动台词。"); color: Theme.muted; font.pixelSize: Theme.font(12, visible); Layout.fillWidth: true; wrapMode: Text.Wrap }
         ComboBox {
             id: roleSlot; objectName: "subagentCharacterSlot"; visible: root.roleMode
             Layout.fillWidth: true
             implicitHeight: Theme.control(42); leftPadding: 12; rightPadding: 32
-            font.pixelSize: Theme.font(12)
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.font(12, visible)
             model: [0, 1, 2, 3]
             displayText: (currentIndex + 1) + " · " + I18n.t(Character.role(currentIndex).name || "")
             contentItem: Text { text: roleSlot.displayText; color: Theme.ink; font: roleSlot.font; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
@@ -83,7 +84,7 @@ PidPopup {
                 width: roleSlot.width
                 text: (index + 1) + " · " + I18n.t(Character.role(index).name || "")
                 highlighted: roleSlot.highlightedIndex === index
-                contentItem: Text { text: roleDelegate.text; color: Theme.ink; font.pixelSize: Theme.font(12); verticalAlignment: Text.AlignVCenter }
+                contentItem: Text { font.family: Theme.fontFamily; text: roleDelegate.text; color: Theme.ink; font.pixelSize: Theme.font(12, visible); verticalAlignment: Text.AlignVCenter }
                 background: Rectangle { color: roleDelegate.highlighted ? Theme.accentBg : Theme.surface }
             }
         }
@@ -129,8 +130,8 @@ PidPopup {
                         }
                         RowLayout {
                             Layout.fillWidth: true; spacing: 4
-                            Text { text: I18n.t(entry.modelData.name); textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12); elide: Text.ElideRight; Layout.fillWidth: true }
-                            Text { visible: entry.modelData.builtin; text: I18n.t("内置"); color: Theme.muted; font.pixelSize: Theme.font(10) }
+                            Text { font.family: Theme.fontFamily; text: I18n.t(entry.modelData.name); textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12, visible); elide: Text.ElideRight; Layout.fillWidth: true }
+                            Text { font.family: Theme.fontFamily; visible: entry.modelData.builtin; text: I18n.t("内置"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
                             ActionButton { objectName: "deleteCharacter_" + entry.modelData.id; visible: !root.roleMode && !entry.modelData.builtin; glyph: "trash"; quiet: true; destructive: true; implicitWidth: 24; implicitHeight: 24; hint: I18n.t("删除角色"); onClicked: { root.removal = entry.modelData; confirmRemoval.open() } }
                         }
                     }

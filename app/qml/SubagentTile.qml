@@ -16,16 +16,16 @@ Rectangle {
         id: summary
         x: avatar.x+avatar.width+Theme.control(12); width: Math.max(0,parent.width-x-Theme.control(28))
         anchors.verticalCenter: parent.verticalCenter; spacing: 5
-        Text {
+        Text { font.family: Theme.fontFamily;
             objectName: "subagentTitle_" + (root.agent.id || "")
             width: parent.width; text: (root.agent.name || I18n.t("子代理")) + (root.statusLabel ? " · " + root.statusLabel : "")
-            textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12)
+            textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12, visible)
             maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight
         }
-        Text {
+        Text { font.family: Theme.fontFamily;
             objectName: "subagentSummary_" + (root.agent.id || "")
             width: parent.width; text: String(root.showStatus ? root.agent.activity || root.agent.task || root.agent.type || "" : root.agent.task || root.agent.type || "").replace(/\s+/g," ")
-            textFormat: Text.PlainText; color: Theme.muted; font.pixelSize: Theme.font(10)
+            textFormat: Text.PlainText; color: Theme.muted; font.pixelSize: Theme.font(10, visible)
             maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight
         }
     }

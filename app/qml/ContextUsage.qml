@@ -46,7 +46,7 @@ Item {
         parent: root; x: 0; y: -height - 8; margins: 12; padding: 12
         visible: hover.containsMouse && !compactPopup.visible; delay: 250
         background: Rectangle { radius: 8; color: Theme.ink }
-        contentItem: Text { text: root.description; color: Theme.bg; font.pixelSize: Theme.font(11); lineHeight: 1.5 }
+        contentItem: Text { font.family: Theme.fontFamily; text: root.description; color: Theme.bg; font.pixelSize: Theme.font(11, visible); lineHeight: 1.5 }
     }
     AnchoredPidPopup {
         id: compactPopup; objectName: "compactContextPopup"
@@ -59,9 +59,9 @@ Item {
                 id: popupContents
                 width: compactPopup.expandedWidth - compactPopup.padding * 2
                 spacing: 10; opacity: compactPopup.contentOpacity
-                Text {
+                Text { font.family: Theme.fontFamily;
                     Layout.fillWidth: true; text: root.description
-                    color: Theme.muted; font.pixelSize: Theme.font(11); lineHeight: 1.5; wrapMode: Text.Wrap
+                    color: Theme.muted; font.pixelSize: Theme.font(11, visible); lineHeight: 1.5; wrapMode: Text.Wrap
                 }
                 Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
                 ActionButton {
@@ -71,11 +71,11 @@ Item {
                     enabled: backend.compactionAvailable && !backend.busy && !!backend.activeSession
                     onClicked: { compactPopup.close(); backend.compactSession() }
                 }
-                Text {
+                Text { font.family: Theme.fontFamily;
                     visible: backend.busy
                     Layout.fillWidth: true
                     text: I18n.t("仅在当前任务结束后可压缩上下文。")
-                    color: Theme.muted; font.pixelSize: Theme.font(10); wrapMode: Text.Wrap
+                    color: Theme.muted; font.pixelSize: Theme.font(10, visible); wrapMode: Text.Wrap
                 }
             }
         }
