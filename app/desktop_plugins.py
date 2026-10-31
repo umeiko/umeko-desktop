@@ -128,8 +128,9 @@ class DesktopPlugins(QObject):
     def details(self,identifier):
         if identifier not in self.entries:return {}
         e=self.entries[identifier];path=self.path(identifier)
+        readme = 'README.en.md' if identifier == 'skill-manager' and e.get('builtin') and getattr(self.b, 'language', 'zh') == 'en' else e.get('readme', 'README.md')
         try:
-            with (path/e.get('readme','README.md')).open('r',encoding='utf-8') as f:doc=f.read(65536)
+            with (path/readme).open('r',encoding='utf-8') as f:doc=f.read(65536)
         except OSError:doc=''
         config=self.settings.get('config',{}).get(identifier,read(path/e.get('config','config.json'),{}))
         return {**e,'readmeText':doc,'configText':json.dumps(config,ensure_ascii=False,indent=2),'settingsUrl':QUrl.fromLocalFile(str(path/e['settingsPage'])).toString() if e.get('settingsPage') else ''}

@@ -1,0 +1,19 @@
+{
+  "kind": "umeko-plugin",
+  "apiVersion": 1,
+  "id": "skill-manager",
+  "version": "1.0.0",
+  "name": "Skill 管理",
+  "description": "查看本地 Skill、当前聊天可用状态、文件与全局默认，安装或移除来源包。",
+  "summary": "管理聊天可用 Skill",
+  "author": "Umeko",
+  "icon": {"path": "assets/layers.svg"},
+  "lifecycle": "session",
+  "entrypoint": "scripts/plugin.py:create_plugin",
+  "page": "qml/Main.qml",
+  "readme": "README.md",
+  "config": "config.json",
+  "configSchema": "config.schema.json",
+  "permissions": ["skills.read", "skills.manage", "pi.read", "pi.manage"],
+  "agent": {"document": "AGENT.md", "methods": {}}
+}

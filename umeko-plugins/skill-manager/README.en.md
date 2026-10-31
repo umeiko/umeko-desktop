@@ -1,0 +1,11 @@
+# Skill management
+
+Open this Widget to see the skills available in the current chat. Switch to all local skills, search names and descriptions, filter by source or default state, sort by name, or group by source. Each skill occupies one compact row, with its chat availability checkbox on the right. Use Up/Down to select, Space to request a change, and Enter to open the bottom detail pane. Ctrl+F focuses search while the panel has focus.
+
+Details show the description, rendered SKILL.md text, included files, listed-file sizes in bytes, and source path. Images in the document are omitted. Separate actions change the default where supported, open the folder, or remove a removable source package. Project and source defaults are identified separately from global defaults. Skill bodies load on demand; excluding a skill does not erase content already read. Bytes do not indicate token usage, and a truncated listing does not represent the complete folder size.
+
+**Import** accepts a local skill folder, ZIP, or `.skill` archive. You can also drop one local file or folder into the panel. Choose the current project or global scope, then preview names, descriptions, and validation results. Skip or replace conflicting skills; skills from protected sources and invalid entries can only be skipped. The host asks for confirmation inside the panel before writing. Import does not execute skill scripts. Results and individual errors remain on the import page; returning to the list refreshes the catalog.
+
+The separate package installation page accepts npm, Git, or local package sources and shows scope, progress, cancellation, and errors. Pi installs and removes whole packages, which may also contain extensions, templates, and other skills. The host confirms all changes inside the panel. The Widget only requests operations and has no approval interface. Unsupported host operations show an upgrade notice.
+
+The icon is [layers.svg from Feather Icons v4.29.2](https://github.com/feathericons/feather/blob/v4.29.2/icons/layers.svg), by Cole Bemis, distributed under the MIT license. Only the stroke color was adjusted. The Widget entry and panel rows share the same file. The complete license is included in [assets/Feather-MIT.txt](assets/Feather-MIT.txt).
