@@ -18,6 +18,13 @@ from app.pi_runtime import RELEASE_NAME, PINNED_VERSION
 from app.project_info import VERSION, git_output
 
 
+def isolated_profile(directory):
+    from app.storage import Store
+    store = Store(directory)
+    store.data['agent']['agentDir'] = str(directory / 'agent')
+    store.save()
+
+
 def verify_windows_preview(executable, environment, report_dir):
     import ctypes
     from ctypes import wintypes
@@ -38,6 +45,7 @@ def verify_windows_preview(executable, environment, report_dir):
     diagnostic.unlink(missing_ok=True)
     env = dict(environment, QT_QPA_PLATFORM='windows', UMEKO_DIAGNOSTICS=str(diagnostic),
                UMEKO_DATA_DIR=str(report_dir / 'preview-profile'), UMEKO_WEB_PREVIEW_URL=f'http://127.0.0.1:{server.server_port}/')
+    isolated_profile(report_dir / 'preview-profile')
     user32 = ctypes.windll.user32
     callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
     user32.EnumWindows.argtypes = [callback, wintypes.LPARAM]
@@ -87,10 +95,15 @@ def main():
         executable = output / ("Umeko/Umeko.exe" if sys.platform == "win32" else "Umeko/Umeko")
         resources = output / "Umeko/_internal"
     if not executable.is_file(): raise RuntimeError("Packaged executable is missing")
+    skill_source = resources / 'bundled-skills/sources.json'
+    skills = json.loads(skill_source.read_text(encoding='utf-8'))
+    if len(skills) != 9 or any(not (skill_source.parent / row['name'] / 'SKILL.md').is_file() for row in skills):
+        raise RuntimeError('Preinstalled Skill distribution is incomplete')
     report_dir = ROOT / "build/ci-smoke"
     report_dir.mkdir(parents=True, exist_ok=True)
     diagnostic = report_dir / "application.log"
     screenshot = report_dir / "application.png"
+    isolated_profile(report_dir / 'profile')
     environment = dict(os.environ, UMEKO_DATA_DIR=str(report_dir / "profile"),
         UMEKO_DIAGNOSTICS=str(diagnostic), QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software")
     environment["PATH"] = str(report_dir / "no-system-node")
