@@ -138,7 +138,8 @@ class SkillJobs(QObject):
         for item in record.resources.get('skills', []):
             if item.get('filePath') or item.get('path'):
                 loaded.append(copy.deepcopy(item))
-        options = dict(sessionSkills=copy.deepcopy(record.skill_modes), loadedSkills=loaded)
+        options = dict(sessionSkills=copy.deepcopy(record.skill_modes), loadedSkills=loaded,
+                       skillsEnabled=self.host.m.skills_enabled(record))
         preview = self.preview_for(request, args['id']) if operation == 'skills.import' else None
         destination = (Path(cwd) / '.pi/skills' if args.get('project') else Path(agent_dir) / 'skills') if operation == 'skills.importPreview' or direct_import else None
         folder_import = key in self.folders

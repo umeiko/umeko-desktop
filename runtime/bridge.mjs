@@ -110,6 +110,7 @@ const ui = {
 globalThis[Symbol.for("umeko:tool-permission-host")] = { getPolicy: () => permissionPolicy, ui };
 
 globalThis[Symbol.for("umeko:tool-visibility-host")] = { getBlockedTools: () => blockedToolNames(config?.blockedTools) };
+globalThis[Symbol.for("umeko:skill-policy-host")] = { enabled: () => config?.skillsEnabled !== false };
 
 async function bindSession(session) {
   unsubscribe?.();

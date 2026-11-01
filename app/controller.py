@@ -231,6 +231,12 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self._umeko_control = UmekoControl(self)
         from .desktop_plugins import DesktopPlugins
         self._desktop_plugins = DesktopPlugins(self)
+        from .slash_commands import SlashCommands
+        self._slash_commands = SlashCommands(self)
+
+    @Property(QObject, constant=True)
+    def slashCommands(self):
+        return self._slash_commands
 
     @Property(QObject, constant=True)
     def piManagement(self):

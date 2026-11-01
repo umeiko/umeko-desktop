@@ -20,7 +20,9 @@ export class DefaultResourceLoader extends NativeResourceLoader {
         [{ name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension }]),
       { name: "tool-permissions", hidden: true, replaceable: false,
         factory: createToolPermissionExtension({ getPolicy: () => permissionHost()?.getPolicy() || { mode: "auto" } }) },
-    ] });
+    ], ...(globalThis[Symbol.for("umeko:skill-policy-host")]?.enabled() === false ? {
+      noSkills: true, skillsOverride: result => ({ ...result, skills: [] }),
+    } : {}) });
   }
   getAppendSystemPrompt() {
     const append = super.getAppendSystemPrompt();

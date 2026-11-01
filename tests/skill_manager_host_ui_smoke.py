@@ -94,9 +94,18 @@ def main():
                      lambda:'Widget did not initialize: '+repr(manager.page))
             widget=find('skillManagerWidget')
             actual=variant(widget.property('skills'))
-            assert {(r['name'],r['scope']) for r in actual}=={('global-guide','global'),('project-guide','project')},{'rows':actual,'notice':widget.property('notice'),'roots':variant(widget.property('roots')),'jobs':[(r['operation'],r['status'],str(r['result'])[:300]) for r in host._skills.jobs.values()] if host._skills else []}
+            bundled={row['name'] for row in json.loads((ROOT/'bundled-skills/sources.json').read_text())}
+            assert {(r['name'],r['scope']) for r in actual}=={('global-guide','global'),('project-guide','project')} | {(name,'global') for name in bundled}
+            assert all(row['valid'] for row in actual)
             assert find('skillManagerScope_global') and find('skillManagerScope_project')
-            global_row=next(row for row in actual if row['scope']=='global')
+            global_row=next(row for row in actual if row['name']=='global-guide' and row['scope']=='global')
+            # Discovery help opens on click, explaining metadata versus full instructions.
+            help_button=find('skillManagerDiscoveryHelp');assert help_button
+            help_button.clicked.emit()
+            wait_for(lambda:find('helpText_skillManagerDiscoveryHelp') is not None,'Discovery help did not open')
+            help_text=find('helpText_skillManagerDiscoveryHelp').property('text')
+            assert 'name, description and path' in help_text and 'Closing the panel' in help_text
+            help_button.clicked.emit()
 
             # Attach a whole global folder, preserving the existing draft and
             # without sending, changing availability or writing Pi settings.
@@ -163,8 +172,8 @@ def main():
                 (folder/'SKILL.md').write_text(f'---\nname: {name}\ndescription: '+'技能说明'*256+'\n---\nLocal fixture.\n',encoding='utf-8')
             find('skillManagerRefresh').clicked.emit();wait_for(lambda:bool(widget.property('job')),'Large browse did not begin')
             wait_for(idle,'Large native folder catalog failed to page')
-            actual=variant(widget.property('skills'));assert len(actual)==213,len(actual)
-            assert len({row['id'] for row in actual})==213
+            actual=variant(widget.property('skills'));assert len(actual)==213+len(bundled),len(actual)
+            assert len({row['id'] for row in actual})==213+len(bundled)
             assert len(json.dumps(actual,ensure_ascii=False).encode())>262144
             assert not [warning for warning in warnings if 'skill-manager' in warning or 'DesktopPluginSurface' in warning],warnings
             print('SKILL_FOLDER_HOST_UI_OK: configured global/workspace roots, whole-folder attachment, direct clipboard paste and ZIP drop, no navigation or import confirmations, failure-only pane popup and conflict preservation, directory rename/delete confirmations, 213-record UTF-8 paging; model calls=0')

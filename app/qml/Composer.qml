@@ -9,10 +9,24 @@ Item {
     height: 157 + Theme.control(33) - 33 + (backend.attachments.length ? Theme.control(48) : 0) + queueOffset
     signal openModels()
     signal chooseFiles()
+    property bool slashDismissed: false
+    readonly property bool slashVisible: prompt.activeFocus && !prompt.inputMethodComposing && /^\//.test(prompt.text) && !slashDismissed
+    function chooseSlash(entry) {
+        if (entry.group === "命令") {
+            setText(entry.command + " ")
+            slashDismissed = true
+        } else if (backend.slashCommands.choose(entry.id)) {
+            setText("")
+        }
+    }
     function focusInput() { prompt.forceActiveFocus() }
     function setText(value) { prompt.text = value; prompt.forceActiveFocus(); prompt.cursorPosition = value.length }
     function sendMessage(steering) {
         if (backend.kernelBusy || backend.loading) return
+        if (/^\//.test(prompt.text)) {
+            if (backend.slashCommands.execute(prompt.text)) setText("")
+            return
+        }
         if (steering) backend.steer(prompt.text)
         else if (prompt.text.trim().length || backend.attachments.length) backend.send(prompt.text)
     }
@@ -25,9 +39,22 @@ Item {
             prompt.cursorPosition = position + 1
             event.accepted = true
         } else if (event.modifiers & Qt.ShiftModifier) event.accepted = false
+        else if (root.slashVisible) { slashMenu.chooseSelection(); event.accepted = true }
         else { sendMessage(); event.accepted = true }
     }
     Connections { target: backend; function onEditorText(text) { root.setText(text) } }
+    Connections { target: backend; function onViewChanged() { root.slashDismissed = false } }
+    onSlashVisibleChanged: if (slashVisible) backend.slashCommands.refresh()
+    CompactCommandMenu {
+        id: slashMenu
+        z: 20; width: parent.width
+        anchors.bottom: parent.top; anchors.bottomMargin: 8
+        maximumHeight: Math.min(Theme.control(360), Math.max(Theme.control(66), root.mapToItem(null, 0, 0).y - 90))
+        visible: root.slashVisible
+        entries: backend.slashCommands.entries
+        query: prompt.text
+        onChosen: entry => root.chooseSlash(entry)
+    }
     QueuedMessages { id: queued; width: parent.width }
     Rectangle { x: 0; y: root.queueOffset + 6; width: parent.width; height: parent.height - root.queueOffset; radius: 17; color: "#090f0a"; opacity: Theme.dark ? 0.1 : 0.035 }
     Rectangle {
@@ -60,8 +87,19 @@ Item {
                 padding: 0; topPadding: 3; font.pixelSize: Theme.font(13, visible)
                 font.family: Theme.fontFamily
                 background: null
-                onTextChanged: backend.setDraft(text)
-                Keys.onPressed: event => { if (event.matches(StandardKey.Paste) && backend.pasteAttachments()) event.accepted = true }
+                onTextChanged: { root.slashDismissed = false; backend.setDraft(text) }
+                Keys.onPressed: event => {
+                    if (event.matches(StandardKey.Paste) && backend.pasteAttachments()) event.accepted = true
+                    else if (root.slashVisible && !inputMethodComposing) {
+                        if (event.key === Qt.Key_Up || event.key === Qt.Key_Down) {
+                            slashMenu.moveSelection(event.key === Qt.Key_Up ? -1 : 1); event.accepted = true
+                        } else if (event.key === Qt.Key_Tab) {
+                            slashMenu.chooseSelection(); event.accepted = true
+                        } else if (event.key === Qt.Key_Escape) {
+                            root.slashDismissed = true; event.accepted = true
+                        }
+                    }
+                }
                 Keys.onReturnPressed: event => root.handleEnter(event)
                 Keys.onEnterPressed: event => root.handleEnter(event)
             }

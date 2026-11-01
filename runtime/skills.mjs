@@ -73,7 +73,7 @@ export async function discoverSkills(Pi, input, settings) {
   // Availability follows the same precedence as sessionSkillOptions and Pi's
   // name deduplication. Keep displaced entries visible without claiming that
   // the model can invoke both same-name skills.
-  if (!input.agent?.safeMode && !input.globalCoordinator) {
+  if (input.skillsEnabled !== false && !input.agent?.safeMode && !input.globalCoordinator) {
     for (const row of effectiveSkills(rows, input)) row.attached = true;
   }
   return rows;
@@ -241,6 +241,12 @@ export async function validateSkillDocuments(documents) {
 }
 
 export async function sessionSkillOptions(Pi, input, nativeSettings) {
+  // Keep native files and +/- settings intact. The override also filters skills
+  // contributed by extension hooks after startup, including on /reload.
+  if (input.skillsEnabled === false) return {
+    noSkills: true,
+    skillsOverride: result => ({ ...result, skills: [] }),
+  };
   if (input.agent?.safeMode || input.globalCoordinator) return {};
   const overrides = input.sessionSkills;
   if (!overrides || typeof overrides !== "object" || Array.isArray(overrides)) return {};

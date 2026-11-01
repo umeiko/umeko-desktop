@@ -9,6 +9,8 @@
 | MCP server | Connects external tools and resources | A local process or remote server |
 | Widget | A desktop page, app service or window | An Umeko Widget ZIP; see [Widgets](./widgets) |
 
+Skill manager is enabled by default. Its question mark explains discovery: the prompt lists available names, descriptions and paths, while instructions and references are read as needed. Double-clicking only attaches a folder. Disabling the Widget globally or for a chat stops discovery and loading in that scope after the current turn; closing the panel only hides it. Type `/` for commands, enabled Widgets and Skills; `/s` through `/skills` expand Skills, with visible-name and Chinese pinyin matching.
+
 ## Manage Skill folders {#manage-skill-folders}
 
 Open **Widgets → Skill manager** at the bottom-right of chat. It has Workspace and Global sections. Workspace Skills belong to the project; global Skills live in the selected Pi configuration directory and serve projects using it.

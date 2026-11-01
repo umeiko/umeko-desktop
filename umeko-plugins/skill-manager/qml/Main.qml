@@ -192,6 +192,11 @@ FocusScope {
             SmallButton{objectName:"skillManagerBack";visible:root.route!=="main";text:"‹";enabled:!root.working;onClicked:{root.route="main";root.clearImportPreview();root.reload()} Accessible.name:root.t("返回","Back")}
             Image{source:"../assets/skill-package.svg";sourceSize.width:22;sourceSize.height:22;Layout.preferredWidth:22*root.sdk.scale;Layout.preferredHeight:22*root.sdk.scale}
             Label{text:root.route==="main" ? "Skills" : root.t("导入 Skill","Import Skill");font.bold:true;font.pixelSize:Umeko.Theme.font(16);Layout.fillWidth:true}
+            Umeko.HelpButton {
+                objectName:"skillManagerDiscoveryHelp"
+                help:root.t("启用后，全局和当前工作区中可用 Skill 的名称、简介和路径会自动提供给智能体；任务匹配时才读取正文和附带资料，无需先双击。双击只把文件夹附加到输入框。停用此 Widget 会关闭相应范围的技能发现与加载；重新启用后恢复原配置。收起面板不影响启用状态。运行中的任务在本轮结束后应用开关。",
+                    "When enabled, available Skills in Global and the current workspace are advertised to the agent by name, description and path. Instructions and references are read only when needed; no double-click is required. Double-click only attaches the folder to the composer. Disabling this Widget turns off skill discovery and loading in that scope; enabling it restores the existing configuration. Closing the panel does not disable Skills. Running tasks apply the change after their current turn.")
+            }
             SmallButton{objectName:"skillManagerImport";visible:root.route==="main";text:root.t("导入","Import");enabled:!root.working;onClicked:root.openImport()}
             SmallButton{objectName:"skillManagerRefresh";visible:root.route==="main";text:"↻";enabled:!root.working;onClicked:root.reload();Accessible.name:root.t("刷新","Refresh")}
         }

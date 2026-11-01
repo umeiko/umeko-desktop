@@ -205,3 +205,57 @@ test("catalog attached reports only the effective same-name winner", async () =>
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+
+test("Widget opt-out removes native Skill discovery and extension additions without changing files or settings", async () => {
+  const root = mkdtempSync(join(tmpdir(), "umeko-widget-skill-gate-"));
+  try {
+    mkdirSync(join(root, ".git"));
+    const cwd = join(root,"workspace"), agentDir = join(root,"agent");
+    mkdirSync(cwd); mkdirSync(agentDir);
+    const create = (path,name) => {
+      mkdirSync(dirname(path),{recursive:true});
+      writeFileSync(path,`---\nname: ${name}\ndescription: ${name} unique routing description\n---\nPrivate skill body.\n`);
+      return path;
+    };
+    const global = create(join(agentDir,"skills/global-guide/SKILL.md"),"global-guide");
+    const project = create(join(cwd,".pi/skills/project-guide/SKILL.md"),"project-guide");
+    const dynamic = create(join(root,"dynamic/SKILL.md"),"dynamic-guide");
+    const input = {cwd,agentDir,agent:{}};
+    const settings = await prepareNativeSettings(Pi,input);
+    const before = JSON.stringify(settings.getSettings());
+    const disabled = {...input,skillsEnabled:false,sessionSkills:{[global]:true,[project]:true}};
+    const loader = new Pi.DefaultResourceLoader({cwd,agentDir,settingsManager:settings,
+      noExtensions:true,noPromptTemplates:true,noThemes:true,noContextFiles:true,
+      ...await sessionSkillOptions(Pi,disabled,settings)});
+    await loader.reload();
+    assert.deepEqual(loader.getSkills().skills,[]);
+    assert.equal(Pi.formatSkillsForPrompt(loader.getSkills().skills),"");
+    loader.extendResources({skillPaths:[{path:dynamic,metadata:{source:"test-extension",scope:"user",origin:"top-level"}}]});
+    assert.deepEqual(loader.getSkills().skills,[],"resource hooks cannot bypass the Widget opt-out");
+    await loader.reload();
+    assert.deepEqual(loader.getSkills().skills,[],"reload cannot bypass the Widget opt-out");
+    const catalog = (await manageSkills(Pi,disabled)).skills;
+    assert.ok(catalog.length>=2 && catalog.every(row=>!row.attached));
+    const enabled = new Pi.DefaultResourceLoader({cwd,agentDir,settingsManager:settings,
+      noExtensions:true,noPromptTemplates:true,noThemes:true,noContextFiles:true,
+      ...await sessionSkillOptions(Pi,input,settings)});
+    await enabled.reload();
+    assert.ok(enabled.getSkills().skills.some(row=>row.filePath===global));
+    assert.ok(enabled.getSkills().skills.some(row=>row.filePath===project));
+    assert.match(Pi.formatSkillsForPrompt(enabled.getSkills().skills),/global-guide unique routing description/);
+    // Newly created community children use the SDK facade, not the main loader.
+    const { DefaultResourceLoader: ChildLoader } = await import('../runtime/subagent-sdk.mjs');
+    const policyKey = Symbol.for('umeko:skill-policy-host');
+    globalThis[policyKey] = {enabled: () => false};
+    try {
+      const child = new ChildLoader({cwd, agentDir, settingsManager:settings, noExtensions:true});
+      await child.reload();
+      assert.deepEqual(child.getSkills().skills, []);
+      child.extendResources({skillPaths:[{path:dynamic,metadata:{source:'test',scope:'user',origin:'top-level'}}]});
+      assert.deepEqual(child.getSkills().skills, []);
+    } finally { delete globalThis[policyKey]; }
+    assert.equal(JSON.stringify(settings.getSettings()),before);
+    assert.ok(readFileSync(global,"utf8").includes("Private skill body."));
+  } finally { rmSync(root,{recursive:true,force:true}); }
+});

@@ -66,6 +66,18 @@ class PiControllerMixin:
         self._pool.invalidate()
         self.contextUsageChanged.emit()
 
+    def _skills_widget_changed(self,record=None):
+        records=(record,) if record is not None else tuple(self._pool.records.values())
+        for current in records:
+            if current.global_agent:continue
+            if current.busy or current.subagents_active:
+                current.stale=True
+            else:
+                current.context_usage={}
+                self._pool.retire(current)
+        self.contextUsageChanged.emit()
+        self.changed.emit()
+
     def _merge_native_sessions(self, native):
         existing = {session["id"]: session for session in self._sessions}
         for session in native:
@@ -138,6 +150,7 @@ class PiControllerMixin:
                     sessionDir=str(self.store.directory / "pi/sessions"), sessionFile=record.file,
                     sessionExtensions={path: mode == "session" for path, mode in record.extension_modes.items()},
                     sessionSkills=record.skill_modes,
+                    skillsEnabled=self._desktop_plugins.skills_enabled(record),
                     blockedTools=record.blocked_tools,
                     docsDir=str(self.store.directory / "agent-docs"),
                     legacyHistory=record.history, models=self.gateway.models(), agent=agent,

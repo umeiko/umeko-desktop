@@ -89,6 +89,14 @@ class DesktopPlugins(QObject):
         if self.application(identifier):return self.enabled(identifier)
         sessions=self.settings.get('sessions',{})
         return identifier in sessions[self.storage_key] if self.storage_key in sessions else self.entries[identifier].get('builtin',False)
+    def skills_enabled(self,record):
+        """Resolve the caller's Widget preference, including background chats."""
+        identifier='skill-manager'
+        if identifier not in self.entries or not self.enabled(identifier) or record.global_agent:return False
+        sessions=self.settings.get('sessions',{})
+        for key in (record.id,'draft:'+record.key):
+            if key and key in sessions:return identifier in sessions[key]
+        return self.entries[identifier].get('builtin',False)
     @Property('QVariantList',notify=changed)
     def rows(self):return sorted([{**e,**self.icon_for(k),'lifecycle':e.get('lifecycle','session'),'enabled':self.enabled(k),'sessionEnabled':self.session_enabled(k),'hasPage':bool(e.get('page')),'running':bool(self.workers.get(k,{}).get('ready')),'starting':k in self.workers and not self.workers[k]['ready']} for k,e in self.entries.items()],key=lambda e:e['name'])
     @Property('QVariantList',constant=True)
@@ -177,6 +185,7 @@ class DesktopPlugins(QObject):
             if self._page==identifier:self.closePage()
             self.stop(identifier)
         elif self.session_enabled(identifier) and (self.application(identifier) or not self.entries[identifier].get('page')):self.start(identifier)
+        if identifier=='skill-manager' and old.get('enabled',{}).get(identifier,True)!=value:self.b._skills_widget_changed()
         self.changed.emit()
     @Slot(str,bool)
     def setSessionEnabled(self,identifier,value):
@@ -191,6 +200,7 @@ class DesktopPlugins(QObject):
             if self._page==identifier:self.closePage()
             self.stop(identifier)
         elif self.enabled(identifier) and not self.entries[identifier].get('page'):self.start(identifier)
+        if identifier=='skill-manager':self.b._skills_widget_changed(self.b._view)
         self.changed.emit()
     @Slot(str,result=bool)
     def openPage(self,identifier):

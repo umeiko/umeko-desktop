@@ -76,6 +76,7 @@ class Manager(QObject):
         self.hostResponse.connect(lambda widget, request, value: self.replies.__setitem__(request, value))
 
     def enabled(self, identifier): return True
+    def skills_enabled(self, record): return True
     def session_enabled(self, identifier): return True
     def application(self, identifier): return True
     def send(self, identifier, value): self.frames.append((identifier, value))

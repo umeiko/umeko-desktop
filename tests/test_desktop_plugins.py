@@ -23,7 +23,8 @@ class Host(QObject):
         super().__init__();self.root=ROOT;self.store=SimpleNamespace(directory=directory/'profile')
         self._view=SimpleNamespace(key='token-one',id='session-one',workspace=str(directory/'workspace'),title='Fixture',busy=False,global_agent='',failed=False,cancelled=False,messages=[{'role':'user','text':'fixture context'}])
         self._pool=Pool(self._view)
-        Path(self._view.workspace).mkdir();self.sent=[];self.attached=[];self.revealed=[]
+        Path(self._view.workspace).mkdir();self.sent=[];self.attached=[];self.revealed=[];self.skill_changes=[]
+    def _skills_widget_changed(self,record=None):self.skill_changes.append(record)
     def send(self,text):self.sent.append((self._view.id,text,False))
     def steer(self,text):self.sent.append((self._view.id,text,True))
     def attachChatboxFile(self,path):self.attached.append(path)
@@ -433,6 +434,37 @@ def create_plugin(context):return Fixture(context)
         deadline=time.monotonic()+1
         while time.monotonic()<deadline:self.app.processEvents();time.sleep(.01)
         self.assertEqual(len(self.host.sent),1)
+    def test_skill_widget_default_and_runtime_gate_follow_the_calling_chat(self):
+        current=self.host._view
+        other=SimpleNamespace(id='session-two',key='token-two',global_agent='')
+        self.assertTrue(self.manager.enabled('skill-manager'))
+        self.assertTrue(self.manager.skills_enabled(current))
+        self.assertTrue(self.manager.skills_enabled(other))
+        # This regression tests preferences, not a worker's host handshake.
+        with patch.object(self.manager,'start'), patch.object(self.manager,'send'), patch.object(self.manager,'stop'):
+            self.assertTrue(self.manager.openPage('skill-manager'))
+            self.manager.closePage()
+        self.assertTrue(self.manager.skills_enabled(current),'closing the page preserves discovery')
+        self.assertEqual(self.host.skill_changes,[])
+        self.manager.setSessionEnabled('skill-manager',False)
+        self.assertFalse(self.manager.skills_enabled(current))
+        self.assertTrue(self.manager.skills_enabled(other),'background chat does not use the foreground switch')
+        self.assertEqual(self.host.skill_changes,[current])
+        self.manager.setEnabled('skill-manager',False)
+        self.assertFalse(self.manager.skills_enabled(other))
+        self.assertIsNone(self.host.skill_changes[-1])
+        self.manager.setEnabled('skill-manager',True)
+        self.assertFalse(self.manager.skills_enabled(current),'global enable preserves the per-chat opt-out')
+        self.assertTrue(self.manager.skills_enabled(other))
+        self.manager.setSessionEnabled('skill-manager',True)
+        self.assertTrue(self.manager.skills_enabled(current))
+        self.manager.settings['sessions']['draft:draft-token']=[]
+        draft=SimpleNamespace(id='newly-saved-id',key='draft-token',global_agent='')
+        self.assertFalse(self.manager.skills_enabled(draft),'ID promotion cannot briefly re-enable a draft')
+        self.assertFalse(self.manager.skills_enabled(SimpleNamespace(id='global',key='global',global_agent='fixture')))
+        restored=json.loads(self.manager.registry.read_text())
+        self.assertIn('skill-manager',restored['sessions'][current.id])
+
     def test_enable_scope_config_and_uninstall_persist(self):
         archive,_=self.fixture();self.manager.importZip(QUrl.fromLocalFile(str(archive)).toString());self.wait(lambda:not self.manager.busy)
         self.manager.setSessionEnabled('session-demo',True);self.manager.setEnabled('session-demo',False)

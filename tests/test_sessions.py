@@ -36,9 +36,11 @@ class SessionTests(unittest.TestCase):
         self.controller.store.data["agent"]["agentDir"] = str(self.path / "agent")
         self.started = {name: threading.Event() for name in ("A", "B")}
         self.gates = {name: threading.Event() for name in ("A", "B")}
+        self.requests = []
         owner = self
         class Fixture:
             def complete(self, model, messages, tools, max_tokens):
+                owner.requests.append(messages)
                 content = next(message["content"] for message in reversed(messages) if message["role"] == "user")
                 if isinstance(content, list):
                     content = " ".join(block.get("text", "") for block in content)
@@ -63,6 +65,33 @@ class SessionTests(unittest.TestCase):
         QTest.qWait(100)
         self.environment.stop()
         self.temp.cleanup()
+
+    def test_skill_widget_toggle_rebuilds_native_prompt_without_interrupting_busy_chat(self):
+        c = self.controller
+        folder = self.path / 'agent/skills/gate-guide'
+        folder.mkdir(parents=True)
+        (folder / 'SKILL.md').write_text('---\nname: gate-guide\ndescription: UNIQUE_SKILL_ROUTING_MARKER\n---\nRead me only when needed.\n')
+        def advertised():
+            return 'UNIQUE_SKILL_ROUTING_MARKER' in str([m for m in self.requests[-1] if m['role'] == 'system'])
+        self.assertTrue(c.send('TASK A'))
+        self.wait_for(lambda: self.started['A'].is_set(), 'enabled skill prompt')
+        self.assertTrue(advertised())
+        record = c._view
+        process = record.process
+        c.desktopPlugins.setSessionEnabled('skill-manager', False)
+        self.assertIs(record.process, process)
+        self.assertTrue(record.busy and record.stale)
+        self.gates['A'].set()
+        self.wait_for(lambda: not record.busy, 'current task completes normally')
+        self.assertFalse(record.cancelled)
+        self.assertTrue(c.send('TASK C'))
+        self.wait_for(lambda: not record.busy, 'disabled skill prompt')
+        self.assertFalse(advertised())
+        c.desktopPlugins.setSessionEnabled('skill-manager', True)
+        self.assertTrue(c.send('TASK D'))
+        self.wait_for(lambda: not record.busy, 'restored skill prompt')
+        self.assertTrue(advertised())
+        self.assertIn('Read me only', (folder / 'SKILL.md').read_text())
 
     def test_concurrent_switching_lru_history_unread_and_drafts(self):
         c = self.controller

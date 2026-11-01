@@ -1,5 +1,8 @@
 .pragma library
 var strings = {
+  "没有匹配项": "No matches",
+  "没有匹配的技能": "No matching Skills",
+  "没有可用的技能或 Skills Widget": "No available Skills or Skills Widget",
   "管理全局和工作区 Skill": "Manage global and workspace Skills",
   "按全局和工作区浏览 Skill 文件夹，导入、复制、重命名、预览或附加到聊天。": "Browse global and workspace Skill folders; import, copy, rename, preview or attach them to chat.",
   "Skill 管理": "Skill manager",

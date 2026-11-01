@@ -1,5 +1,7 @@
 # Skill management
 
+Enabled by default. Disabling the Widget globally or for the current chat turns off Skill discovery, the prompt index and native Skill invocation in that scope. Files and Pi filters are preserved; enabling it restores them. Closing the side panel only hides its UI. Running tasks apply the switch after their current turn. Click the question mark beside the title for the discovery explanation.
+
 The Widget shows two collapsible sections: **Workspace** and **Global**. Each compact 26px row represents an entire Skill folder. Search names and descriptions without expanding its contents. There are no availability checkboxes, activation controls or create button.
 
 A single click only positions the row. Double-click attaches the whole folder to the current composer, preserving its draft and without sending a message. Right-click to attach, preview, edit SKILL.md with its system-associated application, show in the file manager, copy the folder, copy its path, paste, rename or delete. Rename changes the folder name; edit its metadata through the editor or Agent.

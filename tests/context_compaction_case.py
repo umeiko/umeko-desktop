@@ -213,9 +213,10 @@ class ContextCompactionTests(unittest.TestCase):
 
     def test_circle_compacts_in_place_and_busy_action_is_disabled(self):
         self.seed()
-        self.send_and_wait("/compact ordinary composer message")
-        self.assertFalse(any(not call["tools"] for call in self.adapter.calls), "Slash input must remain an ordinary model message")
-        self.assertIn("/compact ordinary composer message", json.dumps(self.adapter.calls[-1]["messages"]))
+        calls = len(self.adapter.calls)
+        self.enter("/compact ordinary composer message")
+        self.assertEqual(len(self.adapter.calls), calls, "Unrecognized slash input stays in the composer")
+        self.assertEqual(self.find('promptInput').property('text'), '/compact ordinary composer message')
         self.adapter.block_next = True
         self.enter("继续当前任务")
         self.wait_for(self.adapter.entered.is_set)
