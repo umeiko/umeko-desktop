@@ -6,10 +6,14 @@ on:
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
+      - 'docs-site/**'
+      - 'scripts/capture-documentation.py'
   pull_request:
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
+      - 'docs-site/**'
+      - 'scripts/capture-documentation.py'
   workflow_dispatch:
 
 permissions:

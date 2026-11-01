@@ -1,0 +1,87 @@
+{
+  "sourceCommit": "f286d443f73fd15009ed4b2c8dbb96779d3937ec",
+  "applicationVersion": "0.6.3",
+  "edition": "Python / Qt",
+  "language": "en",
+  "theme": "docs-white",
+  "capturedAt": "2026-11-01T17:54:46.072162+00:00",
+  "viewport": [
+    1440,
+    960
+  ],
+  "data": "Disposable synthetic project, provider without keys, local Skills and subagent display events. No model requests.",
+  "captures": [
+    {
+      "file": "chat-en.png",
+      "sha256": "3f7b3e18fb0bf21516b8383bcb4cbd036b58e2019b31e2d434a24bb522051d18"
+    },
+    {
+      "file": "process-en.png",
+      "sha256": "9117c2ea4a298e5f0a5048a00df83250b050d09548444311587bf73b00185977"
+    },
+    {
+      "file": "artifact-rendered-en.png",
+      "sha256": "4fb3fa4c9e52f3dd2bdd4567ec59b94c625e56878b087039629db946b5e1265f"
+    },
+    {
+      "file": "artifact-source-en.png",
+      "sha256": "cc8ab2001a823b9661cb25820179b1e071eefa3928bf95721267ee086c0b3d70"
+    },
+    {
+      "file": "subagents-en.png",
+      "sha256": "8e69ab999b476a46684e24a1a7e6a47b2d9199d04c8367789048aecebe9556e5"
+    },
+    {
+      "file": "skills-en.png",
+      "sha256": "3482af3ca0ad4b8b89f8e3f723be96273de9d60395a6f0708e9f40ad32d97568"
+    },
+    {
+      "file": "skill-menu-en.png",
+      "sha256": "fc8f5c748ffbac24f61aefd681e976f63554514518c59d545c494c4bd2370444"
+    },
+    {
+      "file": "providers-en.png",
+      "sha256": "b8a0c296d1f407d65cd38353de3a7dbbcd2fcb24d01b942d3b99dc89284816e9"
+    },
+    {
+      "file": "provider-choices-en.png",
+      "sha256": "ae16eb272d8b2e6ab6636cdd1cf2b0f7fdc5d96ee3cb87891a1938da0c4e21f6"
+    },
+    {
+      "file": "provider-key-en.png",
+      "sha256": "18d2ac25f3cf82479d136c9f56b832647d14c6b2619f6ba0507473ffc3a945b7"
+    },
+    {
+      "file": "api-proxy-en.png",
+      "sha256": "f3441facb2cc1649e5cf06768f2c6a13dc33091135fb67cf2c7246eda87ca6cd"
+    },
+    {
+      "file": "model-mapping-en.png",
+      "sha256": "e03fe55e513a0982a37a448384054cd997434a472290e2b287427ed6361169c5"
+    },
+    {
+      "file": "appearance-en.png",
+      "sha256": "19418cb5e2e584239a5aa485da2f9b43b3afa5c8df712b530b9b5086e88c2fc2"
+    },
+    {
+      "file": "themes-en.png",
+      "sha256": "890bad22fccfd7697287fd58fb998003b7d1bbbd4c62fe13386357e793024511"
+    },
+    {
+      "file": "characters-en.png",
+      "sha256": "cb97e48342ba31605dc114f794cec77497ec32f5497fcd1eb10c1b874c476d59"
+    },
+    {
+      "file": "widgets-en.png",
+      "sha256": "adb2f79c552318e70a1e0bff8a6269163250e62c3f23846606ef742954398891"
+    },
+    {
+      "file": "mcp-en.png",
+      "sha256": "645fd88d5468a4be9850cd50f441fc8c70d569ae579f07fca6d8db087e61f198"
+    },
+    {
+      "file": "about-en.png",
+      "sha256": "c1a049ead1426e558fe074fc19d9c7bb084008f515cdef0ed8c1fba5b8a2d96b"
+    }
+  ]
+}

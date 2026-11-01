@@ -16,3 +16,6 @@ runtime/node/
 /.pi/mcp.json
 /internal.json
 /auth.json
+docs-site/node_modules/
+docs-site/.vitepress/cache/
+docs-site/.vitepress/dist/

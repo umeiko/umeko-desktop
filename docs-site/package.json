@@ -1,0 +1,14 @@
+{
+  "name": "umeko-documentation",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.19.0" },
+  "scripts": {
+    "dev": "vitepress dev . --host 127.0.0.1",
+    "build": "vitepress build . && node scripts/check-site.mjs",
+    "preview": "vitepress preview . --host 127.0.0.1",
+    "check": "node scripts/check-site.mjs"
+  },
+  "devDependencies": { "vitepress": "1.6.4" },
+  "overrides": { "vite": "6.4.5" }
+}
