@@ -5,7 +5,7 @@ from pathlib import Path, PurePosixPath
 from . import PluginError
 MAX_BYTES=128*1024*1024
 MAX_FILES=2048
-PERMISSIONS={'workspace.read','workspace.write','session.read','session.write','process.execute','git.read','git.write','pi.read','pi.manage','pi.observe'}
+PERMISSIONS={'workspace.read','workspace.write','session.read','session.write','process.execute','git.read','git.write','pi.read','pi.manage','pi.observe','skills.read','skills.manage'}
 BUILTIN_ICONS={row['id'] for row in json.loads(Path(__file__).with_name('icons.json').read_text(encoding='utf-8'))}
 
 def relative(value):

@@ -5,6 +5,9 @@ import "english.js" as English
 QtObject {
     id: root
     readonly property string language: backend.language
+    function widgetText(plugin, value) {
+        return plugin && plugin.id === "skill-manager" && plugin.builtin !== false ? t(value) : value
+    }
     function t(value) {
         const text = String(value || "")
         const certificate = text.match(/^TLS certificate validation failed \(([^)]+)\); check the provider's Network settings and CA file, then open request details(.*)$/)

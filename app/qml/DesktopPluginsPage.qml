@@ -11,7 +11,7 @@ Item {
     readonly property var filteredRows: allRows.filter(p=>(p.name+" "+p.id+" "+p.description).toLowerCase().includes(search.text.toLowerCase()))
     onFilteredRowsChanged: if (!filteredRows.some(p=>p.id===selectedId)) selectedId=filteredRows.length?filteredRows[0].id:""
     readonly property var selected: allRows.find(p=>p.id===selectedId) || null
-    readonly property var detail: selected ? manager.details(selectedId) : ({})
+    readonly property var detail: selected && I18n.language ? manager.details(selectedId) : ({})
     Component.onCompleted: if (allRows.length) selectedId=allRows[0].id
     onAllRowsChanged: if (!allRows.some(p=>p.id===selectedId)) selectedId=allRows.length ? allRows[0].id : ""
     FileDialog {id:picker;title:I18n.t("导入 Umeko 插件");nameFilters:["Umeko plugins (*.zip)"];onAccepted:root.manager.importZip(String(selectedFile))}
@@ -59,7 +59,7 @@ Item {
                             WidgetIcon {x:12;y:12;plugin:modelData;width:Theme.icon(18);height:Theme.icon(18)}
                             Column {
                                 anchors.fill:parent;anchors.margins:12;anchors.leftMargin:22+Theme.icon(18);spacing:7
-                                Text { font.family: Theme.fontFamily;width:parent.width;text:modelData.name;textFormat:Text.PlainText;color:Theme.ink;font.pixelSize: Theme.font(12, visible);font.weight:Font.DemiBold;elide:Text.ElideRight}
+                                Text { font.family: Theme.fontFamily;width:parent.width;text:I18n.widgetText(modelData,modelData.name);textFormat:Text.PlainText;color:Theme.ink;font.pixelSize: Theme.font(12, visible);font.weight:Font.DemiBold;elide:Text.ElideRight}
                                 Text { font.family: Theme.fontFamily;text:(modelData.builtin?I18n.t("官方内置"):"v"+modelData.version)+" · "+(modelData.enabled?I18n.t("已启用"):I18n.t("已停用"));color:Theme.muted;font.pixelSize: Theme.font(10, visible)}
                             }
                             MouseArea {id:rowMouse;anchors.fill:parent;hoverEnabled:true;cursorShape:Qt.PointingHandCursor;onClicked:root.selectedId=modelData.id}
@@ -78,12 +78,12 @@ Item {
                             RowLayout {
                                 Layout.fillWidth:true
                                 WidgetIcon {plugin:root.selected || ({});Layout.preferredWidth:Theme.icon(24);Layout.preferredHeight:Theme.icon(24)}
-                                Text { font.family: Theme.fontFamily;text:root.selected ? root.selected.name : "";textFormat:Text.PlainText;color:Theme.ink;font.pixelSize: Theme.font(20, visible);font.weight:Font.DemiBold;Layout.fillWidth:true;wrapMode:Text.Wrap}
+                                Text { font.family: Theme.fontFamily;text:root.selected ? I18n.widgetText(root.selected,root.selected.name) : "";textFormat:Text.PlainText;color:Theme.ink;font.pixelSize: Theme.font(20, visible);font.weight:Font.DemiBold;Layout.fillWidth:true;wrapMode:Text.Wrap}
                                 Switch {palette.windowText:Theme.ink;palette.buttonText:Theme.ink;palette.dark:Theme.accent;objectName:"desktopPluginGlobalSwitch";checked:!!root.selected && !!root.selected.enabled;onToggled:root.manager.setEnabled(root.selectedId,checked)}
                             }
                             Text { font.family: Theme.fontFamily;text:root.selected?"v"+root.selected.version+"  ·  "+(root.selected.author || root.selected.id):"";textFormat:Text.PlainText;color:Theme.muted;font.pixelSize: Theme.font(11, visible)}
                             Text { font.family: Theme.fontFamily;visible:!!root.selected && root.selected.lifecycle==="application";text:I18n.t(root.selected.hasPage?"应用级插件":"应用级后台服务")+" · "+I18n.t(root.selected && root.selected.running?"运行中":root.selected && root.selected.starting?"正在启动":"已停止");color:Theme.muted;font.pixelSize: Theme.font(11, visible)}
-                            Text { font.family: Theme.fontFamily;text:root.selected?root.selected.description || "":"";textFormat:Text.PlainText;color:Theme.ink;Layout.fillWidth:true;wrapMode:Text.Wrap;font.pixelSize: Theme.font(12, visible)}
+                            Text { font.family: Theme.fontFamily;text:root.selected?I18n.widgetText(root.selected,root.selected.description || ""):"";textFormat:Text.PlainText;color:Theme.ink;Layout.fillWidth:true;wrapMode:Text.Wrap;font.pixelSize: Theme.font(12, visible)}
                             RowLayout {
                                 Layout.fillWidth:true;spacing:8
                                 CheckBox {visible:!!root.selected && root.selected.lifecycle!=="application";palette.windowText:Theme.ink;palette.buttonText:Theme.ink;font.pixelSize: Theme.font(12, visible);objectName:"desktopPluginSessionSwitch";text:I18n.t("在当前会话启用");checked:!!root.selected && !!root.selected.sessionEnabled;enabled:!!root.selected && !!root.selected.enabled;onToggled:root.manager.setSessionEnabled(root.selectedId,checked)}

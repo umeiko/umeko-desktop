@@ -1,0 +1,19 @@
+{
+  "kind": "umeko-plugin",
+  "apiVersion": 1,
+  "id": "skill-manager",
+  "version": "1.0.0",
+  "name": "Skill 管理",
+  "description": "按全局和工作区浏览 Skill 文件夹，导入、复制、重命名、预览或附加到聊天。",
+  "summary": "管理全局和工作区 Skill",
+  "author": "Umeko",
+  "icon": {"path": "assets/skill-package.svg"},
+  "lifecycle": "session",
+  "entrypoint": "scripts/plugin.py:create_plugin",
+  "page": "qml/Main.qml",
+  "readme": "README.md",
+  "config": "config.json",
+  "configSchema": "config.schema.json",
+  "permissions": ["skills.read", "skills.manage", "session.write"],
+  "agent": {"document": "AGENT.md", "methods": {}}
+}

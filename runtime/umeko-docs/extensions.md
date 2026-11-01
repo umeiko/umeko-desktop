@@ -6,7 +6,31 @@
 
 Skills 通过 `agent.save` 的 `config.skillPaths` 配置额外路径；Pi 自身资源开关/包管理沿用当前 Pi 的 settings 机制。`run_pi_command` 支持 `pi install`、`pi remove`、`pi list`、`/reload`、`/compact`、`/session`、`/name` 和已加载扩展注册的命令。不要把所有扩展的帮助全文展开到 `/help`。
 
-MCP：`mcp.get` 的 `scope` 是 `global` 或 `project`，返回本实例文件路径和脱敏配置。`mcp.add` 的 `text` 接受 UI 支持的 `pi mcp add ...` 命令或具名 `mcpServers` JSON 字符串；`project` 为范围。也可 `mcp.save`，传 `scope` 和完整 `config` 对象。保存是替换语义，保留其他服务器，不要用脱敏占位值覆盖真实认证配置。
+## 创建和管理 Skill 目录
+
+Skill 是包含 `SKILL.md` 的文件夹，资源和脚本可一起放在该文件夹中。创建、编辑、复制、重命名或删除时，使用已有的文件工具处理整个目录即可，不需要额外的 Skill 创建或管理工具，也不要求用户逐个勾选附带。
+
+- 当前工作区：`<当前工作目录>/.pi/skills/<skill-name>/SKILL.md`。以当前调用聊天的实际工作目录为准，不能把另一个聊天的前台工作区作为目标。
+- 全局：`<当前 Pi agentDir>/skills/<skill-name>/SKILL.md`。先用现有的 `settings.get` 读取 `config.agent.agentDir`；配置为空时才使用 `~/.pi/agent/skills`。Umeko 可以配置独立的 Pi 目录，不要直接假定系统另装的 Pi 使用的目录就是当前实例的目录。
+
+`SKILL.md` 使用 UTF-8 Markdown 和 YAML frontmatter，例如：
+
+```markdown
+---
+name: notes-helper
+description: 整理笔记并保留原始资料的出处。
+---
+
+# 笔记整理
+
+先阅读用户指定的资料，再按主题整理。
+```
+
+沿用 Pi 的原生格式与目录发现机制。名称和简介用于发现，正文按需读取；查看列表不等于正文已经进入上下文。完成目录修改后，可通过当前实例的 `run_pi_command` 执行 `/reload` 刷新资源；以实际任务回执和发现结果核实，不调用系统 PATH 中另一份 `pi`。不要为了添加标准目录中的 Skill 覆盖整个配置文件。
+
+## MCP
+
+`mcp.get` 的 `scope` 是 `global` 或 `project`，返回本实例文件路径和脱敏配置。`mcp.add` 的 `text` 接受 UI 支持的 `pi mcp add ...` 命令或具名 `mcpServers` JSON 字符串；`project` 为范围。也可 `mcp.save`，传 `scope` 和完整 `config` 对象。保存是替换语义，保留其他服务器，不要用脱敏占位值覆盖真实认证配置。
 
 `mcp.reconnect` 传 `name` 重新连接。需要登录/登出等原生 MCP 命令时用当前实例的 `run_pi_command`。异步结果在 `status.get` 和配置查询中核实；含认证信息的字段不会由管理工具原样返回。项目范围必须有实际工作目录。
 

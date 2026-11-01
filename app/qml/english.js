@@ -1,5 +1,10 @@
 .pragma library
 var strings = {
+  "管理全局和工作区 Skill": "Manage global and workspace Skills",
+  "按全局和工作区浏览 Skill 文件夹，导入、复制、重命名、预览或附加到聊天。": "Browse global and workspace Skill folders; import, copy, rename, preview or attach them to chat.",
+  "Skill 管理": "Skill manager",
+  "管理聊天可用 Skill": "Manage chat skills",
+  "查看本地 Skill、当前聊天可用状态、文件与全局默认，安装或移除来源包。": "Manage local skills, chat availability, files, defaults and source packages.",
   "人，你来了。米呢。": "Human, you're here. Where's the rice.",
   "人，有活就说。米，记得。": "Human, work. Say it. Remember the rice.",
   "人，先干活。再吃米。": "Human, work first. Rice after.",
