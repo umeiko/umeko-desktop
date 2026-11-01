@@ -195,9 +195,9 @@ class SkillHostTests(unittest.TestCase):
         self.finish(self.accepted('skills.open', {'id':row['id'],'mode':'preview'}))
         self.assertEqual(previews, [(row['path'],'alpha','file')])
         self.finish(self.accepted('skills.open', {'id':row['id'],'mode':'edit'}))
-        self.assertEqual(self.open_folder.call_args.args[0].toLocalFile(), row['path'])
+        self.assertEqual(Path(self.open_folder.call_args.args[0].toLocalFile()), Path(row['path']))
         self.finish(self.accepted('skills.open', {'id':row['id'],'mode':'reveal'}))
-        self.assertEqual(self.open_folder.call_args.args[0].toLocalFile(), row['directory'])
+        self.assertEqual(Path(self.open_folder.call_args.args[0].toLocalFile()), Path(row['directory']))
 
     def test_paste_and_drop_add_directly_to_explicit_scope_without_confirmation(self):
         row = self.folder_catalog()[0]
