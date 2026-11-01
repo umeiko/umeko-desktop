@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from PySide6.QtCore import QCoreApplication, QObject, Signal
+from PySide6.QtCore import QCoreApplication, QObject, Signal, QMimeData, QUrl
 
 from app.pi_sessions import SessionState, clean_skill_modes
 from app.widget_host import WidgetHost
@@ -30,6 +30,7 @@ class Backend(QObject):
     jobDone = Signal(str, object)
     changed = Signal()
     chatChanged = Signal()
+    documentRequested = Signal(str, str, str)
 
     def __init__(self, root):
         super().__init__()
@@ -81,6 +82,34 @@ class Manager(QObject):
 
 
 class SkillHostTests(unittest.TestCase):
+    def test_large_catalog_pages_share_snapshot_and_keep_owner_boundary(self):
+        self.rows = [self.row(str(i), description='技能说明' * 256) for i in range(250)]
+        job = self.accepted('skills.list')
+        self.backend.finish()
+        rows, offset = [], 0
+        calls = len(self.cli_calls)
+        while True:
+            identifier = self.request('skills.job', {'id': job, 'offset': offset, 'limit': 200})
+            response = self.manager.replies[identifier]
+            self.assertTrue(response['ok'], response)
+            self.assertLess(len(json.dumps(response, ensure_ascii=False).encode()), 262144)
+            result = response['jobs'][0]['result']
+            rows.extend(result['skills'])
+            page = result['skillsPage']
+            self.assertEqual(page['offset'], offset)
+            self.assertEqual(page['total'], 250)
+            if page['nextOffset'] is None:
+                break
+            self.assertGreater(page['nextOffset'], offset)
+            offset = page['nextOffset']
+        self.assertEqual(rows, self.rows)
+        self.assertEqual(len(self.cli_calls), calls)
+        denied = self.request('skills.job', {'id': job, 'offset': 100}, widget='b')
+        self.assertFalse(self.manager.replies[denied]['ok'])
+        for args in ({'offset': -1}, {'offset': True}, {'limit': 0}, {'limit': 201}, {'limit': 1.5}, {'offset': 251}):
+            request = self.request('skills.job', {'id': job, **args})
+            self.assertFalse(self.manager.replies[request]['ok'], args)
+
     @classmethod
     def setUpClass(cls):
         cls.app = QCoreApplication.instance() or QCoreApplication([])
@@ -115,9 +144,194 @@ class SkillHostTests(unittest.TestCase):
         self.cli_calls.append((command, kwargs, action))
         if action['action'] == 'details':
             payload = {'ok': True, 'details': {'id': action['id'], 'markdown': '# Fixture skill\nUse the fixture.'}}
+        elif action['action'] == 'validateText':
+            from tests.test_skill_import import metadata
+            payload = {'ok': True, 'documents': metadata(action['documents'])}
         else:
             payload = {'ok': True, 'skills': copy.deepcopy(self.rows)}
         return subprocess.CompletedProcess(command, 0, json.dumps(payload), '')
+
+    def folder_catalog(self):
+        self.manager.entries['a']['permissions'].append('session.write')
+        rows = []
+        for scope, name, root in [('global','alpha',self.root/'agent/skills'),
+                                  ('project','beta',Path(self.backend._view.workspace)/'.pi/skills')]:
+            directory = root / name
+            directory.mkdir(parents=True)
+            (directory/'SKILL.md').write_text(f'---\nname: {name}\ndescription: Folder fixture.\n---\nOriginal content.\n')
+            rows.append(self.row(name, scope=scope, directory=str(directory),path=str(directory/'SKILL.md'),kind='folder'))
+        self.rows = rows
+        result = self.finish(self.accepted('skills.browse'))
+        self.assertEqual(result['status'], 'completed', result)
+        self.backend.attachChatboxFile = Mock()
+        return result['result']['skills']
+
+    def test_folder_browse_and_attach_are_read_only_and_work_while_agent_is_busy(self):
+        rows = self.folder_catalog()
+        self.assertEqual([row['scope'] for row in rows], ['global','project'])
+        self.backend.busy = True
+        self.assertEqual(self.finish(self.accepted('skills.browse'))['status'], 'completed')
+        result = self.finish(self.accepted('skills.insert', {'id':rows[0]['id']}))
+        self.assertEqual(result['status'], 'completed')
+        self.backend.attachChatboxFile.assert_called_once_with(rows[0]['directory'])
+        self.assertEqual(self.backend._view.skill_modes, {})
+        self.backend._restart_pi.assert_not_called()
+        self.assertFalse(self.host.panelApproval)
+
+    def test_folder_copy_clipboard_preview_editor_and_reveal_use_approved_directory(self):
+        row = self.folder_catalog()[0]
+        previews = []
+        self.backend.documentRequested.connect(lambda *value:previews.append(value))
+        with patch('app.plugin_file_actions.copy_files') as copy_folder:
+            self.assertEqual(self.finish(self.accepted('skills.copy', {'id':row['id'],'kind':'folder'}))['status'], 'completed')
+            copy_folder.assert_called_once_with([Path(row['directory'])])
+        clipboard = Mock()
+        with patch('app.skill_management.QGuiApplication.clipboard', return_value=clipboard):
+            self.finish(self.accepted('skills.copy', {'id':row['id'],'kind':'path'}))
+            clipboard.setText.assert_called_once_with(row['directory'])
+        self.finish(self.accepted('skills.open', {'id':row['id'],'mode':'preview'}))
+        self.assertEqual(previews, [(row['path'],'alpha','file')])
+        self.finish(self.accepted('skills.open', {'id':row['id'],'mode':'edit'}))
+        self.assertEqual(self.open_folder.call_args.args[0].toLocalFile(), row['path'])
+        self.finish(self.accepted('skills.open', {'id':row['id'],'mode':'reveal'}))
+        self.assertEqual(self.open_folder.call_args.args[0].toLocalFile(), row['directory'])
+
+    def test_paste_and_drop_add_directly_to_explicit_scope_without_confirmation(self):
+        row = self.folder_catalog()[0]
+        data = QMimeData();data.setUrls([QUrl.fromLocalFile(row['directory'])])
+        clipboard = Mock();clipboard.mimeData.return_value = data
+        with patch('app.skill_management.QGuiApplication.clipboard', return_value=clipboard):
+            job = self.accepted('skills.paste', {'project': True})
+        self.assertFalse(self.host.panelApproval)
+        self.assertFalse(self.host.capabilities['operations']['skills.paste']['confirmation'])
+        target = Path(self.backend._view.workspace) / '.pi/skills/alpha'
+        self.assertFalse(target.exists())
+        result = self.finish(job)
+        self.assertEqual(result['status'], 'completed', result)
+        self.assertEqual(result['result']['imported'], ['alpha'])
+        self.assertEqual((target/'SKILL.md').read_bytes(), Path(row['path']).read_bytes())
+        source = self.root/'dropped';source.mkdir();(source/'SKILL.md').write_text('---\nname: original-name\ndescription: Drop fixture\n---\nContent')
+        result = self.finish(self.accepted('skills.importLocal', {'source':QUrl.fromLocalFile(str(source)).toString(), 'project':False}))
+        self.assertEqual(result['status'], 'completed', result)
+        self.assertTrue((self.root/'agent/skills/dropped/SKILL.md').is_file())
+        self.assertFalse((Path(self.backend._view.workspace)/'.pi/skills/dropped').exists())
+        self.assertFalse(self.host.panelApproval)
+        self.assertEqual(self.backend._restart_pi.call_count, 2)
+
+    def test_direct_import_needs_manage_explicit_scope_current_chat_and_idle(self):
+        source = self.root/'input'
+        args = {'source':str(source), 'project':True}
+        for invalid in ({'source':str(source)}, {**args, 'project':'global'}, {**args,'replace':True}, {**args,'destination':str(self.root/'outside')}):
+            request = self.request('skills.importLocal', invalid)
+            self.assertFalse(self.manager.replies[request]['ok'], invalid)
+        self.manager.entries['a']['permissions'] = ['skills.read']
+        request = self.request('skills.importLocal', args)
+        self.assertIn('skills.manage', self.manager.replies[request]['error'])
+        self.manager.entries['a']['permissions'].append('skills.manage')
+        self.backend.busy = True
+        request = self.request('skills.importLocal', args)
+        self.assertIn('busy', self.manager.replies[request]['error'])
+        self.backend.busy = False
+        stale = {**self.manager._session, 'workspace':str(self.root/'other')}
+        request = self.request('skills.importLocal', args, session=stale)
+        self.assertFalse(self.manager.replies[request]['ok'])
+        self.manager._session['workspace'] = self.backend._view.workspace = ''
+        request = self.request('skills.importLocal', args)
+        self.assertIn('project', self.manager.replies[request]['error'])
+        self.assertFalse(self.backend.pending_jobs)
+        self.assertFalse(self.host.panelApproval)
+
+    def test_direct_paste_failure_preserves_existing_skill_and_refuses_non_file_clipboard(self):
+        row = self.folder_catalog()[0]
+        original = Path(row['path']).read_bytes()
+        data = QMimeData();data.setUrls([QUrl.fromLocalFile(row['directory'])])
+        clipboard = Mock();clipboard.mimeData.return_value = data
+        with patch('app.skill_management.QGuiApplication.clipboard', return_value=clipboard):
+            result = self.finish(self.accepted('skills.paste', {'project':False}))
+            self.assertEqual(result['status'], 'failed', result)
+            self.assertIn('同名', result['result']['error'])
+            data.setUrls([QUrl('https://example.com/skill.zip')])
+            request = self.request('skills.paste', {'project':False})
+            self.assertFalse(self.manager.replies[request]['ok'])
+        self.assertEqual(Path(row['path']).read_bytes(), original)
+        self.backend._restart_pi.assert_not_called()
+
+    def test_folder_rename_and_delete_require_panel_confirmation_and_preserve_metadata(self):
+        row = self.folder_catalog()[0]
+        original = Path(row['path']).read_bytes()
+        request = self.request('skills.rename', {'id':row['id'],'name':'renamed-folder'})
+        self.assertNotIn(request, self.manager.replies)
+        self.assertIn('alpha → renamed-folder', self.host.panelApproval['name'])
+        self.assertTrue(Path(row['directory']).is_dir())
+        self.assertFalse(self.backend.pending_jobs)
+        self.host.respondApproval(True)
+        job = self.manager.replies[request]['jobId']
+        self.assertEqual(self.finish(job)['status'], 'completed')
+        target = Path(row['directory']).with_name('renamed-folder')
+        self.assertEqual((target/'SKILL.md').read_bytes(), original)
+        self.assertFalse(Path(row['directory']).exists())
+        # Refresh obtains a new identity for the renamed directory.
+        self.rows[0].update(name=target.name,directory=str(target),path=str(target/'SKILL.md'))
+        self.finish(self.accepted('skills.browse'))
+        request = self.request('skills.delete', {'id':row['id']})
+        self.assertTrue(target.exists())
+        self.host.respondApproval(False)
+        self.assertTrue(target.exists())
+        self.assertEqual(self.finish(self.accepted('skills.delete', {'id':row['id']},approve=True))['status'], 'completed')
+        self.assertFalse(target.exists())
+
+    def test_folder_boundary_invalid_ids_names_and_swapped_directory_are_refused(self):
+        row = self.folder_catalog()[0]
+        for name in ('../escape','x/y','CON','x\\y','trailing.',''):
+            request = self.request('skills.rename', {'id':row['id'],'name':name})
+            self.assertFalse(self.manager.replies[request]['ok'], name)
+            self.assertFalse(self.host.panelApproval)
+        request = self.request('skills.insert', {'id':'other-folder'})
+        self.assertFalse(self.manager.replies[request]['ok'])
+        job = self.accepted('skills.rename', {'id':row['id'],'name':'new-folder'},approve=True)
+        directory = Path(row['directory'])
+        directory.rename(directory.with_name('original-saved'))
+        directory.mkdir();(directory/'SKILL.md').write_text('Changed entry')
+        self.assertEqual(self.finish(job)['status'], 'failed')
+        self.assertEqual((directory/'SKILL.md').read_text(), 'Changed entry')
+        self.assertFalse(directory.with_name('new-folder').exists())
+
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX symlink cleanup; Windows reparse tests cover the directory guard')
+    def test_folder_delete_never_follows_asset_links(self):
+        row = self.folder_catalog()[0]
+        outside = self.root/'outside';outside.mkdir();(outside/'keep.txt').write_text('Keep')
+        (Path(row['directory'])/'external-assets').symlink_to(outside, target_is_directory=True)
+        self.assertEqual(self.finish(self.accepted('skills.delete', {'id':row['id']},approve=True))['status'], 'completed')
+        self.assertEqual((outside/'keep.txt').read_text(), 'Keep')
+
+    def test_folder_native_rows_cannot_grant_access_to_external_skill_directories(self):
+        rows = self.folder_catalog()
+        outside = self.root/'outside';outside.mkdir();(outside/'SKILL.md').write_text('External')
+        self.rows.append(self.row('outside',directory=str(outside),path=str(outside/'SKILL.md'),kind='folder',scope='global'))
+        value = self.finish(self.accepted('skills.browse'))['result']
+        self.assertEqual(value['skills'], rows)
+        request = self.request('skills.delete', {'id':'skill_outside'})
+        self.assertFalse(self.manager.replies[request]['ok'])
+        self.assertFalse(self.host.panelApproval)
+        self.assertTrue(outside.exists())
+
+    def test_folder_close_releases_directory_snapshots_and_catalog(self):
+        self.folder_catalog()
+        self.assertTrue(self.host._skills.folders)
+        self.host.stop('a')
+        self.assertFalse(self.host._skills.folders)
+        self.assertFalse(self.host._skills.catalog)
+        self.assertFalse(self.host._skills.catalog_owners)
+
+    def test_changed_global_directory_revokes_stale_folder_actions(self):
+        row = self.folder_catalog()[0]
+        self.backend.piManagement._context = lambda:(self.root/'release',Path(self.backend._view.workspace),self.root/'new-agent',{})
+        for operation in ('skills.insert','skills.delete'):
+            request = self.request(operation, {'id':row['id']})
+            self.assertFalse(self.manager.replies[request]['ok'])
+            self.assertFalse(self.host.panelApproval)
+        self.backend.attachChatboxFile.assert_not_called()
+        self.assertTrue(Path(row['directory']).is_dir())
 
     def request(self, operation, args=None, widget='a', session=None):
         identifier = self.host.request_for(widget, {'operation': operation, 'arguments': args or {},

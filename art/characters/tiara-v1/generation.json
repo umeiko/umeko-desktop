@@ -1,0 +1,72 @@
+{
+  "tool": "built-in image_gen",
+  "created": "2026-10-31",
+  "transparentBackground": true,
+  "character": {
+    "id": "tiara",
+    "name": "马剃天爱星",
+    "originalName": "馬剃天愛星",
+    "englishName": "Tiara Basori"
+  },
+  "reference": {
+    "url": "https://makeine-anime.com/assets/img/character/img_main17.png",
+    "page": "https://makeine-anime.com/character/",
+    "file": "art/characters/tiara-v1/reference/official-tiara.png"
+  },
+  "assets": [
+    {
+      "id": "welcome",
+      "file": "welcome.png",
+      "prompt": "Use case: stylized-concept.\nAsset type: transparent chibi character welcome illustration for Umeko Desktop.\nCreate Tiara Basori / 馬剃天愛星 from Makeine. Image 1 is the official identity and costume reference. Image 2 is ONLY the application's illustration style reference; do not borrow its character identity.\nTiara has neatly pulled-back dark blue-black hair with short separated bangs, a compact low bun at the back, short side locks, gray-blue eyes, pale skin, and a slightly earnest composed expression. Preserve her light gray school blazer with dark navy piping, white blouse with a vertical stack of pale blue bow ribbons, gray pleated skirt if visible. Small chest badge must be blank, no writing.\nDraw a polished cute chibi upper body with a large expressive face, complete head/hair and both hands. Three-quarter very slight turn toward viewer, gently smiling with a modest blush, one open hand raised in a polite welcoming wave, other arm holding a small navy clipboard against her chest.\nStyle: clean crisp pixel-edged anime cel shading matching image 2, confident fine dark contours, restrained highlights, readable at small UI size, no 3D, no painterly texture.\nComposition: one centered figure, square canvas, all hair, hands and clipboard inside frame with about 5% clear margin. Bottom is a clean waist-up crop. Truly transparent background, no scenery, no ground, no text, logo, watermark, frame or circular badge.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-c22600e4-bf9e-4d56-b819-23e7b9edc5ec.png"
+    },
+    {
+      "id": "avatarSmile",
+      "file": "avatarSmile.png",
+      "prompt": "Use case: stylized-concept. Asset type: transparent Umeko Desktop chibi character artwork. The reference image is the approved Tiara Basori / 馬剃天愛星 identity and rendering style. Keep exactly her dark navy-black pulled-back hair, compact low bun, short separated bangs and side locks, gray-blue eyes, pale skin, light gray blazer with dark navy piping, white blouse and vertically stacked pale-blue bow ribbons. Blank chest badge. Match the reference's crisp pixel-edged cel shading, fine dark contours, proportions, modest blush, polished anime art. Create ONE centered character on a square truly transparent canvas, with 5% clear margins around all hair and hands. No scenery, ground, text, watermark, border or circular badge. POSE: A head-and-collar portrait only, face toward viewer, both eyes open, gentle confident closed-mouth smile. Show entire bun and hair silhouette; no hands, no clipboard. Large face occupies most canvas, include top three pale-blue bow ribbons and gray blazer collar.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-91e29fbc-3291-4e52-be50-3c3a918225f2.png"
+    },
+    {
+      "id": "reply",
+      "file": "reply.png",
+      "prompt": "Use case: stylized-concept. Asset type: transparent Umeko Desktop chibi character artwork. The reference image is the approved Tiara Basori / 馬剃天愛星 identity and rendering style. Keep exactly her dark navy-black pulled-back hair, compact low bun, short separated bangs and side locks, gray-blue eyes, pale skin, light gray blazer with dark navy piping, white blouse and vertically stacked pale-blue bow ribbons. Blank chest badge. Match the reference's crisp pixel-edged cel shading, fine dark contours, proportions, modest blush, polished anime art. Create ONE centered character on a square truly transparent canvas, with 5% clear margins around all hair and hands. No scenery, ground, text, watermark, border or circular badge. POSE: Head and shoulders portrait, Tiara looking toward viewer with a calm satisfied gentle closed-mouth smile, both gray-blue eyes open. Include all bun and hair, gray blazer shoulders and stacked blue ribbons. No hands or clipboard. A compact nearly square silhouette for small chat reply mascot.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-5147b085-22c9-49a7-93b1-8299198ba9c1.png"
+    },
+    {
+      "id": "avatarHappy",
+      "file": "avatarHappy.png",
+      "prompt": "Use case: stylized-concept. Asset type: transparent Umeko Desktop chibi character artwork. The reference image is the approved Tiara Basori / 馬剃天愛星 identity and rendering style. Keep exactly her dark navy-black pulled-back hair, compact low bun, short separated bangs and side locks, gray-blue eyes, pale skin, light gray blazer with dark navy piping, white blouse and vertically stacked pale-blue bow ribbons. Blank chest badge. Match the reference's crisp pixel-edged cel shading, fine dark contours, proportions, modest blush, polished anime art. Create ONE centered character on a square truly transparent canvas, with 5% clear margins around all hair and hands. No scenery, ground, text, watermark, border or circular badge. POSE: A head-and-collar portrait only, face toward viewer, both eyes happily curved closed, delighted but reserved smile, modest blush. Entire bun and hair silhouette visible; no hands, no clipboard. Include gray blazer collar and pale-blue bow ribbons.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-53e3008c-241d-4956-be21-36e55170e276.png"
+    },
+    {
+      "id": "avatarWink",
+      "file": "avatarWink.png",
+      "prompt": "Use case: stylized-concept. Asset type: transparent Umeko Desktop chibi character artwork. The reference image is the approved Tiara Basori / 馬剃天愛星 identity and rendering style. Keep exactly her dark navy-black pulled-back hair, compact low bun, short separated bangs and side locks, gray-blue eyes, pale skin, light gray blazer with dark navy piping, white blouse and vertically stacked pale-blue bow ribbons. Blank chest badge. Match the reference's crisp pixel-edged cel shading, fine dark contours, proportions, modest blush, polished anime art. Create ONE centered character on a square truly transparent canvas, with 5% clear margins around all hair and hands. No scenery, ground, text, watermark, border or circular badge. POSE: A head-and-collar portrait only, face toward viewer, one eye winking and the other gray-blue eye open, small friendly smile and modest blush. Entire bun and hair silhouette visible; no hands, no clipboard. Include gray blazer collar and pale-blue bow ribbons.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-dc14c634-6687-450e-b94d-a6ac186027cd.png"
+    },
+    {
+      "id": "loading",
+      "file": "loading.png",
+      "prompt": "Use case: stylized-concept. Asset type: transparent Umeko Desktop chibi character artwork. The reference image is the approved Tiara Basori / 馬剃天愛星 identity and rendering style. Keep exactly her dark navy-black pulled-back hair, compact low bun, short separated bangs and side locks, gray-blue eyes, pale skin, light gray blazer with dark navy piping, white blouse and vertically stacked pale-blue bow ribbons. Blank chest badge. Match the reference's crisp pixel-edged cel shading, fine dark contours, proportions, modest blush, polished anime art. Create ONE centered character on a square truly transparent canvas, with 5% clear margins around all hair and hands. No scenery, ground, text, watermark, border or circular badge. POSE: Upper-body portrait, Tiara thoughtfully checking a small navy clipboard held in one hand while the other index finger rests near her chin; both eyes open looking slightly down toward the list, earnest concentration, small neutral mouth. Keep all hands, hair and clipboard in frame. Waist-up crop.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-0c846828-a18b-48ba-aa72-65e304af1ae9.png"
+    },
+    {
+      "id": "catch",
+      "file": "catch.png",
+      "prompt": "Use case: stylized-concept. Asset type: transparent Umeko Desktop chibi character artwork. The reference image is the approved Tiara Basori / 馬剃天愛星 identity and rendering style. Keep exactly her dark navy-black pulled-back hair, compact low bun, short separated bangs and side locks, gray-blue eyes, pale skin, light gray blazer with dark navy piping, white blouse and vertically stacked pale-blue bow ribbons. Blank chest badge. Match the reference's crisp pixel-edged cel shading, fine dark contours, proportions, modest blush, polished anime art. Create ONE centered character on a square truly transparent canvas, with 5% clear margins around all hair and hands. No scenery, ground, text, watermark, border or circular badge. POSE: Upper-body portrait of Tiara reaching both hands forward with open palms, ready to receive a dropped document, eyes open and attentive, softly surprised small mouth. NO clipboard. Complete hands and hair in frame, clean waist-up crop.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-7867d4c2-918e-4a09-9fdb-7ffb7f04cc9c.png"
+    },
+    {
+      "id": "push",
+      "file": "push.png",
+      "prompt": "Use case: stylized-concept. Asset type: transparent Umeko Desktop chibi character artwork. The reference image is the approved Tiara Basori / 馬剃天愛星 identity and rendering style. Keep exactly her dark navy-black pulled-back hair, compact low bun, short separated bangs and side locks, gray-blue eyes, pale skin, light gray blazer with dark navy piping, white blouse and vertically stacked pale-blue bow ribbons. Blank chest badge. Match the reference's crisp pixel-edged cel shading, fine dark contours, proportions, modest blush, polished anime art. Create ONE centered character on a square truly transparent canvas, with 5% clear margins around all hair and hands. No scenery, ground, text, watermark, border or circular badge. POSE: Waist-up three-quarter illustration of Tiara facing RIGHT, both open palms pressed against a very thin subtle pale-blue translucent vertical divider on the RIGHT, arms outstretched, leaning slightly forward to push it, determined cute expression. No clipboard. Full bun, hair and hands visible. The divider is a narrow edge only, never a large opaque background.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-e285daf8-a52a-4d4a-8542-45b2516345f1.png"
+    },
+    {
+      "id": "pull",
+      "file": "pull.png",
+      "prompt": "Use case: stylized-concept. Asset type: transparent Umeko Desktop chibi character artwork. The reference image is the approved Tiara Basori / 馬剃天愛星 identity and rendering style. Keep exactly her dark navy-black pulled-back hair, compact low bun, short separated bangs and side locks, gray-blue eyes, pale skin, light gray blazer with dark navy piping, white blouse and vertically stacked pale-blue bow ribbons. Blank chest badge. Match the reference's crisp pixel-edged cel shading, fine dark contours, proportions, modest blush, polished anime art. Create ONE centered character on a square truly transparent canvas, with 5% clear margins around all hair and hands. No scenery, ground, text, watermark, border or circular badge. POSE: Waist-up three-quarter illustration of Tiara facing RIGHT, both hands gripping a very thin subtle pale-blue translucent vertical divider on the RIGHT, leaning gently backward to pull it toward herself, concentrated cute expression. No clipboard. Full bun, hair and hands visible. The divider is a narrow edge only, never a large opaque background.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-ee749b25-1171-4c72-93df-9aa13d38bcff.png"
+    }
+  ]
+}

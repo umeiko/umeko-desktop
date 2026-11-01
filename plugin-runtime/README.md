@@ -232,21 +232,30 @@ Python 使用 `context.host_capabilities` 和
 | `pi.refresh` | `pi.manage` | 宿主确认后刷新并应用原生扩展配置。 |
 | `pi.cancel` | `pi.manage` | `{id:jobId}`；仅取消本 Widget 当前实例、同一聊天/工作区发起且仍运行的插件安装。不会再次弹确认。关闭 Widget 也会取消其未完成的安装。 |
 | `pi.job` | `pi.read` | `{id: jobId}`；只能读取本 Widget 实例、同一聊天/工作区创建的任务。返回 `jobs[].status` 和简短的 `result.ok/error`；安装过程中附带 `progress.message/state/cancellable`；完成后用 `pi.status` 读取列表。 |
+| `skills.browse` | `skills.read` | `{}`；仅浏览当前配置的全局 `agentDir/skills` 与当前工作区 `.pi/skills`。异步结果含 `roots`、`skills[]` 和 `truncated`；条目为整个文件夹，含 `id/name/folderName/skillName/description/path/directory/scope/valid`。不列 npm 包或额外资源路径，不展开包内文件。最多扫描 20000 个目录条目、5000 个 Skill、24 层；每份元数据至多读取 64 KiB，总读取至多 128 MiB。不执行代码。列表通过 `skills.job` 分页。 |
+| `skills.insert` | `session.write` | `{id}`；把已浏览、仍在批准目录内的整个 Skill 文件夹附加到当前输入框。不发送消息、不改聊天可用性或草稿。 |
+| `skills.open` | `skills.read` | `{id,mode}`；`preview` 使用右侧文档预览器显示 SKILL.md；`edit` 使用系统关联应用打开 SKILL.md；`reveal` 在系统文件管理器中打开整个 Skill 文件夹。 |
+| `skills.copy` | `skills.read` | `{id,kind}`；`folder` 把整个目录写入系统文件剪贴板；`path` 复制目录路径。 |
+| `skills.paste` | `skills.manage` | `{project:boolean}`；读取系统文件剪贴板中的一个本地来源，校验后直接导入指定标准 Skill 目录，不跳转、不再次确认。必须显式提供范围；重名或校验失败整批拒绝，不支持替换。返回异步任务，完成结果含 `imported/skipped/errors`。 |
+| `skills.importLocal` | `skills.manage` | `{source,project:boolean}`；供用户拖入本地文件夹、ZIP 或 `.skill` 时直接导入落点分区，约束和结果同 `skills.paste`。无任意目标目录或替换选项，不执行 Skill 脚本。界面成功后原地刷新，仅失败时弹窗。 |
+| `skills.rename` | `skills.manage` | `{id,name}`；宿主面板确认后重命名整个 Skill 文件夹，不改 SKILL.md 元数据，也不覆盖同名目录。重新核验目录身份，拒绝穿越与链接替换。 |
+| `skills.delete` | `skills.manage` | `{id}`；宿主面板确认后删除整个 Skill 文件夹及其内容，不跟随资源中的链接。 |
 | `skills.list` | `skills.read` | `{}`；原生发现包括停用、尚未加载的技能。异步任务结果含 `skills[]`，每项有不透明 `id`、名称、描述、路径、来源、范围、`enabled` 默认状态、`attached` 本聊天可用状态、`defaultMutable` 和已登记包的 `removable/packageSource`。动态扩展技能来自本聊天已发现的资源，不通过扫描执行扩展。 |
 | `skills.details` | `skills.read` | `{id}`；异步返回 `details`：有界本地 Markdown、相对文件清单、字节大小、来源路径、目录及 `truncated`。字节不等于 token，截断时大小仅表示已列出的文件。 |
 | `skills.attach` | `skills.manage` | `{id,enabled:boolean}`；确认后持久化本聊天覆盖，通过 Pi 原生 `skillsOverride` 在下次加载应用。不会清除已读的历史内容，不改其他聊天或全局默认。 |
 | `skills.default` | `skills.manage` | `{id,enabled:boolean}`；仅允许有全局默认的来源，确认后更新 Pi 原生全局设置，保留聊天覆盖。项目和动态来源不显示此开关。 |
 | `skills.reveal` | `skills.manage` | `{id}`；确认后打开该目录，不接受任意路径。 |
 | `skills.remove` | `skills.manage` | `{id}`；确认后卸载技能所属的整个已登记 Pi 包；独立技能不提供卸载。 |
-| `skills.job` | `skills.read` | `{id:jobId}`；归属检查同 `pi.job`。返回 `jobs[].status`（`running/completed/failed`）和 `result`。除任务查询外，技能读写均要求聊天和管理任务空闲。 |
+| `skills.job` | `skills.read` | `{id:jobId, offset?:0, limit?:100}`；`offset` 为 0–1000000 的整数，`limit` 为 1–200 的整数。每页重新检查 Widget、聊天和工作区归属。返回 `jobs[].status`（`running/completed/failed`）和 `result`。`skills` 列表及 `preview.skills` 导入预览按同一任务快照分页，`result.skillsPage` 含 `field`、`offset`、`total`、`nextOffset`；持续查询 `nextOffset`，直到其为 `null`，再发布完整列表。每页同时受条数和 UTF-8 字节预算限制；不得假定每页返回 `limit` 条。无 `skillsPage` 时为旧宿主的完整响应。除任务查询外，技能读写均要求聊天和管理任务空闲。 |
 | `skills.importPreview` | `skills.read` | `{source,project:boolean}`；本地文件夹、`.zip` 或 `.skill` 的只读预览，返回异步任务。结果 `preview.id/skills/errors/project/sourceName`；技能项有名称、简介、重名状态及是否可替换。预览不写入文件；归档沿用现有安全路径、大小和条目限制。 |
 | `skills.import` | `skills.manage` | `{id:previewId,decisions:{name:"skip"或"replace"}}`；确认后导入到所选全局或项目标准技能目录。每个重名项必须明确选择；不会替换包内或目标目录外的技能。结果含 `imported/skipped`。预览与任务同样绑定 Widget 实例、聊天及工作区；不能提交其他实例的预览。 |
 
-技能写入的确认区由宿主绘制在所属 Widget 面板内；官方技能 Widget 的 `pi.install`
-也使用该区域。页面在确认期间不能交互，SDK 和公开 Agent RPC 没有批准接口。
+官方 Skill Widget 使用上述目录型接口；旧的聊天附带/默认启停和原生包接口保留兼容，但不再作为该 Widget 的 UI 入口。目录浏览、打开、复制与附加可在主 Agent 工作时使用；导入、重命名、删除仍要求相关任务空闲。关闭 Widget 会释放目录快照和缓存。
+
+技能重命名、删除及显式预览导入的确认区由宿主绘制在所属 Widget 面板内。页面在确认期间不能交互，SDK 和公开 Agent RPC 没有批准接口。用户的粘贴/拖入直接新增文件夹，无额外确认；仍要求 `skills.manage` 权限和空闲状态，重名、格式或目录校验失败不会替换原文件。不存在 JSON 批准标志或 Agent 管理工具。
 其他 Widget 的现有确认流程保持原样。`accepted/jobId` 仅表示接收任务，页面应查询到完成或失败。
 
-写操作始终通过宿主确认。确认后再次检查 Widget 激活状态、聊天、工作区和忙碌状态；
+除上述仅新增的粘贴/拖入外，管理写操作通过宿主确认。执行前再次检查 Widget 激活状态、聊天、工作区和忙碌状态；
 不自动排队到另一个项目，也不开放修改安装权限、工具权限或任意桌面操作的接口。
 `accepted`/`jobId` 只是已开始，只有 `pi.job` 的 `done` 才是完成，`failed` 才是失败。
 运行中的 Agent 安装应继续调用现有 `run_pi_command` 和其权限确认、排队 `/reload`；

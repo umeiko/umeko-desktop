@@ -1,10 +1,8 @@
-"""Preview inert Skill folders/archives in memory; write only confirmed plans."""
+"""Bounded inert imports: confirmed replacements or direct additions only."""
 from __future__ import annotations
 
 import os
-import shutil
 import stat
-import tempfile
 import uuid
 import zipfile
 import zlib
@@ -12,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from umeko_provider_sdk.packages import normalize_package_path
+from .skill_import_paths import ImportDirectories, identity, linked_info, snapshot
 
 # Same import bounds as the existing Widget package importer.
 MAX_BYTES = 128 * 1024 * 1024
@@ -25,12 +24,14 @@ class _Skill:
     files: dict[str, bytes]
     target: Path
     existed: bool
+    identity: tuple | None = None
 
 
 @dataclass
 class _Plan:
     destination: Path
     skills: list[_Skill]
+    directories: dict
 
 
 class _Names:
@@ -58,7 +59,12 @@ class _Names:
 
 
 def _linked(path):
-    return path.is_symlink() or getattr(path, "is_junction", lambda: False)()
+    if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+        return True
+    try:
+        return linked_info(path.lstat())
+    except (AttributeError, FileNotFoundError):
+        return False
 
 
 def _read_source(source):
@@ -153,7 +159,7 @@ def _replace_target(destination, name, catalog):
     return target, False, False, ""
 
 
-def preview_import(source, destination, catalog, validate_markdown):
+def preview_import(source, destination, catalog, validate_markdown, *, preserve_folder_names=False):
     """Return JSON-safe preview data; the sole pending plan retains source bytes.
 
     validate_markdown receives [{key, markdown, directoryName}] and returns
@@ -192,7 +198,7 @@ def preview_import(source, destination, catalog, validate_markdown):
         skills = []
         for index, root in enumerate(roots):
             result = results.get(str(index), {})
-            name = str(result.get("name") or documents[index]["directoryName"])[:256]
+            name = str(documents[index]["directoryName"] if preserve_folder_names else result.get("name") or documents[index]["directoryName"])[:256]
             row = {"name": name, "description": str(result.get("description", ""))[:1024], "conflict": False, "replaceable": False}
             if not result.get("valid"):
                 row["error"] = "SKILL.md 必须为 UTF-8 且通过 Pi 原生格式验证。" + "；".join(str(item)[:500] for item in result.get("diagnostics", [])[:8])
@@ -205,7 +211,8 @@ def preview_import(source, destination, catalog, validate_markdown):
             if error:
                 row["error"] = error
             payload = {PurePosixPath(path).relative_to(root).as_posix(): data for path, data in files.items() if PurePosixPath(path).is_relative_to(root)}
-            skills.append(_Skill(row, payload, target, conflict))
+            skills.append(_Skill(row, payload, target, conflict,
+                                 identity(target.lstat()) if target.exists() else None))
         by_name = {}
         for item in skills:
             by_name.setdefault(item.row["name"].casefold(), []).append(item)
@@ -214,7 +221,8 @@ def preview_import(source, destination, catalog, validate_markdown):
                 for item in duplicates:
                     item.row.update(conflict=True, replaceable=False, error="导入批次中存在多个同名技能，请分开处理。")
         token = uuid.uuid4().hex
-        _plans[token] = _Plan(destination, skills)
+        directories = snapshot([destination, *(item.target.parent for item in skills if not item.row.get('error'))])
+        _plans[token] = _Plan(destination, skills, directories)
         preview.update(planId=token, skills=[dict(item.row) for item in skills])
     except (OSError, ValueError, RuntimeError, zipfile.BadZipFile, NotImplementedError, zlib.error, EOFError) as error:
         preview["errors"] = [str(error)[:1500]]
@@ -224,6 +232,25 @@ def preview_import(source, destination, catalog, validate_markdown):
 def discard_import(preview):
     token = preview.get("planId", "") if isinstance(preview, dict) else str(preview)
     _plans.pop(token, None)
+
+
+def import_local(source, destination, catalog, validate_markdown):
+    """Paste/drop without a preview UI. Refuse the batch on validation/conflict.
+
+    There is deliberately no replacement option. The same pinned transaction
+    rechecks every destination before writing, including races after validation.
+    """
+    preview = preview_import(source, destination, catalog, validate_markdown, preserve_folder_names=True)
+    try:
+        errors = list(preview['errors'])
+        for row in preview['skills']:
+            if row.get('error') or row.get('conflict'):
+                errors.append(row['name'] + ': ' + (row.get('error') or '同名 Skill 已存在，未覆盖原文件。'))
+        if errors:
+            raise ValueError('\n'.join(errors[:8]))
+        return commit_import(preview, {}, destination)
+    finally:
+        discard_import(preview)
 
 
 def commit_import(preview, decisions, expected_root):
@@ -248,33 +275,44 @@ def commit_import(preview, decisions, expected_root):
             selected.append(item)
     if not selected:
         return result
-    plan.destination.mkdir(parents=True, exist_ok=True)
-    for item in selected:
-        temporary = Path(tempfile.mkdtemp(prefix=".umeko-import-", dir=plan.destination))
-        stage, backup = temporary / "skill", temporary / "previous"
-        old_moved = False
-        cleanup = True
-        try:
-            stage.mkdir()
-            for name, content in item.files.items():
-                target = stage.joinpath(*PurePosixPath(name).parts)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(content)
-            if item.existed:
-                item.target.rename(backup)
-                old_moved = True
-            stage.rename(item.target)
-            result["imported"].append(item.row["name"])
-        except OSError:
-            if old_moved:
+    with ImportDirectories(plan.directories) as directories:
+        for item in selected:
+            temporary = None
+            temporary_created = False
+            old_moved = False
+            cleanup = True
+            try:
+                directories.directory(plan.destination, create=True)
+                directories.check_target(item.target, item.identity)
+                temporary = plan.destination / ('.umeko-import-' + uuid.uuid4().hex)
+                directories.mkdir(temporary)
+                temporary_created = True
+                stage, backup = temporary / 'skill', temporary / 'previous'
+                directories.mkdir(stage)
+                for name, content in item.files.items():
+                    directories.write(stage.joinpath(*PurePosixPath(name).parts), content)
+                    # Keep descriptor/handle usage proportional to path depth,
+                    # not the archive's number of directories (up to 2048).
+                    directories.release_below(stage)
+                directories.check_target(item.target, item.identity)
+                if item.existed:
+                    directories.rename(item.target, backup)
+                    old_moved = True
+                directories.rename(stage, item.target)
+                result['imported'].append(item.row['name'])
+            except OSError:
+                if old_moved:
+                    try:
+                        directories.rename(backup, item.target)
+                    except OSError as error:
+                        cleanup = False
+                        raise RuntimeError('导入失败；原技能保留于 ' + temporary.name + '/previous，请恢复后重试。') from error
+                result['skipped'].append(item.row['name'])
+                result['errors'].append({'name': item.row['name'], 'error': '目标目录发生变化或写入失败；请重新预览。已有技能已保留。'})
+            finally:
                 try:
-                    backup.rename(item.target)
-                except OSError as error:
-                    cleanup = False
-                    raise RuntimeError("导入失败；原技能保留于 " + temporary.name + "/previous，请恢复后重试。") from error
-            result["skipped"].append(item.row["name"])
-            result["errors"].append({"name": item.row["name"], "error": "写入失败；已有技能已保留。"})
-        finally:
-            if cleanup:
-                shutil.rmtree(temporary)
+                    if temporary_created and cleanup:
+                        directories.remove(temporary)
+                finally:
+                    directories.release_below(plan.destination)
     return result

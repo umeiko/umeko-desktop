@@ -1,0 +1,64 @@
+{
+  "id": "tiara",
+  "file": "source/tiara-sheet.png",
+  "prompt": "Use case: identity-preserve / stylized-concept.\nAsset type: SIX animation keyframes of one existing Umeko desktop pet, in a 3-column by 2-row sprite sheet. Reference image is the CURRENT DESKTOP PET ITSELF: it is the authority for identity, ART STYLE, COLOR PALETTE, FULL-BODY PROPORTIONS and apparent size. The user explicitly wants a rare idle animation that does not look like switching to a different artist, a different head/body ratio or a waist-up portrait.\nTiara Basori. Preserve exact reference low bun, short thick dark eyebrows below bangs, gray-blue eyes, light gray blazer with dark piping, white shirt, pale-blue stacked bows, gray pleated skirt, dark tights, shoes and small dark notebook. Keep the reference's approved longer slim legs/thighs, chibi face proportions, simple clean anime cel shading and full-body scale. Do NOT use the homepage's larger refined half-body painting. Animation: she shifts the notebook to one arm against chest, the free hand gently touches a ribbon, tilts head slightly and blushes with a shy restrained closed-mouth smile, blinks and returns. Six frames:1 familiar notebook-holding idle,2 one hand rises toward bow,3 fingertips lightly at ribbon/shy smile,4 blink and tiny head tilt,5 reopen hand lowers,6 return almost to frame1. Clean five-finger anatomy, no interlaced hands, no new props.\nComposition: perfect regular 3x2 grid, row-major time order, each equal cell contains the SAME COMPLETE FULL-BODY character from hair top to both shoe soles. Keep exact same scale and shoe baseline through the six cells, feet planted, torso posture stable, smooth very small motion. Center in each cell with ample transparent margins, no overlap between cells; leave transparent gutters between the two rows. Square sheet. Do not use panels, labels or lines. True transparent alpha background in every cell. Character only: no ground, scenery, shadows, stars, floating decorations, text, speech bubbles or watermark. Six consistent frames that form one gentle looping gesture, NOT six unrelated drawings or poses. All heads, hands and feet remain fully visible. Accurate anatomy, two arms, five digits per hand with natural occlusion.",
+  "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-1734b6c0-50b5-46e4-9663-f0a57ff7595b.png",
+  "reference": "reference/tiara-idle.png",
+  "line": "早一点喜欢上我会比较好哦？",
+  "title": "早一点喜欢上我",
+  "sourceAsset": "art/desktop-pets/rare-idle-v1/source/tiara-sheet.png",
+  "tool": "built-in image_gen",
+  "canvas": [
+    384,
+    576
+  ],
+  "durationsMs": [
+    600,
+    500,
+    1400,
+    120,
+    880,
+    700
+  ],
+  "baseline": 541,
+  "cellBounds": [
+    [
+      117,
+      13,
+      369,
+      608
+    ],
+    [
+      84,
+      13,
+      337,
+      608
+    ],
+    [
+      59,
+      13,
+      312,
+      608
+    ],
+    [
+      111,
+      15,
+      374,
+      614
+    ],
+    [
+      87,
+      13,
+      347,
+      615
+    ],
+    [
+      59,
+      14,
+      318,
+      616
+    ]
+  ],
+  "sha256": "174f51f509ac076530809caf3047cce07b4202c274eb2781796759d056c80a5f",
+  "bytes": 212946
+}

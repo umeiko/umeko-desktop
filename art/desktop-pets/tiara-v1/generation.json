@@ -1,0 +1,54 @@
+{
+  "tool": "built-in image_gen",
+  "created": "2026-10-31",
+  "transparentBackground": true,
+  "character": {
+    "id": "tiara",
+    "name": "马剃天爱星",
+    "originalName": "馬剃天愛星",
+    "englishName": "Tiara Basori"
+  },
+  "reference": {
+    "url": "https://makeine-anime.com/assets/img/character/img_main17.png",
+    "page": "https://makeine-anime.com/character/",
+    "file": "art/characters/tiara-v1/reference/official-tiara.png"
+  },
+  "assets": [
+    {
+      "id": "idle",
+      "file": "source/idle-sheet.png",
+      "prompt": "Use case: stylized-concept.\nAsset type: transparent 3-column by 2-row desktop-pet animation sprite sheet, six frames row-major, square canvas ideally 1536x1536.\nDraw Tiara Basori / 馬剃天愛星 from Makeine. Image 1 is official character identity/costume. Image 2 is ONLY the desired chibi pet rendering style, proportions and six-frame layout; replace the character completely with Tiara.\nIdentity: dark blue-black hair pulled neatly back into a compact low bun, short separated bangs and short side locks, gray-blue eyes; no loose long hair, no high ponytail. Light gray blazer with dark navy piping, white blouse and vertically stacked pale-blue bow ribbons, gray pleated skirt, opaque black tights, white school shoes. Chest badge has no writing.\nChibi 2.75-head-tall proportions, large expressive head, crisp clean anime outlines and pixel-edged cel shading, restrained highlights. Whole body including bun, hands and shoes fully visible.\nSTATE idle: standing attentively, both hands holding a small navy clipboard against torso, composed gentle smile, slight blush.\nSix almost identical frames for a subtle breathing/blink loop: frames 1 and 2 eyes open, frame 3 half-lidded, frame 4 eyes closed, frame 5 half-lidded, frame 6 open again. Subtle natural motion, not six different poses. Keep figure scale, clothing, prop and feet baseline identical across every cell. Each cell contains exactly one complete independent figure with clear transparent margins, feet near 94% of its cell height, body about 84% tall. No overlaps between cells.\nTRULY TRANSPARENT background. No grid lines, labels, text, watermark, ground, floor shadows, decorative sparkles or extra figures.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-ff216fc9-8d3f-4533-8694-31852a8be93b.png"
+    },
+    {
+      "id": "waiting",
+      "file": "source/waiting-sheet.png",
+      "prompt": "Use case: stylized-concept. Asset type: a transparent 3-column by 2-row animation sprite sheet, SIX frames row-major on a square canvas ideally 1536x1536.\nThe reference is the approved Tiara Basori desktop pet. Preserve exactly this character, chibi proportions, dark navy-black short bangs and compact low bun, gray-blue eyes, light gray blazer with navy trim and stacked blue bow ribbons, gray skirt, opaque black tights and white shoes; crisp clean anime cel shading. Change ONLY the action and expression to the state described below.\nIn all SIX cells the SAME action, camera, figure scale, prop size, clothing and feet baseline. Only subtle breathing and a blink vary: eyes open, open, half-lidded, closed, half-lidded, open. Whole complete body, hair and shoes in every cell with transparent margins. Feet near 94% of cell height and character about 84% tall. Exactly one independent figure in each cell; no overlap. NO text, labels, grid lines, watermark, floor shadows, background, stickers, extra characters or scenery. Truly transparent alpha. STATE: Waiting for user: clipboard tucked under one arm, other hand raised with a softly open questioning palm, eyebrows mildly expectant, looking toward the viewer politely.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-26661caa-9f38-45c2-9891-29b34fe1e51e.png"
+    },
+    {
+      "id": "working",
+      "file": "source/working-sheet.png",
+      "prompt": "Use case: stylized-concept. Asset type: a transparent 3-column by 2-row animation sprite sheet, SIX frames row-major on a square canvas ideally 1536x1536.\nThe reference is the approved Tiara Basori desktop pet. Preserve exactly this character, chibi proportions, dark navy-black short bangs and compact low bun, gray-blue eyes, light gray blazer with navy trim and stacked blue bow ribbons, gray skirt, opaque black tights and white shoes; crisp clean anime cel shading. Change ONLY the action and expression to the state described below.\nIn all SIX cells the SAME action, camera, figure scale, prop size, clothing and feet baseline. Only subtle breathing and a blink vary: eyes open, open, half-lidded, closed, half-lidded, open. Whole complete body, hair and shoes in every cell with transparent margins. Feet near 94% of cell height and character about 84% tall. Exactly one independent figure in each cell; no overlap. NO text, labels, grid lines, watermark, floor shadows, background, stickers, extra characters or scenery. Truly transparent alpha. STATE: Working: hold the clipboard and write on it with a short pencil, eyes focused down at the sheet with a determined little smile. No readable writing on the clipboard.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-a5ebe3e8-1bbc-48cb-a020-5a60a744866a.png"
+    },
+    {
+      "id": "done",
+      "file": "source/done-sheet.png",
+      "prompt": "Use case: stylized-concept. Asset type: a transparent 3-column by 2-row animation sprite sheet, SIX frames row-major on a square canvas ideally 1536x1536.\nThe reference is the approved Tiara Basori desktop pet. Preserve exactly this character, chibi proportions, dark navy-black short bangs and compact low bun, gray-blue eyes, light gray blazer with navy trim and stacked blue bow ribbons, gray skirt, opaque black tights and white shoes; crisp clean anime cel shading. Change ONLY the action and expression to the state described below.\nIn all SIX cells the SAME action, camera, figure scale, prop size, clothing and feet baseline. Only subtle breathing and a blink vary: eyes open, open, half-lidded, closed, half-lidded, open. Whole complete body, hair and shoes in every cell with transparent margins. Feet near 94% of cell height and character about 84% tall. Exactly one independent figure in each cell; no overlap. NO text, labels, grid lines, watermark, floor shadows, background, stickers, extra characters or scenery. Truly transparent alpha. STATE: Task complete: clipboard tucked under one arm, other hand giving a small thumbs-up, visibly proud gentle smile with a little blush, friendly expression.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-e99cdfd0-786d-4a0d-948e-523fc5f18494.png"
+    },
+    {
+      "id": "error",
+      "file": "source/error-sheet.png",
+      "prompt": "Use case: stylized-concept. Asset type: a transparent 3-column by 2-row animation sprite sheet, SIX frames row-major on a square canvas ideally 1536x1536.\nThe reference is the approved Tiara Basori desktop pet. Preserve exactly this character, chibi proportions, dark navy-black short bangs and compact low bun, gray-blue eyes, light gray blazer with navy trim and stacked blue bow ribbons, gray skirt, opaque black tights and white shoes; crisp clean anime cel shading. Change ONLY the action and expression to the state described below.\nIn all SIX cells the SAME action, camera, figure scale, prop size, clothing and feet baseline. Only subtle breathing and a blink vary: eyes open, open, half-lidded, closed, half-lidded, open. Whole complete body, hair and shoes in every cell with transparent margins. Feet near 94% of cell height and character about 84% tall. Exactly one independent figure in each cell; no overlap. NO text, labels, grid lines, watermark, floor shadows, background, stickers, extra characters or scenery. Truly transparent alpha. STATE: Problem encountered: clipboard held low in one hand, other hand at cheek, mildly worried embarrassed little mouth and eyebrows, looking toward viewer. Cute and composed, no tears, anger, horror or dramatic effects.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-ad6ca4c2-0b15-4e29-95d6-aa144084bb5d.png"
+    },
+    {
+      "id": "thinking",
+      "file": "source/thinking-sheet.png",
+      "prompt": "Use case: stylized-concept. Asset type: a transparent 3-column by 2-row animation sprite sheet, SIX frames row-major on a square canvas ideally 1536x1536.\nThe reference is the approved Tiara Basori desktop pet. Preserve exactly this character, chibi proportions, dark navy-black short bangs and compact low bun, gray-blue eyes, light gray blazer with navy trim and stacked blue bow ribbons, gray skirt, opaque black tights and white shoes; crisp clean anime cel shading. Change ONLY the action and expression to the state described below.\nIn all SIX cells the SAME action, camera, figure scale, prop size, clothing and feet baseline. Only subtle breathing and a blink vary: eyes open, open, half-lidded, closed, half-lidded, open. Whole complete body, hair and shoes in every cell with transparent margins. Feet near 94% of cell height and character about 84% tall. Exactly one independent figure in each cell; no overlap. NO text, labels, grid lines, watermark, floor shadows, background, stickers, extra characters or scenery. Truly transparent alpha. STATE: Thinking: keep the clipboard in left hand and touch chin lightly with right index finger, eyes thoughtfully looking slightly upward, small earnest neutral mouth.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-5d09069f-1dc5-4fee-9954-0358a64498db.png"
+    }
+  ]
+}

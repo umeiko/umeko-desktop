@@ -7,6 +7,31 @@ import * as Pi from "../runtime/node_modules/@earendil-works/pi-coding-agent/dis
 import { prepareNativeSettings } from "../runtime/resources.mjs";
 import { manageSkills, sessionSkillOptions } from "../runtime/skills.mjs";
 
+test("folder browser has two standard roots, inert bounded headers and no package contents tree", async () => {
+  const root = mkdtempSync(join(tmpdir(), 'umeko-skill-folders-'));
+  try {
+    const cwd = join(root, 'workspace'), agentDir = join(root, 'configured-agent');
+    const writeSkill = (directory, name, body = '') => {
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(join(directory, 'SKILL.md'), `---\nname: ${name}\ndescription: Native folder fixture.\n---\n${body}`);
+    };
+    writeSkill(join(agentDir, 'skills', 'global-folder'), 'shared-name', 'large body\n'.repeat(100000));
+    writeSkill(join(cwd, '.pi/skills', 'workspace-folder'), 'shared-name');
+    writeSkill(join(agentDir, 'skills', 'global-folder', 'assets', 'nested'), 'not-a-separate-package');
+    writeSkill(join(root, 'other-package/skills/external'), 'external');
+    writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({packages:[join(root, 'other-package')]}));
+    const result = await manageSkills(Pi, { action:'browse', cwd, agentDir, includeProject:true });
+    assert.deepEqual(result.roots, {project:join(cwd, '.pi/skills'),global:join(agentDir, 'skills')});
+    assert.equal(result.skills.length, 2);
+    assert.deepEqual(result.skills.map(row => row.name), ['workspace-folder', 'global-folder']);
+    assert.ok(result.skills.every(row => row.valid && row.kind === 'folder' && row.description === 'Native folder fixture.'));
+    assert.ok(result.skills.every(row => !('attached' in row) && !('enabled' in row)));
+    const globalOnly = await manageSkills(Pi, {action:'browse',cwd,agentDir,includeProject:false});
+    assert.equal(globalOnly.roots.project, '');
+    assert.deepEqual(globalOnly.skills.map(row => row.scope), ['global']);
+  } finally { rmSync(root, {recursive:true,force:true}); }
+});
+
 test("native catalog, global defaults and chat overrides preserve resource scopes across reload", async () => {
   const root = mkdtempSync(join(tmpdir(), "umeko-skills-"));
   const previousHome = process.env.HOME;
@@ -151,6 +176,30 @@ test("catalog attached reports only the effective same-name winner", async () =>
     assert.deepEqual(selected.filter(row => row.attached).map(row => row.path), [packaged]);
     const excluded = (await manageSkills(Pi, { ...input, sessionSkills: { [local]: false, [packaged]: false } })).skills;
     assert.equal(excluded.some(row => row.attached), false);
+
+    const sessionSkills = { [local]: false };
+    const native = await prepareNativeSettings(Pi, input);
+    const loader = new Pi.DefaultResourceLoader({ cwd, agentDir, settingsManager: native,
+      noExtensions: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+      ...await sessionSkillOptions(Pi, { ...input, sessionSkills }, native) });
+    await loader.reload();
+    const fallback = (await manageSkills(Pi, { ...input, sessionSkills })).skills.filter(row => row.attached).map(row => row.path);
+    assert.deepEqual(fallback, [packaged]);
+    assert.deepEqual(loader.getSkills().skills.map(row => row.filePath), fallback,
+      'excluding the native name winner must restore the enabled namesake');
+
+    // A reload must use current native discovery rather than resurrecting the
+    // previous fallback from the startup catalog.
+    await manageSkills(Pi, { ...input, action: 'default', id: defaults.find(row => row.path === packaged).id, enabled: false });
+    await loader.reload();
+    assert.deepEqual(loader.getSkills().skills, [], 'globally disabled fallback stays disabled after reload');
+
+    const dynamic = join(root, 'dynamic/SKILL.md');
+    mkdirSync(dirname(dynamic), { recursive: true });
+    writeFileSync(dynamic, readFileSync(local));
+    loader.extendResources({ skillPaths: [{ path: dynamic, metadata: { origin: 'top-level', source: 'fixture-extension', scope: 'user' } }] });
+    assert.deepEqual(loader.getSkills().skills.map(row => row.filePath), [dynamic],
+      'an enabled namesake contributed by an extension also survives the excluded winner');
   } finally {
     if (previousHome === undefined) delete process.env.HOME; else process.env.HOME = previousHome;
     rmSync(root, { recursive: true, force: true });

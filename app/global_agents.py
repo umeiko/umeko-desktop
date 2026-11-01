@@ -183,7 +183,7 @@ class GlobalAgents(QObject):
     def prompt(self, record):
         return PROMPT+'\nHost-assigned identity (authoritative JSON data): '+json.dumps(self.self_info(record),ensure_ascii=False)+"\nYou are exactly this ID, never another member of the overview. The overview's self and isSelf fields identify you. Disabled bus targets cannot receive delegated tasks. Match the user's latest message language.\nUser-defined coordinator instructions:\n"+self.agents[record.global_agent].get('instructions','')
     def snapshot(self, selected=''):
-        appearances = self.b.characterPacks
+        appearances = getattr(self.b,'subagentCharacterPacks',self.b.characterPacks)
         portraits = {row['id']:row['portrait'] for row in appearances}
         replies = {row['id']:row.get('replyPortrait',row['portrait']) for row in appearances}
         fallback = self.b.characterStyle['id']
@@ -213,7 +213,7 @@ class GlobalAgents(QObject):
             rows['agent:'+identifier]={'id':'agent:'+identifier,'title':row['name'],'workspace':'',**self.activity(identifier),'bridge':True,'kind':'global'}
         if caller and not caller.global_agent:rows={key:row for key,row in rows.items() if row['kind']!='global' or self.allowed(caller,key)}
         can_create=bool(caller and not caller.global_agent)
-        result={'targets':list(rows.values()),'workspaces':list(workspaces),'policy':'Only opted-in sessions may receive bus tasks. Disabled targets cannot receive requests. Subagent progress is metadata; requests target the owning session.','creation':{'canCreate':can_create,'policy':'Only ordinary session Agents may create global subagents; global subagents cannot create other global subagents.','automaticAllowed':can_create and self.allow_automatic_creation,'characters':[{k:row[k] for k in ('id','name')} for row in self.b.characterPacks],'defaultModel':self.b.store.data.get('selectedModel','')}}
+        result={'targets':list(rows.values()),'workspaces':list(workspaces),'policy':'Only opted-in sessions may receive bus tasks. Disabled targets cannot receive requests. Subagent progress is metadata; requests target the owning session.','creation':{'canCreate':can_create,'policy':'Only ordinary session Agents may create global subagents; global subagents cannot create other global subagents.','automaticAllowed':can_create and self.allow_automatic_creation,'characters':[{k:row[k] for k in ('id','name')} for row in getattr(self.b,'subagentCharacterPacks',self.b.characterPacks)],'defaultModel':self.b.store.data.get('selectedModel','')}}
         if caller:
             identity=self.identifier(caller);result['self']=self.self_info(caller)
             for row in result['targets']:
@@ -225,7 +225,7 @@ class GlobalAgents(QObject):
     def automatic_name(self, character, identifier):
         current=self.agents.get(identifier,{})
         if current.get('autoName') and current.get('character')==character:return current['name'],current.get('autoNameIndex',0)
-        base=next(row['name'] for row in self.b.characterPacks if row['id']==character)[:54]
+        base=next(row['name'] for row in getattr(self.b,'subagentCharacterPacks',self.b.characterPacks) if row['id']==character)[:54]
         others=[row for key,row in self.agents.items() if key!=identifier]
         family=[row for row in others if row.get('autoName') and row['character']==character]
         used={row['name'] for row in others}
@@ -269,7 +269,7 @@ class GlobalAgents(QObject):
         if method in ('create','update'):
             if method=='create' and len(self.agents)>=16: raise ValueError('最多保留 16 个全局子智能体')
             name=self.text(args,'name',60,False); character=args.get('character') or self.b.characterStyle['id']; model=args.get('model') or self.b.store.data.get('selectedModel','')
-            if character not in {row['id'] for row in self.b.characterPacks}: raise ValueError('请选择现有角色形象')
+            if character not in {row['id'] for row in getattr(self.b,'subagentCharacterPacks',self.b.characterPacks)}: raise ValueError('请选择现有角色形象')
             if model not in {row['id'] for row in self.b.gateway.models()}: raise ValueError('请先配置可用模型')
             identifier=args.get('id') if method=='update' else uuid.uuid4().hex
             instructions=self.text(args,'instructions',8000,False)
@@ -390,7 +390,7 @@ class GlobalAgents(QObject):
         if len(self.agents)>=16:raise ValueError('最多保留 16 个全局子智能体')
         if not self.allow_automatic_creation and sum(row['status']=='awaiting_approval' for row in self.creation_requests.values())>=8:raise ValueError('待确认的创建请求已满，请先处理已有表单')
         fields={name:self.text(args,name,60 if name=='name' else 8000,False) for name in ('name','instructions')}
-        choices=self.b.characterPacks;character=self.text(args,'character',80,False)
+        choices=getattr(self.b,'subagentCharacterPacks',self.b.characterPacks);character=self.text(args,'character',80,False)
         if not character:
             if not choices:raise ValueError('没有可用人物形象')
             character=secrets.choice(choices)['id']

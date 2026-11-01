@@ -18,7 +18,7 @@ from PySide6.QtGui import QImageReader
 SLOTS = frozenset('welcome avatarSmile avatarWink avatarHappy reply loading catch push pull background subagent0 subagent1 subagent2 subagent3 subagentCatch0 subagentCatch1 subagentCatch2 subagentCatch3'.split())
 LINES = frozenset(('tap', 'celebration', 'greeting'))
 DEFAULT = {'id': 'yanami', 'name': '八奈见杏菜', 'assets': {}, 'lines': {}}
-BUILTINS = frozenset(('yanami', 'komari', 'kaju'))
+BUILTINS = frozenset(('yanami', 'komari', 'kaju', 'tiara', 'whale-girl', 'kazuhiko'))
 CONFIG_DEFAULTS = json.loads((Path(__file__).parent/'character-defaults.json').read_text(encoding='utf-8'))
 
 
@@ -175,6 +175,11 @@ def unpack_character_zip(source, destination):
 class CharactersMixin:
     def _init_characters(self):
         self._character_options = {}
+        catalog = self.root/'app/icons/characters/rare-scenes/catalog.json'
+        try:
+            self._character_easter_eggs = json.loads(catalog.read_text(encoding='utf-8'))
+        except (ValueError, OSError):
+            self._character_easter_eggs = {}
         try:
             file = self.store.directory/'character-config.json'
             if file.is_file() and file.stat().st_size <= 65536:
@@ -205,10 +210,11 @@ class CharactersMixin:
     def _characterNames(self):
         return [row['name'] for row in self._character_config['subagents']]
 
-    def _character_packs(self):
+    def _character_packs(self, subagents=False):
         rows = [dict(DEFAULT, builtin=True)]
+        identifiers = ('komari', 'kaju', 'tiara', 'whale-girl') + (('kazuhiko',) if subagents else ())
         files = [(self.root/f'app/icons/characters/{identifier}/manifest.json', True)
-                 for identifier in ('komari', 'kaju') if (self.root/f'app/icons/characters/{identifier}/manifest.json').is_file()]
+                 for identifier in identifiers if (self.root/f'app/icons/characters/{identifier}/manifest.json').is_file()]
         files += [(path, False) for path in sorted((self.store.directory/'characters').glob('*/manifest.json'))
                   if re.fullmatch(r'[a-z0-9][a-z0-9-]{0,47}', path.parent.name) and not path.is_symlink() and not path.parent.is_symlink()]
         for file, builtin in files:
@@ -220,9 +226,9 @@ class CharactersMixin:
             except (ValueError, OSError): pass
         return rows
 
-    def _characterPacks(self):
+    def _characterPacks(self, subagents=False):
         rows = []
-        for item in self._character_packs():
+        for item in self._character_packs(subagents):
             row = {key: item[key] for key in ('id', 'name', 'builtin')}
             asset = next((item['assets'][key] for key in ('avatarSmile','reply','welcome') if key in item['assets']), None)
             path = Path(item['directory'])/asset if asset else self.root/'app/icons/avatars/smile.webp'
@@ -234,11 +240,14 @@ class CharactersMixin:
 
     def _characterStyle(self):
         item = self._character_record
+        easter_egg = dict(self._character_easter_eggs.get(item['id'], {}))
+        if easter_egg:
+            easter_egg['source'] = QUrl.fromLocalFile(str(self.root/f"app/icons/characters/rare-scenes/{item['id']}.png")).toString()
         assets = {}
         for key, value in item['assets'].items():
             path = Path(item['directory'])/value
             if path.is_file(): assets[key] = QUrl.fromLocalFile(str(path)).toString() + '?v=' + str((Path(item['directory'])/'manifest.json').stat().st_mtime_ns)
-        return dict(id=item['id'], name=item['name'], assets=assets, lines=item['lines'],
+        return dict(id=item['id'], name=item['name'], assets=assets, lines=item['lines'], easterEgg=easter_egg,
                     animatedSources=[assets[key] for key in self._character_animated_slots if key in assets]+self._character_animated_roles,
                     customGreetings=bool(item.get('_configuration',{}).get('scenes',{}).get('welcome',{}).get('greetings') or item['lines'].get('greeting') or self._character_options.get('scenes',{}).get('welcome',{}).get('greetings')),
                     dialogue=copy.deepcopy(self._character_config['scenes']), subagents=copy.deepcopy(self._character_config['subagents']))
@@ -273,6 +282,35 @@ class CharactersMixin:
         except (ValueError,OSError,RuntimeError) as error:
             self.toast.emit('角色配置失败：'+str(error))
             return False
+
+    @Slot(int, str, result=bool)
+    def selectSubagentCharacter(self, slot, identifier):
+        if not 0 <= slot < 4: return False
+        if identifier == '':
+            options = copy.deepcopy(self._character_options)
+            roles = options.setdefault('subagents', [])
+            roles.extend({} for _ in range(4-len(roles)))
+            roles[slot] = {}
+            return self.configureCharacter(json.dumps(options, ensure_ascii=False))
+        item = next((row for row in self._character_packs(True) if row['id'] == identifier), None)
+        if item is None: return False
+        assets = item['assets']
+        def source(key, fallback):
+            keys = ('avatarSmile','reply','welcome') if key == 'avatarSmile' else (key,)
+            asset = next((assets[name] for name in keys if assets.get(name)), None)
+            return str(Path(item['directory'])/asset if asset else self.root/'app/icons'/fallback)
+        scenes = item.get('_configuration', {}).get('scenes', {})
+        reply = scenes.get('reply', {})
+        row = {'name': item['name'], 'avatar': source('avatarSmile', 'avatars/smile.webp'),
+               'catch': source('catch', 'yanami-catch.png'),
+               'tap': reply.get('tap', CONFIG_DEFAULTS['scenes']['reply']['tap']),
+               'celebration': reply.get('celebration', CONFIG_DEFAULTS['scenes']['reply']['celebration']),
+               'fileDrop': scenes.get('files', {}).get('drop', '松开以添加附件')}
+        options = copy.deepcopy(self._character_options)
+        roles = options.setdefault('subagents', [])
+        roles.extend({} for _ in range(4-len(roles)))
+        roles[slot] = row
+        return self.configureCharacter(json.dumps(options, ensure_ascii=False))
 
     @Slot(str, result=bool)
     def selectCharacter(self, identifier):

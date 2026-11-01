@@ -37,7 +37,23 @@ OPERATIONS = {
     'skills.remove': ('skills.manage', None),
     'skills.importPreview': ('skills.read', None),
     'skills.import': ('skills.manage', None),
+    'skills.browse': ('skills.read', None),
+    'skills.open': ('skills.read', None),
+    'skills.copy': ('skills.read', None),
+    'skills.paste': ('skills.manage', None),
+    'skills.importLocal': ('skills.manage', None),
+    'skills.insert': ('session.write', None),
+    'skills.rename': ('skills.manage', None),
+    'skills.delete': ('skills.manage', None),
 }
+
+# User-initiated paste/drop adds new folders only. Replacement still goes
+# through the preview/confirmation path; these operations cannot overwrite.
+DIRECT_SKILL_IMPORTS = frozenset(('skills.paste', 'skills.importLocal'))
+
+
+def requires_confirmation(name):
+    return OPERATIONS[name][0] in ('pi.manage', 'skills.manage') and name != 'pi.cancel' and name not in DIRECT_SKILL_IMPORTS
 
 
 class WidgetHost(QObject):
@@ -66,7 +82,7 @@ class WidgetHost(QObject):
         if not callable(getattr(getattr(self.b, 'piManagement', None), 'uninstallPackage', None)):
             operations.pop('pi.remove')
         return {'version': 1, 'operations': {name: {'permission': spec[0],
-                'confirmation': spec[0] in ('pi.manage', 'skills.manage') and name != 'pi.cancel'} for name, spec in operations.items()},
+                'confirmation': requires_confirmation(name)} for name, spec in operations.items()},
                 'requestBytes': 16384, 'responseBytes': 262144,
                 'mutationsRequireIdle': True, 'runtimes': ['node'], 'events': {'pi.activity': {'permission':'pi.observe','maxBytes':65536,'intervalMs':200}}}
 
@@ -189,29 +205,43 @@ class WidgetHost(QObject):
             fields = {'pi.status': {'offset', 'limit', 'query', 'details'}, 'pi.network': set(), 'pi.scan': set(), 'pi.refresh': set(),
                       'pi.enable': {'id', 'enabled'}, 'pi.install': {'source', 'project'},
                       'pi.remove': {'id'}, 'pi.job': {'id'}, 'pi.cancel': {'id'}, 'pi.checkUpdate': {'id'}, 'pi.details': {'id'}, 'pi.activation': {'id','mode'},
-                      'skills.list': set(), 'skills.details': {'id'}, 'skills.job': {'id'},
+                      'skills.list': set(), 'skills.details': {'id'}, 'skills.job': {'id', 'offset', 'limit'},
                       'skills.attach': {'id', 'enabled'}, 'skills.default': {'id', 'enabled'},
                       'skills.reveal': {'id'}, 'skills.remove': {'id'},
-                      'skills.importPreview': {'source', 'project'}, 'skills.import': {'id', 'decisions'}}[operation]
+                      'skills.importPreview': {'source', 'project'}, 'skills.import': {'id', 'decisions'},
+                      'skills.browse': set(), 'skills.open': {'id', 'mode'}, 'skills.copy': {'id', 'kind'},
+                      'skills.paste': {'project'}, 'skills.importLocal': {'source', 'project'},
+                      'skills.insert': {'id'}, 'skills.rename': {'id', 'name'}, 'skills.delete': {'id'}}[operation]
             if set(args) - fields:
                 raise ValueError('Unknown host arguments')
-            if operation in ('pi.enable', 'pi.remove', 'pi.job', 'pi.cancel', 'pi.checkUpdate', 'pi.details', 'pi.activation') or operation.startswith('skills.') and operation not in ('skills.list', 'skills.importPreview'):
+            if operation in ('pi.enable', 'pi.remove', 'pi.job', 'pi.cancel', 'pi.checkUpdate', 'pi.details', 'pi.activation') or operation.startswith('skills.') and operation not in ('skills.list', 'skills.browse', 'skills.paste', 'skills.importLocal', 'skills.importPreview'):
                 if not isinstance(args.get('id'), str) or not args['id'] or len(args['id']) > 4096:
                     raise ValueError('A valid id is required')
             if operation in ('pi.enable', 'skills.attach', 'skills.default') and type(args.get('enabled')) is not bool:
                 raise ValueError('enabled must be boolean')
             if operation == 'pi.activation' and args.get('mode') not in ('global','session','disabled'):
                 raise ValueError('Invalid activation mode')
-            if operation in ('pi.install', 'skills.importPreview'):
+            if operation == 'skills.open' and args.get('mode') not in ('preview', 'edit', 'reveal'):
+                raise ValueError('Invalid Skill open mode')
+            if operation == 'skills.copy' and args.get('kind') not in ('folder', 'path'):
+                raise ValueError('Invalid Skill copy kind')
+            if operation == 'skills.rename':
+                from .skill_folders import validate_folder_name
+                validate_folder_name(args.get('name'))
+            if operation in ('skills.rename', 'skills.delete'):
+                self._skill_service().folder_for(request, args['id'])
+            if operation in ('pi.install', 'skills.importPreview', 'skills.importLocal'):
                 if not isinstance(args.get('source'), str) or not args['source'].strip() or len(args['source']) > 4096:
                     raise ValueError('A valid package source is required')
                 if type(args.get('project', False)) is not bool:
                     raise ValueError('project must be boolean')
+            if operation in DIRECT_SKILL_IMPORTS and type(args.get('project')) is not bool:
+                raise ValueError('An explicit destination scope is required')
             if operation == 'skills.import':
                 if not isinstance(args.get('decisions', {}), dict) or any(not isinstance(key, str) or value not in ('skip', 'replace') for key, value in args.get('decisions', {}).items()):
                     raise ValueError('Each conflict needs a skip or replace decision')
                 self._skill_service().preview_for(request, args['id'])
-            if operation == 'pi.status':
+            if operation in ('pi.status', 'skills.job'):
                 if any(key in args and (not isinstance(args[key],str) or len(args[key]) > 256) for key in ('query','details')):
                     raise ValueError('Invalid local catalog query')
                 if type(args.get('offset', 0)) is not int or not 0 <= args.get('offset', 0) <= 1000000:
@@ -222,9 +252,9 @@ class WidgetHost(QObject):
                 row=next((row for row in self.b.piManagement.extensions if row.get('id')==args['id']),{})
                 if row.get('info',{}).get('required'):
                     raise ValueError('Umeko 基础能力固定启用，不能修改启用范围')
-            if operation.startswith('skills.') and operation != 'skills.job':
+            if operation.startswith('skills.') and operation not in ('skills.job', 'skills.browse', 'skills.open', 'skills.copy', 'skills.insert'):
                 self._skill_service().idle()
-            if permission in ('pi.manage', 'skills.manage') and operation != 'pi.cancel':
+            if requires_confirmation(operation):
                 if self.b.busy or self.b.piManagement.busy or self.b.kernelBusy:
                     raise ValueError('Pi is busy; Agent installs must use run_pi_command and its native queued reload')
                 if self._pending or self.b.pendingApproval:
@@ -241,6 +271,8 @@ class WidgetHost(QObject):
                     if self._skills and args.get('id'):
                         rows = self._skills.catalog.get((request['session']['token'], request['session']['workspace']), [])
                         self._panel_approval['name'] = next((r['name'] for r in rows if r['id'] == args['id']), '')
+                        if operation == 'skills.rename':
+                            self._panel_approval['name'] += ' → ' + args['name']
                     if operation == 'skills.import':
                         preview = self._skills.preview_for(request, args['id'])
                         self._panel_approval.update(name=', '.join(row['name'] for row in preview['value']['skills'])[:600], project=preview['project'])
@@ -274,7 +306,8 @@ class WidgetHost(QObject):
         operation, args = request['operation'], request['arguments']
         if operation.startswith('skills.'):
             service = self._skill_service()
-            self._reply(request, service.get(request, args['id']) if operation == 'skills.job' else service.start(request))
+            self._reply(request, service.get(request, args['id'], args.get('offset', 0), args.get('limit', 100))
+                        if operation == 'skills.job' else service.start(request))
             return
         if operation in ('pi.activation','pi.details'):
             if not self.b.piManagement.extensionsCurrent or not any(row.get('id')==args['id'] for row in self.b.piManagement.extensions):

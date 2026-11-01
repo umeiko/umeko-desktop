@@ -1,5 +1,6 @@
 """Focused inert import tests; native metadata parsing is exercised by the host smoke."""
 import re
+import os
 import stat
 import tempfile
 import unittest
@@ -8,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app import skill_import
+from app.skill_import_paths import ImportDirectories
 
 
 def metadata(documents):
@@ -33,6 +35,15 @@ class SkillImportTests(unittest.TestCase):
                 return False
         self.assertFalse(skill_import._linked(Path310()))
 
+    def test_python310_reparse_attribute_detects_junction_without_is_junction(self):
+        from types import SimpleNamespace
+        class Path310:
+            def is_symlink(self):
+                return False
+            def lstat(self):
+                return SimpleNamespace(st_mode=stat.S_IFDIR, st_file_attributes=0x400)
+        self.assertTrue(skill_import._linked(Path310()))
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="umeko-import-test-")
         self.root = Path(self.temporary.name)
@@ -56,7 +67,7 @@ class SkillImportTests(unittest.TestCase):
         (source / "assets").mkdir()
         (source / "assets" / "说明.txt").write_bytes(b"local asset")
         before = sorted(path.relative_to(self.root).as_posix() for path in self.root.rglob("*"))
-        with patch.object(skill_import.tempfile, "mkdtemp", side_effect=AssertionError("preview created temporary files")):
+        with patch.object(ImportDirectories, "mkdir", side_effect=AssertionError("preview created temporary files")):
             preview = self.preview(source)
         self.assertFalse(preview["errors"])
         self.assertEqual(preview["skills"][0]["name"], "alpha")
@@ -79,6 +90,48 @@ class SkillImportTests(unittest.TestCase):
         result = skill_import.commit_import(current, {"beta": "skip"}, self.destination)
         self.assertEqual(result["imported"], ["alpha"])
         self.assertEqual(result["skipped"], ["beta"])
+
+    def test_direct_import_keeps_folder_name_metadata_and_resources(self):
+        source = self.folder('renamed-folder')
+        content = document('original-metadata-name')
+        (source / 'SKILL.md').write_bytes(content)
+        (source / 'reference.txt').write_text('Resource')
+        result = skill_import.import_local(source, self.destination, [], metadata)
+        self.assertEqual(result['imported'], ['renamed-folder'])
+        self.assertEqual((self.destination / 'renamed-folder/SKILL.md').read_bytes(), content)
+        self.assertEqual((self.destination / 'renamed-folder/reference.txt').read_text(), 'Resource')
+        self.assertFalse(skill_import._plans)
+
+    def test_direct_import_refuses_entire_batch_on_conflict_or_invalid_document(self):
+        batch = self.root / 'collection'
+        self.folder('new-folder', parent=batch)
+        source = self.folder('existing', parent=batch)
+        old = self.folder('existing', body='Original files', parent=self.destination)
+        with self.assertRaisesRegex(ValueError, '同名'):
+            skill_import.import_local(batch, self.destination, [], metadata)
+        self.assertFalse((self.destination / 'new-folder').exists())
+        self.assertIn(b'Original files', (old / 'SKILL.md').read_bytes())
+        self.assertFalse(skill_import._plans)
+        (source / 'SKILL.md').write_text('Invalid frontmatter')
+        with self.assertRaisesRegex(ValueError, 'SKILL.md'):
+            skill_import.import_local(batch, self.destination, [], metadata)
+        self.assertFalse((self.destination / 'new-folder').exists())
+        self.assertFalse(skill_import._plans)
+
+    def test_direct_import_does_not_overwrite_a_target_created_during_staging(self):
+        source = self.folder()
+        write = ImportDirectories.write
+        def race(directories, path, content):
+            write(directories, path, content)
+            target = self.destination / 'alpha'
+            target.mkdir(exist_ok=True)
+            (target / 'SKILL.md').write_bytes(document('alpha', 'Created concurrently'))
+        with patch.object(ImportDirectories, 'write', race):
+            result = skill_import.import_local(source, self.destination, [], metadata)
+        self.assertTrue(result['errors'])
+        self.assertEqual(result['imported'], [])
+        self.assertIn(b'Created concurrently', (self.destination / 'alpha/SKILL.md').read_bytes())
+        self.assertFalse(skill_import._plans)
 
     def test_zip_and_skill_archives_preview_without_extraction(self):
         for extension in (".zip", ".skill"):
@@ -170,16 +223,121 @@ class SkillImportTests(unittest.TestCase):
         old.mkdir(parents=True)
         (old / "SKILL.md").write_bytes(document("alpha", "Old body"))
         preview = self.preview(self.folder(), [{"name": "alpha", "path": str(old / "SKILL.md"), "source": "global"}])
-        rename = Path.rename
-        def fail_stage(path, target):
+        rename = ImportDirectories.rename
+        def fail_stage(directories, path, target):
             if path.name == "skill" and path.parent.name.startswith(".umeko-import-"):
                 raise OSError("controlled rename failure")
-            return rename(path, target)
-        with patch.object(Path, "rename", fail_stage):
+            return rename(directories, path, target)
+        with patch.object(ImportDirectories, "rename", fail_stage):
             result = skill_import.commit_import(preview, {"alpha": "replace"}, self.destination)
         self.assertEqual(result["skipped"], ["alpha"])
         self.assertTrue(result["errors"])
         self.assertIn(b"Old body", (old / "SKILL.md").read_bytes())
+
+    def replace_preview(self):
+        old = self.destination / 'group' / 'alpha'
+        old.mkdir(parents=True)
+        (old / 'SKILL.md').write_bytes(document('alpha', 'Original'))
+        preview = self.preview(self.folder(), [{'name': 'alpha', 'path': str(old / 'SKILL.md'), 'source': 'global'}])
+        self.assertTrue(preview['skills'][0]['replaceable'])
+        outside = self.root / 'outside' / 'alpha'
+        outside.mkdir(parents=True)
+        (outside / 'SKILL.md').write_bytes(document('alpha', 'Outside'))
+        (outside / 'keep.txt').write_text('Preserve me')
+        return old, preview, outside
+
+    def assert_outside_preserved(self, outside):
+        self.assertIn(b'Outside', (outside / 'SKILL.md').read_bytes())
+        self.assertEqual((outside / 'keep.txt').read_text(), 'Preserve me')
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX symlink boundary; Windows junction tested separately')
+    def test_parent_replaced_after_preview_cannot_overwrite_external_skill(self):
+        old, preview, outside = self.replace_preview()
+        old.parent.rename(self.root / 'saved-group')
+        old.parent.symlink_to(outside.parent, target_is_directory=True)
+        result = skill_import.commit_import(preview, {'alpha': 'replace'}, self.destination)
+        self.assertEqual(result['imported'], [])
+        self.assertTrue(result['errors'])
+        self.assert_outside_preserved(outside)
+
+    def test_recreated_directory_requires_new_preview(self):
+        old, preview, outside = self.replace_preview()
+        old.parent.rename(self.root / 'saved-group')
+        old.mkdir(parents=True)
+        (old / 'SKILL.md').write_bytes(document('alpha', 'Changed'))
+        result = skill_import.commit_import(preview, {'alpha': 'replace'}, self.destination)
+        self.assertEqual(result['imported'], [])
+        self.assertIn(b'Changed', (old / 'SKILL.md').read_bytes())
+        self.assert_outside_preserved(outside)
+
+    def test_many_asset_directories_keep_open_handle_count_bounded(self):
+        source = self.folder()
+        for index in range(80):
+            folder = source / f'asset-{index}'
+            folder.mkdir()
+            (folder / 'example.txt').write_bytes(b'Inert asset')
+        preview = self.preview(source)
+        write = ImportDirectories.write
+        counts = []
+        def observe(directories, path, content):
+            write(directories, path, content)
+            counts.append(len(directories.opened))
+        with patch.object(ImportDirectories, 'write', observe):
+            result = skill_import.commit_import(preview, {}, self.destination)
+        self.assertEqual(result['imported'], ['alpha'])
+        self.assertEqual(len(list((self.destination / 'alpha').glob('asset-*/example.txt'))), 80)
+        self.assertLessEqual(max(counts), len(self.destination.parents) + 5)
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX descriptor race')
+    def test_parent_swapped_during_staging_uses_pinned_directory(self):
+        old, preview, outside = self.replace_preview()
+        write = ImportDirectories.write
+        def swap(directories, path, content):
+            old.parent.rename(self.root / 'saved-group')
+            old.parent.symlink_to(outside.parent, target_is_directory=True)
+            write(directories, path, content)
+        with patch.object(ImportDirectories, 'write', swap):
+            result = skill_import.commit_import(preview, {'alpha': 'replace'}, self.destination)
+        self.assertEqual(result['imported'], ['alpha'])
+        self.assertIn(b'Imported body', (self.root / 'saved-group/alpha/SKILL.md').read_bytes())
+        self.assert_outside_preserved(outside)
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX symlink boundary')
+    def test_destination_ancestor_replaced_before_commit(self):
+        source = self.folder()
+        self.destination.parent.mkdir(parents=True)
+        preview = self.preview(source)
+        self.destination.parent.rename(self.root / 'saved-agent')
+        outside = self.root / 'outside'
+        outside.mkdir()
+        self.destination.parent.symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, '目标目录'):
+            skill_import.commit_import(preview, {}, self.destination)
+        self.assertEqual(list(outside.iterdir()), [])
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows junction and directory-handle boundary')
+    def test_windows_junction_swap_cannot_overwrite_external_skill(self):
+        import subprocess
+        old, preview, outside = self.replace_preview()
+        old.parent.rename(self.root / 'saved-group')
+        subprocess.run(['cmd', '/c', 'mklink', '/J', str(old.parent), str(outside.parent)], check=True, capture_output=True)
+        result = skill_import.commit_import(preview, {'alpha': 'replace'}, self.destination)
+        self.assertEqual(result['imported'], [])
+        self.assert_outside_preserved(outside)
+        old.parent.rmdir()
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows directory-handle boundary')
+    def test_windows_pins_parent_during_staging_and_allows_own_replacement(self):
+        old, preview, outside = self.replace_preview()
+        write = ImportDirectories.write
+        def attempt_swap(directories, path, content):
+            with self.assertRaises(OSError):
+                old.parent.rename(self.root / 'saved-group')
+            write(directories, path, content)
+        with patch.object(ImportDirectories, 'write', attempt_swap):
+            result = skill_import.commit_import(preview, {'alpha': 'replace'}, self.destination)
+        self.assertEqual(result['imported'], ['alpha'])
+        self.assert_outside_preserved(outside)
 
 
 if __name__ == "__main__":

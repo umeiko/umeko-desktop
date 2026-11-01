@@ -72,8 +72,14 @@ Window {
         function onVirtualXChanged(){if(root.visible)root.constrain()}
         function onVirtualYChanged(){if(root.visible)root.constrain()}
     }
-    Timer { id:speech; interval:2600; onTriggered:root.caption="" }
+    Timer { id:speech; interval:root.state.rareIdle ? 4200 : 2600; onTriggered:root.caption="" }
     Timer {id:reminderTimeout;interval:8000;onTriggered:root.closeReminderCard()}
+    // Compatibility for imported still images; built-in rare scenes are animated.
+    Timer {
+        interval: 4200; repeat: true
+        running: root.visible && !root.config.paused && root.state.action === "idle" && !root.state.animated
+        onTriggered: root.pet.idleCycle()
+    }
     SequentialAnimation {
         id:wiggle
         NumberAnimation {target:root;property:"tilt";to:-7;duration:85}
@@ -122,7 +128,15 @@ Window {
                 }
                 Component {
                     id:animation
-                    AnimatedImage {objectName:"desktopPetAnimation";readonly property bool ready:status===Image.Ready;source:root.state.source;fillMode:Image.PreserveAspectFit;verticalAlignment:Image.AlignBottom;cache:false;asynchronous:true;playing:root.visible && !root.config.paused;mipmap:false;onStatusChanged:if(status===Image.Error)root.caption=I18n.t("形象加载失败，请在桌宠设置中更换形象")}
+                    AnimatedImage {objectName:"desktopPetAnimation";
+                        property int previousFrame: -1
+                        onSourceChanged: previousFrame = -1
+                        onCurrentFrameChanged: {
+                            if (previousFrame > currentFrame && root.visible && !root.config.paused)
+                                Qt.callLater(function() { root.pet.idleCycle() })
+                            previousFrame = currentFrame
+                        }
+                        readonly property bool ready:status===Image.Ready;source:root.state.source;fillMode:Image.PreserveAspectFit;verticalAlignment:Image.AlignBottom;cache:false;asynchronous:true;playing:root.visible && !root.config.paused;mipmap:false;onStatusChanged:if(status===Image.Error)root.caption=I18n.t("形象加载失败，请在桌宠设置中更换形象")}
                 }
                 Component {id:still;Image {source:root.state.source;fillMode:Image.PreserveAspectFit;verticalAlignment:Image.AlignBottom;asynchronous:true;cache:false;mipmap:true}}
             }

@@ -1,208 +1,177 @@
-"""Actual Main.qml, Widget host confirmation and native local skill operations.
+"""Actual App/QML, native folder discovery and scoped clipboard/filesystem jobs.
 
-All profiles and packages are disposable. No provider, model or public server
-is configured. UI actions use QML signals rather than mouse/keyboard injection.
+Disposable profile only. No provider, model request or public server is used.
 """
 from __future__ import annotations
-
 import json
 import os
-from pathlib import Path
 import sys
 import tempfile
 import time
 import zipfile
+from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
-os.environ.setdefault('QT_QUICK_BACKEND', 'software')
-os.environ.setdefault('QT_QUICK_CONTROLS_STYLE', 'Basic')
-os.environ['UMEKO_LANGUAGE'] = 'en'
-
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT))
+os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
+os.environ.setdefault('QT_QUICK_BACKEND','software')
+os.environ.setdefault('QT_QUICK_CONTROLS_STYLE','Basic')
+os.environ['UMEKO_LANGUAGE']='en'
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtQuick import QQuickItem
+from PySide6.QtQml import QQmlExpression
 from PySide6.QtTest import QTest
 import shiboken6
-
 from app.storage import Store
 from main import create_application
 
-
-def wait_for(predicate, message, seconds=45):
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        QTest.qWait(20)
-        time.sleep(.005)  # Allow native worker threads to run between Qt events.
-        if predicate():
-            return
+def wait_for(predicate,message,seconds=45):
+    deadline=time.monotonic()+seconds
+    while time.monotonic()<deadline:
+        QTest.qWait(15);time.sleep(.003)
+        if predicate():return
     raise AssertionError(message() if callable(message) else message)
 
-
-def markdown(name):
-    return f'---\nname: {name}\ndescription: Local fixture for skill management.\n---\n\nUse this local fixture.\n'
-
+def markdown(name):return f'---\nname: {name}\ndescription: Local folder fixture.\n---\n\n# Skill guide\n\nPreserve this content.\n'
+def variant(value):return value.toVariant() if hasattr(value,'toVariant') else value
 
 def main():
-    with tempfile.TemporaryDirectory(prefix='skill-host-ui-') as directory:
-        base = Path(directory)
-        profile, agent, workspace = base / 'profile', base / 'agent', base / 'workspace'
-        for path in (profile, agent, workspace, base / 'home'):
-            path.mkdir()
-        os.environ.update(UMEKO_DATA_DIR=str(profile), PI_CODING_AGENT_DIR=str(agent),
-                          HOME=str(base / 'home'), USERPROFILE=str(base / 'home'))
-        store = Store(profile)
-        store.data['workspace'] = str(workspace)
-        store.data['agent']['agentDir'] = str(agent)
-        store.save()
-
-        package = base / 'fixture-package'
-        (package / 'skills/packaged-fixture').mkdir(parents=True)
-        (package / 'package.json').write_text(json.dumps({'name': 'fixture-local-skills',
-            'version': '1.0.0', 'pi': {'skills': ['skills']}}), encoding='utf-8')
-        (package / 'skills/packaged-fixture/SKILL.md').write_text(markdown('packaged-fixture'), encoding='utf-8')
-
-        app, engine, backend = create_application()
-        app.setQuitOnLastWindowClosed(False)
-        manager, warnings, replies = backend.desktopPlugins, [], {}
-        engine.warnings.connect(lambda errors: warnings.extend(error.toString() for error in errors))
-        manager.hostResponse.connect(lambda widget, identifier, value: replies.__setitem__(identifier, value))
-        window = engine.rootObjects()[0]
-        window.resize(1180, 850)
-        host = manager.hostServices
-
+    with tempfile.TemporaryDirectory(prefix='skill-folder-ui-') as temporary:
+        base=Path(temporary).resolve();profile=base/'profile';agent=base/'agent';workspace=base/'workspace'
+        for folder in (profile,agent,workspace,base/'home'):folder.mkdir()
+        os.environ.update(UMEKO_DATA_DIR=str(profile),PI_CODING_AGENT_DIR=str(agent),HOME=str(base/'home'),USERPROFILE=str(base/'home'))
+        store=Store(profile);store.data['workspace']=str(workspace);store.data['agent']['agentDir']=str(agent);store.data['character']='komari';store.save()
+        global_folder=agent/'skills/global-guide';global_folder.mkdir(parents=True)
+        (global_folder/'SKILL.md').write_text(markdown('global-guide'),encoding='utf-8')
+        (global_folder/'references').mkdir();(global_folder/'references/note.txt').write_text('Packaged reference.',encoding='utf-8')
+        project_folder=workspace/'.pi/skills/project-guide';project_folder.mkdir(parents=True)
+        (project_folder/'SKILL.md').write_text(markdown('project-guide'),encoding='utf-8')
+        archive=base/'import.skill'
+        with zipfile.ZipFile(archive,'w') as stream:
+            stream.writestr('zip-guide/SKILL.md',markdown('zip-guide'))
+            stream.writestr('zip-guide/reference.txt','ZIP reference.')
+        app,engine,backend=create_application();app.setQuitOnLastWindowClosed(False)
+        manager=backend.desktopPlugins;host=manager.hostServices;window=engine.rootObjects()[0];window.resize(1180,850)
+        warnings=[];replies={}
+        engine.warnings.connect(lambda errors:warnings.extend(e.toString() for e in errors))
+        manager.hostResponse.connect(lambda widget,identifier,value:replies.__setitem__(identifier,value))
         def find(name):
-            stack = [window.contentItem()]
+            stack=[window.contentItem()]
             while stack:
-                item = stack.pop()
-                if item.objectName() == name:
-                    return item
+                item=stack.pop()
+                if item.objectName()==name:return item
                 stack.extend(item.childItems())
-            return window.findChild(QQuickItem, name)
-
+            return None
         def idle():
-            widget = find('skillManagerWidget')
-            return (not backend.busy and not backend.kernelBusy and not backend.piManagement.busy
-                and not host.panelApproval and widget is not None and not widget.property('working')
-                and (host._skills is None or not any(row['status'] == 'running' for row in host._skills.jobs.values())))
-
-        def assert_font_family(container, family):
-            pending, count = [container], 0
-            while pending:
-                item = pending.pop()
-                pending.extend(item.childItems())
-                if item.isVisible() and item.property('text') and item.property('font') is not None:
-                    assert item.property('font').family() == family, (item.objectName(), item.property('font').family(), family)
-                    count += 1
-            assert count >= 4, count
-
-        def request(operation, args, *, confirm=False):
-            wait_for(idle, 'The skill panel did not become idle')
-            identifier = manager.requestHost(operation, json.dumps(args))
-            assert identifier, operation
-            if confirm:
-                wait_for(lambda: bool(host.panelApproval) or identifier in replies,
-                         'Host confirmation did not appear')
-                assert identifier not in replies, replies.get(identifier)
-                assert host.panelApproval['id'] == identifier
-                assert host.pendingApproval == {}, 'Skill action opened the global confirmation'
-                confirmation = find('widgetPanelConfirmation')
-                allow = find('widgetPanelAllow')
-                assert confirmation is not None and confirmation.isVisible()
-                assert allow is not None and allow.isVisible() and allow.isEnabled()
-                assert_font_family(confirmation, 'serif')
-                return identifier, allow
-            wait_for(lambda: identifier in replies, 'Host response missing: ' + operation)
-            assert replies[identifier]['ok'], replies[identifier]
+            widget=find('skillManagerWidget')
+            return widget is not None and not widget.property('working') and not host.panelApproval and not backend.piManagement.busy
+        def request(operation,args):
+            wait_for(idle,'Widget remained busy before '+operation)
+            identifier=manager.requestHost(operation,json.dumps(args));assert identifier
+            wait_for(lambda:identifier in replies,'No reply: '+operation)
+            assert replies[identifier]['ok'],replies[identifier]
             return replies[identifier]
-
-        def approved(identifier, allow):
-            allow.clicked.emit()
-            wait_for(lambda: identifier in replies, 'Confirmed host response missing')
-            assert replies[identifier]['ok'], replies[identifier]
-            assert not host.panelApproval
-            return replies[identifier]
-
-        def skill_result(reply):
-            job = reply['jobId']
-            wait_for(lambda: host._skills.jobs[job]['status'] != 'running', 'Native skill job did not finish')
-            identifier = manager.requestHost('skills.job', json.dumps({'id': job}))
-            wait_for(lambda: identifier in replies, 'Skill job poll did not return')
-            row = replies[identifier]['jobs'][0]
-            assert row['status'] == 'completed', row
-            assert row['result']['ok'], row
+        def result(reply):
+            job=reply['jobId'];wait_for(lambda:host._skills.jobs[job]['status']!='running','Native Skill job did not finish')
+            identifier=manager.requestHost('skills.job',json.dumps({'id':job}))
+            wait_for(lambda:identifier in replies,'Job reply missing')
+            row=replies[identifier]['jobs'][0];assert row['status']=='completed',row
             return row['result']
-
-        def catalog():
-            return skill_result(request('skills.list', {}))['skills']
-
+        def js(source):
+            expression=QQmlExpression(engine.rootContext(),find('skillManagerWidget'),source);value=expression.evaluate()
+            assert not expression.hasError(),expression.error().toString()
+            return value[0] if isinstance(value,tuple) else value
+        def confirm(operation):
+            wait_for(lambda:bool(host.panelApproval),'Missing panel confirmation: '+operation)
+            assert host.panelApproval['operation']==operation,host.panelApproval
+            assert host.pendingApproval=={} and find('widgetPanelConfirmation').isVisible()
+            find('widgetPanelAllow').clicked.emit();wait_for(idle,'Confirmed operation did not finish: '+operation)
         try:
-            assert not backend.store.data['providers'], 'Fixture configured a provider'
-            assert backend.public_server is None, 'Fixture started a public server'
-            assert manager.openPage('skill-manager'), 'Built-in skill panel did not open'
-            wait_for(lambda: bool(manager.page.get('error')) or manager.workers.get('skill-manager', {}).get('ready') and idle(),
-                     lambda: 'Actual skill widget did not initialize: ' + repr({
-                         'page': manager.page,
-                         'ready': manager.workers.get('skill-manager', {}).get('ready'),
-                         'backendBusy': backend.busy, 'kernelBusy': backend.kernelBusy,
-                         'managementBusy': backend.piManagement.busy,
-                         'widgetWorking': find('skillManagerWidget').property('working') if find('skillManagerWidget') else None,
-                     }))
-            assert not manager.page.get('error'), manager.page
-            backend.setFontFamily('serif')
-            backend.setFontScale(1.17)
-            QTest.qWait(100)
-            widget = find('skillManagerWidget')
-            assert_font_family(widget, 'serif')
-            assert find('skillManagerSearch').property('font').pixelSize() == 14
-            settings = agent / 'settings.json'
-            before = settings.read_bytes() if settings.exists() else None
-            identifier, allow = request('pi.install', {'source': str(package), 'project': False}, confirm=True)
-            assert (settings.read_bytes() if settings.exists() else None) == before, 'Package installed before confirmation'
-            reply = approved(identifier, allow)
-            job = reply['jobId']
-            wait_for(lambda: backend._umeko_control.jobs[job]['status'] != 'running', 'Native local package install did not finish')
-            poll = manager.requestHost('pi.job', json.dumps({'id': job}))
-            wait_for(lambda: poll in replies, 'Package job poll did not return')
-            assert replies[poll]['jobs'][0]['status'] == 'done', replies[poll]
-            rows = catalog()
-            packaged = next(row for row in rows if row['name'] == 'packaged-fixture')
-            assert packaged['source'] == 'package' and packaged['removable']
+            assert not backend.store.data['providers'] and backend.public_server is None
+            assert manager.openPage('skill-manager')
+            wait_for(lambda:idle() and bool(variant(find('skillManagerWidget').property('roots')).get('global')),
+                     lambda:'Widget did not initialize: '+repr(manager.page))
+            widget=find('skillManagerWidget')
+            actual=variant(widget.property('skills'))
+            assert {(r['name'],r['scope']) for r in actual}=={('global-guide','global'),('project-guide','project')},{'rows':actual,'notice':widget.property('notice'),'roots':variant(widget.property('roots')),'jobs':[(r['operation'],r['status'],str(r['result'])[:300]) for r in host._skills.jobs.values()] if host._skills else []}
+            assert find('skillManagerScope_global') and find('skillManagerScope_project')
+            global_row=next(row for row in actual if row['scope']=='global')
 
-            imported = []
-            for project in (False, True):
-                name = 'project-import-fixture' if project else 'global-import-fixture'
-                source = base / (name + '.zip') if not project else base / name
-                if project:
-                    source.mkdir()
-                    (source / 'SKILL.md').write_text(markdown(name), encoding='utf-8')
-                else:
-                    with zipfile.ZipFile(source, 'w') as archive:
-                        archive.writestr(name + '/SKILL.md', markdown(name))
-                        archive.writestr(name + '/references/local.txt', 'Inert local reference.')
-                destination = (workspace / '.pi/skills' if project else agent / 'skills') / name
-                preview = skill_result(request('skills.importPreview', {'source': str(source), 'project': project}))['preview']
-                assert preview['project'] == project and preview['errors'] == [], preview
-                assert [row['name'] for row in preview['skills']] == [name], preview
-                assert not destination.exists(), 'Preview wrote a skill directory'
-                identifier, allow = request('skills.import', {'id': preview['id'], 'decisions': {}}, confirm=True)
-                assert not destination.exists(), 'Skill imported before host confirmation'
-                result = skill_result(approved(identifier, allow))
-                assert result['imported'] == [name] and result['errors'] == [], result
-                assert (destination / 'SKILL.md').read_text(encoding='utf-8') == markdown(name)
-                row = next(row for row in catalog() if row['name'] == name)
-                assert row['scope'] == ('project' if project else 'global'), row
-                imported.append(name)
+            # Attach a whole global folder, preserving the existing draft and
+            # without sending, changing availability or writing Pi settings.
+            backend.setDraft('Existing draft')
+            before=(agent/'settings.json').read_bytes() if (agent/'settings.json').exists() else None
+            result(request('skills.insert',{'id':global_row['id']}))
+            assert backend._view.draft=='Existing draft'
+            assert any(row['path']==str(global_folder) and row['kind']=='folder' for row in backend._view.attachments)
+            assert not backend._view.skill_modes
+            assert ((agent/'settings.json').read_bytes() if (agent/'settings.json').exists() else None)==before
 
-            relevant_warnings = [warning for warning in warnings if 'skill-manager' in warning
-                                 or 'DesktopPluginSurface' in warning]
-            assert not relevant_warnings, relevant_warnings
-            print('SKILL_MANAGER_HOST_UI_OK: actual App/QML confirmation and live font propagation, native local package, '
-                  'ZIP/global and folder/project imports, native catalog; model calls=0')
+            # Paste directly into the selected workspace, without navigating,
+            # confirming or treating the global source as a local conflict.
+            result(request('skills.copy',{'id':global_row['id'],'kind':'folder'}))
+            assert QGuiApplication.clipboard().mimeData().urls()[0].toLocalFile()==str(global_folder)
+            widget.setProperty('selectedScope','project');js('action("paste")')
+            wait_for(idle,'Clipboard import did not finish')
+            assert widget.property('route')=='main' and not host.panelApproval
+            assert not widget.property('importFailure') and not widget.property('notice'),widget.property('importFailure')
+            target=workspace/'.pi/skills/global-guide'
+            assert (target/'references/note.txt').read_text()=='Packaged reference.'
+            assert (target/'SKILL.md').read_text()==markdown('global-guide')
+            # A repeated paste fails in-place and never modifies the original.
+            original=(target/'SKILL.md').read_bytes();js('action("paste")')
+            wait_for(idle,'Repeated paste did not settle')
+            assert widget.property('route')=='main' and widget.property('importFailure')
+            assert find('skillManagerImportError').isVisible() and not host.panelApproval
+            assert (target/'SKILL.md').read_bytes()==original
+            find('skillManagerImportErrorClose').clicked.emit()
+
+            # Renaming changes only the directory. Denied deletion keeps it.
+            actual=variant(widget.property('skills'));row=next(row for row in actual if row['name']=='global-guide' and row['scope']=='project')
+            widget.setProperty('contextRow',row);js('action("rename")')
+            find('skillManagerRenameName').setProperty('text','renamed-guide');find('skillManagerRenameSave').clicked.emit()
+            wait_for(lambda:bool(host.panelApproval),'Rename confirmation missing');assert target.exists()
+            confirm('skills.rename')
+            renamed=target.with_name('renamed-guide');assert (renamed/'SKILL.md').read_text()==markdown('global-guide')
+            row=next(row for row in variant(widget.property('skills')) if row['name']=='renamed-guide')
+            widget.setProperty('contextRow',row);js('action("delete")');wait_for(lambda:bool(host.panelApproval),'Delete confirmation missing')
+            find('widgetPanelDeny').clicked.emit();wait_for(idle,'Denied deletion did not settle');assert renamed.exists()
+            js('action("delete")');confirm('skills.delete');assert not renamed.exists()
+
+            # ZIP drop imports into the pointer's scope, regardless of the
+            # previously selected workspace. Native archive checks still run.
+            widget.setProperty('selectedScope','project')
+            assert js('dropLocalUrls('+json.dumps([QUrl.fromLocalFile(str(archive)).toString()])+',"global")')
+            wait_for(idle,'ZIP import did not finish')
+            assert widget.property('route')=='main' and not widget.property('importFailure')
+            assert not host.panelApproval
+            assert (agent/'skills/zip-guide/reference.txt').read_text()=='ZIP reference.'
+            assert not (workspace/'.pi/skills/zip-guide').exists()
+
+            # A bad archive reports an in-pane failure without changing route.
+            invalid=base/'broken.zip';invalid.write_bytes(b'Not a zip')
+            assert js('dropLocalUrls('+json.dumps([QUrl.fromLocalFile(str(invalid)).toString()])+',"project")')
+            wait_for(idle,'Broken ZIP import did not settle')
+            assert widget.property('importFailure') and widget.property('route')=='main'
+            find('skillManagerImportErrorClose').clicked.emit()
+
+            # Long descriptions exercise the real host byte budget and QML's
+            # final-page cursor handling, with no partial catalog published.
+            for index in range(210):
+                name=f'paged-{index:03d}';folder=agent/'skills'/name;folder.mkdir()
+                (folder/'SKILL.md').write_text(f'---\nname: {name}\ndescription: '+'技能说明'*256+'\n---\nLocal fixture.\n',encoding='utf-8')
+            find('skillManagerRefresh').clicked.emit();wait_for(lambda:bool(widget.property('job')),'Large browse did not begin')
+            wait_for(idle,'Large native folder catalog failed to page')
+            actual=variant(widget.property('skills'));assert len(actual)==213,len(actual)
+            assert len({row['id'] for row in actual})==213
+            assert len(json.dumps(actual,ensure_ascii=False).encode())>262144
+            assert not [warning for warning in warnings if 'skill-manager' in warning or 'DesktopPluginSurface' in warning],warnings
+            print('SKILL_FOLDER_HOST_UI_OK: configured global/workspace roots, whole-folder attachment, direct clipboard paste and ZIP drop, no navigation or import confirmations, failure-only pane popup and conflict preservation, directory rename/delete confirmations, 213-record UTF-8 paging; model calls=0')
         finally:
-            backend.close()
-            shiboken6.delete(engine)
-            app.processEvents()
+            # Offscreen Qt owns the Python-created file MIME object. Release it
+            # while QApplication is alive, before its platform is destroyed.
+            QGuiApplication.clipboard().clear()
+            backend.close();shiboken6.delete(engine);app.processEvents()
 
-
-if __name__ == '__main__':
-    main()
+if __name__=='__main__':main()

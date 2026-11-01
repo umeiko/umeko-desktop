@@ -59,6 +59,8 @@ FocusScope {
             case "skills.remove": return tr("卸载整个技能包", "Uninstall the whole skill package")
             case "pi.install": return tr("安装 Pi 技能包", "Install Pi skill package")
             case "skills.import": return tr("导入本地技能", "Import local skills") + (approval.project ? tr(" · 当前项目", " · Current project") : tr(" · 全局", " · Global"))
+            case "skills.rename": return tr("重命名整个 Skill 文件夹", "Rename Skill folder")
+            case "skills.delete": return tr("删除整个 Skill 文件夹及其内容", "Delete Skill folder and its contents")
             default: return tr("确认操作", "Confirm operation")
             }
         }

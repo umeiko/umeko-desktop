@@ -14,6 +14,15 @@ const checkErrors = settings => {
   if (errors.length) throw new Error(errors.map(e => e.error?.message || e.message || "Pi 设置无法读写").join("; "));
 };
 
+// Apply chat overrides before deduplicating names, both in the catalog and in
+// the native loader. Pi's default-enabled resources keep their native order.
+function effectiveSkills(rows, input) {
+  const names = new Set();
+  return [...rows.filter(row => override(input, row.path) === true),
+    ...rows.filter(row => row.enabled && override(input, row.path) === undefined)]
+    .filter(row => { if (names.has(row.name)) return false; names.add(row.name); return true; });
+}
+
 export async function discoverSkills(Pi, input, settings) {
   const manager = new Pi.DefaultPackageManager({ cwd: input.cwd, agentDir: input.agentDir, settingsManager: settings });
   const resolved = await manager.resolve(async () => "skip");
@@ -65,12 +74,7 @@ export async function discoverSkills(Pi, input, settings) {
   // name deduplication. Keep displaced entries visible without claiming that
   // the model can invoke both same-name skills.
   if (!input.agent?.safeMode && !input.globalCoordinator) {
-    const names = new Set();
-    const selected = rows.filter(row => override(input, row.path) === true);
-    const defaults = rows.filter(row => row.enabled && override(input, row.path) === undefined);
-    for (const row of [...selected, ...defaults]) {
-      if (!names.has(row.name)) { row.attached = true; names.add(row.name); }
-    }
+    for (const row of effectiveSkills(rows, input)) row.attached = true;
   }
   return rows;
 }
@@ -138,6 +142,7 @@ export function skillDetails(row) {
 
 export async function manageSkills(Pi, input) {
   if (input.action === "validateText") return validateSkillDocuments(input.documents);
+  if (input.action === "browse") return browseSkillFolders(input);
   const settings = await prepareNativeSettings(Pi, input);
   let rows = await discoverSkills(Pi, input, settings);
   const action = input.action || "list";
@@ -153,6 +158,58 @@ export async function manageSkills(Pi, input) {
     rows = await discoverSkills(Pi, input, settings);
   }
   return { ok: true, skills: rows };
+}
+
+// A Skill is a directory, not a toggle or an installed npm package. Only the
+// current global/workspace roots belong in the folder manager. Discovery stays
+// bounded and inert, including when a user drops a huge or malformed document.
+export async function browseSkillFolders(input) {
+  const roots = { global: resolve(input.agentDir, "skills"),
+    project: input.includeProject ? resolve(input.cwd, ".pi/skills") : "" };
+  const skills = [], documents = [];
+  let entries = 0, bytes = 0, truncated = false;
+  for (const scope of ["project", "global"]) {
+    const root = roots[scope];
+    if (!root || !existsSync(root)) continue;
+    const walk = (directory, depth) => {
+      if (depth > 24 || entries >= 20000 || skills.length >= 5000 || bytes >= 128 * 1024 * 1024) { truncated = true; return; }
+      if (lstatSync(directory).isSymbolicLink()) return;
+      const path = join(directory, "SKILL.md");
+      if (directory !== root && existsSync(path) && lstatSync(path).isFile() && !lstatSync(path).isSymbolicLink()) {
+        let fd;
+        try {
+          fd = openSync(path, "r");
+          const buffer = Buffer.alloc(64 * 1024);
+          const count = readSync(fd, buffer, 0, buffer.length, 0);
+          bytes += count;
+          const folderName = directory.slice(directory.lastIndexOf(sep) + 1);
+          const id = idFor(path, { scope, source: "directory" });
+          if (id.length <= 4096) {
+            documents.push({ key: String(skills.length), markdown: buffer.subarray(0, count).toString("utf8"), directoryName: folderName });
+            skills.push({ id, name: folderName, folderName, path, directory, scope, kind: "folder" });
+          }
+        } finally { if (fd !== undefined) closeSync(fd); }
+        return; // Assets inside a Skill are never separate rows or a file tree.
+      }
+      let handle;
+      try {
+        handle = opendirSync(directory);
+        for (let entry; (entry = handle.readSync());) {
+          if (++entries > 20000 || skills.length >= 5000 || bytes >= 128 * 1024 * 1024) { truncated = true; break; }
+          if (!entry.name.startsWith(".") && entry.isDirectory() && !entry.isSymbolicLink()) walk(join(directory, entry.name), depth + 1);
+        }
+      } finally { handle?.closeSync(); }
+    };
+    walk(root, 0);
+  }
+  const parsed = { documents: [] };
+  for (let offset = 0; offset < documents.length; offset += 2048)
+    parsed.documents.push(...(await validateSkillDocuments(documents.slice(offset, offset + 2048))).documents);
+  for (let index = 0; index < skills.length; index++) {
+    const document = parsed.documents[index];
+    Object.assign(skills[index], { skillName: document.name, description: document.description, valid: document.valid });
+  }
+  return { ok: true, roots, skills, truncated };
 }
 
 export async function validateSkillDocuments(documents) {
@@ -194,21 +251,28 @@ export async function sessionSkillOptions(Pi, input, nativeSettings) {
   return {
     additionalSkillPaths: selected.map(row => row.path),
     skillsOverride: result => {
-      const forced = [], names = new Set(), diagnostics = [...result.diagnostics];
-      for (const row of selected) {
-        let skill = result.skills.find(skill => key(skill.filePath) === key(row.path));
-        // Pi deduplicates names before this callback. Recover an explicitly
-        // attached path if a default-enabled namesake displaced it.
-        if (!skill) {
-          const loaded = Pi.loadSkills({ cwd: input.cwd, agentDir: input.agentDir, skillPaths: [row.path], includeDefaults: false });
-          skill = loaded.skills.find(skill => key(skill.filePath) === key(row.path));
-          diagnostics.push(...loaded.diagnostics);
-        }
-        if (skill && !names.has(skill.name)) {
-          forced.push({ ...skill, sourceInfo: row.sourceInfo }); names.add(skill.name);
-        }
+      const diagnostics = [...result.diagnostics];
+      const candidates = result.skills.map(skill => ({ path: skill.filePath, name: skill.name, enabled: true, skill }));
+      // Pi has already discarded duplicate names. Its current collision
+      // diagnostics retain the enabled alternatives, including resources added
+      // by extensions. Recover those instead of reusing a stale startup catalog
+      // (which could undo a subsequent native default change on /reload).
+      const recover = [...selected];
+      for (const diagnostic of result.diagnostics) {
+        const collision = diagnostic.collision;
+        if (collision?.resourceType === "skill" && overrides[collision.winnerPath] === false)
+          recover.push({ path: collision.loserPath });
       }
-      return { ...result, diagnostics, skills: [...forced, ...result.skills.filter(skill => overrides[skill.filePath] !== false && !names.has(skill.name))] };
+      for (const row of recover) {
+        if (candidates.some(candidate => key(candidate.path) === key(row.path))) continue;
+        const loaded = Pi.loadSkills({ cwd: input.cwd, agentDir: input.agentDir, skillPaths: [row.path], includeDefaults: false });
+        const skill = loaded.skills.find(skill => key(skill.filePath) === key(row.path));
+        diagnostics.push(...loaded.diagnostics);
+        if (skill) candidates.push({ path: row.path, name: skill.name, enabled: true,
+          skill: row.sourceInfo ? { ...skill, sourceInfo: row.sourceInfo } : skill });
+      }
+      const forced = selected.map(row => candidates.find(candidate => key(candidate.path) === key(row.path))).filter(Boolean);
+      return { ...result, diagnostics, skills: effectiveSkills([...forced, ...candidates], input).map(row => row.skill) };
     },
   };
 }

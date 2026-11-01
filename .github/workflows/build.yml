@@ -133,7 +133,7 @@ jobs:
       - name: Verify long paths, native argv and running-tool layout
         shell: pwsh
         run: |
-          & '.venv/Scripts/python.exe' -m unittest tests.test_runtime_paths tests.test_pi_management.NativeExtensionTests.test_factory_copies_deep_profile_and_preserves_ordinary_paths tests.test_pi_management.NativeExtensionTests.test_factory_keeps_original_configuration_sessions_and_projects tests.test_windows_python_note tests.test_running_tool_status tests.test_tool_history_layout -v
+          & '.venv/Scripts/python.exe' -m unittest tests.test_runtime_paths tests.test_pi_management.NativeExtensionTests.test_factory_copies_deep_profile_and_preserves_ordinary_paths tests.test_pi_management.NativeExtensionTests.test_factory_keeps_original_configuration_sessions_and_projects tests.test_windows_python_note tests.test_running_tool_status tests.test_tool_history_layout tests.test_skill_import tests.test_skill_host -v
           if ($LASTEXITCODE -ne 0) { throw 'Windows path and tool-header regression failed' }
 
   package:

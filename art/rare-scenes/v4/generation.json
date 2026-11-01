@@ -1,0 +1,35 @@
+{
+  "tool": "built-in image_gen",
+  "selected": false,
+  "assets": [
+    {
+      "id": "kaju",
+      "file": "kaju.png",
+      "prompt": "Use case: precise-object-edit / identity-preserve.\nEdit an existing transparent character illustration. Change ONLY facial emotion. User wants sincere, serious, attentive tenderness matching the words 'You really worked so hard. Very, very well done.' Give her calm warm brown eyes looking directly at viewer with empathetic concern, relaxed brows, a very small CLOSED-mouth reassuring smile, quiet and earnest rather than bubbly. NO open-mouth grin, laughter, excited sparkle or comic exaggeration. Preserve black hair, uniform, gentle reaching hand pose and current longer legs/proportions exactly.\nKeep the same polished clean anime cel shading, silhouette quality, same centered complete figure with generous transparent margins and the same square canvas. TRUE transparency. ONLY the character; NO background, scenery, floating ornaments, captions, speech bubbles, watermark or added props. The user wants a facial expression that fits the dialogue, not a generic smiling mascot. Preserve body anatomy and the already approved proportions.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-e42753de-1d8f-4fd2-8f9c-e262d60308c5.png",
+      "reference": "../v3/kaju.png"
+    },
+    {
+      "id": "komari",
+      "file": "komari.png",
+      "prompt": "Use case: precise-object-edit / identity-preserve.\nEdit an existing transparent character illustration. Change ONLY facial emotion. User wants a SINCERE SERIOUS expression matching her conflicted line about feeling irritated and unable to stop caring about someone. Visible amber-green eye looks aside intently, brow slightly drawn, lips only slightly parted as if earnestly struggling to get words out, restrained blush. A vulnerable but serious troubled look. NOT a cute puffed-cheek pout, duck lips, gag face, happy smile or weeping. Keep the red side ponytail/fringe hiding other eye, all clothes, finger-fidget pose and current graceful longer leg proportions unchanged.\nKeep the same polished clean anime cel shading, silhouette quality, same centered complete figure with generous transparent margins and the same square canvas. TRUE transparency. ONLY the character; NO background, scenery, floating ornaments, captions, speech bubbles, watermark or added props. The user wants a facial expression that fits the dialogue, not a generic smiling mascot. Preserve body anatomy and the already approved proportions.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-ad95d15a-1655-4385-bd13-c587c103b482.png",
+      "reference": "../v3/komari.png"
+    },
+    {
+      "id": "yanami",
+      "file": "yanami.png",
+      "prompt": "Use case: precise-object-edit / identity-preserve.\nEdit an existing transparent character illustration. Image 1 is the character/body edit target; image 2 is the USER'S EXACT FACIAL EXPRESSION REFERENCE. Copy image 2's restrained, composed, knowing expression: half-lidded blue eyes, a calm steady sideways gaze, relaxed slightly lowered brows and a tiny CLOSED-mouth almost-flat smile at one corner. Quiet confidence and resolve, no cheerful open grin, no excited widened eyes, no visible teeth or crying tears. Match the facial tone of image 2 rather than inventing an angry grimace. Keep image 1's short blue hairstyle, full-body slim proportions, LONGER thighs/calves, uniform, hands over chest and pose exactly unchanged. Only adjust face and remove the remaining tear.\nKeep the same polished clean anime cel shading, silhouette quality, same centered complete figure with generous transparent margins and the same square canvas. TRUE transparency. ONLY the character; NO background, scenery, floating ornaments, captions, speech bubbles, watermark or added props. The user wants a facial expression that fits the dialogue, not a generic smiling mascot. Preserve body anatomy and the already approved proportions.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-a172d745-0026-4fab-a0db-0edefce01392.png",
+      "reference": "../v3/yanami.png",
+      "expressionReference": "reference/yanami-expression-user.png"
+    },
+    {
+      "id": "whale-girl",
+      "file": "whale-girl.png",
+      "prompt": "Use case: precise-object-edit / identity-preserve.\nEdit an existing transparent character illustration. Change facial emotion and a small hand gesture to match the user's whimsical line 'Human, give me rice. Human, someday I shall spare you.' Give her half-lidded stern deadpan blue eyes, chin slightly raised, small closed mouth with a faint imperious smirk, one hand on hip and the other palm extended as if demanding food. Remove ALL tears and crying. Keep the exact existing BIG-HEAD / SMALL-BODY chibi proportions: user explicitly approves them. Keep long blue hair, maid costume, lace headdress, whale apron and tiny legs/shoes unchanged.\nKeep the same polished clean anime cel shading, silhouette quality, same centered complete figure with generous transparent margins and the same square canvas. TRUE transparency. ONLY the character; NO background, scenery, floating ornaments, captions, speech bubbles, watermark or added props. The user wants a facial expression that fits the dialogue, not a generic smiling mascot. Preserve body anatomy and the already approved proportions.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-bc02ab2e-9fae-4149-8c03-ef47582ebb38.png",
+      "reference": "../v3/whale-girl.png"
+    }
+  ]
+}
