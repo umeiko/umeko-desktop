@@ -119,7 +119,8 @@ class ToolPermissionTests(unittest.TestCase):
         record.model, record.reasoning_effort = "", "off"
         record.workspace, record.file, record.history = "", "", []
         record.extension_modes = {"builtin:mcp":"disabled"}
-        record.skill_modes = {}
+        record.skill_modes = {"/fixture/skills/example/SKILL.md": False}
+        record.blocked_tools = ["write"]
         backend._release = self.directory / "release"
         backend._release.mkdir()
         (backend._release / "bridge.mjs").write_text("// fixture", encoding="utf-8")
@@ -132,6 +133,8 @@ class ToolPermissionTests(unittest.TestCase):
             self.assertTrue(backend._command_pi("inspect"))
         payload = backend._pool.start.call_args.args[3]
         self.assertEqual(payload["sessionExtensions"], {"builtin:mcp":False})
+        self.assertEqual(payload["sessionSkills"], {"/fixture/skills/example/SKILL.md": False})
+        self.assertEqual(payload["blockedTools"], ["write"])
         self.assertEqual(payload["permissionMode"], "ask")
         self.assertEqual(payload["language"], "en")
         self.assertEqual(payload["dataDir"], str(backend.store.directory))

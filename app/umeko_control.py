@@ -169,7 +169,11 @@ class UmekoControl(QObject):
         job = self.jobs[identifier]
         kind = event.get('type')
         if kind in ('resources', 'state') and 'resources' in event:
-            job['resources'] = redacted(event['resources'])
+            resources = dict(event['resources'])
+            if 'allTools' in resources:
+                resources['allTools'] = [tool for tool in resources['allTools']
+                    if tool.get('visible', True) and tool.get('exposure') != 'hidden']
+            job['resources'] = redacted(resources)
         if kind not in ('done', 'exit', 'error'): return
         self._native.pop(record.key, None)
         ok = kind == 'done' and not record.failed and not record.cancelled

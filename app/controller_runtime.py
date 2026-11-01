@@ -87,6 +87,7 @@ class PiControllerMixin:
         self.store.data["sessionMeta"].setdefault(record.id, {})["reasoningEffort"] = record.reasoning_effort
         self.store.data["sessionMeta"].setdefault(record.id, {})["extensionModes"] = record.extension_modes
         self.store.data["sessionMeta"].setdefault(record.id, {})["skillModes"] = record.skill_modes
+        self.store.data["sessionMeta"].setdefault(record.id, {})["blockedTools"] = record.blocked_tools
         record.file = info.get("file") or record.file
         record.title = info.get("title") or record.title
         record.workspace = info.get("workspace") or record.workspace
@@ -96,7 +97,7 @@ class PiControllerMixin:
             self.store.data["sessionMeta"].setdefault(record.id, {}).update(metadata)
         if record.file or record.action == "prompt":
             self._index_record(record)
-            if record.extension_modes or record.skill_modes: self.store.save()
+            if record.extension_modes or record.skill_modes or record.blocked_tools: self.store.save()
 
     def _index_record(self, record):
         if record.global_agent: return
@@ -137,6 +138,7 @@ class PiControllerMixin:
                     sessionDir=str(self.store.directory / "pi/sessions"), sessionFile=record.file,
                     sessionExtensions={path: mode == "session" for path, mode in record.extension_modes.items()},
                     sessionSkills=record.skill_modes,
+                    blockedTools=record.blocked_tools,
                     docsDir=str(self.store.directory / "agent-docs"),
                     legacyHistory=record.history, models=self.gateway.models(), agent=agent,
                     permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,

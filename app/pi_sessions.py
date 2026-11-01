@@ -12,6 +12,11 @@ from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signa
 from .npm_config import npm_overrides
 
 
+def clean_blocked_tools(value):
+    if not isinstance(value, list): return []
+    return list(dict.fromkeys(name for name in value if isinstance(name,str) and 0 < len(name) <= 256 and not any(ch.isspace() or ch in "*?\x00" for ch in name)))[:4096]
+
+
 def clean_extension_modes(value):
     if not isinstance(value, dict): return {}
     return {path:mode for path,mode in value.items() if isinstance(path,str) and 0 < len(path) <= 4096 and mode in ("session","disabled")}
@@ -43,6 +48,7 @@ class SessionState:
     extension_modes: dict = field(default_factory=dict)
     skill_modes: dict = field(default_factory=dict)
     known_skills: dict = field(default_factory=dict)
+    blocked_tools: list = field(default_factory=list)
     reasoning_effort: str = "off"
     attachments: list = field(default_factory=list)
     approval: dict = field(default_factory=dict)

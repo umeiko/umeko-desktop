@@ -4,7 +4,7 @@ import threading
 
 from PySide6.QtCore import QObject, Signal, Slot
 from .transcripts import preview
-from .pi_sessions import clean_extension_modes, clean_skill_modes
+from .pi_sessions import clean_extension_modes, clean_skill_modes, clean_blocked_tools
 
 
 class SessionPreview(QObject):
@@ -96,6 +96,7 @@ class SessionPreview(QObject):
             record.id, record.file, record.title = saved['id'], saved.get('file', ''), saved['title']
             record.extension_modes = clean_extension_modes(self.controller.store.data['sessionMeta'].get(saved['id'],{}).get('extensionModes'))
             record.skill_modes = clean_skill_modes(self.controller.store.data['sessionMeta'].get(saved['id'],{}).get('skillModes'))
+            record.blocked_tools = clean_blocked_tools(self.controller.store.data['sessionMeta'].get(saved['id'],{}).get('blockedTools'))
             record.history = copy.deepcopy(saved.get('history', []))
             record.messages, record.tree = result.get('messages', []), result.get('tree', [])
             record.transcript, record.loaded = result.get('snapshot'), True
