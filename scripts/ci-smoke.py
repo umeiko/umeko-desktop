@@ -19,10 +19,13 @@ from app.project_info import VERSION, git_output
 
 
 def isolated_profile(directory):
-    from app.storage import Store
-    store = Store(directory)
-    store.data['agent']['agentDir'] = str(directory / 'agent')
-    store.save()
+    # This verifier intentionally runs with system Python, outside the app's
+    # virtualenv. Seed only the preference override using the standard library.
+    directory.mkdir(parents=True, exist_ok=True)
+    settings = directory / 'settings.json'
+    data = json.loads(settings.read_text(encoding='utf-8')) if settings.exists() else {}
+    data.setdefault('agent', {})['agentDir'] = str((directory / 'agent').resolve())
+    settings.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
 
 def verify_windows_preview(executable, environment, report_dir):

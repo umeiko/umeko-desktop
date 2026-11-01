@@ -6,6 +6,8 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 os.environ.setdefault('QT_QUICK_BACKEND','software')
+# A disposable HOME must not retain Qt's mapped disk-cache files on Windows.
+os.environ['QML_DISABLE_DISK_CACHE']='1'
 os.environ['UMEKO_LANGUAGE']='zh'
 from PySide6.QtCore import Qt
 from PySide6.QtQml import QQmlExpression
@@ -23,7 +25,7 @@ def wait(predicate,label):
 
 def main():
     with tempfile.TemporaryDirectory(prefix='slash-actual-ui-') as temporary:
-        base=Path(temporary);agent=base/'agent';workspace=base/'workspace'
+        base=Path(temporary).resolve();agent=base/'agent';workspace=base/'workspace'
         workspace.mkdir();(workspace/'.git').mkdir();(base/'home').mkdir()
         folder=agent/'skills/文档整理';folder.mkdir(parents=True)
         (folder/'SKILL.md').write_text('---\nname: documents\ndescription: Visible document skill.\n---\nGuide.\n',encoding='utf-8')
@@ -60,7 +62,8 @@ def main():
             assert query('/s w')==['文档整理']
             query('/wd');QTest.keyClick(window,Qt.Key_Tab)
             wait(lambda:prompt.property('text')=='','Skill selection did not clear query')
-            assert len(b._view.attachments)==1 and b._view.attachments[0]['path']==str(folder),b._view.attachments
+            assert len(b._view.attachments)==1 and Path(b._view.attachments[0]['path']).resolve()==folder.resolve(),b._view.attachments
+            assert b._view.attachments[0]['kind']=='folder'
             assert not b._view.messages and not b._view.skill_modes
             query('/w');QTest.keyClick(window,Qt.Key_Escape);wait(lambda:not menu.isVisible(),'Escape did not dismiss menu')
             prompt.setProperty('text','/wd');QTest.qWait(30);assert menu.isVisible()
