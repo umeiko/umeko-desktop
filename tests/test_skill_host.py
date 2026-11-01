@@ -117,7 +117,9 @@ class SkillHostTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory(prefix='skill-host-fixture-')
         self.addCleanup(self.directory.cleanup)
-        self.root = Path(self.directory.name)
+        # Match the canonical roots passed to native discovery. Windows TEMP
+        # may use an 8.3 alias such as RUNNER~1 that resolve() expands.
+        self.root = Path(self.directory.name).resolve()
         self.manager = Manager(self.root)
         self.backend = self.manager.b
         self.host = WidgetHost(self.manager)
@@ -163,6 +165,7 @@ class SkillHostTests(unittest.TestCase):
         self.rows = rows
         result = self.finish(self.accepted('skills.browse'))
         self.assertEqual(result['status'], 'completed', result)
+        self.assertEqual(len(result['result']['skills']), len(rows), result)
         self.backend.attachChatboxFile = Mock()
         return result['result']['skills']
 

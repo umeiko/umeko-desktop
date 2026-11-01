@@ -46,7 +46,7 @@ class SkillImportTests(unittest.TestCase):
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="umeko-import-test-")
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.destination = self.root / "agent" / "skills"
 
     def tearDown(self):

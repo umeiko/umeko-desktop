@@ -75,9 +75,11 @@ class ImportDirectories:
         create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
                            wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
         create.restype = wintypes.HANDLE
-        # READ|WRITE sharing, deliberately no FILE_SHARE_DELETE. OPEN_REPARSE_POINT
-        # avoids following a final junction before the lstat check below.
-        handle = create(str(path), 0, 3, None, 3, 0x02000000 | 0x00200000, None)
+        # FILE_LIST_DIRECTORY participates in share-access checks. A metadata-
+        # only handle (DesiredAccess=0) does not reliably deny rename/delete.
+        # READ|WRITE sharing deliberately omits FILE_SHARE_DELETE; opening the
+        # reparse point itself avoids following a final junction before lstat.
+        handle = create(str(path), 0x00000001, 3, None, 3, 0x02000000 | 0x00200000, None)
         if handle == wintypes.HANDLE(-1).value:
             raise ctypes.WinError(ctypes.get_last_error())
         return handle
