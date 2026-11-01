@@ -260,12 +260,14 @@ Rectangle {
                 const result=value.result
                 root.hostBusy=!!result.busy
                 root.agentBusy=!!result.agentBusy
-                if(result.inventoryReady || (!root.agentBusy && root.inventoryRequested)) root.inventoryLoading=false
+                const inventoryFailed=!result.inventoryReady && !!result.inventoryFailed && root.inventoryRequested
+                // An idle Agent does not mean its asynchronous catalog has arrived.
+                if(result.inventoryReady || inventoryFailed) root.inventoryLoading=false
                 if(result.contextCurrent && !root.inventoryRequested && !root.agentBusy && !root.hostBusy) {
                     root.inventoryRequested=true;root.inventoryLoading=true;root.request("pi.inventory")
                 }
                 if(!result.contextCurrent){if(!root.job && !root.hostBusy)root.request("pi.scan");return}
-                root.notice=root.hostBusy && !root.job ? root.t("正在同步本地插件…","Synchronizing installed extensions…") : ""
+                root.notice=inventoryFailed ? root.t("工具列表加载失败，请刷新重试。","Tool inventory failed to load; refresh to retry.") : root.hostBusy && !root.job ? root.t("正在同步本地插件…","Synchronizing installed extensions…") : root.inventoryLoading ? root.t("正在加载工具列表…","Loading tool inventory…") : ""
                 if(root.selected) {
                     const row=(result.extensions || [])[0];if(row)root.selected=row
                     root.details=result.details || {};root.tools=entry.kind==="tools" ? root.tools.concat(result.tools || []) : result.tools || [];root.toolTotal=result.toolTotal || 0;root.toolsHasMore=!!result.toolsHasMore;root.modes=result.activationModes || {}

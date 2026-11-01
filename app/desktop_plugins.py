@@ -204,6 +204,9 @@ class DesktopPlugins(QObject):
         self.changed.emit()
     @Slot(str,result=bool)
     def openPage(self,identifier):
+        if self.closed:return False
+        # Chat notifications are debounced; bind a newly opened page immediately.
+        self.synchronize()
         if identifier not in self.entries or not self.enabled(identifier) or not self.session_enabled(identifier) or not self.entries[identifier].get('page'):return False
         if self._page==identifier and not self._error and identifier in self.workers:return True
         self._failed_services.discard(identifier)

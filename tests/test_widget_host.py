@@ -90,6 +90,29 @@ class WidgetHostTests(unittest.TestCase):
         identifier=self.request('pi.details',{'id':'missing'})
         self.assertFalse(self.manager.replies[identifier]['ok'])
 
+    def test_idle_does_not_mean_inventory_ready_and_async_failure_is_reported(self):
+        view = self.manager.b._view
+        view.action = 'load'
+        view.failed = view.cancelled = False
+        result = self.manager.replies[self.request('pi.status')]['result']
+        self.assertFalse(result['inventoryReady'])
+        self.assertFalse(result['inventoryFailed'])
+        view.failed = True
+        self.manager.b.busy = True
+        self.assertFalse(self.manager.replies[self.request('pi.status')]['result']['inventoryFailed'])
+        self.manager.b.busy = False
+        self.assertTrue(self.manager.replies[self.request('pi.status')]['result']['inventoryFailed'])
+        view.failed, view.cancelled = False, True
+        self.assertTrue(self.manager.replies[self.request('pi.status')]['result']['inventoryFailed'])
+
+    def test_inventory_start_failure_is_returned_to_the_widget(self):
+        view = self.manager.b._view
+        view.model, view.process, view.stale, view.subagents_active = 'fixture', None, False, False
+        self.manager.b._command_pi = lambda *args: False
+        reply = self.manager.replies[self.request('pi.inventory')]
+        self.assertFalse(reply['ok'])
+        self.assertIn('加载失败', reply['error'])
+
     def test_chat_activation_validates_mode_and_requires_native_confirmation(self):
         identifier=self.request('pi.activation',{'id':'17','mode':'invalid'})
         self.assertFalse(self.manager.replies[identifier]['ok'])

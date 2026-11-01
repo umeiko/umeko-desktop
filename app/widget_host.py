@@ -337,7 +337,8 @@ class WidgetHost(QObject):
                     raise ValueError('请等待当前任务结束后刷新工具列表')
                 if not getattr(record,'model',''):
                     raise ValueError('请先选择模型，再刷新工具列表')
-                self.b._command_pi('load', record)
+                if not self.b._command_pi('load', record):
+                    raise ValueError('Pi 工具列表加载失败')
             self._reply(request, {'ok':True})
             return
         if operation == 'pi.details' and args['id'] == NATIVE_ID:
@@ -371,6 +372,7 @@ class WidgetHost(QObject):
             result={'busy':management.busy, 'status':management.status if current else '',
                 'extensions':page,'total':len(rows),'catalogTotal':len(all_rows), 'hasMore':offset+limit<len(rows),
                 'contextCurrent':current, 'inventoryReady':bool(self.b._view.resources.get('allTools')),
+                'inventoryFailed':getattr(self.b._view,'action','')=='load' and not self.b.busy and (getattr(self.b._view,'failed',False) or getattr(self.b._view,'cancelled',False)),
                 'agentBusy':self.b.busy or bool(getattr(self.b._view,'subagents_active',False)), 'workspace':request['session'].get('workspace',''),
                 'activationModes':modes,'extensionUpdate':management.extensionUpdate if current else {}}
             if detail_id:

@@ -154,6 +154,25 @@ def create_plugin(context):return Fixture(context)
         self.call_for_review('finish',{'loopId':'automatic'})
         self.wait(lambda:manager.page.get('id')=='change-review')
 
+    def test_open_page_synchronizes_a_chat_switch_before_the_debounce_timer(self):
+        self.assertTrue(self.manager.openPage('file-tree'))
+        previous = self.manager.workers['file-tree']
+        workspace = self.path/'new-workspace'
+        workspace.mkdir()
+        (workspace/'new-context.txt').write_text('new chat')
+        view = self.host._view
+        view.key, view.id, view.workspace = 'new-token', 'new-session', str(workspace)
+        self.host.chatChanged.emit()
+        # Open immediately, without waiting for the 200 ms context refresh.
+        self.assertTrue(self.manager.openPage('file-tree'))
+        self.assertEqual(self.manager._session['token'], view.key)
+        self.assertEqual(self.manager._session['workspace'], str(workspace))
+        self.assertIsNot(self.manager.workers['file-tree'], previous)
+        result = self.call('list', {'path':'.'})
+        self.assertTrue(result['ok'])
+        self.assertIn('new-context.txt', str(result))
+        self.assertEqual(self.manager.page['id'], 'file-tree')
+
     def test_official_tree_is_lazy_bounded_and_closes_worker(self):
         directory=Path(self.host._view.workspace);(directory/'a.py').write_text('print(1)');(directory/'nested').mkdir();(directory/'nested/x.txt').write_text('hello')
         self.assertEqual({row['id'] for row in self.manager.sessionPlugins},{'file-tree','git-viewer','global-agents','pi-manager','skill-manager'})

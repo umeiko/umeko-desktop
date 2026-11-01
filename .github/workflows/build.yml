@@ -93,6 +93,7 @@ jobs:
             .venv/bin/python tests/sidebar_menu_position_ui_smoke.py
             .venv/bin/python tests/change_review_ui_smoke.py
             .venv/bin/python tests/extension_details_ui_smoke.py
+            .venv/bin/python tests/pi_manager_initial_tools_ui_smoke.py
             .venv/bin/python tests/pi_management_ui_smoke.py
             .venv/bin/python tests/skill_manager_ui_smoke.py
             .venv/bin/python tests/skill_manager_host_ui_smoke.py
