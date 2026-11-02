@@ -26,7 +26,7 @@ Item {
 
     RowMenu {
         id: sessionMenu; objectName: "sessionContextMenu"
-        ContextAction { objectName: "contextFork"; text: I18n.t("分支会话"); glyph: "branch"; enabled: !root.target.busy; onTriggered: backend.forkSessionById(root.target.id) }
+        ContextAction { objectName: "contextFork"; text: I18n.t("分支会话"); glyph: "chat-fork"; enabled: !root.target.busy; onTriggered: backend.forkSessionById(root.target.id) }
         ContextAction { objectName: "contextPinSession"; text: root.target.pinned ? I18n.t("取消置顶") : I18n.t("置顶"); glyph: "pin"; onTriggered: backend.togglePinned("session", root.target.id) }
         ContextAction { objectName: "contextArchiveSession"; text: root.target.archived ? I18n.t("取消归档") : I18n.t("归档"); glyph: "archive"; onTriggered: backend.archiveSession(root.target.id, !root.target.archived) }
         ContextAction { objectName: "contextRenameSession"; text: I18n.t("重命名"); glyph: "edit"; enabled: !root.target.busy; onTriggered: root.rename() }

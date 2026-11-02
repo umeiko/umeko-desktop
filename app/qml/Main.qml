@@ -722,7 +722,7 @@ ApplicationWindow {
             }
             Row { id: footerActions; x: composer.x + (composer.width - width) / 2; anchors.bottom: parent.bottom; anchors.bottomMargin: 13; spacing: 8
                 ActionButton { height: Theme.control(28); quiet: true; text: "Agent"; glyph: "sliders"; onClicked: window.settings(3) }
-                ActionButton { objectName: "forkSessionButton"; visible: backend.messageCount > 0; enabled: !backend.busy; height: Theme.control(28); quiet: true; text: I18n.t("分支"); glyph: "branch"; onClicked: backend.forkSession() }
+                ActionButton { objectName: "forkSessionButton"; visible: backend.messageCount > 0; enabled: !backend.busy; height: Theme.control(28); quiet: true; text: I18n.t("分支"); glyph: "chat-fork"; onClicked: backend.forkSession() }
             }
             DesktopPluginMenu {
                 id: desktopPluginMenu
