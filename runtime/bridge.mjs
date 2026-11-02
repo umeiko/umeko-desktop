@@ -11,6 +11,7 @@ import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coord
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
+import { createRecentImagesExtension } from "./recent-images.mjs";
 import { backgroundJobsExtension } from "./background-jobs.mjs";
 import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
 import { createToolPermissionExtension } from "./tool-permissions.mjs";
@@ -288,6 +289,7 @@ async function restoreSubagentSession(child, context, customTools) {
   const loader = new Pi.DefaultResourceLoader({cwd:manager.getCwd(),agentDir:config.agentDir,settingsManager:policy,
     ...await sessionSkillOptions(Pi, {...config,cwd:manager.getCwd()}, native),
     extensionFactories: [
+      { name: "recent-images", hidden: true, replaceable: false, factory: createRecentImagesExtension({ getLimit: () => config.agent?.maxContextImages }) },
       { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
       { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension },
     ],
@@ -306,6 +308,7 @@ async function restoreSubagentSession(child, context, customTools) {
 
 async function init(input) {
   config = input;
+  globalThis[Symbol.for("umeko:recent-images-policy")] = { getLimit: () => config.agent?.maxContextImages };
   permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir };
   configureUmekoDocs({directory: input.docsDir || join(input.agentDir, "cache", "umeko-docs"), models: input.models});
   reasoningEffort = effortLevels.has(input.reasoningEffort) ? input.reasoningEffort : "off";
@@ -356,6 +359,7 @@ async function init(input) {
           ...(input.globalCoordinator ? [{name:"global-coordinator-boundary",hidden:true,replaceable:false,factory:coordinatorExtension}] : []),
           ...(input.loopReview ? [{name:"loop-review",hidden:true,replaceable:false,factory:loopReview.extension}] : []),
           // Mandatory inline factory: resource filters cannot disable the gate.
+          { name: "recent-images", hidden: true, replaceable: false, factory: createRecentImagesExtension({ getLimit: () => config.agent?.maxContextImages }) },
           { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}) },
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },

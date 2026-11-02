@@ -1654,6 +1654,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
             if record:
                 self._pool.retire(record)
             file.unlink(missing_ok=True)
+            images = file.with_name(file.name + '.images')
+            linked = images.is_symlink() or getattr(images, 'is_junction', lambda: False)()
+            if not linked and images.is_dir() and images.resolve().is_relative_to(base):
+                shutil.rmtree(images)
             self._job('discard-chat-index', lambda: self.transcripts.discard(file))
         if record:
             self._pool.records.pop(record.key, None)

@@ -1,6 +1,7 @@
 """A virtual document: source and rendered blocks are accessed only as needed."""
 import json
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -34,7 +35,20 @@ def parse_markdown(text, cancelled=lambda: False):
     process = subprocess.Popen([node_executable(), str(script)], stdin=subprocess.PIPE,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=CREATE_NO_WINDOW,
         env=node_environment())
-    deadline, first = time.monotonic() + 30, True
+    payload = text.encode('utf-8')
+    # Retrying communicate() cannot finish a partial input on POSIX. Let the
+    # writer own and close stdin while communicate() only drains the output.
+    input_stream = process.stdin
+    process.stdin = None
+    def write_input():
+        try:
+            with input_stream:
+                input_stream.write(payload)
+        except (BrokenPipeError, OSError):
+            pass
+    writer = threading.Thread(target=write_input, daemon=True)
+    writer.start()
+    deadline = time.monotonic() + 30
     try:
         while True:
             if cancelled():
@@ -42,10 +56,10 @@ def parse_markdown(text, cancelled=lambda: False):
             if time.monotonic() >= deadline:
                 raise TimeoutError('Markdown parsing timed out')
             try:
-                output, error = process.communicate(text.encode('utf-8') if first else None, timeout=.05)
+                output, error = process.communicate(timeout=.05)
                 break
             except subprocess.TimeoutExpired:
-                first = False
+                pass
         if process.returncode:
             raise RuntimeError(error.decode('utf-8', 'replace')[:300])
         return json.loads(output)['blocks']
@@ -53,6 +67,7 @@ def parse_markdown(text, cancelled=lambda: False):
         if process.poll() is None:
             process.kill()
             process.communicate()
+        writer.join(timeout=1)
 
 
 class DocumentBlocks(QAbstractListModel):

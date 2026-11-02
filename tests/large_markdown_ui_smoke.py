@@ -56,7 +56,8 @@ with tempfile.TemporaryDirectory(prefix='umeko-large-markdown-') as temporary:
             time.sleep(.001)  # Let Python's reader thread run as the real app.exec() does.
             if check():
                 return
-        raise AssertionError('Timeout: ' + str(warnings))
+        raise AssertionError('Timeout: ' + str(warnings) + '; state=' + json.dumps(backend.documentPreview.state, default=str)
+                             + '; blockList=' + str(find('documentBlockList') is not None))
 
     def invoke(item, method):
         return QMetaObject.invokeMethod(item, method)
@@ -69,7 +70,7 @@ with tempfile.TemporaryDirectory(prefix='umeko-large-markdown-') as temporary:
         started = time.monotonic()
         backend._handle_pi_event(backend._view, {'type':'tool','id':'large-md','name':'submit_to_chatbox','state':'done',
             'args':{'items':[{'path':str(path)}]}, 'media':[{'path':str(path),'kind':'markdown','title':'Large Markdown'}]})
-        wait(lambda: backend.documentPreview.state.get('chunked') and find('documentBlockList') is not None)
+        wait(lambda: backend.documentPreview.state.get('chunked') and find('documentBlockList') is not None, timeout=45)
         wait(lambda: find('webPane') and not find('webPane').property('moving'))
         elapsed = time.monotonic() - started
         timer.stop()

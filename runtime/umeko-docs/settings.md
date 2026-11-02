@@ -29,4 +29,6 @@ Python 桌面版的“设置 → Agent → Umeko Desktop”使用 `desktop.confi
 
 npm 网络配置属于 `network.npm`，`config` 字段以 `status.get` 返回的 npm 配置为依据，字段是 `npmRegistry`、`npmUserconfig`、`npmCafile`。可局部修改，未提供的字段保留，空字符串清除该覆盖。`network.testNpm` 测试连接，结果在 `status.get` 的 npmStatus。不要关闭证书验证来解决企业证书问题；优先使用系统信任或明确的 CA 文件。
 
+高级配置：在应用数据目录的 `settings.json` 中修改 `agent.maxContextImages`（整数，默认 3，最小 1），然后重启应用以加载文件中的新值。每次请求合计用户附件和工具结果中的图片；超出上限时按两张一批移除最旧图片（上限为 1 时逐张移除），因此默认保留最新 2–3 张。原始会话和聊天展示不变，模型之前的文字回复不变；移除位置的短提示提供已有附件/读取路径，原文件缺失时保存到会话文件旁的专属 `.images` 目录，可用 `read` 再看。
+
 更改模型连接和选择参阅 providers.md，更改 API 代理参阅 server-updates.md，MCP/扩展配置参阅 extensions.md。任务排队结果见 control.md。
