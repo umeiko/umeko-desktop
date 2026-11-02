@@ -20,5 +20,6 @@
   {"id":"download","label":"下载","glyph":"download"},
   {"id":"lock","label":"安全","glyph":"lock"},
   {"id":"hourglass","label":"任务","glyph":"hourglass"},
-  {"id":"puzzle","label":"插件","glyph":"puzzle"}
+  {"id":"puzzle","label":"插件","glyph":"puzzle"},
+  {"id":"pi","label":"Pi 能力","glyph":"pi-widget"}
 ]

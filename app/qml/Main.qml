@@ -76,7 +76,16 @@ ApplicationWindow {
         chatCover.begin(); window.page = "chat"
     }
     function commitSidebarSelection() {
-        if (!sidebarSwitching || !sidebarPrepared || sidebarMotion.moving) return
+        if (!sidebarSwitching || !sidebarPrepared) return
+        if (sidebarMotion.moving) {
+            const value = sidebarMotion.value, target = sidebarMotion.targetRect
+            const current = [value.x, value.y, value.width, value.height]
+            const wanted = [target.x, target.y, target.width, target.height]
+            // Finish a subpixel tail instead of delaying content for the PID's
+            // imperceptible integral settling. Text never interrupts its travel.
+            if (current.some((position, i) => Math.abs(position - wanted[i]) > 0.75 || Math.abs(sidebarMotion.velocity[i]) > 10)) return
+            sidebarMotion.snap()
+        }
         const token = sidebarToken
         let ok = true
         if (pendingSidebarKind === "project") backend.openProject(pendingSidebarId)
@@ -87,7 +96,8 @@ ApplicationWindow {
         chatCover.contentReady()
     }
     // Present the cover before starting disk I/O. Cold reads can overlap the
-    // sidebar motion; activate the latest result only after the PID settles.
+    // sidebar motion. Attach delegates after the highlight settles, so text
+    // layout cannot take frames away from the moving PID.
     FrameAnimation {
         running: window.sidebarSwitching && !window.sidebarStarted
         onTriggered: {
@@ -161,10 +171,9 @@ ApplicationWindow {
     function previewChatWeb(item) {
         const url = backend.normalizeWebUrl(item.url || item.path || "")
         if (!url) return
-        if (!backend.webviewAvailable) { window.notification = I18n.t("网页预览组件尚未安装或无法加载"); toastTimer.restart(); return }
-        window.page = "chat"; webPane.submit(url, item.title || item.name || "")
+        backend.openWebPreview(url, item.title || item.name || "")
     }
-    function previewChatDocument(item) { window.page = "chat"; webPane.showDocument(item) }
+    function previewChatDocument(item, sourceWidget) { if (backend.openExternalHtml(item.path)) return; window.page = "chat"; webPane.showDocument(item, sourceWidget || "") }
     function showSubagentGroup(agents, anchor) {
         if (subagentMatrix.desiredOpen && subagentMatrix.parent === anchor) { subagentMatrix.close(); return }
         subagentMatrix.agents = agents; subagentMatrix.parent = anchor; subagentMatrix.open()
@@ -194,11 +203,14 @@ ApplicationWindow {
     Shortcut { sequence: "Escape"; enabled: !composer.slashVisible && backend.pendingApproval.id === undefined && backend.desktopPlugins.hostServices.pendingApproval.id === undefined && !imageViewer.visible; onActivated: { if (window.searchVisible) window.closeConversationSearch(false); else if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
     Connections { target: backend; function onToast(message) { window.notification = message; toastTimer.restart() }
         function onViewChanged() { window.avatarChatKey = String(Math.random()); if (backend.desktopPlugins.page.id !== "global-agents") webPane.dismiss() }
-        function onWebRequested(url, title) { window.page = "chat"; webPane.submit(url, title) }
-        function onDocumentRequested(path, title, kind) { window.previewChatDocument({path:path, title:title, kind:kind}) } }
+        function onWebRequested(url, title) { if (backend.config.desktop.webDisplay === "external") backend.openWebPreview(url,title); else {window.page = "chat"; webPane.submit(url, title)} }
+        function onDesktopSettingsChanged() { if (backend.config.desktop.webDisplay === "external" && (webPane.mode === "web" || webPane.mode === "document" && backend.documentPreview.state.fileType === "html")) webPane.dismiss() }
+        function onDocumentRequested(path, title, kind) { window.previewChatDocument({path:path, title:title, kind:kind}) }
+        function onWidgetDocumentRequested(path, title, kind, widget) { window.previewChatDocument({path:path, title:title, kind:kind}, widget) } }
     Connections { target: backend; function onLayoutChanged() { window.sidebarPreferredWidth = backend.sidebarWidth; window.sidebarCollapsed = backend.sidebarCollapsed } }
     Timer { id: toastTimer; interval: 4200; onTriggered: window.notification = "" }
     RequestDetails { id: requestInspector }
+    Connections { target: backend; function onRequestDetailsRequested(identifier) { requestInspector.show(identifier) } }
     FolderDialog { id: folderDialog; title: I18n.t("选择工作目录"); onAccepted: backend.setWorkspace(selectedFolder.toString()) }
     FileDialog { id: attachmentDialog; title: I18n.t("添加文件"); fileMode: FileDialog.OpenFiles; onAccepted: window.acceptChatFiles(selectedFiles.map(url => url.toString())) }
     ImagePreview { id: imageViewer }
@@ -440,6 +452,14 @@ ApplicationWindow {
                     restoring = true; restoreIndex = row; restoreOffset = 0; restoreAttempts = 0
                     restoreTimer.restart()
                 }
+                function jumpToLatest() {
+                    beginBrowsing()
+                    chatSelection.clear()
+                    followTail = true
+                    restoring = true; restoreIndex = -1; restoreOffset = 0; restoreAttempts = 0
+                    backend.messageModel.requestRange(Math.max(0, count - 4), count - 1)
+                    restoreTimer.restart()
+                }
                 function scrollBy(delta) {
                     beginBrowsing()
                     const top = originY
@@ -645,7 +665,7 @@ ApplicationWindow {
                         id: closingMascot
                         objectName: "replyEndMascot_" + messageRow.index
                         selectionController: chatSelection
-                        visible: !modelData._loading && !messageRow.compactionNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !backend.running && backend.turnStatus.state === "finished"
+                        visible: !modelData._loading && !messageRow.compactionNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !backend.running && (backend.turnStatus.state === "finished" || modelData.stopReason === "stop")
                         x: 33
                     }
                 }
@@ -663,6 +683,18 @@ ApplicationWindow {
                 anchors.right: parent.right
                 anchors.top: conversation.top; anchors.bottom: conversation.bottom
                 view: conversation; enabled: !chatCover.visible; z: 20
+            }
+            ActionButton {
+                id: latestMessages; objectName: "latestMessagesButton"
+                readonly property real distanceFromBottom: Math.max(0, conversation.originY + conversation.contentHeight - conversation.height - conversation.contentY)
+                readonly property bool offered: conversation.visible && !conversation.followTail && !conversation.restoring && !chatCover.visible && distanceFromBottom > Math.max(Theme.control(160), conversation.height * 0.65)
+                anchors.horizontalCenter: composer.horizontalCenter; anchors.bottom: composer.top; anchors.bottomMargin: Theme.control(12)
+                z: 35; implicitHeight: Theme.control(31)
+                text: I18n.t("最新消息"); glyph: "arrow-down"
+                opacity: offered ? 1 : 0; visible: opacity > 0.01; enabled: offered
+                Behavior on opacity { NumberAnimation { duration: 140 } }
+                background: Rectangle { radius: height / 2; color: latestMessages.interactionHovered ? Theme.hover : Theme.surface; border.color: Theme.line }
+                onClicked: conversation.jumpToLatest()
             }
 
             Composer {

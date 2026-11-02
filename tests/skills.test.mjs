@@ -20,16 +20,39 @@ test("folder browser has two standard roots, inert bounded headers and no packag
     writeSkill(join(agentDir, 'skills', 'global-folder', 'assets', 'nested'), 'not-a-separate-package');
     writeSkill(join(root, 'other-package/skills/external'), 'external');
     writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({packages:[join(root, 'other-package')]}));
-    const result = await manageSkills(Pi, { action:'browse', cwd, agentDir, includeProject:true });
+    const result = await manageSkills(undefined, { action:'browse', cwd, agentDir, includeProject:true });
     assert.deepEqual(result.roots, {project:join(cwd, '.pi/skills'),global:join(agentDir, 'skills')});
     assert.equal(result.skills.length, 2);
     assert.deepEqual(result.skills.map(row => row.name), ['workspace-folder', 'global-folder']);
     assert.ok(result.skills.every(row => row.valid && row.kind === 'folder' && row.description === 'Native folder fixture.'));
-    assert.ok(result.skills.every(row => !('attached' in row) && !('enabled' in row)));
+    assert.ok(result.skills.every(row => row.enabled && row.defaultEnabled && row.canToggle));
     const globalOnly = await manageSkills(Pi, {action:'browse',cwd,agentDir,includeProject:false});
     assert.equal(globalOnly.roots.project, '');
     assert.deepEqual(globalOnly.skills.map(row => row.scope), ['global']);
   } finally { rmSync(root, {recursive:true,force:true}); }
+});
+
+test("folder checkboxes follow native defaults and affect only the selected chat's actual loader", async () => {
+  const root=mkdtempSync(join(tmpdir(),"umeko-folder-switches-")),oldHome=process.env.HOME;
+  process.env.HOME=join(root,"home");
+  try {
+    const cwd=join(root,"work"),agentDir=join(root,"agent");mkdirSync(cwd);mkdirSync(agentDir);
+    const global=join(agentDir,"skills/global-guide/SKILL.md"),local=join(cwd,".pi/skills/local-guide/SKILL.md");
+    for(const [path,name] of [[global,"global-guide"],[local,"local-guide"]]){mkdirSync(dirname(path),{recursive:true});writeFileSync(path,`---\nname: ${name}\ndescription: Native checkbox fixture.\n---\nBody.\n`);}
+    const defaults=JSON.stringify({skills:["-"+global]});writeFileSync(join(agentDir,"settings.json"),defaults);
+    const base={cwd,agentDir,agent:{},action:"browse",includeProject:true,skillsEnabled:true};
+    const initial=(await manageSkills(Pi,base)).skills;
+    assert.equal(initial.find(r=>r.path===global).enabled,false);assert.equal(initial.find(r=>r.path===local).enabled,true);
+    const sessionSkills={[global]:true,[local]:false},input={...base,sessionSkills};
+    const selected=(await manageSkills(Pi,input)).skills;
+    assert.equal(selected.find(r=>r.path===global).enabled,true);assert.equal(selected.find(r=>r.path===local).enabled,false);
+    const settings=await prepareNativeSettings(Pi,input);
+    const loader=new Pi.DefaultResourceLoader({cwd,agentDir,settingsManager:settings,noExtensions:true,noPromptTemplates:true,noThemes:true,noContextFiles:true,...await sessionSkillOptions(Pi,input,settings)});
+    await loader.reload();assert.deepEqual(loader.getSkills().skills.map(r=>r.name),["global-guide"]);
+    const untouched=(await manageSkills(Pi,base)).skills;
+    assert.equal(untouched.find(r=>r.path===global).enabled,false);assert.equal(untouched.find(r=>r.path===local).enabled,true);
+    assert.equal(readFileSync(join(agentDir,"settings.json"),"utf8"),defaults);
+  } finally { if(oldHome===undefined)delete process.env.HOME;else process.env.HOME=oldHome;rmSync(root,{recursive:true,force:true}); }
 });
 
 test("native catalog, global defaults and chat overrides preserve resource scopes across reload", async () => {

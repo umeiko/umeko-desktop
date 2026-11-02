@@ -49,7 +49,9 @@ Item {
         id: slashMenu
         z: 20; width: parent.width
         anchors.bottom: parent.top; anchors.bottomMargin: 8
-        maximumHeight: Math.min(Theme.control(360), Math.max(Theme.control(66), root.mapToItem(null, 0, 0).y - 90))
+        // Track y explicitly: mapToItem() alone does not notify when the
+        // bottom-anchored composer moves after its first layout pass.
+        maximumHeight: Math.min(Theme.control(360), Math.max(Theme.control(66), root.y + root.parent.mapToItem(null, 0, 0).y - 90))
         visible: root.slashVisible
         entries: backend.slashCommands.entries
         query: prompt.text

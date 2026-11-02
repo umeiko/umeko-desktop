@@ -66,12 +66,13 @@ GREETINGS = (
 class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObject):
     changed = Signal()
     appearanceChanged = Signal()
+    characterCatalogChanged = Signal()
 
-    @Property('QVariantList', notify=changed)
+    @Property('QVariantList', notify=characterCatalogChanged)
     def characterPacks(self):
         return self._characterPacks()
 
-    @Property('QVariantList', notify=changed)
+    @Property('QVariantList', notify=characterCatalogChanged)
     def subagentCharacterPacks(self):
         return self._characterPacks(True)
 
@@ -95,10 +96,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     def lineSpacing(self):
         return self.store.data['ui']['lineSpacing']
 
-    @Property(bool, constant=True)
+    @Property(bool, notify=changed)
     def webviewAvailable(self):
         from .webview import configuration
-        return configuration()['available']
+        return configuration(self.store.data.get('desktop'))['available']
 
     @Slot(str, result=str)
     def normalizeWebUrl(self, raw):
@@ -117,8 +118,11 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     sidebarChanged = Signal()
     layoutChanged = Signal()
     toast = Signal(str)
+    requestDetailsRequested = Signal(str)
     webRequested = Signal(str, str)
+    desktopSettingsChanged = Signal()
     documentRequested = Signal(str, str, str)
+    widgetDocumentRequested = Signal(str, str, str, str)
     taskFinished = Signal(str, str, bool, bool)
     jobDone = Signal(str, object)
     jobStarted = Signal(str)
@@ -174,6 +178,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self._streaming_timer.setInterval(24)
         self._streaming_timer.timeout.connect(self._publish_stream)
         self._last_sidebar_rows = None
+        self._project_workspace_keys = {}
         self._stream_projection = False
         self.chatChanged.connect(self._update_chat_model)
         self.chatChanged.connect(self._refresh_sidebar)
@@ -281,7 +286,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self._streaming_timer.stop()
         self._view = record
         self.viewChanged.emit()
-        self._pool.touch(record, current=True)
+        self._pool.touch(record, current=True, dirty=False)
         if record.workspace:
             project = self._ensure_project(record.workspace, reopen=True)
             self.store.data.update(workspace=project["path"], activeProject=project["id"])
@@ -312,7 +317,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self.retryChanged.emit()
 
     def _refresh_sidebar(self):
-        rows = self.projectRows
+        rows = self._project_rows()
         if rows != self._last_sidebar_rows:
             self._last_sidebar_rows = rows
             self.sidebarChanged.emit()
@@ -616,6 +621,8 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     def _ensure_project(self, path, reopen=False):
         resolved = str(Path(path).expanduser().resolve())
         key = os.path.normcase(resolved)
+        self._project_workspace_keys[path] = key
+        self._project_workspace_keys[resolved] = key
         project_id = hashlib.sha256(key.encode()).hexdigest()[:16]
         if project_id in self.store.data["removedProjects"]:
             if not reopen:
@@ -629,21 +636,43 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
 
     @Property("QVariantList", notify=sidebarChanged)
     def projectRows(self):
+        # QML reads this from the list model and highlight bindings. A read
+        # must not repeat filesystem canonicalization or rebuild the catalog.
+        if self._last_sidebar_rows is None:
+            self._last_sidebar_rows = self._project_rows()
+        return self._last_sidebar_rows
+
+    def _project_workspace_key(self, path):
+        key = self._project_workspace_keys.get(path)
+        if key is None:
+            key = os.path.normcase(str(Path(path).expanduser().resolve()))
+            if len(self._project_workspace_keys) >= 1024:
+                self._project_workspace_keys.clear()
+            self._project_workspace_keys[path] = key
+        return key
+
+    def _project_rows(self):
         rows, grouped = [], set()
         metadata = self.store.data["sessionMeta"]
         visible_sessions = []
+        by_workspace = {}
         for session in self._sessions:
             workspace = session.get("workspace", "")
             if workspace:
-                key = os.path.normcase(str(Path(workspace).resolve()))
+                key = self._project_workspace_key(workspace)
                 if hashlib.sha256(key.encode()).hexdigest()[:16] in self.store.data["removedProjects"]:
                     continue
             meta = metadata.get(session["id"], {})
             if bool(meta.get("archived")) == self._show_archived:
-                visible_sessions.append({**session, "pinned": bool(meta.get("pinned")), "archived": bool(meta.get("archived"))})
+                item = {**session, "pinned": bool(meta.get("pinned")), "archived": bool(meta.get("archived"))}
+                visible_sessions.append(item)
+                if workspace:
+                    by_workspace.setdefault(key, []).append(item)
         visible_sessions.sort(key=lambda s: not s["pinned"])
+        for children in by_workspace.values():
+            children.sort(key=lambda s: not s["pinned"])
         for project in sorted(self.store.data["projects"], key=lambda p: not p.get("pinned", False)):
-            children = [s for s in visible_sessions if s.get("workspace") and os.path.normcase(str(Path(s["workspace"]).resolve())) == os.path.normcase(project["path"])]
+            children = by_workspace.get(os.path.normcase(project["path"]), [])
             if self._show_archived and not children:
                 continue
             collapsed = project["id"] in self._collapsed_projects
@@ -1596,6 +1625,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
             record.extension_modes = clean_extension_modes(self.store.data["sessionMeta"].get(session_id, {}).get("extensionModes"))
             record.skill_modes = clean_skill_modes(self.store.data["sessionMeta"].get(session_id, {}).get("skillModes"))
             record.blocked_tools = clean_blocked_tools(self.store.data["sessionMeta"].get(session_id, {}).get("blockedTools"))
+            record.pi_capabilities = self.store.data["sessionMeta"].get(session_id, {}).get("piCapabilities") or {}
             effort = self.store.data["sessionMeta"].get(session_id, {}).get("reasoningEffort", record.reasoning_effort)
             record.reasoning_effort = effort if effort in ("off", "low", "high", "max") else "off"
             record.history = copy.deepcopy(session.get("history", []))
@@ -1607,9 +1637,8 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
                 except OSError:
                     self.toast.emit("原生会话文件暂时无法读取")
         self._activate(record)
-        if record.model and not record.process and not record.busy and not record.transcript:
-            # QProcess.start() is asynchronous; the transcript is already visible.
-            self._command_pi("inspect", record=record)
+        # Browsing history is read-only. Start Pi lazily for the next command or
+        # explicit tool inventory, rather than re-projecting history on every visit.
 
     @Slot(str)
     def deleteSession(self, session_id):
@@ -1704,7 +1733,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
             try:
                 self.jobDone.emit(name, {"ok": True, "value": fn()})
             except Exception as exc:
-                self.jobDone.emit(name, {"ok": False, "value": str(exc)[:250]})
+                self.jobDone.emit(name, {"ok": False, "value": str(exc)[:1200 if name.startswith('model-windows:') else 250]})
         threading.Thread(target=run, daemon=True).start()
 
     def _on_job_done(self, name, result):

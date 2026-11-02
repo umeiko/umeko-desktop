@@ -37,7 +37,8 @@ def diagnostic(message):
 def create_application():
     root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
     from app.webview import configure, configure_engine
-    configure(root)
+    from app.desktop_preferences import startup_settings
+    configure(root, enabled=startup_settings()['webDisplay'] == 'embedded')
     app = QApplication(sys.argv)
     if not QFontDatabase.families() and os.name == "nt":
         # The Windows offscreen test platform does not discover system fonts.

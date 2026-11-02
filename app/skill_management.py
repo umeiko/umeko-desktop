@@ -8,7 +8,7 @@ import uuid
 from collections import OrderedDict
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QUrl
+from PySide6.QtCore import QObject, QUrl, QTimer
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 
 from .npm_config import npm_environment
@@ -31,6 +31,9 @@ def skill_command(release, cwd, agent_dir, agent, **action):
         raise RuntimeError('Skill discovery failed') from None
     if result.returncode or not payload.get('ok'):
         raise RuntimeError(payload.get('error', 'Skill operation failed'))
+    if isinstance(payload.get('skills'), list):
+        from .bundled_skills import describe_bundled
+        describe_bundled(payload['skills'], agent_dir)
     return payload
 
 
@@ -48,8 +51,8 @@ class SkillJobs(QObject):
         self.b.jobDone.connect(self._finished)
 
     def idle(self):
-        if self.b.busy or self.b.kernelBusy or self.b.piManagement.busy or any(
-                row['status'] == 'running' for row in self.jobs.values()):
+        if self.b.busy or getattr(self.b._view,'subagents_active',False) or self.b.kernelBusy or self.b.piManagement.busy or any(
+                row['status'] == 'running' and row['operation'] != 'skills.preview' for row in self.jobs.values()):
             raise ValueError('Pi is busy; retry when the chat and management jobs are idle')
 
     def _context(self, request):
@@ -59,12 +62,15 @@ class SkillJobs(QObject):
             raise ValueError('The target chat or workspace changed')
         return record
 
-    def get(self, request, identifier, offset=0, limit=100):
+    def get(self, request, identifier, offset=0, limit=100, wait=False):
         row = self.jobs.get(identifier)
         owner = row and row['owner']
         if not owner or owner['widget'] != request['widget'] or owner['worker'] is not request['worker'] or any(
                 owner['session'].get(k) != request['session'].get(k) for k in ('token', 'workspace')):
             raise ValueError('Host job does not belong to this Widget instance and chat')
+        if wait and row['status'] == 'running':
+            row.setdefault('waiters', []).append((request, offset, limit))
+            return None
         result = row['result']
         # Page the completed job's immutable snapshot, never rerun discovery for
         # a next page. The byte budget also covers long paths and UTF-8 metadata.
@@ -119,10 +125,10 @@ class SkillJobs(QObject):
         record = self._context(request)
         operation, args = request['operation'], request['arguments']
         direct_import = operation in ('skills.paste', 'skills.importLocal')
-        folder_reads = ('skills.browse', 'skills.open', 'skills.copy', 'skills.insert')
+        folder_reads = ('skills.browse', 'skills.preview', 'skills.open', 'skills.copy', 'skills.insert')
         if operation not in folder_reads:
             self.idle()
-        elif any(row['status'] == 'running' for row in self.jobs.values()):
+        elif any(row['status'] == 'running' and row['operation'] != 'skills.preview' for row in self.jobs.values()):
             raise ValueError('Skill manager is busy; retry shortly')
         release, cwd, agent_dir, agent = self.b.piManagement._context()
         key = (record.key, record.workspace)
@@ -148,8 +154,8 @@ class SkillJobs(QObject):
             import_rows = [row for row in rows if Path(row['path']).parent.is_relative_to(destination.resolve())]
         if destination is not None and args.get('project') and not record.workspace:
             raise ValueError('Choose a project before importing project skills')
-        folder_ops = ('skills.open', 'skills.copy', 'skills.insert', 'skills.rename', 'skills.delete')
-        folder = self.folder_for(request, args['id']) if operation in folder_ops else None
+        folder_ops = ('skills.preview', 'skills.open', 'skills.copy', 'skills.insert', 'skills.rename', 'skills.delete')
+        folder = self.folder_for(request, args['id']) if operation in folder_ops or operation == 'skills.attach' and row.get('kind') == 'folder' else None
         clipboard_source = ''
         if operation == 'skills.paste':
             data = QGuiApplication.clipboard().mimeData()
@@ -157,20 +163,26 @@ class SkillJobs(QObject):
             if len(urls) != 1 or not urls[0].isLocalFile():
                 raise ValueError('请先复制一个本地 Skill 文件夹或压缩包')
             clipboard_source = urls[0].toLocalFile()
+        def finish_browse(value):
+            from .bundled_skills import describe_bundled
+            from .skill_folders import folder_snapshots
+            roots = {'global': Path(agent_dir).resolve() / 'skills'}
+            if record.workspace:
+                roots['project'] = Path(cwd).resolve() / '.pi/skills'
+            describe_bundled(value.get('skills', []), agent_dir)
+            value['roots'] = {scope: str(path) for scope, path in roots.items()}
+            value['_folderApprovals'] = folder_snapshots(value, roots)
+            return value
         def run():
             if operation == 'skills.browse':
-                from .skill_folders import folder_snapshots
-                roots = {'global': Path(agent_dir).resolve() / 'skills'}
-                if record.workspace:
-                    roots['project'] = Path(cwd).resolve() / '.pi/skills'
-                value = skill_command(release, Path(cwd).resolve(), Path(agent_dir).resolve(), agent,
-                                      action='browse', includeProject=bool(record.workspace))
-                value['roots'] = {scope: str(path) for scope, path in roots.items()}
-                value['_folderApprovals'] = folder_snapshots(value, roots)
-                return value
+                return finish_browse(skill_command(release, Path(cwd).resolve(), Path(agent_dir).resolve(), agent,
+                                      action='browse', includeProject=bool(record.workspace), **options))
             if operation in folder_ops:
                 from .skill_folders import checked_folder, rename_folder, delete_folder
                 directory = checked_folder(folder)
+                if operation == 'skills.preview':
+                    from .skill_folders import preview_folder
+                    return {'ok': True, 'details': {'id': args['id'], **preview_folder(folder)}}
                 if operation == 'skills.rename':
                     directory = rename_folder(folder, args['name'])
                 elif operation == 'skills.delete':
@@ -197,6 +209,10 @@ class SkillJobs(QObject):
                 from .skill_import import commit_import
                 return {'ok': True, **commit_import(preview['value'], args.get('decisions', {}), preview['destination'])}
             if operation == 'skills.attach':
+                if folder:
+                    from .skill_folders import checked_folder
+                    checked_folder(folder)
+                if row.get('canToggle') is False:raise ValueError('此 Skill 当前不可启用，请检查格式、恢复模式或刷新列表')
                 return {'ok': True, 'path': row['path'], 'enabled': args['enabled']}
             if operation == 'skills.reveal':
                 return {'ok': True, 'directory': str(Path(row['path']).parent)}
@@ -217,7 +233,19 @@ class SkillJobs(QObject):
             completed = next((key for key, value in self.jobs.items() if value['status'] != 'running'), None)
             if completed is None: break
             self.jobs.pop(completed)
-        self.b._job('widget-skills:' + identifier, run)
+        name = 'widget-skills:' + identifier
+        if operation == 'skills.browse':
+            def received(result):
+                if identifier not in self.jobs:
+                    return
+                if result['ok']:
+                    self.b._job(name, lambda: finish_browse(result['value']))
+                else:
+                    self._finished(name, result)
+            query = getattr(self.b._pool, 'query_catalog', lambda *_: False)
+            if query(record, 'skills', received):
+                return {'ok': True, 'accepted': True, 'jobId': identifier}
+        self.b._job(name, run)
         return {'ok': True, 'accepted': True, 'jobId': identifier}
 
     def _finished(self, name, result):
@@ -229,8 +257,13 @@ class SkillJobs(QObject):
             if not result['ok']: raise ValueError(str(result['value']))
             value, record, operation = result['value'], job['record'], job['operation']
             if operation == 'skills.attach':
-                if record.busy or self.b.kernelBusy or self.b.piManagement.busy:
+                if record.busy or record.subagents_active or self.b.kernelBusy or self.b.piManagement.busy:
                     raise ValueError('The chat became busy; no chat change was applied')
+                source=self.catalog.get((record.key,record.workspace),[])
+                selected=next((row for row in source if row['id']==job['owner']['arguments']['id']),{})
+                if selected.get('kind')=='folder':
+                    from .skill_folders import checked_folder
+                    checked_folder(self.folder_for(job['owner'],selected['id']))
                 old = dict(record.skill_modes)
                 record.skill_modes[value['path']] = value['enabled']
                 try:
@@ -241,6 +274,8 @@ class SkillJobs(QObject):
                     record.skill_modes = old
                     self.b.store.data['sessionMeta'].setdefault(record.id, {})['skillModes'] = old
                     raise
+                if selected:
+                    selected['enabled'] = value['enabled']
                 record.stale = True
                 if record.process and not record.busy and not record.subagents_active:
                     self.b._pool.retire(record)
@@ -277,7 +312,7 @@ class SkillJobs(QObject):
                         from .plugin_file_actions import copy_files
                         copy_files([directory])
                 elif args['mode'] == 'preview':
-                    self.b.documentRequested.emit(str(directory / 'SKILL.md'), directory.name, 'file')
+                    self.b.widgetDocumentRequested.emit(str(directory / 'SKILL.md'), directory.name, 'file', job['owner']['widget'])
                 elif not QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory if args['mode'] == 'reveal' else directory / 'SKILL.md'))):
                     raise ValueError('无法打开文件，请检查系统文件关联')
             elif operation in ('skills.default', 'skills.remove', 'skills.import', 'skills.paste', 'skills.importLocal', 'skills.rename', 'skills.delete'):
@@ -287,6 +322,18 @@ class SkillJobs(QObject):
             job['result'], job['status'] = value, 'completed'
         except (ValueError, TypeError, KeyError, OSError, RuntimeError) as error:
             job['result'], job['status'] = {'ok': False, 'error': str(error)[:800]}, 'failed'
+        for request, offset, limit in job.pop('waiters', []):
+            def deliver(request=request, offset=offset, limit=limit):
+                if job['id'] not in self.jobs:
+                    return
+                try:
+                    self.host._owner(request)
+                    self.host._reply(request, self.get(request, job['id'], offset, limit))
+                except (ValueError, TypeError, KeyError):
+                    self.host._reply(request, {'ok': False, 'error': 'The target Skill page changed'})
+            # Finish the native job signal before QML can navigate or destroy
+            # the old page in response. Revalidate its owner on delivery.
+            QTimer.singleShot(0, self, deliver)
 
     def stop(self, widget):
         for key in [key for key, owner in self.catalog_owners.items() if owner['widget'] == widget]:

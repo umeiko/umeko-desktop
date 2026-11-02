@@ -118,6 +118,7 @@ try:
     g.save();assert json.loads(g.registry.read_text())['agents'][0]['sessionFile']==coordinator.file
     # Projects with identical folder names retain their user-assigned names.
     first=base/'client'/'workspace';second=base/'server'/'workspace'
+    project_key=first.as_posix().lower() if os.name=='nt' else first.as_posix()
     first.mkdir(parents=True);second.mkdir(parents=True)
     b.store.data['projects']=[{'id':'project-client','name':'客户端','path':str(first)},{'id':'project-server','name':'服务端','path':str(second)}]
     for sid,title,workspace in [('tree-client-one','修复输入框',first),('tree-client-two','调整布局',first),('tree-server','部署服务',second)]:
@@ -126,7 +127,7 @@ try:
     assert find('globalSubagentsHeading').property('text')=='全局子智能体'
     window.grabWindow().save(str(out/'list.png'))
     click('agentBusTabButton')
-    wait(lambda:find('agentBusProject_'+str(first)) is not None,'Project grouping missing')
+    wait(lambda:find('agentBusProject_'+project_key) is not None,'Project grouping missing')
     wait(lambda:find('agentBusConversation_session:tree-client-one') is not None,'Conversation row missing')
     click('agentBusConversation_session:tree-client-one')
     wait(lambda:find('agentBusCheckbox_session:tree-client-one_'+identifier) is not None,'Pair checkbox missing from secondary page')
@@ -134,7 +135,7 @@ try:
     wait(lambda:identifier in g.bridges.get('tree-client-one',[]),'Checkbox granted the wrong conversation')
     window.grabWindow().save(str(out/'bus-connections.png'));click('agentBusBackButton')
     assert not g.bridges.get('tree-client-two') and not g.bridges.get('tree-server')
-    click('agentBusProject_'+str(first))
+    click('agentBusProject_'+project_key)
     wait(lambda:find('agentBusConversation_session:tree-client-one') is None,'Project did not collapse')
     assert find('agentBusConversation_session:tree-server') is not None
     find('agentBusSearch').setProperty('text','修复输入框')
@@ -142,7 +143,7 @@ try:
     assert find('agentBusConversation_session:tree-client-one') is not None
     find('agentBusSearch').setProperty('text','')
     wait(lambda:find('agentBusConversation_session:tree-client-one') is None,'Search changed the saved collapse state')
-    click('agentBusProject_'+str(first));QTest.qWait(150)
+    click('agentBusProject_'+project_key);QTest.qWait(150)
     window.grabWindow().save(str(out/'agent-bus-projects.png'))
     click('globalSubagentsHelpButton')
     wait(lambda:find('globalSubagentsHelpPopup').property('opened'),'Help did not open')
@@ -165,12 +166,12 @@ try:
     wait(lambda:find('agentBusProjectTree').property('count')>120,'Long tree snapshot missing')
     from PySide6.QtCore import QMetaObject
     assert QMetaObject.invokeMethod(find('agentBusProjectTree'),'positionViewAtEnd')
-    wait(lambda:find('agentBusProject_'+str(first)) is not None,'Could not scroll to the project')
-    QTest.qWait(200);click('agentBusProject_'+str(first))
+    wait(lambda:find('agentBusProject_'+project_key) is not None,'Could not scroll to the project')
+    QTest.qWait(200);click('agentBusProject_'+project_key)
     wait(lambda:find('agentBusConversation_session:tree-client-one') is None,'Long project did not collapse')
     QTest.qWait(800)
-    assert find('agentBusProject_'+str(first)) is not None,'Collapsing or polling jumped away from the project'
-    click('agentBusProject_'+str(first))
+    assert find('agentBusProject_'+project_key) is not None,'Collapsing or polling jumped away from the project'
+    click('agentBusProject_'+project_key)
     wait(lambda:find('agentBusConversation_session:tree-client-one') is not None,'Long project did not reopen')
     # Ordinary native sessions propose a fully filled creation form, never an
     # actual definition until the user confirms it in the Widget.
@@ -227,6 +228,19 @@ try:
     QTest.qWait(750);window.grabWindow().save(str(out/'pending-bus-queue.png'))
     for request in (requests[0],requests[2]):g.handle('cancelRequest',{'id':request})
     queued_target.busy=False;g.outbox.clear();g.timer.start()
+    # The shared Widget message renderer exposes the host's request inspector.
+    failure=b.gateway.diagnostics.failure({'name':'Fixture'}, {'messages':['widget request']},
+        {'status':400,'body':'raw coordinator server failure'}, 'fixture error')
+    queued_target.messages=[{'role':'assistant','text':'Partial coordinator reply','error':True,
+        'errorMessage':str(failure),'stopReason':'error'}]
+    g.changed(False)
+    wait(lambda:find('widgetRequestDetails_0') is not None and find('widgetRequestDetails_0').isVisible(),'Widget request-details action missing')
+    click('widgetRequestDetails_0')
+    inspector=window.findChild(QObject,'requestDetailsDialog')
+    wait(lambda:inspector.property('opened'),'Widget did not open the shared request inspector')
+    click('requestDetailsResponseTab')
+    assert 'raw coordinator server failure' in find('requestDetailsText').property('text')
+    inspector.close()
     kazuhiko=g.handle('create',{'character':'kazuhiko'})
     kazuhiko_row=g.agents[kazuhiko['id']]
     # Automatic creation above may already have picked this character.

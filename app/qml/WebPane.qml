@@ -15,6 +15,7 @@ Rectangle {
     readonly property bool subagentInputFocused: !!agentSurface.item && agentSurface.item.inputFocused
     readonly property bool pluginInputFocused: !!pluginSurface.item && pluginSurface.item.activeFocus
     property string documentPath: ""
+    property string previewWidget: ""
     property real preferredWidth: 480
     readonly property real animatedWidth: Math.max(0, motion.value.width - 1)
     readonly property bool moving: motion.moving && !resizing
@@ -25,9 +26,11 @@ Rectangle {
     clip: true
     // Opened by fresh Agent deliveries or an explicit click on a delivered URL card.
     function submit(url, title) {
+        if (!backend.webviewAvailable) return
+        previewWidget = ""
         backend.desktopPlugins.closePage()
         const clean = backend.normalizeWebUrl(url)
-        if (!clean || !backend.webviewAvailable) return
+        if (!clean) return
         if (mode === "subagent") backend.subagents.closeView()
         backend.documentPreview.cancel()
         pageTitle = title || ""
@@ -36,17 +39,24 @@ Rectangle {
         mode = "web"
         opened = true
     }
-    function showDocument(item) {
-        backend.desktopPlugins.closePage()
+    function showDocument(item, sourceWidget) {
+        const source = sourceWidget && backend.desktopPlugins.page.id === sourceWidget ? sourceWidget : ""
+        previewWidget = source
+        if (!source) backend.desktopPlugins.closePage()
         if (mode === "subagent") backend.subagents.closeView()
         address.focus = false
         documentPath = item.path; pageTitle = item.title || item.name || item.path.split(/[\\/]/).pop()
         mode = "document"; opened = true
         backend.documentPreview.load(documentPath, item.kind || "file")
     }
-    function showSubagent() { backend.desktopPlugins.closePage(); address.focus = false; backend.documentPreview.cancel(); mode = "subagent"; opened = true }
-    function showPlugin() { if (mode === "subagent") backend.subagents.closeView(); address.focus = false; backend.documentPreview.cancel(); mode = "plugin"; opened = true }
-    function dismiss() { backend.desktopPlugins.closePage(); address.focus = false; opened = false; backend.documentPreview.cancel(); if (mode === "subagent") backend.subagents.closeView() }
+    function returnFromDocument() {
+        const source = previewWidget
+        if (source && backend.desktopPlugins.page.id === source) { mode = "plugin"; previewWidget = ""; backend.documentPreview.cancel() }
+        else dismiss()
+    }
+    function showSubagent() { previewWidget = ""; backend.desktopPlugins.closePage(); address.focus = false; backend.documentPreview.cancel(); mode = "subagent"; opened = true }
+    function showPlugin() { previewWidget = ""; if (mode === "subagent") backend.subagents.closeView(); address.focus = false; backend.documentPreview.cancel(); mode = "plugin"; opened = true }
+    function dismiss() { previewWidget = ""; backend.desktopPlugins.closePage(); address.focus = false; opened = false; backend.documentPreview.cancel(); if (mode === "subagent") backend.subagents.closeView() }
     function snapWidth() { motion.snap() }
     function navigate() {
         const url = backend.normalizeWebUrl(address.text)
@@ -61,8 +71,9 @@ Rectangle {
         visible: pane.mode !== "subagent"
         width: parent.width; height: Theme.control(pane.mode === "plugin" ? 35 : 44)
         WidgetIcon {visible:pane.mode==="plugin";plugin:backend.desktopPlugins.page;x:16;anchors.verticalCenter:parent.verticalCenter;width:Theme.icon(15);height:width}
-        Glyph {visible:pane.mode!=="plugin";x:16;anchors.verticalCenter:parent.verticalCenter;name:pane.mode==="web"?"globe":backend.documentPreview.state.kind==="code"?"code":"file";width:Theme.icon(15);height:width}
-        Text { font.family: Theme.fontFamily; x: 40; width: Math.max(0, parent.width - 88); anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: pane.mode === "web" && surface.item && surface.item.title ? surface.item.title : pane.mode === "plugin" ? I18n.widgetText(backend.desktopPlugins.page, backend.desktopPlugins.page.title || "") : pane.pageTitle || pane.pageUrl; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: Theme.font(11, visible) }
+        ActionButton { objectName:"backDocumentPreviewButton";visible:pane.mode==="document";x:8;anchors.verticalCenter:parent.verticalCenter;width:Theme.control(70);height:Theme.control(30);quiet:true;glyph:"arrow-left";text:I18n.t("返回");hint:I18n.t(pane.previewWidget ? "返回 Widget" : "收起预览");onClicked:pane.returnFromDocument() }
+        Glyph {visible:pane.mode!=="plugin";x:pane.mode==="document"?Theme.control(88):16;anchors.verticalCenter:parent.verticalCenter;name:pane.mode==="web"?"globe":backend.documentPreview.state.kind==="code"?"code":"file";width:Theme.icon(15);height:width}
+        Text { font.family: Theme.fontFamily; x: pane.mode==="document"?Theme.control(112):40; width: Math.max(0, parent.width - x - 48); anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: pane.mode === "web" && surface.item && surface.item.title ? surface.item.title : pane.mode === "plugin" ? I18n.widgetText(backend.desktopPlugins.page, backend.desktopPlugins.page.title || "") : pane.pageTitle || pane.pageUrl; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: Theme.font(11, visible) }
         ActionButton { objectName: "closeWebPaneButton"; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: width; quiet: true; glyph: "x"; hint: I18n.t("关闭预览"); onClicked: pane.dismiss() }
     }
     Row {
@@ -124,7 +135,7 @@ Rectangle {
         id: surface; objectName: "webSurfaceLoader"
         anchors.left: parent.left; anchors.leftMargin: 6; anchors.right: parent.right; anchors.rightMargin: 12
         anchors.top: toolbar.bottom; anchors.topMargin: 1; anchors.bottom: parent.bottom; anchors.bottomMargin: 12
-        active: pane.opened && pane.mode === "web" && pane.surfaceReady
+        active: backend.webviewAvailable && pane.opened && pane.mode === "web" && pane.surfaceReady
         visible: !pane.moving && !pane.blocked && (!item || !item.errorMessage)
         source: active ? "WebSurface.qml" : ""
         onLoaded: item.url = pane.pageUrl
@@ -162,9 +173,10 @@ Rectangle {
     Loader {
         id: pluginSurface; objectName: "desktopPluginSurfaceLoader"
         x: 1; y: heading.height; width: Math.max(0,pane.preferredWidth-1); height: parent.height-y
-        active: pane.opened && pane.mode === "plugin"
+        active: pane.opened && (pane.mode === "plugin" || pane.mode === "document" && !!pane.previewWidget)
+        visible: pane.mode === "plugin"
         source: active ? "DesktopPluginSurface.qml" : ""
-        onLoaded: item.live = Qt.binding(function() { return pane.live })
+        onLoaded: item.live = Qt.binding(function() { return pane.live && pane.mode === "plugin" })
     }
     Connections { target: backend.desktopPlugins; function onDismissed() { if (pane.mode === "plugin") { pane.opened = false } } }
     Loader {

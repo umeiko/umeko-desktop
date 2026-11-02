@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Controls.impl
 import QtQuick.Layouts
 
 Column {
@@ -7,18 +8,20 @@ Column {
     property bool piOpen: false
     property bool toolsOpen: false
     property bool pluginsOpen: false
+    property bool desktopOpen: false
     property real availableHeight: 600
     signal navigated()
-    function openPlugins(identifier) { piOpen = false; pluginsOpen = true; if(identifier)pluginManager.selectedId=identifier }
+    function openPlugins(identifier) { piOpen = false; desktopOpen = false; pluginsOpen = true; if(identifier)pluginManager.selectedId=identifier }
     spacing: 18
-    onPiOpenChanged: { if (!piOpen) toolsOpen = false; else { pluginsOpen = false; backend.piManagement.scan() }; navigated() }
+    onPiOpenChanged: { if (!piOpen) toolsOpen = false; else { pluginsOpen = false; desktopOpen = false; backend.piManagement.scan() }; navigated() }
     onToolsOpenChanged: navigated()
     onPluginsOpenChanged: navigated()
-    onVisibleChanged: if (!visible) { piOpen = false; pluginsOpen = false }
+    onDesktopOpenChanged: { if (desktopOpen) { piOpen = false; pluginsOpen = false }; navigated() }
+    onVisibleChanged: if (!visible) { piOpen = false; pluginsOpen = false; desktopOpen = false }
     Button {
         id: piCard
         objectName: "openPiSettingsButton"
-        width: parent.width; implicitHeight: Theme.control(96); visible: !root.piOpen && !root.pluginsOpen
+        width: parent.width; implicitHeight: Theme.control(96); visible: !root.piOpen && !root.pluginsOpen && !root.desktopOpen
         padding: 20; hoverEnabled: true
         Accessible.name: I18n.t("配置 Pi Coding Agent")
         HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -52,7 +55,7 @@ Column {
     Button {
         id: pluginsCard
         objectName: "openDesktopPluginsButton"
-        width: parent.width; implicitHeight: Theme.control(72); visible: !root.piOpen && !root.pluginsOpen
+        width: parent.width; implicitHeight: Theme.control(72); visible: !root.piOpen && !root.pluginsOpen && !root.desktopOpen
         padding: 20; hoverEnabled: true
         Accessible.name: I18n.t("Widgets")
         HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -62,12 +65,47 @@ Column {
             Rectangle {
                 Layout.preferredWidth: Theme.icon(40); Layout.preferredHeight: Theme.icon(40)
                 radius: 10; color: "transparent"
-                Image { objectName: "pluginManagerArtwork"; anchors.centerIn: parent; source: "../icons/fluent/plugin-manager.png"; width: Theme.icon(42); height: Theme.icon(42); sourceSize: Qt.size(128,128); fillMode: Image.PreserveAspectFit; mipmap: true }
+                IconImage { objectName: "pluginManagerArtwork"; anchors.centerIn: parent; source: "../icons/widget-manager.svg"; color: Theme.ink; width: Theme.icon(32); height: Theme.icon(32); sourceSize: Qt.size(96,96); fillMode: Image.PreserveAspectFit }
             }
             Text { font.family: Theme.fontFamily; text: I18n.t("Widgets"); color: Theme.ink; font.pixelSize: Theme.font(16, visible); font.weight: Font.DemiBold; Layout.fillWidth: true }
             Glyph { name: "chevron-right"; width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }
         }
         onClicked: root.openPlugins()
+    }
+    Button {
+        id: desktopCard
+        objectName: "openUmekoDesktopSettingsButton"
+        width: parent.width; implicitHeight: Theme.control(72); visible: !root.piOpen && !root.pluginsOpen && !root.desktopOpen
+        padding: 20; hoverEnabled: true
+        Accessible.name: "Umeko Desktop"
+        HoverHandler { cursorShape: Qt.PointingHandCursor }
+        background: Rectangle { radius: 12; color: desktopCard.hovered ? Theme.hover : Theme.surface; border.color: desktopCard.activeFocus ? Theme.accent : Theme.line }
+        contentItem: RowLayout {
+            spacing: 16
+            Item {
+                Layout.preferredWidth: Theme.icon(40); Layout.preferredHeight: Theme.icon(40)
+                Image {
+                    objectName: "umekoDesktopSettingsArtwork"
+                    anchors.centerIn: parent; width: Theme.icon(42); height: width
+                    source: "../icons/yanami-desktop-settings-v2.png"; sourceSize: Qt.size(256,256)
+                    fillMode: Image.PreserveAspectFit; mipmap: true
+                }
+            }
+            Text { font.family: Theme.fontFamily; text: "Umeko Desktop"; color: Theme.ink; font.pixelSize: Theme.font(16); font.weight: Font.DemiBold; Layout.fillWidth: true }
+            Glyph { name: "chevron-right"; width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }
+        }
+        onClicked: root.desktopOpen = true
+    }
+    Column {
+        width: parent.width; visible: root.desktopOpen; spacing: 14
+        RowLayout {
+            width: parent.width; spacing: 8
+            ActionButton { objectName: "backFromUmekoDesktopButton"; text: "Agent"; glyph: "arrow-left"; quiet: true; onClicked: root.desktopOpen = false }
+            Glyph { name: "chevron-right"; width: Theme.icon(13); height: Theme.icon(13) }
+            Text { font.family: Theme.fontFamily; text: "Umeko Desktop"; color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.Medium }
+            Item { Layout.fillWidth: true }
+        }
+        DesktopSettings { width: parent.width }
     }
     Column {
         width: parent.width; visible: root.pluginsOpen; spacing: 14

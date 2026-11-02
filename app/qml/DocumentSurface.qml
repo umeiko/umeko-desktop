@@ -59,7 +59,7 @@ Item {
     Loader {
         id: browser; objectName: "htmlPreviewBrowser"
         anchors.fill: parent; anchors.margins: 8
-        active: root.browserMode && root.browserReady
+        active: backend.webviewAvailable && root.browserMode && root.browserAllowed && root.browserReady
         visible: root.browserAllowed && (!item || !item.errorMessage)
         source: active ? "WebSurface.qml" : ""
         onLoaded: item.url = root.previewUrl

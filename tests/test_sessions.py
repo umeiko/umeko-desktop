@@ -93,6 +93,31 @@ class SessionTests(unittest.TestCase):
         self.assertTrue(advertised())
         self.assertIn('Read me only', (folder / 'SKILL.md').read_text())
 
+    def test_widget_catalogs_reuse_the_streaming_chat_process(self):
+        c = self.controller
+        folder = self.path / 'agent/skills/live-guide'
+        folder.mkdir(parents=True)
+        (folder / 'SKILL.md').write_text('---\nname: live-guide\ndescription: Live catalog fixture.\n---\nInstructions.', encoding='utf-8')
+        self.assertTrue(c.send('TASK A'))
+        record = c._view
+        self.wait_for(self.started['A'].is_set, 'streaming fixture did not start')
+        pid, transcript = record.process.processId(), record.messages
+        with patch('app.pi_management.resource_command', side_effect=AssertionError('Started another Node process')):
+            c.piManagement.scan()
+            self.wait_for(lambda: not c.piManagement.busy, 'live extension catalog')
+            self.assertTrue(c.piManagement.extensionsCurrent)
+            self.assertTrue(any(row['path']=='builtin:codemode' for row in c.piManagement.extensions))
+        replies = []
+        self.assertTrue(c._pool.query_catalog(record, 'skills', replies.append))
+        self.wait_for(lambda:bool(replies), 'live Skill catalog')
+        self.assertTrue(replies[0]['ok'], replies)
+        self.assertTrue(any(row['name']=='live-guide' for row in replies[0]['value']['skills']))
+        self.assertEqual(record.process.processId(), pid)
+        self.assertIs(record.messages, transcript, 'A directory read rebuilt the chat')
+        self.assertTrue(record.busy, 'A directory read ended the active task')
+        self.gates['A'].set()
+        self.wait_for(lambda:not record.busy, 'streaming task completion')
+
     def test_concurrent_switching_lru_history_unread_and_drafts(self):
         c = self.controller
         c._pool.limit = 2
@@ -134,9 +159,9 @@ class SessionTests(unittest.TestCase):
         self.assertTrue(Path(b.file).is_file())
         c.openSession(b_id)
         self.assertEqual(c.messages[-1]["text"], "RESULT B", "history waited for Pi")
-        self.assertTrue(c.loading)
+        self.assertFalse(c.loading, "Browsing a cached transcript started Pi")
+        self.assertIsNone(b.process)
         self.assertFalse(c.running)
-        self.wait_for(lambda: not b.busy, "cold Pi resume")
         self.gates["A"].set()
         self.wait_for(lambda: not a.busy, "first background completion")
         self.assertTrue(c._session_flags(a_id)["unread"])
@@ -269,18 +294,47 @@ class SessionTests(unittest.TestCase):
         self.assertAlmostEqual(c.turnStatus["elapsed"], 12.5)
         self.assertEqual(c._session_flags("saved-turn")["outcome"], "finished")
 
-    def test_history_without_turn_metadata_uses_assistant_stop_reason(self):
+    def test_history_visit_does_not_invent_completion_but_keeps_failure_and_stop(self):
         c = self.controller
-        for reason, outcome in (("stop", "finished"), ("error", "failed"), ("aborted", "stopped")):
+        for reason, outcome in (("stop", ""), ("error", "failed"), ("aborted", "stopped")):
             with self.subTest(stop_reason=reason):
                 session_id = "history-" + reason
                 c._sessions.append({"id": session_id, "title": "Historical turn", "file": "",
                     "messages": [{"role": "assistant", "text": "historical reply", "stopReason": reason}]})
-                with patch.object(c, "_command_pi", return_value=True):
+                with patch.object(c, "_command_pi", return_value=True) as command:
                     c.openSession(session_id)
+                    # A visit and a duplicate readiness event cannot complete a task.
+                    c._handle_pi_event(c._view, {"type": "done"})
+                    command.assert_not_called()
                 self.assertFalse(c.running)
                 self.assertEqual(c.turnStatus["state"], outcome)
                 self.assertEqual(c._session_flags(session_id)["outcome"], outcome)
+                self.assertNotIn("lastTurn", c.store.data["sessionMeta"].get(session_id, {}))
+                self.assertIsNone(c._view.process)
+
+    def test_sidebar_bindings_reuse_rows_and_canonicalize_each_workspace_once(self):
+        c = self.controller
+        workspaces = [str(self.path / ('project-' + str(i))) for i in range(3)]
+        for workspace in workspaces: c._ensure_project(workspace, reopen=True)
+        c._sessions = [{"id": str(i), "title": "History", "workspace": workspaces[i % 3]} for i in range(11)]
+        c._project_workspace_keys.clear()
+        c._last_sidebar_rows = None
+        resolved = []
+        original = Path.resolve
+        def resolve(path, *args, **kwargs):
+            resolved.append(str(path))
+            return original(path, *args, **kwargs)
+        with patch.object(Path, 'resolve', resolve):
+            c._refresh_sidebar()
+            self.assertEqual(len(resolved), 3)
+            expected = c.projectRows
+            for _ in range(20): self.assertIs(c.projectRows, expected)
+            self.assertEqual(len(resolved), 3)
+            c._view.id = '4'
+            c._refresh_sidebar()
+            self.assertEqual(len(resolved), 3)
+            self.assertTrue(next(row for row in c.projectRows if row['id'] == '4')['selected'])
+            self.assertEqual(sum(row['kind'] == 'session' for row in c.projectRows), 11)
 
     def test_context_usage_follows_view_without_background_session_leaks(self):
         c = self.controller

@@ -4,12 +4,10 @@
   "id": "pi-manager",
   "version": "1.0.0",
   "name": "插件管理",
-  "description": "搜索本地 Pi 插件，查看说明、工具与来源，并管理启用范围。",
+  "description": "按会话管理 Pi 插件与每个工具，提供标准、极简、默认和自定义预设。",
   "summary": "管理本地 Pi 插件",
   "author": "Umeko",
-  "icon": {
-    "path": "qml/assets/pi.svg"
-  },
+  "icon": "pi",
   "lifecycle": "session",
   "entrypoint": "scripts/plugin.py:create_plugin",
   "page": "qml/Main.qml",

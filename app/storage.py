@@ -15,6 +15,7 @@ from ctypes import wintypes
 from .platform_support import data_directory, legacy_data_directory, migrate_profile, normalize_projects
 from .api_keys import make_key
 from PySide6.QtCore import QLocale
+from .desktop_preferences import DEFAULTS as DESKTOP_DEFAULTS, normalize as desktop_settings
 
 
 class Blob(ctypes.Structure):
@@ -69,6 +70,7 @@ DEFAULTS = {
     "employeeId": "", "password": "", "workspace": "", "dark": False, "theme": "light", "character": "yanami",
     "selectedProvider": "", "selectedModel": "",
     "providers": [],
+    "desktop": DESKTOP_DEFAULTS,
     "agent": {"maxTokens": 32768, "outputLimitDefaultVersion": 1, "instructions": "", "autoCompaction": True,
               "agentDir": "", "skillPaths": [], "extensionPaths": [], "safeMode": False, "toolPermissionMode": "auto",
               "npmRegistry": "", "npmUserconfig": "", "npmCafile": ""},
@@ -117,6 +119,7 @@ class Store:
             self.data["server"].pop("token", None)
             for p in self.data["providers"]:
                 p["key"] = protect(p.get("key", ""), True)
+        self.data['desktop'] = desktop_settings(self.data.get('desktop'))
         output_default_migrated = saved.get('agent', {}).get('outputLimitDefaultVersion') != 1
         if output_default_migrated:
             if self.data['agent']['maxTokens'] == 8192:

@@ -47,6 +47,7 @@ export function childMessages(session) {
     const content = typeof message.content === "string" ? [{type:"text",text:message.content}] : message.content || [];
     const row = {role:message.role, text:take(textOf(content)), timestamp:message.timestamp,
       error:message.stopReason === "error", stopReason:message.stopReason || ""};
+    if (row.error) row.errorMessage = take(message.errorMessage);
     const thinking = take(content.filter(item => item.type === "thinking").map(item => item.thinking || "").join("\n"));
     if (thinking) row.thinking = thinking;
     for (const call of content.filter(item => item.type === "toolCall")) {
@@ -67,7 +68,7 @@ function childEvent(event) {
     if (["text_delta","thinking_delta"].includes(update?.type)) return {type:update.type === "text_delta" ? "delta" : "thinking_delta",text:update.delta};
   }
   if (event.type === "message_end" && message?.role === "assistant")
-    return {type:"message",text:textOf(message.content).slice(-131072),thinking:(message.content || []).filter(item=>item.type==="thinking").map(item=>item.thinking || "").join("\n").slice(-131072),error:message.stopReason === "error",stopReason:message.stopReason,timestamp:message.timestamp};
+    return {type:"message",text:textOf(message.content).slice(-131072),thinking:(message.content || []).filter(item=>item.type==="thinking").map(item=>item.thinking || "").join("\n").slice(-131072),error:message.stopReason === "error",errorMessage:message.stopReason === "error" ? message.errorMessage || "" : "",stopReason:message.stopReason,timestamp:message.timestamp};
   if (event.type.startsWith("tool_execution_")) return {type:"tool",id:event.toolCallId,name:event.toolName,args:boundedArgs(event.args),
     state:event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running",
     result:event.type === "tool_execution_end" ? textOf(event.result?.content).slice(0,8192) : undefined};

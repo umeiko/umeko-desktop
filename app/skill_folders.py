@@ -1,10 +1,32 @@
 """Filesystem boundaries for the two Skill roots, independent of chat switches."""
 from pathlib import Path
+import os
 import stat
 import uuid
 
 from umeko_provider_sdk.packages import normalize_package_path, PackageValidationError
 from .skill_import_paths import ImportDirectories, linked_info, snapshot
+
+
+def preview_folder(approval):
+    """Read a bounded document from the pinned, approved Skill directory."""
+    directory = checked_folder(approval)
+    with ImportDirectories(approval['directories']) as pinned:
+        parent = pinned.directory(directory)
+        path = directory / 'SKILL.md'
+        info = path.lstat() if os.name == 'nt' else os.stat('SKILL.md', dir_fd=parent, follow_symlinks=False)
+        if linked_info(info) or not stat.S_ISREG(info.st_mode):
+            raise ValueError('Skill 文件已变化，请刷新目录')
+        from .skill_import_paths import identity
+        fd = os.open(path if os.name == 'nt' else 'SKILL.md',
+                     os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0),
+                     **({} if os.name == 'nt' else {'dir_fd': parent}))
+        with os.fdopen(fd, 'rb') as stream:
+            if identity(os.fstat(stream.fileno())) != identity(info):
+                raise ValueError('Skill 文件已变化，请刷新目录')
+            raw = stream.read(65536)
+    text = raw.decode('utf-8-sig', 'replace')
+    return {'path': str(path), 'markdown': text[:24000], 'truncated': info.st_size > len(raw) or len(text) > 24000}
 
 
 def folder_snapshots(value, roots):

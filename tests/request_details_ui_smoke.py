@@ -34,6 +34,12 @@ def click(name):
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, item.mapToScene(item.boundingRect().center()).toPoint())
     QTest.qWait(80)
 
+def wait(predicate, label):
+    for _ in range(400):
+        QTest.qWait(20)
+        if predicate(): return
+    raise AssertionError(label + '\n' + '\n'.join(warnings))
+
 def show(failure):
     identifier = str(failure).split('[Umeko:', 1)[1].split(']', 1)[0]
     assert QMetaObject.invokeMethod(dialog, 'show', Q_ARG('QVariant', identifier))
@@ -52,7 +58,16 @@ try:
     ]
     failure = backend.gateway.diagnostics.failure({'name':'Fixture','key':'fixture-secret'},
         {'model':'fixture','messages':[{'role':'user','content':'logical request'}]}, calls[-1]['response'], 'fixture transport error', calls)
-    show(failure)
+    # Enter through the actual failed chat row, including a partial completion.
+    record = backend._view
+    record.id = 'request-details-fixture'
+    record.messages = [{'role':'assistant','text':'Partial answer before the failure'}]
+    backend._handle_pi_event(record, {'type':'message','role':'assistant','text':record.messages[0]['text'],
+                                     'error':str(failure),'stopReason':'error'})
+    window.setProperty('page', 'chat')
+    wait(lambda:find('requestDetails_0').isVisible(), 'Failed chat row lost the request-details button')
+    click('requestDetails_0')
+    wait(lambda:dialog.property('opened'), 'Chat request-details button did not open the report')
     text = find('requestDetailsText')
     assert text.isVisible() and 'full HTTP request' in text.property('text')
     assert 'complete upstream error' not in text.property('text')
@@ -77,6 +92,22 @@ try:
     copied = json.loads(app.clipboard().text())
     assert copied['http'][1]['response']['body'] == original_body
     assert 'fixture-secret' not in app.clipboard().text()
+    dialog.close(); QTest.qWait(80)
+
+    # A cold child pane recovers the same failure from its native transcript.
+    native = Path(os.environ['UMEKO_DATA_DIR']) / 'child-failure.jsonl'
+    native.write_text(json.dumps({'type':'session','id':'child-fixture','cwd':str(ROOT)})+'\n'+json.dumps({
+        'type':'message','id':'failed','parentId':None,'message':{'role':'assistant',
+        'content':[{'type':'text','text':'Partial child answer'}], 'stopReason':'error','errorMessage':str(failure)}})+'\n',encoding='utf-8')
+    backend.subagents.merge(record, {'id':'failed-child','status':'error','outputFile':str(native),'task':'Fixture'})
+    backend.subagents.open('failed-child')
+    wait(lambda:not backend.subagents.context['loading'] and not find('webPane').property('moving'), 'Child error history did not load')
+    wait(lambda:find('subagentRequestDetails_0').isVisible(), 'Child request-details button is missing')
+    click('subagentRequestDetails_0')
+    wait(lambda:dialog.property('opened'), 'Child request-details button did not open the shared report')
+    click('requestDetailsResponseTab')
+    assert original_body in text.property('text')
+    dialog.close(); backend.subagents.closeView()
 
     # Legacy reports without an HTTP trace still have both independent panes.
     failure = backend.gateway.diagnostics.failure({'name':'Fixture'}, {'messages':['legacy request']},
@@ -98,7 +129,7 @@ try:
     QTest.qWait(100)
     assert 'expired' in text.property('text')
     assert not warnings, '\n'.join(warnings)
-    print('REQUEST_DETAILS_UI_OK: request/response tabs, full raw body/status/headers, HTTP selection, redaction, legacy and no-response reports')
+    print('REQUEST_DETAILS_UI_OK: partial failure chat/child entry points, request/response tabs, full raw body/status/headers, HTTP selection, redaction, legacy and no-response reports')
 finally:
     app.clipboard().clear()
     backend.close(); window.hide()

@@ -18,7 +18,7 @@ class Pool(QObject):
     def find(self,identifier):return next((row for row in self.records.values() if row.id==identifier),None)
 
 class Host(QObject):
-    viewChanged=Signal();chatChanged=Signal();toast=Signal(str);documentRequested=Signal(str,str,str);editorText=Signal(str)
+    viewChanged=Signal();chatChanged=Signal();toast=Signal(str);documentRequested=Signal(str,str,str);widgetDocumentRequested=Signal(str,str,str,str);editorText=Signal(str)
     def __init__(self,directory):
         super().__init__();self.root=ROOT;self.store=SimpleNamespace(directory=directory/'profile')
         self._view=SimpleNamespace(key='token-one',id='session-one',workspace=str(directory/'workspace'),title='Fixture',busy=False,global_agent='',failed=False,cancelled=False,messages=[{'role':'user','text':'fixture context'}])
@@ -190,7 +190,9 @@ def create_plugin(context):return Fixture(context)
         self.assertEqual(rows['file-tree']['iconGlyph'],'folder')
         self.assertEqual(rows['git-viewer']['iconGlyph'],'branch')
         self.assertEqual(rows['desktop-pet']['iconGlyph'],'pet')
-        self.assertEqual(len(self.manager.iconCatalog),22)
+        self.assertEqual(rows['pi-manager']['iconGlyph'],'pi-widget')
+        self.assertEqual(rows['pi-manager']['iconSource'],'')
+        self.assertEqual(len(self.manager.iconCatalog),23)
         for icon in self.manager.iconCatalog:self.assertTrue((ROOT/'app/icons'/(icon['glyph']+'.svg')).is_file())
         self.fixture();folder=self.path/'session-demo-1.0.0';manifest=json.loads((folder/'manifest.json').read_text())
         manifest['icon']='does-not-exist';(folder/'manifest.json').write_text(json.dumps(manifest))

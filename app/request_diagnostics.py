@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from PySide6.QtCore import QObject, Signal
 from umeko_provider_sdk.network import redact, secret_values
 from .network_retry import transient_failure, certificate_failure, describe_failure
+from .provider_errors import format_http_error, safe_text
 
 
 class RequestFailure(ValueError):
@@ -28,6 +29,20 @@ class RequestDiagnostics(QObject):
                   'provider': provider.get('name', ''), 'request': request,
                   'response': response, 'error': describe_failure(error), 'http': http or []}
         record = redact(record, [provider.get('key', '')] + secret_values(record))
+        failed_response = next((call.get('response', {}) for call in reversed(record['http'])
+                                if str(call.get('response', {}).get('status', '')).isdigit()
+                                and int(call['response']['status']) >= 400), record['response'])
+        status = failed_response.get('status')
+        code = certificate_failure(error)
+        if str(status).isdigit() and int(status) >= 400:
+            message = format_http_error(status, failed_response.get('body', ''), failed_response.get('headers', {}))
+        elif code:
+            message = f'TLS certificate validation failed ({code}); check the provider\'s Network settings and CA file, then open request details'
+        elif isinstance(error, TimeoutError) or isinstance(getattr(error, 'reason', None), TimeoutError) or str(error) == '供应商请求超时，请检查网络或超时设置':
+            message = '供应商请求超时，请检查网络或超时设置'
+        else:
+            message = '供应商请求失败，请查看请求详情'
+        record['summary'] = safe_text(message, [provider.get('key', '')])
         with self.lock:
             self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
             path = self.directory / (record['id'] + '.json')
@@ -36,9 +51,7 @@ class RequestDiagnostics(QObject):
             for old in sorted(self.directory.glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True)[30:]:
                 old.unlink()
         self.changed.emit()
-        code = certificate_failure(error)
-        message = f'TLS certificate validation failed ({code}); check the provider\'s Network settings and CA file, then open request details' if code else '供应商请求失败，请查看请求详情'
-        failure = RequestFailure(f'{message} [Umeko:{record["id"]}]', transient_failure(error, http or []))
+        failure = RequestFailure(f'{record["summary"]} [Umeko:{record["id"]}]', transient_failure(error, http or []))
         failure.tls_code = code
         return failure
 

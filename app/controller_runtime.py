@@ -1,4 +1,5 @@
 """Route native Pi events to their owning session, independently of the view."""
+from .pi_capabilities import merge_resources,from_legacy
 import copy
 import re
 import time
@@ -21,11 +22,11 @@ class PiControllerMixin:
         saved = self.store.data['sessionMeta'].get(record.id, {}).get('lastTurn')
         if saved:
             return dict(saved)
-        # Older native histories have no UI timing receipt. Use their actual
-        # stop reason, and leave duration unknown instead of inventing a time.
+        # A historical assistant's normal stop is not a desktop task receipt.
+        # Keep historical failures/stops useful without marking a visit done.
         message = next((row for row in reversed(record.messages) if row.get('role') in ('user', 'assistant')), {})
         reason = message.get('stopReason') if message.get('role') == 'assistant' else None
-        state = 'failed' if message.get('error') or reason == 'error' else {'stop': 'finished', 'aborted': 'stopped', 'length': 'stopped'}.get(reason, '')
+        state = 'failed' if message.get('error') or reason == 'error' else {'aborted': 'stopped', 'length': 'stopped'}.get(reason, '')
         return {'state': state}
 
     def _finish_turn(self, record, failed=False):
@@ -60,6 +61,8 @@ class PiControllerMixin:
         self._pool.write(record or self._view, payload)
 
     def _restart_pi(self):
+        if getattr(self, '_slash_commands', None):
+            self._slash_commands.invalidate()
         for record in self._pool.records.values():
             if not record.busy:
                 record.context_usage = {}
@@ -100,6 +103,7 @@ class PiControllerMixin:
         self.store.data["sessionMeta"].setdefault(record.id, {})["extensionModes"] = record.extension_modes
         self.store.data["sessionMeta"].setdefault(record.id, {})["skillModes"] = record.skill_modes
         self.store.data["sessionMeta"].setdefault(record.id, {})["blockedTools"] = record.blocked_tools
+        self.store.data["sessionMeta"][record.id]["piCapabilities"] = record.pi_capabilities
         record.file = info.get("file") or record.file
         record.title = info.get("title") or record.title
         record.workspace = info.get("workspace") or record.workspace
@@ -148,7 +152,7 @@ class PiControllerMixin:
                     workspace=record.workspace, defaultCwd=str(default_cwd),
                     agentDir=agent.get("agentDir") or str(Path.home() / ".pi/agent"),
                     sessionDir=str(self.store.directory / "pi/sessions"), sessionFile=record.file,
-                    sessionExtensions={path: mode == "session" for path, mode in record.extension_modes.items()},
+                    piCapabilities=from_legacy(record.pi_capabilities,record.blocked_tools), sessionExtensions={path: mode == "session" for path, mode in record.extension_modes.items()},
                     sessionSkills=record.skill_modes,
                     skillsEnabled=self._desktop_plugins.skills_enabled(record),
                     blockedTools=record.blocked_tools,
@@ -156,7 +160,7 @@ class PiControllerMixin:
                     legacyHistory=record.history, models=self.gateway.models(), agent=agent,
                     permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,
                     dataDir=str(self.store.directory),
-                    mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(), loopReview=True)
+                    mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
                 if record.global_agent:
                     service=self._desktop_plugins.global_agents
                     payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(service.root/"sessions"/record.global_agent),
@@ -356,7 +360,7 @@ class PiControllerMixin:
             if event.get('error') or event.get('stopReason') == 'error': record.failed = True
             if event.get('stopReason') == 'aborted': record.cancelled = True
             if record.messages and (record.messages[-1]["role"] == "assistant" and record.messages[-1].get("customType") != "umeko-compaction"):
-                record.messages[-1].update(text=event.get("text") or event.get("error") or record.messages[-1]["text"], error=bool(event.get("error")), stopReason=event.get("stopReason", ""))
+                record.messages[-1].update(text=event.get("text") or event.get("error") or record.messages[-1]["text"], error=bool(event.get("error")), errorMessage=event.get("error") or "", stopReason=event.get("stopReason", ""))
                 if event.get("timestamp"): record.messages[-1]["timestamp"] = event["timestamp"]
                 if "thinking" in event:
                     record.messages[-1]["thinking"] = event["thinking"]
@@ -387,15 +391,15 @@ class PiControllerMixin:
             tool["state"] = event["state"]
             if event.get("media"):
                 tool["media"] = event["media"]
-                if visible and event.get('name')=='submit_to_chatbox' and event.get('state')=='done':
+                if visible and self.store.data['desktop']['autoOpenSubmissions'] and event.get('name')=='submit_to_chatbox' and event.get('state')=='done':
                     for item in event['media']:
-                        if self.webviewAvailable and item.get('kind')=='web' and item.get('presentation')=='webview':
-                            url=self.normalizeWebUrl(item.get('url',''))
-                            if url: self.webRequested.emit(url,item.get('title',''))
+                        if item.get('kind')=='web':
+                            if self.store.data['desktop']['webDisplay']=='external' or (self.webviewAvailable and item.get('presentation')=='webview'):
+                                self.openWebPreview(item.get('url',item.get('path','')),item.get('title',''))
                         from .document_preview import document_kind
                         path = item.get('path', '')
                         document = document_kind(path, item.get('kind', ''))
-                        if document and Path(path).is_absolute(): self.documentRequested.emit(path, item.get('title', ''), document)
+                        if document and Path(path).is_absolute() and not self.openExternalHtml(path): self.documentRequested.emit(path, item.get('title', ''), document)
             if event.get("result") is not None:
                 tool["result"] = event["result"]
             transcript = True
@@ -420,7 +424,7 @@ class PiControllerMixin:
             else:
                 self.toast.emit(record.title + " · 等待你的确认")
         elif kind == "resources":
-            record.resources = event["resources"]
+            record.resources = merge_resources(record.resources,event["resources"],record.pi_capabilities)
             if visible:
                 self.changed.emit()
             return
@@ -435,10 +439,11 @@ class PiControllerMixin:
             if record.action == "compact":
                 marker = re.search(r'\[Umeko:[a-f0-9-]{36}\]', message)
                 if marker:
-                    message = "压缩失败：供应商请求失败，请查看请求详情 / Compaction failed: provider request failed " + marker[0]
+                    from .provider_errors import diagnostic_notice
+                    message = diagnostic_notice(message) + ' ' + marker[0]
                 record.tool_status = ""
-            elif record.messages and not record.messages[-1]["text"] and record.messages[-1].get("customType") != "umeko-compaction":
-                record.messages[-1].update(text=message, error=True)
+            elif record.messages and record.messages[-1].get('role') == 'assistant' and record.messages[-1].get("customType") != "umeko-compaction":
+                record.messages[-1].update(text=record.messages[-1]['text'] or message, error=True, errorMessage=message)
                 transcript = True
             if visible:
                 self.toast.emit(message)
@@ -454,7 +459,7 @@ class PiControllerMixin:
                 record.messages = [compaction_status(message, active) for message in event["messages"]]
                 record.history, record.tree = [], event["tree"]
                 record.transcript, record.loaded = None, True
-            record.resources = event["resources"]
+            record.resources = merge_resources(record.resources,event["resources"],record.pi_capabilities)
             self._subagents.sync(record)
             record.context_usage = event.get("contextUsage") or {}
             if visible:

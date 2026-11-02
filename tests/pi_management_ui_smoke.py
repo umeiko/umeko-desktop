@@ -147,15 +147,25 @@ try:
     backend.openProject(clean_info["id"])
     manager.setRecoveryMode(False)
     wait_for(lambda: not manager.busy)
-    codemode = next(row for row in manager.extensions if row["path"] == "builtin:codemode")
-    assert codemode["info"]["required"] and codemode["enabled"]
-    manager.setExtensionEnabled(codemode["id"], False)
-    wait_for(lambda: not manager.busy)
-    assert next(row for row in manager.extensions if row["path"] == "builtin:codemode")["enabled"]
-    assert "基础能力固定启用" in manager.status
+    optional = {"codemode", "tool-search", "chatbox", "pi-commands", "umeko-control", "background-jobs"}
+    for name in optional:
+        row = next(row for row in manager.extensions if row["path"] == "builtin:" + name)
+        assert not row["info"]["required"] and row["enabled"]
+        manager.setExtensionEnabled(row["id"], False)
+        wait_for(lambda: not manager.busy)
+        assert not next(row for row in manager.extensions if row["path"] == "builtin:" + name)["enabled"]
     backend.loadCapabilities()
     wait_for(lambda: not backend.busy)
-    assert {"read", "bash", "edit", "write", "codemode"}.issubset(set(backend.agentResources["tools"]))
+    exposed = set(backend.agentResources["tools"])
+    assert {"read", "bash", "edit", "write"}.issubset(exposed)
+    assert not exposed.intersection({"codemode", "tool_search", "submit_to_chatbox", "run_pi_command", "umeko_desktop", "background_job"}), exposed
+    for name in optional:
+        row = next(row for row in manager.extensions if row["path"] == "builtin:" + name)
+        manager.setExtensionEnabled(row["id"], True)
+        wait_for(lambda: not manager.busy)
+    backend.loadCapabilities()
+    wait_for(lambda: not backend.busy)
+    assert {"codemode", "tool_search", "submit_to_chatbox", "run_pi_command", "umeko_desktop", "background_job"}.issubset(set(backend.agentResources["tools"]))
     assert not warnings, "\n".join(warnings)
     print("PI_MANAGEMENT_UI_OK: Agent/Pi navigation, Widget-only extension placement, console plan, task guard, factory recovery")
 finally:

@@ -7,6 +7,13 @@ from app import webview
 
 
 class WebViewConfigurationTests(unittest.TestCase):
+    def test_external_mode_skips_all_native_browser_initialization(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(webview, '_configuration', {}), patch.object(webview.ctypes, 'CDLL') as library, patch.object(webview.QCoreApplication, 'addLibraryPath') as add_path:
+            webview.configure(Path(temporary),enabled=False)
+            self.assertFalse(webview.configuration()['available'])
+            self.assertTrue(webview.configuration()['disabled'])
+            library.assert_not_called();add_path.assert_not_called()
+
     def test_missing_qml_module_is_unavailable(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(webview.sys, 'platform', 'win32'), patch.object(webview, '_configuration', {}), patch.object(webview.ctypes, 'CDLL') as library:
             webview.configure(Path(temporary))

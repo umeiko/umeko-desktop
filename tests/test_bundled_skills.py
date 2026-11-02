@@ -1,10 +1,35 @@
 """Default native folders preserve user ownership across launches and upgrades."""
 import hashlib, json, shutil, tempfile, unittest
 from pathlib import Path
-from app.bundled_skills import install_bundled
+from app.bundled_skills import install_bundled, describe_bundled
 ROOT=Path(__file__).resolve().parents[1]
 
 class BundledSkillTests(unittest.TestCase):
+    def test_bundled_descriptions_cover_both_languages_and_preserve_custom_skills(self):
+        source=ROOT/'bundled-skills'
+        translations=json.loads((source/'descriptions.json').read_text(encoding='utf-8'))
+        names={row['name'] for row in json.loads((source/'sources.json').read_text())}
+        self.assertEqual(set(translations),names)
+        for value in translations.values():
+            self.assertEqual(set(value),{'zh','en'})
+            self.assertTrue(all(value.values()))
+        with tempfile.TemporaryDirectory() as temporary:
+            agent=Path(temporary)/'agent';folder=agent/'skills/pdf';folder.mkdir(parents=True)
+            shutil.copyfile(source/'pdf/SKILL.md',folder/'SKILL.md')
+            row={'path':str(folder/'SKILL.md'),'description':'Original instructions'}
+            describe_bundled([row],agent)
+            self.assertEqual(row['descriptions'],translations['pdf'])
+            self.assertEqual(row['description'],'Original instructions')
+            (folder/'SKILL.md').write_text('---\nname: pdf\ndescription: User edit\n---\nChanged')
+            custom={'path':str(folder/'SKILL.md'),'description':'User edit'}
+            describe_bundled([custom],agent)
+            self.assertNotIn('descriptions',custom)
+            project=Path(temporary)/'project/pdf';project.mkdir(parents=True)
+            shutil.copyfile(source/'pdf/SKILL.md',project/'SKILL.md')
+            third_party={'path':str(project/'SKILL.md'),'description':'Third-party'}
+            describe_bundled([third_party],agent)
+            self.assertNotIn('descriptions',third_party)
+
     def test_default_install_never_overwrites_edits_or_resurrects_deleted_skills(self):
         with tempfile.TemporaryDirectory() as temporary:
             base=Path(temporary);source=base/'distribution';source.mkdir()

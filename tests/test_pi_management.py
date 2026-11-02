@@ -22,6 +22,22 @@ APP = QCoreApplication.instance() or QCoreApplication([])
 
 
 class NativeExtensionTests(unittest.TestCase):
+    def test_desktop_builtin_can_be_disabled_for_one_chat(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ,{"UMEKO_DATA_DIR":temp}):
+            c=Controller(ROOT)
+            try:
+                manager=c.piManagement
+                manager._extensions_context=manager._resource_key()
+                manager._extensions=[{"id":"fixture","path":"builtin:codemode","enabled":True,"info":{"required":True}}]
+                record=c._view;record.id="configurable-builtin"
+                manager.setExtensionMode("fixture","disabled")
+                self.assertEqual(record.extension_modes,{"builtin:codemode":"disabled"})
+                self.assertEqual(c.store.data["sessionMeta"][record.id]["extensionModes"],record.extension_modes)
+                with patch.object(c._pool,"start") as start:
+                    c._command_pi("inspect")
+                    self.assertEqual(start.call_args.args[-1]["sessionExtensions"],{"builtin:codemode":False})
+            finally:c.close()
+
     def test_invalid_chat_modes_do_not_break_session_loading(self):
         for value in (None,[],"invalid",7): self.assertEqual(clean_extension_modes(value),{})
         self.assertEqual(clean_extension_modes({"builtin:mcp":"disabled","builtin:codemode":"session","invalid":True}),{"builtin:mcp":"disabled","builtin:codemode":"session"})

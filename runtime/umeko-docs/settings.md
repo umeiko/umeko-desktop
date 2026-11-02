@@ -9,6 +9,12 @@
 - `themes.select`：选择内置或自定义主题，见 themes.md。
 - `sessions.reasoning`：当前调用会话的思考强度，见 providers.md。
 
+Python 桌面版的“设置 → Agent → Umeko Desktop”使用 `desktop.configure`。`config` 为局部对象：`autoOpenSubmissions`（布尔，默认 true）控制 submit 后是否自动打开网页/文档；关闭后内容保留在聊天，手动点击仍可打开。`webDisplay` 为 `embedded`（默认，内置预览）或 `external`（系统默认浏览器）；网页链接和本地 HTML 文件均遵循此项。配置立即保存，向当前 Agent 进程热更新，不中断任务。外部模式重启时跳过内置 WebView 的加载；从该启动模式切回内置时需由用户方便时重启，不自动结束任务。
+
+```json
+{"operation":"desktop.configure","arguments":{"config":{"autoOpenSubmissions":false,"webDisplay":"external"}}}
+```
+
 运行设置用 `agent.save` 的 `config` **局部对象**，未提及字段保留。例如：
 
 ```json

@@ -1,0 +1,38 @@
+{
+  "pdf": {
+    "zh": "创建、阅读和审阅 PDF，提取文字、检查分页与版式，并验证渲染效果。",
+    "en": "Create, read and review PDFs; extract text and verify pagination, layout and rendering."
+  },
+  "gh-fix-ci": {
+    "zh": "检查 GitHub Actions 的失败任务和日志，定位 CI 问题，并在授权范围内修复验证。",
+    "en": "Inspect failed GitHub Actions jobs and logs, diagnose CI problems and verify authorized fixes."
+  },
+  "skill-creator": {
+    "zh": "创建或改进 Skill，组织说明、工作流程、脚本和参考资料，扩展智能体能力。",
+    "en": "Create or improve Skills with clear instructions, workflows, scripts and reference material."
+  },
+  "humanizer": {
+    "zh": "改写生硬或模板化的文字，减少机器腔，保留原意并呈现自然、具体的表达。",
+    "en": "Rewrite stiff or formulaic text into natural, specific language while preserving its meaning."
+  },
+  "grounded-citations": {
+    "zh": "为回答和文档查找可核验的来源，让论断、引用和证据对应，减少无依据的表述。",
+    "en": "Ground answers and documents in verifiable sources, with citations that support each claim."
+  },
+  "systematic-debugging": {
+    "zh": "通过复现、收集证据、验证假设和回归测试，系统定位根因，再实施修复。",
+    "en": "Reproduce problems, gather evidence, test hypotheses and verify the root cause before fixing bugs."
+  },
+  "microsoft-office": {
+    "zh": "创建、阅读和编辑 Word 文档、PowerPoint 演示文稿与 Excel 表格。",
+    "en": "Create, read and edit Word documents, PowerPoint presentations and Excel spreadsheets."
+  },
+  "dogfood": {
+    "zh": "对网页应用开展探索测试，复现问题、收集截图和证据，并整理可执行的问题报告。",
+    "en": "Explore and test web apps, reproduce bugs, collect evidence and produce actionable issue reports."
+  },
+  "archify": {
+    "zh": "将需求或现有系统整理为可交互的架构图、流程图、时序图和状态图，支持主题切换与导出。",
+    "en": "Turn requirements or existing systems into interactive architecture, workflow, sequence and state diagrams with themes and export."
+  }
+}

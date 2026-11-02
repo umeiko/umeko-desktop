@@ -9,7 +9,8 @@ from html.parser import HTMLParser
 from http.cookies import SimpleCookie
 
 from . import ProviderError
-from .network import proxy_handler, tls_context, trace, TracedResponse
+from .errors import format_http_error
+from .network import proxy_handler, tls_context, trace, TracedResponse, secret_values
 
 
 def response_cookies(headers):
@@ -77,6 +78,7 @@ class HttpSession:
     def request(self, url, *, method="GET", headers=None, data=None, timeout=20):
         self.validate(url)
         headers = {"User-Agent":"Umeko-Provider/0.1", **(headers or {})}
+        request_secrets = secret_values(headers) + secret_values(data)
         if isinstance(data, (dict, list)):
             data = json.dumps(data, ensure_ascii=False).encode()
             headers.setdefault("Content-Type", "application/json")
@@ -95,9 +97,12 @@ class HttpSession:
         except urllib.error.HTTPError as error:
             record['response'].update(status=error.code, headers=dict(error.headers), body=error.read().decode('utf-8', 'replace'))
             error.close()
-            raise ProviderError("服务返回 HTTP " + str(error.code)) from None
-        except OSError:
+            raise ProviderError(format_http_error(error.code, record['response']['body'], error.headers,
+                                                 request_secrets)) from None
+        except OSError as error:
             record['exception'] = traceback.format_exc()
+            if isinstance(error, TimeoutError) or isinstance(getattr(error, 'reason', None), TimeoutError):
+                raise ProviderError('供应商请求超时，请检查网络或超时设置') from None
             raise ProviderError("无法连接服务，请检查网络和证书") from None
 
 

@@ -1,5 +1,5 @@
 """Real PTY sharing, Unicode/VT output, chat grants and process cleanup."""
-import importlib.util, json, os, sys, tempfile, time, types, unittest
+import importlib.util, json, os, subprocess, sys, tempfile, time, types, unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];PACKAGE=ROOT/'umeko-plugins/terminal'
 sys.path.insert(0,str(ROOT/'plugin-runtime'));sys.path.insert(0,str(PACKAGE/'vendor'))
@@ -118,4 +118,22 @@ class TerminalTests(unittest.TestCase):
         frame=terminal.frame(reset=True);self.assertLess(len(json.dumps(frame,ensure_ascii=True)),400000)
 
 
-if __name__=='__main__':unittest.main()
+class PosixTerminalProcessTests(unittest.TestCase):
+    def test_real_terminal_in_an_independent_worker_process(self):
+        # The application runs this plugin in a separate Python worker. The
+        # full unit suite also loads Qt and its native threads; calling forkpty
+        # in that shared process can deadlock before the shell is exec'd.
+        result=subprocess.run([sys.executable,str(Path(__file__).resolve()),'--pty-worker-tests'],
+            capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=90,
+            env=dict(os.environ,PYTHONUTF8='1',PYTHONUNBUFFERED='1',PYTHONDONTWRITEBYTECODE='1'),
+            creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        self.assertEqual(result.returncode,0,(result.stdout+result.stderr)[-16000:])
+
+
+def load_tests(loader, tests, pattern):
+    if os.name=='nt' or '--pty-worker-tests' in sys.argv:
+        return loader.loadTestsFromTestCase(TerminalTests)
+    return loader.loadTestsFromTestCase(PosixTerminalProcessTests)
+
+
+if __name__=='__main__':unittest.main(argv=[sys.argv[0]])

@@ -287,15 +287,30 @@ class ChatModel(QAbstractListModel):
                 if attachments:
                     current["attachments"] = attachments
             if current.get("role") == "assistant" and current.get("customType") != "umeko-compaction":
-                marker = re.search(r'\[Umeko:([a-f0-9-]{36})\]', current.get('text', ''))
+                # Native failures can contain both partial output and a separate
+                # errorMessage. Keep both; the report ID belongs to the failure.
+                failure = current.get('errorMessage', '') if current.get('stopReason') != 'aborted' else ''
+                if not failure and current.get('error'):
+                    failure = current['error'] if isinstance(current['error'], str) else current.get('text', '')
+                marker = re.search(r'\[Umeko:([a-f0-9-]{36})\]', failure)
                 if marker:
                     current['diagnosticId'] = marker[1]
-                    current['text'] = '供应商请求失败，请查看请求详情'
+                if marker:
+                    from .provider_errors import diagnostic_notice
+                    notice = diagnostic_notice(failure)
+                else:
+                    notice = failure
+                body = current.get('text', '')
+                if body == failure:
+                    body = ''
+                if notice:
+                    current['text'] = body or notice
+                    current['error'] = True
                 steps = []
                 if current.get("thinking"):
                     steps.append({"kind": "thinking", "text": current["thinking"]})
-                if current.get("text"):
-                    steps.append({"kind": "text", "text": current["text"], "error": current.get("error", False)})
+                if body:
+                    steps.append({"kind": "text", "text": body, "error": False})
                 if current.get("tools"):
                     current["tools"] = [dict(tool) for tool in current["tools"]]
                     batch = []
@@ -315,6 +330,8 @@ class ChatModel(QAbstractListModel):
                             steps.append({"kind": "media", "items": media_view(tool["media"]), "toolId": tool["id"]})
                             batch = []
                     if batch: steps.append({"kind": "tools", "tools": batch})
+                if notice:
+                    steps.append({"kind": "text", "text": notice, "error": True})
                 current["activity"] = steps
             continuing = bool(rows and rows[-1].get('stopReason') == 'length' and not current.get('error'))
             merging = bool(rows and current.get("role") == rows[-1].get("role") == "assistant"
