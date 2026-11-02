@@ -94,6 +94,7 @@ jobs:
             .venv/bin/python tests/desktop_plugins_ui_smoke.py
             .venv/bin/python tests/conversation_search_ui_smoke.py
             .venv/bin/python tests/sidebar_menu_position_ui_smoke.py
+            .venv/bin/python tests/sidebar_animation_ui_smoke.py
             .venv/bin/python tests/change_review_ui_smoke.py
             .venv/bin/python tests/extension_details_ui_smoke.py
             .venv/bin/python tests/pi_manager_initial_tools_ui_smoke.py
@@ -216,6 +217,7 @@ jobs:
             "$python_bin" tests/conversation_search_ui_smoke.py
             "$python_bin" tests/provider_error_ui_smoke.py
             "$python_bin" tests/sidebar_menu_position_ui_smoke.py
+            "$python_bin" tests/sidebar_animation_ui_smoke.py
             "$python_bin" tests/slash_commands_ui_smoke.py
             "$python_bin" -m unittest tests.test_provider_errors tests.test_update tests.test_common_providers tests.test_openai_responses tests.test_platform tests.test_desktop_notifications tests.test_umeko_control tests.test_characters tests.test_tool_permissions tests.test_terminal_widget tests.test_widget_icon_rendering tests.test_pet_reminders tests.test_skill_host tests.test_skill_import -q
           }
