@@ -4,7 +4,7 @@ import threading
 
 from PySide6.QtCore import QObject, Signal, Slot
 from .transcripts import preview
-from .pi_sessions import clean_extension_modes, clean_skill_modes, clean_blocked_tools
+from .pi_sessions import clean_extension_modes, clean_skill_modes, clean_blocked_tools, saved_viewport
 
 
 class SessionPreview(QObject):
@@ -35,6 +35,7 @@ class SessionPreview(QObject):
             self.ready.emit(token, False)
             return
         saved = dict(saved)
+        saved['_viewport'] = saved_viewport(self.controller.store.data['sessionMeta'].get(session_id, {}))
         cached = self.controller._pool.find(session_id)
         if cached and cached.loaded and (cached.busy or not cached.transcript or cached.transcript.matches_source()):
             self.prepared = {'token': token, 'saved': saved}
@@ -55,7 +56,8 @@ class SessionPreview(QObject):
                 file = saved.get('file')
                 if file and self.controller.transcripts.large(file):
                     cached = self.controller._pool.find(saved['id'])
-                    focus = cached.scroll_index if cached and not cached.follow_tail else -1
+                    index, _, follow = (cached.scroll_index, cached.scroll_y, cached.follow_tail) if cached else saved['_viewport']
+                    focus = index if not follow else -1
                     result['snapshot'] = self.controller.transcripts.open(file, cancelled=lambda: self.request != job['token'] or self.controller._closing, focus=focus)
                 else:
                     result['messages'], result['tree'] = preview(file) if file else (copy.deepcopy(saved.get('messages', [])), [])
@@ -92,8 +94,11 @@ class SessionPreview(QObject):
             return False
         record = self.controller._pool.find(saved['id'])
         if not record or not record.loaded or 'snapshot' in result or 'messages' in result:
+            fresh = record is None
             record = record or self.controller._new_view(saved.get('workspace', ''))
             record.id, record.file, record.title = saved['id'], saved.get('file', ''), saved['title']
+            if fresh:
+                record.scroll_index, record.scroll_y, record.follow_tail = result['saved']['_viewport']
             record.extension_modes = clean_extension_modes(self.controller.store.data['sessionMeta'].get(saved['id'],{}).get('extensionModes'))
             record.skill_modes = clean_skill_modes(self.controller.store.data['sessionMeta'].get(saved['id'],{}).get('skillModes'))
             record.blocked_tools = clean_blocked_tools(self.controller.store.data['sessionMeta'].get(saved['id'],{}).get('blockedTools'))

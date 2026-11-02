@@ -194,6 +194,31 @@ class TranscriptIndexTests(unittest.TestCase):
         self.assertTrue(running.loaded)
         pool.close()
 
+    def test_open_warms_only_the_saved_range_and_metadata_needs_no_gui_io(self):
+        from app.transcript_index import Snapshot, PAGE_ROWS
+        entries = [self.message(str(i),str(i-1) if i else None,'user' if i%2==0 else 'assistant',f'Body {i} '+('text '*30)) for i in range(200)]
+        self.write(entries)
+        before=self.file.read_bytes()
+        pages=[];page=Snapshot.page
+        def read(snapshot,number):
+            pages.append(number);return page(snapshot,number)
+        with patch.object(Snapshot,'page',read):
+            snapshot=self.repo.open(self.file,focus=100)
+        self.assertEqual(snapshot.focus_row,100)
+        self.assertEqual(pages,[100//PAGE_ROWS])
+        self.assertIsNone(snapshot.cached(0))
+        with patch('app.transcript_index.connect',side_effect=AssertionError('GUI must not open SQLite for row metadata')):
+            self.assertEqual(snapshot.metadata(100)['role'],'user')
+            self.assertEqual(snapshot.metadata(101)['role'],'assistant')
+        self.assertEqual(self.file.read_bytes(),before)
+
+    def test_saved_viewport_validates_data(self):
+        from app.pi_sessions import saved_viewport
+        self.assertEqual(saved_viewport({}),(-1,-1,True))
+        self.assertEqual(saved_viewport({'viewport':{'row':100,'offset':20,'follow':False}}),(100,20.0,False))
+        for value in (None,[],{'row':True},{'row':-2},{'row':1<<80},{'row':2,'offset':float('nan')},{'row':2,'offset':-1},{'row':2,'follow':'false'}):
+            self.assertEqual(saved_viewport({'viewport':value}),(-1,-1,True))
+
 
 if __name__ == '__main__':
     unittest.main()

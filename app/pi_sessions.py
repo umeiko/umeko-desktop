@@ -28,6 +28,16 @@ def clean_skill_modes(value):
             if isinstance(path, str) and 0 < len(path) <= 4096 and type(enabled) is bool}
 
 
+def saved_viewport(meta):
+    value = meta.get('viewport', {})
+    if not isinstance(value, dict): return -1, -1, True
+    index, offset, follow = value.get('row', -1), value.get('offset', 0), value.get('follow', True)
+    if type(index) is not int or not -1 <= index <= 2147483647 or type(offset) not in (int, float) or not 0 <= offset < 10000000 or type(follow) is not bool:
+        return -1, -1, True
+    if index == -1: return -1, -1, True
+    return index, float(offset), follow
+
+
 @dataclass(eq=False)
 class SessionState:
     search_leaf: str = ""

@@ -32,7 +32,7 @@ Column {
         Rectangle { width: 1; height: parent.height; color: Theme.line; x: 6 }
         SelectableText {
             id: thinkingText; objectName: "thinkingText_" + root.messageIndex + "_" + root.blockOffset
-            x: 23; width: parent.width - x; text: root.text
+            x: 23; width: parent.width - x; text: root.expanded ? root.text : ""
             color: Theme.muted; font.pixelSize: Theme.font(13, visible); wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText
             selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset
             conditionalSelection: true

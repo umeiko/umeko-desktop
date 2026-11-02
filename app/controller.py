@@ -24,7 +24,7 @@ from .integration import load_adapter, UnconfiguredAdapter
 from .pi_runtime import PACKAGE, RELEASE_NAME, CREATE_NO_WINDOW, installed_version, node_executable, npm_command, project_runtime, verify_runtime
 from .npm_config import npm_environment
 from .storage import Store
-from .pi_sessions import PiSessionPool, SessionState, clean_extension_modes, clean_skill_modes, clean_blocked_tools
+from .pi_sessions import PiSessionPool, SessionState, clean_extension_modes, clean_skill_modes, clean_blocked_tools, saved_viewport
 from .controller_runtime import PiControllerMixin
 from .transcripts import preview
 from .chat_model import ChatModel
@@ -160,6 +160,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self._appearance_save.setSingleShot(True)
         self._appearance_save.setInterval(250)
         self._appearance_save.timeout.connect(self.store.save)
+        self._viewport_save = QTimer(self)
+        self._viewport_save.setSingleShot(True)
+        self._viewport_save.setInterval(800)
+        self._viewport_save.timeout.connect(self.store.save)
         self.adapter = load_adapter(self.store.directory)
         self._provider_plugins = ProviderPlugins(self)
         self.gateway = Gateway(self.store, self.adapter, self._provider_plugins)
@@ -358,7 +362,15 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
 
     @Slot(int, float, bool)
     def saveViewport(self, index, position, follow):
+        if index < 0:
+            return
         self._view.scroll_index, self._view.scroll_y, self._view.follow_tail = index, position, follow
+        if self._view.id and self._view.file:
+            meta = self.store.data['sessionMeta'].setdefault(self._view.id, {})
+            viewport = {'row':index, 'offset':max(0, position), 'follow':follow}
+            if meta.get('viewport') != viewport:
+                meta['viewport'] = viewport
+                self._viewport_save.start()
 
     def _mark_read(self, record):
         if record.id and self._chat_visible:
@@ -1622,6 +1634,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         if record is None:
             record = self._new_view(session.get("workspace", ""))
             record.id, record.file, record.title = session_id, session.get("file", ""), session["title"]
+            record.scroll_index, record.scroll_y, record.follow_tail = saved_viewport(self.store.data['sessionMeta'].get(session_id, {}))
             record.extension_modes = clean_extension_modes(self.store.data["sessionMeta"].get(session_id, {}).get("extensionModes"))
             record.skill_modes = clean_skill_modes(self.store.data["sessionMeta"].get(session_id, {}).get("skillModes"))
             record.blocked_tools = clean_blocked_tools(self.store.data["sessionMeta"].get(session_id, {}).get("blockedTools"))
@@ -1941,6 +1954,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self._closing = True
         self._desktop_plugins.close()
         self._appearance_save.stop()
+        self._viewport_save.stop()
         self._streaming_timer.stop()
         self._session_preview.cancel()
         self._chat_model.close()
