@@ -106,10 +106,15 @@ try:
     click('piExtensionDetails_'+builtin['id'])
     wait(lambda:find('piManagerSessionSwitch').isEnabled() and not widget.property('working'))
     click('piManagerSessionSwitch')
-    wait(lambda:backend._view.pi_capabilities['custom']['plugins'].get(builtin['path']) is False and not widget.property('working'))
+    wait(lambda:backend._view.pi_capabilities.get('custom',{}).get('plugins',{}).get(builtin['path']) is False
+         and not widget.property('working') and not backend._view.busy)
     assert not manager.hostServices.pendingApproval
+    assert not find('piManagerSessionSwitch').property('checked')
     click('piManagerSessionSwitch')
-    wait(lambda:backend._view.pi_capabilities['custom']['plugins'].get(builtin['path']) is True and not widget.property('working'))
+    wait(lambda:backend._view.pi_capabilities.get('custom',{}).get('plugins',{}).get(builtin['path']) is True
+         and not widget.property('working') and not backend._view.busy)
+    assert find('piManagerSessionSwitch').property('checked')
+    assert not manager.hostServices.pendingApproval
     assert json.loads((agent/'settings.json').read_text())=={'packages':[str(pkg)]}
     first=backend._view
     click('piManagerBack')

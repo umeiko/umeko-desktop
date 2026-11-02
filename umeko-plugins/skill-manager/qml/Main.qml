@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../../../app/qml" as Umeko
+import "../../file-tree/qml" as FileTree
 
 FocusScope {
     id: root
@@ -47,6 +48,7 @@ FocusScope {
     property int previewGeneration: 0
     property int requestedGeneration: 0
     readonly property bool working: !!job || Object.keys(pending).length > 0
+    readonly property bool sessionBusy: !!(sdk.session && sdk.session.busy)
     readonly property real rowHeight: 56 * sdk.scale
     readonly property var selected: skills.filter(row => row.id === selectedId)[0] || null
     readonly property var entries: folderEntries()
@@ -116,6 +118,7 @@ FocusScope {
     }
     function reload(keepPosition){if(keepPosition)listPosition={y:list.contentY,index:list.currentIndex,scope:selectedScope};previewGeneration++;previewCache={};previewOrder=[];preview={};previewError="";notice="";noticeError=false;menuOpen=false;request("skills.browse",{})}
     function initialize(){if(sdk.active && !initialized){initialized=true;reload()}}
+    function setEnabled(row,enabled){if(row && !working && !sessionBusy)request("skills.attach",{id:row.id,enabled:enabled})}
     function insert(row){if(row)request("skills.insert",{id:row.id})}
     function showMenu(row,scope,point){if(working)return;contextRow=row;selectedScope=scope;if(row)selectedId=row.id;menuX=point.x;menuY=point.y;menuOpen=true}
     function action(name) {
@@ -197,6 +200,7 @@ FocusScope {
             previewDelay.restart()
             if(listPosition){const position=listPosition;listPosition=null;Qt.callLater(()=>{list.currentIndex=Math.max(0,Math.min(position.index,entries.length-1));list.contentY=Math.max(0,Math.min(position.y,list.contentHeight-list.height));selectedScope=position.scope})}
             else Qt.callLater(()=>{const index=entries.findIndex(entry=>entry.skill && entry.skill.id===selectedId);if(index>=0){list.currentIndex=index;list.positionViewAtIndex(index,ListView.Contain)}})
+            if(result.stateError){notice=root.errorText(result.stateError);noticeError=true}
             if(result.truncated)notice=t("目录较大，仅显示部分 Skill；可在文件管理器中继续查看。","This folder is large; some Skills are omitted. Open it in your file manager to see all items.")
         } else if(operation==="skills.importPreview") {
             importPreview=result.preview || {};let choices={}
@@ -206,7 +210,8 @@ FocusScope {
             importResult=result;importPreview={};importDecisions={}
             notice=t("已导入 ","Imported ")+(result.imported || []).length+t(" 项，跳过 ","; skipped ")+(result.skipped || []).length
             noticeError=!!(result.errors || []).length
-        } else if(operation==="skills.rename" || operation==="skills.delete"){renameRow=null;reload()}
+        } else if(operation==="skills.attach"){reload(true)}
+        else if(operation==="skills.rename" || operation==="skills.delete"){renameRow=null;reload()}
         else if(operation==="skills.insert")notice=t("已附加到输入框","Attached to the composer")
         else if(operation==="skills.copy")notice=t("已复制","Copied")
     }
@@ -239,8 +244,8 @@ FocusScope {
             Label{text:root.route==="main" ? "Skills" : root.t("导入 Skill","Import Skill");font.bold:true;font.pixelSize:Umeko.Theme.font(16);Layout.fillWidth:true}
             Umeko.HelpButton {
                 objectName:"skillManagerDiscoveryHelp"
-                help:root.t("启用后，全局和当前工作区中可用 Skill 的名称、简介和路径会自动提供给智能体；任务匹配时才读取正文和附带资料，无需先双击。双击只把文件夹附加到输入框。停用此 Widget 会关闭相应范围的技能发现与加载；重新启用后恢复原配置。收起面板不影响启用状态。运行中的任务在本轮结束后应用开关。",
-                    "When enabled, available Skills in Global and the current workspace are advertised to the agent by name, description and path. Instructions and references are read only when needed; no double-click is required. Double-click only attaches the folder to the composer. Disabling this Widget turns off skill discovery and loading in that scope; enabling it restores the existing configuration. Closing the panel does not disable Skills. Running tasks apply the change after their current turn.")
+                help:root.t("启用后，全局和当前工作区中可用 Skill 的名称、简介和路径会自动提供给智能体；任务匹配时才读取正文和附带资料，无需先双击。每个 Skill 行尾的复选框单独控制当前会话是否启用，自动保存，不修改全局或工作区的 Pi 默认配置。双击只把文件夹附加到输入框。停用此 Widget 会关闭相应范围的技能发现与加载；重新启用后恢复原配置。收起面板不影响启用状态。运行中的任务在本轮结束后应用开关。",
+                    "When enabled, available Skills in Global and the current workspace are advertised to the agent by name, description and path. Instructions and references are read only when needed; no double-click is required. Each checkbox controls availability in this chat and saves automatically, without changing Pi defaults. Double-click only attaches the folder to the composer. Disabling this Widget turns off skill discovery and loading in that scope; enabling it restores the existing configuration. Closing the panel does not disable Skills. Running tasks apply the change after their current turn.")
             }
             SmallButton{objectName:"skillManagerImport";visible:root.route==="main";text:root.t("导入","Import");enabled:!root.working;onClicked:root.openImport()}
             SmallButton{objectName:"skillManagerRefresh";visible:root.route==="main";text:"↻";enabled:!root.working;onClicked:root.reload();Accessible.name:root.t("刷新","Refresh")}
@@ -284,8 +289,8 @@ FocusScope {
                     id:entry;required property var modelData;required property int index
                     readonly property bool skill:modelData.kind==="skill"
                     objectName:skill ? "skillManagerEntry_"+modelData.skill.id : modelData.kind==="scope" ? "skillManagerScope_"+modelData.scope : "skillManagerEmpty_"+modelData.scope
-                    width:list.width;height:skill ? root.rowHeight : 32*root.sdk.scale
-                    color:modelData.kind==="scope" ? root.dragScope===modelData.scope ? root.sdk.colors.accentBg : root.sdk.colors.bg : skill && root.selectedId===modelData.skill.id ? root.sdk.colors.accentBg : hover.hovered ? root.sdk.colors.hover : "transparent"
+                    width:list.width;height:skill ? root.rowHeight : 22*root.sdk.scale
+                    color:root.dragScope===modelData.scope || skill && root.selectedId===modelData.skill.id ? root.sdk.colors.accentBg : hover.hovered ? root.sdk.colors.hover : "transparent"
                     HoverHandler{id:hover}
                     MouseArea {
                         anchors.fill:parent;acceptedButtons:Qt.LeftButton | Qt.RightButton
@@ -298,24 +303,48 @@ FocusScope {
                         }
                         onDoubleClicked:mouse=>{if(mouse.button===Qt.LeftButton && entry.skill)root.insert(entry.modelData.skill)}
                     }
+                    ToolTip.visible:entry.modelData.kind==="scope" && hover.hovered && !!root.roots[entry.modelData.scope]
+                    ToolTip.delay:500
+                    ToolTip.text:root.roots[entry.modelData.scope] || ""
                     RowLayout {
-                        anchors.fill:parent;anchors.leftMargin:entry.skill ? 12*root.sdk.scale : 6*root.sdk.scale;anchors.rightMargin:6*root.sdk.scale;spacing:7*root.sdk.scale
+                        anchors.fill:parent;anchors.leftMargin:entry.skill ? 22*root.sdk.scale : 3*root.sdk.scale;anchors.rightMargin:6*root.sdk.scale;spacing:4*root.sdk.scale
+                        FileTree.VsIcon {
+                            objectName:entry.modelData.kind==="scope" ? "skillManagerChevron_"+entry.modelData.scope : ""
+                            visible:entry.modelData.kind==="scope";Layout.preferredWidth:16*root.sdk.scale;Layout.preferredHeight:16*root.sdk.scale
+                            name:root.collapsedScopes.indexOf(entry.modelData.scope)>=0 ? "chevron-right" : "chevron-down"
+                            size:16*root.sdk.scale;color:root.sdk.colors.ink
+                        }
                         Image{visible:entry.skill;source:"../assets/skill-package.svg";sourceSize.width:16;sourceSize.height:16;Layout.preferredWidth:16*root.sdk.scale;Layout.preferredHeight:16*root.sdk.scale}
-                        Label{visible:entry.modelData.kind==="scope";text:root.collapsedScopes.indexOf(entry.modelData.scope)>=0 ? "›" : "⌄";Layout.preferredWidth:15*root.sdk.scale;color:root.sdk.colors.muted}
                         ColumnLayout {
                             Layout.fillWidth:entry.modelData.kind!=="scope";spacing:2*root.sdk.scale
-                        Label {
-                            Layout.fillWidth:entry.modelData.kind!=="scope";Layout.preferredWidth:entry.modelData.kind==="scope" ? implicitWidth : -1
-                            text:entry.skill ? entry.modelData.skill.name : entry.modelData.kind==="scope" ? root.scopeLabel(entry.modelData.scope)+"  "+entry.modelData.count : !root.roots[entry.modelData.scope] ? root.t("未选择工作区","No workspace selected") : root.query ? root.t("没有匹配的 Skill","No matching Skills") : root.t("暂无 Skill","No Skills")
-                            font.bold:entry.modelData.kind==="scope";font.pixelSize:Umeko.Theme.font(11);color:entry.modelData.kind==="empty" ? root.sdk.colors.muted : root.sdk.colors.ink
+                            Label {
+                                Layout.fillWidth:entry.modelData.kind!=="scope";Layout.preferredWidth:entry.modelData.kind==="scope" ? implicitWidth : -1
+                                text:entry.skill ? entry.modelData.skill.name : entry.modelData.kind==="scope" ? root.scopeLabel(entry.modelData.scope) : !root.roots[entry.modelData.scope] ? root.t("未选择工作区","No workspace selected") : root.query ? root.t("没有匹配的 Skill","No matching Skills") : root.t("暂无 Skill","No Skills")
+                                font.weight:entry.modelData.kind==="scope" ? Font.DemiBold : Font.Normal;font.pixelSize:Umeko.Theme.font(11);color:entry.modelData.kind==="empty" ? root.sdk.colors.muted : root.sdk.colors.ink
+                            }
+                            Label {
+                                objectName:entry.skill ? "skillManagerDescription_"+entry.modelData.skill.id : ""
+                                visible:entry.skill && !!text;Layout.fillWidth:true;text:root.description(entry.modelData.skill)
+                                font.pixelSize:Umeko.Theme.font(10);color:root.sdk.colors.muted;wrapMode:Text.Wrap;maximumLineCount:2
+                            }
                         }
-                        Label {
-                            objectName:entry.skill ? "skillManagerDescription_"+entry.modelData.skill.id : ""
-                            visible:entry.skill && !!text;Layout.fillWidth:true;text:root.description(entry.modelData.skill)
-                            font.pixelSize:Umeko.Theme.font(10);color:root.sdk.colors.muted;wrapMode:Text.Wrap;maximumLineCount:2
+                        Label{visible:entry.modelData.kind==="scope";text:entry.modelData.count === undefined ? "" : entry.modelData.count;color:root.sdk.colors.muted;font.pixelSize:Umeko.Theme.font(10);leftPadding:2*root.sdk.scale}
+                        Item{visible:entry.modelData.kind==="scope";Layout.fillWidth:true}
+                        CheckBox {
+                            id:skillEnabled;objectName:entry.skill ? "skillManagerEnabled_"+entry.modelData.skill.id : ""
+                            visible:entry.skill;Layout.preferredWidth:20*root.sdk.scale;Layout.preferredHeight:22*root.sdk.scale
+                            padding:0;spacing:0;checked:entry.skill && !!entry.modelData.skill.enabled
+                            enabled:entry.skill && entry.modelData.skill.canToggle!==false && !root.working && !root.sessionBusy
+                            indicator:Rectangle {width:15*root.sdk.scale;height:15*root.sdk.scale;x:(skillEnabled.width-width)/2;y:(skillEnabled.height-height)/2;radius:3*root.sdk.scale;color:skillEnabled.checked ? root.sdk.colors.accent : "transparent";border.color:skillEnabled.enabled ? skillEnabled.checked ? root.sdk.colors.accent : root.sdk.colors.muted : root.sdk.colors.line
+                                Umeko.Glyph {anchors.centerIn:parent;name:"check";visible:skillEnabled.checked;color:root.sdk.colors.surface;width:13*root.sdk.scale;height:13*root.sdk.scale}
+                            }
+                            contentItem:Item {}
+                            onClicked:{const next=checked;checked=Qt.binding(()=>entry.skill && !!entry.modelData.skill.enabled);root.setEnabled(entry.modelData.skill,next)}
+                            Accessible.name:entry.skill ? root.t("启用 ","Enable ")+entry.modelData.skill.name : ""
+                            ToolTip.visible:hovered;ToolTip.delay:450
+                            ToolTip.text:root.sessionBusy ? root.t("任务结束后可调整","Available after the current task finishes") : entry.skill && entry.modelData.skill.canToggle===false ? root.t("当前不可用，请检查 Skill 格式或恢复模式后刷新。","Unavailable; check the Skill format or recovery mode and refresh.") : root.t("在当前会话中启用此 Skill","Enable this Skill in the current chat")
+                            HoverHandler {cursorShape:skillEnabled.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor}
                         }
-                        }
-                        Label{visible:entry.modelData.kind==="scope";Layout.fillWidth:true;text:root.roots[entry.modelData.scope] || "";elide:Text.ElideMiddle;color:root.sdk.colors.muted;font.pixelSize:Umeko.Theme.font(9)}
                     }
                 }
             }
