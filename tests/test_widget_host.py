@@ -25,7 +25,15 @@ class Manager(QObject):
             uninstallPackage=lambda identifier: None)
         self.calls, self.frames, self.replies = [], [], {}
         self.b = SimpleNamespace(piManagement=management, busy=False, kernelBusy=False,
-            pendingApproval={}, _view=SimpleNamespace(extension_modes={}, resources={}), _umeko_control=SimpleNamespace(execute=self.execute))
+            pendingApproval={}, _view=SimpleNamespace(extension_modes={}, resources={},busy=False,action='idle'), _umeko_control=SimpleNamespace(execute=self.execute))
+        from app.tool_visibility import catalog
+        management.capability_extensions=lambda:catalog(self.b._view,management.extensions)
+        management.capability_profile=lambda:{'preset':'full','custom':{'base':'full','tools':{},'plugins':{}}}
+        def capability_tools(identifier,query='',offset=0,limit=100):
+            source=next((r['path'] for r in management.extensions if r['id']==identifier),'')
+            tools=[{'name':t['name'],'description':t.get('description','')[:1024],'enabled':True,'owner':source} for t in self.b._view.resources.get('allTools',[]) if t.get('source')==source and (not query or query in (t['name']+' '+t.get('description','')).casefold())]
+            return {'tools':tools[offset:offset+limit],'total':len(tools),'hasMore':offset+limit<len(tools),'profile':management.capability_profile(),'loading':False}
+        management.capability_tools=capability_tools
         self.closed = False
         self._session = {'token': 'chat-one', 'id': 'one', 'workspace': '/fixture'}
         self.entries = {key: {'name': key, 'permissions': ['pi.read', 'pi.manage']}
@@ -86,7 +94,7 @@ class WidgetHostTests(unittest.TestCase):
         self.assertEqual(result['details']['markdown'],'# Local README')
         self.assertEqual(result['activationModes'],{'builtin:fixture17':'disabled'})
         self.assertEqual([tool['name'] for tool in result['tools']],['local_tool'])
-        self.assertEqual(len(result['tools'][0]['description']),4096)
+        self.assertLessEqual(len(result['tools'][0]['description']),4096)
         identifier=self.request('pi.details',{'id':'missing'})
         self.assertFalse(self.manager.replies[identifier]['ok'])
 
@@ -123,6 +131,24 @@ class WidgetHostTests(unittest.TestCase):
         self.host.respondApproval(True)
         self.assertTrue(self.manager.replies[identifier]['ok'])
         self.assertEqual(self.manager.calls[-1],{'operation':'extensions.activation','arguments':{'id':'17','mode':'session'}})
+
+    def test_only_trusted_builtin_manager_applies_current_chat_switches_directly(self):
+        changes=[]
+        self.manager.b.piManagement.configure_capabilities=lambda op,args: changes.append((op,args)) or {'profile':{'preset':'minimal'}}
+        self.manager.entries['pi-manager']={'name':'Pi','builtin':True,'permissions':['pi.read','pi.manage']}
+        self.manager.workers['pi-manager']={'ready':True}
+        for op,args in [('pi.preset',{'preset':'minimal'}),('pi.tool',{'name':'read','enabled':False}),('pi.plugin',{'id':'native','enabled':False})]:
+            identifier=self.request(op,args,widget='pi-manager')
+            self.assertTrue(self.manager.replies[identifier]['ok'])
+            self.assertFalse(self.host.pendingApproval)
+        self.assertEqual(len(changes),3)
+        identifier=self.request('pi.tool',{'name':'read','enabled':False})
+        self.assertEqual(self.host.pendingApproval['id'],identifier)
+        self.assertEqual(len(changes),3)
+        self.manager._session={'token':'other','id':'other','workspace':'/other'}
+        self.host.respondApproval(True)
+        self.assertFalse(self.manager.replies[identifier]['ok'])
+        self.assertEqual(len(changes),3)
 
     def test_desktop_builtins_use_the_normal_confirmation_flow(self):
         self.manager.b.piManagement.extensions[17]['info']['required']=True

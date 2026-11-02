@@ -19,6 +19,10 @@ from PySide6.QtCore import QObject, Property, QTimer, Signal, Slot
 OPERATIONS = {
     'pi.status': ('pi.read', None),
     'pi.network': ('pi.read', None),
+    'pi.preset': ('pi.manage',None),
+    'pi.tool': ('pi.manage',None),
+    'pi.plugin': ('pi.manage',None),
+    'pi.tools': ('pi.read',None),
     'pi.inventory': ('pi.read', None),
     'pi.toolVisibility': ('pi.manage', None),
     'pi.scan': ('pi.read', 'extensions.scan'),
@@ -209,6 +213,7 @@ class WidgetHost(QObject):
             fields = {'pi.status': {'offset', 'limit', 'query', 'details', 'toolOffset'}, 'pi.inventory': set(), 'pi.toolVisibility': {'id','name','visible'}, 'pi.network': set(), 'pi.scan': set(), 'pi.refresh': set(),
                       'pi.enable': {'id', 'enabled'}, 'pi.install': {'source', 'project'},
                       'pi.remove': {'id'}, 'pi.job': {'id'}, 'pi.cancel': {'id'}, 'pi.checkUpdate': {'id'}, 'pi.details': {'id'}, 'pi.activation': {'id','mode'},
+                      'pi.preset': {'preset'},'pi.tool': {'name','enabled'},'pi.plugin': {'id','enabled'},'pi.tools': {'id','query','offset','limit'},
                       'skills.list': set(), 'skills.details': {'id'}, 'skills.job': {'id', 'offset', 'limit'},
                       'skills.attach': {'id', 'enabled'}, 'skills.default': {'id', 'enabled'},
                       'skills.reveal': {'id'}, 'skills.remove': {'id'},
@@ -218,10 +223,10 @@ class WidgetHost(QObject):
                       'skills.insert': {'id'}, 'skills.rename': {'id', 'name'}, 'skills.delete': {'id'}}[operation]
             if set(args) - fields:
                 raise ValueError('Unknown host arguments')
-            if operation in ('pi.enable', 'pi.remove', 'pi.job', 'pi.cancel', 'pi.checkUpdate', 'pi.details', 'pi.activation') or operation.startswith('skills.') and operation not in ('skills.list', 'skills.browse', 'skills.paste', 'skills.importLocal', 'skills.importPreview'):
+            if operation in ('pi.enable', 'pi.remove', 'pi.job', 'pi.cancel', 'pi.checkUpdate', 'pi.details', 'pi.activation', 'pi.plugin','pi.tools') or operation.startswith('skills.') and operation not in ('skills.list', 'skills.browse', 'skills.paste', 'skills.importLocal', 'skills.importPreview'):
                 if not isinstance(args.get('id'), str) or not args['id'] or len(args['id']) > 4096:
                     raise ValueError('A valid id is required')
-            if operation in ('pi.enable', 'skills.attach', 'skills.default') and type(args.get('enabled')) is not bool:
+            if operation in ('pi.enable','pi.plugin','pi.tool', 'skills.attach', 'skills.default') and type(args.get('enabled')) is not bool:
                 raise ValueError('enabled must be boolean')
             if operation == 'pi.activation' and args.get('mode') not in ('global','session','disabled'):
                 raise ValueError('Invalid activation mode')
@@ -249,7 +254,7 @@ class WidgetHost(QObject):
                 if not isinstance(args.get('decisions', {}), dict) or any(not isinstance(key, str) or value not in ('skip', 'replace') for key, value in args.get('decisions', {}).items()):
                     raise ValueError('Each conflict needs a skip or replace decision')
                 self._skill_service().preview_for(request, args['id'])
-            if operation in ('pi.status', 'skills.job'):
+            if operation in ('pi.status','pi.tools', 'skills.job'):
                 if any(key in args and (not isinstance(args[key],str) or len(args[key]) > 256) for key in ('query','details')):
                     raise ValueError('Invalid local catalog query')
                 if type(args.get('toolOffset', 0)) is not int or not 0 <= args.get('toolOffset', 0) <= 1000000:
@@ -260,6 +265,10 @@ class WidgetHost(QObject):
                     raise ValueError('limit must be an integer from 1 to 200')
             if operation.startswith('skills.') and operation not in ('skills.job', 'skills.browse', 'skills.preview', 'skills.open', 'skills.copy', 'skills.insert'):
                 self._skill_service().idle()
+            if operation in ('pi.preset','pi.tool','pi.plugin') and identifier=='pi-manager' and self.m.entries[identifier].get('builtin'):
+                self._execute(request);return
+            if operation=='skills.attach' and identifier=='skill-manager' and self.m.entries[identifier].get('builtin'):
+                self._execute(request);return
             if requires_confirmation(operation):
                 if self.b.busy or self.b.piManagement.busy or self.b.kernelBusy:
                     raise ValueError('Pi is busy; Agent installs must use run_pi_command and its native queued reload')
@@ -322,6 +331,10 @@ class WidgetHost(QObject):
             self._reply(request, service.get(request, args['id'], args.get('offset', 0), args.get('limit', 100))
                         if operation == 'skills.job' else service.start(request))
             return
+        if operation in ('pi.preset','pi.tool','pi.plugin'):
+            self._reply(request,{'ok':True,'result':self.b.piManagement.configure_capabilities(operation,args)});return
+        if operation=='pi.tools':
+            self._reply(request,{'ok':True,'result':self.b.piManagement.capability_tools(args['id'],args.get('query',''),args.get('offset',0),args.get('limit',100))});return
         if operation == 'pi.toolVisibility':
             self._tool_target(args)
             self.b.piManagement.set_tool_visible(args['name'], args['visible'])
@@ -358,15 +371,15 @@ class WidgetHost(QObject):
         if operation == 'pi.status':
             management = self.b.piManagement
             current = management.extensionsCurrent
-            all_rows = catalog(self.b._view, management.extensions) if current else []
+            all_rows = management.capability_extensions() if current else []
             query=args.get('query','').casefold()
             detail_id=args.get('details','')
-            rows=[row for row in all_rows if row['id']==detail_id] if detail_id else [row for row in all_rows if not query or query in (str(row.get('name',''))+' '+str(row.get('path',''))+' '+str(row.get('info',{}).get('description',''))).casefold()]
+            rows=[row for row in all_rows if row['id']==detail_id] if detail_id else [row for row in all_rows if not query or query in (str(row.get('name',''))+' '+str(row.get('path',''))+' '+str(row.get('info',{}).get('description',''))).casefold() or management.capability_tools(row['id'],query,0,1)['total']>0]
             offset, limit = args.get('offset', 0), args.get('limit', 100)
-            page=[{**row,'tools':[{key:tool[key] for key in ('name','visible')} for tool in row['tools'][:12]]} for row in rows[offset:offset+limit]]
+            page=[{**row,'tools':[{key:tool[key] for key in ('name','visible')} for tool in row.get('tools',[])[:12]]} for row in rows[offset:offset+limit]]
             paths={row['path'] for row in page}
             modes={path:mode for path,mode in self.b._view.extension_modes.items() if path in paths}
-            result={'busy':management.busy, 'status':management.status if current else '',
+            result={'profile':management.capability_profile(),'sessionBusy':self.b.busy,'busy':management.busy or self.b.kernelBusy or (self.b._view.busy and self.b._view.action=='inspect'), 'status':management.status if current else '',
                 'extensions':page,'total':len(rows),'catalogTotal':len(all_rows), 'hasMore':offset+limit<len(rows),
                 'contextCurrent':current, 'inventoryReady':bool(self.b._view.resources.get('allTools')),
                 'inventoryFailed':getattr(self.b._view,'action','')=='load' and not self.b.busy and (getattr(self.b._view,'failed',False) or getattr(self.b._view,'cancelled',False)),

@@ -28,7 +28,7 @@ Column {
                 id: piIcon
                 width: Theme.icon(48); height: Theme.icon(48); radius: 10; color: Theme.accentBg
                 anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                Image { anchors.fill: parent; source: "../icons/pi.svg"; sourceSize: Qt.size(96,96) }
+                Glyph { anchors.fill: parent; name: "pi"; color: Theme.accent }
             }
             Column {
                 anchors.left: piIcon.right; anchors.leftMargin: 16

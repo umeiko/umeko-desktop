@@ -6,6 +6,8 @@
 
 所有列出的扩展（包括 Umeko 内置扩展）都可调整启用范围。`extensions.activation` 传 `id` 和 `mode`：`global` 为全局启用，`session` 仅在当前聊天启用，`disabled` 仅在当前聊天停用。聊天覆盖不会改写 Pi 的全局或项目设置；内置扩展也会遵守原生 `extensions` 过滤规则。Pi 原生文件与命令工具的可见性可在插件管理中逐项调整。
 
+Pi 插件管理页面提供标准 Pi、极简、默认和自定义四种会话预设。默认保留当前已配置的能力；标准 Pi 仅保留 8 个原生工具，极简保留 read/bash/edit/write，自定义可逐插件和逐工具开关。切换预设保留上次自定义配置，不更改其他会话或磁盘上的 Pi 设置。
+
 Skills 通过 `agent.save` 的 `config.skillPaths` 配置额外路径；Pi 自身资源开关/包管理沿用当前 Pi 的 settings 机制。`run_pi_command` 支持 `pi install`、`pi remove`、`pi list`、`/reload`、`/compact`、`/session`、`/name` 和已加载扩展注册的命令。不要把所有扩展的帮助全文展开到 `/help`。
 
 ## 创建和管理 Skill 目录

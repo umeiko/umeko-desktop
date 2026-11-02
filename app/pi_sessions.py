@@ -49,6 +49,7 @@ class SessionState:
     skill_modes: dict = field(default_factory=dict)
     known_skills: dict = field(default_factory=dict)
     blocked_tools: list = field(default_factory=list)
+    pi_capabilities: dict = field(default_factory=dict)
     reasoning_effort: str = "off"
     attachments: list = field(default_factory=list)
     approval: dict = field(default_factory=dict)
@@ -209,7 +210,7 @@ class PiSessionPool(QObject):
             self.retire(record)
             total -= record.body_bytes
             record.messages, record.history, record.tree = [], [], []
-            record.resources = {"tools": [], "skills": [], "extensions": [], "diagnostics": []}
+            record.resources = {"tools": [], "skills": [], "extensions": [], "diagnostics": [], "toolCatalog":record.resources.get("toolCatalog",[])}
             record.transcript, record.loaded, record.body_bytes = None, False, 0
 
     def invalidate(self):

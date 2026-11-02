@@ -1,4 +1,5 @@
 """Route native Pi events to their owning session, independently of the view."""
+from .pi_capabilities import merge_resources,from_legacy
 import copy
 import re
 import time
@@ -100,6 +101,7 @@ class PiControllerMixin:
         self.store.data["sessionMeta"].setdefault(record.id, {})["extensionModes"] = record.extension_modes
         self.store.data["sessionMeta"].setdefault(record.id, {})["skillModes"] = record.skill_modes
         self.store.data["sessionMeta"].setdefault(record.id, {})["blockedTools"] = record.blocked_tools
+        self.store.data["sessionMeta"][record.id]["piCapabilities"] = record.pi_capabilities
         record.file = info.get("file") or record.file
         record.title = info.get("title") or record.title
         record.workspace = info.get("workspace") or record.workspace
@@ -148,7 +150,7 @@ class PiControllerMixin:
                     workspace=record.workspace, defaultCwd=str(default_cwd),
                     agentDir=agent.get("agentDir") or str(Path.home() / ".pi/agent"),
                     sessionDir=str(self.store.directory / "pi/sessions"), sessionFile=record.file,
-                    sessionExtensions={path: mode == "session" for path, mode in record.extension_modes.items()},
+                    piCapabilities=from_legacy(record.pi_capabilities,record.blocked_tools), sessionExtensions={path: mode == "session" for path, mode in record.extension_modes.items()},
                     sessionSkills=record.skill_modes,
                     skillsEnabled=self._desktop_plugins.skills_enabled(record),
                     blockedTools=record.blocked_tools,
@@ -420,7 +422,7 @@ class PiControllerMixin:
             else:
                 self.toast.emit(record.title + " · 等待你的确认")
         elif kind == "resources":
-            record.resources = event["resources"]
+            record.resources = merge_resources(record.resources,event["resources"],record.pi_capabilities)
             if visible:
                 self.changed.emit()
             return
@@ -454,7 +456,7 @@ class PiControllerMixin:
                 record.messages = [compaction_status(message, active) for message in event["messages"]]
                 record.history, record.tree = [], event["tree"]
                 record.transcript, record.loaded = None, True
-            record.resources = event["resources"]
+            record.resources = merge_resources(record.resources,event["resources"],record.pi_capabilities)
             self._subagents.sync(record)
             record.context_usage = event.get("contextUsage") or {}
             if visible:

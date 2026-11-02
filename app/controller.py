@@ -1598,6 +1598,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
             record.extension_modes = clean_extension_modes(self.store.data["sessionMeta"].get(session_id, {}).get("extensionModes"))
             record.skill_modes = clean_skill_modes(self.store.data["sessionMeta"].get(session_id, {}).get("skillModes"))
             record.blocked_tools = clean_blocked_tools(self.store.data["sessionMeta"].get(session_id, {}).get("blockedTools"))
+            record.pi_capabilities = self.store.data["sessionMeta"].get(session_id, {}).get("piCapabilities") or {}
             effort = self.store.data["sessionMeta"].get(session_id, {}).get("reasoningEffort", record.reasoning_effort)
             record.reasoning_effort = effort if effort in ("off", "low", "high", "max") else "off"
             record.history = copy.deepcopy(session.get("history", []))

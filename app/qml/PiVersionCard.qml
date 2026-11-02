@@ -5,7 +5,7 @@ import QtQuick.Layouts
 SectionCard {
     ColumnLayout { width: parent.width; spacing: 18
         RowLayout { Layout.fillWidth: true; spacing: 12
-            Image { source: "../icons/pi.svg"; Layout.preferredWidth: 38; Layout.preferredHeight: 38; sourceSize: Qt.size(76,76)
+            Glyph { name: "pi"; color: Theme.accent; Layout.preferredWidth: 38; Layout.preferredHeight: 38
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: backend.openPiGithub() }
             }
             Text { font.family: Theme.fontFamily; text: "Pi Coding Agent"; color: Theme.ink; font.pixelSize: Theme.font(17, visible); font.weight: Font.Medium }

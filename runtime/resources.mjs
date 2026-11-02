@@ -1,3 +1,4 @@
+import { pluginSelection } from "./session-capabilities.mjs";
 // Native resource discovery/settings only: never import or execute extension code.
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, statSync, realpathSync, openSync, readSync, closeSync } from "node:fs";
 import { dirname, basename, join, relative, resolve, delimiter } from "node:path";
@@ -192,6 +193,11 @@ function selectExtension(settings, input, row, enabled) {
     paths.push(entry);
     if (project) settings.setProjectExtensionPaths(paths); else settings.setExtensionPaths(paths);
   }
+}
+export async function sessionExtensionPaths(Pi,input,settings) {
+  const rows=await discover(Pi,input,settings),legacy=input.sessionExtensions || {};
+  return rows.filter(row=>pluginSelection(input.piCapabilities,row.path,
+    typeof legacy[row.path]==="boolean" ? legacy[row.path] : row.enabled)).map(row=>row.path);
 }
 export async function sessionResourceSettings(Pi, input, native) {
   const overrides = input.sessionExtensions;

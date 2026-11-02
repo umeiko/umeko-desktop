@@ -121,6 +121,7 @@ class ToolPermissionTests(unittest.TestCase):
         record.extension_modes = {"builtin:mcp":"disabled"}
         record.skill_modes = {"/fixture/skills/example/SKILL.md": False}
         record.blocked_tools = ["write"]
+        record.pi_capabilities = {}
         backend._release = self.directory / "release"
         backend._release.mkdir()
         (backend._release / "bridge.mjs").write_text("// fixture", encoding="utf-8")
@@ -138,6 +139,7 @@ class ToolPermissionTests(unittest.TestCase):
         self.assertFalse(payload['skillsEnabled'])
         backend._desktop_plugins.skills_enabled.assert_called_once_with(record)
         self.assertEqual(payload["blockedTools"], ["write"])
+        self.assertEqual(payload["piCapabilities"]["custom"]["tools"], {"write": False})
         self.assertEqual(payload["permissionMode"], "ask")
         self.assertEqual(payload["language"], "en")
         self.assertEqual(payload["dataDir"], str(backend.store.directory))
