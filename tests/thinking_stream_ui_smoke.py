@@ -133,8 +133,11 @@ def main():
             def until(predicate, timeout=25):
                 deadline = time.monotonic() + timeout
                 while not predicate():
-                    assert time.monotonic() < deadline, ('Timed out', requests, backend._view.messages)
+                    assert time.monotonic() < deadline, ('Timed out', len(sent), requests, backend._view.messages)
                     QTest.qWait(10)
+                    # The fake SSE server shares Python's GIL with QML signal
+                    # callbacks. Unlike app.exec(), qWait alone can starve it.
+                    time.sleep(.001)
 
             assert backend.send('Run the local reasoning stream test.')
             until(lambda: find('toggleThinking_') is not None)

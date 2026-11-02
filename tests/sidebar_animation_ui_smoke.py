@@ -113,7 +113,13 @@ with tempfile.TemporaryDirectory(prefix='umeko-sidebar-animation-') as directory
             invoke(window, 'toggleSidebar')  # Same handler as the button and Ctrl+B.
             assert motion.property('moving')
             if reverse:
-                QTest.qWait(60)
+                # Reverse actual motion, rather than an offscreen frame that
+                # may not have started within 60 ms on a busy macOS runner.
+                deadline = time.monotonic() + 15
+                while len(frames) < 3:
+                    assert time.monotonic() < deadline, (label, 'Motion did not start')
+                    QTest.qWait(1)
+                assert motion.property('moving'), (label, 'Motion ended before reversal')
                 invoke(window, 'toggleSidebar')
             settle()
             # This count is independent of rendering speed. On the old binding
