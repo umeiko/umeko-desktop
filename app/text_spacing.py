@@ -1,5 +1,5 @@
 """Proportional paragraph spacing for Quick TextEdit prose, including Markdown."""
-from PySide6.QtCore import QObject, Property, QTimer, Signal
+from PySide6.QtCore import QObject, Property, Signal
 from PySide6.QtGui import QTextBlockFormat, QTextCursor
 
 
@@ -11,9 +11,6 @@ class TextSpacing(QObject):
         self._quick = self._document = None
         self._factor = 1.0
         self._applying = False
-        self._timer = QTimer(self)
-        self._timer.setSingleShot(True)
-        self._timer.timeout.connect(self._apply)
 
     def get_document(self):
         return self._quick
@@ -22,11 +19,14 @@ class TextSpacing(QObject):
         if quick is self._quick:
             return
         if self._document is not None:
-            self._document.contentsChanged.disconnect(self._schedule)
+            self._document.contentsChange.disconnect(self._schedule)
         self._quick = quick
         self._document = quick.textDocument() if quick else None
         if self._document is not None:
-            self._document.contentsChanged.connect(self._schedule)
+            # TextEdit replaces its text on each streamed assignment, resetting
+            # block formats. contentsChange runs before layout;
+            # restore spacing here so no default-height layout reaches the view.
+            self._document.contentsChange.connect(self._schedule)
         self._schedule()
         self.changed.emit()
 
@@ -43,9 +43,9 @@ class TextSpacing(QObject):
 
     factor = Property(float, get_factor, set_factor, notify=changed)
 
-    def _schedule(self):
+    def _schedule(self, *args):
         if not self._applying:
-            self._timer.start(0)
+            self._apply()
 
     def _apply(self):
         if self._document is None:
