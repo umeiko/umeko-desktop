@@ -48,6 +48,7 @@ class RuntimePathTests(unittest.TestCase):
         source_io.mkdir(parents=True)
         for name in ("tool-visibility.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
             (source_io / name).write_text("fixture")
+        (source_io / "session-capabilities.mjs").write_text("fixture")
         (source_io / "skills.mjs").write_text("fixture")
         (source_io / "umeko-docs").mkdir()
         (source_io / "umeko-docs/guide.md").write_text("deep docs")
@@ -56,6 +57,7 @@ class RuntimePathTests(unittest.TestCase):
         self.assertEqual(run.call_args.args[0][1], str(release / "bridge.mjs"))
         self.assertEqual((release_io / "umeko-docs/guide.md").read_text(), "deep docs")
         self.assertEqual((release_io / "tool-visibility.mjs").read_text(), "fixture")
+        self.assertEqual((release_io / "session-capabilities.mjs").read_text(), "fixture")
         self.assertEqual(ordinary_path(filesystem_path(release)), release)
 
 
