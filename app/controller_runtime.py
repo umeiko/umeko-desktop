@@ -61,6 +61,8 @@ class PiControllerMixin:
         self._pool.write(record or self._view, payload)
 
     def _restart_pi(self):
+        if getattr(self, '_slash_commands', None):
+            self._slash_commands.invalidate()
         for record in self._pool.records.values():
             if not record.busy:
                 record.context_usage = {}
