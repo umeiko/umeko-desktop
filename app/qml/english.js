@@ -1175,5 +1175,6 @@ var strings = {
   "内置网页预览": "Embedded web preview",
   "系统默认浏览器": "System default browser",
   "无法打开系统默认浏览器": "Could not open the system default browser",
-  "重启 Umeko 后可使用内置网页预览": "Restart Umeko to enable embedded web previews"
+  "重启 Umeko 后可使用内置网页预览": "Restart Umeko to enable embedded web previews",
+  "最新消息": "Latest messages"
 }
