@@ -5,6 +5,7 @@ import urllib.request
 
 from .gateway import NoRedirect, validate_base_url
 from .model_context import provider_context_window
+from .provider_errors import format_http_error
 from umeko_provider_sdk.network import proxy_handler, tls_context
 
 
@@ -26,9 +27,11 @@ def fetch_model_windows(provider):
             with opener.open(urllib.request.Request(url, headers=headers), timeout=15) as response:
                 payload = json.load(response)
         except urllib.error.HTTPError as exc:
-            code = exc.code
-            exc.close()
-            raise ValueError(f"模型列表返回 HTTP {code} / Model list returned HTTP {code}") from None
+            try:
+                message = format_http_error(exc.code, exc.read(), exc.headers, [provider['key']])
+            finally:
+                exc.close()
+            raise ValueError(message) from None
         rows = payload.get("data", payload.get("models", [])) if isinstance(payload, dict) else payload
         if not isinstance(rows, list):
             raise ValueError("供应商模型列表格式无效 / Invalid provider model list")

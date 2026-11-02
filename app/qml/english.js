@@ -1,5 +1,13 @@
 .pragma library
 var strings = {
+  "服务器未返回错误详情": "The server returned no error details",
+  "请检查 API 密钥与权限": "Check the API key and permissions",
+  "请检查地址或模型名称": "Check the address or model name",
+  "请求超时，请检查网络或超时设置": "Request timed out; check the network or timeout settings",
+  "供应商请求超时，请检查网络或超时设置": "Provider request timed out; check the network or timeout settings",
+  "请求过大或上下文过长": "Request too large or context too long",
+  "请求受到限流，请稍后重试": "Rate limited; retry later",
+  "供应商服务端错误": "Provider-side error",
   "返回 Widget": "Back to Widget",
   "收起预览": "Close preview",
   "没有匹配项": "No matches",

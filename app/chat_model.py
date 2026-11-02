@@ -295,7 +295,11 @@ class ChatModel(QAbstractListModel):
                 marker = re.search(r'\[Umeko:([a-f0-9-]{36})\]', failure)
                 if marker:
                     current['diagnosticId'] = marker[1]
-                notice = '供应商请求失败，请查看请求详情' if marker else failure
+                if marker:
+                    from .provider_errors import diagnostic_notice
+                    notice = diagnostic_notice(failure)
+                else:
+                    notice = failure
                 body = current.get('text', '')
                 if body == failure:
                     body = ''
