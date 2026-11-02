@@ -470,7 +470,7 @@ ApplicationWindow {
                 // final wrap width once, without changing the sidebar PID motion.
                 Binding on width {
                     value: chatPage.width - chatWidth.conversationLeft - chatWidth.conversationRight
-                    when: !sidebarWidthMotion.moving || sidebarResizeHandle.resizing
+                    when: !conversation.visible || !sidebarWidthMotion.moving || sidebarResizeHandle.resizing
                     restoreMode: Binding.RestoreNone
                 }
                 anchors.top: parent.top; anchors.topMargin: 20; anchors.bottom: composer.top; anchors.bottomMargin: 24

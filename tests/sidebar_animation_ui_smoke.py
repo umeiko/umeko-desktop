@@ -84,6 +84,17 @@ with tempfile.TemporaryDirectory(prefix='umeko-sidebar-animation-') as directory
         QTest.qWait(150)
         motion = find('sidebarWidthMotion')
         settle()
+        conversation = find('conversation')
+        empty_widths = []
+        def empty_resize():
+            empty_widths.append(conversation.width())
+        conversation.widthChanged.connect(empty_resize)
+        invoke(window, 'toggleSidebar')
+        settle()
+        assert len(empty_widths) > 2, 'Empty chat lost its live layout updates'
+        conversation.widthChanged.disconnect(empty_resize)
+        invoke(window, 'toggleSidebar')
+        settle()
         thinking = ('Compare the constraints and each possible result before deciding.\n' * 400)[:20000]
         backend._view.messages = [
             {'role': 'assistant', 'thinking': thinking, 'text': f'Result {i}.'}
@@ -91,10 +102,9 @@ with tempfile.TemporaryDirectory(prefix='umeko-sidebar-animation-') as directory
         ]
         backend.chatChanged.emit()
         QTest.qWait(250)
-        conversation = find('conversation')
         widths, frames = [], []
         conversation.widthChanged.connect(lambda: widths.append(conversation.width()))
-        window.frameSwapped.connect(lambda: frames.append(time.perf_counter()))
+        motion.valueChanged.connect(lambda: frames.append(time.perf_counter()))
 
         def animate(label, reverse=False):
             widths.clear()
