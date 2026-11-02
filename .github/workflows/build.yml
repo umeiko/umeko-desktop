@@ -32,7 +32,7 @@ jobs:
     name: checks
     runs-on: ubuntu-22.04
     # Include dependency setup, cache misses and post-job cleanup in the budget.
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       QT_QPA_PLATFORM: offscreen
       QT_QUICK_BACKEND: software
