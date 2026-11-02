@@ -206,6 +206,9 @@ class CharactersMixin:
                 value=row.get(key,'')
                 if value and QUrl(value).path().lower().endswith('.webp') and QImageReader(QUrl(value).toLocalFile()).imageCount()>1:
                     self._character_animated_roles.append(value)
+        # Catalogs have their own notification: switching conversations emits
+        # changed frequently and must not re-read every character manifest.
+        self.characterCatalogChanged.emit()
 
     def _characterNames(self):
         return [row['name'] for row in self._character_config['subagents']]

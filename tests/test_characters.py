@@ -52,6 +52,22 @@ class CharacterTests(unittest.TestCase):
     def write(self):
         self.file.write_text(json.dumps(self.manifest),encoding='utf-8')
 
+    def test_character_catalog_notifies_only_when_its_contents_change(self):
+        b = self.backend
+        for name in ('characterPacks', 'subagentCharacterPacks'):
+            meta = b.metaObject().property(b.metaObject().indexOfProperty(name))
+            self.assertEqual(bytes(meta.notifySignal().name()), b'characterCatalogChanged')
+        notifications = []
+        b.characterCatalogChanged.connect(lambda: notifications.append(True))
+        b.changed.emit()
+        self.assertFalse(notifications)
+        self.assertTrue(b.importCharacter(QUrl.fromLocalFile(str(self.file)).toString()))
+        self.assertEqual(len(notifications), 1)
+        self.assertIn('test-character', {row['id'] for row in b.characterPacks})
+        self.assertTrue(b.removeCharacter('test-character'))
+        self.assertEqual(len(notifications), 2)
+        self.assertNotIn('test-character', {row['id'] for row in b.characterPacks})
+
     def test_import_persists_independent_assets_live_and_falls_back(self):
         b = self.backend
         self.assertEqual(b.characterStyle['id'],'yanami')

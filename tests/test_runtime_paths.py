@@ -50,6 +50,7 @@ class RuntimePathTests(unittest.TestCase):
             (source_io / name).write_text("fixture")
         (source_io / "session-capabilities.mjs").write_text("fixture")
         (source_io / "skills.mjs").write_text("fixture")
+        (source_io / "markdown-preview.mjs").write_text("fixture")
         (source_io / "umeko-docs").mkdir()
         (source_io / "umeko-docs/guide.md").write_text("deep docs")
         with patch("app.pi_runtime.node_executable", return_value="node.exe"), patch("app.pi_runtime.node_environment", return_value={}), patch("app.pi_runtime.subprocess.run", return_value=subprocess.CompletedProcess([], 0, '{"ok":true}', '')) as run:
@@ -58,6 +59,7 @@ class RuntimePathTests(unittest.TestCase):
         self.assertEqual((release_io / "umeko-docs/guide.md").read_text(), "deep docs")
         self.assertEqual((release_io / "tool-visibility.mjs").read_text(), "fixture")
         self.assertEqual((release_io / "session-capabilities.mjs").read_text(), "fixture")
+        self.assertEqual((release_io / "markdown-preview.mjs").read_text(), "fixture")
         self.assertEqual(ordinary_path(filesystem_path(release)), release)
 
 

@@ -576,6 +576,7 @@ var strings = {
   "复制网址": "Copy URL",
   "关闭预览": "Close preview",
   "代码较大，已关闭语法高亮": "Syntax highlighting disabled for large code.",
+  "Markdown 渲染暂不可用，已显示完整源码": "Markdown rendering is unavailable; showing the full source",
   "仅显示部分内容，打开可查看完整文件": "Partial preview. Open the file to view it in full.",
   "文档较复杂，已使用纯文本预览": "Complex document shown as plain text.",
   "复制预览内容": "Copy preview text",
@@ -1175,5 +1176,6 @@ var strings = {
   "内置网页预览": "Embedded web preview",
   "系统默认浏览器": "System default browser",
   "无法打开系统默认浏览器": "Could not open the system default browser",
-  "重启 Umeko 后可使用内置网页预览": "Restart Umeko to enable embedded web previews"
+  "重启 Umeko 后可使用内置网页预览": "Restart Umeko to enable embedded web previews",
+  "最新消息": "Latest messages"
 }

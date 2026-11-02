@@ -16,7 +16,7 @@ Item {
         // Set the format first. Updating two bindings independently can parse
         // Markdown source as HTML during a rich-to-source transition.
         editor.textFormat = root.rich ? TextEdit.RichText : TextEdit.PlainText
-        editor.text = root.browserMode ? "" : root.rich ? root.state.html : root.state.text || ""
+        editor.text = root.browserMode || root.state.chunked ? "" : root.rich ? root.state.html : root.state.text || ""
     }
     onStateChanged: Qt.callLater(root.syncDocument)
     onRichChanged: Qt.callLater(root.syncDocument)
@@ -32,7 +32,7 @@ Item {
         id: scroll; objectName: "documentPreviewScroll"
         anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
         anchors.top: notices.bottom; anchors.topMargin: 4
-        visible: !root.browserMode && !root.state.busy && !root.state.error
+        visible: !root.state.chunked && !root.browserMode && !root.state.busy && !root.state.error
         contentWidth: availableWidth
         TextArea {
             id: editor; objectName: "documentPreviewText"
@@ -54,6 +54,13 @@ Item {
                 enabled: !root.browserMode && !root.rich && !root.state.busy && (!!root.state.highlight || root.state.fileType === "markdown" && (root.state.text || "").length <= 24000 && !root.state.simple)
             }
         }
+    }
+    Loader {
+        objectName:"pagedDocumentLoader"
+        anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;anchors.top:notices.bottom;anchors.topMargin:4
+        active:!!root.state.chunked && !root.state.busy && !root.state.error
+        visible:active
+        source:active ? "PagedDocument.qml" : ""
     }
     Timer { interval: 0; running: root.browserMode && root.browserAllowed && !root.browserReady; onTriggered: root.browserReady = true }
     Loader {
