@@ -56,7 +56,8 @@ with tempfile.TemporaryDirectory(prefix='umeko-large-markdown-') as temporary:
             time.sleep(.001)  # Let Python's reader thread run as the real app.exec() does.
             if check():
                 return
-        raise AssertionError('Timeout: ' + str(warnings))
+        raise AssertionError('Timeout: ' + str(warnings) + '; state=' + json.dumps(backend.documentPreview.state, default=str)
+                             + '; blockList=' + str(find('documentBlockList') is not None))
 
     def invoke(item, method):
         return QMetaObject.invokeMethod(item, method)
