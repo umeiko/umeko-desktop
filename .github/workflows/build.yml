@@ -32,7 +32,7 @@ jobs:
     name: checks
     runs-on: ubuntu-22.04
     # Include dependency setup, cache misses and post-job cleanup in the budget.
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       QT_QPA_PLATFORM: offscreen
       QT_QUICK_BACKEND: software
@@ -112,6 +112,7 @@ jobs:
             .venv/bin/python tests/motion_ui_smoke.py
             .venv/bin/python tests/appearance_ui_smoke.py
             .venv/bin/python tests/task_state_ui_smoke.py
+            .venv/bin/python tests/thinking_stream_ui_smoke.py
           '
 
   windows-path-checks:
@@ -219,6 +220,7 @@ jobs:
             "$python_bin" tests/sidebar_menu_position_ui_smoke.py
             "$python_bin" tests/sidebar_animation_ui_smoke.py
             "$python_bin" tests/slash_commands_ui_smoke.py
+            "$python_bin" tests/thinking_stream_ui_smoke.py
             "$python_bin" -m unittest tests.test_provider_errors tests.test_update tests.test_common_providers tests.test_openai_responses tests.test_platform tests.test_desktop_notifications tests.test_umeko_control tests.test_characters tests.test_tool_permissions tests.test_terminal_widget tests.test_widget_icon_rendering tests.test_pet_reminders tests.test_skill_host tests.test_skill_import -q
           }
           export -f verify_desktop
