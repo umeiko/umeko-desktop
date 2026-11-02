@@ -465,7 +465,14 @@ ApplicationWindow {
                 }
                 acceptedButtons: Qt.NoButton
                 visible: backend.messageCount > 0
-                x: chatWidth.conversationLeft; width: parent.width - chatWidth.conversationLeft - chatWidth.conversationRight
+                x: chatWidth.conversationLeft
+                // Keep text layout stable while the sidebar moves. Commit the
+                // final wrap width once, without changing the sidebar PID motion.
+                Binding on width {
+                    value: chatPage.width - chatWidth.conversationLeft - chatWidth.conversationRight
+                    when: !sidebarWidthMotion.moving || sidebarResizeHandle.resizing
+                    restoreMode: Binding.RestoreNone
+                }
                 anchors.top: parent.top; anchors.topMargin: 20; anchors.bottom: composer.top; anchors.bottomMargin: 24
                 clip: true; spacing: 27; model: backend.messageModel
                 // A hidden attached ScrollBar still writes contentY when its

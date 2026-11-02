@@ -91,6 +91,7 @@ jobs:
             .venv/bin/python tests/desktop_plugins_ui_smoke.py
             .venv/bin/python tests/conversation_search_ui_smoke.py
             .venv/bin/python tests/sidebar_menu_position_ui_smoke.py
+            .venv/bin/python tests/sidebar_animation_ui_smoke.py
             .venv/bin/python tests/change_review_ui_smoke.py
             .venv/bin/python tests/extension_details_ui_smoke.py
             .venv/bin/python tests/pi_manager_initial_tools_ui_smoke.py
@@ -211,6 +212,7 @@ jobs:
             node --test tests/skills.test.mjs tests/tool-visibility.test.mjs tests/pet-reminder-local-time.test.mjs tests/conversation-search.test.mjs tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/package-install.test.mjs tests/pi-widget-command.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/global-agents.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs tests/compaction-bridge.test.mjs
             "$python_bin" tests/conversation_search_ui_smoke.py
             "$python_bin" tests/sidebar_menu_position_ui_smoke.py
+            "$python_bin" tests/sidebar_animation_ui_smoke.py
             "$python_bin" tests/slash_commands_ui_smoke.py
             "$python_bin" -m unittest tests.test_update tests.test_common_providers tests.test_openai_responses tests.test_platform tests.test_desktop_notifications tests.test_umeko_control tests.test_characters tests.test_tool_permissions tests.test_terminal_widget tests.test_widget_icon_rendering tests.test_pet_reminders tests.test_skill_host tests.test_skill_import -q
           }
