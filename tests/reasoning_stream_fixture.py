@@ -1,16 +1,52 @@
 """Local fake provider isolated from Qt's Python callbacks and event pumping."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
-import multiprocessing
+import mmap
+import os
+from pathlib import Path
+import struct
+import subprocess
+import sys
+import tempfile
 import threading
+import time
 
 
-def _serve(channel, release, stop, sent):
+class _Counter:
+    def __init__(self, path):
+        self.file = path.open('r+b')
+        self.mapping = mmap.mmap(self.file.fileno(), 4)
+
+    @property
+    def value(self):
+        return struct.unpack_from('<i', self.mapping)[0]
+
+    @value.setter
+    def value(self, value):
+        struct.pack_into('<i', self.mapping, 0, value)
+
+    def close(self):
+        self.mapping.close()
+        self.file.close()
+
+
+class _Signal:
+    def __init__(self, path):
+        self.path = path
+
+    def set(self):
+        self.path.touch()
+
+
+def _serve(directory):
+    sent = _Counter(directory / 'counter')
+    events = (directory / 'events.jsonl').open('ab', buffering=0)
+    release, stop = threading.Event(), threading.Event()
     lock = threading.Lock()
 
     def report(value):
         with lock:
-            channel.send(value)
+            events.write((json.dumps(value) + '\n').encode())
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -53,15 +89,24 @@ def _serve(channel, release, stop, sent):
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    report({'type': 'ready', 'port': server.server_port})
+    ready = directory / 'ready.json'
+    temporary = directory / 'ready.tmp'
+    temporary.write_text(json.dumps({'port': server.server_port}), encoding='utf-8')
+    temporary.replace(ready)
     try:
-        stop.wait()
+        deadline = time.monotonic() + 120
+        while not (directory / 'stop').exists() and time.monotonic() < deadline:
+            if (directory / 'release').exists():
+                release.set()
+            time.sleep(.01)
     finally:
+        stop.set()
         release.set()
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
-        channel.close()
+        events.close()
+        sent.close()
 
 
 class ReasoningStream:
@@ -72,42 +117,69 @@ class ReasoningStream:
         self.close()
 
     def __init__(self):
-        context = multiprocessing.get_context('spawn')
-        self.channel, child = context.Pipe(duplex=False)
-        self.release, self.stop = context.Event(), context.Event()
-        self.sent = context.RawValue('i', 0)
+        self.temporary = tempfile.TemporaryDirectory(prefix='umeko-thinking-provider-')
+        self.directory = Path(self.temporary.name)
+        (self.directory / 'counter').write_bytes(b'\0' * 4)
+        (self.directory / 'events.jsonl').touch()
+        self.sent = _Counter(self.directory / 'counter')
+        self.release = _Signal(self.directory / 'release')
+        self.stop = _Signal(self.directory / 'stop')
         self.requests, self.errors = [], []
-        self.process = context.Process(target=_serve, args=(child, self.release, self.stop, self.sent),
-                                       name='umeko-thinking-fixture')
-        self.process.start()
-        child.close()
+        self.events = (self.directory / 'events.jsonl').open('rb', buffering=0)
+        self.log = (self.directory / 'server.log').open('wb')
+        self.buffer = b''
+        self.process = None
         try:
-            if not self.channel.poll(10):
-                raise AssertionError('Fake SSE provider did not start')
-            ready = self.channel.recv()
-            assert ready['type'] == 'ready', ready
+            # Do not reimport the Qt smoke script via multiprocessing.spawn.
+            # The child executes only this stdlib-only fixture entrypoint.
+            self.process = subprocess.Popen(
+                [sys.executable, '-u', str(Path(__file__).resolve()), '--serve', str(self.directory)],
+                stdout=self.log, stderr=subprocess.STDOUT,
+                creationflags=0x08000000 if os.name == 'nt' else 0)
+            deadline = time.monotonic() + 10
+            while not (self.directory / 'ready.json').exists():
+                if self.process.poll() is not None or time.monotonic() >= deadline:
+                    raise AssertionError(('Fake SSE provider did not start', self.diagnostics()))
+                time.sleep(.01)
+            ready = json.loads((self.directory / 'ready.json').read_text(encoding='utf-8'))
             self.server_port = ready['port']
         except BaseException:
             self.close()
             raise
 
     def poll(self):
-        while self.channel.poll():
-            try:
-                value = self.channel.recv()
-            except EOFError:
-                raise AssertionError(('Fake SSE provider exited early', self.process.exitcode))
+        if self.process.poll() is not None:
+            raise AssertionError(('Fake SSE provider exited early', self.diagnostics()))
+        self.buffer += self.events.read()
+        while b'\n' in self.buffer:
+            line, self.buffer = self.buffer.split(b'\n', 1)
+            value = json.loads(line)
             if value['type'] == 'request':
                 self.requests.append((value['path'], value['model']))
             elif value['type'] == 'error':
                 self.errors.append(value)
 
+    def diagnostics(self):
+        return {'exitCode': self.process.poll(),
+                'log': (self.directory / 'server.log').read_text(encoding='utf-8', errors='replace')[-2000:]}
+
     def close(self):
         self.stop.set()
         self.release.set()
-        self.process.join(timeout=5)
-        if self.process.is_alive():
-            self.process.terminate()  # Only the fake provider process owned by this fixture.
-            self.process.join(timeout=5)
-        self.channel.close()
-        assert not self.process.is_alive(), 'Fake SSE provider did not stop'
+        try:
+            if self.process:
+                try:
+                    self.process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.process.terminate()  # Only this fixture's fake provider.
+                    self.process.wait(timeout=5)
+        finally:
+            self.events.close()
+            self.log.close()
+            self.sent.close()
+            self.temporary.cleanup()
+
+
+if __name__ == '__main__':
+    assert len(sys.argv) == 3 and sys.argv[1] == '--serve'
+    _serve(Path(sys.argv[2]))
