@@ -15,47 +15,52 @@ os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 os.environ['QT_QUICK_BACKEND'] = 'software'
 os.environ['UMEKO_LANGUAGE'] = 'en'
 
-from PySide6.QtCore import QEventLoop, QObject, QMetaObject, QPointF, Qt, QTimer, Signal, Slot
-from PySide6.QtTest import QTest
-from app.storage import Store
-from main import create_application
 from reasoning_stream_fixture import ReasoningStream
-
-
-class QuietTray(QObject):
-    quitRequested = Signal()
-    notificationRequested = Signal(str)
-
-    def __init__(self, window, icon, parent):
-        super().__init__(parent)
-        self.tray = None
-
-    def set_language(self, language):
-        pass
-
-    def restore(self):
-        pass
-
-
-class QuietNotifications(QObject):
-    activated = Signal(str)
-
-    def __init__(self, window, tray, root, parent):
-        super().__init__(parent)
-
-    @Slot(str, str, bool, bool)
-    def task_finished(self, *args):
-        pass
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--record', type=Path)
     args = parser.parse_args()
+    # Start the provider before GUI initialization. run_gui uses app.exec-style
+    # event pumping, allowing the provider and loopback gateway threads to run.
+    with ReasoningStream() as server:
+        run_gui(args, server)
+
+
+def run_gui(args, server):
+    from PySide6.QtCore import QEventLoop, QObject, QMetaObject, QPointF, Qt, QTimer, Signal, Slot
+    from PySide6.QtTest import QTest
+    from app.storage import Store
+    from main import create_application
+
+    class QuietTray(QObject):
+        quitRequested = Signal()
+        notificationRequested = Signal(str)
+
+        def __init__(self, window, icon, parent):
+            super().__init__(parent)
+            self.tray = None
+
+        def set_language(self, language):
+            pass
+
+        def restore(self):
+            pass
+
+    class QuietNotifications(QObject):
+        activated = Signal(str)
+
+        def __init__(self, window, tray, root, parent):
+            super().__init__(parent)
+
+        @Slot(str, str, bool, bool)
+        def task_finished(self, *args):
+            pass
+
     samples = []
     engine = backend = timer = None
     with tempfile.TemporaryDirectory(prefix='umeko-thinking-stream-') as sandbox, ExitStack() as mocks:
-        server = mocks.enter_context(ReasoningStream())
         sent, requests = server.sent, server.requests
         os.environ['UMEKO_DATA_DIR'] = str(Path(sandbox) / 'profile')
         seed = Store()

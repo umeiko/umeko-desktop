@@ -16,7 +16,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 os.environ.setdefault("UMEKO_LANGUAGE", "zh")
 
-from PySide6.QtCore import Qt, QUrl, QObject, QProcess
+from PySide6.QtCore import Qt, QUrl, QObject, QProcess, QMetaObject
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow
@@ -140,8 +140,12 @@ class ContextCompactionTests(unittest.TestCase):
 
     def click(self, name):
         self.wait_for(lambda: self.find(name) is not None and self.find(name).isVisible())
+        self.window.grabWindow()  # Finish virtual-list polish before mapping the input target.
         item = self.find(name)
-        QTest.mouseClick(self.window, Qt.LeftButton, Qt.NoModifier, item.mapToScene(item.boundingRect().center()).toPoint())
+        point = item.mapToScene(item.boundingRect().center()).toPoint()
+        self.assertTrue(self.window.contentItem().contains(point), (name, point))
+        QTest.mouseMove(self.window, point)
+        QTest.mouseClick(self.window, Qt.LeftButton, Qt.NoModifier, point)
         QTest.qWait(30)
 
     def enter(self, text):
@@ -244,6 +248,12 @@ class ContextCompactionTests(unittest.TestCase):
         self.wait_for(lambda: self.event_row() is not None and self.event_row().property("eventState") == "success")
         self.assertFalse(self.event_row().property("expanded"))
         cold_index = self.event_row().objectName().rsplit("_", 1)[1]
+        # Cold rows can exist in the cache before the asynchronous viewport
+        # restoration has positioned them. Scroll as a user would before clicking.
+        conversation = self.find("conversation")
+        self.assertTrue(QMetaObject.invokeMethod(conversation, "jumpToLatest"))
+        self.wait_for(lambda: not conversation.property("restoring")
+                      and self.backend.messageModel.isReady(int(cold_index)))
         self.click("compactionEventToggle_" + cold_index)
         self.wait_for(lambda: self.event_row().property("expanded"))
         self.assertIn("保留测试任务", self.find("compactionEventDetails_" + cold_index).property("text"))
