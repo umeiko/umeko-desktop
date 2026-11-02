@@ -20,7 +20,7 @@ Rectangle {
     property var profile: ({preset:"full"})
     readonly property bool sessionBusy: !!sdk.session.busy
     onSessionBusyChanged:if(initialized && !sessionBusy && sdk.active && Object.keys(pending).length===0)status(false)
-    property string expandedId: "builtin:pi-tools"
+    property string expandedId: ""
     property var toolPages: ({})
     function loadTools(id,append) {
         if(!id || !sdk.active || !sdk.hostCapabilities.operations["pi.tools"])return
@@ -72,7 +72,7 @@ Rectangle {
     function openLink(url) { if(/^https?:\/\//i.test(url)) Qt.openUrlExternally(url) }
     function initialize() {
         const key=JSON.stringify([sdk.session.token,sdk.session.workspace])
-        if(sessionKey!==key){sessionKey=key;initialized=false;selected=null;rows=[];toolPages={};pending={};job="";hostBusy=false;inventoryRequested=false;inventoryLoading=false;expandedId="builtin:pi-tools"}
+        if(sessionKey!==key){sessionKey=key;initialized=false;selected=null;rows=[];toolPages={};pending={};job="";hostBusy=false;inventoryRequested=false;inventoryLoading=false;expandedId=""}
         if(sdk.active && !initialized){initialized=true;status(false)}
     }
     Component.onCompleted: initialize()

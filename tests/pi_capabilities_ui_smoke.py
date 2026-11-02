@@ -51,7 +51,11 @@ transcript.write_text(json.dumps({'type':'session','version':3,'id':record.id,'t
 record.file=str(transcript);record.title='Pi fixture';backend._index_record(record)
 try:
     window.resize(1480,1000);window.show();window.requestActivate();wait(window.isActive,'Test window did not activate');window.setProperty('page','chat');open_page()
-    wait(lambda:find('piToolSwitch_read') is not None and 'toolCatalog' in backend._view.resources and ready(),'Native tools not loaded')
+    wait(lambda:'toolCatalog' in backend._view.resources and ready(),'Native tools not loaded')
+    assert find('piManagerWidget').property('expandedId')=='', 'A plugin expanded on first open'
+    assert find('piToolSwitch_read') is None or not find('piToolSwitch_read').isVisible()
+    click('piExtension_builtin:pi-tools')
+    wait(lambda:find('piToolSwitch_read') is not None and find('piToolSwitch_read').isVisible() and ready(),'Native tools did not expand on click')
     QTest.qWait(500);wait(ready,'Initial inspection did not settle')
     assert find('piManagerWidget').property('profile')['preset']=='full'
     # One plugin with two tools: a child switch must not disable its sibling.
@@ -93,6 +97,7 @@ try:
     backend._pool.retire(origin);backend._pool.records.pop(origin.key,None)
     backend.openSession(identifier);wait(lambda:not backend._view.busy,'Restored chat did not settle');open_page()
     assert find('piManagerWidget').property('profile')['preset']=='custom'
+    assert find('piManagerWidget').property('expandedId')=='', 'Reopening expanded a plugin automatically'
     icon=next(r for r in manager.rows if r['id']=='pi-manager');assert icon['iconGlyph']=='pi-widget' and not icon.get('iconSource')
     output=ROOT/'build/pi-capabilities-ui';output.mkdir(parents=True,exist_ok=True);window.grabWindow().save(str(output/'capabilities.png'))
     assert not warnings,'\n'.join(warnings)
