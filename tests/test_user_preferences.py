@@ -20,6 +20,19 @@ from app.request_diagnostics import RequestFailure
 
 
 class PreferencesTests(unittest.TestCase):
+    def test_recent_image_limit_defaults_and_cannot_be_disabled(self):
+        for configured, expected in ((None, 3), (7, 7), (0, 1), (-2, 1), ("5", 3), (True, 3)):
+            with self.subTest(configured=configured), tempfile.TemporaryDirectory() as temp:
+                directory = Path(temp)
+                if configured is not None:
+                    (directory / 'settings.json').write_text(json.dumps({
+                        'agent': {'maxContextImages': configured}, 'server': {'keys': []}
+                    }), encoding='utf-8')
+                store = Store(directory)
+                self.assertEqual(store.data['agent']['maxContextImages'], expected)
+                store.save()
+                self.assertEqual(json.loads(store.path.read_text(encoding='utf-8'))['agent']['maxContextImages'], expected)
+
     def test_line_spacing_defaults_to_standard(self):
         with tempfile.TemporaryDirectory() as temp:
             store = Store(Path(temp))

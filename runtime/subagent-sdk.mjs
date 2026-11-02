@@ -8,6 +8,7 @@ import { NETWORK_RETRY } from "./network-retry.mjs";
 import { SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
 import { backgroundJobsExtension } from "./background-jobs.mjs";
 import { createToolPermissionExtension } from "./tool-permissions.mjs";
+import { createRecentImagesExtension } from "./recent-images.mjs";
 
 const permissionHost = () => globalThis[Symbol.for("umeko:tool-permission-host")];
 
@@ -16,6 +17,8 @@ export class DefaultResourceLoader extends NativeResourceLoader {
     const factories = options.extensionFactories || [];
     super({ ...options, extensionFactories: [
       ...factories,
+      { name: "recent-images", hidden: true, replaceable: false,
+        factory: createRecentImagesExtension({ getLimit: () => globalThis[Symbol.for("umeko:recent-images-policy")]?.getLimit() }) },
       ...(factories.some(item => item.name === "background-jobs") ? [] :
         [{ name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension }]),
       { name: "tool-permissions", hidden: true, replaceable: false,
