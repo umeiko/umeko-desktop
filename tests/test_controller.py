@@ -314,6 +314,19 @@ class KernelUpdateTests(unittest.TestCase):
             self.assertTrue((migrated.directory / "sessions-legacy.json").is_file())
             self.assertEqual(old.path.read_bytes(), original)
 
+    def test_checkpoint_workspace_lock_rejects_send_before_chat_mutation(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": str(Path(temp) / "data")}):
+            controller = Controller(ROOT)
+            try:
+                controller._view.messages = []
+                with patch.object(controller.desktopPlugins, 'checkpoint_locked', return_value=True), patch.object(controller, '_command_pi') as command:
+                    self.assertFalse(controller.send('must not start'))
+                    command.assert_not_called()
+                self.assertEqual(controller._view.messages, [])
+                self.assertIn('检查点', controller._last_send_error)
+            finally:
+                controller.close()
+
     def test_font_scale_and_family_persist_with_clamp(self):
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": str(Path(temp) / "data")}):
             controller = Controller(ROOT)

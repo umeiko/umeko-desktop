@@ -409,6 +409,32 @@ class WidgetHostTests(unittest.TestCase):
             with self.assertRaises(PluginError):
                 context.request_host('pi.status', {'large': 'x' * 20000}, session=target)
 
+    def test_checkpoint_lock_is_workspace_scoped_and_rejects_running_tasks(self):
+        self.manager.bridge = SimpleNamespace(workspace=lambda value: os.path.normcase(os.path.abspath(value)) if value else '')
+        self.manager.entries['change-review'] = {'name': 'Review', 'permissions': ['workspace.write']}
+        self.manager.workers['change-review'] = {'ready': True}
+        self.manager.b._pool = SimpleNamespace(records={})
+        identifier = self.request('checkpoints.acquire', {'id': 'a' * 32}, widget='change-review')
+        reply = self.manager.replies[identifier]
+        self.assertTrue(reply['ok'], reply)
+        token = reply['result']['token']
+        self.assertTrue(self.host.workspace_locked('/fixture'))
+        second = self.request('checkpoints.acquire', {'id': 'b' * 32}, widget='change-review')
+        self.assertFalse(self.manager.replies[second]['ok'])
+        wrong = self.request('checkpoints.release', {'token': 'c' * 32}, widget='change-review')
+        self.assertFalse(self.manager.replies[wrong]['ok'])
+        released = self.request('checkpoints.release', {'token': token}, widget='change-review')
+        self.assertTrue(self.manager.replies[released]['ok'])
+        self.assertFalse(self.host.workspace_locked('/fixture'))
+        self.manager.b._pool.records['busy'] = SimpleNamespace(busy=True, workspace='/fixture', title='running')
+        busy = self.request('checkpoints.acquire', {'id': 'b' * 32}, widget='change-review')
+        self.assertFalse(self.manager.replies[busy]['ok'])
+        self.manager.b._pool.records.clear()
+        acquired = self.request('checkpoints.acquire', {'id': 'b' * 32}, widget='change-review')
+        self.assertTrue(self.manager.replies[acquired]['ok'])
+        self.host.stop('change-review')
+        self.assertFalse(self.host.workspace_locked('/fixture'))
+
 
 class WidgetHostWorkerTests(unittest.TestCase):
     def test_real_worker_returns_before_host_reply_and_keeps_original_chat(self):

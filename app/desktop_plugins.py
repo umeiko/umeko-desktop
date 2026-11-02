@@ -67,9 +67,11 @@ class DesktopPlugins(QObject):
         else:self._review_loops.pop(record.key,None)
         request=''
         if identifier in self.entries and self.enabled(identifier):
-            request=self.call_for(identifier,phase,json.dumps({'loopId':event['loopId'],'reason':event.get('reason','completed')}),timeout_ms=10000,session=self.bridge.snapshot(record))
+            request=self.call_for(identifier,phase,json.dumps({'loopId':event['loopId'],'reason':event.get('reason','completed'),'title':event.get('title','')}),timeout_ms=10000,session=self.bridge.snapshot(record))
         if request:self._review_requests[request]=(record,event.get('id'))
         else:self.b._pool.write(record,{'type':'loop_review_response','id':event.get('id')})
+    def checkpoint_locked(self,workspace):
+        return self._host_services.workspace_locked(workspace)
     def path(self, identifier):
         e=self.entries[identifier]
         return self.b.root/'umeko-plugins'/identifier if e.get('builtin') else self.root/'packages'/identifier/e['version']
