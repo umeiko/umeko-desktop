@@ -29,10 +29,10 @@ class FakeSdk(QObject):
         self.fail=False;self.import_error=''
         self.rows=[dict(id=f'skill-{i:02d}',name=f'document-{i:02d}',folderName=f'document-{i:02d}',
             scope='project' if i<20 else 'global',directory=f'/fixture/skills/{i:02d}',kind='folder',
-            path=f'/fixture/skills/{i:02d}/SKILL.md',description=f'Notes for topic {i:02d}') for i in range(40)]
+            path=f'/fixture/skills/{i:02d}/SKILL.md',enabled=True,canToggle=True,description=f'Notes for topic {i:02d}') for i in range(40)]
         self.rows[23]['descriptions']={'en':'Notes for topic 23','zh':'整理主题 23 的相关文档与说明，按需阅读技能指引。'}
         self.operations={key:True for key in ['skills.browse','skills.preview','skills.open','skills.copy','skills.paste',
-            'skills.insert','skills.rename','skills.delete','skills.job','skills.importPreview','skills.import','skills.importLocal']}
+            'skills.attach','skills.insert','skills.rename','skills.delete','skills.job','skills.importPreview','skills.import','skills.importLocal']}
     @Property(bool,notify=activeChanged)
     def active(self):return True
     @Property(float,notify=appearanceChanged)
@@ -73,6 +73,7 @@ class FakeSdk(QObject):
         elif operation in ('skills.paste','skills.importLocal'):
             result.update(imported=['copied-skill'],skipped=[],errors=[])
             if self.import_error:result.update(ok=False,error=self.import_error,imported=[],errors=[dict(name='copied-skill',error=self.import_error)])
+        elif operation=='skills.attach':next(row for row in self.rows if row['id']==args['id']).update(enabled=args['enabled'])
         elif operation=='skills.rename':next(row for row in self.rows if row['id']==args['id']).update(name=args['name'],folderName=args['name'])
         elif operation=='skills.delete':self.rows=[row for row in self.rows if row['id']!=args['id']]
         elif operation=='skills.importPreview':result['preview']=dict(id='preview-local',project=args['project'],errors=[],skills=[
@@ -122,6 +123,7 @@ def js(source):
 def actions():return [entry for entry in sdk.requests if entry[0] not in ('skills.job','skills.preview')]
 
 def reveal(name):
+    name=name.replace('skillManagerEnabled_','skillManagerEntry_')
     entries=variant(root.property('entries'))
     index=next((i for i,row in enumerate(entries) if name==('skillManagerEntry_'+row['skill']['id'] if row['kind']=='skill' else 'skillManagerScope_'+row['scope'] if row['kind']=='scope' else '')),None)
     if index is not None:
@@ -148,6 +150,14 @@ try:
     assert len(variant(root.property('entries')))==42
     assert find('skillManagerEntry_skill-00').height()==56
     assert not find('skillManagerAttach_skill-00') and not find('skillManagerDetails') and not find('skillManagerInstall')
+    click('skillManagerEnabled_skill-00');idle()
+    assert ('skills.attach',{'id':'skill-00','enabled':False}) in actions()
+    assert not find('skillManagerEnabled_skill-00').property('checked')
+    screenshot=ROOT/'artifacts/screenshots/skill-checkboxes-dark.png';screenshot.parent.mkdir(parents=True,exist_ok=True);view.grabWindow().save(str(screenshot))
+    click('skillManagerEnabled_skill-00');idle();assert find('skillManagerEnabled_skill-00').property('checked')
+    sdk.fail=True;click('skillManagerEnabled_skill-00');idle()
+    assert find('skillManagerEnabled_skill-00').property('checked'),'Failed switch did not restore the checkbox'
+    click('skillManagerRefresh');idle()
     before=len(actions());click('skillManagerEntry_skill-00');assert len(actions())==before,'Single click performed an action'
     wait_for(lambda:variant(root.property('preview')).get('id')=='skill-00','Inline Markdown preview did not load')
     assert 'Skill instructions' in find('skillManagerPreviewMarkdown').property('text')
@@ -244,8 +254,8 @@ try:
     menu=find('skillManagerContextMenu');assert menu.height()<=root.height()
     viewport=find('skillManagerMenuViewport');viewport.setProperty('contentY',viewport.property('contentHeight')-viewport.height())
     click('skillManagerMenu_delete');idle();assert len(sdk.rows)==249
-    assert not any(op in ('skills.attach','skills.default','skills.details') for op,args in sdk.requests)
+    assert not any(op in ('skills.default','skills.details') for op,args in sdk.requests)
     assert root.property('clip') and not warnings,'\n'.join(warnings)
-    print('SKILL_FOLDER_UI_OK: descriptive rows, resizable vertical split, cached Markdown preview, two roots, attachment, scoped menus, rename/delete, paste/drop, import, i18n/scale, bounded paging and narrow layouts')
+    print('SKILL_FOLDER_UI_OK: descriptive rows, resizable vertical split, cached Markdown preview, per-chat checkboxes and save-failure rollback, two roots, attachment, scoped menus, rename/delete, paste/drop, import, i18n/scale, bounded paging and narrow layouts')
 finally:
     view.close();shiboken6.delete(view);app.processEvents()

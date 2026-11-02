@@ -51,7 +51,7 @@ class SkillJobs(QObject):
         self.b.jobDone.connect(self._finished)
 
     def idle(self):
-        if self.b.busy or self.b.kernelBusy or self.b.piManagement.busy or any(
+        if self.b.busy or getattr(self.b._view,'subagents_active',False) or self.b.kernelBusy or self.b.piManagement.busy or any(
                 row['status'] == 'running' and row['operation'] != 'skills.preview' for row in self.jobs.values()):
             raise ValueError('Pi is busy; retry when the chat and management jobs are idle')
 
@@ -152,7 +152,7 @@ class SkillJobs(QObject):
         if destination is not None and args.get('project') and not record.workspace:
             raise ValueError('Choose a project before importing project skills')
         folder_ops = ('skills.preview', 'skills.open', 'skills.copy', 'skills.insert', 'skills.rename', 'skills.delete')
-        folder = self.folder_for(request, args['id']) if operation in folder_ops else None
+        folder = self.folder_for(request, args['id']) if operation in folder_ops or operation == 'skills.attach' and row.get('kind') == 'folder' else None
         clipboard_source = ''
         if operation == 'skills.paste':
             data = QGuiApplication.clipboard().mimeData()
@@ -167,7 +167,7 @@ class SkillJobs(QObject):
                 if record.workspace:
                     roots['project'] = Path(cwd).resolve() / '.pi/skills'
                 value = skill_command(release, Path(cwd).resolve(), Path(agent_dir).resolve(), agent,
-                                      action='browse', includeProject=bool(record.workspace))
+                                      action='browse', includeProject=bool(record.workspace), **options)
                 value['roots'] = {scope: str(path) for scope, path in roots.items()}
                 value['_folderApprovals'] = folder_snapshots(value, roots)
                 return value
@@ -203,6 +203,10 @@ class SkillJobs(QObject):
                 from .skill_import import commit_import
                 return {'ok': True, **commit_import(preview['value'], args.get('decisions', {}), preview['destination'])}
             if operation == 'skills.attach':
+                if folder:
+                    from .skill_folders import checked_folder
+                    checked_folder(folder)
+                if row.get('canToggle') is False:raise ValueError('此 Skill 当前不可启用，请检查格式、恢复模式或刷新列表')
                 return {'ok': True, 'path': row['path'], 'enabled': args['enabled']}
             if operation == 'skills.reveal':
                 return {'ok': True, 'directory': str(Path(row['path']).parent)}
@@ -235,8 +239,13 @@ class SkillJobs(QObject):
             if not result['ok']: raise ValueError(str(result['value']))
             value, record, operation = result['value'], job['record'], job['operation']
             if operation == 'skills.attach':
-                if record.busy or self.b.kernelBusy or self.b.piManagement.busy:
+                if record.busy or record.subagents_active or self.b.kernelBusy or self.b.piManagement.busy:
                     raise ValueError('The chat became busy; no chat change was applied')
+                source=self.catalog.get((record.key,record.workspace),[])
+                selected=next((row for row in source if row['id']==job['owner']['arguments']['id']),{})
+                if selected.get('kind')=='folder':
+                    from .skill_folders import checked_folder
+                    checked_folder(self.folder_for(job['owner'],selected['id']))
                 old = dict(record.skill_modes)
                 record.skill_modes[value['path']] = value['enabled']
                 try:

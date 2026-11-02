@@ -456,6 +456,23 @@ class SkillHostTests(unittest.TestCase):
         identifier = self.request('skills.job', {'id': job})
         self.assertFalse(self.manager.replies[identifier]['ok'])
 
+    def test_builtin_folder_switch_is_direct_scoped_and_rejects_busy_subagents(self):
+        rows=self.folder_catalog();row=rows[0]
+        self.manager.entries['skill-manager']={'name':'Skills','builtin':True,'permissions':['skills.read','skills.manage']}
+        self.manager.workers['skill-manager']={'ready':True}
+        identifier=self.request('skills.attach',{'id':row['id'],'enabled':False},widget='skill-manager')
+        self.assertFalse(self.host.panelApproval)
+        job=self.manager.replies[identifier]['jobId'];self.backend.finish()
+        identifier=self.request('skills.job',{'id':job},widget='skill-manager')
+        result=self.manager.replies[identifier]['jobs'][0]
+        self.assertEqual(result['status'],'completed',result)
+        self.assertFalse(self.backend._view.skill_modes[row['path']])
+        self.assertEqual(self.backend.second.skill_modes,{})
+        self.backend._view.subagents_active=True
+        identifier=self.request('skills.attach',{'id':row['id'],'enabled':True},widget='skill-manager')
+        self.assertFalse(self.manager.replies[identifier]['ok'])
+        self.assertFalse(self.backend._view.skill_modes[row['path']])
+
     def test_attach_persists_current_chat_and_marks_native_reload_without_touching_second(self):
         self.catalog()
         path = self.rows[0]['path']

@@ -10,7 +10,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Property, Signal, Slot, QUrl
+from PySide6.QtCore import QObject, Property, Signal, Slot, QUrl, QTimer
 from PySide6.QtGui import QDesktopServices
 from .pi_runtime import CREATE_NO_WINDOW, RELEASE_NAME, installed_version, node_executable, verify_runtime
 from .pi_terminal import console_runtime, prepare_terminal, launch_terminal
@@ -120,40 +120,66 @@ class PiManagement(QObject):
         c=self.controller
         if record.id:
             c.store.data["sessionMeta"].setdefault(record.id,{})["extensionModes"] = dict(record.extension_modes)
+            c.store.data["sessionMeta"][record.id]["piCapabilities"] = record.pi_capabilities
+            c.store.data["sessionMeta"][record.id]["blockedTools"] = record.blocked_tools
             c.store.save()
         record.stale = True
         if not record.busy and not record.subagents_active: c._pool.retire(record)
         self.changed.emit(); c.chatChanged.emit()
     def set_tool_visible(self, name, visible):
-        c, record = self.controller, self.controller._view
-        if record.busy or record.subagents_active or self._busy or c.kernelBusy:
-            raise ValueError("请等待当前任务和子代理结束后修改工具可见性")
-        tools = record.resources.get('allTools', [])
-        if not any(tool.get('name') == name and tool.get('exposure') != 'hidden' for tool in tools):
-            raise ValueError("工具列表已变更，请刷新后重试")
-        if not visible and name not in record.blocked_tools and len(record.blocked_tools) >= 4096:
-            raise ValueError("本会话工具可见性设置已达上限")
-        previous = list(record.blocked_tools)
-        record.blocked_tools = [tool for tool in previous if tool != name]
-        if not visible: record.blocked_tools.append(name)
-        try:
-            if record.id:
-                c.store.data['sessionMeta'].setdefault(record.id,{})['blockedTools'] = list(record.blocked_tools)
-                c.store.save()
-        except (OSError, RuntimeError):
-            record.blocked_tools = previous
-            if record.id: c.store.data['sessionMeta'][record.id]['blockedTools'] = previous
-            raise ValueError("工具可见性保存失败")
-        for tool in tools:
-            if tool.get('name') == name:
-                tool['visible'] = visible
-                if not visible: tool['active'] = False
-        if not visible: record.resources['tools'] = [tool for tool in record.resources.get('tools',[]) if tool != name]
-        record.stale = True
-        c._pool.retire(record)
-        self.changed.emit()
-        c.chatChanged.emit()
+        # Compatibility entry point for the cloud Widget Host API.
+        self.configure_capabilities('pi.tool', {'name':name,'enabled':visible})
 
+    def capability_profile(self):
+        from .pi_capabilities import normalize,from_legacy
+        record=self.controller._view
+        return normalize(from_legacy(record.pi_capabilities,record.blocked_tools))
+
+    def capability_extensions(self):
+        from .pi_capabilities import catalog,plugin_enabled,tool_enabled
+        record=self.controller._view;profile=self.capability_profile();tools=catalog(record.resources)
+        rows=[{'id':'builtin:pi-tools','path':'native','name':'Pi 原生工具','source':'native','scope':'session','enabled':True,
+               'info':{'icon':'code','origin':'pi','bundled':True,'description':'read · bash · powershell · edit · write · grep · find · ls'}},*copy.deepcopy(self._extensions)]
+        for row in rows:
+            source=row['path'];fallback=record.extension_modes.get(source,'session' if row.get('enabled') else 'disabled')=='session'
+            row['sessionEnabled']=plugin_enabled(profile,source,fallback)
+            owned=[t for t in tools if t['owner']==source]
+            row['tools']=[{'name':t['name'],'description':str(t.get('description',''))[:1024],'visible':tool_enabled(profile,t,fallback) and t.get('exposure')!='hidden','editable':row['sessionEnabled'] and t.get('exposure')!='hidden'} for t in owned]
+            row['toolCount']=len(owned);row['enabledToolCount']=sum(t['visible'] for t in row['tools'])
+        return rows
+
+    def capability_tools(self,identifier,query='',offset=0,limit=100):
+        from .pi_capabilities import catalog,plugin_enabled,tool_enabled
+        row=next((r for r in self.capability_extensions() if r['id']==('builtin:pi-tools' if identifier=='native' else identifier)),None)
+        if row is None:raise ValueError('Refresh the current extension catalog first')
+        record=self.controller._view;profile=self.capability_profile();source=row['path'];fallback=row['sessionEnabled']
+        if query.casefold() in (str(row.get('name',''))+' '+source+' '+str(row.get('info',{}).get('description',''))).casefold():query=''
+        tools=[{'name':t['name'][:256],'description':t.get('description','')[:1024],'enabled':tool_enabled(profile,t,fallback) and t.get('exposure')!='hidden','visible':tool_enabled(profile,t,fallback) and t.get('exposure')!='hidden','editable':row['sessionEnabled'] and t.get('exposure')!='hidden','owner':source}
+            for t in catalog(record.resources) if t['owner']==source and (not query or query.casefold() in (t['name']+' '+t.get('description','')).casefold())]
+        return {'tools':tools[offset:offset+limit],'total':len(tools),'hasMore':offset+limit<len(tools),'profile':profile,
+                'loading':record.busy and record.action=='inspect','sessionEnabled':plugin_enabled(profile,source,fallback)}
+
+    def configure_capabilities(self,action,args):
+        from .pi_capabilities import change,catalog,tool_enabled,CORE
+        c=self.controller;record=c._view
+        if record.busy or record.subagents_active or self._busy or c.kernelBusy:raise ValueError('当前会话正在运行，请在任务结束后调整工具')
+        if record.global_agent:raise ValueError('当前会话的运行边界不允许修改工具配置')
+        previous=copy.deepcopy((record.pi_capabilities,record.blocked_tools,record.resources,c.store.data['sessionMeta'].get(record.id,{})))
+        try:
+            record.pi_capabilities=change(self.capability_profile(),action,args,self._extensions,record.resources)
+            definitions=catalog(record.resources)
+            record.blocked_tools=[t['name'] for t in definitions if not tool_enabled(record.pi_capabilities,t)]
+            for t in record.resources.get('allTools',[]):
+                t['visible']=tool_enabled(record.pi_capabilities,next((d for d in definitions if d['name']==t['name']),t)) and t.get('exposure')!='hidden'
+                if not t['visible']:t['active']=False
+            record.resources['tools']=[name for name in record.resources.get('tools',[]) if name not in record.blocked_tools]
+            self._save_modes(record)
+        except (OSError,RuntimeError) as error:
+            record.pi_capabilities,record.blocked_tools,record.resources,metadata=previous
+            if record.id:c.store.data['sessionMeta'][record.id]=metadata
+            raise ValueError('工具配置保存失败：'+str(error)) from error
+        QTimer.singleShot(0,self,lambda:c._command_pi('inspect',record) if c._view is record and not record.busy and record.model else None)
+        return {'profile':self.capability_profile()}
     @Property(bool, notify=changed)
     def extensionsCurrent(self):
         return self._extensions_context == self._resource_key()

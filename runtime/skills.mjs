@@ -142,7 +142,35 @@ export function skillDetails(row) {
 
 export async function manageSkills(Pi, input) {
   if (input.action === "validateText") return validateSkillDocuments(input.documents);
-  if (input.action === "browse") return browseSkillFolders(input);
+  if (input.action === "browse") {
+    const value = await browseSkillFolders(input);
+    try {
+      if (!Pi) {
+        // Keep browsing independent of the full SDK while using Pi's own
+        // package filters to report and enforce the same availability.
+        const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
+        const [settingsModule, packagesModule] = await Promise.all([
+          import(new URL("./core/settings-manager.js", entry)),
+          import(new URL("./core/package-manager.js", entry)),
+        ]);
+        Pi = { SettingsManager: settingsModule.SettingsManager, DefaultPackageManager: packagesModule.DefaultPackageManager };
+      }
+      const settings = await prepareNativeSettings(Pi, input);
+      const manager = new Pi.DefaultPackageManager({cwd:input.cwd,agentDir:input.agentDir,settingsManager:settings});
+      const resolved = await manager.resolve(async()=>"skip");
+      const defaults = new Map(resolved.skills.map(row=>[key(row.path),!!row.enabled]));
+      for(const row of value.skills) {
+        const known=defaults.has(key(row.path)), nativeEnabled=defaults.get(key(row.path)) || false;
+        row.defaultEnabled=nativeEnabled;
+        row.enabled=override(input,row.path) ?? nativeEnabled;
+        row.canToggle=known && row.valid && !input.agent?.safeMode && !input.globalCoordinator && input.skillsEnabled!==false;
+      }
+    } catch(error) {
+      value.stateError=String(error.message || error).slice(0,500);
+      for(const row of value.skills)Object.assign(row,{enabled:override(input,row.path) ?? false,canToggle:false});
+    }
+    return value;
+  }
   const settings = await prepareNativeSettings(Pi, input);
   let rows = await discoverSkills(Pi, input, settings);
   const action = input.action || "list";
@@ -160,7 +188,7 @@ export async function manageSkills(Pi, input) {
   return { ok: true, skills: rows };
 }
 
-// A Skill is a directory, not a toggle or an installed npm package. Only the
+// A Skill is managed as one directory, with an independent chat selection. Only the
 // current global/workspace roots belong in the folder manager. Discovery stays
 // bounded and inert, including when a user drops a huge or malformed document.
 export async function browseSkillFolders(input) {
@@ -289,7 +317,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     let raw = ""; for await (const chunk of process.stdin) raw += chunk;
     const input = JSON.parse(raw);
     let Pi;
-    // Folder browsing only needs Pi's frontmatter parser, not its full SDK,
+    // Folder browsing needs only native resource settings and frontmatter, not the full SDK,
     // tool registry, provider clients and extension transpilation machinery.
     if (!["browse", "validateText"].includes(input.action)) {
       const { installProviderPolicy } = await import("./provider-policy.mjs"); installProviderPolicy({ offline: true });

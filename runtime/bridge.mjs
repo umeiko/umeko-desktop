@@ -1,7 +1,8 @@
+import { excludedSessionTools, toolSelection, collectToolCatalog } from "./session-capabilities.mjs";
 // JSONL presentation adapter for the complete, unmodified Pi Coding Agent SDK.
 // Tools, loop, skill expansion, extension hooks and session trees belong to Pi.
 import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-policy.mjs";
-import { prepareNativeSettings, sessionResourceSettings, builtins, extensionName, SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
+import { prepareNativeSettings, sessionResourceSettings, sessionExtensionPaths, builtins, extensionName, SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
 import { sessionSkillOptions } from "./skills.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
@@ -337,6 +338,7 @@ async function init(input) {
     const nativeManager = await prepareNativeSettings(Pi, { cwd, agentDir, agent: input.agent });
     const settingsManager = await sessionResourceSettings(Pi, {...input,cwd,agentDir}, nativeManager);
     const nativeSettings = settingsManager.getSettings();
+    const selectedExtensions=input.piCapabilities && !input.globalCoordinator ? await sessionExtensionPaths(Pi,{...input,cwd,agentDir},nativeManager) : null;
     const settings = Pi.SettingsManager.inMemory({ ...nativeSettings,
       retry: { ...nativeSettings.retry, ...NETWORK_RETRY, provider: { ...nativeSettings.retry?.provider, maxRetries: 0 } },
       defaultTools: [...new Set([...nativeTools, ...(settingsManager.getDefaultTools() || [])])],
@@ -348,7 +350,8 @@ async function init(input) {
         ...await sessionSkillOptions(Pi, {...input,cwd,agentDir}, nativeManager),
         ...(input.agent?.safeMode || input.globalCoordinator ? { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
           additionalExtensionPaths: builtins.map(name => "builtin:" + name) } : {}),
-        appendSystemPrompt: [DESKTOP_PI_PROMPT + " " + UMEKO_PROMPT + " Reply in the user's language.", input.agent?.instructions || ""],
+        ...(selectedExtensions ? {noExtensions:true,additionalExtensionPaths:selectedExtensions} : {}),
+        appendSystemPrompt: [(input.globalCoordinator || toolSelection(input.piCapabilities,{name:PI_COMMAND_TOOL,source:"builtin:pi-commands"}) ? DESKTOP_PI_PROMPT+" " : "") + (input.globalCoordinator || toolSelection(input.piCapabilities,{name:UMEKO_TOOL,source:"builtin:umeko-control"}) ? UMEKO_PROMPT+" " : "") + "Reply in the user's language.", input.agent?.instructions || ""],
         extensionFactories: [
           ...(input.globalCoordinator ? [{name:"global-coordinator-boundary",hidden:true,replaceable:false,factory:coordinatorExtension}] : []),
           ...(input.loopReview ? [{name:"loop-review",hidden:true,replaceable:false,factory:loopReview.extension}] : []),
@@ -359,7 +362,7 @@ async function init(input) {
           { name: "umeko-control", builtin: true, replaceable: false, factory: pi => umekoControl.extension(pi) },
           { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension },
           { name: "subagents", builtin: true, replaceable: true, factory: subagents.extension },
-          { name: "output-continuation", builtin: true, replaceable: false, factory: outputContinuationExtension },
+          { name: "output-continuation", hidden: true, replaceable: false, factory: outputContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
           { name: "tool-search", builtin: true, replaceable: true, factory: Pi.createToolSearchExtension() },
           { name: "mcp", builtin: true, replaceable: true, factory: Pi.createMcpExtension({ loadConfig: ctx => {
@@ -374,7 +377,7 @@ async function init(input) {
     // Keep native global/project resource scopes in the loader, while desktop
     // generation/compaction overrides stay in memory on the session itself.
     services.settingsManager = settings;
-    const result = await Pi.createAgentSessionFromServices({ services, sessionManager, sessionStartEvent, model: selectedModel, excludeTools: blockedToolNames(input.blockedTools) });
+    const result = await Pi.createAgentSessionFromServices({ services, sessionManager, sessionStartEvent, model: selectedModel, excludeTools: input.globalCoordinator ? undefined : [...new Set([...blockedToolNames(input.blockedTools),...excludedSessionTools(input.piCapabilities)])] });
     return { ...result, services, diagnostics: services.diagnostics };
   };
   let manager;
@@ -482,7 +485,8 @@ async function capabilities() {
   return {
     tools: active,
     contextFiles: session.resourceLoader.getAgentsFiles().agentsFiles.map(file => file.path),
-    allTools: toolInventory(session, createAllToolDefinitions(session.sessionManager.getCwd()), config.blockedTools),
+    toolCatalog: [...new Map([...Object.values(createAllToolDefinitions(session.cwd)).map(tool=>({name:tool.name,description:tool.description,parameters:tool.parameters,source:"builtin:"+tool.name,owner:"native",exposure:"direct"})),...collectToolCatalog(session)].map(tool=>[tool.name,tool])).values()].map(({name,description,source,owner,exposure})=>({name,description:String(description || "").slice(0,1024),source,owner,exposure})),
+    allTools: toolInventory(session, createAllToolDefinitions(session.sessionManager.getCwd()), [...blockedToolNames(config.blockedTools),...excludedSessionTools(config.piCapabilities)]),
     skills: session.resourceLoader.getSkills().skills.map(s => ({ name: s.name, path: s.filePath, description: s.description, sourceInfo: s.sourceInfo })),
     extensions: session.resourceLoader.getExtensions().extensions.map(e => ({ name: extensionName(e.path, session.resourceLoader.resourceMetadataByPath?.get(e.path)), path: e.path })),
     prompts: session.resourceLoader.getPrompts().prompts.map(p => ({ name: p.name, description: p.description, path: p.filePath })),

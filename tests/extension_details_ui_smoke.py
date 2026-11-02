@@ -54,7 +54,7 @@ def wait(predicate):
         QTest.qWait(10);time.sleep(.001)
         if predicate():return
     widget=find('piManagerWidget',False)
-    raise AssertionError((backend.piManagement.status, manager.status, {key:widget.property(key) for key in ('job','working','notice','pending','rows')} if widget else 'no widget',warnings))
+    raise AssertionError((backend.piManagement.status, manager.status, {key:(widget.property(key).toVariant() if hasattr(widget.property(key),'toVariant') else widget.property(key)) for key in ('job','working','notice','pending','rows')} if widget else 'no widget',warnings))
 def click(name):
     wait(lambda:find(name,False) is not None and find(name).isVisible())
     item=find(name)
@@ -70,6 +70,7 @@ try:
     assert 'pi-manager' not in manager.workers, 'Widget should start lazily'
     window.setProperty('page','settings');window.setProperty('settingsTab',3);QTest.qWait(100)
     click('openPiSettingsButton')
+    wait(lambda:not backend.piManagement.busy)
     assert find('piFold_packages',False) is None
     window.setProperty('page','chat')
     assert manager.openPage('pi-manager')
@@ -80,7 +81,7 @@ try:
     find('piManagerSearch').setProperty('text','extension-details')
     wait(lambda:find('piManagerList').property('count')==1 and not widget.property('working'))
     fixture=next(row for row in backend.piManagement.extensions if row['name']=='@fixture/extension-details')
-    click('piManagerEntry_'+fixture['id'])
+    click('piExtensionDetails_'+fixture['id'])
     wait(lambda:'Fixture extension' in find('piManagerReadme').property('text') and not widget.property('working'))
     scroll=find('piManagerDetailScroll')
     snapshot('pi-widget-detail-debug.png')
@@ -91,28 +92,29 @@ try:
     snapshot('pi-widget-detail-scroll.png')
     click('piManagerHomepage');click('piManagerRepository')
     assert links.urls==['https://example.com/extensions','https://github.com/example/extensions']
-    # Select the conversation-only override and accept the actual native popup.
-    click('piManagerActivation');QTest.keyClick(window,Qt.Key_Home);QTest.keyClick(window,Qt.Key_Down);QTest.keyClick(window,Qt.Key_Return)
-    wait(lambda:bool(manager.hostServices.pendingApproval))
-    click('widgetHost_allowToolButton')
-    wait(lambda:backend._view.extension_modes.get(fixture['path'])=='session' and not widget.property('working'))
+    # Session-only switches apply directly and never edit native/global settings.
+    click('piManagerSessionSwitch')
+    wait(lambda:backend._view.pi_capabilities.get('preset')=='custom' and not widget.property('working') and not backend._view.busy)
+    assert fixture['path'] in backend._view.pi_capabilities['custom']['plugins']
+    assert not manager.hostServices.pendingApproval
     assert json.loads((agent/'settings.json').read_text())=={'packages':[str(pkg)]}
     click('piManagerBack')
     find('piManagerSearch').setProperty('text','codemode')
     builtin=next(row for row in backend.piManagement.extensions if row['path']=='builtin:codemode')
-    wait(lambda:find('piManagerEntry_'+builtin['id'],False) is not None and not widget.property('working'))
+    wait(lambda:find('piExtensionDetails_'+builtin['id'],False) is not None and not widget.property('working'))
     assert not builtin['info']['required']
-    click('piManagerEntry_'+builtin['id'])
-    wait(lambda:find('piManagerActivation').isEnabled() and not widget.property('working'))
-    click('piManagerActivation');QTest.keyClick(window,Qt.Key_Home);QTest.keyClick(window,Qt.Key_Down);QTest.keyClick(window,Qt.Key_Down);QTest.keyClick(window,Qt.Key_Return)
-    wait(lambda:bool(manager.hostServices.pendingApproval))
-    click('widgetHost_allowToolButton')
-    wait(lambda:backend._view.extension_modes.get(builtin['path'])=='disabled' and not widget.property('working'))
-    assert find('piManagerActivation').property('currentIndex')==2
-    click('piManagerActivation');QTest.keyClick(window,Qt.Key_Home);QTest.keyClick(window,Qt.Key_Down);QTest.keyClick(window,Qt.Key_Return)
-    wait(lambda:bool(manager.hostServices.pendingApproval))
-    click('widgetHost_allowToolButton')
-    wait(lambda:backend._view.extension_modes.get(builtin['path'])=='session' and not widget.property('working'))
+    click('piExtensionDetails_'+builtin['id'])
+    wait(lambda:find('piManagerSessionSwitch').isEnabled() and not widget.property('working'))
+    click('piManagerSessionSwitch')
+    wait(lambda:backend._view.pi_capabilities.get('custom',{}).get('plugins',{}).get(builtin['path']) is False
+         and not widget.property('working') and not backend._view.busy)
+    assert not manager.hostServices.pendingApproval
+    assert not find('piManagerSessionSwitch').property('checked')
+    click('piManagerSessionSwitch')
+    wait(lambda:backend._view.pi_capabilities.get('custom',{}).get('plugins',{}).get(builtin['path']) is True
+         and not widget.property('working') and not backend._view.busy)
+    assert find('piManagerSessionSwitch').property('checked')
+    assert not manager.hostServices.pendingApproval
     assert json.loads((agent/'settings.json').read_text())=={'packages':[str(pkg)]}
     first=backend._view
     click('piManagerBack')
@@ -145,7 +147,7 @@ try:
     manager.setEnabled('pi-manager',True)
     backend.newSession()
     assert backend._view is not first and not backend._view.extension_modes
-    assert first.extension_modes[fixture['path']]=='session'
+    assert fixture['path'] in first.pi_capabilities['custom']['plugins']
     assert not warnings,warnings
     print('PI_WIDGET_UI_OK: actual Widget, bounded scroll, local search, metadata links, native confirmation, literal local install, scoped activation, close and disable lifecycle')
 finally:

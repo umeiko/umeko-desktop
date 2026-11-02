@@ -10,7 +10,7 @@ Skills 通过 `agent.save` 的 `config.skillPaths` 配置额外路径；Pi 自�
 
 ## 创建和管理 Skill 目录
 
-Skill 是包含 `SKILL.md` 的文件夹，资源和脚本可一起放在该文件夹中。创建、编辑、复制、重命名或删除时，使用已有的文件工具处理整个目录即可，不需要额外的 Skill 创建或管理工具，也不要求用户逐个勾选附带。
+Skill 是包含 `SKILL.md` 的文件夹，资源和脚本可一起放在该文件夹中。创建、编辑、复制、重命名或删除时，使用已有的文件工具处理整个目录即可，不需要额外的 Skill 创建或管理工具。默认自动发现，用户可在 Skill Widget 的复选框中为当前会话启用或禁用单项；尊重用户禁用的配置。
 
 - 当前工作区：`<当前工作目录>/.pi/skills/<skill-name>/SKILL.md`。以当前调用聊天的实际工作目录为准，不能把另一个聊天的前台工作区作为目标。
 - 全局：`<当前 Pi agentDir>/skills/<skill-name>/SKILL.md`。先用现有的 `settings.get` 读取 `config.agent.agentDir`；配置为空时才使用 `~/.pi/agent/skills`。Umeko 可以配置独立的 Pi 目录，不要直接假定系统另装的 Pi 使用的目录就是当前实例的目录。

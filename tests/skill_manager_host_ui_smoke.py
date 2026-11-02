@@ -137,6 +137,34 @@ def main():
             assert not backend._view.skill_modes
             assert ((agent/'settings.json').read_bytes() if (agent/'settings.json').exists() else None)==before
 
+            # The real checkbox persists only the selected chat, without a
+            # second confirmation or changing native Pi settings.
+            owner=backend._view;owner.id='skill-switch-fixture';backend.chatChanged.emit()
+            search=find('skillManagerSearch');search.setProperty('text','global-guide')
+            checkbox_name='skillManagerEnabled_'+global_row['id']
+            wait_for(lambda:find(checkbox_name) is not None and find(checkbox_name).isVisible(),'Checkbox not visible')
+            from PySide6.QtCore import Qt
+            checkbox=find(checkbox_name);assert checkbox.property('checked')
+            QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,checkbox.mapToScene(checkbox.boundingRect().center()).toPoint())
+            wait_for(lambda:idle() and owner.skill_modes.get(global_row['path']) is False,'Disabling did not save')
+            assert not host.panelApproval and not find(checkbox_name).property('checked')
+            assert Store(profile).data['sessionMeta'][owner.id]['skillModes'][global_row['path']] is False
+            backend.newSession();assert not backend._view.skill_modes
+            assert manager.openPage('skill-manager');wait_for(idle,'Second chat did not load')
+            find('skillManagerSearch').setProperty('text','global-guide')
+            wait_for(lambda:find(checkbox_name) is not None,'Second chat checkbox missing')
+            assert find(checkbox_name).property('checked'),'Skill state leaked to a second chat'
+            backend._activate(owner);assert manager.openPage('skill-manager');wait_for(idle,'Original chat did not reload')
+            widget=find('skillManagerWidget');find('skillManagerSearch').setProperty('text','global-guide')
+            wait_for(lambda:find(checkbox_name) is not None,'Restored checkbox missing')
+            assert not find(checkbox_name).property('checked')
+            checkbox=find(checkbox_name)
+            QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,checkbox.mapToScene(checkbox.boundingRect().center()).toPoint())
+            wait_for(lambda:idle() and owner.skill_modes.get(global_row['path']) is True,'Re-enabling did not save')
+            assert ((agent/'settings.json').read_bytes() if (agent/'settings.json').exists() else None)==before
+            find('skillManagerSearch').setProperty('text','');wait_for(idle,'Search reset did not settle')
+            screenshot=ROOT/'artifacts/screenshots/skill-checkboxes.png';screenshot.parent.mkdir(parents=True,exist_ok=True);window.grabWindow().save(str(screenshot))
+
             # Paste directly into the selected workspace, without navigating,
             # confirming or treating the global source as a local conflict.
             result(request('skills.copy',{'id':global_row['id'],'kind':'folder'}))

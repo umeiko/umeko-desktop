@@ -228,6 +228,10 @@ Python 使用 `context.host_capabilities` 和
 | `pi.network` | `pi.read` | 返回宿主显式设置的 `npmRegistry/npmUserconfig/npmCafile`，不返回 `.npmrc` 内容、代理密钥或供应商配置。空值保留 npm 的原生配置发现行为。 |
 | `pi.scan` | `pi.read` | 使用当前内嵌 Pi 的原生扩展发现，返回宿主 `jobId`。不执行被发现的扩展。 |
 | `pi.details` | `pi.read` | `{id}`，按需读取有大小上限的本地 README；返回异步任务，完成后用 `pi.status {details:id}` 读取。不会执行扩展代码。 |
+| `pi.tools` | `pi.read` | `{id,query?,offset?,limit?}`，按插件查询工具（原生组为 `builtin:pi-tools`（兼容别名 `native`）），默认100、最多200条；返回 `tools/total/hasMore/loading/sessionEnabled/profile`，每项含 `name/description/enabled/owner`，说明最多1024字。初始化由 `pi.inventory` 单独发起，查询本身不发模型请求。 |
+| `pi.preset` | `pi.manage` | `{preset:"standard"\|"minimal"\|"full"\|"custom"}`，仅修改当前聊天的能力预设，返回 `result.profile`。 |
+| `pi.plugin` | `pi.manage` | `{id,enabled:boolean}`，当前聊天的插件总开关；原生工具组使用 `builtin:pi-tools`（兼容 `native`）。关闭插件时不加载模块和钩子。 |
+| `pi.tool` | `pi.manage` | `{name,enabled:boolean}`，开关当前目录中的单个工具；即使通过 codemode 或工具搜索也不能调用已关闭的工具。插件关闭时工具不能单独生效。 |
 | `pi.activation` | `pi.manage` | `{id,mode}`；`global`、`session`、`disabled` 分别为全局启用、本对话启用、本对话暂时禁用。须宿主确认；对话覆盖不改写共享 Pi 设置。 |
 | `pi.checkUpdate` | `pi.read` | `{id}` 为原生扩展 ID；原生更新检查任务。 |
 | `pi.enable` | `pi.manage` | `{id, enabled: boolean}`；宿主确认后调用原生启用/停用。 |
@@ -247,7 +251,7 @@ Python 使用 `context.host_capabilities` 和
 | `skills.delete` | `skills.manage` | `{id}`；宿主面板确认后删除整个 Skill 文件夹及其内容，不跟随资源中的链接。 |
 | `skills.list` | `skills.read` | `{}`；原生发现包括停用、尚未加载的技能。异步任务结果含 `skills[]`，每项有不透明 `id`、名称、描述、路径、来源、范围、`enabled` 默认状态、`attached` 本聊天可用状态、`defaultMutable` 和已登记包的 `removable/packageSource`。动态扩展技能来自本聊天已发现的资源，不通过扫描执行扩展。 |
 | `skills.details` | `skills.read` | `{id}`；异步返回 `details`：有界本地 Markdown、相对文件清单、字节大小、来源路径、目录及 `truncated`。字节不等于 token，截断时大小仅表示已列出的文件。 |
-| `skills.attach` | `skills.manage` | `{id,enabled:boolean}`；确认后持久化本聊天覆盖，通过 Pi 原生 `skillsOverride` 在下次加载应用。不会清除已读的历史内容，不改其他聊天或全局默认。 |
+| `skills.attach` | `skills.manage` | `{id,enabled:boolean}`；内置 Skill 页面的复选框直接保存，其他 Widget 经确认后持久化本聊天覆盖，通过 Pi 原生 `skillsOverride` 在下次加载应用。不会清除已读的历史内容，不改其他聊天或全局默认。 |
 | `skills.default` | `skills.manage` | `{id,enabled:boolean}`；仅允许有全局默认的来源，确认后更新 Pi 原生全局设置，保留聊天覆盖。项目和动态来源不显示此开关。 |
 | `skills.reveal` | `skills.manage` | `{id}`；确认后打开该目录，不接受任意路径。 |
 | `skills.remove` | `skills.manage` | `{id}`；确认后卸载技能所属的整个已登记 Pi 包；独立技能不提供卸载。 |
@@ -255,13 +259,13 @@ Python 使用 `context.host_capabilities` 和
 | `skills.importPreview` | `skills.read` | `{source,project:boolean}`；本地文件夹、`.zip` 或 `.skill` 的只读预览，返回异步任务。结果 `preview.id/skills/errors/project/sourceName`；技能项有名称、简介、重名状态及是否可替换。预览不写入文件；归档沿用现有安全路径、大小和条目限制。 |
 | `skills.import` | `skills.manage` | `{id:previewId,decisions:{name:"skip"或"replace"}}`；确认后导入到所选全局或项目标准技能目录。每个重名项必须明确选择；不会替换包内或目标目录外的技能。结果含 `imported/skipped`。预览与任务同样绑定 Widget 实例、聊天及工作区；不能提交其他实例的预览。 |
 
-官方 Skill Widget 使用上述目录型接口；旧的聊天附带/默认启停和原生包接口保留兼容，但不再作为该 Widget 的 UI 入口。目录浏览、打开、复制与附加可在主 Agent 工作时使用；导入、重命名、删除仍要求相关任务空闲。关闭 Widget 会释放目录快照和缓存。
+官方 Skill Widget 使用上述目录型接口；逐项复选框复用 `skills.attach`，只修改当前会话；内置 Skill Widget 的此项用户操作直接生效，其他 Widget 仍需宿主确认。默认启停和原生包接口保留兼容，不作为该 Widget 的 UI 入口。目录浏览、打开、复制与附加可在主 Agent 工作时使用；导入、重命名、删除仍要求相关任务空闲。关闭 Widget 会释放目录快照和缓存。
 
 技能重命名、删除及显式预览导入的确认区由宿主绘制在所属 Widget 面板内。页面在确认期间不能交互，SDK 和公开 Agent RPC 没有批准接口。用户的粘贴/拖入直接新增文件夹，无额外确认；仍要求 `skills.manage` 权限和空闲状态，重名、格式或目录校验失败不会替换原文件。不存在 JSON 批准标志或 Agent 管理工具。
 其他 Widget 的现有确认流程保持原样。`accepted/jobId` 仅表示接收任务，页面应查询到完成或失败。
 
-除上述仅新增的粘贴/拖入外，管理写操作通过宿主确认。执行前再次检查 Widget 激活状态、聊天、工作区和忙碌状态；
-不自动排队到另一个项目，也不开放修改安装权限、工具权限或任意桌面操作的接口。
+除上述仅新增的粘贴/拖入，以及内置 Pi 页面直接操作 `pi.preset/pi.plugin/pi.tool`、内置 Skill 页面直接操作 `skills.attach` 外，管理写操作通过宿主确认；其他 Widget 调用这些会话开关仍需确认。执行前再次检查 Widget 激活状态、聊天、工作区和忙碌状态；
+不自动排队到另一个项目，也不开放修改安装权限、任意桌面操作或安装审批策略的接口。能力预设仅修改当前会话；兼容云端旧版 `blockedTools` 记录，手动开关自动转入自定义配置。
 `accepted`/`jobId` 只是已开始，只有 `pi.job` 的 `done` 才是完成，`failed` 才是失败。
 运行中的 Agent 安装应继续调用现有 `run_pi_command` 和其权限确认、排队 `/reload`；
 Widget 管理接口会拒绝忙碌时的写操作，不能作为安装权限的替代路径。
