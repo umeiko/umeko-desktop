@@ -201,6 +201,8 @@ def run_gui(args, server):
                 'lineHeights': sorted(set(s['lineHeight'] for s in streamed)),
                 'secondLineY': [min(s['secondLineY'] for s in streamed), max(s['secondLineY'] for s in streamed)],
                 'largestTailGap': round(max(abs(s['footerBottom']-s['viewHeight']) for s in frames),3),
+                'unexplainedTailGap': round(max(abs(b['footerBottom']-b['viewHeight'])
+                    - max(0, b['contentHeight']-a['contentHeight']) for a,b in zip(frames,frames[1:])),3),
                 'tailScrollAdvance': round(active[-1]['contentY']-active[0]['contentY'],3),
                 'backwardJumps': len(backwards), 'largestBackwardJump': round(-min(backwards,default=0),3),
                 'browseDrift': round(max(s['contentY'] for s in browse)-min(s['contentY'] for s in browse),3),
@@ -220,8 +222,12 @@ def run_gui(args, server):
             assert summary['browseDrift'] <= 1, summary
             assert summary['browseLineDrift'] <= 1, summary
             assert len(frames) >= 20 and summary['tailScrollAdvance'] > view.height(), summary
-            # A frame may precede the zero-delay tail timer by one newly added line.
-            assert summary['largestTailGap'] <= summary['secondLineY'][1] + 1, summary
+            # A frame can precede the zero-delay tail timer. Coalesced SSE chunks
+            # can add several lines in that frame, so bound the lag by its actual
+            # layout growth. An unchanged frame must already be within one pixel;
+            # persistent lag cannot pass, regardless of the number of new lines.
+            assert abs(frames[0]['footerBottom']-frames[0]['viewHeight']) <= summary['secondLineY'][1] + 1, summary
+            assert summary['unexplainedTailGap'] <= 1, summary
             print('THINKING_STREAM_UI_OK', flush=True)
         finally:
             server.stop.set()
