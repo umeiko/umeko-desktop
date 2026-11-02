@@ -432,7 +432,7 @@ class DesktopPlugins(QObject):
             root=Path(self._session['workspace']).resolve();path=Path(args.get('path','')).resolve()
             if not path.is_relative_to(root) or not path.is_file():return
             if kind=='session.attach':self.b.attachChatboxFile(str(path))
-            else:self.b.documentRequested.emit(str(path),path.name,'file')
+            else:self.b.widgetDocumentRequested.emit(str(path),path.name,'file',identifier)
     def manage(self,request,done):
         if self._busy or self.closed:return ''
         token=uuid.uuid4().hex

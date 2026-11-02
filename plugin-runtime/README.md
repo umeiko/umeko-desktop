@@ -234,7 +234,8 @@ Python 使用 `context.host_capabilities` 和
 | `pi.refresh` | `pi.manage` | 宿主确认后刷新并应用原生扩展配置。 |
 | `pi.cancel` | `pi.manage` | `{id:jobId}`；仅取消本 Widget 当前实例、同一聊天/工作区发起且仍运行的插件安装。不会再次弹确认。关闭 Widget 也会取消其未完成的安装。 |
 | `pi.job` | `pi.read` | `{id: jobId}`；只能读取本 Widget 实例、同一聊天/工作区创建的任务。返回 `jobs[].status` 和简短的 `result.ok/error`；安装过程中附带 `progress.message/state/cancellable`；完成后用 `pi.status` 读取列表。 |
-| `skills.browse` | `skills.read` | `{}`；仅浏览当前配置的全局 `agentDir/skills` 与当前工作区 `.pi/skills`。异步结果含 `roots`、`skills[]` 和 `truncated`；条目为整个文件夹，含 `id/name/folderName/skillName/description/path/directory/scope/valid`。不列 npm 包或额外资源路径，不展开包内文件。最多扫描 20000 个目录条目、5000 个 Skill、24 层；每份元数据至多读取 64 KiB，总读取至多 128 MiB。不执行代码。列表通过 `skills.job` 分页。 |
+| `skills.browse` | `skills.read` | `{}`；仅浏览当前配置的全局 `agentDir/skills` 与当前工作区 `.pi/skills`。异步结果含 `roots`、`skills[]` 和 `truncated`；条目为整个文件夹，含 `id/name/folderName/skillName/description/path/directory/scope/valid`，原版预装技能另含供 UI 按语言选取的 `descriptions.zh/en`。不列 npm 包或额外资源路径，不展开包内文件。最多扫描 20000 个目录条目、5000 个 Skill、24 层；每份元数据至多读取 64 KiB，总读取至多 128 MiB。不执行代码。列表通过 `skills.job` 分页。 |
+| `skills.preview` | `skills.read` | `{id}`；只读取当前目录浏览已经批准的 Skill 文件夹中的 `SKILL.md`，通过 `skills.job` 返回 `details:{id,path,markdown,truncated}`。只读、无确认，可在智能体工作时使用；最多读取 64 KiB，展示前 24000 个字符，不启动 Pi 内核或执行技能。 |
 | `skills.insert` | `session.write` | `{id}`；把已浏览、仍在批准目录内的整个 Skill 文件夹附加到当前输入框。不发送消息、不改聊天可用性或草稿。 |
 | `skills.open` | `skills.read` | `{id,mode}`；`preview` 使用右侧文档预览器显示 SKILL.md；`edit` 使用系统关联应用打开 SKILL.md；`reveal` 在系统文件管理器中打开整个 Skill 文件夹。 |
 | `skills.copy` | `skills.read` | `{id,kind}`；`folder` 把整个目录写入系统文件剪贴板；`path` 复制目录路径。 |

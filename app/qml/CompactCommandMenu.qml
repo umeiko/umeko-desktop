@@ -43,7 +43,7 @@ Rectangle {
         }
         return result
     }
-    readonly property real rowHeight: Theme.control(33)
+    readonly property real rowHeight: Theme.control(62)
     readonly property real headingHeight: Theme.control(25)
     readonly property real naturalHeight: rows.reduce((height, row) => height + (row.heading ? headingHeight : rowHeight), 16)
     signal chosen(var entry)
@@ -118,14 +118,15 @@ Rectangle {
                     Layout.preferredWidth: Theme.icon(17)
                     Layout.preferredHeight: Theme.icon(17)
                 }
-                Text {
-                    text: row.modelData.entry ? row.modelData.entry.title : ""
-                    color: Theme.ink
-                    font.pixelSize: Theme.font(13)
-                    textFormat: Text.PlainText
-                    elide: Text.ElideRight
-                    Layout.maximumWidth: root.width * 0.34
-                }
+                ColumnLayout {
+                    Layout.fillWidth:true;spacing:3
+                RowLayout {
+                    Layout.fillWidth:true
+                    Text {
+                        text: row.modelData.entry ? row.modelData.entry.title : ""
+                        color: Theme.ink;font.pixelSize: Theme.font(13);textFormat: Text.PlainText
+                        elide: Text.ElideRight;Layout.fillWidth:true
+                    }
                 Text {
                     readonly property string pronunciation: row.modelData.entry && !root.matchesName(row.modelData.entry)
                         ? root.matchedPinyin(row.modelData.entry) : ""
@@ -137,13 +138,17 @@ Rectangle {
                     elide: Text.ElideRight
                     Layout.maximumWidth: root.width * 0.25
                 }
+                }
                 Text {
+                    objectName:row.modelData.entry ? "commandDescription_"+row.modelData.entry.id : ""
                     text: row.modelData.entry ? row.modelData.entry.description : ""
                     color: Theme.muted
-                    font.pixelSize: Theme.font(12)
+                    font.pixelSize: Theme.font(11)
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
                     Layout.fillWidth: true
+                    wrapMode:Text.Wrap;maximumLineCount:2
+                }
                 }
                 Text {
                     text: row.modelData.entry ? row.modelData.entry.scope || "" : ""

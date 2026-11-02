@@ -20,6 +20,7 @@ class SlashCommands(QObject):
         backend.viewChanged.connect(self.invalidate)
         backend.desktopPlugins.changed.connect(self.invalidate)
         backend.jobDone.connect(self.finished)
+        backend.appearanceChanged.connect(self.changed)
 
     def key(self):
         r = self.b._view
@@ -43,7 +44,9 @@ class SlashCommands(QObject):
             rows.append(dict(id='widget:'+row['id'], widgetId=row['id'], group='Widgets', title=row['name'], icon=row['iconGlyph'],
                              iconSource=row.get('iconSource', ''), description=row.get('summary', ''), scope='Widget'))
         if self._context == self.key() and self.b.desktopPlugins.skills_enabled(self.b._view):
-            rows.extend(self._skills)
+            rows.extend({**row, 'description': row.get('descriptions', {}).get(self.b.language, row['description']),
+                         'scope': ('项目' if row['scopeKey'] == 'project' else '全局') if not english else ('Project' if row['scopeKey'] == 'project' else 'Global')}
+                        for row in self._skills)
         return [{**row, 'titlePinyin': lazy_pinyin(row['title'])} for row in rows]
 
     @Slot()
@@ -77,7 +80,7 @@ class SlashCommands(QObject):
                     path = Path(row['path'])
                     title = path.parent.name if path.name == 'SKILL.md' else row['name']
                     self._skills.append(dict(id=row['id'], group='技能', title=title, icon='skill',
-                        description=row['description'], path=row['path'],
+                        description=row['description'], descriptions=row.get('descriptions', {}), path=row['path'], scopeKey=row['scope'],
                         scope=('项目' if row['scope'] == 'project' else '全局') if self.b.language != 'en'
                         else ('Project' if row['scope'] == 'project' else 'Global')))
         else:

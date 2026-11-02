@@ -18,7 +18,7 @@ class Pool(QObject):
     def find(self,identifier):return next((row for row in self.records.values() if row.id==identifier),None)
 
 class Host(QObject):
-    viewChanged=Signal();chatChanged=Signal();toast=Signal(str);documentRequested=Signal(str,str,str);editorText=Signal(str)
+    viewChanged=Signal();chatChanged=Signal();toast=Signal(str);documentRequested=Signal(str,str,str);widgetDocumentRequested=Signal(str,str,str,str);editorText=Signal(str)
     def __init__(self,directory):
         super().__init__();self.root=ROOT;self.store=SimpleNamespace(directory=directory/'profile')
         self._view=SimpleNamespace(key='token-one',id='session-one',workspace=str(directory/'workspace'),title='Fixture',busy=False,global_agent='',failed=False,cancelled=False,messages=[{'role':'user','text':'fixture context'}])

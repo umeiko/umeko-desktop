@@ -120,6 +120,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     requestDetailsRequested = Signal(str)
     webRequested = Signal(str, str)
     documentRequested = Signal(str, str, str)
+    widgetDocumentRequested = Signal(str, str, str, str)
     taskFinished = Signal(str, str, bool, bool)
     jobDone = Signal(str, object)
     jobStarted = Signal(str)

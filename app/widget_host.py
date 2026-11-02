@@ -41,6 +41,7 @@ OPERATIONS = {
     'skills.importPreview': ('skills.read', None),
     'skills.import': ('skills.manage', None),
     'skills.browse': ('skills.read', None),
+    'skills.preview': ('skills.read', None),
     'skills.open': ('skills.read', None),
     'skills.copy': ('skills.read', None),
     'skills.paste': ('skills.manage', None),
@@ -212,7 +213,7 @@ class WidgetHost(QObject):
                       'skills.attach': {'id', 'enabled'}, 'skills.default': {'id', 'enabled'},
                       'skills.reveal': {'id'}, 'skills.remove': {'id'},
                       'skills.importPreview': {'source', 'project'}, 'skills.import': {'id', 'decisions'},
-                      'skills.browse': set(), 'skills.open': {'id', 'mode'}, 'skills.copy': {'id', 'kind'},
+                      'skills.browse': set(), 'skills.preview': {'id'}, 'skills.open': {'id', 'mode'}, 'skills.copy': {'id', 'kind'},
                       'skills.paste': {'project'}, 'skills.importLocal': {'source', 'project'},
                       'skills.insert': {'id'}, 'skills.rename': {'id', 'name'}, 'skills.delete': {'id'}}[operation]
             if set(args) - fields:
@@ -261,7 +262,7 @@ class WidgetHost(QObject):
                 row=next((row for row in self.b.piManagement.extensions if row.get('id')==args['id']),{})
                 if row.get('info',{}).get('required'):
                     raise ValueError('Umeko 基础能力固定启用，不能修改启用范围')
-            if operation.startswith('skills.') and operation not in ('skills.job', 'skills.browse', 'skills.open', 'skills.copy', 'skills.insert'):
+            if operation.startswith('skills.') and operation not in ('skills.job', 'skills.browse', 'skills.preview', 'skills.open', 'skills.copy', 'skills.insert'):
                 self._skill_service().idle()
             if requires_confirmation(operation):
                 if self.b.busy or self.b.piManagement.busy or self.b.kernelBusy:

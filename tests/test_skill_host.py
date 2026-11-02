@@ -31,6 +31,7 @@ class Backend(QObject):
     changed = Signal()
     chatChanged = Signal()
     documentRequested = Signal(str, str, str)
+    widgetDocumentRequested = Signal(str, str, str, str)
 
     def __init__(self, root):
         super().__init__()
@@ -185,7 +186,7 @@ class SkillHostTests(unittest.TestCase):
     def test_folder_copy_clipboard_preview_editor_and_reveal_use_approved_directory(self):
         row = self.folder_catalog()[0]
         previews = []
-        self.backend.documentRequested.connect(lambda *value:previews.append(value))
+        self.backend.widgetDocumentRequested.connect(lambda *value:previews.append(value))
         with patch('app.plugin_file_actions.copy_files') as copy_folder:
             self.assertEqual(self.finish(self.accepted('skills.copy', {'id':row['id'],'kind':'folder'}))['status'], 'completed')
             copy_folder.assert_called_once_with([Path(row['directory'])])
@@ -194,11 +195,27 @@ class SkillHostTests(unittest.TestCase):
             self.finish(self.accepted('skills.copy', {'id':row['id'],'kind':'path'}))
             clipboard.setText.assert_called_once_with(row['directory'])
         self.finish(self.accepted('skills.open', {'id':row['id'],'mode':'preview'}))
-        self.assertEqual(previews, [(row['path'],'alpha','file')])
+        self.assertEqual(previews, [(row['path'],'alpha','file','a')])
         self.finish(self.accepted('skills.open', {'id':row['id'],'mode':'edit'}))
         self.assertEqual(Path(self.open_folder.call_args.args[0].toLocalFile()), Path(row['path']))
         self.finish(self.accepted('skills.open', {'id':row['id'],'mode':'reveal'}))
         self.assertEqual(Path(self.open_folder.call_args.args[0].toLocalFile()), Path(row['directory']))
+
+    def test_inline_preview_is_bounded_scoped_and_does_not_start_pi(self):
+        row=self.folder_catalog()[0];before=len(self.cli_calls)
+        self.backend.busy=True
+        result=self.finish(self.accepted('skills.preview',{'id':row['id']}))
+        self.assertEqual(result['status'],'completed',result)
+        self.assertIn('markdown',result['result']['details'])
+        self.assertEqual(len(self.cli_calls),before)
+        self.assertFalse(self.host.panelApproval)
+        foreign=self.request('skills.preview',{'id':'not-in-current-catalog'},widget='b')
+        self.assertFalse(self.manager.replies[foreign]['ok'])
+        Path(row['path']).write_text('x'*100000)
+        details=self.finish(self.accepted('skills.preview',{'id':row['id']}))['result']['details']
+        self.assertEqual(len(details['markdown']),24000)
+        self.assertTrue(details['truncated'])
+        self.assertEqual(len(self.cli_calls),before)
 
     def test_paste_and_drop_add_directly_to_explicit_scope_without_confirmation(self):
         row = self.folder_catalog()[0]

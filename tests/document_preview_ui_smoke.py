@@ -1,5 +1,6 @@
 """Local artifact preview needs no WebEngine: render, bounded fallback, close and session isolation."""
 import os,sys,tempfile
+from unittest.mock import patch
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen');os.environ.setdefault('QT_QUICK_BACKEND','software')
@@ -13,7 +14,11 @@ with tempfile.TemporaryDirectory(prefix='umeko-document-ui-') as temporary:
     code=base/'example.py';code.write_text('def hello(name):\n    # 用户产物\n    return f"Hello, {name}"\n',encoding='utf-8')
     large=base/'large.py'
     with large.open('wb') as stream:stream.write(b'print("hello")\n'*30000);stream.truncate(512*1024*1024)
-    app,engine,controller=create_application();window=engine.rootObjects()[0];warnings=[];engine.warnings.connect(lambda es:warnings.extend(str(e) for e in es))
+    # Windows can already have the bundled engine; this fixture deliberately
+    # verifies document previews without an initialized browser on every OS.
+    with patch('app.webview.configure'):
+        app,engine,controller=create_application()
+    window=engine.rootObjects()[0];warnings=[];engine.warnings.connect(lambda es:warnings.extend(str(e) for e in es))
     assert not controller.webviewAvailable
     def find(name):
         pending=[window.contentItem()]

@@ -37,18 +37,60 @@ FocusScope {
     property var importPreview: ({})
     property var importDecisions: ({})
     property var importResult: ({})
+    property var preview: ({})
+    property var previewCache: ({})
+    property var previewOrder: []
+    property string previewError: ""
+    property string previewRequest: ""
+    property string previewJob: ""
+    property string previewSkill: ""
+    property int previewGeneration: 0
+    property int requestedGeneration: 0
     readonly property bool working: !!job || Object.keys(pending).length > 0
-    readonly property real rowHeight: 26 * sdk.scale
+    readonly property real rowHeight: 56 * sdk.scale
     readonly property var selected: skills.filter(row => row.id === selectedId)[0] || null
     readonly property var entries: folderEntries()
     readonly property bool importReady: !!importPreview.id && !(importPreview.errors || []).length
         && (importPreview.skills || []).some(row => !row.error && importDecisions[row.name] !== "skip" && (!row.conflict || row.replaceable))
     function t(zh,en) {return sdk.language.indexOf("zh")===0 ? zh : en}
     function scopeLabel(scope) {return scope==="project" ? t("工作区","Workspace") : t("全局","Global")}
+    function description(row){return row ? (row.descriptions || {})[sdk.language] || row.description || "" : ""}
+    function loadPreview() {
+        if(!selected || !sdk.active)return
+        if(previewCache[selectedId]){preview=previewCache[selectedId];previewError="";return}
+        if(previewRequest || previewJob)return
+        if(!sdk.hostCapabilities.operations["skills.preview"])return
+        previewSkill=selectedId;requestedGeneration=previewGeneration
+        previewRequest=sdk.requestHost("skills.preview",{id:selectedId})
+    }
+    function previewResponse(value) {
+        previewRequest=""
+        if(value.jobId){previewJob=value.jobId;return}
+        const item=(value.jobs || [])[0]
+        if(item && item.status==="running")return
+        previewJob=""
+        if(requestedGeneration===previewGeneration){
+            const result=item ? item.result || {} : value
+            if(value.ok===false || (item && item.status!=="completed") || result.ok===false){
+                if(previewSkill===selectedId)previewError=errorText(result.error || value.error || t("无法读取 Skill。","Could not read the Skill."))
+            } else {
+                const details=result.details || {}
+                let cache=Object.assign({},previewCache);cache[previewSkill]=details
+                let order=previewOrder.filter(id=>id!==previewSkill);order.push(previewSkill)
+                while(order.length>8)delete cache[order.shift()]
+                previewCache=cache;previewOrder=order
+                if(previewSkill===selectedId){preview=details;previewError=""}
+            }
+        }
+        if(previewSkill!==selectedId || requestedGeneration!==previewGeneration)previewDelay.restart()
+    }
+    onSelectedIdChanged:{previewError="";previewDelay.restart()}
+    Timer{id:previewDelay;interval:80;onTriggered:root.loadPreview()}
+    Timer{interval:80;repeat:true;running:root.sdk.active && !!root.previewJob;onTriggered:if(!root.previewRequest)root.previewRequest=root.sdk.requestHost("skills.job",{id:root.previewJob})}
     function folderEntries() {
         let result=[]
         for(const scope of ["project","global"]) {
-            const rows=skills.filter(row=>row.scope===scope && (row.name+" "+(row.description || "")).toLowerCase().indexOf(query.toLowerCase())>=0)
+            const rows=skills.filter(row=>row.scope===scope && (row.name+" "+description(row)+" "+(row.description || "")).toLowerCase().indexOf(query.toLowerCase())>=0)
                 .sort((a,b)=>a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
             result.push({kind:"scope",scope:scope,count:rows.length})
             if(collapsedScopes.indexOf(scope)>=0)continue
@@ -72,7 +114,7 @@ FocusScope {
         let next=Object.assign({},pending);next[id]={operation:operation};pending=next
         return true
     }
-    function reload(keepPosition){if(keepPosition)listPosition={y:list.contentY,index:list.currentIndex,scope:selectedScope};notice="";noticeError=false;menuOpen=false;request("skills.browse",{})}
+    function reload(keepPosition){if(keepPosition)listPosition={y:list.contentY,index:list.currentIndex,scope:selectedScope};previewGeneration++;previewCache={};previewOrder=[];preview={};previewError="";notice="";noticeError=false;menuOpen=false;request("skills.browse",{})}
     function initialize(){if(sdk.active && !initialized){initialized=true;reload()}}
     function insert(row){if(row)request("skills.insert",{id:row.id})}
     function showMenu(row,scope,point){if(working)return;contextRow=row;selectedScope=scope;if(row)selectedId=row.id;menuX=point.x;menuY=point.y;menuOpen=true}
@@ -151,7 +193,10 @@ FocusScope {
         if(noticeError)return
         if(operation==="skills.browse") {
             skills=result.skills || [];roots=result.roots || {};if(!roots.project)selectedScope="global"
+            if(!selected)selectedId=skills.length ? skills[0].id : ""
+            previewDelay.restart()
             if(listPosition){const position=listPosition;listPosition=null;Qt.callLater(()=>{list.currentIndex=Math.max(0,Math.min(position.index,entries.length-1));list.contentY=Math.max(0,Math.min(position.y,list.contentHeight-list.height));selectedScope=position.scope})}
+            else Qt.callLater(()=>{const index=entries.findIndex(entry=>entry.skill && entry.skill.id===selectedId);if(index>=0){list.currentIndex=index;list.positionViewAtIndex(index,ListView.Contain)}})
             if(result.truncated)notice=t("目录较大，仅显示部分 Skill；可在文件管理器中继续查看。","This folder is large; some Skills are omitted. Open it in your file manager to see all items.")
         } else if(operation==="skills.importPreview") {
             importPreview=result.preview || {};let choices={}
@@ -205,8 +250,16 @@ FocusScope {
         ColumnLayout {
             visible:root.route==="main";Layout.fillWidth:true;Layout.fillHeight:true;spacing:8*root.sdk.scale
             Input{id:search;objectName:"skillManagerSearch";Layout.fillWidth:true;placeholderText:root.t("搜索 Skill…","Find Skills…");onTextChanged:root.query=text}
+            SplitView {
+                id:skillSplit;objectName:"skillManagerSplit";orientation:Qt.Vertical
+                Layout.fillWidth:true;Layout.fillHeight:true
+                handle:Rectangle {
+                    objectName:"skillManagerSplitHandle";implicitHeight:10*(root.sdk ? root.sdk.scale : 1);color:"transparent"
+                    Rectangle{anchors.centerIn:parent;width:42*(root.sdk ? root.sdk.scale : 1);height:3;radius:2;color:!root.sdk ? "transparent" : SplitHandle.hovered || SplitHandle.pressed ? root.sdk.colors.accent : root.sdk.colors.line}
+                    HoverHandler{cursorShape:Qt.SplitVCursor}
+                }
             ListView {
-                id:list;objectName:"skillManagerList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;reuseItems:true;spacing:0
+                id:list;objectName:"skillManagerList";SplitView.fillHeight:true;SplitView.preferredHeight:skillSplit.height*.52;SplitView.minimumHeight:Math.min(100*root.sdk.scale,skillSplit.height*.25);clip:true;reuseItems:true;spacing:0
                 model:root.entries;currentIndex:0;boundsBehavior:Flickable.StopAtBounds
                 ScrollBar.vertical:ScrollBar{policy:ScrollBar.AsNeeded}
                 DropArea {
@@ -249,14 +302,46 @@ FocusScope {
                         anchors.fill:parent;anchors.leftMargin:entry.skill ? 12*root.sdk.scale : 6*root.sdk.scale;anchors.rightMargin:6*root.sdk.scale;spacing:7*root.sdk.scale
                         Image{visible:entry.skill;source:"../assets/skill-package.svg";sourceSize.width:16;sourceSize.height:16;Layout.preferredWidth:16*root.sdk.scale;Layout.preferredHeight:16*root.sdk.scale}
                         Label{visible:entry.modelData.kind==="scope";text:root.collapsedScopes.indexOf(entry.modelData.scope)>=0 ? "›" : "⌄";Layout.preferredWidth:15*root.sdk.scale;color:root.sdk.colors.muted}
+                        ColumnLayout {
+                            Layout.fillWidth:entry.modelData.kind!=="scope";spacing:2*root.sdk.scale
                         Label {
                             Layout.fillWidth:entry.modelData.kind!=="scope";Layout.preferredWidth:entry.modelData.kind==="scope" ? implicitWidth : -1
                             text:entry.skill ? entry.modelData.skill.name : entry.modelData.kind==="scope" ? root.scopeLabel(entry.modelData.scope)+"  "+entry.modelData.count : !root.roots[entry.modelData.scope] ? root.t("未选择工作区","No workspace selected") : root.query ? root.t("没有匹配的 Skill","No matching Skills") : root.t("暂无 Skill","No Skills")
                             font.bold:entry.modelData.kind==="scope";font.pixelSize:Umeko.Theme.font(11);color:entry.modelData.kind==="empty" ? root.sdk.colors.muted : root.sdk.colors.ink
                         }
+                        Label {
+                            objectName:entry.skill ? "skillManagerDescription_"+entry.modelData.skill.id : ""
+                            visible:entry.skill && !!text;Layout.fillWidth:true;text:root.description(entry.modelData.skill)
+                            font.pixelSize:Umeko.Theme.font(10);color:root.sdk.colors.muted;wrapMode:Text.Wrap;maximumLineCount:2
+                        }
+                        }
                         Label{visible:entry.modelData.kind==="scope";Layout.fillWidth:true;text:root.roots[entry.modelData.scope] || "";elide:Text.ElideMiddle;color:root.sdk.colors.muted;font.pixelSize:Umeko.Theme.font(9)}
                     }
                 }
+            }
+            Rectangle {
+                objectName:"skillManagerPreviewPane";color:root.sdk.colors.surface;border.color:root.sdk.colors.line;radius:6
+                SplitView.minimumHeight:Math.min(130*root.sdk.scale,skillSplit.height*.3);SplitView.preferredHeight:skillSplit.height*.48
+                ColumnLayout {
+                    anchors.fill:parent;anchors.margins:10*root.sdk.scale;spacing:6
+                    RowLayout {
+                        Layout.fillWidth:true
+                        Label {Layout.fillWidth:true;font.bold:true;text:root.selected ? root.selected.name+" · SKILL.md" : root.t("Skill 预览","Skill preview")}
+                        SmallButton {text:root.t("打开","Open");visible:!!root.selected;onClicked:root.request("skills.open",{id:root.selectedId,mode:"edit"})}
+                    }
+                    Label {Layout.fillWidth:true;visible:!!root.selected && !!text;text:root.description(root.selected);wrapMode:Text.Wrap;maximumLineCount:3;color:root.sdk.colors.muted;font.pixelSize:Umeko.Theme.font(10)}
+                    ScrollView {
+                        id:skillPreviewScroll;objectName:"skillManagerPreviewScroll";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;contentWidth:availableWidth
+                        Umeko.MessageBody {
+                            objectName:"skillManagerPreviewMarkdown";width:skillPreviewScroll.availableWidth
+                            text:root.preview.id===root.selectedId && !root.previewError ? (root.preview.markdown || "").replace(/^\uFEFF?---[^\S\n]*\r?\n[\s\S]*?\r?\n---[^\S\n]*\r?\n/,"") : ""
+                            markdown:true
+                            onTextChanged:if(skillPreviewScroll.contentItem)skillPreviewScroll.contentItem.contentY=0
+                        }
+                    }
+                    Label {Layout.fillWidth:true;visible:!!text;text:root.previewError || (!root.selected ? root.t("选择一个 Skill 查看说明。","Select a Skill to read its instructions.") : root.preview.id!==root.selectedId ? root.t("正在读取…","Reading…") : root.preview.truncated ? root.t("预览已截断，可打开完整文件。","Preview truncated; open the full file to continue.") : "");wrapMode:Text.Wrap;color:root.previewError ? root.sdk.colors.danger : root.sdk.colors.muted;font.pixelSize:Umeko.Theme.font(10)}
+                }
+            }
             }
             RowLayout {
                 objectName:"skillManagerRenameForm";visible:!!root.renameRow;Layout.fillWidth:true
@@ -349,6 +434,7 @@ FocusScope {
         target:root.sdk;ignoreUnknownSignals:true
         function onActiveChanged(){root.initialize()}
         function onHostResponse(id,value) {
+            if(id===root.previewRequest){root.previewResponse(value);return}
             const entry=root.pending[id];if(!entry)return
             let next=Object.assign({},root.pending);delete next[id];root.pending=next
             const operation=entry.operation

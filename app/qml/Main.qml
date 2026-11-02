@@ -164,7 +164,7 @@ ApplicationWindow {
         if (!backend.webviewAvailable) { window.notification = I18n.t("网页预览组件尚未安装或无法加载"); toastTimer.restart(); return }
         window.page = "chat"; webPane.submit(url, item.title || item.name || "")
     }
-    function previewChatDocument(item) { window.page = "chat"; webPane.showDocument(item) }
+    function previewChatDocument(item, sourceWidget) { window.page = "chat"; webPane.showDocument(item, sourceWidget || "") }
     function showSubagentGroup(agents, anchor) {
         if (subagentMatrix.desiredOpen && subagentMatrix.parent === anchor) { subagentMatrix.close(); return }
         subagentMatrix.agents = agents; subagentMatrix.parent = anchor; subagentMatrix.open()
@@ -195,7 +195,8 @@ ApplicationWindow {
     Connections { target: backend; function onToast(message) { window.notification = message; toastTimer.restart() }
         function onViewChanged() { window.avatarChatKey = String(Math.random()); if (backend.desktopPlugins.page.id !== "global-agents") webPane.dismiss() }
         function onWebRequested(url, title) { window.page = "chat"; webPane.submit(url, title) }
-        function onDocumentRequested(path, title, kind) { window.previewChatDocument({path:path, title:title, kind:kind}) } }
+        function onDocumentRequested(path, title, kind) { window.previewChatDocument({path:path, title:title, kind:kind}) }
+        function onWidgetDocumentRequested(path, title, kind, widget) { window.previewChatDocument({path:path, title:title, kind:kind}, widget) } }
     Connections { target: backend; function onLayoutChanged() { window.sidebarPreferredWidth = backend.sidebarWidth; window.sidebarCollapsed = backend.sidebarCollapsed } }
     Timer { id: toastTimer; interval: 4200; onTriggered: window.notification = "" }
     RequestDetails { id: requestInspector }

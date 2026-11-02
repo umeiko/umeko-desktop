@@ -286,9 +286,15 @@ export async function sessionSkillOptions(Pi, input, nativeSettings) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     process.env.PI_OFFLINE = "1";
-    const { installProviderPolicy } = await import("./provider-policy.mjs"); installProviderPolicy({ offline: true });
-    const Pi = await import(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "node_modules/@earendil-works/pi-coding-agent/dist/index.js")));
     let raw = ""; for await (const chunk of process.stdin) raw += chunk;
-    process.stdout.write(JSON.stringify(await manageSkills(Pi, JSON.parse(raw))) + "\n");
+    const input = JSON.parse(raw);
+    let Pi;
+    // Folder browsing only needs Pi's frontmatter parser, not its full SDK,
+    // tool registry, provider clients and extension transpilation machinery.
+    if (!["browse", "validateText"].includes(input.action)) {
+      const { installProviderPolicy } = await import("./provider-policy.mjs"); installProviderPolicy({ offline: true });
+      Pi = await import(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "node_modules/@earendil-works/pi-coding-agent/dist/index.js")));
+    }
+    process.stdout.write(JSON.stringify(await manageSkills(Pi, input)) + "\n");
   } catch (error) { process.stdout.write(JSON.stringify({ ok: false, error: error.message }) + "\n"); process.exitCode = 1; }
 }

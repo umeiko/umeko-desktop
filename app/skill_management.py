@@ -31,6 +31,9 @@ def skill_command(release, cwd, agent_dir, agent, **action):
         raise RuntimeError('Skill discovery failed') from None
     if result.returncode or not payload.get('ok'):
         raise RuntimeError(payload.get('error', 'Skill operation failed'))
+    if isinstance(payload.get('skills'), list):
+        from .bundled_skills import describe_bundled
+        describe_bundled(payload['skills'], agent_dir)
     return payload
 
 
@@ -49,7 +52,7 @@ class SkillJobs(QObject):
 
     def idle(self):
         if self.b.busy or self.b.kernelBusy or self.b.piManagement.busy or any(
-                row['status'] == 'running' for row in self.jobs.values()):
+                row['status'] == 'running' and row['operation'] != 'skills.preview' for row in self.jobs.values()):
             raise ValueError('Pi is busy; retry when the chat and management jobs are idle')
 
     def _context(self, request):
@@ -119,10 +122,10 @@ class SkillJobs(QObject):
         record = self._context(request)
         operation, args = request['operation'], request['arguments']
         direct_import = operation in ('skills.paste', 'skills.importLocal')
-        folder_reads = ('skills.browse', 'skills.open', 'skills.copy', 'skills.insert')
+        folder_reads = ('skills.browse', 'skills.preview', 'skills.open', 'skills.copy', 'skills.insert')
         if operation not in folder_reads:
             self.idle()
-        elif any(row['status'] == 'running' for row in self.jobs.values()):
+        elif any(row['status'] == 'running' and row['operation'] != 'skills.preview' for row in self.jobs.values()):
             raise ValueError('Skill manager is busy; retry shortly')
         release, cwd, agent_dir, agent = self.b.piManagement._context()
         key = (record.key, record.workspace)
@@ -148,7 +151,7 @@ class SkillJobs(QObject):
             import_rows = [row for row in rows if Path(row['path']).parent.is_relative_to(destination.resolve())]
         if destination is not None and args.get('project') and not record.workspace:
             raise ValueError('Choose a project before importing project skills')
-        folder_ops = ('skills.open', 'skills.copy', 'skills.insert', 'skills.rename', 'skills.delete')
+        folder_ops = ('skills.preview', 'skills.open', 'skills.copy', 'skills.insert', 'skills.rename', 'skills.delete')
         folder = self.folder_for(request, args['id']) if operation in folder_ops else None
         clipboard_source = ''
         if operation == 'skills.paste':
@@ -171,6 +174,9 @@ class SkillJobs(QObject):
             if operation in folder_ops:
                 from .skill_folders import checked_folder, rename_folder, delete_folder
                 directory = checked_folder(folder)
+                if operation == 'skills.preview':
+                    from .skill_folders import preview_folder
+                    return {'ok': True, 'details': {'id': args['id'], **preview_folder(folder)}}
                 if operation == 'skills.rename':
                     directory = rename_folder(folder, args['name'])
                 elif operation == 'skills.delete':
@@ -277,7 +283,7 @@ class SkillJobs(QObject):
                         from .plugin_file_actions import copy_files
                         copy_files([directory])
                 elif args['mode'] == 'preview':
-                    self.b.documentRequested.emit(str(directory / 'SKILL.md'), directory.name, 'file')
+                    self.b.widgetDocumentRequested.emit(str(directory / 'SKILL.md'), directory.name, 'file', job['owner']['widget'])
                 elif not QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory if args['mode'] == 'reveal' else directory / 'SKILL.md'))):
                     raise ValueError('无法打开文件，请检查系统文件关联')
             elif operation in ('skills.default', 'skills.remove', 'skills.import', 'skills.paste', 'skills.importLocal', 'skills.rename', 'skills.delete'):

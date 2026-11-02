@@ -1,5 +1,7 @@
 .pragma library
 var strings = {
+  "返回 Widget": "Back to Widget",
+  "收起预览": "Close preview",
   "没有匹配项": "No matches",
   "没有匹配的技能": "No matching Skills",
   "没有可用的技能或 Skills Widget": "No available Skills or Skills Widget",
