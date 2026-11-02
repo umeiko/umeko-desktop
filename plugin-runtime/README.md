@@ -226,12 +226,10 @@ Python 使用 `context.host_capabilities` 和
 | `pi.inventory` | `pi.read` | 异步加载当前会话的实际工具清单；允许初始化已启用的扩展，不发送模型请求。回执表示请求已接收；用 `pi.status` 等待 `inventoryReady=true`，`inventoryFailed=true` 表示加载失败或取消。Agent 空闲不代表清单已返回，就绪或失败后应停止轮询。 |
 | `pi.toolVisibility` | `pi.manage` | `{id:扩展ID,name:工具名,visible:boolean}`。宿主确认后仅修改当前会话；原生、Umeko 内置与第三方工具均适用。任务及子代理运行中拒绝修改。隐藏工具从 Pi 注册清单中排除，无法通过搜索或嵌套调用恢复。须来自当前扩展的实际工具清单。 |
 | `pi.network` | `pi.read` | 返回宿主显式设置的 `npmRegistry/npmUserconfig/npmCafile`，不返回 `.npmrc` 内容、代理密钥或供应商配置。空值保留 npm 的原生配置发现行为。 |
-| `pi.preset` / `pi.tool` / `pi.plugin` | `pi.manage` | 分别接收 `{preset:"full"或"standard"或"minimal"或"custom"}`、`{name,enabled:boolean}`、`{id,enabled:boolean}`，只调整当前会话。`full` 在 UI 中显示为“默认”。任务、子代理或管理操作运行时拒绝修改；内置 Pi 管理页直接应用，其他 Widget 仍需宿主确认。返回 `result.profile`。 |
-| `pi.tools` | `pi.read` | `{id,query?,offset?,limit?}` 分页读取插件的工具及当前启用状态；已停用工具仍保留在清单中以便重新开启。返回 `tools/total/hasMore/profile/loading/sessionEnabled`。 |
 | `pi.scan` | `pi.read` | 使用当前内嵌 Pi 的原生扩展发现，返回宿主 `jobId`。不执行被发现的扩展。 |
 | `pi.details` | `pi.read` | `{id}`，按需读取有大小上限的本地 README；返回异步任务，完成后用 `pi.status {details:id}` 读取。不会执行扩展代码。 |
 | `pi.tools` | `pi.read` | `{id,query?,offset?,limit?}`，按插件查询工具（原生组为 `builtin:pi-tools`（兼容别名 `native`）），默认100、最多200条；返回 `tools/total/hasMore/loading/sessionEnabled/profile`，每项含 `name/description/enabled/owner`，说明最多1024字。初始化由 `pi.inventory` 单独发起，查询本身不发模型请求。 |
-| `pi.preset` | `pi.manage` | `{preset:"standard"\|"minimal"\|"full"\|"custom"}`，仅修改当前聊天的能力预设，返回 `result.profile`。 |
+| `pi.preset` | `pi.manage` | `{preset:"standard"\|"minimal"\|"full"\|"custom"}`，仅修改当前聊天的能力预设，返回 `result.profile`。`full` 在 UI 中显示为“默认”。 |
 | `pi.plugin` | `pi.manage` | `{id,enabled:boolean}`，当前聊天的插件总开关；原生工具组使用 `builtin:pi-tools`（兼容 `native`）。关闭插件时不加载模块和钩子。 |
 | `pi.tool` | `pi.manage` | `{name,enabled:boolean}`，开关当前目录中的单个工具；即使通过 codemode 或工具搜索也不能调用已关闭的工具。插件关闭时工具不能单独生效。 |
 | `pi.activation` | `pi.manage` | `{id,mode}`；`global`、`session`、`disabled` 分别为全局启用、本对话启用、本对话暂时禁用。须宿主确认；对话覆盖不改写共享 Pi 设置。 |
