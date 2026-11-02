@@ -174,6 +174,14 @@ class ContextCompactionTests(unittest.TestCase):
                       and popup.property("visible") and popup.property("desiredOpen")
                       and popup.property("contentOpacity") > 0.98 and not popup.property("animating"))
 
+    def wait_popup_closed(self):
+        self.wait_for(lambda: (popup := self.window.findChild(QObject, "compactContextPopup")) is None
+                      or not popup.property("visible"))
+
+    def close_popup(self):
+        self.click("contextUsageMouse")
+        self.wait_popup_closed()
+
     def event_row(self):
         return next((item for item in items(self.window)
                      if item.objectName().startswith("compactionEvent_") and item.isVisible()), None)
@@ -183,6 +191,7 @@ class ContextCompactionTests(unittest.TestCase):
         self.open_popup()
         self.assertTrue(self.find("compactContextAction").isEnabled())
         self.click("compactContextAction")
+        self.wait_popup_closed()
         self.wait_for(self.adapter.entered.is_set)
         self.wait_for(lambda: self.event_row() is not None and self.event_row().property("eventState") == "running")
         row = self.event_row()
@@ -230,11 +239,11 @@ class ContextCompactionTests(unittest.TestCase):
         self.assertFalse(any(not call["tools"] for call in self.adapter.calls))
         self.adapter.release.set()
         self.wait_for(lambda: not self.backend.busy)
-        self.click("contextUsageMouse")  # close the still-open popup
+        self.close_popup()
         row, name, index = self.begin_compaction()
         self.open_popup()
         self.assertFalse(self.find("compactContextAction").isEnabled())
-        self.click("contextUsageMouse")
+        self.close_popup()
         details = self.assert_finished("success", row, name, index)
         self.assertIn("保留测试任务", details["summary"])
         self.assertIsInstance(details["before"], (int, float))

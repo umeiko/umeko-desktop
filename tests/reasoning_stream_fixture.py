@@ -3,6 +3,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from socketserver import TCPServer
 import threading
+import time
 from types import SimpleNamespace
 
 
@@ -12,6 +13,17 @@ class _LoopbackServer(ThreadingHTTPServer):
         TCPServer.server_bind(self)
         self.server_name = 'localhost'
         self.server_port = self.server_address[1]
+
+
+def _paced_indices(stop, count=600, interval=.025):
+    # Keep the intended stream rate when a loaded runner wakes a timer late.
+    # Relative sleeps accumulate that lateness once per chunk (600 times).
+    deadline = time.monotonic()
+    for index in range(count):
+        deadline += interval
+        if stop.wait(max(0, deadline - time.monotonic())):
+            return
+        yield index
 
 
 class ReasoningStream:
@@ -52,11 +64,11 @@ class ReasoningStream:
                         owner.errors.append({'message': 'GUI did not release the initial reasoning stream'})
                         return
                     words = ['Reasoning ', 'keeps ', 'the ', 'same ', 'line ', 'spacing.\n']
-                    for index in range(600):
-                        if owner.stop.wait(.025):
-                            return
+                    for index in _paced_indices(owner.stop):
                         emit({'reasoning_content': words[index % len(words)]})
                         owner.sent.value += 1
+                    if owner.stop.is_set():
+                        return
                     emit({'content': 'The local streaming test is complete.'})
                     emit({}, 'stop')
                     self.wfile.write(b'data: [DONE]\n\n')
