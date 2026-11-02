@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Controls.impl
 import "Commands.js" as Commands
 
 Rectangle {
@@ -103,7 +104,7 @@ Rectangle {
         RowLayout {
             Layout.fillWidth:true
             SmallButton {objectName:"piManagerBack";visible:!!root.selected;text:root.t("‹ 返回","‹ Back");onClicked:root.back()}
-            Image {visible:!root.selected;source:"assets/pi.svg";sourceSize.width:36;sourceSize.height:36;Layout.preferredWidth:28;Layout.preferredHeight:28}
+            IconImage {visible:!root.selected;source:"../../../app/icons/puzzle.svg";color:root.sdk.colors.muted;sourceSize:Qt.size(48,48);Layout.preferredWidth:24*root.sdk.scale;Layout.preferredHeight:24*root.sdk.scale}
             Text {Layout.fillWidth:true;text:root.selected ? "" : root.t("本地已安装","Installed locally")+" · "+root.total;textFormat:Text.PlainText;elide:Text.ElideRight;color:root.sdk.colors.ink;font.pixelSize:16*root.sdk.scale;font.bold:true}
             SmallButton {objectName:"piManagerCancelInstall";visible:root.jobOperation==="pi.install" && !!root.job;enabled:root.canCancel;text:root.t("取消安装","Cancel install");onClicked:{root.canCancel=false;root.request("pi.cancel",{id:root.job})}}
             SmallButton {objectName:"piManagerInstall";visible:!root.selected;text:"＋";ToolTip.text:root.t("安装插件","Install extension");enabled:!root.working;onClicked:install.open()}
