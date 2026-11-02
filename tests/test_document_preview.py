@@ -35,6 +35,11 @@ class DocumentPreviewTests(unittest.TestCase):
         self.assertTrue(all(len(b['text'])<=8192 and b['text'].count('\n')<=80 for b in blocks))
         with self.assertRaises(InterruptedError):parse_markdown('x' * 100000, cancelled=lambda:True)
 
+    def test_parser_completes_large_input_after_initial_timeout(self):
+        text = 'x' * 1_000_000
+        blocks = parse_markdown(text)
+        self.assertEqual(''.join(block['text'] for block in blocks), text)
+
     def test_packaged_parser_and_failure_keep_source_accessible(self):
         with patch('app.document_blocks.Path.is_dir', return_value=False):
             self.assertIn('<strong>bold</strong>', parse_markdown('**bold**')[0]['html'])
