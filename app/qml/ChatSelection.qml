@@ -20,6 +20,7 @@ Item {
         for (const item of interactions) {
             if (!item.visible || !item.enabled || item.width <= 0 || item.height <= 0) continue
             const p = mapToItem(item, x, y)
+            if (typeof item.selectionContains === "function" && !item.selectionContains(p.x,p.y)) continue
             if (p.x >= 0 && p.y >= 0 && p.x <= item.width && p.y <= item.height && item.interactionPriority >= priority) {
                 found = item; priority = item.interactionPriority
             }
