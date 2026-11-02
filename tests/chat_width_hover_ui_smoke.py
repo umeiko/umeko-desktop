@@ -50,7 +50,11 @@ def states():
 
 
 def move(item):
-    QTest.mouseMove(window, item.mapToScene(item.boundingRect().center()).toPoint())
+    point = item.mapToScene(QPointF(item.width() / 2, item.height() / 2)).toPoint()
+    # Resize-triggered hover delivery uses the platform cursor position, while
+    # QTest's QWindow events alone leave the offscreen cursor at (10, 10).
+    QCursor.setPos(window.mapToGlobal(point))
+    QTest.mouseMove(window, point)
 
 
 def hidden():
@@ -84,6 +88,39 @@ try:
             wait_for(lambda: edge.opacity() > .95 and other.opacity() < .01, 'Gutter did not reveal ' + side)
         move(prompt)
         hidden()
+
+    # Turning hints off while expanded and hovered removes the controls and
+    # their hit targets immediately, without changing either layout edge.
+    move(left)
+    wait_for(lambda: left.opacity() > .95, 'Left edge not revealed before disabling')
+    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, left.mapToScene(left.boundingRect().center()).toPoint())
+    wait_for(lambda: controls.property('expandedLeft') and controls.property('leftReveal') > .99, 'Left expansion failed')
+    move(left)
+    wait_for(lambda: left.opacity() > .95, 'Expanded edge not revealed')
+    margins = tuple(controls.property(key) for key in ('composerLeft', 'composerRight'))
+    assert backend.saveDesktopSettings(json.dumps({'chatWidthHints': False}))
+    hidden()
+    assert not left.isVisible() and not right.isVisible()
+    assert margins == tuple(controls.property(key) for key in ('composerLeft', 'composerRight'))
+    for side in ('Left', 'Right'):
+        zone = find('chatWidth' + side + 'HoverZone')
+        move(zone)
+        hidden()
+    backend.openSession('1')
+    wait_for(lambda: not find('chatLoadingOverlay').isVisible(), 'Disabled-hint chat switch failed')
+    window.resize(1700, 950)
+    QTest.qWait(250)
+    move(left)
+    hidden()
+    assert controls.property('expandedLeft') and not controls.property('expandedRight')
+    assert backend.saveDesktopSettings(json.dumps({'chatWidthHints': True}))
+    move(prompt)
+    move(left)
+    wait_for(lambda: left.opacity() > .95, 'Left edge not restored after enabling')
+    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, left.mapToScene(left.boundingRect().center()).toPoint())
+    wait_for(lambda: not controls.property('expandedLeft') and controls.property('leftReveal') < .01, 'Restored collapse failed')
+    move(prompt)
+    hidden()
 
     # A cover disables the items while the pointer leaves; no local exit event
     # is guaranteed to be delivered before the same items are enabled again.
@@ -128,6 +165,7 @@ try:
     move(left)
     wait_for(lambda: left.opacity() > .95, 'Left edge not revealed after settings')
     window.resize(1060, 760)
+    QTest.qWait(250)
     move(prompt)
     window.resize(1800, 980)
     QTest.qWait(250)
@@ -137,7 +175,7 @@ try:
     QTest.mouseMove(window, QPoint(-20, -20))
     hidden()
     assert not warnings, '\n'.join(warnings)
-    print('CHAT_WIDTH_HOVER_UI_OK: disabled cover, six chat switches, each edge, settings, resize and window exit')
+    print('CHAT_WIDTH_HOVER_UI_OK: live persisted hint toggle, preserved width, disabled cover, six chat switches, each edge, settings, resize and window exit')
 finally:
     backend.close()
     import shiboken6

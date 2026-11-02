@@ -118,7 +118,7 @@ Rectangle {
         Text { font.family: Theme.fontFamily; anchors.left: parent.left; anchors.right: fileActions.left; anchors.verticalCenter: parent.verticalCenter; text: pane.documentPath; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
         Row {
             id: fileActions; anchors.right: parent.right; spacing: 2
-            ActionButton { objectName: "copyDocumentPreviewButton"; glyph: "copy"; quiet: true; width: Theme.control(30); height: Theme.control(30); enabled: !backend.documentPreview.state.busy && !backend.documentPreview.state.error; hint: I18n.t("复制预览内容"); onClicked: backend.copy(backend.documentPreview.state.text || "") }
+            ActionButton { objectName: "copyDocumentPreviewButton"; glyph: "copy"; quiet: true; width: Theme.control(30); height: Theme.control(30); enabled: !backend.documentPreview.state.busy && !backend.documentPreview.state.error; hint: I18n.t("复制预览内容"); onClicked: backend.documentPreview.copyAll() }
             ActionButton { objectName: "openDocumentFileButton"; glyph: "external-link"; quiet: true; width: Theme.control(30); height: Theme.control(30); hint: I18n.t("打开完整文件"); onClicked: backend.openChatboxPath(pane.documentPath, false) }
         }
     }

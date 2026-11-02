@@ -127,6 +127,22 @@ def check_turn_lifecycle():
     assert not backend.running
     assert_turn("finished", "已完成", "check")
     assert find("sessionStatus_ui-background").property("unread") is False
+
+    # Normal historical text has no host completion receipt. Reading it, or
+    # receiving a non-task ready event, must not add a sidebar Done badge.
+    backend._sessions.append({"id": "ui-history-only", "title": "History only", "file": "",
+        "workspace": profile.name, "messages": [{"role":"assistant", "text":"Past answer", "stopReason":"stop"}]})
+    backend.chatChanged.emit()
+    with patch.object(backend, "_command_pi") as command:
+        backend.openSession("ui-history-only")
+        backend._handle_pi_event(backend._view, {"type":"done"})
+        command.assert_not_called()
+    settle()
+    assert not find("sessionStatus_ui-history-only").isVisible()
+    assert not find("turnStatus").isVisible()
+    assert "lastTurn" not in backend.store.data["sessionMeta"]["ui-history-only"]
+    assert backend._view.process is None
+    assert find("replyEndMascot_0").isVisible()
     assert not warnings, "\n".join(warnings)
     print("TASK_STATE_UI_OK: live spinner, terminal labels, background unread and persisted history", flush=True)
 

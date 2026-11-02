@@ -71,7 +71,7 @@ DEFAULTS = {
     "selectedProvider": "", "selectedModel": "",
     "providers": [],
     "desktop": DESKTOP_DEFAULTS,
-    "agent": {"maxTokens": 32768, "outputLimitDefaultVersion": 1, "instructions": "", "autoCompaction": True,
+    "agent": {"maxTokens": 32768, "maxContextImages": 3, "outputLimitDefaultVersion": 1, "instructions": "", "autoCompaction": True,
               "agentDir": "", "skillPaths": [], "extensionPaths": [], "safeMode": False, "toolPermissionMode": "auto",
               "npmRegistry": "", "npmUserconfig": "", "npmCafile": ""},
     "server": {"port": 8787, "openai": True, "anthropic": True, "lan": False, "keys": []},
@@ -119,6 +119,8 @@ class Store:
             self.data["server"].pop("token", None)
             for p in self.data["providers"]:
                 p["key"] = protect(p.get("key", ""), True)
+        image_limit = self.data['agent'].get('maxContextImages', 3)
+        self.data['agent']['maxContextImages'] = max(1, image_limit) if type(image_limit) is int else 3
         self.data['desktop'] = desktop_settings(self.data.get('desktop'))
         output_default_migrated = saved.get('agent', {}).get('outputLimitDefaultVersion') != 1
         if output_default_migrated:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import json
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Property, Signal, Slot, QUrl
@@ -13,14 +14,18 @@ from .skill_management import skill_command
 
 class SlashCommands(QObject):
     changed = Signal()
+    CACHE_SECONDS = 30
 
     def __init__(self, backend):
         super().__init__(backend)
         self.b, self._skills, self._context, self._pending = backend, [], None, None
+        self._loaded_at = 0
+        self._entries = []
         backend.viewChanged.connect(self.invalidate)
-        backend.desktopPlugins.changed.connect(self.invalidate)
+        backend.desktopPlugins.changed.connect(self._widgets_changed)
         backend.jobDone.connect(self.finished)
-        backend.appearanceChanged.connect(self.changed)
+        backend.appearanceChanged.connect(self._publish)
+        self._publish()
 
     def key(self):
         r = self.b._view
@@ -31,10 +36,24 @@ class SlashCommands(QObject):
     def invalidate(self):
         self._context = None
         self._skills = []
-        self.changed.emit()
+        self._publish()
+
+    def _widgets_changed(self):
+        if self._context is not None and self._context != self.key():
+            self._context, self._skills = None, []
+        self._publish()
+
+    def _publish(self):
+        rows = self._build_entries()
+        if rows != self._entries:
+            self._entries = rows
+            self.changed.emit()
 
     @Property('QVariantList', notify=changed)
     def entries(self):
+        return self._entries
+
+    def _build_entries(self):
         english = self.b.language == 'en'
         rows = [dict(id='compact', group='命令', title='/compact', command='/compact', icon='archive',
                      description='Compact conversation context' if english else '压缩当前会话的上下文'),
@@ -54,7 +73,8 @@ class SlashCommands(QObject):
         if self.b._closing:
             return
         key = self.key()
-        if self._pending or not key[4]:
+        self._publish()
+        if self._pending or not key[4] or (self._context == key and time.monotonic() - self._loaded_at < self.CACHE_SECONDS):
             return
         release, cwd, agent_dir, agent = self.b.piManagement._context()
         r = self.b._view
@@ -72,9 +92,9 @@ class SlashCommands(QObject):
         if key != self.key():
             self.refresh()
             return
-        self._context = key
-        self._skills = []
         if result.get('ok'):
+            self._context, self._skills = key, []
+            self._loaded_at = time.monotonic()
             for row in result.get('value', {}).get('skills', []):
                 if row.get('attached'):
                     path = Path(row['path'])
@@ -85,7 +105,7 @@ class SlashCommands(QObject):
                         else ('Project' if row['scope'] == 'project' else 'Global')))
         else:
             self.b.toast.emit('无法读取技能列表 / Could not read Skills: ' + str(result.get('value', ''))[:200])
-        self.changed.emit()
+        self._publish()
 
     @Slot(str, result=bool)
     def choose(self, identifier):

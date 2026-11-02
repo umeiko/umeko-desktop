@@ -22,11 +22,11 @@ class PiControllerMixin:
         saved = self.store.data['sessionMeta'].get(record.id, {}).get('lastTurn')
         if saved:
             return dict(saved)
-        # Older native histories have no UI timing receipt. Use their actual
-        # stop reason, and leave duration unknown instead of inventing a time.
+        # A historical assistant's normal stop is not a desktop task receipt.
+        # Keep historical failures/stops useful without marking a visit done.
         message = next((row for row in reversed(record.messages) if row.get('role') in ('user', 'assistant')), {})
         reason = message.get('stopReason') if message.get('role') == 'assistant' else None
-        state = 'failed' if message.get('error') or reason == 'error' else {'stop': 'finished', 'aborted': 'stopped', 'length': 'stopped'}.get(reason, '')
+        state = 'failed' if message.get('error') or reason == 'error' else {'aborted': 'stopped', 'length': 'stopped'}.get(reason, '')
         return {'state': state}
 
     def _finish_turn(self, record, failed=False):
@@ -61,6 +61,8 @@ class PiControllerMixin:
         self._pool.write(record or self._view, payload)
 
     def _restart_pi(self):
+        if getattr(self, '_slash_commands', None):
+            self._slash_commands.invalidate()
         for record in self._pool.records.values():
             if not record.busy:
                 record.context_usage = {}
@@ -447,7 +449,8 @@ class PiControllerMixin:
             if record.action == "compact":
                 marker = re.search(r'\[Umeko:[a-f0-9-]{36}\]', message)
                 if marker:
-                    message = "压缩失败：供应商请求失败，请查看请求详情 / Compaction failed: provider request failed " + marker[0]
+                    from .provider_errors import diagnostic_notice
+                    message = diagnostic_notice(message) + ' ' + marker[0]
                 record.tool_status = ""
             elif record.messages and record.messages[-1].get('role') == 'assistant' and record.messages[-1].get("customType") != "umeko-compaction":
                 record.messages[-1].update(text=record.messages[-1]['text'] or message, error=True, errorMessage=message)

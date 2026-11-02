@@ -41,6 +41,47 @@ class KernelUpdateTests(unittest.TestCase):
         bundles.start()
         self.addCleanup(bundles.stop)
 
+    def test_delete_session_removes_only_recent_image_sidecar(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": temp}):
+            controller = Controller(ROOT)
+            try:
+                sessions = controller.store.directory / 'pi' / 'sessions'
+                sessions.mkdir(parents=True, exist_ok=True)
+                native = sessions / 'history.jsonl'
+                native.write_text('fixture', encoding='utf-8')
+                archive = Path(str(native) + '.images')
+                archive.mkdir()
+                (archive / 'entry.png').write_bytes(b'private image fixture')
+                unrelated = sessions / 'unrelated.images'
+                unrelated.mkdir()
+                (unrelated / 'keep.png').write_bytes(b'keep')
+                regular_file = sessions / 'regular.jsonl.images'
+                regular_file.write_text('keep', encoding='utf-8')
+                controller._view.id = 'other'
+                controller._sessions = [{'id': 'history', 'file': str(native)}]
+                controller.deleteSession('history')
+                self.assertFalse(native.exists())
+                self.assertFalse(archive.exists())
+                self.assertTrue((unrelated / 'keep.png').exists())
+                self.assertTrue(regular_file.exists())
+
+                external = Path(temp) / 'external'
+                external.mkdir()
+                (external / 'keep.png').write_bytes(b'keep')
+                linked_native = sessions / 'linked.jsonl'
+                linked_native.write_text('fixture', encoding='utf-8')
+                linked_archive = Path(str(linked_native) + '.images')
+                try:
+                    linked_archive.symlink_to(external, target_is_directory=True)
+                except (OSError, NotImplementedError):
+                    pass
+                else:
+                    controller._sessions = [{'id': 'linked', 'file': str(linked_native)}]
+                    controller.deleteSession('linked')
+                    self.assertTrue((external / 'keep.png').exists())
+            finally:
+                controller.close()
+
     def test_project_entry_is_blank_and_management_preserves_native_files(self):
         from PySide6.QtCore import QUrl
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": str(Path(temp) / "data")}):

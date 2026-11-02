@@ -455,6 +455,18 @@ def create_plugin(context):return Fixture(context)
         deadline=time.monotonic()+1
         while time.monotonic()<deadline:self.app.processEvents();time.sleep(.01)
         self.assertEqual(len(self.host.sent),1)
+    def test_session_toggle_uses_native_identity_before_the_debounced_ui_sync(self):
+        current = self.host._view
+        previous = current.id
+        self.manager.settings.setdefault('sessions', {})[previous] = ['skill-manager', 'git-viewer']
+        current.id = 'native-saved-session'
+        with patch.object(self.manager, 'start'), patch.object(self.manager, 'send'), patch.object(self.manager, 'stop'):
+            self.manager.setSessionEnabled('skill-manager', False)
+        self.assertFalse(self.manager.skills_enabled(current))
+        self.assertEqual(self.manager.storage_key, current.id)
+        self.assertEqual(self.manager.settings['sessions'][current.id], ['git-viewer'])
+        self.assertNotIn(previous, self.manager.settings['sessions'])
+
     def test_skill_widget_default_and_runtime_gate_follow_the_calling_chat(self):
         current=self.host._view
         other=SimpleNamespace(id='session-two',key='token-two',global_agent='')

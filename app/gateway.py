@@ -26,6 +26,7 @@ from .protocols import response_events, collect_openai, anthropic_events_to_open
 from .openai_responses import responses_request, responses_events
 from .request_diagnostics import RequestDiagnostics, RequestFailure
 from .network_retry import upstream_failure
+from .provider_errors import format_http_error
 from umeko_provider_sdk.network import network_scope, proxy_handler, tls_context, trace, TracedResponse
 from umeko_provider_sdk import request_scope
 
@@ -170,9 +171,11 @@ class Gateway:
         except urllib.error.HTTPError as exc:
             record['response'].update(status=exc.code, headers=dict(exc.headers), body=exc.read().decode('utf-8', 'replace'))
             exc.close()
-            raise ValueError(f"供应商返回 HTTP {exc.code}，请检查地址、密钥和模型名称") from None
-        except (urllib.error.URLError, TimeoutError):
+            raise ValueError(format_http_error(exc.code, record['response']['body'], exc.headers, [p['key']])) from None
+        except (urllib.error.URLError, TimeoutError) as exc:
             record['exception'] = traceback.format_exc()
+            if isinstance(exc, TimeoutError) or isinstance(getattr(exc, 'reason', None), TimeoutError):
+                raise ValueError('供应商请求超时，请检查网络或超时设置') from None
             raise ValueError("无法连接供应商，请检查地址、网络与证书") from None
 
     @staticmethod

@@ -4,13 +4,14 @@ import os
 from pathlib import Path
 from .platform_support import data_directory, legacy_data_directory
 
-DEFAULTS = {'autoOpenSubmissions': True, 'webDisplay': 'embedded'}
+DEFAULTS = {'autoOpenSubmissions': True, 'webDisplay': 'embedded', 'chatWidthHints': True}
 
 
 def normalize(value):
     value = value if isinstance(value, dict) else {}
     return {'autoOpenSubmissions': value.get('autoOpenSubmissions') if type(value.get('autoOpenSubmissions')) is bool else True,
-            'webDisplay': value.get('webDisplay') if value.get('webDisplay') in ('embedded', 'external') else 'embedded'}
+            'webDisplay': value.get('webDisplay') if value.get('webDisplay') in ('embedded', 'external') else 'embedded',
+            'chatWidthHints': value.get('chatWidthHints') if type(value.get('chatWidthHints')) is bool else True}
 
 
 def validate_patch(value):
@@ -18,6 +19,8 @@ def validate_patch(value):
         raise ValueError('Unknown Umeko Desktop setting')
     if 'autoOpenSubmissions' in value and type(value['autoOpenSubmissions']) is not bool:
         raise ValueError('autoOpenSubmissions must be boolean')
+    if 'chatWidthHints' in value and type(value['chatWidthHints']) is not bool:
+        raise ValueError('chatWidthHints must be boolean')
     if 'webDisplay' in value and value['webDisplay'] not in ('embedded', 'external'):
         raise ValueError('webDisplay must be embedded or external')
     return value

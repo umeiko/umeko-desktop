@@ -25,12 +25,12 @@
 
 <!-- umeko-downloads:standard:start -->
 
-**下载 v0.6.4 · 点击下载**
+**下载 v0.6.5 · 点击下载**
 
-[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.4/Umeko-0.6.4-windows-x64-411de56.zip)
-[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.4/Umeko-0.6.4-macos-arm64-411de56.dmg)
-[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.4/Umeko-0.6.4-macos-x64-411de56.dmg)
-[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.4/Umeko-0.6.4-linux-x64-411de56.tar.gz)
+[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.5/Umeko-0.6.5-windows-x64-6bc6abc.zip)
+[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.5/Umeko-0.6.5-macos-arm64-6bc6abc.dmg)
+[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.5/Umeko-0.6.5-macos-x64-6bc6abc.dmg)
+[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.5/Umeko-0.6.5-linux-x64-6bc6abc.tar.gz)
 
 <!-- umeko-downloads:standard:end -->
 

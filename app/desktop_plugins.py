@@ -193,6 +193,9 @@ class DesktopPlugins(QObject):
     def setSessionEnabled(self,identifier,value):
         if identifier not in self.entries:return
         if self.application(identifier):self.setEnabled(identifier,value);return
+        # Native Pi can promote the session identity before the 200 ms UI
+        # notification catches up. Persist this action under the current ID.
+        self.synchronize()
         selected=[k for k in self.entries if not self.application(k) and self.session_enabled(k) and k!=identifier]
         if value:selected.append(identifier)
         if len(selected)>8:self.b.toast.emit('每个会话最多启用 8 个 Umeko 插件');return

@@ -77,6 +77,15 @@ ApplicationWindow {
     }
     function commitSidebarSelection() {
         if (!sidebarSwitching || !sidebarPrepared) return
+        if (sidebarMotion.moving) {
+            const value = sidebarMotion.value, target = sidebarMotion.targetRect
+            const current = [value.x, value.y, value.width, value.height]
+            const wanted = [target.x, target.y, target.width, target.height]
+            // Finish a subpixel tail instead of delaying content for the PID's
+            // imperceptible integral settling. Text never interrupts its travel.
+            if (current.some((position, i) => Math.abs(position - wanted[i]) > 0.75 || Math.abs(sidebarMotion.velocity[i]) > 10)) return
+            sidebarMotion.snap()
+        }
         const token = sidebarToken
         let ok = true
         if (pendingSidebarKind === "project") backend.openProject(pendingSidebarId)
@@ -87,7 +96,8 @@ ApplicationWindow {
         chatCover.contentReady()
     }
     // Present the cover before starting disk I/O. Cold reads can overlap the
-    // sidebar motion; show the latest ready result while the PID keeps moving.
+    // sidebar motion. Attach delegates after the highlight settles, so text
+    // layout cannot take frames away from the moving PID.
     FrameAnimation {
         running: window.sidebarSwitching && !window.sidebarStarted
         onTriggered: {
@@ -442,6 +452,14 @@ ApplicationWindow {
                     restoring = true; restoreIndex = row; restoreOffset = 0; restoreAttempts = 0
                     restoreTimer.restart()
                 }
+                function jumpToLatest() {
+                    beginBrowsing()
+                    chatSelection.clear()
+                    followTail = true
+                    restoring = true; restoreIndex = -1; restoreOffset = 0; restoreAttempts = 0
+                    backend.messageModel.requestRange(Math.max(0, count - 4), count - 1)
+                    restoreTimer.restart()
+                }
                 function scrollBy(delta) {
                     beginBrowsing()
                     const top = originY
@@ -467,7 +485,14 @@ ApplicationWindow {
                 }
                 acceptedButtons: Qt.NoButton
                 visible: backend.messageCount > 0
-                x: chatWidth.conversationLeft; width: parent.width - chatWidth.conversationLeft - chatWidth.conversationRight
+                x: chatWidth.conversationLeft
+                // Keep text layout stable while the sidebar moves. Commit the
+                // final wrap width once, without changing the sidebar PID motion.
+                Binding on width {
+                    value: chatPage.width - chatWidth.conversationLeft - chatWidth.conversationRight
+                    when: !conversation.visible || !sidebarWidthMotion.moving || sidebarResizeHandle.resizing
+                    restoreMode: Binding.RestoreNone
+                }
                 anchors.top: parent.top; anchors.topMargin: 20; anchors.bottom: composer.top; anchors.bottomMargin: 24
                 clip: true; spacing: 27; model: backend.messageModel
                 // A hidden attached ScrollBar still writes contentY when its
@@ -647,7 +672,7 @@ ApplicationWindow {
                         id: closingMascot
                         objectName: "replyEndMascot_" + messageRow.index
                         selectionController: chatSelection
-                        visible: !modelData._loading && !messageRow.compactionNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !backend.running && backend.turnStatus.state === "finished"
+                        visible: !modelData._loading && !messageRow.compactionNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !backend.running && (backend.turnStatus.state === "finished" || modelData.stopReason === "stop")
                         x: 33
                     }
                 }
@@ -665,6 +690,18 @@ ApplicationWindow {
                 anchors.right: parent.right
                 anchors.top: conversation.top; anchors.bottom: conversation.bottom
                 view: conversation; enabled: !chatCover.visible; z: 20
+            }
+            ActionButton {
+                id: latestMessages; objectName: "latestMessagesButton"
+                readonly property real distanceFromBottom: Math.max(0, conversation.originY + conversation.contentHeight - conversation.height - conversation.contentY)
+                readonly property bool offered: conversation.visible && !conversation.followTail && !conversation.restoring && !chatCover.visible && distanceFromBottom > Math.max(Theme.control(160), conversation.height * 0.65)
+                anchors.horizontalCenter: composer.horizontalCenter; anchors.bottom: composer.top; anchors.bottomMargin: Theme.control(12)
+                z: 35; implicitHeight: Theme.control(31)
+                text: I18n.t("最新消息"); glyph: "arrow-down"
+                opacity: offered ? 1 : 0; visible: opacity > 0.01; enabled: offered
+                Behavior on opacity { NumberAnimation { duration: 140 } }
+                background: Rectangle { radius: height / 2; color: latestMessages.interactionHovered ? Theme.hover : Theme.surface; border.color: Theme.line }
+                onClicked: conversation.jumpToLatest()
             }
 
             Composer {
@@ -685,7 +722,7 @@ ApplicationWindow {
             }
             Row { id: footerActions; x: composer.x + (composer.width - width) / 2; anchors.bottom: parent.bottom; anchors.bottomMargin: 13; spacing: 8
                 ActionButton { height: Theme.control(28); quiet: true; text: "Agent"; glyph: "sliders"; onClicked: window.settings(3) }
-                ActionButton { objectName: "forkSessionButton"; visible: backend.messageCount > 0; enabled: !backend.busy; height: Theme.control(28); quiet: true; text: I18n.t("分支"); glyph: "branch"; onClicked: backend.forkSession() }
+                ActionButton { objectName: "forkSessionButton"; visible: backend.messageCount > 0; enabled: !backend.busy; height: Theme.control(28); quiet: true; text: I18n.t("分支"); glyph: "chat-fork"; onClicked: backend.forkSession() }
             }
             DesktopPluginMenu {
                 id: desktopPluginMenu

@@ -33,7 +33,20 @@ Rectangle {
         if (skillScope && entry.group !== "技能" && !(entry.group === "Widgets" && entry.widgetId === "skill-manager")) return false
         return !needle || matchesName(entry) || matchedPinyin(entry)
     })
-    readonly property var rows: {
+    property var rows: []
+    property bool ready: false
+    property string renderedQuery: ""
+    function rowKey(row) { return row.heading ? "group:" + row.heading : "entry:" + row.entry.id }
+    function rebuild(reset) {
+        reset = reset || renderedQuery !== normalizedQuery
+        renderedQuery = normalizedQuery
+        const previous = rows
+        const oldY = listing.contentY
+        const top = listing.indexAt(1, oldY + 1)
+        const anchor = top >= 0 && top < previous.length ? rowKey(previous[top]) : ""
+        const item = top >= 0 ? listing.itemAtIndex(top) : null
+        const offset = item ? oldY - item.y : 0
+        const selected = previous.find(row => row.entry && row.index === selectedIndex)
         let result = [], index = 0
         for (const group of ["命令", "Widgets", "技能"]) {
             const values = matches.filter(entry => entry.group === group)
@@ -41,7 +54,19 @@ Rectangle {
             result.push({heading: group})
             for (const entry of values) result.push({entry: entry, index: index++})
         }
-        return result
+        const selectedId = selected ? selected.entry.id : ""
+        const nextIndex = matches.findIndex(entry => entry.id === selectedId)
+        selectedIndex = reset ? 0 : Math.max(0, nextIndex)
+        if (JSON.stringify(result) !== JSON.stringify(rows)) rows = result
+        listing.forceLayout()
+        if (reset) { listing.positionViewAtBeginning(); return }
+        const target = rows.findIndex(row => rowKey(row) === anchor)
+        if (target >= 0) {
+            listing.positionViewAtIndex(target, ListView.Beginning)
+            listing.forceLayout()
+            const targetItem = listing.itemAtIndex(target)
+            listing.contentY = Math.max(listing.originY, Math.min(listing.originY + Math.max(0, listing.contentHeight - listing.height), targetItem ? targetItem.y + offset : oldY))
+        } else listing.contentY = Math.max(listing.originY, Math.min(listing.originY + Math.max(0, listing.contentHeight - listing.height), oldY))
     }
     readonly property real rowHeight: Theme.control(33)
     readonly property real headingHeight: Theme.control(25)
@@ -60,8 +85,8 @@ Rectangle {
         const row = rows.find(row => row.entry && row.index === selectedIndex)
         if (row) chosen(row.entry)
     }
-    onQueryChanged: { selectedIndex = 0; listing.contentY = 0 }
-    onEntriesChanged: { selectedIndex = 0; listing.contentY = 0 }
+    onMatchesChanged: if (ready) rebuild(false)
+    Component.onCompleted: { ready = true; rebuild(true) }
     width: 850
     height: Math.min(maximumHeight, Math.max(Theme.control(66), naturalHeight))
     radius: 16
