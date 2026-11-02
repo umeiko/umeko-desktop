@@ -36,6 +36,18 @@ try:
  for row in (0,3000,5998,1200):
   QMetaObject.invokeMethod(view,'jumpToMessage',Qt.DirectConnection,Q_ARG('QVariant',row));wait(lambda:c.messageModel.isReady(row) and not view.property('restoring'));y=find('messageBubble_'+str(row)).mapToItem(view,QPointF()).y();print('JUMP',row,view.property('contentY'),'relative',y,'cache',c.transcripts.cache.weight,flush=True);assert -2<=y<=5 or view.property('atYEnd') and 0<=y<view.height(),(row,y)
  assert c.messageModel.questionCount==3000
+ # Returning from a distant paged message needs one click, not a long scroll.
+ QMetaObject.invokeMethod(view,'jumpToMessage',Qt.DirectConnection,Q_ARG('QVariant',0))
+ latest=find('latestMessagesButton')
+ wait(lambda:not view.property('restoring') and latest.isVisible() and latest.isEnabled())
+ output=ROOT/'build/history-navigation';output.mkdir(parents=True,exist_ok=True)
+ assert w.grabWindow().save(str(output/'latest-messages.png'))
+ QTest.mouseClick(w,Qt.LeftButton,Qt.NoModifier,latest.mapToScene(latest.boundingRect().center()).toPoint())
+ wait(lambda:view.property('followTail') and not view.property('restoring') and view.property('atYEnd'))
+ wait(lambda:not latest.isVisible())
+ assert c._view.follow_tail
+ QMetaObject.invokeMethod(view,'jumpToMessage',Qt.DirectConnection,Q_ARG('QVariant',1200))
+ wait(lambda:not view.property('restoring'))
  c.copyDisplayMessage(5999);wait(lambda:app.clipboard().text().startswith('Reply 5999'))
  c.copyChatSelection(json.dumps({'anchor':{'row':0,'block':-100000,'offset':0},'cursor':{'row':3,'block':2147483647,'offset':0},'expanded':{}}));wait(lambda:'Reply 3' in app.clipboard().text());print('COPY_OK',len(app.clipboard().text()),flush=True)
  # Full copy must include pages that have never entered the display cache.

@@ -1,5 +1,15 @@
 .pragma library
 var strings = {
+  "服务器未返回错误详情": "The server returned no error details",
+  "请检查 API 密钥与权限": "Check the API key and permissions",
+  "请检查地址或模型名称": "Check the address or model name",
+  "请求超时，请检查网络或超时设置": "Request timed out; check the network or timeout settings",
+  "供应商请求超时，请检查网络或超时设置": "Provider request timed out; check the network or timeout settings",
+  "请求过大或上下文过长": "Request too large or context too long",
+  "请求受到限流，请稍后重试": "Rate limited; retry later",
+  "供应商服务端错误": "Provider-side error",
+  "返回 Widget": "Back to Widget",
+  "收起预览": "Close preview",
   "没有匹配项": "No matches",
   "没有匹配的技能": "No matching Skills",
   "没有可用的技能或 Skills Widget": "No available Skills or Skills Widget",
@@ -1156,5 +1166,15 @@ var strings = {
   "真正重要的东西，就算用最笨的方法也要紧紧抓住——这话是你说的吧？那我现在就要做全世界最笨的人。": "You said we should hold on tight to what really matters, even in the clumsiest way, right? Then I'll be the world's biggest fool.",
   "那家伙就总是让我烦躁、让我感到不爽、让我很在意。但是那家伙，却表现得一点都不在乎。我、我就感觉很恼火。": "He always irritates me, upsets me, and stays on my mind. But he acts like he doesn't care at all. I-I just get so frustrated.",
   "你真的很努力了喔。非常、非常了不起喔。": "You really worked so hard. You did very, very well.",
-  "人，你给我吃米，人，日后我会放你一马的": "Human, give me rice. Human, one day I shall spare you."
+  "人，你给我吃米，人，日后我会放你一马的": "Human, give me rice. Human, one day I shall spare you.",
+  "提交与预览": "Delivery and previews",
+  "提交后自动打开预览": "Open previews after submission",
+  "模型提交网页或文档后自动打开预览。关闭后，内容仍会显示在聊天中，点击时再打开。": "Automatically open submitted webpages and documents. When off, items stay in the chat and open when clicked.",
+  "网页打开方式": "Open webpages with",
+  "网页链接和本地 HTML 均遵循此设置。系统默认浏览器可绕过内置 WebView 的兼容性问题。": "Applies to web links and local HTML files. The system browser avoids compatibility issues with the embedded WebView.",
+  "内置网页预览": "Embedded web preview",
+  "系统默认浏览器": "System default browser",
+  "无法打开系统默认浏览器": "Could not open the system default browser",
+  "重启 Umeko 后可使用内置网页预览": "Restart Umeko to enable embedded web previews",
+  "最新消息": "Latest messages"
 }

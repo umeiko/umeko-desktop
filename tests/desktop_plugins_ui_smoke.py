@@ -124,11 +124,14 @@ try:
     wait(lambda:find('fileManagerDeleteDialog').property('visible'),'Delete confirmation did not open')
     assert (workspace/'delete-me.txt').exists()
     click('fileManagerDeleteConfirm');wait(lambda:not (workspace/'delete-me.txt').exists(),'Confirmed file was not deleted')
+    source_worker=manager.workers['file-tree'];source_page=find('fileTreePluginPage')
     click('fileTreeRow_renamed.md',Qt.RightButton);click('fileManagerPreview')
     wait(lambda:find('webPane').property('mode')=='document','File did not open in document preview')
-    assert not manager.page and set(manager.workers)=={'desktop-pet','global-agents'}
-    click('desktopPluginRecentButton')
-    wait(lambda:manager.page.get('id')=='file-tree' and find('fileTreeEntries') is not None,'Left click did not reopen recent widget')
+    assert manager.page.get('id')=='file-tree' and set(manager.workers)=={'desktop-pet','global-agents','file-tree'}
+    assert manager.workers['file-tree'] is source_worker
+    click('backDocumentPreviewButton')
+    wait(lambda:find('webPane').property('mode')=='plugin' and find('fileTreeEntries') is not None,'Preview Back did not return to its Widget')
+    assert find('fileTreePluginPage') is source_page and manager.workers['file-tree'] is source_worker
     manager.setSessionEnabled('git-viewer',True)
     assert manager.openPage('git-viewer')
     wait(lambda:find('gitChangesList') is not None and find('gitChangesList').property('count')>=3,'Git changes did not load')

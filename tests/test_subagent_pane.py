@@ -46,6 +46,19 @@ class SubagentPaneTests(unittest.TestCase):
         self.hub.close()
         self.directory.cleanup()
 
+    def test_live_child_failure_keeps_request_details_with_partial_or_empty_output(self):
+        failure = 'Provider failed [Umeko:12345678-1234-1234-1234-123456789abc]'
+        for text in ('partial child response', ''):
+            self.hub.messages = []
+            self.hub._event({'type':'message','text':text,'error':True,
+                             'errorMessage':failure,'stopReason':'error'})
+            row = ChatModel.project(self.hub.messages)[-1]
+            self.assertEqual(row['diagnosticId'], '12345678-1234-1234-1234-123456789abc')
+            self.assertTrue(row['activity'][-1]['error'])
+            if text:
+                self.assertEqual(row['activity'][0]['text'], text)
+                self.assertFalse(row['activity'][0]['error'])
+
     def test_cards_leave_tool_history_and_preserve_surrounding_tool_order(self):
         rows = ChatModel.project([{"role": "assistant", "text": "Delegating", "tools": [
             {"id": "read", "name": "read"},

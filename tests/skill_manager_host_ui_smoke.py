@@ -97,8 +97,28 @@ def main():
             bundled={row['name'] for row in json.loads((ROOT/'bundled-skills/sources.json').read_text())}
             assert {(r['name'],r['scope']) for r in actual}=={('global-guide','global'),('project-guide','project')} | {(name,'global') for name in bundled}
             assert all(row['valid'] for row in actual)
+            pdf=next(row for row in actual if row['name']=='pdf')
+            assert pdf['descriptions']['zh'] and pdf['descriptions']['en']
+            assert 'descriptions' not in next(row for row in actual if row['name']=='global-guide')
             assert find('skillManagerScope_global') and find('skillManagerScope_project')
             global_row=next(row for row in actual if row['name']=='global-guide' and row['scope']=='global')
+            # Preview navigation retains the originating Widget and its state.
+            find('skillManagerSearch').setProperty('text','global-guide')
+            result(request('skills.open',{'id':global_row['id'],'mode':'preview'}))
+            pane=find('webPane')
+            wait_for(lambda:pane.property('mode')=='document' and not backend.documentPreview.state.get('busy'),'Widget preview did not open')
+            assert pane.property('previewWidget')=='skill-manager' and find('skillManagerWidget')==widget
+            find('backDocumentPreviewButton').clicked.emit()
+            wait_for(lambda:pane.property('mode')=='plugin','Back did not return to the Skill Widget')
+            assert find('skillManagerWidget')==widget and find('skillManagerSearch').property('text')=='global-guide'
+            # A chat-originated request must not inherit the open Widget as its source.
+            backend.documentRequested.emit(global_row['path'],'Chat file','file')
+            wait_for(lambda:pane.property('mode')=='document' and not backend.documentPreview.state.get('busy'),'Chat preview did not open')
+            assert not pane.property('previewWidget') and not manager.page.get('id')
+            find('backDocumentPreviewButton').clicked.emit()
+            wait_for(lambda:not pane.property('opened'),'Chat preview Back did not collapse the pane')
+            assert manager.openPage('skill-manager')
+            wait_for(lambda:idle() and host._skills.catalog.get((backend._view.key,backend._view.workspace)), 'Reopened Skill Widget did not load');widget=find('skillManagerWidget')
             # Discovery help opens on click, explaining metadata versus full instructions.
             help_button=find('skillManagerDiscoveryHelp');assert help_button
             help_button.clicked.emit()
@@ -117,10 +137,38 @@ def main():
             assert not backend._view.skill_modes
             assert ((agent/'settings.json').read_bytes() if (agent/'settings.json').exists() else None)==before
 
+            # The real checkbox persists only the selected chat, without a
+            # second confirmation or changing native Pi settings.
+            owner=backend._view;owner.id='skill-switch-fixture';backend.chatChanged.emit()
+            search=find('skillManagerSearch');search.setProperty('text','global-guide')
+            checkbox_name='skillManagerEnabled_'+global_row['id']
+            wait_for(lambda:find(checkbox_name) is not None and find(checkbox_name).isVisible(),'Checkbox not visible')
+            from PySide6.QtCore import Qt
+            checkbox=find(checkbox_name);assert checkbox.property('checked')
+            QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,checkbox.mapToScene(checkbox.boundingRect().center()).toPoint())
+            wait_for(lambda:idle() and owner.skill_modes.get(global_row['path']) is False,'Disabling did not save')
+            assert not host.panelApproval and not find(checkbox_name).property('checked')
+            assert Store(profile).data['sessionMeta'][owner.id]['skillModes'][global_row['path']] is False
+            backend.newSession();assert not backend._view.skill_modes
+            assert manager.openPage('skill-manager');wait_for(idle,'Second chat did not load')
+            find('skillManagerSearch').setProperty('text','global-guide')
+            wait_for(lambda:find(checkbox_name) is not None,'Second chat checkbox missing')
+            assert find(checkbox_name).property('checked'),'Skill state leaked to a second chat'
+            backend._activate(owner);assert manager.openPage('skill-manager');wait_for(idle,'Original chat did not reload')
+            widget=find('skillManagerWidget');find('skillManagerSearch').setProperty('text','global-guide')
+            wait_for(lambda:find(checkbox_name) is not None,'Restored checkbox missing')
+            assert not find(checkbox_name).property('checked')
+            checkbox=find(checkbox_name)
+            QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,checkbox.mapToScene(checkbox.boundingRect().center()).toPoint())
+            wait_for(lambda:idle() and owner.skill_modes.get(global_row['path']) is True,'Re-enabling did not save')
+            assert ((agent/'settings.json').read_bytes() if (agent/'settings.json').exists() else None)==before
+            find('skillManagerSearch').setProperty('text','');wait_for(idle,'Search reset did not settle')
+            screenshot=ROOT/'artifacts/screenshots/skill-checkboxes.png';screenshot.parent.mkdir(parents=True,exist_ok=True);window.grabWindow().save(str(screenshot))
+
             # Paste directly into the selected workspace, without navigating,
             # confirming or treating the global source as a local conflict.
             result(request('skills.copy',{'id':global_row['id'],'kind':'folder'}))
-            assert QGuiApplication.clipboard().mimeData().urls()[0].toLocalFile()==str(global_folder)
+            assert Path(QGuiApplication.clipboard().mimeData().urls()[0].toLocalFile()).resolve()==global_folder.resolve()
             widget.setProperty('selectedScope','project');js('action("paste")')
             wait_for(idle,'Clipboard import did not finish')
             assert widget.property('route')=='main' and not host.panelApproval

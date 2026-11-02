@@ -50,6 +50,7 @@ try:
         screenshot.parent.mkdir(parents=True, exist_ok=True)
         assert window.grabWindow().save(str(screenshot))
     count = window.property('statusRequests')
+    assert window.property('page').property('expandedId') == '', 'Inventory loading expanded a plugin automatically'
     QTest.qWait(900)
     assert window.property('statusRequests') == count, 'Settled Widget must stop polling'
     assert window.property('inventoryRequests') == 1, 'Do not reload Pi repeatedly'

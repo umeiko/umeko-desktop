@@ -7,7 +7,7 @@ from pathlib import Path
 
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 os.environ.setdefault('QT_QUICK_BACKEND','software')
-from PySide6.QtCore import QObject, Property, QPointF, QTimer, Qt, QUrl, Signal, Slot, QMimeData
+from PySide6.QtCore import QObject, Property, QPointF, QTimer, Qt, QUrl, Signal, Slot, QMimeData, QMetaObject, Q_ARG
 from PySide6.QtGui import QGuiApplication, QFont, QFontDatabase, QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtQuick import QQuickItem, QQuickView
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -29,9 +29,10 @@ class FakeSdk(QObject):
         self.fail=False;self.import_error=''
         self.rows=[dict(id=f'skill-{i:02d}',name=f'document-{i:02d}',folderName=f'document-{i:02d}',
             scope='project' if i<20 else 'global',directory=f'/fixture/skills/{i:02d}',kind='folder',
-            path=f'/fixture/skills/{i:02d}/SKILL.md',description=f'Notes for topic {i:02d}') for i in range(40)]
-        self.operations={key:True for key in ['skills.browse','skills.open','skills.copy','skills.paste',
-            'skills.insert','skills.rename','skills.delete','skills.job','skills.importPreview','skills.import','skills.importLocal']}
+            path=f'/fixture/skills/{i:02d}/SKILL.md',enabled=True,canToggle=True,description=f'Notes for topic {i:02d}') for i in range(40)]
+        self.rows[23]['descriptions']={'en':'Notes for topic 23','zh':'整理主题 23 的相关文档与说明，按需阅读技能指引。'}
+        self.operations={key:True for key in ['skills.browse','skills.preview','skills.open','skills.copy','skills.paste',
+            'skills.attach','skills.insert','skills.rename','skills.delete','skills.job','skills.importPreview','skills.import','skills.importLocal']}
     @Property(bool,notify=activeChanged)
     def active(self):return True
     @Property(float,notify=appearanceChanged)
@@ -55,7 +56,7 @@ class FakeSdk(QObject):
         assert operation in self.operations,operation
         self.counter+=1;identifier=f'request-{self.counter}';self.requests.append((operation,args))
         def reply(value):QTimer.singleShot(0,lambda:self.hostResponse.emit(identifier,value))
-        if self.fail:
+        if self.fail and operation not in ('skills.preview','skills.job'):
             self.fail=False;reply({'ok':False,'error':'Fixture failure'});return identifier
         if operation=='skills.job':
             result=copy.deepcopy(self.jobs[args['id']])
@@ -68,9 +69,13 @@ class FakeSdk(QObject):
             reply({'ok':True,'jobs':[dict(id=args['id'],status='completed',result=result)]});return identifier
         result={'ok':True}
         if operation=='skills.browse':result.update(skills=copy.deepcopy(self.rows),roots={'project':'/fixture/workspace/.pi/skills','global':'/fixture/agent/skills'})
+        elif operation=='skills.preview':result['details']={'id':args['id'],'markdown':'---\nname: fixture\n---\n# Skill instructions\n\nRead these instructions before working.','truncated':False}
         elif operation in ('skills.paste','skills.importLocal'):
             result.update(imported=['copied-skill'],skipped=[],errors=[])
             if self.import_error:result.update(ok=False,error=self.import_error,imported=[],errors=[dict(name='copied-skill',error=self.import_error)])
+        elif operation=='skills.attach':
+            row=next(row for row in self.rows if row['id']==args['id']);row.update(enabled=args['enabled'])
+            result.update(path=row['path'],enabled=args['enabled'])
         elif operation=='skills.rename':next(row for row in self.rows if row['id']==args['id']).update(name=args['name'],folderName=args['name'])
         elif operation=='skills.delete':self.rows=[row for row in self.rows if row['id']!=args['id']]
         elif operation=='skills.importPreview':result['preview']=dict(id='preview-local',project=args['project'],errors=[],skills=[
@@ -81,6 +86,8 @@ class FakeSdk(QObject):
 
 QQuickStyle.setStyle('Basic')
 app=QGuiApplication([])
+from app.syntax_highlight import register_text_types
+register_text_types()
 for path in ('C:/Windows/Fonts/segoeui.ttf','C:/Windows/Fonts/msyh.ttc'):
     if Path(path).is_file():QFontDatabase.addApplicationFont(path)
 app.setFont(QFont('Segoe UI',10))
@@ -106,6 +113,7 @@ def wait_for(predicate,message):
     raise AssertionError(message+': '+str(root.property('notice')))
 def idle():wait_for(lambda:not root.property('working'),'Widget remained busy')
 def click(name,button=Qt.LeftButton,double=False):
+    reveal(name)
     QTest.qWait(20);item=find(name);assert item and item.isVisible() and item.isEnabled(),name
     point=item.mapToScene(item.boundingRect().center()).toPoint()
     (QTest.mouseDClick if double else QTest.mouseClick)(view,button,Qt.NoModifier,point)
@@ -114,8 +122,17 @@ def js(source):
     expression=QQmlExpression(view.engine().rootContext(),root,source);value=expression.evaluate()
     assert not expression.hasError(),expression.error().toString()
     return value[0] if isinstance(value,tuple) else value
-def actions():return [entry for entry in sdk.requests if entry[0]!='skills.job']
+def actions():return [entry for entry in sdk.requests if entry[0] not in ('skills.job','skills.preview')]
+
+def reveal(name):
+    name=name.replace('skillManagerEnabled_','skillManagerEntry_')
+    entries=variant(root.property('entries'))
+    index=next((i for i,row in enumerate(entries) if name==('skillManagerEntry_'+row['skill']['id'] if row['kind']=='skill' else 'skillManagerScope_'+row['scope'] if row['kind']=='scope' else '')),None)
+    if index is not None:
+        assert QMetaObject.invokeMethod(find('skillManagerList'),'positionViewAtIndex',Q_ARG(int,index),Q_ARG(int,4))
+        QTest.qWait(30)
 def drop(name,url='file:///tmp/test.skill',point=None):
+    if point is None:reveal(name)
     item=find(name);assert item and item.isVisible(),name
     point=point or item.mapToScene(item.boundingRect().center())
     mime=QMimeData();mime.setUrls([QUrl(url)])
@@ -133,9 +150,30 @@ try:
     assert len(variant(root.property('skills')))==40
     assert sum(row['kind']=='scope' for row in variant(root.property('entries')))==2
     assert len(variant(root.property('entries')))==42
-    assert find('skillManagerEntry_skill-00').height()==26
+    assert find('skillManagerEntry_skill-00').height()==56
     assert not find('skillManagerAttach_skill-00') and not find('skillManagerDetails') and not find('skillManagerInstall')
+    click('skillManagerEnabled_skill-00');idle()
+    assert ('skills.attach',{'id':'skill-00','enabled':False}) in actions()
+    assert not find('skillManagerEnabled_skill-00').property('checked')
+    screenshot=ROOT/'artifacts/screenshots/skill-checkboxes-dark.png';screenshot.parent.mkdir(parents=True,exist_ok=True);view.grabWindow().save(str(screenshot))
+    click('skillManagerEnabled_skill-00');idle();assert find('skillManagerEnabled_skill-00').property('checked')
+    sdk.fail=True;click('skillManagerEnabled_skill-00');idle()
+    assert find('skillManagerEnabled_skill-00').property('checked'),'Failed switch did not restore the checkbox'
+    click('skillManagerRefresh');idle()
     before=len(actions());click('skillManagerEntry_skill-00');assert len(actions())==before,'Single click performed an action'
+    wait_for(lambda:variant(root.property('preview')).get('id')=='skill-00','Inline Markdown preview did not load')
+    assert 'Skill instructions' in find('skillManagerPreviewMarkdown').property('text')
+    assert find('skillManagerDescription_skill-00').property('text')=='Notes for topic 00'
+    handle=find('skillManagerSplitHandle');listing=find('skillManagerList');original=listing.height()
+    point=handle.mapToScene(handle.boundingRect().center()).toPoint()
+    QTest.mousePress(view,Qt.LeftButton,Qt.NoModifier,point);QTest.mouseMove(view,point+QPointF(0,60).toPoint(),80);QTest.mouseRelease(view,Qt.LeftButton,Qt.NoModifier,point+QPointF(0,60).toPoint())
+    QTest.qWait(60);assert listing.height()>original+30,'Preview splitter did not resize the list'
+    before_preview=sum(operation=='skills.preview' for operation,args in sdk.requests)
+    js('selectedId="skill-01"');wait_for(lambda:variant(root.property('preview')).get('id')=='skill-01','Second preview did not load')
+    js('selectedId="skill-00"');wait_for(lambda:variant(root.property('preview')).get('id')=='skill-00','Cached preview did not return')
+    assert sum(operation=='skills.preview' for operation,args in sdk.requests)==before_preview+1,'Cached preview was loaded again'
+    output=ROOT/'build/skill-manager-ui';output.mkdir(parents=True,exist_ok=True)
+    assert view.grabWindow().save(str(output/'skills-en.png'))
     click('skillManagerEntry_skill-00',double=True);idle()
     assert actions()[-1]==('skills.insert',{'id':'skill-00'})
     click('skillManagerScope_project');assert len(variant(root.property('entries')))==22
@@ -178,7 +216,7 @@ try:
     scroll=find('skillManagerList');scroll.setProperty('contentY',scroll.property('contentHeight')-scroll.height());QTest.qWait(25)
     root.setProperty('selectedScope','project');drop('skillManagerEntry_skill-39')
     assert actions()[-2][1]['project'] is False
-    click('skillManagerScope_global')
+    root.setProperty('collapsedScopes',['project','global']);QTest.qWait(30)
     scroll.setProperty('contentY',0);QTest.qWait(25)
     point=scroll.mapToScene(QPointF(40,scroll.height()-10));root.setProperty('selectedScope','project')
     drop('skillManagerList',point=point);assert actions()[-2][1]['project'] is False
@@ -200,21 +238,27 @@ try:
     sdk.fail=True;click('skillManagerRefresh');idle();assert root.property('noticeError') and 'Fixture failure' in root.property('notice')
     sdk._language='zh';sdk.languageChanged.emit();sdk._scale=1.3;sdk.appearanceChanged.emit();QTest.qWait(40)
     click('skillManagerRefresh');idle()
+    click('skillManagerEntry_skill-23')
+    wait_for(lambda:variant(root.property('preview')).get('id')=='skill-23','Localized Skill preview did not load')
+    assert '整理主题 23' in find('skillManagerDescription_skill-23').property('text')
+    assert view.grabWindow().save(str(output/'skills-zh.png'))
     # Large UTF-8 catalog spans multiple immutable pages; publish it once complete.
+    root.setProperty('collapsedScopes',[])
     sdk.rows=[dict(sdk.rows[0],id=f'large-{i}',name=f'large-{i:03d}',description='技能说明'*256) for i in range(250)]
+    publication_sizes=[]
+    root.skillsChanged.connect(lambda:publication_sizes.append(len(variant(root.property('skills')))))
     sdk.page_size=60;before=len(sdk.requests);click('skillManagerRefresh')
-    wait_for(lambda:root.property('pageOffset')>0,'Pagination did not begin')
-    assert len(variant(root.property('skills')))!=250,'Published a partial catalog'
     idle();actual=variant(root.property('skills'));assert len(actual)==250 and len({row['id'] for row in actual})==250
+    assert publication_sizes==[250],('Published a partial catalog',publication_sizes)
     assert len(json.dumps(actual,ensure_ascii=False).encode())>262144
-    assert [args['offset'] for op,args in sdk.requests[before:] if op=='skills.job']==[0,60,120,180,240]
+    assert [args['offset'] for op,args in sdk.requests[before:] if op=='skills.job' and 'offset' in args]==[0,60,120,180,240]
     view.resize(320,240);QTest.qWait(60)
     click('skillManagerEntry_large-0',Qt.RightButton)
     menu=find('skillManagerContextMenu');assert menu.height()<=root.height()
     viewport=find('skillManagerMenuViewport');viewport.setProperty('contentY',viewport.property('contentHeight')-viewport.height())
     click('skillManagerMenu_delete');idle();assert len(sdk.rows)==249
-    assert not any(op in ('skills.attach','skills.default','skills.details') for op,args in sdk.requests)
+    assert not any(op in ('skills.default','skills.details') for op,args in sdk.requests)
     assert root.property('clip') and not warnings,'\n'.join(warnings)
-    print('SKILL_FOLDER_UI_OK: two collapsible roots, 26px rows, inert single click, double-click attachment, scoped menus, rename/delete, direct paste/drop without navigation, real Qt drops onto collapsed/scrolled sections, in-pane errors, explicit import, i18n/scale, 250-row UTF-8 paging; no availability controls')
+    print('SKILL_FOLDER_UI_OK: descriptive rows, resizable vertical split, cached Markdown preview, per-chat checkboxes and save-failure rollback, two roots, attachment, scoped menus, rename/delete, paste/drop, import, i18n/scale, bounded paging and narrow layouts')
 finally:
     view.close();shiboken6.delete(view);app.processEvents()

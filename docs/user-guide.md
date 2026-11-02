@@ -111,7 +111,7 @@ Syntax coloring waits for a 180 ms pause in code changes and uses one background
 
 ## Pi capabilities
 
-All eight native tools are enabled: `read`, `bash`, `powershell`, `edit`, `write`, `grep`, `find`, `ls`. `codemode`, `tool_search`, and directly callable extension tools are enabled too. Host executables are still required; using PowerShell on Unix requires PowerShell to be installed.
+All eight native tools are enabled by default: `read`, `bash`, `powershell`, `edit`, `write`, `grep`, `find`, `ls`. `codemode`, `tool_search`, and directly callable extension tools are enabled by default too. The Pi plugin Widget lets you change the activation scope or disable any listed extension, including Umeko's built-ins, and change individual native tools' visibility for the current chat. Host executables are still required; using PowerShell on Unix requires PowerShell to be installed.
 
 Skills, extensions, templates and commands load from the configured Pi agent directory and project `.pi` resources. Settings accepts additional Skill/extension paths. “View native capabilities” shows the actual registry, activation states and schemas. Deferred tools retain native discovery; explicitly hidden or disabled tools remain unavailable. New sessions, resume, fork and reload preserve this behavior without overwriting Pi settings files.
 

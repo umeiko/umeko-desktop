@@ -27,7 +27,7 @@ export function chatboxItems(name, result) {
 export function chatboxExtension(pi, getWebview = () => ({})) {
   pi.registerTool({
     name: CHATBOX_TOOL, label: "展示产物与网页", exposure: "direct",
-    description: "Show artifacts directly in Umeko chat. Accept local files/folders as absolute paths, file URLs or workspace-relative paths, and HTTP(S) URLs. Images preview inline independently of model vision support. Markdown, source code and plain text open in the side pane. Markdown offers source/rendered views; local static HTML offers source/webpage views when the WebView component is available. The desktop remembers the user's view choice globally per file type. Large/complex files use bounded partial, simplified or source previews. Other files have cards for opening or revealing their folder. HTTP(S) URLs open the single-page side WebView; the same URL reloads it and a different URL replaces it. Users can click delivered cards to reopen previews. URL context actions open the system browser, copy the URL or attach it to chat. Download remote images before submitting them as inline images.",
+    description: "Show artifacts directly in Umeko chat. Accept local files/folders as absolute paths, file URLs or workspace-relative paths, and HTTP(S) URLs. Images preview inline independently of model vision support. Markdown, source code and plain text open in the side pane. Markdown offers source/rendered views; local static HTML offers source/webpage views when the WebView component is available. The desktop remembers the user's view choice globally per file type. Large/complex files use bounded partial, simplified or source previews. Other files have cards for opening or revealing their folder. Webpage/HTML opening follows the user's embedded-view/system-browser preference; automatic opening can be disabled. Users can click delivered cards to reopen previews. URL context actions open the system browser, copy the URL or attach it to chat. Download remote images before submitting them as inline images.",
     promptSnippet: "Use submit_to_chatbox to show generated artifacts, images, documents, code or webpages in Umeko.",
     promptGuidelines: ["For a better user experience, after creating or updating a user-facing artifact, prefer submitting its local path with submit_to_chatbox rather than only mentioning its path. Also use it when the user asks to see an image or receive a generated/downloaded file. Markdown, code and text are previewed in the side pane; images render independently of model vision support. Large-file previews may be truncated or simplified; the original file remains available."],
     parameters: Type.Object({items: Type.Array(Type.Object({
@@ -69,7 +69,7 @@ export function chatboxExtension(pi, getWebview = () => ({})) {
       // Nested tool results keep only a bounded call summary in Pi. A native
       // custom entry preserves delivery details on the same branch as the call.
       pi.appendEntry("umeko-chatbox", {version: 1, toolCallId: _id, items});
-      return { content: [{type: "text", text: JSON.stringify({submitted: items.map(({path, kind, title}) => ({path, kind, title})), errors, ...(webview ? {webview} : {})})}],
+      return { content: [{type: "text", text: JSON.stringify({submitted: items.map(({path, kind, title}) => ({path, kind, title})), errors, ...(getWebview().autoOpen === false ? {autoOpen:false} : {}), ...(webview ? {webview} : {})})}],
         details: {umekoChatbox: {version: 1, items}} };
     },
   });

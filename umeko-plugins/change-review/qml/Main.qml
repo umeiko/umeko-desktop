@@ -25,9 +25,20 @@ Rectangle {
     property int epoch: 0
     property string diffRequest: ""
     property string targetToken: ""
+    property string configRequest: ""
+    property string configError: ""
     readonly property string help: error || ((report.limited || clipped) ? "部分文件超过采集限制，预览不完整。" : truncated ? "差异预览已截断。" : "仅本轮变更，可能包含同目录的并发编辑。\n只保留最近一轮，重启后清除。")
     color: c.surface
 
+    function t(zh, en) { return sdk.language.indexOf("zh") === 0 ? zh : en }
+    function saveAutoOpen(value) {
+        configError = ""
+        configRequest = sdk.saveConfig(Object.assign({}, sdk.config, {autoOpen: value}))
+        if (!configRequest) {
+            configError = t("保存失败，请重试", "Could not save. Please retry.")
+            autoOpen.checked = Qt.binding(function() { return root.sdk.config.autoOpen !== false })
+        }
+    }
     function call(method, args, kind) {
         const token = sdk.call(method, args || {})
         if (!token) { error = "插件暂时繁忙，请稍后重试"; return "" }
@@ -102,6 +113,12 @@ Rectangle {
     Component.onCompleted: { targetToken = sdk.session.token || ""; load(false) }
     Connections {
         target: root.sdk
+        function onConfigSaved(token, value) {
+            if (token !== root.configRequest) return
+            root.configRequest = ""
+            if (!value.ok) root.configError = value.error || root.t("保存失败，请重试", "Could not save. Please retry.")
+            autoOpen.checked = Qt.binding(function() { return root.sdk.config.autoOpen !== false })
+        }
         function onSessionChanged() {
             if (root.targetToken !== (root.sdk.session.token || "")) { root.targetToken = root.sdk.session.token || ""; root.load(false) }
         }
@@ -135,6 +152,34 @@ Rectangle {
     ListModel { id: tree; dynamicRoles: true }
     ColumnLayout {
         anchors.fill: parent; spacing: 0
+        CheckBox {
+            id: autoOpen; objectName: "changeReviewPageAutoOpen"
+            Layout.fillWidth: true; Layout.leftMargin: 8 * root.s; Layout.rightMargin: 8 * root.s
+            padding: 6 * root.s; spacing: 8 * root.s
+            checked: root.sdk.config.autoOpen !== false
+            enabled: root.sdk.active && !root.configRequest
+            onToggled: root.saveAutoOpen(checked)
+            indicator: Rectangle {
+                implicitWidth: 18 * root.s; implicitHeight: 18 * root.s
+                x: autoOpen.leftPadding; y: (autoOpen.height - height) / 2; radius: 4 * root.s
+                border.color: autoOpen.checked ? root.c.accent : root.c.muted
+                color: autoOpen.checked ? root.c.accent : "transparent"
+                opacity: autoOpen.enabled ? 1 : 0.5
+                Git.VsIcon { anchors.centerIn: parent; name: "check"; size: 15 * root.s; visible: autoOpen.checked; color: root.c.surface }
+            }
+            contentItem: Text {
+                leftPadding: autoOpen.indicator.width + autoOpen.spacing
+                text: root.t("每轮改动后自动展开", "Open automatically after each turn")
+                wrapMode: Text.Wrap; color: root.c.ink; font.pixelSize: 12 * root.s
+                verticalAlignment: Text.AlignVCenter
+            }
+        }
+        Text {
+            visible: !!root.configError; text: root.configError; textFormat: Text.PlainText
+            Layout.fillWidth: true; Layout.leftMargin: 12 * root.s; Layout.rightMargin: 12 * root.s
+            wrapMode: Text.Wrap; color: root.c.danger; font.pixelSize: 11 * root.s
+        }
+        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: root.c.line }
         RowLayout {
             Layout.fillWidth: true; Layout.preferredHeight: 30 * root.s
             Layout.leftMargin: 6 * root.s; Layout.rightMargin: 6 * root.s; spacing: 3 * root.s

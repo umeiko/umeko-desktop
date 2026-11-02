@@ -6,6 +6,16 @@ import path from 'node:path';
 import {chatboxExtension, chatboxItems} from '../runtime/releases/coding-1.3.0/chatbox.mjs';
 import {componentSpec} from '../runtime/releases/coding-1.3.0/webview-component.mjs';
 
+test('external browser policy bypasses embedded component guidance and manual delivery is reported',async()=>{
+  let tool;
+  chatboxExtension({registerTool(value){tool=value;},appendEntry(){}},()=>({display:'external',autoOpen:false,available:true,directory:'/does-not-exist'}));
+  const result=await tool.execute('external',{items:[{path:'http://127.0.0.1:8791/preview'}]},null,null,{cwd:os.tmpdir()});
+  const payload=JSON.parse(result.content[0].text);
+  assert.equal(payload.webview.status,'external');assert.equal(payload.autoOpen,false);
+  assert.equal(chatboxItems(tool.name,result)[0].presentation,'external');
+  assert.ok(!payload.webview.instructions && !payload.webview.downloadUrl);
+});
+
 test('URL submissions reuse the delivery protocol and guidance appears only when the component is missing', async () => {
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'umeko-webview-'));
   try {

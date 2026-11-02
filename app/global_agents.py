@@ -58,6 +58,7 @@ class GlobalAgents(QObject):
         for value in reversed(values[-64:]):
             if not isinstance(value,dict): continue
             row = {key:str(value.get(key,''))[:6000] for key in ('role','text','thinking','name')}
+            if value.get('errorMessage'): row['errorMessage'] = str(value['errorMessage'])[:6000]
             for key in ('timestamp','stopReason','entryId'):
                 if key in value: row[key] = value[key] if key=='timestamp' else str(value[key])[:128]
             tools=[]

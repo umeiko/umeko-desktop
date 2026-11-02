@@ -12,12 +12,21 @@ _libraries = []
 def component_directory():
     return Path(os.environ.get('UMEKO_WEBVIEW_COMPONENT_DIR') or Path(os.environ.get('XDG_DATA_HOME') or Path.home()/'.local/share')/'umeko/components')
 
-def configuration():
-    return {**_configuration, 'directory':str(component_directory()), 'qt':qVersion()}
+def configuration(preferences=None):
+    result = {**_configuration, 'directory':str(component_directory()), 'qt':qVersion()}
+    if preferences is not None:
+        from .desktop_preferences import normalize
+        settings = normalize(preferences)
+        result.update(display=settings['webDisplay'], autoOpen=settings['autoOpenSubmissions'])
+        result['available'] = result['available'] and settings['webDisplay'] == 'embedded'
+    return result
 
-def configure(root):
+def configure(root, enabled=True):
     global _configuration
     _configuration = {'available':False}
+    if not enabled:
+        _configuration['disabled'] = True
+        return
     support = root/'webview-support' if getattr(sys, 'frozen', False) else root/'build/webview-support'
     if sys.platform.startswith('linux'):
         try:

@@ -9,7 +9,7 @@ def catalog(record, extensions):
     rows = list(extensions)
     if raw:
         rows.insert(0, {'id':NATIVE_ID,'path':NATIVE_ID,'name':'Pi 内置工具','source':'builtin','scope':'session','enabled':True,
-            'info':{'icon':'pi-commands','required':True,'bundled':True,'description':'Pi 原生的文件、搜索与命令工具。','updateKind':'desktop'}})
+            'info':{'icon':'pi-commands','required':False,'bundled':True,'description':'Pi 原生的文件、搜索与命令工具。','updateKind':'desktop'}})
     modes = record.extension_modes
     groups = {}
     for tool in raw:

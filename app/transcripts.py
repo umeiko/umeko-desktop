@@ -148,6 +148,8 @@ def present(entries, cwd, active_compactions=()):
             row = {"role": role, "text": text, "error": message.get("stopReason") != "aborted" and bool(message.get("errorMessage")), "entryId": entry["id"], "timestamp": message.get("timestamp") or entry.get("timestamp")}
             if role == "assistant":
                 row["stopReason"] = message.get("stopReason", "")
+                if row["error"]:
+                    row["errorMessage"] = message["errorMessage"]
             if thinking:
                 row["thinking"] = thinking
             if calls:

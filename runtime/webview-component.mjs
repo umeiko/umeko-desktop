@@ -6,6 +6,7 @@ import os from 'node:os';
 export const componentSpec = JSON.parse(await fs.readFile(new URL('./webview-component.json', import.meta.url), 'utf8'));
 export const componentDirectory = () => process.env.UMEKO_WEBVIEW_COMPONENT_DIR || path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local/share'), 'umeko/components');
 export async function webviewStatus(config = {}) {
+  if (config.display === 'external') return {status:'external',message:config.autoOpen === false ? '用户已选择系统默认浏览器，并关闭提交后自动打开；内容保留在聊天中，点击后打开。' : '用户已选择使用系统默认浏览器打开网页，无需安装或启用内置 WebView。'};
   if (config.available) return {status:'ready'};
   if (process.platform !== 'linux') return {status:'unavailable', message:'当前构建未能加载系统 WebView，请检查应用安装。'};
   if (process.arch !== 'x64' || config.qt && config.qt !== componentSpec.qt) return {status:'unavailable',message:'此组件仅适用于 Qt '+componentSpec.qt+' 的 Linux x64 构建。'};

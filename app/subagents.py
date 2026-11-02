@@ -422,7 +422,7 @@ class Subagents(QObject):
                     self.truncated = True
                 message[key] = value[-131072:]
             elif kind == "message":
-                message.update({key: event[key] for key in ("text", "thinking", "error", "stopReason", "timestamp") if key in event})
+                message.update({key: event[key] for key in ("text", "thinking", "error", "errorMessage", "stopReason", "timestamp") if key in event})
                 for key in ("text", "thinking"):
                     if len(message.get(key, "")) > 131072:
                         message[key] = message[key][-131072:]

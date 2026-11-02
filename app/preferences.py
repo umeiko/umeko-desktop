@@ -1,12 +1,69 @@
-"""Small persisted appearance and provider transport settings."""
+"""Persisted desktop presentation, appearance and provider transport settings."""
 import math
+import json
 import urllib.parse
-from PySide6.QtCore import Slot
+from pathlib import Path
+from PySide6.QtCore import Slot, QUrl
+from PySide6.QtGui import QDesktopServices
 from .gateway import validate_base_url
 from umeko_provider_sdk.network import validate_ca_file
 
 
 class PreferencesMixin:
+    @Slot(str, result=bool)
+    def saveDesktopSettings(self, raw):
+        from .desktop_preferences import validate_patch, normalize
+        from .webview import configuration
+        old = self.store.data['desktop']
+        try:
+            value = normalize({**old, **validate_patch(json.loads(raw))})
+            if value == old: return True
+            self.store.data['desktop'] = value
+            self.store.save()
+        except (ValueError, OSError, RuntimeError) as error:
+            self.store.data['desktop'] = old
+            self.toast.emit(str(error)); return False
+        self.documentPreview.refreshWebPolicy()
+        pool = getattr(self, '_pool', None)
+        if pool:
+            for record in tuple(pool.records.values()):
+                if record.process:
+                    pool.write(record, {'type':'desktop_settings', 'webview':configuration(value)})
+        self.changed.emit()
+        self.desktopSettingsChanged.emit()
+        if value['webDisplay'] == 'embedded' and configuration().get('disabled'):
+            self.toast.emit('重启 Umeko 后可使用内置网页预览')
+        return True
+
+    def _open_browser(self, url):
+        try:
+            if QDesktopServices.openUrl(url): return True
+        except OSError: pass
+        self.toast.emit('无法打开系统默认浏览器')
+        return False
+
+    @Slot(str, str, result=bool)
+    def openWebPreview(self, raw, title):
+        url = self.normalizeWebUrl(raw)
+        if not url: return False
+        if self.store.data['desktop']['webDisplay'] == 'external':
+            return self._open_browser(QUrl(url))
+        if not self.webviewAvailable:
+            self.toast.emit('网页预览组件尚未安装或无法加载'); return False
+        self.webRequested.emit(url, title)
+        return True
+
+    @Slot(str, result=bool)
+    def openExternalHtml(self, raw):
+        path = Path(raw)
+        if self.store.data['desktop']['webDisplay'] != 'external' or path.suffix.lower() not in ('.html', '.htm'):
+            return False
+        if path.is_absolute() and path.is_file():
+            self._open_browser(QUrl.fromLocalFile(str(path)))
+        else:
+            self.toast.emit('文件已移动或不存在')
+        return True
+
     @Slot(str)
     def setLanguage(self, language):
         if language not in ('zh', 'en') or language == self.language:
@@ -76,3 +133,7 @@ class PreferencesMixin:
     @Slot(str, result=str)
     def requestReport(self, identifier):
         return self.gateway.diagnostics.read(identifier)
+
+    @Slot(str)
+    def showRequestDetails(self, identifier):
+        self.requestDetailsRequested.emit(identifier)

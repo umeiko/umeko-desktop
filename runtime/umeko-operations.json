@@ -18,6 +18,7 @@
     "appearance.fontScale": {"target":"backend","method":"setFontScale","args":[["scale","number"]]},
     "appearance.fontFamily": {"target":"backend","method":"setFontFamily","editions":["python"],"args":[["family","string"]]},
     "appearance.sidebar": {"target":"backend","method":"saveSidebarLayout","args":[["width","integer"],["collapsed","boolean",false]]},
+    "desktop.configure": {"target":"backend","method":"saveDesktopSettings","editions":["python"],"args":[["config","json"]]},
     "projects.add": {"target":"backend","method":"dropProjects","args":[["paths","json"]]},
     "projects.open": {"target":"backend","method":"openProject","exists":"project","args":[["id","string"]]},
     "projects.rename": {"target":"backend","method":"renameProject","exists":"project","args":[["id","string"],["title","string"]]},

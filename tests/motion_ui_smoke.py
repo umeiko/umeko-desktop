@@ -47,26 +47,29 @@ try:
     assert abs(find('sidebarPidMotion').property('value').y()-before)<.2,'Sidebar retarget reset its position'
     QTest.qWait(20)
     QTest.qWait(2000);assert abs(find('sidebarHighlight').y()-find('sidebarRow_2').y())<.2
-    # Actual pointer selection must move before the synchronous history loader.
+    # Disk preparation overlaps the PID; expensive content attachment waits for
+    # the highlight to settle, rather than stealing frames midway through it.
     from unittest.mock import patch
     calls=[]
     def loaded(session_id):
         calls.append(session_id)
-        assert not find('sidebarPidMotion').property('moving'),'History load blocked PID frames'
+        assert not find('sidebarPidMotion').property('moving'),'Content interrupted the moving highlight'
         backend._view.id=session_id;backend.chatChanged.emit()
     with patch.object(backend,'openSession',side_effect=loaded):
-        click(find('sidebarRow_4'));QTest.qWait(45)
-        assert window.property('sidebarSwitching') and backend.activeSession=='2' and not calls
+        click(find('sidebarRow_4'))
+        assert not calls,'History load ran before presenting the cover'
+        QTest.qWait(80)
+        assert not calls and window.property('sidebarPrepared'),'Prepared content attached during the PID'
         start=find('sidebarRow_2').y();target=find('sidebarRow_4').y()
-        assert start<find('sidebarHighlight').y()<target,'Click did not start animation immediately'
+        assert start<find('sidebarHighlight').y()<target,'Highlight failed to move while content waited'
         before=find('sidebarPidMotion').property('value').y()
         click(find('sidebarRow_0'))
         assert abs(find('sidebarPidMotion').property('value').y()-before)<30,'Rapid pointer retarget reset its position'
-        QTest.qWait(45);assert not calls,'Intermediate selection loaded during animation'
-        for _ in range(200):
+        for _ in range(150):
             QTest.qWait(20)
-            if not window.property('sidebarSwitching'):break
-        assert calls==['0'],calls
+            if calls:break
+        assert calls==['0'] and not window.property('sidebarSwitching'),calls
+        QTest.qWait(2000)
         assert abs(find('sidebarHighlight').y()-find('sidebarRow_0').y())<.2
     assert not warnings,'\n'.join(warnings)
     print('MOTION_UI_OK: popup toggle, button-sized PID growth, mid-flight reversal and continuous sidebar retargeting')

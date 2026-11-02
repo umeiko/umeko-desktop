@@ -29,6 +29,9 @@ def main():
         workspace.mkdir();(workspace/'.git').mkdir();(base/'home').mkdir()
         folder=agent/'skills/文档整理';folder.mkdir(parents=True)
         (folder/'SKILL.md').write_text('---\nname: documents\ndescription: Visible document skill.\n---\nGuide.\n',encoding='utf-8')
+        for index in range(40):
+            guide=agent/'skills'/('guide-'+str(index).zfill(2));guide.mkdir(parents=True)
+            (guide/'SKILL.md').write_text(f'---\nname: guide-{index:02}\ndescription: Guide fixture.\n---\nInstructions.\n',encoding='utf-8')
         os.environ.update(UMEKO_DATA_DIR=str(base/'profile'),HOME=str(base/'home'),USERPROFILE=str(base/'home'),PI_CODING_AGENT_DIR=str(agent))
         store=Store();store.data['agent']['agentDir']=str(agent);store.data['workspace']=str(workspace);store.save()
         app,engine,b=create_application();window=engine.rootObjects()[0];window.resize(1280,900)
@@ -52,7 +55,38 @@ def main():
         try:
             wait(lambda:prompt.isEnabled(),'Composer disabled')
             assert '/compact' in query('/')
+            assert abs(menu.width()-find('composer').width())<1,'Menu must keep the compact composer width'
+            assert menu.height()>=180,'Menu kept the initial minimum height after composer layout'
+            assert js(menu,'rowHeight')<40,'Menu rows lost the compact layout'
             wait(lambda:'文档整理' in query('/w'),'Native Skill catalog did not arrive')
+            # A delayed catalog update must preserve an already scrolled menu,
+            # including when newly discovered items are inserted above it.
+            commands=b.slashCommands
+            native=[dict(id=row['id'], name=row['title'], path=row['path'], attached=True,
+                description=row['description'], descriptions=row.get('descriptions',{}), scope=row['scopeKey']) for row in commands._skills]
+            prompt.setProperty('text','');QTest.qWait(20)
+            commands._loaded_at=0
+            with patch.object(b,'_job') as jobs:
+                query('/')
+                assert jobs.call_count==1
+                listing=find('compactCommandList')
+                js(menu,'selectedIndex=matches.length-4; revealSelection()');QTest.qWait(20)
+                before=listing.property('contentY')
+                selected=js(menu,'matches[selectedIndex].id')
+                top=js(listing,'indexAt(1,contentY+1)')
+                anchor=js(menu,f'rowKey(rows[{top}])')
+                offset=js(listing,'itemAtIndex(indexAt(1,contentY+1)).y-contentY')
+                extra=dict(native[0], id='added-guide', name='added-guide', path=str(agent/'skills/added-guide/SKILL.md'))
+                commands.finished('slash-skills',{'ok':True,'value':{'skills':[extra]+native}})
+                QTest.qWait(30)
+                assert js(menu,'matches[selectedIndex].id')==selected,(selected,js(menu,'matches[selectedIndex].id'),js(menu,'selectedIndex'),before,listing.property('contentY'))
+                top=js(listing,'indexAt(1,contentY+1)')
+                assert js(menu,f'rowKey(rows[{top}])')==anchor
+                assert abs(js(listing,'itemAtIndex(indexAt(1,contentY+1)).y-contentY')-offset)<1
+                after=listing.property('contentY')
+                commands.refresh();b.desktopPlugins.changed.emit();QTest.qWait(20)
+                assert jobs.call_count==1 and abs(listing.property('contentY')-after)<1
+            query('/guide-03');assert listing.property('contentY')<1
             for prefix in ('w','wd','wendang','文档'):
                 assert '文档整理' in query('/'+prefix),prefix
             for prefix in ('s','sk','ski','skil','skill','skills'):

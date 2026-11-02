@@ -27,6 +27,7 @@
 | `appearance.fontScale` | `scale: number` | 无 | 否 |
 | `appearance.fontFamily`（仅 python） | `family: string` | 无 | 否 |
 | `appearance.sidebar` | `width: integer`, `collapsed: boolean=false` | 无 | 否 |
+| `desktop.configure`（仅 python） | `config: json` | 无 | 否 |
 | `projects.add` | `paths: json` | 无 | 否 |
 | `projects.open` | `id: string` | 无 | 否 |
 | `projects.rename` | `id: string`, `title: string` | 无 | 否 |

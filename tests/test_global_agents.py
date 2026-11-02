@@ -30,6 +30,14 @@ class GlobalAgentTests(unittest.TestCase):
         return self.g.execute('agent_bus.create',{'requestKey':key,**fields},self.b._view)
     def creation_status(self,row,caller=None):
         return self.g.execute('agent_bus.creation_status',{'requestId':row['requestId']},caller or self.b._view)
+    def test_failed_coordinator_snapshot_preserves_request_report_with_partial_text(self):
+        identifier='12345678-1234-1234-1234-123456789abc'
+        self.source.messages=[{'role':'assistant','text':'partial coordinator reply','error':True,
+            'stopReason':'error','errorMessage':'Provider failed [Umeko:'+identifier+']'}]
+        row=self.g.snapshot(self.id)['messages'][-1]
+        self.assertEqual(row['diagnosticId'],identifier)
+        self.assertEqual(row['activity'][0]['text'],'partial coordinator reply')
+        self.assertTrue(row['activity'][-1]['error'])
     def test_global_agents_cannot_create_even_when_user_allows_automatic_creation(self):
         for automatic in (False,True):
             self.g.handle('setAutomaticCreation',{'enabled':automatic})
