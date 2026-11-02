@@ -415,11 +415,13 @@ class DesktopPlugins(QObject):
                 path=Path(args.get('path','')).resolve()
                 if path.is_relative_to(root) and path.is_file():plugin_file_actions.open_with(path)
             return
-        if kind in ('file.reveal','explorer.reveal'):
+        if kind in ('file.open','file.reveal','explorer.reveal'):
             if 'workspace.read' not in perms or not self._session.get('workspace'):return
             root=Path(self._session['workspace']).resolve();path=Path(args.get('path','')).resolve()
             if not path.is_relative_to(root):return
-            if kind=='file.reveal':
+            if kind=='file.open':
+                if path.is_file():self.b.openChatboxPath(str(path),False)
+            elif kind=='file.reveal':
                 if path.exists():self.b.openChatboxPath(str(path),True)
                 elif path.parent.is_relative_to(root) and path.parent.is_dir():self.b.openChatboxPath(str(path.parent),False)
             elif not self.openPage('file-tree'):self.b.toast.emit('请先启用文件树插件')

@@ -51,6 +51,7 @@ class DesktopPluginTests(unittest.TestCase):
     def fixture(self,identifier='session-demo',version='1.0.0',config=None,lifecycle='session'):
         folder=self.path/(identifier+'-'+version);shutil.copytree(ROOT/'umeko-plugins/file-tree',folder)
         manifest=json.loads((folder/'manifest.json').read_text());manifest.update(id=identifier,version=version,builtin=True,permissions=['workspace.read','session.read','session.write'])
+        manifest.pop('liveConfig',None)
         manifest['agent']['methods']={'rpc':{'description':'Return supplied data and publish progress','parameters':{'type':'object','properties':{'value':{'type':'string','maxLength':8}},'required':['value'],'additionalProperties':False}}}
         manifest['lifecycle']=lifecycle
         if lifecycle=='application':
@@ -521,6 +522,13 @@ def create_plugin(context):return Fixture(context)
             self.assertEqual(clipboard.call_args.args,([workspace/'renamed.txt'],True))
         with patch('app.plugin_file_actions.open_with') as chooser:
             self.assertTrue(self.call('openWith',{'path':'renamed.txt'})['ok']);chooser.assert_called_once_with(workspace/'renamed.txt')
+        self.assertTrue(self.call('openDefault',{'path':'renamed.txt'})['ok'])
+        self.assertEqual(self.host.revealed,[(str(workspace/'renamed.txt'),False)])
+        outside=self.path/'outside.txt';outside.write_text('outside')
+        self.assertFalse(self.call('openDefault',{'path':'../outside.txt'})['ok'])
+        self.manager.host_event('file-tree',{'event':'file.open','arguments':{'path':str(outside)}})
+        self.manager.host_event('file-tree',{'event':'file.open','arguments':{'path':str(workspace)}})
+        self.assertEqual(len(self.host.revealed),1)
         (workspace/'existing.txt').write_text('existing')
         self.assertFalse(self.call('rename',{'path':'renamed.txt','name':'existing.txt'})['ok'])
         self.assertFalse(self.call('delete',{'path':'..'})['ok']);self.assertTrue(workspace.exists())
@@ -536,6 +544,22 @@ def create_plugin(context):return Fixture(context)
         self.assertEqual(len(self.host.revealed),1)
         self.manager.host_event('git-viewer',{'event':'explorer.reveal','arguments':{'path':str(target)}})
         self.assertEqual(self.manager.page['id'],'file-tree');self.assertEqual(self.manager.page['selection'],'nested/file.txt')
+    def test_file_manager_action_config_updates_without_restarting_page_and_accepts_legacy_config(self):
+        self.manager.settings.setdefault('config',{})['file-tree']={'showHidden':False,'directoryLimit':200}
+        self.assertTrue(self.manager.openPage('file-tree'))
+        self.wait(lambda:self.manager.workers['file-tree']['ready'])
+        worker=self.manager.workers['file-tree']
+        config={**self.manager.page['config'],'doubleClickAction':'open'}
+        self.assertTrue(self.manager.saveConfig('file-tree',json.dumps(config)))
+        self.wait(lambda:not self.manager.busy)
+        self.assertIs(self.manager.workers['file-tree'],worker)
+        self.assertEqual(self.manager.page['config'],config)
+        self.assertEqual(json.loads(self.manager.registry.read_text())['config']['file-tree'],config)
+        self.assertTrue(self.call('list',{'path':'.'})['ok'])
+        self.assertTrue(self.manager.saveConfig('file-tree',json.dumps({**config,'doubleClickAction':'unknown'})))
+        self.wait(lambda:not self.manager.busy)
+        self.assertEqual(self.manager.page['config'],config)
+        self.assertIs(self.manager.workers['file-tree'],worker)
     def test_recent_widget_is_remembered_per_workspace_and_only_uses_enabled_pages(self):
         first_workspace=self.host._view.workspace
         self.assertTrue(self.manager.openPage('file-tree'));self.manager.closePage()

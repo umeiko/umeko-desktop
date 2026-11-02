@@ -11,6 +11,8 @@ Rectangle {
     property var expanded:({".":true})
     property var requests:({})
     property bool hidden:!!sdk.config.showHidden
+    readonly property string doubleClickAction: ["preview", "open", "attach"].includes(sdk.config.doubleClickAction) ? sdk.config.doubleClickAction : "attach"
+    property string configRequest:""
     property string selectedPath:""
     property string error:""
     property string rootName:""
@@ -20,6 +22,15 @@ Rectangle {
     property bool workspaceOpen:true
     property var contextEntry:({})
     property string pendingReveal: sdk.revealPath || ""
+    function t(zh,en) { return sdk.language.indexOf("zh") === 0 ? zh : en }
+    function saveDoubleClickAction(value) {
+        error=""
+        configRequest=sdk.saveConfig(Object.assign({},sdk.config,{doubleClickAction:value}))
+        if(!configRequest) {error=t("保存失败，请重试","Could not save. Please retry.");actionChoice.syncSelection()}
+    }
+    function openFile(path) {
+        call(doubleClickAction === "open" ? "openDefault" : doubleClickAction,{path:path})
+    }
     function revealNext() {
         if(!pendingReveal || !cache["."])return
         const parts=pendingReveal.split("/");let path=".";const next=Object.assign({},expanded)
@@ -118,6 +129,16 @@ Rectangle {
         if(request.kind==="rename" || request.kind==="delete"){root.renameBusy=false;root.pendingReveal=result.path || "";root.refresh()}
     }}
     Connections {target:root.sdk;function onRevealPathChanged(){root.pendingReveal=root.sdk.revealPath;root.revealNext()}function onEvent(topic,data){if(topic==="file.select"){root.pendingReveal=data.path || "";root.revealNext()}}}
+    Connections {
+        target:root.sdk
+        function onConfigChanged(){actionChoice.syncSelection()}
+        function onConfigSaved(token,value){
+            if(token!==root.configRequest)return
+            root.configRequest=""
+            if(!value.ok)root.error=value.error || root.t("保存失败，请重试","Could not save. Please retry.")
+            actionChoice.syncSelection()
+        }
+    }
     ListModel {id:tree;dynamicRoles:true}
     ColumnLayout {
         anchors.fill:parent;spacing:0
@@ -128,6 +149,25 @@ Rectangle {
             VsButton {uiScale:root.sdk.scale;iconName:root.hidden?"eye":"eye-closed";foreground:root.c.muted;hoverColor:root.c.hover;hint:"显示隐藏文件";onClicked:{root.hidden=!root.hidden;root.refresh()}}
             VsButton {uiScale:root.sdk.scale;iconName:"collapse-all";foreground:root.c.muted;hoverColor:root.c.hover;hint:"全部折叠";onClicked:{root.expanded=({".":true});root.rebuild()}}
             VsButton {objectName:"fileTreeRefresh";uiScale:root.sdk.scale;iconName:"refresh";foreground:root.c.muted;hoverColor:root.c.hover;hint:"刷新";onClicked:root.refresh()}
+        }
+        RowLayout {
+            Layout.fillWidth:true;Layout.leftMargin:16*root.sdk.scale;Layout.rightMargin:8*root.sdk.scale;Layout.bottomMargin:6*root.sdk.scale;spacing:8*root.sdk.scale
+            Text {text:root.t("双击文件","Double-click files");Layout.maximumWidth:root.width*0.4;wrapMode:Text.Wrap;color:root.c.muted;font.family:"Segoe UI";font.pixelSize:12*root.sdk.scale}
+            ComboBox {
+                id:actionChoice;objectName:"fileTreeDoubleClickAction";Layout.fillWidth:true;Layout.minimumWidth:0;implicitHeight:28*root.sdk.scale
+                model:[root.t("预览","Preview"),root.t("用默认 App 打开","Open with default app"),root.t("附加到聊天","Attach to chat")]
+                enabled:!root.configRequest
+                function syncSelection(){currentIndex=root.doubleClickAction==="preview"?0:root.doubleClickAction==="open"?1:2}
+                Component.onCompleted:syncSelection()
+                onModelChanged:Qt.callLater(syncSelection)
+                onActivated:index=>root.saveDoubleClickAction(["preview","open","attach"][index])
+                font.family:"Segoe UI";font.pixelSize:12*root.sdk.scale
+                palette.text:root.c.ink;palette.buttonText:root.c.ink;palette.base:root.c.surface;palette.window:root.c.surface;palette.highlight:root.c.accentBg;palette.highlightedText:root.c.ink
+                Accessible.name:root.t("双击文件的默认行为","Default action for double-clicking files")
+                background:Rectangle {color:root.c.surface;border.color:actionChoice.activeFocus?root.c.accent:root.c.line;radius:3}
+                contentItem:Text {text:actionChoice.displayText;font:actionChoice.font;color:root.c.ink;verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight;leftPadding:8*root.sdk.scale;rightPadding:24*root.sdk.scale}
+                indicator:VsIcon {name:"chevron-down";size:14*root.sdk.scale;color:root.c.muted;x:parent.width-width-6*root.sdk.scale;y:(parent.height-height)/2}
+            }
         }
         TextField {
             id:filter;objectName:"fileTreeFilter";visible:root.filterOpen;Layout.fillWidth:true;Layout.preferredHeight:26*root.sdk.scale;Layout.leftMargin:16*root.sdk.scale;Layout.rightMargin:16*root.sdk.scale;Layout.bottomMargin:6*root.sdk.scale
@@ -190,7 +230,7 @@ Rectangle {
                 MouseArea {
                     id:mouse;anchors.fill:parent;enabled:!row.editing && !root.renameBusy;hoverEnabled:true;cursorShape:Qt.PointingHandCursor;acceptedButtons:Qt.LeftButton|Qt.RightButton
                     onClicked:event=>{root.cancelRename(false);root.selectedPath=row.path;root.contextEntry={path:row.path,directory:row.directory};list.forceActiveFocus();if(event.button===Qt.RightButton){const p=mouse.mapToItem(root,event.x,event.y);menu.x=p.x;menu.y=p.y;menu.open()}else if(row.directory)root.toggle(row)}
-                    onDoubleClicked:event=>{if(event.button===Qt.LeftButton && !row.directory)root.call("attach",{path:row.path})}
+                    onDoubleClicked:event=>{if(event.button===Qt.LeftButton && !row.directory)root.openFile(row.path)}
                 }
             }
             Text {anchors.centerIn:parent;visible:list.count===0 && !root.loading && !root.error;text:"当前目录为空";color:root.c.muted;font.pixelSize:12*root.sdk.scale}
