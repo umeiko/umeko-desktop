@@ -533,6 +533,10 @@ async function execute(input) {
     } catch (error) { emit({type: "widget_catalog", id: input.id, ok: false, error: error.message}); }
     return;
   }
+  if (input.type === "desktop_settings") {
+    if (config && input.webview && typeof input.webview === "object") config.webview = input.webview;
+    return;
+  }
   if (input.type === "loop_review_response") { loopReview.response(input); return; }
   if (input.type === "umeko_response") { umekoControl.response(input); return; }
   if(input.type==='widget-notify' && runtime && (executing || input.notification?.wake===false)) {

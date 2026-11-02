@@ -158,7 +158,7 @@ class PiControllerMixin:
                     legacyHistory=record.history, models=self.gateway.models(), agent=agent,
                     permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,
                     dataDir=str(self.store.directory),
-                    mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(), loopReview=True)
+                    mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
                 if record.global_agent:
                     service=self._desktop_plugins.global_agents
                     payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(service.root/"sessions"/record.global_agent),
@@ -389,15 +389,15 @@ class PiControllerMixin:
             tool["state"] = event["state"]
             if event.get("media"):
                 tool["media"] = event["media"]
-                if visible and event.get('name')=='submit_to_chatbox' and event.get('state')=='done':
+                if visible and self.store.data['desktop']['autoOpenSubmissions'] and event.get('name')=='submit_to_chatbox' and event.get('state')=='done':
                     for item in event['media']:
-                        if self.webviewAvailable and item.get('kind')=='web' and item.get('presentation')=='webview':
-                            url=self.normalizeWebUrl(item.get('url',''))
-                            if url: self.webRequested.emit(url,item.get('title',''))
+                        if item.get('kind')=='web':
+                            if self.store.data['desktop']['webDisplay']=='external' or (self.webviewAvailable and item.get('presentation')=='webview'):
+                                self.openWebPreview(item.get('url',item.get('path','')),item.get('title',''))
                         from .document_preview import document_kind
                         path = item.get('path', '')
                         document = document_kind(path, item.get('kind', ''))
-                        if document and Path(path).is_absolute(): self.documentRequested.emit(path, item.get('title', ''), document)
+                        if document and Path(path).is_absolute() and not self.openExternalHtml(path): self.documentRequested.emit(path, item.get('title', ''), document)
             if event.get("result") is not None:
                 tool["result"] = event["result"]
             transcript = True

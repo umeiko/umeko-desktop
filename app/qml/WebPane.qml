@@ -26,10 +26,11 @@ Rectangle {
     clip: true
     // Opened by fresh Agent deliveries or an explicit click on a delivered URL card.
     function submit(url, title) {
+        if (!backend.webviewAvailable) return
         previewWidget = ""
         backend.desktopPlugins.closePage()
         const clean = backend.normalizeWebUrl(url)
-        if (!clean || !backend.webviewAvailable) return
+        if (!clean) return
         if (mode === "subagent") backend.subagents.closeView()
         backend.documentPreview.cancel()
         pageTitle = title || ""
@@ -134,7 +135,7 @@ Rectangle {
         id: surface; objectName: "webSurfaceLoader"
         anchors.left: parent.left; anchors.leftMargin: 6; anchors.right: parent.right; anchors.rightMargin: 12
         anchors.top: toolbar.bottom; anchors.topMargin: 1; anchors.bottom: parent.bottom; anchors.bottomMargin: 12
-        active: pane.opened && pane.mode === "web" && pane.surfaceReady
+        active: backend.webviewAvailable && pane.opened && pane.mode === "web" && pane.surfaceReady
         visible: !pane.moving && !pane.blocked && (!item || !item.errorMessage)
         source: active ? "WebSurface.qml" : ""
         onLoaded: item.url = pane.pageUrl

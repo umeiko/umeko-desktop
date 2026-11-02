@@ -356,6 +356,9 @@ class UmekoControl(QObject):
         if source is not None and not any(item['id'] == args.get('id') for item in source): raise ValueError(exists + ' ID does not exist')
         if operation == 'appearance.language' and args['language'] not in ('zh', 'en'): raise ValueError('language must be zh or en')
         if operation == 'appearance.fontScale' and not .5 <= args['scale'] <= 2: raise ValueError('scale must be 0.5-2')
+        if operation == 'desktop.configure':
+            from .desktop_preferences import validate_patch
+            validate_patch(values[0])
         if operation == 'themes.select' and args['id'] not in ['light', 'dark', 'yanami', *[t['id'] for t in b.customThemes]]: raise ValueError('Theme ID does not exist')
         if operation == 'themes.remove' and args['id'] not in [t['id'] for t in b.customThemes]: raise ValueError('Custom theme ID does not exist')
         if operation == 'items.pin':

@@ -95,10 +95,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     def lineSpacing(self):
         return self.store.data['ui']['lineSpacing']
 
-    @Property(bool, constant=True)
+    @Property(bool, notify=changed)
     def webviewAvailable(self):
         from .webview import configuration
-        return configuration()['available']
+        return configuration(self.store.data.get('desktop'))['available']
 
     @Slot(str, result=str)
     def normalizeWebUrl(self, raw):
@@ -119,6 +119,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     toast = Signal(str)
     requestDetailsRequested = Signal(str)
     webRequested = Signal(str, str)
+    desktopSettingsChanged = Signal()
     documentRequested = Signal(str, str, str)
     widgetDocumentRequested = Signal(str, str, str, str)
     taskFinished = Signal(str, str, bool, bool)

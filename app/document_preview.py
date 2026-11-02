@@ -111,9 +111,10 @@ class DocumentPreview(QObject):
         kind = self._state.get('fileType', '')
         self._state['mode'] = self._modes.get(kind, 'rendered' if kind in ('markdown', 'html') else 'source')
         self._state['previewUrl'] = ''
+        self._state.pop('renderNote', None)
         if kind == 'html' and not self._state.get('error') and not self._state.get('busy'):
             from .webview import configuration
-            available = configuration()['available']
+            available = configuration(self._store.data.get('desktop'))['available'] if self._store else configuration()['available']
             self._state['renderable'] = available and self._state.get('bytes', 0) <= HTML_LIMIT
             if self._state['mode'] == 'rendered' and self._state['renderable']:
                 try:
@@ -125,6 +126,12 @@ class DocumentPreview(QObject):
             if not self._state['renderable']:
                 self._state['mode'] = 'source'
                 self._state['renderNote'] = 'HTML 较大，已使用源码预览' if available else '网页预览组件尚未安装或无法加载'
+
+    def refreshWebPolicy(self):
+        if self._state.get('fileType') == 'html':
+            if self._static: self._static.revoke()
+            self._presentation()
+            self.changed.emit()
 
     @Slot(str, str)
     def setMode(self, file_type, mode):
