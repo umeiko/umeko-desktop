@@ -41,6 +41,7 @@ Popup {
         const received = response.status !== undefined && response.status !== null ||
                          response.headers && Object.keys(response.headers).length > 0 || body.length > 0
         let text = splitBody(response)
+        if (reportData.summary) text = I18n.t(reportData.summary) + "\n\n" + text
         text += !received ? I18n.t("未收到服务器响应") : body ? I18n.t("服务器返回正文") + "\n" + body : I18n.t("服务器未返回响应正文")
         if (reportData.error) text += "\n\n" + I18n.t("本地异常") + "\n" + pretty(reportData.error)
         return text

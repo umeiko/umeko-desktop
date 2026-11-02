@@ -347,7 +347,8 @@ class ProviderPlugins(QObject):
         return public
 
     def _public_error(self, provider_id, error, sensitive=None):
-        try: return self._public_message(provider_id, str(error), sensitive, limit=400)
+        try: return self._public_message(provider_id, str(error), sensitive,
+                                         limit=1000 if str(error).startswith('供应商返回 HTTP ') else 400)
         except Exception: return "供应商操作失败，请检查插件配置、依赖与网络"
 
     def _card_actions(self, provider_id):

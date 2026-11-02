@@ -437,7 +437,8 @@ class PiControllerMixin:
             if record.action == "compact":
                 marker = re.search(r'\[Umeko:[a-f0-9-]{36}\]', message)
                 if marker:
-                    message = "压缩失败：供应商请求失败，请查看请求详情 / Compaction failed: provider request failed " + marker[0]
+                    from .provider_errors import diagnostic_notice
+                    message = diagnostic_notice(message) + ' ' + marker[0]
                 record.tool_status = ""
             elif record.messages and record.messages[-1].get('role') == 'assistant' and record.messages[-1].get("customType") != "umeko-compaction":
                 record.messages[-1].update(text=record.messages[-1]['text'] or message, error=True, errorMessage=message)

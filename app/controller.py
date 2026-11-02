@@ -1707,7 +1707,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
             try:
                 self.jobDone.emit(name, {"ok": True, "value": fn()})
             except Exception as exc:
-                self.jobDone.emit(name, {"ok": False, "value": str(exc)[:250]})
+                self.jobDone.emit(name, {"ok": False, "value": str(exc)[:1200 if name.startswith('model-windows:') else 250]})
         threading.Thread(target=run, daemon=True).start()
 
     def _on_job_done(self, name, result):
