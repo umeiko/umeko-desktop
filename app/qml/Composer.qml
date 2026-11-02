@@ -47,12 +47,11 @@ Item {
     onSlashVisibleChanged: if (slashVisible) backend.slashCommands.refresh()
     CompactCommandMenu {
         id: slashMenu
-        z: 20; width: Math.min(root.parent.width - 24, Math.max(root.width, Theme.control(1050)))
-        x: Math.max(12-root.x, Math.min((root.width-width)/2, root.parent.width-root.x-width-12))
+        z: 20; width: parent.width
         anchors.bottom: parent.top; anchors.bottomMargin: 8
         // Track y explicitly: mapToItem() alone does not notify when the
         // bottom-anchored composer moves after its first layout pass.
-        maximumHeight: Math.min(Theme.control(480), Math.max(Theme.control(66), root.y + root.parent.mapToItem(null, 0, 0).y - 90))
+        maximumHeight: Math.min(Theme.control(360), Math.max(Theme.control(66), root.y + root.parent.mapToItem(null, 0, 0).y - 90))
         visible: root.slashVisible
         entries: backend.slashCommands.entries
         query: prompt.text

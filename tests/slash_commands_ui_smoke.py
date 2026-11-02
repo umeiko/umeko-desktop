@@ -52,10 +52,9 @@ def main():
         try:
             wait(lambda:prompt.isEnabled(),'Composer disabled')
             assert '/compact' in query('/')
-            assert menu.width()>=find('composer').width() and menu.width()<=window.width()
+            assert abs(menu.width()-find('composer').width())<1,'Menu must keep the compact composer width'
             assert menu.height()>=180,'Menu kept the initial minimum height after composer layout'
-            assert js(menu,'rowHeight')>=60
-            assert find('commandDescription_compact').property('maximumLineCount')==2
+            assert js(menu,'rowHeight')<40,'Menu rows lost the compact layout'
             wait(lambda:'文档整理' in query('/w'),'Native Skill catalog did not arrive')
             for prefix in ('w','wd','wendang','文档'):
                 assert '文档整理' in query('/'+prefix),prefix
