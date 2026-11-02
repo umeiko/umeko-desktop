@@ -76,7 +76,7 @@ ApplicationWindow {
         chatCover.begin(); window.page = "chat"
     }
     function commitSidebarSelection() {
-        if (!sidebarSwitching || !sidebarPrepared || sidebarMotion.moving) return
+        if (!sidebarSwitching || !sidebarPrepared) return
         const token = sidebarToken
         let ok = true
         if (pendingSidebarKind === "project") backend.openProject(pendingSidebarId)
@@ -87,7 +87,7 @@ ApplicationWindow {
         chatCover.contentReady()
     }
     // Present the cover before starting disk I/O. Cold reads can overlap the
-    // sidebar motion; activate the latest result only after the PID settles.
+    // sidebar motion; show the latest ready result while the PID keeps moving.
     FrameAnimation {
         running: window.sidebarSwitching && !window.sidebarStarted
         onTriggered: {

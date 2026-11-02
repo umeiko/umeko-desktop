@@ -67,7 +67,7 @@ FocusScope {
     }
     function previewResponse(value) {
         previewRequest=""
-        if(value.jobId){previewJob=value.jobId;return}
+        if(value.jobId){previewJob=value.jobId;Qt.callLater(()=>{if(previewJob && !previewRequest)previewRequest=sdk.requestHost("skills.job",{id:previewJob,wait:true})});return}
         const item=(value.jobs || [])[0]
         if(item && item.status==="running")return
         previewJob=""
@@ -119,6 +119,7 @@ FocusScope {
     function reload(keepPosition){if(keepPosition)listPosition={y:list.contentY,index:list.currentIndex,scope:selectedScope};previewGeneration++;previewCache={};previewOrder=[];preview={};previewError="";notice="";noticeError=false;menuOpen=false;request("skills.browse",{})}
     function initialize(){if(sdk.active && !initialized){initialized=true;reload()}}
     function setEnabled(row,enabled){if(row && !working && !sessionBusy)request("skills.attach",{id:row.id,enabled:enabled})}
+    function pollJob(){if(sdk.active && job && !polling){polling=true;if(!request("skills.job",{id:job,offset:pageOffset,limit:100,wait:true}))polling=false}}
     function insert(row){if(row)request("skills.insert",{id:row.id})}
     function showMenu(row,scope,point){if(working)return;contextRow=row;selectedScope=scope;if(row)selectedId=row.id;menuX=point.x;menuY=point.y;menuOpen=true}
     function action(name) {
@@ -210,7 +211,9 @@ FocusScope {
             importResult=result;importPreview={};importDecisions={}
             notice=t("已导入 ","Imported ")+(result.imported || []).length+t(" 项，跳过 ","; skipped ")+(result.skipped || []).length
             noticeError=!!(result.errors || []).length
-        } else if(operation==="skills.attach"){reload(true)}
+        } else if(operation==="skills.attach"){
+            skills=skills.map(row=>row.path===result.path ? Object.assign({},row,{enabled:result.enabled}) : row)
+        }
         else if(operation==="skills.rename" || operation==="skills.delete"){renameRow=null;reload()}
         else if(operation==="skills.insert")notice=t("已附加到输入框","Attached to the composer")
         else if(operation==="skills.copy")notice=t("已复制","Copied")
@@ -457,7 +460,7 @@ FocusScope {
     }
     Timer {
         interval:200;repeat:true;running:root.sdk.active && !!root.job
-        onTriggered:if(!root.polling){root.polling=true;if(!root.request("skills.job",{id:root.job,offset:root.pageOffset,limit:100}))root.polling=false}
+        onTriggered:root.pollJob()
     }
     Connections {
         target:root.sdk;ignoreUnknownSignals:true
@@ -469,7 +472,7 @@ FocusScope {
             const operation=entry.operation
             if(operation==="skills.job")root.polling=false
             if(value.ok===false){const failedOperation=operation==="skills.job" ? root.jobOperation : operation;root.job="";root.jobOperation="";root.pageRows=[];root.fail(failedOperation,value.error || value.status);return}
-            if(value.jobId){root.job=value.jobId;root.jobOperation=operation;root.pageOffset=0;root.pageRows=[];return}
+            if(value.jobId){root.job=value.jobId;root.jobOperation=operation;root.pageOffset=0;root.pageRows=[];Qt.callLater(root.pollJob);return}
             if(operation!=="skills.job"){root.complete(operation,value,true);return}
             const item=(value.jobs || [])[0];if(!item || item.status==="running")return
             const result=item.result || {},page=result.skillsPage
@@ -479,7 +482,7 @@ FocusScope {
                     root.notice=root.t("分页响应无效，请刷新重试。","Invalid page; refresh to retry.");root.noticeError=true;root.job="";root.pageRows=[];return
                 }
                 root.pageRows=root.pageRows.concat(Array.from(rows))
-                if(page.nextOffset!=null){root.pageOffset=page.nextOffset;return}
+                if(page.nextOffset!=null){root.pageOffset=page.nextOffset;Qt.callLater(root.pollJob);return}
                 if(page.field==="skills")result.skills=root.pageRows;else result.preview.skills=root.pageRows
             }
             const original=root.jobOperation;root.job="";root.jobOperation="";root.pageRows=[]

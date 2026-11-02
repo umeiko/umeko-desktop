@@ -286,7 +286,7 @@ Rectangle {
                 root.hostBusy=!!result.busy;root.profile=result.profile || {preset:"full"}
                 const inventoryFailed=!result.inventoryReady && !!result.inventoryFailed && root.inventoryRequested
                 if(result.inventoryReady || inventoryFailed)root.inventoryLoading=false
-                if(result.contextCurrent && !root.inventoryRequested && !result.agentBusy && !root.hostBusy && root.sdk.hostCapabilities.operations["pi.inventory"]){root.inventoryRequested=true;root.inventoryLoading=true;root.request("pi.inventory")}
+                if(result.contextCurrent && !result.inventoryReady && !root.inventoryRequested && !result.agentBusy && !root.hostBusy && root.sdk.hostCapabilities.operations["pi.inventory"]){root.inventoryRequested=true;root.inventoryLoading=true;root.request("pi.inventory")}
                 if(!result.contextCurrent){if(!root.job && !root.hostBusy)root.request("pi.scan");return}
                 if(root.hostBusy && !root.job)root.notice=root.t("正在同步本地插件…","Synchronizing installed extensions…");else if(inventoryFailed){root.lastError=true;root.notice=root.t("工具列表加载失败，请刷新重试。","Tool inventory failed to load; refresh to retry.")}else if(!root.lastError)root.notice=""
                 if(root.selected) {

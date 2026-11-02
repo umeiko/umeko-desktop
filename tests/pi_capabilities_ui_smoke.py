@@ -93,7 +93,7 @@ try:
     backend._pool.retire(origin);backend._pool.records.pop(origin.key,None)
     backend.openSession(identifier);wait(lambda:not backend._view.busy,'Restored chat did not settle');open_page()
     assert find('piManagerWidget').property('profile')['preset']=='custom'
-    icon=next(r for r in manager.rows if r['id']=='pi-manager');assert icon['iconGlyph']=='pi' and not icon.get('iconSource')
+    icon=next(r for r in manager.rows if r['id']=='pi-manager');assert icon['iconGlyph']=='pi-widget' and not icon.get('iconSource')
     output=ROOT/'build/pi-capabilities-ui';output.mkdir(parents=True,exist_ok=True);window.grabWindow().save(str(output/'capabilities.png'))
     assert not warnings,'\n'.join(warnings)
     print('PI_CAPABILITIES_UI_OK: presets, per-plugin child/parent exclusions, restored custom configuration, chat isolation, themed icon')

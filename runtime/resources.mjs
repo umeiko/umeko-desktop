@@ -2,7 +2,7 @@ import { pluginSelection } from "./session-capabilities.mjs";
 // Native resource discovery/settings only: never import or execute extension code.
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, statSync, realpathSync, openSync, readSync, closeSync } from "node:fs";
 import { dirname, basename, join, relative, resolve, delimiter } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -302,8 +302,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     // Discovery must not fetch models or install missing packages.
     process.env.PI_OFFLINE = "1";
-    const { installProviderPolicy } = await import("./provider-policy.mjs"); installProviderPolicy({ offline: true });
-    const Pi = await import(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "node_modules/@earendil-works/pi-coding-agent/dist/index.js")));
+    // Administration uses settings and resource discovery only. Importing the
+    // public SDK here also loaded every model client and tool unnecessarily.
+    const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
+    const [settingsModule, packagesModule] = await Promise.all([
+      import(new URL("./core/settings-manager.js", entry)),
+      import(new URL("./core/package-manager.js", entry)),
+    ]);
+    const Pi = { SettingsManager: settingsModule.SettingsManager, DefaultPackageManager: packagesModule.DefaultPackageManager };
     let raw = ""; for await (const chunk of process.stdin) raw += chunk;
     process.stdout.write(JSON.stringify({ ok: true, ...await manageResources(Pi, JSON.parse(raw)) }) + "\n");
   } catch (error) { process.stdout.write(JSON.stringify({ ok: false, error: error.message }) + "\n"); process.exitCode = 1; }

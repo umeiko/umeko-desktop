@@ -8,7 +8,7 @@ import uuid
 from collections import OrderedDict
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QUrl
+from PySide6.QtCore import QObject, QUrl, QTimer
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 
 from .npm_config import npm_environment
@@ -62,12 +62,15 @@ class SkillJobs(QObject):
             raise ValueError('The target chat or workspace changed')
         return record
 
-    def get(self, request, identifier, offset=0, limit=100):
+    def get(self, request, identifier, offset=0, limit=100, wait=False):
         row = self.jobs.get(identifier)
         owner = row and row['owner']
         if not owner or owner['widget'] != request['widget'] or owner['worker'] is not request['worker'] or any(
                 owner['session'].get(k) != request['session'].get(k) for k in ('token', 'workspace')):
             raise ValueError('Host job does not belong to this Widget instance and chat')
+        if wait and row['status'] == 'running':
+            row.setdefault('waiters', []).append((request, offset, limit))
+            return None
         result = row['result']
         # Page the completed job's immutable snapshot, never rerun discovery for
         # a next page. The byte budget also covers long paths and UTF-8 metadata.
@@ -160,17 +163,20 @@ class SkillJobs(QObject):
             if len(urls) != 1 or not urls[0].isLocalFile():
                 raise ValueError('请先复制一个本地 Skill 文件夹或压缩包')
             clipboard_source = urls[0].toLocalFile()
+        def finish_browse(value):
+            from .bundled_skills import describe_bundled
+            from .skill_folders import folder_snapshots
+            roots = {'global': Path(agent_dir).resolve() / 'skills'}
+            if record.workspace:
+                roots['project'] = Path(cwd).resolve() / '.pi/skills'
+            describe_bundled(value.get('skills', []), agent_dir)
+            value['roots'] = {scope: str(path) for scope, path in roots.items()}
+            value['_folderApprovals'] = folder_snapshots(value, roots)
+            return value
         def run():
             if operation == 'skills.browse':
-                from .skill_folders import folder_snapshots
-                roots = {'global': Path(agent_dir).resolve() / 'skills'}
-                if record.workspace:
-                    roots['project'] = Path(cwd).resolve() / '.pi/skills'
-                value = skill_command(release, Path(cwd).resolve(), Path(agent_dir).resolve(), agent,
-                                      action='browse', includeProject=bool(record.workspace), **options)
-                value['roots'] = {scope: str(path) for scope, path in roots.items()}
-                value['_folderApprovals'] = folder_snapshots(value, roots)
-                return value
+                return finish_browse(skill_command(release, Path(cwd).resolve(), Path(agent_dir).resolve(), agent,
+                                      action='browse', includeProject=bool(record.workspace), **options))
             if operation in folder_ops:
                 from .skill_folders import checked_folder, rename_folder, delete_folder
                 directory = checked_folder(folder)
@@ -227,7 +233,19 @@ class SkillJobs(QObject):
             completed = next((key for key, value in self.jobs.items() if value['status'] != 'running'), None)
             if completed is None: break
             self.jobs.pop(completed)
-        self.b._job('widget-skills:' + identifier, run)
+        name = 'widget-skills:' + identifier
+        if operation == 'skills.browse':
+            def received(result):
+                if identifier not in self.jobs:
+                    return
+                if result['ok']:
+                    self.b._job(name, lambda: finish_browse(result['value']))
+                else:
+                    self._finished(name, result)
+            query = getattr(self.b._pool, 'query_catalog', lambda *_: False)
+            if query(record, 'skills', received):
+                return {'ok': True, 'accepted': True, 'jobId': identifier}
+        self.b._job(name, run)
         return {'ok': True, 'accepted': True, 'jobId': identifier}
 
     def _finished(self, name, result):
@@ -256,6 +274,8 @@ class SkillJobs(QObject):
                     record.skill_modes = old
                     self.b.store.data['sessionMeta'].setdefault(record.id, {})['skillModes'] = old
                     raise
+                if selected:
+                    selected['enabled'] = value['enabled']
                 record.stale = True
                 if record.process and not record.busy and not record.subagents_active:
                     self.b._pool.retire(record)
@@ -302,6 +322,18 @@ class SkillJobs(QObject):
             job['result'], job['status'] = value, 'completed'
         except (ValueError, TypeError, KeyError, OSError, RuntimeError) as error:
             job['result'], job['status'] = {'ok': False, 'error': str(error)[:800]}, 'failed'
+        for request, offset, limit in job.pop('waiters', []):
+            def deliver(request=request, offset=offset, limit=limit):
+                if job['id'] not in self.jobs:
+                    return
+                try:
+                    self.host._owner(request)
+                    self.host._reply(request, self.get(request, job['id'], offset, limit))
+                except (ValueError, TypeError, KeyError):
+                    self.host._reply(request, {'ok': False, 'error': 'The target Skill page changed'})
+            # Finish the native job signal before QML can navigate or destroy
+            # the old page in response. Revalidate its owner on delivery.
+            QTimer.singleShot(0, self, deliver)
 
     def stop(self, widget):
         for key in [key for key, owner in self.catalog_owners.items() if owner['widget'] == widget]:

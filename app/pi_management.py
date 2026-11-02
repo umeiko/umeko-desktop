@@ -98,7 +98,8 @@ class PiManagement(QObject):
         if self._busy: return
         context = self._context()
         self._extension_details = {"id":extension_id, "busy":True}
-        self._start("details", "正在读取扩展说明…", lambda: resource_command(*context,action="details",id=extension_id))
+        self._start("details", "正在读取扩展说明…", lambda: resource_command(*context,action="details",id=extension_id),
+                    catalog=('extension-details', {'extensionId': extension_id}))
 
     @Slot(str, str)
     def setExtensionMode(self, extension_id, mode):
@@ -260,11 +261,16 @@ class PiManagement(QObject):
         agent_dir = Path(agent.get("agentDir") or Path.home() / ".pi/agent")
         return c._release, cwd, agent_dir, agent
 
-    def _start(self, name, status, work):
+    def _start(self, name, status, work, catalog=None):
         if self._busy or self.controller.kernelBusy: return
         self._job_context = self._resource_key()
         self._busy, self._status = True, status
         self.changed.emit()
+        if catalog:
+            kind, arguments = catalog
+            if self.controller._pool.query_catalog(self.controller._view, kind,
+                    lambda result: self._finished('pi-admin:' + name, result), **arguments):
+                return
         self.controller._job("pi-admin:" + name, work)
 
     def _resource_key(self):
@@ -274,7 +280,8 @@ class PiManagement(QObject):
     def _scan(self, apply=False):
         if self._busy or self.controller.kernelBusy: return
         context = self._context()
-        self._start("reload" if apply else "scan", "正在读取 Pi 扩展…", lambda: resource_command(*context, action="scan"))
+        self._start("reload" if apply else "scan", "正在读取 Pi 扩展…", lambda: resource_command(*context, action="scan"),
+                    catalog=('extensions', {}) if not apply else None)
 
     @Slot()
     def scan(self):

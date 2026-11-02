@@ -283,7 +283,7 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self._streaming_timer.stop()
         self._view = record
         self.viewChanged.emit()
-        self._pool.touch(record, current=True)
+        self._pool.touch(record, current=True, dirty=False)
         if record.workspace:
             project = self._ensure_project(record.workspace, reopen=True)
             self.store.data.update(workspace=project["path"], activeProject=project["id"])
@@ -1610,9 +1610,8 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
                 except OSError:
                     self.toast.emit("原生会话文件暂时无法读取")
         self._activate(record)
-        if record.model and not record.process and not record.busy and not record.transcript:
-            # QProcess.start() is asynchronous; the transcript is already visible.
-            self._command_pi("inspect", record=record)
+        # Browsing history is read-only. Start Pi lazily for the next command or
+        # explicit tool inventory, rather than re-projecting history on every visit.
 
     @Slot(str)
     def deleteSession(self, session_id):

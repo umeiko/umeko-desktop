@@ -3,6 +3,7 @@ import { closeSync, existsSync, lstatSync, opendirSync, openSync, readSync, stat
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { prepareNativeSettings } from "./resources.mjs";
+import { setImmediate as yieldDirectoryScan } from "node:timers/promises";
 
 const key = path => process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path);
 const strip = entry => entry.replace(/^[!+-]/, "");
@@ -199,7 +200,7 @@ export async function browseSkillFolders(input) {
   for (const scope of ["project", "global"]) {
     const root = roots[scope];
     if (!root || !existsSync(root)) continue;
-    const walk = (directory, depth) => {
+    const walk = async (directory, depth) => {
       if (depth > 24 || entries >= 20000 || skills.length >= 5000 || bytes >= 128 * 1024 * 1024) { truncated = true; return; }
       if (lstatSync(directory).isSymbolicLink()) return;
       const path = join(directory, "SKILL.md");
@@ -224,11 +225,12 @@ export async function browseSkillFolders(input) {
         handle = opendirSync(directory);
         for (let entry; (entry = handle.readSync());) {
           if (++entries > 20000 || skills.length >= 5000 || bytes >= 128 * 1024 * 1024) { truncated = true; break; }
-          if (!entry.name.startsWith(".") && entry.isDirectory() && !entry.isSymbolicLink()) walk(join(directory, entry.name), depth + 1);
+          if (!entry.name.startsWith(".") && entry.isDirectory() && !entry.isSymbolicLink()) await walk(join(directory, entry.name), depth + 1);
+          if (entries % 64 === 0) await yieldDirectoryScan();
         }
       } finally { handle?.closeSync(); }
     };
-    walk(root, 0);
+    await walk(root, 0);
   }
   const parsed = { documents: [] };
   for (let offset = 0; offset < documents.length; offset += 2048)

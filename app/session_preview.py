@@ -101,6 +101,7 @@ class SessionPreview(QObject):
             record.history = copy.deepcopy(saved.get('history', []))
             record.messages, record.tree = result.get('messages', []), result.get('tree', [])
             record.transcript, record.loaded = result.get('snapshot'), True
+            record.body_dirty = True
             record.model = saved.get('model') or record.model
             record.provider = saved.get('provider') or record.provider
             # Register before activation; trimming it while the old view is

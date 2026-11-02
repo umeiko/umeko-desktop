@@ -107,9 +107,42 @@ class PiSessionPool(QObject):
         self.current = None
         self.retiring = set()
         self.closing = False
+        self.catalog_requests = {}
 
-    def touch(self, record, current=False):
-        record.body_dirty = True
+    def query_catalog(self, record, kind, callback, **arguments):
+        """Read the owning live Pi without changing its turn, model or busy state."""
+        if self.closing or not record.process or not record.ready or record.stale or record.global_agent:
+            return False
+        if len(self.catalog_requests) >= 16:
+            return False
+        identifier = uuid.uuid4().hex
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        self.catalog_requests[identifier] = (record, record.process, callback, timer)
+        timer.timeout.connect(lambda: self._catalog_reply(record, {'id': identifier, 'ok': False, 'error': 'Pi directory read timed out'}))
+        timer.start(10000)
+        self.write(record, {'type': 'widget_catalog', 'id': identifier, 'kind': kind, **arguments})
+        return True
+
+    def _catalog_reply(self, record, event):
+        request = self.catalog_requests.get(event.get('id'))
+        if not request or request[0] is not record:
+            return
+        self.catalog_requests.pop(event['id'])
+        _, _, callback, timer = request
+        timer.stop()
+        timer.deleteLater()
+        if not self.closing:
+            callback({'ok': bool(event.get('ok')), 'value': event.get('value') if event.get('ok') else event.get('error', 'Pi directory read failed')})
+
+    def _cancel_catalogs(self, record):
+        for identifier, request in list(self.catalog_requests.items()):
+            if request[0] is record:
+                self._catalog_reply(record, {'id': identifier, 'ok': False, 'error': 'Pi instance changed; refresh the directory'})
+
+    def touch(self, record, current=False, dirty=True):
+        if dirty:
+            record.body_dirty = True
         self.records[record.key] = record
         self.records.move_to_end(record.key)
         if current:
@@ -157,7 +190,10 @@ class PiSessionPool(QObject):
                 event = json.loads(line)
             except (ValueError, UnicodeDecodeError):
                 continue
-            self.event.emit(record, event)
+            if event.get('type') == 'widget_catalog':
+                self._catalog_reply(record, event)
+            else:
+                self.event.emit(record, event)
 
     def _error(self, record, process, error):
         if record.process is process and error == QProcess.FailedToStart:
@@ -168,6 +204,7 @@ class PiSessionPool(QObject):
     def _finished(self, record, process):
         if record.process is process:
             self._read(record, process)
+            self._cancel_catalogs(record)
             record.process = None
             if not self.closing:
                 self.event.emit(record, {"type": "exit"})
@@ -179,6 +216,7 @@ class PiSessionPool(QObject):
         process = record.process
         if not process:
             return
+        self._cancel_catalogs(record)
         self.write(record, {"type": "shutdown"})
         record.process, record.ready, record.stale = None, False, False
         self.retiring.add(process)
@@ -224,6 +262,8 @@ class PiSessionPool(QObject):
         if self.closing:
             return
         self.closing = True
+        for record in self.records.values():
+            self._cancel_catalogs(record)
         processes = set(self.retiring)
         for record in self.records.values():
             if record.process:

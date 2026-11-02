@@ -2,8 +2,8 @@ import { excludedSessionTools, toolSelection, collectToolCatalog } from "./sessi
 // JSONL presentation adapter for the complete, unmodified Pi Coding Agent SDK.
 // Tools, loop, skill expansion, extension hooks and session trees belong to Pi.
 import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-policy.mjs";
-import { prepareNativeSettings, sessionResourceSettings, sessionExtensionPaths, builtins, extensionName, SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
-import { sessionSkillOptions } from "./skills.mjs";
+import { prepareNativeSettings, sessionResourceSettings, sessionExtensionPaths, manageResources, builtins, extensionName, SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
+import { sessionSkillOptions, manageSkills } from "./skills.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
@@ -518,6 +518,21 @@ async function promptWithInterrupts(first) {
 }
 
 async function execute(input) {
+  if (input.type === "widget_catalog") {
+    // A read-only side channel, including during a streaming turn. Never run
+    // state(), reload(), prompt() or emit done for a management-page read.
+    try {
+      if (!runtime || closing || config.globalCoordinator) throw new Error("Pi instance is not available");
+      const context = {...config, cwd: runtime.session.sessionManager.getCwd(), includeProject: !!config.workspace};
+      let value;
+      if (input.kind === "skills") value = await manageSkills(Pi, {...context, action: "browse"});
+      else if (input.kind === "extensions") value = (await manageResources(Pi, {...context, action: "scan"})).extensions;
+      else if (input.kind === "extension-details") value = (await manageResources(Pi, {...context, action: "details", id: input.extensionId})).details;
+      else throw new Error("Unsupported directory request");
+      emit({type: "widget_catalog", id: input.id, ok: true, value});
+    } catch (error) { emit({type: "widget_catalog", id: input.id, ok: false, error: error.message}); }
+    return;
+  }
   if (input.type === "loop_review_response") { loopReview.response(input); return; }
   if (input.type === "umeko_response") { umekoControl.response(input); return; }
   if(input.type==='widget-notify' && runtime && (executing || input.notification?.wake===false)) {

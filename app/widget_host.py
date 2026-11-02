@@ -214,7 +214,7 @@ class WidgetHost(QObject):
                       'pi.enable': {'id', 'enabled'}, 'pi.install': {'source', 'project'},
                       'pi.remove': {'id'}, 'pi.job': {'id'}, 'pi.cancel': {'id'}, 'pi.checkUpdate': {'id'}, 'pi.details': {'id'}, 'pi.activation': {'id','mode'},
                       'pi.preset': {'preset'},'pi.tool': {'name','enabled'},'pi.plugin': {'id','enabled'},'pi.tools': {'id','query','offset','limit'},
-                      'skills.list': set(), 'skills.details': {'id'}, 'skills.job': {'id', 'offset', 'limit'},
+                      'skills.list': set(), 'skills.details': {'id'}, 'skills.job': {'id', 'offset', 'limit', 'wait'},
                       'skills.attach': {'id', 'enabled'}, 'skills.default': {'id', 'enabled'},
                       'skills.reveal': {'id'}, 'skills.remove': {'id'},
                       'skills.importPreview': {'source', 'project'}, 'skills.import': {'id', 'decisions'},
@@ -223,6 +223,8 @@ class WidgetHost(QObject):
                       'skills.insert': {'id'}, 'skills.rename': {'id', 'name'}, 'skills.delete': {'id'}}[operation]
             if set(args) - fields:
                 raise ValueError('Unknown host arguments')
+            if operation == 'skills.job' and 'wait' in args and type(args['wait']) is not bool:
+                raise ValueError('wait must be boolean')
             if operation in ('pi.enable', 'pi.remove', 'pi.job', 'pi.cancel', 'pi.checkUpdate', 'pi.details', 'pi.activation', 'pi.plugin','pi.tools') or operation.startswith('skills.') and operation not in ('skills.list', 'skills.browse', 'skills.paste', 'skills.importLocal', 'skills.importPreview'):
                 if not isinstance(args.get('id'), str) or not args['id'] or len(args['id']) > 4096:
                     raise ValueError('A valid id is required')
@@ -328,8 +330,9 @@ class WidgetHost(QObject):
         operation, args = request['operation'], request['arguments']
         if operation.startswith('skills.'):
             service = self._skill_service()
-            self._reply(request, service.get(request, args['id'], args.get('offset', 0), args.get('limit', 100))
-                        if operation == 'skills.job' else service.start(request))
+            result = service.get(request, args['id'], args.get('offset', 0), args.get('limit', 100), args.get('wait', False)) if operation == 'skills.job' else service.start(request)
+            if result is not None:
+                self._reply(request, result)
             return
         if operation in ('pi.preset','pi.tool','pi.plugin'):
             self._reply(request,{'ok':True,'result':self.b.piManagement.configure_capabilities(operation,args)});return

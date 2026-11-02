@@ -73,7 +73,9 @@ class FakeSdk(QObject):
         elif operation in ('skills.paste','skills.importLocal'):
             result.update(imported=['copied-skill'],skipped=[],errors=[])
             if self.import_error:result.update(ok=False,error=self.import_error,imported=[],errors=[dict(name='copied-skill',error=self.import_error)])
-        elif operation=='skills.attach':next(row for row in self.rows if row['id']==args['id']).update(enabled=args['enabled'])
+        elif operation=='skills.attach':
+            row=next(row for row in self.rows if row['id']==args['id']);row.update(enabled=args['enabled'])
+            result.update(path=row['path'],enabled=args['enabled'])
         elif operation=='skills.rename':next(row for row in self.rows if row['id']==args['id']).update(name=args['name'],folderName=args['name'])
         elif operation=='skills.delete':self.rows=[row for row in self.rows if row['id']!=args['id']]
         elif operation=='skills.importPreview':result['preview']=dict(id='preview-local',project=args['project'],errors=[],skills=[
@@ -243,10 +245,11 @@ try:
     # Large UTF-8 catalog spans multiple immutable pages; publish it once complete.
     root.setProperty('collapsedScopes',[])
     sdk.rows=[dict(sdk.rows[0],id=f'large-{i}',name=f'large-{i:03d}',description='技能说明'*256) for i in range(250)]
+    publication_sizes=[]
+    root.skillsChanged.connect(lambda:publication_sizes.append(len(variant(root.property('skills')))))
     sdk.page_size=60;before=len(sdk.requests);click('skillManagerRefresh')
-    wait_for(lambda:root.property('pageOffset')>0,'Pagination did not begin')
-    assert len(variant(root.property('skills')))!=250,'Published a partial catalog'
     idle();actual=variant(root.property('skills'));assert len(actual)==250 and len({row['id'] for row in actual})==250
+    assert publication_sizes==[250],('Published a partial catalog',publication_sizes)
     assert len(json.dumps(actual,ensure_ascii=False).encode())>262144
     assert [args['offset'] for op,args in sdk.requests[before:] if op=='skills.job' and 'offset' in args]==[0,60,120,180,240]
     view.resize(320,240);QTest.qWait(60)

@@ -93,6 +93,31 @@ class SessionTests(unittest.TestCase):
         self.assertTrue(advertised())
         self.assertIn('Read me only', (folder / 'SKILL.md').read_text())
 
+    def test_widget_catalogs_reuse_the_streaming_chat_process(self):
+        c = self.controller
+        folder = self.path / 'agent/skills/live-guide'
+        folder.mkdir(parents=True)
+        (folder / 'SKILL.md').write_text('---\nname: live-guide\ndescription: Live catalog fixture.\n---\nInstructions.', encoding='utf-8')
+        self.assertTrue(c.send('TASK A'))
+        record = c._view
+        self.wait_for(self.started['A'].is_set, 'streaming fixture did not start')
+        pid, transcript = record.process.processId(), record.messages
+        with patch('app.pi_management.resource_command', side_effect=AssertionError('Started another Node process')):
+            c.piManagement.scan()
+            self.wait_for(lambda: not c.piManagement.busy, 'live extension catalog')
+            self.assertTrue(c.piManagement.extensionsCurrent)
+            self.assertTrue(any(row['path']=='builtin:codemode' for row in c.piManagement.extensions))
+        replies = []
+        self.assertTrue(c._pool.query_catalog(record, 'skills', replies.append))
+        self.wait_for(lambda:bool(replies), 'live Skill catalog')
+        self.assertTrue(replies[0]['ok'], replies)
+        self.assertTrue(any(row['name']=='live-guide' for row in replies[0]['value']['skills']))
+        self.assertEqual(record.process.processId(), pid)
+        self.assertIs(record.messages, transcript, 'A directory read rebuilt the chat')
+        self.assertTrue(record.busy, 'A directory read ended the active task')
+        self.gates['A'].set()
+        self.wait_for(lambda:not record.busy, 'streaming task completion')
+
     def test_concurrent_switching_lru_history_unread_and_drafts(self):
         c = self.controller
         c._pool.limit = 2
@@ -134,9 +159,9 @@ class SessionTests(unittest.TestCase):
         self.assertTrue(Path(b.file).is_file())
         c.openSession(b_id)
         self.assertEqual(c.messages[-1]["text"], "RESULT B", "history waited for Pi")
-        self.assertTrue(c.loading)
+        self.assertFalse(c.loading, "Browsing a cached transcript started Pi")
+        self.assertIsNone(b.process)
         self.assertFalse(c.running)
-        self.wait_for(lambda: not b.busy, "cold Pi resume")
         self.gates["A"].set()
         self.wait_for(lambda: not a.busy, "first background completion")
         self.assertTrue(c._session_flags(a_id)["unread"])

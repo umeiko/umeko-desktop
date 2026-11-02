@@ -112,6 +112,22 @@ class SkillHostTests(unittest.TestCase):
             request = self.request('skills.job', {'id': job, **args})
             self.assertFalse(self.manager.replies[request]['ok'], args)
 
+    def test_waiting_for_a_skill_job_replies_on_completion_without_repolling(self):
+        job = self.accepted('skills.list')
+        response = self.request('skills.job', {'id': job, 'wait': True})
+        self.assertNotIn(response, self.manager.replies)
+        self.backend.finish()
+        self.app.processEvents()
+        self.assertEqual(self.manager.replies[response]['jobs'][0]['status'], 'completed')
+        self.assertEqual(len(self.cli_calls), 1)
+
+    def test_closed_skill_page_drops_pending_job_waiters(self):
+        job = self.accepted('skills.list')
+        response = self.request('skills.job', {'id': job, 'wait': True})
+        self.host.stop('a')
+        self.backend.finish()
+        self.assertNotIn(response, self.manager.replies)
+
     @classmethod
     def setUpClass(cls):
         cls.app = QCoreApplication.instance() or QCoreApplication([])

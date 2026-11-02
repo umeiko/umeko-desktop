@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Controls.impl
 import QtQuick.Layouts
 
 Column {
@@ -28,7 +29,7 @@ Column {
                 id: piIcon
                 width: Theme.icon(48); height: Theme.icon(48); radius: 10; color: Theme.accentBg
                 anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                Glyph { anchors.fill: parent; name: "pi"; color: Theme.accent }
+                Image { anchors.fill: parent; source: "../icons/pi.svg"; sourceSize: Qt.size(96,96) }
             }
             Column {
                 anchors.left: piIcon.right; anchors.leftMargin: 16
@@ -62,7 +63,7 @@ Column {
             Rectangle {
                 Layout.preferredWidth: Theme.icon(40); Layout.preferredHeight: Theme.icon(40)
                 radius: 10; color: "transparent"
-                Image { objectName: "pluginManagerArtwork"; anchors.centerIn: parent; source: "../icons/fluent/plugin-manager.png"; width: Theme.icon(42); height: Theme.icon(42); sourceSize: Qt.size(128,128); fillMode: Image.PreserveAspectFit; mipmap: true }
+                IconImage { objectName: "pluginManagerArtwork"; anchors.centerIn: parent; source: "../icons/widget-manager.svg"; color: Theme.ink; width: Theme.icon(32); height: Theme.icon(32); sourceSize: Qt.size(96,96); fillMode: Image.PreserveAspectFit }
             }
             Text { font.family: Theme.fontFamily; text: I18n.t("Widgets"); color: Theme.ink; font.pixelSize: Theme.font(16, visible); font.weight: Font.DemiBold; Layout.fillWidth: true }
             Glyph { name: "chevron-right"; width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }

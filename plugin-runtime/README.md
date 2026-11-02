@@ -255,7 +255,7 @@ Python 使用 `context.host_capabilities` 和
 | `skills.default` | `skills.manage` | `{id,enabled:boolean}`；仅允许有全局默认的来源，确认后更新 Pi 原生全局设置，保留聊天覆盖。项目和动态来源不显示此开关。 |
 | `skills.reveal` | `skills.manage` | `{id}`；确认后打开该目录，不接受任意路径。 |
 | `skills.remove` | `skills.manage` | `{id}`；确认后卸载技能所属的整个已登记 Pi 包；独立技能不提供卸载。 |
-| `skills.job` | `skills.read` | `{id:jobId, offset?:0, limit?:100}`；`offset` 为 0–1000000 的整数，`limit` 为 1–200 的整数。每页重新检查 Widget、聊天和工作区归属。返回 `jobs[].status`（`running/completed/failed`）和 `result`。`skills` 列表及 `preview.skills` 导入预览按同一任务快照分页，`result.skillsPage` 含 `field`、`offset`、`total`、`nextOffset`；持续查询 `nextOffset`，直到其为 `null`，再发布完整列表。每页同时受条数和 UTF-8 字节预算限制；不得假定每页返回 `limit` 条。无 `skillsPage` 时为旧宿主的完整响应。除任务查询外，技能读写均要求聊天和管理任务空闲。 |
+| `skills.job` | `skills.read` | `{id:jobId, offset?:0, limit?:100, wait?:false}`；`offset` 为 0–1000000 的整数，`limit` 为 1–200 的整数。`wait:true` 时宿主在任务结束后立即返回，避免固定间隔轮询；默认仍立即返回当前状态。每页重新检查 Widget、聊天和工作区归属。返回 `jobs[].status`（`running/completed/failed`）和 `result`。`skills` 列表及 `preview.skills` 导入预览按同一任务快照分页，`result.skillsPage` 含 `field`、`offset`、`total`、`nextOffset`；持续查询 `nextOffset`，直到其为 `null`，再发布完整列表。每页同时受条数和 UTF-8 字节预算限制；不得假定每页返回 `limit` 条。无 `skillsPage` 时为旧宿主的完整响应。除任务查询外，技能读写均要求聊天和管理任务空闲。 |
 | `skills.importPreview` | `skills.read` | `{source,project:boolean}`；本地文件夹、`.zip` 或 `.skill` 的只读预览，返回异步任务。结果 `preview.id/skills/errors/project/sourceName`；技能项有名称、简介、重名状态及是否可替换。预览不写入文件；归档沿用现有安全路径、大小和条目限制。 |
 | `skills.import` | `skills.manage` | `{id:previewId,decisions:{name:"skip"或"replace"}}`；确认后导入到所选全局或项目标准技能目录。每个重名项必须明确选择；不会替换包内或目标目录外的技能。结果含 `imported/skipped`。预览与任务同样绑定 Widget 实例、聊天及工作区；不能提交其他实例的预览。 |
 
