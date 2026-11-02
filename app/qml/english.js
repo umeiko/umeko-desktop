@@ -1168,6 +1168,8 @@ var strings = {
   "那家伙就总是让我烦躁、让我感到不爽、让我很在意。但是那家伙，却表现得一点都不在乎。我、我就感觉很恼火。": "He always irritates me, upsets me, and stays on my mind. But he acts like he doesn't care at all. I-I just get so frustrated.",
   "你真的很努力了喔。非常、非常了不起喔。": "You really worked so hard. You did very, very well.",
   "人，你给我吃米，人，日后我会放你一马的": "Human, give me rice. Human, one day I shall spare you.",
+  "聊天区域左右展开提示": "Chat width expansion hints",
+  "鼠标移到聊天区域两侧时显示展开或收起提示。关闭后保留当前布局。": "Show expand or collapse hints when hovering over either side of the chat. Turning this off keeps the current layout.",
   "提交与预览": "Delivery and previews",
   "提交后自动打开预览": "Open previews after submission",
   "模型提交网页或文档后自动打开预览。关闭后，内容仍会显示在聊天中，点击时再打开。": "Automatically open submitted webpages and documents. When off, items stay in the chat and open when clicked.",

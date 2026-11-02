@@ -11,6 +11,8 @@
 
 Python 桌面版的“设置 → Agent → Umeko Desktop”使用 `desktop.configure`。`config` 为局部对象：`autoOpenSubmissions`（布尔，默认 true）控制 submit 后是否自动打开网页/文档；关闭后内容保留在聊天，手动点击仍可打开。`webDisplay` 为 `embedded`（默认，内置预览）或 `external`（系统默认浏览器）；网页链接和本地 HTML 文件均遵循此项。配置立即保存，向当前 Agent 进程热更新，不中断任务。外部模式重启时跳过内置 WebView 的加载；从该启动模式切回内置时需由用户方便时重启，不自动结束任务。
 
+`chatWidthHints`（布尔，默认 true）控制“聊天区域左右展开提示”。设为 false 后，两侧的悬浮展开/收起提示立即隐藏，当前聊天宽度保持不变。可随时在设置中重新开启。
+
 ```json
 {"operation":"desktop.configure","arguments":{"config":{"autoOpenSubmissions":false,"webDisplay":"external"}}}
 ```

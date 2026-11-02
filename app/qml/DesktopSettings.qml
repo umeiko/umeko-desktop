@@ -8,6 +8,20 @@ Column {
     spacing: 16
     SectionCard {
         width: parent.width
+        RowLayout {
+            width: parent.width; spacing: 8
+            Text { text: I18n.t("聊天区域左右展开提示"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(13); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            HelpButton { help: I18n.t("鼠标移到聊天区域两侧时显示展开或收起提示。关闭后保留当前布局。"); Layout.alignment: Qt.AlignVCenter }
+            Toggle {
+                objectName: "desktopChatWidthHints"
+                checked: backend.config.desktop.chatWidthHints
+                Accessible.name: I18n.t("聊天区域左右展开提示")
+                onClicked: { const value = checked; checked = Qt.binding(function() { return backend.config.desktop.chatWidthHints }); backend.saveDesktopSettings(JSON.stringify({chatWidthHints:value})) }
+            }
+        }
+    }
+    SectionCard {
+        width: parent.width
         ColumnLayout {
             width: parent.width; spacing: 20
             Text { text: I18n.t("提交与预览"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }

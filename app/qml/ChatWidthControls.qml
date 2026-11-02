@@ -7,8 +7,9 @@ Item {
     objectName: "chatWidthControls"
     property bool expandedLeft: false
     property bool expandedRight: false
+    readonly property bool hintsEnabled: backend.config.desktop.chatWidthHints
     readonly property var hostWindow: root.Window.window
-    readonly property bool canReveal: enabled && visible && expandable && !!hostWindow && hostWindow.active
+    readonly property bool canReveal: hintsEnabled && enabled && visible && expandable && !!hostWindow && hostWindow.active
     property point pointerPosition: Qt.point(-1, -1)
     property bool pointerValid: false
     property var pointerSource: null
@@ -62,7 +63,7 @@ Item {
         readonly property bool revealed: root.canReveal && (nearby || root.keyboardNavigation && visualFocus)
         readonly property real effortDirection: (leftSide ? -1 : 1) * (collapsing ? -1 : 1)
         width: Theme.control(76); height: Theme.control(70)
-        visible: root.expandable
+        visible: root.hintsEnabled && root.expandable
         opacity: revealed ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: control.revealed ? 120 : 180 } }
         y: root.height * 0.47 - height / 2
@@ -101,7 +102,7 @@ Item {
         id: leftZone
         objectName: "chatWidthLeftHoverZone"
         x: 0; y: 0; width: root.composerLeft; height: root.height
-        visible: root.expandable
+        visible: root.hintsEnabled && root.expandable
         MarginHover { objectName: "chatWidthLeftPointer" }
         EdgeButton {
             id: leftButton
@@ -119,7 +120,7 @@ Item {
         objectName: "chatWidthRightHoverZone"
         x: root.width - root.composerRight; y: 0
         // Leave the outer 24 pixels available to the question navigation rail.
-        width: Math.max(0, root.composerRight - 24); height: root.height; visible: root.expandable
+        width: Math.max(0, root.composerRight - 24); height: root.height; visible: root.hintsEnabled && root.expandable
         MarginHover { objectName: "chatWidthRightPointer" }
         EdgeButton {
             id: rightButton

@@ -59,12 +59,15 @@ try:
     click('openUmekoDesktopSettingsButton')
     assert not find('openPiSettingsButton').isVisible()
     assert not find('desktopAutoOpenSubmissions').property('checked')
+    assert find('desktopChatWidthHints').property('checked')
     assert find('desktopWebDisplay').property('currentIndex')==1
     for language,scale in [('zh',1.0),('en',2.0)]:
         backend.setLanguage(language);backend.setFontScale(scale);QTest.qWait(150)
         combo=find('desktopWebDisplay');settings=find('umekoDesktopSettings')
         assert combo.property('currentIndex')==1 and combo.property('displayText')==('系统默认浏览器' if language=='zh' else 'System default browser')
         assert combo.width()>120 and combo.mapToItem(settings,combo.boundingRect().bottomRight()).x()<=settings.width()+1
+        hints=find('desktopChatWidthHints')
+        assert hints.isVisible() and hints.mapToItem(settings,hints.boundingRect().bottomRight()).x()<=settings.width()+1
         window.grabWindow().save(str(output/('settings-'+language+'.png')))
     backend.setLanguage('zh');backend.setFontScale(1.0);QTest.qWait(100)
     click('desktopWebDisplay');QTest.keyClick(window,Qt.Key_Home);QTest.keyClick(window,Qt.Key_Return);QTest.qWait(100)
@@ -75,6 +78,12 @@ try:
     click('desktopAutoOpenSubmissions')
     assert backend.config['desktop']['autoOpenSubmissions']
     click('desktopAutoOpenSubmissions')
+    click('desktopChatWidthHints')
+    assert not backend.config['desktop']['chatWidthHints']
+    assert not Store(store.directory).data['desktop']['chatWidthHints']
+    assert not find('chatWidthControls').property('hintsEnabled')
+    click('desktopChatWidthHints')
+    assert backend.config['desktop']['chatWidthHints'] and find('chatWidthControls').property('hintsEnabled')
     click('backFromUmekoDesktopButton')
     assert find('openPiSettingsButton').isVisible() and find('openDesktopPluginsButton').isVisible()
     window.setProperty('page','chat');QTest.qWait(100)

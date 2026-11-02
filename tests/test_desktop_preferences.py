@@ -16,15 +16,16 @@ APP = QCoreApplication.instance() or QCoreApplication([])
 class DesktopPreferencesTests(unittest.TestCase):
     def test_defaults_normalization_and_pre_application_read(self):
         self.assertEqual(normalize(None), DEFAULTS)
-        self.assertEqual(normalize({'autoOpenSubmissions':1,'webDisplay':[]}), DEFAULTS)
+        self.assertEqual(normalize({'autoOpenSubmissions':1,'webDisplay':[],'chatWidthHints':0}), DEFAULTS)
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {'UMEKO_DATA_DIR':temp}):
             self.assertEqual(startup_settings(), DEFAULTS)
             store = Store(Path(temp))
             self.assertEqual(store.data['desktop'], DEFAULTS)
             store.data['desktop'] = {'autoOpenSubmissions':False,'webDisplay':'external'}; store.save()
-            self.assertEqual(startup_settings(), store.data['desktop'])
-            self.assertEqual(Store(Path(temp)).data['desktop'], store.data['desktop'])
-        for value in ([], {'unknown':True}, {'autoOpenSubmissions':'false'}, {'webDisplay':'unsafe'}):
+            expected = {**DEFAULTS, **store.data['desktop']}
+            self.assertEqual(startup_settings(), expected)
+            self.assertEqual(Store(Path(temp)).data['desktop'], expected)
+        for value in ([], {'unknown':True}, {'autoOpenSubmissions':'false'}, {'webDisplay':'unsafe'}, {'chatWidthHints':'false'}, {'chatWidthHints':0}):
             with self.subTest(value=value), self.assertRaises(ValueError): validate_patch(value)
 
     def test_partial_settings_hot_update_without_retiring_running_session(self):
@@ -40,12 +41,17 @@ class DesktopPreferencesTests(unittest.TestCase):
                     self.assertEqual(write.call_args.args[1]['webview']['display'],'external')
                     retire.assert_not_called()
                     self.assertTrue(controller.saveDesktopSettings(json.dumps({'autoOpenSubmissions':False})))
-                    self.assertEqual(controller.config['desktop'], {'autoOpenSubmissions':False,'webDisplay':'external'})
+                    self.assertTrue(controller.saveDesktopSettings(json.dumps({'chatWidthHints':False})))
+                    self.assertEqual(controller.config['desktop'], {'autoOpenSubmissions':False,'webDisplay':'external','chatWidthHints':False})
                     self.assertEqual(Store(Path(temp)).data['desktop'], controller.config['desktop'])
+                    self.assertEqual(startup_settings(), controller.config['desktop'])
+                    self.assertTrue(record.busy)
+                    retire.assert_not_called()
                 record.process = None
-                result = controller._umeko_control.execute({'operation':'desktop.configure','arguments':{'config':{'webDisplay':'embedded'}}})
+                result = controller._umeko_control.execute({'operation':'desktop.configure','arguments':{'config':{'webDisplay':'embedded','chatWidthHints':True}}})
                 self.assertTrue(result['ok'], result)
                 self.assertFalse(controller.config['desktop']['autoOpenSubmissions'])
+                self.assertTrue(controller.config['desktop']['chatWidthHints'])
                 bad = controller._umeko_control.execute({'operation':'desktop.configure','arguments':{'config':{'webDisplay':'unknown'}}})
                 self.assertFalse(bad['ok'])
             finally:
