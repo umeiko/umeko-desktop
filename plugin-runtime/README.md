@@ -164,6 +164,8 @@ Python 的 `context.notify_agent(message, data={}, request_id=None, wake=True, s
 
 页面根项必须声明 `required property var sdk`。宿主异步加载页面，只有当前一个插件页面被呈现。
 
+页面也可用 `sdk.saveConfig(object)` 保存本 Widget 的非秘密配置，返回请求 ID；用 `sdk.configSaved(request, value)` 接收 `{ok, error?}`，`sdk.config` 随保存结果更新。校验和持久化与插件管理设置页一致。声明 `liveConfig: true` 的插件会在原进程接收新配置，其余插件按原生命周期重新启动。
+
 ```qml
 import QtQuick
 import QtQuick.Controls

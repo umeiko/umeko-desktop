@@ -124,13 +124,14 @@ class WidgetHostTests(unittest.TestCase):
         self.assertTrue(self.manager.replies[identifier]['ok'])
         self.assertEqual(self.manager.calls[-1],{'operation':'extensions.activation','arguments':{'id':'17','mode':'session'}})
 
-    def test_required_abilities_are_rejected_before_confirmation(self):
+    def test_desktop_builtins_use_the_normal_confirmation_flow(self):
         self.manager.b.piManagement.extensions[17]['info']['required']=True
         for operation,args in [('pi.activation',{'id':'17','mode':'disabled'}),('pi.enable',{'id':'17','enabled':False})]:
             identifier=self.request(operation,args)
-            self.assertFalse(self.manager.replies[identifier]['ok'])
-            self.assertFalse(self.host.pendingApproval)
-        self.assertEqual(self.manager.calls,[])
+            self.assertEqual(self.host.pendingApproval['id'],identifier)
+            self.host.respondApproval(True)
+            self.assertTrue(self.manager.replies[identifier]['ok'])
+        self.assertEqual(len(self.manager.calls),2)
 
     def test_install_progress_and_cancellation_are_owned_by_widget_and_chat(self):
         cancelled=[];management=self.manager.b.piManagement

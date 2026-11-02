@@ -258,10 +258,6 @@ class WidgetHost(QObject):
                     raise ValueError('offset must be an integer from 0 to 1000000')
                 if type(args.get('limit', 100)) is not int or not 1 <= args.get('limit', 100) <= 200:
                     raise ValueError('limit must be an integer from 1 to 200')
-            if operation in ('pi.activation','pi.enable'):
-                row=next((row for row in self.b.piManagement.extensions if row.get('id')==args['id']),{})
-                if row.get('info',{}).get('required'):
-                    raise ValueError('Umeko 基础能力固定启用，不能修改启用范围')
             if operation.startswith('skills.') and operation not in ('skills.job', 'skills.browse', 'skills.preview', 'skills.open', 'skills.copy', 'skills.insert'):
                 self._skill_service().idle()
             if requires_confirmation(operation):

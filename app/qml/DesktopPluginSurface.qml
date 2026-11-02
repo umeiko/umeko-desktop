@@ -22,15 +22,18 @@ FocusScope {
         readonly property Component queuedMessagesComponent: queueRenderer
         signal response(string request, var value)
         signal hostResponse(string request, var value)
+        signal configSaved(string request, var value)
         signal event(string topic, var data)
         function call(method,args) { return root.manager.call(method,JSON.stringify(args || {})) }
         function requestHost(operation,args) { return root.manager.requestHost(operation,JSON.stringify(args || {})) }
+        function saveConfig(value) { return root.manager.saveConfig(root.page.id,JSON.stringify(value)) }
         function copyText(text) { backend.copy(text) }
     }
     Component { id: chatMessageRenderer; WidgetChatMessage {} }
     Component { id: queueRenderer; QueuedMessages {} }
     Connections {target:root.manager;function onResponse(request,value) {bridge.response(request,value)}function onEvent(topic,data){bridge.event(topic,data)}}
     Connections {target:root.manager;function onHostResponse(widget,request,value) {if (widget===root.page.id) bridge.hostResponse(request,value)}}
+    Connections {target:root.manager;function onManaged(request,value) {bridge.configSaved(request,value)}}
     Loader {
         id: content; objectName: "desktopPluginPageLoader"
         anchors { left: parent.left; right: parent.right; top: parent.top; bottom: panelConfirmation.visible ? panelConfirmation.top : parent.bottom }

@@ -63,13 +63,12 @@ Rectangle {
     function openLink(url) { if(/^https?:\/\//i.test(url)) Qt.openUrlExternally(url) }
     function modeIndex() {
         if(!selected) return -1
-        if(selected.info.required) return 0
         const mode=modes[selected.path]
         if(mode==="session") return 1
         if(mode==="disabled") return 2
         return selected.enabled && selected.scope==="global" ? 0 : -1
     }
-    function activate(index) { if(!selected || selected.info.required)return; request("pi.activation",{id:selected.id,mode:["global","session","disabled"][index]}) }
+    function activate(index) { if(!selected)return; request("pi.activation",{id:selected.id,mode:["global","session","disabled"][index]}) }
     function initialize() {
         const key=JSON.stringify([sdk.session.token,sdk.session.workspace])
         if(sessionKey!==key) {
@@ -190,11 +189,11 @@ Rectangle {
                 ScopePicker {
                     id:activation;objectName:"piManagerActivation";width:parent.width;visible:!root.selected || root.selected.id!=="builtin:pi-tools"
                     model:[root.t("全局启用","Enable globally"),root.t("本对话中启用","Enable in this chat"),root.t("本对话暂时禁用","Disable in this chat")]
-                    currentIndex:root.modeIndex();enabled:!root.working && !!root.selected && !root.selected.info.required
-                    displayText:root.selected && root.selected.info.required ? root.t("基础能力 · 固定启用","Required · always enabled") : currentIndex<0 ? (root.selected && root.selected.enabled ? root.t("项目中已启用","Enabled for this project") : root.t("已停用 · 选择启用范围","Disabled · choose a scope")) : currentText
+                    currentIndex:root.modeIndex();enabled:!root.working && !!root.selected
+                    displayText:currentIndex<0 ? (root.selected && root.selected.enabled ? root.t("项目中已启用","Enabled for this project") : root.t("已停用 · 选择启用范围","Disabled · choose a scope")) : currentText
                     onActivated:index=>root.activate(index)
                 }
-                Text {objectName:"piManagerActivationHint";width:parent.width;visible:!root.selected || root.selected.id!=="builtin:pi-tools";text:root.selected && root.selected.info.required ? root.t("扩展保持加载；下方可单独设置工具可见性。","The extension stays loaded; control individual tools below.") : root.t("任务结束后生效；对话设置仅影响当前对话。","Changes apply after the task; chat overrides affect only this chat.");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:11*root.sdk.scale}
+                Text {objectName:"piManagerActivationHint";width:parent.width;visible:!root.selected || root.selected.id!=="builtin:pi-tools";text:root.t("任务结束后生效；对话设置仅影响当前对话。","Changes apply after the task; chat overrides affect only this chat.");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:11*root.sdk.scale}
                 Flow {
                     width:parent.width;spacing:8
                     SmallButton {objectName:"piManagerHomepage";visible:!!(root.selected && root.selected.info.homepage);text:root.t("↗ 主页","↗ Homepage");onClicked:root.openLink(root.selected.info.homepage)}

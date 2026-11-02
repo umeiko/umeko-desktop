@@ -152,10 +152,10 @@ test("detail documents are on-demand, bounded and do not request remote images",
 });
 
 
-test("required desktop abilities ignore old disable filters and reject configuration changes",async()=>{
-  const {prepareNativeSettings,sessionResourceSettings,requiredBuiltins}=await import("../runtime/resources.mjs");
+test("all desktop builtins honor native filters and isolated chat overrides across reload",async()=>{
+  const {prepareNativeSettings,sessionResourceSettings}=await import("../runtime/resources.mjs");
   const {readFileSync}=await import("node:fs");
-  const root=mkdtempSync(join(tmpdir(),"umeko-required-"));
+  const root=mkdtempSync(join(tmpdir(),"umeko-configurable-"));
   try {
     const agent=join(root,"agent"),cwd=join(root,"project");
     mkdirSync(agent,{recursive:true});mkdirSync(join(cwd,".pi"),{recursive:true});
@@ -163,27 +163,33 @@ test("required desktop abilities ignore old disable filters and reject configura
     writeFileSync(join(agent,"settings.json"),JSON.stringify(original));
     writeFileSync(join(cwd,".pi/settings.json"),JSON.stringify({extensions:["!builtin:*","-builtin:chatbox"]}));
     const input={cwd,agentDir:agent,agent:{}};
+    let scan=(await manageResources(Pi,input)).extensions;
+    for(const name of builtins) {
+      const path='builtin:'+name;
+      let row=scan.find(row=>row.path===path);
+      assert.equal(row.info.required,false,path);assert.equal(row.enabled,false,path);
+      scan=(await manageResources(Pi,{...input,action:'enable-global',id:row.id})).extensions;
+      row=scan.find(row=>row.path===path);assert.equal(row.enabled,true,path);
+      scan=(await manageResources(Pi,{...input,action:'toggle',id:row.id,enabled:false})).extensions;
+      row=scan.find(row=>row.path===path);assert.equal(row.enabled,false,path);
+      scan=(await manageResources(Pi,{...input,action:'toggle',id:row.id,enabled:true})).extensions;
+      assert.equal(scan.find(row=>row.path===path).enabled,true,path);
+    }
+    const globalBefore=readFileSync(join(agent,'settings.json'),'utf8');
+    const projectBefore=readFileSync(join(cwd,'.pi/settings.json'),'utf8');
     const native=await prepareNativeSettings(Pi,input);
-    const settings=await sessionResourceSettings(Pi,{...input,sessionExtensions:Object.fromEntries([...requiredBuiltins].map(path=>[path,false]))},native);
+    const settings=await sessionResourceSettings(Pi,{...input,sessionExtensions:Object.fromEntries(builtins.map(name=>['builtin:'+name,false]))},native);
     const rows=async()=>(await new Pi.DefaultPackageManager({cwd,agentDir:agent,settingsManager:settings,builtinExtensions:builtins}).resolve(async()=>"skip")).extensions;
     for(let pass=0;pass<2;pass++) {
       const result=await rows();
-      for(const path of requiredBuiltins) assert.equal(result.find(row=>row.path===path).enabled,true,path);
-      assert.equal(result.find(row=>row.path==='builtin:mcp').enabled,false);
-      assert.equal(result.find(row=>row.path==='builtin:subagents').enabled,false);
+      for(const name of builtins) assert.equal(result.find(row=>row.path==='builtin:'+name).enabled,false,name);
       await settings.reload();
     }
-    // Ordinary native setters retain persistence through the policy view.
-    settings.setTheme('light');await settings.flush();
-    assert.equal(JSON.parse(readFileSync(join(agent,'settings.json'),'utf8')).theme,'light');
-    assert.deepEqual(JSON.parse(readFileSync(join(agent,'settings.json'),'utf8')).extensions,original.extensions);
-    const scan=(await manageResources(Pi,input)).extensions;
-    for(const path of requiredBuiltins) {
-      const row=scan.find(row=>row.path===path);assert.equal(row.info.required,true);assert.equal(row.enabled,true);
-      await assert.rejects(manageResources(Pi,{...input,action:'toggle',id:row.id,enabled:false}),/基础能力固定启用/);
-      await assert.rejects(manageResources(Pi,{...input,action:'enable-global',id:row.id}),/基础能力固定启用/);
-    }
-    assert.equal(scan.find(row=>row.path==='builtin:mcp').info.required,false);
-    assert.equal(scan.find(row=>row.path==='builtin:subagents').info.required,false);
+    assert.equal(readFileSync(join(agent,'settings.json'),'utf8'),globalBefore);
+    assert.equal(readFileSync(join(cwd,'.pi/settings.json'),'utf8'),projectBefore);
+    // A second chat still gets the enabled native configuration.
+    const other=await sessionResourceSettings(Pi,input,native);
+    const otherRows=(await new Pi.DefaultPackageManager({cwd,agentDir:agent,settingsManager:other,builtinExtensions:builtins}).resolve(async()=>'skip')).extensions;
+    for(const name of builtins) assert.equal(otherRows.find(row=>row.path==='builtin:'+name).enabled,true,name);
   } finally {rmSync(root,{recursive:true,force:true});}
 });

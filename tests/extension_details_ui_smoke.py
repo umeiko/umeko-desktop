@@ -56,6 +56,7 @@ def wait(predicate):
     widget=find('piManagerWidget',False)
     raise AssertionError((backend.piManagement.status, manager.status, {key:widget.property(key) for key in ('job','working','notice','pending','rows')} if widget else 'no widget',warnings))
 def click(name):
+    wait(lambda:find(name,False) is not None and find(name).isVisible())
     item=find(name)
     QTest.qWait(100)
     assert item.isVisible() and item.isEnabled(),name
@@ -95,6 +96,23 @@ try:
     wait(lambda:bool(manager.hostServices.pendingApproval))
     click('widgetHost_allowToolButton')
     wait(lambda:backend._view.extension_modes.get(fixture['path'])=='session' and not widget.property('working'))
+    assert json.loads((agent/'settings.json').read_text())=={'packages':[str(pkg)]}
+    click('piManagerBack')
+    find('piManagerSearch').setProperty('text','codemode')
+    builtin=next(row for row in backend.piManagement.extensions if row['path']=='builtin:codemode')
+    wait(lambda:find('piManagerEntry_'+builtin['id'],False) is not None and not widget.property('working'))
+    assert not builtin['info']['required']
+    click('piManagerEntry_'+builtin['id'])
+    wait(lambda:find('piManagerActivation').isEnabled() and not widget.property('working'))
+    click('piManagerActivation');QTest.keyClick(window,Qt.Key_Home);QTest.keyClick(window,Qt.Key_Down);QTest.keyClick(window,Qt.Key_Down);QTest.keyClick(window,Qt.Key_Return)
+    wait(lambda:bool(manager.hostServices.pendingApproval))
+    click('widgetHost_allowToolButton')
+    wait(lambda:backend._view.extension_modes.get(builtin['path'])=='disabled' and not widget.property('working'))
+    assert find('piManagerActivation').property('currentIndex')==2
+    click('piManagerActivation');QTest.keyClick(window,Qt.Key_Home);QTest.keyClick(window,Qt.Key_Down);QTest.keyClick(window,Qt.Key_Return)
+    wait(lambda:bool(manager.hostServices.pendingApproval))
+    click('widgetHost_allowToolButton')
+    wait(lambda:backend._view.extension_modes.get(builtin['path'])=='session' and not widget.property('working'))
     assert json.loads((agent/'settings.json').read_text())=={'packages':[str(pkg)]}
     first=backend._view
     click('piManagerBack')

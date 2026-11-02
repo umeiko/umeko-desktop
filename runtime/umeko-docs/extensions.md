@@ -4,6 +4,8 @@
 
 `status.get` 查看当前扩展列表、后台管理状态和 npm 配置。`extensions.scan` 重新扫描；`extensions.enable` 传扫描结果的 `id`、`enabled`；`extensions.install` 的 `source` 接受 UI 支持的 npm/Git/本地扩展来源，`project` 指定项目范围（默认 false）。`extensions.refresh` 应用并重载，使用中的任务结束后执行。
 
+所有列出的扩展（包括 Umeko 内置扩展）都可调整启用范围。`extensions.activation` 传 `id` 和 `mode`：`global` 为全局启用，`session` 仅在当前聊天启用，`disabled` 仅在当前聊天停用。聊天覆盖不会改写 Pi 的全局或项目设置；内置扩展也会遵守原生 `extensions` 过滤规则。Pi 原生文件与命令工具的可见性可在插件管理中逐项调整。
+
 Skills 通过 `agent.save` 的 `config.skillPaths` 配置额外路径；Pi 自身资源开关/包管理沿用当前 Pi 的 settings 机制。`run_pi_command` 支持 `pi install`、`pi remove`、`pi list`、`/reload`、`/compact`、`/session`、`/name` 和已加载扩展注册的命令。不要把所有扩展的帮助全文展开到 `/help`。
 
 ## 创建和管理 Skill 目录

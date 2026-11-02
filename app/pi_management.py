@@ -106,8 +106,6 @@ class PiManagement(QObject):
         row = next((row for row in self._extensions if row.get("id") == extension_id), None)
         if not row or not self.extensionsCurrent:
             self.controller.toast.emit("请刷新当前对话的插件列表"); return
-        if row.get("info",{}).get("required"):
-            self.controller.toast.emit("Umeko 基础能力固定启用，不能修改启用范围"); return
         if self.controller.store.data["agent"].get("safeMode"): return
         record = self.controller._view
         if mode == "global":

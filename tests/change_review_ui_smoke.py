@@ -75,7 +75,15 @@ try:
     menu=find('gitFileContextMenu')
     wait(lambda:menu.property('visible'),'Read-only menu did not open')
     assert menu.property('readOnly') and not find('gitContextDiscard').isVisible() and not find('gitContextIgnore').isVisible()
-    menu.close();manager.closePage()
+    menu.close()
+    worker=manager.workers['change-review']
+    click('changeReviewPageAutoOpen')
+    wait(lambda:manager.settings.get('config',{}).get('change-review',{}).get('autoOpen') is False and not manager.busy,'Page checkbox did not save')
+    assert manager.workers['change-review'] is worker,'Page checkbox restarted the snapshot service'
+    assert call('status',{})['total']==2,'Page checkbox discarded the review'
+    click('changeReviewPageAutoOpen')
+    wait(lambda:manager.settings['config']['change-review']['autoOpen'] is True and not manager.busy,'Page checkbox did not re-enable auto-open')
+    manager.closePage()
     assert 'change-review' in manager.workers,'Closing the page stopped the application service'
     window.setProperty('settingsTab',3);window.setProperty('page','settings');QTest.qWait(100)
     page=find('desktopPluginsPage');page.setProperty('selectedId','change-review')
@@ -98,9 +106,17 @@ try:
     assert not manager.page,'Disabled auto-open still opened a pane'
     assert manager.openPage('change-review')
     wait(lambda:find('changeReviewRow_src') is not None,'Manual review did not populate')
+    assert not find('changeReviewPageAutoOpen').property('checked'),'Page did not reflect the setting from plugin management'
+    wait(lambda:not find('webPane').property('moving'),'Manual pane did not settle')
+    click('changeReviewPageAutoOpen')
+    wait(lambda:manager.settings['config']['change-review']['autoOpen'] is True and not manager.busy,'Page checkbox did not persist after reopening')
+    manager.closePage()
+    call('begin',{'loopId':'page-reenabled'});file.write_text('manual = 4\n',encoding='utf-8')
+    call('finish',{'loopId':'page-reenabled'})
+    wait(lambda:manager.page.get('id')=='change-review' and find('changeReviewWidget') is not None,'Page checkbox did not restore automatic opening')
     manager.setEnabled('change-review',False)
     wait(lambda:not any((manager.root/'state'/'change-review').rglob('review-*')),'Stopping retained temporary snapshots')
-    assert file.read_text(encoding='utf-8')=='manual = 3\n'
+    assert file.read_text(encoding='utf-8')=='manual = 4\n'
     assert not (workspace/'.git').exists(),'Review created a repository in the project'
     assert not warnings,'\n'.join(warnings)
     print('CHANGE_REVIEW_UI_OK: automatic/manual pane, live persistent setting, retained snapshot, tree/diff/back/copy, read-only menu and cleanup')
