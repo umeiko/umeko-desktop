@@ -15,9 +15,10 @@ PLATFORMS = (
 )
 
 
-def download_buttons(repo, tag, assets, section='release'):
+def download_buttons(repo, tag, assets, section='release', language='bilingual'):
     assert repo in REPOS and re.fullmatch(r'v\d+\.\d+\.\d+(?:-minimal)?', tag)
     assert section in ('standard', 'minimal', 'release')
+    assert language in ('en', 'zh', 'bilingual')
     names = [a['name'] if isinstance(a, dict) else a for a in assets]
     prefix = ('UmekoCpp-' + tag if repo.endswith('-cpp') else 'Umeko-' + tag[1:]) + '-'
     links = []
@@ -28,9 +29,11 @@ def download_buttons(repo, tag, assets, section='release'):
         url = f'https://github.com/{repo}/releases/download/{tag}/{quote(candidates[0], safe="")}'
         image = f'https://raw.githubusercontent.com/{repo}/main/docs/downloads/{icon}'
         links.append(f'[![{label}]({image})]({url})')
-    edition = ' · Minimal / 精简版' if tag.endswith('-minimal') else ''
+    edition_label = {'en': 'Minimal', 'zh': '精简版', 'bilingual': 'Minimal / 精简版'}[language]
+    edition = ' · ' + edition_label if tag.endswith('-minimal') else ''
+    heading = f'Download {tag}{edition}' if language == 'en' else f'下载 {tag}{edition} · 点击下载' if language == 'zh' else f'Download {tag}{edition} · 点击下载'
     return (f'<!-- umeko-downloads:{section}:start -->\n\n'
-            f'**Download {tag}{edition} · 点击下载**\n\n' + '\n'.join(links) +
+            f'**{heading}**\n\n' + '\n'.join(links) +
             f'\n\n<!-- umeko-downloads:{section}:end -->')
 
 
@@ -52,9 +55,10 @@ def release_notes(text, repo, tag, assets):
 def refresh_readmes(repo, tag, assets, api, gh):
     """Update only marked blocks on main after all release assets are verified."""
     section = 'minimal' if tag.endswith('-minimal') else 'standard'
-    block = download_buttons(repo, tag, assets, section)
     paths = ('README.md',) if repo.endswith('-cpp') else ('README.md', 'README.zh-CN.md')
     for path in paths:
+        language = 'bilingual' if repo.endswith('-cpp') else 'zh' if path.endswith('.zh-CN.md') else 'en'
+        block = download_buttons(repo, tag, assets, section, language=language)
         for attempt in range(3):
             current = api('contents/' + path + '?ref=main')
             text = base64.b64decode(current['content']).decode('utf-8')

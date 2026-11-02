@@ -10,6 +10,7 @@ import json
 import re
 import uuid
 from datetime import datetime, timezone
+from .tool_visibility import catalog, NATIVE_ID
 from collections import OrderedDict
 
 from PySide6.QtCore import QObject, Property, QTimer, Signal, Slot
@@ -18,6 +19,8 @@ from PySide6.QtCore import QObject, Property, QTimer, Signal, Slot
 OPERATIONS = {
     'pi.status': ('pi.read', None),
     'pi.network': ('pi.read', None),
+    'pi.inventory': ('pi.read', None),
+    'pi.toolVisibility': ('pi.manage', None),
     'pi.scan': ('pi.read', 'extensions.scan'),
     'pi.checkUpdate': ('pi.read', 'extensions.checkUpdate'),
     'pi.details': ('pi.read', 'extensions.details'),
@@ -28,7 +31,32 @@ OPERATIONS = {
     'pi.remove': ('pi.manage', 'extensions.remove'),
     'pi.job': ('pi.read', None),
     'pi.cancel': ('pi.manage', None),
+    'skills.list': ('skills.read', None),
+    'skills.details': ('skills.read', None),
+    'skills.job': ('skills.read', None),
+    'skills.attach': ('skills.manage', None),
+    'skills.default': ('skills.manage', None),
+    'skills.reveal': ('skills.manage', None),
+    'skills.remove': ('skills.manage', None),
+    'skills.importPreview': ('skills.read', None),
+    'skills.import': ('skills.manage', None),
+    'skills.browse': ('skills.read', None),
+    'skills.open': ('skills.read', None),
+    'skills.copy': ('skills.read', None),
+    'skills.paste': ('skills.manage', None),
+    'skills.importLocal': ('skills.manage', None),
+    'skills.insert': ('session.write', None),
+    'skills.rename': ('skills.manage', None),
+    'skills.delete': ('skills.manage', None),
 }
+
+# User-initiated paste/drop adds new folders only. Replacement still goes
+# through the preview/confirmation path; these operations cannot overwrite.
+DIRECT_SKILL_IMPORTS = frozenset(('skills.paste', 'skills.importLocal'))
+
+
+def requires_confirmation(name):
+    return OPERATIONS[name][0] in ('pi.manage', 'skills.manage') and name != 'pi.cancel' and name not in DIRECT_SKILL_IMPORTS
 
 
 class WidgetHost(QObject):
@@ -42,6 +70,8 @@ class WidgetHost(QObject):
         self.jobs = OrderedDict()
         self.requests = {}
         self.activity = {}
+        self._panel_approval = {}
+        self._skills = None
         self.activity_timer = QTimer(self)
         self.activity_timer.setSingleShot(True)
         self.activity_timer.setInterval(200)
@@ -55,7 +85,7 @@ class WidgetHost(QObject):
         if not callable(getattr(getattr(self.b, 'piManagement', None), 'uninstallPackage', None)):
             operations.pop('pi.remove')
         return {'version': 1, 'operations': {name: {'permission': spec[0],
-                'confirmation': spec[0] == 'pi.manage' and name != 'pi.cancel'} for name, spec in operations.items()},
+                'confirmation': requires_confirmation(name)} for name, spec in operations.items()},
                 'requestBytes': 16384, 'responseBytes': 262144,
                 'mutationsRequireIdle': True, 'runtimes': ['node'], 'events': {'pi.activity': {'permission':'pi.observe','maxBytes':65536,'intervalMs':200}}}
 
@@ -67,7 +97,19 @@ class WidgetHost(QObject):
     def pendingApproval(self):
         return self._approval
 
+    @Property('QVariantMap', notify=changed)
+    def panelApproval(self):
+        # Kept out of pendingApproval so the main-window dialog never opens.
+        return self._panel_approval
+
+    def _skill_service(self):
+        if self._skills is None:
+            from .skill_management import SkillJobs
+            self._skills = SkillJobs(self)
+        return self._skills
+
     def stop(self, identifier):
+        if self._skills: self._skills.stop(identifier)
         self.activity.pop(identifier, None)
         if any(owner['widget']==identifier and owner.get('operation')=='pi.install' and getattr(self.b._umeko_control,'jobs',{}).get(key,{}).get('status')=='running' for key,owner in self.jobs.items()):
             cancel=getattr(self.b.piManagement,'cancelInstall',None)
@@ -163,26 +205,54 @@ class WidgetHost(QObject):
             permission, _ = OPERATIONS[operation]
             if permission not in self.m.entries[identifier].get('permissions', []):
                 raise ValueError('Widget permission is required: ' + permission)
-            fields = {'pi.status': {'offset', 'limit', 'query', 'details'}, 'pi.network': set(), 'pi.scan': set(), 'pi.refresh': set(),
+            fields = {'pi.status': {'offset', 'limit', 'query', 'details', 'toolOffset'}, 'pi.inventory': set(), 'pi.toolVisibility': {'id','name','visible'}, 'pi.network': set(), 'pi.scan': set(), 'pi.refresh': set(),
                       'pi.enable': {'id', 'enabled'}, 'pi.install': {'source', 'project'},
-                      'pi.remove': {'id'}, 'pi.job': {'id'}, 'pi.cancel': {'id'}, 'pi.checkUpdate': {'id'}, 'pi.details': {'id'}, 'pi.activation': {'id','mode'}}[operation]
+                      'pi.remove': {'id'}, 'pi.job': {'id'}, 'pi.cancel': {'id'}, 'pi.checkUpdate': {'id'}, 'pi.details': {'id'}, 'pi.activation': {'id','mode'},
+                      'skills.list': set(), 'skills.details': {'id'}, 'skills.job': {'id', 'offset', 'limit'},
+                      'skills.attach': {'id', 'enabled'}, 'skills.default': {'id', 'enabled'},
+                      'skills.reveal': {'id'}, 'skills.remove': {'id'},
+                      'skills.importPreview': {'source', 'project'}, 'skills.import': {'id', 'decisions'},
+                      'skills.browse': set(), 'skills.open': {'id', 'mode'}, 'skills.copy': {'id', 'kind'},
+                      'skills.paste': {'project'}, 'skills.importLocal': {'source', 'project'},
+                      'skills.insert': {'id'}, 'skills.rename': {'id', 'name'}, 'skills.delete': {'id'}}[operation]
             if set(args) - fields:
                 raise ValueError('Unknown host arguments')
-            if operation in ('pi.enable', 'pi.remove', 'pi.job', 'pi.cancel', 'pi.checkUpdate', 'pi.details', 'pi.activation'):
+            if operation in ('pi.enable', 'pi.remove', 'pi.job', 'pi.cancel', 'pi.checkUpdate', 'pi.details', 'pi.activation') or operation.startswith('skills.') and operation not in ('skills.list', 'skills.browse', 'skills.paste', 'skills.importLocal', 'skills.importPreview'):
                 if not isinstance(args.get('id'), str) or not args['id'] or len(args['id']) > 4096:
                     raise ValueError('A valid id is required')
-            if operation == 'pi.enable' and type(args.get('enabled')) is not bool:
+            if operation in ('pi.enable', 'skills.attach', 'skills.default') and type(args.get('enabled')) is not bool:
                 raise ValueError('enabled must be boolean')
             if operation == 'pi.activation' and args.get('mode') not in ('global','session','disabled'):
                 raise ValueError('Invalid activation mode')
-            if operation == 'pi.install':
+            if operation == 'skills.open' and args.get('mode') not in ('preview', 'edit', 'reveal'):
+                raise ValueError('Invalid Skill open mode')
+            if operation == 'skills.copy' and args.get('kind') not in ('folder', 'path'):
+                raise ValueError('Invalid Skill copy kind')
+            if operation == 'skills.rename':
+                from .skill_folders import validate_folder_name
+                validate_folder_name(args.get('name'))
+            if operation in ('skills.rename', 'skills.delete'):
+                self._skill_service().folder_for(request, args['id'])
+            if operation == 'pi.toolVisibility':
+                if not isinstance(args.get('id'),str) or not isinstance(args.get('name'),str) or not 0<len(args['name'])<=256 or type(args.get('visible')) is not bool:
+                    raise ValueError('Invalid tool visibility arguments')
+                self._tool_target(args)
+            if operation in ('pi.install', 'skills.importPreview', 'skills.importLocal'):
                 if not isinstance(args.get('source'), str) or not args['source'].strip() or len(args['source']) > 4096:
                     raise ValueError('A valid package source is required')
                 if type(args.get('project', False)) is not bool:
                     raise ValueError('project must be boolean')
-            if operation == 'pi.status':
+            if operation in DIRECT_SKILL_IMPORTS and type(args.get('project')) is not bool:
+                raise ValueError('An explicit destination scope is required')
+            if operation == 'skills.import':
+                if not isinstance(args.get('decisions', {}), dict) or any(not isinstance(key, str) or value not in ('skip', 'replace') for key, value in args.get('decisions', {}).items()):
+                    raise ValueError('Each conflict needs a skip or replace decision')
+                self._skill_service().preview_for(request, args['id'])
+            if operation in ('pi.status', 'skills.job'):
                 if any(key in args and (not isinstance(args[key],str) or len(args[key]) > 256) for key in ('query','details')):
                     raise ValueError('Invalid local catalog query')
+                if type(args.get('toolOffset', 0)) is not int or not 0 <= args.get('toolOffset', 0) <= 1000000:
+                    raise ValueError('Invalid tool offset')
                 if type(args.get('offset', 0)) is not int or not 0 <= args.get('offset', 0) <= 1000000:
                     raise ValueError('offset must be an integer from 0 to 1000000')
                 if type(args.get('limit', 100)) is not int or not 1 <= args.get('limit', 100) <= 200:
@@ -191,15 +261,32 @@ class WidgetHost(QObject):
                 row=next((row for row in self.b.piManagement.extensions if row.get('id')==args['id']),{})
                 if row.get('info',{}).get('required'):
                     raise ValueError('Umeko 基础能力固定启用，不能修改启用范围')
-            if permission == 'pi.manage' and operation != 'pi.cancel':
+            if operation.startswith('skills.') and operation not in ('skills.job', 'skills.browse', 'skills.open', 'skills.copy', 'skills.insert'):
+                self._skill_service().idle()
+            if requires_confirmation(operation):
                 if self.b.busy or self.b.piManagement.busy or self.b.kernelBusy:
                     raise ValueError('Pi is busy; Agent installs must use run_pi_command and its native queued reload')
                 if self._pending or self.b.pendingApproval:
                     raise ValueError('Another confirmation is pending')
                 self._pending = request
-                self._approval = {'id': request['id'], 'method': 'confirm',
+                approval = {'id': request['id'], 'method': 'confirm',
                     'title': 'Widget · ' + self.m.entries[identifier]['name'],
                     'detail': operation + '\n' + json.dumps(args, ensure_ascii=False, indent=2)}
+                if permission == 'skills.manage' or identifier == 'skill-manager':
+                    # Only the host surface receives these controls. The SDK has
+                    # no operation, method or event capable of approving them.
+                    self._panel_approval = {**approval, 'widget': identifier, 'operation': operation,
+                        'enabled': args.get('enabled', False), 'name': args.get('source', '')}
+                    if self._skills and args.get('id'):
+                        rows = self._skills.catalog.get((request['session']['token'], request['session']['workspace']), [])
+                        self._panel_approval['name'] = next((r['name'] for r in rows if r['id'] == args['id']), '')
+                        if operation == 'skills.rename':
+                            self._panel_approval['name'] += ' → ' + args['name']
+                    if operation == 'skills.import':
+                        preview = self._skills.preview_for(request, args['id'])
+                        self._panel_approval.update(name=', '.join(row['name'] for row in preview['value']['skills'])[:600], project=preview['project'])
+                else:
+                    self._approval = approval
                 self.changed.emit()
                 QTimer.singleShot(120000, self, lambda: self.respondApproval(False)
                                   if self._pending is request else None)
@@ -211,7 +298,7 @@ class WidgetHost(QObject):
     @Slot(bool)
     def respondApproval(self, allowed):
         request = self._pending
-        self._pending, self._approval = None, {}
+        self._pending, self._approval, self._panel_approval = None, {}, {}
         self.changed.emit()
         if not request:
             return
@@ -223,9 +310,40 @@ class WidgetHost(QObject):
         except (ValueError, TypeError, KeyError) as error:
             self._reply(request, {'ok': False, 'error': str(error)})
 
+    def _tool_target(self, args):
+        if not self.b.piManagement.extensionsCurrent:
+            raise ValueError('Refresh the current local inventory first')
+        row = next((row for row in catalog(self.b._view, self.b.piManagement.extensions) if row['id'] == args['id']), {})
+        if not any(tool['name']==args['name'] and tool['editable'] for tool in row.get('tools',[])):
+            raise ValueError('Tool does not belong to this loaded package')
+
     def _execute(self, request):
         self._owner(request)  # Revalidate after the user spends time in confirmation.
         operation, args = request['operation'], request['arguments']
+        if operation.startswith('skills.'):
+            service = self._skill_service()
+            self._reply(request, service.get(request, args['id'], args.get('offset', 0), args.get('limit', 100))
+                        if operation == 'skills.job' else service.start(request))
+            return
+        if operation == 'pi.toolVisibility':
+            self._tool_target(args)
+            self.b.piManagement.set_tool_visible(args['name'], args['visible'])
+            self._reply(request, {'ok': True})
+            return
+        if operation == 'pi.inventory':
+            record=self.b._view
+            if not record.resources.get('allTools') or record.stale or (not record.process and record.model):
+                if self.b.busy or record.subagents_active or self.b.kernelBusy:
+                    raise ValueError('请等待当前任务结束后刷新工具列表')
+                if not getattr(record,'model',''):
+                    raise ValueError('请先选择模型，再刷新工具列表')
+                if not self.b._command_pi('load', record):
+                    raise ValueError('Pi 工具列表加载失败')
+            self._reply(request, {'ok':True})
+            return
+        if operation == 'pi.details' and args['id'] == NATIVE_ID:
+            self._reply(request, {'ok':True})
+            return
         if operation in ('pi.activation','pi.details'):
             if not self.b.piManagement.extensionsCurrent or not any(row.get('id')==args['id'] for row in self.b.piManagement.extensions):
                 raise ValueError('Refresh the current local inventory first')
@@ -243,23 +361,29 @@ class WidgetHost(QObject):
         if operation == 'pi.status':
             management = self.b.piManagement
             current = management.extensionsCurrent
-            all_rows = management.extensions if current else []
+            all_rows = catalog(self.b._view, management.extensions) if current else []
             query=args.get('query','').casefold()
             detail_id=args.get('details','')
             rows=[row for row in all_rows if row['id']==detail_id] if detail_id else [row for row in all_rows if not query or query in (str(row.get('name',''))+' '+str(row.get('path',''))+' '+str(row.get('info',{}).get('description',''))).casefold()]
             offset, limit = args.get('offset', 0), args.get('limit', 100)
-            page=rows[offset:offset+limit]
+            page=[{**row,'tools':[{key:tool[key] for key in ('name','visible')} for tool in row['tools'][:12]]} for row in rows[offset:offset+limit]]
             paths={row['path'] for row in page}
             modes={path:mode for path,mode in self.b._view.extension_modes.items() if path in paths}
             result={'busy':management.busy, 'status':management.status if current else '',
                 'extensions':page,'total':len(rows),'catalogTotal':len(all_rows), 'hasMore':offset+limit<len(rows),
-                'contextCurrent':current, 'workspace':request['session'].get('workspace',''),
+                'contextCurrent':current, 'inventoryReady':bool(self.b._view.resources.get('allTools')),
+                'inventoryFailed':getattr(self.b._view,'action','')=='load' and not self.b.busy and (getattr(self.b._view,'failed',False) or getattr(self.b._view,'cancelled',False)),
+                'agentBusy':self.b.busy or bool(getattr(self.b._view,'subagents_active',False)), 'workspace':request['session'].get('workspace',''),
                 'activationModes':modes,'extensionUpdate':management.extensionUpdate if current else {}}
             if detail_id:
                 doc=management.extensionDetails
                 result['details']=doc if doc.get('id')==detail_id and current else {}
-                result['tools']=[{key:str(tool.get(key,''))[:4096 if key=='description' else 256] for key in ('name','description')}
-                    for tool in self.b._view.resources.get('allTools',[]) if tool.get('source') in paths][:32]
+                if detail_id == NATIVE_ID: result['details']={'id':NATIVE_ID,'markdown':'Pi 内置工具，可按当前会话分别设置对 Agent 的可见性。'}
+                tools=rows[0]['tools'] if rows else []
+                start=args.get('toolOffset',0)
+                result['tools']=tools[start:start+40]
+                result['toolTotal']=len(tools)
+                result['toolsHasMore']=start+40<len(tools)
             self._reply(request,{'ok':True,'result':result})
             return
         control = self.b._umeko_control

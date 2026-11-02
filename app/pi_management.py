@@ -126,6 +126,36 @@ class PiManagement(QObject):
         record.stale = True
         if not record.busy and not record.subagents_active: c._pool.retire(record)
         self.changed.emit(); c.chatChanged.emit()
+    def set_tool_visible(self, name, visible):
+        c, record = self.controller, self.controller._view
+        if record.busy or record.subagents_active or self._busy or c.kernelBusy:
+            raise ValueError("请等待当前任务和子代理结束后修改工具可见性")
+        tools = record.resources.get('allTools', [])
+        if not any(tool.get('name') == name and tool.get('exposure') != 'hidden' for tool in tools):
+            raise ValueError("工具列表已变更，请刷新后重试")
+        if not visible and name not in record.blocked_tools and len(record.blocked_tools) >= 4096:
+            raise ValueError("本会话工具可见性设置已达上限")
+        previous = list(record.blocked_tools)
+        record.blocked_tools = [tool for tool in previous if tool != name]
+        if not visible: record.blocked_tools.append(name)
+        try:
+            if record.id:
+                c.store.data['sessionMeta'].setdefault(record.id,{})['blockedTools'] = list(record.blocked_tools)
+                c.store.save()
+        except (OSError, RuntimeError):
+            record.blocked_tools = previous
+            if record.id: c.store.data['sessionMeta'][record.id]['blockedTools'] = previous
+            raise ValueError("工具可见性保存失败")
+        for tool in tools:
+            if tool.get('name') == name:
+                tool['visible'] = visible
+                if not visible: tool['active'] = False
+        if not visible: record.resources['tools'] = [tool for tool in record.resources.get('tools',[]) if tool != name]
+        record.stale = True
+        c._pool.retire(record)
+        self.changed.emit()
+        c.chatChanged.emit()
+
     @Property(bool, notify=changed)
     def extensionsCurrent(self):
         return self._extensions_context == self._resource_key()

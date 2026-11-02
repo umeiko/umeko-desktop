@@ -30,7 +30,7 @@
 - `configure {"size":192,"alwaysOnTop":true,"paused":false,"sampleIntervalMs":1500,"minimumStateMs":3000}`：局部更新，立即生效。size 96–320px；观察间隔 1000–2000ms；状态保持 3000–30000ms。`visible` 与 `appearance` 也可配置。
 - `appearances {}`：列出可用 id、名称、是否内置。
 - `importAppearance {"path":"C:/absolute/path/pet.zip"}`：异步导入本机形象。Widget 请求完成后结果包含新 id；导入不会自动改选、显示或执行任何代码。导入失败保留现有形象。
-- `selectAppearance {"id":"my-pet"}`：切换形象，偏好跨重启保存。内置 id 为 `yanami`（八奈见杏菜）和 `komari`（小鞠知花），均不可删除、不可通过导入覆盖。
+- `selectAppearance {"id":"my-pet"}`：切换形象，偏好跨重启保存。内置 id 为 `yanami`（八奈见杏菜）、`komari`（小鞠知花）、`tiara`（马剃天爱星）和 `whale-girl`（鲸鱼娘），均不可删除、不可通过导入覆盖。
 - `removeAppearance {"id":"my-pet"}`：删除用户形象；当前形象先切回八奈见。不能删除内置资源。
 - `interact {"kind":"tap"}`：可选 tap、hover、drag；仍遵守最短状态保持。
 - `resetPosition {}`：回到屏幕右下方。
@@ -68,3 +68,5 @@
 活动观察是确定性后台服务，不是另一个 LLM。动作不会逐 token 切换：所有状态至少持续 3 秒；点击时先给出即时轻摇与台词，动画在保持时间到达后变化。停止/取消任务不会伪装成成功。任务完成动作短暂保持后回到待机。
 
 `dialogue` 可选 `done`、`error` 台词，仅在实际任务结束或失败的状态变化时播报一次；点击互动不会误报任务完成。内置图片元数据的 `contentTop` 用于将气泡贴近可见角色上缘，不在运行时扫描像素。
+
+可选的 `rareIdle` 对象包含 `image`（包内 PNG/WebP/GIF 相对路径）及 `line`（1–120 字符）。其资源遵循普通动画相同的路径、文件大小、像素和帧数限制。宿主固定以每完整待机轮次 0.5% 的概率抽取，形象包不能改变概率。内置彩蛋使用与普通待机画布、头身比例一致的全身动画；不复用主页半身插画。

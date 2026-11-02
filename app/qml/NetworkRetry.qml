@@ -1,6 +1,6 @@
 import QtQuick
 
-Text {
+Text { font.family: Theme.fontFamily;
     id: root
     objectName: "networkRetryStatus"
     property var retryState: backend.networkRetry
@@ -9,7 +9,7 @@ Text {
     readonly property int elapsed: Math.min(seconds, Math.max(0, Math.floor((clock - (retryState.startedAt || clock)) / 1000)))
     visible: retryState.active === true && backend.running
     color: Theme.muted
-    font.pixelSize: Theme.font(12)
+    font.pixelSize: Theme.font(12, visible)
     elide: Text.ElideRight
     text: {
         const attempt = retryState.attempt || 1

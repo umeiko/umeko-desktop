@@ -26,11 +26,11 @@ ColumnLayout {
             }
             Glyph { visible: !modelData.presetId; name: "server"; width: Theme.icon(19); height: Theme.icon(19) }
             Column { Layout.fillWidth: true; spacing: 5
-                Text { text: modelData.name; color: Theme.ink; font.pixelSize: Theme.font(12) }
-                Text { text: modelData.baseUrl; color: Theme.muted; font.pixelSize: Theme.font(10); elide: Text.ElideRight; width: 400 }
+                Text { font.family: Theme.fontFamily; text: modelData.name; color: Theme.ink; font.pixelSize: Theme.font(12, visible) }
+                Text { font.family: Theme.fontFamily; text: modelData.baseUrl; color: Theme.muted; font.pixelSize: Theme.font(10, visible); elide: Text.ElideRight; width: 400 }
             }
-            Text { text: modelData.models.length + I18n.t(" 个模型"); color: Theme.muted; font.pixelSize: Theme.font(10) }
-            Text { text: modelData.api === "openai" ? I18n.t("OpenAI 格式") : I18n.t("Anthropic 格式"); color: Theme.muted; font.pixelSize: Theme.font(10) }
+            Text { font.family: Theme.fontFamily; text: modelData.models.length + I18n.t(" 个模型"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
+            Text { font.family: Theme.fontFamily; text: modelData.api === "openai" ? I18n.t("OpenAI 格式") : I18n.t("Anthropic 格式"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
             ProviderProxy { providerId: modelData.id }
             ActionButton { objectName: "editProvider_" + modelData.id; glyph: "edit"; quiet: true; hint: I18n.t("编辑供应商与模型"); onClicked: root.editProvider(modelData) }
             ActionButton { glyph: "trash"; quiet: true; hint: I18n.t("移除供应商"); onClicked: backend.removeProvider(modelData.id) }
@@ -38,7 +38,7 @@ ColumnLayout {
             Flow { Layout.fillWidth: true; spacing: 7
                 Repeater { model: modelData.models
                     Rectangle { required property var modelData; width: chip.implicitWidth + 18; height: 27; radius: 6; color: Theme.accentBg
-                        Text { id: chip; anchors.centerIn: parent; text: modelData.alias; color: Theme.accent; font.pixelSize: Theme.font(10) }
+                        Text { font.family: Theme.fontFamily; id: chip; anchors.centerIn: parent; text: modelData.alias; color: Theme.accent; font.pixelSize: Theme.font(10, visible) }
                     }
                 }
             }

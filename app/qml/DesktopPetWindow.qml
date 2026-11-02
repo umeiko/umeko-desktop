@@ -72,8 +72,14 @@ Window {
         function onVirtualXChanged(){if(root.visible)root.constrain()}
         function onVirtualYChanged(){if(root.visible)root.constrain()}
     }
-    Timer { id:speech; interval:2600; onTriggered:root.caption="" }
+    Timer { id:speech; interval:root.state.rareIdle ? 4200 : 2600; onTriggered:root.caption="" }
     Timer {id:reminderTimeout;interval:8000;onTriggered:root.closeReminderCard()}
+    // Compatibility for imported still images; built-in rare scenes are animated.
+    Timer {
+        interval: 4200; repeat: true
+        running: root.visible && !root.config.paused && root.state.action === "idle" && !root.state.animated
+        onTriggered: root.pet.idleCycle()
+    }
     SequentialAnimation {
         id:wiggle
         NumberAnimation {target:root;property:"tilt";to:-7;duration:85}
@@ -86,7 +92,7 @@ Window {
         y:Math.max(4,art.y+art.height-(art.item?art.item.paintedHeight:art.height)*(1-(root.state.contentTop || 0))-height-8)
         width:Math.min(root.width,spoken.implicitWidth+24);height:spoken.implicitHeight+16;radius:12
         color:Theme.surface;border.color:Theme.line;visible:!!root.caption && !root.reminderCard.length
-        Text {id:spoken;anchors.centerIn:parent;width:Math.min(implicitWidth,root.width-24);text:root.caption;textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.ink;font.pixelSize:Theme.font(11)}
+        Text { font.family: Theme.fontFamily;id:spoken;anchors.centerIn:parent;width:Math.min(implicitWidth,root.width-24);text:root.caption;textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.ink;font.pixelSize: Theme.font(11, visible)}
     }
     Rectangle {
         objectName:"desktopPetReminderCard";z:4;anchors.horizontalCenter:parent.horizontalCenter
@@ -95,14 +101,14 @@ Window {
         color:Theme.surface;border.color:Theme.line;visible:root.reminderCard.length>0
         ColumnLayout {
             id:reminderContents;anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.margins:10;spacing:6
-            Text {Layout.fillWidth:true;text:root.reminderCard.length===1?I18n.t("提醒到期"):I18n.t("有 {count} 项提醒已到期").replace("{count}",root.reminderCard.length);textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.ink;font.bold:true;font.pixelSize:Theme.font(11)}
-            Text {objectName:"desktopPetReminderCardTitle";Layout.fillWidth:true;text:root.reminderCard.length?root.reminderCard[0].title:"";textFormat:Text.PlainText;wrapMode:Text.Wrap;maximumLineCount:3;elide:Text.ElideRight;color:Theme.ink;font.pixelSize:Theme.font(11)}
-            Text {Layout.fillWidth:true;visible:root.reminderCard.length===1;text:root.reminderCard.length?root.localTime(root.reminderCard[0].dueAt):"";textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.font(10)}
+            Text { font.family: Theme.fontFamily;Layout.fillWidth:true;text:root.reminderCard.length===1?I18n.t("提醒到期"):I18n.t("有 {count} 项提醒已到期").replace("{count}",root.reminderCard.length);textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.ink;font.bold:true;font.pixelSize: Theme.font(11, visible)}
+            Text { font.family: Theme.fontFamily;objectName:"desktopPetReminderCardTitle";Layout.fillWidth:true;text:root.reminderCard.length?root.reminderCard[0].title:"";textFormat:Text.PlainText;wrapMode:Text.Wrap;maximumLineCount:3;elide:Text.ElideRight;color:Theme.ink;font.pixelSize: Theme.font(11, visible)}
+            Text { font.family: Theme.fontFamily;Layout.fillWidth:true;visible:root.reminderCard.length===1;text:root.reminderCard.length?root.localTime(root.reminderCard[0].dueAt):"";textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize: Theme.font(10, visible)}
             Flow {
                 Layout.fillWidth:true;spacing:4
-                Button {objectName:"desktopPetReminderComplete";visible:root.reminderCard.length===1;text:I18n.t("完成");font.pixelSize:Theme.font(10);onClicked:if(root.reminderCard.length===1){const item=root.reminderCard[0];root.pet.completeReminder(item.id,item.revision)}}
-                Button {objectName:"desktopPetReminderView";text:I18n.t(root.reminderCard.length===1?"查看":"查看待办");font.pixelSize:Theme.font(10);onClicked:root.viewReminderCard()}
-                Button {objectName:"desktopPetReminderClose";text:I18n.t("关闭");font.pixelSize:Theme.font(10);onClicked:root.closeReminderCard()}
+                Button {objectName:"desktopPetReminderComplete";visible:root.reminderCard.length===1;text:I18n.t("完成");font.pixelSize: Theme.font(10, visible);onClicked:if(root.reminderCard.length===1){const item=root.reminderCard[0];root.pet.completeReminder(item.id,item.revision)}}
+                Button {objectName:"desktopPetReminderView";text:I18n.t(root.reminderCard.length===1?"查看":"查看待办");font.pixelSize: Theme.font(10, visible);onClicked:root.viewReminderCard()}
+                Button {objectName:"desktopPetReminderClose";text:I18n.t("关闭");font.pixelSize: Theme.font(10, visible);onClicked:root.closeReminderCard()}
             }
         }
     }
@@ -122,7 +128,15 @@ Window {
                 }
                 Component {
                     id:animation
-                    AnimatedImage {objectName:"desktopPetAnimation";readonly property bool ready:status===Image.Ready;source:root.state.source;fillMode:Image.PreserveAspectFit;verticalAlignment:Image.AlignBottom;cache:false;asynchronous:true;playing:root.visible && !root.config.paused;mipmap:false;onStatusChanged:if(status===Image.Error)root.caption=I18n.t("形象加载失败，请在桌宠设置中更换形象")}
+                    AnimatedImage {objectName:"desktopPetAnimation";
+                        property int previousFrame: -1
+                        onSourceChanged: previousFrame = -1
+                        onCurrentFrameChanged: {
+                            if (previousFrame > currentFrame && root.visible && !root.config.paused)
+                                Qt.callLater(function() { root.pet.idleCycle() })
+                            previousFrame = currentFrame
+                        }
+                        readonly property bool ready:status===Image.Ready;source:root.state.source;fillMode:Image.PreserveAspectFit;verticalAlignment:Image.AlignBottom;cache:false;asynchronous:true;playing:root.visible && !root.config.paused;mipmap:false;onStatusChanged:if(status===Image.Error)root.caption=I18n.t("形象加载失败，请在桌宠设置中更换形象")}
                 }
                 Component {id:still;Image {source:root.state.source;fillMode:Image.PreserveAspectFit;verticalAlignment:Image.AlignBottom;asynchronous:true;cache:false;mipmap:true}}
             }
@@ -171,7 +185,7 @@ Window {
                 MenuItem {
                     required property var modelData
                     text:modelData.title+" · "+root.localTime(modelData.dueAt)
-                    contentItem:Text {text:parent.text;textFormat:Text.PlainText;elide:Text.ElideRight;color:Theme.ink;font.pixelSize:Theme.font(11);verticalAlignment:Text.AlignVCenter}
+                    contentItem:Text { font.family: Theme.fontFamily;text:parent.text;textFormat:Text.PlainText;elide:Text.ElideRight;color:Theme.ink;font.pixelSize: Theme.font(11, visible);verticalAlignment:Text.AlignVCenter}
                     implicitWidth:Math.min(360,Math.max(220,implicitContentWidth+leftPadding+rightPadding))
                     onTriggered:root.pet.openReminders(modelData.id,false)
                 }

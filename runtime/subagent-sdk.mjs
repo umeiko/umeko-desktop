@@ -20,7 +20,9 @@ export class DefaultResourceLoader extends NativeResourceLoader {
         [{ name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension }]),
       { name: "tool-permissions", hidden: true, replaceable: false,
         factory: createToolPermissionExtension({ getPolicy: () => permissionHost()?.getPolicy() || { mode: "auto" } }) },
-    ] });
+    ], ...(globalThis[Symbol.for("umeko:skill-policy-host")]?.enabled() === false ? {
+      noSkills: true, skillsOverride: result => ({ ...result, skills: [] }),
+    } : {}) });
   }
   getAppendSystemPrompt() {
     const append = super.getAppendSystemPrompt();
@@ -33,7 +35,7 @@ export class DefaultResourceLoader extends NativeResourceLoader {
 // Jiti and ESM can load separate module instances; the process-local symbol is
 // the narrow handoff between its SDK facade and the desktop extension.
 export async function createAgentSession(options) {
-  const result = await nativeCreateAgentSession(options);
+  const result = await nativeCreateAgentSession({...options, excludeTools: [...(options?.excludeTools || []), ...(globalThis[Symbol.for("umeko:tool-visibility-host")]?.getBlockedTools() || [])]});
   // The community package binds children with {}. Relay supported confirmations
   // through the desktop while leaving genuinely headless contexts headless.
   const bind = result.session.bindExtensions.bind(result.session);

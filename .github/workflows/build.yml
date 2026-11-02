@@ -6,10 +6,14 @@ on:
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
+      - 'docs-site/**'
+      - 'scripts/capture-documentation.py'
   pull_request:
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
+      - 'docs-site/**'
+      - 'scripts/capture-documentation.py'
   workflow_dispatch:
 
 permissions:
@@ -71,7 +75,7 @@ jobs:
           retention-days: 7
 
       - name: Node tests
-        run: node --test tests/pet-reminder-local-time.test.mjs tests/conversation-search.test.mjs tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/package-install.test.mjs tests/pi-widget-command.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/global-agents.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs tests/compaction-bridge.test.mjs
+        run: node --test tests/skills.test.mjs tests/tool-visibility.test.mjs tests/pet-reminder-local-time.test.mjs tests/conversation-search.test.mjs tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/package-install.test.mjs tests/pi-widget-command.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/global-agents.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs tests/compaction-bridge.test.mjs
 
       - name: Python unit tests
         run: |
@@ -90,7 +94,11 @@ jobs:
             .venv/bin/python tests/sidebar_menu_position_ui_smoke.py
             .venv/bin/python tests/change_review_ui_smoke.py
             .venv/bin/python tests/extension_details_ui_smoke.py
+            .venv/bin/python tests/pi_manager_initial_tools_ui_smoke.py
             .venv/bin/python tests/pi_management_ui_smoke.py
+            .venv/bin/python tests/skill_manager_ui_smoke.py
+            .venv/bin/python tests/skill_manager_host_ui_smoke.py
+            .venv/bin/python tests/slash_commands_ui_smoke.py
             .venv/bin/python tests/desktop_pet_ui_smoke.py
             .venv/bin/python tests/global_agents_ui_smoke.py
             .venv/bin/python tests/subagent_collection_ui_smoke.py
@@ -98,6 +106,8 @@ jobs:
             .venv/bin/python tests/model_popup_ui_smoke.py
             .venv/bin/python tests/preview_resize_ui_smoke.py
             .venv/bin/python tests/motion_ui_smoke.py
+            .venv/bin/python tests/appearance_ui_smoke.py
+            .venv/bin/python tests/task_state_ui_smoke.py
           '
 
   windows-path-checks:
@@ -130,7 +140,7 @@ jobs:
       - name: Verify long paths, native argv and running-tool layout
         shell: pwsh
         run: |
-          & '.venv/Scripts/python.exe' -m unittest tests.test_runtime_paths tests.test_pi_management.NativeExtensionTests.test_factory_copies_deep_profile_and_preserves_ordinary_paths tests.test_pi_management.NativeExtensionTests.test_factory_keeps_original_configuration_sessions_and_projects tests.test_windows_python_note tests.test_running_tool_status tests.test_tool_history_layout -v
+          & '.venv/Scripts/python.exe' -m unittest tests.test_runtime_paths tests.test_pi_management.NativeExtensionTests.test_factory_copies_deep_profile_and_preserves_ordinary_paths tests.test_pi_management.NativeExtensionTests.test_factory_keeps_original_configuration_sessions_and_projects tests.test_windows_python_note tests.test_running_tool_status tests.test_tool_history_layout tests.test_skill_import tests.test_skill_host -v
           if ($LASTEXITCODE -ne 0) { throw 'Windows path and tool-header regression failed' }
 
   package:
@@ -199,10 +209,11 @@ jobs:
             set -e
             python_bin=.venv/bin/python
             if [ "$RUNNER_OS" = Windows ]; then python_bin=.venv/Scripts/python.exe; fi
-            node --test tests/pet-reminder-local-time.test.mjs tests/conversation-search.test.mjs tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/package-install.test.mjs tests/pi-widget-command.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/global-agents.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs tests/compaction-bridge.test.mjs
+            node --test tests/skills.test.mjs tests/tool-visibility.test.mjs tests/pet-reminder-local-time.test.mjs tests/conversation-search.test.mjs tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/package-install.test.mjs tests/pi-widget-command.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/global-agents.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs tests/compaction-bridge.test.mjs
             "$python_bin" tests/conversation_search_ui_smoke.py
             "$python_bin" tests/sidebar_menu_position_ui_smoke.py
-            "$python_bin" -m unittest tests.test_update tests.test_common_providers tests.test_openai_responses tests.test_platform tests.test_desktop_notifications tests.test_umeko_control tests.test_characters tests.test_tool_permissions tests.test_terminal_widget tests.test_widget_icon_rendering tests.test_pet_reminders -q
+            "$python_bin" tests/slash_commands_ui_smoke.py
+            "$python_bin" -m unittest tests.test_update tests.test_common_providers tests.test_openai_responses tests.test_platform tests.test_desktop_notifications tests.test_umeko_control tests.test_characters tests.test_tool_permissions tests.test_terminal_widget tests.test_widget_icon_rendering tests.test_pet_reminders tests.test_skill_host tests.test_skill_import -q
           }
           export -f verify_desktop
           if [ "$RUNNER_OS" = Linux ]; then

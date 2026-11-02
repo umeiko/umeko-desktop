@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import Umeko.Text 1.0
 
 Column {
     id: root
@@ -16,7 +17,7 @@ Column {
         Row {
             id: heading; height: parent.height; spacing: 7
             Glyph { name: "bulb"; width: Theme.icon(14); height: Theme.icon(14); anchors.verticalCenter: parent.verticalCenter }
-            Text { text: I18n.t("思考过程"); color: hover.interactionHovered ? Theme.ink : Theme.muted; font.pixelSize: Theme.font(12); anchors.verticalCenter: parent.verticalCenter }
+            Text { font.family: Theme.fontFamily; text: I18n.t("思考过程"); color: hover.interactionHovered ? Theme.ink : Theme.muted; font.pixelSize: Theme.font(12, visible); anchors.verticalCenter: parent.verticalCenter }
             Glyph { name: root.expanded ? "chevron-down" : "chevron-right"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
         }
         ChatHitArea {
@@ -32,9 +33,10 @@ Column {
         SelectableText {
             id: thinkingText; objectName: "thinkingText_" + root.messageIndex + "_" + root.blockOffset
             x: 23; width: parent.width - x; text: root.text
-            color: Theme.muted; font.pixelSize: Theme.font(13); wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText
+            color: Theme.muted; font.pixelSize: Theme.font(13, visible); wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText
             selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset
             conditionalSelection: true
+            TextSpacing { document: thinkingText.textDocument; factor: Theme.proseLineHeight }
         }
     }
 }

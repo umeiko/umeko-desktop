@@ -57,7 +57,12 @@ try:
     assert b.desktopPlugins.openPage('global-agents')
     wait(lambda:find('globalAgentsPage') is not None,'Widget did not load')
     page=find('globalAgentsPage');wait(lambda:(page.property('state').toVariant() if hasattr(page.property('state'),'toVariant') else page.property('state')).get('defaultCharacter'),'Snapshot missing')
-    QTest.qWait(1000);click('newGlobalAgentButton');assert page.property('chosenCharacter')==b.characterStyle['id']
+    QTest.qWait(1000);click('createFirstGlobalAgentButton')
+    assert find('createGlobalAgentDialog').property('opened'),'Empty-state create button did not open the dialog'
+    assert not find('globalAgentsList').isVisible()
+    click('cancelGlobalCreation');wait(lambda:not find('createGlobalAgentDialog').property('opened'),'Creation dialog did not close')
+    click('newGlobalAgentButton');assert find('createGlobalAgentDialog').property('opened')
+    assert page.property('chosenCharacter')==b.characterStyle['id']
     assert not find('globalAgentName').property('text')
     find('globalAgentInstructions').setProperty('text','关注所有已开启智能体总线的工作区任务，委派后主动汇总结果。')
     window.grabWindow().save(str(out/'create.png'));click('confirmCreateGlobalAgent')
@@ -200,7 +205,7 @@ try:
     # Only a real user checkbox action enables direct creation.
     click('allowAutomaticGlobalCreation');wait(lambda:g.allow_automatic_creation,'User checkbox did not enable auto creation')
     automatic=g.execute('agent_bus.create',{'requestKey':'ui-direct'},caller)
-    assert automatic['status']=='created' and automatic['character'] in {row['id'] for row in b.characterPacks}
+    assert automatic['status']=='created' and automatic['character'] in {row['id'] for row in b.subagentCharacterPacks}
     assert len(g.agents)==before+2
     QTest.qWait(800);assert not page.property('proposalId')
     window.grabWindow().save(str(out/'automatic-creation.png'))
@@ -236,6 +241,15 @@ try:
     click('requestDetailsResponseTab')
     assert 'raw coordinator server failure' in find('requestDetailsText').property('text')
     inspector.close()
+    kazuhiko=g.handle('create',{'character':'kazuhiko'})
+    kazuhiko_row=g.agents[kazuhiko['id']]
+    # Automatic creation above may already have picked this character.
+    assert kazuhiko_row['character']=='kazuhiko' and re.fullmatch(r'温水和彦(?:-[1-9]\d*)?',kazuhiko_row['name'])
+    for remaining in list(g.agents):g.handle('delete',{'id':remaining})
+    page.setProperty('selected','');page.setProperty('section','agents')
+    wait(lambda:find('createFirstGlobalAgentButton').isVisible() and not find('globalAgentsList').isVisible(),'Deleting the final agent did not restore the empty state')
+    click('createFirstGlobalAgentButton');assert find('createGlobalAgentDialog').property('opened')
+    click('cancelGlobalCreation')
     assert not [w for w in warnings if 'global-agents/qml' in w],warnings
     print('PASS: real Widget creation, current-character default, native cross-session dispatch/reply/wakeup, scoped tools, durable contexts and searchable project-tree bus authorizations.')
 finally:

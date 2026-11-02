@@ -23,7 +23,8 @@ class Host(QObject):
         super().__init__();self.root=ROOT;self.store=SimpleNamespace(directory=directory/'profile')
         self._view=SimpleNamespace(key='token-one',id='session-one',workspace=str(directory/'workspace'),title='Fixture',busy=False,global_agent='',failed=False,cancelled=False,messages=[{'role':'user','text':'fixture context'}])
         self._pool=Pool(self._view)
-        Path(self._view.workspace).mkdir();self.sent=[];self.attached=[];self.revealed=[]
+        Path(self._view.workspace).mkdir();self.sent=[];self.attached=[];self.revealed=[];self.skill_changes=[]
+    def _skills_widget_changed(self,record=None):self.skill_changes.append(record)
     def send(self,text):self.sent.append((self._view.id,text,False))
     def steer(self,text):self.sent.append((self._view.id,text,True))
     def attachChatboxFile(self,path):self.attached.append(path)
@@ -153,9 +154,28 @@ def create_plugin(context):return Fixture(context)
         self.call_for_review('finish',{'loopId':'automatic'})
         self.wait(lambda:manager.page.get('id')=='change-review')
 
+    def test_open_page_synchronizes_a_chat_switch_before_the_debounce_timer(self):
+        self.assertTrue(self.manager.openPage('file-tree'))
+        previous = self.manager.workers['file-tree']
+        workspace = self.path/'new-workspace'
+        workspace.mkdir()
+        (workspace/'new-context.txt').write_text('new chat')
+        view = self.host._view
+        view.key, view.id, view.workspace = 'new-token', 'new-session', str(workspace)
+        self.host.chatChanged.emit()
+        # Open immediately, without waiting for the 200 ms context refresh.
+        self.assertTrue(self.manager.openPage('file-tree'))
+        self.assertEqual(self.manager._session['token'], view.key)
+        self.assertEqual(self.manager._session['workspace'], str(workspace))
+        self.assertIsNot(self.manager.workers['file-tree'], previous)
+        result = self.call('list', {'path':'.'})
+        self.assertTrue(result['ok'])
+        self.assertIn('new-context.txt', str(result))
+        self.assertEqual(self.manager.page['id'], 'file-tree')
+
     def test_official_tree_is_lazy_bounded_and_closes_worker(self):
         directory=Path(self.host._view.workspace);(directory/'a.py').write_text('print(1)');(directory/'nested').mkdir();(directory/'nested/x.txt').write_text('hello')
-        self.assertEqual({row['id'] for row in self.manager.sessionPlugins},{'file-tree','git-viewer','global-agents','pi-manager'})
+        self.assertEqual({row['id'] for row in self.manager.sessionPlugins},{'file-tree','git-viewer','global-agents','pi-manager','skill-manager'})
         self.assertNotIn('pi-manager',self.manager.workers)
         self.assertTrue(self.manager.openPage('file-tree'));result=self.call('list',{'path':'.'})
         self.assertTrue(result['ok']);entries=result['result']['entries'];self.assertEqual(entries[0]['name'],'nested')
@@ -433,6 +453,37 @@ def create_plugin(context):return Fixture(context)
         deadline=time.monotonic()+1
         while time.monotonic()<deadline:self.app.processEvents();time.sleep(.01)
         self.assertEqual(len(self.host.sent),1)
+    def test_skill_widget_default_and_runtime_gate_follow_the_calling_chat(self):
+        current=self.host._view
+        other=SimpleNamespace(id='session-two',key='token-two',global_agent='')
+        self.assertTrue(self.manager.enabled('skill-manager'))
+        self.assertTrue(self.manager.skills_enabled(current))
+        self.assertTrue(self.manager.skills_enabled(other))
+        # This regression tests preferences, not a worker's host handshake.
+        with patch.object(self.manager,'start'), patch.object(self.manager,'send'), patch.object(self.manager,'stop'):
+            self.assertTrue(self.manager.openPage('skill-manager'))
+            self.manager.closePage()
+        self.assertTrue(self.manager.skills_enabled(current),'closing the page preserves discovery')
+        self.assertEqual(self.host.skill_changes,[])
+        self.manager.setSessionEnabled('skill-manager',False)
+        self.assertFalse(self.manager.skills_enabled(current))
+        self.assertTrue(self.manager.skills_enabled(other),'background chat does not use the foreground switch')
+        self.assertEqual(self.host.skill_changes,[current])
+        self.manager.setEnabled('skill-manager',False)
+        self.assertFalse(self.manager.skills_enabled(other))
+        self.assertIsNone(self.host.skill_changes[-1])
+        self.manager.setEnabled('skill-manager',True)
+        self.assertFalse(self.manager.skills_enabled(current),'global enable preserves the per-chat opt-out')
+        self.assertTrue(self.manager.skills_enabled(other))
+        self.manager.setSessionEnabled('skill-manager',True)
+        self.assertTrue(self.manager.skills_enabled(current))
+        self.manager.settings['sessions']['draft:draft-token']=[]
+        draft=SimpleNamespace(id='newly-saved-id',key='draft-token',global_agent='')
+        self.assertFalse(self.manager.skills_enabled(draft),'ID promotion cannot briefly re-enable a draft')
+        self.assertFalse(self.manager.skills_enabled(SimpleNamespace(id='global',key='global',global_agent='fixture')))
+        restored=json.loads(self.manager.registry.read_text())
+        self.assertIn('skill-manager',restored['sessions'][current.id])
+
     def test_enable_scope_config_and_uninstall_persist(self):
         archive,_=self.fixture();self.manager.importZip(QUrl.fromLocalFile(str(archive)).toString());self.wait(lambda:not self.manager.busy)
         self.manager.setSessionEnabled('session-demo',True);self.manager.setEnabled('session-demo',False)
@@ -482,6 +533,8 @@ def create_plugin(context):return Fixture(context)
         self.host._view.workspace=first_workspace;self.host.viewChanged.emit()
         self.assertEqual(self.manager.recentPlugin['id'],'file-tree')
         self.manager.setSessionEnabled('file-tree',False)
+        self.assertEqual(self.manager.recentPlugin['id'],'skill-manager')
+        self.manager.setSessionEnabled('skill-manager',False)
         self.assertEqual(self.manager.recentPlugin['id'],'pi-manager')
         self.manager.setSessionEnabled('pi-manager',False)
         self.assertEqual(self.manager.recentPlugin['id'],'git-viewer')

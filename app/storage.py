@@ -73,7 +73,7 @@ DEFAULTS = {
               "agentDir": "", "skillPaths": [], "extensionPaths": [], "safeMode": False, "toolPermissionMode": "auto",
               "npmRegistry": "", "npmUserconfig": "", "npmCafile": ""},
     "server": {"port": 8787, "openai": True, "anthropic": True, "lan": False, "keys": []},
-    "ui": {"sidebarWidth": 244, "sidebarCollapsed": False},
+    "ui": {"sidebarWidth": 244, "sidebarCollapsed": False, "lineSpacing": "standard"},
 }
 
 
@@ -131,8 +131,11 @@ class Store:
         old_ui = saved.get('ui') if isinstance(saved.get('ui'), dict) else {}
         scale = old_ui.get('fontScale', saved.get('fontScale', ui.get('fontScale', 1.)))
         ui['fontScale'] = max(.3, min(2., float(scale))) if type(scale) in (int, float) and math.isfinite(scale) else 1.
+        line_spacing = old_ui.get('lineSpacing')
+        line_spacing_migrated = line_spacing not in ('compact', 'standard', 'relaxed')
+        ui['lineSpacing'] = 'standard' if line_spacing_migrated else line_spacing
         projects_migrated = normalize_projects(self.data)
-        if not self.path.exists() or "keys" not in saved.get("server", {}) or output_default_migrated or projects_migrated:
+        if not self.path.exists() or "keys" not in saved.get("server", {}) or output_default_migrated or projects_migrated or line_spacing_migrated:
             self.save()
 
     def save(self):

@@ -1,0 +1,8 @@
+{
+  "tool": "built-in image_gen",
+  "selected": false,
+  "prompt": "Use case: precise-object-edit / background-extraction.\nEdit target: the attached Tiara Basori transparent waist-up character portrait. Preserve her face, shy closed-mouth smile, thick short eyebrows, blush, hairstyle, all colors, outfit, interlaced hands and waist-up framing exactly. Remove the stray white/colored streaks and any non-character pixels at the TOP canvas edge. Recenter the whole head and upper body with at least 5% genuinely transparent padding above her hair; do not cut off head or fingers. Nothing should touch the top/left/right canvas borders. Keep the waist-up ending and all hands fully visible. TRUE TRANSPARENT background, only the character. No white border, scene, scenery, floor, shadow, petals, ornaments, letters or watermark. Change only edge cleanup and slight framing, no identity/expression changes, no legs.",
+  "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-a2a5daba-71a5-4ceb-a842-591713d503cb.png",
+  "file": "tiara.png",
+  "supersededBy": "tiara-refined.png"
+}

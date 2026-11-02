@@ -1,0 +1,56 @@
+{
+  "tool": "built-in image_gen",
+  "selected": false,
+  "assets": [
+    {
+      "id": "komari",
+      "reference": "art/rare-scenes/v1/komari.png",
+      "title": "说不清的在意",
+      "line": "那家伙就总是让我烦躁、让我感到不爽、让我很在意。但是那家伙，却表现得一点都不在乎。我、我就感觉很恼火。",
+      "instructions": "Chika Komari. Preserve burgundy-red side ponytail and fringe covering one eye, visible amber-green eye, beige cardigan and burgundy ribbon, dark plaid skirt. Her expression is bashfully frustrated and flustered: blushing, a tiny stubborn pout, looking aside, fingers fidgeting together near her chest. No crying and no reaching for rescue, no book. Remove ALL stair rail, room, window, petals or surroundings. Lengthen the body/legs to match image 2's approved slender proportions: skirt hem to sole about 35% full figure height, longer than head, slender thighs with distinct knees and calves. Preserve Komari's identity; image 2 is ONLY a proportion reference.",
+      "prompt": "Use case: identity-preserve / background-extraction.\nEdit target: image 1 is the existing rare komari illustration. User wants ONLY THE CHARACTER, with genuinely TRANSPARENT empty space around it, no scene/background synthesis.\nChika Komari. Preserve burgundy-red side ponytail and fringe covering one eye, visible amber-green eye, beige cardigan and burgundy ribbon, dark plaid skirt. Her expression is bashfully frustrated and flustered: blushing, a tiny stubborn pout, looking aside, fingers fidgeting together near her chest. No crying and no reaching for rescue, no book. Remove ALL stair rail, room, window, petals or surroundings. Lengthen the body/legs to match image 2's approved slender proportions: skirt hem to sole about 35% full figure height, longer than head, slender thighs with distinct knees and calves. Preserve Komari's identity; image 2 is ONLY a proportion reference.\nClean polished chibi anime cel shading consistent with the original. One complete figure, fully visible head/hands/shoes, square canvas with clear transparent margins. No floor, shadow patch, vignette glow, setting, text, speech bubble or watermark. Preserve readable face at 210 pixels. Nothing except the character silhouette should remain.",
+      "file": "komari.png",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-312ff99e-eae1-403a-b168-1c1b516b93b1.png"
+    },
+    {
+      "id": "kaju",
+      "reference": "art/rare-scenes/v1/kaju.png",
+      "title": "非常、非常了不起喔",
+      "line": "你真的很努力了喔。非常、非常了不起喔。",
+      "instructions": "Kaju Nukumizu. Preserve long straight dark hair and blunt fringe, brown eyes, navy sailor uniform with cream trim. Tender, reassuring smile with soft sympathetic eyes, leaning forward slightly and reaching one open relaxed hand gently towards viewer as if offering an encouraging pat, other hand over her heart. Remove chocolate box and ALL kitchen, utensils, ribbons, floating hearts and surroundings. Lengthen the figure/legs to match image 2's approved slender proportions: skirt hem to sole about 35% full figure height, longer than head, longer slim thighs, distinct knees and calves. Image 2 is ONLY a body proportion reference, do not borrow its hairstyle/identity.",
+      "prompt": "Use case: identity-preserve / background-extraction.\nEdit target: image 1 is the existing rare kaju illustration. User wants ONLY THE CHARACTER, with genuinely TRANSPARENT empty space around it, no scene/background synthesis.\nKaju Nukumizu. Preserve long straight dark hair and blunt fringe, brown eyes, navy sailor uniform with cream trim. Tender, reassuring smile with soft sympathetic eyes, leaning forward slightly and reaching one open relaxed hand gently towards viewer as if offering an encouraging pat, other hand over her heart. Remove chocolate box and ALL kitchen, utensils, ribbons, floating hearts and surroundings. Lengthen the figure/legs to match image 2's approved slender proportions: skirt hem to sole about 35% full figure height, longer than head, longer slim thighs, distinct knees and calves. Image 2 is ONLY a body proportion reference, do not borrow its hairstyle/identity.\nClean polished chibi anime cel shading consistent with the original. One complete figure, fully visible head/hands/shoes, square canvas with clear transparent margins. No floor, shadow patch, vignette glow, setting, text, speech bubble or watermark. Preserve readable face at 210 pixels. Nothing except the character silhouette should remain.",
+      "file": "kaju.png",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-b601fb35-c999-4d45-bea8-eb874b31ce40.png"
+    },
+    {
+      "id": "whale-girl",
+      "reference": "art/rare-scenes/v1/whale-girl.png",
+      "title": "潮声会带你回家",
+      "line": "远方的潮声，也会把你带回家。",
+      "instructions": "Whale-girl mascot. The user explicitly APPROVED her current short super-deformed chibi proportions: preserve the current head/body/leg ratio exactly, do NOT lengthen the legs or normalize the proportions. Keep blue long hair, lace maid headdress, blue eyes, whale-emblem apron and dress, happy tearful soft smile. Hands gently clasped at chest. Remove the held shell and ALL crescent moon, waves, water, stars, bubbles, sparkles, hanging ornaments and all scenery. Keep costume decorations intrinsic to the character.",
+      "prompt": "Use case: identity-preserve / background-extraction.\nEdit target: image 1 is the existing rare whale-girl illustration. User wants ONLY THE CHARACTER, with genuinely TRANSPARENT empty space around it, no scene/background synthesis.\nWhale-girl mascot. The user explicitly APPROVED her current short super-deformed chibi proportions: preserve the current head/body/leg ratio exactly, do NOT lengthen the legs or normalize the proportions. Keep blue long hair, lace maid headdress, blue eyes, whale-emblem apron and dress, happy tearful soft smile. Hands gently clasped at chest. Remove the held shell and ALL crescent moon, waves, water, stars, bubbles, sparkles, hanging ornaments and all scenery. Keep costume decorations intrinsic to the character.\nClean polished chibi anime cel shading consistent with the original. One complete figure, fully visible head/hands/shoes, square canvas with clear transparent margins. No floor, shadow patch, vignette glow, setting, text, speech bubble or watermark. Preserve readable face at 210 pixels. Nothing except the character silhouette should remain.",
+      "file": "whale-girl.png",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-d3b0745b-b983-4edc-aa6a-2f6fbbbbbec3.png"
+    },
+    {
+      "id": "yanami",
+      "reference": "art/rare-scenes/v1/yanami.png",
+      "title": "最笨的人",
+      "line": "真正重要的东西，就算用最笨的方法也要紧紧抓住——这话是你说的吧？那我现在就要做全世界最笨的人。",
+      "instructions": "Anna Yanami. Keep recognizable short blue hair and blue eyes, white school blouse and blue ribbon, dark pleated skirt. Give her a vulnerable but determined brave smile, eyes slightly moist, one hand curled lightly over heart and the other resting at side. Remove the snack entirely and remove ALL sunset, sea, railings, clouds and ground. Lengthen the figure to match image 2's approved slender proportions: skirt hem to shoe sole about 35% of full figure height, visibly longer than the head, longer slim thighs, defined knees and calves. Do not copy image 2's female identity or hairstyle; image 2 is ONLY the leg/body proportion reference.",
+      "prompt": "Use case: identity-preserve / background-extraction.\nEdit target: image 1 is the existing rare yanami illustration. User wants ONLY THE CHARACTER, with genuinely TRANSPARENT empty space around it, no scene/background synthesis.\nAnna Yanami. Keep recognizable short blue hair and blue eyes, white school blouse and blue ribbon, dark pleated skirt. Give her a vulnerable but determined brave smile, eyes slightly moist, one hand curled lightly over heart and the other resting at side. Remove the snack entirely and remove ALL sunset, sea, railings, clouds and ground. Lengthen the figure to match image 2's approved slender proportions: skirt hem to shoe sole about 35% of full figure height, visibly longer than the head, longer slim thighs, defined knees and calves. Do not copy image 2's female identity or hairstyle; image 2 is ONLY the leg/body proportion reference.\nClean polished chibi anime cel shading consistent with the original. One complete figure, fully visible head/hands/shoes, square canvas with clear transparent margins. No floor, shadow patch, vignette glow, setting, text, speech bubble or watermark. Preserve readable face at 210 pixels. Nothing except the character silhouette should remain.",
+      "file": "yanami.png",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-007ba671-54df-42ff-a643-5105943a4adb.png"
+    },
+    {
+      "id": "tiara",
+      "reference": "art/rare-scenes/v2/tiara-long-legs.png",
+      "title": "早一点喜欢上我",
+      "line": "早一点喜欢上我会比较好哦？",
+      "instructions": "Change ONLY background removal. Preserve her current slim leg proportions EXACTLY, the gently tilted head, low bun, short thick eyebrows, gray-blue eyes, heavy blush, shy closed-mouth smile, interlaced hands, white blouse with rolled sleeves, pale-blue stacked bows, dark pleated skirt, navy ankle socks and loafers. Do not shorten thighs/calves or enlarge head. Remove every railing segment, drifting petal and decorative background mark. The user already approved this figure's proportions.",
+      "prompt": "Use case: identity-preserve / background-extraction.\nEdit target: image 1 is the existing rare tiara illustration. User wants ONLY THE CHARACTER, with genuinely TRANSPARENT empty space around it, no scene/background synthesis.\nChange ONLY background removal. Preserve her current slim leg proportions EXACTLY, the gently tilted head, low bun, short thick eyebrows, gray-blue eyes, heavy blush, shy closed-mouth smile, interlaced hands, white blouse with rolled sleeves, pale-blue stacked bows, dark pleated skirt, navy ankle socks and loafers. Do not shorten thighs/calves or enlarge head. Remove every railing segment, drifting petal and decorative background mark. The user already approved this figure's proportions.\nClean polished chibi anime cel shading consistent with the original. One complete figure, fully visible head/hands/shoes, square canvas with clear transparent margins. No floor, shadow patch, vignette glow, setting, text, speech bubble or watermark. Preserve readable face at 210 pixels. Nothing except the character silhouette should remain.",
+      "file": "tiara.png",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-45538add-b7ef-429f-8557-480dfa2aa7f4.png"
+    }
+  ]
+}

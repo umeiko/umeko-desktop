@@ -1,0 +1,24 @@
+{
+  "format": "umeko-theme",
+  "version": 1,
+  "id": "docs-white",
+  "name": "Pure white",
+  "base": "light",
+  "colors": {
+    "bg": "#FFFFFF",
+    "sidebar": "#FAFAFA",
+    "surface": "#FFFFFF",
+    "userBubble": "#F5F5F5",
+    "hover": "#F3F4F6",
+    "line": "#E5E7EB",
+    "ink": "#222222",
+    "muted": "#7C8590",
+    "accent": "#52525B",
+    "accentBg": "#F1F1F3",
+    "selectionBg": "#DAE7FF",
+    "selectionText": "#222222",
+    "button": "#242424",
+    "buttonText": "#FFFFFF",
+    "danger": "#C43C3C"
+  }
+}

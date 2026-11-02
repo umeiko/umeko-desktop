@@ -78,7 +78,9 @@ Item {
             readonly property bool loaded: status === Image.Ready
             fallbackSource: "../icons/yanami-" + (control.collapsing ? "pull" : "push") + ".png"
             artwork: root.expandable ? Character.asset(control.collapsing ? "pull" : "push", fallbackSource) : ""
-            mirror: control.leftSide; fillMode: Image.PreserveAspectFit
+            // Whale Girl's push artwork faces left; the other edge poses face right.
+            mirror: control.leftSide !== (!control.collapsing && Character.id === "whale-girl")
+            fillMode: Image.PreserveAspectFit
             sourceSize: Qt.size(320, 320); asynchronous: true; mipmap: true
             transform: Translate { x: control.effort }
         }

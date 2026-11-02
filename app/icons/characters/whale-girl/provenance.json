@@ -1,0 +1,114 @@
+{
+  "tool": "built-in image_gen",
+  "created": "2026-10-31",
+  "transparentBackground": true,
+  "mode": "Nine consistent main-character portraits derived from the existing Whale-girl identity; separate from full-body desktop-pet animations.",
+  "communityReference": {
+    "repository": "https://github.com/yanzwzz/dsh-whale-girl-pet",
+    "commit": "53e9ab8e2c779f4c0feb902cfa940c098c83d228",
+    "license": "MIT",
+    "notice": "reference/LICENSE.txt"
+  },
+  "assets": [
+    {
+      "id": "welcome",
+      "file": "welcome.png",
+      "prompt": "Use case: identity-preserve / stylized-concept.\nAsset type: WELCOME portrait of Whale-girl (鲸鱼娘) for the main character in Umeko Desktop. Image 1 is her existing MAIN-PAGE RARE PORTRAIT: primary identity, big-head chibi proportions and clean anime illustration style reference. Image 2 is her existing desktop pet: supporting canonical costume/whale-emblem reference ONLY, do not copy the full-body layout.\nCreate a single WAIST-UP portrait WITH BOTH HANDS fully visible, ending at waist. Preserve giant cute head and small torso, long wavy deep-blue hair fading lighter blue, curled ahoge, blue eyes, white lace maid headdress, small bright-blue side bow with gold center and white wing-like cloth trim, navy/white maid dress, frilled cuffs and a small blue whale emblem on the apron. Refine the linework to read clearly at a 210px homepage size, moderate restrained cel-shaded highlights, consistent with image1.\nPose: one hand cradles a simple small white bowl of cooked white rice at upper abdomen; the other relaxed open palm reaches slightly forward as if quietly asking the human to give rice. Calm half-lidded expectant gaze, tiny closed mouth, a slightly entitled and endearing deadpan expression, not an angry pout, not a huge cheerful grin, no crying. The dialogue is '人，你来了。米呢。' but DO NOT draw any text.\nFraming: centered complete head/hair/headdress plus both forearms/hands/rice bowl, generous 7% genuinely TRANSPARENT margin on TOP and both SIDES, no cropping across hair or fingers. Square canvas. No legs, scenery, floor, shadows, floating ornaments, decorative stars, letters, speech bubbles, logo or watermark. Accurate anatomy: two arms, each hand one thumb and four fingers with natural occlusion. Only the isolated character and the held rice bowl.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-dd6b65b9-58c5-43b9-9999-8de036cdb9d9.png",
+      "references": [
+        "reference/current-main-rare.png",
+        "reference/current-pet-idle.png"
+      ]
+    },
+    {
+      "id": "avatarSmile",
+      "file": "avatarSmile.png",
+      "label": "日常头像",
+      "prompt": "Use case: identity-preserve / precise-object-edit.\nAsset type: 日常头像 for Whale-girl (鲸鱼娘), main character of Umeko Desktop.\nImage 1 is her SELECTED NEW WELCOME PORTRAIT: lock this exact identity, face, color palette, costume design and clean anime cel-shading style. Image 2 is the original desktop pet for canonical costume details only. Keep the enormous cute head/small torso chibi proportions and do NOT give her a taller adult body.\nPreserve long wavy deep-blue-to-light-blue hair, curled ahoge, blue eyes, white lace maid headdress, small blue side bow with gold center and white wing-like trim, navy/white maid outfit, frilled cuffs and the blue whale apron motif when visible. Same rendering polish and line weight as image1, no new jewelry or clothing redesign.\nRequested variation: Compact HEAD-AND-COLLAR AVATAR. Face turned almost forward with calm half-lidded blue eyes, the faintest closed-mouth smile, restrained expectant look. No hands or bowl. Crop at upper collar; keep FULL headdress, ahoge and hair silhouette inside canvas with transparent margin. Face clear at 24–40px.\nComposition: one character ONLY on a square canvas, centered, complete hair/headdress/hands when present. Use the central 82% of canvas so ALL silhouette edges have ample TRANSPARENT margins, especially ahoge, side hair and fingertips. Genuinely TRANSPARENT background. No scene, floor, ground shadow, glow, stars, decorations, typography, speech bubble, watermark or extra people. No full body or legs. Preserve her understated rice-obsessed, slightly entitled deadpan personality rather than generic bubbly idol posing.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-90191985-dac7-41f9-bd1b-4cc665614954.png",
+      "references": [
+        "welcome.png",
+        "reference/current-pet-idle.png"
+      ]
+    },
+    {
+      "id": "avatarWink",
+      "file": "avatarWink.png",
+      "label": "眨眼头像",
+      "prompt": "Use case: identity-preserve / precise-object-edit.\nAsset type: 眨眼头像 for Whale-girl (鲸鱼娘), main character of Umeko Desktop.\nImage 1 is her SELECTED NEW WELCOME PORTRAIT: lock this exact identity, face, color palette, costume design and clean anime cel-shading style. Image 2 is the original desktop pet for canonical costume details only. Keep the enormous cute head/small torso chibi proportions and do NOT give her a taller adult body.\nPreserve long wavy deep-blue-to-light-blue hair, curled ahoge, blue eyes, white lace maid headdress, small blue side bow with gold center and white wing-like trim, navy/white maid outfit, frilled cuffs and the blue whale apron motif when visible. Same rendering polish and line weight as image1, no new jewelry or clothing redesign.\nRequested variation: Compact HEAD-AND-COLLAR AVATAR, same angle and scale as an ordinary avatar. One blue eye gently winking closed, other eye looking at human, tiny knowing closed-mouth smile, a hint of cheek blush. No hands, props or rice. FULL headdress/hair/ahoge in canvas, readable at 24–40px.\nComposition: one character ONLY on a square canvas, centered, complete hair/headdress/hands when present. Use the central 82% of canvas so ALL silhouette edges have ample TRANSPARENT margins, especially ahoge, side hair and fingertips. Genuinely TRANSPARENT background. No scene, floor, ground shadow, glow, stars, decorations, typography, speech bubble, watermark or extra people. No full body or legs. Preserve her understated rice-obsessed, slightly entitled deadpan personality rather than generic bubbly idol posing.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-71ca87de-859b-4930-a209-6341bd061d11.png",
+      "references": [
+        "welcome.png",
+        "reference/current-pet-idle.png"
+      ]
+    },
+    {
+      "id": "avatarHappy",
+      "file": "avatarHappy.png",
+      "label": "开心头像",
+      "prompt": "Use case: identity-preserve / precise-object-edit.\nAsset type: 开心头像 for Whale-girl (鲸鱼娘), main character of Umeko Desktop.\nImage 1 is her SELECTED NEW WELCOME PORTRAIT: lock this exact identity, face, color palette, costume design and clean anime cel-shading style. Image 2 is the original desktop pet for canonical costume details only. Keep the enormous cute head/small torso chibi proportions and do NOT give her a taller adult body.\nPreserve long wavy deep-blue-to-light-blue hair, curled ahoge, blue eyes, white lace maid headdress, small blue side bow with gold center and white wing-like trim, navy/white maid outfit, frilled cuffs and the blue whale apron motif when visible. Same rendering polish and line weight as image1, no new jewelry or clothing redesign.\nRequested variation: Compact HEAD-AND-COLLAR AVATAR, same angle and scale as an ordinary avatar. Both eyes softly curved closed in a satisfied smile after getting rice, content cheeks, small happy CLOSED mouth. No crying, sparkling tears, wide screaming mouth, hands, bowl or background symbols. Full headdress, ahoge and hair silhouette included.\nComposition: one character ONLY on a square canvas, centered, complete hair/headdress/hands when present. Use the central 82% of canvas so ALL silhouette edges have ample TRANSPARENT margins, especially ahoge, side hair and fingertips. Genuinely TRANSPARENT background. No scene, floor, ground shadow, glow, stars, decorations, typography, speech bubble, watermark or extra people. No full body or legs. Preserve her understated rice-obsessed, slightly entitled deadpan personality rather than generic bubbly idol posing.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-ee46d6ee-b011-42f4-8028-b8aa908d6c91.png",
+      "references": [
+        "welcome.png",
+        "reference/current-pet-idle.png"
+      ]
+    },
+    {
+      "id": "reply",
+      "file": "reply.png",
+      "label": "回复完成",
+      "prompt": "Use case: identity-preserve / precise-object-edit.\nAsset type: 回复完成 for Whale-girl (鲸鱼娘), main character of Umeko Desktop.\nImage 1 is her SELECTED NEW WELCOME PORTRAIT: lock this exact identity, face, color palette, costume design and clean anime cel-shading style. Image 2 is the original desktop pet for canonical costume details only. Keep the enormous cute head/small torso chibi proportions and do NOT give her a taller adult body.\nPreserve long wavy deep-blue-to-light-blue hair, curled ahoge, blue eyes, white lace maid headdress, small blue side bow with gold center and white wing-like trim, navy/white maid outfit, frilled cuffs and the blue whale apron motif when visible. Same rendering polish and line weight as image1, no new jewelry or clothing redesign.\nRequested variation: WAIST-UP with BOTH HANDS fully visible. She quietly presents a small white bowl of cooked rice with both hands at upper abdomen, tiny satisfied closed-mouth smile and relaxed half-lidded gaze, chin slightly raised as if she completed the task and now expects payment in rice. Simple natural hands cradling sides of bowl; exactly one thumb and four fingers per hand with occlusion. No spoon, chopsticks or extra objects.\nComposition: one character ONLY on a square canvas, centered, complete hair/headdress/hands when present. Use the central 82% of canvas so ALL silhouette edges have ample TRANSPARENT margins, especially ahoge, side hair and fingertips. Genuinely TRANSPARENT background. No scene, floor, ground shadow, glow, stars, decorations, typography, speech bubble, watermark or extra people. No full body or legs. Preserve her understated rice-obsessed, slightly entitled deadpan personality rather than generic bubbly idol posing.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-e4e331d9-95dd-4f6c-b483-b5fa7e8d4d1f.png",
+      "references": [
+        "welcome.png",
+        "reference/current-pet-idle.png"
+      ]
+    },
+    {
+      "id": "loading",
+      "file": "loading.png",
+      "label": "加载思考",
+      "prompt": "Use case: identity-preserve / precise-object-edit.\nAsset type: 加载思考 for Whale-girl (鲸鱼娘), main character of Umeko Desktop.\nImage 1 is her SELECTED NEW WELCOME PORTRAIT: lock this exact identity, face, color palette, costume design and clean anime cel-shading style. Image 2 is the original desktop pet for canonical costume details only. Keep the enormous cute head/small torso chibi proportions and do NOT give her a taller adult body.\nPreserve long wavy deep-blue-to-light-blue hair, curled ahoge, blue eyes, white lace maid headdress, small blue side bow with gold center and white wing-like trim, navy/white maid outfit, frilled cuffs and the blue whale apron motif when visible. Same rendering polish and line weight as image1, no new jewelry or clothing redesign.\nRequested variation: WAIST-UP with both arms/hands included. Thoughtful deadpan half-lidded face, small mouth, one relaxed hand supporting cheek/chin, the other arm folded across small torso supporting the elbow. Slight head tilt as if thinking where the rice is. No thought bubble, question marks, rice bowl or other props. Natural five-digit anatomy.\nComposition: one character ONLY on a square canvas, centered, complete hair/headdress/hands when present. Use the central 82% of canvas so ALL silhouette edges have ample TRANSPARENT margins, especially ahoge, side hair and fingertips. Genuinely TRANSPARENT background. No scene, floor, ground shadow, glow, stars, decorations, typography, speech bubble, watermark or extra people. No full body or legs. Preserve her understated rice-obsessed, slightly entitled deadpan personality rather than generic bubbly idol posing.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-0e2b97da-a354-4df7-b739-27c74feed4ef.png",
+      "references": [
+        "welcome.png",
+        "reference/current-pet-idle.png"
+      ]
+    },
+    {
+      "id": "catch",
+      "file": "catch.png",
+      "label": "接住文件",
+      "prompt": "Use case: identity-preserve / precise-object-edit.\nAsset type: 接住文件 for Whale-girl (鲸鱼娘), main character of Umeko Desktop.\nImage 1 is her SELECTED NEW WELCOME PORTRAIT: lock this exact identity, face, color palette, costume design and clean anime cel-shading style. Image 2 is the original desktop pet for canonical costume details only. Keep the enormous cute head/small torso chibi proportions and do NOT give her a taller adult body.\nPreserve long wavy deep-blue-to-light-blue hair, curled ahoge, blue eyes, white lace maid headdress, small blue side bow with gold center and white wing-like trim, navy/white maid outfit, frilled cuffs and the blue whale apron motif when visible. Same rendering polish and line weight as image1, no new jewelry or clothing redesign.\nRequested variation: WAIST-UP with BOTH HANDS fully visible. She leans slightly forward and reaches both hands around ONE plain pale-blue blank document sheet with a folded corner, gently catching it near upper abdomen. Earnest focused eyes and tiny neutral mouth. The document stays blank and simple, no text or code. Natural two arms and five digits per hand, no finger tangles or extra paper sheets. Preserve exact identity and chibi proportions.\nComposition: one character ONLY on a square canvas, centered, complete hair/headdress/hands when present. Use the central 82% of canvas so ALL silhouette edges have ample TRANSPARENT margins, especially ahoge, side hair and fingertips. Genuinely TRANSPARENT background. No scene, floor, ground shadow, glow, stars, decorations, typography, speech bubble, watermark or extra people. No full body or legs. Preserve her understated rice-obsessed, slightly entitled deadpan personality rather than generic bubbly idol posing.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-644508b7-caeb-4016-aaa0-e3350d2ee346.png",
+      "references": [
+        "welcome.png",
+        "reference/current-pet-idle.png"
+      ]
+    },
+    {
+      "id": "push",
+      "file": "push.png",
+      "label": "推开侧栏",
+      "prompt": "Use case: identity-preserve / precise-object-edit.\nAsset type: 推开侧栏 for Whale-girl (鲸鱼娘), main character of Umeko Desktop.\nImage 1 is her SELECTED NEW WELCOME PORTRAIT: lock this exact identity, face, color palette, costume design and clean anime cel-shading style. Image 2 is the original desktop pet for canonical costume details only. Keep the enormous cute head/small torso chibi proportions and do NOT give her a taller adult body.\nPreserve long wavy deep-blue-to-light-blue hair, curled ahoge, blue eyes, white lace maid headdress, small blue side bow with gold center and white wing-like trim, navy/white maid outfit, frilled cuffs and the blue whale apron motif when visible. Same rendering polish and line weight as image1, no new jewelry or clothing redesign.\nRequested variation: WAIST-UP, gently pushing an imaginary panel toward the LEFT SIDE OF THE CANVAS. Body slightly angled left, both arms extend toward viewer's left, palms open flat and facing left as if pushing a vertical edge, five fingers on each hand with natural separation; no actual panel drawn. Head looks back to viewer with a half-lidded calm mildly stubborn expression. Full head, both arms and all fingers inside canvas. No rice bowl or props.\nComposition: one character ONLY on a square canvas, centered, complete hair/headdress/hands when present. Use the central 82% of canvas so ALL silhouette edges have ample TRANSPARENT margins, especially ahoge, side hair and fingertips. Genuinely TRANSPARENT background. No scene, floor, ground shadow, glow, stars, decorations, typography, speech bubble, watermark or extra people. No full body or legs. Preserve her understated rice-obsessed, slightly entitled deadpan personality rather than generic bubbly idol posing.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-5b6392bc-8ccd-482c-9579-2209245d7175.png",
+      "references": [
+        "welcome.png",
+        "reference/current-pet-idle.png"
+      ]
+    },
+    {
+      "id": "pull",
+      "file": "pull.png",
+      "label": "拉回侧栏",
+      "prompt": "Use case: identity-preserve / precise-object-edit.\nAsset type: 拉回侧栏 for Whale-girl (鲸鱼娘), main character of Umeko Desktop.\nImage 1 is her SELECTED NEW WELCOME PORTRAIT: lock this exact identity, face, color palette, costume design and clean anime cel-shading style. Image 2 is the original desktop pet for canonical costume details only. Keep the enormous cute head/small torso chibi proportions and do NOT give her a taller adult body.\nPreserve long wavy deep-blue-to-light-blue hair, curled ahoge, blue eyes, white lace maid headdress, small blue side bow with gold center and white wing-like trim, navy/white maid outfit, frilled cuffs and the blue whale apron motif when visible. Same rendering polish and line weight as image1, no new jewelry or clothing redesign.\nRequested variation: WAIST-UP, gently pulling an imaginary panel back toward herself from the RIGHT SIDE OF THE CANVAS. One arm reaches toward viewer's right with softly curled fingers as if holding an invisible edge; other hand close to chest assists the pulling gesture. Calm half-lidded expectant gaze at viewer with a tiny closed-mouth smile. Natural two arms, five digits per hand with natural occlusion, no tangled/intertwined fingers. FULL hands and head visible. No actual handle, panel, rope, rice bowl or props.\nComposition: one character ONLY on a square canvas, centered, complete hair/headdress/hands when present. Use the central 82% of canvas so ALL silhouette edges have ample TRANSPARENT margins, especially ahoge, side hair and fingertips. Genuinely TRANSPARENT background. No scene, floor, ground shadow, glow, stars, decorations, typography, speech bubble, watermark or extra people. No full body or legs. Preserve her understated rice-obsessed, slightly entitled deadpan personality rather than generic bubbly idol posing.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-ee54f327-a944-4d8d-816c-b0343677a50b.png",
+      "references": [
+        "welcome.png",
+        "reference/current-pet-idle.png"
+      ]
+    }
+  ],
+  "sourceArtwork": "art/characters/whale-girl-v1",
+  "communityReferenceLicenseText": "MIT License\n\nCopyright (c) 2026 dsh-whale-girl-pet contributors\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n"
+}

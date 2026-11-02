@@ -1,0 +1,64 @@
+{
+  "id": "komari",
+  "file": "source/komari-sheet.png",
+  "prompt": "Use case: identity-preserve / stylized-concept.\nAsset type: SIX animation keyframes of one existing Umeko desktop pet, in a 3-column by 2-row sprite sheet. Reference image is the CURRENT DESKTOP PET ITSELF: it is the authority for identity, ART STYLE, COLOR PALETTE, FULL-BODY PROPORTIONS and apparent size. The user explicitly wants a rare idle animation that does not look like switching to a different artist, a different head/body ratio or a waist-up portrait.\nChika Komari. Preserve red-burgundy bob/side ponytail and ahoge, fringe hiding one eye, one visible amber eye, beige cardigan, burgundy bow, gray pleated skirt, dark socks, brown shoes and the SAME small closed burgundy book as reference. Match exact reference linework, clean shading, full-body proportions and large-head size. Animation: shy conflicted and a little frustrated, hugging the existing book a little tighter, small sideways glance with restrained blush, fingers remain a simple closed grip on book to avoid complicated intertwined fingers. Shoulders lift then release, one slow blink. Six frames: 1 familiar book-held idle, 2 slightly tighter book hug, 3 earnest sideways glance/small troubled brow, 4 blink at same stance, 5 reopen and shoulders relax, 6 return nearly to frame1. No new objects.\nComposition: perfect regular 3x2 grid, row-major time order, each equal cell contains the SAME COMPLETE FULL-BODY character from hair top to both shoe soles. Keep exact same scale and shoe baseline through the six cells, feet planted, torso posture stable, smooth very small motion. Center in each cell with ample transparent margins, no overlap between cells; leave transparent gutters between the two rows. Square sheet. Do not use panels, labels or lines. True transparent alpha background in every cell. Character only: no ground, scenery, shadows, stars, floating decorations, text, speech bubbles or watermark. Six consistent frames that form one gentle looping gesture, NOT six unrelated drawings or poses. All heads, hands and feet remain fully visible. Accurate anatomy, two arms, five digits per hand with natural occlusion.",
+  "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-77987497-4365-488b-aeb3-f7e030c69576.png",
+  "reference": "reference/komari-idle.png",
+  "line": "那家伙就总是让我烦躁、让我感到不爽、让我很在意。但是那家伙，却表现得一点都不在乎。我、我就感觉很恼火。",
+  "title": "说不清的在意",
+  "sourceAsset": "art/desktop-pets/rare-idle-v1/source/komari-sheet.png",
+  "tool": "built-in image_gen",
+  "canvas": [
+    384,
+    576
+  ],
+  "durationsMs": [
+    600,
+    500,
+    1400,
+    120,
+    880,
+    700
+  ],
+  "baseline": 541,
+  "cellBounds": [
+    [
+      57,
+      18,
+      388,
+      614
+    ],
+    [
+      44,
+      17,
+      376,
+      614
+    ],
+    [
+      50,
+      18,
+      383,
+      614
+    ],
+    [
+      57,
+      16,
+      393,
+      605
+    ],
+    [
+      42,
+      14,
+      378,
+      608
+    ],
+    [
+      50,
+      12,
+      387,
+      609
+    ]
+  ],
+  "sha256": "dd37ec6182355cc5687e828bfffb56da743aaadc4696e340d178e65345269676",
+  "bytes": 281144
+}

@@ -1,6 +1,7 @@
 import base64
 import importlib.util
 import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -16,6 +17,37 @@ def assets(prefix):
 
 
 class ReleaseDownloadsTests(unittest.TestCase):
+    def test_download_headings_follow_readme_language(self):
+        args = ('umeiko/umeko-desktop', 'v0.5.0', assets('Umeko-0.5.0'))
+        english = downloads.download_buttons(*args, language='en')
+        chinese = downloads.download_buttons(*args, language='zh')
+        self.assertNotRegex(english, r'[\u3400-\u9fff]')
+        self.assertIn('**Download v0.5.0**', english)
+        self.assertIn('下载 v0.5.0', chinese)
+        for _, _, _, label in downloads.PLATFORMS:
+            self.assertIn(label, english)
+            self.assertIn(label, chinese)
+
+    def test_english_readme_has_no_chinese_text(self):
+        text = (Path(__file__).resolve().parents[1] / 'README.md').read_text(encoding='utf-8')
+        lines = [line for line in text.splitlines() if re.search(r'[\u3400-\u9fff]', line)]
+        self.assertEqual(lines, [], 'Keep the English README entirely in English')
+
+    def test_refresh_keeps_python_readme_languages_separate(self):
+        old = '<!-- umeko-downloads:standard:start -->old<!-- umeko-downloads:standard:end -->'
+        calls = []
+        with tempfile.TemporaryDirectory() as folder, patch.object(downloads, 'Path', lambda _: Path(folder) / 'payload.json'):
+            def commit(*args):
+                payload = json.loads(Path(args[-1]).read_text(encoding='utf-8'))
+                calls.append((args[3], base64.b64decode(payload['content']).decode('utf-8')))
+            downloads.refresh_readmes('umeiko/umeko-desktop', 'v0.5.0', assets('Umeko-0.5.0'),
+                lambda _: {'sha': 'blob', 'content': base64.b64encode(old.encode()).decode()}, commit)
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(calls[0][0].endswith('/README.md'))
+        self.assertNotRegex(calls[0][1], r'[\u3400-\u9fff]')
+        self.assertTrue(calls[1][0].endswith('/README.zh-CN.md'))
+        self.assertIn('点击下载', calls[1][1])
+
     def test_python_uses_actual_commit_named_packages_and_dmg(self):
         names = [name.replace('.zip', '-abcdef0.zip').replace('.dmg', '-abcdef0.dmg').replace('.tar.gz', '-abcdef0.tar.gz') for name in assets('Umeko-0.5.0')]
         block = downloads.download_buttons('umeiko/umeko-desktop', 'v0.5.0', names)

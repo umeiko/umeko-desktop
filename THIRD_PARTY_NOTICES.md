@@ -95,3 +95,9 @@ Python Linux builds use dbus-next 0.2.3 (https://github.com/altdesktop/python-db
 ## Whale-girl desktop pet artwork
 
 Six community animation assets from [yanzwzz/dsh-whale-girl-pet](https://github.com/yanzwzz/dsh-whale-girl-pet), pinned at `53e9ab8e2c779f4c0feb902cfa940c098c83d228`, are distributed under the upstream MIT license. Copyright (c) 2026 dsh-whale-girl-pet contributors. The animations were transcoded from VP9 alpha WebM to looping animated WebP; the character artwork was not redesigned. The full license and per-file source URLs/checksums are shipped in `umeko-plugins/desktop-pet/assets/whale-girl/LICENSE.txt` and `source.json`. This community character is not an official DeepSeek endorsement.
+
+## Preinstalled Skills (0.6.4)
+
+Public OpenAI Skills (Apache-2.0), Hermes Skills (MIT), and Archify (Apache-2.0 with its retained third-party notices) are distributed in `bundled-skills/`. Each folder retains its own license; `bundled-skills/sources.json` records immutable upstream commits, adaptations and file hashes. These are portable public packages, not extracted proprietary Codex runtime Skills. Optional Python/CLI/browser dependencies are not bundled or implicitly installed.
+
+Composer pinyin matching uses pypinyin 0.55.0 (MIT); see `licenses/pypinyin-MIT.txt`.

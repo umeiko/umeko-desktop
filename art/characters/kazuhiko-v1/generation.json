@@ -1,0 +1,31 @@
+{
+  "tool": "built-in image_gen",
+  "created": "2026-10-31",
+  "transparentBackground": true,
+  "assets": [
+    {
+      "id": "avatarSmile",
+      "file": "avatarSmile.png",
+      "prompt": "Use case: stylized-concept. Asset type: a transparent chibi subagent avatar for Umeko Desktop.\nDraw Kazuhiko Nukumizu / 温水和彦, the MALE protagonist of Makeine. Image 1 and 2 are his official character identity/costume references. Image 3 is ONLY the application's crisp chibi rendering style; do not borrow its female character identity, thick eyebrows or uniform.\nIdentity: ordinary-looking introverted teenage boy, short slightly tousled charcoal/dark-brown hair with asymmetrical separated front bangs and a little loose crown tuft, warm gray-brown eyes, normal fairly thin dark brows, fair skin. White school shirt with a neatly folded collar and a plain straight grass-green NECKTIE (not a bow). No glasses, no jewelry or makeup.\nA compact head-and-collar portrait, gently deadpan but kind, small restrained closed-mouth smile, relaxed slightly wry expression. Preserve a recognizable boyish face and subdued eyes rather than a generic very round cute girl face. Complete hair silhouette with comfortable 5% transparent margin; include shirt collar and the top of the green tie. Face should remain readable at 40px.\nMatch the polished clean fine dark outlines and pixel-edged anime cel shading of image 3, muted natural highlights, simple bold shapes. ONE centered character on square truly transparent canvas. No circular frame, scenery, hands, props, text, watermark or logo.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-370c82bc-f4fc-49af-98a0-8fa8e4dfdda9.png"
+    },
+    {
+      "kind": "male",
+      "id": "reply",
+      "motif": "Waist-up, relaxed quiet smile, one hand touching his cheek in thoughtful conversation, other arm resting naturally. Preserve plain green tie and white short-sleeved shirt; no blazer.",
+      "reference": "art/characters/kazuhiko-v1/avatarSmile.png",
+      "prompt": "Use case: identity-preserve.\nAsset: transparent chibi subagent reply portrait of Kazuhiko Nukumizu / 温水和彦.\nImage 1 is the approved identity master. Preserve the same short tousled charcoal-brown hair, asymmetrical bangs and crown tuft, subdued gray-brown eyes, ordinary slim eyebrows, white short-sleeved shirt with plain green necktie. Same clean cel-shaded chibi anime illustration style.\nChange only expression/framing and pose: Waist-up, relaxed quiet smile, one hand touching his cheek in thoughtful conversation, other arm resting naturally. Preserve plain green tie and white short-sleeved shirt; no blazer.\nGenuinely transparent background. Square canvas, complete silhouette with transparent margins. No writing, watermark, other characters, female features or hair bun.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-f7a7aa44-2ccc-4bc0-b030-b85b7f1dfc38.png",
+      "file": "reply.png"
+    },
+    {
+      "kind": "male",
+      "id": "catch",
+      "motif": "Half-body chibi pose leaning forward and extending BOTH hands as if catching an incoming file card, friendly slightly surprised expression. A single small blank pale-blue file sheet hovers just above his hands. Full head and both hands visible.",
+      "reference": "art/characters/kazuhiko-v1/avatarSmile.png",
+      "prompt": "Use case: identity-preserve.\nAsset: transparent chibi subagent catch portrait of Kazuhiko Nukumizu / 温水和彦.\nImage 1 is the approved identity master. Preserve the same short tousled charcoal-brown hair, asymmetrical bangs and crown tuft, subdued gray-brown eyes, ordinary slim eyebrows, white short-sleeved shirt with plain green necktie. Same clean cel-shaded chibi anime illustration style.\nChange only expression/framing and pose: Half-body chibi pose leaning forward and extending BOTH hands as if catching an incoming file card, friendly slightly surprised expression. A single small blank pale-blue file sheet hovers just above his hands. Full head and both hands visible.\nGenuinely transparent background. Square canvas, complete silhouette with transparent margins. No writing, watermark, other characters, female features or hair bun.",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-df09b178-8a7b-49b6-90e9-78fdc00087aa.png",
+      "file": "catch.png"
+    }
+  ]
+}

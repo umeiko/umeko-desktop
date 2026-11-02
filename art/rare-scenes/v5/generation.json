@@ -1,0 +1,99 @@
+{
+  "tool": "built-in image_gen",
+  "created": "2026-10-31",
+  "selected": true,
+  "transparentBackground": true,
+  "composition": "waist-up with hands",
+  "assets": [
+    {
+      "id": "yanami",
+      "title": "最笨的人",
+      "line": "真正重要的东西，就算用最笨的方法也要紧紧抓住——这话是你说的吧？那我现在就要做全世界最笨的人。",
+      "detail": "Anna Yanami: retain short blue hair and blue eyes, white school blouse and blue ribbon. Match the restrained composed expression of image 2: half-lidded eyes with a calm knowing sideways gaze and a tiny CLOSED-mouth almost-flat smile. Quiet resolve, not a happy grin, no tears. One hand lightly over heart/ribbon; bring the other relaxed hand close to the first near upper abdomen so both hands fit fully in frame.",
+      "prompt": "Use case: identity-preserve / precise-object-edit.\nAsset type: rare character portrait for a desktop app welcome cover and pet idle easter egg.\nImage 1 is the existing character edit target. Image 2 is the user's facial-expression reference, NOT a background or rendering style reference.\nLATEST USER CHANGE: no full-body artwork is needed. Recompose into a HALF-BODY WAIST-UP PORTRAIT WITH BOTH HANDS FULLY VISIBLE. Show head, shoulders, chest, arms and complete hands, ending just below waist; NO legs or shoes. Enlarge the upper body to fill the square canvas with comfortable clear margins around hair and fingers, no amputated hands or head.\nAnna Yanami: retain short blue hair and blue eyes, white school blouse and blue ribbon. Match the restrained composed expression of image 2: half-lidded eyes with a calm knowing sideways gaze and a tiny CLOSED-mouth almost-flat smile. Quiet resolve, not a happy grin, no tears. One hand lightly over heart/ribbon; bring the other relaxed hand close to the first near upper abdomen so both hands fit fully in frame.\nUse the same polished clean anime cel shading and linework, preserving character identity. Genuine transparent background. ONLY the character silhouette; no scenery, objects behind her, moon, railings, floor, ground shadow, petals, floating ornaments, caption, speech bubble or watermark. Do NOT render the dialogue as text. This is a sincere character moment; expression should match the user's words: 真正重要的东西，就算用最笨的方法也要紧紧抓住——这话是你说的吧？那我现在就要做全世界最笨的人。",
+      "file": "yanami.png",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-fec2038d-9746-4f45-b78b-7116d42c7d09.png",
+      "reference": "../../../art/rare-scenes/v4/yanami.png",
+      "adaptedDialogue": false,
+      "expressionReference": "reference/yanami-expression-user.png",
+      "sourceStatus": "User-supplied Chinese wording; exact novel volume/page not verified."
+    },
+    {
+      "id": "komari",
+      "title": "说不清的在意",
+      "line": "那家伙就总是让我烦躁、让我感到不爽、让我很在意。但是那家伙，却表现得一点都不在乎。我、我就感觉很恼火。",
+      "detail": "Chika Komari: retain burgundy-red side ponytail, fringe hiding one eye, visible amber-green eye, beige cardigan and burgundy ribbon. Image 2 is the USER'S EXPRESSION AND HAND POSE REFERENCE. Copy its half-lidded eye, slightly troubled brows, embarrassed flushed cheeks, serious conflicted nervous look, and delicate fingers splayed/fidgeting near mouth/chin. Do not give a puffed-cheek pout or a cheerful smile. Preserve identity and outfit from image 1.",
+      "prompt": "Use case: identity-preserve / precise-object-edit.\nAsset type: rare character portrait for a desktop app welcome cover and pet idle easter egg.\nImage 1 is the existing character edit target. Image 2 is the user's facial-expression reference, NOT a background or rendering style reference.\nLATEST USER CHANGE: no full-body artwork is needed. Recompose into a HALF-BODY WAIST-UP PORTRAIT WITH BOTH HANDS FULLY VISIBLE. Show head, shoulders, chest, arms and complete hands, ending just below waist; NO legs or shoes. Enlarge the upper body to fill the square canvas with comfortable clear margins around hair and fingers, no amputated hands or head.\nChika Komari: retain burgundy-red side ponytail, fringe hiding one eye, visible amber-green eye, beige cardigan and burgundy ribbon. Image 2 is the USER'S EXPRESSION AND HAND POSE REFERENCE. Copy its half-lidded eye, slightly troubled brows, embarrassed flushed cheeks, serious conflicted nervous look, and delicate fingers splayed/fidgeting near mouth/chin. Do not give a puffed-cheek pout or a cheerful smile. Preserve identity and outfit from image 1.\nUse the same polished clean anime cel shading and linework, preserving character identity. Genuine transparent background. ONLY the character silhouette; no scenery, objects behind her, moon, railings, floor, ground shadow, petals, floating ornaments, caption, speech bubble or watermark. Do NOT render the dialogue as text. This is a sincere character moment; expression should match the user's words: 那家伙就总是让我烦躁、让我感到不爽、让我很在意。但是那家伙，却表现得一点都不在乎。我、我就感觉很恼火。",
+      "file": "komari.png",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-367e542b-19a0-467f-abef-821c50f8c945.png",
+      "reference": "../../../art/rare-scenes/v4/komari.png",
+      "adaptedDialogue": false,
+      "expressionReference": "reference/komari-expression-user.png",
+      "sourceUrl": "https://note.com/kyoto_nyannyan/n/nca9d9bd989e0",
+      "sourceStatus": "User-supplied Chinese wording; Japanese context noted for novel volume 6 pages 203–204."
+    },
+    {
+      "id": "kaju",
+      "title": "非常、非常了不起喔",
+      "line": "你真的很努力了喔。非常、非常了不起喔。",
+      "detail": "Kaju Nukumizu: retain long straight dark hair and blunt fringe, warm brown eyes, navy sailor uniform with cream trim. Image 2 is the USER'S FINAL FACIAL EXPRESSION REFERENCE ONLY. Copy her quiet attentive eyes, gentle three-quarter head turn toward left, tiny restrained closed-mouth smile and composed affectionate demeanor, no generic big cheerful eyes/grin. Match the sincere encouraging line 'You really worked so hard. Very, very well done.' One open hand gently extended toward viewer offering encouragement, other hand over her heart; show both complete hands. Keep image 1's bright clean art colors, do not copy nighttime blue lighting/background.",
+      "prompt": "Use case: precise-object-edit / identity-preserve.\nEdit target: the existing Kaju Nukumizu transparent waist-up portrait. The user points out that ONLY the hand resting on her chest has an incorrect extra finger. Redraw that chest hand as a small natural FIVE-DIGIT hand: exactly one thumb and four fingers. Rest it diagonally gently over heart/collar, four relaxed fingers together with clear separation and coherent joints, one natural thumb, no extra bottom fingertip or duplicated little finger. Preserve the natural wrist connection into sleeve. The open hand extending toward the viewer already has five correct digits; leave that hand and arm unchanged.\nKeep EVERYTHING ELSE unchanged: calm attentive face and tiny closed-mouth smile, three-quarter head direction, long dark straight hair/blunt bangs, sailor uniform with cream stripes, pose, full visible hands and waist-up framing, polished anime cel shading. No change of identity, expression, colors or proportions. Genuine transparent background, only the character, no scene, floor, ornaments, text, speech bubble, border or watermark. Do not add full body or legs.",
+      "file": "kaju-hands-fixed.png",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-34b1c5d2-7995-4df9-9bb8-876dc4eba354.png",
+      "reference": "../../../art/rare-scenes/v4/kaju.png",
+      "adaptedDialogue": false,
+      "expressionReference": "reference/kaju-expression-user.png",
+      "sourceStatus": "User-supplied Chinese wording; exact novel volume/page not verified.",
+      "revisions": [
+        {
+          "file": "kaju.png",
+          "prompt": "Use case: identity-preserve / precise-object-edit.\nAsset type: rare character portrait for a desktop app welcome cover and pet idle easter egg.\nImage 1 is the existing character edit target. Image 2 is the user's facial-expression reference, NOT a background or rendering style reference.\nLATEST USER CHANGE: no full-body artwork is needed. Recompose into a HALF-BODY WAIST-UP PORTRAIT WITH BOTH HANDS FULLY VISIBLE. Show head, shoulders, chest, arms and complete hands, ending just below waist; NO legs or shoes. Enlarge the upper body to fill the square canvas with comfortable clear margins around hair and fingers, no amputated hands or head.\nKaju Nukumizu: retain long straight dark hair and blunt fringe, warm brown eyes, navy sailor uniform with cream trim. Image 2 is the USER'S FINAL FACIAL EXPRESSION REFERENCE ONLY. Copy her quiet attentive eyes, gentle three-quarter head turn toward left, tiny restrained closed-mouth smile and composed affectionate demeanor, no generic big cheerful eyes/grin. Match the sincere encouraging line 'You really worked so hard. Very, very well done.' One open hand gently extended toward viewer offering encouragement, other hand over her heart; show both complete hands. Keep image 1's bright clean art colors, do not copy nighttime blue lighting/background.\nUse the same polished clean anime cel shading and linework, preserving character identity. Genuine transparent background. ONLY the character silhouette; no scenery, objects behind her, moon, railings, floor, ground shadow, petals, floating ornaments, caption, speech bubble or watermark. Do NOT render the dialogue as text. This is a sincere character moment; expression should match the user's words: 你真的很努力了喔。非常、非常了不起喔。",
+          "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-96a7ad74-55a1-4a28-8553-8c675f64d909.png"
+        }
+      ],
+      "handCorrectionReference": "../v5/kaju.png"
+    },
+    {
+      "id": "tiara",
+      "title": "早一点喜欢上我",
+      "line": "早一点喜欢上我会比较好哦？",
+      "detail": "Tiara Basori: preserve EXACT current gently tilted head, low bun, short THICK eyebrows, gray-blue eyes, heavy blush, shy small closed-mouth smile, delicately interlaced fingers at upper abdomen, white blouse with rolled sleeves and pale-blue stacked bows. Keep expression and hand pose unchanged. Reframe as half-body ending just below the waist, no skirt/legs/shoes.",
+      "prompt": "Use case: precise-object-edit / identity-preserve.\nImage 1 is the current Tiara Basori waist-up portrait. The user found incorrect finger counts in its tangled hand pose. Reconstruct ONLY THE TWO HANDS and their contact, keeping their location at upper abdomen.\nUse a SIMPLE, anatomically clear, gentle overlapping-hand gesture rather than knotted interlacing: both wrists enter naturally from the existing sleeves, one hand rests softly over the back of the other, fingers relaxed and curved together, natural graceful pose. Each hand has exactly FIVE digits: one thumb and four fingers. Respect natural occlusion; hidden fingers do not need to be shown, but do not invent extra digits or duplicate thumbs. Clear separations and coherent joints; no branching fingertips, fused fingers, unattached fingertips, webbing or extra little finger shapes. Show both full hands inside the canvas. Preserve the delicate shy gesture's mood.\nKeep EVERYTHING ELSE unchanged: the corrected longer/narrower face, delicate jaw, thick short eyebrows, gray-blue eyes, shy closed-mouth smile, blush, low bun, tilted head, hairstyle, white blouse and pale-blue stacked bows, upper body proportions, clean anime cel shading, waist-up crop and transparent background. Do not alter face or enlarge cheeks/head. No legs, text, setting, floor, scenery, border or watermark. Genuine alpha transparency, only the character.",
+      "file": "tiara-hands-fixed.png",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-a4dee467-8485-4155-987c-fd19e111630b.png",
+      "reference": "../v6/reference/tiara-before-face-refinement.png",
+      "adaptedDialogue": false,
+      "sourceStatus": "User-supplied volume-8 illustration and Chinese wording.",
+      "sceneReference": "../v2/reference/tiara-volume8-user.png",
+      "revisions": [
+        {
+          "file": "tiara-before-edge-cleanup.png",
+          "prompt": "Use case: identity-preserve / precise-object-edit.\nAsset type: rare character portrait for a desktop app welcome cover and pet idle easter egg.\nImage 1 is the existing character edit target.\nLATEST USER CHANGE: no full-body artwork is needed. Recompose into a HALF-BODY WAIST-UP PORTRAIT WITH BOTH HANDS FULLY VISIBLE. Show head, shoulders, chest, arms and complete hands, ending just below waist; NO legs or shoes. Enlarge the upper body to fill the square canvas with comfortable clear margins around hair and fingers, no amputated hands or head.\nTiara Basori: preserve EXACT current gently tilted head, low bun, short THICK eyebrows, gray-blue eyes, heavy blush, shy small closed-mouth smile, delicately interlaced fingers at upper abdomen, white blouse with rolled sleeves and pale-blue stacked bows. Keep expression and hand pose unchanged. Reframe as half-body ending just below the waist, no skirt/legs/shoes.\nUse the same polished clean anime cel shading and linework, preserving character identity. Genuine transparent background. ONLY the character silhouette; no scenery, objects behind her, moon, railings, floor, ground shadow, petals, floating ornaments, caption, speech bubble or watermark. Do NOT render the dialogue as text. This is a sincere character moment; expression should match the user's words: 早一点喜欢上我会比较好哦？",
+          "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-989cab19-b94a-4e1a-adcd-4d4dc0625cef.png"
+        },
+        {
+          "file": "tiara-refined.png",
+          "prompt": "Use case: identity-preserve / precise-object-edit.\nImage 1 is the user's latest Tiara Basori waist-up portrait to correct. Image 2 is her original volume-8 novel illustration, the FACE PROPORTION AND EXPRESSION guide. Image 3 shows her original anime face and THICK SHORT EYEBROWS.\nUser feedback: image 1's face is much too broad, flat and round; make her more refined and graceful, closer to the original novel illustration and anime. Redraw ONLY her head/face proportions toward image 2: a noticeably longer oval face, narrower cheeks, slender gently tapering jaw and small soft chin, more natural spacing from eyes to mouth/chin, less inflated cheeks, smaller more naturally proportioned eyes and a slightly smaller head relative to shoulders. Keep the subtle perspective and facial volume of the novel rather than a squashed circular baby face. Preserve the characteristic SHORT THICK straight eyebrows partly beneath bangs, gray-blue eyes, dark hair tied in low bun, light blush and tiny shy CLOSED-mouth smile. She should remain the SAME recognizable character, with clean polished anime cel shading consistent with the other portraits. Do not make a photorealistic face.\nPreserve the gently tilted head, white collared blouse, stacked pale-blue bows, rolled sleeves, interlaced delicate fingers at upper abdomen and the waist-up-with-hands composition. Entire hair/head and both hands visible. Comfortable 5% transparent margin above head, no crop across hair or fingertips. ONLY the character on a genuinely TRANSPARENT background. Clean up ALL stray marks at top and sides. No scenery, railings, petals, floor, shadow, letters, speech bubble or watermark. No full body, legs or shoes. Do not copy the backgrounds or collage arrangement of the reference images. Dialogue is shown separately in the app, do not write it in the picture.",
+          "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-c4dfa68e-3ee7-45a3-9aec-3cea72c19df2.png"
+        }
+      ],
+      "faceReferences": [
+        "../v2/reference/tiara-volume8-user.png",
+        "../../characters/tiara-v2/reference/official-tiara-face.png"
+      ],
+      "handCorrectionReference": "../v6/tiara.png"
+    },
+    {
+      "id": "whale-girl",
+      "title": "人，你给我吃米",
+      "line": "人，你给我吃米，人，日后我会放你一马的",
+      "detail": "Whale-girl maid mascot: preserve her approved very large head/small torso CHIBI proportions, blue long hair, lace maid headdress, blue eyes, whale-emblem apron, navy/white costume. Preserve the half-lidded stern deadpan eyes, tiny imperious mouth, one hand on hip and other open palm demanding rice. Both hands fully visible in the half-body crop. No tears. Do not normalize or lengthen her body.",
+      "prompt": "Use case: identity-preserve / precise-object-edit.\nAsset type: rare character portrait for a desktop app welcome cover and pet idle easter egg.\nImage 1 is the existing character edit target.\nLATEST USER CHANGE: no full-body artwork is needed. Recompose into a HALF-BODY WAIST-UP PORTRAIT WITH BOTH HANDS FULLY VISIBLE. Show head, shoulders, chest, arms and complete hands, ending just below waist; NO legs or shoes. Enlarge the upper body to fill the square canvas with comfortable clear margins around hair and fingers, no amputated hands or head.\nWhale-girl maid mascot: preserve her approved very large head/small torso CHIBI proportions, blue long hair, lace maid headdress, blue eyes, whale-emblem apron, navy/white costume. Preserve the half-lidded stern deadpan eyes, tiny imperious mouth, one hand on hip and other open palm demanding rice. Both hands fully visible in the half-body crop. No tears. Do not normalize or lengthen her body.\nUse the same polished clean anime cel shading and linework, preserving character identity. Genuine transparent background. ONLY the character silhouette; no scenery, objects behind her, moon, railings, floor, ground shadow, petals, floating ornaments, caption, speech bubble or watermark. Do NOT render the dialogue as text. This is a sincere character moment; expression should match the user's words: 人，你给我吃米，人，日后我会放你一马的",
+      "file": "whale-girl.png",
+      "generatedPath": "/home/umeko/.codex/generated_images/01a18cd6-4fd4-7550-8ebb-eb0174204742/exec-e3d76161-787c-4d63-a9de-8ed16aa09d32.png",
+      "reference": "../../../art/rare-scenes/v4/whale-girl.png",
+      "adaptedDialogue": false,
+      "sourceStatus": "Original dialogue supplied by user."
+    }
+  ]
+}

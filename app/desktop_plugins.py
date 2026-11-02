@@ -89,6 +89,14 @@ class DesktopPlugins(QObject):
         if self.application(identifier):return self.enabled(identifier)
         sessions=self.settings.get('sessions',{})
         return identifier in sessions[self.storage_key] if self.storage_key in sessions else self.entries[identifier].get('builtin',False)
+    def skills_enabled(self,record):
+        """Resolve the caller's Widget preference, including background chats."""
+        identifier='skill-manager'
+        if identifier not in self.entries or not self.enabled(identifier) or record.global_agent:return False
+        sessions=self.settings.get('sessions',{})
+        for key in (record.id,'draft:'+record.key):
+            if key and key in sessions:return identifier in sessions[key]
+        return self.entries[identifier].get('builtin',False)
     @Property('QVariantList',notify=changed)
     def rows(self):return sorted([{**e,**self.icon_for(k),'lifecycle':e.get('lifecycle','session'),'enabled':self.enabled(k),'sessionEnabled':self.session_enabled(k),'hasPage':bool(e.get('page')),'running':bool(self.workers.get(k,{}).get('ready')),'starting':k in self.workers and not self.workers[k]['ready']} for k,e in self.entries.items()],key=lambda e:e['name'])
     @Property('QVariantList',constant=True)
@@ -128,8 +136,9 @@ class DesktopPlugins(QObject):
     def details(self,identifier):
         if identifier not in self.entries:return {}
         e=self.entries[identifier];path=self.path(identifier)
+        readme = 'README.en.md' if identifier == 'skill-manager' and e.get('builtin') and getattr(self.b, 'language', 'zh') == 'en' else e.get('readme', 'README.md')
         try:
-            with (path/e.get('readme','README.md')).open('r',encoding='utf-8') as f:doc=f.read(65536)
+            with (path/readme).open('r',encoding='utf-8') as f:doc=f.read(65536)
         except OSError:doc=''
         config=self.settings.get('config',{}).get(identifier,read(path/e.get('config','config.json'),{}))
         return {**e,'readmeText':doc,'configText':json.dumps(config,ensure_ascii=False,indent=2),'settingsUrl':QUrl.fromLocalFile(str(path/e['settingsPage'])).toString() if e.get('settingsPage') else ''}
@@ -176,6 +185,7 @@ class DesktopPlugins(QObject):
             if self._page==identifier:self.closePage()
             self.stop(identifier)
         elif self.session_enabled(identifier) and (self.application(identifier) or not self.entries[identifier].get('page')):self.start(identifier)
+        if identifier=='skill-manager' and old.get('enabled',{}).get(identifier,True)!=value:self.b._skills_widget_changed()
         self.changed.emit()
     @Slot(str,bool)
     def setSessionEnabled(self,identifier,value):
@@ -190,9 +200,13 @@ class DesktopPlugins(QObject):
             if self._page==identifier:self.closePage()
             self.stop(identifier)
         elif self.enabled(identifier) and not self.entries[identifier].get('page'):self.start(identifier)
+        if identifier=='skill-manager':self.b._skills_widget_changed(self.b._view)
         self.changed.emit()
     @Slot(str,result=bool)
     def openPage(self,identifier):
+        if self.closed:return False
+        # Chat notifications are debounced; bind a newly opened page immediately.
+        self.synchronize()
         if identifier not in self.entries or not self.enabled(identifier) or not self.session_enabled(identifier) or not self.entries[identifier].get('page'):return False
         if self._page==identifier and not self._error and identifier in self.workers:return True
         self._failed_services.discard(identifier)

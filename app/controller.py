@@ -17,14 +17,14 @@ from pathlib import Path
 from dataclasses import replace
 
 from PySide6.QtCore import QObject, Property, QProcess, QProcessEnvironment, QTimer, QUrl, Signal, Slot, QBuffer, QIODevice, QMimeData
-from PySide6.QtGui import QGuiApplication, QDesktopServices, QImageReader, QWindow
+from PySide6.QtGui import QGuiApplication, QDesktopServices, QFont, QFontDatabase, QImageReader, QWindow
 
 from .gateway import Gateway, LocalServer, validate_base_url
 from .integration import load_adapter, UnconfiguredAdapter
 from .pi_runtime import PACKAGE, RELEASE_NAME, CREATE_NO_WINDOW, installed_version, node_executable, npm_command, project_runtime, verify_runtime
 from .npm_config import npm_environment
 from .storage import Store
-from .pi_sessions import PiSessionPool, SessionState, clean_extension_modes
+from .pi_sessions import PiSessionPool, SessionState, clean_extension_modes, clean_skill_modes, clean_blocked_tools
 from .controller_runtime import PiControllerMixin
 from .transcripts import preview
 from .chat_model import ChatModel
@@ -71,6 +71,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     def characterPacks(self):
         return self._characterPacks()
 
+    @Property('QVariantList', notify=changed)
+    def subagentCharacterPacks(self):
+        return self._characterPacks(True)
+
     @Property('QVariantMap', notify=changed)
     def characterStyle(self):
         return self._characterStyle()
@@ -86,6 +90,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     @Property(float, notify=appearanceChanged)
     def fontScale(self):
         return self.store.data['ui']['fontScale']
+
+    @Property(str, notify=appearanceChanged)
+    def lineSpacing(self):
+        return self.store.data['ui']['lineSpacing']
 
     @Property(bool, constant=True)
     def webviewAvailable(self):
@@ -224,6 +232,12 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self._umeko_control = UmekoControl(self)
         from .desktop_plugins import DesktopPlugins
         self._desktop_plugins = DesktopPlugins(self)
+        from .slash_commands import SlashCommands
+        self._slash_commands = SlashCommands(self)
+
+    @Property(QObject, constant=True)
+    def slashCommands(self):
+        return self._slash_commands
 
     @Property(QObject, constant=True)
     def piManagement(self):
@@ -380,7 +394,11 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
 
     @Property(bool, notify=chatChanged)
     def running(self):
-        return self._view.phase == "running"
+        return self._view.phase == "running" or (self._view.busy and self._view.action in ('prompt', 'widget-notify') and self._view.prompt_started is not None)
+
+    @Property("QVariantMap", notify=chatChanged)
+    def turnStatus(self):
+        return self._turn_status(self._view)
 
     @Property(int, notify=chatChanged)
     def runningCount(self):
@@ -389,8 +407,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     def _session_flags(self, session_id):
         record = self._pool.find(session_id)
         meta = self.store.data["sessionMeta"].get(session_id, {})
-        return {"running": bool(record and record.phase == "running"), "loading": bool(record and record.phase in ("loading", "working")),
+        status = self._turn_status(record) if record else meta.get('lastTurn', {})
+        return {"running": bool(record and (record.phase == "running" or status.get('state') in ('running', 'stopping'))), "loading": bool(record and record.phase in ("loading", "working")),
             "waiting": bool(record and record.approval), "unread": bool(meta.get("unread")),
+            "outcome": status.get('state', '') or ('unread' if meta.get('unread') else ''),
             "busy": bool(record and record.busy) or session_id in self._management_jobs}
 
     def _models_busy(self, provider_id=None):
@@ -901,6 +921,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     def activeSession(self):
         return self._view.id
 
+    @Property(str, notify=viewChanged)
+    def conversationToken(self):
+        return self._view.key
+
     @Property(str, notify=chatChanged)
     def sessionTitle(self):
         return next((s["title"] for s in self._sessions if s["id"] == self._view.id), "新会话")
@@ -1284,9 +1308,12 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self.store.save()
         app = QGuiApplication.instance()
         family = self.store.data["fontFamily"]
-        if isinstance(app, QGuiApplication) and family:
-            font = app.font()
-            font.setFamily(family)
+        if isinstance(app, QGuiApplication):
+            if family:
+                font = app.font()
+                font.setFamily(family)
+            else:
+                font = QFont("Microsoft YaHei UI", 10) if os.name == "nt" else QFontDatabase.systemFont(QFontDatabase.GeneralFont)
             app.setFont(font)
         self.changed.emit()
 
@@ -1568,6 +1595,8 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
             record = self._new_view(session.get("workspace", ""))
             record.id, record.file, record.title = session_id, session.get("file", ""), session["title"]
             record.extension_modes = clean_extension_modes(self.store.data["sessionMeta"].get(session_id, {}).get("extensionModes"))
+            record.skill_modes = clean_skill_modes(self.store.data["sessionMeta"].get(session_id, {}).get("skillModes"))
+            record.blocked_tools = clean_blocked_tools(self.store.data["sessionMeta"].get(session_id, {}).get("blockedTools"))
             effort = self.store.data["sessionMeta"].get(session_id, {}).get("reasoningEffort", record.reasoning_effort)
             record.reasoning_effort = effort if effort in ("off", "low", "high", "max") else "off"
             record.history = copy.deepcopy(session.get("history", []))

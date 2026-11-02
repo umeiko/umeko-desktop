@@ -68,6 +68,7 @@ class DesktopPet(QObject):
         self.b = manager.b
         self.motion = PetMotion()
         self.running = False
+        self._rare_idle = False
         self.closed = False
         self.importing = False
         self.last_error = ''
@@ -132,10 +133,13 @@ class DesktopPet(QObject):
     def state(self):
         pack = self._packs.get(self._config['appearance']) or self._packs.get('yanami', {})
         asset = pack.get('states', {}).get(self.motion.state) or pack.get('states', {}).get('idle', '')
+        if self._rare_idle:
+            asset = pack['rareIdle']['image']
         source = QUrl.fromLocalFile(str(pack['directory'] / asset)).toString() if asset else ''
         top = pack.get('images', {}).get(asset, {}).get('contentTop', 0)
         top = top if type(top) in (int, float) and 0 <= top <= 1 else 0
-        return {'action': self.motion.state, 'source': source, 'animated': pack.get('images', {}).get(asset, {}).get('animated', True),
+        return {'action': self.motion.state, 'source': source, 'animated': pack.get('images', {}).get(asset, {}).get('animated', not self._rare_idle),
+                'rareIdle': self._rare_idle,
                 'contentTop': top,
                 'appearance': pack.get('id', 'yanami'), 'name': pack.get('name', ''), 'running': self.running,
                 'activity': copy.deepcopy(self._activity), 'importing': self.importing, 'error': self.last_error}
@@ -151,6 +155,8 @@ class DesktopPet(QObject):
 
     def stop(self):
         self.running = False
+        self._rare_idle = False
+        self.reaction.emit('')
         self.reminders.stop()
         self.dismissReminders()
         self.timer.stop()
@@ -180,6 +186,10 @@ class DesktopPet(QObject):
             if not self.manager.save():
                 self.manager.settings = old
                 raise ValueError('桌宠设置保存失败')
+        if value['appearance'] != self._config['appearance'] or not value['visible']:
+            if self._rare_idle:
+                self.reaction.emit('')
+            self._rare_idle = False
         self._config = value
         if not self.visible or not value['reminderNotificationsEnabled']:
             self.dismissReminders()
@@ -222,6 +232,10 @@ class DesktopPet(QObject):
         changed = activity != self._activity
         self._activity = activity
         self.motion.request(target)
+        if target != 'idle' and self._rare_idle:
+            self._rare_idle = False
+            self.reaction.emit('')
+            changed = True
         changed = self.motion.step(self._config['minimumStateMs'] / 1000, self._config['paused']) or changed
         if announce:
             self._speak(target)
@@ -305,12 +319,27 @@ class DesktopPet(QObject):
             return
         self._last_interaction = now
         self._last_interaction_kind = kind
+        if self._rare_idle:
+            self._rare_idle = False
+            self.changed.emit()
         self._speak(kind)
         if kind in ('tap', 'hover', 'drag'):
             if kind != 'hover' or self.motion.target == 'idle':
                 self.motion.interact('done' if kind == 'tap' else 'waiting', self._config['minimumStateMs'] / 1000)
                 if self.motion.step(self._config['minimumStateMs'] / 1000, self._config['paused']):
                     self.changed.emit()
+
+    @Slot()
+    def idleCycle(self):
+        rare = self._packs.get(self._config['appearance'], {}).get('rareIdle')
+        if (not self.visible or self._config['paused'] or self.motion.state != 'idle'
+                or self.motion.target != 'idle' or self.motion.interaction or not rare):
+            return
+        previous = self._rare_idle
+        self._rare_idle = random.random() < .005
+        if previous or self._rare_idle:
+            self.reaction.emit(rare['line'] if self._rare_idle else '')
+            self.changed.emit()
 
     def _speak(self, kind):
         pack = self._packs.get(self._config['appearance'], {})

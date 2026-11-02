@@ -2,6 +2,7 @@
 // Tools, loop, skill expansion, extension hooks and session trees belong to Pi.
 import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-policy.mjs";
 import { prepareNativeSettings, sessionResourceSettings, builtins, extensionName, SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
+import { sessionSkillOptions } from "./skills.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
@@ -12,6 +13,7 @@ import { createInputQueue } from "./input-queue.mjs";
 import { backgroundJobsExtension } from "./background-jobs.mjs";
 import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
 import { createToolPermissionExtension } from "./tool-permissions.mjs";
+import { blockedToolNames, toolInventory } from "./tool-visibility.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
@@ -35,7 +37,7 @@ const { isRetryableAssistantError, isContextOverflow } = await import("@earendil
 const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", entry));
 const { loadMcpConfig } = await import(new URL("./extensions/mcp/config.js", entry));
-const { allToolNames } = await import(new URL("./core/tools/index.js", entry));
+const { allToolNames, createAllToolDefinitions } = await import(new URL("./core/tools/index.js", entry));
 const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, "background_job"];
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
@@ -106,6 +108,9 @@ const ui = {
 // The existing subagent SDK facade shares this host across ESM/Jiti modules.
 // No desktop operation or model-callable tool exposes this policy setter.
 globalThis[Symbol.for("umeko:tool-permission-host")] = { getPolicy: () => permissionPolicy, ui };
+
+globalThis[Symbol.for("umeko:tool-visibility-host")] = { getBlockedTools: () => blockedToolNames(config?.blockedTools) };
+globalThis[Symbol.for("umeko:skill-policy-host")] = { enabled: () => config?.skillsEnabled !== false };
 
 async function bindSession(session) {
   unsubscribe?.();
@@ -280,6 +285,7 @@ async function restoreSubagentSession(child, context, customTools) {
   // transcripts use the standard read-only policy for Explore/Plan.
   const readonly = ["Explore","Plan"].includes(child.type);
   const loader = new Pi.DefaultResourceLoader({cwd:manager.getCwd(),agentDir:config.agentDir,settingsManager:policy,
+    ...await sessionSkillOptions(Pi, {...config,cwd:manager.getCwd()}, native),
     extensionFactories: [
       { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
       { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension },
@@ -290,7 +296,7 @@ async function restoreSubagentSession(child, context, customTools) {
   await loader.reload();
   const {session} = await Pi.createAgentSession({cwd:manager.getCwd(),agentDir:config.agentDir,sessionManager:manager,
     modelRuntime,model,settingsManager:policy,resourceLoader:loader,thinkingLevel:context?.thinkingLevel || "off",
-    customTools,excludeTools:["subagent","get_subagent_result","steer_subagent"],
+    customTools,excludeTools:["subagent","get_subagent_result","steer_subagent",...blockedToolNames(config.blockedTools)],
     tools:context?.tools || (readonly ? ["read","grep","find","ls"] : undefined)});
   await session.bindExtensions({uiContext:ui,mode:"rpc",abortHandler:()=>session.abort(),
     shutdownHandler:()=>session.abort(),onError:error=>emit({type:"notice",message:error.message})});
@@ -339,6 +345,7 @@ async function init(input) {
     }, { projectTrusted: !input.agent?.safeMode });
     const services = await Pi.createAgentSessionServices({ cwd, agentDir, modelRuntime, settingsManager,
       resourceLoaderOptions: {
+        ...await sessionSkillOptions(Pi, {...input,cwd,agentDir}, nativeManager),
         ...(input.agent?.safeMode || input.globalCoordinator ? { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
           additionalExtensionPaths: builtins.map(name => "builtin:" + name) } : {}),
         appendSystemPrompt: [DESKTOP_PI_PROMPT + " " + UMEKO_PROMPT + " Reply in the user's language.", input.agent?.instructions || ""],
@@ -367,7 +374,7 @@ async function init(input) {
     // Keep native global/project resource scopes in the loader, while desktop
     // generation/compaction overrides stay in memory on the session itself.
     services.settingsManager = settings;
-    const result = await Pi.createAgentSessionFromServices({ services, sessionManager, sessionStartEvent, model: selectedModel });
+    const result = await Pi.createAgentSessionFromServices({ services, sessionManager, sessionStartEvent, model: selectedModel, excludeTools: blockedToolNames(input.blockedTools) });
     return { ...result, services, diagnostics: services.diagnostics };
   };
   let manager;
@@ -475,8 +482,8 @@ async function capabilities() {
   return {
     tools: active,
     contextFiles: session.resourceLoader.getAgentsFiles().agentsFiles.map(file => file.path),
-    allTools: allTools.map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters, exposure: tool.exposure, active: active.includes(tool.name), source: tool.sourceInfo?.path || tool.sourceInfo?.kind || "Pi" })),
-    skills: session.resourceLoader.getSkills().skills.map(s => ({ name: s.name, path: s.filePath, description: s.description })),
+    allTools: toolInventory(session, createAllToolDefinitions(session.sessionManager.getCwd()), config.blockedTools),
+    skills: session.resourceLoader.getSkills().skills.map(s => ({ name: s.name, path: s.filePath, description: s.description, sourceInfo: s.sourceInfo })),
     extensions: session.resourceLoader.getExtensions().extensions.map(e => ({ name: extensionName(e.path, session.resourceLoader.resourceMetadataByPath?.get(e.path)), path: e.path })),
     prompts: session.resourceLoader.getPrompts().prompts.map(p => ({ name: p.name, description: p.description, path: p.filePath })),
     commands: session.extensionRunner.getRegisteredCommands().map(command => ({ name: command.name, description: command.description || "" })),

@@ -8,9 +8,13 @@
 
 Your projects, your providers, the full Pi Coding Agent — with a little Yanami.
 
-[English](README.md) · [简体中文](README.zh-CN.md)
+[English](README.md) · [Chinese (Simplified)](README.zh-CN.md)
 
-[Download](#downloads) · [User guide](docs/user-guide.md) · [Provider SDK](provider_dev/README.md) · [Build status](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
+[![Documentation](docs/documentation.svg)](https://umeiko.github.io/umeko-desktop/en/)
+
+[Quick start](https://umeiko.github.io/umeko-desktop/en/start/quick-start.html) · [User guide](https://umeiko.github.io/umeko-desktop/en/) · [FAQ](https://umeiko.github.io/umeko-desktop/en/faq.html)
+
+[Download](#downloads) · [Provider SDK](provider_dev/README.md) · [Build status](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
 
 [![Desktop packages](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml/badge.svg)](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/umeiko/umeko-desktop?color=4f74c8)](https://github.com/umeiko/umeko-desktop/releases/latest)
@@ -21,12 +25,12 @@ Your projects, your providers, the full Pi Coding Agent — with a little Yanami
 
 <!-- umeko-downloads:standard:start -->
 
-**Download v0.6.3 · 点击下载**
+**Download v0.6.4**
 
-[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.3/Umeko-0.6.3-windows-x64-c219c92.zip)
-[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.3/Umeko-0.6.3-macos-arm64-c219c92.dmg)
-[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.3/Umeko-0.6.3-macos-x64-c219c92.dmg)
-[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.3/Umeko-0.6.3-linux-x64-c219c92.tar.gz)
+[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.4/Umeko-0.6.4-windows-x64-411de56.zip)
+[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.4/Umeko-0.6.4-macos-arm64-411de56.dmg)
+[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.4/Umeko-0.6.4-macos-x64-411de56.dmg)
+[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.4/Umeko-0.6.4-linux-x64-411de56.tar.gz)
 
 <!-- umeko-downloads:standard:end -->
 
@@ -68,7 +72,7 @@ After a verified update download, the independent Yanami installer can stop all 
 | **Readable agent work** | Foldable thinking and tool history, colored code blocks, inline attachments, stable scrolling and text selection across messages. |
 | **Your model services** | OpenAI-compatible and Anthropic providers, per-model context limits and vision settings, plus importable account-provider plugins. |
 | **An API for your other tools** | An optional OpenAI / Anthropic API proxy, model aliases, LAN access and named, revocable API keys. |
-| **A little personality** | Light, dark and Yanami themes, twelve welcome portraits and greetings, and a pixel Yanami at the end of a reply. |
+| **A little personality** | Light, dark and sea-salt blue themes, selectable characters and appearance packs, plus small interactions throughout the app. |
 
 Pi can deliver images and compact file cards directly with [`submit_to_chatbox`](docs/chatbox-media.md). Click a file to open it; right-click to copy it, reveal it or attach it to chat again. Image previews support wheel zoom, drag to pan and click to close. Drag files anywhere in the chat to attach them and focus the input. Queued messages sit above the composer with editing and deletion; steering interrupts the active run and submits a normal message immediately. Hover a message for its timestamp and copy action. Double-click selects a word; triple-click selects a paragraph. Pi settings have searchable, nested sections and click-activated inline scrolling. Model selection, sidebar highlights and compact context menus use continuous PID motion.
 
@@ -140,7 +144,7 @@ The pixel Yanami logo reuses the app's existing [fan-art asset and provenance](a
 
 Custom color themes use portable JSON files. Import, update or delete them under **Settings → Appearance**, and copy a complete creation prompt from the same page. See the [theme format and example](docs/themes.md). Reply mascots react to taps, click combos and holds.
 
-Common providers: **账号与供应商 → 添加常见供应商** offers Claude Code, Codex, Kimi Code, DeepSeek, GLM Coding Plan (including Z.ai) and MiniMax subscriptions (M Plan). GLM and MiniMax offer a site dropdown inside the Key form with just China and International; China is selected by default. Enter an API Key and optional account alias; endpoints and models are preconfigured. Multiple accounts receive distinct names and model mappings. See [Common provider accounts](docs/common-providers.md).
+Common providers: **Settings → Accounts & Providers → Common providers** offers Claude Code, Codex, Kimi Code, DeepSeek, GLM Coding Plan (including Z.ai) and MiniMax subscriptions (M Plan). GLM and MiniMax offer a site dropdown inside the Key form with just China and International; China is selected by default. Enter an API Key and optional account alias; endpoints and models are preconfigured. Multiple accounts receive distinct names and model mappings. See [Common provider accounts](https://umeiko.github.io/umeko-desktop/en/guide/providers.html).
 
 The Agent can manage this running desktop through **`umeko_desktop`**: providers, plugins, themes, settings, projects, chats and updates. Changes refresh the UI; operations that need idle tasks return a queued job. `/help` points to the bundled [Umeko management documentation](runtime/umeko-docs/README.md), loaded by topic instead of adding a large command list to every prompt. Umeko provider and theme settings are separate from Pi's terminal configuration.
 

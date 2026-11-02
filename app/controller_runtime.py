@@ -12,6 +12,31 @@ from .message_attachments import attachment_prompt, split_attachments
 
 
 class PiControllerMixin:
+    def _turn_status(self, record):
+        """Execution is live only in this process; terminal UI metadata survives reopening."""
+        if record.busy and record.action in ('prompt', 'widget-notify') and record.prompt_started is not None:
+            elapsed = max(0, time.monotonic() - record.prompt_started)
+            return {'state': 'stopping' if record.cancelled else 'running', 'elapsed': elapsed,
+                'startedAt': (time.time() - elapsed) * 1000}
+        saved = self.store.data['sessionMeta'].get(record.id, {}).get('lastTurn')
+        if saved:
+            return dict(saved)
+        # Older native histories have no UI timing receipt. Use their actual
+        # stop reason, and leave duration unknown instead of inventing a time.
+        message = next((row for row in reversed(record.messages) if row.get('role') in ('user', 'assistant')), {})
+        reason = message.get('stopReason') if message.get('role') == 'assistant' else None
+        state = 'failed' if message.get('error') or reason == 'error' else {'stop': 'finished', 'aborted': 'stopped', 'length': 'stopped'}.get(reason, '')
+        return {'state': state}
+
+    def _finish_turn(self, record, failed=False):
+        if record.action not in ('prompt', 'widget-notify') or record.prompt_started is None:
+            return
+        status = {'state': 'stopped' if record.cancelled else 'failed' if failed or record.failed else 'finished',
+            'elapsed': max(0, time.monotonic() - record.prompt_started)}
+        if record.id:
+            self.store.data['sessionMeta'].setdefault(record.id, {})['lastTurn'] = status
+            self.store.save()
+
     def _queue_transcript_index(self, record, leaf=None, canonical=False, captured=None):
         if not record.file or self._closing:
             return
@@ -41,6 +66,18 @@ class PiControllerMixin:
         self._pool.invalidate()
         self.contextUsageChanged.emit()
 
+    def _skills_widget_changed(self,record=None):
+        records=(record,) if record is not None else tuple(self._pool.records.values())
+        for current in records:
+            if current.global_agent:continue
+            if current.busy or current.subagents_active:
+                current.stale=True
+            else:
+                current.context_usage={}
+                self._pool.retire(current)
+        self.contextUsageChanged.emit()
+        self.changed.emit()
+
     def _merge_native_sessions(self, native):
         existing = {session["id"]: session for session in self._sessions}
         for session in native:
@@ -61,6 +98,8 @@ class PiControllerMixin:
         record.id = info["id"]
         self.store.data["sessionMeta"].setdefault(record.id, {})["reasoningEffort"] = record.reasoning_effort
         self.store.data["sessionMeta"].setdefault(record.id, {})["extensionModes"] = record.extension_modes
+        self.store.data["sessionMeta"].setdefault(record.id, {})["skillModes"] = record.skill_modes
+        self.store.data["sessionMeta"].setdefault(record.id, {})["blockedTools"] = record.blocked_tools
         record.file = info.get("file") or record.file
         record.title = info.get("title") or record.title
         record.workspace = info.get("workspace") or record.workspace
@@ -70,7 +109,7 @@ class PiControllerMixin:
             self.store.data["sessionMeta"].setdefault(record.id, {}).update(metadata)
         if record.file or record.action == "prompt":
             self._index_record(record)
-            if record.extension_modes: self.store.save()
+            if record.extension_modes or record.skill_modes or record.blocked_tools: self.store.save()
 
     def _index_record(self, record):
         if record.global_agent: return
@@ -110,6 +149,9 @@ class PiControllerMixin:
                     agentDir=agent.get("agentDir") or str(Path.home() / ".pi/agent"),
                     sessionDir=str(self.store.directory / "pi/sessions"), sessionFile=record.file,
                     sessionExtensions={path: mode == "session" for path, mode in record.extension_modes.items()},
+                    sessionSkills=record.skill_modes,
+                    skillsEnabled=self._desktop_plugins.skills_enabled(record),
+                    blockedTools=record.blocked_tools,
                     docsDir=str(self.store.directory / "agent-docs"),
                     legacyHistory=record.history, models=self.gateway.models(), agent=agent,
                     permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,
@@ -122,6 +164,7 @@ class PiControllerMixin:
                 self._pool.start(record, node_executable(), bridge, payload)
         except (RuntimeError, OSError) as error:
             record.phase, record.failed = "idle", True
+            self._finish_turn(record, failed=True)
             record.prompt_started = None
             self.toast.emit(str(error))
             if record.messages and not record.messages[-1]["text"] and record.messages[-1].get("customType") != "umeko-compaction":
@@ -311,6 +354,7 @@ class PiControllerMixin:
                 transcript = True
         elif kind == "message" and event.get("role") == "assistant":
             if event.get('error') or event.get('stopReason') == 'error': record.failed = True
+            if event.get('stopReason') == 'aborted': record.cancelled = True
             if record.messages and (record.messages[-1]["role"] == "assistant" and record.messages[-1].get("customType") != "umeko-compaction"):
                 record.messages[-1].update(text=event.get("text") or event.get("error") or record.messages[-1]["text"], error=bool(event.get("error")), errorMessage=event.get("error") or "", stopReason=event.get("stopReason", ""))
                 if event.get("timestamp"): record.messages[-1]["timestamp"] = event["timestamp"]
@@ -443,6 +487,7 @@ class PiControllerMixin:
                 self.retryChanged.emit()
             was_busy = record.busy
             long_running = record.prompt_started is not None and time.monotonic() - record.prompt_started > 180
+            self._finish_turn(record, failed=kind == 'exit')
             record.prompt_started = None
             if record.queue:
                 self._restore_queued(record, [row["text"] for row in record.queue])
@@ -496,3 +541,4 @@ class PiControllerMixin:
             self._pool.write(record, {"type": "abort"})
             record.approval = {}
             self.approvalChanged.emit()
+            self.chatChanged.emit()

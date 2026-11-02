@@ -1,0 +1,6 @@
+Use case: illustration-story.
+Asset: rare character scene for a small new-task cover and desktop-pet idle easter egg.
+Reference image is the exact character identity, hair, costume and established clean chibi anime rendering style. Keep that identity.
+Scene: Inspired by the official episode-4 aftermath key visual: a bittersweet seaside farewell to a first love. Anna Yanami, recognizable short blue hair, blue eyes, school blouse and blue ribbon, holding a small chikuwa snack, one tear at the corner of her eye but a brave little smile. Small sea rail, warm sunset and sea breeze form a compact vignette behind her.
+Composition: one complete chibi character, approximately 3 heads tall with graceful slim legs, full head/hands/shoes visible, central figure occupying 80% height. Minimal scene fragments stay compact directly behind the figure and fade into TRUE TRANSPARENT space around the silhouette. Square canvas, generous transparent margins. Scene must read clearly at 210 pixels. Carefully drawn expressive face, crisp linework, cel shading, soft cinematic light. Emotional, sincere, not exaggerated.
+No lettering, speech bubbles, watermarks, logos, rectangular opaque background, or additional people. The dialogue will be rendered separately by the application.

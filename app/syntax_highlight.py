@@ -270,5 +270,7 @@ class SyntaxHighlighter(QObject):
 def register_text_types():
     global _registered
     if not _registered:
+        from .text_spacing import TextSpacing
+        qmlRegisterType(TextSpacing, "Umeko.Text", 1, 0, "TextSpacing")
         qmlRegisterType(SyntaxHighlighter, "Umeko.Text", 1, 0, "SyntaxHighlighter")
         _registered = True

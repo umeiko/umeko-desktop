@@ -22,18 +22,18 @@ ActionButton {
         background: Rectangle { radius: 14; color: Theme.surface; border.color: Theme.line }
         contentItem: ColumnLayout {
             spacing: 16
-            Text { objectName: "providerNetworkTitle"; text: I18n.t("网络设置"); color: Theme.ink; font.pixelSize: Theme.font(17); font.weight: Font.DemiBold }
-            Text { text: root.record.name || ""; color: Theme.muted; font.pixelSize: Theme.font(12); textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight }
-            Text { text: I18n.t("代理设置"); color: Theme.ink; font.pixelSize: Theme.font(12); font.weight: Font.Medium }
+            Text { font.family: Theme.fontFamily; objectName: "providerNetworkTitle"; text: I18n.t("网络设置"); color: Theme.ink; font.pixelSize: Theme.font(17, visible); font.weight: Font.DemiBold }
+            Text { font.family: Theme.fontFamily; text: root.record.name || ""; color: Theme.muted; font.pixelSize: Theme.font(12, visible); textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight }
+            Text { font.family: Theme.fontFamily; text: I18n.t("代理设置"); color: Theme.ink; font.pixelSize: Theme.font(12, visible); font.weight: Font.Medium }
             Picker { id: mode; objectName: "providerProxyMode"; Layout.fillWidth: true; model: [I18n.t("跟随系统代理"), I18n.t("不使用代理"), I18n.t("使用自定义代理")] }
             InputField { id: address; objectName: "providerProxyAddress"; Layout.fillWidth: true; visible: mode.currentIndex === 2; placeholderText: "http://127.0.0.1:7890" }
             RowLayout {
                 Layout.fillWidth: true
-                Text { text: I18n.t("CA 证书文件（可选）"); color: Theme.ink; font.pixelSize: Theme.font(12) }
+                Text { font.family: Theme.fontFamily; text: I18n.t("CA 证书文件（可选）"); color: Theme.ink; font.pixelSize: Theme.font(12, visible) }
                 HelpButton { help: I18n.t("证书信任失败时，自动补用系统信任库再连接一次。也可指定可信的 PEM 根证书或中间证书文件；留空使用默认信任链。始终校验证书和域名，不会自动关闭 TLS 验证。") }
             }
             InputField { id: caFile; objectName: "providerCaFile"; Layout.fillWidth: true; placeholderText: I18n.t("PEM 证书文件的完整路径") }
-            Text { text: I18n.t("仅影响此供应商的模型请求，以及插件的登录和模型发现。自定义代理支持 HTTP / HTTPS。"); color: Theme.muted; font.pixelSize: Theme.font(12); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Text { font.family: Theme.fontFamily; text: I18n.t("仅影响此供应商的模型请求，以及插件的登录和模型发现。自定义代理支持 HTTP / HTTPS。"); color: Theme.muted; font.pixelSize: Theme.font(12, visible); wrapMode: Text.Wrap; Layout.fillWidth: true }
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }

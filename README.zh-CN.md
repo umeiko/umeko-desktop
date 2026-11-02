@@ -10,7 +10,11 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-[下载应用](#downloads) · [使用手册](docs/user-guide.md) · [Provider SDK](provider_dev/README.md) · [构建状态](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
+[![使用文档](docs/documentation-zh.svg)](https://umeiko.github.io/umeko-desktop/)
+
+[五分钟上手](https://umeiko.github.io/umeko-desktop/start/quick-start.html) · [使用指南](https://umeiko.github.io/umeko-desktop/) · [常见问题](https://umeiko.github.io/umeko-desktop/faq.html)
+
+[下载应用](#downloads) · [Provider SDK](provider_dev/README.md) · [构建状态](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
 
 [![Desktop packages](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml/badge.svg)](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/umeiko/umeko-desktop?color=4f74c8)](https://github.com/umeiko/umeko-desktop/releases/latest)
@@ -21,12 +25,12 @@
 
 <!-- umeko-downloads:standard:start -->
 
-**Download v0.6.3 · 点击下载**
+**下载 v0.6.4 · 点击下载**
 
-[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.3/Umeko-0.6.3-windows-x64-c219c92.zip)
-[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.3/Umeko-0.6.3-macos-arm64-c219c92.dmg)
-[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.3/Umeko-0.6.3-macos-x64-c219c92.dmg)
-[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.3/Umeko-0.6.3-linux-x64-c219c92.tar.gz)
+[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.4/Umeko-0.6.4-windows-x64-411de56.zip)
+[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.4/Umeko-0.6.4-macos-arm64-411de56.dmg)
+[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.4/Umeko-0.6.4-macos-x64-411de56.dmg)
+[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.6.4/Umeko-0.6.4-linux-x64-411de56.tar.gz)
 
 <!-- umeko-downloads:standard:end -->
 
@@ -66,7 +70,7 @@ Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原�
 | **清晰的工作过程** | 可折叠思考与工具记录、代码着色、内嵌附件、稳定滚动与跨消息文字选取。 |
 | **自由配置模型** | OpenAI 兼容与 Anthropic 服务、逐模型上下文与视觉配置，以及可导入的账号供应商插件。 |
 | **给其他工具的 API** | 可选 API 代理服务、模型别名、局域网访问，以及可命名、停用和撤销的 API Key。 |
-| **一点自己的风格** | 浅色、深色与八奈见主题，十二组欢迎头像与问候，以及回复末尾的像素八奈见。 |
+| **一点自己的风格** | 浅色、深色与海盐蓝主题，独立选择主角色与人设包，以及应用里的互动小细节。 |
 
 使用 [`submit_to_chatbox`](docs/chatbox-media.md) 可直接展示图片和紧凑文件卡片。单击文件打开，右键复制文件或路径、在文件管理器中查看、重新附加到聊天。图片预览支持滚轮缩放、拖动查看和单击关闭。文件可以拖到聊天区任意位置，添加后自动聚焦输入框。排队消息支持逐条引导、编辑与删除；双击选词，三击选择整段。
 

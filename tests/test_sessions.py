@@ -36,9 +36,11 @@ class SessionTests(unittest.TestCase):
         self.controller.store.data["agent"]["agentDir"] = str(self.path / "agent")
         self.started = {name: threading.Event() for name in ("A", "B")}
         self.gates = {name: threading.Event() for name in ("A", "B")}
+        self.requests = []
         owner = self
         class Fixture:
             def complete(self, model, messages, tools, max_tokens):
+                owner.requests.append(messages)
                 content = next(message["content"] for message in reversed(messages) if message["role"] == "user")
                 if isinstance(content, list):
                     content = " ".join(block.get("text", "") for block in content)
@@ -64,13 +66,40 @@ class SessionTests(unittest.TestCase):
         self.environment.stop()
         self.temp.cleanup()
 
+    def test_skill_widget_toggle_rebuilds_native_prompt_without_interrupting_busy_chat(self):
+        c = self.controller
+        folder = self.path / 'agent/skills/gate-guide'
+        folder.mkdir(parents=True)
+        (folder / 'SKILL.md').write_text('---\nname: gate-guide\ndescription: UNIQUE_SKILL_ROUTING_MARKER\n---\nRead me only when needed.\n')
+        def advertised():
+            return 'UNIQUE_SKILL_ROUTING_MARKER' in str([m for m in self.requests[-1] if m['role'] == 'system'])
+        self.assertTrue(c.send('TASK A'))
+        self.wait_for(lambda: self.started['A'].is_set(), 'enabled skill prompt')
+        self.assertTrue(advertised())
+        record = c._view
+        process = record.process
+        c.desktopPlugins.setSessionEnabled('skill-manager', False)
+        self.assertIs(record.process, process)
+        self.assertTrue(record.busy and record.stale)
+        self.gates['A'].set()
+        self.wait_for(lambda: not record.busy, 'current task completes normally')
+        self.assertFalse(record.cancelled)
+        self.assertTrue(c.send('TASK C'))
+        self.wait_for(lambda: not record.busy, 'disabled skill prompt')
+        self.assertFalse(advertised())
+        c.desktopPlugins.setSessionEnabled('skill-manager', True)
+        self.assertTrue(c.send('TASK D'))
+        self.wait_for(lambda: not record.busy, 'restored skill prompt')
+        self.assertTrue(advertised())
+        self.assertIn('Read me only', (folder / 'SKILL.md').read_text())
+
     def test_concurrent_switching_lru_history_unread_and_drafts(self):
         c = self.controller
         c._pool.limit = 2
         self.assertTrue(c.send("TASK A"))
         a = c._view
         self.assertTrue(c.loading)
-        self.assertFalse(c.running)
+        self.assertTrue(c.running)
         self.wait_for(lambda: self.started["A"].is_set(), "first request")
         a_id, a_pid = a.id, a.process.processId()
         c.setDraft("draft A")
@@ -142,6 +171,116 @@ class SessionTests(unittest.TestCase):
         self.assertIsNone(second.prompt_started)
         c._handle_pi_event(first, {'type': 'done'})
         self.assertEqual(len(events), 2)
+
+    def prepare_live_turn(self, session_id="turn-status", phase="running"):
+        """Exercise lifecycle events without starting a native Pi process."""
+        c, record = self.controller, self.controller._view
+        record.id, record.title = session_id, "Status fixture"
+        record.action, record.phase, record.ready = "prompt", phase, True
+        record.failed, record.cancelled = False, False
+        record.prompt_started = 100.0
+        record.messages = [{"role": "user", "text": "fixture task"},
+            {"role": "assistant", "text": "", "error": False}]
+        c._pool.touch(record, current=True)
+        c._index_record(record)
+        return record
+
+    def test_turn_status_counts_prompt_startup_and_finishes_with_elapsed(self):
+        c = self.controller
+        record = self.prepare_live_turn(phase="loading")
+        with patch("app.controller_runtime.time.monotonic", return_value=112.5):
+            status = c.turnStatus
+            self.assertTrue(c.running)
+            self.assertTrue(c._session_flags(record.id)["running"])
+            self.assertEqual(status["state"], "running")
+            self.assertAlmostEqual(status["elapsed"], 12.5)
+            self.assertAlmostEqual(status["startedAt"], (time.time() - 12.5) * 1000, delta=1000)
+            record.phase = "running"
+            c._handle_pi_event(record, {"type": "done"})
+        self.assertFalse(c.running)
+        self.assertEqual(c.turnStatus["state"], "finished")
+        self.assertAlmostEqual(c.turnStatus["elapsed"], 12.5)
+        self.assertEqual(c._session_flags(record.id)["outcome"], "finished")
+        self.assertEqual(c.store.data["sessionMeta"][record.id]["lastTurn"],
+            {"state": "finished", "elapsed": 12.5})
+
+    def test_turn_status_marks_provider_errors_and_unexpected_exit_failed(self):
+        c = self.controller
+        for label, event, terminal in (
+            ("error-event", {"type": "error", "message": "fixture failure"}, "done"),
+            ("assistant-error", {"type": "message", "role": "assistant", "text": "failed", "stopReason": "error"}, "done"),
+            ("unexpected-exit", None, "exit"),
+        ):
+            with self.subTest(case=label):
+                record = self.prepare_live_turn(label)
+                with patch("app.controller_runtime.time.monotonic", return_value=112.5):
+                    self.assertEqual(c.turnStatus["state"], "running")
+                    if event:
+                        c._handle_pi_event(record, event)
+                    c._handle_pi_event(record, {"type": terminal})
+                self.assertFalse(c.running)
+                self.assertEqual(c.turnStatus["state"], "failed")
+                self.assertAlmostEqual(c.turnStatus["elapsed"], 12.5)
+                self.assertEqual(c._session_flags(record.id)["outcome"], "failed")
+                self.assertEqual(c.store.data["sessionMeta"][record.id]["lastTurn"]["state"], "failed")
+
+    def test_turn_status_user_stop_is_stopping_then_stopped(self):
+        c = self.controller
+        record = self.prepare_live_turn()
+        with patch("app.controller_runtime.time.monotonic", return_value=112.5):
+            c.stop()
+            self.assertTrue(record.cancelled)
+            self.assertEqual(c.turnStatus["state"], "stopping")
+            c._handle_pi_event(record, {"type": "done"})
+        self.assertFalse(c.running)
+        self.assertEqual(c.turnStatus["state"], "stopped")
+        self.assertAlmostEqual(c.turnStatus["elapsed"], 12.5)
+        self.assertEqual(c._session_flags(record.id)["outcome"], "stopped")
+        self.assertEqual(c.store.data["sessionMeta"][record.id]["lastTurn"]["state"], "stopped")
+        self.assertFalse(c._session_flags(record.id)["unread"])
+
+    def test_background_turn_finishes_unread_without_changing_current_status(self):
+        c = self.controller
+        background = self.prepare_live_turn("background-turn")
+        c._activate(c._new_view())
+        with patch("app.controller_runtime.time.monotonic", return_value=112.5):
+            c._handle_pi_event(background, {"type": "done"})
+        self.assertEqual(c.turnStatus["state"], "")
+        self.assertFalse(c.running)
+        flags = c._session_flags(background.id)
+        self.assertFalse(flags["running"])
+        self.assertTrue(flags["unread"])
+        self.assertEqual(flags["outcome"], "finished")
+
+    def test_finished_turn_survives_store_reload_and_history_reopen(self):
+        c = self.controller
+        record = self.prepare_live_turn("saved-turn")
+        with patch("app.controller_runtime.time.monotonic", return_value=112.5):
+            c._handle_pi_event(record, {"type": "done"})
+        c._activate(c._new_view())
+        c._pool.records.pop(record.key)
+        c.store = Store(c.store.directory)
+        with patch.object(c, "_command_pi", return_value=True):
+            c.openSession("saved-turn")
+        self.assertIsNot(c._view, record)
+        self.assertEqual(c._view.id, "saved-turn")
+        self.assertFalse(c.running)
+        self.assertEqual(c.turnStatus["state"], "finished")
+        self.assertAlmostEqual(c.turnStatus["elapsed"], 12.5)
+        self.assertEqual(c._session_flags("saved-turn")["outcome"], "finished")
+
+    def test_history_without_turn_metadata_uses_assistant_stop_reason(self):
+        c = self.controller
+        for reason, outcome in (("stop", "finished"), ("error", "failed"), ("aborted", "stopped")):
+            with self.subTest(stop_reason=reason):
+                session_id = "history-" + reason
+                c._sessions.append({"id": session_id, "title": "Historical turn", "file": "",
+                    "messages": [{"role": "assistant", "text": "historical reply", "stopReason": reason}]})
+                with patch.object(c, "_command_pi", return_value=True):
+                    c.openSession(session_id)
+                self.assertFalse(c.running)
+                self.assertEqual(c.turnStatus["state"], outcome)
+                self.assertEqual(c._session_flags(session_id)["outcome"], outcome)
 
     def test_context_usage_follows_view_without_background_session_leaks(self):
         c = self.controller

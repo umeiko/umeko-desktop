@@ -26,6 +26,14 @@ class PreferencesMixin:
         self.appearanceChanged.emit()
         self._appearance_save.start()
 
+    @Slot(str)
+    def setLineSpacing(self, spacing):
+        if spacing not in ('compact', 'standard', 'relaxed') or spacing == self.lineSpacing:
+            return
+        self.store.data['ui']['lineSpacing'] = spacing
+        self.appearanceChanged.emit()
+        self._appearance_save.start()
+
     @Slot(str, str, str, result=bool)
     def setProviderProxy(self, identifier, mode, address):
         provider = self.gateway.provider(identifier) or {}
