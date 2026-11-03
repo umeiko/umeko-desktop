@@ -19,6 +19,7 @@ from app.gateway import Gateway, LocalServer
 from app.generation import GenerationCancelled, generation_config
 from app.request_diagnostics import RequestFailure
 from umeko_provider_sdk import Provider, ProviderContext, ProviderError, request_scope
+from tests.http_fixture import peer_disconnected
 
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=')
 AUDIO = b'ID3\x04\x00\x00fixture-audio'
@@ -68,11 +69,10 @@ class GenerationTests(unittest.TestCase):
                     fixture.started.set()
                     self.connection.settimeout(60)
                     try:
-                        if not self.connection.recv(1):
+                        if peer_disconnected(self.connection):
                             fixture.upstream_closed.set()
-                    except OSError:
-                        pass
-                    self.close_connection = True
+                    finally:
+                        self.close_connection = True
                     return
                 if fixture.mode == 'error':
                     return self.reply(json.dumps({'error': {'message': 'test quota reason; key=fixture-secret', 'code': 'insufficient_quota'}}).encode(), status=429)
