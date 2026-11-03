@@ -97,6 +97,21 @@ Item {
         const p = root.mapToItem(editor, x, y)
         return {row:editor.messageIndex, block:editor.blockIndex, offset:editor.positionAt(Math.max(0, Math.min(editor.width, p.x)), Math.max(0, Math.min(editor.height - 1, p.y)))}
     }
+    function linkAt(x, y) {
+        const editor = pick(x, y, false)
+        if (!editor || !editor.conversationLinks) return null
+        const p = mapToItem(editor, x, y), href = editor.conversationLinkAt(p.x, p.y)
+        return href ? {editor:editor, href:href, x:p.x, y:p.y} : null
+    }
+    property var pressedLink: null
+    function rememberLink(x, y) { pressedLink = linkAt(x, y); pointerMoved = false; return !!pressedLink }
+    function activateLink(x, y, button, modifiers) {
+        const link = linkAt(x, y), pressed = pressedLink
+        pressedLink = null
+        if (!pressed || !link || pointerMoved || pressed.editor !== link.editor || pressed.href !== link.href || (modifiers & Qt.ShiftModifier)) return false
+        link.editor.activateConversationLink(link.href, button, link.x, link.y)
+        return true
+    }
     function extend() {
         const editor = pick(pointer.x, Math.max(0, Math.min(height - 1, pointer.y)), true)
         if (editor) {
@@ -201,13 +216,16 @@ Item {
         anchors.fill: parent; anchors.rightMargin: 14
         objectName: "chatPointerArea"
         acceptedButtons: Qt.LeftButton | Qt.RightButton; preventStealing: true; hoverEnabled: true
-        cursorShape: root.hoveredTarget ? Qt.PointingHandCursor : root.pick(root.pointer.x, root.pointer.y, false) ? Qt.IBeamCursor : Qt.ArrowCursor
+        cursorShape: root.hoveredTarget || root.linkAt(root.pointer.x, root.pointer.y) ? Qt.PointingHandCursor : root.pick(root.pointer.x, root.pointer.y, false) ? Qt.IBeamCursor : Qt.ArrowCursor
         onPressed: event => {
+            root.pressedLink = null
             root.pointer = Qt.point(event.x, event.y)
             if (root.interactionAt(event.x, event.y)) { if (event.button === Qt.LeftButton) root.clear(); event.accepted = false; return }
             const editor = root.pick(event.x, event.y, false)
             if (!editor) { if (event.button === Qt.LeftButton) root.clear(); event.accepted = false; return }
+            root.rememberLink(event.x, event.y)
             if (event.button === Qt.RightButton) {
+                if (root.pressedLink) return
                 if (!root.hasSelection) root.selectUnit(editor, root.position(editor, event.x, event.y).offset, 2)
                 root.forceActiveFocus(); return
             }
@@ -225,7 +243,9 @@ Item {
             root.pointer = Qt.point(event.x, event.y); root.dragging = true
             root.view.beginBrowsing(); root.forceActiveFocus(); root.refresh()
         }
-        onClicked: event => { if (event.button === Qt.RightButton) selectionMenu.popup(event.x, event.y) }
+        onClicked: event => {
+            if (!root.activateLink(event.x, event.y, event.button, event.modifiers) && event.button === Qt.RightButton) selectionMenu.popup(event.x, event.y)
+        }
         onPositionChanged: event => {
             root.pointer = Qt.point(event.x, event.y)
             if (pressed && root.dragging) {
@@ -234,7 +254,7 @@ Item {
             }
         }
         onReleased: { if (root.dragging && root.pointerMoved) root.extend(); root.dragging = false }
-        onCanceled: root.dragging = false
+        onCanceled: { root.dragging = false; root.pressedLink = null }
         onDoubleClicked: event => {
             const editor = root.pick(event.x, event.y, false)
             if (!editor) return

@@ -160,6 +160,7 @@ Column {
                     x: 23; y: 6; width: parent.width - x; textFormat: TextEdit.PlainText; wrapMode: TextEdit.WrapAnywhere
                     selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset + toolRow.index + 1
                     conditionalSelection: true
+                    conversationLinks: true
                     text: root.detail(toolRow.tool)
                     font.family: "Consolas"; font.pixelSize: Theme.font(11, visible); color: Theme.muted
                 }

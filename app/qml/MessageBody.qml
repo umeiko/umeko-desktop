@@ -23,6 +23,7 @@ Column {
             width: root.width
             SelectableText {
                 id: proseText
+                conversationLinks: true
                 selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset + index
                 visible: !modelData.code; width: parent.width
                 text: modelData.code ? "" : modelData.html !== undefined ? modelData.html : root.markdown ? Markdown.forQt(modelData.text) : modelData.text; color: root.textColor
