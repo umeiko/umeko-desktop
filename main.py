@@ -111,6 +111,12 @@ def create_application():
 
 
 if __name__ == "__main__":
+    # Opt-in diagnostics for a frozen smoke process that hangs during teardown.
+    # Keep the watchdog alive through Python/Qt finalization, after EXIT:0.
+    if "--smoke" in sys.argv and os.environ.get('UMEKO_SMOKE_STACKS'):
+        import faulthandler
+        _smoke_stacks = open(os.environ['UMEKO_SMOKE_STACKS'], 'w', encoding='utf-8')
+        faulthandler.dump_traceback_later(30, file=_smoke_stacks)
     try:
         app, engine, controller = create_application()
     except Exception as exc:

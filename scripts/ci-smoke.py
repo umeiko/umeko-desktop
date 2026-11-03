@@ -106,9 +106,11 @@ def main():
     report_dir.mkdir(parents=True, exist_ok=True)
     diagnostic = report_dir / "application.log"
     screenshot = report_dir / "application.png"
+    stacks = report_dir / "application-stacks.log"
     isolated_profile(report_dir / 'profile')
     environment = dict(os.environ, UMEKO_DATA_DIR=str(report_dir / "profile"),
-        UMEKO_DIAGNOSTICS=str(diagnostic), QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software")
+        UMEKO_DIAGNOSTICS=str(diagnostic), UMEKO_SMOKE_STACKS=str(stacks),
+        QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software")
     environment["PATH"] = str(report_dir / "no-system-node")
     environment.pop("NODE_OPTIONS", None); environment.pop("NODE_PATH", None)
     for name in ('QT_PLUGIN_PATH', 'LD_LIBRARY_PATH', 'QML_IMPORT_PATH', 'QML2_IMPORT_PATH'):
@@ -116,8 +118,19 @@ def main():
     node = resources / "runtime/node" / ("node.exe" if os.name == "nt" else "bin/node")
     if not node.is_file(): raise RuntimeError("Bundled Node.js is missing")
     diagnostic.unlink(missing_ok=True)
-    result = subprocess.run([str(executable), "--smoke", "--snapshot", str(screenshot)],
-        env=environment, timeout=45, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    stacks.unlink(missing_ok=True)
+    try:
+        result = subprocess.run([str(executable), "--smoke", "--snapshot", str(screenshot)],
+            env=environment, timeout=45, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    except subprocess.TimeoutExpired as error:
+        # communicate() reports bytes on timeout, even when text=True.
+        output = b''.join(value.encode('utf-8') if isinstance(value, str) else value or b''
+                          for value in (error.stdout, error.stderr))
+        (report_dir / "application-output.log").write_bytes(output)
+        for path in (diagnostic, stacks):
+            if path.is_file():
+                print(path.name + ':\n' + path.read_text(encoding='utf-8', errors='replace'), flush=True)
+        raise
     (report_dir / "application-output.log").write_text(result.stdout + result.stderr, encoding="utf-8")
     log = diagnostic.read_text(encoding="utf-8") if diagnostic.exists() else ""
     lines = log.strip().splitlines()
