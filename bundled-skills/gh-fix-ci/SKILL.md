@@ -25,6 +25,23 @@ Use gh to locate failing PR checks, fetch GitHub Actions logs for actionable fai
 
 Prereq: authenticate with the standard GitHub CLI once (for example, run `gh auth login`), then confirm with `gh auth status` (repo + workflow scopes are typically required).
 
+## Local dependency preflight
+
+Before repository operations, check `git --version`, `gh --version`, and a
+user-accessible Python 3 for the bundled script. Use the same task environment
+for later checks; a frozen Umeko executable is not a general-purpose Python CLI.
+If any dependency is missing, identify it and the affected operations instead of
+attempting repository commands repeatedly or claiming that checks were inspected.
+
+Explain the proposed setup and obtain explicit user authorization before
+installing or upgrading Git, GitHub CLI, or Python. On a restricted or corporate
+network, reuse user-confirmed package sources, proxy settings, and CA certificates
+supported by the selected installer. Model provider proxy settings do not
+configure system package managers. Do not guess internal URLs or treat a public
+mirror as an approved internal source. Prefer command- or task-scoped settings
+over global configuration changes, preserve TLS verification, redact credentials,
+and confirm proxy and CA settings separately on remote hosts and in containers.
+
 ## Inputs
 
 - `repo`: path inside the repo (default `.`)
