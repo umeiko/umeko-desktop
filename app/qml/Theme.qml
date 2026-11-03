@@ -5,10 +5,10 @@ QtObject {
     readonly property real fontScale: backend.fontScale
     readonly property string fontFamily: backend.config.fontFamily || Qt.application.font.family
     readonly property real proseLineHeight: ({compact: 1.0, standard: 1.2, relaxed: 1.5})[backend.lineSpacing || "standard"]
-    // Hidden text waits until shown before subscribing to global size changes.
-    // Nonvisual measurements pass the visibility of the content they measure.
+    // Retained pages keep the same font metrics while hidden. Visibility
+    // changes must not invalidate every cached QTextDocument layout.
     function font(size, active) {
-        return Math.max(1, Math.round(size * (active === false ? 1 : fontScale)))
+        return Math.max(1, Math.round(size * fontScale))
     }
     function icon(size) { return Math.max(1, Math.round(size * fontScale)) }
     function control(size) { return Math.round(size * Math.max(1, fontScale)) }

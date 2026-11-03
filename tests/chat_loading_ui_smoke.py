@@ -16,7 +16,6 @@ os.environ.setdefault('QT_QUICK_BACKEND', 'software')
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtTest import QTest
 from main import create_application
-from app.transcripts import preview
 
 app, engine, backend = create_application()
 window = engine.rootObjects()[0]
@@ -59,17 +58,18 @@ try:
     cover = find('chatLoadingOverlay')
     reads, ready = [], []
     backend.sessionPreview.ready.connect(lambda token, ok: ready.append((token, ok)))
-    def slow_read(path):
+    read_transcript = backend.transcripts.open
+    def slow_read(path, **kwargs):
         reads.append(Path(path).stem)
         if len(reads) == 1:
             assert gate.wait(8), 'Test failed to release reader'
-        return preview(path)
+        return read_transcript(path, **kwargs)
     ticks = []
     timer = QTimer()
     timer.setInterval(10)
     timer.timeout.connect(lambda: ticks.append(1))
     timer.start()
-    with patch('app.session_preview.preview', side_effect=slow_read):
+    with patch.object(backend.transcripts, 'open', side_effect=slow_read):
         click('sidebarRow_1')
         assert cover.isVisible() and cover.opacity() == 1, 'Old chat was not covered immediately'
         assert backend.activeSession == '0'
@@ -92,18 +92,17 @@ try:
         wait_for(lambda: backend.activeSession == '3', 'Latest selection did not activate')
         assert reads == ['1', '3'], reads
         assert len(ready) == 1 and ready[0][1], 'Stale completion was delivered'
-        assert backend.messages[-1]['text'] == 'Conversation 3'
-        assert cover.isVisible(), 'Cover disappeared before layout/fade'
-        wait_for(lambda: 0 < cover.opacity() < 1, 'No fade between cover and chat')
+        assert backend.displayMessage(0)['text'] == 'Conversation 3'
+        # Index handoff reveals lightweight local placeholders immediately.
         wait_for(lambda: not cover.isVisible(), 'Cover remained after completion')
 
     # Cached switching and leaving for settings both retire pending work.
     click('sidebarRow_0')
-    assert cover.isVisible()
+    assert not cover.isVisible(), 'Retained view should not flash a full-screen loading cover'
     wait_for(lambda: backend.activeSession == '0' and not cover.isVisible(), 'Warm switch stayed covered')
     gate.clear()
     reads.clear()
-    with patch('app.session_preview.preview', side_effect=slow_read):
+    with patch.object(backend.transcripts, 'open', side_effect=slow_read):
         click('sidebarRow_4')
         wait_for(lambda: bool(reads), 'Cancel test read never started')
         window.setProperty('page', 'settings')
@@ -112,12 +111,12 @@ try:
         QTest.qWait(250)
         assert backend.activeSession == '0', 'Cancelled read changed chat'
     window.setProperty('page', 'chat')
-    with patch('app.session_preview.preview', side_effect=OSError('fixture read failure')):
+    with patch.object(backend.transcripts, 'open', side_effect=OSError('fixture read failure')):
         click('sidebarRow_4')
         wait_for(lambda: not window.property('sidebarSwitching') and not cover.isVisible(), 'Failed read stayed covered')
         assert backend.activeSession == '0'
     assert not warnings, '\n'.join(warnings)
-    print('CHAT_LOADING_UI_OK: immediate cover, live event loop, latest-only read, fade, cancel and failure recovery')
+    print('CHAT_LOADING_UI_OK: immediate cover, live event loop, latest-only read, local placeholders, warm-cache fast path, cancel and failure recovery')
 finally:
     gate.set()
     backend.close()

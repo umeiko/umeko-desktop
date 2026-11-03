@@ -10,7 +10,7 @@ Column {
         if (!expansionStates[key]) expansionStates[key] = {expanded:false, details:({})}
         return expansionStates[key]
     }
-    Connections { target: backend; function onViewChanged() { root.expansionStates = ({}) } }
+    Connections { target: backend; function onViewChanged() { if (!root.selectionController || !root.selectionController.retainedView) root.expansionStates = ({}) } }
     spacing: 4
     visible: activity.length > 0
     Repeater {
@@ -25,7 +25,7 @@ Column {
             width: root.width
             MessageBody {
                 width: parent.width; visible: step.entry.kind === "text"
-                text: visible ? (step.entry.error ? I18n.t(step.entry.text || "") : step.entry.text || "") : ""
+                text: step.entry.kind === "text" ? (step.entry.error ? I18n.t(step.entry.text || "") : step.entry.text || "") : ""
                 markdown: !step.entry.error; textColor: step.entry.error ? Theme.danger : Theme.ink
                 preparedBlocks: step.entry._rendered || null
                 compact: step.index < root.activity.length - 1
@@ -33,25 +33,25 @@ Column {
             }
             ThinkingHistory {
                 width: parent.width; visible: step.entry.kind === "thinking"
-                text: visible ? step.entry.text || "" : ""
+                text: step.entry.kind === "thinking" ? step.entry.text || "" : ""
                 expansionState: step.fold
                 selectionController: root.selectionController; messageIndex: root.messageIndex; blockOffset: step.entry.blockOffset
             }
             ToolHistory {
                 width: parent.width; visible: step.entry.kind === "tools"
-                tools: visible ? step.entry.tools || [] : []
+                tools: step.entry.kind === "tools" ? step.entry.tools || [] : []
                 expansionState: step.fold
                 selectionController: root.selectionController; messageIndex: root.messageIndex; blockOffset: step.entry.blockOffset
             }
             ChatboxMedia {
                 width: parent.width; visible: step.entry.kind === "media"
-                items: visible ? step.entry.items || [] : []; toolId: step.entry.toolId || ""
+                items: step.entry.kind === "media" ? step.entry.items || [] : []; toolId: step.entry.toolId || ""
                 expansionState: step.fold
                 selectionController: root.selectionController; messageIndex: root.messageIndex; blockOffset: step.entry.blockOffset
             }
             SubagentCards {
                 width: parent.width; visible: step.entry.kind === "subagents"
-                agents: visible ? step.entry.agents || [] : []
+                agents: step.entry.kind === "subagents" ? step.entry.agents || [] : []
                 selectionController: root.selectionController
             }
         }

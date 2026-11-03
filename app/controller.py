@@ -116,6 +116,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     messageCountChanged = Signal()
     transcriptChanged = Signal()
     viewChanged = Signal()
+    viewAboutToChange = Signal()
+    messageModelChanged = Signal()
+    conversationEvicted = Signal(str)
+    conversationViewsClosing = Signal()
     sidebarChanged = Signal()
     layoutChanged = Signal()
     toast = Signal(str)
@@ -181,7 +185,11 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._view = self._new_view()
         self._pool.touch(self._view, current=True)
         self._pool.event.connect(self._handle_pi_event)
-        self._chat_model = ChatModel(self)
+        from .conversation_views import ConversationViews
+        self._conversation_views = ConversationViews(self)
+        self._conversation_views.evicted.connect(self.conversationEvicted)
+        self._pool.bodyDiscarded.connect(self._conversation_views.discard)
+        self._chat_model = self._conversation_views.select(self._view.key)
         self._streaming_timer = QTimer(self)
         self._streaming_timer.setSingleShot(True)
         self._streaming_timer.setInterval(24)
@@ -293,9 +301,14 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     def _activate(self, record):
         self._streaming_timer.stop()
-        previous_configuration = copy.deepcopy(self.store.data)
+        self.viewAboutToChange.emit()
+        previous_configuration = {key: self.store.data.get(key) for key in ("workspace", "activeProject", "selectedProvider", "selectedModel")}
         self._view = record
-        self.viewChanged.emit()
+        model = self._conversation_views.select(record.key)
+        if model is not self._chat_model:
+            self._chat_model = model
+            self.messageModelChanged.emit()
+            self.messageCountChanged.emit()
         self._pool.touch(record, current=True, dirty=False)
         if record.workspace:
             project = self._ensure_project(record.workspace, reopen=True)
@@ -316,12 +329,13 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if (record.provider, record.model) in available:
             self.store.data.update(selectedModel=record.model, selectedProvider=record.provider)
         self._mark_read(record)
-        self.store.save()
+        self._viewport_save.start()
         # Rebinding every hidden settings page is expensive. Session-specific
         # signals below update the chat; refresh settings only when they changed.
-        if self.store.data != previous_configuration:
+        if any(self.store.data.get(key) != value for key, value in previous_configuration.items()):
             self.changed.emit()
         self.chatChanged.emit()
+        self.viewChanged.emit()
         self.attachmentsChanged.emit()
         self.approvalChanged.emit()
         self.editorText.emit(record.draft)
@@ -340,7 +354,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self._last_sidebar_rows = rows
             self.sidebarChanged.emit()
 
-    @Property(QObject, constant=True)
+    @Property(QObject, notify=messageModelChanged)
     def messageModel(self):
         return self._chat_model
 
@@ -1018,6 +1032,14 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Property(str, notify=viewChanged)
     def conversationToken(self):
         return self._view.key
+
+    @Slot(str, result=str)
+    def cachedConversationToken(self, session_id):
+        record = self._pool.find(session_id)
+        if (record and record.loaded and record.key in self._conversation_views.models
+                and (record.busy or not record.transcript or record.transcript.matches_source())):
+            return record.key
+        return ''
 
     @Property(str, notify=chatChanged)
     def sessionTitle(self):
@@ -1719,6 +1741,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             if not file.resolve().is_relative_to(base):
                 return self.toast.emit("只能删除 Umeko 会话目录中的文件")
         if record:
+            self._conversation_views.discard(record.key)
             self._pool._clear_body(record)
         if file:
             file.unlink(missing_ok=True)
@@ -2014,7 +2037,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._viewport_save.stop()
         self._streaming_timer.stop()
         self._session_preview.cancel()
-        self._chat_model.close()
+        self.conversationViewsClosing.emit()
+        self._conversation_views.close()
         self._document_preview.close()
         self._subagents.close()
         self._proxy_usage_timer.stop()

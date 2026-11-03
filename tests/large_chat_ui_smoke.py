@@ -60,6 +60,7 @@ try:
  old=c._view;old.draft='preserved draft';old.scroll_index=1200;old.scroll_y=0;old.follow_tail=False
  c._pool.body_limit=1;c.newSession();assert not old.loaded and not old.messages
  c.openSession('fixture');wait(lambda:c.activeSession=='fixture' and c.messageModel.paged)
+ view=find('conversation')  # Eviction releases the old retained Qt view.
  assert old.draft=='preserved draft' and old.transcript.parsed_entries==0
  wait(lambda:not view.property('restoring'))
  print('EVICT_RESTORE_OK',flush=True)
@@ -97,6 +98,7 @@ try:
  assert selected_text(script,None,[{'role':'user','text':'甲🙂乙𠮷尾'}],{'row':0,'block':0,'offset':1},{'row':0,'block':0,'offset':3},{})=='🙂'
  print('FRAGMENT_COPY_OK',flush=True)
  c.newSession();QTest.qWait(50)
+ view=find('conversation')
  assert not view.isVisible()
  c._view.messages=[{'role':'user','text':'A new question'},{'role':'assistant','text':'A new reply'}]
  c.chatChanged.emit();c.viewChanged.emit();QTest.qWait(150)

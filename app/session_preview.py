@@ -54,7 +54,7 @@ class SessionPreview(QObject):
             try:
                 saved = job['saved']
                 file = saved.get('file')
-                if file and self.controller.transcripts.large(file):
+                if file:
                     cached = self.controller._pool.find(saved['id'])
                     index, _, follow = (cached.scroll_index, cached.scroll_y, cached.follow_tail) if cached else saved['_viewport']
                     focus = index if not follow else -1

@@ -135,6 +135,11 @@ jobs:
             .venv/bin/python tests/large_markdown_ui_smoke.py
             .venv/bin/python tests/history_window_ui_smoke.py
             .venv/bin/python tests/motion_ui_smoke.py
+            .venv/bin/python tests/sidebar_highlight_ui_smoke.py
+            .venv/bin/python tests/chat_loading_ui_smoke.py
+            .venv/bin/python tests/viewport_cache_ui_smoke.py
+            .venv/bin/python tests/scroll_paging_ui_smoke.py
+            .venv/bin/python tests/large_chat_ui_smoke.py
             .venv/bin/python tests/appearance_ui_smoke.py
             .venv/bin/python tests/task_state_ui_smoke.py
             .venv/bin/python tests/thinking_stream_ui_smoke.py

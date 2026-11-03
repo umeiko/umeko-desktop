@@ -96,10 +96,12 @@ class Store:
         self.directory.mkdir(parents=True, exist_ok=True)
         self.path = self.directory / "settings.json"
         self.data = copy.deepcopy(DEFAULTS)
+        self._protected = {}
+        self._serialized = None
         saved = {}
         if self.path.exists():
             saved = json.loads(self.path.read_text(encoding="utf-8"))
-            self.data.update(saved)
+            self.data.update(copy.deepcopy(saved))
             self.data["theme"] = saved.get("theme", "dark" if saved.get("dark") else "light")
             saved_server = saved.get("server", {})
             self.data["server"] = {**copy.deepcopy(DEFAULTS["server"]), **saved_server}
@@ -123,6 +125,13 @@ class Store:
             self.data["server"].pop("token", None)
             for p in self.data["providers"]:
                 p["key"] = protect(p.get("key", ""), True)
+        # Retain the encrypted references read from disk. Ordinary UI saves
+        # must not rewrite unchanged secrets through Secret Service/Keychain.
+        self._namespace = hashlib.sha256(str(self.directory.resolve()).encode()).hexdigest()[:24]
+        self._remember_secret('password', self.data.get('password', ''), saved.get('password', ''))
+        saved_keys = {p['id']: p.get('key', '') for p in saved.get('providers', [])}
+        for provider in self.data['providers']:
+            self._remember_secret('provider:' + provider['id'], provider.get('key', ''), saved_keys.get(provider['id'], ''))
         image_limit = self.data['agent'].get('maxContextImages', 3)
         self.data['agent']['maxContextImages'] = max(1, image_limit) if type(image_limit) is int else 3
         self.data['desktop'] = desktop_settings(self.data.get('desktop'))
@@ -154,15 +163,31 @@ class Store:
         if not self.path.exists() or "keys" not in saved.get("server", {}) or output_default_migrated or projects_migrated or line_spacing_migrated:
             self.save()
 
+    def _remember_secret(self, name, value, protected):
+        if protected or not value:
+            self._protected[name] = (hashlib.sha256(value.encode('utf-8')).digest(), protected)
+
+    def _protect_secret(self, name, value):
+        fingerprint = hashlib.sha256(value.encode('utf-8')).digest()
+        cached = self._protected.get(name)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        protected = protect(value, account=self._namespace + ':' + name)
+        self._protected[name] = fingerprint, protected
+        return protected
+
     def save(self):
         saved = copy.deepcopy(self.data)
-        namespace = hashlib.sha256(str(self.directory.resolve()).encode()).hexdigest()[:24]
-        saved["password"] = protect(saved.get("password", ""), account=namespace + ":password")
-        for p in saved["providers"]:
-            p["key"] = protect(p.get("key", ""), account=namespace + ":provider:" + p["id"])
-        temp = self.path.with_suffix(".tmp")
-        temp.write_text(json.dumps(saved, ensure_ascii=False, indent=2), encoding="utf-8")
+        saved['password'] = self._protect_secret('password', saved.get('password', ''))
+        for provider in saved['providers']:
+            provider['key'] = self._protect_secret('provider:' + provider['id'], provider.get('key', ''))
+        text = json.dumps(saved, ensure_ascii=False, indent=2)
+        if text == self._serialized and self.path.exists():
+            return
+        temp = self.path.with_suffix('.tmp')
+        temp.write_text(text, encoding='utf-8')
         temp.replace(self.path)
+        self._serialized = text
 
     def load_sessions(self):
         path = self.directory / "sessions.json"

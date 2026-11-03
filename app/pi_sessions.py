@@ -109,6 +109,7 @@ class SessionState:
 
 class PiSessionPool(QObject):
     event = Signal(object, object)
+    bodyDiscarded = Signal(str)
 
     def __init__(self, parent=None, limit=3, body_limit=32 * 1024 * 1024):
         super().__init__(parent)
@@ -258,6 +259,7 @@ class PiSessionPool(QObject):
         self._evict(record)
         if not record.file:
             return  # Unsaved messages are authoritative, not a replayable cache.
+        self.bodyDiscarded.emit(record.key)
         record.messages, record.history, record.tree = [], [], []
         record.resources = {"tools": [], "skills": [], "extensions": [], "diagnostics": [], "toolCatalog":record.resources.get("toolCatalog",[])}
         record.transcript, record.loaded, record.body_bytes = None, False, 0

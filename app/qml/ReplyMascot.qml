@@ -50,7 +50,7 @@ FocusScope {
         Behavior on scale { SpringAnimation { spring: 4; damping: 0.25; epsilon: 0.005 } }
     }
     Repeater {
-        model: 5
+        model: burst.running ? 5 : 0
         Glyph {
             required property int index
             readonly property real angle: (index * 72 - 110) * Math.PI / 180
