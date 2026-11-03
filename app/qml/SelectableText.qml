@@ -1,4 +1,5 @@
 import QtQuick
+import Umeko.Text 1.0
 
 TextEdit {
     id: root
@@ -7,6 +8,38 @@ TextEdit {
     property int messageIndex: -1
     property int blockIndex: 0
     property bool conditionalSelection: false
+    property bool conversationLinks: false
+    function conversationLinkAt(x, y) { return conversationLinks ? linkAt(x, y) : "" }
+    function activateConversationLink(href, button, x, y) {
+        const info = links.linkInfo(href)
+        if (!info.kind) return
+        if (button === Qt.RightButton) {
+            linkMenu.link = info
+            linkMenu.popup(x, y)
+        } else if (info.kind === "path") backend.openConversationPath(info.target, false)
+        else backend.openConversationUrl(info.target)
+    }
+    onLinkActivated: link => { if (conversationLinks && !selectionController) activateConversationLink(link, Qt.LeftButton, 0, 0) }
+    TextLinks {
+        id: links; objectName: "conversationLinks"
+        document: root.textDocument; enabled: root.conversationLinks && root.visible
+        workspace: root.conversationLinks ? backend.conversationWorkspace || "" : ""
+        active: !root.conversationLinks || !backend.busy
+        color: Theme.accent
+    }
+    MouseArea {
+        anchors.fill: parent; enabled: root.conversationLinks && !root.selectionController
+        acceptedButtons: Qt.RightButton
+        onPressed: mouse => { if (!root.conversationLinkAt(mouse.x, mouse.y)) mouse.accepted = false }
+        onClicked: mouse => root.activateConversationLink(root.conversationLinkAt(mouse.x, mouse.y), mouse.button, mouse.x, mouse.y)
+    }
+    FloatingMenu {
+        id: linkMenu; objectName: "conversationLinkMenu"
+        property var link: ({})
+        ContextAction { objectName: "copyConversationPath"; visible: linkMenu.link.kind === "path"; text: I18n.t("复制路径"); glyph: "file"; onTriggered: backend.copy(linkMenu.link.target) }
+        ContextAction { objectName: "revealConversationPath"; visible: linkMenu.link.kind === "path"; text: I18n.t("在文件管理器中打开"); glyph: "folder"; onTriggered: backend.openConversationPath(linkMenu.link.target, true) }
+        ContextAction { objectName: "copyConversationUrl"; visible: linkMenu.link.kind === "url"; text: I18n.t("复制网址"); glyph: "copy"; onTriggered: backend.copy(linkMenu.link.target) }
+    }
     readOnly: true
     font.family: Theme.fontFamily
     selectByMouse: !selectionController

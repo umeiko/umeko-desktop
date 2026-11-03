@@ -271,6 +271,8 @@ def register_text_types():
     global _registered
     if not _registered:
         from .text_spacing import TextSpacing
+        from .text_links import TextLinks
         qmlRegisterType(TextSpacing, "Umeko.Text", 1, 0, "TextSpacing")
+        qmlRegisterType(TextLinks, "Umeko.Text", 1, 0, "TextLinks")
         qmlRegisterType(SyntaxHighlighter, "Umeko.Text", 1, 0, "SyntaxHighlighter")
         _registered = True

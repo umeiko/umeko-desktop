@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QApplication
 import shiboken6
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 _application = None
 
 
@@ -46,6 +47,8 @@ def create_scene(tools):
     global _application
     _application = QApplication.instance() or QApplication([])
     _application.setFont(QFont('sans-serif', 11))
+    from app.syntax_highlight import register_text_types
+    register_text_types()
     display = Display(tools)
     engine = QQmlApplicationEngine()
     warnings = []
