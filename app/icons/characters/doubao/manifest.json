@@ -1,0 +1,20 @@
+{
+  "format": "umeko-character",
+  "version": 1,
+  "id": "doubao",
+  "name": "豆包",
+  "assets": {
+    "picker": "picker.png",
+    "welcome": "welcome.png",
+    "avatarSmile": "picker.png",
+    "avatarWink": "picker.png",
+    "avatarHappy": "picker.png",
+    "reply": "reply.png",
+    "loading": "loading.png",
+    "catch": "catch.png",
+    "push": "push.png",
+    "pull": "pull.png",
+    "background": "welcome.png"
+  },
+  "dialogue": "dialogue.json"
+}

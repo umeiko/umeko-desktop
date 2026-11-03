@@ -13,9 +13,9 @@ def package(folder, output):
     import re
     if data.get('format')!='umeko-character' or type(data.get('version')) is not int or data['version']!=1: raise ValueError('Invalid format/version')
     identifier=data.get('id','')
-    if not re.fullmatch('[a-z0-9][a-z0-9-]{0,47}',identifier) or identifier in ('yanami','komari','kaju'): raise ValueError('Invalid or reserved id')
+    if not re.fullmatch('[a-z0-9][a-z0-9-]{0,47}',identifier) or identifier in ('yanami','komari','kaju','tiara','whale-girl','doubao','kazuhiko'): raise ValueError('Invalid or reserved id')
     if not isinstance(data.get('name'),str) or not 1<=len(data['name'].strip())<=48: raise ValueError('Invalid name')
-    slots=set('welcome avatarSmile avatarWink avatarHappy reply loading catch push pull background subagent0 subagent1 subagent2 subagent3 subagentCatch0 subagentCatch1 subagentCatch2 subagentCatch3'.split())
+    slots=set('picker welcome avatarSmile avatarWink avatarHappy reply loading catch push pull background subagent0 subagent1 subagent2 subagent3 subagentCatch0 subagentCatch1 subagentCatch2 subagentCatch3'.split())
     assets=data.get('assets',{})
     if not isinstance(assets,dict) or set(assets)-slots: raise ValueError('Unknown asset slot')
     paths={'manifest.json',*assets.values()}

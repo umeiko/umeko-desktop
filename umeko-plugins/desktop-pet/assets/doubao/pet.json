@@ -1,0 +1,90 @@
+{
+  "format": "umeko-pet",
+  "version": 1,
+  "id": "doubao",
+  "name": "豆包",
+  "states": {
+    "idle": "idle.webp",
+    "thinking": "thinking.webp",
+    "working": "working.webp",
+    "waiting": "waiting.webp",
+    "done": "done.webp",
+    "error": "error.webp"
+  },
+  "images": {
+    "idle.webp": {
+      "animated": true,
+      "width": 360,
+      "height": 360,
+      "frames": 12,
+      "contentTop": 0.10277777777777777
+    },
+    "thinking.webp": {
+      "animated": true,
+      "width": 360,
+      "height": 360,
+      "frames": 12,
+      "contentTop": 0.1
+    },
+    "working.webp": {
+      "animated": true,
+      "width": 360,
+      "height": 360,
+      "frames": 12,
+      "contentTop": 0.1
+    },
+    "waiting.webp": {
+      "animated": true,
+      "width": 360,
+      "height": 360,
+      "frames": 12,
+      "contentTop": 0.1
+    },
+    "done.webp": {
+      "animated": true,
+      "width": 360,
+      "height": 360,
+      "frames": 12,
+      "contentTop": 0.11666666666666667
+    },
+    "error.webp": {
+      "animated": true,
+      "width": 360,
+      "height": 360,
+      "frames": 12,
+      "contentTop": 0.1
+    },
+    "idle-rare.webp": {
+      "animated": true,
+      "width": 360,
+      "height": 360,
+      "frames": 12,
+      "contentTop": 0.10555555555555556
+    }
+  },
+  "dialogue": {
+    "tap": [
+      "我太懂你这种感觉了！",
+      "你说，我听，咱们直接捋。",
+      "清楚、实用、不绕弯。"
+    ],
+    "hover": [
+      "我就在这里，稳稳陪着你。",
+      "稍等，我用大白话给你捋清楚。"
+    ],
+    "drag": [
+      "稳了，站稳了，咱们继续。"
+    ],
+    "done": [
+      "我直接说结论：完成啦。"
+    ],
+    "error": [
+      "对不起，这一步卡住了。我不躲，咱们找办法。"
+    ]
+  },
+  "rareIdle": {
+    "image": "idle-rare.webp",
+    "title": "稳稳接住你",
+    "line": "我就在这里，不躲、不藏、不绕、不逃，稳稳地接住你。"
+  }
+}

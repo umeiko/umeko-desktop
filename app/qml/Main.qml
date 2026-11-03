@@ -672,6 +672,7 @@ ApplicationWindow {
                         id: closingMascot
                         objectName: "replyEndMascot_" + messageRow.index
                         selectionController: chatSelection
+                        width: Character.id === "doubao" ? Theme.icon(72) : 56
                         visible: !modelData._loading && !messageRow.compactionNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !backend.running && (backend.turnStatus.state === "finished" || modelData.stopReason === "stop")
                         x: 33
                     }

@@ -19,6 +19,7 @@
 
 | 槽位 | 用途 |
 | --- | --- |
+| picker | 可选主角色选择窗口封面；省略时使用头像，不改变聊天或子智能体头像 |
 | welcome | 欢迎与点击互动，半身图 |
 | avatarSmile / avatarWink / avatarHappy | 紧凑头像，聊天中轮换 |
 | reply | 回复完成互动 |

@@ -102,6 +102,30 @@ class PetTests(unittest.TestCase):
         self.assertEqual(self.pet._packs['whale-girl']['directory'], pack)
         self.manager.close();second=DesktopPlugins(self.host);self.addCleanup(second.close)
         self.assertEqual(second.pet.config['appearance'],'whale-girl')
+    def test_doubao_has_seven_animated_states_and_protected_persistent_selection(self):
+        from PySide6.QtGui import QImageReader
+        folder = self.host.root/'umeko-plugins/desktop-pet/assets/doubao'
+        pack = read_pack(folder, check=True)
+        self.assertEqual(pack['name'], '豆包')
+        self.assertTrue(next(row for row in self.pet.appearances if row['id'] == 'doubao')['builtin'])
+        for file in [*pack['states'].values(), pack['rareIdle']['image']]:
+            reader = QImageReader(str(folder/file))
+            self.assertEqual(reader.imageCount(), 12, file)
+            image = reader.read()
+            self.assertEqual((image.width(), image.height()), (360,360))
+            self.assertTrue(image.hasAlphaChannel())
+            self.assertEqual(image.pixelColor(0,0).alpha(), 0)
+        self.assertTrue(self.rpc(self.control(),'selectAppearance',{'id':'doubao'})['ok'])
+        for state in pack['states']:
+            self.pet.motion.state = state
+            self.assertTrue(self.pet.state['source'].endswith('/doubao/'+state+'.webp'))
+            self.assertTrue(self.pet.state['animated'])
+        self.assertFalse(self.rpc(self.control(),'removeAppearance',{'id':'doubao'})['ok'])
+        self.manager.close()
+        second = DesktopPlugins(self.host)
+        self.addCleanup(second.close)
+        self.assertEqual(second.pet.config['appearance'], 'doubao')
+
     def test_builtin_komari_has_six_valid_animations_and_persists_selection(self):
         packs = {row['id']:row for row in self.pet.appearances}
         self.assertTrue(packs['yanami']['builtin'])

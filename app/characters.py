@@ -15,10 +15,10 @@ from pathlib import Path
 from PySide6.QtCore import QUrl, Slot, QSaveFile, QIODevice, QTimer
 from PySide6.QtGui import QImageReader
 
-SLOTS = frozenset('welcome avatarSmile avatarWink avatarHappy reply loading catch push pull background subagent0 subagent1 subagent2 subagent3 subagentCatch0 subagentCatch1 subagentCatch2 subagentCatch3'.split())
+SLOTS = frozenset('picker welcome avatarSmile avatarWink avatarHappy reply loading catch push pull background subagent0 subagent1 subagent2 subagent3 subagentCatch0 subagentCatch1 subagentCatch2 subagentCatch3'.split())
 LINES = frozenset(('tap', 'celebration', 'greeting'))
 DEFAULT = {'id': 'yanami', 'name': '八奈见杏菜', 'assets': {}, 'lines': {}}
-BUILTINS = frozenset(('yanami', 'komari', 'kaju', 'tiara', 'whale-girl', 'kazuhiko'))
+BUILTINS = frozenset(('yanami', 'komari', 'kaju', 'tiara', 'whale-girl', 'doubao', 'kazuhiko'))
 CONFIG_DEFAULTS = json.loads((Path(__file__).parent/'character-defaults.json').read_text(encoding='utf-8'))
 
 
@@ -215,7 +215,7 @@ class CharactersMixin:
 
     def _character_packs(self, subagents=False):
         rows = [dict(DEFAULT, builtin=True)]
-        identifiers = ('komari', 'kaju', 'tiara', 'whale-girl') + (('kazuhiko',) if subagents else ())
+        identifiers = ('komari', 'kaju', 'tiara', 'whale-girl', 'doubao') + (('kazuhiko',) if subagents else ())
         files = [(self.root/f'app/icons/characters/{identifier}/manifest.json', True)
                  for identifier in identifiers if (self.root/f'app/icons/characters/{identifier}/manifest.json').is_file()]
         files += [(path, False) for path in sorted((self.store.directory/'characters').glob('*/manifest.json'))
@@ -233,7 +233,8 @@ class CharactersMixin:
         rows = []
         for item in self._character_packs(subagents):
             row = {key: item[key] for key in ('id', 'name', 'builtin')}
-            asset = next((item['assets'][key] for key in ('avatarSmile','reply','welcome') if key in item['assets']), None)
+            portrait_slots = ('avatarSmile','reply','welcome') if subagents else ('picker','avatarSmile','reply','welcome')
+            asset = next((item['assets'][key] for key in portrait_slots if key in item['assets']), None)
             path = Path(item['directory'])/asset if asset else self.root/'app/icons/avatars/smile.webp'
             row['portrait'] = QUrl.fromLocalFile(str(path)).toString()
             reply = Path(item['directory'])/item['assets']['reply'] if item['assets'].get('reply') else self.root/'app/icons/yanami-pixel.webp' if item['id']=='yanami' else path

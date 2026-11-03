@@ -150,8 +150,8 @@ class CharacterTests(unittest.TestCase):
 
     def test_all_builtin_characters_are_complete_and_protected(self):
         b=self.backend
-        self.assertEqual({row['id'] for row in b.characterPacks if row['builtin']},{'yanami','komari','kaju','tiara','whale-girl'})
-        for identifier in ('yanami','komari','kaju','tiara','whale-girl'):
+        self.assertEqual({row['id'] for row in b.characterPacks if row['builtin']},{'yanami','komari','kaju','tiara','whale-girl','doubao'})
+        for identifier in ('yanami','komari','kaju','tiara','whale-girl','doubao'):
             self.assertFalse(b.removeCharacter(identifier))
             self.manifest['id']=identifier;self.write()
             self.assertFalse(b.importCharacter(str(self.make_zip(self.zip_entries()))))
@@ -164,6 +164,44 @@ class CharacterTests(unittest.TestCase):
         self.assertEqual(b.characterStyle['id'],'kaju')
         self.assertEqual(json.loads(b.store.path.read_text())['character'],'kaju')
         self.assertTrue(all(row['portrait'].startswith('file:') for row in b.characterPacks))
+
+    def test_doubao_art_dialogue_subagent_and_selection_persist(self):
+        b = self.backend
+        pack = read_character(ROOT/'app/icons/characters/doubao/manifest.json', check_images=True)
+        self.assertEqual(len(pack['assets']), 11)
+        self.assertTrue(b.selectCharacter('doubao'))
+        self.assertEqual(b.characterStyle['name'], '豆包')
+        row = next(row for row in b.characterPacks if row['id'] == 'doubao')
+        self.assertTrue(row['portrait'].endswith('/doubao/picker.png'))
+        self.assertTrue(row['replyPortrait'].endswith('/doubao/reply.png'))
+        self.assertTrue(b.characterStyle['easterEgg']['source'].endswith('/rare-scenes/doubao.png'))
+        self.assertEqual(b.characterStyle['easterEgg']['title'], '稳稳接住你')
+        self.assertEqual(len(b.characterStyle['dialogue']['loading']['tips']), 8)
+        self.assertTrue(b.selectSubagentCharacter(1, 'doubao'))
+        role = b.characterStyle['subagents'][1]
+        self.assertEqual(role['name'], '豆包')
+        self.assertEqual(role['tap'], b.characterStyle['dialogue']['reply']['tap'])
+        for slot in ('avatar', 'catch'):
+            self.assertTrue(Path(QUrl(role[slot]).toLocalFile()).is_file())
+        self.assertTrue(b.selectCharacter('komari'))
+        self.assertEqual(b.characterNames[1], '豆包')
+        b.close()
+        self.backend = Controller(ROOT)
+        self.assertEqual(self.backend.characterStyle['id'], 'komari')
+        self.assertEqual(self.backend.characterNames[1], '豆包')
+        self.assertTrue(self.backend.selectCharacter('doubao'))
+
+    def test_optional_picker_is_only_used_for_the_main_character_cover(self):
+        image = QImage(16,16,QImage.Format.Format_ARGB32)
+        image.fill(0xff4466aa)
+        self.assertTrue(image.save(str(self.folder/'cover.png')))
+        self.manifest['assets'].update(picker='cover.png', avatarSmile='portrait.png')
+        self.write()
+        self.assertTrue(self.backend.importCharacter(str(self.file)))
+        main = next(row for row in self.backend.characterPacks if row['id'] == 'test-character')
+        subagent = next(row for row in self.backend.subagentCharacterPacks if row['id'] == 'test-character')
+        self.assertTrue(main['portrait'].endswith('/cover.png'))
+        self.assertTrue(subagent['portrait'].endswith('/portrait.png'))
 
     def test_whale_girl_main_art_dialogue_and_subagent_are_independent(self):
         b = self.backend
