@@ -43,6 +43,7 @@ export class DefaultResourceLoader extends NativeResourceLoader {
 // the narrow handoff between its SDK facade and the desktop extension.
 export async function createAgentSession(options) {
   const result = await nativeCreateAgentSession({...options, excludeTools: [...(options?.excludeTools || []), ...(globalThis[Symbol.for("umeko:tool-visibility-host")]?.getBlockedTools() || [])]});
+  globalThis[Symbol.for("umeko:auxiliary-vision")]?.guardSession(result.session);
   // The community package binds children with {}. Relay supported confirmations
   // through the desktop while leaving genuinely headless contexts headless.
   const bind = result.session.bindExtensions.bind(result.session);

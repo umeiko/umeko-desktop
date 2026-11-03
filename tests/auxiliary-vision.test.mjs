@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createAuxiliaryVision} from '../runtime/auxiliary-vision.mjs';
+import {createAuxiliaryVision,textOnlyPayload} from '../runtime/auxiliary-vision.mjs';
 
 const image={type:'image',data:Buffer.from('fixture image').toString('base64'),mimeType:'image/png'};
 const config=()=>({gateway:'http://127.0.0.1:8787/',token:'private-token',models:[{id:'text',input:['text']},{id:'native',input:['text','image']}],
@@ -100,4 +100,37 @@ test('changing the upstream model behind an alias cannot reuse another model res
   const result=await f.host.analyze([image],'Describe');
   assert.equal(f.requests.length,2);
   assert.equal(result.label,'another-upstream-model');
+});
+
+test('final request guard runs after extension hooks, preserves text and follows model switches',async()=>{
+  const f=fixture();let hooks=0;
+  // This guard must work independently of helper/tool enablement.
+  f.value.auxiliaryVision={};
+  const injected={messages:[{role:'user',content:[{type:'text',text:'Keep this recognition result'},
+    {type:'image_url',image_url:{url:'data:image/png;base64,'+image.data}}]}],tools:[{type:'function',function:{name:'read'}}]};
+  const original=structuredClone(injected);
+  const session={model:{id:'text'},agent:{onPayload:async payload=>{hooks++;return {...payload,...injected,extension:'preserved'};}}};
+  f.host.guardSession(session);f.host.guardSession(session);
+  const clean=await session.agent.onPayload({reasoning_effort:'high'},session.model);
+  assert.equal(hooks,1,'Installing the guard twice must not duplicate extension hooks');
+  assert.equal(clean.reasoning_effort,'high');assert.equal(clean.extension,'preserved');assert.deepEqual(clean.tools,injected.tools);
+  assert.match(clean.messages[0].content,/Keep this recognition result/);
+  assert.match(clean.messages[0].content,/model does not support images/);
+  assert.ok(!JSON.stringify(clean).includes(image.data),'Image bytes cannot leak into the primary request');
+  assert.deepEqual(injected,original,'Request projection must not mutate extension-owned content or history');
+  session.model={id:'native'};
+  assert.deepEqual((await session.agent.onPayload({})).messages,injected.messages,'Switching to native vision retains original images');
+  session.model={id:'text'};
+  assert.equal(typeof (await session.agent.onPayload({})).messages[0].content,'string');
+});
+
+test('request projection handles image-only messages and preserves unaffected payloads',()=>{
+  const payload={messages:[{role:'user',content:'ordinary text'},{role:'tool',tool_call_id:'call',content:'recognition result'}]};
+  assert.equal(textOnlyPayload(payload),payload);
+  for(const type of ['image','image_url','input_image']) {
+    const content={messages:[{role:'user',content:[{type,data:image.data,image_url:{url:'data:image/png;base64,'+image.data}}]}]};
+    const projected=textOnlyPayload(content);
+    assert.equal(typeof projected.messages[0].content,'string');
+    assert.ok(!JSON.stringify(projected).includes(image.data));
+  }
 });

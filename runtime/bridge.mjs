@@ -313,6 +313,7 @@ async function restoreSubagentSession(child, context, customTools) {
     modelRuntime,model,settingsManager:policy,resourceLoader:loader,thinkingLevel:context?.thinkingLevel || "off",
     customTools,excludeTools:["subagent","get_subagent_result","steer_subagent",...blockedToolNames(config.blockedTools)],
     tools:context?.tools || (readonly ? ["read","grep","find","ls"] : undefined)});
+  auxiliaryVision.guardSession(session);
   await session.bindExtensions({uiContext:ui,mode:"rpc",abortHandler:()=>session.abort(),
     shutdownHandler:()=>session.abort(),onError:error=>emit({type:"notice",message:error.message})});
   return session;
@@ -397,6 +398,7 @@ async function init(input) {
     // generation/compaction overrides stay in memory on the session itself.
     services.settingsManager = settings;
     const result = await Pi.createAgentSessionFromServices({ services, sessionManager, sessionStartEvent, model: selectedModel, excludeTools: input.globalCoordinator ? undefined : [...new Set([...blockedToolNames(input.blockedTools),...excludedSessionTools(input.piCapabilities)])] });
+    auxiliaryVision.guardSession(result.session);
     return { ...result, services, diagnostics: services.diagnostics };
   };
   let manager;
