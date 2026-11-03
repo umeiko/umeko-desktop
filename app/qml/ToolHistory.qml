@@ -12,7 +12,7 @@ Column {
     property int messageIndex: -1
     property int blockOffset: 0
     readonly property bool running: tools.some(tool => tool.state === "running")
-    readonly property string runningNames: tools.filter(tool => tool.state === "running").map(tool => tool.name + (tool.video ? " · " + videoProgress(tool.video) : "")).join(", ")
+    readonly property string runningNames: tools.filter(tool => tool.state === "running").map(tool => tool.video ? tool.name + " · " + videoProgress(tool.video) : tool.name === "analyze_image" && tool.arguments?.model ? preview(tool) : tool.name).join(", ")
     readonly property int failures: tools.filter(tool => tool.state === "error").length
     readonly property bool commandsOnly: tools.length > 0 && tools.every(tool => command(tool.name))
     readonly property string summary: (running ? (commandsOnly ? I18n.t("正在运行 ") : I18n.t("正在执行 ")) : (commandsOnly ? I18n.t("运行了 ") : I18n.t("执行了 "))) + tools.length + (commandsOnly ? I18n.t(" 条命令") : I18n.t(" 项操作")) + (failures ? "（" + failures + I18n.t(" 失败）") : "") + (runningNames ? " · " + runningNames : "")
@@ -39,6 +39,10 @@ Column {
     function preview(tool) {
         const args = tool.arguments || {}
         if (tool.video) return videoProgress(tool.video) + (args.prompt ? " · " + args.prompt : "")
+        if (tool.name === "analyze_image" && args.model) {
+            const label = args.cached ? I18n.t("复用 {model} 的识图结果") : tool.state === "running" ? I18n.t("正在通过 {model} 识图") : I18n.t("通过 {model} 识图")
+            return label.replace("{model}", args.model)
+        }
         if (tool.subagent) {
             const agent = tool.subagent
             return [agentType(agent.type || args.type), agentState(tool.state || agent.status), agentMode(agent), I18n.t("调用工具 %1 次").replace("%1", agent.toolUses || 0), agent.task || args.task || "", agentActivity(agent.activity)].filter(value => value !== "").join(" · ").replace(/\s+/g, " ").trim()

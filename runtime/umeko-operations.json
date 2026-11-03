@@ -1,6 +1,8 @@
 {
   "version": 1,
   "operations": {
+  "vision.configure": {"target":"backend","method":"saveAuxiliaryVision","args":[["config","json"]]},
+  "generation.configure": {"target":"backend","method":"saveMultimodalSettings","args":[["config","json"]]},
     "providers.save": {"target":"backend","method":"saveProvider","idle":"provider","args":[["id","string",""],["name","string"],["api","string"],["baseUrl","string"],["key","string",""],["models","json"]]},
     "providers.addCommon": {"target":"backend","method":"addCommonProvider","args":[["preset","string"],["key","string"],["alias","string",""],["region","string","cn"]]},
     "providers.remove": {"target":"backend","method":"removeProvider","idle":"provider","exists":"provider","args":[["id","string"]]},

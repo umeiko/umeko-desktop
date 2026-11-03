@@ -19,6 +19,10 @@ export class DefaultResourceLoader extends NativeResourceLoader {
       ...factories,
       { name: "recent-images", hidden: true, replaceable: false,
         factory: createRecentImagesExtension({ getLimit: () => globalThis[Symbol.for("umeko:recent-images-policy")]?.getLimit() }) },
+      { name: "auxiliary-vision", hidden: true, replaceable: false,
+        factory: pi => globalThis[Symbol.for("umeko:auxiliary-vision")]?.contextExtension(pi) },
+      ...(factories.some(item => item.name === "umeko-control") ? [] : [{name:"umeko-control", builtin:true, replaceable:false,
+        factory: pi => globalThis[Symbol.for("umeko:auxiliary-vision")]?.toolExtension(pi)}]),
       ...(factories.some(item => item.name === "background-jobs") ? [] :
         [{ name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension }]),
       { name: "tool-permissions", hidden: true, replaceable: false,

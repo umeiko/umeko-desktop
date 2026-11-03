@@ -163,6 +163,7 @@ class PiControllerMixin:
                     blockedTools=record.blocked_tools,
                     docsDir=str(self.store.directory / "agent-docs"),
                     legacyHistory=record.history, models=self.gateway.models(), agent=agent,
+                    auxiliaryVision=self._auxiliary_vision(),
                     permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,
                     dataDir=str(self.store.directory),
                     generation=generation_config(self.store.data),
@@ -206,10 +207,12 @@ class PiControllerMixin:
         model = record.model if record.phase == "running" else self.store.data["selectedModel"]
         provider = record.provider if record.phase == "running" else self.store.data["selectedProvider"]
         attachments = record.attachments
-        if images and not self.gateway.supports_vision(model, provider):
-            self.toast.emit("未启用视觉，降级为普通文件路径")
+        if images and not self.gateway.supports_vision(model, provider) and not self._can_analyze_attachments(model, provider):
             images = []
-            attachments = [{**item, "kind": "file" if item["kind"] == "image" else item["kind"]} for item in attachments]
+            vision = self._auxiliary_vision()
+            if not (vision['model'] and vision['toolEnabled']):
+                self.toast.emit("未启用视觉，降级为普通文件路径")
+                attachments = [{**item, "kind": "file" if item["kind"] == "image" else item["kind"]} for item in attachments]
         text = attachment_prompt(text, attachments)
         if record.phase == "running":
             self._write_pi({"type": "steer" if steering else "follow-up", "text": text, "images": images}, record)
@@ -403,6 +406,8 @@ class PiControllerMixin:
             tool["state"] = event["state"]
             if isinstance(event.get('video'), dict):
                 tool['video'] = dict(event['video'])
+            if event['name'] == 'analyze_image' and isinstance(event.get('args'), dict):
+                tool['arguments'] = dict(event['args'])
             if event.get("media"):
                 tool["media"] = event["media"]
                 if visible and self.store.data['desktop']['autoOpenSubmissions'] and event.get('name')=='submit_to_chatbox' and event.get('state')=='done':

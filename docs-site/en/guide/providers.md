@@ -40,9 +40,9 @@ Use a provider card's small gear to choose the system proxy, a direct connection
 
 Model settings allow context-length and vision overrides. Enable these only when the upstream model supports them; entering a larger number does not change the model's capabilities.
 
-## Multimodal models {#multimodal-models}
+## Multimodal model options {#multimodal-models}
 
-In **Settings → Accounts & providers → Multimodal models**, choose an existing account and model separately for image, speech and video generation. Select from the model catalogue or enter a raw upstream model ID. Generation reuses the account's credentials, proxy and CA settings, with no separate Key or new vendor presets. The upstream service must support the selected generation endpoint and parameters.
+In **Settings → Accounts & Providers → Multimodal model options**, choose an existing account and model separately for image, speech and video generation. Select from the model catalogue or enter a raw upstream model ID. Generation reuses the account's credentials, proxy and CA settings, with no separate Key or new vendor presets. The upstream service must support the selected generation endpoint and parameters.
 
 Images default to a count of `1`, with optional default size, quality and format. Speech requires a manually entered voice ID supported by the provider, with format `mp3` and speed `1` by default. Every call requests permission before sending the prompt or text, including in auto mode. There is currently no always-allow option.
 
@@ -50,7 +50,9 @@ Video has optional duration (seconds) and resolution (for example `1280x720`) de
 
 Files are saved in the current chat workspace, adding a suffix if a name already exists. Images appear as thumbnails; audio and MP4 video appear as file cards that open with the system association only on click. Nothing plays automatically. Completed file cards are preserved in session history. The Agent receives file paths and text, never video bytes.
 
-The video default follows the [OpenAI Videos protocol](https://developers.openai.com/api/reference/resources/videos/methods/create): `POST /videos` to create, `GET /videos/{id}` to poll and `GET /videos/{id}/content` to download. OpenAI itself has shut down this API; the selected provider must offer this compatible protocol. Other task protocols belong in provider plugins through the optional `video` capability. Image understanding is reserved for #49, whose design remains undecided; this feature adds no controls or implementation for it.
+The video default follows the [OpenAI Videos protocol](https://developers.openai.com/api/reference/resources/videos/methods/create): `POST /videos` to create, `GET /videos/{id}` to poll and `GET /videos/{id}/content` to download. OpenAI itself has shut down this API; the selected provider must offer this compatible protocol. Other task protocols belong in provider plugins through the optional `video` capability.
+
+The same page configures auxiliary image understanding, automatic attachment analysis and the optional `analyze_image` tool. Native vision models receive original images directly; historical observations are saved and reused.
 
 ## Custom providers {#custom-providers}
 

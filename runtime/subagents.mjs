@@ -450,5 +450,9 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession } = 
     const service = getService?.();
     getService = () => service;
   }
-  return { extension, dispose, command, hydrate };
+  function automaticTool(sessionId,event) {
+    const owner = [...sessions].find(([_id,value]) => value.session.sessionManager.getSessionId() === sessionId);
+    if (owner && watching === owner[0]) emit({type:'subagent_event',id:owner[0],event});
+  }
+  return { extension, dispose, command, hydrate, automaticTool };
 }

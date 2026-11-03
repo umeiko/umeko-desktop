@@ -180,8 +180,10 @@ def run():
             backend.changed.emit()
             window.setProperty('page', 'settings')
             window.setProperty('settingsTab', 0)
-            assert QMetaObject.invokeMethod(find(window, 'settingsMultimodalPage'), 'clicked')
+            assert QMetaObject.invokeMethod(find(window, 'multimodalSettingsEntry'), 'clicked')
             until(lambda: find(window, 'multimodalSettings').isVisible(), lambda: str(warnings))
+            assert find(window, 'auxiliaryVisionModel').isVisible()
+            assert not find(window, 'apiProvidersSection').isVisible()
             for kind, index in [('image', 1), ('speech', 2)]:
                 picker = find(window, kind + 'GenerationProvider')
                 assert picker.property('count') == 2
@@ -194,6 +196,8 @@ def run():
             manual = find(window, 'imageGenerationModelId')
             manual.setProperty('text', 'test-manual-image')
             QMetaObject.invokeMethod(manual, 'textEdited')
+            assert backend.saveAuxiliaryVision('{"autoAnalyze":false}')
+            assert manual.property('text') == 'test-manual-image', 'Saving image-understanding preferences must preserve unsaved generation fields'
             assert QMetaObject.invokeMethod(find(window, 'saveMultimodalSettings'), 'clicked')
             # Voice has not been set; the shared save rejects the incomplete selection.
             assert backend.store.data['multimodal'] == DEFAULTS
@@ -213,14 +217,23 @@ def run():
                 assert provider_picker.property('displayText') == 'Test provider'
                 assert model_picker.property('displayText') == 'test-' + ('image' if kind == 'image' else 'voice') + '-model'
             assert Store(Path(profile)).data['multimodal'] == backend.store.data['multimodal']
+            assert QMetaObject.invokeMethod(find(window, 'backMultimodalSettings'), 'clicked')
+            assert find(window, 'apiProvidersSection').isVisible()
+            assert not find(window, 'imageGenerationSettings').isVisible()
+            assert QMetaObject.invokeMethod(find(window, 'multimodalSettingsEntry'), 'clicked')
+            assert find(window, 'auxiliaryVisionModel').isVisible()
+            assert find(window, 'imageGenerationSettings').isVisible()
+            assert find(window, 'speechGenerationSettings').isVisible()
             assert find(window, 'videoGenerationSettings').isVisible()
-            assert find(window, 'imageUnderstandingNotice').isVisible()
             screenshot_dir = ROOT / 'docs/images'
             screenshot_dir.mkdir(exist_ok=True)
             capture = '--screenshots' in sys.argv
             for language in ('zh', 'en'):
                 backend.setLanguage(language)
                 window.setProperty('page', 'settings')
+                if not find(window, 'multimodalSettings').isVisible():
+                    assert QMetaObject.invokeMethod(find(window, 'multimodalSettingsEntry'), 'clicked')
+                until(lambda: find(window, 'multimodalSettings').isVisible(), lambda: str(warnings))
                 QCoreApplication.processEvents()
                 for kind in ('image', 'speech'):
                     card = find(window, kind + 'GenerationSettings')
@@ -230,7 +243,9 @@ def run():
                     assert picker.property('displayText') == 'Test provider'
                 assert find(window, 'speechGenerationVoice').property('text') == 'test-voice'
                 if capture:
+                    window.resize(1320, 1700)
                     screenshot(window, screenshot_dir / f'multimodal-models-{language}.png')
+                    window.resize(1320, 1200)
                 window.setProperty('page', 'chat')
                 if language == 'en':
                     backend.newSession()

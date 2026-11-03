@@ -131,10 +131,10 @@ def run():
                 provider = backend.store.data['providers'][0]
                 provider['proxy'] = {'mode': 'direct', 'url': ''}
                 backend.changed.emit()
-                window.resize(1320, 1500)
+                window.resize(1320, 2000)
                 window.setProperty('page', 'settings')
                 window.setProperty('settingsTab', 0)
-                QMetaObject.invokeMethod(find(window, 'settingsMultimodalPage'), 'clicked')
+                QMetaObject.invokeMethod(find(window, 'multimodalSettingsEntry'), 'clicked')
                 until(lambda: find(window, 'videoGenerationSettings').isVisible(), lambda: str(warnings))
                 QMetaObject.invokeMethod(find(window, 'videoGenerationProvider'), 'activated', Q_ARG(int, 1))
                 QMetaObject.invokeMethod(find(window, 'videoGenerationModel'), 'activated', Q_ARG(int, 1))
@@ -149,6 +149,9 @@ def run():
                 for language in ('zh', 'en'):
                     backend.setLanguage(language)
                     window.setProperty('page', 'settings')
+                    if not find(window, 'multimodalSettings').isVisible():
+                        QMetaObject.invokeMethod(find(window, 'multimodalSettingsEntry'), 'clicked')
+                    until(lambda: find(window, 'multimodalSettings').isVisible(), lambda: str(warnings))
                     QCoreApplication.processEvents()
                     assert find(window, 'videoGenerationProvider').property('displayText') == 'Test provider'
                     assert find(window, 'videoGenerationModel').property('displayText') == 'test-video-model'
@@ -199,7 +202,7 @@ def run():
                     assert find(window, 'chatboxCard_video-call_0').isVisible()
                     if capture:
                         screenshot(window, images / f'multimodal-video-finished-{language}.png')
-                    window.resize(1320, 1500)
+                    window.resize(1320, 2000)
 
                 # Denial through the actual Pi dialog prevents every video request.
                 approved = False

@@ -78,6 +78,23 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(result["content"][0]["text"], "本机测试通过")
         self.assertEqual(self.adapter.calls[0][1][0], {"role": "system", "content": "system text"})
 
+    def test_auxiliary_provider_selection_is_private_and_applies_to_streaming(self):
+        self.store.data['providers'].append({'id':'vision', 'name':'Fixture vision', 'api':'internal', 'baseUrl':'', 'key':'',
+            'models':[{'upstream':'vision-original', 'alias':'umeko-default'}]})
+        body = self.payload(_umeko_provider='vision')
+        self.request('/v1/chat/completions', body)
+        self.assertEqual(self.adapter.calls[-1][0], 'default', 'Public clients do not control the private routing field')
+        self.server.close()
+        self.server = LocalServer(self.gateway, 0, 'fixture-key', private=True)
+        for stream in (False, True):
+            self.request('/v1/chat/completions', {**body, 'stream':stream})
+            self.assertEqual(self.adapter.calls[-1][0], 'vision-original')
+        before = len(self.adapter.calls)
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request('/v1/chat/completions', {**body, '_umeko_provider':{'id':'vision'}})
+        self.assertEqual(error.exception.code, 400)
+        self.assertEqual(len(self.adapter.calls), before)
+
     def test_both_stream_formats(self):
         openai = self.request("/v1/chat/completions", self.payload(stream=True))
         self.assertIn("chat.completion.chunk", openai)

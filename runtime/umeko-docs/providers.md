@@ -29,9 +29,12 @@ Umeko 使用自己的供应商网关。不要指导用户执行 Pi `/login`、�
 
 每个供应商的网络模式通过 `providers.network` 设置，参数 `id`、`mode`、`address`。模式 `system` 跟随系统，`direct` 不走代理，`custom` 使用指定的 HTTP/HTTPS 代理地址。非 custom 时 `address` 留空。不要把它称为独立供应商类型。
 
-### 多模态模型：图片、语音与视频生成
+### 多模态模型选项：图片理解、图片、语音与视频生成
 
-在 **设置 → 账号与供应商 → 多模态模型** 中，分别选择图片、语音、视频生成使用的现有供应商账号和模型。可以从模型目录选择，也可以手填上游原始模型 ID。生成沿用该账号的凭据、代理、CA 与错误处理，不新增厂商预设、独立 Key 或生成重试。
+在 **设置 → 账号与供应商 → 多模态模型选项** 中，分别选择图片、语音、视频生成使用的现有供应商账号和模型。可以从模型目录选择，也可以手填上游原始模型 ID。生成沿用该账号的凭据、代理、CA 与错误处理，不新增厂商预设、独立 Key 或生成重试。
+
+同一个二级页中的图片理解设置见 [辅助视觉与 analyze_image](auxiliary-vision.md)。
+`settings.get` 返回当前 `config.multimodal`；用 `generation.configure` 的 `config` 参数保存生成配置，字段为 `image`、`speech` 和 `video`，结构与返回值一致。图片理解使用同页独立配置，详见辅助视觉文档。
 
 图片默认生成 `1` 张，可选默认尺寸、质量和格式。语音必须填写供应商支持的 voice ID，默认格式为 `mp3`、速度为 `1`。模型、参数和 voice ID 是否可用取决于上游服务。
 
@@ -39,7 +42,7 @@ Umeko 使用自己的供应商网关。不要指导用户执行 Pi `/login`、�
 
 `video_gen` 必填 `prompt`，可选字符串 `seconds`（正整数秒）、`size`（如 `1280x720`）、`output_filename`（MP4 文件名）。时长与分辨率不传时沿用视频设置，设置留空则由供应商决定。每次发送前确认一次，未配置视频账号及模型时不注册工具。创建任务、轮询状态和下载都留在同一次工具调用中；现有工具栏显示状态与百分比。停止会结束轮询，不保存或展示迟到结果，并尽力 `DELETE /videos/{id}`；删除失败不影响取消。文件保存为当前工作目录中的新 MP4，通过文件卡片点击后才由系统程序打开，会话历史保留卡片。运行中任务不跨应用重启恢复。
 
-OpenAI 兼容接入使用 `/images/generations`，接受 `b64_json` 或 URL 图片结果；`/audio/speech` 接受二进制音频结果。视频使用 [Videos 协议](https://developers.openai.com/api/reference/resources/videos/methods/create)：`POST /videos`，`GET /videos/{id}`，`GET /videos/{id}/content`。OpenAI 自身已关闭该 API，需要所选供应商继续提供此兼容协议。插件可声明 `generationCapabilities: ["video"]` 并实现 `generate_video(model, prompt, parameters, on_progress=None)`，通过回调上报 `{id,status,progress}` 并遵守请求取消状态，返回 MP4 媒体列表；不在默认适配器中混入其他任务协议。图片理解留给尚未定案的 #49，本功能不增加相关控件或实现。
+OpenAI 兼容接入使用 `/images/generations`，接受 `b64_json` 或 URL 图片结果；`/audio/speech` 接受二进制音频结果。视频使用 [Videos 协议](https://developers.openai.com/api/reference/resources/videos/methods/create)：`POST /videos`，`GET /videos/{id}`，`GET /videos/{id}/content`。OpenAI 自身已关闭该 API，需要所选供应商继续提供此兼容协议。插件可声明 `generationCapabilities: ["video"]` 并实现 `generate_video(model, prompt, parameters, on_progress=None)`，通过回调上报 `{id,status,progress}` 并遵守请求取消状态，返回 MP4 媒体列表；不在默认适配器中混入其他任务协议。
 
 ### 私有 CA 与证书校验失败
 

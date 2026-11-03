@@ -128,13 +128,37 @@ class VideoSettingsTests(unittest.TestCase):
         self.assertIn('video: video.values()', source)
         self.assertIn('video.load()', source)
         self.assertNotIn('videoGenerationNotice', source)
-        self.assertIn('objectName: "imageUnderstandingNotice"', source)
-        self.assertIn('独立的识图模型设置预留于此，方案仍在 #49 讨论。', source)
+        self.assertNotIn('imageUnderstandingNotice', source)
+        self.assertIn('图片、语音与视频生成', source)
+
+    def test_reload_preserves_unsaved_generation_when_only_vision_changes(self):
+        source = (QML / 'MultimodalSettings.qml').read_text(encoding='utf-8')
+        method = re.search(r'    function reload\(\) \{[\s\S]*?\n    }', source).group(0)
+        fixture = """
+            var savedSignature = '', calls = [0, 0, 0], videoDraft = '';
+            var backend = {config: {multimodal: {video: {model: 'saved-video'}}, vision: {}}};
+            var image = {load: function() {calls[0]++;}};
+            var speech = {load: function() {calls[1]++;}};
+            var video = {load: function() {calls[2]++; videoDraft = backend.config.multimodal.video.model;}};
+        """
+        exercise = """
+            reload();
+            videoDraft = 'unsaved-video';
+            backend.config.vision = {model: 'new-vision'};
+            reload();
+            var preserved = videoDraft === 'unsaved-video' && calls.every(n => n === 1);
+            backend.config.multimodal.video.model = 'updated-video';
+            reload();
+            ({preserved: preserved, draft: videoDraft, calls: calls});
+        """
+        self.assertEqual(self.evaluate(fixture + method + exercise),
+                         {'preserved': True, 'draft': 'updated-video', 'calls': [2, 2, 2]})
 
     def test_video_labels_and_provider_disclosure_have_english_translations(self):
         source = (QML / 'english.js').read_text(encoding='utf-8').replace('.pragma library', '')
         translations = self.evaluate(source + '\nstrings;')
-        expected = {'时长（秒）': 'Duration (seconds)', '分辨率（宽x高）': 'Resolution (WIDTHxHEIGHT)',
+        expected = {'图片、语音与视频生成': 'Image, voice and video generation',
+                    '时长（秒）': 'Duration (seconds)', '分辨率（宽x高）': 'Resolution (WIDTHxHEIGHT)',
                     '供应商默认，例如 1280x720': 'Provider default, e.g. 1280x720', '生成中': 'Generating',
                     '视频提示词会发送给所选供应商，生成前逐次确认。':
                     'Video prompts are sent to the selected provider, with confirmation before each call.'}
