@@ -105,7 +105,8 @@ with patch("app.provider_plugins.BundledProviders.sync", return_value=[]), \
         approval()
         button = find("grantDangerousToolButton")
         assert button.isVisible() and not button.hasActiveFocus()
-        assert "递归删除" in button.property("text") if language == "zh" else "Recursive deletion" in button.property("text")
+        assert button.property("text") == ("确认，并且本会话不再询问「递归删除」" if language == "zh" else
+                                           "Confirm and don't ask again in this chat for “Recursive deletion”")
         label = button.property("contentItem")
         assert label.property("paintedWidth") <= label.width() + 1
         assert label.property("paintedHeight") <= label.height() + 1
@@ -125,15 +126,20 @@ with patch("app.provider_plugins.BundledProviders.sync", return_value=[]), \
         button.clicked.emit()
         settle(lambda: len(backend.dangerousGrants) == 1 and not backend.pendingApproval)
         status = find("composerPermissionStatus")
-        assert "1" in status.property("text")
+        assert status.property("text") == ("自动 · 已允许 1 项" if language == "zh" else "Auto · 1 allowed")
+        assert status.property("glyph") == "lock"
         assert ("递归删除" if language == "zh" else "Recursive deletion") in status.property("hint")
         status.clicked.emit()
         menu = find("composerPermissionMenu")
         settle(lambda: find("revokeDangerousGrant_1") is not None and menu.property("visible"))
+        assert find("dangerousGrantsHeader").property("text") == ("本会话已允许" if language == "zh" else "Allowed in this chat")
+        assert not find("dangerousGrantsHeader").isEnabled()
+        assert find("dangerousGrantRow_1").property("text") == ("递归删除" if language == "zh" else "Recursive deletion")
+        assert find("revokeDangerousGrant_1").property("text") == ("撤销" if language == "zh" else "Revoke")
         menu_item = menu.property("contentItem")
         assert menu_item.mapToScene(menu_item.boundingRect().topLeft()).y() + menu_item.height() <= status.mapToScene(status.boundingRect().topLeft()).y()
         capture("grants")
-        find("revokeDangerousGrant_1").triggered.emit()
+        find("revokeDangerousGrant_1").clicked.emit()
         settle(lambda: not backend.dangerousGrants)
         evaluate(menu, "close()")
         # Switch same-model chats: status must update even without config changes.
@@ -141,11 +147,13 @@ with patch("app.provider_plugins.BundledProviders.sync", return_value=[]), \
         backend._sync_dangerous_grants(record)
         backend.newSession()
         assert backend.dangerousGrants == []
-        assert "1" not in status.property("text")
+        assert status.property("text") == ("自动" if language == "zh" else "Auto")
         backend.openSession(record.id)
         assert len(backend.dangerousGrants) == 1
-        assert "1" in status.property("text")
-        backend.revokeDangerousGrant(0)
+        assert status.property("text") == ("自动 · 已允许 1 项" if language == "zh" else "Auto · 1 allowed")
+        status.clicked.emit()
+        assert find("revokeAllDangerousGrants").property("text") == ("全部撤销" if language == "zh" else "Revoke all")
+        find("revokeAllDangerousGrants").triggered.emit()
         assert backend.dangerousGrants == []
         relevant = [warning for warning in warnings if "dangerous" in warning.lower() or "Composer.qml" in warning or "ApprovalDialog.qml" in warning]
         assert not relevant, relevant

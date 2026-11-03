@@ -1,6 +1,8 @@
 .pragma library
 var strings = {
-    "本会话不再询问：{category}": "Don't ask again in this chat: {category}",
+    "确认，并且本会话不再询问「{category}」": "Confirm and don't ask again in this chat for “{category}”",
+    "已允许 {count} 项": "{count} allowed",
+    "本会话已允许": "Allowed in this chat",
     "本会话已允许：": "Allowed in this chat: ",
     "递归删除": "Recursive deletion",
     "磁盘或分区修改": "Disk or partition changes",
