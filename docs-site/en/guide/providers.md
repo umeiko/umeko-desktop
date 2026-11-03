@@ -42,13 +42,13 @@ Model settings allow context-length and vision overrides. Enable these only when
 
 ## Multimodal models {#multimodal-models}
 
-In **Settings → Accounts & providers → Multimodal models**, choose an existing account and model separately for image and speech generation. Select from the model catalogue or enter a raw upstream model ID. Generation reuses the account's credentials and network settings, with no separate Key or new vendor presets. The upstream service must support the selected generation endpoint and parameters.
+In **Settings → Accounts & Providers → Multimodal model options**, choose an existing account and model separately for image and speech generation. Select from the model catalogue or enter a raw upstream model ID. Generation reuses the account's credentials and network settings, with no separate Key or new vendor presets. The upstream service must support the selected generation endpoint and parameters.
 
 Images default to a count of `1`, with optional default size, quality and format. Speech requires a manually entered voice ID supported by the provider, with format `mp3` and speed `1` by default. Every call requests permission before sending the prompt or text, including in auto mode. There is currently no always-allow option.
 
 Files are saved in the current chat workspace, adding a suffix if a name already exists. Images appear as thumbnails and audio as clickable file cards; neither opens or plays automatically. The Agent receives file paths and text. Generation does not put image pixels into model context.
 
-Video generation is unavailable; asynchronous jobs, progress and cancellation are planned for a separate PR. Image understanding is reserved for #49, whose design remains undecided; this feature adds no controls or implementation for it.
+Video generation is unavailable; asynchronous jobs, progress and cancellation are tracked in [#52](https://github.com/umeiko/umeko-desktop/issues/52). The same page configures auxiliary image understanding, automatic attachment analysis and the optional `analyze_image` tool. Native vision models receive original images directly; historical observations are saved and reused.
 
 ## Custom providers {#custom-providers}
 

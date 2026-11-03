@@ -13,6 +13,7 @@ import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
+import { createAuxiliaryVision, ANALYZE_IMAGE, AUTO_VISION_ENTRY, automaticVisionView } from "./auxiliary-vision.mjs";
 import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
 import { createToolPermissionExtension } from "./tool-permissions.mjs";
 import { blockedToolNames, toolInventory } from "./tool-visibility.mjs";
@@ -45,6 +46,10 @@ const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, P
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 const umekoControl = createUmekoControl({ emit });
+const auxiliaryVision = createAuxiliaryVision({getConfig:() => config, emit:event => {
+  if (event.sessionId && event.sessionId !== runtime?.session.sessionManager.getSessionId()) return subagents.automaticTool(event.sessionId,event);
+  emit(event);
+}});
 const subagents = createSubagentExtension({ emit, restoreSession: restoreSubagentSession });
 const textOf = content => typeof content === "string" ? content : (content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
 const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
@@ -192,7 +197,7 @@ async function bindSession(session) {
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") emit({ type: "delta", text: event.assistantMessageEvent.delta });
     if (event.type === "message_update" && event.assistantMessageEvent.type === "thinking_delta") emit({ type: "thinking_delta", text: event.assistantMessageEvent.delta });
     if (event.type.startsWith("tool_execution_") && event.toolName !== "subagent") emit({ type: "tool", name: event.toolName, id: event.toolCallId,
-      args: event.args, result: event.type === "tool_execution_end" ? textOf(event.result?.content).slice(0,8192) : undefined,
+      args: event.toolName === ANALYZE_IMAGE ? {...event.args,model:auxiliaryVision.label(),provider:auxiliaryVision.provider()} : event.args, result: event.type === "tool_execution_end" ? textOf(event.result?.content).slice(0,8192) : undefined,
       media: event.type === "tool_execution_end" ? chatboxItems(event.toolName, {...event.result, isError: event.isError}) : undefined,
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
     const willRetry = event.type === "message_end" && session.retryAttempt < NETWORK_RETRY.maxRetries &&
@@ -241,7 +246,8 @@ function exposeNativeTools(session) {
   // through the native discovery tools; explicitly hidden tools stay hidden.
   if (config?.globalCoordinator) { session.setActiveToolsByName([UMEKO_TOOL]); return; }
   const declared = session.getAllTools().filter(tool => ["direct", "model-only"].includes(tool.exposure));
-  session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...declared.map(tool => tool.name)])]);
+  session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...declared.map(tool => tool.name)])]
+    .filter(name => name !== ANALYZE_IMAGE || auxiliaryVision.available(session.model)));
 }
 
 function outputContinuationExtension(pi) {
@@ -293,7 +299,9 @@ async function restoreSubagentSession(child, context, customTools) {
     ...await sessionSkillOptions(Pi, {...config,cwd:manager.getCwd()}, native),
     extensionFactories: [
       { name: "recent-images", hidden: true, replaceable: false, factory: createRecentImagesExtension({ getLimit: () => config.agent?.maxContextImages }) },
+      { name: "auxiliary-vision", hidden: true, replaceable: false, factory: auxiliaryVision.contextExtension },
       { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
+      { name: "umeko-control", builtin: true, replaceable: false, factory: auxiliaryVision.toolExtension },
       { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
     ],
     systemPrompt:context?.systemPrompt || `You are the ${child.type} subagent embedded in Umeko Desktop. Continue the task in this existing conversation. ${readonly ? "Inspect and report only; do not modify files." : ""}`,
@@ -311,6 +319,7 @@ async function restoreSubagentSession(child, context, customTools) {
 
 async function init(input) {
   config = input;
+  globalThis[Symbol.for("umeko:auxiliary-vision")] = auxiliaryVision;
   globalThis[Symbol.for("umeko:recent-images-policy")] = { getLimit: () => config.agent?.maxContextImages };
   permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir, generation: input.generation };
   configureUmekoDocs({directory: input.docsDir || join(input.agentDir, "cache", "umeko-docs"), models: input.models});
@@ -363,11 +372,12 @@ async function init(input) {
           ...(input.loopReview ? [{name:"loop-review",hidden:true,replaceable:false,factory:loopReview.extension}] : []),
           // Mandatory inline factory: resource filters cannot disable the gate.
           { name: "recent-images", hidden: true, replaceable: false, factory: createRecentImagesExtension({ getLimit: () => config.agent?.maxContextImages }) },
+      { name: "auxiliary-vision", hidden: true, replaceable: false, factory: auxiliaryVision.contextExtension },
           { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}) },
           { name: "generation", builtin: true, replaceable: false, factory: createGenerationExtension({getConfig: () => config}) },
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },
-          { name: "umeko-control", builtin: true, replaceable: false, factory: pi => umekoControl.extension(pi) },
+          { name: "umeko-control", builtin: true, replaceable: false, factory: pi => { umekoControl.extension(pi); auxiliaryVision.toolExtension(pi); } },
           { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
           { name: "subagents", builtin: true, replaceable: true, factory: subagents.extension },
           { name: "output-continuation", hidden: true, replaceable: false, factory: outputContinuationExtension },
@@ -435,6 +445,7 @@ async function state() {
   const compactions = new Map();
   const candidates = branch.flatMap(e => {
     if (e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant"].includes(e.message.role)) return [e];
+    if (automaticVisionView(e)) return [e];
     if (e.type !== "custom" || e.customType !== "umeko-compaction" || ![1, 2].includes(e.data?.version)) return [];
     if (e.data.version === 1) return [e];
     if (compactions.has(e.data.eventId)) {
@@ -449,6 +460,7 @@ async function state() {
   const paged = candidates.length > 256 || characters > 1024 * 1024;
   const selected = config.globalCoordinator ? candidates.slice(-64) : paged ? candidates.slice(-128) : candidates;
   const messages = projectSubagents(branch, selected.map(e => {
+    if (e.customType === AUTO_VISION_ENTRY) return automaticVisionView(e);
     if (e.type === "custom") return { role: "assistant", text: e.data.version === 1 ? compactionText(e.data) : "", customType: e.customType,
       compaction: e.data, entryId: e.id, timestamp: e.timestamp };
     const message = e.message;
@@ -459,7 +471,8 @@ async function state() {
     if (thinking) row.thinking = thinking;
     const calls = Array.isArray(message.content) ? message.content.filter(c => c.type === "toolCall") : [];
     if (calls.length) row.tools = calls.flatMap(call => {
-      const result = results.get(call.id), args = call.arguments || {};
+      const result = results.get(call.id), details = result?.details;
+      const args = call.name === ANALYZE_IMAGE && details?.model ? {...call.arguments, model:details.modelName || details.model, provider:details.providerName || details.providerId} : call.arguments || {};
       let path = args.path || args.file_path || args.filePath || "";
       path = path && typeof path === "string" && !path.includes("://") ? canonicalPath(resolve(manager.getCwd(), path.replace(/^~(?=[/\\]|$)/,homedir()))) : "";
       const row = {id:call.id, name:call.name, arguments:args, path, state:result ? result.isError ? "error" : "done" : "interrupted", result:result ? textOf(result.content).slice(0,8192) : ""};
@@ -607,6 +620,7 @@ async function execute(input) {
       selectedModel = modelRuntime.getModel("umeko", input.model);
       if (!selectedModel) throw new Error("模型未配置");
       await runtime.session.setModel(selectedModel);
+      exposeNativeTools(runtime.session);
     }
     if (input.type === "prompt") {
       if (!runtime.session.sessionManager.getSessionName()) runtime.session.setSessionName(input.text.replace(/\s+/g, " ").slice(0, 28));

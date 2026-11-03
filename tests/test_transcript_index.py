@@ -37,6 +37,28 @@ class TranscriptIndexTests(unittest.TestCase):
             result.append(row)
         return result
 
+    def test_automatic_image_operations_survive_cold_history_and_index_rebuild(self):
+        tool = {'id':'auto-vision-fixture','name':'analyze_image','arguments':{'model':'Vision / eyes','automatic':True,'imageCount':1},
+                'state':'done','result':'The image says ERROR 123.'}
+        receipt = {'type':'custom','id':'vision','parentId':'u','customType':'umeko-auto-vision',
+                   'data':{'version':1,'startedAt':123,'target':{'model':'eyes','providerId':'p','label':'Vision / eyes'},'imageKeys':['image-key'],'tool':tool}}
+        entries = [self.message('u',None,'user','What error is shown?'),receipt,self.message('answer','vision','assistant','ERROR 123')]
+        self.write(entries)
+        before = self.file.read_bytes()
+        expected = ChatModel.project(preview(self.file)[0])
+        snapshot = self.repo.open(self.file)
+        self.assertEqual(self.rows(snapshot),expected)
+        operations = [item for row in self.rows(snapshot) for block in row.get('activity',[]) for item in block.get('tools',[])]
+        self.assertEqual([(item['name'],item['state']) for item in operations],[('analyze_image','done')])
+        reopened = TranscriptRepository(self.path/'cache').open(self.file)
+        self.assertEqual(self.rows(reopened),expected)
+        receipt['data']['tool'].update(state='error',result='Vision connection failed')
+        self.write([self.message('u',None,'user','What error is shown?'),receipt])
+        failed = self.repo.open(self.file)
+        self.assertEqual(self.rows(failed),ChatModel.project(preview(self.file)[0]))
+        self.assertIn('Vision connection failed',json.dumps(self.rows(failed)))
+        self.assertNotEqual(self.file.read_bytes(),before)
+
     def test_partial_failed_response_recovers_report_from_native_history_and_old_cache(self):
         from app.transcript_index import connect
         identifier = '12345678-1234-1234-1234-123456789abc'

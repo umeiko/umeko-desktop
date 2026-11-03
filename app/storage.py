@@ -17,6 +17,7 @@ from .api_keys import make_key
 from PySide6.QtCore import QLocale
 from .desktop_preferences import DEFAULTS as DESKTOP_DEFAULTS, normalize as desktop_settings
 from .multimodal_settings import DEFAULTS as MULTIMODAL_DEFAULTS, normalize as multimodal_settings
+from .auxiliary_vision import DEFAULTS as VISION_DEFAULTS, normalize as vision_settings
 
 
 class Blob(ctypes.Structure):
@@ -72,6 +73,7 @@ DEFAULTS = {
     "selectedProvider": "", "selectedModel": "",
     "providers": [],
     "multimodal": MULTIMODAL_DEFAULTS,
+    "auxiliaryVision": VISION_DEFAULTS,
     "desktop": DESKTOP_DEFAULTS,
     "agent": {"maxTokens": 32768, "maxContextImages": 3, "outputLimitDefaultVersion": 1, "instructions": "", "autoCompaction": True,
               "agentDir": "", "skillPaths": [], "extensionPaths": [], "safeMode": False, "toolPermissionMode": "auto",
@@ -125,6 +127,10 @@ class Store:
         self.data['agent']['maxContextImages'] = max(1, image_limit) if type(image_limit) is int else 3
         self.data['desktop'] = desktop_settings(self.data.get('desktop'))
         self.data['multimodal'] = multimodal_settings(self.data.get('multimodal'))
+        try:
+            self.data['auxiliaryVision'] = vision_settings(self.data.get('auxiliaryVision', {}))
+        except ValueError:
+            self.data['auxiliaryVision'] = copy.deepcopy(VISION_DEFAULTS)
         output_default_migrated = saved.get('agent', {}).get('outputLimitDefaultVersion') != 1
         if output_default_migrated:
             if self.data['agent']['maxTokens'] == 8192:
