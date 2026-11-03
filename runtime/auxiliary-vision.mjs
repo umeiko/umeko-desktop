@@ -12,6 +12,23 @@ const SYSTEM = 'Analyze the supplied images for the stated task. Describe visibl
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const textOf = message => typeof message?.content === 'string' ? message.content
   : (message?.content || []).filter(block => block.type === 'text' && !block.text.startsWith('[Image removed from context')).map(block => block.text).join('\n');
+const OMITTED_IMAGE = '[Image omitted because the selected model does not support images. Original image content is retained in the chat; use auxiliary visual observations when available.]';
+
+// Runs after the SDK's provider hooks: extensions may add images after the
+// context projection (including via custom messages). Never change history.
+export function textOnlyPayload(payload) {
+  if (!Array.isArray(payload?.messages)) return payload;
+  let changed = false;
+  const messages = payload.messages.map(message => {
+    if (!Array.isArray(message.content) || !message.content.some(block =>
+      ['image', 'image_url', 'input_image'].includes(block.type))) return message;
+    changed = true;
+    const content = message.content.map(block => ['image', 'image_url', 'input_image'].includes(block.type)
+      ? {type:'text',text:OMITTED_IMAGE} : block);
+    return {...message,content:content.every(block => block.type === 'text') ? content.map(block => block.text).join('\n') : content};
+  });
+  return changed ? {...payload,messages} : payload;
+}
 
 // A host-initiated operation, not a tool call fabricated on behalf of the model.
 export function automaticVisionView(entry) {
@@ -25,12 +42,23 @@ export function automaticVisionView(entry) {
 
 export function createAuxiliaryVision({getConfig, emit = () => {}, fetchImpl = globalThis.fetch, timeoutMs = 60000}) {
   const cache = new Map();
+  const guarded = new WeakSet();
   const options = () => getConfig()?.auxiliaryVision || {};
   const native = model => {
     const id = typeof model === 'string' ? model : model?.id;
     return (getConfig()?.models || []).find(row => row.id === id)?.input?.includes('image') ?? model?.input?.includes('image') ?? false;
   };
   const available = model => !!options().model && !native(model) && !getConfig()?.globalCoordinator;
+
+  function guardSession(session) {
+    if (guarded.has(session)) return;
+    guarded.add(session);
+    const previous = session.agent.onPayload;
+    session.agent.onPayload = async (payload, model) => {
+      const result = await previous?.(payload, model) ?? payload;
+      return native(model || session.model) ? result : textOnlyPayload(result);
+    };
+  }
 
   async function analyze(images, question, signal) {
     if (signal?.aborted) throw signal.reason || new Error('Image analysis cancelled');
@@ -97,8 +125,8 @@ export function createAuxiliaryVision({getConfig, emit = () => {}, fetchImpl = g
       let userTask = '';
       for (const message of event.messages) {
         if (message.role === 'user') userTask = textOf(message);
-        if (!['user','toolResult'].includes(message.role) || !Array.isArray(message.content)) continue;
-        const task = (message.role === 'user' ? textOf(message) : userTask) || 'Describe these images and transcribe relevant visible text.';
+        if (!['user','toolResult','custom'].includes(message.role) || !Array.isArray(message.content)) continue;
+        const task = (message.role !== 'toolResult' ? textOf(message) : userTask) || 'Describe these images and transcribe relevant visible text.';
         const source = [message.role, message.toolCallId || message.timestamp || textOf(message)];
         const images = message.content.flatMap((block,index) => block.type === 'image' ? [{block,index,
           key:digest([target.providerId,target.model,source,index,block.mimeType,block.data])}] : []);
@@ -167,5 +195,5 @@ export function createAuxiliaryVision({getConfig, emit = () => {}, fetchImpl = g
         return {content:[{type:'text',text:result.text}],details:{model:result.model,modelName:result.label,providerId:result.providerId,providerName:result.provider,cached:!!result.cached}};
       }});
   }
-  return {analyze,contextExtension,toolExtension,available,native,label:()=>options().modelName || options().model,provider:()=>options().providerName || options().providerId};
+  return {analyze,contextExtension,toolExtension,guardSession,available,native,label:()=>options().modelName || options().model,provider:()=>options().providerName || options().providerId};
 }

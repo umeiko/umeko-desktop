@@ -16,6 +16,22 @@ test('real Pi uses automatic observations, calls the desktop tool and bypasses i
   const agentDir=join(dir,'agent');mkdirSync(agentDir);
   writeFileSync(join(agentDir,'settings.json'),JSON.stringify({retry:{enabled:false},cacheWarming:'off'}));
   const path=join(dir,'image.png');writeFileSync(path,Buffer.from(png,'base64'));
+  mkdirSync(join(agentDir,'extensions'));
+  writeFileSync(join(agentDir,'extensions','images.mjs'),`export default pi => {
+    pi.on('before_agent_start', event => {
+      if(event.prompt === 'custom image') return {message:{customType:'fixture-image',display:false,
+        content:[{type:'text',text:'Describe this custom image'},{type:'image',mimeType:'image/png',data:${JSON.stringify(png)}}]}};
+    });
+    pi.on('before_provider_request', event => {
+      const payload=event.payload;
+      if(!JSON.stringify(payload.messages).includes('late payload image')) return;
+      return {...payload,fixture_marker:'extension preserved',messages:[...payload.messages,
+        {role:'user',content:[{type:'text',text:'Late extension image'},
+          {type:'image_url',image_url:{url:'data:image/png;base64,${png}'}}]}]};
+    });
+  };`);
+  writeFileSync(join(agentDir,'settings.json'),JSON.stringify({retry:{enabled:false},cacheWarming:'off',
+    extensions:[join(agentDir,'extensions','images.mjs')]}));
   const requests=[],errors=[];
   let calls=0;
   let enteredCancel,closedCancel;
@@ -39,10 +55,19 @@ test('real Pi uses automatic observations, calls the desktop tool and bypasses i
       const images=body.messages.flatMap(row=>Array.isArray(row.content)?row.content:[]).filter(block=>block.type==='image_url');
       const text=JSON.stringify(body.messages);
       if(body.model==='text') {
-        if(images.length)errors.push('Raw image reached the text-only model');
-        if(!text.includes('manual followup') && !text.includes('blue square'))errors.push('Automatic observation missing');
+        if(images.length) {
+          errors.push('Raw image reached the text-only model');
+          res.writeHead(406,{'Content-Type':'application/json'});
+          res.end(JSON.stringify({error:{message:'The multimodal content of text is incorrect'}}));return;
+        }
+        if(!text.includes('manual followup') && !text.includes('late payload image') &&
+           !text.includes('read image through native tool') && !text.includes('blue square'))errors.push('Automatic observation missing');
+        if(text.includes('late payload image'))assert.equal(body.fixture_marker,'extension preserved');
         if(body.messages.at(-1).role==='user' && text.includes('manual followup')) {
           delta={role:'assistant',tool_calls:[{index:0,id:'analyze-1',type:'function',function:{name:'analyze_image',arguments:JSON.stringify({paths:[path],question:'Read the image carefully'})}}]};
+          reason='tool_calls';
+        } else if(body.messages.at(-1).role==='user' && text.includes('read image through native tool')) {
+          delta={role:'assistant',tool_calls:[{index:0,id:'read-image',type:'function',function:{name:'read',arguments:JSON.stringify({path})}}]};
           reason='tool_calls';
         }
       } else assert.equal(images.length,1,'Native model receives its original image');
@@ -70,9 +95,11 @@ test('real Pi uses automatic observations, calls the desktop tool and bypasses i
     return events;
   }
   const initial={type:'inspect',gateway:`http://127.0.0.1:${server.address().port}/`,token:'fixture',workspace:dir,defaultCwd:dir,agentDir,sessionDir:join(dir,'sessions'),
-    models:[{id:'text',input:['text'],contextWindow:128000},{id:'native',input:['text','image'],contextWindow:128000}],model:'text',agent:{safeMode:true,autoCompaction:false},
+    models:[{id:'text',input:['text'],contextWindow:128000},{id:'native',input:['text','image'],contextWindow:128000}],model:'text',agent:{safeMode:false,autoCompaction:false},
     auxiliaryVision:{providerId:'vision-provider',model:'eyes',modelName:'vision-upstream-model',providerName:'Fixture',label:'Fixture / eyes',autoAnalyze:true,toolEnabled:true}};
-  await command(initial);
+  const inspected=await command(initial);
+  const loaded=inspected.findLast(event=>event.type==='state').resources.extensions.find(row=>row.path?.endsWith('images.mjs'));
+  assert.ok(loaded,JSON.stringify(inspected.filter(event=>['notice','error'].includes(event.type))));
   const events=await command({type:'prompt',text:'Describe the square',images:[{type:'image',data:png,mimeType:'image/png'}]});
   assert.equal(calls,1);assert.deepEqual(errors,[]);
   const automatic=events.filter(event=>event.type==='tool' && event.args?.automatic);
@@ -103,6 +130,19 @@ test('real Pi uses automatic observations, calls the desktop tool and bypasses i
   const manualTool=manual.findLast(event=>event.type==='state').messages.flatMap(row=>row.tools || []).find(tool=>tool.id==='analyze-1');
   assert.equal(manualTool.arguments.model,'vision-upstream-model','Native tool history retains the actual model name');
   assert.equal(manualTool.arguments.provider,'Fixture');
+  await command({type:'new',model:'text'});
+  const late=await command({type:'prompt',text:'late payload image'});
+  assert.ok(!late.some(event=>event.type==='message' && event.error),'Late extension images must not cause a primary-model 406');
+  assert.deepEqual(errors,[]);
+  await command({type:'new',model:'text'});
+  const custom=await command({type:'prompt',text:'custom image'});
+  assert.deepEqual(errors,[]);
+  assert.equal(calls,3,'Custom messages also need an auxiliary visual observation');
+  assert.ok(!custom.some(event=>event.type==='message' && event.error),'Custom images must not cause a primary-model 406');
+  await command({type:'new',model:'text'});
+  await command({type:'prompt',text:'read image through native tool'});
+  assert.equal(calls,4,'Images returned by native tools are interpreted before the primary continuation');
+  assert.ok(requests.findLast(body=>body.model==='text').messages.some(row=>row.role==='tool' && row.content.includes('blue square')));
   const before=calls;
   await command({type:'new',model:'native'});
   await command({type:'prompt',text:'Use native vision',images:[{type:'image',data:png,mimeType:'image/png'}]});
