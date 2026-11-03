@@ -60,20 +60,43 @@ Deeper notes: `references/revisions-and-comments.md` (Word review markup) and
   `soffice --headless --convert-to docx|pptx|xlsx old-file` when LibreOffice is installed.
 - Not for `.odt`/`.odp`/`.ods`, or WYSIWYG layout work.
 
-## Prerequisites
+## Prerequisites and preflight
 
-Use a user-accessible Python 3.10+ interpreter. A frozen Umeko executable is
-not a general-purpose Python CLI. Check imports with `python -c "import docx,
-pptx, openpyxl"`. If unavailable, create a task-local `.umeko-tools` virtual
-environment and install `python-docx==1.2.0 python-pptx==1.0.2 openpyxl==3.1.5`.
-Use `.umeko-tools/bin/python` on Unix or `.umeko-tools/Scripts/python.exe` on
-Windows for helpers. Do not modify Umeko's packaged environment.
+Use a user-accessible Python 3.10+ interpreter; a frozen Umeko executable is
+not a general-purpose Python CLI. If the task already has a `.umeko-tools`
+environment, use its interpreter. Otherwise choose the task's existing Python,
+and do not assume that the desktop's packaged environment contains these packages.
+Set `PY` to that interpreter and check once per task environment:
+
+```bash
+"$PY" -c "import sys, importlib.metadata as m; print(sys.version); [print(p, m.version(p)) for p in ('python-docx', 'python-pptx', 'openpyxl')]"
+command -v soffice || command -v libreoffice
+command -v pdftoppm
+```
+
+The required package versions are `python-docx==1.2.0`,
+`python-pptx==1.0.2`, and `openpyxl==3.1.5`. LibreOffice is needed only for PDF
+conversion and formula recalculation; Poppler is needed for PNG render checks.
+Report missing versions and which operations are unavailable, and continue only
+the supported parts. Never claim an unperformed conversion or render.
+
+If installation is needed, explain the proposed environment and obtain explicit
+user authorization first. Create or reuse a task-local `.umeko-tools` virtual
+environment for Python packages, then rerun the checks. Use
+`.umeko-tools/bin/python` on Unix or `.umeko-tools/Scripts/python.exe` on
+Windows. Do not modify Umeko's packaged environment or global Python packages.
+
+On a restricted or corporate network, reuse user-confirmed package indexes,
+proxy settings, and CA certificates supported by the selected installer. Model
+provider proxy settings do not configure pip, uv, system package managers, or
+browser downloads. Do not guess internal URLs or treat a public mirror as an
+approved internal source. Prefer command- or task-scoped settings over global
+proxy, registry, or pip changes; preserve TLS verification and redact credentials.
+Confirm proxy and CA settings separately on remote hosts and in containers:
+the office machine's loopback proxy is not automatically valid there.
 
 Helpers live in this Skill folder's `scripts/`; call them by absolute path
 from the task workspace and inspect `--help` before choosing arguments.
-LibreOffice is an optional system dependency for PDF conversion and formula
-recalculation; Poppler is optional for PNG render checks. Check availability
-and report a missing dependency rather than claiming an unperformed render.
 
 ## How to Run
 

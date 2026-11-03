@@ -36,27 +36,41 @@ metadata: {}
 - Write final artifacts under `output/pdf/` when working in this repo.
 - Keep filenames stable and descriptive.
 
-## Dependencies (install if missing)
-Prefer `uv` for dependency management.
+## Dependencies and preflight
 
-Python packages:
-```
-uv pip install reportlab pdfplumber pypdf
-```
-If `uv` is unavailable:
-```
-python3 -m pip install reportlab pdfplumber pypdf
-```
-System tools (for rendering):
-```
-# macOS (Homebrew)
-brew install poppler
+Use a user-accessible Python 3.10+ interpreter, not the frozen Umeko executable.
+If the task already has a `.umeko-tools` environment, use its interpreter;
+otherwise use the task's existing Python. Set `PY` to the selected interpreter
+and check the actual environment before generating or extracting:
 
-# Ubuntu/Debian
-sudo apt-get install -y poppler-utils
+```bash
+"$PY" -c "import sys, importlib.metadata as m; print(sys.version); [print(p, m.version(p)) for p in ('reportlab', 'pdfplumber', 'pypdf')]"
+command -v pdftoppm
 ```
 
-If installation isn't possible in this environment, tell the user which dependency is missing and how to install it locally.
+Use `reportlab>=4`, `pdfplumber>=0.10`, and `pypdf>=3`. Report a missing or
+incompatible package instead of assuming it is available. If Poppler is absent,
+explain that visual rendering is unverified; use another available review path
+or ask the user to inspect the PDF locally rather than claiming a visual check.
+
+If installation is needed, describe the missing dependency and target
+environment, then obtain explicit user authorization before installing anything.
+Prefer a task-local `.umeko-tools` virtual environment and an already available
+`uv` or pip; do not modify Umeko's packaged environment or global Python packages.
+Install Poppler through the operating system's approved package source only after
+authorization. Rerun the same checks after installation.
+
+For a restricted or corporate network, reuse user-confirmed package indexes,
+proxy settings, and CA certificates supported by the selected tool. Model
+provider proxy settings do not configure pip, uv, or system package managers.
+Do not guess internal URLs or treat a public mirror as an approved internal
+source. Prefer command- or task-scoped settings over global configuration changes,
+preserve TLS verification, and redact credentials. Confirm proxy and CA settings
+separately on remote hosts and in containers; a loopback proxy on the office
+machine is not automatically valid there.
+
+If installation is not possible, tell the user exactly what is missing, which
+operations remain possible, and how to complete the setup locally.
 
 ## Environment
 No required environment variables.
