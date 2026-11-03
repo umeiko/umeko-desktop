@@ -40,6 +40,8 @@ def create_application():
     from app.desktop_preferences import startup_settings
     configure(root, enabled=startup_settings()['webDisplay'] == 'embedded')
     app = QApplication(sys.argv)
+    from app.input_method import InputMethodUpdates
+    app._input_method_updates = InputMethodUpdates(app)
     if not QFontDatabase.families() and os.name == "nt":
         # The Windows offscreen test platform does not discover system fonts.
         for font in ("msyh.ttc", "segoeui.ttf", "consola.ttf"):
