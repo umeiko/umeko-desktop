@@ -310,7 +310,7 @@ test("real bridge reports background jobs and enforces checkpoint lock changes",
   });
   await new Promise(done => server.listen(0, "127.0.0.1", done));
   const bridge = fileURLToPath(new URL("../runtime/releases/coding-1.3.0/bridge.mjs", import.meta.url));
-  const child = spawn(process.execPath, [bridge], { cwd, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [bridge], { cwd, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
   const events = [];
   let buffer = "", stderr = "";
   child.stderr.on("data", value => { stderr += value; });
@@ -339,6 +339,9 @@ test("real bridge reports background jobs and enforces checkpoint lock changes",
   try {
     send({ type: "inspect", workspace: cwd, defaultCwd: cwd, agentDir, sessionDir, model: "fixture", models: [{ id: "fixture", contextWindow: 128000 }], gateway: `http://127.0.0.1:${server.address().port}/`, token: "fixture", agent: {} });
     await wait(() => events.some(event => event.type === "ready"));
+    // ready announces the session; inspect still emits its initial state before
+    // releasing the operation lock. Wait for that operation's completion.
+    await wait(() => events.some(event => event.type === "done" && event.action === "inspect"));
     send({ type: "prompt", text: "Start the background job" });
     await wait(() => events.some(event => event.type === "tool" && event.name === "background_job" && event.state === "done"));
     await wait(() => events.some(event => event.type === "done" && event.action === "prompt"));
