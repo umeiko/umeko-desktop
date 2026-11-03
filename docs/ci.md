@@ -9,6 +9,8 @@ After the usual setup, use those same commands locally with
 `QT_QPA_PLATFORM=offscreen` and `QT_QUICK_BACKEND=software`. Linux checks also
 use a private D-Bus session and an unlocked ephemeral keyring, as shown in the
 workflow.
+Discovery and the serial UI smoke list run concurrently inside that same
+Linux job, with separate private D-Bus/keyring sessions. Both must succeed.
 
 `python scripts/ci-native-tests.py` runs the actual-host regressions. The
 lists live in that script: native paths, PTY/process behavior, filesystem
@@ -19,12 +21,15 @@ The same script selects native Node process-tree, search-tool and installer
 cases by exact test name, plus Windows PowerShell and macOS symlink cases.
 The remaining shared Node cases run only in Linux checks.
 
-For PRs, a small scope job skips native packaging when every changed file is
-in `tests/`, `docs/` or `docs-site/`, or is the docs workflow/capture script.
-Every other path builds all four packages, including unknown paths,
-dependencies, application/QML files, skills, packaged Markdown and build
-scripts. Tests-only PRs retain the dedicated Windows native regression job;
-packaging PRs run that same native list in the Windows package job.
+For PRs, a small scope job keeps ordinary `app/`, QML, `runtime/` source and
+test changes on Linux shared checks plus the Windows native regression job.
+It requests all four packages for dependency/build inputs and explicitly
+copied non-source resources: runtime package manifests, requirements,
+PyInstaller specs, app icons/data files, runtime documentation/data,
+skills/plugins/licenses, build/setup scripts and packaging workflows.
+Unclassified paths also request packages. The exact exceptions live in
+`scripts/ci-package-changes.py`. Packaging PRs run the Windows native list
+in the Windows package job instead of repeating it in a separate job.
 
 Main pushes and manual desktop dispatches always build Windows x64, Linux
 x64, macOS Intel and Apple Silicon. Native IME caret checks, Windows window
