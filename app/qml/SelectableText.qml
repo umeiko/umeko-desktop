@@ -22,7 +22,7 @@ TextEdit {
     onLinkActivated: link => { if (conversationLinks && !selectionController) activateConversationLink(link, Qt.LeftButton, 0, 0) }
     TextLinks {
         id: links; objectName: "conversationLinks"
-        document: root.textDocument; enabled: root.conversationLinks
+        document: root.textDocument; enabled: root.conversationLinks && root.visible
         workspace: root.conversationLinks ? backend.conversationWorkspace || "" : ""
         active: !root.conversationLinks || !backend.busy
         color: Theme.accent

@@ -130,6 +130,16 @@ class ConversationLinksTests(unittest.TestCase):
             target.chmod(0o600)
             self.assertFalse(is_executable_path(target))
 
+    def test_ambiguous_path_checks_are_bounded_and_cancellable(self):
+        from app.conversation_links import MAX_PATH_WORDS
+        count = 200
+        with patch('app.conversation_links.Path.exists', return_value=False) as exists:
+            self.assertEqual(recognize_links('missing/path '*count,self.root), [])
+        self.assertLessEqual(exists.call_count, count*(MAX_PATH_WORDS+1)+1)
+        with patch('app.conversation_links.Path.exists') as exists:
+            self.assertEqual(recognize_links('missing/path '*count,self.root,cancelled=lambda:True), [])
+        exists.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

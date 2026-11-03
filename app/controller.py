@@ -552,10 +552,12 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if is_executable_path(path) and path.is_dir():
             # Application bundles are directories, but opening one can run it.
             self.openChatboxPath(str(path.parent), False)
-        elif reveal or is_executable_path(path):
+        elif reveal:
             self.openChatboxPath(str(path), True)
         elif path.is_file() and (kind := document_kind(path)):
             self.documentRequested.emit(str(path), path.name, kind)
+        elif is_executable_path(path):
+            self.openChatboxPath(str(path), True)
         else:
             self.openChatboxPath(str(path), False)
 

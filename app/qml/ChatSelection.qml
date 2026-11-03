@@ -104,10 +104,21 @@ Item {
         return href ? {editor:editor, href:href, x:p.x, y:p.y} : null
     }
     property var pressedLink: null
+    function selectionAt(x, y) {
+        if (!hasSelection) return false
+        const editor = pick(x,y,false)
+        if (!editor) return false
+        const point = position(editor,x,y)
+        const start = compare(anchor,cursor) < 0 ? anchor : cursor
+        const end = compare(anchor,cursor) < 0 ? cursor : anchor
+        return compare(point,start) >= 0 && compare(point,end) < 0
+    }
     function rememberLink(x, y) { pressedLink = linkAt(x, y); pointerMoved = false; return !!pressedLink }
     function activateLink(x, y, button, modifiers) {
         const link = linkAt(x, y), pressed = pressedLink
         pressedLink = null
+        // A selection keeps its Copy/Select all menu even when it covers a link.
+        if (button === Qt.RightButton && selectionAt(x,y)) return false
         if (!pressed || !link || pointerMoved || pressed.editor !== link.editor || pressed.href !== link.href || (modifiers & Qt.ShiftModifier)) return false
         link.editor.activateConversationLink(link.href, button, link.x, link.y)
         return true
@@ -225,6 +236,7 @@ Item {
             if (!editor) { if (event.button === Qt.LeftButton) root.clear(); event.accepted = false; return }
             root.rememberLink(event.x, event.y)
             if (event.button === Qt.RightButton) {
+                if (root.selectionAt(event.x,event.y)) { root.pressedLink = null; root.forceActiveFocus(); return }
                 if (root.pressedLink) return
                 if (!root.hasSelection) root.selectUnit(editor, root.position(editor, event.x, event.y).offset, 2)
                 root.forceActiveFocus(); return

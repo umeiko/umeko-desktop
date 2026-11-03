@@ -52,6 +52,9 @@ _WINDOWS_ABSOLUTE = re.compile(r"^(?:[A-Za-z]:[/\\]|\\\\)")
 _CHUNK = re.compile(r"[^\r\n<>\"'`，。；！？、：【】《》（）,;]+")
 _TOKEN = re.compile(r"[^\s<>\"'`，。；！？、：【】《》（）,;]+")
 _WEB_TOKEN = _TOKEN
+# Quoted/inline-code paths are tried whole. Limit ambiguous unquoted prose
+# extensions so a paragraph of missing paths cannot cause quadratic stat I/O.
+MAX_PATH_WORDS = 32
 
 
 def is_executable_path(path: str | os.PathLike) -> bool:
@@ -194,7 +197,7 @@ def fenced_ranges(text: str) -> list[tuple[int, int]]:
     return ranges
 
 
-def recognize_links(text: str, workspace: str | os.PathLike) -> list[ConversationLink]:
+def recognize_links(text: str, workspace: str | os.PathLike, *, cancelled=lambda: False) -> list[ConversationLink]:
     """Return non-overlapping existing-path and web links in rendered plain text.
 
     Quoted spans and whole fragments support spaces, as do paths beginning with
@@ -212,6 +215,7 @@ def recognize_links(text: str, workspace: str | os.PathLike) -> list[Conversatio
 
     # Whole/quoted/punctuation-bounded spans let an existing path contain spaces.
     for chunk in _CHUNK.finditer(text):
+        if cancelled(): return []
         if overlaps(chunk.start(), chunk.end()):
             continue
         whole = _path_link(text, chunk.start(), chunk.end(), workspace)
@@ -221,6 +225,7 @@ def recognize_links(text: str, workspace: str | os.PathLike) -> list[Conversatio
             continue
         tokens = list(_TOKEN.finditer(text, chunk.start(), chunk.end()))
         for index, token in enumerate(tokens):
+            if cancelled(): return []
             start, end = _trim(text, token.start(), token.end())
             if overlaps(start, end):
                 continue
@@ -239,7 +244,8 @@ def recognize_links(text: str, workspace: str | os.PathLike) -> list[Conversatio
             # Spaces may occur inside an absolute or project-relative path.
             # Longest existing prefix wins; checks are confined to this chunk.
             if "/" in value or "\\" in value:
-                for later in tokens[index + 1:]:
+                for later in tokens[index + 1:index + MAX_PATH_WORDS]:
+                    if cancelled(): return []
                     extended = _path_link(text, start, later.end(), workspace)
                     if extended:
                         found = extended
@@ -250,6 +256,7 @@ def recognize_links(text: str, workspace: str | os.PathLike) -> list[Conversatio
                 occupied.append((start, end))
 
     for token in _WEB_TOKEN.finditer(text):
+        if cancelled(): return []
         start, end = _trim(text, token.start(), token.end())
         if start >= end or overlaps(start, end):
             continue

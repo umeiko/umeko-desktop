@@ -9,6 +9,8 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -62,6 +64,12 @@ def offscreen_suite(screenshots=None):
         loop = QEventLoop()
         QTimer.singleShot(60, loop.quit)
         loop.exec()
+
+    def wait_until(check):
+        deadline = time.monotonic()+5
+        while not check():
+            if time.monotonic() > deadline: raise AssertionError('Link scanner did not settle')
+            settle()
 
     def qml_call(obj, name, *args):
         result = QMetaObject.invokeMethod(
@@ -214,6 +222,7 @@ ApplicationWindow {
 
         def anchors(self, editor):
             decorator = self.find("conversationLinks", editor)
+            wait_until(lambda:not decorator.pending)
             rows = []
             for fragment in self.fragments(self.document(editor)):
                 style = fragment.charFormat()
@@ -363,9 +372,65 @@ ApplicationWindow {
             selection.setProperty("cursor", {"row": 0, "block": 0, "offset": len(plain)})
             qml_call(selection, "refresh")
             self.assertEqual(editor.property("selectedText"), plain)
+            link = h.anchors(editor)[0]
+            point = qml_call(h.window,'selectionPoint',editor,link['position']+2)
+            self.assertTrue(qml_call(selection,'rememberLink',point.x(),point.y()))
+            self.assertFalse(qml_call(selection,'activateLink',point.x(),point.y(),Qt.RightButton.value,0))
+            self.assertTrue(selection.property('hasSelection'))
             QMetaObject.invokeMethod(h.find("copyCode_1"), "clicked", Qt.DirectConnection)
             self.assertEqual(h.backend.calls[-1][0], "copy")
             self.assertEqual(h.backend.calls[-1][1].strip(), "guide.txt")
+
+        def test_slow_lookup_is_background_and_obsolete_text_is_discarded(self):
+            from app.text_links import recognize_links
+            h = self.h
+            entered, release = threading.Event(), threading.Event()
+            threads, gui_progress = [], []
+            main_thread = threading.get_ident()
+            def slow(text, workspace, **kwargs):
+                threads.append(threading.get_ident())
+                if 'guide.txt' in text:
+                    entered.set();release.wait(5)
+                return recognize_links(text, workspace, **kwargs)
+            with patch('app.text_links.recognize_links',side_effect=slow):
+                try:
+                    h.backend.update(messageText='guide.txt')
+                    wait_until(entered.is_set)
+                    QTimer.singleShot(0,lambda:gui_progress.append(True))
+                    h.backend.update(messageText='https://example.com/final')
+                    self.assertTrue(gui_progress)
+                finally:
+                    release.set()
+                anchors=h.anchors(h.prose())
+            self.assertEqual([row['info']['target'] for row in anchors],['https://example.com/final'])
+            self.assertTrue(threads)
+            self.assertNotIn(main_thread,threads)
+
+        def test_workspace_change_resolves_both_bare_and_markdown_paths_again(self):
+            h = self.h
+            h.backend.update(messageText='[Read](guide.txt) and guide.txt')
+            self.assertEqual(len(h.anchors(h.prose())),2)
+            with tempfile.TemporaryDirectory() as other:
+                root=Path(other).resolve();(root/'guide.txt').write_text('other',encoding='utf-8')
+                h.backend.update(conversationWorkspace=str(root))
+                self.assertEqual([r['info']['target'] for r in h.anchors(h.prose())],[str(root/'guide.txt')]*2)
+
+        def test_existing_links_remain_usable_while_new_reply_streams(self):
+            h=self.h
+            h.backend.update(messageText='guide.txt')
+            self.assertEqual(h.anchors(h.prose())[0]['info']['kind'],'path')
+            with patch('app.text_links.recognize_links',side_effect=AssertionError('No scan during generation')):
+                h.backend.update(busy=True)
+                self.assertEqual(h.anchors(h.prose())[0]['info']['kind'],'path')
+                h.backend.update(messageText='https://example.com/streamed')
+                self.assertTrue(all(not row['info'] for row in h.anchors(h.prose())))
+
+        def test_unicode_offsets_still_hit_the_decorated_link(self):
+            h = self.h
+            h.backend.update(messageText='😀 中文 **guide.txt**')
+            editor=h.prose();link=h.anchors(editor)[0]
+            self.assertEqual(link['position'],len('😀 中文 '.encode('utf-16-le'))//2)
+            self.assertEqual(qml_call(h.window,'linkAtOffset',editor,link['position']+2),link['href'])
 
     class ControllerActions(unittest.TestCase):
         def test_routes_safe_text_to_viewer_and_other_items_to_existing_opener(self):
@@ -377,17 +442,17 @@ ApplicationWindow {
                 fake = SimpleNamespace(documentRequested=SimpleNamespace(emit=lambda *args: documents.append(args)),
                                        toast=SimpleNamespace(emit=lambda *args: toasts.append(args)),
                                        openChatboxPath=lambda *args: opened.append(args))
-                for filename in ("guide.txt", "notes.md", "sample.cpp"):
+                for filename in ("guide.txt", "notes.md", "sample.cpp", "sample.py", "run.cmd", "script.js"):
                     path = workspace / filename
                     path.write_text("fixture\n", encoding="utf-8")
                     Controller.openConversationPath(fake, str(path), False)
                     self.assertEqual(documents[-1], (str(path), filename, document_kind(path)))
                 expected_documents = list(documents)
-                for filename in ("run.cmd", "sample.py", "payload.exe", "image.png"):
+                for filename in ("payload.exe", "image.png"):
                     path = workspace / filename
                     path.write_text("fixture\n", encoding="utf-8")
                     Controller.openConversationPath(fake, str(path), False)
-                    self.assertEqual(opened[-1], (str(path), filename in ("run.cmd", "sample.py", "payload.exe")))
+                    self.assertEqual(opened[-1], (str(path), filename == "payload.exe"))
                 folder = workspace / "folder"
                 folder.mkdir()
                 Controller.openConversationPath(fake, str(folder), False)
