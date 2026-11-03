@@ -1,5 +1,17 @@
 .pragma library
 var strings = {
+    "本会话不再询问：{category}": "Don't ask again in this chat: {category}",
+    "本会话已允许：": "Allowed in this chat: ",
+    "递归删除": "Recursive deletion",
+    "磁盘或分区修改": "Disk or partition changes",
+    "关机、重启或注销": "Shutdown, restart or logoff",
+    "系统配置修改": "System configuration changes",
+    "受保护路径权限修改": "Protected path permission changes",
+    "强制推送主分支": "Force push to main or master",
+    "系统目录写入": "System directory writes",
+    "全部撤销": "Revoke all",
+    "询问": "Ask",
+    "会话授权保存失败": "Could not save chat approval",
   "图片与语音生成": "Image and voice generation",
   "图片、语音与视频生成": "Image, voice and video generation",
   "多模态模型": "Multimodal models",

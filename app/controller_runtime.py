@@ -111,6 +111,7 @@ class PiControllerMixin:
         if old_id and old_id != record.id:
             self._sessions = [session for session in self._sessions if session["id"] != old_id]
             metadata = self.store.data["sessionMeta"].pop(old_id, {})
+            metadata.pop("dangerousGrants", None)
             self.store.data["sessionMeta"].setdefault(record.id, {}).update(metadata)
         if record.file or record.action == "prompt":
             self._index_record(record)
@@ -170,6 +171,7 @@ class PiControllerMixin:
                     legacyHistory=record.history, models=self.gateway.models(), agent=agent,
                     auxiliaryVision=self._auxiliary_vision(),
                     permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,
+                    dangerousGrants=[] if action in ("fork", "navigate", "new") else self._dangerous_grants(record),
                     dataDir=str(self.store.directory),
                     generation=generation_config(self.store.data),
                     mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
@@ -290,6 +292,10 @@ class PiControllerMixin:
             return
         kind, visible = event.get("type"), record is self._view
         if kind=='widget_delivery':return  # WidgetChannel observes the same pool event.
+        if kind == "dangerous_grants_cleared":
+            self._clear_dangerous_grants(record.id)
+            self.store.save()
+            return
         if kind in ("subagents", "subagent_context", "subagent_event", "subagent_command", "subagent_queue", "subagent_queue_edited", "subagent_queue_returned"):
             self._subagents.handle(record, event)
             archived = self.store.data['sessionMeta'].get(record.id, {}).get('archived')
