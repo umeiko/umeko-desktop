@@ -48,7 +48,7 @@ class PreferencesTests(unittest.TestCase):
                 path.write_text(json.dumps({'ui': ui, 'server': {'keys': []},
                                            'agent': {'outputLimitDefaultVersion': 1}}), encoding='utf-8')
                 store = Store(Path(temp))
-                self.assertEqual(store.data['ui'], {**ui, 'sidebarCollapsed': False, 'lineSpacing': 'standard'})
+                self.assertEqual(store.data['ui'], {**ui, 'sidebarCollapsed': False, 'lineSpacing': 'standard', 'sessionCacheSize': 3})
                 self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['ui']['lineSpacing'], 'standard')
 
     def test_line_spacing_updates_immediately_and_round_trips(self):

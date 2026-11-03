@@ -99,6 +99,8 @@ class ContextCompactionTests(unittest.TestCase):
         agent.mkdir(); workspace.mkdir()
         (agent / "settings.json").write_text(json.dumps({"compaction": {"keepRecentTokens": 50, "reserveTokens": 100}}), encoding="utf-8")
         self.backend = Controller(ROOT)
+        self.model_resets = []
+        self.backend.messageModel.modelReset.connect(lambda: self.model_resets.append(self.backend._view.key))
         self.adapter = FixtureProvider()
         self.backend.adapter = self.backend.gateway.adapter = self.adapter
         self.backend.store.data.update(selectedProvider="fixture", selectedModel="Fixture", providers=[{
@@ -210,6 +212,10 @@ class ContextCompactionTests(unittest.TestCase):
         self.wait_for(lambda: self.event_row() is not None and self.event_row().property("eventState") == "running")
         row = self.event_row()
         self.assertTrue(self.backend.compacting)
+        self.compaction_record = self.backend._view
+        self.compaction_session = (self.compaction_record.id, self.compaction_record.file)
+        self.compaction_event_id = self.compaction_record.compaction_event_id
+        self.compaction_reset_count = len(self.model_resets)
         name = row.objectName()
         index = name.rsplit("_", 1)[1]
         self.click_event_toggle(index)
@@ -227,6 +233,14 @@ class ContextCompactionTests(unittest.TestCase):
         self.adapter.release.set()
         self.wait_for(lambda: not self.backend.busy and row.property("eventState") == state)
         self.assertIs(self.find(name), row, "Terminal result must update the original QML row")
+        self.assertEqual(len(self.model_resets), self.compaction_reset_count,
+                         "Finishing compaction must not reset the conversation model")
+        record = row.property("record")
+        if hasattr(record, "toVariant"):
+            record = record.toVariant()
+        self.assertEqual(record["eventId"], self.compaction_event_id)
+        self.assertIs(self.backend._view, self.compaction_record, "Compaction must keep the current conversation")
+        self.assertEqual((self.backend._view.id, self.backend._view.file), self.compaction_session)
         self.assertTrue(row.property("expanded"), "Updating a result must preserve disclosure state")
         self.assertEqual(len([item for item in items(self.window) if item.objectName().startswith("compactionEvent_") and item.isVisible()]), 1)
         self.assert_local_style(index)
@@ -234,6 +248,7 @@ class ContextCompactionTests(unittest.TestCase):
         events = [entry for entry in entries if entry.get("customType") == "umeko-compaction"]
         self.assertEqual([entry["data"]["state"] for entry in events], ["running", state])
         self.assertEqual(events[0]["data"]["eventId"], events[-1]["data"]["eventId"])
+        self.assertEqual(events[-1]["data"]["eventId"], self.compaction_event_id)
         self.assertEqual(events[-1]["data"]["version"], 2)
         self.assertNotIn("umeko-compaction", json.dumps([call["messages"] for call in self.adapter.calls], ensure_ascii=False))
         return events[-1]["data"]

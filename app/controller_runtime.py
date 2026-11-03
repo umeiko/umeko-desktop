@@ -5,6 +5,7 @@ import re
 import time
 import uuid
 from pathlib import Path
+from PySide6.QtCore import QProcess
 
 from .pi_runtime import node_executable
 from .webview import configuration as webview_configuration
@@ -131,9 +132,13 @@ class PiControllerMixin:
         locked = getattr(plugins, 'checkpoint_locked', None)
         if callable(locked) and locked(record.workspace):
             return False
-        if record.busy or self._kernel_busy:
+        if record.busy or record.approval or self._kernel_busy:
             return False
+        if record.process and record.process.state() == QProcess.NotRunning:
+            self._pool.retire(record)
         if record.stale or (record.process and not record.ready):
+            if record.subagents_active:
+                return False
             self._pool.retire(record)
         record.action, record.failed, record.cancelled = action, False, False
         record.pet_activity = 'thinking'
@@ -287,6 +292,12 @@ class PiControllerMixin:
         if kind=='widget_delivery':return  # WidgetChannel observes the same pool event.
         if kind in ("subagents", "subagent_context", "subagent_event", "subagent_command", "subagent_queue", "subagent_queue_edited", "subagent_queue_returned"):
             self._subagents.handle(record, event)
+            archived = self.store.data['sessionMeta'].get(record.id, {}).get('archived')
+            if archived and record is not self._view and not self._pool.protected(record):
+                self._pool._clear_body(record)
+            elif record.stale and not self._pool.protected(record):
+                self._pool.retire(record)
+            self._pool.trim()
             return
         if kind == 'umeko_request':
             result = self._umeko_control.execute({'operation': event.get('operation'), 'arguments': event.get('arguments', {})}, record)
@@ -538,7 +549,10 @@ class PiControllerMixin:
                 self.taskFinished.emit(record.id, record.title, kind == 'done' and not record.failed, long_running)
             if visible:
                 self.approvalChanged.emit()
-            if record.stale or (kind == "done" and not record.ready):
+            archived = self.store.data['sessionMeta'].get(record.id, {}).get('archived')
+            if archived and record is not self._view and not self._pool.protected(record):
+                self._pool._clear_body(record)
+            elif (record.stale or (kind == "done" and not record.ready)) and not self._pool.protected(record):
                 self._pool.retire(record)
             self._pool.trim()
         else:

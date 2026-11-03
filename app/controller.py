@@ -177,7 +177,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.public_server = None
         self._sessions = self.store.load_sessions()
         self._welcome_greetings, self._welcome_portraits = [], []
-        self._pool = PiSessionPool(self)
+        self._pool = PiSessionPool(self, limit=self.store.data['ui']['sessionCacheSize'])
         self._view = self._new_view()
         self._pool.touch(self._view, current=True)
         self._pool.event.connect(self._handle_pi_event)
@@ -293,6 +293,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     def _activate(self, record):
         self._streaming_timer.stop()
+        previous_configuration = copy.deepcopy(self.store.data)
         self._view = record
         self.viewChanged.emit()
         self._pool.touch(record, current=True, dirty=False)
@@ -316,7 +317,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self.store.data.update(selectedModel=record.model, selectedProvider=record.provider)
         self._mark_read(record)
         self.store.save()
-        self.changed.emit()
+        # Rebinding every hidden settings page is expensive. Session-specific
+        # signals below update the chat; refresh settings only when they changed.
+        if self.store.data != previous_configuration:
+            self.changed.emit()
         self.chatChanged.emit()
         self.attachmentsChanged.emit()
         self.approvalChanged.emit()
@@ -324,6 +328,11 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.contextUsageChanged.emit()
         self.reasoningChanged.emit()
         self.retryChanged.emit()
+
+        # A dead retained kernel is resumed through the same command path as
+        # ordinary Pi startup. Never-started history browsing remains lazy.
+        if record.crashed and not record.busy and not record.subagents_active and not record.approval:
+            self._command_pi('inspect', record=record)
 
     def _refresh_sidebar(self):
         rows = self._project_rows()
@@ -767,6 +776,9 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.store.data["sessionMeta"].setdefault(session_id, {})["archived"] = archived
         if archived and self._view.id == session_id:
             self._clear_current()
+        record = self._pool.find(session_id)
+        if archived and record and not self._pool.protected(record):
+            self._pool._clear_body(record)
         self.store.save()
         self.chatChanged.emit()
 
@@ -780,6 +792,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self.store.data["sessionMeta"].setdefault(session_id, {})["archived"] = archived
         if archived and self._view.id in ids:
             self._clear_current()
+        if archived:
+            for record in tuple(self._pool.records.values()):
+                if record.id in ids and not self._pool.protected(record):
+                    self._pool._clear_body(record)
         self.store.save()
         self.chatChanged.emit()
 
@@ -1694,7 +1710,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Slot(str)
     def deleteSession(self, session_id):
         record = self._pool.find(session_id)
-        if (record and record.busy) or session_id in self._management_jobs:
+        if (record and self._pool.protected(record)) or session_id in self._management_jobs:
             return self.toast.emit("此会话正在运行，请先停止该会话")
         session = next((s for s in self._sessions if s["id"] == session_id), {})
         file = Path(session["file"]) if session.get("file") else None
@@ -1702,8 +1718,9 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             base = (self.store.directory / "pi/sessions").resolve()
             if not file.resolve().is_relative_to(base):
                 return self.toast.emit("只能删除 Umeko 会话目录中的文件")
-            if record:
-                self._pool.retire(record)
+        if record:
+            self._pool._clear_body(record)
+        if file:
             file.unlink(missing_ok=True)
             images = file.with_name(file.name + '.images')
             linked = images.is_symlink() or getattr(images, 'is_junction', lambda: False)()

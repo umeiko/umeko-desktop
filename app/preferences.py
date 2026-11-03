@@ -10,6 +10,26 @@ from umeko_provider_sdk.network import validate_ca_file
 
 
 class PreferencesMixin:
+    @Slot(int, result=bool)
+    def setSessionCacheSize(self, size):
+        if type(size) is not int or not 0 <= size <= 2147483647:
+            return False
+        ui = self.store.data['ui']
+        previous = ui['sessionCacheSize']
+        if previous == size:
+            return True
+        ui['sessionCacheSize'] = size
+        try:
+            self.store.save()
+        except (OSError, RuntimeError) as error:
+            ui['sessionCacheSize'] = previous
+            self.toast.emit(str(error))
+            return False
+        self._pool.limit = size
+        self._pool.trim()
+        self.changed.emit()
+        return True
+
     @Slot(str, result=bool)
     def saveMultimodalSettings(self, raw):
         from .multimodal_settings import normalize, validate
@@ -104,6 +124,8 @@ class PreferencesMixin:
             return
         self.store.data['ui']['language'] = language
         self.store.save()
+        # Pi's extension UI language is read in its startup payload.
+        self._restart_pi()
         self.appearanceChanged.emit()
 
     @Slot(float)

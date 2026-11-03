@@ -120,7 +120,7 @@ class SessionTests(unittest.TestCase):
 
     def test_concurrent_switching_lru_history_unread_and_drafts(self):
         c = self.controller
-        c._pool.limit = 2
+        c._pool.limit = 1  # One idle session, in addition to all running sessions.
         self.assertTrue(c.send("TASK A"))
         a = c._view
         self.assertTrue(c.loading)
