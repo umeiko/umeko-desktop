@@ -1,5 +1,8 @@
 .pragma library
 var strings = {
+  "取消登录": "Cancel sign-in",
+  "正在取消登录…": "Cancelling sign-in…",
+  "登录已取消": "Sign-in cancelled",
   "豆包": "Doubao",
   "稳稳接住你": "Right here to catch you",
   "我直接给你最直白、最清晰、最实用、最不绕弯的结论：今天这件事，咱们一起搞定。": "Here's the clearest, simplest, most practical answer, no beating around the bush: we'll get this done together.",
