@@ -3,6 +3,10 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+if __name__ == '__main__':
+    from app.preview_launch import route_start
+    if route_start(Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))):
+        sys.exit(0)
 if "--umeko-plugin-worker" in sys.argv:
     import runpy
     _plugin_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
@@ -61,6 +65,9 @@ def create_application():
         QTimer.singleShot(0, installer.begin)
         return app, engine, installer
     controller = Controller(root)
+    launch_error = os.environ.pop('UMEKO_PREVIEW_LAUNCH_ERROR', '')
+    if launch_error:
+        QTimer.singleShot(0, lambda: controller.toast.emit(launch_error))
     from app.bundled_skills import install_bundled
     try:
         install_bundled(root / 'bundled-skills', Path(controller.store.data['agent'].get('agentDir') or Path.home() / '.pi/agent'))
