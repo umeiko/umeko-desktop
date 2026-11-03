@@ -225,7 +225,7 @@ export async function sessionResourceSettings(Pi, input, native) {
 export function extensionDocument(row) {
   const info=extensionInfo(row);
   const name=row.path.startsWith("builtin:") ? row.path.slice(8) : row.name;
-  const tools={codemode:["codemode"], "tool-search":["tool_search"], mcp:["MCP 服务器提供的工具"], chatbox:["submit_to_chatbox"], "pi-commands":["run_pi_command"], "umeko-control":["umeko_desktop"], "background-jobs":["background_job"], subagents:["subagent", "get_subagent_result", "steer_subagent"]};
+  const tools={codemode:["codemode"], "tool-search":["tool_search"], mcp:["MCP 服务器提供的工具"], chatbox:["submit_to_chatbox"], "pi-commands":["run_pi_command"], "umeko-control":["umeko_desktop", "analyze_image"], "background-jobs":["background_job"], subagents:["subagent", "get_subagent_result", "steer_subagent"]};
   const summary=`# ${name}
 
 ${info.description || "本地 Pi 扩展。"}

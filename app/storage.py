@@ -16,6 +16,7 @@ from .platform_support import data_directory, legacy_data_directory, migrate_pro
 from .api_keys import make_key
 from PySide6.QtCore import QLocale
 from .desktop_preferences import DEFAULTS as DESKTOP_DEFAULTS, normalize as desktop_settings
+from .auxiliary_vision import DEFAULTS as VISION_DEFAULTS, normalize as vision_settings
 
 
 class Blob(ctypes.Structure):
@@ -70,6 +71,7 @@ DEFAULTS = {
     "employeeId": "", "password": "", "workspace": "", "dark": False, "theme": "light", "character": "yanami",
     "selectedProvider": "", "selectedModel": "",
     "providers": [],
+    "auxiliaryVision": VISION_DEFAULTS,
     "desktop": DESKTOP_DEFAULTS,
     "agent": {"maxTokens": 32768, "maxContextImages": 3, "outputLimitDefaultVersion": 1, "instructions": "", "autoCompaction": True,
               "agentDir": "", "skillPaths": [], "extensionPaths": [], "safeMode": False, "toolPermissionMode": "auto",
@@ -122,6 +124,10 @@ class Store:
         image_limit = self.data['agent'].get('maxContextImages', 3)
         self.data['agent']['maxContextImages'] = max(1, image_limit) if type(image_limit) is int else 3
         self.data['desktop'] = desktop_settings(self.data.get('desktop'))
+        try:
+            self.data['auxiliaryVision'] = vision_settings(self.data.get('auxiliaryVision', {}))
+        except ValueError:
+            self.data['auxiliaryVision'] = copy.deepcopy(VISION_DEFAULTS)
         output_default_migrated = saved.get('agent', {}).get('outputLimitDefaultVersion') != 1
         if output_default_migrated:
             if self.data['agent']['maxTokens'] == 8192:

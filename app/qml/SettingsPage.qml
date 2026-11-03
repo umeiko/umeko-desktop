@@ -9,6 +9,7 @@ Item {
     signal back()
     property bool editingProvider: false
     property bool editingCommon: false
+    property bool multimodalOpen: false
     property string editId: ""
     function openPluginManagement(identifier) { agentPage.openPlugins(identifier) }
     CommonProviderDialog { id: commonProviders }
@@ -22,8 +23,8 @@ Item {
         flick.cancelFlick()
         flick.contentY = Math.max(0, Math.min(Math.max(0, flick.contentHeight - flick.height), flick.contentY - delta))
     }
-    onTabChanged: { activeInlineScroll = null; if (providerPopup) providerPopup.close() }
-    onVisibleChanged: if (!visible) { activeInlineScroll = null; if (providerPopup) providerPopup.close() }
+    onTabChanged: { multimodalOpen = false; activeInlineScroll = null; if (providerPopup) providerPopup.close() }
+    onVisibleChanged: if (!visible) { multimodalOpen = false; activeInlineScroll = null; if (providerPopup) providerPopup.close() }
     TapHandler {
         onPressedChanged: if (pressed && root.activeInlineScroll) {
             const target = root.activeInlineScroll
@@ -132,9 +133,15 @@ Item {
 
                 Column {
                     visible: root.tab === 0; width: parent.width; spacing: 18
-                    ProviderPluginsSection { width: parent.width }
+                    AuxiliaryVisionSettings {
+                        width: parent.width; expanded: root.multimodalOpen
+                        onOpenRequested: { root.multimodalOpen = true; settingsScroll.contentItem.contentY = 0 }
+                        onBackRequested: { root.multimodalOpen = false; settingsScroll.contentItem.contentY = 0 }
+                    }
+                    ProviderPluginsSection { visible: !root.multimodalOpen; width: parent.width }
                     SectionCard {
                         objectName: "commonProvidersSection"
+                        visible: !root.multimodalOpen
                         width: parent.width
                         ColumnLayout {
                             id: commonProviderContent
@@ -158,6 +165,7 @@ Item {
                     }
                     SectionCard {
                         objectName: "apiProvidersSection"
+                        visible: !root.multimodalOpen
                         width: parent.width
                         ColumnLayout { id: apiProviderContent; width: parent.width; spacing: 18
                             RowLayout { Layout.fillWidth: true

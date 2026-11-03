@@ -308,9 +308,12 @@ class LocalServer:
                             parameters["parallel_tool_calls"] = not choice["disable_parallel_tool_use"]
                         parameters["tool_choice"] = {"type": "function", "function": {"name": choice["name"]}} if choice.get("type") == "tool" else {"any": "required"}.get(choice.get("type"), choice.get("type", "auto"))
                     max_tokens = min(max(int(body.get("max_tokens", body.get("max_completion_tokens", 4096))), 1), 32768)
+                    provider_id = body.get('_umeko_provider') if owner.private else None
+                    if provider_id is not None and not isinstance(provider_id, str):
+                        raise ValueError('Invalid private provider identity')
                     if body.get("stream"):
-                        return self.stream_events(owner.gateway.events(body["model"], messages, tools, max_tokens, parameters=parameters), body["model"], anth)
-                    result = owner.gateway.complete(body["model"], messages, tools, max_tokens, parameters=parameters)
+                        return self.stream_events(owner.gateway.events(body["model"], messages, tools, max_tokens, provider_id=provider_id, parameters=parameters), body["model"], anth)
+                    result = owner.gateway.complete(body["model"], messages, tools, max_tokens, provider_id=provider_id, parameters=parameters)
                     self.respond(200, anthropic_response(result, body["model"]) if anth else openai_response(result, body["model"]))
                 except IntegrationRequired as exc:
                     self.respond(422 if owner.private else 503, {"error": {"type": "integration_required", "message": str(exc)}})
