@@ -207,6 +207,7 @@ export function createBackgroundJobsExtension(options = {}) {
       parameters,
       async execute(_toolCallId, input, _signal, _onUpdate, ctx) {
         try {
+          if (input.action === "start" && options.canStart && !(await options.canStart())) throw new Error("Checkpoint restoration is active in this workspace");
           const jobs = await getManager();
           let result;
           if (input.action === "start") result = await jobs.start({ command: input.command,

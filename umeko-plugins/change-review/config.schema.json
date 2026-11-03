@@ -1,1 +1,1 @@
-{"type":"object","properties":{"autoOpen":{"type":"boolean"}},"additionalProperties":false}
+{"type":"object","properties":{"autoOpen":{"type":"boolean"},"checkpoints":{"type":"boolean"},"maxCheckpoints":{"type":"integer","minimum":1,"maximum":200},"maxCheckpointMB":{"type":"integer","minimum":16,"maximum":4096}},"additionalProperties":false}

@@ -37,12 +37,12 @@ export function createLoopReview({emit,timeoutMs=12000}) {
     const item=pending.get(event.id);
     if(item){pending.delete(event.id);clearTimeout(item.timer);item.resolve();}
   }
-  function request(phase,loopId,reason) {
+  function request(phase,loopId,reason,title='') {
     const id=crypto.randomUUID();
     return new Promise(resolve=>{
       const timer=setTimeout(()=>{pending.delete(id);resolve();},timeoutMs);
       pending.set(id,{resolve,timer});
-      emit({type:'loop_review',id,phase,loopId,reason});
+      emit({type:'loop_review',id,phase,loopId,reason,...(title?{title}:{})});
     });
   }
   return {
@@ -54,7 +54,10 @@ export function createLoopReview({emit,timeoutMs=12000}) {
       pi.on('agent_end',async event=>{
         const current=loopId;loopId='';if(!current)return;
         const last=[...(event.messages||[])].reverse().find(m=>m.role==='assistant');
-        await request('finish',current,last?.stopReason==='aborted'?'cancelled':last?.stopReason==='error'?'error':'completed');
+        const user=[...(event.messages||[])].reverse().find(m=>m.role==='user');
+        const content=typeof user?.content==='string'?user.content:Array.isArray(user?.content)?user.content.filter(item=>item?.type==='text').map(item=>item.text).join(' '):'';
+        const title=content.trim().replace(/\s+/g,' ').slice(0,80);
+        await request('finish',current,last?.stopReason==='aborted'?'cancelled':last?.stopReason==='error'?'error':'completed',title);
       });
     }
   };
