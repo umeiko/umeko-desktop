@@ -154,7 +154,9 @@ ApplicationWindow {
     class Harness:
         def __init__(self):
             self.temporary = tempfile.TemporaryDirectory(prefix="chat-link-fixture-")
-            self.workspace = Path(self.temporary.name)
+            # Windows CI may return an 8.3 temp path; link targets use the
+            # canonical resolved spelling rather than that temporary alias.
+            self.workspace = Path(self.temporary.name).resolve()
             for filename in ("guide.txt", "notes.md", "sample.cpp", "run.cmd", "payload.exe", "image.png"):
                 (self.workspace / filename).write_text("fixture only\n", encoding="utf-8")
             (self.workspace / "folder").mkdir()
