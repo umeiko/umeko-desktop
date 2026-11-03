@@ -108,6 +108,8 @@ class ConversationLinksTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(web_url(value), value)
         self.assertEqual(web_url("example.com:8443/path"), "https://example.com:8443/path")
+        self.assertEqual(web_url("https://example.invalid/guide"), "https://example.invalid/guide")
+        self.assertIsNone(web_url("example.invalid/guide"))
         self.assertEqual(web_url("例子.中国"), "https://例子.中国")
         for value in ("file:///tmp/readme", "javascript:alert(1)", "ftp://example.com",
                       "data:text/plain,example.com", "example.invalid", "co.uk", "README.md",

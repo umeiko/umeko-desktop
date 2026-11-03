@@ -67,8 +67,8 @@ def is_executable_path(path: str | os.PathLike) -> bool:
 def web_url(text: str) -> str | None:
     """Validate a complete http(s)/www/bare-domain target using the offline PSL.
 
-    Explicit http(s) links also permit IP addresses and localhost for local web
-    tools. Bare links require a recognized, registrable public domain. Other
+    Explicit http(s) links permit syntactically valid hosts and IP addresses.
+    Bare links require a recognized, registrable public domain. Other
     schemes, credentials, whitespace and malformed ports are rejected.
     """
     if not text or text != text.strip() or re.search(r"\s|[<>\\\x00-\x1f]", text):
@@ -98,10 +98,13 @@ def web_url(text: str) -> str | None:
     if explicit and ascii_host == "localhost":
         return candidate
     labels = ascii_host.split(".")
-    if (len(ascii_host) > 253 or len(labels) < 2
+    if (len(ascii_host) > 253
             or any(not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", p)
-                   for p in labels)
-            or _PSL.privatesuffix(ascii_host) is None):
+                   for p in labels)):
+        return None
+    if explicit:
+        return candidate
+    if len(labels) < 2 or _PSL.privatesuffix(ascii_host) is None:
         return None
     if not explicit and not ascii_host.startswith("www."):
         if "." + labels[-1] in _FILE_SUFFIXES:
