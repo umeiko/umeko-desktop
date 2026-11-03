@@ -120,7 +120,7 @@ class SessionTests(unittest.TestCase):
 
     def test_concurrent_switching_lru_history_unread_and_drafts(self):
         c = self.controller
-        c._pool.limit = 2
+        c._pool.limit = 1  # One idle session, in addition to all running sessions.
         self.assertTrue(c.send("TASK A"))
         a = c._view
         self.assertTrue(c.loading)
@@ -158,6 +158,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(a.process.processId(), a_pid, "running Pi was evicted")
         self.assertTrue(Path(b.file).is_file())
         c.openSession(b_id)
+        self.wait_for(lambda: c.activeSession == b_id, "evicted history reload")
         self.assertEqual(c.messages[-1]["text"], "RESULT B", "history waited for Pi")
         self.assertFalse(c.loading, "Browsing a cached transcript started Pi")
         self.assertIsNone(b.process)
@@ -167,6 +168,7 @@ class SessionTests(unittest.TestCase):
         self.assertTrue(c._session_flags(a_id)["unread"])
         self.assertEqual(Store(c.store.directory).data["sessionMeta"][a_id]["unread"], True)
         c.openSession(a_id)
+        self.wait_for(lambda: c.activeSession == a_id, "finished evicted history reload")
         self.assertEqual(c.messages[-1]["text"], "RESULT A")
         self.assertFalse(c._session_flags(a_id)["unread"])
         self.assertTrue(any(s["id"] == b_id for s in c.sessions), "parallel index update lost another session")
