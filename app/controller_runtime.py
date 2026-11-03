@@ -148,6 +148,7 @@ class PiControllerMixin:
                 default_cwd = self.store.directory / "workspace"
                 default_cwd.mkdir(exist_ok=True)
                 agent = self.store.data["agent"]
+                from .generation import generation_config
                 payload.update(gateway=f"http://127.0.0.1:{self.private_server.port}/", token=self.private_token,
                     workspace=record.workspace, defaultCwd=str(default_cwd),
                     agentDir=agent.get("agentDir") or str(Path.home() / ".pi/agent"),
@@ -160,6 +161,7 @@ class PiControllerMixin:
                     legacyHistory=record.history, models=self.gateway.models(), agent=agent,
                     permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,
                     dataDir=str(self.store.directory),
+                    generation=generation_config(self.store.data),
                     mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
                 if record.global_agent:
                     service=self._desktop_plugins.global_agents

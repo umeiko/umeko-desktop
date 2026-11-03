@@ -40,6 +40,16 @@ Use a provider card's small gear to choose the system proxy, a direct connection
 
 Model settings allow context-length and vision overrides. Enable these only when the upstream model supports them; entering a larger number does not change the model's capabilities.
 
+## Multimodal models {#multimodal-models}
+
+In **Settings → Accounts & providers → Multimodal models**, choose an existing account and model separately for image and speech generation. Select from the model catalogue or enter a raw upstream model ID. Generation reuses the account's credentials and network settings, with no separate Key or new vendor presets. The upstream service must support the selected generation endpoint and parameters.
+
+Images default to a count of `1`, with optional default size, quality and format. Speech requires a manually entered voice ID supported by the provider, with format `mp3` and speed `1` by default. Every call requests permission before sending the prompt or text, including in auto mode. There is currently no always-allow option.
+
+Files are saved in the current chat workspace, adding a suffix if a name already exists. Images appear as thumbnails and audio as clickable file cards; neither opens or plays automatically. The Agent receives file paths and text. Generation does not put image pixels into model context.
+
+Video generation is unavailable; asynchronous jobs, progress and cancellation are planned for a separate PR. Image understanding is reserved for #49, whose design remains undecided; this feature adds no controls or implementation for it.
+
 ## Custom providers {#custom-providers}
 
 A provider ZIP executes local code, so verify its source. To build one, export the SDK and development Skill from the import dialog, then see [Development & SDKs](../reference/development).

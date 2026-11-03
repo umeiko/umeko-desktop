@@ -16,6 +16,7 @@ from .platform_support import data_directory, legacy_data_directory, migrate_pro
 from .api_keys import make_key
 from PySide6.QtCore import QLocale
 from .desktop_preferences import DEFAULTS as DESKTOP_DEFAULTS, normalize as desktop_settings
+from .multimodal_settings import DEFAULTS as MULTIMODAL_DEFAULTS, normalize as multimodal_settings
 
 
 class Blob(ctypes.Structure):
@@ -70,6 +71,7 @@ DEFAULTS = {
     "employeeId": "", "password": "", "workspace": "", "dark": False, "theme": "light", "character": "yanami",
     "selectedProvider": "", "selectedModel": "",
     "providers": [],
+    "multimodal": MULTIMODAL_DEFAULTS,
     "desktop": DESKTOP_DEFAULTS,
     "agent": {"maxTokens": 32768, "maxContextImages": 3, "outputLimitDefaultVersion": 1, "instructions": "", "autoCompaction": True,
               "agentDir": "", "skillPaths": [], "extensionPaths": [], "safeMode": False, "toolPermissionMode": "auto",
@@ -122,6 +124,7 @@ class Store:
         image_limit = self.data['agent'].get('maxContextImages', 3)
         self.data['agent']['maxContextImages'] = max(1, image_limit) if type(image_limit) is int else 3
         self.data['desktop'] = desktop_settings(self.data.get('desktop'))
+        self.data['multimodal'] = multimodal_settings(self.data.get('multimodal'))
         output_default_migrated = saved.get('agent', {}).get('outputLimitDefaultVersion') != 1
         if output_default_migrated:
             if self.data['agent']['maxTokens'] == 8192:

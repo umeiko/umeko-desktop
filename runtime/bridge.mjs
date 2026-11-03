@@ -16,6 +16,7 @@ import { backgroundJobsExtension } from "./background-jobs.mjs";
 import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
 import { createToolPermissionExtension } from "./tool-permissions.mjs";
 import { blockedToolNames, toolInventory } from "./tool-visibility.mjs";
+import { createGenerationExtension } from "./generation.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
@@ -309,7 +310,7 @@ async function restoreSubagentSession(child, context, customTools) {
 async function init(input) {
   config = input;
   globalThis[Symbol.for("umeko:recent-images-policy")] = { getLimit: () => config.agent?.maxContextImages };
-  permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir };
+  permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir, generation: input.generation };
   configureUmekoDocs({directory: input.docsDir || join(input.agentDir, "cache", "umeko-docs"), models: input.models});
   reasoningEffort = effortLevels.has(input.reasoningEffort) ? input.reasoningEffort : "off";
   setGateway(input.gateway);
@@ -362,6 +363,7 @@ async function init(input) {
           { name: "recent-images", hidden: true, replaceable: false, factory: createRecentImagesExtension({ getLimit: () => config.agent?.maxContextImages }) },
           { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}) },
+          { name: "generation", builtin: true, replaceable: false, factory: createGenerationExtension({getConfig: () => config}) },
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },
           { name: "umeko-control", builtin: true, replaceable: false, factory: pi => umekoControl.extension(pi) },
           { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension },

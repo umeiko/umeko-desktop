@@ -430,7 +430,9 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
             "busy": bool(record and record.busy) or session_id in self._management_jobs}
 
     def _models_busy(self, provider_id=None):
-        return any(record.busy and (provider_id is None or record.provider == provider_id) for record in self._pool.records.values())
+        generation_accounts = {row.get('providerId') for row in self.store.data.get('multimodal', {}).values()}
+        return any(record.busy and (provider_id is None or record.provider == provider_id or provider_id in generation_accounts)
+                   for record in self._pool.records.values())
 
     @Property("QVariantMap", notify=changed)
     def config(self):

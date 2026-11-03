@@ -26,3 +26,11 @@
 同一个已安装版本不能默默替换不同内容。开发时提升 manifest version，或明确卸载对应版本后重装。ZIP 只允许正常安全相对路径，`./scripts/provider.py` 可以；父级穿越、绝对路径、符号链接、冲突条目等会被拒绝，UI/错误结果会指出条目和规则。
 
 不要为了让插件生效而把源码复制进应用安装目录或修改 Pi。Python 运行环境、账号与插件目录的位置以当前实例返回值及 SDK 为准。内网登录细节保持在用户自己创建的本地插件中。
+
+## 图片与语音生成能力
+
+生成能力通过 manifest 顶层的 `generationCapabilities` 声明，例如 `["image", "speech"]`；不声明则保持原有聊天能力。SDK 提供 `generate_image(self, model: str, prompt: str, parameters: dict) -> list[dict]` 和 `generate_speech(self, model: str, text: str, parameters: dict) -> list[dict]`，默认均抛出不支持的 `ProviderError`。不能因插件能够聊天就假定它能够生成图片或语音。
+
+每项结果为 `{data: bytes, mimeType: str}`，由宿主验证、传输并保存文件。图片参数为 `size`、`quality`、`count`（`1`–`10`）、`format`；语音参数为 `voice`、`format`、`speed`。空的可选参数会省略。插件应自行观察 `context.request_cancelled` 与 `context.cancelled`。以随附 SDK 的完整契约为准；此扩展不附带任何供应商插件的生成实现，也不新增厂商预设。
+
+配置入口为 **设置 → 账号与供应商 → 多模态模型**，复用现有插件账号的凭据与网络设置。图片理解属于尚未定案的 #49；视频生成及其异步任务、进度和取消留待独立 PR。

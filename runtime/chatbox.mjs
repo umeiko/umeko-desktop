@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { webviewStatus } from "./webview-component.mjs";
 
 export const CHATBOX_TOOL = "submit_to_chatbox";
+const DELIVERY_TOOLS = new Set([CHATBOX_TOOL, "image_gen", "voice_gen"]);
 function documentKind(path, requested) {
   if (['markdown','code','text'].includes(requested)) return requested;
   if (requested === 'image') return '';
@@ -21,7 +22,16 @@ function documentKind(path, requested) {
 }
 export function chatboxItems(name, result) {
   const payload = result?.details?.umekoChatbox;
-  return name === CHATBOX_TOOL && !result?.isError && payload?.version === 1 && Array.isArray(payload.items) ? payload.items.slice(0, 12) : [];
+  return DELIVERY_TOOLS.has(name) && !result?.isError && payload?.version === 1 && Array.isArray(payload.items) ? payload.items.slice(0, 12) : [];
+}
+
+// Shared path-only delivery for tools that create local artifacts. Native custom
+// entries preserve nested calls while details serve live and restored tool rows.
+export function deliverChatboxItems(pi, toolCallId, items, extra = {}) {
+  pi.appendEntry("umeko-chatbox", {version: 1, toolCallId, items});
+  return {content: [{type: "text", text: JSON.stringify({
+    submitted: items.map(({path, kind, title}) => ({path, kind, title})), ...extra,
+  })}], details: {umekoChatbox: {version: 1, items}}};
 }
 
 export function chatboxExtension(pi, getWebview = () => ({})) {
@@ -68,9 +78,8 @@ export function chatboxExtension(pi, getWebview = () => ({})) {
       if (!items.length) throw new Error(errors.map(item => `${item.path}: ${item.message}`).join("\n"));
       // Nested tool results keep only a bounded call summary in Pi. A native
       // custom entry preserves delivery details on the same branch as the call.
-      pi.appendEntry("umeko-chatbox", {version: 1, toolCallId: _id, items});
-      return { content: [{type: "text", text: JSON.stringify({submitted: items.map(({path, kind, title}) => ({path, kind, title})), errors, ...(getWebview().autoOpen === false ? {autoOpen:false} : {}), ...(webview ? {webview} : {})})}],
-        details: {umekoChatbox: {version: 1, items}} };
+      return deliverChatboxItems(pi, _id, items, {errors,
+        ...(getWebview().autoOpen === false ? {autoOpen:false} : {}), ...(webview ? {webview} : {})});
     },
   });
 }

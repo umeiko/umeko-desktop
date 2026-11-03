@@ -164,7 +164,8 @@ class ProviderPlugins(QObject):
     def _new_account(manifest):
         return {"id": uuid.uuid4().hex, "api": "plugin", "name": manifest["name"],
                 "pluginId": manifest["id"], "pluginVersion": manifest["version"],
-                "key": "", "baseUrl": "", "models": []}
+                "key": "", "baseUrl": "", "models": [],
+                "generationCapabilities": list(manifest.get('generationCapabilities', []))}
 
     @Slot(str, str, result=bool)
     def addAccount(self, plugin_id, version):
@@ -269,6 +270,14 @@ class ProviderPlugins(QObject):
     def events(self, provider_id, model, messages, tools, max_tokens, parameters):
         with self._lease(provider_id) as client:
             yield from client.events(model, messages, tools, max_tokens, parameters)
+
+    def generate(self, provider_id, kind, model, text, parameters):
+        _, (manifest, _, _) = self._package(self._record(provider_id))
+        if kind not in manifest.get('generationCapabilities', []):
+            raise ProviderError('该供应商未声明此生成能力')
+        with self._lease(provider_id) as client:
+            method = client.generate_image if kind == 'image' else client.generate_speech
+            return method(model, text, parameters)
 
     def _idle(self, provider_id):
         if self.closed: raise ProviderError("应用正在关闭")

@@ -53,6 +53,10 @@ class Gateway:
     def provider(self, provider_id):
         return next((p for p in self.store.data["providers"] if p["id"] == provider_id), None)
 
+    def generate(self, body):
+        from .generation import generate
+        return generate(self, body)
+
     def models(self):
         rows = []
         for p in self.store.data["providers"]:
@@ -280,6 +284,9 @@ class LocalServer:
                         return self.respond(413, {"error": {"message": "Invalid request size"}})
                     self.connection.settimeout(100)
                     body = json.loads(self.rfile.read(size))
+                    if self.path == '/umeko/generate' and owner.private:
+                        result = self.request_call(lambda: owner.gateway.generate(body))
+                        return self.respond(200, result)
                     if self.path not in ("/v1/chat/completions", "/v1/messages", "/chat/completions", "/messages"):
                         return self.respond(404, {"error": {"message": "Not found"}})
                     anth = self.path in ("/v1/messages", "/messages")
@@ -326,6 +333,9 @@ class LocalServer:
                     self.respond(502, {"error": {"type": "upstream_error", "message": "请求失败，请检查适配器或供应商配置"}})
 
             def stream_events(self, events, model, anth):
+                return self.request_call(lambda: self._stream_events(events, model, anth))
+
+            def request_call(self, function):
                 cancelled, finished = threading.Event(), threading.Event()
 
                 def disconnected():
@@ -345,7 +355,7 @@ class LocalServer:
                 watcher.start()
                 try:
                     with request_scope(cancelled):
-                        return self._stream_events(events, model, anth)
+                        return function()
                 finally:
                     finished.set()
                     watcher.join(timeout=1)

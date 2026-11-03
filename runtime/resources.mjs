@@ -99,7 +99,7 @@ export async function checkExtensionUpdate(row, {cwd, lookup = npmVersion} = {})
   return {id:row.id,status:"unsupported",message:"本地扩展没有可检查的更新源"};
 }
 
-export const builtins = ["codemode", "tool-search", "mcp", "chatbox", "pi-commands", "umeko-control", "background-jobs", "subagents"];
+export const builtins = ["codemode", "tool-search", "mcp", "chatbox", "generation", "pi-commands", "umeko-control", "background-jobs", "subagents"];
 const target = entry => entry.replace(/^[!+-]/, "");
 const canonical = (value, base) => value.startsWith("builtin:") ? value : resolve(base, value);
 export function extensionName(path, metadata = {}) {
