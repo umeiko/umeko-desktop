@@ -51,5 +51,6 @@ SectionCard {
             }
         }
         Text { Layout.fillWidth: true; visible: !!root.report.guides; text: root.report.guides ? [I18n.t(root.report.guides.python), I18n.t(root.report.guides.soffice), I18n.t(root.report.guides.pdftoppm)].join("\n") : ""; wrapMode: Text.Wrap; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible) }
+        Text { objectName: "runtimeDependencyNetworkGuide"; Layout.fillWidth: true; text: root.report.guides ? I18n.t(root.report.guides.network || "") : ""; visible: !!text; wrapMode: Text.Wrap; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible) }
     }
 }

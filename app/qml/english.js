@@ -1343,6 +1343,7 @@ var strings = {
   "重启 Umeko 后可使用内置网页预览": "Restart Umeko to enable embedded web previews",
   "最新消息": "Latest messages",
   "能力与运行依赖": "Capabilities and runtime dependencies",
+  "内网安装需先确认企业软件源、系统代理与 CA。安装前需用户授权；模型代理不等于安装代理，不猜测源地址、不修改全局配置。详见 Agent 依赖文档。": "For intranet installation, first confirm corporate package sources, system proxies and CA certificates. User authorization is required. Model proxies do not configure installers; do not guess source URLs or change global settings. See the Agent dependency guide.",
   "依赖 检测 配置": "dependencies checks setup",
   "重新检测": "Check again",
   "仅检测本机基础依赖，不安装软件、不下载模型。远程服务与生成质量未检测。": "Checks local prerequisites only. No software installation or model downloads. Remote services and output quality are not checked.",

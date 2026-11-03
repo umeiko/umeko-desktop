@@ -32,6 +32,7 @@ COMMANDS = (
     ('pdftoppm', ('pdftoppm',), '-v', '0.86'),
 )
 GUIDES = {
+    'network': '内网安装需先确认企业软件源、系统代理与 CA。安装前需用户授权；模型代理不等于安装代理，不猜测源地址、不修改全局配置。详见 Agent 依赖文档。',
     'python': '安装 Python 3.10+，或在任务目录创建 .umeko-tools 虚拟环境，然后重新检测。',
     'office': '在显示的 Python 环境安装 python-docx、python-pptx 和 openpyxl；不要修改 Umeko 的打包环境。',
     'pdf': '在显示的 Python 环境安装 reportlab、pdfplumber 和 pypdf。扫描 PDF 的 OCR 不在本次检测范围内。',
