@@ -288,7 +288,7 @@ ApplicationWindow {
             self.assertEqual(h.backend.calls, [("path", str(h.workspace / "guide.txt"), False),
                                                 ("url", "https://example.com/guide")])
             self.assertTrue(route(path, 2))
-            menu = h.find("conversationLinkMenu", editor)
+            menu = h.find("conversationLinkMenu", selection)
             self.assertTrue(menu.property("visible"))
             self.assertTrue(h.find("copyConversationPath", menu).property("visible"))
             self.assertFalse(h.find("copyConversationUrl", menu).property("visible"))

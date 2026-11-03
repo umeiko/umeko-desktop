@@ -7,6 +7,21 @@ Item {
     objectName: "chatSelection"
     property var view
     property var dataSource: backend
+    property bool retainedView: false
+    property bool sessionActive: true
+    property string workspace: dataSource.conversationWorkspace || ""
+    function openLinkMenu(source, info, x, y) {
+        sharedLinkMenu.link = info
+        const point = source.mapToItem(root, x, y)
+        sharedLinkMenu.popup(point.x, point.y)
+    }
+    FloatingMenu {
+        id: sharedLinkMenu; objectName: "conversationLinkMenu"
+        property var link: ({})
+        ContextAction { objectName: "copyConversationPath"; visible: sharedLinkMenu.link.kind === "path"; text: I18n.t("复制路径"); glyph: "file"; onTriggered: backend.copy(sharedLinkMenu.link.target) }
+        ContextAction { objectName: "revealConversationPath"; visible: sharedLinkMenu.link.kind === "path"; text: I18n.t("在文件管理器中打开"); glyph: "folder"; onTriggered: backend.openConversationPath(sharedLinkMenu.link.target, true) }
+        ContextAction { objectName: "copyConversationUrl"; visible: sharedLinkMenu.link.kind === "url"; text: I18n.t("复制网址"); glyph: "copy"; onTriggered: backend.copy(sharedLinkMenu.link.target) }
+    }
     property var editors: []
     property var interactions: []
     readonly property var hoveredTarget: {
@@ -60,6 +75,7 @@ Item {
         refreshSoon()
     }
     function clear() {
+        sharedLinkMenu.close()
         dragging = false; anchor = null; cursor = null; expandedDetails = ({})
         clickCount = 0; unitAnchor = null; selectionUnit = 1; pointerMoved = false
         for (const editor of editors) editor.deselect()

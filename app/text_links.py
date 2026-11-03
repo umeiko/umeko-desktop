@@ -103,11 +103,13 @@ class TextLinks(QObject):
     def set_active(self, value):
         if value != self._active:
             current = self._applied_generation == self._generation
-            self._active = value;self.refresh()
-            if not value and current:
-                # Existing history links remain usable while another reply
-                # streams. A later text/workspace change invalidates them.
-                self._applied_generation = self._generation
+            self._active = value
+            if current:
+                # Hiding a retained page does not change its text or links.
+                # Resume without rescanning and reformatting the document.
+                self.changed.emit()
+            else:
+                self.refresh()
     active = Property(bool, get_active, set_active, notify=changed)
 
     def get_color(self): return self._color

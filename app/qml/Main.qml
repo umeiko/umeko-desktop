@@ -7,6 +7,12 @@ import QtQuick.Window
 ApplicationWindow {
     id: window
     objectName: "mainWindow"
+    readonly property var appWindow: window
+    readonly property var sharedRequestInspector: requestInspector
+    readonly property var conversation: conversationHost.currentPane ? conversationHost.currentPane.view : emptyConversation
+    readonly property var chatSelection: conversationHost.currentPane ? conversationHost.currentPane.selection : emptySelection
+    ListView { id: emptyConversation; visible: false; property bool followTail: true; property bool restoring: false }
+    ChatSelection { id: emptySelection; visible: false; view: emptyConversation }
     width: 1320; height: 860
     minimumWidth: 1060; minimumHeight: 700
     visible: true
@@ -34,7 +40,7 @@ ApplicationWindow {
     Connections { target: backend.chatSearch
         function onJumpReady(row, entryId) {
             window.page = "chat"; window.searchVisible = false
-            chatCover.contentReady()
+            chatCover.cancel()
             if (row >= 0) Qt.callLater(() => { conversation.jumpToMessage(row); window.searchHighlightRow = row; searchHighlightTimer.restart() })
         }
     }
@@ -73,19 +79,14 @@ ApplicationWindow {
         backend.sessionPreview.cancel(); sidebarToken++
         pendingSidebarKind = row.kind; pendingSidebarTitle = row.title; pendingSidebarId = row.id
         sidebarFrames = 0; sidebarStarted = false; sidebarPrepared = false
-        chatCover.begin(); window.page = "chat"
+        window.page = "chat"
+        // Warm panes already contain their controls and text layouts.
+        const cached = backend.cachedConversationToken(row.id)
+        if (cached && conversationHost.panes[cached]) chatCover.cancel()
+        else chatCover.begin()
     }
     function commitSidebarSelection() {
         if (!sidebarSwitching || !sidebarPrepared) return
-        if (sidebarMotion.moving) {
-            const value = sidebarMotion.value, target = sidebarMotion.targetRect
-            const current = [value.x, value.y, value.width, value.height]
-            const wanted = [target.x, target.y, target.width, target.height]
-            // Finish a subpixel tail instead of delaying content for the PID's
-            // imperceptible integral settling. Text never interrupts its travel.
-            if (current.some((position, i) => Math.abs(position - wanted[i]) > 0.75 || Math.abs(sidebarMotion.velocity[i]) > 10)) return
-            sidebarMotion.snap()
-        }
         const token = sidebarToken
         let ok = true
         if (pendingSidebarKind === "project") backend.openProject(pendingSidebarId)
@@ -95,14 +96,13 @@ ApplicationWindow {
         if (!ok) { window.notification = I18n.t("暂时无法打开所选聊天，请重试"); toastTimer.restart() }
         chatCover.contentReady()
     }
-    // Present the cover before starting disk I/O. Cold reads can overlap the
-    // sidebar motion. Attach delegates after the highlight settles, so text
-    // layout cannot take frames away from the moving PID.
+    // Read off-thread and show lightweight row placeholders immediately.
+    // Render-thread motion is independent of this GUI-thread handoff.
     FrameAnimation {
         running: window.sidebarSwitching && !window.sidebarStarted
         onTriggered: {
             window.sidebarFrames++
-            if (window.sidebarFrames < 2) return
+            if (window.sidebarFrames < 1) return
             window.sidebarStarted = true
             if (window.pendingSidebarKind === "project") window.sidebarPrepared = true
             else backend.sessionPreview.prepare(window.pendingSidebarId, window.sidebarToken)
@@ -254,16 +254,55 @@ ApplicationWindow {
                 id: sessionList; objectName: "projectList"
                 x: 12; y: recentLabel.y + Theme.control(28); width: parent.width - 24; height: apiStatus.y - y - 16
                 spacing: 2; clip: true; model: backend.projectRows
-                currentIndex: backend.projectRows.findIndex(row => window.sidebarSwitching ? row.id === window.pendingSidebarId && row.kind === window.pendingSidebarKind : row.selected && (row.kind === "session" || row.kind === "project" && !backend.activeSession))
+                readonly property int selectedRow: model.findIndex(row => window.sidebarSwitching ? row.id === window.pendingSidebarId && row.kind === window.pendingSidebarKind : row.selected && (row.kind === "session" || row.kind === "project" && !backend.activeSession))
+                function rowHeight(row) { return row.kind === "project" ? 38 : 34 }
+                function syncSelection() {
+                    currentIndex = selectedRow
+                    sidebarHighlight.updateTarget()
+                }
+                onModelChanged: Qt.callLater(syncSelection)
+                onSelectedRowChanged: Qt.callLater(syncSelection)
                 highlightFollowsCurrentItem: false
-                PidMotion { id: sidebarMotion; objectName: "sidebarPidMotion"; targetRect: Qt.rect(0,sessionList.currentItem ? sessionList.currentItem.y : 0,sessionList.width,sessionList.currentItem ? sessionList.currentItem.height : 34) }
-                highlight: Rectangle { objectName: "sidebarHighlight"; x: sidebarMotion.value.x; y: sidebarMotion.value.y; width: sidebarMotion.value.width; height: sidebarMotion.value.height; radius: 7; color: Theme.surface; visible: sessionList.currentIndex >= 0 && window.page === "chat"; z: -1 }
+                // A model reset briefly clears currentItem and selects row zero.
+                // Derive the target from stable row data, after pending updates,
+                // and let the content item handle scrolling without animation.
+                Rectangle {
+                    id: sidebarHighlight
+                    parent: sessionList.contentItem
+                    objectName: "sidebarHighlight"
+                    property bool positioned: false
+                    function updateTarget() {
+                        const index = sessionList.selectedRow, rows = sessionList.model
+                        if (index < 0 || index >= rows.length) return
+                        let top = sessionList.originY
+                        for (let i = 0; i < index; ++i) top += sessionList.rowHeight(rows[i]) + sessionList.spacing
+                        const rowHeight = sessionList.rowHeight(rows[index])
+                        sidebarHeightMotion.targetRect = Qt.rect(0, 0, 1, rowHeight)
+                        if (positioned) sidebarMotion.moveTo(top)
+                        else {
+                            sidebarMotion.snapTo(top)
+                            sidebarHeightMotion.snap()
+                            positioned = true
+                        }
+                    }
+                    function scheduleTarget() { Qt.callLater(updateTarget) }
+                    Component.onCompleted: scheduleTarget()
+                    Connections {
+                        target: sessionList
+                        function onSpacingChanged() { sidebarHighlight.scheduleTarget() }
+                        function onOriginYChanged() { sidebarHighlight.scheduleTarget() }
+                    }
+                    width: sessionList.width; height: sidebarHeightMotion.value.height
+                    radius: 7; color: Theme.surface; visible: positioned && sessionList.selectedRow >= 0 && window.page === "chat"; z: -1
+                    PidYAnimator { id: sidebarMotion; objectName: "sidebarPidMotion"; target: sidebarHighlight }
+                    PidMotion { id: sidebarHeightMotion; targetRect: Qt.rect(0, 0, 1, 34) }
+                }
 
                 Text { font.family: Theme.fontFamily; visible: sessionList.count === 0; x: 17; y: 8; text: backend.showArchived ? I18n.t("暂无归档会话") : I18n.t("暂无项目"); font.pixelSize: Theme.font(11, visible); color: Theme.muted }
                 delegate: Item {
                     required property var modelData
                     objectName: "sidebarRow_" + modelData.id
-                    width: sessionList.width; height: modelData.kind === "project" ? 38 : 34
+                    width: sessionList.width; height: sessionList.rowHeight(modelData)
                     Rectangle { anchors.fill: parent; radius: 7; color: rowMouse.containsMouse && !(window.sidebarSwitching ? window.pendingSidebarId === modelData.id : modelData.selected) ? Theme.hover : "transparent" }
                     MouseArea { id: rowMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; acceptedButtons: Qt.LeftButton | Qt.RightButton; enabled: modelData.kind !== "label"
                         onClicked: mouse => { if (mouse.button === Qt.RightButton) { sidebarMenus.openFor(modelData, mapToItem(sidebarMenus, mouse.x, mouse.y)); return } window.selectSidebar(modelData) }
@@ -421,265 +460,56 @@ ApplicationWindow {
                 Text { font.family: Theme.fontFamily; objectName: "welcomeGreeting"; anchors.horizontalCenter: parent.horizontalCenter; y: 231; width: parent.width; text: welcomeMascot.reactionText || welcomeMascot.rareGreeting || Character.greeting(I18n.t(backend.greeting), welcomeMascot.portraitIndex); color: Theme.yanami ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(14, visible); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; lineHeight: 1.35 }
             }
 
-            ListView {
-                id: conversation; objectName: "conversation"
-                property bool followTail: true
-                property bool restoring: false
-                property real restoreOffset: -1
-                property int restoreIndex: -1
-                property int restoreAttempts: 0
-                property int pageAnchor: -1
-                property real pageOffset: 0
-                readonly property string layoutKey: width + "/" + Theme.fontScale + "/" + Theme.proseLineHeight + "/" + window.font.family
-                onLayoutKeyChanged: { backend.messageModel.setLayout(layoutKey); if (!followTail && count) restoreViewport() }
-                function rememberPageAnchor() {
-                    if (followTail || restoring) return
-                    pageAnchor = indexAt(1, contentY + 1)
-                    const item = pageAnchor >= 0 ? itemAtIndex(pageAnchor) : null
-                    pageOffset = item ? contentY - item.y : 0
-                }
-                function restorePageAnchor() {
-                    if (followTail) { tailTimer.restart(); return }
-                    if (pageAnchor < 0 || restoring) return
-                    restoreIndex = pageAnchor; restoreOffset = pageOffset; restoreAttempts = 1; restoring = true
-                    pageAnchor = -1; restoreTimer.restart()
-                }
-                function beginBrowsing() { tailTimer.stop(); restoreTimer.stop(); restoring = false; cancelFlick(); followTail = false }
-                function jumpToMessage(row) {
-                    if (row < 0 || row >= count) return
-                    beginBrowsing()
-                    chatSelection.clear()
-                    restoring = true; restoreIndex = row; restoreOffset = 0; restoreAttempts = 0
-                    restoreTimer.restart()
-                }
-                function jumpToLatest() {
-                    beginBrowsing()
-                    chatSelection.clear()
-                    followTail = true
-                    restoring = true; restoreIndex = -1; restoreOffset = 0; restoreAttempts = 0
-                    backend.messageModel.requestRange(Math.max(0, count - 4), count - 1)
-                    restoreTimer.restart()
-                }
-                function scrollBy(delta) {
-                    beginBrowsing()
-                    const top = originY
-                    const bottom = Math.max(top, originY + contentHeight - height)
-                    contentY = Math.max(top, Math.min(bottom, contentY + delta))
-                    if (atYEnd && !chatSelection.dragging) followTail = true
-                }
-                function saveViewport() {
-                    if (restoring) return
-                    let index = indexAt(1, contentY + 1)
-                    if (index < 0) index = indexAt(1, contentY + spacing + 2)
-                    const item = index >= 0 ? itemAtIndex(index) : null
-                    backend.saveViewport(index, item ? contentY - item.y : 0, followTail)
-                }
-                function restoreViewport() {
-                    restoring = true
-                    tailTimer.stop()
-                    followTail = backend.followTail
-                    restoreOffset = backend.scrollPosition
-                    restoreIndex = backend.scrollAnchor
-                    restoreAttempts = 0
-                    restoreTimer.restart()
-                }
-                acceptedButtons: Qt.NoButton
-                visible: backend.messageCount > 0
+            Item {
+                id: conversationHost
+                objectName: "conversationHost"
+                property var panes: ({})
+                property var currentPane: null
+                property int retainedCount: 0
                 x: chatWidth.conversationLeft
-                // Keep text layout stable while the sidebar moves. Commit the
-                // final wrap width once, without changing the sidebar PID motion.
                 Binding on width {
                     value: chatPage.width - chatWidth.conversationLeft - chatWidth.conversationRight
                     when: !conversation.visible || !sidebarWidthMotion.moving || sidebarResizeHandle.resizing
                     restoreMode: Binding.RestoreNone
                 }
                 anchors.top: parent.top; anchors.topMargin: 20; anchors.bottom: composer.top; anchors.bottomMargin: 24
-                clip: true; spacing: 27; model: backend.messageModel
-                cacheBuffer: Math.max(0, height * 0.5)
-                // A hidden attached ScrollBar still writes contentY when its
-                // size changes. Variable-height rows must have one scroll owner.
-                onAtYEndChanged: if (atYEnd && !restoring && !chatSelection.dragging) followTail = true
-                onFollowTailChanged: saveViewport()
-                onContentYChanged: { saveViewport(); pagePrefetch.restart() }
-                Timer { id: pagePrefetch; interval: 0; onTriggered: {
-                    if (conversation.restoring) return
-                    let first = conversation.indexAt(1, conversation.contentY + 1)
-                    let last = conversation.indexAt(1, conversation.contentY + conversation.height - 1)
-                    if (first < 0) first = conversation.atYEnd ? conversation.count - 1 : 0
-                    backend.messageModel.requestRange(first, last < first ? first + 4 : last)
-                } }
-                onContentHeightChanged: if (followTail && !restoring) tailTimer.restart()
-                onCountChanged: if (followTail && !restoring) tailTimer.restart()
-                Timer { id: tailTimer; interval: 0; onTriggered: { if (conversation.followTail && !conversation.restoring) conversation.positionViewAtEnd() } }
-                Timer { id: restoreTimer; interval: 16; repeat: true
-                    onTriggered: {
-                        conversation.forceLayout()
-                        conversation.restoreAttempts++
-                        if (conversation.followTail || conversation.restoreIndex < 0) conversation.positionViewAtEnd()
-                        else {
-                            const index = Math.min(conversation.restoreIndex, conversation.count - 1)
-                            backend.messageModel.requestRange(index, index + 4)
-                            if (conversation.restoreAttempts === 1) { conversation.positionViewAtIndex(index, ListView.Beginning); conversation.forceLayout(); return }
-                            if (!backend.messageModel.isReady(index) && conversation.restoreAttempts < 200) return
-                            const item = conversation.itemAtIndex(index)
-                            if (!item && conversation.restoreAttempts < 5) return
-                            if (item) {
-                                conversation.positionViewAtIndex(index, ListView.Beginning)
-                                if (!conversation.atYEnd) conversation.contentY += Math.min(conversation.restoreOffset, item.height - 1)
-                            }
-                        }
-                        if (conversation.restoreAttempts >= 3) {
-                            stop()
-                            conversation.restoring = false
-                            conversation.saveViewport()
-                        }
+                function deactivate() { if (currentPane) currentPane.deactivate() }
+                function activate() {
+                    const key = backend.conversationToken
+                    let pane = panes[key]
+                    if (!pane) {
+                        pane = conversationComponent.createObject(conversationHost, {viewKey:key, messageModel:backend.messageModel})
+                        if (!pane) return
+                        panes[key] = pane
+                        retainedCount = Object.keys(panes).length
                     }
+                    currentPane = pane
+                    pane.activate()
                 }
+                function evict(key) {
+                    const pane = panes[key]
+                    if (!pane) return
+                    if (currentPane === pane) currentPane = null
+                    delete panes[key]
+                    retainedCount = Object.keys(panes).length
+                    pane.release()
+                    pane.destroy()
+                }
+                Component.onCompleted: activate()
                 Connections { target: backend
-                    function onTranscriptChanged() { if (conversation.followTail && !conversation.restoring) tailTimer.restart() }
-                    function onViewChanged() { conversation.restoreViewport() }
+                    function onViewAboutToChange() { conversationHost.deactivate() }
+                    function onViewChanged() { conversationHost.activate() }
+                    function onConversationEvicted(key) { conversationHost.evict(key) }
+                    function onConversationViewsClosing() {
+                        for (const key of Object.keys(conversationHost.panes)) conversationHost.evict(key)
+                    }
                 }
-                Connections { target: backend.messageModel
-                    function onViewportAboutToChange() { conversation.rememberPageAnchor() }
-                    function onViewportChanged() { conversation.restorePageAnchor() }
-                }
-                footer: Item {
-                    width: conversation.width; height: turnStatus.visible ? turnStatus.implicitHeight + 20 : 0
-                    TaskStatus { id: turnStatus; objectName: "turnStatus"; x: 33; y: 8; status: backend.turnStatus }
-                }
-                delegate: Column {
-                    id: messageRow
-                    readonly property var replyMascot: closingMascot
-                    required property var modelData
-                    required property int index
-                    readonly property bool compactionNotice: modelData.customType === "umeko-compaction"
-                    readonly property point hoverPoint: chatSelection.mapToItem(messageRow, chatSelection.pointer.x, chatSelection.pointer.y)
-                    readonly property bool hovered: chatSelection.hovering && hoverPoint.x >= 0 && hoverPoint.x <= width && hoverPoint.y >= 0 && hoverPoint.y <= height
-                    width: conversation.width - 16; spacing: 10
-                    onImplicitHeightChanged: if (!modelData._loading) backend.messageModel.recordHeight(index, implicitHeight)
-                    Item {
-                        visible: !!modelData._loading
-                        width: parent.width; height: modelData._estimatedHeight || 100
-                        BusyIndicator { objectName: "historyLoading_" + messageRow.index; x: 33; y: 12; width: 22; height: 22; visible: !modelData._loadError; running: visible && messageRow.visible }
-                        ActionButton { x: 33; y: 16; visible: !!modelData._loadError; text: I18n.t("重新加载消息"); glyph: "refresh-cw"; onClicked: backend.messageModel.retryPage(messageRow.index) }
-                    }
-                    Row { visible: !modelData._loading && !messageRow.compactionNotice && !modelData.continuation && modelData.role !== "user"; spacing: 9
-                        AssistantAvatar { objectName: "assistantAvatar_" + messageRow.index; messageKey: window.avatarChatKey + "/" + messageRow.index }
-                        SelectableText { selectionController: chatSelection; messageIndex: messageRow.index; blockIndex: -100000; text: "umeko"; anchors.verticalCenter: parent.verticalCenter; color: Theme.ink; font.pixelSize: Theme.font(11, visible); font.weight: Font.DemiBold }
-                    }
-                    Rectangle {
-                        objectName: "messageBubble_" + messageRow.index
-                        border.width: 1; border.color: window.searchHighlightRow === messageRow.index ? Theme.accent : "transparent"
-                        Behavior on border.color { ColorAnimation { duration: 180 } }
-                        visible: !modelData._loading && !messageRow.compactionNotice
-                        readonly property bool userMessage: modelData.role === "user"
-                        width: userMessage ? (modelData.text.length > 512 ? messageRow.width * 0.82 : Math.min(messageRow.width * 0.82, Math.max(64, userBody.implicitWidth + 28))) : parent.width - 33
-                        x: userMessage ? parent.width - width : 33
-                        height: replyColumn.implicitHeight + (userMessage ? 22 : modelData.error ? 28 : 4); radius: userMessage ? 13 : 8
-                        color: userMessage ? Theme.userBubble : modelData.error ? Theme.accentBg : "transparent"
-                        Column { id: replyColumn; x: parent.userMessage || modelData.error ? 14 : 0; y: parent.userMessage ? 11 : modelData.error ? 14 : 0; width: parent.width - x * 2; spacing: 10
-                            ActivityHistory { width: parent.width; activity: modelData.activity || []; selectionController: chatSelection; messageIndex: messageRow.index }
-                            UserMessageBody { id: userBody; width: parent.width; visible: modelData.role === "user"
-                                text: modelData.role === "user" ? modelData.text : ""; attachments: modelData.attachments || []
-                                selectionController: chatSelection; messageIndex: messageRow.index }
-                            MessageBody { id: reply; width: parent.width
-                                preparedBlocks: modelData._rendered || null
-                                selectionController: chatSelection; messageIndex: messageRow.index
-                                visible: modelData.role !== "user" && text.length > 0 && !(modelData.activity || []).length
-                                text: modelData.role === "user" || (modelData.activity || []).length ? "" : modelData.text || (messageRow.index === conversation.count - 1 && backend.busy ? I18n.t(backend.toolStatus) + "…" : "")
-                                markdown: modelData.role === "assistant" && !modelData.error
-                                textColor: modelData.error ? Theme.danger : Theme.ink }
-                        }
-                    }
-                    ActionButton {
-                        objectName: "requestDetails_" + messageRow.index
-                        selectionController: chatSelection
-                        visible: !modelData._loading && !messageRow.compactionNotice && !!modelData.error && (modelData.diagnosticId || "").length > 0
-                        x: 33; text: I18n.t("查看请求与返回"); glyph: "code"; quiet: true
-                        onClicked: requestInspector.show(modelData.diagnosticId)
-                    }
-                    Column {
-                        id: compactionEvent
-                        objectName: "compactionEvent_" + messageRow.index
-                        x: 33; width: parent.width - 33
-                        visible: !modelData._loading && messageRow.compactionNotice
-                        readonly property var record: modelData.compaction || ({})
-                        readonly property string eventState: record.state || "success"
-                        readonly property string heading: eventState === "running" ? I18n.t("正在压缩上下文") : eventState === "failure" ? I18n.t("上下文压缩失败") : I18n.t("上下文已压缩")
-                        property bool expanded: false
-                        spacing: 6
-                        onExpandedChanged: if (!expanded) chatSelection.hideDetails(messageRow.index, 0, 1)
-                        Item {
-                            width: Math.min(parent.width, compactionHeading.implicitWidth); height: Theme.control(24)
-                            Row {
-                                id: compactionHeading; height: parent.height; spacing: 7
-                                ActivitySpinner { visible: compactionEvent.eventState === "running"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
-                                Text { font.family: Theme.fontFamily; text: compactionEvent.heading; color: compactionHover.interactionHovered ? Theme.ink : Theme.muted; font.pixelSize: Theme.font(12, visible); anchors.verticalCenter: parent.verticalCenter }
-                                Glyph { name: compactionEvent.expanded ? "chevron-down" : "chevron-right"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
-                            }
-                            ChatHitArea {
-                                id: compactionHover; objectName: "compactionEventToggle_" + messageRow.index
-                                anchors.fill: parent; selectionController: chatSelection
-                                onClicked: compactionEvent.expanded = !compactionEvent.expanded
-                            }
-                            Accessible.role: Accessible.Button; Accessible.name: compactionEvent.heading
-                            Accessible.description: compactionEvent.expanded ? I18n.t("已展开") : I18n.t("已折叠")
-                        }
-                        Item {
-                            visible: compactionEvent.expanded
-                            width: parent.width; height: compactionDetails.implicitHeight
-                            Rectangle { width: 1; height: parent.height; color: Theme.line; x: 6 }
-                            SelectableText {
-                                id: compactionDetails; objectName: "compactionEventDetails_" + messageRow.index
-                                x: 23; width: parent.width - x
-                                text: {
-                                    const detail = compactionEvent.record, lines = []
-                                    if (typeof detail.before === "number") lines.push(I18n.t("压缩前：") + detail.before + " tokens")
-                                    if (typeof detail.after === "number") lines.push(I18n.t("压缩后：") + detail.after + " tokens")
-                                    if (detail.summary) lines.push("\n" + I18n.t("压缩摘要") + "\n" + detail.summary)
-                                    if (detail.error) lines.push("\n" + I18n.t(detail.error))
-                                    return lines.join("\n")
-                                }
-                                color: Theme.muted; font.pixelSize: Theme.font(13, visible); wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText
-                                selectionController: chatSelection; messageIndex: messageRow.index; blockIndex: 0
-                                conditionalSelection: true
-                            }
-                        }
-                    }
-                    OutputLimitNotice {
-                        objectName: "outputLimitNotice_" + messageRow.index
-                        x: 33; width: parent.width - 33
-                        visible: !modelData._loading && !messageRow.compactionNotice && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
-                        continuable: messageRow.index === conversation.count - 1 && !backend.busy
-                        onContinued: backend.send(I18n.t("继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。"))
-                    }
-                    Item {
-                        objectName: "messageActions_" + messageRow.index
-                        visible: !modelData._loading && !messageRow.compactionNotice && modelData.segmentLast !== false
-                        width: parent.width; height: 18
-                        opacity: messageRow.hovered || actionHover.hovered ? 1 : 0
-                        HoverHandler { id: actionHover }
-                        Row {
-                            x: modelData.role === "user" ? parent.width - width : 33
-                            height: parent.height; spacing: 7
-                            Text { font.family: Theme.fontFamily; objectName: "messageTime_" + messageRow.index; anchors.verticalCenter: parent.verticalCenter; color: Theme.muted; font.pixelSize: Theme.font(11, visible)
-                                text: { if (!modelData.timestamp) return ""; const date = new Date(modelData.timestamp); if (isNaN(date.getTime())) return ""; return Qt.formatDateTime(date, date.toDateString() === new Date().toDateString() ? "hh:mm" : "MM-dd hh:mm") } }
-                            ActionButton { objectName: "copyMessage_" + messageRow.index; selectionController: chatSelection; glyph: "copy"; width: Theme.control(22); height: Theme.control(18); quiet: true; enabled: parent.parent.opacity > 0; hint: I18n.t("复制消息")
-                                onClicked: backend.copyDisplayMessage(messageRow.index) }
-                        }
-                    }
-                    ReplyMascot {
-                        id: closingMascot
-                        objectName: "replyEndMascot_" + messageRow.index
-                        selectionController: chatSelection
-                        width: Character.id === "doubao" ? Theme.icon(72) : 56
-                        visible: !modelData._loading && !messageRow.compactionNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !backend.running && (backend.turnStatus.state === "finished" || modelData.stopReason === "stop")
-                        x: 33
-                    }
+                Component {
+                    id: conversationComponent
+                    ConversationPane { anchors.fill: parent; window: appWindow; requestInspector: sharedRequestInspector; blocked: chatCover.visible }
                 }
             }
 
-            ChatSelection { id: chatSelection; anchors.fill: conversation; view: conversation; visible: conversation.visible; enabled: !chatCover.visible }
             ReplyMascot {
                 id: widthLimitMascot; objectName: "chatWidthLimitMascot"
                 x: composer.x+33; y: Math.max(0,composer.y-height-12); z: 50
@@ -689,7 +519,7 @@ ApplicationWindow {
 
             QuestionNavigator {
                 anchors.right: parent.right
-                anchors.top: conversation.top; anchors.bottom: conversation.bottom
+                anchors.top: conversationHost.top; anchors.bottom: conversationHost.bottom
                 view: conversation; enabled: !chatCover.visible; z: 20
             }
             ActionButton {

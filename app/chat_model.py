@@ -8,7 +8,9 @@ from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt, Property, Signal
 from .message_attachments import split_attachments
 from .chatbox import media_view
 
-RENDER_ROWS = 4
+RENDER_ROWS = 1
+MAX_PREPARED_ROWS = 8
+MAX_CACHED_ROWS = 16
 
 
 class ChatModel(QAbstractListModel):
@@ -19,7 +21,7 @@ class ChatModel(QAbstractListModel):
     viewportAboutToChange = Signal()
     viewportChanged = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, reader=None, presentation=None):
         super().__init__(parent)
         self.rows = []
         self._questions = []
@@ -29,14 +31,21 @@ class ChatModel(QAbstractListModel):
         self.snapshot = None
         self._generation = 0
         self._pending, self._failed = set(), set()
-        self._wanted, self._prepared, self._job = [], {}, None
+        self._wanted, self._prepared, self._job = [], OrderedDict(), None
         from .chat_presentation import HistoryPresentation
-        self._presentation = HistoryPresentation()
+        self._presentation = presentation or HistoryPresentation()
         self._metadata, self._heights = OrderedDict(), OrderedDict()
         self._layout = ''
         self._closed = False
-        self._reader = ThreadPoolExecutor(max_workers=1, thread_name_prefix='chat-pages')
+        self._owns_reader = reader is None
+        self._reader = reader or ThreadPoolExecutor(max_workers=1, thread_name_prefix='chat-pages')
+        self._suspended = False
         self.pageReady.connect(self._page_ready)
+
+    def suspend(self, value):
+        self._suspended = value
+        if not value:
+            self._pump()
 
     @Property(bool, notify=sourceChanged)
     def paged(self):
@@ -95,14 +104,40 @@ class ChatModel(QAbstractListModel):
         first, last = max(0, first), min(self.base_count - 1, max(first, last))
         if first > last:
             return
-        last = min(last, first + 32)
-        visible = list(range(first // RENDER_ROWS, last // RENDER_ROWS + 1))
-        neighbors = [visible[-1] + 1, visible[0] - 1]
-        pages = visible + [p for p in neighbors if 0 <= p <= (self.base_count - 1) // RENDER_ROWS]
+        last = min(last, first + MAX_PREPARED_ROWS - 1)
+        self._set_wanted(list(range(first // RENDER_ROWS, last // RENDER_ROWS + 1)))
+
+    @Slot('QVariantList', 'QVariantList')
+    def requestViewport(self, visible, nearby):
+        if not self.snapshot or self._closed:
+            return
+        def valid(values):
+            return list(dict.fromkeys(int(row) for row in values if isinstance(row, (int, float)) and 0 <= row < self.base_count))
+        # Every on-screen row must load, including dense views with more than
+        # eight short messages. Only speculative rows share the usual budget.
+        rows = valid(visible)
+        limit = max(MAX_PREPARED_ROWS, len(rows))
+        rows += [row for row in valid(nearby) if row not in rows][:max(0, limit - len(rows))]
+        self._set_wanted(rows)
+
+    def _set_wanted(self, pages):
         self._wanted = pages
-        self._prepared = {row:value for row,value in self._prepared.items() if row // RENDER_ROWS in pages}
-        self.snapshot.repository.cache.pin(self.snapshot.key(row) for row in range(max(0, first - 8), min(self.base_count, last + 9)))
+        for row in pages:
+            if row in self._prepared:
+                self._prepared.move_to_end(row)
+        self._trim_prepared()
+        self.snapshot.repository.cache.pin(self.snapshot.key(row) for row in pages)
         self._pump()
+
+    def _trim_prepared(self):
+        # Keep a small LRU across viewport-boundary changes. Immediately
+        # discarding the previous range made edge rows oscillate into placeholders.
+        limit = max(MAX_CACHED_ROWS, len(self._wanted))
+        for row in list(self._prepared):
+            if len(self._prepared) <= limit:
+                break
+            if row not in self._wanted:
+                self._prepared.pop(row)
 
     def _request(self, page):
         if page not in self._wanted:
@@ -110,7 +145,7 @@ class ChatModel(QAbstractListModel):
         self._pump()
 
     def _pump(self):
-        if self._closed or self._job is not None or not self.snapshot:
+        if self._closed or self._suspended or self._job is not None or not self.snapshot:
             return
         page = next((p for p in self._wanted if p not in self._failed and not all(
             row in self._prepared for row in range(p * RENDER_ROWS, min(self.base_count, (p + 1) * RENDER_ROWS)))), None)
@@ -122,7 +157,7 @@ class ChatModel(QAbstractListModel):
         def read():
             from .transcript_index import PAGE_ROWS
             first = page * RENDER_ROWS
-            cancelled = lambda: self._closed or generation != self._generation or page not in self._wanted
+            cancelled = lambda: self._closed or self._suspended or generation != self._generation or page not in self._wanted
             if cancelled(): return {}
             rows = snapshot.page(first // PAGE_ROWS)
             rows = {row:value for row,value in rows.items() if first <= row < first + RENDER_ROWS}
@@ -153,9 +188,13 @@ class ChatModel(QAbstractListModel):
         if page not in self._wanted:
             self._pump()
             return
+        if not error and not prepared:
+            self._pump()
+            return
         if error:
             self._failed.add(page)
         self._prepared.update(prepared)
+        self._trim_prepared()
         first, last = page * RENDER_ROWS, min(self.base_count - 1, (page + 1) * RENDER_ROWS - 1)
         self.viewportAboutToChange.emit()
         self.dataChanged.emit(self.index(first), self.index(last), [self.MessageRole])
@@ -189,6 +228,14 @@ class ChatModel(QAbstractListModel):
             self._layout = key
             self._heights.clear()
 
+    @Slot(int, result=float)
+    def estimatedHeight(self, row):
+        if row in self._heights:
+            return self._heights[row]
+        if self.snapshot and 0 <= row < self.base_count:
+            return float(self.snapshot.metadata(row).get('hint', 100))
+        return 100.0
+
     def message(self, row, synchronous=False):
         if row >= self.base_count:
             return self.rows[row - self.base_count] if 0 <= row - self.base_count < len(self.rows) else {}
@@ -211,7 +258,9 @@ class ChatModel(QAbstractListModel):
 
     def close(self):
         self._closed = True
-        self._reader.shutdown(wait=False, cancel_futures=True)
+        self._generation += 1
+        if self._owns_reader:
+            self._reader.shutdown(wait=False, cancel_futures=True)
 
     @Property('QVariantList', notify=questionsChanged)
     def questions(self):

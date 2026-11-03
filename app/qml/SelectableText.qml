@@ -14,17 +14,22 @@ TextEdit {
         const info = links.linkInfo(href)
         if (!info.kind) return
         if (button === Qt.RightButton) {
-            linkMenu.link = info
-            linkMenu.popup(x, y)
+            if (root.selectionController && root.selectionController.openLinkMenu)
+                root.selectionController.openLinkMenu(root, info, x, y)
+            else {
+                linkMenuLoader.active = true
+                linkMenuLoader.item.link = info
+                linkMenuLoader.item.popup(x, y)
+            }
         } else if (info.kind === "path") backend.openConversationPath(info.target, false)
         else backend.openConversationUrl(info.target)
     }
     onLinkActivated: link => { if (conversationLinks && !selectionController) activateConversationLink(link, Qt.LeftButton, 0, 0) }
     TextLinks {
         id: links; objectName: "conversationLinks"
-        document: root.textDocument; enabled: root.conversationLinks && root.visible
-        workspace: root.conversationLinks ? backend.conversationWorkspace || "" : ""
-        active: !root.conversationLinks || !backend.busy
+        document: root.textDocument; enabled: root.conversationLinks && (root.selectionController && root.selectionController.retainedView || root.visible)
+        workspace: root.conversationLinks ? (root.selectionController ? root.selectionController.workspace : backend.conversationWorkspace || "") : ""
+        active: !root.conversationLinks || (!backend.busy && (!root.selectionController || root.selectionController.sessionActive))
         color: Theme.accent
     }
     MouseArea {
@@ -33,12 +38,15 @@ TextEdit {
         onPressed: mouse => { if (!root.conversationLinkAt(mouse.x, mouse.y)) mouse.accepted = false }
         onClicked: mouse => root.activateConversationLink(root.conversationLinkAt(mouse.x, mouse.y), mouse.button, mouse.x, mouse.y)
     }
-    FloatingMenu {
+    Loader {
+        id: linkMenuLoader; active: false
+        sourceComponent: FloatingMenu {
         id: linkMenu; objectName: "conversationLinkMenu"
         property var link: ({})
         ContextAction { objectName: "copyConversationPath"; visible: linkMenu.link.kind === "path"; text: I18n.t("复制路径"); glyph: "file"; onTriggered: backend.copy(linkMenu.link.target) }
         ContextAction { objectName: "revealConversationPath"; visible: linkMenu.link.kind === "path"; text: I18n.t("在文件管理器中打开"); glyph: "folder"; onTriggered: backend.openConversationPath(linkMenu.link.target, true) }
         ContextAction { objectName: "copyConversationUrl"; visible: linkMenu.link.kind === "url"; text: I18n.t("复制网址"); glyph: "copy"; onTriggered: backend.copy(linkMenu.link.target) }
+    }
     }
     readOnly: true
     font.family: Theme.fontFamily
