@@ -271,11 +271,13 @@ class ProviderPlugins(QObject):
         with self._lease(provider_id) as client:
             yield from client.events(model, messages, tools, max_tokens, parameters)
 
-    def generate(self, provider_id, kind, model, text, parameters):
+    def generate(self, provider_id, kind, model, text, parameters, on_progress=None):
         _, (manifest, _, _) = self._package(self._record(provider_id))
         if kind not in manifest.get('generationCapabilities', []):
             raise ProviderError('该供应商未声明此生成能力')
         with self._lease(provider_id) as client:
+            if kind == 'video':
+                return client.generate_video(model, text, parameters, on_progress=on_progress)
             method = client.generate_image if kind == 'image' else client.generate_speech
             return method(model, text, parameters)
 

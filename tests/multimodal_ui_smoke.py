@@ -154,7 +154,10 @@ def run():
         server = ThreadingHTTPServer(('127.0.0.1', 0), FakeProvider)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        with patch('app.provider_plugins.BundledProviders.sync', return_value=[]):
+        with patch('app.provider_plugins.BundledProviders.sync', return_value=[]), \
+                patch('app.tray.QSystemTrayIcon.isSystemTrayAvailable', return_value=False), \
+                patch('app.tray.QSystemTrayIcon.showMessage'), \
+                patch('app.controller.QDesktopServices.openUrl', return_value=True):
             from main import create_application
             app, engine, backend = create_application()
         window = engine.rootObjects()[0]
@@ -224,6 +227,7 @@ def run():
             assert find(window, 'auxiliaryVisionModel').isVisible()
             assert find(window, 'imageGenerationSettings').isVisible()
             assert find(window, 'speechGenerationSettings').isVisible()
+            assert find(window, 'videoGenerationSettings').isVisible()
             screenshot_dir = ROOT / 'docs/images'
             screenshot_dir.mkdir(exist_ok=True)
             capture = '--screenshots' in sys.argv
