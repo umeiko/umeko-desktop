@@ -7,6 +7,7 @@ MAX_BYTES=128*1024*1024
 MAX_FILES=2048
 PERMISSIONS={'workspace.read','workspace.write','session.read','session.write','process.execute','git.read','git.write','pi.read','pi.manage','pi.observe','skills.read','skills.manage'}
 BUILTIN_ICONS={row['id'] for row in json.loads(Path(__file__).with_name('icons.json').read_text(encoding='utf-8'))}
+SEMVER=r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?'
 
 def relative(value):
     if not isinstance(value,str) or not value or '\0' in value or '\\' in value or ':' in value or value.startswith('/'):
@@ -61,8 +62,8 @@ def validate(folder):
     if p.stat().st_size>65536:raise PluginError('插件清单过大')
     m=json.loads(p.read_text(encoding='utf-8-sig'))
     if not isinstance(m,dict) or m.get('kind')!='umeko-plugin' or m.get('apiVersion')!=1:raise PluginError('不是兼容的 Umeko 插件包')
-    if not isinstance(m.get('id'),str) or not re.fullmatch('[a-z][a-z0-9-]{0,63}',m['id']):raise PluginError('插件 ID 无效')
-    if not isinstance(m.get('version'),str) or not re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?',m['version']):raise PluginError('插件版本无效')
+    if not isinstance(m.get('id'),str) or not re.fullmatch('[a-z0-9][a-z0-9-]{0,63}',m['id']):raise PluginError('插件 ID 无效')
+    if not isinstance(m.get('version'),str) or not re.fullmatch(SEMVER,m['version']):raise PluginError('插件版本无效')
     for key in ('name','description'):
         if not isinstance(m.get(key,''),str) or len(m.get(key,''))>8000:raise PluginError('插件文案无效')
     if not m.get('name','').strip():raise PluginError('插件名称不能为空')
@@ -116,32 +117,43 @@ def validate(folder):
             else:file(path)
     return m,defaults,schema
 
+def _unpack(archive, stage):
+    """Extract inert files with the same limits for inspection and installation."""
+    with zipfile.ZipFile(archive) as stream:
+        entries=stream.infolist()
+        if len(entries)>MAX_FILES or sum(i.file_size for i in entries)>MAX_BYTES:raise PluginError('插件包超过 128 MiB 或 2048 个文件的限制')
+        normalized=[];seen={}
+        for info in entries:
+            name=relative(info.orig_filename)
+            mode=stat.S_IFMT(info.external_attr>>16)
+            if mode not in (0,stat.S_IFREG,stat.S_IFDIR):raise PluginError('插件不支持链接或特殊文件')
+            key=name.casefold()
+            if key in seen:raise PluginError('插件包存在重复或大小写冲突的路径')
+            seen[key]=info.is_dir();normalized.append((info,name))
+        roots=[name for info,name in normalized if not info.is_dir() and name.endswith('manifest.json') and PurePosixPath(name).name=='manifest.json']
+        prefix='' if 'manifest.json' in roots else roots[0].split('/')[0]+'/' if len(roots)==1 and roots[0].count('/')==1 else None
+        if prefix is None:raise PluginError('ZIP 根目录必须有一个 manifest.json')
+        for info,name in normalized:
+            if info.is_dir():continue
+            if prefix and not name.startswith(prefix):raise PluginError('ZIP 包含插件目录外的文件')
+            target=stage/relative(name[len(prefix):])
+            target.parent.mkdir(parents=True,exist_ok=True)
+            with stream.open(info) as source,target.open('xb') as output:
+                shutil.copyfileobj(source,output,65536)
+            if os.name!='nt' and info.external_attr>>16 & 0o111:target.chmod(0o755)
+
+def inspect_archive(archive, temporary_root=None):
+    """Validate a ZIP without installing or executing any of its code."""
+    with tempfile.TemporaryDirectory(prefix='.inspect-',dir=temporary_root) as temporary:
+        stage=Path(temporary)/'package';stage.mkdir()
+        _unpack(archive,stage)
+        return validate(stage)[0]
+
 def install(archive, destination, reserved=(), current_configs=None):
     destination=Path(destination);destination.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.staging-',dir=destination) as temporary:
         stage=Path(temporary)/'package';stage.mkdir()
-        with zipfile.ZipFile(archive) as stream:
-            entries=stream.infolist()
-            if len(entries)>MAX_FILES or sum(i.file_size for i in entries)>MAX_BYTES:raise PluginError('插件包超过 128 MiB 或 2048 个文件的限制')
-            normalized=[];seen={}
-            for info in entries:
-                name=relative(info.orig_filename)
-                mode=stat.S_IFMT(info.external_attr>>16)
-                if mode not in (0,stat.S_IFREG,stat.S_IFDIR):raise PluginError('插件不支持链接或特殊文件')
-                key=name.casefold()
-                if key in seen:raise PluginError('插件包存在重复或大小写冲突的路径')
-                seen[key]=info.is_dir();normalized.append((info,name))
-            roots=[name for info,name in normalized if not info.is_dir() and name.endswith('manifest.json') and PurePosixPath(name).name=='manifest.json']
-            prefix='' if 'manifest.json' in roots else roots[0].split('/')[0]+'/' if len(roots)==1 and roots[0].count('/')==1 else None
-            if prefix is None:raise PluginError('ZIP 根目录必须有一个 manifest.json')
-            for info,name in normalized:
-                if info.is_dir():continue
-                if prefix and not name.startswith(prefix):raise PluginError('ZIP 包含插件目录外的文件')
-                target=stage/relative(name[len(prefix):])
-                target.parent.mkdir(parents=True,exist_ok=True)
-                with stream.open(info) as source,target.open('xb') as output:
-                    shutil.copyfileobj(source,output,65536)
-                if os.name!='nt' and info.external_attr>>16 & 0o111:target.chmod(0o755)
+        _unpack(archive,stage)
         m,config,schema=validate(stage)
         if m['id'] in reserved:raise PluginError('不能覆盖内置官方插件')
         if current_configs and m['id'] in current_configs:

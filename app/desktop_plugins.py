@@ -28,7 +28,7 @@ class DesktopPlugins(QObject):
         self._icons=read(backend.root/'plugin-runtime/umeko_plugin_sdk/icons.json',[]) or []
         self.settings=read(self.registry,{}) or {};self.entries={}
         for identifier,record in self.settings.get('installed',{}).items():
-            if re.fullmatch('[a-z][a-z0-9-]{0,63}',identifier) and re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?',record.get('version','')):
+            if re.fullmatch('[a-z0-9][a-z0-9-]{0,63}',identifier) and re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?',record.get('version','')):
                 self.entries[identifier]={**record,'builtin':False}
         for folder in (backend.root/'umeko-plugins').glob('*'):
             m=read(folder/'manifest.json',{}) or {}
@@ -200,6 +200,7 @@ class DesktopPlugins(QObject):
         if value:selected.append(identifier)
         if len(selected)>8:self.b.toast.emit('每个会话最多启用 8 个 Umeko 插件');return
         old=copy.deepcopy(self.settings);self.settings.setdefault('sessions',{})[self.storage_key]=selected
+        if value:self.settings.setdefault('enabled',{})[identifier]=True
         if not self.save():self.settings=old;return
         if not value:
             if self._page==identifier:self.closePage()
@@ -458,7 +459,8 @@ class DesktopPlugins(QObject):
             if not self.closed:
                 applied=done(result)
                 if applied is False:result={'ok':False,'error':self._status or '插件设置未能保存'}
-                self.changed.emit();self.b.toast.emit(self._status);self.managed.emit(token,result)
+                self.changed.emit();self.b.toast.emit(self._status)
+            self.managed.emit(token,result)
             p.deleteLater()
         p.finished.connect(finish);p.errorOccurred.connect(finish)
         program,args=self.command();p.start(program,args);QTimer.singleShot(30000,p,p.kill);return token
@@ -472,7 +474,7 @@ class DesktopPlugins(QObject):
             old_path=self.path(identifier) if identifier in self.entries else None
             if self._page==identifier:self.closePage()
             self.stop(identifier);self.entries[identifier]=m;self.settings.setdefault('config',{}).setdefault(identifier,value['config'])
-            if self.application(identifier):self.settings.setdefault('enabled',{})[identifier]=False
+            if self.application(identifier) or identifier not in old:self.settings.setdefault('enabled',{})[identifier]=False
             if not self.save():self.entries=old;self.settings=options;return False
             if old_path and old_path!=self.path(identifier):
                 import shutil;shutil.rmtree(old_path,ignore_errors=True)
