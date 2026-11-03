@@ -310,7 +310,7 @@ test("real bridge reports background jobs and enforces checkpoint lock changes",
   });
   await new Promise(done => server.listen(0, "127.0.0.1", done));
   const bridge = fileURLToPath(new URL("../runtime/releases/coding-1.3.0/bridge.mjs", import.meta.url));
-  const child = spawn(process.execPath, [bridge], { cwd, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [bridge], { cwd, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
   const events = [];
   let buffer = "", stderr = "";
   child.stderr.on("data", value => { stderr += value; });

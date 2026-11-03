@@ -4,13 +4,11 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - '**/*.md'
       - 'docs/**'
       - 'docs-site/**'
       - 'scripts/capture-documentation.py'
   pull_request:
     paths-ignore:
-      - '**/*.md'
       - 'docs/**'
       - 'docs-site/**'
       - 'scripts/capture-documentation.py'
@@ -28,6 +26,26 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: PR package scope
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    outputs:
+      packages: ${{ steps.scope.outputs.packages }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Include both parents of the merge commit being tested.
+          fetch-depth: 2
+      - name: Check packaging inputs
+        id: scope
+        env:
+          # main may advance after the event; compare this tested merge's base.
+          PR_BASE: HEAD^1
+        run: python3 scripts/ci-package-changes.py
+
   checks:
     name: checks
     runs-on: ubuntu-22.04
@@ -82,7 +100,6 @@ jobs:
           dbus-run-session -- bash -ec '
             printf "ci-ephemeral-password" | gnome-keyring-daemon --unlock --components=secrets
             .venv/bin/python -m unittest discover -s tests -p "test_*.py" -v
-            .venv/bin/python -m unittest tests.test_conversation_links tests.test_conversation_link_actions tests.test_auxiliary_vision tests.test_video_generation tests.test_video_settings tests.test_generation tests.test_multimodal_settings tests.test_preview_source tests.test_preview_channel tests.test_preview_channel_ui -q
             .venv/bin/python tests/codearts_plugin_ui_smoke.py
             .venv/bin/python tests/subagent_pane_ui_smoke.py
             .venv/bin/python tests/request_details_ui_smoke.py
@@ -120,12 +137,12 @@ jobs:
             .venv/bin/python tests/appearance_ui_smoke.py
             .venv/bin/python tests/task_state_ui_smoke.py
             .venv/bin/python tests/thinking_stream_ui_smoke.py
-            .venv/bin/python tests/input_method_ui_smoke.py
           '
 
   windows-path-checks:
     name: Windows path regressions
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.packages != 'true'
     runs-on: windows-2022
     timeout-minutes: 15
     env:
@@ -153,13 +170,15 @@ jobs:
       - name: Verify long paths, native argv and running-tool layout
         shell: pwsh
         run: |
-          & '.venv/Scripts/python.exe' -m unittest tests.test_conversation_links tests.test_conversation_link_actions tests.test_auxiliary_vision tests.test_video_generation tests.test_video_settings tests.test_generation tests.test_multimodal_settings tests.test_runtime_paths tests.test_pi_management.NativeExtensionTests.test_factory_copies_deep_profile_and_preserves_ordinary_paths tests.test_pi_management.NativeExtensionTests.test_factory_keeps_original_configuration_sessions_and_projects tests.test_windows_python_note tests.test_running_tool_status tests.test_tool_history_layout tests.test_skill_import tests.test_skill_host tests.test_preview_source tests.test_preview_channel tests.test_preview_channel_ui -v
+          & '.venv/Scripts/python.exe' scripts/ci-native-tests.py
           if ($LASTEXITCODE -ne 0) { throw 'Windows path and tool-header regression failed' }
           & '.venv/Scripts/python.exe' tests/input_method_ui_smoke.py
           if ($LASTEXITCODE -ne 0) { throw 'Input-method caret regression failed' }
 
   package:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: changes
+    # changes is PR-only; its skipped state must not block main or dispatch.
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && needs.changes.outputs.packages == 'true')) }}
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
@@ -217,26 +236,16 @@ jobs:
         if: runner.os != 'Windows'
         run: bash setup.sh
 
-      - name: Node and Python unit tests
+      - name: Native platform regressions
         shell: bash
         run: |
           verify_desktop() {
             set -e
             python_bin=.venv/bin/python
             if [ "$RUNNER_OS" = Windows ]; then python_bin=.venv/Scripts/python.exe; fi
-            node --test tests/auxiliary-vision.test.mjs tests/auxiliary-vision-bridge.test.mjs tests/video-generation.test.mjs tests/generation.test.mjs tests/skills.test.mjs tests/tool-visibility.test.mjs tests/pet-reminder-local-time.test.mjs tests/conversation-search.test.mjs tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/package-install.test.mjs tests/pi-widget-command.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/global-agents.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs tests/compaction-bridge.test.mjs tests/recent-images.test.mjs tests/recent-images-bridge.test.mjs
-            "$python_bin" tests/conversation_search_ui_smoke.py
-            "$python_bin" tests/provider_error_ui_smoke.py
-            "$python_bin" tests/provider_login_cancel_ui_smoke.py
-            "$python_bin" tests/multimodal_ui_smoke.py
-            "$python_bin" tests/video_ui_smoke.py
-            "$python_bin" tests/auxiliary_vision_ui_smoke.py
-            "$python_bin" tests/sidebar_menu_position_ui_smoke.py
-            "$python_bin" tests/sidebar_animation_ui_smoke.py
-            "$python_bin" tests/slash_commands_ui_smoke.py
-            "$python_bin" tests/thinking_stream_ui_smoke.py
+            # Linux discovery already exercised this host's native unit tests.
+            if [ "$RUNNER_OS" != Linux ]; then "$python_bin" scripts/ci-native-tests.py; fi
             "$python_bin" tests/input_method_ui_smoke.py
-            "$python_bin" -m unittest tests.test_conversation_links tests.test_conversation_link_actions tests.test_auxiliary_vision tests.test_video_generation tests.test_video_settings tests.test_generation tests.test_multimodal_settings tests.test_provider_errors tests.test_update tests.test_common_providers tests.test_openai_responses tests.test_platform tests.test_desktop_notifications tests.test_umeko_control tests.test_characters tests.test_tool_permissions tests.test_terminal_widget tests.test_widget_icon_rendering tests.test_pet_reminders tests.test_skill_host tests.test_skill_import tests.test_preview_source tests.test_preview_channel tests.test_preview_channel_ui -q
           }
           export -f verify_desktop
           if [ "$RUNNER_OS" = Linux ]; then
@@ -245,15 +254,11 @@ jobs:
             verify_desktop
           fi
 
-      - name: Windows regression suite
+      - name: Windows window interaction
         if: runner.os == 'Windows'
-        # Full discovery includes native runtime/profile copies and multimodal fixtures.
-        timeout-minutes: 15
+        timeout-minutes: 10
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force build/test-logs | Out-Null
-          & '.venv/Scripts/python.exe' -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | Tee-Object -FilePath build/test-logs/regression.log
-          if ($LASTEXITCODE -ne 0) { throw 'Regression suite failed' }
           & '.venv/Scripts/python.exe' tests/window_resize_ui_smoke.py
           if ($LASTEXITCODE -ne 0) { throw 'Window interaction regression failed' }
 

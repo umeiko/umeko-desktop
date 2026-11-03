@@ -1,5 +1,6 @@
 """The packaged verifier must work outside the application's Python venv."""
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -24,7 +25,8 @@ assert not any(name.startswith("PySide6") for name in sys.modules)
 '''
             result = subprocess.run([sys.executable, '-S', '-c', script,
                 str(ROOT / 'scripts/ci-smoke.py'), str(profile)],
-                capture_output=True, text=True, timeout=20)
+                capture_output=True, text=True, timeout=20,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             saved = json.loads(settings.read_text(encoding='utf-8'))
             self.assertEqual(saved['agent']['agentDir'], str((profile / 'agent').resolve()))
