@@ -84,18 +84,12 @@ with tempfile.TemporaryDirectory(prefix='umeko-history-window-') as temporary:
             # observable, then jump across several distant ranges.
             entered, release = threading.Event(), threading.Event()
             prepared_ranges = []
-            model = backend._chat_model
-            # This branch deliberately exercises a cold render request. Warm
-            # memory hits correctly skip the reader and its loading spinner.
-            model._presentation.invalidate(model._render_cache, 400, 403)
-            for row in range(400, 404):
-                model._prepared.pop(row, None)
-            prepare = model._presentation.prepare
-            def prepare_range(rows, cancelled, **kwargs):
+            prepare = backend._chat_model._presentation.prepare
+            def prepare_range(rows, cancelled):
                 prepared_ranges.append(min(rows) if rows else -1)
                 if 400 in rows:
                     entered.set();release.wait(3)
-                return prepare(rows, cancelled, **kwargs)
+                return prepare(rows, cancelled)
             with patch.object(backend._chat_model._presentation,'prepare',prepare_range):
                 jump(400);wait(entered.is_set)
                 spinner = find('historyLoading_400')

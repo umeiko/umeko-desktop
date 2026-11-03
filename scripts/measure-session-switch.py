@@ -1,45 +1,41 @@
 #!/usr/bin/env python3
 """Local, offscreen native-Pi/Controller/QML benchmark; never calls a model.
 
-Run: .venv/Scripts/python.exe scripts/measure-session-switch.py --label baseline
+Run: .venv/Scripts/python.exe scripts/measure-session-switch.py --mode switches --label local
+Modes: switches (nine first/cached observations), sequence (five saved sessions), memory.
 This is deliberately outside CI. Fixtures and the catalog-only Pi projection
 are held in one TemporaryDirectory and removed after shutdown.
 """
 from __future__ import annotations
 
 import argparse
-import cProfile
 import faulthandler
 import gc
-import inspect
 import json
 import os
 import shutil
 import statistics
-import subprocess
 import sys
 import tempfile
 import time
-import textwrap
-import types
-import re
+import threading
 from pathlib import Path
 from unittest.mock import patch
-from contextlib import ExitStack
 
 ROOT = Path(__file__).resolve().parents[1]
+QML_ROOT = ROOT / 'app/qml'
 sys.path.insert(0, str(ROOT))
 os.environ.update(QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", UMEKO_LANGUAGE="zh")
 
 import psutil
-from PySide6.QtCore import QProcess, QUrl
+from PySide6.QtCore import QObject, QProcess, QUrl, Slot
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow, QQuickTextDocument
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from app.controller import Controller
 from app.integration import Completion
-from app.pi_runtime import CATALOG, PACKAGE, node_executable
+from app.pi_runtime import CATALOG, node_executable
 from app.syntax_highlight import register_text_types
 import shiboken6
 
@@ -51,6 +47,66 @@ class IdealProvider:
     def complete(self, *args, **kwargs):
         self.calls += 1
         return Completion("Test response", input_tokens=1, output_tokens=1)
+
+
+PHASES = None
+
+
+class PhaseProbe(QObject):
+    """High-resolution optional probes used only in instrumented task snapshots."""
+    def __init__(self):
+        super().__init__()
+        self.lock = threading.Lock()
+        self.reset()
+
+    def reset(self):
+        with self.lock:
+            self.values = {}
+
+    @Slot(result=float)
+    def begin(self):
+        return time.perf_counter()
+
+    @Slot(str, float)
+    def end(self, name, started):
+        elapsed = (time.perf_counter() - started) * 1000
+        with self.lock:
+            value = self.values.setdefault(name, {"calls": 0, "ms": 0.0})
+            value['calls'] += 1
+            value['ms'] += elapsed
+
+    @Slot(str)
+    def created(self, name):
+        with self.lock:
+            value = self.values.setdefault(name, {"calls": 0, "ms": None})
+            value['calls'] += 1
+
+    def snapshot(self):
+        with self.lock:
+            return {key: dict(value) for key, value in self.values.items()}
+
+
+def prepare_profile_qml(temp):
+    """Instrument an isolated QML copy with the same optional timing probes."""
+    destination = temp / 'qml'
+    shutil.copytree(ROOT / 'app/qml', destination)
+    file = destination / 'MessageBody.qml'
+    text = file.read_text(encoding='utf-8')
+    text = text.replace('Markdown.blocks(root.text, root.markdown, root.compact)', 'root.measuredBlocks()')
+    text = text.replace('Markdown.forQt(modelData.text)', 'root.measuredForQt(modelData.text)')
+    text = text.replace('    property string text: ""', '''    Component.onCompleted: measurementProbe.created("message_body_created")
+    function measuredBlocks() {
+        var started=measurementProbe.begin(); var result=Markdown.blocks(root.text,root.markdown,root.compact)
+        measurementProbe.end("qml_markdown_blocks",started); return result
+    }
+    function measuredForQt(text) {
+        var started=measurementProbe.begin(); var result=Markdown.forQt(text)
+        measurementProbe.end("qml_markdown_forQt",started); return result
+    }
+    property string text: ""''')
+    text = text.replace('            required property int index', '            required property int index\n            Component.onCompleted: measurementProbe.created("message_block_delegate_created")')
+    file.write_text(text, encoding='utf-8')
+    return destination
 
 
 def wait(predicate, timeout=45):
@@ -138,7 +194,9 @@ def one_controller(temp, release):
     controller.setWorkspace(QUrl.fromLocalFile(str(workspace)).toString())
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("backend", controller)
-    engine.load(QUrl.fromLocalFile(str(ROOT / "app/qml/Main.qml")))
+    if PHASES is not None:
+        engine.rootContext().setContextProperty("measurementProbe", PHASES)
+    engine.load(QUrl.fromLocalFile(str(QML_ROOT / "Main.qml")))
     if not engine.rootObjects():
         raise RuntimeError("Main.qml did not load")
     window = engine.rootObjects()[0]
@@ -214,221 +272,221 @@ def memory_sample(controller):
             "node_rss_bytes": sum(row["rss_bytes"] for row in nodes), "nodes": nodes}
 
 
-def measure_memory(temp, release, capacity):
-    case = temp / "memory"
-    case.mkdir()
-    controller, engine, window, provider, workspace = one_controller(case, release)
-    try:
-        if capacity is not None:
-            if not controller.setSessionCacheSize(capacity):
-                raise RuntimeError("Session cache capacity setting was rejected")
-        render(controller, window)
-        gc.collect()
-        empty = memory_sample(controller)
-        stages = []
-        for index, language in enumerate(("zh", "en", "zh")):
-            row = fixture(case / f"long-{index}.jsonl", f"memory-{index}", 500, language, workspace)
-            controller._sessions.append(row)
-            measure(controller, window, row["id"], "memory")
-            gc.collect()
-            stages.append(memory_sample(controller))
-        controller.newSession()
-        render(controller, window)
-        # Retirement is asynchronous; wait for the exact retired processes the
-        # pool owns, never discover or stop unrelated processes.
-        wait(lambda: not controller._pool.retiring)
-        gc.collect()
-        blank = memory_sample(controller)
-        if provider.calls:
-            raise RuntimeError("Memory measurement unexpectedly requested inference")
-        return {"scenario": "visit three native Pi sessions with 500 visible messages each (zh/en/zh), then switch to blank",
-                "cache_capacity": capacity,
-                "model_calls": provider.calls,
-                "empty_controller": empty, "after_each_session": stages,
-                "after_switch_blank": blank,
-                "python_qml_delta_bytes": blank["python_qml_rss_bytes"] - empty["python_qml_rss_bytes"],
-                "node_delta_bytes": blank["node_rss_bytes"] - empty["node_rss_bytes"],
-                "limits": "RSS is a point sample. Python and QML share one process and are reported together. Empty-to-visited delta includes index/history work; compare fresh capacity0/3 end states for cache overhead. Python allocator may retain freed pages, so RSS is not exact retained object size. Does not measure sustained growth or compare shared pages across processes."}
-    finally:
-        controller.close()
-        window.close()
-        shiboken6.delete(engine)
-        shiboken6.delete(controller)
+def measure_switch(controller, window, sid, scenario, **metadata):
+    # Settle prior background work before resetting counters. This is outside
+    # the measured switch and is identical for both revision snapshots.
+    wait(lambda: controller.messageModel._job is None)
+    PHASES.reset()
+    started = time.perf_counter()
+    controller.openSession(sid)
+    wait(lambda: controller.activeSession == sid)
+    activated = time.perf_counter()
+    model = controller.messageModel
+    last = model.rowCount() - 1
+    if last >= 0:
+        model.requestRange(max(0, last - 3), last)
+        wait(lambda: all(model.isReady(index) for index in range(max(0, last - 3), last + 1)))
+    prepared = time.perf_counter()
+    for _ in range(3):
         QApplication.processEvents()
-        gc.collect()
+    polished = time.perf_counter()
+    frame = window.grabWindow()
+    finished = time.perf_counter()
+    if frame.isNull():
+        raise RuntimeError('Measurement offscreen frame is null')
+    return {'scenario': scenario, 'session_id': sid, 'history_activation_ms': (activated - started) * 1000,
+            'page_readiness_ms': (prepared - activated) * 1000,
+            'qt_delegate_layout_events_ms': (polished - prepared) * 1000,
+            'software_grab_ms': (finished - polished) * 1000,
+            'render_ms': (finished - activated) * 1000,
+            'browse_total_ms': (finished - started) * 1000,
+            'phases': PHASES.snapshot(), 'background_prepare_inflight_at_frame': model._job is not None,
+            **metadata}
 
 
-def profile_cached(temp, release):
-    """One new diagnostic sample, not a repeated matrix or acceptance gate."""
-    case = temp / "profile"
-    case.mkdir()
-    controller, engine, window, provider, workspace = one_controller(case, release)
-    stages = {}
-    def timed(name, function, *args, **kwargs):
-        start = time.perf_counter()
+def noise_summary(rows, keys):
+    grouped = {}
+    for row in rows:
+        key = tuple(row.get(name) for name in keys)
+        grouped.setdefault(key, []).append(row)
+    result = []
+    for key, values in grouped.items():
+        entry = dict(zip(keys, key))
+        entry['n'] = len(values)
+        for field in ('history_activation_ms', 'page_readiness_ms', 'qt_delegate_layout_events_ms', 'software_grab_ms', 'render_ms', 'browse_total_ms'):
+            numbers = [row[field] for row in values]
+            quartiles = statistics.quantiles(numbers, n=4, method='inclusive') if len(numbers) > 1 else [numbers[0]] * 3
+            entry[field] = {'median': statistics.median(numbers), 'q1': quartiles[0], 'q3': quartiles[2],
+                            'iqr': quartiles[2] - quartiles[0], 'min': min(numbers), 'max': max(numbers)}
+        phase_names = sorted({name for row in values for name in row['phases']})
+        entry['phase_medians'] = {name: {'calls': statistics.median(row['phases'].get(name, {}).get('calls', 0) for row in values),
+              'ms': None if all(row['phases'].get(name, {}).get('ms') is None for row in values) else
+                    statistics.median(row['phases'].get(name, {}).get('ms', 0) or 0 for row in values)} for name in phase_names}
+        result.append(entry)
+    return result
+
+
+def measure_mode(temp, release, args):
+    global PHASES
+    PHASES = PhaseProbe()
+    rows = []
+    details = {}
+    from app.chat_presentation import HistoryPresentation
+    original_prepare = HistoryPresentation.prepare
+    def prepare(instance, *values, **options):
+        started = time.perf_counter()
         try:
-            return function(*args, **kwargs)
+            return original_prepare(instance, *values, **options)
         finally:
-            value = stages.setdefault(name, {"calls": 0, "total_ms": 0.0})
-            value["calls"] += 1
-            value["total_ms"] += (time.perf_counter() - start) * 1000
-    try:
-        target = fixture(case / "target.jsonl", "profile-target", 500, "zh", workspace)
-        other = fixture(case / "other.jsonl", "profile-other", 10, "zh", workspace)
-        controller._sessions.extend([target, other])
-        measure(controller, window, target['id'], "profile_warmup")
-        controller.openSession(other['id'])
-        wait(lambda: controller.activeSession == other['id'])
-        render(controller, window)
-        original = controller._activate
-        source = textwrap.dedent(inspect.getsource(original))
-        source = re.sub(r"self\.(\w+)\.emit\(([^\n]*)\)",
-                        lambda match: f"_profile_timed('signal.{match[1]}', lambda: self.{match[1]}.emit({match[2]}))", source)
-        namespace = dict(original.__func__.__globals__, _profile_timed=timed)
-        exec(compile(source, "<profile-activate-signals>", "exec"), namespace)
-        profiler = cProfile.Profile()
-        with ExitStack() as stack:
-            stack.enter_context(patch.object(controller, '_activate', types.MethodType(namespace['_activate'], controller)))
-            for owner, method, name in [(controller._pool, 'touch', 'pool.touch'),
-                                        (controller._pool, 'trim', 'pool.trim'),
-                                        (controller._pool, 'trim_bodies', 'pool.trim_bodies'),
-                                        (controller.store, 'save', 'store.save'),
-                                        (controller._chat_model, 'set_session', 'model.set_session'),
-                                        (controller._chat_model, 'set_snapshot', 'model.set_snapshot'),
-                                        (controller._chat_model, 'update', 'model.update')]:
-                function = getattr(owner, method)
-                stack.enter_context(patch.object(owner, method, lambda *args, _function=function, _name=name, **kwargs: timed(_name, _function, *args, **kwargs)))
-            profiler.enable()
-            start = time.perf_counter()
-            controller.openSession(target['id'])
-            wait(lambda: controller.activeSession == target['id'])
-            active = time.perf_counter()
-            render(controller, window)
-            finished = time.perf_counter()
-            profiler.disable()
-        profiler.dump_stats(str(case / 'cached.prof'))
-        entries = []
-        for entry in profiler.getstats():
-            code = entry.code
-            name = code if isinstance(code, str) else f"{Path(code.co_filename).name}:{code.co_firstlineno}:{code.co_name}"
-            entries.append({'function': name, 'calls': entry.callcount, 'cumulative_ms': entry.totaltime * 1000,
-                            'own_ms': entry.inlinetime * 1000})
-        if provider.calls:
-            raise RuntimeError("Profiling unexpectedly requested inference")
-        return {'scenario': 'one zh500 cached return after real native inspect warmup',
-                'history_activation_ms': (active - start) * 1000, 'render_ms': (finished - active) * 1000,
-                'stages': stages, 'profile_cumulative': sorted(entries, key=lambda row: row['cumulative_ms'], reverse=True)[:40],
-                'profile_own': sorted(entries, key=lambda row: row['own_ms'], reverse=True)[:25], 'model_calls': provider.calls}
-    finally:
+            PHASES.end('python_history_prepare_inclusive', started)
+    def close(controller, engine, window):
         controller.close()
         window.close()
         shiboken6.delete(engine)
         shiboken6.delete(controller)
         QApplication.processEvents()
         gc.collect()
+    with patch.object(HistoryPresentation, 'prepare', prepare):
+        if args.mode == 'switches':
+            for language in args.languages:
+                for count in args.counts:
+                    case = temp / f'{language}-{count}'
+                    case.mkdir()
+                    controller, engine, window, provider, workspace = one_controller(case, release)
+                    try:
+                        other = fixture(case / 'other.jsonl', f'other-{language}-{count}', 10, language, workspace)
+                        controller._sessions.append(other)
+                        for observation in range(args.observations):
+                            target = fixture(case / f'target-{observation}.jsonl', f'target-{language}-{count}-{observation}', count, language, workspace)
+                            controller._sessions.append(target)
+                            rows.append(measure_switch(controller, window, target['id'], 'first_open', language=language, messages=count, observation=observation + 1))
+                            # Warm presentation fully, then visit another saved
+                            # session. No Pi inspect is performed in this matrix.
+                            wait(lambda: controller.messageModel._job is None)
+                            controller.openSession(other['id'])
+                            wait(lambda: controller.activeSession == other['id'])
+                            render(controller, window)
+                            rows.append(measure_switch(controller, window, target['id'], 'cached_return', language=language, messages=count, observation=observation + 1))
+                        if provider.calls:
+                            raise RuntimeError('Measurement unexpectedly called a model')
+                    finally:
+                        close(controller, engine, window)
+            group = ['language', 'messages', 'scenario']
+        else:
+            case = temp / args.mode
+            case.mkdir()
+            controller, engine, window, provider, workspace = one_controller(case, release)
+            try:
+                if args.cache_size is not None:
+                    controller.setSessionCacheSize(args.cache_size)
+                details['configured_capacity'] = controller._pool.limit
+                gc.collect()
+                details['empty_rss'] = memory_sample(controller)
+                sessions = []
+                visits = 5 if args.mode == 'sequence' else args.visits
+                for index in range(visits):
+                    language = 'zh' if index % 2 == 0 else 'en'
+                    row = fixture(case / f'saved-{index}.jsonl', chr(65 + index), 100 if args.mode == 'sequence' else 500, language, workspace)
+                    sessions.append(row)
+                    controller._sessions.append(row)
+                for row in sessions:
+                    # One native init per saved session models used history;
+                    # subsequent browsing does not add synthetic inspect work.
+                    measure(controller, window, row['id'], 'native_warmup')
+                if args.mode == 'sequence':
+                    controller.openSession('A')
+                    wait(lambda: controller.activeSession == 'A')
+                    render(controller, window)
+                    recency = ['B', 'C', 'D', 'E', 'A']
+                    for round_number in range(5):
+                        for sid in ['B', 'C', 'D', 'E', 'A']:
+                            rank = len(recency) - recency.index(sid)
+                            rows.append(measure_switch(controller, window, sid, 'pure_five_cycle', round=round_number + 1, recency_rank=rank, rank_group='fourth_fifth'))
+                            recency.remove(sid); recency.append(sid)
+                    # A separate probe phase leaves the pure five-cycle intact.
+                    # Rank is selected from current full recency immediately
+                    # before each switch, so the probes disclose their effects.
+                    for round_number in range(5):
+                        for rank in [2, 3, 4, 5]:
+                            sid = recency[-rank]
+                            rows.append(measure_switch(controller, window, sid, 'explicit_rank_probe', round=round_number + 1, recency_rank=rank,
+                                                        rank_group='recent_top3' if rank <= 3 else 'fourth_fifth'))
+                            recency.remove(sid); recency.append(sid)
+                    group = ['scenario', 'rank_group']
+                    details['ordering'] = 'Warm A B C D E, return A; five rounds of B C D E A (every revisit rank5). Then five separate probe rounds selecting ranks2,3,4,5 from current recency before each switch. Rank1 is not a switch and is excluded.'
+                else:
+                    controller.newSession()
+                    render(controller, window)
+                    wait(lambda: not controller._pool.retiring)
+                    gc.collect()
+                    details['after_visits_then_blank_rss'] = memory_sample(controller)
+                    details['visits'] = visits
+                    details['messages_per_session'] = 500
+                    details['retained_records'] = [{'id': record.id, 'loaded': record.loaded,
+                                                    **({'retained': record.retained} if hasattr(record, 'retained') else {}),
+                                                    'body_bytes': record.body_bytes, 'message_rows': len(record.messages), 'history_rows': len(record.history),
+                                                    'tree_rows': len(record.tree), 'native_ready': bool(record.process and record.ready)} for record in controller._pool.records.values() if record.id]
+                    group = []
+                if provider.calls:
+                    raise RuntimeError('Measurement unexpectedly called a model')
+            finally:
+                close(controller, engine, window)
+    return {'raw': rows, 'noise_summary': noise_summary(rows, group) if rows else [], 'details': details,
+            'model_calls': 0, 'phase_limits': ['QML markdown blocks/forQt bindings are directly timed via snapshot-only probes.',
+              'Python HistoryPresentation.prepare includes cache lookup, markdown parsing and Qt document conversion; worker time can overlap GUI time.',
+              'Qt delegate creation is counted, not separately timed. Qt binding/delegate construction, internal Text markdown-to-document conversion, font work and layout are inseparable within synchronous activation/event dispatch; qt_delegate_layout_events_ms is a combined event phase, not a direct isolated layout measurement.',
+              'software_grab_ms includes any final deferred scenegraph/polish work plus software rasterization/capture, so it is not pure raster CPU time.',
+              'First available frame may precede completion of background rich formatting.']}
 
 
 def main():
+    global QML_ROOT
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--label", required=True)
-    parser.add_argument("--observations", type=int, default=5)
-    parser.add_argument("--counts", type=int, nargs="+", default=[10, 100, 500])
-    parser.add_argument("--languages", nargs="+", default=["zh", "en"])
-    parser.add_argument("--resume-log", type=Path)
-    parser.add_argument("--memory-only", action="store_true")
-    parser.add_argument("--cache-size", type=int)
-    parser.add_argument("--profile-cached", action="store_true")
+    parser.add_argument('--mode', required=True, choices=['switches', 'sequence', 'memory'])
+    parser.add_argument('--label', required=True)
+    parser.add_argument('--observations', type=int, default=9)
+    parser.add_argument('--counts', type=int, nargs='+', default=[10, 100, 500])
+    parser.add_argument('--languages', nargs='+', default=['zh', 'en'])
+    parser.add_argument('--cache-size', type=int)
+    parser.add_argument('--output-dir', type=Path, default=ROOT / 'artifacts/session-switch-measurements')
+    parser.add_argument('--visits', type=int, default=8)
+    parser.add_argument('--profile-phases', action='store_true', help='time QML parser bindings and count delegates in a temporary QML copy')
     args = parser.parse_args()
     app = QApplication.instance() or QApplication([])
     register_text_types()
-    observations = []
-    if args.resume_log:
-        for line in args.resume_log.read_text(encoding="utf-8").splitlines():
-            if line.startswith('{"scenario":'):
-                observations.append(json.loads(line))
-    result = {"label": args.label, "source_revision": os.environ.get("UMEKO_MEASUREMENT_SOURCE_REV", "unspecified"), "observations_per_cell": args.observations,
-              "environment": {"platform": sys.platform, "python": sys.version.split()[0], "qt_platform": "offscreen",
-                              "renderer": "software", "node": Path(node_executable()).name, "pi": "1.3.0", "window": [1300, 1000]},
-              "method": "Real Controller.openSession, PiSessionPool QProcess, pinned native Pi bridge/SDK, Main.qml software frame. Separate read-only browse from explicit inspect (no prompt/model call). Controlled evicted scenario calls pool.retire, the same lifecycle used by LRU trim, and drops only the inactive SessionState to force disk history reload.",
-              "limits": ["Offscreen software rasterization; no visible desktop input or frame-to-display latency.",
-                         "First-open is application-cold per unique fixture, not OS disk-cache cold.",
-                         "Kernel resume metric is zero for an already-ready process; inspect roundtrip is reported separately.",
-                         "Native initialization contains real resource discovery; provider is ideal local fixture and no inference occurs."],
-              "raw": observations}
+    result = {'label': args.label, 'mode': args.mode,
+              'source_revision': os.environ.get('UMEKO_MEASUREMENT_SOURCE_REV', 'unspecified'),
+              'observations_per_cell': args.observations, 'profile_phases': args.profile_phases,
+              'environment': {'platform': sys.platform, 'python': sys.version.split()[0],
+                              'qt_platform': 'offscreen', 'renderer': 'software',
+                              'node': Path(node_executable()).name, 'pi': '1.3.0', 'window': [1300, 1000]},
+              'method': 'Real Controller.openSession and Main.qml software frames. Switch matrix is read-only with no inspect per switch. Sequence/memory initialize each saved native Pi once, then browse without inspect per switch.',
+              'limits': ['Offscreen rendering does not measure frame-to-display latency.',
+                         'First-open is application-cold per unique fixture, not OS disk-cache cold.',
+                         'Ideal local Test provider/test-model; no inference or real API call.']}
     saved = {}
-    with tempfile.TemporaryDirectory(prefix="umeko-issue60-measure-") as rawtemp:
+    with tempfile.TemporaryDirectory(prefix='umeko-session-measure-') as rawtemp:
         temp = Path(rawtemp)
-        print("FIXTURE_DIRECTORY " + str(temp), flush=True)
+        if args.profile_phases:
+            QML_ROOT = prepare_profile_qml(temp)
         release, saved = prepare_runtime(temp)
-        # Force hidden subprocesses below native Node helpers. No shell or model
-        # operation is requested by inspect, and all fixture scopes are isolated.
-        preload = temp / "hidden-children.cjs"
-        preload.write_text("const cp=require('node:child_process'); for(const key of ['spawn','spawnSync','execFile','execFileSync']) { const old=cp[key]; cp[key]=function(...a){let i=Array.isArray(a[1])?2:1; if(typeof a[i]==='function')a.splice(i,0,{});a[i]={...(a[i]||{}),windowsHide:true};return old.apply(this,a)} } require('node:module').syncBuiltinESMExports();", encoding="utf-8")
+        preload = temp / 'hidden-children.cjs'
+        preload.write_text("const cp=require('node:child_process'); for(const key of ['spawn','spawnSync','execFile','execFileSync']) { const old=cp[key]; cp[key]=function(...a){let i=Array.isArray(a[1])?2:1; if(typeof a[i]==='function')a.splice(i,0,{});a[i]={...(a[i]||{}),windowsHide:true};return old.apply(this,a)} } require('node:module').syncBuiltinESMExports();", encoding='utf-8')
         class HiddenProcess(QProcess):
             def setProcessEnvironment(self, environment):
-                environment.insert("NODE_OPTIONS", "--require=" + json.dumps(str(preload)))
+                environment.insert('NODE_OPTIONS', '--require=' + json.dumps(str(preload)))
                 super().setProcessEnvironment(environment)
         try:
-            with patch("app.pi_sessions.QProcess", HiddenProcess), patch("app.provider_plugins.BundledProviders.sync", return_value=[]):
-                if args.memory_only:
-                    result["memory"] = measure_memory(temp, release, args.cache_size)
-                if args.profile_cached:
-                    result["profile"] = profile_cached(temp, release)
-                for language in args.languages:
-                    if args.memory_only or args.profile_cached:
-                        break
-                    for count in args.counts:
-                        if all(sum(r["language"] == language and r["messages"] == count and r["scenario"] == scenario for r in observations) >= args.observations
-                               for scenario in ("first_open", "switch_back", "evicted")):
-                            continue
-                        case = temp / f"{language}-{count}"
-                        case.mkdir()
-                        controller, engine, window, provider, workspace = one_controller(case, release)
-                        try:
-                            for n in range(args.observations):
-                                target = fixture(case / f"target-{n}.jsonl", f"target-{language}-{count}-{n}", count, language, workspace)
-                                other = fixture(case / f"other-{n}.jsonl", f"other-{language}-{count}-{n}", 10, language, workspace)
-                                controller._sessions.extend([target, other])
-                                for scenario in ("first_open", "switch_back", "evicted"):
-                                    if scenario != "first_open":
-                                        controller.openSession(other["id"])
-                                        wait(lambda: controller.activeSession == other["id"])
-                                    if scenario == "evicted":
-                                        record = controller._pool.find(target["id"])
-                                        controller._pool.retire(record)
-                                        controller._pool.records.pop(record.key)
-                                    value = measure(controller, window, target["id"], scenario)
-                                    value.update(messages=count, language=language, observation=n + 1)
-                                    observations.append(value)
-                                    print(json.dumps(value), flush=True)
-                                # Isolate repetitions while leaving real cache
-                                # behavior in each three-switch sequence intact.
-                                controller._pool.retire(controller._view)
-                            if provider.calls:
-                                raise RuntimeError("Benchmark unexpectedly requested inference")
-                        finally:
-                            controller.close()
-                            window.close()
-                            shiboken6.delete(engine)
-                            shiboken6.delete(controller)
-                            QApplication.processEvents()
-                            gc.collect()
+            with patch('app.pi_sessions.QProcess', HiddenProcess), patch('app.provider_plugins.BundledProviders.sync', return_value=[]):
+                result['measurements'] = measure_mode(temp, release, args)
         finally:
             for target, original in saved.items():
                 target.write_bytes(original)
-    result["medians"] = []
-    for language in args.languages:
-        if args.memory_only or args.profile_cached:
-            break
-        for count in args.counts:
-            for scenario in ("first_open", "switch_back", "evicted"):
-                rows = [r for r in observations if r["language"] == language and r["messages"] == count and r["scenario"] == scenario]
-                result["medians"].append({"language": language, "messages": count, "scenario": scenario, "n": len(rows),
-                    **{k: statistics.median(r[k] for r in rows) for k in ("history_load_ms", "render_ms", "browse_total_ms", "kernel_start_resume_ms", "native_inspect_total_ms")}})
-    output = ROOT / "docs" / f"session-cache-measurements-{args.label}.json"
-    output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print("RESULT " + str(output), flush=True)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    output = args.output_dir / f'session-cache-measurements-{args.label}.json'
+    output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    print('RESULT ' + str(output), flush=True)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

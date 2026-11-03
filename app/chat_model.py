@@ -32,80 +32,11 @@ class ChatModel(QAbstractListModel):
         self._wanted, self._prepared, self._job = [], {}, None
         from .chat_presentation import HistoryPresentation
         self._presentation = HistoryPresentation()
-        self._session_key, self._render_context = None, None
-        self._render_cache, self._live_prepared = None, {}
-        self._cache_enabled, self._streaming = False, False
-        self._binding_changed = False
-        self._snapshot_sources = {}
         self._metadata, self._heights = OrderedDict(), OrderedDict()
         self._layout = ''
         self._closed = False
         self._reader = ThreadPoolExecutor(max_workers=1, thread_name_prefix='chat-pages')
         self.pageReady.connect(self._page_ready)
-
-    def set_session(self, key, context, streaming=False, enabled=True):
-        """Bind render retention to the controller's existing session pool."""
-        changed = (key != self._session_key or context != self._render_context
-                   or enabled != self._cache_enabled or streaming != self._streaming)
-        binding_changed = key != self._session_key
-        self._binding_changed |= binding_changed
-        if binding_changed:
-            self._wanted = []
-            self._source = None
-        if not enabled:
-            self._presentation.discard_session(key)
-            self._snapshot_sources.pop(key, None)
-        self._session_key = key
-        self._render_context = copy.deepcopy(context)
-        self._cache_enabled, self._streaming = bool(enabled), bool(streaming)
-        self._render_cache = self._presentation.session_cache(key, context) if enabled else None
-        if streaming and not binding_changed and self._source_starts:
-            for offset, start in enumerate(self._source_starts):
-                if start == self._source_starts[-1]:
-                    self._presentation.invalidate(self._render_cache, self.base_count + offset, self.base_count + offset)
-        if changed:
-            self._generation += 1
-            self._pending.clear()
-            self._failed.clear()
-            self._prepared.clear()
-            self._live_prepared.clear()
-            self._heights.clear()
-            if self.rowCount():
-                self.dataChanged.emit(self.index(0), self.index(self.rowCount() - 1), [self.MessageRole])
-            if not binding_changed and enabled:
-                self._pump()
-
-    def discard_session(self, key):
-        self._presentation.discard_session(key)
-        self._snapshot_sources.pop(key, None)
-        if key == self._session_key:
-            self._wanted = []
-            self.set_session(key, self._render_context, self._streaming, False)
-
-    def clear(self):
-        self._generation += 1
-        self._presentation.clear()
-        self._snapshot_sources.clear()
-        self._render_cache = None
-        self._cache_enabled = False
-        self._prepared.clear()
-        self._live_prepared.clear()
-
-    def _live_renderable(self, row):
-        offset = row - self.base_count
-        if not self._cache_enabled or not 0 <= offset < len(self.rows):
-            return False
-        # A native assistant may project into many fragments or a grouped tool
-        # chain. Every fragment of that final source group remains live.
-        if (self._streaming and self._source_starts
-                and (offset >= len(self._source_starts) or self._source_starts[offset] == self._source_starts[-1])):
-            return False
-        return bool(self._presentation.signature(self.rows[offset]))
-
-    def _loading(self, row, meta):
-        return {'role': meta.get('role', 'assistant'), 'text': '', 'error': False, '_loading': True,
-                '_loadError': row // RENDER_ROWS in self._failed,
-                '_estimatedHeight': self._heights.get(row, meta.get('hint', 100))}
 
     @Property(bool, notify=sourceChanged)
     def paged(self):
@@ -135,79 +66,42 @@ class ChatModel(QAbstractListModel):
         return base + selected if selected >= 0 else max(0, base - 1)
 
     def set_snapshot(self, snapshot):
-        revised = False
-        if snapshot is not None and self._cache_enabled:
-            identity = (getattr(snapshot, 'database', None) or getattr(snapshot, 'file', None)
-                        or getattr(snapshot, 'path', None) or id(snapshot))
-            source = str(identity), getattr(snapshot, 'revision', None), snapshot.count
-            previous = self._snapshot_sources.get(self._session_key)
-            revised = previous is not None and previous != source
-            if revised:
-                self._generation += 1
-                self._presentation.invalidate(self._render_cache, 0)
-            self._snapshot_sources[self._session_key] = source
-        if self.snapshot is snapshot and not revised:
+        if self.snapshot is snapshot:
             return
         self.beginResetModel()
         if self.snapshot:
             self.snapshot.repository.cache.pin(())
-        if not revised:
-            self._generation += 1
+        self._generation += 1
         self._pending.clear()
         self._failed.clear()
         self._prepared.clear()
-        self._live_prepared.clear()
         self._wanted = []
         self._metadata.clear()
         self._heights.clear()
         self.snapshot = snapshot
         self.rows, self._questions, self._source_starts = [], [], []
         self._source, self._source_count = None, 0
-        self.endResetModel()
         if snapshot and snapshot.count:
             focus = snapshot.focus_row if snapshot.focus_row >= 0 else snapshot.count - 1
             self.requestRange(focus, focus)
+        self.endResetModel()
         self.sourceChanged.emit()
         self.questionsChanged.emit()
 
     @Slot(int, int)
     def requestRange(self, first, last):
-        if self._closed or (not self.snapshot and not self._cache_enabled):
+        if not self.snapshot or self._closed:
             return
-        first, last = max(0, first), min(self.rowCount() - 1, max(first, last))
+        first, last = max(0, first), min(self.base_count - 1, max(first, last))
         if first > last:
             return
         last = min(last, first + 32)
         visible = list(range(first // RENDER_ROWS, last // RENDER_ROWS + 1))
         neighbors = [visible[-1] + 1, visible[0] - 1]
-        pages = visible + [p for p in neighbors if 0 <= p <= (self.rowCount() - 1) // RENDER_ROWS]
+        pages = visible + [p for p in neighbors if 0 <= p <= (self.base_count - 1) // RENDER_ROWS]
         self._wanted = pages
         self._prepared = {row:value for row,value in self._prepared.items() if row // RENDER_ROWS in pages}
-        self._live_prepared = {row:value for row,value in self._live_prepared.items() if row // RENDER_ROWS in pages}
-        if self.snapshot:
-            self.snapshot.repository.cache.pin(self.snapshot.key(row) for row in range(max(0, first - 8), min(self.base_count, last + 9)))
-        # A retained viewport can be shown immediately. This path only looks
-        # at memory caches; cold pages and Markdown stay on the reader thread.
-        cached_row = getattr(self.snapshot, 'cached', None)
-        warmed = []
-        for page in pages:
-            for row in range(page * RENDER_ROWS, min(self.rowCount(), (page + 1) * RENDER_ROWS)):
-                target = self._prepared if row < self.base_count else self._live_prepared
-                if row in target:
-                    continue
-                if row < self.base_count:
-                    value = cached_row(row) if callable(cached_row) else None
-                else:
-                    value = self.rows[row - self.base_count] if self._live_renderable(row) else None
-                if value is not None:
-                    prepared = self._presentation.cached(row, value, self._render_cache)
-                    if prepared is not None:
-                        target[row] = prepared
-                        warmed.append(row)
-        if warmed:
-            self.viewportAboutToChange.emit()
-            self.dataChanged.emit(self.index(min(warmed)), self.index(max(warmed)), [self.MessageRole])
-            self.viewportChanged.emit()
+        self.snapshot.repository.cache.pin(self.snapshot.key(row) for row in range(max(0, first - 8), min(self.base_count, last + 9)))
         self._pump()
 
     def _request(self, page):
@@ -216,32 +110,23 @@ class ChatModel(QAbstractListModel):
         self._pump()
 
     def _pump(self):
-        if self._closed or self._job is not None or (not self.snapshot and not self._cache_enabled):
+        if self._closed or self._job is not None or not self.snapshot:
             return
-        def ready(row):
-            return row in self._prepared if row < self.base_count else (not self._live_renderable(row) or row in self._live_prepared)
         page = next((p for p in self._wanted if p not in self._failed and not all(
-            ready(row) for row in range(p * RENDER_ROWS, min(self.rowCount(), (p + 1) * RENDER_ROWS)))), None)
+            row in self._prepared for row in range(p * RENDER_ROWS, min(self.base_count, (p + 1) * RENDER_ROWS)))), None)
         if page is None:
             return
         snapshot, generation = self.snapshot, self._generation
-        first, last, base_count = page * RENDER_ROWS, min(self.rowCount(), (page + 1) * RENDER_ROWS), self.base_count
-        live = {row: copy.deepcopy(self.rows[row - base_count]) for row in range(max(base_count, first), last)
-                if self._live_renderable(row)}
-        cache = self._render_cache
-        use_default = self._session_key is None
         self._job = generation, page
         self._pending.add(page)
         def read():
             from .transcript_index import PAGE_ROWS
+            first = page * RENDER_ROWS
             cancelled = lambda: self._closed or generation != self._generation or page not in self._wanted
             if cancelled(): return {}
-            rows = {}
-            if snapshot and first < base_count:
-                rows = snapshot.page(first // PAGE_ROWS)
-                rows = {row:value for row,value in rows.items() if first <= row < min(last, base_count)}
-            rows.update(live)
-            return self._presentation.prepare(rows, cancelled, cache=cache, use_default=use_default)
+            rows = snapshot.page(first // PAGE_ROWS)
+            rows = {row:value for row,value in rows.items() if first <= row < first + RENDER_ROWS}
+            return self._presentation.prepare(rows, cancelled)
         future = self._reader.submit(read)
         def complete(job):
             try:
@@ -262,7 +147,7 @@ class ChatModel(QAbstractListModel):
         generation, page, error, prepared = value
         self._job = None
         self._pending.discard(page)
-        if self._closed or generation != self._generation:
+        if self._closed or generation != self._generation or not self.snapshot:
             self._pump()
             return
         if page not in self._wanted:
@@ -270,9 +155,8 @@ class ChatModel(QAbstractListModel):
             return
         if error:
             self._failed.add(page)
-        self._prepared.update((row, value) for row, value in prepared.items() if row < self.base_count)
-        self._live_prepared.update((row, value) for row, value in prepared.items() if row >= self.base_count)
-        first, last = page * RENDER_ROWS, min(self.rowCount() - 1, (page + 1) * RENDER_ROWS - 1)
+        self._prepared.update(prepared)
+        first, last = page * RENDER_ROWS, min(self.base_count - 1, (page + 1) * RENDER_ROWS - 1)
         self.viewportAboutToChange.emit()
         self.dataChanged.emit(self.index(first), self.index(last), [self.MessageRole])
         self.viewportChanged.emit()
@@ -286,9 +170,7 @@ class ChatModel(QAbstractListModel):
 
     @Slot(int, result=bool)
     def isReady(self, row):
-        if row >= self.base_count:
-            return True
-        if not self.snapshot or row < 0:
+        if not self.snapshot or row >= self.base_count or row < 0:
             return True
         return row in self._prepared or row // RENDER_ROWS in self._failed
 
@@ -309,22 +191,7 @@ class ChatModel(QAbstractListModel):
 
     def message(self, row, synchronous=False):
         if row >= self.base_count:
-            if not 0 <= row - self.base_count < len(self.rows):
-                return {}
-            value = self.rows[row - self.base_count]
-            if synchronous or not self._live_renderable(row):
-                return value
-            prepared = self._live_prepared.get(row)
-            if prepared is None:
-                prepared = self._presentation.cached(row, value, self._render_cache)
-                if prepared is not None and row // RENDER_ROWS in self._wanted:
-                    self._live_prepared[row] = prepared
-            if prepared is not None:
-                return prepared
-            self._request(row // RENDER_ROWS)
-            # A cold live row keeps the existing immediate QML fallback while
-            # the reader prepares retention for subsequent session visits.
-            return value
+            return self.rows[row - self.base_count] if 0 <= row - self.base_count < len(self.rows) else {}
         if not self.snapshot or row < 0:
             return {}
         value = self._prepared.get(row)
@@ -339,11 +206,11 @@ class ChatModel(QAbstractListModel):
             self._metadata[row] = meta
             while len(self._metadata) > 192:
                 self._metadata.popitem(last=False)
-        return self._loading(row, meta)
+        return {'role': meta.get('role', 'assistant'), 'text': '', 'error': False, '_loading': True,
+                '_loadError': row // RENDER_ROWS in self._failed, '_estimatedHeight': self._heights.get(row, meta.get('hint', 100))}
 
     def close(self):
         self._closed = True
-        self.clear()
         self._reader.shutdown(wait=False, cancel_futures=True)
 
     @Property('QVariantList', notify=questionsChanged)
@@ -388,21 +255,10 @@ class ChatModel(QAbstractListModel):
         self._source_starts.extend(start + value for value in starts)
         self._source, self._source_count = source, len(source)
         total = first + len(messages)
-        changed_rows = {row for row in range(first, min(total, len(self.rows))) if self.rows[row] != messages[row - first]}
-        if changed_rows or total != len(self.rows):
-            self._generation += 1
-            self._failed.clear()
-            for row in changed_rows:
-                absolute = self.base_count + row
-                self._live_prepared.pop(absolute, None)
-                if not self._binding_changed:
-                    self._presentation.invalidate(self._render_cache, absolute, absolute)
-            self._presentation.invalidate(self._render_cache, self.base_count + total)
-            self._live_prepared = {row:value for row,value in self._live_prepared.items() if row < self.base_count + total}
         questions_dirty = total != len(self.rows)
         for row in range(first, min(total, len(self.rows))):
             value = messages[row - first]
-            if row in changed_rows:
+            if self.rows[row] != value:
                 questions_dirty |= self.rows[row].get('role') == 'user' or value.get('role') == 'user'
                 self.rows[row] = copy.deepcopy(value)
                 self.dataChanged.emit(self.index(self.base_count + row), self.index(self.base_count + row), [self.MessageRole])
@@ -424,12 +280,6 @@ class ChatModel(QAbstractListModel):
             if questions != self._questions:
                 self._questions = questions
                 self.questionsChanged.emit()
-        if self._cache_enabled and self.rowCount():
-            if not self._wanted:
-                self.requestRange(max(0, self.rowCount() - RENDER_ROWS), self.rowCount() - 1)
-            else:
-                self._pump()
-        self._binding_changed = False
 
     def row_for_entry(self, entry_id):
         if self.snapshot:

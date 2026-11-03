@@ -294,7 +294,7 @@ class PiControllerMixin:
             self._subagents.handle(record, event)
             archived = self.store.data['sessionMeta'].get(record.id, {}).get('archived')
             if archived and record is not self._view and not self._pool.protected(record):
-                self._pool._evict(record)
+                self._pool._clear_body(record)
             elif record.stale and not self._pool.protected(record):
                 self._pool.retire(record)
             self._pool.trim()
@@ -551,7 +551,7 @@ class PiControllerMixin:
                 self.approvalChanged.emit()
             archived = self.store.data['sessionMeta'].get(record.id, {}).get('archived')
             if archived and record is not self._view and not self._pool.protected(record):
-                self._pool._evict(record)
+                self._pool._clear_body(record)
             elif (record.stale or (kind == "done" and not record.ready)) and not self._pool.protected(record):
                 self._pool.retire(record)
             self._pool.trim()

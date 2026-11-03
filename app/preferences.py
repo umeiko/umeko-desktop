@@ -27,7 +27,6 @@ class PreferencesMixin:
             return False
         self._pool.limit = size
         self._pool.trim()
-        self._update_chat_model()
         self.changed.emit()
         return True
 

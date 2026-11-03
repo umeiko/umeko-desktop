@@ -13,6 +13,7 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 os.environ.setdefault('QT_QUICK_BACKEND', 'software')
 
 from tests.test_preview_channel import qt_application, isolated_test_module
+from tests.test_session_cache import CachedKernel
 from PySide6.QtTest import QSignalSpy
 from app.controller import Controller
 from app.pi_sessions import SessionState
@@ -40,7 +41,7 @@ class ControllerCacheTests(unittest.TestCase):
     def session(self, identifier, **values):
         record = SessionState(id=identifier, title=identifier,
                               messages=[{'role': 'assistant', 'text': 'Completed reply', 'error': False}], **values)
-        self.controller._sessions.append({'id': identifier, 'title': identifier, 'file': ''})
+        self.controller._sessions.append({'id': identifier, 'title': identifier, 'file': record.file})
         self.controller._pool.touch(record)
         return record
 
@@ -92,30 +93,54 @@ class ControllerCacheTests(unittest.TestCase):
             c.openSession(cold.id)
             command.assert_not_called()
 
-    def test_delete_without_transcript_releases_render_and_process_lifecycle(self):
+    def test_delete_without_transcript_retires_kernel_and_preserves_unsaved_body(self):
         c = self.controller
-        record = self.session('no-file')
-        with patch.object(c._chat_model, 'discard_session', wraps=c._chat_model.discard_session) as discard:
+        record = self.session('no-file', process=CachedKernel(c._pool))
+        with patch.object(c._pool, 'retire', wraps=c._pool.retire) as retire:
             c.deleteSession(record.id)
-            discard.assert_called_once_with(record.key)
+            retire.assert_called_once_with(record)
+        self.assertIsNone(record.process)
+        self.assertEqual(record.messages[-1]['text'], 'Completed reply')
         self.assertIsNone(c._pool.find(record.id))
         self.assertFalse(any(row['id'] == record.id for row in c._sessions))
 
     def test_archive_releases_idle_resources_and_keeps_waiting_session(self):
         c = self.controller
-        idle = self.session('idle')
-        waiting = self.session('waiting', approval={'id': 'question'})
-        with patch.object(c._chat_model, 'discard_session') as discard:
+        idle = self.session('idle', file=str(self.root / 'idle.jsonl'), process=CachedKernel(c._pool))
+        waiting = self.session('waiting', file=str(self.root / 'waiting.jsonl'),
+                               process=CachedKernel(c._pool), approval={'id': 'question'})
+        with patch.object(c._pool, 'retire', wraps=c._pool.retire) as retire:
             c.archiveSession(idle.id, True)
-            discard.assert_called_once_with(idle.key)
+            retire.assert_called_once_with(idle)
             c.archiveSession(waiting.id, True)
-            self.assertEqual(discard.call_count, 1)
-        self.assertFalse(idle.retained)
-        self.assertTrue(waiting.retained)
+            self.assertEqual(retire.call_count, 1)
+        self.assertIsNone(idle.process)
+        self.assertFalse(idle.loaded)
+        self.assertEqual(idle.messages, [])
+        self.assertIsNotNone(waiting.process)
+        self.assertTrue(waiting.loaded)
         c.deleteSession(waiting.id)
         self.assertIs(c._pool.find(waiting.id), waiting)
         c._handle_pi_event(waiting, {'type': 'done'})
-        self.assertFalse(waiting.retained, 'Archived task must release its cache once it becomes idle')
+        self.assertIsNone(waiting.process)
+        self.assertFalse(waiting.loaded, 'Archived task must release its replayable body once idle')
+        self.assertEqual(waiting.messages, [])
+
+    def test_delete_saved_session_releases_kernel_and_replayable_body(self):
+        c = self.controller
+        path = c.store.directory / 'pi/sessions/deleted.jsonl'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('fixture transcript', encoding='utf-8')
+        record = self.session('saved', file=str(path), process=CachedKernel(c._pool))
+        with patch.object(c, '_job') as job:
+            c.deleteSession(record.id)
+            job.assert_called_once()
+            self.assertEqual(job.call_args.args[0], 'discard-chat-index')
+        self.assertIsNone(record.process)
+        self.assertFalse(record.loaded)
+        self.assertEqual(record.messages, [])
+        self.assertFalse(path.exists())
+        self.assertIsNone(c._pool.find(record.id))
 
     def test_language_change_invalidates_startup_configuration(self):
         c = self.controller
@@ -135,10 +160,28 @@ class ControllerCacheTests(unittest.TestCase):
     def test_finished_background_task_rechecks_idle_capacity(self):
         c = self.controller
         c.setSessionCacheSize(0)
-        running = self.session('running', phase='running', action='inspect')
-        self.assertTrue(running.retained)
+        running = self.session('running', phase='running', action='inspect', process=CachedKernel(c._pool))
+        self.assertIsNotNone(running.process)
         c._handle_pi_event(running, {'type': 'done'})
-        self.assertFalse(running.retained)
+        self.assertIsNone(running.process)
+        self.assertTrue(running.loaded)
+        self.assertEqual(running.messages[-1]['text'], 'Completed reply')
+
+    def test_five_loaded_histories_switch_synchronously_after_kernel_eviction(self):
+        c = self.controller
+        records = [self.session(str(index), file=str(self.root / (str(index) + '.jsonl')),
+                                process=CachedKernel(c._pool)) for index in range(5)]
+        bodies = {record.key: record.messages for record in records}
+        self.assertEqual(sum(record.process is not None for record in records), 3)
+        self.assertTrue(all(record.loaded for record in records))
+        with patch.object(c._session_preview, 'open_direct') as preview, patch.object(c, '_command_pi') as command:
+            for record in records:
+                c.openSession(record.id)
+                self.assertEqual(c.activeSession, record.id)
+                self.assertIs(c._view.messages, bodies[record.key])
+                self.assertEqual(c.messages[-1]['text'], 'Completed reply')
+            preview.assert_not_called()
+            command.assert_not_called()
 
     def test_stale_path_is_checked_at_click_without_fallback_open(self):
         c = self.controller

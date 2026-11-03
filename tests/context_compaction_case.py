@@ -99,6 +99,8 @@ class ContextCompactionTests(unittest.TestCase):
         agent.mkdir(); workspace.mkdir()
         (agent / "settings.json").write_text(json.dumps({"compaction": {"keepRecentTokens": 50, "reserveTokens": 100}}), encoding="utf-8")
         self.backend = Controller(ROOT)
+        self.model_resets = []
+        self.backend.messageModel.modelReset.connect(lambda: self.model_resets.append(self.backend._view.key))
         self.adapter = FixtureProvider()
         self.backend.adapter = self.backend.gateway.adapter = self.adapter
         self.backend.store.data.update(selectedProvider="fixture", selectedModel="Fixture", providers=[{
@@ -186,16 +188,6 @@ class ContextCompactionTests(unittest.TestCase):
         return next((item for item in items(self.window)
                      if item.objectName().startswith("compactionEvent_") and item.isVisible()), None)
 
-    def current_event(self, name, event_id):
-        row = next((item for item in items(self.window)
-                    if item.objectName() == name and item.isVisible()), None)
-        if row is None:
-            return None
-        record = row.property("record")
-        if hasattr(record, "toVariant"):
-            record = record.toVariant()
-        return row if record.get("eventId") == event_id else None
-
     def click_event_toggle(self, index):
         # A result changes the row height and schedules tail restoration. A
         # cached delegate being visible does not mean its header is in the
@@ -223,13 +215,13 @@ class ContextCompactionTests(unittest.TestCase):
         self.compaction_record = self.backend._view
         self.compaction_session = (self.compaction_record.id, self.compaction_record.file)
         self.compaction_event_id = self.compaction_record.compaction_event_id
+        self.compaction_reset_count = len(self.model_resets)
         name = row.objectName()
         index = name.rsplit("_", 1)[1]
         self.click_event_toggle(index)
-        self.wait_for(lambda: (current := self.current_event(name, self.compaction_event_id)) is not None
-                      and current.property("expanded"))
+        self.wait_for(lambda: row.property("expanded"))
         self.assertTrue(self.find("compactionEventDetails_" + index).isVisible())
-        return self.current_event(name, self.compaction_event_id), name, index
+        return row, name, index
 
     def assert_local_style(self, index):
         for prefix in ("assistantAvatar_", "messageBubble_", "messageActions_", "replyEndMascot_"):
@@ -239,11 +231,10 @@ class ContextCompactionTests(unittest.TestCase):
 
     def assert_finished(self, state, row, name, index):
         self.adapter.release.set()
-        # Canonical transcript indexing may reset the model and replace a QML
-        # delegate. The durable event/session identity is the in-place contract.
-        self.wait_for(lambda: not self.backend.busy and (current := self.current_event(name, self.compaction_event_id)) is not None
-                      and current.property("eventState") == state)
-        row = self.current_event(name, self.compaction_event_id)
+        self.wait_for(lambda: not self.backend.busy and row.property("eventState") == state)
+        self.assertIs(self.find(name), row, "Terminal result must update the original QML row")
+        self.assertEqual(len(self.model_resets), self.compaction_reset_count,
+                         "Finishing compaction must not reset the conversation model")
         record = row.property("record")
         if hasattr(record, "toVariant"):
             record = record.toVariant()
@@ -287,8 +278,7 @@ class ContextCompactionTests(unittest.TestCase):
         self.assertIsInstance(details["before"], (int, float))
         self.assertTrue(details["afterEstimated"])
         self.click_event_toggle(index)
-        self.wait_for(lambda: (current := self.current_event(name, self.compaction_event_id)) is not None
-                      and not current.property("expanded"))
+        self.wait_for(lambda: not row.property("expanded"))
         repository = TranscriptRepository(self.path / "cold-cache")
         self.backend._view.transcript = repository.open(Path(self.backend._view.file))
         self.backend._view.messages = []

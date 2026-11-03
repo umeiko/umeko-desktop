@@ -77,7 +77,6 @@ class SessionState:
     cancelled: bool = False
     stale: bool = False
     crashed: bool = False
-    retained: bool = True
     operation: bool = False
     queue: list = field(default_factory=list)
     compaction_running: bool = False
@@ -110,7 +109,6 @@ class SessionState:
 
 class PiSessionPool(QObject):
     event = Signal(object, object)
-    resourceReleased = Signal(object)
 
     def __init__(self, parent=None, limit=3, body_limit=32 * 1024 * 1024):
         super().__init__(parent)
@@ -154,7 +152,6 @@ class PiSessionPool(QObject):
                 self._catalog_reply(record, {'id': identifier, 'ok': False, 'error': 'Pi instance changed; refresh the directory'})
 
     def touch(self, record, current=False, dirty=True):
-        record.retained = True
         if dirty:
             record.body_dirty = True
         self.records[record.key] = record
@@ -233,7 +230,6 @@ class PiSessionPool(QObject):
         process = record.process
         record.crashed = False
         record.ready, record.stale = False, False
-        self.resourceReleased.emit(record)
         if not process:
             return
         self._cancel_catalogs(record)
@@ -251,11 +247,15 @@ class PiSessionPool(QObject):
 
     @staticmethod
     def _has_resources(record):
-        return bool(record.process or record.messages or record.history or record.transcript is not None)
+        return record.process is not None
 
     def _evict(self, record):
+        """Release the kernel; loaded history has its own byte budget."""
         self.retire(record)
-        record.retained = False
+
+    def _clear_body(self, record):
+        """Release a replayable body for its byte budget or explicit removal."""
+        self._evict(record)
         if not record.file:
             return  # Unsaved messages are authoritative, not a replayable cache.
         record.messages, record.history, record.tree = [], [], []
@@ -268,7 +268,7 @@ class PiSessionPool(QObject):
     def trim(self):
         def idle():
             return [record for record in self.records.values()
-                    if record.retained and self._has_resources(record) and not self.protected(record)]
+                    if self._has_resources(record) and not self.protected(record)]
         while len(idle()) > max(0, self.limit):
             oldest = next((record for record in idle() if record is not self.current), None)
             if not oldest:
@@ -286,10 +286,10 @@ class PiSessionPool(QObject):
         for record in self.records.values():
             if total <= self.body_limit:
                 break
-            if not record.retained or record is self.current or self.protected(record) or not record.file or not record.loaded:
+            if record is self.current or self.protected(record) or not record.file or not record.loaded:
                 continue
             released = record.body_bytes
-            self._evict(record)
+            self._clear_body(record)
             total -= released
 
     def invalidate(self):
@@ -305,7 +305,6 @@ class PiSessionPool(QObject):
         self.closing = True
         for record in self.records.values():
             self._cancel_catalogs(record)
-            self.resourceReleased.emit(record)
         processes = set(self.retiring)
         for record in self.records.values():
             if record.process:
