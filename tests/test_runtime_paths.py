@@ -46,10 +46,11 @@ class RuntimePathTests(unittest.TestCase):
         retry.write_text("const errorMessage = message.errorMessage;")
         (release_io / "manifest.json").write_text(json.dumps({"package":PACKAGE, "projection":2}))
         source_io.mkdir(parents=True)
-        for name in ("tool-visibility.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
+        for name in ("tool-visibility.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
             (source_io / name).write_text("fixture")
         (source_io / "session-capabilities.mjs").write_text("fixture")
         (source_io / "skills.mjs").write_text("fixture")
+        (source_io / "generation.mjs").write_text("fixture")
         (source_io / "markdown-preview.mjs").write_text("fixture")
         (source_io / "umeko-docs").mkdir()
         (source_io / "umeko-docs/guide.md").write_text("deep docs")
@@ -60,6 +61,7 @@ class RuntimePathTests(unittest.TestCase):
         self.assertEqual((release_io / "tool-visibility.mjs").read_text(), "fixture")
         self.assertEqual((release_io / "session-capabilities.mjs").read_text(), "fixture")
         self.assertEqual((release_io / "markdown-preview.mjs").read_text(), "fixture")
+        self.assertEqual((release_io / "generation.mjs").read_text(), "fixture")
         self.assertEqual(ordinary_path(filesystem_path(release)), release)
 
 

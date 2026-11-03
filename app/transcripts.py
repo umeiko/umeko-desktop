@@ -10,6 +10,9 @@ from .chatbox import result_media
 
 
 def tool_view(tool_id, name, arguments, cwd, result=None):
+    details = result.get('details') if isinstance(result, dict) else None
+    if name == 'analyze_image' and isinstance(details, dict) and details.get('model'):
+        arguments = {**arguments, 'model':details.get('modelName') or details['model'], 'provider':details.get('providerName') or details.get('providerId')}
     path = arguments.get("path") or arguments.get("file_path") or arguments.get("filePath") or ""
     if not isinstance(path, str) or "://" in path:
         path = ""
@@ -30,6 +33,20 @@ def content_text(content):
 
 def content_thinking(content):
     return "\n".join(block.get("thinking", "") for block in content if block.get("type") == "thinking") if isinstance(content, list) else ""
+
+
+def automatic_vision_view(entry):
+    if entry.get('type') != 'custom' or entry.get('customType') != 'umeko-auto-vision':
+        return None
+    data = entry.get('data')
+    tool = data.get('tool') if isinstance(data, dict) else None
+    if not isinstance(tool, dict) or data.get('version') != 1 or tool.get('name') != 'analyze_image' or not isinstance(tool.get('id'), str) or tool.get('state') not in ('done', 'error', 'interrupted'):
+        return None
+    target = data.get('target') if isinstance(data.get('target'), dict) else {}
+    arguments = {**tool.get('arguments', {}), 'model':target.get('modelName') or target.get('model') or tool.get('arguments', {}).get('model'),
+                 'provider':target.get('providerName') or target.get('providerId') or tool.get('arguments', {}).get('provider')}
+    return {'role':'assistant', 'text':'', 'entryId':entry.get('id'), 'timestamp':data.get('startedAt') or entry.get('timestamp'),
+            'tools':[{**tool, 'arguments':arguments, 'path':'', 'result':str(tool.get('result', ''))[:8192]}]}
 
 
 def compaction_view(entry):
@@ -116,6 +133,10 @@ def present(entries, cwd, active_compactions=()):
     results = {e["message"].get("toolCallId"): e["message"] for e in entries if e.get("type") == "message" and e.get("message", {}).get("role") == "toolResult"}
     deliveries = [e["data"] for e in entries if e.get("type") == "custom" and e.get("customType") == "umeko-chatbox" and isinstance(e.get("data"), dict) and e["data"].get("version") == 1 and isinstance(e["data"].get("toolCallId"), str) and isinstance(e["data"].get("items"), list)]
     for entry in entries:
+        vision = automatic_vision_view(entry)
+        if vision:
+            messages.append(vision)
+            continue
         receipt = compaction_view(entry)
         if receipt:
             details = receipt["compaction"]

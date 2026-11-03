@@ -29,6 +29,12 @@ def request_scope(cancelled: Event):
         _request_cancelled.reset(token)
 
 
+def current_request_cancelled() -> Event:
+    """Host transports can share the current request's cooperative stop event."""
+    event = _request_cancelled.get()
+    return Event() if event is None else event
+
+
 class ProviderError(RuntimeError):
     """A short user-facing error. Never include credentials or raw auth responses."""
 
@@ -108,6 +114,21 @@ class Provider:
     def events(self, model: str, messages: list[dict], tools: list[dict], max_tokens: int, parameters: dict):
         """Yield OpenAI-compatible JSON chunks, including usage-only chunks."""
         raise NotImplementedError
+    def generate_image(self, model: str, prompt: str, parameters: dict) -> list[dict]:
+        """Optional generation extension; return [{data: bytes, mimeType: str}].
+
+        Advertise 'image' in manifest.generationCapabilities. Observe both
+        context.request_cancelled and context.cancelled during network work.
+        Old API v1 providers inherit an explicit unsupported result.
+        """
+        raise ProviderError('该供应商不支持图片生成')
+    def generate_speech(self, model: str, text: str, parameters: dict) -> list[dict]:
+        """Optional speech extension, with the same bytes/cancellation contract.
+
+        Advertise 'speech' in manifest.generationCapabilities. Credentials must
+        remain in context.secrets, as for streaming inference.
+        """
+        raise ProviderError('该供应商不支持语音生成')
     def close(self): self.context.cancelled.set()
 
 

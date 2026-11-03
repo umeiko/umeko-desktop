@@ -7,6 +7,7 @@ Agent 入口只有一个：`umeko_desktop`。第一次使用先调用 `{"operati
 - [委派子代理：选择不同模型、正确调用名称、并行任务](delegate-subagents.md)
 - [工具协议、批量与排队](control.md)
 - [添加供应商、模型和网络](providers.md)
+- [辅助视觉模型、自动识图和 analyze_image](auxiliary-vision.md)
 - [Provider 插件：供应商接入、认证与模型](provider-plugins.md)
 - [Widget 插件：桌面面板与 Agent 交互](widget-plugins.md)
 - [制作、导入和切换主题](themes.md)

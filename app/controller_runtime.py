@@ -152,6 +152,7 @@ class PiControllerMixin:
                 default_cwd = self.store.directory / "workspace"
                 default_cwd.mkdir(exist_ok=True)
                 agent = self.store.data["agent"]
+                from .generation import generation_config
                 payload.update(gateway=f"http://127.0.0.1:{self.private_server.port}/", token=self.private_token,
                     workspace=record.workspace, defaultCwd=str(default_cwd),
                     agentDir=agent.get("agentDir") or str(Path.home() / ".pi/agent"),
@@ -162,8 +163,10 @@ class PiControllerMixin:
                     blockedTools=record.blocked_tools,
                     docsDir=str(self.store.directory / "agent-docs"),
                     legacyHistory=record.history, models=self.gateway.models(), agent=agent,
+                    auxiliaryVision=self._auxiliary_vision(),
                     permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,
                     dataDir=str(self.store.directory),
+                    generation=generation_config(self.store.data),
                     mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
                 if record.global_agent:
                     service=self._desktop_plugins.global_agents
@@ -204,10 +207,12 @@ class PiControllerMixin:
         model = record.model if record.phase == "running" else self.store.data["selectedModel"]
         provider = record.provider if record.phase == "running" else self.store.data["selectedProvider"]
         attachments = record.attachments
-        if images and not self.gateway.supports_vision(model, provider):
-            self.toast.emit("未启用视觉，降级为普通文件路径")
+        if images and not self.gateway.supports_vision(model, provider) and not self._can_analyze_attachments(model, provider):
             images = []
-            attachments = [{**item, "kind": "file" if item["kind"] == "image" else item["kind"]} for item in attachments]
+            vision = self._auxiliary_vision()
+            if not (vision['model'] and vision['toolEnabled']):
+                self.toast.emit("未启用视觉，降级为普通文件路径")
+                attachments = [{**item, "kind": "file" if item["kind"] == "image" else item["kind"]} for item in attachments]
         text = attachment_prompt(text, attachments)
         if record.phase == "running":
             self._write_pi({"type": "steer" if steering else "follow-up", "text": text, "images": images}, record)
@@ -399,6 +404,8 @@ class PiControllerMixin:
                 if isinstance(event.get("args"), dict):
                     tool["arguments"] = dict(event["args"])
             tool["state"] = event["state"]
+            if event['name'] == 'analyze_image' and isinstance(event.get('args'), dict):
+                tool['arguments'] = dict(event['args'])
             if event.get("media"):
                 tool["media"] = event["media"]
                 if visible and self.store.data['desktop']['autoOpenSubmissions'] and event.get('name')=='submit_to_chatbox' and event.get('state')=='done':

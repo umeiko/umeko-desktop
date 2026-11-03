@@ -45,6 +45,7 @@ from .common_providers import CommonProvidersMixin
 from .chatbox import media_view
 from .subagents import Subagents
 from .characters import CharactersMixin
+from .auxiliary_vision import AuxiliaryVisionMixin
 
 
 GREETINGS = (
@@ -63,7 +64,7 @@ GREETINGS = (
 )
 
 
-class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObject):
+class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObject):
     changed = Signal()
     appearanceChanged = Signal()
     characterCatalogChanged = Signal()
@@ -137,6 +138,10 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
     @Property("QVariantMap", notify=retryChanged)
     def networkRetry(self):
         return self._view.network_retry
+
+    @Property('QVariantList', notify=changed)
+    def auxiliaryVisionModels(self):
+        return self._auxiliaryVisionModels()
     proxyKeysChanged = Signal()
     editorText = Signal(str)
 
@@ -430,7 +435,9 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
             "busy": bool(record and record.busy) or session_id in self._management_jobs}
 
     def _models_busy(self, provider_id=None):
-        return any(record.busy and (provider_id is None or record.provider == provider_id) for record in self._pool.records.values())
+        generation_accounts = {row.get('providerId') for row in self.store.data.get('multimodal', {}).values()}
+        return any(record.busy and (provider_id is None or record.provider == provider_id or provider_id in generation_accounts)
+                   for record in self._pool.records.values())
 
     @Property("QVariantMap", notify=changed)
     def config(self):

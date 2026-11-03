@@ -53,6 +53,10 @@ class Gateway:
     def provider(self, provider_id):
         return next((p for p in self.store.data["providers"] if p["id"] == provider_id), None)
 
+    def generate(self, body):
+        from .generation import generate
+        return generate(self, body)
+
     def models(self):
         rows = []
         for p in self.store.data["providers"]:
@@ -280,6 +284,9 @@ class LocalServer:
                         return self.respond(413, {"error": {"message": "Invalid request size"}})
                     self.connection.settimeout(100)
                     body = json.loads(self.rfile.read(size))
+                    if self.path == '/umeko/generate' and owner.private:
+                        result = self.request_call(lambda: owner.gateway.generate(body))
+                        return self.respond(200, result)
                     if self.path not in ("/v1/chat/completions", "/v1/messages", "/chat/completions", "/messages"):
                         return self.respond(404, {"error": {"message": "Not found"}})
                     anth = self.path in ("/v1/messages", "/messages")
@@ -308,9 +315,12 @@ class LocalServer:
                             parameters["parallel_tool_calls"] = not choice["disable_parallel_tool_use"]
                         parameters["tool_choice"] = {"type": "function", "function": {"name": choice["name"]}} if choice.get("type") == "tool" else {"any": "required"}.get(choice.get("type"), choice.get("type", "auto"))
                     max_tokens = min(max(int(body.get("max_tokens", body.get("max_completion_tokens", 4096))), 1), 32768)
+                    provider_id = body.get('_umeko_provider') if owner.private else None
+                    if provider_id is not None and not isinstance(provider_id, str):
+                        raise ValueError('Invalid private provider identity')
                     if body.get("stream"):
-                        return self.stream_events(owner.gateway.events(body["model"], messages, tools, max_tokens, parameters=parameters), body["model"], anth)
-                    result = owner.gateway.complete(body["model"], messages, tools, max_tokens, parameters=parameters)
+                        return self.stream_events(owner.gateway.events(body["model"], messages, tools, max_tokens, provider_id=provider_id, parameters=parameters), body["model"], anth)
+                    result = owner.gateway.complete(body["model"], messages, tools, max_tokens, provider_id=provider_id, parameters=parameters)
                     self.respond(200, anthropic_response(result, body["model"]) if anth else openai_response(result, body["model"]))
                 except IntegrationRequired as exc:
                     self.respond(422 if owner.private else 503, {"error": {"type": "integration_required", "message": str(exc)}})
@@ -326,6 +336,9 @@ class LocalServer:
                     self.respond(502, {"error": {"type": "upstream_error", "message": "请求失败，请检查适配器或供应商配置"}})
 
             def stream_events(self, events, model, anth):
+                return self.request_call(lambda: self._stream_events(events, model, anth))
+
+            def request_call(self, function):
                 cancelled, finished = threading.Event(), threading.Event()
 
                 def disconnected():
@@ -345,7 +358,7 @@ class LocalServer:
                 watcher.start()
                 try:
                     with request_scope(cancelled):
-                        return self._stream_events(events, model, anth)
+                        return function()
                 finally:
                     finished.set()
                     watcher.join(timeout=1)

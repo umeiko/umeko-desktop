@@ -21,6 +21,16 @@ Drag files anywhere in the chat area to attach them. The app comes to the foregr
 
 Delivery references are stored in Pi's native session, including submissions made through nested tools such as codemode. Reopening, restarting and branching preserve the cards. The original files stay in their existing locations; the session does not bundle file contents or insert base64 data into the model context. If a file is moved or removed, the open action reports that it is unavailable.
 
+## Image and speech generation
+
+Choose an existing account and model for each capability in **Settings → Accounts & Providers → Multimodal model options**. Select a model from the catalogue or enter its raw upstream model ID. Generation uses that account's credentials and network settings; it does not add vendor presets or separate keys. Image defaults include optional size, quality and format, with count `1`. Speech requires a voice ID supported by the provider, with format `mp3` and speed `1` by default.
+
+The built-in `image_gen` tool requires `prompt` and accepts optional `size`, `count`, `format` and `output_filename`. `voice_gen` requires `text` and accepts optional `voice`, `format`, `speed` and `output_filename`. Each call asks for permission before sending the prompt or text to the selected provider, including in auto mode. There is no always-allow setting for these calls.
+
+Generated files are written directly to the current chat workspace. Output filenames must be safe basenames; files are created exclusively and name collisions receive a suffix rather than overwriting an existing file. Images appear as thumbnails and audio as openable file cards. Neither opens or plays automatically. Tool results give the Agent paths and text only, including with a vision model: generated image pixels do not enter model context. Reading an image separately uses the existing recent-image limit (default `3`).
+
+The OpenAI-compatible adapter uses `/images/generations` (base64 `b64_json` or URL response) and `/audio/speech` (binary response). Requests reuse provider networking and error handling without additional generation retries. Video generation is disabled; asynchronous jobs, progress and cancellation are tracked in [#52](https://github.com/umeiko/umeko-desktop/issues/52). The same page also configures auxiliary image understanding and its independent automatic-analysis and `analyze_image` switches. Historical observations are saved and reused; native vision models still receive original images.
+
 ## Webpage delivery
 
 Submit an HTTP(S) URL in `path`, optionally with `kind: "web"`. URLs with embedded credentials and other schemes are rejected. A successful fresh Agent submission opens the single-page Qt WebView side pane; the same URL reloads it and a different URL replaces the current page. Background-session events and history replay never open it automatically.

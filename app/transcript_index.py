@@ -20,9 +20,9 @@ from pathlib import Path
 
 from .chat_model import ChatModel
 from .message_attachments import split_attachments
-from .transcripts import content_text, content_thinking, present, compaction_view, compaction_status
+from .transcripts import content_text, content_thinking, present, compaction_view, compaction_status, automatic_vision_view
 
-SCHEMA = 4
+SCHEMA = 5
 LARGE_FILE = 256 * 1024
 PAGE_ROWS = 24
 GROUP_MESSAGES = 16
@@ -422,9 +422,12 @@ class TranscriptRepository:
                         text, thinking = content_text(content), content_thinking(content)
                         text = text or ('' if message.get('stopReason') == 'aborted' else message.get('errorMessage', ''))
                         receipt = compaction_view(entry)
+                        vision = automatic_vision_view(entry)
                         if receipt:
                             role, text = 'assistant', receipt['text']
                         tools = any(isinstance(c, dict) and c.get('type') == 'toolCall' for c in content) if isinstance(content, list) else False
+                        if vision:
+                            role, tools = 'assistant', True
                         title = ''
                         if role == 'user':
                             title, attachments = split_attachments(text)
@@ -438,7 +441,7 @@ class TranscriptRepository:
                             subagent_owners.add(data['ownerEntryId'])
                         omitted = entry.get('targetId', '') if entry.get('type') == 'context_edit' and entry.get('replacement') is None else ''
                         db.execute('INSERT OR REPLACE INTO entries(id,parent,offset,length,kind,role,tool,omitted,eligible,tools,stop,error,title) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                                   (entry['id'], entry.get('parentId'), at, len(line), entry.get('type', ''), role, tool, omitted, int(bool(receipt) or role in ('user', 'assistant') and bool(text or thinking or tools)), int(tools), message.get('stopReason', ''), int(bool(message.get('errorMessage'))), title))
+                                   (entry['id'], entry.get('parentId'), at, len(line), 'operation' if vision else entry.get('type', ''), role, tool, omitted, int(bool(receipt) or role in ('user', 'assistant') and bool(text or thinking or tools)), int(tools), message.get('stopReason', ''), int(bool(message.get('errorMessage'))), title))
                         latest = entry['id']
                 offset = source.tell()
                 source.seek(max(0, offset - 4096))

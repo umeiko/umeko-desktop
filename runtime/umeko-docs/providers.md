@@ -29,6 +29,19 @@ Umeko 使用自己的供应商网关。不要指导用户执行 Pi `/login`、�
 
 每个供应商的网络模式通过 `providers.network` 设置，参数 `id`、`mode`、`address`。模式 `system` 跟随系统，`direct` 不走代理，`custom` 使用指定的 HTTP/HTTPS 代理地址。非 custom 时 `address` 留空。不要把它称为独立供应商类型。
 
+### 多模态模型选项：图片理解、图片与语音生成
+
+在 **设置 → 账号与供应商 → 多模态模型选项** 中，分别选择图片、语音生成使用的现有供应商账号和模型。可以从模型目录选择，也可以手填上游原始模型 ID。生成沿用该账号的凭据、网络与错误处理，不新增厂商预设、独立 Key 或生成重试。
+
+同一个二级页中的图片理解设置见 [辅助视觉与 analyze_image](auxiliary-vision.md)。
+`settings.get` 返回当前 `config.multimodal`；用 `generation.configure` 的 `config` 参数保存图片与语音生成配置，字段为 `image` 和 `speech`，结构与返回值一致。
+
+图片默认生成 `1` 张，可选默认尺寸、质量和格式。语音必须填写供应商支持的 voice ID，默认格式为 `mp3`、速度为 `1`。模型、参数和 voice ID 是否可用取决于上游服务。
+
+`image_gen` 必填 `prompt`，可选 `size`、`count`、`format`、`output_filename`；`voice_gen` 必填 `text`，可选 `voice`、`format`、`speed`、`output_filename`。每次发送提示词或文本前都会请求一次权限确认，自动模式也一样；当前没有始终允许选项。文件直接写入当前聊天工作目录，只接受安全文件名，只创建新文件，重名时追加后缀。聊天展示图片缩略图或可点击的音频文件卡片，不自动打开或播放。Agent 只收到路径和文本，不收到图片像素；另行读图仍遵守现有最近图片数量限制，默认 `3`。
+
+OpenAI 兼容接入使用 `/images/generations`，接受 `b64_json` 或 URL 图片结果；`/audio/speech` 接受二进制音频结果。视频生成暂不可用，异步任务、进度与取消在 [#52](https://github.com/umeiko/umeko-desktop/issues/52) 跟踪。图片理解及其独立开关也在同一个二级页内配置，详见辅助视觉文档。
+
 ### 私有 CA 与证书校验失败
 
 Python 模型请求使用系统证书信任链，并可按供应商追加可信的 PEM 根证书/中间证书。证书过期、域名不匹配或信任链校验失败时会直接显示原因，不进入网络流重试。始终保留证书与域名校验。

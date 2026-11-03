@@ -11,6 +11,40 @@ from umeko_provider_sdk.network import validate_ca_file
 
 class PreferencesMixin:
     @Slot(str, result=bool)
+    def saveMultimodalSettings(self, raw):
+        from .multimodal_settings import normalize, validate
+        old = self.store.data['multimodal']
+        try:
+            if self._models_busy():
+                raise ValueError('请等待当前任务结束后修改多模态设置')
+            patch = validate(json.loads(raw))
+            value = normalize({kind: {**row, **patch.get(kind, {})} for kind, row in old.items()})
+            for kind, row in value.items():
+                if not row['providerId']:
+                    row['model'] = ''
+                    continue
+                provider = self.gateway.provider(row['providerId'])
+                if not provider or (provider['api'] != 'openai' and
+                                    kind not in provider.get('generationCapabilities', [])):
+                    raise ValueError('请选择支持该生成功能的供应商')
+                if not row['model']:
+                    raise ValueError('请输入模型 ID')
+                if kind == 'speech' and not row['voice']:
+                    raise ValueError('请输入供应商支持的音色 ID')
+            if value == old:
+                return True
+            self.store.data['multimodal'] = value
+            self.store.save()
+        except (ValueError, OSError, RuntimeError) as error:
+            self.store.data['multimodal'] = old
+            self.toast.emit(str(error))
+            return False
+        self._restart_pi()
+        self.changed.emit()
+        self.toast.emit('多模态设置已保存')
+        return True
+
+    @Slot(str, result=bool)
     def saveDesktopSettings(self, raw):
         from .desktop_preferences import validate_patch, normalize
         from .webview import configuration
