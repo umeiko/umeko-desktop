@@ -97,6 +97,9 @@ def child_suite():
             messages = [{'entryId': 'one', 'role': 'assistant', 'text': '**Alpha**\n\n```py\nx=1\n```'}]
             original = copy.deepcopy(messages)
             self.bind('a', messages)
+            self.assertEqual(self.model.message(0)['text'], original[0]['text'])
+            self.assertFalse(self.model.message(0).get('_loading'))
+            self.assertTrue(self.model.isReady(0))
             self.assertTrue(self.rendered(self.ready()))
             self.assertNotIn('umeko-conversation:', repr(self.rendered(self.model.message(0))))
             self.assertEqual(len(self.calls), 1)
@@ -224,11 +227,16 @@ def child_suite():
                 database, revision = 'fixture.db', 1
                 repository = SimpleNamespace(cache=WeightedLRU())
                 reads = []
+                raw = {}
                 def page(self, page):
                     from app.transcript_index import PAGE_ROWS
                     self.reads.append(page)
-                    return {i: {'role': 'assistant', 'text': 'body ' + str(i)}
-                            for i in range(page * PAGE_ROWS, (page + 1) * PAGE_ROWS)}
+                    values = {i: {'role': 'assistant', 'text': 'body ' + str(i)}
+                              for i in range(page * PAGE_ROWS, (page + 1) * PAGE_ROWS)}
+                    self.raw.update(values)
+                    return values
+                def cached(self, row):
+                    return self.raw.get(row)
                 def key(self, row):
                     return ('fixture', row)
                 def metadata(self, row):
@@ -243,10 +251,22 @@ def child_suite():
             self.ready()
             other_count = len(self.calls)
             self.model.set_session('a', self.context)
-            self.model.set_snapshot(snapshot)
+            with (patch.object(self.model._reader, 'submit', side_effect=AssertionError('Warm viewport must not submit a job')),
+                  patch.object(snapshot, 'page', side_effect=AssertionError('Warm viewport must not read a page'))):
+                self.model.set_snapshot(snapshot)
+                self.assertTrue(self.model.isReady(0))
+                self.assertTrue(self.rendered(self.model.message(0)))
             self.ready()
             self.assertEqual(len(self.calls), other_count)
             self.assertGreater(count, 0)
+            # A viewport already showing placeholders must receive dataChanged
+            # when a memory hit replaces those placeholders without a worker.
+            changed = []
+            self.model.dataChanged.connect(lambda first, last, roles: changed.append((first.row(), last.row())))
+            self.model._prepared.clear()
+            with patch.object(self.model._reader, 'submit', side_effect=AssertionError('Warm scroll must not submit a job')):
+                self.model.requestRange(0, 0)
+            self.assertTrue(changed)
             # An edited/deleted offscreen row cannot remain cached under the
             # revised transcript, even before that viewport is revisited.
             self.model._render_cache.put(9000, (((-1, 'deleted historical text', False),), []))

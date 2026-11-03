@@ -163,10 +163,10 @@ class ChatModel(QAbstractListModel):
         self.snapshot = snapshot
         self.rows, self._questions, self._source_starts = [], [], []
         self._source, self._source_count = None, 0
+        self.endResetModel()
         if snapshot and snapshot.count:
             focus = snapshot.focus_row if snapshot.focus_row >= 0 else snapshot.count - 1
             self.requestRange(focus, focus)
-        self.endResetModel()
         self.sourceChanged.emit()
         self.questionsChanged.emit()
 
@@ -186,6 +186,28 @@ class ChatModel(QAbstractListModel):
         self._live_prepared = {row:value for row,value in self._live_prepared.items() if row // RENDER_ROWS in pages}
         if self.snapshot:
             self.snapshot.repository.cache.pin(self.snapshot.key(row) for row in range(max(0, first - 8), min(self.base_count, last + 9)))
+        # A retained viewport can be shown immediately. This path only looks
+        # at memory caches; cold pages and Markdown stay on the reader thread.
+        cached_row = getattr(self.snapshot, 'cached', None)
+        warmed = []
+        for page in pages:
+            for row in range(page * RENDER_ROWS, min(self.rowCount(), (page + 1) * RENDER_ROWS)):
+                target = self._prepared if row < self.base_count else self._live_prepared
+                if row in target:
+                    continue
+                if row < self.base_count:
+                    value = cached_row(row) if callable(cached_row) else None
+                else:
+                    value = self.rows[row - self.base_count] if self._live_renderable(row) else None
+                if value is not None:
+                    prepared = self._presentation.cached(row, value, self._render_cache)
+                    if prepared is not None:
+                        target[row] = prepared
+                        warmed.append(row)
+        if warmed:
+            self.viewportAboutToChange.emit()
+            self.dataChanged.emit(self.index(min(warmed)), self.index(max(warmed)), [self.MessageRole])
+            self.viewportChanged.emit()
         self._pump()
 
     def _request(self, page):
@@ -265,8 +287,7 @@ class ChatModel(QAbstractListModel):
     @Slot(int, result=bool)
     def isReady(self, row):
         if row >= self.base_count:
-            return (not self._live_renderable(row) or row in self._live_prepared
-                    or row // RENDER_ROWS in self._failed)
+            return True
         if not self.snapshot or row < 0:
             return True
         return row in self._prepared or row // RENDER_ROWS in self._failed
@@ -301,8 +322,9 @@ class ChatModel(QAbstractListModel):
             if prepared is not None:
                 return prepared
             self._request(row // RENDER_ROWS)
-            # Preserve raw fallback if worker preparation failed.
-            return value if row // RENDER_ROWS in self._failed else self._loading(row, value)
+            # A cold live row keeps the existing immediate QML fallback while
+            # the reader prepares retention for subsequent session visits.
+            return value
         if not self.snapshot or row < 0:
             return {}
         value = self._prepared.get(row)

@@ -297,6 +297,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     def _activate(self, record):
         self._streaming_timer.stop()
+        previous_configuration = copy.deepcopy(self.store.data)
         self._view = record
         self.viewChanged.emit()
         self._pool.touch(record, current=True, dirty=False)
@@ -320,7 +321,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self.store.data.update(selectedModel=record.model, selectedProvider=record.provider)
         self._mark_read(record)
         self.store.save()
-        self.changed.emit()
+        # Rebinding every hidden settings page is expensive. Session-specific
+        # signals below update the chat; refresh settings only when they changed.
+        if self.store.data != previous_configuration:
+            self.changed.emit()
         self.chatChanged.emit()
         self.attachmentsChanged.emit()
         self.approvalChanged.emit()

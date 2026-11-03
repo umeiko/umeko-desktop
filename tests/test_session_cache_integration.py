@@ -13,6 +13,7 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 os.environ.setdefault('QT_QUICK_BACKEND', 'software')
 
 from tests.test_preview_channel import qt_application, isolated_test_module
+from PySide6.QtTest import QSignalSpy
 from app.controller import Controller
 from app.pi_sessions import SessionState
 from app.storage import Store
@@ -61,6 +62,24 @@ class ControllerCacheTests(unittest.TestCase):
         settings.mkdir()
         (settings / 'settings.json').write_text(json.dumps({'ui': {'sessionCacheSize': -3}}), encoding='utf-8')
         self.assertEqual(Store(settings).data['ui']['sessionCacheSize'], 3)
+
+    def test_cached_switch_only_refreshes_global_settings_when_configuration_changes(self):
+        c = self.controller
+        first = self.session('first')
+        second = self.session('second')
+        c.openSession(first.id)
+        c.openSession(second.id)
+        c.openSession(first.id)
+        changed, view = QSignalSpy(c.changed), QSignalSpy(c.viewChanged)
+        c.openSession(second.id)
+        self.assertEqual(changed.count(), 0)
+        self.assertEqual(view.count(), 1)
+        c.store.data['providers'] = [{'id': 'test-provider', 'name': 'Test provider',
+                                     'api': 'openai', 'models': [{'alias': 'test-model', 'upstream': 'test-model'}]}]
+        different = self.session('different', provider='test-provider', model='test-model')
+        c.openSession(different.id)
+        self.assertEqual(changed.count(), 1)
+        self.assertEqual(c.config['selectedModel'], 'test-model')
 
     def test_crashed_cached_kernel_restarts_on_switch_back_but_cold_history_is_lazy(self):
         c = self.controller
