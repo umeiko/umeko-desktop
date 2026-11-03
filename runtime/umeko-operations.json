@@ -1,6 +1,8 @@
 {
   "version": 1,
   "operations": {
+    "capabilities.get": {"target":"capabilities","read":true,"editions":["python"],"args":[]},
+    "capabilities.refresh": {"target":"capabilities","read":true,"editions":["python"],"args":[]},
   "vision.configure": {"target":"backend","method":"saveAuxiliaryVision","args":[["config","json"]]},
   "generation.configure": {"target":"backend","method":"saveMultimodalSettings","args":[["config","json"]]},
     "providers.save": {"target":"backend","method":"saveProvider","idle":"provider","args":[["id","string",""],["name","string"],["api","string"],["baseUrl","string"],["key","string",""],["models","json"]]},

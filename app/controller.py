@@ -241,6 +241,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 self._kernel_status = "已使用内置内核，可在此恢复配置"
         self.jobDone.connect(self._on_job_done)
         self._pi_management = PiManagement(self)
+        from .runtime_capabilities import RuntimeCapabilities
+        self._runtime_capabilities = RuntimeCapabilities(self)
         from .umeko_control import UmekoControl
         self._umeko_control = UmekoControl(self)
         from .desktop_plugins import DesktopPlugins
@@ -255,6 +257,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Property(QObject, constant=True)
     def piManagement(self):
         return self._pi_management
+
+    @Property(QObject, constant=True)
+    def runtimeCapabilities(self):
+        return self._runtime_capabilities
 
     @Property(QObject, constant=True)
     def sessionPreview(self):

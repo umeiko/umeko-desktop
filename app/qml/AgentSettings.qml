@@ -6,6 +6,9 @@ Column {
     id: root
     property string query: ""
     spacing: 12
+    SettingsFold { objectName: "piFold_dependencies"; width: parent.width; title: I18n.t("能力与运行依赖"); nested: true; query: root.query; searchTerms: "Office PDF Git Python Playwright LibreOffice Poppler " + I18n.t("依赖 检测 配置")
+        RuntimeCapabilities { width: parent.width }
+    }
     SectionCard {
         objectName: "toolPermissionSettings"
         width: parent.width
