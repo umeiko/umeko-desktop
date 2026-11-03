@@ -101,3 +101,23 @@ Six community animation assets from [yanzwzz/dsh-whale-girl-pet](https://github.
 Public OpenAI Skills (Apache-2.0), Hermes Skills (MIT), and Archify (Apache-2.0 with its retained third-party notices) are distributed in `bundled-skills/`. Each folder retains its own license; `bundled-skills/sources.json` records immutable upstream commits, adaptations and file hashes. These are portable public packages, not extracted proprietary Codex runtime Skills. Optional Python/CLI/browser dependencies are not bundled or implicitly installed.
 
 Composer pinyin matching uses pypinyin 0.55.0 (MIT); see `licenses/pypinyin-MIT.txt`.
+
+
+## Public suffix parsing and data
+
+Public suffix parsing uses publicsuffixlist 1.1.2.20261101 by ko-zu, licensed
+under the Mozilla Public License 2.0 (MPL-2.0). Its bundled Public Suffix List
+data is also licensed under MPL-2.0. The full license text is provided in
+[licenses/publicsuffixlist-MPL-2.0.txt](licenses/publicsuffixlist-MPL-2.0.txt).
+
+The MPL-covered source code and bundled data for this exact package version
+are available at no charge in the
+[publicsuffixlist 1.1.2.20261101 source distribution](https://files.pythonhosted.org/packages/da/68/0d29fc72696e19bcfc8be2f13e0f44ec125751f4324900c499d058f07ba1/publicsuffixlist-1.1.2.20261101.tar.gz).
+The package is maintained at [ko-zu/psl](https://github.com/ko-zu/psl).
+
+The bundled data identifies itself as Public Suffix List version
+`2026-10-31_14-17-28_UTC`, upstream commit
+`73f8cc701c084fe07d888ec552b2f0b53281a674`. Its corresponding upstream source is
+[public_suffix_list.dat at that commit](https://github.com/publicsuffix/list/blob/73f8cc701c084fe07d888ec552b2f0b53281a674/public_suffix_list.dat).
+The Public Suffix List project and current data are available at
+[publicsuffix.org](https://publicsuffix.org/list/).
