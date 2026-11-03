@@ -5,6 +5,7 @@ Keep unittest module loading for terminal_widget's isolated POSIX PTY worker.
 """
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -39,6 +40,30 @@ UNIX = [
     'tests.test_skill_host.SkillHostTests.test_folder_delete_never_follows_asset_links',
 ]
 
+NODE_HOST = [
+    ('background-jobs', 'real background lifecycle: deadline, exit status, distinct files and byte cursors'),
+    ('background-jobs', 'kill by job ID stops only its owned tree; session disposal leaves another manager alone'),
+    ('package-install', 'cancellation terminates only the owned installer and its descendant'),
+    ('package-install', 'real npm download/cache fallback finishes with a fully offline native Pi install'),
+    ('conversation-search', 'literal CJK, quoted code, one/two characters and emoji use original visible text'),
+    ('extension-metadata', 'real npm update probe uses the configured registry without installing the extension'),
+    ('webview', 'URL submissions reuse the delivery protocol and guidance appears only when the component is missing'),
+    ('update-engine', 'zip installs a staged payload and preserves an old-version backup'),
+    ('update-engine', 'malicious paths and symlinks cannot escape or redirect extraction'),
+    ('update-engine', 'replacement failure rolls back the existing directory'),
+    ('update-engine', 'prepare copies the helper executable and runtime outside the install directory'),
+    ('update-engine', 'an uncommitted or cancelled handoff never replaces the application'),
+]
+NODE_WINDOWS = [
+    ('tool-permissions-integration', 'actual native powershell tool is intercepted before its harmless write'),
+    ('subagent-queue', 'child queue edits/removal, immediate tool and model interruption, FIFO continuation, promotion, isolation and stop recovery'),
+]
+NODE_MAC = [
+    ('update-download', 'verified cached archives avoid network; unrelated files and symlink targets survive'),
+    ('update-engine', 'framework-style internal symlinks survive installation'),
+    ('update-engine', 'existing installation paths through a directory alias are canonicalized'),
+]
+
 
 if __name__ == '__main__':
     root = Path(__file__).resolve().parents[1]
@@ -46,3 +71,12 @@ if __name__ == '__main__':
     subprocess.run([sys.executable, '-m', 'unittest', *suites, '-v'],
                    cwd=root, check=True,
                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    # Linux discovery/Node checks already run all Linux branches. Other hosts
+    # retain actual process/filesystem/tool branches, not the shared Node suite.
+    if sys.platform in ('win32', 'darwin'):
+        cases = NODE_HOST + (NODE_WINDOWS if os.name == 'nt' else NODE_MAC)
+        pattern = '^(?:' + '|'.join(re.escape(name) for _, name in cases) + ')$'
+        files = list(dict.fromkeys(f'tests/{module}.test.mjs' for module, _ in cases))
+        subprocess.run(['node', '--test', '--test-name-pattern=' + pattern, *files],
+                       cwd=root, check=True,
+                       creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))

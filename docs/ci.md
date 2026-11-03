@@ -15,6 +15,9 @@ lists live in that script: native paths, PTY/process behavior, filesystem
 boundaries and Preview source launching on each OS, plus Windows-only
 ConPTY, font, argv, socket and process-tree checks. Preview and terminal
 module entrypoints preserve their existing isolated Qt/PTY workers.
+The same script selects native Node process-tree, search-tool and installer
+cases by exact test name, plus Windows PowerShell and macOS symlink cases.
+The remaining shared Node cases run only in Linux checks.
 
 For PRs, a small scope job skips native packaging when every changed file is
 in `tests/`, `docs/` or `docs-site/`, or is the docs workflow/capture script.
