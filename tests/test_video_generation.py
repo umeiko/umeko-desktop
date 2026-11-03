@@ -18,6 +18,7 @@ from app import generation
 from app.generation import GenerationCancelled, generate, generation_config
 from app.request_diagnostics import RequestFailure
 from umeko_provider_sdk import Provider, ProviderContext, ProviderError, request_scope
+from tests.http_fixture import peer_disconnected
 
 MP4 = b'\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isomfixture-video'
 
@@ -85,11 +86,10 @@ class VideoGenerationTests(unittest.TestCase):
                     fixture.started.set()
                     self.connection.settimeout(30)
                     try:
-                        if not self.connection.recv(1):
+                        if peer_disconnected(self.connection):
                             fixture.closed.set()
-                    except OSError:
-                        pass
-                    self.close_connection = True
+                    finally:
+                        self.close_connection = True
                     return
                 if stage == 'content':
                     return self.reply(MP4 if fixture.mode != 'invalid-content' else b'not-video', 'video/mp4')

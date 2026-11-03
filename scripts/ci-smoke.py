@@ -107,9 +107,11 @@ def main():
     report_dir.mkdir(parents=True, exist_ok=True)
     diagnostic = report_dir / "application.log"
     screenshot = report_dir / "application.png"
+    stacks = report_dir / "application-stacks.log"
     isolated_profile(report_dir / 'profile')
     environment = dict(os.environ, UMEKO_DATA_DIR=str(report_dir / "profile"),
-        UMEKO_DIAGNOSTICS=str(diagnostic), QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software")
+        UMEKO_DIAGNOSTICS=str(diagnostic), UMEKO_SMOKE_STACKS=str(stacks),
+        QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software")
     environment["PATH"] = str(report_dir / "no-system-node")
     environment.pop("NODE_OPTIONS", None); environment.pop("NODE_PATH", None)
     for name in ('QT_PLUGIN_PATH', 'LD_LIBRARY_PATH', 'QML_IMPORT_PATH', 'QML2_IMPORT_PATH'):
@@ -117,9 +119,16 @@ def main():
     node = resources / "runtime/node" / ("node.exe" if os.name == "nt" else "bin/node")
     if not node.is_file(): raise RuntimeError("Bundled Node.js is missing")
     diagnostic.unlink(missing_ok=True)
+    stacks.unlink(missing_ok=True)
     output_log = report_dir / "application-output.log"
-    result = run_logged([str(executable), "--smoke", "--snapshot", str(screenshot)],
-        output_log, env=environment, timeout=45)
+    try:
+        result = run_logged([str(executable), "--smoke", "--snapshot", str(screenshot)],
+            output_log, env=environment, timeout=45)
+    except subprocess.TimeoutExpired:
+        for path in (output_log, diagnostic, stacks):
+            if path.is_file():
+                print(path.name + ':\n' + path.read_text(encoding='utf-8', errors='replace'), flush=True)
+        raise
     output = output_log.read_text(encoding="utf-8", errors="replace")
     log = diagnostic.read_text(encoding="utf-8") if diagnostic.exists() else ""
     lines = log.strip().splitlines()

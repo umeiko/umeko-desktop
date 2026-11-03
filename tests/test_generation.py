@@ -20,6 +20,7 @@ from app.gateway import Gateway, LocalServer
 from app.generation import GenerationCancelled, generation_config
 from app.request_diagnostics import RequestFailure
 from umeko_provider_sdk import Provider, ProviderContext, ProviderError, request_scope
+from tests.http_fixture import peer_disconnected
 
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=')
 AUDIO = b'ID3\x04\x00\x00fixture-audio'
@@ -71,20 +72,15 @@ class GenerationTests(unittest.TestCase):
                     fixture.started.set()
                     self.connection.settimeout(60)
                     try:
-                        received = self.connection.recv(1)
-                        fixture.upstream_outcome = {'state': 'unexpected-data' if received else 'eof', 'data': repr(received)}
-                        if not received:
+                        closed = peer_disconnected(self.connection)
+                        fixture.upstream_outcome = {'state': 'peer-disconnected' if closed else 'unexpected-data'}
+                        if closed:
                             fixture.upstream_closed.set()
-                    except (ConnectionResetError, ConnectionAbortedError) as exc:
-                        # Cancelling with unread response bytes can reset TCP
-                        # instead of delivering EOF. Both prove peer closure.
-                        fixture.upstream_outcome = {'state': 'reset', 'error': repr(exc)}
-                        fixture.upstream_closed.set()
                     except OSError as exc:
                         fixture.upstream_outcome = {'state': 'error', 'error': repr(exc)}
                     finally:
                         fixture.upstream_observed.set()
-                    self.close_connection = True
+                        self.close_connection = True
                     return
                 if fixture.mode == 'error':
                     return self.reply(json.dumps({'error': {'message': 'test quota reason; key=fixture-secret', 'code': 'insufficient_quota'}}).encode(), status=429)
