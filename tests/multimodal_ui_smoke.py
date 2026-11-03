@@ -144,7 +144,8 @@ class FakeProvider(BaseHTTPRequestHandler):
 
 
 def run():
-    with tempfile.TemporaryDirectory(prefix='umeko-multimodal-ui-') as profile:
+    with tempfile.TemporaryDirectory(prefix='umeko-multimodal-ui-') as temporary_profile:
+        profile = str(Path(temporary_profile).resolve())
         os.environ['UMEKO_DATA_DIR'] = profile
         store = Store(Path(profile))
         store.data['agent'].update(agentDir=str(Path(profile) / 'agent'), autoCompaction=False)

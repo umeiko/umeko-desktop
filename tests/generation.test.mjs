@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, readdir, readFile, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createGenerationExtension} from '../runtime/generation.mjs';
@@ -11,7 +11,7 @@ import {toolSelection, excludedSessionTools} from '../runtime/session-capabiliti
 const image = {data: Buffer.from('fixture image').toString('base64'), mimeType:'image/png', extension:'png'};
 const speech = {data: Buffer.from('fixture speech').toString('base64'), mimeType:'audio/mpeg', extension:'mp3'};
 async function fixture(t, {generation={image:{provider:'Image account',model:'image-model'},speech:{provider:'Voice account',model:'voice-model'}}, mode='auto', approved=true, fetchImpl}={}) {
-  const cwd=await mkdtemp(join(tmpdir(),'umeko-generation-'));
+  const cwd=await realpath(await mkdtemp(join(tmpdir(),'umeko-generation-')));
   t.after(()=>rm(cwd,{recursive:true,force:true}));
   const tools=[], entries=[], requests=[], confirmations=[];
   const config={generation,gateway:'http://127.0.0.1:12345/',token:'fixture-private-token'};
