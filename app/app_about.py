@@ -113,6 +113,7 @@ class AppAbout(QObject):
     def __init__(self, controller):
         super().__init__(controller)
         self.controller = controller
+        self._preview = None
         self._info = project_info(controller.root)
         self._busy, self._release, self._checked_at = False, {}, ""
         self._download = {}
@@ -129,6 +130,13 @@ class AppAbout(QObject):
 
     @Property("QVariantMap", constant=True)
     def info(self): return self._info
+
+    @Property(QObject, constant=True)
+    def preview(self):
+        if self._preview is None:
+            from .preview_channel import PreviewChannel
+            self._preview = PreviewChannel(self.controller)
+        return self._preview
 
     @Property(bool, notify=changed)
     def busy(self): return self._busy
@@ -162,11 +170,16 @@ class AppAbout(QObject):
     @Slot()
     def startAutomaticChecks(self):
         if self._automatic.isActive(): return
+        self.preview
         self._automatic.start()
         QTimer.singleShot(5000, self, self.checkUpdates)
 
     @Slot()
     def checkUpdates(self):
+        if self._preview and self._preview.channel == 'preview':
+            self._preview.checkUpdates()
+            return
+        if self._preview and self._preview.busy: return
         if self._busy or self._download_running: return
         self._busy = True
         if self._release.get('state') != 'available':
