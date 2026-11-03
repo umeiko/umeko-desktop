@@ -129,7 +129,7 @@ def main():
             if path.is_file():
                 print(path.name + ':\n' + path.read_text(encoding='utf-8', errors='replace'), flush=True)
         raise
-    output = output_log.read_text(encoding="utf-8", errors="replace")
+    gui_output = output_log.read_text(encoding="utf-8", errors="replace")
     log = diagnostic.read_text(encoding="utf-8") if diagnostic.exists() else ""
     lines = log.strip().splitlines()
     selected = next((line.split(":", 1)[1] for line in lines if line.startswith("NODE_EXECUTABLE:")), "")
@@ -137,7 +137,7 @@ def main():
     if sys.platform.startswith('linux'): expected.append('IME_PLUGIN_READY:1')
     expected += ["NODE_EXECUTABLE:" + selected, "TRAY_ICON_READY:1", "EXIT:0"]
     if result.returncode or lines != expected or not selected or Path(selected).resolve() != node.resolve():
-        raise RuntimeError("Frozen GUI startup failed: " + log + output[-2000:])
+        raise RuntimeError("Frozen GUI startup failed: " + log + gui_output[-2000:])
     if sys.platform == 'win32': verify_windows_preview(executable, environment, report_dir)
     if not screenshot.is_file() or screenshot.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
         raise RuntimeError("Frozen GUI did not render a screenshot")
