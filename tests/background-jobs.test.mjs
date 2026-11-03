@@ -338,7 +338,8 @@ test("real bridge reports background jobs and enforces checkpoint lock changes",
   };
   try {
     send({ type: "inspect", workspace: cwd, defaultCwd: cwd, agentDir, sessionDir, model: "fixture", models: [{ id: "fixture", contextWindow: 128000 }], gateway: `http://127.0.0.1:${server.address().port}/`, token: "fixture", agent: {} });
-    await wait(() => events.some(event => event.type === "ready"));
+    await wait(() => events.some(event => event.type === "done" && event.action === "inspect"));
+    assert.ok(events.some(event => event.type === "ready"), JSON.stringify(events.filter(event => event.type === "error")));
     send({ type: "prompt", text: "Start the background job" });
     await wait(() => events.some(event => event.type === "tool" && event.name === "background_job" && event.state === "done"));
     await wait(() => events.some(event => event.type === "done" && event.action === "prompt"));
@@ -359,6 +360,7 @@ test("real bridge reports background jobs and enforces checkpoint lock changes",
     send({ type: "prompt", text: "Start after releasing" });
     await wait(() => events.filter(event => event.type === "tool" && event.name === "background_job" && event.state === "done").length >= 2);
     assert.equal((await catalog("released")).value.jobs.length, 2);
+    await wait(() => events.filter(event => event.type === "done" && event.action === "prompt").length >= 3);
   } finally {
     if (child.exitCode === null) {
       send({ type: "shutdown" });
