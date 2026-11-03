@@ -135,6 +135,7 @@ Column {
                     ActionButton { text: I18n.t("连接配置"); quiet: true; enabled: !card.modelData.busy; onClicked: { root.currentId = card.modelData.id; configEditor.text = root.manager.configJson(root.currentId); configDialog.open() } }
                     ActionButton { objectName: "refreshPluginModels_" + card.modelData.id; text: I18n.t("刷新模型"); quiet: true; enabled: !card.modelData.busy; onClicked: root.manager.refreshModels(card.modelData.id) }
                     Item { Layout.fillWidth: true }
+                    ActionButton { objectName: "cancelPluginLogin_" + card.modelData.id; text: I18n.t("取消登录"); quiet: true; visible: !!card.modelData.loginCancellable; onClicked: root.manager.cancelLogin(card.modelData.id) }
                     ActionButton { objectName: "loginPlugin_" + card.modelData.id; text: card.modelData.busy ? I18n.t("连接中…") : I18n.t("登录并刷新模型"); primary: true; enabled: !card.modelData.busy; onClicked: { const id = card.modelData.id; const values = card.credentials(); card.clearSecrets(); root.manager.login(id, values) } }
                 }
                 Repeater {

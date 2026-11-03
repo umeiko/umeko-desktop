@@ -59,6 +59,7 @@ class ProviderContext:
     downloads_dir: Path | None = None
     language: str = "zh"
     notify: Callable[[dict], None] | None = None
+    report_status: Callable[[str], None] | None = None
 
     @property
     def request_cancelled(self) -> Event:
@@ -95,7 +96,11 @@ class Provider:
         """
         raise ProviderError("该供应商不支持额外密钥字段")
     def authenticate(self, credentials: dict[str, str]) -> dict:
-        """Return public account details; persist tokens with context.secrets."""
+        """Return public account details; persist tokens with context.secrets.
+
+        During sign-in, observe context.request_cancelled to stop cooperatively.
+        Hosts may provide context.report_status for short public progress text.
+        """
         raise NotImplementedError
     def list_models(self, refresh: bool = False) -> list[dict]:
         """Each model needs id; contextWindow and vision are optional metadata."""

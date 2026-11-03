@@ -8,6 +8,8 @@ from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt, Property, Signal
 from .message_attachments import split_attachments
 from .chatbox import media_view
 
+RENDER_ROWS = 4
+
 
 class ChatModel(QAbstractListModel):
     MessageRole = Qt.UserRole + 1
@@ -27,6 +29,9 @@ class ChatModel(QAbstractListModel):
         self.snapshot = None
         self._generation = 0
         self._pending, self._failed = set(), set()
+        self._wanted, self._prepared, self._job = [], {}, None
+        from .chat_presentation import HistoryPresentation
+        self._presentation = HistoryPresentation()
         self._metadata, self._heights = OrderedDict(), OrderedDict()
         self._layout = ''
         self._closed = False
@@ -69,11 +74,16 @@ class ChatModel(QAbstractListModel):
         self._generation += 1
         self._pending.clear()
         self._failed.clear()
+        self._prepared.clear()
+        self._wanted = []
         self._metadata.clear()
         self._heights.clear()
         self.snapshot = snapshot
         self.rows, self._questions, self._source_starts = [], [], []
         self._source, self._source_count = None, 0
+        if snapshot and snapshot.count:
+            focus = snapshot.focus_row if snapshot.focus_row >= 0 else snapshot.count - 1
+            self.requestRange(focus, focus)
         self.endResetModel()
         self.sourceChanged.emit()
         self.questionsChanged.emit()
@@ -82,64 +92,87 @@ class ChatModel(QAbstractListModel):
     def requestRange(self, first, last):
         if not self.snapshot or self._closed:
             return
-        from .transcript_index import PAGE_ROWS
         first, last = max(0, first), min(self.base_count - 1, max(first, last))
         if first > last:
             return
-        pages = range(max(0, first // PAGE_ROWS - 1), min((self.base_count - 1) // PAGE_ROWS, last // PAGE_ROWS + 1) + 1)
+        last = min(last, first + 32)
+        visible = list(range(first // RENDER_ROWS, last // RENDER_ROWS + 1))
+        neighbors = [visible[-1] + 1, visible[0] - 1]
+        pages = visible + [p for p in neighbors if 0 <= p <= (self.base_count - 1) // RENDER_ROWS]
+        self._wanted = pages
+        self._prepared = {row:value for row,value in self._prepared.items() if row // RENDER_ROWS in pages}
         self.snapshot.repository.cache.pin(self.snapshot.key(row) for row in range(max(0, first - 8), min(self.base_count, last + 9)))
-        for page in pages:
-            self._request(page)
+        self._pump()
 
     def _request(self, page):
-        from .transcript_index import PAGE_ROWS
-        if self._closed or page in self._pending or page in self._failed or not self.snapshot:
+        if page not in self._wanted:
+            return
+        self._pump()
+
+    def _pump(self):
+        if self._closed or self._job is not None or not self.snapshot:
+            return
+        page = next((p for p in self._wanted if p not in self._failed and not all(
+            row in self._prepared for row in range(p * RENDER_ROWS, min(self.base_count, (p + 1) * RENDER_ROWS)))), None)
+        if page is None:
             return
         snapshot, generation = self.snapshot, self._generation
-        if all(snapshot.cached(row) is not None for row in range(page * PAGE_ROWS, min(self.base_count, (page + 1) * PAGE_ROWS))):
-            return
+        self._job = generation, page
         self._pending.add(page)
-        future = self._reader.submit(snapshot.page, page)
+        def read():
+            from .transcript_index import PAGE_ROWS
+            first = page * RENDER_ROWS
+            cancelled = lambda: self._closed or generation != self._generation or page not in self._wanted
+            if cancelled(): return {}
+            rows = snapshot.page(first // PAGE_ROWS)
+            rows = {row:value for row,value in rows.items() if first <= row < first + RENDER_ROWS}
+            return self._presentation.prepare(rows, cancelled)
+        future = self._reader.submit(read)
         def complete(job):
             try:
-                job.result()
+                prepared = job.result()
                 error = False
             except Exception:
+                prepared = {}
                 error = True
             try:
                 if not self._closed:
-                    self.pageReady.emit((generation, page, error))
+                    self.pageReady.emit((generation, page, error, prepared))
             except RuntimeError:
                 pass
         future.add_done_callback(complete)
 
     @Slot(object)
     def _page_ready(self, value):
-        generation, page, error = value
-        if self._closed or generation != self._generation or not self.snapshot:
-            return
-        from .transcript_index import PAGE_ROWS
+        generation, page, error, prepared = value
+        self._job = None
         self._pending.discard(page)
+        if self._closed or generation != self._generation or not self.snapshot:
+            self._pump()
+            return
+        if page not in self._wanted:
+            self._pump()
+            return
         if error:
             self._failed.add(page)
-        first, last = page * PAGE_ROWS, min(self.base_count - 1, (page + 1) * PAGE_ROWS - 1)
+        self._prepared.update(prepared)
+        first, last = page * RENDER_ROWS, min(self.base_count - 1, (page + 1) * RENDER_ROWS - 1)
         self.viewportAboutToChange.emit()
         self.dataChanged.emit(self.index(first), self.index(last), [self.MessageRole])
         self.viewportChanged.emit()
+        self._pump()
 
     @Slot(int)
     def retryPage(self, row):
-        from .transcript_index import PAGE_ROWS
-        page = row // PAGE_ROWS
+        page = row // RENDER_ROWS
         self._failed.discard(page)
-        self._request(page)
+        self.requestRange(row, row)
 
     @Slot(int, result=bool)
     def isReady(self, row):
         if not self.snapshot or row >= self.base_count or row < 0:
             return True
-        from .transcript_index import PAGE_ROWS
-        return self.snapshot.cached(row) is not None or row // PAGE_ROWS in self._failed
+        return row in self._prepared or row // RENDER_ROWS in self._failed
 
     @Slot(int, float)
     def recordHeight(self, row, height):
@@ -161,21 +194,20 @@ class ChatModel(QAbstractListModel):
             return self.rows[row - self.base_count] if 0 <= row - self.base_count < len(self.rows) else {}
         if not self.snapshot or row < 0:
             return {}
-        value = self.snapshot.cached(row)
+        value = self._prepared.get(row)
         if value is not None:
             return value
         if synchronous:
             return self.snapshot.row(row)
-        from .transcript_index import PAGE_ROWS
-        self._request(row // PAGE_ROWS)
+        self._request(row // RENDER_ROWS)
         meta = self._metadata.get(row)
         if meta is None:
             meta = self.snapshot.metadata(row)
             self._metadata[row] = meta
-            while len(self._metadata) > PAGE_ROWS * 8:
+            while len(self._metadata) > 192:
                 self._metadata.popitem(last=False)
         return {'role': meta.get('role', 'assistant'), 'text': '', 'error': False, '_loading': True,
-                '_loadError': row // PAGE_ROWS in self._failed, '_estimatedHeight': self._heights.get(row, meta.get('hint', 100))}
+                '_loadError': row // RENDER_ROWS in self._failed, '_estimatedHeight': self._heights.get(row, meta.get('hint', 100))}
 
     def close(self):
         self._closed = True

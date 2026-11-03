@@ -1,5 +1,6 @@
 """Actual QML plugin management, lazy tree, Git diff and pane exclusion."""
 import os,sys,json,tempfile,subprocess,time
+from unittest.mock import patch
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 work=tempfile.TemporaryDirectory(prefix='umeko-plugins-ui-');base=Path(work.name);workspace=base/'workspace';workspace.mkdir()
@@ -105,6 +106,45 @@ try:
     QTest.mouseDClick(window,Qt.LeftButton,Qt.NoModifier,file_row.mapToScene(file_row.boundingRect().center()).toPoint())
     wait(lambda:any(row.get('name')=='hello.md' for row in backend._view.attachments),'Double click did not attach file')
     assert manager.page.get('id')=='file-tree' and find('webPane').property('mode')=='plugin'
+    source_worker=manager.workers['file-tree'];source_page=find('fileTreePluginPage')
+    assert find('fileTreeDoubleClickAction').property('currentIndex')==2
+    click('fileTreeRow_folder')
+    def choose_action(index,expected):
+        click('fileTreeDoubleClickAction')
+        QTest.keyClick(window,Qt.Key_Home)
+        for _ in range(index):QTest.keyClick(window,Qt.Key_Down)
+        QTest.keyClick(window,Qt.Key_Return)
+        wait(lambda:manager.page.get('config',{}).get('doubleClickAction')==expected and not manager.busy,'Double-click setting did not save')
+        assert find('fileTreePluginPage') is source_page and manager.workers['file-tree'] is source_worker
+        assert source_page.property('expanded').toVariant()['folder']
+    choose_action(1,'open')
+    with patch.object(backend,'openChatboxPath') as external:
+        file_row=find('fileTreeRow_hello.md')
+        QTest.mouseDClick(window,Qt.LeftButton,Qt.NoModifier,file_row.mapToScene(file_row.boundingRect().center()).toPoint())
+        wait(lambda:external.called,'Default-app action did not reach system file handler')
+        external.assert_called_once_with(str(workspace/'hello.md'),False)
+    choose_action(0,'preview')
+    attachments_before=len(backend._view.attachments)
+    file_row=find('fileTreeRow_hello.md')
+    QTest.mouseDClick(window,Qt.LeftButton,Qt.NoModifier,file_row.mapToScene(file_row.boundingRect().center()).toPoint())
+    wait(lambda:find('webPane').property('mode')=='document' and not find('webPane').property('moving'),'Double-click preview did not open')
+    assert len(backend._view.attachments)==attachments_before
+    click('backDocumentPreviewButton')
+    wait(lambda:find('webPane').property('mode')=='plugin' and not find('webPane').property('moving'),'Could not return to file manager')
+    assert find('fileTreePluginPage') is source_page
+    manager.closePage();assert manager.openPage('file-tree')
+    wait(lambda:find('fileTreeDoubleClickAction') is not None and find('fileTreeEntries').property('count')>=3,'File manager did not reopen after config save')
+    assert find('fileTreeDoubleClickAction').property('currentIndex')==0
+    source_worker=manager.workers['file-tree'];source_page=find('fileTreePluginPage')
+    click('fileTreeRow_folder')
+    choose_action(2,'attach')
+    for language,scale in [('en',2.0),('zh',1.0)]:
+        backend.setLanguage(language);backend.setFontScale(scale);QTest.qWait(150)
+        choice=find('fileTreeDoubleClickAction');page=find('fileTreePluginPage')
+        assert choice.property('currentIndex')==2
+        assert choice.isVisible() and choice.width()>50
+        assert choice.mapToItem(page,choice.boundingRect().bottomRight()).x()<=page.width()+1
+        window.grabWindow().save(str(out/('file-tree-actions-'+language+'.png')))
     click('fileTreeRow_hello.md',Qt.RightButton)
     wait(lambda:find('fileManagerContextMenu').property('visible'),'File manager menu did not open')
     window.grabWindow().save(str(out/'file-manager-context-menu.png'))

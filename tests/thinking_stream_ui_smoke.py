@@ -1,13 +1,11 @@
 """Real chat + local SSE reasoning stream; no accounts, windows or native notices."""
 import argparse
 from contextlib import ExitStack
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
 import sys
 import tempfile
-import threading
 import time
 from unittest.mock import patch
 
@@ -17,89 +15,53 @@ os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 os.environ['QT_QUICK_BACKEND'] = 'software'
 os.environ['UMEKO_LANGUAGE'] = 'en'
 
-from PySide6.QtCore import QObject, QMetaObject, QPointF, Qt, QTimer, Signal, Slot
-from PySide6.QtTest import QTest
-from app.storage import Store
-from main import create_application
-
-
-class QuietTray(QObject):
-    quitRequested = Signal()
-    notificationRequested = Signal(str)
-
-    def __init__(self, window, icon, parent):
-        super().__init__(parent)
-        self.tray = None
-
-    def set_language(self, language):
-        pass
-
-    def restore(self):
-        pass
-
-
-class QuietNotifications(QObject):
-    activated = Signal(str)
-
-    def __init__(self, window, tray, root, parent):
-        super().__init__(parent)
-
-    @Slot(str, str, bool, bool)
-    def task_finished(self, *args):
-        pass
+from reasoning_stream_fixture import ReasoningStream
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--record', type=Path)
     args = parser.parse_args()
-    release = threading.Event()
-    stop = threading.Event()
-    sent = []
-    requests = []
+    # Start the provider before GUI initialization. run_gui uses app.exec-style
+    # event pumping, allowing the provider and loopback gateway threads to run.
+    with ReasoningStream() as server:
+        run_gui(args, server)
 
-    class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *args):
+
+def run_gui(args, server):
+    from PySide6.QtCore import QEventLoop, QObject, QMetaObject, QPointF, Qt, QTimer, Signal, Slot
+    from PySide6.QtTest import QTest
+    from app.storage import Store
+    from main import create_application
+
+    class QuietTray(QObject):
+        quitRequested = Signal()
+        notificationRequested = Signal(str)
+
+        def __init__(self, window, icon, parent):
+            super().__init__(parent)
+            self.tray = None
+
+        def set_language(self, language):
             pass
 
-        def do_POST(self):
-            body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
-            requests.append((self.path, body['model']))
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/event-stream')
-            self.end_headers()
+        def restore(self):
+            pass
 
-            def emit(delta, finish=None):
-                data = {'id': 'chatcmpl-test', 'object': 'chat.completion.chunk',
-                        'created': 1, 'model': 'test-model',
-                        'choices': [{'index': 0, 'delta': delta, 'finish_reason': finish}]}
-                self.wfile.write(('data: ' + json.dumps(data) + '\n\n').encode())
-                self.wfile.flush()
+    class QuietNotifications(QObject):
+        activated = Signal(str)
 
-            try:
-                emit({'role': 'assistant'})
-                emit({'reasoning_content': 'First stable line.\nSecond stable line.\n'})
-                if not release.wait(20):
-                    return
-                words = ['Reasoning ', 'keeps ', 'the ', 'same ', 'line ', 'spacing.\n']
-                for index in range(600):
-                    if stop.wait(.025):
-                        return
-                    emit({'reasoning_content': words[index % len(words)]})
-                    sent.append(index)
-                emit({'content': 'The local streaming test is complete.'})
-                emit({}, 'stop')
-                self.wfile.write(b'data: [DONE]\n\n')
-                self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
+        def __init__(self, window, tray, root, parent):
+            super().__init__(parent)
 
-    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+        @Slot(str, str, bool, bool)
+        def task_finished(self, *args):
+            pass
+
     samples = []
     engine = backend = timer = None
     with tempfile.TemporaryDirectory(prefix='umeko-thinking-stream-') as sandbox, ExitStack() as mocks:
+        sent, requests = server.sent, server.requests
         os.environ['UMEKO_DATA_DIR'] = str(Path(sandbox) / 'profile')
         seed = Store()
         seed.data['agent']['agentDir'] = str(Path(sandbox) / 'agent')
@@ -130,11 +92,19 @@ def main():
                     pending.extend(item.childItems())
                 return None
 
+            event_loop = QEventLoop()
+
             def until(predicate, timeout=25):
                 deadline = time.monotonic() + timeout
                 while not predicate():
-                    assert time.monotonic() < deadline, ('Timed out', requests, backend._view.messages)
-                    QTest.qWait(10)
+                    server.poll()
+                    assert not server.errors, server.errors
+                    assert time.monotonic() < deadline, ('Timed out', sent.value, requests, backend._view.messages)
+                    # Use a real Qt event loop, as app.exec() does, so the
+                    # loopback gateway's Python threads also get to run.
+                    QTimer.singleShot(10, event_loop.quit)
+                    event_loop.exec()
+                server.poll()
 
             assert backend.send('Run the local reasoning stream test.')
             until(lambda: find('toggleThinking_') is not None)
@@ -178,7 +148,7 @@ def main():
                 line = layout.lineAt(0) if layout.lineCount() else None
                 fmt = block.blockFormat()
                 samples.append({'event': event, 'ms': round((time.monotonic()-started)*1000, 2),
-                    'tokens': len(sent), 'phase': phase, 'length': len(thinking.property('text')),
+                    'tokens': sent.value, 'phase': phase, 'length': len(thinking.property('text')),
                     'contentY': view.property('contentY'), 'contentHeight': view.property('contentHeight'),
                     'originY': view.property('originY'), 'atYEnd': view.property('atYEnd'),
                     'footerBottom': status.parentItem().mapToItem(view, QPointF(0, status.parentItem().height())).y(),
@@ -200,15 +170,15 @@ def main():
             timer.timeout.connect(sample)
             timer.start(4)
             sample('start')
-            release.set()
-            until(lambda: len(sent) >= 410)
+            server.release.set()
+            until(lambda: sent.value >= 410)
             # Use the existing QML scroll hook, with no input injection.
             phase = 'browse-transition'
             from PySide6.QtCore import Q_ARG
             assert QMetaObject.invokeMethod(view, 'scrollBy', Qt.DirectConnection, Q_ARG('QVariant', -250))
             QTest.qWait(100)
             phase = 'browse'
-            until(lambda: len(sent) >= 560)
+            until(lambda: sent.value >= 560)
             phase = 'finish'
             until(lambda: not backend.busy)
             QTest.qWait(150)
@@ -217,7 +187,8 @@ def main():
             # The thinking delegate can be rebuilt when the final answer adds an activity.
             final_status = status.property('state')
             final_label = status.property('text')
-            assert len(sent) == 600 and requests == [('/v1/chat/completions', 'test-model')], requests
+            assert not server.errors, server.errors
+            assert sent.value == 600 and requests == [('/v1/chat/completions', 'test-model')], requests
             assert not backend._view.failed, backend._view.messages
             assert 'The local streaming test is complete.' in str(backend._view.messages)
             active = [s for s in samples if s['phase'] == 'tail' and s['tokens'] > 5]
@@ -225,11 +196,13 @@ def main():
             streamed = active + browse
             frames = [s for s in active if s['event'] == 'frame' and s['contentY'] > 1]
             backwards = [b['contentY']-a['contentY'] for a,b in zip(active,active[1:]) if b['contentY'] < a['contentY']-1]
-            summary = {'tokens': len(sent), 'updates': len(samples), 'frames': sum(s['event']=='frame' for s in active),
+            summary = {'tokens': sent.value, 'updates': len(samples), 'frames': sum(s['event']=='frame' for s in active),
                 'fontSizes': sorted(set(s['fontSize'] for s in streamed)),
                 'lineHeights': sorted(set(s['lineHeight'] for s in streamed)),
                 'secondLineY': [min(s['secondLineY'] for s in streamed), max(s['secondLineY'] for s in streamed)],
                 'largestTailGap': round(max(abs(s['footerBottom']-s['viewHeight']) for s in frames),3),
+                'unexplainedTailGap': round(max(abs(b['footerBottom']-b['viewHeight'])
+                    - max(0, b['contentHeight']-a['contentHeight']) for a,b in zip(frames,frames[1:])),3),
                 'tailScrollAdvance': round(active[-1]['contentY']-active[0]['contentY'],3),
                 'backwardJumps': len(backwards), 'largestBackwardJump': round(-min(backwards,default=0),3),
                 'browseDrift': round(max(s['contentY'] for s in browse)-min(s['contentY'] for s in browse),3),
@@ -249,12 +222,16 @@ def main():
             assert summary['browseDrift'] <= 1, summary
             assert summary['browseLineDrift'] <= 1, summary
             assert len(frames) >= 20 and summary['tailScrollAdvance'] > view.height(), summary
-            # A frame may precede the zero-delay tail timer by one newly added line.
-            assert summary['largestTailGap'] <= summary['secondLineY'][1] + 1, summary
+            # A frame can precede the zero-delay tail timer. Coalesced SSE chunks
+            # can add several lines in that frame, so bound the lag by its actual
+            # layout growth. An unchanged frame must already be within one pixel;
+            # persistent lag cannot pass, regardless of the number of new lines.
+            assert abs(frames[0]['footerBottom']-frames[0]['viewHeight']) <= summary['secondLineY'][1] + 1, summary
+            assert summary['unexplainedTailGap'] <= 1, summary
             print('THINKING_STREAM_UI_OK', flush=True)
         finally:
-            stop.set()
-            release.set()
+            server.stop.set()
+            server.release.set()
             if timer:
                 timer.stop()
             if 'sample' in locals():
@@ -270,9 +247,6 @@ def main():
                 import shiboken6
                 shiboken6.delete(engine)
                 app.processEvents()
-            server.shutdown()
-            server.server_close()
-            thread.join(timeout=5)
 
 
 if __name__ == '__main__':

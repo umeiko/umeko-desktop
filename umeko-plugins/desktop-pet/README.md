@@ -28,3 +28,5 @@
 鲸鱼娘的六种透明动画复用社区 [dsh-whale-girl-pet](https://github.com/yanzwzz/dsh-whale-girl-pet)，保留 MIT 许可与贡献者署名。原始动画转为 360×360、10 fps 的循环 WebP，无需网络或额外视频组件；只有当前动作参与播放，隐藏后释放解码器。来源版本、校验与动作映射见 `assets/whale-girl/source.json`，许可见 `assets/whale-girl/LICENSE.txt`。开发者可用 `scripts/prepare-whale-pet.py --ffmpeg <ffmpeg路径>` 重新制作资源，应用和常规构建不会自动下载。
 
 待机动画每完整播放一轮，有 0.5% 概率出现与普通待机画风和比例一致的全身彩蛋动画与用户指定台词；隐藏、暂停、忙碌和互动时不会抽取。稀有图只在显示时加载，不消耗模型 Token。桌宠动画提示词与生成记录见 art/desktop-pets/rare-idle-v1；主页半身插画独立打包。
+
+豆包内置形象使用独立二维全身动画，包含六种任务状态及稀有待机彩蛋；完整生成记录与参考许可见 `art/desktop-pets/doubao-v1`，运行资源见 `assets/doubao`。

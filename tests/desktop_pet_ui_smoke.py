@@ -198,7 +198,7 @@ try:
     agent=page.parentItem().parentItem();agent.setProperty('pluginsOpen',True)
     wait(lambda:find('desktopPetSettings') is not None,'Pet settings did not load')
     wait(lambda:find('desktopPetAppearancePicker').property('count')==len(pet.appearances),'Appearance list did not load')
-    assert {'yanami','komari','whale-girl'} <= {row['id'] for row in pet.appearances}
+    assert {'yanami','komari','whale-girl','doubao'} <= {row['id'] for row in pet.appearances}
     assert all(row['builtin'] for row in pet.appearances)
     pet.ui('selectAppearance',{'id':'whale-girl'})
     main.grabWindow().save(str(out/'settings.png'))
@@ -239,6 +239,17 @@ try:
         wait(lambda:animation.property('source').toString().endswith('/'+state+'.webp') and animation.property('ready'),'Whale state did not decode: '+state)
         assert animation.property('frameCount')>1
         window.grabWindow().save(str(out/('whale-'+state+'.png')))
+    pet.ui('selectAppearance',{'id':'doubao'})
+    for state in ('idle','thinking','working','waiting','done','error'):
+        pet.motion.state=state;pet.changed.emit()
+        wait(lambda:animation.property('ready') and '/doubao/'+state+'.webp' in str(animation.property('source')),'Doubao state did not decode: '+state)
+        assert animation.property('frameCount')==12
+        window.grabWindow().save(str(out/('doubao-'+state+'.png')))
+    pet._rare_idle=True;pet.changed.emit()
+    wait(lambda:animation.property('ready') and '/doubao/idle-rare.webp' in str(animation.property('source')),'Doubao rare idle did not decode')
+    assert animation.property('frameCount')==12
+    window.grabWindow().save(str(out/'doubao-idle-rare.png'))
+    pet._rare_idle=False;pet.changed.emit()
     pet.ui('configure',{'paused':False})
     window.grabWindow().save(str(out/'pet.png'))
     pet.ui('configure',{'paused':True});QTest.qWait(100)

@@ -29,5 +29,11 @@
     "line": "人，你给我吃米，人，日后我会放你一马的",
     "sourceStatus": "Original dialogue supplied by user.",
     "adaptedDialogue": false
+  },
+  "doubao": {
+    "title": "稳稳接住你",
+    "line": "我就在这里，不躲、不藏、不绕、不逃，稳稳地接住你。",
+    "sourceStatus": "Original dialogue written for this character.",
+    "adaptedDialogue": false
   }
 }

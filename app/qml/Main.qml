@@ -495,12 +495,14 @@ ApplicationWindow {
                 }
                 anchors.top: parent.top; anchors.topMargin: 20; anchors.bottom: composer.top; anchors.bottomMargin: 24
                 clip: true; spacing: 27; model: backend.messageModel
+                cacheBuffer: Math.max(0, height * 0.5)
                 // A hidden attached ScrollBar still writes contentY when its
                 // size changes. Variable-height rows must have one scroll owner.
                 onAtYEndChanged: if (atYEnd && !restoring && !chatSelection.dragging) followTail = true
                 onFollowTailChanged: saveViewport()
                 onContentYChanged: { saveViewport(); pagePrefetch.restart() }
                 Timer { id: pagePrefetch; interval: 0; onTriggered: {
+                    if (conversation.restoring) return
                     let first = conversation.indexAt(1, conversation.contentY + 1)
                     let last = conversation.indexAt(1, conversation.contentY + conversation.height - 1)
                     if (first < 0) first = conversation.atYEnd ? conversation.count - 1 : 0
@@ -558,10 +560,7 @@ ApplicationWindow {
                     Item {
                         visible: !!modelData._loading
                         width: parent.width; height: modelData._estimatedHeight || 100
-                        Column { x: 33; y: 16; spacing: 10; visible: !modelData._loadError
-                            Rectangle { width: 160; height: 10; radius: 5; color: Theme.line; opacity: 0.5 }
-                            Rectangle { width: Math.max(40, Math.min(320, messageRow.width - 66)); height: 10; radius: 5; color: Theme.line; opacity: 0.3 }
-                        }
+                        BusyIndicator { objectName: "historyLoading_" + messageRow.index; x: 33; y: 12; width: 22; height: 22; visible: !modelData._loadError; running: visible && messageRow.visible }
                         ActionButton { x: 33; y: 16; visible: !!modelData._loadError; text: I18n.t("重新加载消息"); glyph: "refresh-cw"; onClicked: backend.messageModel.retryPage(messageRow.index) }
                     }
                     Row { visible: !modelData._loading && !messageRow.compactionNotice && !modelData.continuation && modelData.role !== "user"; spacing: 9
@@ -584,6 +583,7 @@ ApplicationWindow {
                                 text: modelData.role === "user" ? modelData.text : ""; attachments: modelData.attachments || []
                                 selectionController: chatSelection; messageIndex: messageRow.index }
                             MessageBody { id: reply; width: parent.width
+                                preparedBlocks: modelData._rendered || null
                                 selectionController: chatSelection; messageIndex: messageRow.index
                                 visible: modelData.role !== "user" && text.length > 0 && !(modelData.activity || []).length
                                 text: modelData.role === "user" || (modelData.activity || []).length ? "" : modelData.text || (messageRow.index === conversation.count - 1 && backend.busy ? I18n.t(backend.toolStatus) + "…" : "")
@@ -672,6 +672,7 @@ ApplicationWindow {
                         id: closingMascot
                         objectName: "replyEndMascot_" + messageRow.index
                         selectionController: chatSelection
+                        width: Character.id === "doubao" ? Theme.icon(72) : 56
                         visible: !modelData._loading && !messageRow.compactionNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !backend.running && (backend.turnStatus.state === "finished" || modelData.stopReason === "stop")
                         x: 33
                     }

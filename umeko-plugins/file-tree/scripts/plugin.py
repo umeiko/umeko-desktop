@@ -37,6 +37,7 @@ class Explorer(Plugin):
         if method=='attach':self.context.attach_file(args['path']);return {'attached':True}
         if method=='copyPath':return {'path':str(self.context.resolve_workspace(args['path']))}
         if method=='openWith':self.context.open_with(args['path']);return {'opened':True}
+        if method=='openDefault':self.context.open_file(args['path']);return {'opened':True}
         if method=='reveal':self.context.reveal_file(args['path']);return {'revealed':True}
         if method in ('copy','cut'):
             if method=='cut':self.context.require('workspace.write')

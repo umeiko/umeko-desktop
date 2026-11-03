@@ -13,7 +13,7 @@ from pathlib import Path
 from PySide6.QtGui import QImageReader
 
 STATES = ('idle', 'thinking', 'working', 'waiting', 'done', 'error')
-BUILTIN_APPEARANCES = ('yanami', 'komari', 'tiara', 'whale-girl')
+BUILTIN_APPEARANCES = ('yanami', 'komari', 'tiara', 'whale-girl', 'doubao')
 MAX_BYTES = 128 * 1024 * 1024
 
 

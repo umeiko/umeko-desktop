@@ -16,7 +16,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 os.environ.setdefault("UMEKO_LANGUAGE", "zh")
 
-from PySide6.QtCore import Qt, QUrl, QObject, QProcess
+from PySide6.QtCore import Qt, QUrl, QObject, QProcess, QMetaObject
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow
@@ -140,8 +140,12 @@ class ContextCompactionTests(unittest.TestCase):
 
     def click(self, name):
         self.wait_for(lambda: self.find(name) is not None and self.find(name).isVisible())
+        self.window.grabWindow()  # Finish virtual-list polish before mapping the input target.
         item = self.find(name)
-        QTest.mouseClick(self.window, Qt.LeftButton, Qt.NoModifier, item.mapToScene(item.boundingRect().center()).toPoint())
+        point = item.mapToScene(item.boundingRect().center()).toPoint()
+        self.assertTrue(self.window.contentItem().contains(point), (name, point))
+        QTest.mouseMove(self.window, point)
+        QTest.mouseClick(self.window, Qt.LeftButton, Qt.NoModifier, point)
         QTest.qWait(30)
 
     def enter(self, text):
@@ -170,22 +174,45 @@ class ContextCompactionTests(unittest.TestCase):
                       and popup.property("visible") and popup.property("desiredOpen")
                       and popup.property("contentOpacity") > 0.98 and not popup.property("animating"))
 
+    def wait_popup_closed(self):
+        self.wait_for(lambda: (popup := self.window.findChild(QObject, "compactContextPopup")) is None
+                      or not popup.property("visible"))
+
+    def close_popup(self):
+        self.click("contextUsageMouse")
+        self.wait_popup_closed()
+
     def event_row(self):
         return next((item for item in items(self.window)
                      if item.objectName().startswith("compactionEvent_") and item.isVisible()), None)
+
+    def click_event_toggle(self, index):
+        # A result changes the row height and schedules tail restoration. A
+        # cached delegate being visible does not mean its header is in the
+        # clipped viewport. Use the real history-navigation hook first.
+        from PySide6.QtCore import Q_ARG
+        conversation = self.find("conversation")
+        self.assertTrue(QMetaObject.invokeMethod(conversation, "jumpToMessage", Q_ARG("QVariant", int(index))))
+        self.wait_for(lambda: not conversation.property("restoring")
+                      and self.backend.messageModel.isReady(int(index)))
+        toggle = self.find("compactionEventToggle_" + index)
+        point = toggle.mapToItem(conversation, toggle.boundingRect().center())
+        self.assertTrue(conversation.contains(point), (index, point, conversation.height()))
+        self.click("compactionEventToggle_" + index)
 
     def begin_compaction(self):
         self.adapter.release.clear(); self.adapter.entered.clear(); self.adapter.block_summary = True
         self.open_popup()
         self.assertTrue(self.find("compactContextAction").isEnabled())
         self.click("compactContextAction")
+        self.wait_popup_closed()
         self.wait_for(self.adapter.entered.is_set)
         self.wait_for(lambda: self.event_row() is not None and self.event_row().property("eventState") == "running")
         row = self.event_row()
         self.assertTrue(self.backend.compacting)
         name = row.objectName()
         index = name.rsplit("_", 1)[1]
-        self.click("compactionEventToggle_" + index)
+        self.click_event_toggle(index)
         self.wait_for(lambda: row.property("expanded"))
         self.assertTrue(self.find("compactionEventDetails_" + index).isVisible())
         return row, name, index
@@ -226,25 +253,31 @@ class ContextCompactionTests(unittest.TestCase):
         self.assertFalse(any(not call["tools"] for call in self.adapter.calls))
         self.adapter.release.set()
         self.wait_for(lambda: not self.backend.busy)
-        self.click("contextUsageMouse")  # close the still-open popup
+        self.close_popup()
         row, name, index = self.begin_compaction()
         self.open_popup()
         self.assertFalse(self.find("compactContextAction").isEnabled())
-        self.click("contextUsageMouse")
+        self.close_popup()
         details = self.assert_finished("success", row, name, index)
         self.assertIn("保留测试任务", details["summary"])
         self.assertIsInstance(details["before"], (int, float))
         self.assertTrue(details["afterEstimated"])
-        self.click("compactionEventToggle_" + index)
-        self.assertFalse(row.property("expanded"))
+        self.click_event_toggle(index)
+        self.wait_for(lambda: not row.property("expanded"))
         repository = TranscriptRepository(self.path / "cold-cache")
         self.backend._view.transcript = repository.open(Path(self.backend._view.file))
         self.backend._view.messages = []
         self.backend.chatChanged.emit()
-        self.wait_for(lambda: self.event_row() is not None and self.event_row().property("eventState") == "success")
+        # Cold rows can exist in the cache before the asynchronous viewport
+        # restoration has positioned them. Scroll as a user would before clicking.
+        conversation = self.find("conversation")
+        self.assertTrue(QMetaObject.invokeMethod(conversation, "jumpToLatest"))
+        self.wait_for(lambda: not conversation.property("restoring")
+                      and self.backend.messageModel.isReady(int(index))
+                      and self.event_row() is not None and self.event_row().property("eventState") == "success")
         self.assertFalse(self.event_row().property("expanded"))
         cold_index = self.event_row().objectName().rsplit("_", 1)[1]
-        self.click("compactionEventToggle_" + cold_index)
+        self.click_event_toggle(cold_index)
         self.wait_for(lambda: self.event_row().property("expanded"))
         self.assertIn("保留测试任务", self.find("compactionEventDetails_" + cold_index).property("text"))
 

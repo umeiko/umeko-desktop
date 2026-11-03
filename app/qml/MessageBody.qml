@@ -12,7 +12,8 @@ Column {
     property int messageIndex: -1
     property int blockOffset: 0
     property bool compact: false
-    readonly property var blocks: root.text.length ? Markdown.blocks(root.text, root.markdown, root.compact) : []
+    property var preparedBlocks: null
+    readonly property var blocks: root.text.length ? (preparedBlocks || Markdown.blocks(root.text, root.markdown, root.compact)) : []
     spacing: compact ? 6 : 12
     Repeater {
         model: root.blocks.length
@@ -24,8 +25,8 @@ Column {
                 id: proseText
                 selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset + index
                 visible: !modelData.code; width: parent.width
-                text: modelData.code ? "" : root.markdown ? Markdown.forQt(modelData.text) : modelData.text; color: root.textColor
-                wrapMode: TextEdit.Wrap; textFormat: root.markdown ? TextEdit.MarkdownText : TextEdit.PlainText
+                text: modelData.code ? "" : modelData.html !== undefined ? modelData.html : root.markdown ? Markdown.forQt(modelData.text) : modelData.text; color: root.textColor
+                wrapMode: TextEdit.Wrap; textFormat: modelData.html !== undefined ? TextEdit.RichText : root.markdown ? TextEdit.MarkdownText : TextEdit.PlainText
                 font.pixelSize: Theme.font(13, visible)
                 TextSpacing { document: proseText.textDocument; factor: Theme.proseLineHeight }
             }

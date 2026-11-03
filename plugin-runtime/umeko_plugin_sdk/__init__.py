@@ -102,6 +102,10 @@ class Context:
         path=self.resolve_workspace(relative)
         self.emit({'event':'file.openWith','arguments':{'path':str(path),'session':self.capture_session()}})
 
+    def open_file(self, relative):
+        path=self.resolve_workspace(relative)
+        self.emit({'event':'file.open','arguments':{'path':str(path),'session':self.capture_session()}})
+
     def copy_files(self, relatives, cut=False):
         paths=[str(self.resolve_workspace(relative)) for relative in relatives]
         self.emit({'event':'files.copy','arguments':{'paths':paths,'cut':bool(cut),'session':self.capture_session()}})

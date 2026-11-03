@@ -122,6 +122,7 @@ def create_plugin(context):
 - `context.reveal_file(relative)`：要求 `workspace.read`，在系统文件管理器中定位工作区内的文件；已删除文件定位到其所在文件夹。
 - `context.reveal_in_explorer(relative)`：要求 `workspace.read`，打开已启用的文件树插件并定位文件。
 - `context.open_with(relative)`：要求 `workspace.read`，显示系统应用选择器。
+- `context.open_file(relative)`：要求 `workspace.read`，使用系统默认应用打开工作区内的文件，保留当前 Widget。
 - `context.copy_files(relatives, cut=False)`：要求 `workspace.read`，把文件写入系统文件剪贴板；剪切还要求 `workspace.write`。
 - `context.notify(message)`：显示简短通知。
 - `context.run_executable(name, args, timeout=12, limit=524288)`：要求 `process.execute`，按清单解析程序，不使用 shell 拼接；限制执行时间、输出和进程生命周期。

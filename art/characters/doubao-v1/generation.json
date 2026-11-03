@@ -1,0 +1,121 @@
+{
+  "tool": "built-in image_gen",
+  "character": {
+    "id": "doubao",
+    "name": "豆包"
+  },
+  "style": "User-supplied cinematic 3D style, classic short bob, black knit top and red scarf",
+  "references": {
+    "classicAppearance": {
+      "file": "reference/classic-app-icon.png",
+      "url": "https://apps.apple.com/cn/app/id6459478672"
+    },
+    "style": [
+      "reference/smile.png",
+      "reference/surprised.png",
+      "reference/determined.png",
+      "reference/concerned.png",
+      "reference/outfit.png"
+    ]
+  },
+  "assets": [
+    {
+      "id": "welcome",
+      "file": "source/welcome.png",
+      "prompt": "Use case: identity-preserve / style-transfer. Asset type: transparent welcome sprite for the Umeko Desktop character Doubao.\nInput image 1 ONLY defines the CLASSIC DOUBAO HAIRSTYLE AND CLOTHING: smooth straight dark chocolate chin-length asymmetrical bob, side part and side-swept front hair, one side tucked back showing an ear; charcoal-black knitted crewneck top and a vivid warm red knitted scarf wrapped around her neck with its ends draped down the front. Preserve this recognizable classic silhouette.\nInput image 2 defines the DESIRED BEAUTIFUL FACE AND PREMIUM 3D ANIMATED-FILM STYLE: refined expressive large chocolate-brown eyes with elegant long lashes, delicate well-shaped brows, small graceful nose, soft peach lips, warm fair skin and a slender elegant neck. Make her appealing, charming, intelligent and naturally expressive, like the refined fictional woman in image 2. Do not copy the plain low-detail face from image 1. Do not copy the hairstyle, jewelry or dress from image 2.\nFinal appearance: classic short bob + BLACK TOP + RED SCARF, with the beautiful refined face and cinematic 3D materials of image 2. No bun, long hair, ponytail, hair clips, flower ornaments, pearls, earrings, necklace, blue dress or other jewelry. Sophisticated stylized young adult, not a baby, flat anime, pixel art, plastic toy or exaggerated bobblehead. Smooth modeled forms, dimensional hair strands, soft studio lighting, subtle skin scattering, finely knitted fabric.\nPose: one centered waist-up girl, facing viewer with slight three-quarter angle, warm gentle closed-mouth smile, one hand raised in a graceful small welcoming wave and other hand near waist. Entire hair and both hands inside a square composition with 8% clear transparent margins. Natural waist-up bottom crop.\nGenuine alpha transparency, not a white backdrop or painted checkerboard. No scene, floor, props, cast shadow outside figure, text, logo, watermark, frame or extra characters.",
+      "reference": [
+        "reference/classic-app-icon.png",
+        "reference/smile.png"
+      ],
+      "generatedPath": "C:\\Users\\admin\\.codex\\generated_images\\01a18fa8-9bef-7ab1-a339-1700860aa447\\exec-b5493645-046b-4372-9290-66338ec0709b.png"
+    },
+    {
+      "id": "avatarSmile",
+      "file": "source/avatarSmile.png",
+      "prompt": "Use case: identity-preserve. Asset type: transparent Umeko Desktop sprite. This is the APPROVED CLASSIC DOUBAO MASTER. Preserve EXACTLY this girl's refined beautiful cinematic 3D face, large expressive dark chocolate eyes, delicate neat brows, graceful nose, peach lips, warm fair skin and elegant neck. Preserve her smooth straight chin-length side-parted dark-chocolate asymmetrical BOB HAIRCUT, charcoal BLACK KNITTED LONG-SLEEVE TOP and vivid RED KNITTED SCARF wrapped around her neck with two ends hanging down the chest. Same hair silhouette, knit textures, refined proportions and soft studio rendering. No long hair, bun, ponytail, hair ornaments, jewelry, earrings, flowers, blue dress, baby face or pixel art. One independent centered figure, square canvas, genuine alpha transparency, empty margins around the whole hair, arms and hands. No studio backdrop, floor, scenery, text, watermark, frame, extra characters or cast shadow/glow outside the figure. POSE: large head-and-collar portrait, entire bob silhouette visible with 6% clear margins. Both eyes open looking at viewer, gentle confident closed-mouth smile. Include just shoulders and red scarf. Face fills most of square canvas. No hands.",
+      "reference": "source/welcome.png",
+      "generatedPath": "C:\\Users\\admin\\.codex\\generated_images\\01a18fa8-9bef-7ab1-a339-1700860aa447\\exec-6f705efe-25f6-4dbd-bea3-eddac3ea160f.png"
+    },
+    {
+      "id": "avatarWink",
+      "file": "source/avatarWink.png",
+      "prompt": "Use case: identity-preserve. Asset type: transparent Umeko Desktop sprite. This is the APPROVED CLASSIC DOUBAO MASTER. Preserve EXACTLY this girl's refined beautiful cinematic 3D face, large expressive dark chocolate eyes, delicate neat brows, graceful nose, peach lips, warm fair skin and elegant neck. Preserve her smooth straight chin-length side-parted dark-chocolate asymmetrical BOB HAIRCUT, charcoal BLACK KNITTED LONG-SLEEVE TOP and vivid RED KNITTED SCARF wrapped around her neck with two ends hanging down the chest. Same hair silhouette, knit textures, refined proportions and soft studio rendering. No long hair, bun, ponytail, hair ornaments, jewelry, earrings, flowers, blue dress, baby face or pixel art. One independent centered figure, square canvas, genuine alpha transparency, empty margins around the whole hair, arms and hands. No studio backdrop, floor, scenery, text, watermark, frame, extra characters or cast shadow/glow outside the figure. POSE: large head-and-collar portrait, entire bob visible with 6% clear margins. One eye in an elegant playful wink, other eye looking at viewer, small asymmetric smile. Include just shoulders and red scarf. No hands.",
+      "reference": "source/welcome.png",
+      "generatedPath": "C:\\Users\\admin\\.codex\\generated_images\\01a18fa8-9bef-7ab1-a339-1700860aa447\\exec-be0bf666-c710-4118-847b-3398fd94d57a.png"
+    },
+    {
+      "id": "avatarHappy",
+      "file": "source/avatarHappy.png",
+      "prompt": "Use case: identity-preserve. Asset type: transparent Umeko Desktop sprite. This is the APPROVED CLASSIC DOUBAO MASTER. Preserve EXACTLY this girl's refined beautiful cinematic 3D face, large expressive dark chocolate eyes, delicate neat brows, graceful nose, peach lips, warm fair skin and elegant neck. Preserve her smooth straight chin-length side-parted dark-chocolate asymmetrical BOB HAIRCUT, charcoal BLACK KNITTED LONG-SLEEVE TOP and vivid RED KNITTED SCARF wrapped around her neck with two ends hanging down the chest. Same hair silhouette, knit textures, refined proportions and soft studio rendering. No long hair, bun, ponytail, hair ornaments, jewelry, earrings, flowers, blue dress, baby face or pixel art. One independent centered figure, square canvas, genuine alpha transparency, empty margins around the whole hair, arms and hands. No studio backdrop, floor, scenery, text, watermark, frame, extra characters or cast shadow/glow outside the figure. POSE: large head-and-collar portrait, entire bob visible with 6% clear margins. Both eyes warmly curved closed in a delighted expression, small joyful open-mouth smile with subtle blush, sophisticated and charming. Include just shoulders and red scarf. No hands.",
+      "reference": "source/welcome.png",
+      "generatedPath": "C:\\Users\\admin\\.codex\\generated_images\\01a18fa8-9bef-7ab1-a339-1700860aa447\\exec-d5be7c8c-4627-4f0c-9c6a-b82ba4eb8429.png"
+    },
+    {
+      "id": "reply",
+      "file": "source/reply-shoulders.png",
+      "prompt": "Use case: identity-preserve / background-extraction.\nAsset type: small transparent head-and-shoulders mascot shown beneath assistant replies in Umeko Desktop.\nEdit the supplied image. Preserve this EXACT beautiful stylized 3D animated-film woman: refined face, warm large brown eyes, delicate brows, gentle closed-mouth smile, chestnut side-parted swept-back updo with a loose curled tendril, pearl and ivory flower hair ornament on the viewer's right, pearl drop earrings, slender neck, powder-blue high collar embroidered dress with pearl trim and delicate necklace. Keep her adult elegance and original face proportions, same lighting and colors.\nChange only framing and the cutout boundary. Remove the white background completely. Show her complete hair, ornaments, earrings, head, neck and a compact cap of both shoulders. Redesign the clipped lower clothing into a graceful small rounded head-and-shoulders vignette: shoulders curve inward toward a shallow softly rounded point at the bottom, pearl collar and tiny upper bodice still readable. The lower silhouette must end naturally with a subtle soft alpha taper at its last edge, not a straight horizontal crop, not a chopped rectangular torso, not a hard oval badge. Do not add a circular background or white plate. Keep a crisp, clear face and well-defined hair; only the final lower clothing edge may softly taper.\nOne centered compact portrait, square canvas, the full cutout comfortably inside all four canvas edges with 5 percent transparent margin, head dominates the composition, minimal torso. Genuine RGBA transparency. No hands, arms, full body, background, blue disk, frame, sticker outline, text, watermark, new accessories, bob haircut, red scarf or black sweater.",
+      "reference": "reference/reply-shoulders.png",
+      "generatedPath": "C:\\Users\\admin\\.codex\\generated_images\\01a18fa8-9bef-7ab1-a339-1700860aa447\\exec-d70f63f6-0eb7-4c9c-8886-81016e737df1.png"
+    },
+    {
+      "id": "loading",
+      "file": "source/loading.png",
+      "prompt": "Use case: identity-preserve. Asset type: transparent Umeko Desktop sprite. This is the APPROVED CLASSIC DOUBAO MASTER. Preserve EXACTLY this girl's refined beautiful cinematic 3D face, large expressive dark chocolate eyes, delicate neat brows, graceful nose, peach lips, warm fair skin and elegant neck. Preserve her smooth straight chin-length side-parted dark-chocolate asymmetrical BOB HAIRCUT, charcoal BLACK KNITTED LONG-SLEEVE TOP and vivid RED KNITTED SCARF wrapped around her neck with two ends hanging down the chest. Same hair silhouette, knit textures, refined proportions and soft studio rendering. No long hair, bun, ponytail, hair ornaments, jewelry, earrings, flowers, blue dress, baby face or pixel art. One independent centered figure, square canvas, genuine alpha transparency, empty margins around the whole hair, arms and hands. No studio backdrop, floor, scenery, text, watermark, frame, extra characters or cast shadow/glow outside the figure. POSE: waist-up, quietly reading a small open neutral cream notebook held in both hands at chest/waist height. Her eyes look softly down at its blank pages, curious slightly raised brows and a tiny smile. Book and fingers fully visible; no writing or symbols. Leave 8% transparent margin around the entire girl.",
+      "reference": "source/welcome.png",
+      "generatedPath": "C:\\Users\\admin\\.codex\\generated_images\\01a18fa8-9bef-7ab1-a339-1700860aa447\\exec-87711f7b-3022-41f1-9763-45feac65a750.png"
+    },
+    {
+      "id": "catch",
+      "file": "source/catch.png",
+      "prompt": "Use case: identity-preserve. Asset type: transparent Umeko Desktop sprite. This is the APPROVED CLASSIC DOUBAO MASTER. Preserve EXACTLY this girl's refined beautiful cinematic 3D face, large expressive dark chocolate eyes, delicate neat brows, graceful nose, peach lips, warm fair skin and elegant neck. Preserve her smooth straight chin-length side-parted dark-chocolate asymmetrical BOB HAIRCUT, charcoal BLACK KNITTED LONG-SLEEVE TOP and vivid RED KNITTED SCARF wrapped around her neck with two ends hanging down the chest. Same hair silhouette, knit textures, refined proportions and soft studio rendering. No long hair, bun, ponytail, hair ornaments, jewelry, earrings, flowers, blue dress, baby face or pixel art. One independent centered figure, square canvas, genuine alpha transparency, empty margins around the whole hair, arms and hands. No studio backdrop, floor, scenery, text, watermark, frame, extra characters or cast shadow/glow outside the figure. POSE: waist-up facing viewer, lively gently surprised expression, eyebrows lifted, lips parted slightly. Both arms reach forward with open hands in a graceful receiving gesture, as if catching a document the user drops. Both EMPTY hands and all fingers fully visible, entire hair and elbows inside 8% clear margins.",
+      "reference": "source/welcome.png",
+      "generatedPath": "C:\\Users\\admin\\.codex\\generated_images\\01a18fa8-9bef-7ab1-a339-1700860aa447\\exec-45106126-3535-4591-888e-71f1e92854b4.png"
+    },
+    {
+      "id": "push",
+      "file": "source/push.png",
+      "prompt": "Use case: identity-preserve. Asset type: transparent Umeko Desktop sprite. This is the APPROVED CLASSIC DOUBAO MASTER. Preserve EXACTLY this girl's refined beautiful cinematic 3D face, large expressive dark chocolate eyes, delicate neat brows, graceful nose, peach lips, warm fair skin and elegant neck. Preserve her smooth straight chin-length side-parted dark-chocolate asymmetrical BOB HAIRCUT, charcoal BLACK KNITTED LONG-SLEEVE TOP and vivid RED KNITTED SCARF wrapped around her neck with two ends hanging down the chest. Same hair silhouette, knit textures, refined proportions and soft studio rendering. No long hair, bun, ponytail, hair ornaments, jewelry, earrings, flowers, blue dress, baby face or pixel art. One independent centered figure, square canvas, genuine alpha transparency, empty margins around the whole hair, arms and hands. No studio backdrop, floor, scenery, text, watermark, frame, extra characters or cast shadow/glow outside the figure. POSE: waist-up three-quarter side view facing to the RIGHT of the image. Lean forward a little, both arms extended to the RIGHT and palms pressing an invisible vertical panel. Charming determined expression with gently furrowed brows and small pursed lips, looking right. No actual panel. Entire hair, elbows and both hands inside 8% margins. Base artwork must face RIGHT because the UI mirrors left-side controls.",
+      "reference": "source/welcome.png",
+      "generatedPath": "C:\\Users\\admin\\.codex\\generated_images\\01a18fa8-9bef-7ab1-a339-1700860aa447\\exec-92dc8a20-8c4d-42fb-a4ce-49d0081e14db.png"
+    },
+    {
+      "id": "pull",
+      "file": "source/pull.png",
+      "prompt": "Use case: identity-preserve. Asset type: transparent Umeko Desktop sprite. This is the APPROVED CLASSIC DOUBAO MASTER. Preserve EXACTLY this girl's refined beautiful cinematic 3D face, large expressive dark chocolate eyes, delicate neat brows, graceful nose, peach lips, warm fair skin and elegant neck. Preserve her smooth straight chin-length side-parted dark-chocolate asymmetrical BOB HAIRCUT, charcoal BLACK KNITTED LONG-SLEEVE TOP and vivid RED KNITTED SCARF wrapped around her neck with two ends hanging down the chest. Same hair silhouette, knit textures, refined proportions and soft studio rendering. No long hair, bun, ponytail, hair ornaments, jewelry, earrings, flowers, blue dress, baby face or pixel art. One independent centered figure, square canvas, genuine alpha transparency, empty margins around the whole hair, arms and hands. No studio backdrop, floor, scenery, text, watermark, frame, extra characters or cast shadow/glow outside the figure. POSE: waist-up three-quarter side view facing to the RIGHT. Both hands reaching to the RIGHT with naturally curled fingers gripping an invisible handle, elbows bent as she leans her shoulders back LEFT and pulls toward herself. Playful focused expression, determined brows and tiny smile, eyes right. No actual handle or panel. Entire bob, elbows and hands inside 8% margins. Base artwork must face RIGHT for UI mirroring.",
+      "reference": "source/welcome.png",
+      "generatedPath": "C:\\Users\\admin\\.codex\\generated_images\\01a18fa8-9bef-7ab1-a339-1700860aa447\\exec-9c52c01a-ad84-4d43-878e-f757457643fa.png"
+    }
+  ],
+  "rareScene": {
+    "id": "rare-scene",
+    "file": "source/rare-scene.png",
+    "prompt": "Use case: identity-preserve. Asset type: transparent Umeko Desktop sprite. This is the APPROVED CLASSIC DOUBAO MASTER. Preserve EXACTLY this girl's refined beautiful cinematic 3D face, large expressive dark chocolate eyes, delicate neat brows, graceful nose, peach lips, warm fair skin and elegant neck. Preserve her smooth straight chin-length side-parted dark-chocolate asymmetrical BOB HAIRCUT, charcoal BLACK KNITTED LONG-SLEEVE TOP and vivid RED KNITTED SCARF wrapped around her neck with two ends hanging down the chest. Same hair silhouette, knit textures, refined proportions and soft studio rendering. No long hair, bun, ponytail, hair ornaments, jewelry, earrings, flowers, blue dress, baby face or pixel art. One independent centered figure, square canvas, genuine alpha transparency, empty margins around the whole hair, arms and hands. No studio backdrop, floor, scenery, text, watermark, frame, extra characters or cast shadow/glow outside the figure. POSE: alternate waist-up rare welcome illustration. She tilts her head gently toward the viewer, one hand supporting her cheek with naturally curved fingers, the other resting near her heart over the RED scarf. Warm reassuring smile, softly attentive eyes and subtle peach blush. Sophisticated, quietly charming expression. Entire hair, elbows and both hands inside 8% margins; a natural waist-up bottom crop.",
+    "reference": "source/welcome.png",
+    "generatedPath": "C:\\Users\\admin\\.codex\\generated_images\\01a18fa8-9bef-7ab1-a339-1700860aa447\\exec-460e9624-7a56-4bf6-9d6a-44a77ffb952a.png"
+  },
+  "picker": {
+    "file": "source/picker-pretty.png",
+    "prompt": "Use case: identity-preserve / style-transfer. Edit image 1, a circular blue Doubao selection icon. KEEP image 1's same blue circular disk, composition, large-head-to-circle ratio, complete short dark bob silhouette, red scarf, and outer alpha transparency. REPLACE her FACE AND FACIAL FEATURES with the approved beautiful face from image 2: refined delicate features, warm expressive chocolate-brown eyes with graceful lashes, gently shaped elegant brows, a small graceful nose, softly shaped peach lips and warm fair skin with polished cinematic 3D animation quality. Match image 2's appealing, natural, intelligent gentle smile and sophisticated face shape. This should unmistakably be the same beautiful girl as image 2, wearing the classic short bob, black top and red scarf, in image 1's large-head circular avatar proportions. Keep the face large, no long neck or waist-up body. Only a little red scarf and the top edge of the black collar are visible inside the lower blue circle. Hair may slightly overhang the blue disk; preserve its complete silhouette. Outside the union of the blue disk and the hair/character silhouette must be GENUINE ALPHA TRANSPARENCY. Remove all white outer background and white fringe. No outer white square or app-icon plate, no extra ring, no new text, watermark, frame, scene or extra character. Keep the pale-blue circular background intact.",
+    "references": [
+      "reference/picker-layout.png",
+      "source/avatarSmile.png"
+    ],
+    "sourceUrl": "https://apps.apple.com/cn/app/id6459478672",
+    "processing": "Generated refined face with the classic blue-circle composition; the outer white background is transparent",
+    "generatedPath": "C:\\Users\\admin\\.codex\\generated_images\\01a18fa8-9bef-7ab1-a339-1700860aa447\\exec-ec51db50-7172-48a1-b6d8-582b4bc3298c.png"
+  },
+  "sharedAvatarSlots": [
+    "avatarSmile",
+    "avatarWink",
+    "avatarHappy"
+  ],
+  "retiredAssets": [
+    {
+      "id": "reply",
+      "file": "source/reply.png",
+      "prompt": "Use case: identity-preserve. Asset type: transparent Umeko Desktop sprite. This is the APPROVED CLASSIC DOUBAO MASTER. Preserve EXACTLY this girl's refined beautiful cinematic 3D face, large expressive dark chocolate eyes, delicate neat brows, graceful nose, peach lips, warm fair skin and elegant neck. Preserve her smooth straight chin-length side-parted dark-chocolate asymmetrical BOB HAIRCUT, charcoal BLACK KNITTED LONG-SLEEVE TOP and vivid RED KNITTED SCARF wrapped around her neck with two ends hanging down the chest. Same hair silhouette, knit textures, refined proportions and soft studio rendering. No long hair, bun, ponytail, hair ornaments, jewelry, earrings, flowers, blue dress, baby face or pixel art. One independent centered figure, square canvas, genuine alpha transparency, empty margins around the whole hair, arms and hands. No studio backdrop, floor, scenery, text, watermark, frame, extra characters or cast shadow/glow outside the figure. POSE: compact head-and-shoulders portrait for the assistant reply marker. Both eyes open toward viewer, warm quietly proud closed-mouth smile and a tiny head tilt. Show the entire bob with 7% transparent margins, upper shoulders and RED scarf. No arms or hands. Square canvas.",
+      "reference": "source/welcome.png",
+      "generatedPath": "C:\\Users\\admin\\.codex\\generated_images\\01a18fa8-9bef-7ab1-a339-1700860aa447\\exec-5d5b8745-8cc2-40b1-960b-46f92e3aa2ed.png"
+    }
+  ]
+}

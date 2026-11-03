@@ -1,0 +1,659 @@
+{
+  "tool": "built-in image_gen",
+  "character": {
+    "id": "doubao",
+    "name": "豆包"
+  },
+  "style": "2D chibi matching the existing Whale Girl desktop pet, classic bob, black sweater and red scarf",
+  "grid": [
+    4,
+    3
+  ],
+  "frameCount": 12,
+  "canvas": [
+    360,
+    360
+  ],
+  "master": {
+    "file": "reference/master-2d.png",
+    "prompt": "Use case: style-transfer. Asset type: 2D chibi desktop pet for Umeko, matching the EXISTING WHALE-GIRL PET.\nImage 1 is the EXACT DRAWING STYLE AND BODY-PROPORTION REFERENCE. Match its Japanese 2D SD/chibi line art, compact approximately 2 to 2.3 heads-tall proportions, huge cute head, tiny body and little feet, flat cel colors, small simple shadow shapes, soft restrained highlights, clean dark outlines, big expressive anime eyes and tiny mouth. A small illustrated desktop sprite, not a rendered doll.\nImage 2 is ONLY the DOUBAO CHARACTER IDENTITY AND CLOTHING reference. Keep the recognizable dark-brown chin-length side-parted asymmetrical short bob, black sweater, RED SCARF, tiny dark trousers and little dark ankle shoes. Reinterpret ALL of it in image 1's SIMPLE TWO-DIMENSIONAL ANIME STYLE. Replace the realistic detailed face with a sweet readable drawn chibi face: large warm brown anime eyes with a couple of simple highlights, minimal nose, tiny smiling mouth, light peach cheeks and small simplified hands. Hair is clean solid cel-shaded shapes, scarf and sweater are flat colors with just a few folds. Absolutely no individual hair strands, knit microtexture, skin pores, volumetric shading, photo lighting, realistic hands, glass doll eyes, 3D materials or toy-like render.\nPose: ONE complete full-body standing character, frontal with a slight three-quarter turn, hands softly together near waist, feet planted side by side, a relaxed friendly smile. Same compact visual silhouette as image 1, scaled to occupy about 80% of a SQUARE transparent canvas with safe empty margins around ALL hair, hands and shoes. Good readability at 192px.\nGENUINE ALPHA TRANSPARENCY, no colored background or painted checkerboard. No scenery, floor, ground shadow, text, frame, symbols, speech bubbles, watermark or extra characters.",
+    "references": [
+      "reference/whale-girl-style.png",
+      "reference/doubao-before-2d.png"
+    ]
+  },
+  "assets": [
+    {
+      "id": "idle",
+      "file": "source/idle-sheet.png",
+      "prompt": "Use case: identity-preserve. Asset type: ONE transparent 4-COLUMN BY 3-ROW ANIMATION SPRITE SHEET, exactly 12 sequential frames in row-major order. Preferred canvas 1536x1728; each of the 12 invisible grid cells is portrait 2:3. The reference is the APPROVED DOUBAO 2D CHIBI DESKTOP PET. Preserve her EXACT flat 2D anime line art, clean warm-dark outlines, simple cel colors and shadow shapes, huge expressive brown anime eyes, tiny smiling mouth, minimal nose, rosy cheeks, dark brown side-parted short bob, BLACK sweater and trousers, RED scarf and little dark ankle shoes. Same compact 2.3-head-tall SD proportions and beautiful cute face. No 3D shading, skin texture, knit microtexture, detailed realistic hands, glass doll eyes, dimensional hair strands, jewelry or new outfit. Every cell shows one COMPLETE independent full-body girl from hair to whole shoes, centered horizontally with clear transparent margins; shoes on the same relative baseline at 94% cell height. Precisely identical character SCALE and body proportions across ALL 12 cells. Both feet stay planted. Keep character separate between cells, no clipping or overlap. Motion must have real distinct smooth intermediate drawings, not twelve unrelated poses or repeated copies. Last frame approaches the first for a loop. Gentle secondary motion in short hair and scarf. Entire sheet background genuinely transparent alpha; no lines, separators, labels, numbers, floor, shadow, scene, text, watermark or extra objects. ACTION over frames 1 to 12: a gentle breathing and blink loop. Hands remain together near waist. Shoulders lift slightly through frames 2-4, tiny head tilt 4-6, eyes softly half-close 6 and close 7, reopen 8, head and shoulders gently settle through 9-12 into the starting pose. The tiny changes flow smoothly; preserve fixed foot positions and scale.",
+      "reference": "reference/master-2d.png"
+    },
+    {
+      "id": "thinking",
+      "file": "source/thinking-sheet.png",
+      "prompt": "Use case: identity-preserve. Asset type: ONE transparent 4-COLUMN BY 3-ROW ANIMATION SPRITE SHEET, exactly 12 sequential frames in row-major order. Preferred canvas 1536x1728; each of the 12 invisible grid cells is portrait 2:3. The reference is the APPROVED DOUBAO 2D CHIBI DESKTOP PET. Preserve her EXACT flat 2D anime line art, clean warm-dark outlines, simple cel colors and shadow shapes, huge expressive brown anime eyes, tiny smiling mouth, minimal nose, rosy cheeks, dark brown side-parted short bob, BLACK sweater and trousers, RED scarf and little dark ankle shoes. Same compact 2.3-head-tall SD proportions and beautiful cute face. No 3D shading, skin texture, knit microtexture, detailed realistic hands, glass doll eyes, dimensional hair strands, jewelry or new outfit. Every cell shows one COMPLETE independent full-body girl from hair to whole shoes, centered horizontally with clear transparent margins; shoes on the same relative baseline at 94% cell height. Precisely identical character SCALE and body proportions across ALL 12 cells. Both feet stay planted. Keep character separate between cells, no clipping or overlap. Motion must have real distinct smooth intermediate drawings, not twelve unrelated poses or repeated copies. Last frame approaches the first for a loop. Gentle secondary motion in short hair and scarf. Entire sheet background genuinely transparent alpha; no lines, separators, labels, numbers, floor, shadow, scene, text, watermark or extra objects. ACTION over frames 1 to 12: thoughtfully resting one small hand at her chin, the other near her waist. Eyes glance up and her head slowly tilts, then she blinks once and returns to the opening thoughtful position. Draw clear continuous intermediate positions, a thoughtful tiny mouth and mildly curious brows. Both feet planted, same body scale.",
+      "reference": "reference/master-2d.png"
+    },
+    {
+      "id": "working",
+      "file": "source/working-sheet.png",
+      "prompt": "Use case: identity-preserve. Asset type: ONE transparent 4-COLUMN BY 3-ROW ANIMATION SPRITE SHEET, exactly 12 sequential frames in row-major order. Preferred canvas 1536x1728; each of the 12 invisible grid cells is portrait 2:3. The reference is the APPROVED DOUBAO 2D CHIBI DESKTOP PET. Preserve her EXACT flat 2D anime line art, clean warm-dark outlines, simple cel colors and shadow shapes, huge expressive brown anime eyes, tiny smiling mouth, minimal nose, rosy cheeks, dark brown side-parted short bob, BLACK sweater and trousers, RED scarf and little dark ankle shoes. Same compact 2.3-head-tall SD proportions and beautiful cute face. No 3D shading, skin texture, knit microtexture, detailed realistic hands, glass doll eyes, dimensional hair strands, jewelry or new outfit. Every cell shows one COMPLETE independent full-body girl from hair to whole shoes, centered horizontally with clear transparent margins; shoes on the same relative baseline at 94% cell height. Precisely identical character SCALE and body proportions across ALL 12 cells. Both feet stay planted. Keep character separate between cells, no clipping or overlap. Motion must have real distinct smooth intermediate drawings, not twelve unrelated poses or repeated copies. Last frame approaches the first for a loop. Gentle secondary motion in short hair and scarf. Entire sheet background genuinely transparent alpha; no lines, separators, labels, numbers, floor, shadow, scene, text, watermark or extra objects. ACTION over frames 1 to 12: she holds a small plain cream notepad at waist in one hand and writes a few short strokes with a tiny pencil in the other. Eyes look at the pad. The writing wrist and elbow move smoothly, she gives a tiny satisfied nod, then returns to the first writing pose. No letters or marks on the pad. All body, hands, pad and shoes remain complete within each cell.",
+      "reference": "reference/master-2d.png"
+    },
+    {
+      "id": "waiting",
+      "file": "source/waiting-sheet.png",
+      "prompt": "Use case: identity-preserve. Asset type: ONE transparent 4-COLUMN BY 3-ROW ANIMATION SPRITE SHEET, exactly 12 sequential frames in row-major order. Preferred canvas 1536x1728; each of the 12 invisible grid cells is portrait 2:3. The reference is the APPROVED DOUBAO 2D CHIBI DESKTOP PET. Preserve her EXACT flat 2D anime line art, clean warm-dark outlines, simple cel colors and shadow shapes, huge expressive brown anime eyes, tiny smiling mouth, minimal nose, rosy cheeks, dark brown side-parted short bob, BLACK sweater and trousers, RED scarf and little dark ankle shoes. Same compact 2.3-head-tall SD proportions and beautiful cute face. No 3D shading, skin texture, knit microtexture, detailed realistic hands, glass doll eyes, dimensional hair strands, jewelry or new outfit. Every cell shows one COMPLETE independent full-body girl from hair to whole shoes, centered horizontally with clear transparent margins; shoes on the same relative baseline at 94% cell height. Precisely identical character SCALE and body proportions across ALL 12 cells. Both feet stay planted. Keep character separate between cells, no clipping or overlap. Motion must have real distinct smooth intermediate drawings, not twelve unrelated poses or repeated copies. Last frame approaches the first for a loop. Gentle secondary motion in short hair and scarf. Entire sheet background genuinely transparent alpha; no lines, separators, labels, numbers, floor, shadow, scene, text, watermark or extra objects. ACTION over frames 1 to 12: one small open palm lifted toward the viewer with a polite expectant expression, other hand near waist. The palm gently lifts and lowers in a small questioning gesture, head tilts a little, brows lift, she blinks and returns to the opening pose. Smooth restrained intermediate drawings, planted feet.",
+      "reference": "reference/master-2d.png"
+    },
+    {
+      "id": "done",
+      "file": "source/done-sheet.png",
+      "prompt": "Use case: identity-preserve. Asset type: ONE transparent 4-COLUMN BY 3-ROW ANIMATION SPRITE SHEET, exactly 12 sequential frames in row-major order. Preferred canvas 1536x1728; each of the 12 invisible grid cells is portrait 2:3. The reference is the APPROVED DOUBAO 2D CHIBI DESKTOP PET. Preserve her EXACT flat 2D anime line art, clean warm-dark outlines, simple cel colors and shadow shapes, huge expressive brown anime eyes, tiny smiling mouth, minimal nose, rosy cheeks, dark brown side-parted short bob, BLACK sweater and trousers, RED scarf and little dark ankle shoes. Same compact 2.3-head-tall SD proportions and beautiful cute face. No 3D shading, skin texture, knit microtexture, detailed realistic hands, glass doll eyes, dimensional hair strands, jewelry or new outfit. Every cell shows one COMPLETE independent full-body girl from hair to whole shoes, centered horizontally with clear transparent margins; shoes on the same relative baseline at 94% cell height. Precisely identical character SCALE and body proportions across ALL 12 cells. Both feet stay planted. Keep character separate between cells, no clipping or overlap. Motion must have real distinct smooth intermediate drawings, not twelve unrelated poses or repeated copies. Last frame approaches the first for a loop. Gentle secondary motion in short hair and scarf. Entire sheet background genuinely transparent alpha; no lines, separators, labels, numbers, floor, shadow, scene, text, watermark or extra objects. ACTION over frames 1 to 12: a happy small thumbs-up with one hand, the other near waist. She gives a tiny proud nod, eyes curve happily closed briefly at the middle of the loop, then reopen as head, scarf and thumb settle back into the starting pose. Keep both feet planted, small charming movement and clear distinct in-between poses.",
+      "reference": "reference/master-2d.png"
+    },
+    {
+      "id": "error",
+      "file": "source/error-sheet.png",
+      "prompt": "Use case: identity-preserve. Asset type: ONE transparent 4-COLUMN BY 3-ROW ANIMATION SPRITE SHEET, exactly 12 sequential frames in row-major order. Preferred canvas 1536x1728; each of the 12 invisible grid cells is portrait 2:3. The reference is the APPROVED DOUBAO 2D CHIBI DESKTOP PET. Preserve her EXACT flat 2D anime line art, clean warm-dark outlines, simple cel colors and shadow shapes, huge expressive brown anime eyes, tiny smiling mouth, minimal nose, rosy cheeks, dark brown side-parted short bob, BLACK sweater and trousers, RED scarf and little dark ankle shoes. Same compact 2.3-head-tall SD proportions and beautiful cute face. No 3D shading, skin texture, knit microtexture, detailed realistic hands, glass doll eyes, dimensional hair strands, jewelry or new outfit. Every cell shows one COMPLETE independent full-body girl from hair to whole shoes, centered horizontally with clear transparent margins; shoes on the same relative baseline at 94% cell height. Precisely identical character SCALE and body proportions across ALL 12 cells. Both feet stay planted. Keep character separate between cells, no clipping or overlap. Motion must have real distinct smooth intermediate drawings, not twelve unrelated poses or repeated copies. Last frame approaches the first for a loop. Gentle secondary motion in short hair and scarf. Entire sheet background genuinely transparent alpha; no lines, separators, labels, numbers, floor, shadow, scene, text, watermark or extra objects. ACTION over frames 1 to 12: she holds one hand gently near her cheek, makes a small worried pout with softly angled brows, shoulders dip in a little embarrassed sigh, she blinks and raises her shoulders back to the opening mildly worried pose. Cute expressive 2D reaction, no tears, no aggression or symbols. Smooth distinct intermediate drawings with planted feet.",
+      "reference": "reference/master-2d.png"
+    },
+    {
+      "id": "idle-rare",
+      "file": "source/idle-rare-sheet.png",
+      "prompt": "Use case: identity-preserve. Asset type: ONE transparent 4-COLUMN BY 3-ROW ANIMATION SPRITE SHEET, exactly 12 sequential frames in row-major order. Preferred canvas 1536x1728; each of the 12 invisible grid cells is portrait 2:3. The reference is the APPROVED DOUBAO 2D CHIBI DESKTOP PET. Preserve her EXACT flat 2D anime line art, clean warm-dark outlines, simple cel colors and shadow shapes, huge expressive brown anime eyes, tiny smiling mouth, minimal nose, rosy cheeks, dark brown side-parted short bob, BLACK sweater and trousers, RED scarf and little dark ankle shoes. Same compact 2.3-head-tall SD proportions and beautiful cute face. No 3D shading, skin texture, knit microtexture, detailed realistic hands, glass doll eyes, dimensional hair strands, jewelry or new outfit. Every cell shows one COMPLETE independent full-body girl from hair to whole shoes, centered horizontally with clear transparent margins; shoes on the same relative baseline at 94% cell height. Precisely identical character SCALE and body proportions across ALL 12 cells. Both feet stay planted. Keep character separate between cells, no clipping or overlap. Motion must have real distinct smooth intermediate drawings, not twelve unrelated poses or repeated copies. Last frame approaches the first for a loop. Gentle secondary motion in short hair and scarf. Entire sheet background genuinely transparent alpha; no lines, separators, labels, numbers, floor, shadow, scene, text, watermark or extra objects. ACTION over frames 1 to 12: a special warm reassuring pose, one tiny hand supporting her cheek and the other resting over the red scarf near her heart. She tilts her head gently toward the viewer, gives one slow friendly blink and a tiny tender smile, then settles back. Same FULL-BODY chibi figure as ordinary idle; do not switch to a bust portrait. Distinct gentle in-between drawings, planted feet.",
+      "reference": "reference/master-2d.png"
+    }
+  ],
+  "encoding": {
+    "canvas": [
+      360,
+      360
+    ],
+    "grid": [
+      4,
+      3
+    ],
+    "frames": 12,
+    "durationsMs": [
+      450,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      120,
+      450
+    ],
+    "loopMs": 2100,
+    "loop": "infinite",
+    "quality": 92,
+    "assets": [
+      {
+        "id": "idle",
+        "sourceSha256": "1b7180a0a1336a21060ee4382f27888331682a621bf9cd0f1c3bd9911f194983",
+        "cellBounds": [
+          [
+            8,
+            75,
+            235,
+            482
+          ],
+          [
+            8,
+            74,
+            237,
+            482
+          ],
+          [
+            7,
+            73,
+            237,
+            482
+          ],
+          [
+            5,
+            73,
+            235,
+            482
+          ],
+          [
+            8,
+            74,
+            237,
+            481
+          ],
+          [
+            8,
+            75,
+            236,
+            481
+          ],
+          [
+            7,
+            75,
+            236,
+            481
+          ],
+          [
+            7,
+            74,
+            236,
+            481
+          ],
+          [
+            6,
+            75,
+            239,
+            481
+          ],
+          [
+            7,
+            75,
+            239,
+            481
+          ],
+          [
+            7,
+            74,
+            239,
+            481
+          ],
+          [
+            7,
+            74,
+            237,
+            481
+          ]
+        ],
+        "bytes": 208202,
+        "sha256": "b4e9284e76d0a45c59076fc97268593f291a6cb87b58018f5ca83349b7740e52"
+      },
+      {
+        "id": "thinking",
+        "sourceSha256": "4fbd6246076dfa633d95c9aef8f195ec37644113271c023cb1f7ec0c8718f94d",
+        "cellBounds": [
+          [
+            5,
+            69,
+            239,
+            479
+          ],
+          [
+            6,
+            69,
+            239,
+            479
+          ],
+          [
+            6,
+            69,
+            238,
+            479
+          ],
+          [
+            5,
+            69,
+            236,
+            479
+          ],
+          [
+            5,
+            68,
+            238,
+            479
+          ],
+          [
+            8,
+            68,
+            239,
+            479
+          ],
+          [
+            9,
+            69,
+            239,
+            479
+          ],
+          [
+            10,
+            69,
+            238,
+            479
+          ],
+          [
+            9,
+            69,
+            239,
+            479
+          ],
+          [
+            7,
+            69,
+            239,
+            479
+          ],
+          [
+            6,
+            70,
+            239,
+            479
+          ],
+          [
+            5,
+            70,
+            239,
+            479
+          ]
+        ],
+        "bytes": 214762,
+        "sha256": "0da6438153846964bd759f037fb50ecd3dc6dca98738126eec98f4986c825bcc"
+      },
+      {
+        "id": "working",
+        "sourceSha256": "30fc3d3a20b6439b6f8adf0176456de79f1380ae7241716afe9498395d482bc8",
+        "cellBounds": [
+          [
+            5,
+            80,
+            241,
+            492
+          ],
+          [
+            5,
+            80,
+            240,
+            492
+          ],
+          [
+            5,
+            80,
+            239,
+            492
+          ],
+          [
+            4,
+            80,
+            239,
+            492
+          ],
+          [
+            6,
+            82,
+            241,
+            492
+          ],
+          [
+            4,
+            84,
+            241,
+            492
+          ],
+          [
+            0,
+            89,
+            242,
+            492
+          ],
+          [
+            0,
+            82,
+            240,
+            492
+          ],
+          [
+            6,
+            81,
+            241,
+            492
+          ],
+          [
+            6,
+            81,
+            241,
+            492
+          ],
+          [
+            5,
+            81,
+            240,
+            492
+          ],
+          [
+            4,
+            81,
+            239,
+            492
+          ]
+        ],
+        "bytes": 210754,
+        "sha256": "16a9519ae366925932023facf42aaea0a04001c54a47945f794420c5c261f7e4"
+      },
+      {
+        "id": "waiting",
+        "sourceSha256": "b466e223d564d6c8b2d8591be467473bc60c0d454849974c12fc72da4e83d4e8",
+        "cellBounds": [
+          [
+            6,
+            65,
+            236,
+            472
+          ],
+          [
+            5,
+            65,
+            239,
+            472
+          ],
+          [
+            5,
+            65,
+            238,
+            472
+          ],
+          [
+            2,
+            65,
+            238,
+            472
+          ],
+          [
+            4,
+            65,
+            239,
+            473
+          ],
+          [
+            5,
+            65,
+            239,
+            472
+          ],
+          [
+            5,
+            65,
+            238,
+            472
+          ],
+          [
+            5,
+            65,
+            239,
+            473
+          ],
+          [
+            6,
+            66,
+            239,
+            472
+          ],
+          [
+            7,
+            66,
+            239,
+            472
+          ],
+          [
+            7,
+            66,
+            239,
+            472
+          ],
+          [
+            7,
+            66,
+            239,
+            472
+          ]
+        ],
+        "bytes": 226556,
+        "sha256": "a80904e145834d0f181b2ca39e4f31504d14a0f3fd4043a68bc0b5a011c1a13b"
+      },
+      {
+        "id": "done",
+        "sourceSha256": "8047be99c302ebe551b2003f300180141c4851b105002bcd11de76a2164f3d0f",
+        "cellBounds": [
+          [
+            1,
+            56,
+            241,
+            472
+          ],
+          [
+            1,
+            56,
+            240,
+            472
+          ],
+          [
+            0,
+            56,
+            239,
+            472
+          ],
+          [
+            0,
+            50,
+            241,
+            472
+          ],
+          [
+            2,
+            49,
+            241,
+            472
+          ],
+          [
+            2,
+            47,
+            241,
+            472
+          ],
+          [
+            1,
+            48,
+            241,
+            472
+          ],
+          [
+            0,
+            51,
+            239,
+            471
+          ],
+          [
+            1,
+            55,
+            240,
+            472
+          ],
+          [
+            2,
+            56,
+            240,
+            472
+          ],
+          [
+            1,
+            56,
+            240,
+            472
+          ],
+          [
+            1,
+            56,
+            241,
+            472
+          ]
+        ],
+        "bytes": 215514,
+        "sha256": "dd5f4005e4a3c2066dca10b110cd29228dd6691f3de8ac2323f7dfb3178046f1"
+      },
+      {
+        "id": "error",
+        "sourceSha256": "33a808dc0f343e25298f2b6daed60470c56bad103512c7328049bc5177b91a37",
+        "cellBounds": [
+          [
+            4,
+            97,
+            239,
+            513
+          ],
+          [
+            4,
+            98,
+            239,
+            513
+          ],
+          [
+            3,
+            98,
+            239,
+            513
+          ],
+          [
+            3,
+            98,
+            239,
+            513
+          ],
+          [
+            4,
+            98,
+            240,
+            513
+          ],
+          [
+            3,
+            102,
+            240,
+            513
+          ],
+          [
+            3,
+            104,
+            241,
+            513
+          ],
+          [
+            2,
+            106,
+            240,
+            513
+          ],
+          [
+            3,
+            101,
+            240,
+            512
+          ],
+          [
+            4,
+            98,
+            239,
+            512
+          ],
+          [
+            4,
+            98,
+            239,
+            512
+          ],
+          [
+            3,
+            98,
+            238,
+            512
+          ]
+        ],
+        "bytes": 208692,
+        "sha256": "86ebc6a859a5112c67acebf50ec1b51a58e47b7336cacb47ea79d43c9571771b"
+      },
+      {
+        "id": "idle-rare",
+        "sourceSha256": "3cc876ae9ce5b748bc428042f4638bca03a5a4dacae1b3c745cea42494ee81fb",
+        "cellBounds": [
+          [
+            4,
+            59,
+            238,
+            481
+          ],
+          [
+            4,
+            58,
+            238,
+            481
+          ],
+          [
+            1,
+            57,
+            241,
+            481
+          ],
+          [
+            2,
+            56,
+            239,
+            481
+          ],
+          [
+            1,
+            55,
+            241,
+            481
+          ],
+          [
+            0,
+            55,
+            241,
+            480
+          ],
+          [
+            0,
+            55,
+            242,
+            481
+          ],
+          [
+            0,
+            55,
+            241,
+            481
+          ],
+          [
+            1,
+            58,
+            241,
+            480
+          ],
+          [
+            0,
+            57,
+            241,
+            480
+          ],
+          [
+            3,
+            58,
+            241,
+            480
+          ],
+          [
+            4,
+            59,
+            237,
+            480
+          ]
+        ],
+        "bytes": 204522,
+        "sha256": "8884216479db42a29bdaa913ba6196c8284925c82df8ce0abc74c943194e3598"
+      }
+    ]
+  }
+}

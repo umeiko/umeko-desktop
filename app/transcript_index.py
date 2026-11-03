@@ -23,7 +23,7 @@ from .message_attachments import split_attachments
 from .transcripts import content_text, content_thinking, present, compaction_view, compaction_status
 
 SCHEMA = 4
-LARGE_FILE = 2 * 1024 * 1024
+LARGE_FILE = 256 * 1024
 PAGE_ROWS = 24
 GROUP_MESSAGES = 16
 GROUP_BYTES = 512 * 1024
@@ -227,6 +227,8 @@ class Snapshot:
     size: int = 0
     mtime_ns: int = 0
     active_compactions: frozenset = frozenset()
+    focus_row: int = -1
+    row_metadata: tuple = ()
 
     def matches_source(self):
         try:
@@ -260,6 +262,10 @@ class Snapshot:
         return self.page(row // PAGE_ROWS).get(row, {})
 
     def metadata(self, row):
+        if self.row_metadata:
+            if not 0 <= row < len(self.row_metadata): return {}
+            role, hint, continuation = self.row_metadata[row]
+            return {'role':role, 'hint':hint, 'continuation':continuation}
         with connect(self.database) as db:
             value = db.execute('SELECT role,hint,continuation FROM display WHERE seq=?', (row,)).fetchone()
             return dict(value) if value else {}
@@ -342,6 +348,8 @@ class TranscriptRepository:
         if snapshot.count:
             target = min(snapshot.count - 1, focus) if focus >= 0 else snapshot.count - 1
             snapshot.page(target // PAGE_ROWS)
+            from dataclasses import replace
+            snapshot = replace(snapshot, focus_row=target)
         return snapshot
 
     def discard(self, file):
@@ -512,7 +520,9 @@ class TranscriptRepository:
             db.close()
 
     def _snapshot(self, file, database, meta, parsed):
-        return Snapshot(self, str(file), str(database), int(meta['revision']), int(meta['count']), int(meta['native_count']), int(meta['question_count']), meta.get('leaf', ''), parsed, int(meta['size']), int(meta['mtime']))
+        with connect(database) as db:
+            metadata = tuple((sys.intern(row[0]), row[1], bool(row[2])) for row in db.execute('SELECT role,hint,continuation FROM display ORDER BY seq'))
+        return Snapshot(self, str(file), str(database), int(meta['revision']), int(meta['count']), int(meta['native_count']), int(meta['question_count']), meta.get('leaf', ''), parsed, int(meta['size']), int(meta['mtime']), row_metadata=metadata)
 
     def _project(self, db, file, cwd, start, cancelled):
         seq = db.execute('SELECT COUNT(*) FROM display').fetchone()[0]
