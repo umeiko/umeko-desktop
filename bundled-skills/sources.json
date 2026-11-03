@@ -7,7 +7,7 @@
     "adaptation": "Umeko 0.6.4: Pi tool names, host prerequisites and artifact delivery; source license retained.",
     "files": {
       "LICENSE.txt": "4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9",
-      "SKILL.md": "57580bca5abe82b897ed505cb761a0c2927085eff7827924fe7cf1bcc82d50bd",
+      "SKILL.md": "d924b5756ce75d326e31b0462eddba7221e694f2287eac26246918d87420aedb",
       "agents/openai.yaml": "f8b223e25343559f57e1839ccd849fd1494a9729da33da04bb5074b7f80f4887",
       "assets/pdf.png": "17da356d195d4e3fa24f9becbee6b8d9e60e13005762b5ab0809c520c76da6ee"
     }
@@ -20,7 +20,7 @@
     "adaptation": "Umeko 0.6.4: Pi tool names, host prerequisites and artifact delivery; source license retained.",
     "files": {
       "LICENSE.txt": "4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9",
-      "SKILL.md": "c73f70d0c6d945f336b4ddc1c1058c93346f47863f22d575eee0baa6f9c86e80",
+      "SKILL.md": "812b55bbbdc1a5a7a0406fa7a19ccbbacd4a3a08c974bb1cb356b21d62ddc1ed",
       "agents/openai.yaml": "36f73b9450504983d1647c960689596f59bf9147c14b1b43162912ed7ada9af6",
       "assets/github-small.svg": "ee05e92d373d4d84f4612af3c1090ef67698d421bbe30896a4ed5a00cb86a069",
       "assets/github.png": "d55a9baa41798d8b5108e3058df3a5bda09914ea9fd73b49929cc38a8832424f",
@@ -87,7 +87,7 @@
     "adaptation": "Umeko 0.6.4: Pi tool names, host prerequisites and artifact delivery; source license retained.",
     "files": {
       "LICENSE": "8aa3c7717d57a68490c31eef4b57b6887e892f0566ff866078ebd76113d357e2",
-      "SKILL.md": "4455780edc469b57e09b5aeb481c32ead53f30665b66a665fbf5c8513e8acbef",
+      "SKILL.md": "f6226418dc7db61776f4b8e7bca1c500b860b5709d512dc42540e777d6808ca9",
       "licenses/deepseek-harness-MIT.txt": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be",
       "references/delivery-checks.md": "73a51d95ca4c11ed3dab829271e84efd587d983f5860774ef49e3042cdd70115",
       "references/excel.md": "11a810e41d6e51dbdda6937328e8b9c1d7490271e9522d287bbef2de5c34af7d",
@@ -137,7 +137,7 @@
     "adaptation": "Umeko 0.6.4: Pi tool names, host prerequisites and artifact delivery; source license retained.",
     "files": {
       "LICENSE": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6",
-      "SKILL.md": "19b828b956feb6f47734318f2895235e27a3aaabc6a5d913f53f9407f27fd84c",
+      "SKILL.md": "0af6a51c11819545b8f072cf3fb0799d7aacf1f3512677df30085391ebc5cdf3",
       "references/issue-taxonomy.md": "b90546fab5b59494ebea35b957ccc1d98bab8eaeaaa3529a142b15ea96df2b31",
       "templates/dogfood-report-template.md": "6db9127715d3d1482542e48dd2d71fcb25238e614b1e5739ec193fa143962a26"
     }
