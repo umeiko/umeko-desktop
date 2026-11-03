@@ -17,7 +17,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot, QStandardPaths
 from PySide6.QtGui import QDesktopServices
 
-from umeko_provider_sdk import Provider, ProviderContext, ProviderError
+from umeko_provider_sdk import Provider, ProviderContext, ProviderError, request_scope
 from umeko_provider_sdk.packages import PackageValidationError, unpack_package, validate_folder, validate_config
 from umeko_provider_sdk.network import network_scope
 from .model_capabilities import normalize_model
@@ -67,6 +67,7 @@ class ProviderPlugins(QObject):
     finished = Signal(str, object)
     progress = Signal(str, object, object)
     refreshReady = Signal(str)
+    loginProgress = Signal(str, object, str)
 
     def __init__(self, controller):
         super().__init__(controller)
@@ -77,10 +78,12 @@ class ProviderPlugins(QObject):
         self.clients, self.leases, self.busy, self.status = {}, {}, set(), {}
         self._import_error = {}
         self._client_tokens, self._pending_refresh = {}, {}
+        self._login_cancels = {}
         self.closed = False
         self.finished.connect(self._finished)
         self.progress.connect(self._progress)
         self.refreshReady.connect(self._drain_refresh)
+        self.loginProgress.connect(self._login_progress)
         self.c.changed.connect(self._drain_pending_refresh)
         self.bundled = BundledProviders(self)
         self.bundle_errors = self.bundled.sync()
@@ -413,7 +416,8 @@ class ProviderPlugins(QObject):
             if record["api"] != "plugin": continue
             row = {"id": record["id"], "name": record["name"], "version": record["pluginVersion"], "description": "",
                    "models": copy.deepcopy(record["models"]), "fields": [], "cardFields": [], "cardActions": [], "cardStatus": "", "busy": record["id"] in self.busy,
-                   "status": self.status.get(record["id"], record.get("accountLabel", "尚未登录"))}
+                   "status": self.status.get(record["id"], record.get("accountLabel", "尚未登录")),
+                   "loginCancellable": record["id"] in self._login_cancels and not self._login_cancels[record["id"]].is_set()}
             try:
                 _, (manifest, _, _) = self._package(record)
                 row["description"] = manifest.get("description", "")
@@ -431,23 +435,56 @@ class ProviderPlugins(QObject):
         return rows
 
     def _submit(self, provider_id, action, function, sensitive=None):
+        cancel = threading.Event() if action == "login" else None
         with self.lock:
             self._idle(provider_id)
             self.busy.add(provider_id)
+            if cancel is not None: self._login_cancels[provider_id] = cancel
         self.status[provider_id] = {"login": "正在登录…", "card-secret": "正在保存密钥并刷新模型…", "card-action": "正在执行供应商操作…"}.get(action, "正在刷新模型…")
         self.changed.emit()
         def work():
+            client = None
+            def cancelled():
+                return cancel is not None and (cancel.is_set() or (client is not None and client.context.cancelled.is_set()))
             try:
                 with self._lease(provider_id, management=True) as client:
-                    result = self._management_result(provider_id, function(client), sensitive)
-                payload = {"action": action, "result": result}
+                    if cancel is None:
+                        result = function(client)
+                    else:
+                        previous = client.context.report_status
+                        client.context.report_status = lambda message: self.loginProgress.emit(
+                            provider_id, cancel, self._public_message(provider_id, message, sensitive))
+                        try:
+                            with request_scope(cancel):
+                                result = {} if cancelled() else function(client)
+                        finally:
+                            client.context.report_status = previous
+                    result = {} if cancelled() else self._management_result(provider_id, result, sensitive)
+                payload = {"cancelled": True} if cancelled() else {"action": action, "result": result}
             except ProviderError as exc:
                 # Include every protected field and newly submitted, not-yet-saved values.
-                payload = {"error": self._public_error(provider_id, exc, sensitive)}
+                payload = {"cancelled": True} if cancelled() else {"error": self._public_error(provider_id, exc, sensitive)}
+                if cancelled() and client is not None and client.context.cancelled.is_set():
+                    payload["message"] = self._public_error(provider_id, exc, sensitive)
             except Exception:
-                payload = {"error": "供应商操作失败，请检查插件配置、依赖与网络"}
+                payload = {"cancelled": True} if cancelled() else {"error": "供应商操作失败，请检查插件配置、依赖与网络"}
             if not self.closed: self.finished.emit(provider_id, payload)
         threading.Thread(target=work, daemon=True).start()
+
+    @Slot(str, object, str)
+    def _login_progress(self, provider_id, cancel, message):
+        if self.closed or self._login_cancels.get(provider_id) is not cancel or cancel.is_set(): return
+        self.status[provider_id] = message
+        self.changed.emit()
+
+    @Slot(str, result=bool)
+    def cancelLogin(self, provider_id):
+        cancel = self._login_cancels.get(provider_id)
+        if cancel is None or cancel.is_set(): return False
+        cancel.set()
+        self.status[provider_id] = "正在取消登录…"
+        self.changed.emit()
+        return True
 
     @Slot(str, result=bool)
     def importZip(self, url):
@@ -510,7 +547,9 @@ class ProviderPlugins(QObject):
                 credentials[key] = value
             def authenticate(client):
                 details = client.authenticate(credentials) or {}
+                if client.context.request_cancelled.is_set() or client.context.cancelled.is_set(): return {}
                 models = client.list_models(refresh=True)
+                if client.context.request_cancelled.is_set() or client.context.cancelled.is_set(): return {}
                 self._secrets(provider_id).set("credentials", credentials)
                 return {"models": models, "label": details.get("label", "已登录")}
             self._submit(provider_id, "login", authenticate, {f["key"]: credentials[f["key"]] for f in fields if f.get("secret")})
@@ -609,6 +648,13 @@ class ProviderPlugins(QObject):
     def _finished(self, provider_id, payload):
         if self.closed: return
         with self.lock: self.busy.discard(provider_id)
+        cancel = self._login_cancels.pop(provider_id, None)
+        if payload.get("cancelled") or (cancel is not None and cancel.is_set()):
+            client = self.clients.get(provider_id)
+            if client is not None and client.context.cancelled.is_set(): self._invalidate(provider_id)
+            self.status[provider_id] = payload.get("message") or "登录已取消"
+            self.changed.emit()
+            return
         if "error" in payload:
             self.status[provider_id] = payload["error"]
             self.changed.emit()
@@ -787,5 +833,6 @@ class ProviderPlugins(QObject):
             self.closed = True
             self._client_tokens.clear()
             self._pending_refresh.clear()
+            for cancel in self._login_cancels.values(): cancel.set()
             for client in self.clients.values(): client.close()
             self.clients.clear()

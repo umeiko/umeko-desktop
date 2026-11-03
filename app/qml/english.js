@@ -1,5 +1,8 @@
 .pragma library
 var strings = {
+  "取消登录": "Cancel sign-in",
+  "正在取消登录…": "Cancelling sign-in…",
+  "登录已取消": "Sign-in cancelled",
   "更新通道": "Update channel",
   "若预览版无法启动，可用 --release-channel 参数启动原安装包，直接返回正式版。": "If Preview cannot start, launch the retained package with --release-channel to return directly to Release.",
   "保留的正式版": "Retained Release",
