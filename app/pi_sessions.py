@@ -76,6 +76,8 @@ class SessionState:
     failed: bool = False
     cancelled: bool = False
     stale: bool = False
+    crashed: bool = False
+    retained: bool = True
     operation: bool = False
     queue: list = field(default_factory=list)
     compaction_running: bool = False
@@ -108,8 +110,9 @@ class SessionState:
 
 class PiSessionPool(QObject):
     event = Signal(object, object)
+    resourceReleased = Signal(object)
 
-    def __init__(self, parent=None, limit=8, body_limit=32 * 1024 * 1024):
+    def __init__(self, parent=None, limit=3, body_limit=32 * 1024 * 1024):
         super().__init__(parent)
         self.limit = limit
         self.body_limit = body_limit
@@ -151,6 +154,7 @@ class PiSessionPool(QObject):
                 self._catalog_reply(record, {'id': identifier, 'ok': False, 'error': 'Pi instance changed; refresh the directory'})
 
     def touch(self, record, current=False, dirty=True):
+        record.retained = True
         if dirty:
             record.body_dirty = True
         self.records[record.key] = record
@@ -169,6 +173,7 @@ class PiSessionPool(QObject):
     def start(self, record, program, bridge, payload):
         process = QProcess(self)
         record.process, record.buffer, record.ready = process, b"", False
+        record.crashed = False
         environment = QProcessEnvironment.systemEnvironment()
         for key in environment.keys():
             if key.upper() in ("NODE_OPTIONS", "NODE_PATH") or key.upper().endswith(("API_KEY", "ACCESS_TOKEN", "_AK", "_SK", "_SECRET_KEY", "_SECURITY_TOKEN")):
@@ -208,6 +213,7 @@ class PiSessionPool(QObject):
     def _error(self, record, process, error):
         if record.process is process and error == QProcess.FailedToStart:
             record.process = None
+            record.crashed = True
             self.event.emit(record, {"type": "exit", "message": "Pi 内核启动失败，请检查 Node.js 和内核设置"})
             process.deleteLater()
 
@@ -217,6 +223,7 @@ class PiSessionPool(QObject):
             self._cancel_catalogs(record)
             record.process = None
             if not self.closing:
+                record.crashed = True
                 self.event.emit(record, {"type": "exit"})
         self.retiring.discard(process)
         process.deleteLater()
@@ -224,6 +231,9 @@ class PiSessionPool(QObject):
     def retire(self, record):
         """Dispose an idle instance without blocking navigation on process exit."""
         process = record.process
+        record.crashed = False
+        record.ready, record.stale = False, False
+        self.resourceReleased.emit(record)
         if not process:
             return
         self._cancel_catalogs(record)
@@ -235,12 +245,35 @@ class PiSessionPool(QObject):
         timer.timeout.connect(lambda: process.kill() if process.state() != QProcess.NotRunning else None)
         timer.start(2500)
 
+    @staticmethod
+    def protected(record):
+        return record.busy or record.subagents_active or bool(record.approval)
+
+    @staticmethod
+    def _has_resources(record):
+        return bool(record.process or record.messages or record.history or record.transcript is not None)
+
+    def _evict(self, record):
+        self.retire(record)
+        record.retained = False
+        if not record.file:
+            return  # Unsaved messages are authoritative, not a replayable cache.
+        record.messages, record.history, record.tree = [], [], []
+        record.resources = {"tools": [], "skills": [], "extensions": [], "diagnostics": [], "toolCatalog":record.resources.get("toolCatalog",[])}
+        record.transcript, record.loaded, record.body_bytes = None, False, 0
+        record.body_dirty = False
+        record.tail_characters = 0
+        record.projection_dirty_from = None
+
     def trim(self):
-        while sum(record.process is not None for record in self.records.values()) > self.limit:
-            oldest = next((record for record in self.records.values() if record.process and not record.busy and not record.subagents_active and record is not self.current), None)
+        def idle():
+            return [record for record in self.records.values()
+                    if record.retained and self._has_resources(record) and not self.protected(record)]
+        while len(idle()) > max(0, self.limit):
+            oldest = next((record for record in idle() if record is not self.current), None)
             if not oldest:
-                break  # Running/loading instances are never evicted.
-            self.retire(oldest)
+                break  # The current session is retained even when capacity is zero.
+            self._evict(oldest)
         self.trim_bodies()
 
     def trim_bodies(self):
@@ -253,17 +286,15 @@ class PiSessionPool(QObject):
         for record in self.records.values():
             if total <= self.body_limit:
                 break
-            if record is self.current or record.busy or record.subagents_active or not record.file or not record.loaded:
+            if not record.retained or record is self.current or self.protected(record) or not record.file or not record.loaded:
                 continue
-            self.retire(record)
-            total -= record.body_bytes
-            record.messages, record.history, record.tree = [], [], []
-            record.resources = {"tools": [], "skills": [], "extensions": [], "diagnostics": [], "toolCatalog":record.resources.get("toolCatalog",[])}
-            record.transcript, record.loaded, record.body_bytes = None, False, 0
+            released = record.body_bytes
+            self._evict(record)
+            total -= released
 
     def invalidate(self):
         for record in self.records.values():
-            if record.busy or record.subagents_active:
+            if self.protected(record):
                 record.stale = True
             else:
                 self.retire(record)
@@ -274,6 +305,7 @@ class PiSessionPool(QObject):
         self.closing = True
         for record in self.records.values():
             self._cancel_catalogs(record)
+            self.resourceReleased.emit(record)
         processes = set(self.retiring)
         for record in self.records.values():
             if record.process:
@@ -286,6 +318,6 @@ class PiSessionPool(QObject):
         for process in processes:
             if process.state() != QProcess.NotRunning:
                 process.kill()
-                process.waitForFinished(500)
+                process.waitForFinished(5000)
         for record in self.records.values():
             record.process = None

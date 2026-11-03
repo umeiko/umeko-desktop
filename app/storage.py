@@ -79,7 +79,7 @@ DEFAULTS = {
               "agentDir": "", "skillPaths": [], "extensionPaths": [], "safeMode": False, "toolPermissionMode": "auto",
               "npmRegistry": "", "npmUserconfig": "", "npmCafile": ""},
     "server": {"port": 8787, "openai": True, "anthropic": True, "lan": False, "keys": []},
-    "ui": {"sidebarWidth": 244, "sidebarCollapsed": False, "lineSpacing": "standard"},
+    "ui": {"sidebarWidth": 244, "sidebarCollapsed": False, "lineSpacing": "standard", "sessionCacheSize": 3},
 }
 
 
@@ -137,6 +137,8 @@ class Store:
                 self.data['agent']['maxTokens'] = 32768
             self.data['agent']['outputLimitDefaultVersion'] = 1
         ui = self.data['ui']
+        cache_size = ui.get('sessionCacheSize', 3)
+        ui['sessionCacheSize'] = cache_size if type(cache_size) is int and 0 <= cache_size <= 2147483647 else 3
         if ui.get('language') not in ('zh', 'en'):
             preferred = QLocale.system().uiLanguages()
             system_language = preferred[0] if preferred else QLocale.system().name()

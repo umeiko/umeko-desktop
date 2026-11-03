@@ -177,11 +177,15 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.public_server = None
         self._sessions = self.store.load_sessions()
         self._welcome_greetings, self._welcome_portraits = [], []
-        self._pool = PiSessionPool(self)
+        self._pool = PiSessionPool(self, limit=self.store.data['ui']['sessionCacheSize'])
         self._view = self._new_view()
         self._pool.touch(self._view, current=True)
         self._pool.event.connect(self._handle_pi_event)
         self._chat_model = ChatModel(self)
+        self._pool.resourceReleased.connect(lambda record: self._chat_model.discard_session(record.key))
+        self._render_context = None
+        self.changed.connect(self._refresh_render_context)
+        self.appearanceChanged.connect(self._refresh_render_context)
         self._streaming_timer = QTimer(self)
         self._streaming_timer.setSingleShot(True)
         self._streaming_timer.setInterval(24)
@@ -325,6 +329,11 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.reasoningChanged.emit()
         self.retryChanged.emit()
 
+        # A dead retained kernel is resumed through the same command path as
+        # ordinary Pi startup. Never-started history browsing remains lazy.
+        if record.crashed and not record.busy and not record.subagents_active and not record.approval:
+            self._command_pi('inspect', record=record)
+
     def _refresh_sidebar(self):
         rows = self._project_rows()
         if rows != self._last_sidebar_rows:
@@ -335,7 +344,24 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def messageModel(self):
         return self._chat_model
 
+    def _message_render_context(self):
+        ui = self.store.data['ui']
+        return (self.store.data['theme'], self.store.data['dark'], self.store.data.get('fontFamily', ''),
+                ui['fontScale'], ui['language'], ui['lineSpacing'],
+                json.dumps(self.themeStyle, sort_keys=True, ensure_ascii=False))
+
+    def _refresh_render_context(self):
+        context = self._message_render_context()
+        if context != self._render_context:
+            self._render_context = context
+            self._update_chat_model()
+
     def _update_chat_model(self):
+        context = self._message_render_context()
+        self._render_context = context
+        self._chat_model.set_session(self._view.key, context,
+            streaming=self._view.busy and self._view.action in ('prompt', 'widget-notify'),
+            enabled=self._pool.limit > 0 and self._view.retained)
         count = self._chat_model.rowCount()
         active = frozenset({self._view.compaction_event_id}) if self._view.process and self._view.compaction_running else frozenset()
         if self._view.transcript and self._view.transcript.active_compactions != active:
@@ -767,6 +793,9 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.store.data["sessionMeta"].setdefault(session_id, {})["archived"] = archived
         if archived and self._view.id == session_id:
             self._clear_current()
+        record = self._pool.find(session_id)
+        if archived and record and not self._pool.protected(record):
+            self._pool._evict(record)
         self.store.save()
         self.chatChanged.emit()
 
@@ -780,6 +809,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self.store.data["sessionMeta"].setdefault(session_id, {})["archived"] = archived
         if archived and self._view.id in ids:
             self._clear_current()
+        if archived:
+            for record in tuple(self._pool.records.values()):
+                if record.id in ids and not self._pool.protected(record):
+                    self._pool._evict(record)
         self.store.save()
         self.chatChanged.emit()
 
@@ -1694,7 +1727,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Slot(str)
     def deleteSession(self, session_id):
         record = self._pool.find(session_id)
-        if (record and record.busy) or session_id in self._management_jobs:
+        if (record and self._pool.protected(record)) or session_id in self._management_jobs:
             return self.toast.emit("此会话正在运行，请先停止该会话")
         session = next((s for s in self._sessions if s["id"] == session_id), {})
         file = Path(session["file"]) if session.get("file") else None
@@ -1702,8 +1735,9 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             base = (self.store.directory / "pi/sessions").resolve()
             if not file.resolve().is_relative_to(base):
                 return self.toast.emit("只能删除 Umeko 会话目录中的文件")
-            if record:
-                self._pool.retire(record)
+        if record:
+            self._pool._evict(record)
+        if file:
             file.unlink(missing_ok=True)
             images = file.with_name(file.name + '.images')
             linked = images.is_symlink() or getattr(images, 'is_junction', lambda: False)()

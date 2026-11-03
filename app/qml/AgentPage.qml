@@ -144,8 +144,13 @@ Column {
         }
         SettingsFold {
             objectName: "piFold_runtime"; width: parent.width; title: I18n.t("运行与资源"); query: search.text
-            searchTerms: I18n.t("上下文 自动压缩 compaction 资源 路径 Skills 提示词 自定义指令 instructions token 回答 上限 运行 ") + [backend.config.agent.agentDir, backend.config.agent.instructions, ...(backend.config.agent.skillPaths || []), ...(backend.config.agent.extensionPaths || [])].join(" ")
+            searchTerms: I18n.t("上下文 自动压缩 compaction 资源 路径 Skills 提示词 自定义指令 instructions token 回答 上限 运行 ") + I18n.t("会话缓存 后台 空闲 内存 session cache memory ") + [backend.config.agent.agentDir, backend.config.agent.instructions, ...(backend.config.agent.skillPaths || []), ...(backend.config.agent.extensionPaths || [])].join(" ")
             AgentSettings { width: parent.width; query: search.text; enabled: !backend.busy; opacity: enabled ? 1 : 0.6 }
+            SettingsFold {
+                objectName: "piFold_sessionCache"; width: parent.width; title: I18n.t("会话缓存"); nested: true; query: search.text
+                searchTerms: I18n.t("会话缓存 后台 空闲 内存 session cache memory ")
+                SessionCacheSettings { width: parent.width }
+            }
         }
         SettingsFold {
             objectName: "piFold_management"; width: parent.width; title: I18n.t("管理与恢复"); query: search.text; searchTerms: I18n.t("终端 terminal 恢复出厂 备份 reset 恢复模式")
