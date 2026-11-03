@@ -83,11 +83,12 @@ def run_gui(args, server):
             window.setHeight(700)
             window.setProperty('page', 'chat')
 
-            def find(prefix):
+            def find(prefix, *, exact=False):
                 pending = [window.contentItem()]
                 while pending:
                     item = pending.pop()
-                    if item.objectName().startswith(prefix) and item.isVisible():
+                    matches = item.objectName() == prefix if exact else item.objectName().startswith(prefix)
+                    if matches and item.isVisible():
                         return item
                     pending.extend(item.childItems())
                 return None
@@ -114,7 +115,9 @@ def run_gui(args, server):
             thinking_root.property('expansionState').setProperty('expanded', True)
             assert thinking_root.setProperty('expanded', True)
             QTest.qWait(100)
-            view = find('conversation')
+            # Retained pages now live inside conversationViews; a prefix match
+            # would select that container instead of the actual scrolling view.
+            view = find('conversation', exact=True)
             status = find('turnStatus')
             phase = 'tail'
             started = time.monotonic()
