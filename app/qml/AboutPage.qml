@@ -56,6 +56,12 @@ Column {
     }
     SectionCard {
         width: parent.width
+        PreviewChannelSettings { width: parent.width; enabled: !root.about.busy && !root.transferring }
+    }
+    SectionCard {
+        visible: root.about.preview.channel === "release"
+        enabled: !root.about.preview.busy
+        width: parent.width
         ColumnLayout {
             width: parent.width; spacing: 14
             RowLayout {
