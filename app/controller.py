@@ -1947,6 +1947,8 @@ class Controller(CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiCont
         self._job("update", update)
 
     def close(self):
+        if self._app_about._preview is not None:
+            self._app_about._preview.cancel()
         self._chat_search.close()
         self.piManagement.cancelInstall()
         if self._closing:
