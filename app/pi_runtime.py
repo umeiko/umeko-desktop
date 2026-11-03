@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from .filesystem_paths import filesystem_path, ordinary_path
 
@@ -101,6 +102,24 @@ def patch_retry_diagnostics(release: Path):
         path.write_text(text.replace(original, replacement), encoding="utf-8")
 
 
+def copy_runtime_file(source, destination):
+    """Leave prepared adapters untouched; publish changed files atomically."""
+    source, destination = Path(source), Path(destination)
+    try:
+        if source.read_bytes() == destination.read_bytes():
+            return str(destination)
+    except FileNotFoundError:
+        pass
+    descriptor, temporary = tempfile.mkstemp(prefix='.' + destination.name + '.', dir=destination.parent)
+    os.close(descriptor)
+    try:
+        shutil.copy2(source, temporary)
+        os.replace(temporary, destination)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+    return str(destination)
+
+
 def verify_runtime(release: Path, bridge_source: Path):
     node_release = ordinary_path(release)
     release, bridge_source = filesystem_path(release), filesystem_path(bridge_source)
@@ -109,11 +128,11 @@ def verify_runtime(release: Path, bridge_source: Path):
         raise RuntimeError("旧 Agent Core 内核不能用于完整 Pi Coding Agent")
     patch_retry_diagnostics(release)
     for name in ("tool-visibility.mjs", "session-capabilities.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
-        shutil.copy2(bridge_source.parent / name, release / name)
-    shutil.copy2(bridge_source.parent / 'generation.mjs', release / 'generation.mjs')
-    shutil.copy2(bridge_source.parent / 'skills.mjs', release / 'skills.mjs')
-    shutil.copy2(bridge_source.parent / 'markdown-preview.mjs', release / 'markdown-preview.mjs')
-    shutil.copytree(bridge_source.parent/'umeko-docs', release/'umeko-docs', dirs_exist_ok=True)
+        copy_runtime_file(bridge_source.parent / name, release / name)
+    copy_runtime_file(bridge_source.parent / 'generation.mjs', release / 'generation.mjs')
+    copy_runtime_file(bridge_source.parent / 'skills.mjs', release / 'skills.mjs')
+    copy_runtime_file(bridge_source.parent / 'markdown-preview.mjs', release / 'markdown-preview.mjs')
+    shutil.copytree(bridge_source.parent/'umeko-docs', release/'umeko-docs', dirs_exist_ok=True, copy_function=copy_runtime_file)
     environment = node_environment(dict(os.environ, PI_OFFLINE="1"))
     environment.pop("NODE_OPTIONS", None)
     environment.pop("NODE_PATH", None)
