@@ -6,7 +6,6 @@ Keep unittest module loading for terminal_widget's isolated POSIX PTY worker.
 import os
 from pathlib import Path
 import re
-import subprocess
 import sys
 
 COMMON = [
@@ -66,17 +65,28 @@ NODE_MAC = [
 
 
 if __name__ == '__main__':
+    from ci_process import run_logged
+
     root = Path(__file__).resolve().parents[1]
+    log_dir = root / 'build/test-logs'
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    def run_suite(command, name):
+        # Windows no-console children need explicit output handles. Keep the
+        # complete output in uploaded diagnostics even when a suite fails.
+        output = log_dir / f'native-{name}.log'
+        try:
+            result = run_logged(command, output, timeout=None, cwd=root)
+        finally:
+            print(output.read_text(encoding='utf-8', errors='replace'), end='', flush=True)
+        result.check_returncode()
+
     suites = COMMON + (WINDOWS if os.name == 'nt' else UNIX)
-    subprocess.run([sys.executable, '-m', 'unittest', *suites, '-v'],
-                   cwd=root, check=True,
-                   creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    run_suite([sys.executable, '-m', 'unittest', *suites, '-v'], 'python')
     # Linux discovery/Node checks already run all Linux branches. Other hosts
     # retain actual process/filesystem/tool branches, not the shared Node suite.
     if sys.platform in ('win32', 'darwin'):
         cases = NODE_HOST + (NODE_WINDOWS if os.name == 'nt' else NODE_MAC)
         pattern = '^(?:' + '|'.join(re.escape(name) for _, name in cases) + ')$'
         files = list(dict.fromkeys(f'tests/{module}.test.mjs' for module, _ in cases))
-        subprocess.run(['node', '--test', '--test-name-pattern=' + pattern, *files],
-                       cwd=root, check=True,
-                       creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        run_suite(['node', '--test', '--test-name-pattern=' + pattern, *files], 'node')

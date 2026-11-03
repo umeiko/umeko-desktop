@@ -1,6 +1,7 @@
 """Offline protocol and cancellation fixtures; no installed application profile."""
 import base64
 import copy
+import http.client
 import json
 import os
 import socket
@@ -39,6 +40,8 @@ class GenerationTests(unittest.TestCase):
         self.calls = []
         self.started = threading.Event()
         self.upstream_closed = threading.Event()
+        self.upstream_observed = threading.Event()
+        self.upstream_outcome = None
         fixture = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -68,10 +71,19 @@ class GenerationTests(unittest.TestCase):
                     fixture.started.set()
                     self.connection.settimeout(60)
                     try:
-                        if not self.connection.recv(1):
+                        received = self.connection.recv(1)
+                        fixture.upstream_outcome = {'state': 'unexpected-data' if received else 'eof', 'data': repr(received)}
+                        if not received:
                             fixture.upstream_closed.set()
-                    except OSError:
-                        pass
+                    except (ConnectionResetError, ConnectionAbortedError) as exc:
+                        # Cancelling with unread response bytes can reset TCP
+                        # instead of delivering EOF. Both prove peer closure.
+                        fixture.upstream_outcome = {'state': 'reset', 'error': repr(exc)}
+                        fixture.upstream_closed.set()
+                    except OSError as exc:
+                        fixture.upstream_outcome = {'state': 'error', 'error': repr(exc)}
+                    finally:
+                        fixture.upstream_observed.set()
                     self.close_connection = True
                     return
                 if fixture.mode == 'error':
@@ -220,6 +232,11 @@ class GenerationTests(unittest.TestCase):
         cancelled = threading.Event()
         errors = []
         finished = threading.Event()
+        read_started = threading.Event()
+        original_read = http.client.HTTPResponse.read
+        def read_response(response, *args, **kwargs):
+            read_started.set()
+            return original_read(response, *args, **kwargs)
         def run():
             try:
                 with request_scope(cancelled):
@@ -228,15 +245,25 @@ class GenerationTests(unittest.TestCase):
                 errors.append(exc)
             finally:
                 finished.set()
-        worker = threading.Thread(target=run, daemon=True)
-        worker.start()
-        await_event(self.started)
-        cancelled.set()
-        await_event(finished)
-        await_event(self.upstream_closed)
-        worker.join()
+        with patch.object(http.client.HTTPResponse, 'read', read_response):
+            worker = threading.Thread(target=run, daemon=True)
+            worker.start()
+            await_event(self.started)
+            if mode == 'body-wait':
+                # A server write alone does not mean the client has finished
+                # reading headers and entered its blocking response-body read.
+                await_event(read_started)
+            cancelled.set()
+            await_event(finished)
+            await_event(self.upstream_observed)
+            worker.join()
+        self.assertTrue(self.upstream_closed.is_set(), self.upstream_outcome)
+        self.assertEqual(len(errors), 1, errors)
         self.assertIsInstance(errors[0], GenerationCancelled)
         self.assertFalse((Path(self.temp.name) / 'request-errors').exists())
+        self.cancel_observation = {'mode': mode, 'response_read_entered': read_started.is_set(),
+            'worker_finished': finished.is_set(), 'upstream': self.upstream_outcome,
+            'exception': type(errors[0]).__name__}
 
     def test_cancel_before_response_headers_aborts_upstream(self):
         self.run_cancel('headers-wait')

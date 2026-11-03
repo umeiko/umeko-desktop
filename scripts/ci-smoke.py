@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from app.pi_runtime import RELEASE_NAME, PINNED_VERSION
 from app.project_info import VERSION, git_output
+from scripts.ci_process import run_logged
 
 
 def isolated_profile(directory):
@@ -116,9 +117,10 @@ def main():
     node = resources / "runtime/node" / ("node.exe" if os.name == "nt" else "bin/node")
     if not node.is_file(): raise RuntimeError("Bundled Node.js is missing")
     diagnostic.unlink(missing_ok=True)
-    result = subprocess.run([str(executable), "--smoke", "--snapshot", str(screenshot)],
-        env=environment, timeout=45, capture_output=True, text=True, encoding="utf-8", errors="replace")
-    (report_dir / "application-output.log").write_text(result.stdout + result.stderr, encoding="utf-8")
+    output_log = report_dir / "application-output.log"
+    result = run_logged([str(executable), "--smoke", "--snapshot", str(screenshot)],
+        output_log, env=environment, timeout=45)
+    output = output_log.read_text(encoding="utf-8", errors="replace")
     log = diagnostic.read_text(encoding="utf-8") if diagnostic.exists() else ""
     lines = log.strip().splitlines()
     selected = next((line.split(":", 1)[1] for line in lines if line.startswith("NODE_EXECUTABLE:")), "")
@@ -126,7 +128,7 @@ def main():
     if sys.platform.startswith('linux'): expected.append('IME_PLUGIN_READY:1')
     expected += ["NODE_EXECUTABLE:" + selected, "TRAY_ICON_READY:1", "EXIT:0"]
     if result.returncode or lines != expected or not selected or Path(selected).resolve() != node.resolve():
-        raise RuntimeError("Frozen GUI startup failed: " + log + result.stderr[-2000:])
+        raise RuntimeError("Frozen GUI startup failed: " + log + output[-2000:])
     if sys.platform == 'win32': verify_windows_preview(executable, environment, report_dir)
     if not screenshot.is_file() or screenshot.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
         raise RuntimeError("Frozen GUI did not render a screenshot")
