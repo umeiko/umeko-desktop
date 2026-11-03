@@ -186,6 +186,16 @@ class ContextCompactionTests(unittest.TestCase):
         return next((item for item in items(self.window)
                      if item.objectName().startswith("compactionEvent_") and item.isVisible()), None)
 
+    def current_event(self, name, event_id):
+        row = next((item for item in items(self.window)
+                    if item.objectName() == name and item.isVisible()), None)
+        if row is None:
+            return None
+        record = row.property("record")
+        if hasattr(record, "toVariant"):
+            record = record.toVariant()
+        return row if record.get("eventId") == event_id else None
+
     def click_event_toggle(self, index):
         # A result changes the row height and schedules tail restoration. A
         # cached delegate being visible does not mean its header is in the
@@ -210,12 +220,16 @@ class ContextCompactionTests(unittest.TestCase):
         self.wait_for(lambda: self.event_row() is not None and self.event_row().property("eventState") == "running")
         row = self.event_row()
         self.assertTrue(self.backend.compacting)
+        self.compaction_record = self.backend._view
+        self.compaction_session = (self.compaction_record.id, self.compaction_record.file)
+        self.compaction_event_id = self.compaction_record.compaction_event_id
         name = row.objectName()
         index = name.rsplit("_", 1)[1]
         self.click_event_toggle(index)
-        self.wait_for(lambda: row.property("expanded"))
+        self.wait_for(lambda: (current := self.current_event(name, self.compaction_event_id)) is not None
+                      and current.property("expanded"))
         self.assertTrue(self.find("compactionEventDetails_" + index).isVisible())
-        return row, name, index
+        return self.current_event(name, self.compaction_event_id), name, index
 
     def assert_local_style(self, index):
         for prefix in ("assistantAvatar_", "messageBubble_", "messageActions_", "replyEndMascot_"):
@@ -225,8 +239,17 @@ class ContextCompactionTests(unittest.TestCase):
 
     def assert_finished(self, state, row, name, index):
         self.adapter.release.set()
-        self.wait_for(lambda: not self.backend.busy and row.property("eventState") == state)
-        self.assertIs(self.find(name), row, "Terminal result must update the original QML row")
+        # Canonical transcript indexing may reset the model and replace a QML
+        # delegate. The durable event/session identity is the in-place contract.
+        self.wait_for(lambda: not self.backend.busy and (current := self.current_event(name, self.compaction_event_id)) is not None
+                      and current.property("eventState") == state)
+        row = self.current_event(name, self.compaction_event_id)
+        record = row.property("record")
+        if hasattr(record, "toVariant"):
+            record = record.toVariant()
+        self.assertEqual(record["eventId"], self.compaction_event_id)
+        self.assertIs(self.backend._view, self.compaction_record, "Compaction must keep the current conversation")
+        self.assertEqual((self.backend._view.id, self.backend._view.file), self.compaction_session)
         self.assertTrue(row.property("expanded"), "Updating a result must preserve disclosure state")
         self.assertEqual(len([item for item in items(self.window) if item.objectName().startswith("compactionEvent_") and item.isVisible()]), 1)
         self.assert_local_style(index)
@@ -234,6 +257,7 @@ class ContextCompactionTests(unittest.TestCase):
         events = [entry for entry in entries if entry.get("customType") == "umeko-compaction"]
         self.assertEqual([entry["data"]["state"] for entry in events], ["running", state])
         self.assertEqual(events[0]["data"]["eventId"], events[-1]["data"]["eventId"])
+        self.assertEqual(events[-1]["data"]["eventId"], self.compaction_event_id)
         self.assertEqual(events[-1]["data"]["version"], 2)
         self.assertNotIn("umeko-compaction", json.dumps([call["messages"] for call in self.adapter.calls], ensure_ascii=False))
         return events[-1]["data"]
@@ -263,7 +287,8 @@ class ContextCompactionTests(unittest.TestCase):
         self.assertIsInstance(details["before"], (int, float))
         self.assertTrue(details["afterEstimated"])
         self.click_event_toggle(index)
-        self.wait_for(lambda: not row.property("expanded"))
+        self.wait_for(lambda: (current := self.current_event(name, self.compaction_event_id)) is not None
+                      and not current.property("expanded"))
         repository = TranscriptRepository(self.path / "cold-cache")
         self.backend._view.transcript = repository.open(Path(self.backend._view.file))
         self.backend._view.messages = []

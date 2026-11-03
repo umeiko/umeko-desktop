@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 from PySide6.QtCore import QObject
 
 from app.controller import Controller
+from app.pi_sessions import SessionState
 from app.storage import Store
 from app.umeko_control import UmekoControl
 
@@ -114,7 +115,8 @@ class ToolPermissionTests(unittest.TestCase):
     def test_native_start_receives_current_permission_context(self):
         backend = self.controller()
         backend.store.data["agent"]["toolPermissionMode"] = "ask"
-        record = backend._view
+        record = backend._view = SessionState(key="current")
+        backend._pool.records[record.key] = record
         record.busy, record.stale, record.process = False, False, None
         record.model, record.reasoning_effort = "", "off"
         record.workspace, record.file, record.history = "", "", []

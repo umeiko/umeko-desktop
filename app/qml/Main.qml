@@ -430,6 +430,12 @@ ApplicationWindow {
                 property int restoreAttempts: 0
                 property int pageAnchor: -1
                 property real pageOffset: 0
+                property var compactionExpansions: ({})
+                function compactionExpansion(eventId) {
+                    if (!eventId) return {expanded:false}
+                    if (!compactionExpansions[eventId]) compactionExpansions[eventId] = {expanded:false}
+                    return compactionExpansions[eventId]
+                }
                 readonly property string layoutKey: width + "/" + Theme.fontScale + "/" + Theme.proseLineHeight + "/" + window.font.family
                 onLayoutKeyChanged: { backend.messageModel.setLayout(layoutKey); if (!followTail && count) restoreViewport() }
                 function rememberPageAnchor() {
@@ -537,7 +543,7 @@ ApplicationWindow {
                 }
                 Connections { target: backend
                     function onTranscriptChanged() { if (conversation.followTail && !conversation.restoring) tailTimer.restart() }
-                    function onViewChanged() { conversation.restoreViewport() }
+                    function onViewChanged() { conversation.compactionExpansions = ({}); conversation.restoreViewport() }
                 }
                 Connections { target: backend.messageModel
                     function onViewportAboutToChange() { conversation.rememberPageAnchor() }
@@ -606,9 +612,14 @@ ApplicationWindow {
                         readonly property var record: modelData.compaction || ({})
                         readonly property string eventState: record.state || "success"
                         readonly property string heading: eventState === "running" ? I18n.t("正在压缩上下文") : eventState === "failure" ? I18n.t("上下文压缩失败") : I18n.t("上下文已压缩")
-                        property bool expanded: false
+                        property var expansionState: conversation.compactionExpansion(record.eventId || "")
+                        property bool expanded: expansionState.expanded
+                        onExpansionStateChanged: expanded = expansionState.expanded
                         spacing: 6
-                        onExpandedChanged: if (!expanded) chatSelection.hideDetails(messageRow.index, 0, 1)
+                        onExpandedChanged: {
+                            expansionState.expanded = expanded
+                            if (!expanded) chatSelection.hideDetails(messageRow.index, 0, 1)
+                        }
                         Item {
                             width: Math.min(parent.width, compactionHeading.implicitWidth); height: Theme.control(24)
                             Row {
