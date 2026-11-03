@@ -122,6 +122,7 @@ class ProviderLoginCancellationTests(unittest.TestCase):
         self.temp.cleanup()
 
     def wait_until(self, predicate, timeout=3):
+        # The deadline is only a deadlock watchdog; assertions use observed state.
         deadline = time.monotonic() + timeout
         while not predicate() and time.monotonic() < deadline: QTest.qWait(10)
         self.assertTrue(predicate(), "Synthetic sign-in timed out")
@@ -191,7 +192,10 @@ class ProviderLoginCancellationTests(unittest.TestCase):
         timer.start()
         try:
             self.login()
+            ticks.clear()
             self.wait_until(lambda: len(ticks) >= 3)
+            self.assertIn("first", self.manager.busy)
+            self.assertFalse(self.providers["first"].release.is_set())
             cancel = find("cancelPluginLogin_first")
             self.assertIsNotNone(cancel)
             self.assertTrue(cancel.isVisible() and cancel.isEnabled())
