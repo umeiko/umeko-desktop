@@ -12,6 +12,40 @@ from app.filesystem_paths import filesystem_path, ordinary_path
 from app.pi_runtime import PACKAGE, project_runtime, verify_runtime
 
 
+class RuntimeReaderTests(unittest.TestCase):
+    def test_prepared_runtime_is_not_rewritten_by_concurrent_test_lanes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            release=Path(temporary)/'release'
+            retry=release/'node_modules/@earendil-works/pi-ai/dist/utils/retry.js'
+            retry.parent.mkdir(parents=True)
+            retry.write_text('const errorMessage = message.errorMessage;',encoding='utf-8')
+            (release/'manifest.json').write_text(json.dumps({'package':PACKAGE,'projection':2}),encoding='utf-8')
+            bridge=Path(__file__).resolve().parents[1]/'runtime/bridge.mjs'
+            success=subprocess.CompletedProcess([],0,'{"ok":true}','')
+            with patch('app.pi_runtime.node_executable',return_value='node'),patch('app.pi_runtime.node_environment',return_value={}),patch('app.pi_runtime.subprocess.run',return_value=success) as run:
+                verify_runtime(release,bridge)
+                before={str(p):p.stat().st_mtime_ns for p in release.rglob('*') if p.is_file()}
+                with patch('app.pi_runtime.shutil.copy2',side_effect=AssertionError('Prepared adapters must remain immutable')):
+                    verify_runtime(release,bridge)
+                self.assertEqual(run.call_count,2)
+                self.assertEqual(before,{str(p):p.stat().st_mtime_ns for p in release.rglob('*') if p.is_file()})
+
+    def test_changed_adapter_is_only_published_after_the_copy_completes(self):
+        from app.pi_runtime import copy_runtime_file
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);source=root/'source';target=root/'target'
+            source.write_text('new helper',encoding='utf-8');target.write_text('old helper',encoding='utf-8')
+            real_copy=shutil.copy2
+            def copy(src,dst):
+                self.assertEqual(target.read_text(encoding='utf-8'),'old helper')
+                result=real_copy(src,dst)
+                self.assertEqual(target.read_text(encoding='utf-8'),'old helper')
+                return result
+            with patch('app.pi_runtime.shutil.copy2',side_effect=copy):copy_runtime_file(source,target)
+            self.assertEqual(target.read_text(encoding='utf-8'),'new helper')
+            self.assertEqual(set(p.name for p in root.iterdir()),{'source','target'})
+
+
 @unittest.skipUnless(os.name == "nt", "Windows extended-length paths")
 class RuntimePathTests(unittest.TestCase):
     def setUp(self):

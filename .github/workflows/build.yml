@@ -97,9 +97,10 @@ jobs:
 
       - name: Python unit tests
         run: |
-          dbus-run-session -- bash -ec '
-            printf "ci-ephemeral-password" | gnome-keyring-daemon --unlock --components=secrets
+          unit_tests() {
             .venv/bin/python -m unittest discover -s tests -p "test_*.py" -v
+          }
+          ui_smokes() {
             .venv/bin/python tests/codearts_plugin_ui_smoke.py
             .venv/bin/python tests/subagent_pane_ui_smoke.py
             .venv/bin/python tests/request_details_ui_smoke.py
@@ -137,7 +138,31 @@ jobs:
             .venv/bin/python tests/appearance_ui_smoke.py
             .venv/bin/python tests/task_state_ui_smoke.py
             .venv/bin/python tests/thinking_stream_ui_smoke.py
-          '
+          }
+          export -f unit_tests ui_smokes
+          isolated_tests() {
+            # Each worker gets its own D-Bus/keyring; test profiles are temporary.
+            dbus-run-session -- bash -ec '
+              profile=$(mktemp -d "$RUNNER_TEMP/umeko-ci.XXXXXX")
+              trap '\''rm -rf -- "$profile"'\'' EXIT
+              export XDG_DATA_HOME="$profile/data" XDG_CONFIG_HOME="$profile/config" XDG_RUNTIME_DIR="$profile/run"
+              mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_RUNTIME_DIR"
+              chmod 700 "$XDG_RUNTIME_DIR"
+              printf "ci-ephemeral-password" | gnome-keyring-daemon --unlock --components=secrets
+              started=$SECONDS
+              "$1"
+              echo "$1 completed in $((SECONDS - started)) seconds"
+            ' _ "$1"
+          }
+          # Keep the UI sequence serial, but overlap it with discovery. Wait for
+          # both workers and propagate either failure without adding a CI job.
+          isolated_tests unit_tests &
+          unit_pid=$!
+          ui_status=0
+          isolated_tests ui_smokes || ui_status=$?
+          unit_status=0
+          wait "$unit_pid" || unit_status=$?
+          if (( unit_status != 0 || ui_status != 0 )); then exit 1; fi
 
   windows-path-checks:
     name: Windows path regressions
