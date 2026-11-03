@@ -17,6 +17,7 @@ class DesktopPlugins(QObject):
     sessionChanged=Signal()
     pageChanged=Signal()
     requested=Signal()
+    importRequested=Signal()
     dismissed=Signal()
     response=Signal(str,"QVariantMap")
     managed=Signal(str,"QVariantMap")

@@ -198,6 +198,7 @@ class MarketCatalog:
                     if unquote(urlsplit(actual).path) != unquote(urlsplit(expected).path):
                         continue
                     row = {'id': identifier, 'version': version, 'name': identifier, 'description': '',
+                           'icon': 'puzzle', 'readme': 'README.md',
                            'publishedAt': str(release.get('published_at') or ''), 'digest': asset.get('digest') or '',
                            'size': size, 'url': actual, 'tag': tag, 'assetName': asset['name']}
                     previous = selected.get(identifier)
@@ -212,9 +213,14 @@ class MarketCatalog:
                     manifest = json.loads(body)
                     if not isinstance(manifest, dict) or manifest.get('id') != row['id'] or manifest.get('version') != row['version']:
                         raise MarketError('Widget 展示清单与发布包名称不一致', 'metadata')
-                    for key in ('name', 'description', 'summary', 'lifecycle'):
+                    for key in ('name', 'description', 'summary', 'lifecycle', 'readme'):
                         if isinstance(manifest.get(key), str):
                             row[key] = manifest[key][:8000]
+                    icon = manifest.get('icon')
+                    if isinstance(icon, str):
+                        row['icon'] = icon[:8000]
+                    elif isinstance(icon, dict) and isinstance(icon.get('path'), str):
+                        row['icon'] = {'path': icon['path'][:8000]}
                     if isinstance(manifest.get('permissions'), list):
                         row['permissions'] = [item for item in manifest['permissions'] if isinstance(item, str)]
                 except MarketError as error:

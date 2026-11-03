@@ -23,6 +23,10 @@ OPERATIONS = {
     'market.discard': ('pi.read', None),
     'market.install': ('pi.manage', None),
     'market.uninstall': ('pi.manage', None),
+    'market.enable': ('pi.manage', None),
+    'market.open': ('pi.read', None),
+    'market.browse': ('pi.read', None),
+    'market.importLocal': ('pi.read', None),
     'pi.status': ('pi.read', None),
     'pi.network': ('pi.read', None),
     'pi.preset': ('pi.manage',None),
@@ -69,7 +73,7 @@ DIRECT_SKILL_IMPORTS = frozenset(('skills.paste', 'skills.importLocal'))
 
 
 def requires_confirmation(name):
-    return OPERATIONS[name][0] in ('pi.manage', 'skills.manage') and name != 'pi.cancel' and name not in DIRECT_SKILL_IMPORTS
+    return OPERATIONS[name][0] in ('pi.manage', 'skills.manage') and name not in ('pi.cancel', 'market.enable') and name not in DIRECT_SKILL_IMPORTS
 
 
 class WidgetHost(QObject):
@@ -247,7 +251,8 @@ class WidgetHost(QObject):
             if permission not in self.m.entries[identifier].get('permissions', []):
                 raise ValueError('Widget permission is required: ' + permission)
             fields = {'market.list': {'force'}, 'market.prepare': {'id'}, 'market.install': {'token'},
-                      'market.discard': {'token'}, 'market.uninstall': {'id'},
+                      'market.discard': {'token'}, 'market.uninstall': {'id'}, 'market.enable': {'id'},
+                      'market.open': {'id'}, 'market.browse': {'target','id'}, 'market.importLocal': set(),
                       'pi.status': {'offset', 'limit', 'query', 'details', 'toolOffset'}, 'pi.inventory': set(), 'pi.toolVisibility': {'id','name','visible'}, 'pi.network': set(), 'pi.scan': set(), 'pi.refresh': set(),
                       'pi.enable': {'id', 'enabled'}, 'pi.install': {'source', 'project'},
                       'pi.remove': {'id'}, 'pi.job': {'id'}, 'pi.cancel': {'id'}, 'pi.checkUpdate': {'id'}, 'pi.details': {'id'}, 'pi.activation': {'id','mode'},
@@ -267,8 +272,10 @@ class WidgetHost(QObject):
                     raise ValueError('Open the built-in Widget market to use this operation')
                 if 'force' in args and type(args['force']) is not bool:
                     raise ValueError('force must be boolean')
-                if operation in ('market.prepare', 'market.uninstall') and (not isinstance(args.get('id'), str) or not re.fullmatch('[a-z0-9][a-z0-9-]{0,63}', args['id'])):
+                if (operation in ('market.prepare', 'market.uninstall', 'market.enable', 'market.open') or operation=='market.browse' and args.get('target')=='readme') and (not isinstance(args.get('id'), str) or not re.fullmatch('[a-z0-9][a-z0-9-]{0,63}', args['id'])):
                     raise ValueError('A valid Widget id is required')
+                if operation=='market.browse' and (args.get('target') not in ('repository','readme') or args.get('target')=='repository' and 'id' in args):
+                    raise ValueError('A valid market link target is required')
                 if operation in ('market.install', 'market.discard') and (not isinstance(args.get('token'), str) or not re.fullmatch('[a-f0-9]{32}', args['token'])):
                     raise ValueError('A valid download token is required')
             if operation == 'checkpoints.acquire' and not re.fullmatch('[a-f0-9]{32}', args.get('id', '')):

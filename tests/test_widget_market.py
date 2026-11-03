@@ -94,6 +94,16 @@ class MarketCatalogTests(unittest.TestCase):
         self.assertEqual(restored.refresh()['rows'], first['rows'])
         self.assertEqual(len(fetch.calls), 2)
 
+    def test_catalog_retains_layers_icon_and_manifest_readme_without_extra_requests(self):
+        catalog, fetch = self.catalog()
+        metadata = {**manifest(), 'icon':'layers', 'readme':'docs/usage.md'}
+        fetch.routes[metadata_url()]['body'] = json.dumps(metadata)
+        row = catalog.refresh()['rows'][0]
+        self.assertEqual(row['icon'], 'layers')
+        self.assertEqual(row['readme'], 'docs/usage.md')
+        self.assertEqual(len(fetch.calls), 2)
+        self.assertFalse(any(call[2] for call in fetch.calls))
+
     def test_semver_order_build_metadata_and_filename_identity(self):
         versions = ['1.0.0-alpha','1.0.0-alpha.1','1.0.0-alpha.beta','1.0.0-beta','1.0.0-beta.2','1.0.0-beta.11','1.0.0-rc.1','1.0.0']
         self.assertEqual(sorted(versions, key=semver_key), versions)

@@ -8,7 +8,7 @@ QtObject {
     function widgetText(plugin, value) {
         if (plugin && plugin.id === "widget-market" && plugin.builtin !== false && root.language === "en") {
             if (value === "Widget 市场") return "Widget Market"
-            if (value === "浏览固定发布源的 Widget，确认后安装、更新或卸载。") return "Browse Widgets from a fixed release source, then confirm installation, updates or removal."
+            if (value === "发现、安装和管理桌面 Widget。") return "Discover, install and manage desktop Widgets."
             if (value === "浏览和安装 Widget") return "Browse and install Widgets"
         }
         return plugin && plugin.id === "skill-manager" && plugin.builtin !== false ? t(value) : value

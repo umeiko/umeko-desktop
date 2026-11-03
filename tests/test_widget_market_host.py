@@ -58,8 +58,9 @@ class WidgetMarketHostTests(unittest.TestCase):
             approval = self.host.pendingApproval
             self.assertEqual(approval['id'], key)
             self.assertIn('Permissions: workspace.read', approval['detail'])
-            self.assertIn('digest', approval['detail'])
-            self.assertIn('not added to this chat or run', approval['detail'])
+            self.assertIn('GitHub provides no checksum', approval['detail'])
+            self.assertIn('Source: umeko-desktop-widgets', approval['detail'])
+            self.assertIn('This Widget contains Python and QML code.', approval['detail'])
             importer.assert_not_called()
             self.host.respondApproval(False)
             wait_for(lambda: key in self.backend.replies, self.app, 'Decline did not reply')
@@ -68,10 +69,11 @@ class WidgetMarketHostTests(unittest.TestCase):
 
     def test_real_async_import_update_retains_config_and_uninstall_uses_manager(self):
         token = self.prepare()
-        with patch.object(self.manager, 'importZip', wraps=self.manager.importZip) as importer:
+        with patch.object(self.manager, 'importZip', wraps=self.manager.importZip) as importer, patch.object(self.manager, 'setSessionEnabled', wraps=self.manager.setSessionEnabled) as enable:
             installed = self.result('market.install', {'token': token}, True)
         self.assertTrue(installed['ok'], installed)
         self.assertEqual(importer.call_count, 1)
+        enable.assert_not_called()
         row = next(row for row in self.manager.rows if row['id'] == 'sample-widget')
         self.assertTrue(row['enabled'])
         self.assertFalse(row['sessionEnabled'])
@@ -152,6 +154,36 @@ class WidgetMarketHostTests(unittest.TestCase):
         self.assertFalse(downloaded.exists())
         self.assertEqual(toasts, [])
         self.assertEqual(changes, [])
+
+    def test_explicit_enable_and_open_reuse_widget_settings_paths(self):
+        identifier = self.manual_import()
+        self.assertFalse(self.result('market.open', {'id': identifier})['ok'])
+        with patch.object(self.manager, 'setSessionEnabled', wraps=self.manager.setSessionEnabled) as enable:
+            result = self.result('market.enable', {'id': identifier})
+        self.assertTrue(result['ok'], result)
+        enable.assert_called_once_with(identifier, True)
+        self.assertFalse(self.host.pendingApproval)
+        self.assertTrue(self.manager.session_enabled(identifier))
+        self.assertNotIn(identifier, self.manager.workers, 'Opening a page remains a separate explicit action')
+        with patch.object(self.manager, 'openPage', return_value=True) as open_page:
+            self.assertTrue(self.result('market.open', {'id': identifier})['ok'])
+        open_page.assert_called_once_with(identifier)
+
+    def test_repository_readme_and_manual_import_use_fixed_existing_entries(self):
+        self.assertTrue(self.result('market.list')['ok'])
+        with patch('app.widget_market_host.QDesktopServices.openUrl', return_value=True) as browser:
+            self.assertTrue(self.result('market.browse', {'target': 'repository'})['ok'])
+            self.assertEqual(browser.call_args.args[0].toString(), 'https://github.com/umeiko/umeko-desktop-widgets')
+            self.assertTrue(self.result('market.browse', {'target': 'readme', 'id': 'sample-widget'})['ok'])
+            self.assertEqual(browser.call_args.args[0].toString(), 'https://github.com/umeiko/umeko-desktop-widgets/blob/sample-widget-v1.0.0/widgets/sample-widget/README.md')
+            self.assertEqual(browser.call_count, 2)
+            invalid = self.result('market.browse', {'target': 'repository', 'url': 'https://example.com'})
+            self.assertFalse(invalid['ok'])
+            self.assertEqual(browser.call_count, 2)
+        imports = []
+        self.manager.importRequested.connect(lambda: imports.append(True))
+        self.assertTrue(self.result('market.importLocal')['ok'])
+        self.assertEqual(imports, [True])
 
     def test_only_visible_builtin_market_can_dispatch_and_stale_confirmation_fails(self):
         self.manager.entries['widget-market']['builtin'] = False

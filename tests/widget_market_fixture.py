@@ -171,3 +171,81 @@ def request(backend, app, operation, args=None, confirm=None):
         host.respondApproval(confirm)
         wait_for(lambda: key in backend.replies, app, 'Confirmed operation did not settle: ' + operation)
     return key
+
+
+# Public examples for the real application captures. Billion Context's Chinese
+# metadata matches its published 1.0.0 manifest. All fixture workers are inert.
+PUBLIC_WIDGETS = {
+    'billion-context': {
+        'version': '1.0.0', 'name': 'Billion Context', 'icon': 'layers',
+        'lifecycle': 'application', 'permissions': ['process.execute'],
+        'summary': '长上下文安装检查与状态',
+        'description': '默认关闭。检查全局 billion-context 安装和本地代理状态，提供安装引导与管理入口，不包含压缩包本身。',
+        'en': {'name': 'Billion Context', 'summary': 'Long-context installation checks and status',
+            'description': 'Disabled by default. Checks the global billion-context installation and local proxy status, and provides installation guidance and management entry points. Does not include the archive itself.'}},
+    'focus-timer': {
+        'version': '1.0.0', 'name': '专注计时', 'icon': 'layers',
+        'lifecycle': 'session', 'permissions': [], 'summary': '专注与休息计时',
+        'description': '设置专注与休息时长，查看当前计时状态。',
+        'en': {'name': 'Focus Timer', 'summary': 'Focus and break timer',
+            'description': 'Set focus and break durations and view the current timer status.'}},
+    'clipboard-notes': {
+        'version': '1.1.0', 'name': '剪贴板便笺', 'icon': 'layers',
+        'lifecycle': 'session', 'permissions': ['workspace.read'], 'summary': '随手保存常用片段',
+        'description': '保存常用片段，并在当前聊天中查看和复制。',
+        'en': {'name': 'Clipboard Notes', 'summary': 'Keep frequently used snippets',
+            'description': 'Save frequently used snippets to view and copy in the current chat.'}},
+}
+
+
+def public_manifest(identifier, language='zh', version=None):
+    source = dict(PUBLIC_WIDGETS[identifier]); translated = source.pop('en')
+    if language == 'en': source.update(translated)
+    return {'kind': 'umeko-plugin', 'apiVersion': 1, 'id': identifier,
+        **source, 'version': version or source['version'], 'author': 'Umeko',
+        'entrypoint': 'main.py:create_plugin', 'page': 'qml/Main.qml',
+        'config': 'config.json', 'configSchema': 'config.schema.json',
+        'readme': 'README.md', 'agent': {'document': 'AGENT.md', 'methods': {}}}
+
+
+def public_files(identifier, version=None):
+    return {'manifest.json': json.dumps(public_manifest(identifier, version=version), ensure_ascii=False),
+        'main.py': 'from umeko_plugin_sdk import Plugin\ndef create_plugin(context): return Plugin(context)\n',
+        'qml/Main.qml': 'import QtQuick\nRectangle { required property var sdk; objectName: "focusTimerPage"; color: sdk.colors.surface; Text { anchors.centerIn: parent; text: sdk.language === "en" ? "Ready to focus" : "准备专注"; color: sdk.colors.ink } }',
+        'README.md': '# ' + PUBLIC_WIDGETS[identifier]['name'], 'AGENT.md': 'Use this Widget only when explicitly enabled.',
+        'config.json': '{}', 'config.schema.json': '{"type":"object"}'}
+
+
+class PublicGitHub(LocalGitHub):
+    def __init__(self):
+        self.routes, self.calls = {}, []; releases = []
+        for identifier, source in PUBLIC_WIDGETS.items():
+            version = source['version']; tag = identifier + '-v' + version
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, 'w') as archive:
+                for name, body in public_files(identifier).items(): archive.writestr(name, body)
+            url = 'https://github.com/umeiko/umeko-desktop-widgets/releases/download/' + tag + '/' + identifier + '-' + version + '.zip'
+            raw = 'https://raw.githubusercontent.com/umeiko/umeko-desktop-widgets/' + tag + '/widgets/' + identifier + '/manifest.json'
+            self.routes[url] = {'status': 200, 'body': buffer.getvalue(), 'headers': {}}
+            self.routes[raw] = {'status': 200, 'body': json.dumps(public_manifest(identifier)), 'headers': {}}
+            releases.append({'tag_name': tag, 'published_at': '2026-11-02T08:30:00Z',
+                'assets': [{'name': identifier + '-' + version + '.zip', 'size': len(buffer.getvalue()), 'browser_download_url': url}]})
+        self.routes[RELEASES] = {'status': 200, 'headers': {'etag': '"public-widgets"'}, 'body': json.dumps(releases)}
+
+
+class PublicCatalog(MarketCatalog):
+    """Actual local catalog/cache behavior, with fixture-only language variants."""
+    def __init__(self, backend):
+        self.backend = backend; self.fixture = PublicGitHub()
+        super().__init__(backend.store.directory, root=ROOT, fetcher=self.fixture)
+
+    def localized(self, row):
+        return {**row, **PUBLIC_WIDGETS[row['id']]['en']} if self.backend.language == 'en' else row
+
+    def refresh(self, force=False):
+        value = super().refresh(force)
+        return {**value, 'rows': [self.localized(row) for row in value['rows']]}
+
+    def prepare(self, identifier):
+        value = super().prepare(identifier)
+        return {**value, 'manifest': self.localized(value['manifest'])}

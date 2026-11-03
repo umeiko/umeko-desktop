@@ -11,7 +11,7 @@ Column {
     property bool desktopOpen: false
     property real availableHeight: 600
     signal navigated()
-    function openPlugins(identifier) { piOpen = false; desktopOpen = false; pluginsOpen = true; if(identifier)pluginManager.selectedId=identifier }
+    function openPlugins(identifier, importZip) { piOpen = false; desktopOpen = false; pluginsOpen = true; if(identifier)pluginManager.selectedId=identifier; if(importZip)Qt.callLater(()=>pluginManager.openImport()) }
     spacing: 18
     onPiOpenChanged: { if (!piOpen) toolsOpen = false; else { pluginsOpen = false; desktopOpen = false; backend.piManagement.scan() }; navigated() }
     onToolsOpenChanged: navigated()

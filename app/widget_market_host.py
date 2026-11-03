@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import PurePosixPath
+from urllib.parse import quote
 from PySide6.QtCore import QObject, QUrl, Slot
+from PySide6.QtGui import QDesktopServices
 
 from .widget_market import MarketCatalog, is_newer
 
@@ -33,16 +36,15 @@ class MarketJobs(QObject):
             item = self._owned(request, args['token'])
             manifest = item['package']['manifest']
             verified = item['package']['digestVerified']
-            digest = self._tr('GitHub SHA-256 已匹配。', 'GitHub SHA-256 matched.') if verified else self._tr(
-                'GitHub 未提供附件摘要，无法核对下载摘要。', 'GitHub provides no asset digest; download digest verification is unavailable.')
+            digest = self._tr('已核对 GitHub 校验值', 'GitHub checksum verified') if verified else self._tr(
+                'GitHub 未提供校验值', 'GitHub provides no checksum')
             permissions = ', '.join(manifest.get('permissions', [])) or self._tr('无', 'None')
-            return {'title': self._tr('导入 Widget ZIP', 'Import Widget ZIP'), 'detail': '\n\n'.join((
-                manifest['name'] + ' · ' + manifest['version'], manifest.get('description', ''),
+            return {'title': self._tr('安装 Widget', 'Install Widget'), 'detail': '\n\n'.join((
+                manifest['name'] + ' · ' + manifest['version'],
+                self._tr('来源：', 'Source: ') + 'umeko-desktop-widgets',
                 self._tr('权限：', 'Permissions: ') + permissions, digest,
-                self._tr('此插件可执行 Python 和 QML，请仅安装你信任的插件。',
-                         'This plugin can execute Python and QML. Install only plugins you trust.'),
-                self._tr('使用现有 ZIP 导入流程并保留用户配置。新安装的 Widget 不会加入当前会话或运行，请在插件管理中明确启用。',
-                         'Uses ZIP import and preserves user configuration. New Widgets are not added to this chat or run until you explicitly enable them in Plugin Management.')))}
+                self._tr('此 Widget 包含 Python 和 QML 代码，请只安装信任的来源。',
+                         'This Widget contains Python and QML code. Install only sources you trust.')))}
         identifier = args['id']
         entry = self.m.entries.get(identifier, {})
         if not entry or entry.get('builtin'):
@@ -73,6 +75,43 @@ class MarketJobs(QObject):
 
     def start(self, request):
         operation, args = request['operation'], request['arguments']
+        if operation=='market.importLocal':
+            self.host._reply(request, {'ok': True})
+            self.m.importRequested.emit()
+            return
+        if operation=='market.browse':
+            url = 'https://github.com/umeiko/umeko-desktop-widgets'
+            if args['target']=='readme':
+                row = next((row for row in self.catalog._cache['rows'] if row['id']==args['id']), None)
+                if not row:
+                    raise ValueError('Refresh the Widget list before opening its README')
+                readme = row.get('readme','README.md')
+                if not isinstance(readme,str) or not readme or '\\' in readme or ':' in readme or PurePosixPath(readme).is_absolute() or any(part in ('','..','.') for part in readme.split('/')):
+                    raise ValueError('The Widget README path is invalid')
+                url += '/blob/'+quote(row['tag'],safe='')+'/widgets/'+row['id']+'/'+quote(readme,safe='/')
+            if not QDesktopServices.openUrl(QUrl(url)):
+                raise ValueError(self._tr('无法打开链接，请稍后重试。','Could not open the link. Please retry.'))
+            self.host._reply(request, {'ok':True})
+            return
+        if operation in ('market.enable','market.open'):
+            identifier = args['id']
+            entry = self.m.entries.get(identifier,{})
+            if not entry or entry.get('builtin'):
+                raise ValueError('Install this Widget before enabling or opening it')
+            if operation=='market.enable':
+                if self.m.busy:
+                    raise ValueError('Plugin management is busy; please retry')
+                self.m.setSessionEnabled(identifier,True)
+                if not self.m.enabled(identifier) or not self.m.session_enabled(identifier):
+                    raise ValueError(self._tr('未能启用，请检查 Agent > Widgets 中的开关。','Could not enable the Widget. Check its switches in Agent > Widgets.'))
+                self.host._reply(request,{'ok':True,'result':{'enabled':identifier}})
+                return
+            if not entry.get('page') or not self.m.enabled(identifier) or not self.m.session_enabled(identifier):
+                raise ValueError(self._tr('请先启用此 Widget。','Enable this Widget first.'))
+            # Deliver to the requesting page before openPage retires its worker.
+            self.host._reply(request,{'ok':True,'result':{'opened':identifier}})
+            self.m.openPage(identifier)
+            return
         if operation == 'market.discard':
             self.discard(request)
             self.host._reply(request, {'ok': True})
@@ -140,7 +179,7 @@ class MarketJobs(QObject):
                 token = uuid.uuid4().hex
                 self.prepared[token] = {'package': value, 'widget': request['widget'],
                                         'worker': request['worker'], 'session': request['session']['token']}
-                value = {'token': token}
+                value = {'token': token, 'digestVerified': value['digestVerified']}
             else:
                 value = dict(value)
                 rows = []
@@ -148,8 +187,14 @@ class MarketJobs(QObject):
                     entry = self.m.entries.get(row['id'], {})
                     installed = entry.get('version', '')
                     newer = bool(installed and is_newer(row['version'], installed))
+                    icon = row.get('icon','puzzle')
+                    glyph = next((item['glyph'] for item in self.m._icons if item['id']==icon),'puzzle') if isinstance(icon,str) else 'puzzle'
                     rows.append({**row, 'installedVersion': installed,
                                  'state': 'update-available' if newer else 'installed' if installed else 'not-installed',
+                                 'enabled': bool(installed and self.m.enabled(row['id']) and self.m.session_enabled(row['id'])),
+                                 'sessionEnabled': bool(installed and self.m.session_enabled(row['id'])),
+                                 'running': bool(self.m.workers.get(row['id'],{}).get('ready')),
+                                 **(self.m.icon_for(row['id']) if installed else {'iconGlyph':glyph,'iconSource':''}),
                                  'builtin': bool(entry.get('builtin'))})
                 value['rows'] = rows
             self.host._reply(request, {'ok': True, 'result': value})
