@@ -9,7 +9,7 @@ import { homedir } from "node:os";
 import { webviewStatus } from "./webview-component.mjs";
 
 export const CHATBOX_TOOL = "submit_to_chatbox";
-const DELIVERY_TOOLS = new Set([CHATBOX_TOOL, "image_gen", "voice_gen"]);
+const DELIVERY_TOOLS = new Set([CHATBOX_TOOL, "image_gen", "voice_gen", "video_gen"]);
 function documentKind(path, requested) {
   if (['markdown','code','text'].includes(requested)) return requested;
   if (requested === 'image') return '';

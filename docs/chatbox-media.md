@@ -21,7 +21,7 @@ Drag files anywhere in the chat area to attach them. The app comes to the foregr
 
 Delivery references are stored in Pi's native session, including submissions made through nested tools such as codemode. Reopening, restarting and branching preserve the cards. The original files stay in their existing locations; the session does not bundle file contents or insert base64 data into the model context. If a file is moved or removed, the open action reports that it is unavailable.
 
-## Image and speech generation
+## Image, speech and video generation
 
 Choose an existing account and model for each capability in **Settings → Accounts & Providers → Multimodal model options**. Select a model from the catalogue or enter its raw upstream model ID. Generation uses that account's credentials and network settings; it does not add vendor presets or separate keys. Image defaults include optional size, quality and format, with count `1`. Speech requires a voice ID supported by the provider, with format `mp3` and speed `1` by default.
 
@@ -29,7 +29,11 @@ The built-in `image_gen` tool requires `prompt` and accepts optional `size`, `co
 
 Generated files are written directly to the current chat workspace. Output filenames must be safe basenames; files are created exclusively and name collisions receive a suffix rather than overwriting an existing file. Images appear as thumbnails and audio as openable file cards. Neither opens or plays automatically. Tool results give the Agent paths and text only, including with a vision model: generated image pixels do not enter model context. Reading an image separately uses the existing recent-image limit (default `3`).
 
-The OpenAI-compatible adapter uses `/images/generations` (base64 `b64_json` or URL response) and `/audio/speech` (binary response). Requests reuse provider networking and error handling without additional generation retries. Video generation is disabled; asynchronous jobs, progress and cancellation are tracked in [#52](https://github.com/umeiko/umeko-desktop/issues/52). The same page also configures auxiliary image understanding and its independent automatic-analysis and `analyze_image` switches. Historical observations are saved and reused; native vision models still receive original images.
+`video_gen` requires `prompt` and accepts optional `seconds` (a positive integer string), `size` (`WIDTHxHEIGHT`) and `output_filename` (MP4). Duration and resolution use the video settings when omitted; blank settings leave them to the provider. The tool registers only when configured and asks for permission on each call. It uses Pi's existing running-tool updates and AbortSignal, with queued/generating state and progress percent visible even in the collapsed tool header. Stop discards the result and attempts provider deletion; no late result is saved or shown. Completed MP4 files use the existing file card and native session delivery references, including after history reload. They open with the system player only after a user click, with no automatic playback. Running provider jobs do not resume across application restarts.
+
+The OpenAI-compatible adapter uses `/images/generations` (base64 `b64_json` or URL response), `/audio/speech` (binary response), and the [Videos protocol](https://developers.openai.com/api/reference/resources/videos/methods/create): create `POST /videos` with `prompt`, `model`, optional string `seconds` and `size`; poll `GET /videos/{id}` for `status`, percentage `progress` and `error`; download `GET /videos/{id}/content`. Cancellation attempts `DELETE /videos/{id}` with failures ignored. OpenAI itself has shut down this API; a selected compatible provider must still offer it. Other task protocols can be implemented by provider plugins declaring `video` and implementing `generate_video(model, prompt, parameters, on_progress=None)`. Requests reuse provider networking and error handling without additional generation retries.
+
+The same page also configures auxiliary image understanding and its independent automatic-analysis and `analyze_image` switches. Historical observations are saved and reused; native vision models still receive original images.
 
 ## Webpage delivery
 

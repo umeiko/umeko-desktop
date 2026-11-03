@@ -404,6 +404,8 @@ class PiControllerMixin:
                 if isinstance(event.get("args"), dict):
                     tool["arguments"] = dict(event["args"])
             tool["state"] = event["state"]
+            if isinstance(event.get('video'), dict):
+                tool['video'] = dict(event['video'])
             if event['name'] == 'analyze_image' and isinstance(event.get('args'), dict):
                 tool['arguments'] = dict(event['args'])
             if event.get("media"):

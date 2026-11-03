@@ -53,9 +53,9 @@ class Gateway:
     def provider(self, provider_id):
         return next((p for p in self.store.data["providers"] if p["id"] == provider_id), None)
 
-    def generate(self, body):
+    def generate(self, body, on_progress=None, *, poll_interval=2.0):
         from .generation import generate
-        return generate(self, body)
+        return generate(self, body, on_progress, poll_interval=poll_interval)
 
     def models(self):
         rows = []
@@ -285,6 +285,8 @@ class LocalServer:
                     self.connection.settimeout(100)
                     body = json.loads(self.rfile.read(size))
                     if self.path == '/umeko/generate' and owner.private:
+                        if isinstance(body, dict) and body.get('kind') == 'video':
+                            return self.request_call(lambda: self.stream_generation(body))
                         result = self.request_call(lambda: owner.gateway.generate(body))
                         return self.respond(200, result)
                     if self.path not in ("/v1/chat/completions", "/v1/messages", "/chat/completions", "/messages"):
@@ -334,6 +336,42 @@ class LocalServer:
                     pass
                 except Exception:
                     self.respond(502, {"error": {"type": "upstream_error", "message": "请求失败，请检查适配器或供应商配置"}})
+
+            def stream_generation(self, body):
+                # Keep one ordinary tool call alive. Progress travels through
+                # Pi's existing tool updates; disconnect uses request_call's
+                # cancellation scope, just like other streaming requests.
+                from umeko_provider_sdk import current_request_cancelled
+                from .generation import GenerationCancelled
+                cancelled = current_request_cancelled()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/x-ndjson')
+                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('Connection', 'close')
+                self.end_headers()
+                self.close_connection = True
+
+                def send(value):
+                    if cancelled.is_set():
+                        raise GenerationCancelled('生成已取消')
+                    try:
+                        self.wfile.write((json.dumps(value, ensure_ascii=False) + '\n').encode())
+                        self.wfile.flush()
+                    except OSError:
+                        cancelled.set()
+                        raise GenerationCancelled('生成已取消') from None
+
+                try:
+                    result = owner.gateway.generate(body, lambda job: send({'type': 'progress', **job}))
+                    send({'type': 'result', 'result': result})
+                except GenerationCancelled:
+                    pass
+                except RequestFailure as exc:
+                    send({'type': 'error', 'error': upstream_failure(exc)})
+                except (ValueError, KeyError, TypeError) as exc:
+                    send({'type': 'error', 'error': {'message': str(exc)[:300]}})
+                except Exception:
+                    send({'type': 'error', 'error': {'message': '请求失败，请检查适配器或供应商配置'}})
 
             def stream_events(self, events, model, anth):
                 return self.request_call(lambda: self._stream_events(events, model, anth))
