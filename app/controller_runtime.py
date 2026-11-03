@@ -401,6 +401,8 @@ class PiControllerMixin:
                 if isinstance(event.get("args"), dict):
                     tool["arguments"] = dict(event["args"])
             tool["state"] = event["state"]
+            if isinstance(event.get('video'), dict):
+                tool['video'] = dict(event['video'])
             if event.get("media"):
                 tool["media"] = event["media"]
                 if visible and self.store.data['desktop']['autoOpenSubmissions'] and event.get('name')=='submit_to_chatbox' and event.get('state')=='done':

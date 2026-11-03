@@ -12,7 +12,7 @@ Column {
     property int messageIndex: -1
     property int blockOffset: 0
     readonly property bool running: tools.some(tool => tool.state === "running")
-    readonly property string runningNames: tools.filter(tool => tool.state === "running").map(tool => tool.name).join(", ")
+    readonly property string runningNames: tools.filter(tool => tool.state === "running").map(tool => tool.name + (tool.video ? " · " + videoProgress(tool.video) : "")).join(", ")
     readonly property int failures: tools.filter(tool => tool.state === "error").length
     readonly property bool commandsOnly: tools.length > 0 && tools.every(tool => command(tool.name))
     readonly property string summary: (running ? (commandsOnly ? I18n.t("正在运行 ") : I18n.t("正在执行 ")) : (commandsOnly ? I18n.t("运行了 ") : I18n.t("执行了 "))) + tools.length + (commandsOnly ? I18n.t(" 条命令") : I18n.t(" 项操作")) + (failures ? "（" + failures + I18n.t(" 失败）") : "") + (runningNames ? " · " + runningNames : "")
@@ -31,9 +31,14 @@ Column {
         return ({queued:I18n.t("排队中"), running:I18n.t("运行中"), done:I18n.t("已完成"), completed:I18n.t("已完成"), error:I18n.t("出错"), interrupted:I18n.t("已中断"), aborted:I18n.t("已取消"), stopped:I18n.t("已停止")})[value] || value || ""
     }
     function agentMode(agent) { return agent.isBackground ? I18n.t("后台") : I18n.t("前台") }
+    function videoProgress(job) {
+        const state = ({queued:I18n.t("排队中"), in_progress:I18n.t("生成中"), completed:I18n.t("已完成"), failed:I18n.t("失败")})[job.status] || job.status || ""
+        return state + (typeof job.progress === "number" ? " · " + job.progress + "%" : "")
+    }
     function agentActivity(value) { return value === "Continuing" ? I18n.t("继续执行中") : value || "" }
     function preview(tool) {
         const args = tool.arguments || {}
+        if (tool.video) return videoProgress(tool.video) + (args.prompt ? " · " + args.prompt : "")
         if (tool.subagent) {
             const agent = tool.subagent
             return [agentType(agent.type || args.type), agentState(tool.state || agent.status), agentMode(agent), I18n.t("调用工具 %1 次").replace("%1", agent.toolUses || 0), agent.task || args.task || "", agentActivity(agent.activity)].filter(value => value !== "").join(" · ").replace(/\s+/g, " ").trim()

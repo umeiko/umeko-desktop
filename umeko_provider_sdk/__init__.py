@@ -129,6 +129,15 @@ class Provider:
         remain in context.secrets, as for streaming inference.
         """
         raise ProviderError('该供应商不支持语音生成')
+    def generate_video(self, model: str, prompt: str, parameters: dict, on_progress=None) -> list[dict]:
+        """Optional video extension returning [{data: bytes, mimeType: 'video/mp4'}].
+
+        Advertise 'video' in manifest.generationCapabilities. Report public
+        {id, status, progress} values through on_progress when provided. Observe
+        context.request_cancelled throughout polling and downloading, stop after
+        cancellation, and attempt remote cleanup when the provider supports it.
+        """
+        raise ProviderError('该供应商不支持视频生成')
     def close(self): self.context.cancelled.set()
 
 

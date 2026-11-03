@@ -69,9 +69,9 @@ def validate_folder(folder):
         raise ProviderError("Provider description must be a string")
     manifest["description"] = description.strip()
     capabilities = manifest.get('generationCapabilities', [])
-    if (not isinstance(capabilities, list) or any(item not in ('image', 'speech') for item in capabilities)
+    if (not isinstance(capabilities, list) or any(item not in ('image', 'speech', 'video') for item in capabilities)
             or len(set(capabilities)) != len(capabilities)):
-        raise ProviderError('generationCapabilities must list image and/or speech without duplicates')
+        raise ProviderError('generationCapabilities must list image, speech and/or video without duplicates')
     manifest['generationCapabilities'] = capabilities
     entry, sep, factory = manifest.get("entrypoint", "").partition(":")
     if not sep or not factory.isidentifier() or not entry.endswith(".py"):

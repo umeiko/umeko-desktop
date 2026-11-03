@@ -21,7 +21,7 @@ import urllib.request
 from umeko_provider_sdk import ProviderError, current_request_cancelled
 from umeko_provider_sdk.network import network_scope, proxy_handler, tls_context
 from .multimodal_settings import normalize
-from .provider_errors import format_http_error
+from .provider_errors import format_http_error, safe_text
 
 MAX_RESPONSE = 48 * 1024 * 1024
 MAX_MEDIA = 32 * 1024 * 1024
@@ -34,15 +34,19 @@ class GenerationCancelled(ConnectionError):
     """A caller cancellation is not a provider failure or a retry request."""
 
 
+class VideoJobFailed(ProviderError):
+    """A terminal remote job failure carries a public, sanitized reason."""
+
+
 def capabilities(provider):
     if provider.get('api') == 'openai':
-        return ['image', 'speech']
+        return ['image', 'speech', 'video']
     return provider.get('generationCapabilities', []) if provider.get('api') == 'plugin' else []
 
 
 def selection(data, kind):
-    if kind not in ('image', 'speech'):
-        raise ValueError('生成类型必须是 image 或 speech')
+    if kind not in ('image', 'speech', 'video'):
+        raise ValueError('生成类型必须是 image、speech 或 video')
     settings = normalize(data.get('multimodal'))[kind]
     provider = next((p for p in data.get('providers', []) if p.get('id') == settings['providerId']), None)
     if not provider or kind not in capabilities(provider):
@@ -63,7 +67,7 @@ def selection(data, kind):
 def generation_config(data):
     """Public tool descriptions only; selections are resolved again per request."""
     result = {}
-    for kind in ('image', 'speech'):
+    for kind in ('image', 'speech', 'video'):
         try:
             provider, model, _ = selection(data, kind)
             result[kind] = {'provider': provider.get('name', ''), 'model': model}
@@ -84,8 +88,9 @@ class _Transport:
     a duplicate still permits shutdown while that response's file is being read.
     DNS is resolved by the OS, then cancellation is checked before connecting.
     """
-    def __init__(self, settings, cancelled):
+    def __init__(self, settings, cancelled, timeout=TIMEOUT):
         self.cancelled = cancelled
+        self.timeout = timeout
         self.done = threading.Event()
         self.lock = threading.Lock()
         self.handles = []
@@ -176,15 +181,16 @@ class _Transport:
             for handle in self.handles:
                 handle.close()
 
-    def request(self, url, headers, records, data=None):
+    def request(self, url, headers, records, data=None, method=None):
         self.check()
+        method = method or ('POST' if data is not None else 'GET')
         record = {'request': {'url': urllib.parse.urlunsplit(urllib.parse.urlsplit(url)._replace(query='')),
-                              'method': 'POST' if data is not None else 'GET', 'headers': headers},
+                              'method': method, 'headers': headers},
                   'response': {'status': None, 'headers': {}, 'body': ''}}
         records.append(record)
-        request = urllib.request.Request(url, data=data, headers=headers)
+        request = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
-            with self.opener.open(request, timeout=TIMEOUT) as response:
+            with self.opener.open(request, timeout=self.timeout) as response:
                 record['response'].update(status=response.status, headers=dict(response.headers))
                 raw = self.read(response, MAX_RESPONSE)
                 record['response']['bytes'] = len(raw)
@@ -234,6 +240,10 @@ def _media(data, kind, format='', content_type=''):
             mime, extension = 'image/gif', 'gif'
         else:
             raise ValueError('供应商返回的图片格式不受支持')
+    elif kind == 'video':
+        if data[4:8] != b'ftyp' or (content_type and content_type not in ('video/mp4', 'application/octet-stream')):
+            raise ValueError('供应商返回的响应不是 MP4 视频')
+        mime, extension = 'video/mp4', 'mp4'
     else:
         extension = format or 'mp3'
         mime = FORMATS[extension]
@@ -242,25 +252,95 @@ def _media(data, kind, format='', content_type=''):
     return {'data': base64.b64encode(data).decode('ascii'), 'mimeType': mime, 'extension': extension}
 
 
-def generate(gateway, body):
+def _video_progress(value, on_progress, transport):
+    transport.check()
+    if not isinstance(value, dict):
+        raise ValueError('供应商返回的视频任务无效')
+    job_id, status, progress = value.get('id'), value.get('status'), value.get('progress', 0)
+    if (not isinstance(job_id, str) or not job_id or len(job_id) > 200
+            or status not in ('queued', 'in_progress', 'completed', 'failed')
+            or type(progress) is not int or not 0 <= progress <= 100):
+        raise ValueError('供应商返回的视频任务状态无效')
+    if on_progress:
+        on_progress({'id': job_id, 'status': status, 'progress': progress})
+    transport.check()
+    return job_id, status
+
+
+def _delete_video(provider, url, headers):
+    """Cancellation cleanup has its own bounded lifetime and no caller stop event.
+
+    A daemon also bounds OS DNS waits, which socket shutdown cannot interrupt.
+    Deletion is best effort: some providers only delete terminal jobs.
+    """
+    stop = threading.Event()
+    def delete():
+        try:
+            with _Transport(provider.get('proxy'), stop, timeout=2) as cleanup:
+                cleanup.request(url, headers, [], method='DELETE')
+        except Exception:
+            pass
+    worker = threading.Thread(target=delete, daemon=True)
+    worker.start()
+    worker.join(timeout=2)
+    stop.set()
+
+
+def _openai_video(provider, base, payload, transport, records, on_progress, poll_interval):
+    headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + provider['key'],
+               'User-Agent': 'Umeko-Desktop'}
+    job_id = None
+    try:
+        raw, _ = transport.request(base + '/videos', headers, records, json.dumps(payload).encode())
+        value = json.loads(raw)
+        # Keep a known ID even if the progress callback cancels this request.
+        if isinstance(value, dict) and isinstance(value.get('id'), str) and value['id']:
+            job_id = value['id']
+        while True:
+            received_id, status = _video_progress(value, on_progress, transport)
+            if received_id != job_id:
+                raise ValueError('供应商返回的视频任务 ID 不匹配')
+            url = base + '/videos/' + urllib.parse.quote(job_id, safe='')
+            if status == 'failed':
+                error = value.get('error')
+                reason = error.get('message') if isinstance(error, dict) else None
+                raise VideoJobFailed('视频生成失败：' + (reason if isinstance(reason, str) and reason.strip() else '供应商未提供原因'))
+            if status == 'completed':
+                raw, response_headers = transport.request(url + '/content', headers, records)
+                transport.check()
+                return [_media(raw, 'video', content_type=response_headers.get_content_type())]
+            if transport.cancelled.wait(poll_interval):
+                transport.check()
+            raw, _ = transport.request(url, headers, records)
+            value = json.loads(raw)
+    except Exception:
+        if transport.cancelled.is_set():
+            if job_id:
+                _delete_video(provider, base + '/videos/' + urllib.parse.quote(job_id, safe=''), headers)
+            raise GenerationCancelled('生成已取消') from None
+        raise
+
+
+def generate(gateway, body, on_progress=None, *, poll_interval=2.0):
     if not isinstance(body, dict):
         raise ValueError('生成请求必须是对象')
     kind = body.get('kind')
     provider, model, defaults = selection(gateway.store.data, kind)
-    text = body.get('prompt' if kind == 'image' else 'text')
+    text = body.get('text' if kind == 'speech' else 'prompt')
     if not isinstance(text, str) or not text.strip():
         raise ValueError('生成内容不能为空')
     if len(text) > 100_000:
         raise ValueError('生成内容过长')
-    options = {key: body.get(key, defaults.get(key)) for key in
-               (('size', 'quality', 'count', 'format') if kind == 'image' else ('voice', 'format', 'speed'))}
+    fields = {'image': ('size', 'quality', 'count', 'format'),
+              'speech': ('voice', 'format', 'speed'), 'video': ('seconds', 'size')}
+    options = {key: body.get(key, defaults.get(key)) for key in fields[kind]}
     options = {key: value for key, value in options.items() if value is not None and value != ''}
     if kind == 'image':
         if type(options.get('count', 1)) is not int or not 1 <= options.get('count', 1) <= 10:
             raise ValueError('图片数量必须为 1 到 10')
         if options.get('format', '') not in ('', 'png', 'jpeg', 'webp'):
             raise ValueError('图片格式必须为 png、jpeg 或 webp')
-    else:
+    elif kind == 'speech':
         if options.get('format', 'mp3') not in FORMATS:
             raise ValueError('不支持此音频格式')
         if not isinstance(options.get('voice'), str) or not options['voice'].strip():
@@ -268,6 +348,17 @@ def generate(gateway, body):
         speed = options.get('speed', 1)
         if type(speed) not in (int, float) or not .25 <= speed <= 4:
             raise ValueError('语速必须在 0.25 到 4 之间')
+    else:
+        if type(poll_interval) not in (int, float) or not 0 <= poll_interval <= 60:
+            raise ValueError('视频轮询间隔无效')
+        if 'seconds' in options and (not isinstance(options['seconds'], str) or not options['seconds'].isdigit()
+                                     or len(options['seconds']) > 4 or int(options['seconds']) <= 0):
+            raise ValueError('视频 seconds 必须为正整数字符串')
+        if 'size' in options:
+            size = options['size']
+            if (not isinstance(size, str) or len(size) > 30 or len(size.split('x')) != 2
+                    or any(not part.isdigit() or int(part) <= 0 for part in size.split('x'))):
+                raise ValueError('视频 size 必须为 WIDTHxHEIGHT')
     for key in ('size', 'quality', 'voice'):
         if key in options and (not isinstance(options[key], str) or len(options[key]) > 200):
             raise ValueError('生成参数无效：' + key)
@@ -277,10 +368,20 @@ def generate(gateway, body):
                'parameters': options, 'input': text}
     try:
         with network_scope(provider.get('proxy'), records):
+            if cancelled.is_set():
+                raise GenerationCancelled('生成已取消')
             if provider['api'] == 'plugin':
                 if gateway.plugins is None:
                     raise ProviderError('供应商插件不可用')
-                values = gateway.plugins.generate(provider['id'], kind, model, text, options)
+                if kind == 'video':
+                    def plugin_progress(value):
+                        if cancelled.is_set():
+                            raise GenerationCancelled('生成已取消')
+                        if on_progress:
+                            on_progress(value)
+                    values = gateway.plugins.generate(provider['id'], kind, model, text, options, on_progress=plugin_progress)
+                else:
+                    values = gateway.plugins.generate(provider['id'], kind, model, text, options)
                 if not isinstance(values, list) or not 1 <= len(values) <= (options.get('count', 1) if kind == 'image' else 1):
                     raise ValueError('供应商返回的媒体列表无效')
                 items = [_media(value['data'], kind, options.get('format', ''), value.get('mimeType', '')) for value in values]
@@ -293,15 +394,20 @@ def generate(gateway, body):
                     payload.update({k: options[k] for k in ('size', 'quality') if k in options})
                     if options.get('format'):
                         payload['output_format'] = options['format']
-                else:
+                elif kind == 'speech':
                     payload.update(input=text, voice=options['voice'], response_format=options.get('format', 'mp3'), speed=options.get('speed', 1))
+                else:
+                    payload.update(prompt=text, **options)
                 with _Transport(provider.get('proxy'), cancelled) as transport:
-                    raw, headers = transport.request(base + ('/images/generations' if kind == 'image' else '/audio/speech'),
-                        {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + provider['key'], 'User-Agent': 'Umeko-Desktop'},
-                        records, json.dumps(payload).encode())
+                    if kind == 'video':
+                        items = _openai_video(provider, base, payload, transport, records, on_progress, poll_interval)
+                    else:
+                        raw, headers = transport.request(base + ('/images/generations' if kind == 'image' else '/audio/speech'),
+                            {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + provider['key'], 'User-Agent': 'Umeko-Desktop'},
+                            records, json.dumps(payload).encode())
                     if kind == 'speech':
                         items = [_media(raw, kind, options.get('format', 'mp3'), headers.get_content_type())]
-                    else:
+                    elif kind == 'image':
                         result = json.loads(raw)
                         values = result.get('data') if isinstance(result, dict) else None
                         if not isinstance(values, list) or not 1 <= len(values) <= options.get('count', 1):
@@ -335,4 +441,7 @@ def generate(gateway, body):
     except Exception as exc:
         if cancelled.is_set():
             raise GenerationCancelled('生成已取消') from None
-        raise gateway.diagnostics.failure(provider, request, records[-1]['response'] if records else {}, exc, records) from None
+        failure = gateway.diagnostics.failure(provider, request, records[-1]['response'] if records else {}, exc, records)
+        if isinstance(exc, VideoJobFailed):
+            failure.args = (safe_text(str(exc), [provider.get('key', '')]) + ' ' + str(failure),)
+        raise failure from None

@@ -8,7 +8,7 @@ SectionCard {
     property string title: ""
     property string providerId: ""
     property string modelId: ""
-    property string formatValue: kind === "image" ? "" : "mp3"
+    property string formatValue: kind === "speech" ? "mp3" : ""
     property var accounts: backend.config.providers.filter(p => p.api === "openai" || (p.generationCapabilities || []).includes(root.kind))
     readonly property var account: accounts.find(p => p.id === providerId) || null
     readonly property var models: account ? account.models : []
@@ -27,15 +27,19 @@ SectionCard {
         providerId = value.providerId
         modelId = value.model
         size.text = kind === "image" ? value.size : ""
+        videoSize.text = kind === "video" ? value.size : ""
+        seconds.text = kind === "video" ? value.seconds : ""
         quality.text = kind === "image" ? value.quality : ""
         count.text = kind === "image" ? String(value.count) : "1"
         voice.text = kind === "speech" ? value.voice : ""
         speed.text = kind === "speech" ? String(value.speed) : "1"
-        formatValue = value.format
+        formatValue = value.format || ""
         Qt.callLater(syncPickers)
     }
     function values() {
         const common = {providerId: providerId, model: modelId}
+        if (kind === "video")
+            return Object.assign(common, {seconds: seconds.text, size: videoSize.text})
         return kind === "image" ? Object.assign(common, {size: size.text, quality: quality.text, count: Number(count.text), format: formatValue})
                                 : Object.assign(common, {voice: voice.text, format: formatValue, speed: Number(speed.text)})
     }
@@ -49,7 +53,7 @@ SectionCard {
             Glyph { name: root.kind === "image" ? "image" : "file"; width: Theme.icon(20); height: Theme.icon(20); color: Theme.accent }
             Text { text: root.title; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14, visible); font.weight: Font.DemiBold; color: Theme.ink }
             Item { Layout.fillWidth: true }
-            Text { text: root.kind === "image" ? "image_gen" : "voice_gen"; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible); color: Theme.muted }
+            Text { text: root.kind === "image" ? "image_gen" : root.kind === "video" ? "video_gen" : "voice_gen"; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible); color: Theme.muted }
         }
         GridLayout {
             Layout.fillWidth: true; columns: 2; columnSpacing: 14; rowSpacing: 7
@@ -111,6 +115,20 @@ SectionCard {
             }
         }
         RowLayout {
+            visible: root.kind === "video"; Layout.fillWidth: true; spacing: 14
+            ColumnLayout {
+                Layout.fillWidth: true; spacing: 6
+                Text { text: I18n.t("时长（秒）"); font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
+                InputField { id: seconds; objectName: "videoGenerationSeconds"; Layout.fillWidth: true; placeholderText: I18n.t("供应商默认"); validator: RegularExpressionValidator { regularExpression: /[0-9]+/ } Accessible.name: I18n.t("时长（秒）") }
+            }
+            ColumnLayout {
+                Layout.fillWidth: true; spacing: 6
+                Text { text: I18n.t("分辨率（宽x高）"); font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
+                InputField { id: videoSize; objectName: "videoGenerationSize"; Layout.fillWidth: true; placeholderText: I18n.t("供应商默认，例如 1280x720"); validator: RegularExpressionValidator { regularExpression: /[0-9]+x[0-9]+/ } Accessible.name: I18n.t("分辨率（宽x高）") }
+            }
+        }
+        RowLayout {
+            visible: root.kind !== "video"
             Layout.fillWidth: true; spacing: 14
             Text { text: I18n.t("输出格式"); font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
             Picker {
@@ -123,7 +141,12 @@ SectionCard {
             Text { text: I18n.t("参数支持因模型而异，留空使用供应商默认值。"); font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(10, visible); Layout.fillWidth: true; wrapMode: Text.Wrap }
         }
         Text {
-            text: root.kind === "image" ? I18n.t("图片提示词会发送给所选供应商，生成前逐次确认。") : I18n.t("朗读文本会发送给所选供应商，生成前逐次确认。")
+            visible: root.kind === "video"
+            text: I18n.t("参数支持因模型而异，留空使用供应商默认值。")
+            font.family: Theme.fontFamily; font.pixelSize: Theme.font(10, visible); color: Theme.muted; Layout.fillWidth: true; wrapMode: Text.Wrap
+        }
+        Text {
+            text: root.kind === "image" ? I18n.t("图片提示词会发送给所选供应商，生成前逐次确认。") : root.kind === "video" ? I18n.t("视频提示词会发送给所选供应商，生成前逐次确认。") : I18n.t("朗读文本会发送给所选供应商，生成前逐次确认。")
             font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible); color: Theme.muted; Layout.fillWidth: true; wrapMode: Text.Wrap
         }
     }

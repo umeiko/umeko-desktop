@@ -10,7 +10,7 @@ def result_media(name, result):
     details = (result or {}).get("details")
     payload = details.get("umekoChatbox") if isinstance(details, dict) else None
     if not isinstance(payload, dict): return []
-    if name not in ("submit_to_chatbox", "image_gen", "voice_gen") or (result or {}).get("isError") or payload.get("version") != 1:
+    if name not in ("submit_to_chatbox", "image_gen", "voice_gen", "video_gen") or (result or {}).get("isError") or payload.get("version") != 1:
         return []
     items = payload.get("items")
     return items[:12] if isinstance(items, list) else []

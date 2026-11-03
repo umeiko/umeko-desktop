@@ -375,7 +375,7 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        const context={...policy,cwd:backgroundStart&&input.cwd ? path.resolve(baseCwd,input.cwd) : baseCwd};
        const shell=name==='bash'||name==='powershell'||backgroundStart;
        const file=name==='write'||name==='edit';
-       const generation=name==='image_gen'||name==='voice_gen';
+       const generation=name==='image_gen'||name==='voice_gen'||name==='video_gen';
        let hit=generation?decision('ask'):null;
        if(shell)hit=await classify(String(input.command??input.script??''),context);
        else if(file)hit=classifyPath(String(input.path??input.file_path??''),context);
@@ -389,11 +389,11 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
          }
        }
        if(!hit)return undefined;
-       const selected=policy.generation?.[name==='image_gen'?'image':'speech'];
+       const selected=policy.generation?.[name==='image_gen'?'image':name==='video_gen'?'video':'speech'];
        const destination=selected ? `${selected.provider} / ${selected.model}` : name;
        const reason=generation ? (language==='zh'
-         ? `将提示词或文本发送到 ${destination} 生成${name==='image_gen'?'图片':'语音'}，可能产生费用。文件保存在当前工作目录，已有文件不会被覆盖。`
-         : `Send the prompt or text to ${destination} to generate ${name==='image_gen'?'images':'speech'}; this may incur charges. Save files in the current workspace without overwriting existing files.`)
+         ? `将提示词或文本发送到 ${destination} 生成${name==='image_gen'?'图片':name==='video_gen'?'视频':'语音'}，可能产生费用。文件保存在当前工作目录，已有文件不会被覆盖。`
+         : `Send the prompt or text to ${destination} to generate ${name==='image_gen'?'images':name==='video_gen'?'video':'speech'}; this may incur charges. Save files in the current workspace without overwriting existing files.`)
          : REASONS[hit.ruleId]?.[language==='zh'?1:0]||hit.reason;
        const original=shell?String(input.command??input.script??''):file?String(input.path??input.file_path??''):JSON.stringify(input);
        if(!ctx.hasUI||!ctx.ui?.confirm){

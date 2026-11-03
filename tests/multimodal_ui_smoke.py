@@ -213,7 +213,7 @@ def run():
                 assert provider_picker.property('displayText') == 'Test provider'
                 assert model_picker.property('displayText') == 'test-' + ('image' if kind == 'image' else 'voice') + '-model'
             assert Store(Path(profile)).data['multimodal'] == backend.store.data['multimodal']
-            assert find(window, 'videoGenerationNotice').isVisible()
+            assert find(window, 'videoGenerationSettings').isVisible()
             assert find(window, 'imageUnderstandingNotice').isVisible()
             screenshot_dir = ROOT / 'docs/images'
             screenshot_dir.mkdir(exist_ok=True)

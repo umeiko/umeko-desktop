@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 
 DEFAULTS = {
     'image': {'providerId': '', 'model': '', 'size': '', 'quality': '', 'count': 1, 'format': ''},
     'speech': {'providerId': '', 'model': '', 'voice': '', 'format': 'mp3', 'speed': 1.0},
+    'video': {'providerId': '', 'model': '', 'seconds': '', 'size': ''},
 }
 IMAGE_FORMATS = ('', 'png', 'jpeg', 'webp')
 SPEECH_FORMATS = ('mp3', 'opus', 'aac', 'flac', 'wav', 'pcm')
@@ -32,6 +34,12 @@ def validate(value):
                 if not isinstance(item, str) or len(item) > 512 or any(ord(c) < 32 for c in item):
                     raise ValueError('多模态设置文本无效 / Invalid generation settings text')
                 item = item.strip()
+                if kind == 'video' and key == 'seconds' and item:
+                    if not re.fullmatch(r'[0-9]+', item) or int(item) <= 0:
+                        raise ValueError('视频时长应为正整数秒或留空 / Video duration must be positive integer seconds or blank')
+                if kind == 'video' and key == 'size' and item:
+                    if not re.fullmatch(r'[0-9]+x[0-9]+', item) or any(int(n) <= 0 for n in item.split('x')):
+                        raise ValueError('视频分辨率应为正整数宽x高或留空 / Video resolution must be positive WIDTHxHEIGHT or blank')
                 if key == 'format' and item not in (IMAGE_FORMATS if kind == 'image' else SPEECH_FORMATS):
                     raise ValueError('生成格式无效 / Invalid generation format')
             clean[key] = item

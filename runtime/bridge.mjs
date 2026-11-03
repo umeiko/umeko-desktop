@@ -194,6 +194,7 @@ async function bindSession(session) {
     if (event.type.startsWith("tool_execution_") && event.toolName !== "subagent") emit({ type: "tool", name: event.toolName, id: event.toolCallId,
       args: event.args, result: event.type === "tool_execution_end" ? textOf(event.result?.content).slice(0,8192) : undefined,
       media: event.type === "tool_execution_end" ? chatboxItems(event.toolName, {...event.result, isError: event.isError}) : undefined,
+      video: event.toolName === "video_gen" ? event.partialResult?.details?.video : undefined,
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
     const willRetry = event.type === "message_end" && session.retryAttempt < NETWORK_RETRY.maxRetries &&
       isRetryableAssistantError(event.message) && !isContextOverflow(event.message, session.model?.contextWindow || 128000);

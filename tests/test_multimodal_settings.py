@@ -35,7 +35,7 @@ class MultimodalSettingsTests(unittest.TestCase):
     def test_invalid_saved_values_use_defaults_but_invalid_edits_are_rejected(self):
         self.assertEqual(normalize(None), DEFAULTS)
         self.assertEqual(normalize({'image': {'count': True, 'format': 'exe'}, 'speech': {'speed': float('nan')}}), DEFAULTS)
-        for value in ([], {'image': {'key': 'never-store'}}, {'video': {}}, {'speech': {'speed': 9}},
+        for value in ([], {'image': {'key': 'never-store'}}, {'unknown': {}}, {'speech': {'speed': 9}},
                       {'image': {'count': 11}}, {'image': {'providerId': 'bad\nvalue'}}):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 validate(value)
@@ -48,7 +48,8 @@ class MultimodalSettingsTests(unittest.TestCase):
                 self.assertTrue(controller.saveProvider('', 'Test provider', 'openai', 'https://provider.invalid/v1',
                                                         'fixture-key', 'test-image-model,test-voice-model'))
                 provider = copy.deepcopy(controller.store.data['providers'][0])
-                selection = {'image': {**DEFAULTS['image'], 'providerId': provider['id'], 'model': 'manual-image'},
+                selection = {'video': DEFAULTS['video'].copy(),
+                             'image': {**DEFAULTS['image'], 'providerId': provider['id'], 'model': 'manual-image'},
                              'speech': {**DEFAULTS['speech'], 'providerId': provider['id'],
                                         'model': 'test-voice-model', 'voice': 'test-voice'}}
                 with patch.object(controller, '_restart_pi') as restart:

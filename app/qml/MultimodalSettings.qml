@@ -6,7 +6,7 @@ Column {
     id: root
     objectName: "multimodalSettings"
     spacing: 16
-    function reload() { image.load(); speech.load() }
+    function reload() { image.load(); speech.load(); video.load() }
     Connections { target: backend; function onChanged() { root.reload() } }
     RowLayout {
         width: parent.width; spacing: 16
@@ -17,19 +17,12 @@ Column {
         }
         ActionButton {
             objectName: "saveMultimodalSettings"; text: I18n.t("保存"); primary: true
-            onClicked: backend.saveMultimodalSettings(JSON.stringify({image: image.values(), speech: speech.values()}))
+            onClicked: backend.saveMultimodalSettings(JSON.stringify({image: image.values(), speech: speech.values(), video: video.values()}))
         }
     }
     GenerationSettingsCard { id: image; objectName: "imageGenerationSettings"; width: parent.width; kind: "image"; title: I18n.t("图片生成") }
     GenerationSettingsCard { id: speech; objectName: "speechGenerationSettings"; width: parent.width; kind: "speech"; title: I18n.t("语音生成") }
-    SectionCard {
-        objectName: "videoGenerationNotice"; width: parent.width; enabled: false
-        RowLayout {
-            width: parent.width; spacing: 16
-            Text { text: I18n.t("视频生成"); font.family: Theme.fontFamily; font.pixelSize: Theme.font(13, visible); color: Theme.muted; font.weight: Font.DemiBold }
-            Text { text: I18n.t("将在后续版本加入异步任务、进度和取消支持。"); font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible); color: Theme.muted; Layout.fillWidth: true; wrapMode: Text.Wrap }
-        }
-    }
+    GenerationSettingsCard { id: video; objectName: "videoGenerationSettings"; width: parent.width; kind: "video"; title: I18n.t("视频生成") }
     SectionCard {
         objectName: "imageUnderstandingNotice"; width: parent.width
         RowLayout {
