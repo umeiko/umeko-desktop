@@ -9,6 +9,7 @@ os.environ.setdefault('UMEKO_LANGUAGE','zh')
 os.environ['UMEKO_DATA_DIR']=tempfile.mkdtemp(prefix='umeko-motion-ui-')
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen');os.environ.setdefault('QT_QUICK_BACKEND','software')
 from PySide6.QtCore import Qt,QPoint,QObject
+from PySide6.QtQml import QQmlEngine, QQmlExpression
 from PySide6.QtTest import QTest
 from main import create_application
 app,engine,backend=create_application();window=engine.rootObjects()[0]
@@ -26,6 +27,16 @@ def settled(popup):
         QTest.qWait(20)
         if not popup.property('animating'):return
     raise AssertionError('PID failed to settle')
+def selection_settled():
+    for _ in range(300):
+        QTest.qWait(20)
+        if not animator.property('running'): return
+    raise AssertionError('Sidebar PID failed to settle')
+def evaluate(item, expression):
+    query=QQmlExpression(QQmlEngine.contextForObject(item), item, expression)
+    value=query.evaluate()[0]
+    assert not query.hasError(),query.error().toString()
+    return value.toVariant() if hasattr(value,'toVariant') else value
 try:
     backend.store.data.update(selectedProvider='fixture',selectedModel='fixture',providers=[{'id':'fixture','name':'Fixture','api':'openai','baseUrl':'http://127.0.0.1:1/v1','models':[{'upstream':'fixture','alias':'fixture'}]}]);backend.changed.emit();QTest.qWait(150)
     button=find('modelSelector');popup=window.findChild(QObject,'modelPopup');click(button);QTest.qWait(30)
@@ -40,15 +51,30 @@ try:
     backend._sessions=[{'id':str(i),'title':f'Fixture {i}','workspace':''} for i in range(5)]
     backend._view.id='0';backend.chatChanged.emit();QTest.qWait(1500)
     highlight=find('sidebarHighlight')
-    backend._view.id='4';backend.chatChanged.emit();QTest.qWait(240)
-    assert abs(find('sidebarHighlight').mapToScene(find('sidebarHighlight').boundingRect().topLeft()).y()-find('sidebarRow_4').mapToScene(find('sidebarRow_4').boundingRect().topLeft()).y())<.2
-    backend._view.id='2';backend.chatChanged.emit();QTest.qWait(240)
-    assert abs(find('sidebarHighlight').mapToScene(find('sidebarHighlight').boundingRect().topLeft()).y()-find('sidebarRow_2').mapToScene(find('sidebarRow_2').boundingRect().topLeft()).y())<.2
-    # The visual animator is independent of data attachment; keep it running
-    # deliberately long so this contract does not depend on machine speed.
+    motion=find('sidebarPidMotion')
     animator=window.findChild(QObject,'sidebarSelectionAnimator')
-    assert animator is not None
-    animator.setProperty('duration',1000)
+    assert [motion.property(key) for key in ('kp','ki','kd')]==[280,60,20]
+    backend._view.id='4';backend.chatChanged.emit();QTest.qWait(90)
+    state=evaluate(motion,'currentState()')
+    path=evaluate(motion,'trajectory')
+    assert abs(state[1])>1, 'PID lost its velocity'
+    positions=[row[0] for row in path['samples']]
+    direction=1 if path['destination']>path['start'] else -1
+    assert max(direction*(position-path['destination']) for position in positions)>1, 'PID lost its damped overshoot'
+    # Retarget while moving: retain position, velocity and integral, including
+    # the brief motion in the old direction before reversing.
+    backend._view.id='2';backend.chatChanged.emit();QTest.qWait(5)
+    retarget=evaluate(motion,'trajectory.samples[0]')
+    assert abs(retarget[0]-state[0])<20, (state,retarget)
+    assert state[1]*retarget[1]>0 and abs(retarget[1])>1, (state,retarget)
+    assert state[2]*retarget[2]>0, (state,retarget)
+    selection_settled()
+    assert abs(find('sidebarHighlight').mapToScene(find('sidebarHighlight').boundingRect().topLeft()).y()-find('sidebarRow_2').mapToScene(find('sidebarRow_2').boundingRect().topLeft()).y())<.2
+    backend._view.id='4';backend.chatChanged.emit();selection_settled()
+    assert abs(find('sidebarHighlight').mapToScene(find('sidebarHighlight').boundingRect().topLeft()).y()-find('sidebarRow_4').mapToScene(find('sidebarRow_4').boundingRect().topLeft()).y())<.2
+    backend._view.id='2';backend.chatChanged.emit();selection_settled()
+    assert abs(find('sidebarHighlight').mapToScene(find('sidebarHighlight').boundingRect().topLeft()).y()-find('sidebarRow_2').mapToScene(find('sidebarRow_2').boundingRect().topLeft()).y())<.2
+    # The PID trajectory runs independently of data attachment.
     from unittest.mock import patch
     calls=[]
     def loaded(session_id):
@@ -67,10 +93,10 @@ try:
             QTest.qWait(5)
             if calls:break
         assert [row[0] for row in calls]==['0'],calls
-        QTest.qWait(1200)
+        selection_settled()
         assert abs(find('sidebarHighlight').mapToScene(find('sidebarHighlight').boundingRect().topLeft()).y()-find('sidebarRow_0').mapToScene(find('sidebarRow_0').boundingRect().topLeft()).y())<.2
     assert not warnings,'\n'.join(warnings)
-    print('MOTION_UI_OK: popup PID, sidebar retargeting, latest-click wins and content attachment during independent motion')
+    print('MOTION_UI_OK: original PID gains, damped overshoot, continuous velocity/integral on retarget, stable selection, latest-click wins and independent content attachment')
 finally:
     backend.close()
     import shiboken6

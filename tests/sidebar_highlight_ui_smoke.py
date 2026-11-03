@@ -37,6 +37,14 @@ def aligned(identifier):
     assert abs(highlight.height() - row.height()) < .2
 
 
+def settled():
+    for _ in range(300):
+        QTest.qWait(20)
+        if not animator.property('running'):
+            return
+    raise AssertionError('Sidebar PID did not settle')
+
+
 try:
     workspace = os.environ['UMEKO_DATA_DIR']
     backend.store.data['projects'] = [{'id': 'project', 'name': 'Fixture', 'path': workspace}]
@@ -44,16 +52,9 @@ try:
     backend._view.id = '24'
     backend.chatChanged.emit()
     QTest.qWait(1300)
-    # Behaviors instantiate their animation lazily; exercise a real selection
-    # before observing subsequent resets of an unchanged selection.
-    backend._view.id = '23'
-    backend.chatChanged.emit()
-    QTest.qWait(250)
-    backend._view.id = '24'
-    backend.chatChanged.emit()
-    QTest.qWait(250)
     view, highlight = find('projectList'), find('sidebarHighlight')
     animator = window.findChild(QObject, 'sidebarSelectionAnimator')
+    settled()
     aligned('24')
     positions, starts = [], []
     highlight.yChanged.connect(lambda: positions.append(highlight.y()))
@@ -87,7 +88,7 @@ try:
     # Different row heights and a genuine selection change still align exactly.
     backend._view.id = '20'
     backend.chatChanged.emit()
-    QTest.qWait(250)
+    settled()
     aligned('20')
     assert all(y > 100 for y in positions), ('Selection animation visited the top', positions)
     assert not warnings, '\n'.join(warnings)

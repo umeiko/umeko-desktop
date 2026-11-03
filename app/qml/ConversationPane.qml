@@ -251,7 +251,20 @@ Item {
         }
         Connections {
             target: pane.messageModel
-            enabled: pane.current
+            function onModelAboutToBeReset() {
+                if (!pane.current) return;
+                conversation.saveViewport();
+                conversation.restoring = true;
+                tailTimer.stop();
+                restoreTimer.stop();
+            }
+            function onModelReset() {
+                // Replacing a live transcript with its indexed snapshot is a
+                // structural reset. Preserve its reading anchor; ordinary page
+                // arrivals below only refresh viewport demand.
+                if (pane.current) conversation.restoreViewport();
+                else pane.layoutDirty = true;
+            }
             function onViewportChanged() {
                 // A page arrival is not a navigation request. ListView keeps
                 // its anchor while asynchronous delegate heights settle.
@@ -317,7 +330,7 @@ Item {
                             text: "umeko"
                             anchors.verticalCenter: parent.verticalCenter
                             color: Theme.ink
-                            font.pixelSize: Theme.font(11, visible)
+                            font.pixelSize: Theme.font(11, visible, chatSelection)
                             font.weight: Font.DemiBold
                         }
                     }
@@ -411,7 +424,7 @@ Item {
                                     font.family: Theme.fontFamily
                                     text: compactionEvent.heading
                                     color: compactionHover.interactionHovered ? Theme.ink : Theme.muted
-                                    font.pixelSize: Theme.font(12, visible)
+                                    font.pixelSize: Theme.font(12, visible, chatSelection)
                                     anchors.verticalCenter: parent.verticalCenter
                                 }
                                 Glyph {
@@ -460,7 +473,7 @@ Item {
                                     return lines.join("\n");
                                 }
                                 color: Theme.muted
-                                font.pixelSize: Theme.font(13, visible)
+                                font.pixelSize: Theme.font(13, visible, chatSelection)
                                 wrapMode: TextEdit.Wrap
                                 textFormat: TextEdit.PlainText
                                 selectionController: chatSelection
@@ -496,7 +509,7 @@ Item {
                                 objectName: "messageTime_" + messageRow.index
                                 anchors.verticalCenter: parent.verticalCenter
                                 color: Theme.muted
-                                font.pixelSize: Theme.font(11, visible)
+                                font.pixelSize: Theme.font(11, visible, chatSelection)
                                 text: {
                                     if (!modelData.timestamp)
                                         return "";
@@ -533,6 +546,7 @@ Item {
                 anchors.fill: parent
                 visible: bodyLoader.status !== Loader.Ready
                 ActivitySpinner {
+                    objectName: "historyLoading_" + rowShell.index
                     x: 33
                     y: 16
                     running: pane.current && parent.visible && !rowShell.modelData._loadError

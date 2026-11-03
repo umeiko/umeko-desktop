@@ -7,8 +7,9 @@ QtObject {
     readonly property real proseLineHeight: ({compact: 1.0, standard: 1.2, relaxed: 1.5})[backend.lineSpacing || "standard"]
     // Retained pages keep the same font metrics while hidden. Visibility
     // changes must not invalidate every cached QTextDocument layout.
-    function font(size, active) {
-        return Math.max(1, Math.round(size * fontScale))
+    function font(size, active, selectionController) {
+        const retained = selectionController && selectionController.retainedView
+        return Math.max(1, Math.round(size * (active === false && !retained ? 1 : fontScale)))
     }
     function icon(size) { return Math.max(1, Math.round(size * fontScale)) }
     function control(size) { return Math.round(size * Math.max(1, fontScale)) }

@@ -276,7 +276,14 @@ ApplicationWindow {
                         if (index < 0 || index >= rows.length) return
                         let top = sessionList.originY
                         for (let i = 0; i < index; ++i) top += sessionList.rowHeight(rows[i]) + sessionList.spacing
-                        y = top; height = sessionList.rowHeight(rows[index]); positioned = true
+                        const rowHeight = sessionList.rowHeight(rows[index])
+                        sidebarHeightMotion.targetRect = Qt.rect(0, 0, 1, rowHeight)
+                        if (positioned) sidebarMotion.moveTo(top)
+                        else {
+                            sidebarMotion.snapTo(top)
+                            sidebarHeightMotion.snap()
+                            positioned = true
+                        }
                     }
                     function scheduleTarget() { Qt.callLater(updateTarget) }
                     Component.onCompleted: scheduleTarget()
@@ -285,9 +292,10 @@ ApplicationWindow {
                         function onSpacingChanged() { sidebarHighlight.scheduleTarget() }
                         function onOriginYChanged() { sidebarHighlight.scheduleTarget() }
                     }
-                    width: sessionList.width; height: 34
+                    width: sessionList.width; height: sidebarHeightMotion.value.height
                     radius: 7; color: Theme.surface; visible: positioned && sessionList.selectedRow >= 0 && window.page === "chat"; z: -1
-                    Behavior on y { enabled: sidebarHighlight.positioned; YAnimator { objectName: "sidebarSelectionAnimator"; duration: 180; easing.type: Easing.OutCubic } }
+                    PidYAnimator { id: sidebarMotion; objectName: "sidebarPidMotion"; target: sidebarHighlight }
+                    PidMotion { id: sidebarHeightMotion; targetRect: Qt.rect(0, 0, 1, 34) }
                 }
 
                 Text { font.family: Theme.fontFamily; visible: sessionList.count === 0; x: 17; y: 8; text: backend.showArchived ? I18n.t("暂无归档会话") : I18n.t("暂无项目"); font.pixelSize: Theme.font(11, visible); color: Theme.muted }
