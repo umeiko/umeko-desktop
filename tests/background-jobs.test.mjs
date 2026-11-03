@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { createServer } from "node:http";
+import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -267,5 +269,103 @@ test("extension registers a natural-language tool, pre-execution hook and per-se
   } finally {
     await adapter.dispose();
     if (manager) await rm(manager.directory, { recursive: true, force: true });
+  }
+});
+
+test("checkpoint lock blocks only new background starts and preserves running-job inventory", async () => {
+  let allowStart = false;
+  const tools = [];
+  const adapter = createBackgroundJobsExtension({ canStart: () => allowStart });
+  adapter.extension({ on: () => {}, registerTool: tool => tools.push(tool) });
+  const execute = () => tools[0].execute("test", { action: "start", command: nodeCommand("setInterval(()=>{},1000)") }, undefined, undefined, { cwd: process.cwd() });
+  let manager;
+  try {
+    const blocked = await execute();
+    assert.equal(blocked.isError, true);
+    assert.match(blocked.content[0].text, /Checkpoint restoration is active/);
+    allowStart = true;
+    const started = await execute();
+    assert.equal(started.details.status, "running");
+    manager = await adapter.getManager();
+    const inventory = manager.list().map(({id,cwd,status}) => ({id,cwd,status}));
+    assert.deepEqual(inventory, [{id: started.details.id, cwd: process.cwd(), status: "running"}]);
+  } finally {
+    await adapter.dispose();
+    if (manager) await rm(manager.directory, { recursive: true, force: true });
+  }
+});
+
+test("real bridge reports background jobs and enforces checkpoint lock changes", { timeout: 90000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "umeko-checkpoint-background-"));
+  const cwd = join(root, "workspace"), agentDir = join(root, "agent"), sessionDir = join(root, "sessions");
+  for (const path of [cwd, agentDir, sessionDir]) await mkdir(path, { recursive: true });
+  let tool = true;
+  const server = createServer(async (request, response) => {
+    let raw = ""; for await (const chunk of request) raw += chunk;
+    const delta = tool ? { role: "assistant", content: null, tool_calls: [{ id: "background", type: "function", function: { name: "background_job", arguments: JSON.stringify({ action: "start", command: nodeCommand("setInterval(()=>{},1000)") }) } }] } : { role: "assistant", content: "done" };
+    tool = !tool;
+    const message = { id: "fixture", object: "chat.completion.chunk", created: 1, model: "fixture" };
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.end(`data: ${JSON.stringify({ ...message, choices: [{ index: 0, delta, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ ...message, choices: [{ index: 0, delta: {}, finish_reason: delta.tool_calls ? "tool_calls" : "stop" }] })}\n\ndata: [DONE]\n\n`);
+  });
+  await new Promise(done => server.listen(0, "127.0.0.1", done));
+  const bridge = fileURLToPath(new URL("../runtime/releases/coding-1.3.0/bridge.mjs", import.meta.url));
+  const child = spawn(process.execPath, [bridge], { cwd, stdio: ["pipe", "pipe", "pipe"] });
+  const events = [];
+  let buffer = "", stderr = "";
+  child.stderr.on("data", value => { stderr += value; });
+  child.stdout.on("data", value => {
+    buffer += value;
+    let index;
+    while ((index = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, index); buffer = buffer.slice(index + 1);
+      if (line) events.push(JSON.parse(line));
+    }
+  });
+  const send = value => child.stdin.write(JSON.stringify(value) + "\n");
+  const wait = async predicate => {
+    const deadline = Date.now() + 30000;
+    while (!predicate()) {
+      if (child.exitCode !== null) throw Error("Bridge exited: " + stderr);
+      if (Date.now() > deadline) throw Error("Timed out: " + JSON.stringify(events.slice(-4)) + stderr);
+      await new Promise(done => setTimeout(done, 20));
+    }
+  };
+  const catalog = async id => {
+    send({ type: "widget_catalog", kind: "background-jobs", id });
+    await wait(() => events.some(event => event.type === "widget_catalog" && event.id === id));
+    return events.find(event => event.type === "widget_catalog" && event.id === id);
+  };
+  try {
+    send({ type: "inspect", workspace: cwd, defaultCwd: cwd, agentDir, sessionDir, model: "fixture", models: [{ id: "fixture", contextWindow: 128000 }], gateway: `http://127.0.0.1:${server.address().port}/`, token: "fixture", agent: {} });
+    await wait(() => events.some(event => event.type === "ready"));
+    send({ type: "prompt", text: "Start the background job" });
+    await wait(() => events.some(event => event.type === "tool" && event.name === "background_job" && event.state === "done"));
+    await wait(() => events.some(event => event.type === "done" && event.action === "prompt"));
+    const started = events.find(event => event.type === "tool" && event.name === "background_job" && event.state === "done");
+    const jobId = JSON.parse(started.result).id;
+    const running = await catalog("running");
+    assert.equal(running.ok, true);
+    assert.deepEqual(running.value.jobs.map(job => job.id), [jobId]);
+    assert.equal(running.value.jobs[0].status, "running");
+    send({ type: "checkpoint_lock", locked: true });
+    send({ type: "prompt", text: "Start while restoring" });
+    await wait(() => events.some(event => event.type === "tool" && event.name === "background_job" && event.state === "error"));
+    const blocked = events.findLast(event => event.type === "tool" && event.name === "background_job" && event.state === "error");
+    assert.match(blocked.result, /Checkpoint restoration is active/);
+    assert.equal((await catalog("locked")).value.jobs.length, 1);
+    await wait(() => events.filter(event => event.type === "done" && event.action === "prompt").length >= 2);
+    send({ type: "checkpoint_lock", locked: false });
+    send({ type: "prompt", text: "Start after releasing" });
+    await wait(() => events.filter(event => event.type === "tool" && event.name === "background_job" && event.state === "done").length >= 2);
+    assert.equal((await catalog("released")).value.jobs.length, 2);
+  } finally {
+    if (child.exitCode === null) {
+      send({ type: "shutdown" });
+      await Promise.race([new Promise(done => child.once("exit", done)), new Promise(done => setTimeout(done, 5000))]);
+    }
+    if (child.exitCode === null) child.kill();
+    await new Promise(done => server.close(done));
+    await rm(root, { recursive: true, force: true });
   }
 });

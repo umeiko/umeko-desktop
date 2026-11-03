@@ -180,6 +180,23 @@ class CheckpointTests(unittest.TestCase):
         response = self.call('restorePreview', {'checkpointId': rows[0]['checkpointId']}, ok=False)
         self.assertFalse(response['ok'])
 
+    def test_origin_never_becomes_a_future_checkpoint(self):
+        (self.work / 'file.txt').write_text('A\n', encoding='utf-8')
+        self.start()
+        first = self.loop('loop-b', 'B', {'file.txt': 'B\n'})
+        self.loop('loop-c', 'C', {'file.txt': 'C\n'})
+        origin = next(row for row in self.call('timeline', {})['entries'] if row['kind'] == 'origin')
+        folder = next(child for child in self.state.glob('checkpoint-*') if json.loads((child / 'checkpoint.json').read_text(encoding='utf-8'))['id'] == origin['checkpointId'])
+        path = folder / 'checkpoint.json'
+        metadata = json.loads(path.read_text(encoding='utf-8'))
+        metadata['started'] = metadata['ended'] = 2000000000
+        path.write_text(json.dumps(metadata, ensure_ascii=False), encoding='utf-8')
+        self.start()
+        self.call('restore', {'checkpointId': first['checkpointId'], 'lockToken': uuid.uuid4().hex})
+        timeline = self.call('timeline', {})
+        self.assertEqual(timeline['futureCount'], 1)
+        self.assertEqual(timeline['entries'][-1]['kind'], 'origin')
+
 
 if __name__ == '__main__':
     unittest.main()

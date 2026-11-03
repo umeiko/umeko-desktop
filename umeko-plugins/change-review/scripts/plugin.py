@@ -66,7 +66,7 @@ class ChangeReview(Plugin):
 
     def ordered(self, key):
         return sorted([item for item in self.history.values() if self.owns(item, key) and item['kind'] != 'recovery'],
-                      key=lambda item: (item.get('started') or item.get('ended') or 0, item['checkpointId']))
+                      key=lambda item: (item['kind'] != 'origin', item.get('started') or item.get('ended') or 0, item['checkpointId']))
 
     def current_id(self, key):
         identifier = self.current.get(self.identity(key), '')

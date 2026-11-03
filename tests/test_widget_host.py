@@ -435,6 +435,29 @@ class WidgetHostTests(unittest.TestCase):
         self.host.stop('change-review')
         self.assertFalse(self.host.workspace_locked('/fixture'))
 
+    def test_checkpoint_lock_rejects_background_writers_and_notifies_runtime(self):
+        self.manager.bridge = SimpleNamespace(workspace=lambda value: os.path.normcase(os.path.abspath(value)) if value else '')
+        self.manager.entries['change-review'] = {'name': 'Review', 'permissions': ['workspace.write']}
+        self.manager.workers['change-review'] = {'ready': True}
+        record = SimpleNamespace(busy=False, workspace='/fixture', title='idle', process=object(), ready=True, stale=False, global_agent='')
+        notifications = []
+        jobs = [{'cwd': '/fixture/nested', 'status': 'running'}]
+        pool = SimpleNamespace(records={'idle': record})
+        pool.query_catalog = lambda record, kind, callback: (callback({'ok': True, 'value': {'jobs': jobs}}), True)[1]
+        pool.write = lambda record, payload: notifications.append(payload)
+        self.manager.b._pool = pool
+        blocked = self.request('checkpoints.acquire', {'id': 'a' * 32}, widget='change-review')
+        self.assertIn('后台任务', self.manager.replies[blocked]['error'])
+        self.assertFalse(self.host.workspace_locked('/fixture'))
+        jobs.clear()
+        acquired = self.request('checkpoints.acquire', {'id': 'b' * 32}, widget='change-review')
+        reply = self.manager.replies[acquired]
+        self.assertTrue(reply['ok'], reply)
+        self.assertEqual(notifications[-1], {'type': 'checkpoint_lock', 'locked': True})
+        released = self.request('checkpoints.release', {'token': reply['result']['token']}, widget='change-review')
+        self.assertTrue(self.manager.replies[released]['ok'])
+        self.assertEqual(notifications[-1], {'type': 'checkpoint_lock', 'locked': False})
+
 
 class WidgetHostWorkerTests(unittest.TestCase):
     def test_real_worker_returns_before_host_reply_and_keeps_original_chat(self):
