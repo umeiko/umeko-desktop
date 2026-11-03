@@ -200,7 +200,6 @@ class DesktopPlugins(QObject):
         if value:selected.append(identifier)
         if len(selected)>8:self.b.toast.emit('每个会话最多启用 8 个 Umeko 插件');return
         old=copy.deepcopy(self.settings);self.settings.setdefault('sessions',{})[self.storage_key]=selected
-        if value:self.settings.setdefault('enabled',{})[identifier]=True
         if not self.save():self.settings=old;return
         if not value:
             if self._page==identifier:self.closePage()
@@ -460,6 +459,8 @@ class DesktopPlugins(QObject):
                 applied=done(result)
                 if applied is False:result={'ok':False,'error':self._status or '插件设置未能保存'}
                 self.changed.emit();self.b.toast.emit(self._status)
+            # MarketJobs needs completion to clean its ZIP after shutdown too;
+            # UI changes and toasts above remain suppressed when closed.
             self.managed.emit(token,result)
             p.deleteLater()
         p.finished.connect(finish);p.errorOccurred.connect(finish)
@@ -474,7 +475,7 @@ class DesktopPlugins(QObject):
             old_path=self.path(identifier) if identifier in self.entries else None
             if self._page==identifier:self.closePage()
             self.stop(identifier);self.entries[identifier]=m;self.settings.setdefault('config',{}).setdefault(identifier,value['config'])
-            if self.application(identifier) or identifier not in old:self.settings.setdefault('enabled',{})[identifier]=False
+            if self.application(identifier):self.settings.setdefault('enabled',{})[identifier]=False
             if not self.save():self.entries=old;self.settings=options;return False
             if old_path and old_path!=self.path(identifier):
                 import shutil;shutil.rmtree(old_path,ignore_errors=True)

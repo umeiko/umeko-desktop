@@ -41,8 +41,8 @@ class MarketJobs(QObject):
                 self._tr('权限：', 'Permissions: ') + permissions, digest,
                 self._tr('此插件可执行 Python 和 QML，请仅安装你信任的插件。',
                          'This plugin can execute Python and QML. Install only plugins you trust.'),
-                self._tr('使用现有 ZIP 导入流程。用户配置会保留；新安装的 Widget 默认停用，请在插件管理中明确启用。',
-                         'Uses ZIP import. User configuration is preserved. New Widgets stay disabled until you explicitly enable them in Plugin Management.')))}
+                self._tr('使用现有 ZIP 导入流程并保留用户配置。新安装的 Widget 不会加入当前会话或运行，请在插件管理中明确启用。',
+                         'Uses ZIP import and preserves user configuration. New Widgets are not added to this chat or run until you explicitly enable them in Plugin Management.')))}
         identifier = args['id']
         entry = self.m.entries.get(identifier, {})
         if not entry or entry.get('builtin'):

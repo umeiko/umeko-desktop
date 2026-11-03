@@ -114,7 +114,7 @@ ApplicationWindow {
         value = expression.evaluate()
         if expression.hasError():
             raise AssertionError(expression.error().toString())
-        return value
+        return value[0] if isinstance(value, tuple) else value
 
     def idle(self):
         wait_for(lambda: self.widget.property('initialized') and not variant(self.widget.property('pending')),
@@ -172,13 +172,31 @@ class WidgetMarketUiTests(unittest.TestCase):
         ui = self.ui
         self.assertEqual(ui.manager.page['id'], 'widget-market')
         self.assertEqual({row['state'] for row in ui.rows()}, {'installed', 'update-available', 'not-installed'})
-        for language, states in [('en', ['Installed', 'Update available', 'Not installed']),
-                                 ('zh', ['已安装', '有可用更新', '未安装'])]:
+        for language, states in [('en', ['Installed version 1.0.0', 'Update available · Installed version 1.0.0', 'Not installed']),
+                                 ('zh', ['已安装版本 1.0.0', '有可用更新 · 已安装版本 1.0.0', '未安装'])]:
             ui.backend._language = language
             ui.backend.changed.emit()
             wait_for(lambda: ui.find('widgetMarketState_installed-widget').property('text') == states[0], self.app, 'Language did not update')
             for identifier, text in zip(('installed-widget', 'updated-widget', 'sample-widget'), states):
                 self.assertEqual(ui.find('widgetMarketState_' + identifier).property('text'), text)
+                row = next(row for row in ui.rows() if row['id'] == identifier)
+                date = ui.js('localDate(' + json.dumps(row['publishedAt']) + ')')
+                self.assertRegex(date, r'^\d{4}-\d{2}-\d{2}$')
+                metadata = ui.find('widgetMarketRelease_' + identifier).property('text')
+                self.assertTrue(metadata.endswith(date))
+                self.assertNotIn(row['publishedAt'], metadata)
+            # Build a local time near midnight, choosing the side that crosses
+            # UTC's calendar boundary whenever the local offset is nonzero.
+            boundary = variant(ui.js('''JSON.parse(JSON.stringify((function() {
+                const offset = new Date(2026, 0, 2).getTimezoneOffset();
+                const date = new Date(2026, 0, 2, offset > 0 ? 23 : 0, offset > 0 ? 45 : 15);
+                const expected = date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0");
+                return {iso: date.toISOString(), expected: expected, offset: date.getTimezoneOffset()};
+            })()))'''))
+            self.assertEqual(ui.js('localDate(' + json.dumps(boundary['iso']) + ')'), boundary['expected'])
+            if boundary['offset'] != 0:
+                self.assertNotEqual(boundary['iso'][:10], boundary['expected'])
+            self.assertEqual(ui.js('localDate("invalid-date")'), '—')
         calls = len(ui.fetch.calls)
         ui.click('widgetMarketRefresh')
         ui.idle()
@@ -199,7 +217,8 @@ class WidgetMarketUiTests(unittest.TestCase):
             ui.idle()
         self.assertEqual(importer.call_count, 1)
         row = next(row for row in ui.manager.rows if row['id'] == 'sample-widget')
-        self.assertFalse(row['enabled'])
+        self.assertFalse(row['sessionEnabled'])
+        self.assertNotIn('sample-widget', {item['id'] for item in ui.manager.sessionPlugins})
         self.assertFalse(row['running'])
         self.assertEqual(next(row for row in ui.rows() if row['id'] == 'sample-widget')['state'], 'installed')
         with patch.object(ui.manager, 'uninstall', wraps=ui.manager.uninstall) as uninstall:
@@ -231,9 +250,8 @@ def capture_documentation():
             ui = MarketUi(directory, language)
             try:
                 ui.capture(ROOT / ('docs/images/widget-market-' + language + '.png'))
-                if language == 'en':
-                    ui.start_install('sample-widget')
-                    ui.capture(ROOT / 'docs/images/widget-market-confirmation-en.png')
+                ui.start_install('sample-widget')
+                ui.capture(ROOT / ('docs/images/widget-market-confirmation-' + language + '.png'))
             finally:
                 ui.close()
     print('WIDGET_MARKET_CAPTURES_OK')

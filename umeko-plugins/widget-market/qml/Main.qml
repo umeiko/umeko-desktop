@@ -21,6 +21,14 @@ Rectangle {
     readonly property bool working: Object.keys(pending).some(key => pending[key].operation !== "market.discard")
 
     function t(zh, en) { return sdk.language.indexOf("zh") === 0 ? zh : en }
+    function localDate(value) {
+        if (!value) return "—"
+        const date = new Date(value)
+        if (isNaN(date.getTime())) return "—"
+        const month = String(date.getMonth() + 1).padStart(2, "0")
+        const day = String(date.getDate()).padStart(2, "0")
+        return String(date.getFullYear()).padStart(4, "0") + "-" + month + "-" + day
+    }
     function setState(id, state, reason) {
         const next = Object.assign({}, localStates)
         if (state) next[id] = {state: state, reason: reason || ""}
@@ -32,8 +40,9 @@ Rectangle {
         if (local && local.state === "installing") return t("正在安装…", "Installing…")
         if (local && local.state === "uninstalling") return t("正在卸载…", "Uninstalling…")
         if (local && local.state === "failed") return t("操作失败：", "Failed: ") + local.reason
-        if (row.state === "update-available") return t("有可用更新", "Update available")
-        if (row.state === "installed") return t("已安装", "Installed")
+        const installed = row.installedVersion ? t("已安装版本 ", "Installed version ") + row.installedVersion : t("已安装", "Installed")
+        if (row.state === "update-available") return t("有可用更新", "Update available") + (row.installedVersion ? " · " + installed : "")
+        if (row.state === "installed") return installed
         return t("未安装", "Not installed")
     }
     function failure(value) {
@@ -196,7 +205,7 @@ Rectangle {
                 id: helpText
                 anchors.fill: parent
                 anchors.margins: 10 * root.sdk.scale
-                text: root.t("安装后默认停用，请到“设置 > Agent > 插件管理”启用。手动导入 ZIP 也在此处。", "Installed Widgets stay disabled until enabled in Settings > Agent > Plugin Management. Import a local ZIP there too.")
+                text: root.t("新安装的 Widget 不会加入当前聊天或运行，请到“设置 > Agent > 插件管理”明确启用。手动导入 ZIP 也在此处。", "New Widgets are not added to this chat or run until explicitly enabled in Settings > Agent > Plugin Management. Import a local ZIP there too.")
                 color: root.sdk.colors.muted
                 font.pixelSize: 11 * root.sdk.scale
             }
@@ -246,16 +255,9 @@ Rectangle {
                         color: root.sdk.colors.muted
                     }
                     Copy {
+                        objectName: "widgetMarketRelease_" + card.modelData.id
                         Layout.fillWidth: true
-                        text: root.t("版本 ", "Version ") + (card.modelData.version || "—") + "  ·  " + root.t("发布于 ", "Published ") + (card.modelData.publishedAt || "—")
-                        color: root.sdk.colors.muted
-                        font.pixelSize: 11 * root.sdk.scale
-                        wrapMode: Text.WrapAnywhere
-                    }
-                    Copy {
-                        Layout.fillWidth: true
-                        visible: !!card.modelData.installedVersion
-                        text: root.t("已安装版本 ", "Installed version ") + (card.modelData.installedVersion || "")
+                        text: root.t("版本 ", "Version ") + (card.modelData.version || "—") + "  ·  " + root.t("发布于 ", "Published ") + root.localDate(card.modelData.publishedAt)
                         color: root.sdk.colors.muted
                         font.pixelSize: 11 * root.sdk.scale
                         wrapMode: Text.WrapAnywhere
