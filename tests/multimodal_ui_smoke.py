@@ -154,7 +154,10 @@ def run():
         server = ThreadingHTTPServer(('127.0.0.1', 0), FakeProvider)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        with patch('app.provider_plugins.BundledProviders.sync', return_value=[]):
+        with patch('app.provider_plugins.BundledProviders.sync', return_value=[]), \
+                patch('app.tray.QSystemTrayIcon.isSystemTrayAvailable', return_value=False), \
+                patch('app.tray.QSystemTrayIcon.showMessage'), \
+                patch('app.controller.QDesktopServices.openUrl', return_value=True):
             from main import create_application
             app, engine, backend = create_application()
         window = engine.rootObjects()[0]

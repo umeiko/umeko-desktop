@@ -88,17 +88,17 @@ SectionCard {
             ColumnLayout {
                 Layout.fillWidth: true; Layout.preferredWidth: 240; Layout.minimumWidth: 80; spacing: 6
                 Text { text: I18n.t("尺寸"); font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
-                InputField { id: size; objectName: "imageGenerationSize"; Layout.fillWidth: true; placeholderText: I18n.t("供应商默认"); Accessible.name: I18n.t("尺寸") }
+                InputField { id: size; objectName: root.kind === "image" ? "imageGenerationSize" : ""; Layout.fillWidth: true; placeholderText: I18n.t("供应商默认"); Accessible.name: I18n.t("尺寸") }
             }
             ColumnLayout {
                 Layout.fillWidth: true; Layout.preferredWidth: 240; Layout.minimumWidth: 80; spacing: 6
                 Text { text: I18n.t("质量"); font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
-                InputField { id: quality; objectName: "imageGenerationQuality"; Layout.fillWidth: true; placeholderText: I18n.t("供应商默认"); Accessible.name: I18n.t("质量") }
+                InputField { id: quality; objectName: root.kind === "image" ? "imageGenerationQuality" : ""; Layout.fillWidth: true; placeholderText: I18n.t("供应商默认"); Accessible.name: I18n.t("质量") }
             }
             ColumnLayout {
                 Layout.fillWidth: false; Layout.preferredWidth: 90; Layout.maximumWidth: 90; spacing: 6
                 Text { text: I18n.t("数量"); font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
-                InputField { id: count; objectName: "imageGenerationCount"; Layout.fillWidth: true; validator: IntValidator { bottom: 1; top: 10 } Accessible.name: I18n.t("数量") }
+                InputField { id: count; objectName: root.kind === "image" ? "imageGenerationCount" : ""; Layout.fillWidth: true; validator: IntValidator { bottom: 1; top: 10 } Accessible.name: I18n.t("数量") }
             }
         }
         RowLayout {
@@ -106,12 +106,12 @@ SectionCard {
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 6
                 Text { text: I18n.t("音色 ID"); font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
-                InputField { id: voice; objectName: "speechGenerationVoice"; Layout.fillWidth: true; placeholderText: I18n.t("输入供应商支持的音色 ID"); Accessible.name: I18n.t("音色 ID") }
+                InputField { id: voice; objectName: root.kind === "speech" ? "speechGenerationVoice" : ""; Layout.fillWidth: true; placeholderText: I18n.t("输入供应商支持的音色 ID"); Accessible.name: I18n.t("音色 ID") }
             }
             ColumnLayout {
                 Layout.fillWidth: false; Layout.preferredWidth: 100; Layout.maximumWidth: 100; spacing: 6
                 Text { text: I18n.t("语速"); font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
-                InputField { id: speed; objectName: "speechGenerationSpeed"; Layout.fillWidth: true; validator: DoubleValidator { bottom: 0.25; top: 4; locale: "C" } Accessible.name: I18n.t("语速") }
+                InputField { id: speed; objectName: root.kind === "speech" ? "speechGenerationSpeed" : ""; Layout.fillWidth: true; validator: DoubleValidator { bottom: 0.25; top: 4; locale: "C" } Accessible.name: I18n.t("语速") }
             }
         }
         RowLayout {
@@ -119,12 +119,12 @@ SectionCard {
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 6
                 Text { text: I18n.t("时长（秒）"); font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
-                InputField { id: seconds; objectName: "videoGenerationSeconds"; Layout.fillWidth: true; placeholderText: I18n.t("供应商默认"); validator: RegularExpressionValidator { regularExpression: /[0-9]+/ } Accessible.name: I18n.t("时长（秒）") }
+                InputField { id: seconds; objectName: root.kind === "video" ? "videoGenerationSeconds" : ""; Layout.fillWidth: true; placeholderText: I18n.t("供应商默认"); validator: RegularExpressionValidator { regularExpression: /[0-9]+/ } Accessible.name: I18n.t("时长（秒）") }
             }
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 6
                 Text { text: I18n.t("分辨率（宽x高）"); font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
-                InputField { id: videoSize; objectName: "videoGenerationSize"; Layout.fillWidth: true; placeholderText: I18n.t("供应商默认，例如 1280x720"); validator: RegularExpressionValidator { regularExpression: /[0-9]+x[0-9]+/ } Accessible.name: I18n.t("分辨率（宽x高）") }
+                InputField { id: videoSize; objectName: root.kind === "video" ? "videoGenerationSize" : ""; Layout.fillWidth: true; placeholderText: I18n.t("供应商默认，例如 1280x720"); validator: RegularExpressionValidator { regularExpression: /[0-9]+x[0-9]+/ } Accessible.name: I18n.t("分辨率（宽x高）") }
             }
         }
         RowLayout {
