@@ -247,7 +247,8 @@ jobs:
 
       - name: Windows regression suite
         if: runner.os == 'Windows'
-        timeout-minutes: 10
+        # Full discovery includes native runtime/profile copies and multimodal fixtures.
+        timeout-minutes: 15
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force build/test-logs | Out-Null
