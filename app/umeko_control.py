@@ -267,6 +267,10 @@ class UmekoControl(QObject):
             settings = b.config
             settings.pop('sessionMeta', None)
             return {'config': redacted(settings), 'activeSession': b.activeSession, 'callerSession': caller.id if caller else ''}
+        if operation in ('capabilities.get', 'capabilities.refresh'):
+            if args:
+                raise ValueError('Capability checks do not accept commands or environment overrides')
+            return {'snapshot': b.runtimeCapabilities.request(caller, force=operation == 'capabilities.refresh')}
         if operation == 'providers.list': return {'providers': redacted(b.config['providers']), 'presets': b.commonProviders}
         if operation == 'models.list':
             return {'models': [dict(model='umeko/'+row['id'], id=row['id'], provider='umeko', displayProvider=row.get('owned_by', 'Umeko'), contextWindow=row['contextWindow'], vision='image' in row['input'])
