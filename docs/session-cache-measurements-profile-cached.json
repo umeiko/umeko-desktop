@@ -1,0 +1,491 @@
+{
+  "label": "profile-cached",
+  "observations_per_cell": 5,
+  "environment": {
+    "platform": "win32",
+    "python": "3.14.7",
+    "qt_platform": "offscreen",
+    "renderer": "software",
+    "node": "node.EXE",
+    "pi": "1.3.0",
+    "window": [
+      1300,
+      1000
+    ]
+  },
+  "method": "Real Controller.openSession, PiSessionPool QProcess, pinned native Pi bridge/SDK, Main.qml software frame. Separate read-only browse from explicit inspect (no prompt/model call). Controlled evicted scenario calls pool.retire, the same lifecycle used by LRU trim, and drops only the inactive SessionState to force disk history reload.",
+  "limits": [
+    "Offscreen software rasterization; no visible desktop input or frame-to-display latency.",
+    "First-open is application-cold per unique fixture, not OS disk-cache cold.",
+    "Kernel resume metric is zero for an already-ready process; inspect roundtrip is reported separately.",
+    "Native initialization contains real resource discovery; provider is ideal local fixture and no inference occurs."
+  ],
+  "raw": [],
+  "profile": {
+    "scenario": "one zh500 cached return after real native inspect warmup",
+    "history_activation_ms": 847.8375000413507,
+    "render_ms": 182.28959990665317,
+    "stages": {
+      "signal.viewChanged": {
+        "calls": 1,
+        "total_ms": 203.8161000236869
+      },
+      "pool.trim_bodies": {
+        "calls": 1,
+        "total_ms": 0.04650000482797623
+      },
+      "pool.trim": {
+        "calls": 1,
+        "total_ms": 0.0754999928176403
+      },
+      "pool.touch": {
+        "calls": 1,
+        "total_ms": 0.08679996244609356
+      },
+      "store.save": {
+        "calls": 1,
+        "total_ms": 1.5045000473037362
+      },
+      "signal.changed": {
+        "calls": 1,
+        "total_ms": 500.46090001706034
+      },
+      "model.set_session": {
+        "calls": 1,
+        "total_ms": 2.2354000248014927
+      },
+      "model.set_snapshot": {
+        "calls": 1,
+        "total_ms": 120.09419989772141
+      },
+      "model.update": {
+        "calls": 1,
+        "total_ms": 0.10080006904900074
+      },
+      "signal.chatChanged": {
+        "calls": 1,
+        "total_ms": 139.28080000914633
+      },
+      "signal.attachmentsChanged": {
+        "calls": 1,
+        "total_ms": 0.21899992134422064
+      },
+      "signal.approvalChanged": {
+        "calls": 1,
+        "total_ms": 0.12690003495663404
+      },
+      "signal.editorText": {
+        "calls": 1,
+        "total_ms": 0.031400006264448166
+      },
+      "signal.contextUsageChanged": {
+        "calls": 1,
+        "total_ms": 1.0492000728845596
+      },
+      "signal.reasoningChanged": {
+        "calls": 1,
+        "total_ms": 0.10330008808523417
+      },
+      "signal.retryChanged": {
+        "calls": 1,
+        "total_ms": 0.04220008850097656
+      }
+    },
+    "profile_cumulative": [
+      {
+        "function": "measure-session-switch.py:267:timed",
+        "calls": 16,
+        "cumulative_ms": 830.3399000000001,
+        "own_ms": 0.117
+      },
+      {
+        "function": "<method 'emit' of 'PySide6.QtCore.SignalInstance' objects>",
+        "calls": 182,
+        "cumulative_ms": 827.9850000000001,
+        "own_ms": 657.8492
+      },
+      {
+        "function": "controller.py:1695:openSession",
+        "calls": 2,
+        "cumulative_ms": 641.3443000000001,
+        "own_ms": 16.608600000000003
+      },
+      {
+        "function": "<profile-activate-signals>:26:<lambda>",
+        "calls": 1,
+        "cumulative_ms": 484.05570000000006,
+        "own_ms": 0.0052
+      },
+      {
+        "function": "<profile-activate-signals>:4:<lambda>",
+        "calls": 1,
+        "cumulative_ms": 203.8057,
+        "own_ms": 0.0041
+      },
+      {
+        "function": "measure-session-switch.py:152:render",
+        "calls": 1,
+        "cumulative_ms": 181.9885,
+        "own_ms": 0.0437
+      },
+      {
+        "function": "<built-in method processEvents>",
+        "calls": 4,
+        "cumulative_ms": 168.7717,
+        "own_ms": 156.00930000000002
+      },
+      {
+        "function": "<profile-activate-signals>:1:_activate",
+        "calls": 2,
+        "cumulative_ms": 140.8778,
+        "own_ms": 0.3753
+      },
+      {
+        "function": "<profile-activate-signals>:27:<lambda>",
+        "calls": 1,
+        "cumulative_ms": 139.2717,
+        "own_ms": 1.3179
+      },
+      {
+        "function": "measure-session-switch.py:300:<lambda>",
+        "calls": 7,
+        "cumulative_ms": 124.0473,
+        "own_ms": 0.024300000000000002
+      },
+      {
+        "function": "controller.py:359:_update_chat_model",
+        "calls": 1,
+        "cumulative_ms": 120.3651,
+        "own_ms": 0.013300000000000001
+      },
+      {
+        "function": "chat_model.py:137:set_snapshot",
+        "calls": 2,
+        "cumulative_ms": 106.994,
+        "own_ms": 0.0097
+      },
+      {
+        "function": "<method 'endResetModel' of 'PySide6.QtCore.QAbstractItemModel' objects>",
+        "calls": 2,
+        "cumulative_ms": 62.1411,
+        "own_ms": 60.54390000000001
+      },
+      {
+        "function": "controller.py:468:config",
+        "calls": 237,
+        "cumulative_ms": 52.213800000000006,
+        "own_ms": 1.0751000000000002
+      },
+      {
+        "function": "copy.py:110:deepcopy",
+        "calls": 52014,
+        "cumulative_ms": 42.706,
+        "own_ms": 16.3495
+      },
+      {
+        "function": "copy.py:198:_deepcopy_dict",
+        "calls": 5180,
+        "cumulative_ms": 41.5546,
+        "own_ms": 14.268
+      },
+      {
+        "function": "chat_model.py:122:question",
+        "calls": 24,
+        "cumulative_ms": 38.0878,
+        "own_ms": 0.23530000000000004
+      },
+      {
+        "function": "transcript_index.py:273:question",
+        "calls": 24,
+        "cumulative_ms": 37.852500000000006,
+        "own_ms": 0.2736
+      },
+      {
+        "function": "transcript_index.py:208:connect",
+        "calls": 24,
+        "cumulative_ms": 25.505600000000005,
+        "own_ms": 0.15370000000000003
+      },
+      {
+        "function": "<method 'execute' of 'sqlite3.Connection' objects>",
+        "calls": 72,
+        "cumulative_ms": 19.9411,
+        "own_ms": 19.9411
+      },
+      {
+        "function": "controller.py:337:_refresh_sidebar",
+        "calls": 1,
+        "cumulative_ms": 15.125000000000002,
+        "own_ms": 0.0227
+      },
+      {
+        "function": "selectors.py:310:select",
+        "calls": 1,
+        "cumulative_ms": 13.0797,
+        "own_ms": 0.03780000000000001
+      },
+      {
+        "function": "selectors.py:304:_select",
+        "calls": 1,
+        "cumulative_ms": 12.899500000000002,
+        "own_ms": 0.0382
+      },
+      {
+        "function": "<built-in method select.select>",
+        "calls": 1,
+        "cumulative_ms": 12.6194,
+        "own_ms": 12.0365
+      },
+      {
+        "function": "model_capabilities.py:47:normalize_model",
+        "calls": 237,
+        "cumulative_ms": 12.2451,
+        "own_ms": 0.2723
+      },
+      {
+        "function": "transcript_index.py:201:__exit__",
+        "calls": 24,
+        "cumulative_ms": 11.4217,
+        "own_ms": 0.08240000000000001
+      },
+      {
+        "function": "<method 'close' of 'sqlite3.Connection' objects>",
+        "calls": 24,
+        "cumulative_ms": 11.327700000000002,
+        "own_ms": 11.327700000000002
+      },
+      {
+        "function": "desktop_plugins.py:156:synchronize",
+        "calls": 1,
+        "cumulative_ms": 11.1538,
+        "own_ms": 0.0631
+      },
+      {
+        "function": "measure-session-switch.py:56:wait",
+        "calls": 2,
+        "cumulative_ms": 10.930700000000002,
+        "own_ms": 0.0297
+      },
+      {
+        "function": "copy.py:172:_deepcopy_list",
+        "calls": 2511,
+        "cumulative_ms": 9.2834,
+        "own_ms": 1.9321000000000002
+      },
+      {
+        "function": "model_capabilities.py:36:normalize_vision",
+        "calls": 238,
+        "cumulative_ms": 9.2574,
+        "own_ms": 0.5294000000000001
+      },
+      {
+        "function": "model_capabilities.py:7:vision_suggestion",
+        "calls": 238,
+        "cumulative_ms": 8.587800000000001,
+        "own_ms": 1.3925
+      },
+      {
+        "function": "<built-in method _sqlite3.connect>",
+        "calls": 24,
+        "cumulative_ms": 5.9379,
+        "own_ms": 5.3495
+      },
+      {
+        "function": "<method 'get' of '_queue.SimpleQueue' objects>",
+        "calls": 1,
+        "cumulative_ms": 5.9115,
+        "own_ms": 5.6017
+      },
+      {
+        "function": "copy.py:212:_keep_alive",
+        "calls": 7691,
+        "cumulative_ms": 5.3793,
+        "own_ms": 3.5080000000000005
+      },
+      {
+        "function": "__init__.py:174:search",
+        "calls": 3808,
+        "cumulative_ms": 5.3175,
+        "own_ms": 1.6634000000000002
+      },
+      {
+        "function": "desktop_plugins.py:102:rows",
+        "calls": 7,
+        "cumulative_ms": 5.2319,
+        "own_ms": 0.38520000000000004
+      },
+      {
+        "function": "<method 'grabWindow' of 'PySide6.QtQuick.QQuickWindow' objects>",
+        "calls": 1,
+        "cumulative_ms": 5.1021,
+        "own_ms": 5.1021
+      },
+      {
+        "function": "controller.py:80:characterStyle",
+        "calls": 40,
+        "cumulative_ms": 4.9033,
+        "own_ms": 0.0374
+      },
+      {
+        "function": "characters.py:245:_characterStyle",
+        "calls": 40,
+        "cumulative_ms": 4.8659,
+        "own_ms": 0.2771
+      }
+    ],
+    "profile_own": [
+      {
+        "function": "<method 'emit' of 'PySide6.QtCore.SignalInstance' objects>",
+        "calls": 182,
+        "cumulative_ms": 827.9850000000001,
+        "own_ms": 657.8492
+      },
+      {
+        "function": "<built-in method processEvents>",
+        "calls": 4,
+        "cumulative_ms": 168.7717,
+        "own_ms": 156.00930000000002
+      },
+      {
+        "function": "<method 'endResetModel' of 'PySide6.QtCore.QAbstractItemModel' objects>",
+        "calls": 2,
+        "cumulative_ms": 62.1411,
+        "own_ms": 60.54390000000001
+      },
+      {
+        "function": "<method 'execute' of 'sqlite3.Connection' objects>",
+        "calls": 72,
+        "cumulative_ms": 19.9411,
+        "own_ms": 19.9411
+      },
+      {
+        "function": "controller.py:1695:openSession",
+        "calls": 2,
+        "cumulative_ms": 641.3443000000001,
+        "own_ms": 16.608600000000003
+      },
+      {
+        "function": "copy.py:110:deepcopy",
+        "calls": 52014,
+        "cumulative_ms": 42.706,
+        "own_ms": 16.3495
+      },
+      {
+        "function": "copy.py:198:_deepcopy_dict",
+        "calls": 5180,
+        "cumulative_ms": 41.5546,
+        "own_ms": 14.268
+      },
+      {
+        "function": "<built-in method select.select>",
+        "calls": 1,
+        "cumulative_ms": 12.6194,
+        "own_ms": 12.0365
+      },
+      {
+        "function": "<method 'close' of 'sqlite3.Connection' objects>",
+        "calls": 24,
+        "cumulative_ms": 11.327700000000002,
+        "own_ms": 11.327700000000002
+      },
+      {
+        "function": "<method 'get' of '_queue.SimpleQueue' objects>",
+        "calls": 1,
+        "cumulative_ms": 5.9115,
+        "own_ms": 5.6017
+      },
+      {
+        "function": "<built-in method _sqlite3.connect>",
+        "calls": 24,
+        "cumulative_ms": 5.9379,
+        "own_ms": 5.3495
+      },
+      {
+        "function": "<method 'grabWindow' of 'PySide6.QtQuick.QQuickWindow' objects>",
+        "calls": 1,
+        "cumulative_ms": 5.1021,
+        "own_ms": 5.1021
+      },
+      {
+        "function": "copy.py:212:_keep_alive",
+        "calls": 7691,
+        "cumulative_ms": 5.3793,
+        "own_ms": 3.5080000000000005
+      },
+      {
+        "function": "<built-in method nt._getfinalpathname>",
+        "calls": 34,
+        "cumulative_ms": 2.8154,
+        "own_ms": 2.8154
+      },
+      {
+        "function": "<method 'get' of 'dict' objects>",
+        "calls": 18040,
+        "cumulative_ms": 2.6482,
+        "own_ms": 2.6482
+      },
+      {
+        "function": "<method 'connect' of 'PySide6.QtCore.SignalInstance' objects>",
+        "calls": 136,
+        "cumulative_ms": 2.5844,
+        "own_ms": 2.5844
+      },
+      {
+        "function": "<built-in method builtins.id>",
+        "calls": 23402,
+        "cumulative_ms": 2.524,
+        "own_ms": 2.524
+      },
+      {
+        "function": "text_links.py:62:__init__",
+        "calls": 36,
+        "cumulative_ms": 3.6495,
+        "own_ms": 2.0103
+      },
+      {
+        "function": "copy.py:172:_deepcopy_list",
+        "calls": 2511,
+        "cumulative_ms": 9.2834,
+        "own_ms": 1.9321000000000002
+      },
+      {
+        "function": "__init__.py:330:_compile",
+        "calls": 4283,
+        "cumulative_ms": 2.5915,
+        "own_ms": 1.8647000000000002
+      },
+      {
+        "function": "<built-in method time.sleep>",
+        "calls": 1,
+        "cumulative_ms": 1.747,
+        "own_ms": 1.747
+      },
+      {
+        "function": "__init__.py:174:search",
+        "calls": 3808,
+        "cumulative_ms": 5.3175,
+        "own_ms": 1.6634000000000002
+      },
+      {
+        "function": "<method 'search' of 're.Pattern' objects>",
+        "calls": 3808,
+        "cumulative_ms": 1.5218,
+        "own_ms": 1.5218
+      },
+      {
+        "function": "<built-in method nt.replace>",
+        "calls": 2,
+        "cumulative_ms": 1.4176,
+        "own_ms": 1.4133000000000002
+      },
+      {
+        "function": "model_capabilities.py:7:vision_suggestion",
+        "calls": 238,
+        "cumulative_ms": 8.587800000000001,
+        "own_ms": 1.3925
+      }
+    ],
+    "model_calls": 0
+  },
+  "medians": []
+}

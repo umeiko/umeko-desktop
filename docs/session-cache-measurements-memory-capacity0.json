@@ -1,0 +1,79 @@
+{
+  "label": "memory-capacity0",
+  "source_revision": "5137d05",
+  "observations_per_cell": 5,
+  "environment": {
+    "platform": "win32",
+    "python": "3.14.7",
+    "qt_platform": "offscreen",
+    "renderer": "software",
+    "node": "node.EXE",
+    "pi": "1.3.0",
+    "window": [
+      1300,
+      1000
+    ]
+  },
+  "method": "Real Controller.openSession, PiSessionPool QProcess, pinned native Pi bridge/SDK, Main.qml software frame. Separate read-only browse from explicit inspect (no prompt/model call). Controlled evicted scenario calls pool.retire, the same lifecycle used by LRU trim, and drops only the inactive SessionState to force disk history reload.",
+  "limits": [
+    "Offscreen software rasterization; no visible desktop input or frame-to-display latency.",
+    "First-open is application-cold per unique fixture, not OS disk-cache cold.",
+    "Kernel resume metric is zero for an already-ready process; inspect roundtrip is reported separately.",
+    "Native initialization contains real resource discovery; provider is ideal local fixture and no inference occurs."
+  ],
+  "raw": [],
+  "memory": {
+    "scenario": "visit three native Pi sessions with 500 visible messages each (zh/en/zh), then switch to blank",
+    "cache_capacity": 0,
+    "model_calls": 0,
+    "empty_controller": {
+      "python_qml_rss_bytes": 248061952,
+      "node_rss_bytes": 0,
+      "nodes": []
+    },
+    "after_each_session": [
+      {
+        "python_qml_rss_bytes": 297381888,
+        "node_rss_bytes": 288649216,
+        "nodes": [
+          {
+            "session_id": "memory-0",
+            "pid": 39556,
+            "rss_bytes": 288649216
+          }
+        ]
+      },
+      {
+        "python_qml_rss_bytes": 307580928,
+        "node_rss_bytes": 145268736,
+        "nodes": [
+          {
+            "session_id": "memory-1",
+            "pid": 70268,
+            "rss_bytes": 145268736
+          }
+        ]
+      },
+      {
+        "python_qml_rss_bytes": 311431168,
+        "node_rss_bytes": 144572416,
+        "nodes": [
+          {
+            "session_id": "memory-2",
+            "pid": 7228,
+            "rss_bytes": 144572416
+          }
+        ]
+      }
+    ],
+    "after_switch_blank": {
+      "python_qml_rss_bytes": 313253888,
+      "node_rss_bytes": 0,
+      "nodes": []
+    },
+    "python_qml_delta_bytes": 65191936,
+    "node_delta_bytes": 0,
+    "limits": "RSS is a point sample. Python and QML share one process and are reported together. Empty-to-visited delta includes index/history work; compare fresh capacity0/3 end states for cache overhead. Python allocator may retain freed pages, so RSS is not exact retained object size. Does not measure sustained growth or compare shared pages across processes."
+  },
+  "medians": []
+}
