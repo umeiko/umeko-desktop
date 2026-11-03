@@ -1,4 +1,4 @@
-"""Decide whether a PR needs native packages; unknown paths build by default."""
+"""Compare the tested PR merge with its base; unknown paths build by default."""
 import os
 import subprocess
 from pathlib import Path

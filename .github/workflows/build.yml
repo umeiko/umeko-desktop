@@ -37,12 +37,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # The PR merge commit and its parents include the exact base tree.
+          # Include both parents of the merge commit being tested.
           fetch-depth: 2
       - name: Check packaging inputs
         id: scope
         env:
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          # main may advance after the event; compare this tested merge's base.
+          PR_BASE: HEAD^1
         run: python3 scripts/ci-package-changes.py
 
   checks:
