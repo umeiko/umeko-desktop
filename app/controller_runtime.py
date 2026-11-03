@@ -127,6 +127,10 @@ class PiControllerMixin:
 
     def _command_pi(self, action, record=None, **values):
         record = record or self._view
+        plugins = getattr(self, 'desktopPlugins', None)
+        locked = getattr(plugins, 'checkpoint_locked', None)
+        if callable(locked) and locked(record.workspace):
+            return False
         if record.busy or self._kernel_busy:
             return False
         if record.stale or (record.process and not record.ready):
@@ -187,6 +191,12 @@ class PiControllerMixin:
         self._last_send_error = ""
         if self._kernel_busy:
             self._last_send_error = "Pi 内核检查或更新正在进行；完成后即可再次发送消息。"
+            self.toast.emit(self._last_send_error)
+            self.changed.emit()
+            return False
+        locked = getattr(self.desktopPlugins, 'checkpoint_locked', None)
+        if callable(locked) and locked(record.workspace):
+            self._last_send_error = "该工作目录正在恢复代码检查点，完成后即可发送消息。"
             self.toast.emit(self._last_send_error)
             self.changed.emit()
             return False

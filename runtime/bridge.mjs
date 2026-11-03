@@ -12,7 +12,7 @@ import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
-import { backgroundJobsExtension } from "./background-jobs.mjs";
+import { createBackgroundJobsExtension } from "./background-jobs.mjs";
 import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
 import { createToolPermissionExtension } from "./tool-permissions.mjs";
 import { blockedToolNames, toolInventory } from "./tool-visibility.mjs";
@@ -53,6 +53,8 @@ let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe
 const compactionFailures = new WeakMap();
 const loopReview=createLoopReview({emit});
 const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit});
+let checkpointLocked = false;
+const backgroundJobs = createBackgroundJobsExtension({ canStart: () => !checkpointLocked });
 let reasoningEffort = "off";
 const effortLevels = new Set(["off", "low", "high", "max"]);
 let mcpEntries = [], mcpStatus = "", capturingMcp = false, pollingResources = false;
@@ -292,7 +294,7 @@ async function restoreSubagentSession(child, context, customTools) {
     extensionFactories: [
       { name: "recent-images", hidden: true, replaceable: false, factory: createRecentImagesExtension({ getLimit: () => config.agent?.maxContextImages }) },
       { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
-      { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension },
+      { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
     ],
     systemPrompt:context?.systemPrompt || `You are the ${child.type} subagent embedded in Umeko Desktop. Continue the task in this existing conversation. ${readonly ? "Inspect and report only; do not modify files." : ""}`,
     appendSystemPrompt:context?.systemPrompt?.includes(SUBAGENT_COMPLETION_HINT) ? [] : [SUBAGENT_COMPLETION_HINT],
@@ -366,7 +368,7 @@ async function init(input) {
           { name: "generation", builtin: true, replaceable: false, factory: createGenerationExtension({getConfig: () => config}) },
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },
           { name: "umeko-control", builtin: true, replaceable: false, factory: pi => umekoControl.extension(pi) },
-          { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension },
+          { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
           { name: "subagents", builtin: true, replaceable: true, factory: subagents.extension },
           { name: "output-continuation", hidden: true, replaceable: false, factory: outputContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
@@ -531,12 +533,17 @@ async function execute(input) {
       if (!runtime || closing || config.globalCoordinator) throw new Error("Pi instance is not available");
       const context = {...config, cwd: runtime.session.sessionManager.getCwd(), includeProject: !!config.workspace};
       let value;
-      if (input.kind === "skills") value = await manageSkills(Pi, {...context, action: "browse"});
+      if (input.kind === "background-jobs") value = {jobs: (await backgroundJobs.getManager()).list().map(({id,cwd,status}) => ({id,cwd,status}))};
+      else if (input.kind === "skills") value = await manageSkills(Pi, {...context, action: "browse"});
       else if (input.kind === "extensions") value = (await manageResources(Pi, {...context, action: "scan"})).extensions;
       else if (input.kind === "extension-details") value = (await manageResources(Pi, {...context, action: "details", id: input.extensionId})).details;
       else throw new Error("Unsupported directory request");
       emit({type: "widget_catalog", id: input.id, ok: true, value});
     } catch (error) { emit({type: "widget_catalog", id: input.id, ok: false, error: error.message}); }
+    return;
+  }
+  if (input.type === "checkpoint_lock") {
+    checkpointLocked = input.locked === true;
     return;
   }
   if (input.type === "desktop_settings") {

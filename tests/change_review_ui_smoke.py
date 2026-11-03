@@ -59,9 +59,18 @@ try:
     result=call('finish',{'loopId':'fixture','reason':'cancelled'})
     assert result['files']==2 and not result['error']
     wait(lambda:manager.page.get('id')=='change-review' and find('changeReviewWidget') is not None,'Finishing did not open the review page')
-    wait(lambda:find('changeReviewRow_src') is not None,'Review tree did not populate')
+    wait(lambda:find('changeReviewTimelineRow_') is not None,'Review timeline did not populate')
     wait(lambda:not find('webPane').property('moving'),'Review pane did not settle')
+    window.grabWindow().save(str(out/'timeline.png'))
+    click('changeReviewTimelineRow_')
+    wait(lambda:find('changeReviewRow_src') is not None,'Review tree did not populate')
     window.grabWindow().save(str(out/'tree.png'))
+    before=find('changeReviewTimeline').property('height')
+    handle=find('changeReviewSplitHandle');assert handle is not None
+    start=handle.mapToScene(handle.boundingRect().center()).toPoint();QTest.mousePress(window,Qt.LeftButton,Qt.NoModifier,start)
+    end=handle.mapToScene(handle.boundingRect().center()).toPoint();end.setY(end.y()+60);QTest.mouseMove(window,end);QTest.mouseRelease(window,Qt.LeftButton,Qt.NoModifier,end)
+    QTest.qWait(100)
+    assert find('changeReviewTimeline').property('height')>before+30,(before,find('changeReviewTimeline').property('height'))
     click('changeReviewRow_src')
     click('changeReviewRow_src/example.py')
     wait(lambda:'+after = 2' in find('changeReviewWidget').property('diff'),'Diff did not show updated content')
@@ -77,11 +86,11 @@ try:
     assert menu.property('readOnly') and not find('gitContextDiscard').isVisible() and not find('gitContextIgnore').isVisible()
     menu.close()
     worker=manager.workers['change-review']
-    click('changeReviewPageAutoOpen')
+    click('changeReviewMore');click('changeReviewPageAutoOpen')
     wait(lambda:manager.settings.get('config',{}).get('change-review',{}).get('autoOpen') is False and not manager.busy,'Page checkbox did not save')
     assert manager.workers['change-review'] is worker,'Page checkbox restarted the snapshot service'
     assert call('status',{})['total']==2,'Page checkbox discarded the review'
-    click('changeReviewPageAutoOpen')
+    click('changeReviewMore');click('changeReviewPageAutoOpen')
     wait(lambda:manager.settings['config']['change-review']['autoOpen'] is True and not manager.busy,'Page checkbox did not re-enable auto-open')
     manager.closePage()
     assert 'change-review' in manager.workers,'Closing the page stopped the application service'
@@ -105,10 +114,12 @@ try:
     call('finish',{'loopId':'manual-open'})
     assert not manager.page,'Disabled auto-open still opened a pane'
     assert manager.openPage('change-review')
+    wait(lambda:find('changeReviewTimelineRow_') is not None,'Manual review timeline did not populate')
+    wait(lambda:not find('webPane').property('moving'),'Manual pane did not settle')
+    click('changeReviewTimelineRow_')
     wait(lambda:find('changeReviewRow_src') is not None,'Manual review did not populate')
     assert not find('changeReviewPageAutoOpen').property('checked'),'Page did not reflect the setting from plugin management'
-    wait(lambda:not find('webPane').property('moving'),'Manual pane did not settle')
-    click('changeReviewPageAutoOpen')
+    click('changeReviewMore');click('changeReviewPageAutoOpen')
     wait(lambda:manager.settings['config']['change-review']['autoOpen'] is True and not manager.busy,'Page checkbox did not persist after reopening')
     manager.closePage()
     call('begin',{'loopId':'page-reenabled'});file.write_text('manual = 4\n',encoding='utf-8')

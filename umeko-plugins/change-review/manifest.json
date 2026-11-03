@@ -1,8 +1,8 @@
 {
-  "kind":"umeko-plugin","apiVersion":1,"id":"change-review","name":"本轮变更审查","version":"1.0.0","icon":"diff",
-  "summary":"任务结束后审查本轮文件变更","description":"默认关闭。开启后，在每轮主 Agent 开始前采集独立 Git 快照，完成或中止时可自动展示只读差异，也可手动查看。不会修改项目的暂存区、分支或历史。",
+  "kind":"umeko-plugin","apiVersion":1,"id":"change-review","name":"本轮变更审查","version":"1.1.0","icon":"diff",
+  "summary":"按轮次查看代码检查点和历史差异","description":"默认关闭。可查看本轮差异；显式开启检查后持久保存历史检查点，并在预览和冲突检查后恢复。不会修改聊天、项目暂存区、分支或历史。",
   "author":"Umeko","lifecycle":"application","entrypoint":"scripts/plugin.py:create_plugin","page":"qml/Main.qml",
-  "permissions":["workspace.read","session.write","process.execute","git.read"],"executables":{"git":{"system":"git"}},
+  "permissions":["workspace.read","workspace.write","session.write","process.execute","git.read"],"executables":{"git":{"system":"git"}},
   "readme":"README.md","config":"config.json","configSchema":"config.schema.json","settingsPage":"qml/Settings.qml","liveConfig":true,
   "agent":{"document":"AGENT.md","methods":{
     "status":{"description":"读取本聊天最近一轮的变更摘要，每页最多 200 个文件","parameters":{"type":"object","properties":{"offset":{"type":"integer","minimum":0,"maximum":4000}},"additionalProperties":false}},

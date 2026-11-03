@@ -10,6 +10,7 @@ import json
 import re
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from .tool_visibility import catalog, NATIVE_ID
 from collections import OrderedDict
 
@@ -53,6 +54,8 @@ OPERATIONS = {
     'skills.insert': ('session.write', None),
     'skills.rename': ('skills.manage', None),
     'skills.delete': ('skills.manage', None),
+    'checkpoints.acquire': ('workspace.write', None),
+    'checkpoints.release': ('workspace.write', None),
 }
 
 # User-initiated paste/drop adds new folders only. Replacement still goes
@@ -75,6 +78,7 @@ class WidgetHost(QObject):
         self.jobs = OrderedDict()
         self.requests = {}
         self.activity = {}
+        self.checkpoint_locks = {}
         self._panel_approval = {}
         self._skills = None
         self.activity_timer = QTimer(self)
@@ -113,7 +117,26 @@ class WidgetHost(QObject):
             self._skills = SkillJobs(self)
         return self._skills
 
+    def workspace_locked(self, workspace):
+        target = self.m.bridge.workspace(workspace)
+        return bool(target and any(lock['workspace'] == target for lock in self.checkpoint_locks.values()))
+
+    def release_checkpoint(self, identifier, token, worker=None):
+        lock = self.checkpoint_locks.get(token)
+        if not lock or lock['widget'] != identifier or worker is not None and lock['worker'] is not worker:
+            return False
+        self.checkpoint_locks.pop(token, None)
+        self._sync_checkpoint_locks()
+        return True
+
+    def _sync_checkpoint_locks(self):
+        pool = getattr(self.b, '_pool', None)
+        for record in getattr(pool, 'records', {}).values():
+            pool.write(record, {'type': 'checkpoint_lock', 'locked': self.workspace_locked(record.workspace)})
+
     def stop(self, identifier):
+        for token in [token for token, lock in self.checkpoint_locks.items() if lock['widget'] == identifier]:
+            self.release_checkpoint(identifier, token)
         if self._skills: self._skills.stop(identifier)
         self.activity.pop(identifier, None)
         if any(owner['widget']==identifier and owner.get('operation')=='pi.install' and getattr(self.b._umeko_control,'jobs',{}).get(key,{}).get('status')=='running' for key,owner in self.jobs.items()):
@@ -220,9 +243,14 @@ class WidgetHost(QObject):
                       'skills.importPreview': {'source', 'project'}, 'skills.import': {'id', 'decisions'},
                       'skills.browse': set(), 'skills.preview': {'id'}, 'skills.open': {'id', 'mode'}, 'skills.copy': {'id', 'kind'},
                       'skills.paste': {'project'}, 'skills.importLocal': {'source', 'project'},
-                      'skills.insert': {'id'}, 'skills.rename': {'id', 'name'}, 'skills.delete': {'id'}}[operation]
+                      'skills.insert': {'id'}, 'skills.rename': {'id', 'name'}, 'skills.delete': {'id'},
+                      'checkpoints.acquire': {'id'}, 'checkpoints.release': {'token'}}[operation]
             if set(args) - fields:
                 raise ValueError('Unknown host arguments')
+            if operation == 'checkpoints.acquire' and not re.fullmatch('[a-f0-9]{32}', args.get('id', '')):
+                raise ValueError('A valid checkpoint id is required')
+            if operation == 'checkpoints.release' and not re.fullmatch('[a-f0-9]{32}', args.get('token', '')):
+                raise ValueError('A valid checkpoint lock token is required')
             if operation == 'skills.job' and 'wait' in args and type(args['wait']) is not bool:
                 raise ValueError('wait must be boolean')
             if operation in ('pi.enable', 'pi.remove', 'pi.job', 'pi.cancel', 'pi.checkUpdate', 'pi.details', 'pi.activation', 'pi.plugin','pi.tools') or operation.startswith('skills.') and operation not in ('skills.list', 'skills.browse', 'skills.paste', 'skills.importLocal', 'skills.importPreview'):
@@ -326,8 +354,69 @@ class WidgetHost(QObject):
             raise ValueError('Tool does not belong to this loaded package')
 
     def _execute(self, request):
-        self._owner(request)  # Revalidate after the user spends time in confirmation.
+        identifier = self._owner(request)  # Revalidate after the user spends time in confirmation.
         operation, args = request['operation'], request['arguments']
+        if operation.startswith('checkpoints.'):
+            if identifier != 'change-review':
+                raise ValueError('Checkpoint locks are owned by the change review Widget')
+            if operation == 'checkpoints.release':
+                if not self.release_checkpoint(identifier, args['token'], request['worker']):
+                    raise ValueError('Checkpoint lock is invalid or expired')
+                self._reply(request, {'ok': True})
+                return
+            workspace = self.m.bridge.workspace(request['session'].get('workspace'))
+            if not workspace:
+                raise ValueError('A workspace is required')
+            if self.workspace_locked(workspace):
+                raise ValueError('Another checkpoint restore owns this workspace')
+            pool = getattr(self.b, '_pool', None)
+            records = list(getattr(pool, 'records', {}).values())
+            running = [record.title for record in records if record.busy and self.m.bridge.workspace(record.workspace) == workspace]
+            if running:
+                raise ValueError('同工作目录仍有运行中的任务：' + '、'.join(running[:4]))
+            live = [record for record in records if self.m.bridge.workspace(record.workspace) == workspace and
+                    record.process and record.ready and not record.stale and not record.global_agent]
+            pending = {id(record) for record in live}
+            failed = False
+            def finish():
+                self._owner(request)
+                if self.workspace_locked(workspace):
+                    raise ValueError('Another checkpoint restore owns this workspace')
+                current = [record.title for record in getattr(pool, 'records', {}).values()
+                           if record.busy and self.m.bridge.workspace(record.workspace) == workspace]
+                if current:
+                    raise ValueError('同工作目录仍有运行中的任务：' + '、'.join(current[:4]))
+                token = uuid.uuid4().hex
+                self.checkpoint_locks[token] = {'widget': identifier, 'worker': request['worker'], 'workspace': workspace}
+                self._sync_checkpoint_locks()
+                QTimer.singleShot(60000, self, lambda: self.release_checkpoint(identifier, token, request['worker']))
+                self._reply(request, {'ok': True, 'result': {'token': token, 'expiresMs': 60000}})
+            def checked(record, response):
+                nonlocal failed
+                if failed:
+                    return
+                try:
+                    self._owner(request)
+                    pending.discard(id(record))
+                    if not response.get('ok'):
+                        raise ValueError(str(response.get('value') or '无法读取后台任务状态'))
+                    jobs = response['value'].get('jobs')
+                    if not isinstance(jobs, list):
+                        raise ValueError('后台任务状态无效')
+                    if any(job.get('status') == 'running' and job.get('cwd') and Path(job['cwd']).resolve().is_relative_to(Path(workspace)) for job in jobs):
+                        raise ValueError('同工作目录仍有运行中的后台任务；请等待结束后再恢复')
+                    if not pending:
+                        finish()
+                except (ValueError, TypeError, OSError) as error:
+                    failed = True
+                    self._reply(request, {'ok': False, 'error': str(error)})
+            if not live:
+                finish()
+                return
+            for record in live:
+                if not pool.query_catalog(record, 'background-jobs', lambda response, record=record: checked(record, response)):
+                    checked(record, {'ok': False, 'value': 'Pi 实例已变化，请重新检查后台任务'})
+            return
         if operation.startswith('skills.'):
             service = self._skill_service()
             result = service.get(request, args['id'], args.get('offset', 0), args.get('limit', 100), args.get('wait', False)) if operation == 'skills.job' else service.start(request)

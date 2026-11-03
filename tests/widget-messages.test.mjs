@@ -42,6 +42,15 @@ test('loop boundaries await snapshots, correlate replies, and include cancellati
   review.response({id:events[1].id});await finish;
   await handlers.agent_end({messages:[]});assert.equal(events.length,2);
 });
+test('loop completion names the checkpoint from the user task',async()=>{
+  const handlers={},events=[];
+  const review=createLoopReview({emit:event=>events.push(event),timeoutMs:1000});
+  review.extension({on:(name,handler)=>handlers[name]=handler});
+  const start=handlers.agent_start();review.response({id:events[0].id});await start;
+  const finish=handlers.agent_end({messages:[{role:'user',content:[{type:'text',text:'  实现\n时间线  '}]},{role:'assistant',stopReason:'stop'}]});
+  assert.equal(events[1].title,'实现 时间线');
+  review.response({id:events[1].id});await finish;
+});
 test('disconnected review hooks have a bounded wait and shutdown releases pending hooks',async()=>{
   const handlers={};const review=createLoopReview({emit:()=>{},timeoutMs:10});
   review.extension({on:(name,handler)=>handlers[name]=handler});

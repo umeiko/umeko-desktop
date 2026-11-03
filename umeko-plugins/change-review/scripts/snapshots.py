@@ -21,12 +21,12 @@ def remove_snapshot(folder):
         pass
 
 class Snapshot:
-    def __init__(self, workspace, state, cancelled=None):
+    def __init__(self, workspace, state, cancelled=None, prefix='review-'):
         self.workspace = Path(workspace).resolve()
         if not self.workspace.is_dir(): raise SnapshotError('请先选择存在的会话工作目录')
         self.git = shutil.which('git')
         if not self.git: raise SnapshotError('未找到 Git，请安装 Git 后重新开始一轮任务')
-        self.folder = Path(tempfile.mkdtemp(prefix='review-', dir=state))
+        self.folder = Path(tempfile.mkdtemp(prefix=prefix, dir=state))
         self.repo = self.folder / 'objects.git'
         self.cancelled = cancelled or threading.Event()
         self.deadline = time.monotonic() + SNAPSHOT_SECONDS
@@ -43,6 +43,8 @@ class Snapshot:
         if remaining <= 0: raise SnapshotError('采集超过 5 秒，已停止；本轮审查不可用')
         env = {k:v for k,v in os.environ.items() if not k.upper().startswith('GIT_')}
         env.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull, GIT_TERMINAL_PROMPT='0', GIT_OPTIONAL_LOCKS='0')
+        if os.environ.get('GIT_CEILING_DIRECTORIES'):
+            env['GIT_CEILING_DIRECTORIES'] = os.environ['GIT_CEILING_DIRECTORIES']
         command = [self.git, '--no-pager', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath='+os.devnull]
         if private: command += ['--git-dir='+str(self.repo),'--work-tree='+str(self.workspace)]
         command += args
@@ -166,8 +168,11 @@ class Snapshot:
         # pruning are confined to the private repository.
         self.run(['update-ref','refs/review/end',self.end['tree']],private=True)
         self.run(['prune','--expire=now'],private=True)
-        return {'entries':rows,'limited':self.base['limited'] or self.end['limited'], 'repository':self.base['repository'],
-            'started':self.base['captured'],'ended':self.end['captured']}
+        self.entries = rows
+        self.limited = self.base['limited'] or self.end['limited']
+        self.started, self.ended = self.base['captured'], self.end['captured']
+        return {'entries':rows,'limited':self.limited, 'repository':self.base['repository'],
+            'started':self.started,'ended':self.ended}
 
     def diff(self,path):
         if not self.base or not self.end:raise SnapshotError('尚无已完成的快照')
@@ -182,5 +187,42 @@ class Snapshot:
         text=raw[:48000].decode('utf-8','replace');lines=text.splitlines();truncated=len(raw)>48000 or len(lines)>1000 or any(len(x)>2000 for x in lines)
         return {'text':'\n'.join(x[:2000] for x in lines[:1000]),'truncated':truncated}
 
-    def close(self):
-        if not self.closed:remove_snapshot(self.folder);self.closed=True
+    def save(self, **metadata):
+        data = {'version': 1, 'workspace': str(self.workspace), 'base': self.base, 'end': self.end,
+                'entries': getattr(self, 'entries', []), 'limited': getattr(self, 'limited', False),
+                'started': getattr(self, 'started', self.base['captured'] if self.base else 0),
+                'ended': getattr(self, 'ended', self.end['captured'] if self.end else 0), **metadata}
+        temporary = self.folder / 'checkpoint.tmp'
+        temporary.write_text(json.dumps(data, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+        temporary.replace(self.folder / 'checkpoint.json')
+        self.metadata = metadata
+
+    @classmethod
+    def load(cls, workspace, folder, cancelled=None):
+        folder = Path(folder)
+        try:
+            data = json.loads((folder / 'checkpoint.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError) as error:
+            raise SnapshotError('检查点清单无法读取') from error
+        self = cls.__new__(cls)
+        self.workspace = Path(workspace).resolve()
+        if data.get('version') != 1 or data.get('workspace') != str(self.workspace) or not self.workspace.is_dir():
+            raise SnapshotError('检查点与工作目录不匹配')
+        self.git = shutil.which('git')
+        if not self.git: raise SnapshotError('未找到 Git，请安装 Git 后查看检查点')
+        self.folder, self.repo = folder, folder / 'objects.git'
+        if not self.repo.is_dir(): raise SnapshotError('检查点对象库已失效')
+        self.cancelled = cancelled or threading.Event()
+        self.deadline = time.monotonic() + SNAPSHOT_SECONDS
+        self.base, self.end = data.get('base'), data.get('end')
+        self.entries = data.get('entries', [])
+        self.limited = bool(data.get('limited'))
+        self.started, self.ended = data.get('started', 0), data.get('ended', 0)
+        self.metadata = {k: v for k, v in data.items() if k not in ('version', 'workspace', 'base', 'end', 'entries', 'limited', 'started', 'ended')}
+        self.closed = False
+        return self
+
+    def close(self, remove=True):
+        if not self.closed:
+            if remove: remove_snapshot(self.folder)
+            self.closed = True
