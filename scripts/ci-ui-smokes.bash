@@ -19,23 +19,7 @@ if [[ ${1:-} == --run-one ]]; then
     mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" "$UMEKO_DATA_DIR"
     chmod 700 "$XDG_RUNTIME_DIR"
     printf "ci-ephemeral-password" | gnome-keyring-daemon --unlock --components=secrets
-    if [[ ${CI_UI_NATIVE_TRACE:-0} == 1 && $1 == tests/large_chat_ui_smoke.py ]]; then
-      ulimit -c 524288
-      export PYTHONFAULTHANDLER=1
-      result=0
-      .venv/bin/python "$1" &
-      child=$!
-      wait "$child" || result=$?
-      core="$RUNNER_TEMP/umeko-ui-core.$child"
-      if [[ -f $core ]]; then
-        gdb --batch -nx -ex "set debuginfod enabled off" \
-          -ex "thread apply all bt 32" .venv/bin/python "$core" || true
-        rm -f -- "$core"
-      fi
-      exit "$result"
-    else
-      .venv/bin/python "$1"
-    fi
+    .venv/bin/python "$1"
   ' _ "$script" >"$log" 2>&1 || status=$?
   elapsed=$((SECONDS - started))
   printf '%s\t%s\t%s\n' "$script" "$elapsed" "$status" >"$log_dir/$name.result"

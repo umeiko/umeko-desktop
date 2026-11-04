@@ -48,7 +48,6 @@ class PackageChangesTests(unittest.TestCase):
 set -e
 export RUNNER_TEMP="$(pwd -P)"
 export CI_BENCHMARK_CONFIGS=0
-export CI_UI_NATIVE_TRACE=0
 dbus-run-session() { if [[ "$1" == -- ]]; then shift; fi; export DBUS_SESSION_BUS_ADDRESS="fixture:$BASHPID"; "$@"; }
 gnome-keyring-daemon() { cat >/dev/null; }
 flock() { :; }

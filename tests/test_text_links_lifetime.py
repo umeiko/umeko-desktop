@@ -1,9 +1,16 @@
 """Link scanners cannot access Qt owners after virtualized text is destroyed."""
 import os
+from pathlib import Path
+import subprocess
+import sys
 import threading
 import time
 import unittest
 from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+OFFSCREEN_CHILD = '--offscreen-child' in sys.argv
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 os.environ.setdefault('QT_QUICK_BACKEND', 'software')
@@ -31,7 +38,18 @@ class QuickDocument(QObject):
 class TextLinksLifetimeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.app = QGuiApplication.instance() or QGuiApplication([])
+        if OFFSCREEN_CHILD:
+            cls.app = QGuiApplication([])
+
+    def run_in_child(self):
+        # Serial discovery may already own a QCoreApplication; GUI text belongs
+        # to a fresh process, as in test_conversation_link_actions.py.
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), '--offscreen-child', self._testMethodName],
+            cwd=ROOT, env=dict(os.environ, QT_QPA_PLATFORM='offscreen', QT_QUICK_BACKEND='software', PYTHONUTF8='1'),
+            capture_output=True, text=True, encoding='utf-8', timeout=15,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def wait_for(self, predicate, errors):
         deadline = time.monotonic() + 5
@@ -68,6 +86,9 @@ class TextLinksLifetimeTests(unittest.TestCase):
         return parent, document, links, gui_thread, violations, gui_valid, valid
 
     def test_destroyed_parent_discards_a_blocked_scanner_without_worker_qt_access(self):
+        if not OFFSCREEN_CHILD:
+            self.run_in_child()
+            return
         parent, document, links, gui_thread, violations, gui_valid, valid = self.guarded_owner('old')
         started, release = threading.Event(), threading.Event()
         workers, cancellations, deliveries, errors = [], [], [], []
@@ -103,6 +124,9 @@ class TextLinksLifetimeTests(unittest.TestCase):
                 if valid(parent): shiboken6.delete(parent)
 
     def test_stale_scan_cannot_replace_current_links_and_delivery_stays_on_gui_thread(self):
+        if not OFFSCREEN_CHILD:
+            self.run_in_child()
+            return
         parent, document, links, gui_thread, violations, gui_valid, valid = self.guarded_owner('old')
         started, release = threading.Event(), threading.Event()
         workers, scans, cancellations, deliveries, errors = [], [], [], [], []
@@ -146,3 +170,10 @@ class TextLinksLifetimeTests(unittest.TestCase):
                     worker.join(5)
                     self.assertFalse(worker.is_alive())
                 if valid(parent): shiboken6.delete(parent)
+
+
+if __name__ == '__main__':
+    if OFFSCREEN_CHILD:
+        unittest.main(argv=[sys.argv[0], 'TextLinksLifetimeTests.' + sys.argv[2]])
+    else:
+        unittest.main()
