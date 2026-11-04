@@ -4,6 +4,8 @@ Umeko 的 API 代理将已配置的模型提供为 OpenAI/Anthropic 兼容服务
 
 `server.save` 传 `port`、`openai`、`anthropic`、`lan`；先用 settings.get 保留未改的选项。`server.toggle` 开关服务。`status.get` 返回运行状态和访问密钥摘要。
 
+“设置 → Agent → Umeko Desktop → 开机启动 API 代理”使下次登录时在后台启动同一个桌面运行环境，再调用现有代理启动流程。它使用已保存的端口、OpenAI/Anthropic 协议、LAN 选项和访问密钥，不创建新密钥或额外监听器。至少需要一个已启用的 API Key；密钥缺失、端口占用等情况仍按手动启动的规则拒绝启动。可从托盘打开窗口检查 API 代理状态。只有“开机启动 Umeko”打开时不启动 API 代理；两项都打开也只启动一个实例。
+
 `server.saveKey` 传 `name`、可选 `id`、`key`；新增 key 为空时沿用 UI 的生成方式，结果只提供摘要，不把完整密钥读回模型。`server.enableKey` 传 `id`、`enabled`；`server.revokeKey` 撤销指定访问密钥。已有密钥不由工具导出；用户在桌面对应 UI 中查看/复制新生成的值。
 
 `updates.check` 检查适配当前平台/标准或精简渠道的发布；`updates.download` 下载；`updates.cancel` 取消；`updates.install` 在相关任务空闲后启动安装。下载、校验、进度和错误通过原有 UI 与 `status.get` 更新。只有用户要求升级时才安装，安装会退出当前应用并启动安装器。

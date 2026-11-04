@@ -15,7 +15,7 @@ ApplicationWindow {
     ChatSelection { id: emptySelection; visible: false; view: emptyConversation }
     width: 1320; height: 860
     minimumWidth: 1060; minimumHeight: 700
-    visible: true
+    visible: !backend.loginStartup.background
     title: "Umeko"
     font.family: Theme.fontFamily
     color: Theme.bg
