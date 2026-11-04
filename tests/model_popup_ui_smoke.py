@@ -103,8 +103,71 @@ try:
     open_popup()
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, QPoint(400, 90))
     wait(lambda: not popup.property("visible"), "Outside click did not close popup")
+
+    # #70: independent toolbar rows used to overlap with long provider names.
+    # Exercise actual layout bounds, including translated running/permission labels.
+    provider = backend.store.data['providers'][0]
+    provider['name'] = 'Long provider / ' + '供应商名称很长' * 8
+    long_model = 'a-very-long-model-name-with-a-preview-version-and-region-' * 3
+    provider['models'][0]['alias'] = long_model
+    backend.selectModel(provider['id'], long_model)
+    backend.setReasoningEffort('max')
+    record = backend._view
+    record.id = 'composer-layout-fixture'
+    backend.store.data['sessionMeta'][record.id] = {'dangerousAllowed':True}
+    saw_stacked = saw_hidden_hint = saw_elided_name = False
+
+    def rect(item):
+        point = item.mapToScene(QPointF(0, 0))
+        return point.x(), point.y(), point.x() + item.width(), point.y() + item.height()
+
+    def check_toolbar():
+        controls = [find(name) for name in ('composerUtilityControls','modelSelector','composerSendControls')]
+        left, top, right, bottom = rect(find('composerToolbar'))
+        for item in controls:
+            x1,y1,x2,y2 = rect(item)
+            assert x1 >= left-.5 and x2 <= right+.5 and y1 >= top-.5 and y2 <= bottom+.5, (item.objectName(),rect(item),(left,top,right,bottom))
+        for index, first in enumerate(controls):
+            for second in controls[index+1:]:
+                a,b = rect(first),rect(second)
+                assert min(a[2],b[2])-max(a[0],b[0]) <= .5 or min(a[3],b[3])-max(a[1],b[1]) <= .5, (first.objectName(),a,second.objectName(),b)
+        selector = find('modelSelector')
+        assert selector.width() >= 32 and find('sendButton').isVisible()
+        assert provider['name'] in selector.property('hint') and long_model in selector.property('hint')
+        for name in ('composerProviderName','composerModelName','reasoningEffortBadge'):
+            label = find(name)
+            if label.isVisible():
+                a,b = rect(label),rect(selector)
+                assert a[0] >= b[0]-.5 and a[2] <= b[2]+.5, (name,a,b)
+
+    with patch.object(backend, '_command_pi', return_value=True):
+        backend.subagents.open('popup-child')
+    window.setProperty('webPreferredWidth',420)
+    wait(lambda:not find('webPane').property('moving'),'Narrow chat pane did not settle')
+    for language in ('zh','en'):
+        backend.setLanguage(language)
+        for scale in (.5,1.,1.25,2.):
+            backend.setFontScale(scale)
+            for width in (1060,1320):
+                window.resize(width,900)
+                for phase in ('idle','running'):
+                    record.action,record.phase,record.ready = 'prompt',phase,True
+                    backend.changed.emit(); backend.chatChanged.emit(); QTest.qWait(100)
+                    check_toolbar()
+                    saw_stacked |= find('composerToolbar').property('stacked')
+                    saw_hidden_hint |= not find('composerStatus').isVisible()
+                    saw_elided_name |= not find('composerProviderName').isVisible() or find('composerProviderName').property('truncated')
+    assert saw_stacked and saw_hidden_hint and saw_elided_name
+    record.phase = 'idle'; backend.changed.emit()
+    click('closeSubagentPaneButton')
+    wait(lambda:not find('webPane').property('moving'),'Narrow pane did not close')
+    backend.setLanguage('zh'); backend.setFontScale(1.)
+    window.resize(1060,900)
+    open_popup()
+    QTest.keyClick(window,Qt.Key_Escape)
+    wait(lambda:not popup.property('visible'),'Responsive selector cannot close')
     assert not warnings, "\n".join(warnings)
-    print("MODEL_POPUP_UI_OK: expanded geometry, visible content, provider/model selection, search/reset, 200% font, Escape/outside close and typing focus")
+    print("MODEL_POPUP_UI_OK: provider/model selection, popup focus, long-name toolbar bounds, 50-200% fonts, Chinese/English and idle/running layouts")
 finally:
     backend.close()
     import shiboken6
