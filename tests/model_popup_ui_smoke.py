@@ -11,7 +11,7 @@ os.environ["UMEKO_DATA_DIR"] = tempfile.mkdtemp(prefix="umeko-model-popup-")
 os.environ["UMEKO_LANGUAGE"] = "zh"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
-from PySide6.QtCore import QObject, QPoint, QPointF, Qt
+from PySide6.QtCore import QMetaObject, QObject, QPoint, QPointF, Qt
 from PySide6.QtTest import QTest
 from main import create_application
 
@@ -122,6 +122,10 @@ try:
         return point.x(), point.y(), point.x() + item.width(), point.y() + item.height()
 
     def check_toolbar():
+        # Row positions update during polish. Sample that layout, even while
+        # the enclosing sidebar PID is still changing the available width.
+        for name in ('composerUtilityIcons','composerUtilityControls','composerSendControls','composerModelLabels'):
+            assert QMetaObject.invokeMethod(find(name),'forceLayout',Qt.DirectConnection), name
         controls = [find(name) for name in ('composerUtilityControls','modelSelector','composerSendControls')]
         left, top, right, bottom = rect(find('composerToolbar'))
         for item in controls:
@@ -134,11 +138,13 @@ try:
         selector = find('modelSelector')
         assert selector.width() >= 32 and find('sendButton').isVisible()
         assert provider['name'] in selector.property('hint') and long_model in selector.property('hint')
-        for name in ('composerProviderName','composerModelName','reasoningEffortBadge'):
+        for name in ('composerProviderName','composerModelName','reasoningEffortBadge','composerModelChevron'):
             label = find(name)
             if label.isVisible():
                 a,b = rect(label),rect(selector)
-                assert a[0] >= b[0]-.5 and a[2] <= b[2]+.5, (name,a,b)
+                assert a[0] >= b[0]-.5 and a[2] <= b[2]+.5, (name,a,b,
+                    {key:selector.property(key) for key in ('width','scale','namesWidth','showProvider','providerWidth')},
+                    [(child.objectName(),child.x(),child.width(),child.isVisible()) for child in label.parentItem().childItems()])
 
     with patch.object(backend, '_command_pi', return_value=True):
         backend.subagents.open('popup-child')
@@ -158,6 +164,13 @@ try:
                     saw_hidden_hint |= not find('composerStatus').isVisible()
                     saw_elided_name |= not find('composerProviderName').isVisible() or find('composerProviderName').property('truncated')
     assert saw_stacked and saw_hidden_hint and saw_elided_name
+    # Serif and monospace bearings differ from their horizontal advance.
+    for family in ('serif','monospace'):
+        backend.setFontFamily(family)
+        for scale in (1.,2.):
+            backend.setFontScale(scale); QTest.qWait(100)
+            check_toolbar()
+    backend.setFontFamily('系统默认')
     record.phase = 'idle'; backend.changed.emit()
     click('closeSubagentPaneButton')
     wait(lambda:not find('webPane').property('moving'),'Narrow pane did not close')

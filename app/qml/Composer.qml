@@ -111,17 +111,19 @@ Item {
             x: 14; width: parent.width - 28; anchors.bottom: parent.bottom; anchors.bottomMargin: 12
             readonly property real gap: 8
             readonly property real minimumModelWidth: Theme.control(96)
-            readonly property bool permissionTextVisible: width >= utilityIcons.implicitWidth + permissionMetrics.width + Theme.icon(17) + 36 + minimumModelWidth + sendButton.width + gap * 3
+            readonly property bool permissionTextVisible: width >= utilityIcons.implicitWidth + permissionMetrics.advanceWidth + Theme.icon(17) + 36 + minimumModelWidth + sendButton.width + gap * 3
             readonly property bool stacked: width < utilityRow.implicitWidth + minimumModelWidth + sendButton.width + gap * 2
             readonly property real trailingBudget: width - (stacked ? 0 : utilityRow.implicitWidth + gap) - minimumModelWidth - gap
             height: Theme.control(33) * (stacked ? 2 : 1) + (stacked ? gap : 0)
-            TextMetrics { id: permissionMetrics; text: permissionButton.fullText; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12) }
-            TextMetrics { id: statusMetrics; text: statusText.text; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10) }
+            // Advance widths match Row layout; glyph ink bounds vary by font/platform.
+            TextMetrics { renderType: Text.QtRendering; id: permissionMetrics; text: permissionButton.fullText; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12) }
+            TextMetrics { renderType: Text.QtRendering; id: statusMetrics; text: statusText.text; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10) }
+            TextMetrics { renderType: Text.QtRendering; id: taskMetrics; text: taskStatus.text; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10) }
             Row {
                 id: utilityRow; objectName: "composerUtilityControls"; spacing: 5
                 y: (Theme.control(33) - height) / 2
                 Row {
-                    id: utilityIcons; spacing: 5
+                    id: utilityIcons; objectName: "composerUtilityIcons"; spacing: 5
                     ActionButton { objectName: "attachFilesButton"; glyph: "plus"; quiet: true; width: Theme.control(31); height: Theme.control(31); hint: I18n.t("添加文件"); onClicked: root.chooseFiles() }
                     ActionButton { objectName: "openChatDirectoryButton"; glyph: "folder"; quiet: true; width: Theme.control(31); height: Theme.control(31); hint: I18n.t("在文件管理器中打开当前目录"); onClicked: backend.openChatDirectory() }
                     Rectangle { width: 1; height: 15; color: Theme.line; anchors.verticalCenter: parent.verticalCenter }
@@ -163,31 +165,31 @@ Item {
                 readonly property string providerName: { const p = backend.config.providers.find(p => p.id === backend.config.selectedProvider); return p ? p.name : I18n.t("选择供应商") }
                 readonly property string modelName: backend.config.selectedModel
                 readonly property string effort: backend.reasoningEffort !== "off" ? "· " + ({low:"Low",high:"High",max:"Max"}[backend.reasoningEffort] || "") : ""
-                readonly property real naturalWidth: providerMetrics.width + (modelName.length ? slashMetrics.width + Math.min(modelMetrics.width, Theme.control(135)) + 14 : 0) + (effort.length ? effortMetrics.width + 7 : 0) + Theme.icon(12) + 27
-                readonly property real namesWidth: Math.max(0, width - 20 - Theme.icon(12) - 7 - (effortBadge.visible ? effortMetrics.width + 7 : 0))
-                readonly property bool showProvider: !modelName.length || namesWidth >= Math.min(providerMetrics.width, Theme.control(48)) + Math.min(modelMetrics.width, Theme.control(90)) + slashMetrics.width + 14
-                readonly property real providerWidth: Math.min(providerMetrics.width, modelName.length ? Math.max(Math.min(providerMetrics.width, Theme.control(48)), namesWidth - Math.min(modelMetrics.width, Theme.control(135)) - slashMetrics.width - 14) : namesWidth)
+                readonly property real naturalWidth: providerMetrics.advanceWidth + (modelName.length ? slashMetrics.advanceWidth + Math.min(modelMetrics.advanceWidth, Theme.control(135)) + 14 : 0) + (effort.length ? effortMetrics.advanceWidth + 7 : 0) + Theme.icon(12) + 27
+                readonly property real namesWidth: Math.max(0, width - 20 - Theme.icon(12) - 7 - (effortBadge.visible ? effortMetrics.advanceWidth + 7 : 0))
+                readonly property bool showProvider: !modelName.length || namesWidth >= Math.min(providerMetrics.advanceWidth, Theme.control(48)) + Math.min(modelMetrics.advanceWidth, Theme.control(90)) + slashMetrics.advanceWidth + 14
+                readonly property real providerWidth: Math.min(providerMetrics.advanceWidth, modelName.length ? Math.max(Math.min(providerMetrics.advanceWidth, Theme.control(48)), namesWidth - Math.min(modelMetrics.advanceWidth, Theme.control(135)) - slashMetrics.advanceWidth - 14) : namesWidth)
                 hint: providerName + (modelName.length ? " / " + modelName : "") + (effort.length ? " " + effort : "")
                 Accessible.name: hint
-                TextMetrics { id: providerMetrics; text: modelButton.providerName; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
-                TextMetrics { id: modelMetrics; text: modelButton.modelName; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
-                TextMetrics { id: slashMetrics; text: "/"; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
-                TextMetrics { id: effortMetrics; text: modelButton.effort; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
+                TextMetrics { renderType: Text.QtRendering; id: providerMetrics; text: modelButton.providerName; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
+                TextMetrics { renderType: Text.QtRendering; id: modelMetrics; text: modelButton.modelName; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
+                TextMetrics { renderType: Text.QtRendering; id: slashMetrics; text: "/"; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
+                TextMetrics { renderType: Text.QtRendering; id: effortMetrics; text: modelButton.effort; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
                 onClicked: root.openModels()
                 contentItem: Item { clip: true; Row {
-                    id: modelRow; spacing: 7; anchors.verticalCenter: parent.verticalCenter; x: 10
+                    id: modelRow; objectName: "composerModelLabels"; spacing: 7; anchors.verticalCenter: parent.verticalCenter; x: 10
                     Text { id: providerText; objectName: "composerProviderName"; visible: modelButton.showProvider; width: modelButton.providerWidth; text: modelButton.providerName; textFormat: Text.PlainText; elide: Text.ElideRight; color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
-                    Text { visible: providerText.visible && modelButton.modelName.length > 0; text: "/"; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
-                    Text { objectName: "composerModelName"; visible: modelButton.modelName.length > 0; width: Math.min(modelMetrics.width, Math.max(0, modelButton.namesWidth - (providerText.visible ? providerText.width + slashMetrics.width + 14 : 0))); text: modelButton.modelName; textFormat: Text.PlainText; elide: Text.ElideRight; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
-                    Text { id: effortBadge; objectName: "reasoningEffortBadge"; visible: modelButton.effort.length > 0 && modelButton.width >= effortMetrics.width + Theme.icon(12) + Theme.control(36) + 34; text: modelButton.effort; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
-                    Glyph { name: "chevron-down"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
+                    Text { visible: providerText.visible && modelButton.modelName.length > 0; width: slashMetrics.advanceWidth; text: "/"; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
+                    Text { objectName: "composerModelName"; visible: modelButton.modelName.length > 0; width: Math.min(modelMetrics.advanceWidth, Math.max(0, modelButton.namesWidth - (providerText.visible ? providerText.width + slashMetrics.advanceWidth + 14 : 0))); text: modelButton.modelName; textFormat: Text.PlainText; elide: Text.ElideRight; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
+                    Text { id: effortBadge; objectName: "reasoningEffortBadge"; width: effortMetrics.advanceWidth; visible: modelButton.effort.length > 0 && modelButton.width >= effortMetrics.advanceWidth + Theme.icon(12) + Theme.control(36) + 34; text: modelButton.effort; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11); anchors.verticalCenter: parent.verticalCenter }
+                    Glyph { objectName: "composerModelChevron"; name: "chevron-down"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
                 } }
             }
             Row {
                 id: trailingRow; objectName: "composerSendControls"
                 anchors.right: parent.right; anchors.bottom: parent.bottom; spacing: 13
-                TaskStatus { id: taskStatus; objectName: "composerTaskStatus"; status: backend.turnStatus; compact: true; visible: state.length > 0 && footer.trailingBudget >= sendButton.width + implicitWidth + 13; anchors.verticalCenter: parent.verticalCenter }
-                Text { id: statusText; font.family: Theme.fontFamily; objectName: "composerStatus"; visible: footer.trailingBudget >= sendButton.width + (taskStatus.visible ? taskStatus.width + 13 : 0) + statusMetrics.width + 13; text: backend.compacting ? I18n.t(backend.toolStatus) : backend.loading ? I18n.t(backend.toolStatus || "正在加载 Pi") : backend.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
+                TaskStatus { id: taskStatus; objectName: "composerTaskStatus"; status: backend.turnStatus; compact: true; width: Theme.icon(13) + 6 + taskMetrics.advanceWidth; visible: state.length > 0 && footer.trailingBudget >= sendButton.width + width + 13; anchors.verticalCenter: parent.verticalCenter }
+                Text { id: statusText; font.family: Theme.fontFamily; objectName: "composerStatus"; visible: footer.trailingBudget >= sendButton.width + (taskStatus.visible ? taskStatus.width + 13 : 0) + statusMetrics.advanceWidth + 13; text: backend.compacting ? I18n.t(backend.toolStatus) : backend.loading ? I18n.t(backend.toolStatus || "正在加载 Pi") : backend.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
                 Rectangle {
                     id: sendButton; objectName: "sendButton"
                     readonly property bool stopAction: backend.running
