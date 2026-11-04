@@ -109,6 +109,8 @@ class SessionPreview(QObject):
             record.body_dirty = True
             record.model = saved.get('model') or record.model
             record.provider = saved.get('provider') or record.provider
+            if fresh:
+                record.reasoning_effort = self.controller.store.data['sessionMeta'].get(saved['id'], {}).get('reasoningEffort', record.reasoning_effort)
             # Register before activation; trimming it while the old view is
             # still pinned could immediately evict this prepared selection.
             self.controller._pool.records[record.key] = record

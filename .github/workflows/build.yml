@@ -114,6 +114,7 @@ jobs:
             .venv/bin/python tests/subagent_queue_ui_smoke.py
             .venv/bin/python tests/characters_ui_smoke.py
             .venv/bin/python tests/provider_popup_ui_smoke.py
+            .venv/bin/python tests/model_reasoning_ui_smoke.py
             .venv/bin/python tests/api_proxy_layout_ui_smoke.py
             .venv/bin/python tests/desktop_settings_ui_smoke.py
             .venv/bin/python tests/login_startup_ui_smoke.py

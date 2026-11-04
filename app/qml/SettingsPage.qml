@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "ReasoningLevels.js" as Reasoning
 
 Item {
     id: root
@@ -67,11 +68,15 @@ Item {
         mappingSignature = signature
         if (mappingProviderId && !backend.config.providers.some(p => p.id === mappingProviderId)) mappingProviderId = ""
         mappingRows.clear()
-        backend.config.providers.forEach(p => p.models.forEach(m => mappingRows.append({provider:p.id, providerName:p.name, upstream:m.upstream, alias:m.alias, contextWindowText:String(m.contextWindow), contextWindowAuto:m.contextWindowAuto, providerContextWindow:Number(m.providerContextWindow || 0), visionValue:m.vision, visionAuto:m.visionAuto})))
+        backend.config.providers.forEach(p => p.models.forEach(m => mappingRows.append({provider:p.id, providerName:p.name, upstream:m.upstream, alias:m.alias, contextWindowText:String(m.contextWindow), contextWindowAuto:m.contextWindowAuto, providerContextWindow:Number(m.providerContextWindow || 0), visionValue:m.vision, visionAuto:m.visionAuto, reasoningLevelsJson:JSON.stringify(m.reasoningLevels || Reasoning.defaults)})))
     }
     Component.onCompleted: reloadMappings()
     Connections { target: backend; function onChanged() { root.reloadMappings() } }
     ListModel { id: mappingRows }
+    ModelReasoningDialog {
+        id: mappingReasoning; objectName: "mappingModelReasoning"
+        onConfirmed: (rowIndex, levelsJson) => mappingRows.setProperty(rowIndex, "reasoningLevelsJson", levelsJson)
+    }
     ColumnLayout {
         anchors.fill: parent; anchors.leftMargin: 40; anchors.rightMargin: 40; anchors.topMargin: 19; anchors.bottomMargin: 24; spacing: 0
         RowLayout {
@@ -223,7 +228,7 @@ Item {
                                 Text { font.family: Theme.fontFamily; text: I18n.t("原始模型名称"); color: Theme.muted; font.pixelSize: Theme.font(10, visible); Layout.fillWidth: true; Layout.preferredWidth: 1 }
                                 Item { Layout.preferredWidth: 24 }
                                 Text { font.family: Theme.fontFamily; text: I18n.t("对外模型别名"); color: Theme.muted; font.pixelSize: Theme.font(10, visible); Layout.fillWidth: true; Layout.preferredWidth: 1 }
-                                Item { Layout.preferredWidth: 34 }
+                                Item { Layout.preferredWidth: 82 }
                             }
                             Repeater {
                                 model: mappingRows
@@ -240,6 +245,7 @@ Item {
                                     required property double providerContextWindow
                                     required property bool visionValue
                                     required property bool visionAuto
+                                    required property string reasoningLevelsJson
                                     active: provider === root.mappingProviderId
                                     visible: active; Layout.fillWidth: true
                                     sourceComponent: ColumnLayout {
@@ -249,6 +255,7 @@ Item {
                                         InputField { objectName: "mappingModelId_" + mappingDelegate.index; readOnly: mappingDelegate.pluginModel; text: mappingDelegate.upstream; Layout.fillWidth: true; Layout.preferredWidth: 1; onTextEdited: mappingRows.setProperty(mappingDelegate.index, "upstream", text) }
                                         Glyph { name: "arrow-right"; width: Theme.icon(24); height: Theme.icon(17) }
                                         InputField { objectName: "mappingAlias_" + mappingDelegate.index; text: mappingDelegate.alias; Layout.fillWidth: true; Layout.preferredWidth: 1; onTextEdited: mappingRows.setProperty(mappingDelegate.index, "alias", text) }
+                                        ActionButton { objectName: "mappingModelSettings_" + mappingDelegate.index; glyph: "settings"; Layout.preferredWidth: Theme.control(34); quiet: true; hint: I18n.t("模型思考档位"); Accessible.name: hint; onClicked: mappingReasoning.edit(mappingDelegate.index, mappingDelegate.alias || mappingDelegate.upstream, mappingDelegate.reasoningLevelsJson) }
                                         ActionButton { enabled: !mappingDelegate.pluginModel; glyph: "trash"; quiet: true; width: Theme.control(34); hint: I18n.t("删除映射"); onClicked: mappingRows.remove(mappingDelegate.index) }
                                     }
                                     RowLayout {
@@ -274,10 +281,10 @@ Item {
                                 }
                             }
                             RowLayout { Layout.fillWidth: true; spacing: 10
-                                ActionButton { objectName: "addMappingButton"; text: I18n.t("添加映射"); glyph: "plus"; enabled: !!root.mappingAccount && (root.mappingAccount.api === "openai" || root.mappingAccount.api === "anthropic"); onClicked: { const p = root.mappingAccount; if (p) mappingRows.append({provider:p.id, providerName:p.name, upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, providerContextWindow:0, visionValue:false, visionAuto:true}) } }
+                                ActionButton { objectName: "addMappingButton"; text: I18n.t("添加映射"); glyph: "plus"; enabled: !!root.mappingAccount && (root.mappingAccount.api === "openai" || root.mappingAccount.api === "anthropic"); onClicked: { const p = root.mappingAccount; if (p) mappingRows.append({provider:p.id, providerName:p.name, upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, providerContextWindow:0, visionValue:false, visionAuto:true, reasoningLevelsJson:JSON.stringify(Reasoning.defaults)}) } }
                                 ActionButton { objectName: "refreshProviderModelsButton"; text: I18n.t("刷新模型信息"); glyph: "refresh"; enabled: !!root.mappingAccount && (root.mappingAccount.api === "openai" || root.mappingAccount.api === "anthropic"); onClicked: backend.refreshProviderModels(root.mappingProviderId) }
                                 Item { Layout.fillWidth: true }
-                                ActionButton { objectName: "saveMappingsButton"; text: I18n.t("保存映射"); primary: true; onClicked: { let rows = []; for(let i=0;i<mappingRows.count;i++) { let m=mappingRows.get(i); rows.push({provider:m.provider,upstream:m.upstream,alias:m.alias,contextWindow:m.contextWindowText,contextWindowAuto:m.contextWindowAuto,vision:m.visionValue,visionAuto:m.visionAuto}) } backend.saveMappings(JSON.stringify(rows)) } }
+                                ActionButton { objectName: "saveMappingsButton"; text: I18n.t("保存映射"); primary: true; onClicked: { let rows = []; for(let i=0;i<mappingRows.count;i++) { let m=mappingRows.get(i); rows.push({provider:m.provider,upstream:m.upstream,alias:m.alias,contextWindow:m.contextWindowText,contextWindowAuto:m.contextWindowAuto,vision:m.visionValue,visionAuto:m.visionAuto, reasoningLevels:JSON.parse(m.reasoningLevelsJson)}) } backend.saveMappings(JSON.stringify(rows)) } }
                             }
                             }
                         }

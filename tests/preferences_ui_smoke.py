@@ -53,14 +53,14 @@ try:
     assert backend.store.data['providers'][0]['proxy']['mode']=='custom'
     window.setProperty('page','chat')
     click('modelSelector');QTest.qWait(700)
-    click('reasoningEffort_max')
+    slider=find('reasoningEffortSlider');slider.forceActiveFocus();QTest.keyClick(window,Qt.Key_End);QTest.qWait(100)
     assert backend.reasoningEffort=='max'
     assert find('reasoningEffortBadge').property('text')=='· Max'
     assert find('reasoningEffortBadge').isVisible()
-    click('reasoningEffort_off')
+    slider.forceActiveFocus();QTest.keyClick(window,Qt.Key_Home);QTest.qWait(100)
     assert backend.reasoningEffort=='off'
     assert not find('reasoningEffortBadge').isVisible()
-    click('reasoningEffort_high')
+    slider.forceActiveFocus();QTest.keyClick(window,Qt.Key_Right);QTest.keyClick(window,Qt.Key_Right);QTest.qWait(100)
     hint=window.findChild(QObject,'reasoningEffortHint')
     assert hint is not None
     QTest.mouseMove(window,find('modelSearch').mapToScene(QPointF(10,10)).toPoint());QTest.qWait(200)
@@ -69,9 +69,8 @@ try:
     row=find('reasoningControls')
     for scale in (.5,1,2):
         backend.setFontScale(scale);QTest.qWait(120)
-        controls=[find('reasoningEffort_'+level) for level in ('off','low','high','max')]
-        assert controls[0].x() < 1 and controls[-1].x()+controls[-1].width() <= row.width()+1
-        assert sum(control.width() for control in controls) >= row.width()*.8
+        assert slider.x() < 1 and slider.x()+slider.width() <= row.width()+1
+        assert slider.width() >= row.width()*.8
     backend.setFontScale(1);QTest.qWait(120)
     QTest.mouseMove(window,row.mapToScene(row.boundingRect().center()).toPoint());QTest.qWait(700)
     assert hint.property('visible')
@@ -94,10 +93,13 @@ try:
         QTest.qWait(400)
     drag_slider(slider.width()-1)
     assert backend.fontScale==2.,'Slider did not apply 200%'
+    window.setProperty('page','chat');QTest.qWait(150)
     assert find('promptInput').property('font').pixelSize()==26
     assert find('sendGlyph').width()==34
     assert find('attachFilesButton').width()==62
+    window.setProperty('page','settings');QTest.qWait(150)
     drag_slider(0)
+    window.setProperty('page','chat');QTest.qWait(150)
     assert backend.fontScale==.3 and find('promptInput').property('font').pixelSize()==4
     assert find('sendGlyph').width()==5 and find('attachFilesButton').width()==31
     backend.setFontScale(2);QTest.qWait(300)
