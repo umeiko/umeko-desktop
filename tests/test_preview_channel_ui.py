@@ -26,6 +26,8 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow
 import shiboken6
 from app.preview_channel import PreviewChannel
+from app.preview_network import NETWORK_MESSAGES, network_failure
+from app.preview_source import PreviewError
 from test_preview_channel import JobController, isolated_test_module, qt_application
 
 
@@ -269,6 +271,122 @@ class PreviewChannelUiTests(unittest.TestCase):
         self.assertIn("official main", ui.find("previewChannelWarning").property("text"))
         self.assertEqual(ui.controller.jobs, [])
         self.assertEqual(ui.warnings, [])
+
+    def finish_preflight(self, checks, language):
+        ui = self.ui
+        ui.backend._language = language
+        ui.backend.changed.emit()
+        ui.manager.preflight.return_value = {
+            "ready": all(check["ready"] for check in checks), "details": checks,
+        }
+        ui.find("updateChannelPicker").activated.emit(1)
+        self.assertTrue(ui.preview.busy)
+        ui.controller.finish()
+        self.app.processEvents()
+        self.assertEqual(ui.preview.status["state"], "prerequisites")
+        self.assertFalse(ui.preview.busy)
+
+    def test_all_prerequisites_enable_install_and_explain_success_bilingually(self):
+        checks = [{"name": name, "ready": True, "detail": "OK"} for name in (
+            "保留的正式版", "网络与代理", "Git", "Python 3.10+ / venv", "Node.js 22.19+",
+            "npm", "安装脚本 Shell", "磁盘空间 (至少 2 GiB)", "官方 main 分支连接")]
+        for language, summary, passed in (
+                ("zh", "运行前提全部满足，可以确认并安装预览版。", "已满足"),
+                ("en", "All prerequisites are met. You can confirm and install Preview.", "Passed")):
+            with self.subTest(language=language):
+                self.finish_preflight(checks, language)
+                self.assertTrue(self.ui.preview.status["ready"])
+                self.assertTrue(self.ui.find("preparePreviewButton").property("enabled"))
+                self.assertEqual(self.ui.find("previewPrerequisiteResult").property("text"), summary)
+                details = self.ui.find("previewChannelDetails")
+                self.assertTrue(details.property("visible"))
+                self.assertIn(passed + " · Git: OK", details.property("text"))
+                self.ui.manager.switch_to_preview.assert_not_called()
+        self.assertEqual(self.ui.warnings, [])
+
+    def test_each_failed_prerequisite_disables_install_and_shows_bilingual_remedy(self):
+        remedies = (
+            ("保留的正式版", "完整解压", "fully extracted Release"),
+            ("Git", "安装 Git", "Install Git"),
+            ("Python 3.10+ / venv", "含 venv 和 ensurepip", "with venv and ensurepip"),
+            ("Node.js 22.19+", "安装 Node.js 22.19", "Install Node.js 22.19"),
+            ("npm", "含 npm", "with npm"),
+            ("安装脚本 Shell", "PowerShell 可用", "PowerShell is available"),
+            ("磁盘空间 (至少 2 GiB)", "腾出至少 2 GiB", "Free at least 2 GiB"),
+            ("官方 main 分支连接", "Git 的网络、代理及证书", "Git network, proxy and certificate"),
+        )
+        for name, chinese, english in remedies:
+            for language, remedy, failed, disabled in (
+                    ("zh", chinese, "未满足", "安装按钮暂不可用"),
+                    ("en", english, "Failed", "installation is disabled")):
+                with self.subTest(check=name, language=language):
+                    checks = [{"name": label, "ready": label != name, "detail": "probe result"}
+                              for label, _, _ in remedies]
+                    self.finish_preflight(checks, language)
+                    self.assertFalse(self.ui.preview.status["ready"])
+                    self.assertFalse(self.ui.find("preparePreviewButton").property("enabled"))
+                    result = self.ui.find("previewPrerequisiteResult")
+                    self.assertTrue(result.property("visible"))
+                    self.assertIn(disabled, result.property("text"))
+                    details = self.ui.find("previewChannelDetails")
+                    self.assertTrue(details.property("visible"))
+                    self.assertEqual(details.property("text").count(failed + " · "), 1)
+                    self.assertIn(remedy, details.property("text"))
+                    self.ui.preview.switchToPreview()
+                    self.assertEqual(self.ui.controller.jobs, [])
+                    self.ui.manager.switch_to_preview.assert_not_called()
+        self.assertEqual(self.ui.warnings, [])
+
+    def test_recheck_replaces_failed_result_without_starting_installation(self):
+        self.finish_preflight([{"name": "Python 3.10+ / venv", "ready": False,
+                                "detail": "未找到系统 Python 3.10+"}], "zh")
+        self.ui.manager.preflight.return_value = {
+            "ready": True, "details": [{"name": "Python 3.10+ / venv", "ready": True, "detail": "OK"}]}
+        self.ui.click("recheckPreviewPrerequisitesButton")
+        self.assertTrue(self.ui.preview.busy)
+        self.assertFalse(self.ui.find("preparePreviewButton").property("enabled"))
+        self.ui.controller.finish()
+        self.app.processEvents()
+        self.assertTrue(self.ui.find("preparePreviewButton").property("enabled"))
+        self.assertNotIn("未满足", self.ui.find("previewChannelDetails").property("text"))
+        self.assertEqual(self.ui.manager.preflight.call_count, 2)
+        self.ui.manager.switch_to_preview.assert_not_called()
+        self.assertEqual(self.ui.warnings, [])
+
+    def test_network_failure_categories_and_hints_are_bilingual_and_private(self):
+        english = {
+            "certificate": ("Certificate problem", "root certificate"),
+            "proxy": ("Proxy problem", "HTTP proxy"),
+            "dns": ("DNS problem", "DNS and proxy"),
+            "timeout": ("Connection timed out", "network connectivity"),
+            "other": ("Other network problem", "required tools"),
+        }
+        for category, (label, hint) in NETWORK_MESSAGES.items():
+            for language in ("zh", "en"):
+                with self.subTest(category=category, language=language):
+                    failure = network_failure(category, [{"code": "PREVIEW_PROXY_UNSUPPORTED"}])
+                    self.finish_preflight([{"name": "官方 main 分支连接", "ready": False, **failure}], language)
+                    self.assertFalse(self.ui.find("preparePreviewButton").property("enabled"))
+                    text = self.ui.find("previewChannelDetails").property("text")
+                    expected_label, expected_hint = (label, hint) if language == "zh" else english[category]
+                    self.assertIn(expected_label, text)
+                    self.assertIn(expected_hint, text)
+                    self.assertIn("SOCKS", text)
+                    # A later fetch/setup error follows the same controller/UI contract.
+                    self.ui.status({}, channel="preview")
+                    self.ui.manager.check_update.side_effect = PreviewError(
+                        "预览版网络步骤失败。", "https://private.invalid/path user:secret@proxy.invalid", category, failure["limitation"])
+                    self.ui.click("checkPreviewUpdatesButton")
+                    self.ui.controller.finish()
+                    self.app.processEvents()
+                    text = self.ui.find("previewChannelDetails").property("text")
+                    self.assertIn(expected_label, text)
+                    self.assertIn(expected_hint, text)
+                    self.assertNotIn("private.invalid", text)
+                    self.assertNotIn("secret", text)
+                    self.assertIn("SOCKS", text)
+                    self.ui.status({}, channel="release")
+        self.assertEqual(self.ui.warnings, [])
 
 
 def illustrative_plan(language):

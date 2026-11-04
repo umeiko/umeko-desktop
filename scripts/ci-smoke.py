@@ -29,6 +29,19 @@ def isolated_profile(directory):
     settings.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
 
+def verify_preview_network(node, resources, environment):
+    """Exercise the packaged helper's imports and safe protocol without networking."""
+    result = subprocess.run([str(node), str(resources / 'runtime/preview-network.mjs'), 'classify'],
+        input='CERTIFICATE_VERIFY_FAILED', capture_output=True, text=True, env=environment,
+        timeout=15, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+    try:
+        category = json.loads(result.stdout).get('category')
+    except (ValueError, AttributeError):
+        category = None
+    if result.returncode or category != 'certificate':
+        raise RuntimeError('Packaged Preview network helper is unavailable')
+
+
 def verify_windows_preview(executable, environment, report_dir):
     import ctypes
     from ctypes import wintypes
@@ -121,6 +134,7 @@ def main():
         environment.pop(name, None)
     node = resources / "runtime/node" / ("node.exe" if os.name == "nt" else "bin/node")
     if not node.is_file(): raise RuntimeError("Bundled Node.js is missing")
+    verify_preview_network(node, resources, environment)
     diagnostic.unlink(missing_ok=True)
     stacks.unlink(missing_ok=True)
     output_log = report_dir / "application-output.log"

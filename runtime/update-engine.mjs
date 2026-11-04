@@ -153,8 +153,9 @@ async function requestOnRoute(url, options, redirects = 0) {
     req.on('error',error=>{clearTimeout(deadline);reject(error);});
   });
 }
-export async function updateRequest(url, options = {}) {
-  const configured=options.proxy ?? process.env.UMEKO_UPDATE_PROXY ?? process.env.https_proxy ?? process.env.HTTPS_PROXY ?? process.env.all_proxy ?? process.env.ALL_PROXY ?? process.env.http_proxy ?? process.env.HTTP_PROXY ?? '';
+export async function withUpdateRoutes(operation, options = {}) {
+  const environment=options.environment || process.env;
+  const configured=options.proxy ?? environment.UMEKO_UPDATE_PROXY ?? environment.https_proxy ?? environment.HTTPS_PROXY ?? environment.all_proxy ?? environment.ALL_PROXY ?? environment.http_proxy ?? environment.HTTP_PROXY ?? '';
   const network=options.network || {};
   // An explicit per-call route and NO_PROXY remain authoritative. Only the
   // updater's automatic system-proxy mode has a direct fallback.
@@ -168,14 +169,14 @@ export async function updateRequest(url, options = {}) {
     network.route=route;
     options.onRoute?.(route, i > 0);
     try {
-      const response=await requestOnRoute(url,{...options,proxy});
+      const response=await operation(proxy);
       network.preferred=proxy;
       return response;
     } catch (error) {
       if (options.signal?.aborted || ['ABORT_ERR','PAUSED'].includes(error.code)) throw error;
       if (certificateError(error)) trustFailure=error;
       attempts.push({route,code:error.code || 'NETWORK'});
-      if (routeError(error) && i+1<routes.length) continue;
+      if ((error.routeUnavailable || routeError(error)) && i+1<routes.length) continue;
       const failure=trustFailure || error;
       if (trustFailure) { failure.message=certificateMessage(trustFailure); failure.retryable=false; }
       // Route names and stable error codes are safe to show; proxy URLs and
@@ -185,6 +186,9 @@ export async function updateRequest(url, options = {}) {
       throw failure;
     }
   }
+}
+export function updateRequest(url, options = {}) {
+  return withUpdateRoutes(proxy=>requestOnRoute(url,{...options,proxy}),options);
 }
 const request=updateRequest;
 async function digest(file) {
