@@ -9,9 +9,6 @@ import re
 import sys
 
 COMMON = [
-    # Resolve real host paths and exercise the isolated offscreen chat actions.
-    'tests.test_conversation_links',
-    'tests.test_conversation_link_actions',
     'tests.test_platform',
     'tests.test_terminal_widget',
     'tests.test_skill_import',
@@ -22,6 +19,8 @@ COMMON = [
 ]
 
 WINDOWS = [
+    # Unique disposable Run value, guarded again by GITHUB_ACTIONS in the test.
+    'tests.test_login_startup.WindowsCIRegistryTests',
     # Linux discovery cannot verify Windows QProcess cached/retiring cleanup.
     'tests.test_session_cache.SessionCacheTests.test_windows_cached_and_retiring_kernels_exit_on_app_close',
     'tests.test_runtime_paths',

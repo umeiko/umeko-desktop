@@ -66,7 +66,7 @@ class TrayController(QObject):
             return True
         return super().eventFilter(watched, event)
 
-    def minimize_to_tray(self):
+    def minimize_to_tray(self, notify=True):
         if self.window is None: return
         if self.window.visibility() not in (QWindow.Minimized, QWindow.Hidden):
             self.previous_visibility = self.window.visibility()
@@ -74,11 +74,13 @@ class TrayController(QObject):
             self.tray.show()
             self.window.hide()
             message = "I'll keep working here! To quit completely, right-click the icon in the system tray~" if self.english else '我在这里继续执行任务！需要完全退出你可以右键点击任务栏中的图标~'
-            self.notificationRequested.emit(message)
-            self.tray.showMessage('Umeko', message, self.tray.icon(), 4000)
+            if notify:
+                self.notificationRequested.emit(message)
+                self.tray.showMessage('Umeko', message, self.tray.icon(), 4000)
         else:
             self.window.showMinimized()
-            self.notificationRequested.emit("The system tray is unavailable, so I'm minimized to the taskbar. I'll keep working here." if self.english else '系统托盘不可用，已最小化到任务栏。我会在这里继续执行任务。')
+            if notify:
+                self.notificationRequested.emit("The system tray is unavailable, so I'm minimized to the taskbar. I'll keep working here." if self.english else '系统托盘不可用，已最小化到任务栏。我会在这里继续执行任务。')
 
     def activated(self, reason):
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick): self.restore()

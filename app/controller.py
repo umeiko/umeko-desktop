@@ -154,6 +154,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.root = root
         self._app_about = AppAbout(self)
         self.store = Store()
+        from .login_session import LoginStartupSettings
+        self._login_startup = LoginStartupSettings(self, background='--login-startup' in sys.argv)
         self._init_characters()
         self.transcripts = TranscriptRepository(self.store.directory / 'cache/chat-index')
         self.store.data["themes"] = theme_library(self.store.data.get("themes"))
@@ -255,6 +257,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._desktop_plugins = DesktopPlugins(self)
         from .slash_commands import SlashCommands
         self._slash_commands = SlashCommands(self)
+
+    @Property(QObject, constant=True)
+    def loginStartup(self):
+        return self._login_startup
 
     @Property(QObject, constant=True)
     def slashCommands(self):
@@ -565,36 +571,12 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         else:
             self.toast.emit("当前会话目录不存在")
 
-    @Slot(str, bool)
-    def openConversationPath(self, raw, reveal):
-        from .conversation_links import is_executable_path
-        from .document_preview import document_kind
-        path = Path(raw)
-        if not path.is_absolute() or not path.exists():
-            self.toast.emit("文件已移动或不存在")
-            return
-        if is_executable_path(path) and path.is_dir():
-            # Application bundles are directories, but opening one can run it.
-            self.openChatboxPath(str(path.parent), False)
-        elif reveal:
-            self.openChatboxPath(str(path), True)
-        elif path.is_file() and (kind := document_kind(path)):
-            self.documentRequested.emit(str(path), path.name, kind)
-        elif is_executable_path(path):
-            self.openChatboxPath(str(path), True)
-        else:
-            self.openChatboxPath(str(path), False)
-
     @Slot(str)
     def openConversationUrl(self, raw):
         from .conversation_links import web_url
         url = web_url(raw)
         if url:
             QDesktopServices.openUrl(QUrl(url))
-
-    @Property(str, notify=viewChanged)
-    def conversationWorkspace(self):
-        return str(self._view.workspace or self.store.data["workspace"] or self.store.directory)
 
     @Slot(str, bool)
     def openChatboxPath(self, raw, reveal):

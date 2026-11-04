@@ -15,7 +15,6 @@ Item {
     property bool busy: false
     property bool running: false
     property string toolStatus: ""
-    property string workspace: ""
     property var turnStatus: ({})
     property alias view: conversation
     property alias selection: chatSelection
@@ -28,7 +27,6 @@ Item {
         running = backend.running;
         toolStatus = backend.toolStatus;
         turnStatus = backend.turnStatus;
-        workspace = backend.conversationWorkspace;
     }
     function activate() {
         current = true;
@@ -224,6 +222,15 @@ Item {
                     const item = conversation.itemAtIndex(index);
                     if ((!item || !item.bodyReady) && conversation.restoreAttempts < 200)
                         return;
+                    // Nearby rows are loaded asynchronously too. In particular,
+                    // a short target near the tail can be clamped against a
+                    // following placeholder before its real height is known.
+                    for (let row = index + 1; row < Math.min(conversation.count, index + 4); row++) {
+                        const nearby = conversation.itemAtIndex(row);
+                        if ((!pane.messageModel.isReady(row) || (nearby && !nearby.bodyReady))
+                                && conversation.restoreAttempts < 200)
+                            return;
+                    }
                     if (item) {
                         conversation.positionViewAtIndex(index, ListView.Beginning);
                         if (!conversation.atYEnd)
@@ -570,6 +577,5 @@ Item {
         enabled: pane.current && !pane.blocked
         retainedView: true
         sessionActive: pane.current
-        workspace: pane.workspace
     }
 }
