@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { createInterface } from "node:readline";
 import { once } from "node:events";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, renameSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,8 +22,18 @@ async function fixture(t, {autoCompaction=false, hook="", legacy=false, summaryE
     pi.registerCommand("probe-compaction", {description:"test settings",handler:async (_args,ctx) => ctx.ui.notify(JSON.stringify({model:ctx.model.id,compaction:pi.getSettings().compaction}))});
     ${hook}
   };`);
-  for (const name of readdirSync(join(root,"runtime")).filter(name=>/\.(mjs|json)$/.test(name)))
-    copyFileSync(join(root,"runtime",name),join(release,name));
+  // Other Node test processes import this same release while this fixture starts.
+  // Publish complete adapters by rename so those readers never see a truncated file.
+  const staging = mkdtempSync(join(release,".compaction-adapters-"));
+  try {
+    for (const name of readdirSync(join(root,"runtime")).filter(name=>/\.(mjs|json)$/.test(name))) {
+      const staged = join(staging,name);
+      copyFileSync(join(root,"runtime",name),staged);
+      renameSync(staged,join(release,name));
+    }
+  } finally {
+    rmSync(staging,{recursive:true,force:true});
+  }
   const calls = [];
   const server = createServer(async (req,res) => {
     let raw=""; for await (const chunk of req) raw+=chunk;

@@ -16,6 +16,9 @@ from PySide6.QtTest import QTest
 from main import create_application
 
 app, engine, backend = create_application()
+# As in the compaction fixture, offscreen UI checks do not depend on a
+# continuous rendered-frame budget for asynchronous delegate incubation.
+engine.setIncubationController(None)
 window = engine.rootObjects()[0]
 warnings = []
 engine.warnings.connect(lambda errors: warnings.extend(e.toString() for e in errors))
@@ -29,10 +32,7 @@ def find(name, required=True):
         pending.extend(item.childItems())
     if required:
         raise AssertionError(name)
-
-def visible(name):
-    item = find(name, required=False)
-    return item is not None and item.isVisible()
+    return None
 
 def click(name):
     item = find(name)
@@ -70,7 +70,7 @@ try:
     backend._handle_pi_event(record, {'type':'message','role':'assistant','text':record.messages[0]['text'],
                                      'error':str(failure),'stopReason':'error'})
     window.setProperty('page', 'chat')
-    wait(lambda:visible('requestDetails_0'), 'Failed chat row lost the request-details button')
+    wait(lambda:(item := find('requestDetails_0', required=False)) is not None and item.isVisible(), 'Failed chat row lost the request-details button')
     click('requestDetails_0')
     wait(lambda:dialog.property('opened'), 'Chat request-details button did not open the report')
     text = find('requestDetailsText')
@@ -107,7 +107,7 @@ try:
     backend.subagents.merge(record, {'id':'failed-child','status':'error','outputFile':str(native),'task':'Fixture'})
     backend.subagents.open('failed-child')
     wait(lambda:not backend.subagents.context['loading'] and (pane:=find('webPane', required=False)) is not None and not pane.property('moving'), 'Child error history did not load')
-    wait(lambda:visible('subagentRequestDetails_0'), 'Child request-details button is missing')
+    wait(lambda:(item := find('subagentRequestDetails_0', required=False)) is not None and item.isVisible(), 'Child request-details button is missing')
     click('subagentRequestDetails_0')
     wait(lambda:dialog.property('opened'), 'Child request-details button did not open the shared report')
     click('requestDetailsResponseTab')

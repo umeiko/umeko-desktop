@@ -72,6 +72,9 @@ def run_child(base, screenshots=None):
          patch('app.notifications.TaskNotifications', QuietNotifications), \
          patch('app.webview.configure'):
         app, engine, backend = create_application()
+    # Match the compaction fixture: offscreen delegates have no continuous
+    # rendered-frame incubation budget. Keep model work asynchronous.
+    engine.setIncubationController(None)
     window = engine.rootObjects()[0]
     window.resize(1400, 900)
     warnings, toasts = [], []
@@ -93,6 +96,21 @@ def run_child(base, screenshots=None):
         return next((item for item in items(window.contentItem())
                      if (item.objectName().startswith(name) if prefix else item.objectName() == name)), None)
 
+    def clickable(item):
+        if item is None or not item.isVisible() or not item.isEnabled() or item.width() <= 0 or item.height() <= 0:
+            return False
+        point = item.mapToScene(item.boundingRect().center())
+        if not (0 < point.x() < window.width() and 0 < point.y() < window.height()):
+            return False
+        ancestor = item.parentItem()
+        while ancestor is not None:
+            if ancestor.property('clip'):
+                local = ancestor.mapFromScene(point)
+                if not ancestor.boundingRect().contains(local):
+                    return False
+            ancestor = ancestor.parentItem()
+        return True
+
     def wait(check, label):
         # A bounded wait for asynchronous Qt work; nothing measures elapsed time.
         for _ in range(400):
@@ -102,11 +120,21 @@ def run_child(base, screenshots=None):
         raise AssertionError('Timed out waiting for ' + label + ': ' + '\n'.join(warnings[:5]))
 
     def click(item):
+        name = item.objectName()
+        wait(lambda: clickable(find(name)), 'click target ' + name)
+        window.grabWindow()  # Finish virtual-list layout before mapping input.
+        item = find(name)
         point = item.mapToScene(item.boundingRect().center()).toPoint()
         # Populate the selection overlay's passive hover target before pressing,
         # as a real pointer does. Some offscreen platforms omit this implicit move.
         QTest.mouseMove(window, point)
         QTest.qWait(25)
+        # Hover processes queued model/layout work; remap the current delegate.
+        window.grabWindow()
+        item = find(name)
+        assert item is not None, name
+        point = item.mapToScene(item.boundingRect().center()).toPoint()
+        assert window.contentItem().contains(point), (name, point)
         QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
         QTest.qWait(80)
 
@@ -127,7 +155,7 @@ def run_child(base, screenshots=None):
         tool('bash-1', 'bash', {'command': 'git status --short'}, result=' M notes.md')
         backend._view.messages[-1]['text'] = 'The notes describe the new read preview.'
         backend.chatChanged.emit(); backend.transcriptChanged.emit(); backend.viewChanged.emit()
-        wait(lambda: find('toggleTools_', prefix=True) is not None, 'tool history header')
+        wait(lambda: clickable(find('toggleTools_', prefix=True)), 'clickable tool history header')
         click(find('toggleTools_', prefix=True))
         wait(lambda: find('toggleToolDetail_read-ok') is not None and find('toggleToolDetail_read-ok').isVisible(), 'tool rows')
 
