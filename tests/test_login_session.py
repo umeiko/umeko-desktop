@@ -2,13 +2,15 @@
 import http.client
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from PySide6.QtCore import QCoreApplication, QObject, Signal
 
-from app.login_session import LoginStartupSettings, acquire_instance, start_login_proxy
+from app.login_session import LoginStartupSettings, acquire_instance, instance_for_launch, start_login_proxy
 
 APP = QCoreApplication.instance() or QCoreApplication([])
 ROOT = Path(__file__).resolve().parents[1]
@@ -81,6 +83,57 @@ class LoginSessionTests(unittest.TestCase):
             replacement = acquire_instance(directory)
             self.assertIsNotNone(replacement)
             replacement.unlock()
+
+    def test_manual_launches_continue_with_free_or_busy_lock_but_login_skips(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            manual, proceed = instance_for_launch(directory, [])
+            self.assertTrue(proceed)
+            self.assertIsNotNone(manual)
+            try:
+                second_manual, proceed = instance_for_launch(directory, [])
+                self.assertTrue(proceed)
+                self.assertIsNone(second_manual)
+                login, proceed = instance_for_launch(directory, ['--login-startup', '--login-proxy'])
+                self.assertFalse(proceed)
+                self.assertIsNone(login)
+            finally:
+                manual.unlock()
+            login, proceed = instance_for_launch(directory, ['--login-startup'])
+            self.assertTrue(proceed)
+            self.assertIsNotNone(login)
+            try:
+                manual, proceed = instance_for_launch(directory, [])
+                self.assertTrue(proceed)
+                self.assertIsNone(manual)
+            finally:
+                login.unlock()
+
+    def test_manual_launch_continues_when_lock_directory_is_unavailable(self):
+        with patch('app.login_session.acquire_instance', side_effect=PermissionError('denied')):
+            self.assertEqual(instance_for_launch(Path('unused'), []), (None, True))
+
+    def test_installer_does_not_acquire_a_lock(self):
+        with patch('app.login_session.acquire_instance') as acquire:
+            self.assertEqual(instance_for_launch(Path('unused'), ['--install-update']), (None, True))
+            acquire.assert_not_called()
+
+    def test_login_recovers_lock_left_by_an_exited_process(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            child = subprocess.run([sys.executable, '-c',
+                'import os, sys; from pathlib import Path; '
+                'from app.login_session import acquire_instance; '
+                'lock = acquire_instance(Path(sys.argv[1])); '
+                'os._exit(0 if lock is not None else 1)', str(directory)],
+                cwd=ROOT, capture_output=True, text=True, timeout=15,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+            self.assertEqual(child.returncode, 0, child.stderr)
+            self.assertTrue((directory / 'desktop-instance.lock').is_file())
+            lock, proceed = instance_for_launch(directory, ['--login-startup'])
+            self.assertTrue(proceed)
+            self.assertIsNotNone(lock)
+            lock.unlock()
 
     def test_login_proxy_uses_real_controller_listener_once_with_both_flags(self):
         from app.controller import Controller

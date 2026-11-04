@@ -52,9 +52,20 @@ def start_login_proxy(controller, arguments):
 
 
 def acquire_instance(directory):
-    """One desktop instance per profile, without adding an IPC/network listener."""
+    """Try to mark this profile as running for later login launches."""
     directory.mkdir(parents=True, exist_ok=True)
     lock = QLockFile(str(directory / 'desktop-instance.lock'))
     # A slow but live process must not lose its lock based on elapsed time.
     lock.setStaleLockTime(0)
     return lock if lock.tryLock(0) else None
+
+
+def instance_for_launch(directory, arguments):
+    """Only login launches stop on a busy lock; manual launches always continue."""
+    if '--install-update' in arguments:
+        return None, True
+    try:
+        lock = acquire_instance(directory)
+    except OSError:
+        lock = None
+    return lock, '--login-startup' not in arguments or lock is not None
