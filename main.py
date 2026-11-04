@@ -96,6 +96,8 @@ def create_application():
     controller.appearanceChanged.connect(lambda: controller._system_tray.set_language(controller.language))
     controller._system_tray.quitRequested.connect(app.quit)
     controller._system_tray.notificationRequested.connect(controller.toast)
+    if controller.loginStartup.background:
+        controller._system_tray.minimize_to_tray(notify=False)
     from app.notifications import TaskNotifications
     controller._task_notifications = TaskNotifications(engine.rootObjects()[0], controller._system_tray.tray, root, controller)
     controller._task_notifications.language = controller.language
@@ -106,6 +108,8 @@ def create_application():
         controller.openSession(session)
         controller._system_tray.restore()
     controller._task_notifications.activated.connect(open_finished_session)
+    from app.login_session import start_login_proxy
+    QTimer.singleShot(0, lambda: start_login_proxy(controller, sys.argv))
     QTimer.singleShot(150, controller.loadNativeIndex)
     return app, engine, controller
 
@@ -117,6 +121,11 @@ if __name__ == "__main__":
         import faulthandler
         _smoke_stacks = open(os.environ['UMEKO_SMOKE_STACKS'], 'w', encoding='utf-8')
         faulthandler.dump_traceback_later(30, file=_smoke_stacks)
+    from app.login_session import instance_for_launch
+    from app.preview_launch import profile_directory
+    instance_lock, continue_launch = instance_for_launch(profile_directory(), sys.argv)
+    if not continue_launch:
+        sys.exit(0)
     try:
         app, engine, controller = create_application()
     except Exception as exc:

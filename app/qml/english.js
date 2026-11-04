@@ -1354,5 +1354,14 @@ var strings = {
   "系统默认浏览器": "System default browser",
   "无法打开系统默认浏览器": "Could not open the system default browser",
   "重启 Umeko 后可使用内置网页预览": "Restart Umeko to enable embedded web previews",
+  "开机启动": "Start at login",
+  "开机启动 Umeko": "Start Umeko at login",
+  "开机启动 API 代理": "Start API proxy at login",
+  "登录系统后在托盘中启动 Umeko。": "Start Umeko in the system tray after signing in.",
+  "登录系统后在后台启动 API 代理，无需打开 Umeko 窗口。": "Start the API proxy in the background after signing in, without opening the Umeko window.",
+  "开机启动仅适用于打包后的应用。": "Start at login is available only in packaged applications.",
+  "当前系统不支持开机启动。": "Start at login is not supported on this system.",
+  "无法读取系统开机启动设置。": "Could not read the system's login startup settings.",
+  "保存开机启动设置失败。": "Could not save login startup settings.",
   "最新消息": "Latest messages"
 }
