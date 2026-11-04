@@ -111,11 +111,9 @@ Item {
             x: 14; width: parent.width - 28; anchors.bottom: parent.bottom; anchors.bottomMargin: 12
             readonly property real gap: 8
             readonly property real minimumModelWidth: Theme.control(96)
-            readonly property bool permissionTextVisible: width >= utilityIcons.implicitWidth + permissionMetrics.width + Theme.icon(17) + 36 + minimumModelWidth + sendButton.width + gap * 3
             readonly property bool stacked: width < utilityRow.implicitWidth + minimumModelWidth + sendButton.width + gap * 2
             readonly property real trailingBudget: width - (stacked ? 0 : utilityRow.implicitWidth + gap) - minimumModelWidth - gap
             height: Theme.control(33) * (stacked ? 2 : 1) + (stacked ? gap : 0)
-            TextMetrics { id: permissionMetrics; text: permissionButton.fullText; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12) }
             TextMetrics { id: statusMetrics; text: statusText.text; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10) }
             Row {
                 id: utilityRow; objectName: "composerUtilityControls"; spacing: 5
@@ -126,33 +124,6 @@ Item {
                     ActionButton { objectName: "openChatDirectoryButton"; glyph: "folder"; quiet: true; width: Theme.control(31); height: Theme.control(31); hint: I18n.t("在文件管理器中打开当前目录"); onClicked: backend.openChatDirectory() }
                     Rectangle { width: 1; height: 15; color: Theme.line; anchors.verticalCenter: parent.verticalCenter }
                     ContextUsage {}
-                }
-                ActionButton {
-                    id: permissionButton; objectName: "composerPermissionStatus"
-                    glyph: "lock"; quiet: true; height: Theme.control(31)
-                    readonly property string fullText: (backend.config.agent.toolPermissionMode === "ask" ? I18n.t("询问") : I18n.t("自动")) + (backend.dangerousAllowed ? " · " + I18n.t("本会话已授权") : "")
-                    text: footer.permissionTextVisible ? fullText : ""
-                    width: footer.permissionTextVisible ? implicitWidth : Theme.control(31)
-                    Accessible.name: fullText
-                    hint: fullText + "\n" + (backend.dangerousAllowed ? I18n.t("本会话已允许全部危险操作，可在菜单中撤销。") : I18n.t("工具执行权限"))
-                    onClicked: permissionMenu.openAt(Qt.point(0, -permissionMenu.implicitHeight - 8))
-                    FloatingMenu {
-                        id: permissionMenu; objectName: "composerPermissionMenu"
-                        parent: permissionButton
-                        onHeightChanged: if (visible) {
-                            requestedPosition = Qt.point(0, -height - 8)
-                            y = requestedPosition.y
-                            Qt.callLater(fitToWindow)
-                        }
-                        ContextAction { text: I18n.t("自动"); glyph: backend.config.agent.toolPermissionMode === "auto" ? "check" : ""; onTriggered: backend.setToolPermissionMode("auto") }
-                        ContextAction { text: I18n.t("询问"); glyph: backend.config.agent.toolPermissionMode === "ask" ? "check" : ""; onTriggered: backend.setToolPermissionMode("ask") }
-                        MenuSeparator { visible: backend.dangerousAllowed; height: visible ? implicitHeight : 0 }
-                        ContextAction {
-                            objectName: "revokeDangerousApproval"
-                            text: I18n.t("撤销本会话授权"); visible: backend.dangerousAllowed
-                            onTriggered: backend.revokeDangerousApproval()
-                        }
-                    }
                 }
             }
             ActionButton {

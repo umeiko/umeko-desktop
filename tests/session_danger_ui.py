@@ -125,36 +125,24 @@ with patch("app.provider_plugins.BundledProviders.sync", return_value=[]), \
         assert not backend.dangerousAllowed
         button.clicked.emit()
         settle(lambda: backend.dangerousAllowed and not backend.pendingApproval)
-        status = find("composerPermissionStatus")
-        assert status.property("text") == ("自动 · 本会话已授权" if language == "zh" else "Auto · Chat authorized")
-        assert status.property("glyph") == "lock"
-        assert ("全部危险操作" if language == "zh" else "All dangerous operations") in status.property("hint")
-        status.clicked.emit()
-        menu = find("composerPermissionMenu")
-        settle(lambda: find("revokeDangerousApproval") is not None and menu.property("visible"))
-        assert find("revokeDangerousApproval").property("text") == ("撤销本会话授权" if language == "zh" else "Revoke chat authorization")
-        menu_item = menu.property("contentItem")
-        assert menu_item.mapToScene(menu_item.boundingRect().topLeft()).y() + menu_item.height() <= status.mapToScene(status.boundingRect().topLeft()).y()
+        assert find("composerPermissionStatus") is None
+        assert find("composerPermissionMenu") is None
         capture("grants")
-        find("revokeDangerousApproval").triggered.emit()
+        backend.revokeDangerousApproval()
         settle(lambda: not backend.dangerousAllowed)
-        evaluate(menu, "close()")
-        # Switch same-model chats: status must update even without config changes.
+        # Removing the composer controls must not alter chat-scoped grants.
         backend.store.data["sessionMeta"][record.id]["dangerousAllowed"] = True
         backend._sync_dangerous_approval(record)
         backend.newSession()
         assert not backend.dangerousAllowed
-        assert status.property("text") == ("自动" if language == "zh" else "Auto")
         backend.openSession(record.id)
         assert backend.dangerousAllowed
-        assert status.property("text") == ("自动 · 本会话已授权" if language == "zh" else "Auto · Chat authorized")
-        status.clicked.emit()
-        assert find("revokeDangerousApproval").property("text") == ("撤销本会话授权" if language == "zh" else "Revoke chat authorization")
-        find("revokeDangerousApproval").triggered.emit()
+        assert find("composerPermissionStatus") is None
+        backend.revokeDangerousApproval()
         assert not backend.dangerousAllowed
         relevant = [warning for warning in warnings if "dangerous" in warning.lower() or "Composer.qml" in warning or "ApprovalDialog.qml" in warning]
         assert not relevant, relevant
-        print(f"SESSION_DANGER_UI_OK {language}: safe focus, Enter, explicit grant, status, menu, revoke, chat switch", flush=True)
+        print(f"SESSION_DANGER_UI_OK {language}: safe focus, Enter, explicit grant, no composer permission controls, revoke, chat switch", flush=True)
     finally:
         backend.close()
         import shiboken6
