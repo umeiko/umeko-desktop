@@ -9,9 +9,8 @@ After the usual setup, use those same commands locally with
 `QT_QPA_PLATFORM=offscreen` and `QT_QUICK_BACKEND=software`. Linux checks also
 use a private D-Bus session and an unlocked ephemeral keyring, as shown in the
 workflow.
-Discovery and the same 43 UI smokes run concurrently inside that same Linux job,
-sharing the detected core count: two unit workers and two UI workers on the
-four-core runner. The smoke entry point is `bash scripts/ci-ui-smokes.bash --jobs N`.
+Discovery runs first using all cores, followed by the same 43 UI smokes through
+`bash scripts/ci-ui-smokes.bash --jobs "$(nproc)"` inside that same Linux job.
 GNU `xargs -P` schedules scripts; no additional runner dependency is installed.
 Each script gets its own private D-Bus session, ephemeral keyring, XDG directories,
 profile and `PI_CODING_AGENT_DIR`. An explicitly configured agent directory still
@@ -46,8 +45,8 @@ exclusive resource that cannot be isolated, add its discovery name (for example
 `test_device`) and a one-line reason to `SERIAL_MODULES` in the script. Keep that
 module small. The script removes it from the parallel group and runs it once,
 in a fresh process, after the pool finishes; it never runs in both groups.
-This exception is exclusive among unit tests; UI smokes still run concurrently,
-so it must not share their resources. Fix such a shared fixture instead.
+This exception is exclusive among unit tests; the UI pool starts after the unit
+phase. Resources shared within either pool still need isolated fixtures.
 For local runs install `unittest-parallel==1.8.6` and run the same script;
 `--jobs 4`, `--pattern test_context_compaction.py` and `-k circle` can limit a
 focused run. `--list` prints the discovered IDs without executing them.
@@ -65,6 +64,10 @@ UI smoke readiness follows actual delegates and geometry: request-details waits
 for its asynchronous button to exist and be visible, while large-chat waits for
 the original jump-position condition after scene polish, as well as ready data
 and restoration completion. Neither changes the original timeout or assertion.
+Subagent collection waits for the visible card/group state instead of a fixed
+sleep. Motion retargeting compares both states at one fixture clock instant
+inside a synchronous call to the real update method, restoring the clock in
+`finally`; CPU scheduling cannot move the old trajectory between those samples.
 
 Runtime verification leaves identical prepared adapters untouched and replaces
 changed files atomically, so concurrent readers cannot see a truncated helper.
