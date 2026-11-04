@@ -135,8 +135,9 @@ ApplicationWindow {
         badge = self.find('reasoningEffortBadge')
         self.assertEqual(badge.property('text'), '· ' + {'low': 'Low', 'high': 'High', 'max': 'Max', 'off': ''}[record.reasoning_effort])
         self.assertEqual(badge.property('visible'), record.reasoning_effort != 'off')
-        for value in ('off', 'low', 'high', 'max'):
-            self.assertEqual(self.find('reasoningEffort_' + value).property('primary'), value == record.reasoning_effort)
+        # Fixture models keep the default levels, so the slider runs off/low/high/max.
+        levels = ['off', 'low', 'high', 'max']
+        self.assertEqual(round(self.find('reasoningEffortSlider').property('value')), levels.index(record.reasoning_effort))
         for value in ('ask', 'auto'):
             self.assertEqual(self.find('toolPermission_' + value).property('primary'), value == permission)
         usage = self.find('contextUsageIndicator')
