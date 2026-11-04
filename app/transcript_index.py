@@ -22,7 +22,7 @@ from .chat_model import ChatModel
 from .message_attachments import split_attachments
 from .transcripts import content_text, content_thinking, present, compaction_view, compaction_status, automatic_vision_view
 
-SCHEMA = 5
+SCHEMA = 6
 LARGE_FILE = 256 * 1024
 PAGE_ROWS = 24
 GROUP_MESSAGES = 16
@@ -195,6 +195,25 @@ def display_fragments(row):
             weight += size
     if steps:
         yield fragment()
+
+
+def estimated_height(row):
+    """Estimate the initially visible body, excluding folded reasoning/output.
+
+    A fragment can contain only a collapsed thinking block. Counting its hidden
+    lines as prose made a short header reserve tens of thousands of pixels;
+    asynchronous body creation then invalidated ListView's entire visible range.
+    Include every visible text step, rather than only the last reply in a group.
+    Measured, layout-specific heights still replace these initial hints.
+    """
+    activity = row.get('activity', [])
+    if activity:
+        text = '\n'.join(step.get('text', '') for step in activity if step['kind'] == 'text')
+        headers = sum(1 for step in activity if step['kind'] != 'text')
+    else:
+        text, headers = row.get('text', ''), 0
+    return max(80, min(50000, 70 + headers * 24 +
+                       max(text.count('\n'), len(text) / 70) * 22))
 
 
 class Database(sqlite3.Connection):
@@ -501,7 +520,9 @@ class TranscriptRepository:
                 cursor = db.execute('''SELECT e.id FROM entries e JOIN branch b ON e.id=b.id WHERE e.eligible=1
                     AND NOT(e.tool LIKE 'umeko-compaction:%' AND EXISTS(
                         SELECT 1 FROM entries prior JOIN branch pb ON pb.id=prior.id WHERE prior.tool=e.tool AND prior.num<e.num))
-                    AND NOT(e.stop='error' AND EXISTS(SELECT 1 FROM entries edit JOIN branch eb ON edit.id=eb.id WHERE edit.omitted=e.id)) ORDER BY e.num''')
+                    AND NOT(e.stop='error' AND e.id IN (
+                        SELECT edit.omitted FROM entries edit JOIN branch eb ON edit.id=eb.id
+                        WHERE edit.omitted!='')) ORDER BY e.num''')
                 db.executemany('INSERT INTO native(pos,id) VALUES(?,?)', enumerate(row[0] for row in cursor))
                 rebuild = 0
             db.execute('DELETE FROM display WHERE last_native>=?', (rebuild,))
@@ -572,9 +593,7 @@ class TranscriptRepository:
                 for row in ChatModel.project(messages):
                     row_start = seq
                     for part, value in enumerate(display_fragments(row)):
-                        chars = len(value.get('text', '')) + len(value.get('thinking', ''))
-                        lines = value.get('text', '').count('\n') + value.get('thinking', '').count('\n')
-                        hint = max(80, min(50000, 70 + max(lines, chars / 70) * 22))
+                        hint = estimated_height(value)
                         continuation = group_continuation or part > 0
                         body = zlib.compress(json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode(), 1)
                         db.execute('INSERT INTO display VALUES(?,?,?,?,?,?,?,?,?)', (seq, first, last, row['role'], hint, body, logical, int(continuation), 1))
