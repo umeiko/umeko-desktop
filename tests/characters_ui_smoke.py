@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 import sys
 import tempfile
-from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
@@ -20,10 +19,6 @@ from main import create_application
 from tests.test_characters import GIF
 
 app,engine,backend = create_application()
-# This smoke asserts normal artwork; random rare covers use different asset paths.
-normal_artwork = patch.object(backend, '_character_easter_eggs', {})
-normal_artwork.start()
-backend.changed.emit()
 window = engine.rootObjects()[0]
 warnings = []
 engine.warnings.connect(lambda errors:warnings.extend(error.toString() for error in errors))
@@ -185,7 +180,6 @@ try:
     assert not warnings,'\n'.join(warnings)
     print('Character picker, Kaju and protected defaults passed. Character UI: Komari, live selection, Yanami fallback, theme independence, two-frame GIF and hidden playback passed')
 finally:
-    normal_artwork.stop()
     backend.close()
     window.close()
     import shiboken6

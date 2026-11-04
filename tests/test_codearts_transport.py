@@ -65,11 +65,13 @@ class FakeServer:
                 if urlsplit(self.path).path != "/event":
                     self.send_error(404)
                     return
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream")
-                self.end_headers()
-                self.wfile.flush()
                 with outer.condition:
+                    # A client can submit its prompt as soon as it reads these
+                    # headers. Keep emit() behind this subscription registration.
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.end_headers()
+                    self.wfile.flush()
                     outer.clients.append(self.wfile)
                     outer.connections.append(self.connection)
                     outer.condition.notify_all()
@@ -231,6 +233,58 @@ def collect(events):
 
 
 class TransportTests(unittest.TestCase):
+    def test_fake_sse_headers_do_not_allow_emission_before_subscription(self):
+        fake = FakeServer("silent")
+        self.addCleanup(fake.close)
+        headers_sent, allow_subscription, emit_attempted = (threading.Event() for _ in range(3))
+        self.addCleanup(allow_subscription.set)
+        emitter = None
+
+        class EmissionCondition(threading.Condition):
+            def __enter__(self):
+                if threading.current_thread() is emitter:
+                    # Report the acquisition attempt before registration resumes.
+                    # If the old handshake left the lock free, keep it until the
+                    # emission finishes so registration cannot win the race.
+                    acquired = self.acquire(blocking=False)
+                    emit_attempted.set()
+                    if acquired:
+                        return True
+                return super().__enter__()
+
+        fake.condition = EmissionCondition()
+        original = fake.http.RequestHandlerClass
+
+        class PausedHeaders(original):
+            def end_headers(self):
+                super().end_headers()
+                self.wfile.flush()
+                headers_sent.set()
+                if not allow_subscription.wait(3):
+                    raise TimeoutError("fixture subscription was not released")
+
+        fake.http.RequestHandlerClass = PausedHeaders
+        conn = http.client.HTTPConnection("127.0.0.1", fake.http.server_port, timeout=3)
+        self.addCleanup(conn.close)
+        conn.request("GET", "/event")
+        response = conn.getresponse()
+        self.assertTrue(headers_sent.wait(3))
+
+        def emit():
+            nonlocal emitter
+            emitter = threading.current_thread()
+            fake.emit("session.idle", sessionID="fixture-session")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(emit)
+            try:
+                self.assertTrue(emit_attempted.wait(3))
+            finally:
+                allow_subscription.set()
+            future.result(timeout=3)
+        self.assertEqual(json.loads(response.readline().removeprefix(b"data: ")),
+                         {"type": "session.idle", "properties": {"sessionID": "fixture-session"}})
+
     def setup_fixture(self, mode="tools", **options):
         root = (Path("C:/UmekoTests/codearts-transport") if os.name == "nt"
                 else Path(tempfile.gettempdir()) / "UmekoTests/codearts-transport")
