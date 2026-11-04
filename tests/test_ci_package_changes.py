@@ -36,7 +36,8 @@ class PackageChangesTests(unittest.TestCase):
         bash = shutil.which('bash') if os.name != 'nt' else str(Path(shutil.which('git')).parents[1]/'bin/bash.exe') if shutil.which('git') else ''
         if not bash or not Path(bash).is_file():self.skipTest('Bash is unavailable')
         workflow=(ROOT/'.github/workflows/build.yml').read_text(encoding='utf-8')
-        block=textwrap.dedent(workflow.split('      - name: Python unit tests\n        run: |\n',1)[1].split('\n  windows-path-checks:',1)[0])
+        step=workflow.split('      - name: Python unit tests\n',1)[1].split('\n  windows-path-checks:',1)[0]
+        block=textwrap.dedent(step.split('        run: |\n',1)[1])
         orchestration=block.split('export -f unit_tests',1)[1]
         runner=(ROOT/'scripts/ci-ui-smokes.bash').read_text(encoding='utf-8')
         smoke_names=('fixture_first_ui_smoke.py','fixture_second_ui_smoke.py')
@@ -46,6 +47,7 @@ class PackageChangesTests(unittest.TestCase):
         fixture='''
 set -e
 export RUNNER_TEMP="$(pwd -P)"
+export CI_BENCHMARK_CONFIGS=0
 dbus-run-session() { if [[ "$1" == -- ]]; then shift; fi; export DBUS_SESSION_BUS_ADDRESS="fixture:$BASHPID"; "$@"; }
 gnome-keyring-daemon() { cat >/dev/null; }
 flock() { :; }

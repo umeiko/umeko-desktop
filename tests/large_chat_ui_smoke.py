@@ -29,11 +29,19 @@ def find(name,required=True):
   if p.objectName()==name:return p
   todo.extend(p.childItems())
  if required:raise AssertionError(name)
+def message_bubble(view,row):
+ slot=next((item for item in view.property('contentItem').childItems() if item.property('messageSlot') is True and item.property('index')==row),None)
+ if slot is None:return None
+ todo=[slot]
+ while todo:
+  item=todo.pop()
+  if item.objectName()=='messageBubble_'+str(row):return item
+  todo.extend(item.childItems())
 def jump_settled(view,row):
  if not c.messageModel.isReady(row) or view.property('restoring'):return False
  # Ready data and restore completion can precede asynchronous delegate polish.
  w.grabWindow()
- bubble=find('messageBubble_'+str(row),required=False)
+ bubble=message_bubble(view,row)
  if bubble is None:return False
  y=bubble.mapToItem(view,QPointF()).y()
  return -2<=y<=5 or view.property('atYEnd') and 0<=y<view.height()
@@ -42,7 +50,7 @@ try:
  assert c._view.process is None and not c._view.messages
  view=find('conversation');QTest.qWait(300)
  for row in (0,3000,5998,1200):
-  QMetaObject.invokeMethod(view,'jumpToMessage',Qt.DirectConnection,Q_ARG('QVariant',row));wait(lambda:jump_settled(view,row));y=find('messageBubble_'+str(row)).mapToItem(view,QPointF()).y();print('JUMP',row,view.property('contentY'),'relative',y,'cache',c.transcripts.cache.weight,flush=True);assert -2<=y<=5 or view.property('atYEnd') and 0<=y<view.height(),(row,y)
+  QMetaObject.invokeMethod(view,'jumpToMessage',Qt.DirectConnection,Q_ARG('QVariant',row));wait(lambda:jump_settled(view,row));y=message_bubble(view,row).mapToItem(view,QPointF()).y();print('JUMP',row,view.property('contentY'),'relative',y,'cache',c.transcripts.cache.weight,flush=True);assert -2<=y<=5 or view.property('atYEnd') and 0<=y<view.height(),(row,y)
  assert c.messageModel.questionCount==3000
  # Returning from a distant paged message needs one click, not a long scroll.
  QMetaObject.invokeMethod(view,'jumpToMessage',Qt.DirectConnection,Q_ARG('QVariant',0))
