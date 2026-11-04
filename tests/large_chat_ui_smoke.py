@@ -22,19 +22,27 @@ def wait(check):
   QTest.qWait(10);time.sleep(0.001)
   if check():return
  raise AssertionError('timeout '+str(warnings[:10])+str((c.activeSession,c.messageCount,c.sessionPreview.request,c.sessionPreview.reading,c.sessionPreview.direct_token)))
-def find(name):
+def find(name,required=True):
  todo=[w.contentItem()]
  while todo:
   p=todo.pop()
   if p.objectName()==name:return p
   todo.extend(p.childItems())
- raise AssertionError(name)
+ if required:raise AssertionError(name)
+def jump_settled(view,row):
+ if not c.messageModel.isReady(row) or view.property('restoring'):return False
+ # Ready data and restore completion can precede asynchronous delegate polish.
+ w.grabWindow()
+ bubble=find('messageBubble_'+str(row),required=False)
+ if bubble is None:return False
+ y=bubble.mapToItem(view,QPointF()).y()
+ return -2<=y<=5 or view.property('atYEnd') and 0<=y<view.height()
 try:
  t=time.perf_counter();c.openSession('fixture');wait(lambda:c.activeSession=='fixture' and c.messageModel.rowCount()==6000);print('OPEN',time.perf_counter()-t,'ticks',len(ticks),'cache',c.transcripts.cache.weight,flush=True)
  assert c._view.process is None and not c._view.messages
  view=find('conversation');QTest.qWait(300)
  for row in (0,3000,5998,1200):
-  QMetaObject.invokeMethod(view,'jumpToMessage',Qt.DirectConnection,Q_ARG('QVariant',row));wait(lambda:c.messageModel.isReady(row) and not view.property('restoring'));y=find('messageBubble_'+str(row)).mapToItem(view,QPointF()).y();print('JUMP',row,view.property('contentY'),'relative',y,'cache',c.transcripts.cache.weight,flush=True);assert -2<=y<=5 or view.property('atYEnd') and 0<=y<view.height(),(row,y)
+  QMetaObject.invokeMethod(view,'jumpToMessage',Qt.DirectConnection,Q_ARG('QVariant',row));wait(lambda:jump_settled(view,row));y=find('messageBubble_'+str(row)).mapToItem(view,QPointF()).y();print('JUMP',row,view.property('contentY'),'relative',y,'cache',c.transcripts.cache.weight,flush=True);assert -2<=y<=5 or view.property('atYEnd') and 0<=y<view.height(),(row,y)
  assert c.messageModel.questionCount==3000
  # Returning from a distant paged message needs one click, not a long scroll.
  QMetaObject.invokeMethod(view,'jumpToMessage',Qt.DirectConnection,Q_ARG('QVariant',0))

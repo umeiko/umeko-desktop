@@ -100,7 +100,7 @@ jobs:
           echo "Linux CPU cores: $(nproc)"
           .venv/bin/python -m pip install unittest-parallel==1.8.6
           unit_tests() {
-            .venv/bin/python scripts/ci-unit-tests.py
+            .venv/bin/python scripts/ci-unit-tests.py --jobs "$UNIT_TEST_JOBS"
           }
           export -f unit_tests
           isolated_tests() {
@@ -117,11 +117,17 @@ jobs:
               echo "$1 completed in $((SECONDS - started)) seconds"
             ' _ "$1"
           }
-          # Compare a full-core unit phase followed by four isolated UI workers.
-          unit_status=0
-          isolated_tests unit_tests || unit_status=$?
+          # Share the detected core budget between units and isolated UI workers.
+          cores=$(nproc)
+          export UNIT_TEST_JOBS=$(((cores + 1) / 2))
+          ui_jobs=$((cores / 2))
+          if (( ui_jobs < 1 )); then ui_jobs=1; fi
+          isolated_tests unit_tests &
+          unit_pid=$!
           ui_status=0
-          bash scripts/ci-ui-smokes.bash --jobs "$(nproc)" || ui_status=$?
+          bash scripts/ci-ui-smokes.bash --jobs "$ui_jobs" || ui_status=$?
+          unit_status=0
+          wait "$unit_pid" || unit_status=$?
           if (( unit_status != 0 || ui_status != 0 )); then exit 1; fi
 
   windows-path-checks:

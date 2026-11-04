@@ -42,50 +42,51 @@ if [[ $# != 0 || ! $jobs =~ ^[1-9][0-9]*$ ]]; then
   echo 'Usage: bash scripts/ci-ui-smokes.bash [--jobs N]' >&2
   exit 2
 fi
+# Slowest scripts first, using timings from CI run 41779809091.
 smokes=(
-  tests/codearts_plugin_ui_smoke.py
-  tests/subagent_pane_ui_smoke.py
-  tests/request_details_ui_smoke.py
-  tests/provider_error_ui_smoke.py
-  tests/provider_login_cancel_ui_smoke.py
-  tests/multimodal_ui_smoke.py
-  tests/video_ui_smoke.py
-  tests/auxiliary_vision_ui_smoke.py
-  tests/subagent_queue_ui_smoke.py
-  tests/characters_ui_smoke.py
-  tests/provider_popup_ui_smoke.py
-  tests/api_proxy_layout_ui_smoke.py
-  tests/desktop_settings_ui_smoke.py
-  tests/desktop_plugins_ui_smoke.py
-  tests/conversation_search_ui_smoke.py
-  tests/sidebar_menu_position_ui_smoke.py
-  tests/sidebar_animation_ui_smoke.py
-  tests/change_review_ui_smoke.py
-  tests/extension_details_ui_smoke.py
-  tests/pi_manager_initial_tools_ui_smoke.py
-  tests/pi_capabilities_ui_smoke.py
-  tests/pi_management_ui_smoke.py
-  tests/skill_manager_ui_smoke.py
-  tests/skill_manager_host_ui_smoke.py
-  tests/slash_commands_ui_smoke.py
-  tests/desktop_pet_ui_smoke.py
-  tests/global_agents_ui_smoke.py
-  tests/subagent_collection_ui_smoke.py
-  tests/subagent_reaction_ui_smoke.py
   tests/model_popup_ui_smoke.py
-  tests/preview_resize_ui_smoke.py
-  tests/large_markdown_ui_smoke.py
-  tests/history_window_ui_smoke.py
+  tests/pi_capabilities_ui_smoke.py
+  tests/global_agents_ui_smoke.py
+  tests/desktop_plugins_ui_smoke.py
+  tests/pi_management_ui_smoke.py
+  tests/subagent_collection_ui_smoke.py
+  tests/thinking_stream_ui_smoke.py
+  tests/skill_manager_host_ui_smoke.py
+  tests/video_ui_smoke.py
+  tests/desktop_pet_ui_smoke.py
+  tests/subagent_pane_ui_smoke.py
+  tests/multimodal_ui_smoke.py
+  tests/auxiliary_vision_ui_smoke.py
+  tests/appearance_ui_smoke.py
+  tests/characters_ui_smoke.py
+  tests/sidebar_animation_ui_smoke.py
+  tests/extension_details_ui_smoke.py
+  tests/provider_popup_ui_smoke.py
+  tests/change_review_ui_smoke.py
   tests/motion_ui_smoke.py
-  tests/pid_thread_ui_smoke.py
+  tests/codearts_plugin_ui_smoke.py
+  tests/subagent_reaction_ui_smoke.py
+  tests/viewport_cache_ui_smoke.py
+  tests/subagent_queue_ui_smoke.py
+  tests/preview_resize_ui_smoke.py
+  tests/api_proxy_layout_ui_smoke.py
+  tests/large_chat_ui_smoke.py
+  tests/provider_error_ui_smoke.py
+  tests/desktop_settings_ui_smoke.py
   tests/sidebar_highlight_ui_smoke.py
   tests/chat_loading_ui_smoke.py
-  tests/viewport_cache_ui_smoke.py
   tests/scroll_paging_ui_smoke.py
-  tests/large_chat_ui_smoke.py
-  tests/appearance_ui_smoke.py
   tests/task_state_ui_smoke.py
-  tests/thinking_stream_ui_smoke.py
+  tests/conversation_search_ui_smoke.py
+  tests/sidebar_menu_position_ui_smoke.py
+  tests/pi_manager_initial_tools_ui_smoke.py
+  tests/slash_commands_ui_smoke.py
+  tests/large_markdown_ui_smoke.py
+  tests/history_window_ui_smoke.py
+  tests/request_details_ui_smoke.py
+  tests/skill_manager_ui_smoke.py
+  tests/provider_login_cancel_ui_smoke.py
+  tests/pid_thread_ui_smoke.py
 )
 
 mkdir -p build

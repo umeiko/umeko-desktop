@@ -20,14 +20,19 @@ window = engine.rootObjects()[0]
 warnings = []
 engine.warnings.connect(lambda errors: warnings.extend(e.toString() for e in errors))
 
-def find(name):
+def find(name, required=True):
     pending = [window.contentItem()]
     while pending:
         item = pending.pop()
         if item.objectName() == name:
             return item
         pending.extend(item.childItems())
-    raise AssertionError(name)
+    if required:
+        raise AssertionError(name)
+
+def visible(name):
+    item = find(name, required=False)
+    return item is not None and item.isVisible()
 
 def click(name):
     item = find(name)
@@ -65,7 +70,7 @@ try:
     backend._handle_pi_event(record, {'type':'message','role':'assistant','text':record.messages[0]['text'],
                                      'error':str(failure),'stopReason':'error'})
     window.setProperty('page', 'chat')
-    wait(lambda:find('requestDetails_0').isVisible(), 'Failed chat row lost the request-details button')
+    wait(lambda:visible('requestDetails_0'), 'Failed chat row lost the request-details button')
     click('requestDetails_0')
     wait(lambda:dialog.property('opened'), 'Chat request-details button did not open the report')
     text = find('requestDetailsText')
@@ -101,8 +106,8 @@ try:
         'content':[{'type':'text','text':'Partial child answer'}], 'stopReason':'error','errorMessage':str(failure)}})+'\n',encoding='utf-8')
     backend.subagents.merge(record, {'id':'failed-child','status':'error','outputFile':str(native),'task':'Fixture'})
     backend.subagents.open('failed-child')
-    wait(lambda:not backend.subagents.context['loading'] and not find('webPane').property('moving'), 'Child error history did not load')
-    wait(lambda:find('subagentRequestDetails_0').isVisible(), 'Child request-details button is missing')
+    wait(lambda:not backend.subagents.context['loading'] and (pane:=find('webPane', required=False)) is not None and not pane.property('moving'), 'Child error history did not load')
+    wait(lambda:visible('subagentRequestDetails_0'), 'Child request-details button is missing')
     click('subagentRequestDetails_0')
     wait(lambda:dialog.property('opened'), 'Child request-details button did not open the shared report')
     click('requestDetailsResponseTab')
