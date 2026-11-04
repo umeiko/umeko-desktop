@@ -72,6 +72,9 @@ def run_child(base, screenshots=None):
          patch('app.notifications.TaskNotifications', QuietNotifications), \
          patch('app.webview.configure'):
         app, engine, backend = create_application()
+    # Match the compaction fixture: offscreen delegates have no continuous
+    # rendered-frame incubation budget. Keep model work asynchronous.
+    engine.setIncubationController(None)
     window = engine.rootObjects()[0]
     window.resize(1400, 900)
     warnings, toasts = [], []
@@ -102,11 +105,22 @@ def run_child(base, screenshots=None):
         raise AssertionError('Timed out waiting for ' + label + ': ' + '\n'.join(warnings[:5]))
 
     def click(item):
+        name = item.objectName()
+        wait(lambda: (target := find(name)) is not None and target.isVisible()
+             and target.width() > 0 and target.height() > 0, 'click target ' + name)
+        window.grabWindow()  # Finish virtual-list layout before mapping input.
+        item = find(name)
         point = item.mapToScene(item.boundingRect().center()).toPoint()
         # Populate the selection overlay's passive hover target before pressing,
         # as a real pointer does. Some offscreen platforms omit this implicit move.
         QTest.mouseMove(window, point)
         QTest.qWait(25)
+        # Hover processes queued model/layout work; remap the current delegate.
+        window.grabWindow()
+        item = find(name)
+        assert item is not None, name
+        point = item.mapToScene(item.boundingRect().center()).toPoint()
+        assert window.contentItem().contains(point), (name, point)
         QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
         QTest.qWait(80)
 
