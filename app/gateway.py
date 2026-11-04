@@ -26,7 +26,8 @@ from .protocols import response_events, collect_openai, anthropic_events_to_open
 from .openai_responses import responses_request, responses_events
 from .request_diagnostics import RequestDiagnostics, RequestFailure
 from .network_retry import upstream_failure
-from .provider_errors import format_http_error
+from .provider_errors import format_http_error, safe_text
+from .reasoning_levels import detect_levels, allowed_levels, is_effort_rejection, normalize_reasoning
 from umeko_provider_sdk.network import network_scope, proxy_handler, tls_context, trace, TracedResponse
 from umeko_provider_sdk import request_scope
 
@@ -46,8 +47,9 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class Gateway:
-    def __init__(self, store, adapter, plugins=None):
+    def __init__(self, store, adapter, plugins=None, reasoning_rejected=None):
         self.store, self.adapter, self.plugins = store, adapter, plugins
+        self.reasoning_rejected = reasoning_rejected
         self.diagnostics = RequestDiagnostics(store.directory)
 
     def provider(self, provider_id):
@@ -64,11 +66,36 @@ class Gateway:
                 continue
             for model in p["models"]:
                 metadata = normalize_model(model)
-                rows.append({"id": model["alias"], "object": "model", "owned_by": p["name"],
+                reasoning = normalize_reasoning(model)
+                rows.append({"id": model["alias"], "object": "model", "owned_by": p["name"], "provider": p["id"],
                              "contextWindow": metadata["contextWindow"],
                              **{key: metadata[key] for key in ("providerContextWindow",) if key in metadata},
-                             "input": ["text", "image"] if metadata["vision"] else ["text"]})
+                             "input": ["text", "image"] if metadata["vision"] else ["text"],
+                             "reasoningLevels": reasoning["reasoningLevels"],
+                             "reasoningState": ("manual" if not reasoning["reasoningLevelsAuto"] else
+                                                reasoning["reasoningDetection"].get("state", "unknown"))})
         return rows
+
+    def detect_reasoning_levels(self, alias, provider_id=None):
+        """Probe the configured wire protocol without saving chat diagnostics."""
+        provider, _ = self.resolve(alias, provider_id)
+
+        def request(effort):
+            parameters = {} if effort is None else {"reasoning_effort": effort}
+            # Keep traces scoped for the transport, but never persist probe
+            # payloads or report them as failed user conversations.
+            records = []
+            try:
+                with network_scope(provider.get("proxy"), records):
+                    for event in self._events(alias, [{"role": "user", "content": "Reply OK."}],
+                                              max_tokens=1, provider_id=provider_id,
+                                              parameters=parameters):
+                        if event.get("error"):
+                            raise ValueError(json.dumps(event, ensure_ascii=False))
+            except Exception as error:
+                raise ValueError(safe_text(str(error), [provider.get("key", "")])) from None
+
+        return detect_levels(request)
 
     def supports_vision(self, alias, provider_id=None):
         return any(m["alias"] == alias and normalize_vision(m)["vision"]
@@ -103,8 +130,32 @@ class Gateway:
         except (IntegrationRequired, PermissionError):
             raise
         except Exception as error:
+            effort = (parameters or {}).get("reasoning_effort")
+            rejection = self._reasoning_rejection(p, model, effort, error, records)
+            if rejection is not None:
+                raise rejection from None
             raise self.diagnostics.failure(p, request, records[-1]['response'] if records else {},
                                            error, records) from None
+
+    def _reasoning_rejection(self, provider, model, effort, error, records):
+        if effort is None:
+            return None
+        response = records[-1].get("response", {}) if records else {}
+        status = response.get('status')
+        if status in (401, 403, 408, 425, 429) or (isinstance(status, int) and status >= 500):
+            return None
+        detail = response.get("body") or str(error)
+        if not is_effort_rejection(detail):
+            return None
+        levels = allowed_levels(detail)
+        if callable(self.reasoning_rejected):
+            self.reasoning_rejected(provider["id"], model, effort, levels)
+        if levels is None:
+            configured = next((item for item in provider["models"] if item["upstream"] == model), {})
+            levels = normalize_reasoning(configured)["reasoningLevels"]
+        supported = ["off"] + [item for item in levels if item not in (effort, "off")]
+        message = safe_text(str(error), [provider.get("key", "")])
+        return RequestFailure(f'{message}\n当前可选推理档位：{", ".join(supported)}。请调整档位后重新发送。', retryable=False)
 
     def _events(self, alias, messages, tools=None, max_tokens=4096, provider_id=None, parameters=None):
         p, model = self.resolve(alias, provider_id)
@@ -170,7 +221,14 @@ class Gateway:
         try:
             with opener.open(request, timeout=90) as response:
                 record['response'].update(status=response.status, headers=dict(response.headers))
-                events = response_events(TracedResponse(response, record))
+                def checked_events():
+                    for event in response_events(TracedResponse(response, record)):
+                        # Anthropic's converter otherwise replaces the actual
+                        # validation detail with a generic streaming error.
+                        if event.get('error') or event.get('type') == 'error':
+                            raise ValueError(json.dumps(event, ensure_ascii=False))
+                        yield event
+                events = checked_events()
                 yield from anthropic_events_to_openai(events) if p["api"] == "anthropic" else responses_events(events) if p.get('wireApi') == 'responses' else events
         except urllib.error.HTTPError as exc:
             record['response'].update(status=exc.code, headers=dict(exc.headers), body=exc.read().decode('utf-8', 'replace'))

@@ -30,7 +30,6 @@ from .transcripts import preview
 from .chat_model import ChatModel
 from .transcript_index import TranscriptRepository
 from .model_context import context_suggestion
-from .provider_models import fetch_model_windows
 from .model_capabilities import normalize_model, vision_suggestion
 from .provider_plugins import ProviderPlugins
 from .api_keys import KeyCatalog, generate_key, key_summary, lan_addresses, make_key
@@ -46,6 +45,7 @@ from .chatbox import media_view
 from .subagents import Subagents
 from .characters import CharactersMixin
 from .auxiliary_vision import AuxiliaryVisionMixin
+from .controller_reasoning import ReasoningModels
 
 
 GREETINGS = (
@@ -137,6 +137,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     attachmentsChanged = Signal()
     contextUsageChanged = Signal()
     reasoningChanged = Signal()
+    reasoningLevelsChanged = Signal()
     retryChanged = Signal()
 
     @Property("QVariantMap", notify=retryChanged)
@@ -203,7 +204,6 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._chat_visible = True
         self._management_jobs = set()
         self._mcp_jobs = {}
-        self._model_refresh_jobs = {}
         self._closing = False
         self._copy_request = 0
         self._session_preview = SessionPreview(self)
@@ -255,6 +255,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._desktop_plugins = DesktopPlugins(self)
         from .slash_commands import SlashCommands
         self._slash_commands = SlashCommands(self)
+        self._reasoning = ReasoningModels(self)
 
     @Property(QObject, constant=True)
     def slashCommands(self):
@@ -296,7 +297,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self._welcome_portraits = list(range(12))
             secrets.SystemRandom().shuffle(self._welcome_portraits)
         return SessionState(workspace=self.store.data["workspace"] if workspace is None else workspace,
-            reasoning_effort=self.store.data["ui"].get("reasoningEffort", "off") if self.store.data["ui"].get("reasoningEffort") in ("low", "high", "max") else "off",
+            reasoning_effort=self.store.data["ui"].get("reasoningEffort", "off"),
             model=self.store.data["selectedModel"], provider=self.store.data["selectedProvider"], greeting=self._welcome_greetings.pop(), portrait=self._welcome_portraits.pop())
 
     def _activate(self, record):
@@ -329,6 +330,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             record.context_usage = {}
         if (record.provider, record.model) in available:
             self.store.data.update(selectedModel=record.model, selectedProvider=record.provider)
+        self._reasoning.clamp(record)
+        self._reasoning.sync_active()
         self._mark_read(record)
         self._viewport_save.start()
         # Rebinding every hidden settings page is expensive. Session-specific
@@ -1070,16 +1073,42 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def reasoningEffort(self):
         return self._view.reasoning_effort
 
+    @Property("QVariantList", notify=reasoningLevelsChanged)
+    def reasoningLevels(self):
+        from .reasoning_levels import effort_options
+        return effort_options(self._reasoning.levels())
+
+    @Property(str, notify=reasoningLevelsChanged)
+    def reasoningDetectionState(self):
+        return self._reasoning.state()
+
+    @Slot(result=bool)
+    def redetectReasoningLevels(self):
+        return self._reasoning.refresh(self.store.data['selectedProvider'], force=True,
+                                       only=(self._reasoning.for_record() or {}).get('upstream'))
+
+    @Slot(str, str, result='QVariantMap')
+    def modelReasoningSettings(self, provider_id, model):
+        return self._reasoning.settings(provider_id, model)
+
+    @Slot(str, str, 'QVariantList', bool, result=bool)
+    def setModelReasoningLevels(self, provider_id, model, levels, automatic):
+        try:
+            return self._reasoning.set_manual(provider_id, model, levels, automatic)
+        except (ValueError, OSError, RuntimeError) as error:
+            self.toast.emit(str(error))
+            return False
+
     @Slot(str, result=bool)
     def setReasoningEffort(self, value):
-        if value not in ("off", "low", "high", "max"): return False
+        if value != 'off' and value not in self._reasoning.levels(): return False
         record = self._view
         record.reasoning_effort = value
         self.store.data["ui"]["reasoningEffort"] = value
         if record.id:
             self.store.data["sessionMeta"].setdefault(record.id, {})["reasoningEffort"] = value
         self.store.save()
-        self._pool.write(record, {"type": "reasoning_effort", "value": value})
+        self._reasoning.send_levels(record)
         self.reasoningChanged.emit()
         return True
 
@@ -1564,6 +1593,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self._view.context_usage = {}
         self.store.data.update(selectedProvider=provider, selectedModel=model)
         self._view.model, self._view.provider = model, provider
+        self._reasoning.clamp()
         self.store.save()
         self.changed.emit()
         self.contextUsageChanged.emit()
@@ -1608,6 +1638,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             models = self._validate_model_mappings(rows, (existing or {}).get("models", []), taken)
             provider = {**(existing or {}), "id": provider_id, "name": name.strip(), "api": api, "baseUrl": base_url, "key": kept_key, "models": models,
                         "proxy": (existing or {}).get('proxy', {'mode':'system', 'url':''})}
+            if existing and ReasoningModels.connection(existing) != ReasoningModels.connection(provider):
+                for model in models:
+                    if model['reasoningLevelsAuto']:
+                        model.update(reasoningLevels=[], reasoningDetection={'state': 'unknown', 'levels': []})
             self.store.data["providers"] = [provider if p["id"] == provider_id else p for p in self.store.data["providers"]]
             if not existing:
                 self.store.data["providers"].append(provider)
@@ -1619,6 +1653,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("供应商配置已保存")
+            QTimer.singleShot(0, lambda: self._reasoning.refresh(provider_id, force=False))
             return True
         except (ValueError, KeyError, TypeError) as exc:
             self.toast.emit(str(exc))
@@ -1631,12 +1666,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             return self.toast.emit("请在账号页刷新插件模型 / Refresh plugin models on the account page")
         if self._models_busy(provider_id):
             return self.toast.emit("请等待当前任务结束后刷新模型 / Wait for the current task before refreshing models")
-        if provider_id in self._model_refresh_jobs:
-            return
-        snapshot = copy.deepcopy(provider)
-        self._model_refresh_jobs[provider_id] = snapshot
         self.toast.emit("正在获取供应商模型信息 / Fetching provider model information")
-        self._job("model-windows:" + provider_id, lambda: fetch_model_windows(snapshot))
+        self._reasoning.refresh(provider_id, force=True)
 
     @Slot(str)
     def removeProvider(self, provider_id):
@@ -1677,6 +1708,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("模型映射已保存")
+            for provider in providers:
+                self._reasoning.refresh(provider['id'], force=False)
             return True
         except (ValueError, KeyError, TypeError, StopIteration) as exc:
             self.toast.emit(str(exc))
@@ -1782,7 +1815,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             record.blocked_tools = clean_blocked_tools(self.store.data["sessionMeta"].get(session_id, {}).get("blockedTools"))
             record.pi_capabilities = self.store.data["sessionMeta"].get(session_id, {}).get("piCapabilities") or {}
             effort = self.store.data["sessionMeta"].get(session_id, {}).get("reasoningEffort", record.reasoning_effort)
-            record.reasoning_effort = effort if effort in ("off", "low", "high", "max") else "off"
+            record.reasoning_effort = effort
             record.history = copy.deepcopy(session.get("history", []))
             record.messages = copy.deepcopy(session.get("messages", []))
             record.model, record.provider = session.get("model") or record.model, session.get("provider") or record.provider
@@ -1899,40 +1932,6 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     def _on_job_done(self, name, result):
         if self._closing:
-            return
-        if name.startswith("model-windows:"):
-            provider_id = name.split(":", 1)[1]
-            snapshot = self._model_refresh_jobs.pop(provider_id, None)
-            provider = self.gateway.provider(provider_id)
-            if not result["ok"]:
-                self.toast.emit(str(result["value"]))
-                return
-            if not snapshot or provider != snapshot or self._models_busy(provider_id):
-                self.toast.emit("配置已变化或会话已开始，请重新刷新模型 / Configuration changed or a task started; refresh models again")
-                return
-            try:
-                models = copy.deepcopy(provider["models"])
-                windows = result["value"]
-                for row in models:
-                    if row["upstream"] not in windows:
-                        continue
-                    limit = windows[row["upstream"]]
-                    row.pop("providerContextWindow", None)
-                    if limit is not None:
-                        row["providerContextWindow"] = limit
-                    row.update(normalize_model(row))
-                previous = provider["models"]
-                provider["models"] = models
-                try:
-                    self.store.save()
-                except (OSError, RuntimeError):
-                    provider["models"] = previous
-                    raise
-                self._restart_pi()
-                self.changed.emit()
-                self.toast.emit("供应商模型信息已更新 / Provider model information updated")
-            except (ValueError, OSError, RuntimeError) as exc:
-                self.toast.emit(str(exc))
             return
         if name.startswith('copy-chat:'):
             if int(name.split(':', 1)[1]) != self._copy_request:
@@ -2099,6 +2098,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if self._closing:
             return
         self._closing = True
+        self._reasoning.close()
         self._desktop_plugins.close()
         self._appearance_save.stop()
         self._viewport_save.stop()

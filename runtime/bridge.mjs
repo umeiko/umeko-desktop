@@ -61,7 +61,25 @@ const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit}
 let checkpointLocked = false;
 const backgroundJobs = createBackgroundJobsExtension({ canStart: () => !checkpointLocked });
 let reasoningEffort = "off";
-const effortLevels = new Set(["off", "low", "high", "max"]);
+let reasoningState = { model: "", provider: "", levels: [], effort: "off" };
+
+// Keep raw provider values; capabilities belong to one provider/model pair.
+export function resolveReasoningState(input, current = {}, models = []) {
+  const model = input.model ?? current.model ?? "";
+  const provider = input.provider ?? (model === current.model ? current.provider : "") ?? "";
+  const matches = models.filter(row => row.id === model && (!provider || row.provider === provider));
+  const available = Array.isArray(input.reasoningLevels) ? input.reasoningLevels
+    : matches.length === 1 && Array.isArray(matches[0].reasoningLevels) ? matches[0].reasoningLevels : [];
+  const levels = [...new Set(available.filter(value => typeof value === "string" && value.length && value !== "off"))];
+  const requested = input.reasoningEffort ?? input.value ?? current.effort ?? "off";
+  return { model, provider, levels, effort: requested === "off" || levels.includes(requested) ? requested : "off" };
+}
+// End reasoning policy.
+
+function updateReasoning(input) {
+  reasoningState = resolveReasoningState(input, reasoningState, input.models || config?.models || []);
+  reasoningEffort = reasoningState.effort;
+}
 let mcpEntries = [], mcpStatus = "", capturingMcp = false, pollingResources = false;
 let commandCancellation = 0;
 const inputQueue=createInputQueue({getSession:()=>runtime?.session,isRunning:()=>executing,
@@ -332,7 +350,6 @@ async function init(input) {
   globalThis[Symbol.for("umeko:recent-images-policy")] = { getLimit: () => config.agent?.maxContextImages };
   permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir, generation: input.generation, dangerousAllowed: input.dangerousAllowed === true };
   configureUmekoDocs({directory: input.docsDir || join(input.agentDir, "cache", "umeko-docs"), models: input.models});
-  reasoningEffort = effortLevels.has(input.reasoningEffort) ? input.reasoningEffort : "off";
   setGateway(input.gateway);
   process.env.PI_CODING_AGENT_DIR = input.agentDir;
   for (const [name, value] of Object.entries(input.mcpEnv || {})) if (!/^NODE_|^(HTTP|HTTPS|ALL)_PROXY$|_(AK|SK|SECRET_KEY|SECURITY_TOKEN)$/i.test(name)) process.env[name] = value;
@@ -357,6 +374,7 @@ async function init(input) {
   modelRuntime.registerNativeProvider = reject;
   selectedModel = modelRuntime.getModel("umeko", input.model);
   if (!selectedModel) throw new Error("请选择已配置的模型");
+  updateReasoning(input);
   const factory = async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
     // Load normal Pi settings/resources without importing auth.json or models.json.
     const nativeManager = await prepareNativeSettings(Pi, { cwd, agentDir, agent: input.agent });
@@ -590,7 +608,7 @@ async function execute(input) {
   }
   if (input.type === "subagent-command") { await subagents.command(input); return; }
   if (input.type === "reasoning_effort") {
-    if (effortLevels.has(input.value)) reasoningEffort = input.value;
+    updateReasoning(input);
     return;
   }
   if (["follow-up", "steer", "promote-queue", "edit-queue", "delete-queue", "steer-queued"].includes(input.type)) {
@@ -633,7 +651,6 @@ async function execute(input) {
   if (executing) { emit({ type: "error", message: "Pi 正在处理当前操作" }); return; }
   executing = true;
   try {
-    if (effortLevels.has(input.reasoningEffort)) reasoningEffort = input.reasoningEffort;
     if (!runtime) {
       if (!input.gateway || !input.token || !Array.isArray(input.models)) throw new Error("Pi 尚未完成初始化，请重新加载会话后重试");
       await init(input);
@@ -645,6 +662,7 @@ async function execute(input) {
       await runtime.session.setModel(selectedModel);
       exposeNativeTools(runtime.session);
     }
+    updateReasoning({ ...input, model: runtime.session.model?.id || input.model });
     if (input.type === "prompt") {
       if (!runtime.session.sessionManager.getSessionName()) runtime.session.setSessionName(input.text.replace(/\s+/g, " ").slice(0, 28));
       emit({ type: "session", session: sessionInfo() });

@@ -269,7 +269,7 @@ class UmekoControl(QObject):
             return {'config': redacted(settings), 'activeSession': b.activeSession, 'callerSession': caller.id if caller else ''}
         if operation == 'providers.list': return {'providers': redacted(b.config['providers']), 'presets': b.commonProviders}
         if operation == 'models.list':
-            return {'models': [dict(model='umeko/'+row['id'], id=row['id'], provider='umeko', displayProvider=row.get('owned_by', 'Umeko'), contextWindow=row['contextWindow'], vision='image' in row['input'])
+            return {'models': [dict(model='umeko/'+row['id'], id=row['id'], provider='umeko', displayProvider=row.get('owned_by', 'Umeko'), contextWindow=row['contextWindow'], vision='image' in row['input'], reasoningLevels=row['reasoningLevels'], reasoningState=row['reasoningState'])
                                for row in b.gateway.models()]}
         if operation == 'characters.list': return {'selected': b.characterStyle['id'], 'characters': b.characterPacks}
         if operation == 'characters.get': return {'character': b.characterStyle}
@@ -326,12 +326,16 @@ class UmekoControl(QObject):
                 target.context_usage = {}
                 if target is b._view:
                     b.store.data.update(selectedProvider=target.provider, selectedModel=target.model)
+                b._reasoning.clamp(target)
+                b._reasoning.sync_active()
             else:
-                if args.get('value') not in ('off', 'low', 'high', 'max'): raise ValueError('Reasoning must be off, low, high or max')
+                levels = b._reasoning.levels(target)
+                if args.get('value') != 'off' and args.get('value') not in levels:
+                    raise ValueError('Supported reasoning levels: ' + ', '.join(['off', *levels]))
                 target.reasoning_effort = args['value']
                 if target.id: b.store.data['sessionMeta'].setdefault(target.id, {})['reasoningEffort'] = args['value']
                 if target is b._view: b.store.data['ui']['reasoningEffort'] = args['value']
-                b._write_pi({'type': 'reasoning_effort', 'value': args['value']}, target)
+                b._reasoning.send_levels(target)
             b.store.save(); b.changed.emit(); b.reasoningChanged.emit(); b.contextUsageChanged.emit()
             return {'status': 'applied', 'sessionId': target.id}
         spec = self.operations.get(operation)

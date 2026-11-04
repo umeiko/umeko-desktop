@@ -146,7 +146,11 @@ class PiControllerMixin:
         record.prompt_started = time.monotonic() if action in ('prompt','widget-notify') else None
         record.phase = "loading" if not record.process else "running" if action in ("prompt", "compact", "widget-notify") else "working"
         record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在压缩上下文" if action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
-        payload = {"type": action, "model": record.model or self.store.data["selectedModel"], "reasoningEffort": record.reasoning_effort, **values}
+        self._reasoning.clamp(record)
+        payload = {"type": action, "model": record.model or self.store.data["selectedModel"],
+                   "provider": record.provider or self.store.data['selectedProvider'],
+                   "reasoningLevels": self._reasoning.levels(record),
+                   "reasoningEffort": record.reasoning_effort, **values}
         try:
             if record.process:
                 self._pool.write(record, payload)

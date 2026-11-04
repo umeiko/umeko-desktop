@@ -1,5 +1,9 @@
 .pragma library
 var strings = {
+    "关闭：不发送推理强度参数。\n其他档位来自当前模型的能力识别或手动设置。": "Off omits the reasoning effort parameter.\nOther levels come from this model's discovery or manual settings.",
+    "正在识别思考强度…": "Detecting reasoning levels…",
+    "思考强度识别失败，保留已知档位": "Reasoning discovery failed; keeping known levels",
+    "尚未识别思考强度，当前仅可关闭": "Reasoning levels are unknown; Off is available",
     "确认，并且本会话不再询问危险操作": "Confirm and don't ask again for dangerous operations in this chat",
     "本会话已授权": "Chat authorized",
     "本会话已允许全部危险操作，可在菜单中撤销。": "All dangerous operations are allowed in this chat. Revoke in this menu.",

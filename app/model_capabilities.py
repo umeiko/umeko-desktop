@@ -2,6 +2,7 @@
 import re
 
 from .model_context import normalize_context
+from .reasoning_levels import normalize_reasoning
 
 
 def vision_suggestion(model_name: str) -> dict:
@@ -46,4 +47,4 @@ def normalize_vision(model: dict, previous: dict | None = None) -> dict:
 
 def normalize_model(model: dict, previous: dict | None = None) -> dict:
     context = normalize_context(model, previous)
-    return {**context, **normalize_vision(model, previous)}
+    return {**context, **normalize_vision(model, previous), **normalize_reasoning(model, previous)}

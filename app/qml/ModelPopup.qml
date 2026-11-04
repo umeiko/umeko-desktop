@@ -53,12 +53,12 @@ AnchoredPidPopup {
             objectName: "reasoningControls"
             Layout.fillWidth: true; spacing: 8
             Repeater {
-                model: [{value:"off",label:I18n.t("关闭")},{value:"low",label:"Low"},{value:"high",label:"High"},{value:"max",label:"Max"}]
+                model: backend.reasoningLevels
                 ActionButton {
                     required property var modelData
                     Layout.fillWidth: true; Layout.preferredWidth: 1; Layout.minimumWidth: 0
                     objectName: "reasoningEffort_" + modelData.value
-                    text: modelData.label; quiet: true; primary: backend.reasoningEffort === modelData.value
+                    text: modelData.value === "off" ? I18n.t("关闭") : modelData.label; quiet: true; primary: backend.reasoningEffort === modelData.value
                     onClicked: backend.setReasoningEffort(modelData.value)
                 }
             }
@@ -67,8 +67,17 @@ AnchoredPidPopup {
                 objectName: "reasoningEffortHint"
                 heading: I18n.t("思考强度")
                 active: root.desiredOpen && reasoningHover.hovered
-                text: I18n.t("关闭：不发送推理强度参数。\nLow / High / Max：以模型支持的档位为准。")
+                text: I18n.t("关闭：不发送推理强度参数。\n其他档位来自当前模型的能力识别或手动设置。")
             }
+        }
+        Text {
+            Layout.fillWidth: true
+            visible: backend.reasoningDetectionState !== "known" && backend.reasoningDetectionState !== "manual"
+            text: backend.reasoningDetectionState === "probing" ? I18n.t("正在识别思考强度…")
+                : backend.reasoningDetectionState === "failed" ? I18n.t("思考强度识别失败，保留已知档位")
+                : I18n.t("尚未识别思考强度，当前仅可关闭")
+            color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(9, visible)
+            wrapMode: Text.WordWrap
         }
         ActionButton { text: I18n.t("管理供应商与模型"); glyph: "sliders"; quiet: true; Layout.fillWidth: true; onClicked: { root.close(); root.configure() } }
     }

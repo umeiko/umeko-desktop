@@ -25,7 +25,7 @@ Umeko 使用自己的供应商网关。不要指导用户执行 Pi `/login`、�
 {"operation":"sessions.reasoning","arguments":{"value":"high"}}
 ```
 
-`value` 为 `off`、`low`、`high`、`max`。`off` 完全不发送 `reasoning_effort`；实际服务是否接受其他级别依其协议与模型能力。模型切换若排队，下一轮才使用新连接。
+`value` 为 `off` 或当前供应商和模型所支持的原始档位，例如 `medium`、`xhigh`；不同模型的列表可能不同，不要假定固定为 `low`、`high`、`max`。`off` 完全不发送 `reasoning_effort`。能力尚未识别、识别失败或支持列表为空时，仅可使用 `off`；不支持的旧选择会回到 `off`。模型切换若排队，下一轮才使用新连接及其支持列表。
 
 每个供应商的网络模式通过 `providers.network` 设置，参数 `id`、`mode`、`address`。模式 `system` 跟随系统，`direct` 不走代理，`custom` 使用指定的 HTTP/HTTPS 代理地址。非 custom 时 `address` 留空。不要把它称为独立供应商类型。
 
