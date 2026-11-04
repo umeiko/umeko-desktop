@@ -87,7 +87,10 @@ try:
     window.setProperty('page','chat')
     QTest.qWait(350)
     assert welcome.property('loaded')
-    assert any('/doubao/' in str(child.property('artwork')) for child in welcome.childItems())
+    # The welcome portrait may show the selected character's rare cover.
+    expected_sources = {backend.characterStyle['assets']['welcome'], backend.characterStyle['easterEgg']['source']}
+    assert any(isinstance(source := child.property('source'), QUrl) and source.toString() in expected_sources
+               for child in welcome.childItems()), expected_sources
     assert window.grabWindow().save(str(out/'character-doubao-welcome.png'))
     backend.setLanguage('en')
     QMetaObject.invokeMethod(welcome,'tap')
