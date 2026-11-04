@@ -73,6 +73,11 @@ Near the end of a paged conversation, restoration also waits for relevant visibl
 neighbour bodies in its existing requested range, explicitly polishes their
 loaded layout and repositions before completing. Loader readiness alone does
 not guarantee final nested Column/text heights. The original retry cap remains.
+Concurrent paging also exposed a link-scanner lifetime race: a Python weak
+reference can survive destruction of its QML-owned C++ object. Scanner workers
+now exchange only Python cancellation state and queued results; the owner's GUI
+timer delivers results while it exists, so a late scan never signals a deleted
+delegate. The timer runs only while a scan is active.
 Subagent collection waits for the visible card/group state instead of a fixed
 sleep. Motion retargeting samples and calls the real update method in one
 synchronous QML call, without processing queued work between the samples.
