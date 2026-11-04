@@ -15,7 +15,6 @@ Item {
     property bool busy: false
     property bool running: false
     property string toolStatus: ""
-    property string workspace: ""
     property var turnStatus: ({})
     property alias view: conversation
     property alias selection: chatSelection
@@ -28,7 +27,6 @@ Item {
         running = backend.running;
         toolStatus = backend.toolStatus;
         turnStatus = backend.turnStatus;
-        workspace = backend.conversationWorkspace;
     }
     function activate() {
         current = true;
@@ -603,6 +601,5 @@ Item {
         enabled: pane.current && !pane.blocked
         retainedView: true
         sessionActive: pane.current
-        workspace: pane.workspace
     }
 }

@@ -1,7 +1,6 @@
-"""Resolve paths off-thread, then decorate the unchanged rendered document."""
+"""Decorate explicit web links in the unchanged rendered document."""
 import queue
 import threading
-from urllib.parse import unquote
 
 from PySide6.QtCore import QObject, Property, Signal, Slot, QTimer
 from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor, QTextFormat
@@ -21,11 +20,10 @@ def utf16_offsets(text):
 
 
 def link_info(link, source):
-    return {'kind':link.kind, 'target':link.target, 'line':link.line or 0,
-            'column':link.column or 0, '_source':source}
+    return {'kind':link.kind, 'target':link.target, '_source':source}
 
 
-def resolve_spans(plain, fragments, workspace, previous, cancelled):
+def resolve_spans(plain, fragments, previous, cancelled):
     """Only plain Python values enter the scanner; no Qt object crosses threads."""
     units = utf16_offsets(plain)
     fences = [(units[a], units[b]) for a,b in fenced_ranges(plain)]
@@ -36,19 +34,14 @@ def resolve_spans(plain, fragments, workspace, previous, cancelled):
         if href:
             original = previous.get(href, {}).get('_source', href) if generated else href
             target = web_url(original)
-            if target:
-                info = {'kind':'url','target':target,'_source':original}
-            else:
-                local = unquote(original)
-                matches = recognize_links(local, workspace, cancelled=cancelled)
-                info = link_info(matches[0], local) if len(matches)==1 and matches[0].start==0 and matches[0].end==len(local) else {}
+            info = {'kind':'url','target':target,'_source':original} if target else {}
             spans.append((start, end, info));occupied.append((start,end))
         elif inline:
             offsets = utf16_offsets(text)
-            for link in recognize_links(text, workspace, cancelled=cancelled):
+            for link in recognize_links(text, cancelled=cancelled):
                 a, b = start+offsets[link.start], start+offsets[link.end]
                 spans.append((a,b,link_info(link,text[link.start:link.end])));occupied.append((a,b))
-    for link in recognize_links(plain, workspace, cancelled=cancelled):
+    for link in recognize_links(plain, cancelled=cancelled):
         start, end = units[link.start], units[link.end]
         if not any(start < b and end > a for a,b in occupied):
             spans.append((start,end,link_info(link,plain[link.start:link.end])))
@@ -62,7 +55,7 @@ class TextLinks(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._quick = self._document = None
-        self._workspace, self._enabled, self._active = '', False, True
+        self._enabled, self._active = False, True
         self._color = QColor('#387756')
         self._applying, self._reading = False, False
         self._links, self._generation, self._pending = {}, 0, None
@@ -90,12 +83,6 @@ class TextLinks(QObject):
         self.refresh()
 
     document = Property(QObject, get_document, set_document, notify=changed)
-
-    def get_workspace(self): return self._workspace
-    def set_workspace(self, value):
-        if value != self._workspace:
-            self._workspace = value;self.refresh()
-    workspace = Property(str, get_workspace, set_workspace, notify=changed)
 
     def get_enabled(self): return self._enabled
     def set_enabled(self, value):
@@ -149,7 +136,7 @@ class TextLinks(QObject):
                     iterator += 1
                 block = block.next()
             if plain:
-                self._pending = (self._generation, plain, fragments, self._workspace, self._links)
+                self._pending = (self._generation, plain, fragments, self._links)
                 self._timer.start(0)
         self.changed.emit()
 
@@ -166,7 +153,7 @@ class TextLinks(QObject):
 
     def _start(self):
         if self._reading or self._pending is None: return
-        generation, plain, fragments, workspace, previous = self._pending
+        generation, plain, fragments, previous = self._pending
         self._pending, self._reading = None, True
         lifetime, results = self._lifetime, self._results
         def cancelled():
@@ -177,7 +164,7 @@ class TextLinks(QObject):
                 while not cancelled():
                     acquired = _SCANNERS.acquire(timeout=.05)
                     if acquired: break
-                result = resolve_spans(plain, fragments, workspace, previous, cancelled) if acquired and not cancelled() else []
+                result = resolve_spans(plain, fragments, previous, cancelled) if acquired and not cancelled() else []
             except Exception:
                 result = []
             finally:
@@ -185,7 +172,6 @@ class TextLinks(QObject):
             # QML can destroy the C++ owner while this thread is scanning.
             # Hand off only Python data; its GUI timer owns Qt delivery.
             results.put((generation, result))
-        # A slow network filesystem must neither block the GUI nor delay exit.
         threading.Thread(target=read, daemon=True, name='conversation-links').start()
         # Poll only while a scanner is active, at the desktop frame cadence.
         self._timer.start(16)

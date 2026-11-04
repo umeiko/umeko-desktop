@@ -157,7 +157,7 @@ async function bindSession(session) {
     if (activeCompaction) finishCompaction({ reason: activeCompaction.mode, errorMessage: error.message });
   });
   let publishedFile = existsSync(session.sessionManager.getSessionFile() || "");
-  let retryState = {}, retryTimer;
+  let retryState = {}, retryTimer, retryAssistant = false;
   const retry = state => { retryState = state; emit({ type: "network_retry", ...state }); };
   let lastContext = "";
   const publishContext = () => {
@@ -196,9 +196,15 @@ async function bindSession(session) {
       inputQueue.sync(event.steering, event.followUp);
     }
     if (event.type === "message_start" && event.message.role === "user") emit({ type: "user_start", text: textOf(event.message.content), timestamp: event.message.timestamp });
+    // Like Pi's interactive UI, replace the retry indicator when the next
+    // attempt starts; auto_retry_end arrives only after the assistant finishes.
+    // Keep draft replacement separate from the indicator's visibility.
+    if (["turn_start", "summarization_retry_attempt_start"].includes(event.type) && retryState.active) {
+      clearTimeout(retryTimer); retry({ active: false });
+    }
     if (event.type === "message_start" && event.message.role === "assistant") {
-      emit({ type: "assistant_start", retry: retryState.active === true, timestamp: event.message.timestamp });
-      if (retryState.active) { clearTimeout(retryTimer); retry({ ...retryState, waiting: false }); }
+      emit({ type: "assistant_start", retry: retryAssistant, timestamp: event.message.timestamp });
+      retryAssistant = false;
     }
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") emit({ type: "delta", text: event.assistantMessageEvent.delta });
     if (event.type === "message_update" && event.assistantMessageEvent.type === "thinking_delta") emit({ type: "thinking_delta", text: event.assistantMessageEvent.delta });
@@ -214,11 +220,13 @@ async function bindSession(session) {
     if (event.type === "compaction_start") startCompaction(event.reason);
     if (event.type === "compaction_end") finishCompaction(event);
     if (["auto_retry_start", "summarization_retry_scheduled"].includes(event.type)) {
+      if (event.type === "auto_retry_start") retryAssistant = true;
       clearTimeout(retryTimer);
       retry({ active: true, waiting: true, attempt: event.attempt, maxAttempts: event.maxAttempts, delayMs: event.delayMs, startedAt: Date.now() });
       retryTimer = setTimeout(() => retry({ ...retryState, waiting: false }), event.delayMs);
     }
     if (["auto_retry_end", "summarization_retry_finished"].includes(event.type)) {
+      if (event.type === "auto_retry_end") retryAssistant = false;
       clearTimeout(retryTimer); retry({ active: false });
     }
     if (["entry_appended", "message_end", "compaction_end", "agent_end"].includes(event.type)) publishContext();

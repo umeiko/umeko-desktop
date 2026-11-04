@@ -21,14 +21,12 @@ TextEdit {
                 linkMenuLoader.item.link = info
                 linkMenuLoader.item.popup(x, y)
             }
-        } else if (info.kind === "path") backend.openConversationPath(info.target, false)
-        else backend.openConversationUrl(info.target)
+        } else backend.openConversationUrl(info.target)
     }
     onLinkActivated: link => { if (conversationLinks && !selectionController) activateConversationLink(link, Qt.LeftButton, 0, 0) }
     TextLinks {
         id: links; objectName: "conversationLinks"
         document: root.textDocument; enabled: root.conversationLinks && (root.selectionController && root.selectionController.retainedView || root.visible)
-        workspace: root.conversationLinks ? (root.selectionController ? root.selectionController.workspace : backend.conversationWorkspace || "") : ""
         active: !root.conversationLinks || (!backend.busy && (!root.selectionController || root.selectionController.sessionActive))
         color: Theme.accent
     }
@@ -43,8 +41,6 @@ TextEdit {
         sourceComponent: FloatingMenu {
         id: linkMenu; objectName: "conversationLinkMenu"
         property var link: ({})
-        ContextAction { objectName: "copyConversationPath"; visible: linkMenu.link.kind === "path"; text: I18n.t("复制路径"); glyph: "file"; onTriggered: backend.copy(linkMenu.link.target) }
-        ContextAction { objectName: "revealConversationPath"; visible: linkMenu.link.kind === "path"; text: I18n.t("在文件管理器中打开"); glyph: "folder"; onTriggered: backend.openConversationPath(linkMenu.link.target, true) }
         ContextAction { objectName: "copyConversationUrl"; visible: linkMenu.link.kind === "url"; text: I18n.t("复制网址"); glyph: "copy"; onTriggered: backend.copy(linkMenu.link.target) }
     }
     }

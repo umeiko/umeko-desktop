@@ -93,7 +93,7 @@ class TextLinksLifetimeTests(unittest.TestCase):
         started, release = threading.Event(), threading.Event()
         workers, cancellations, deliveries, errors = [], [], [], []
 
-        def scan(plain, fragments, workspace, previous, cancelled):
+        def scan(plain, fragments, previous, cancelled):
             workers.append(threading.current_thread())
             started.set()
             if not release.wait(5): raise AssertionError('Blocked scanner was not released')
@@ -131,7 +131,7 @@ class TextLinksLifetimeTests(unittest.TestCase):
         started, release = threading.Event(), threading.Event()
         workers, scans, cancellations, deliveries, errors = [], [], [], [], []
 
-        def scan(plain, fragments, workspace, previous, cancelled):
+        def scan(plain, fragments, previous, cancelled):
             workers.append(threading.current_thread())
             scans.append(plain)
             if plain == 'old':
