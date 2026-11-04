@@ -21,8 +21,13 @@ Column {
     onExpandedChanged: if (!expanded && selectionController) selectionController.hideDetails(messageIndex, blockOffset + 1, tools.length)
     function command(name) { return name === "bash" || name === "powershell" }
     function openFile(path) {
-        if(root.Window.window)root.Window.window.previewChatImage({path:path})
+        const window = root.Window.window
+        if (window && typeof window.previewChatImage === "function") window.previewChatImage({path:path})
     }
+    // A successful read shows the file itself, so its row opens the shared
+    // chatbox preview instead of folding out the file text. Failed reads keep
+    // the inline row because the error text is the useful content there.
+    function opensPreview(tool) { return tool.name === "read" && !!tool.path && tool.state !== "error" }
     function action(name) { return ({read:I18n.t("读取"),write:I18n.t("写入"),edit:I18n.t("编辑"),bash:I18n.t("运行"),powershell:I18n.t("运行"),grep:I18n.t("搜索"),find:I18n.t("查找"),ls:I18n.t("浏览"),codemode:I18n.t("执行代码"),tool_search:I18n.t("查找工具"),submit_to_chatbox:I18n.t("展示附件"),subagent:I18n.t("子代理")})[name] || name }
     function agentType(value) {
         return ({"general-purpose":I18n.t("通用"), Explore:I18n.t("探索"), Plan:I18n.t("规划")})[value] || value || I18n.t("子代理")
@@ -102,6 +107,11 @@ Column {
             required property int index
             property var tool: root.tools[index] || ({})
             property bool details: !!root.expansionState.details[tool.id]
+            readonly property bool opensPreview: root.opensPreview(tool)
+            function activate() {
+                if (opensPreview) { root.openFile(tool.path); return }
+                details = !details; root.expansionState.details[tool.id] = details
+            }
             Connections { target: root; function onExpansionStateChanged() { toolRow.details = !!root.expansionState.details[toolRow.tool.id] } }
             width: root.width; spacing: 4
             Item {
@@ -110,8 +120,9 @@ Column {
                 ChatHitArea {
                     id: rowMouse; objectName: "toggleToolDetail_" + toolRow.tool.id
                     anchors.fill: parent; selectionController: root.selectionController
-                    onClicked: { toolRow.details = !toolRow.details; root.expansionState.details[toolRow.tool.id] = toolRow.details }
+                    onClicked: toolRow.activate()
                 }
+                HoverTip { active: toolRow.opensPreview && rowMouse.interactionHovered && !pathMouse.interactionHovered; text: toolRow.tool.path + I18n.t("\n点击预览") }
                 Glyph {
                     name: root.command(toolRow.tool.name) ? "terminal" : toolRow.tool.name === "edit" || toolRow.tool.name === "write" ? "edit" : "file"
                     width: Theme.icon(14); height: Theme.icon(14); anchors.verticalCenter: parent.verticalCenter
@@ -139,7 +150,12 @@ Column {
                     x: verb.x + verb.width + 6; width: Math.max(0, parent.width - x - Theme.control(42)); visible: !pathLabel.visible
                     text: root.preview(toolRow.tool); elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(12, visible, root.selectionController); anchors.verticalCenter: parent.verticalCenter
                 }
-                Glyph { x: parent.width - width - Theme.control(22); width: Theme.icon(12); height: Theme.icon(12); name: toolRow.details ? "chevron-down" : "chevron-right"; anchors.verticalCenter: parent.verticalCenter }
+                Glyph {
+                    objectName: "toolRowAffordance_" + toolRow.tool.id
+                    x: parent.width - width - Theme.control(22); width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter
+                    name: toolRow.opensPreview ? "eye" : toolRow.details ? "chevron-down" : "chevron-right"
+                    color: toolRow.opensPreview && rowMouse.interactionHovered ? Theme.accent : Theme.muted
+                }
                 Glyph {
                     objectName: "toolState_" + toolRow.tool.id
                     x: parent.width - width; width: Theme.icon(14); height: width; anchors.verticalCenter: parent.verticalCenter
@@ -150,10 +166,12 @@ Column {
                     HoverHandler { id: stateHover }
                     HoverTip { active: stateHover.hovered; text: root.agentState(toolRow.tool.state) }
                 }
-                Accessible.role: Accessible.Button; Accessible.name: root.action(toolRow.tool.name) + " " + root.preview(toolRow.tool); Accessible.description: toolRow.details ? I18n.t("已展开") : I18n.t("已折叠")
+                Accessible.role: Accessible.Button; Accessible.name: root.action(toolRow.tool.name) + " " + root.preview(toolRow.tool)
+                Accessible.description: toolRow.opensPreview ? I18n.t("打开文件预览") : toolRow.details ? I18n.t("已展开") : I18n.t("已折叠")
+                Accessible.onPressAction: toolRow.activate()
             }
             Item {
-                visible: toolRow.details; width: parent.width; height: detailText.implicitHeight + 12
+                visible: toolRow.details && !toolRow.opensPreview; width: parent.width; height: detailText.implicitHeight + 12
                 Rectangle { x: 6; y: 4; width: 1; height: parent.height - 8; color: Theme.line }
                 SelectableText {
                     id: detailText; objectName: "toolDetail_" + toolRow.tool.id
