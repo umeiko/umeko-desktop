@@ -2,6 +2,8 @@
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -137,6 +139,30 @@ class PreviewNetworkTests(unittest.TestCase):
             self.manager._ensure_network()
         self.assertEqual(caught.exception.category, "dns")
         self.assertIn("SOCKS", caught.exception.limitation)
+
+    def test_unix_setup_forwards_default_and_direct_pip_arguments_with_nounset(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "setup.sh").read_text(encoding="utf-8")
+        function = "preview_pip() {" + text.split("preview_pip() {", 1)[1].split("\n}", 1)[0] + "\n}\n"
+        script = self.directory / "check.bash"
+        script.write_text('set -eu\n' + function + '\npreview_pip install -r requirements.txt\n', encoding="utf-8")
+        python = self.directory / ".venv/bin/python"
+        python.parent.mkdir(parents=True)
+        python.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$@"\n', encoding="utf-8")
+        python.chmod(0o755)
+        bash = shutil.which("bash")
+        if os.name == "nt":
+            bash = str(Path(shutil.which("git")).resolve().parent.parent / "bin/bash.exe")
+        self.assertTrue(bash, "Bash is required for the setup contract")
+        for direct in ("0", "1"):
+            with self.subTest(direct=direct):
+                env = dict(os.environ, HOME=str(self.directory), UMEKO_PREVIEW_DIRECT=direct)
+                result = subprocess.run([bash, script.as_posix()], cwd=self.directory, env=env,
+                    capture_output=True, text=True, check=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                expected = ["-m", "pip", "install", "-r", "requirements.txt"]
+                if direct == "1": expected.append("--proxy=")
+                self.assertEqual(result.stdout.splitlines(), expected)
 
 
 if __name__ == "__main__":

@@ -5,10 +5,15 @@ command -v python3 >/dev/null || { echo 'Python 3.10+ is required.' >&2; exit 1;
 command -v node >/dev/null || { echo 'Node.js 22.19+ is required.' >&2; exit 1; }
 command -v npm >/dev/null || { echo 'npm is required to install the Pi kernel.' >&2; exit 1; }
 [[ -x .venv/bin/python ]] || python3 -m venv .venv
-preview_pip_args=()
 # An empty PIP_PROXY environment value does not override pip.conf.
-if [[ "${UMEKO_PREVIEW_DIRECT:-}" == "1" ]]; then preview_pip_args=(--proxy=); fi
-.venv/bin/python -m pip install "${preview_pip_args[@]}" -r requirements.txt
+preview_pip() {
+    if [[ "${UMEKO_PREVIEW_DIRECT:-}" == "1" ]]; then
+        .venv/bin/python -m pip "$@" --proxy=
+    else
+        .venv/bin/python -m pip "$@"
+    fi
+}
+preview_pip install -r requirements.txt
 .venv/bin/python scripts/build-provider-resources.py
 .venv/bin/python scripts/build-desktop-plugin-resources.py
 npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
@@ -17,7 +22,7 @@ npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
 
 # Build the Linux input context with the exact Qt version used by PySide.
 if [[ "$(uname -s)" == "Linux" ]]; then
-    .venv/bin/python -m pip install "${preview_pip_args[@]}" cmake==3.31.6 aqtinstall==3.3.0
+    preview_pip install cmake==3.31.6 aqtinstall==3.3.0
     .venv/bin/python scripts/build-input-method.py
 fi
 
