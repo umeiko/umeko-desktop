@@ -981,6 +981,7 @@ var strings = {
   "登录并刷新模型": "Sign in and refresh models",
   "监听端口": "Listening port",
   "确认": "Confirm",
+  "确定": "OK",
   "移除供应商": "Remove provider",
   "移除此账号和已保存的登录凭据": "Remove this account and its saved credentials",
   "移除项目": "Remove project",

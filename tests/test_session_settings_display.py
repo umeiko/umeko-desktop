@@ -135,8 +135,13 @@ ApplicationWindow {
         badge = self.find('reasoningEffortBadge')
         self.assertEqual(badge.property('text'), '· ' + {'low': 'Low', 'high': 'High', 'max': 'Max', 'off': ''}[record.reasoning_effort])
         self.assertEqual(badge.property('visible'), record.reasoning_effort != 'off')
-        for value in ('off', 'low', 'high', 'max'):
-            self.assertEqual(self.find('reasoningEffort_' + value).property('primary'), value == record.reasoning_effort)
+        # ModelPopup selects reasoning effort with a slider over the model's
+        # supported levels, rather than individual effort buttons.
+        levels = ['off', *self.controller.reasoningLevels]
+        slider = self.find('reasoningEffortSlider')
+        self.assertEqual(slider.property('value'), levels.index(record.reasoning_effort))
+        self.assertEqual(self.find('reasoningSelectedLabel').property('text'),
+                         {'low': 'Low', 'high': 'High', 'max': 'Max', 'off': 'Close'}[record.reasoning_effort])
         for value in ('ask', 'auto'):
             self.assertEqual(self.find('toolPermission_' + value).property('primary'), value == permission)
         usage = self.find('contextUsageIndicator')
