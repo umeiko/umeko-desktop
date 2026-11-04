@@ -47,63 +47,76 @@ class SessionDangerGrantTests(unittest.TestCase):
         self.backend.store.data["agent"]["toolPermissionMode"] = "ask"
         self.grant()
         self.assertEqual(self.backend._pool.write.call_args_list, [
-            unittest.mock.call(self.backend._view, {"type": "dangerous_grants", "categories": [1]}),
+            unittest.mock.call(self.backend._view, {"type": "dangerous_approval", "allowed": True}),
             unittest.mock.call(self.backend._view, {"type": "ui_response", "id": "approval", "value": True})])
-        self.assertEqual(Store(self.path).data["sessionMeta"]["chat-a"]["dangerousGrants"], [1])
+        self.assertIs(Store(self.path).data["sessionMeta"]["chat-a"]["dangerousAllowed"], True)
         self.assertEqual(self.backend.store.data["agent"]["toolPermissionMode"], "ask")
         self.assertEqual(self.backend._view.approval, {})
 
-    def test_categories_are_independent_and_other_or_new_chat_has_none(self):
-        self.grant(1)
-        self.grant(7)
-        self.assertEqual([g["category"] for g in self.backend.dangerousGrants], [1, 7])
+    def test_any_category_authorizes_current_chat_only(self):
+        for category in range(1, 8):
+            self.grant(category)
+            self.assertTrue(self.backend.dangerousAllowed)
+            self.backend.revokeDangerousApproval()
+        self.grant()
         for identifier in ("chat-b", ""):
             record = SessionState(key="other", id=identifier)
-            self.assertEqual(self.backend._dangerous_grants(record), [])
+            self.assertFalse(self.backend._dangerous_allowed(record))
 
-    def test_same_chat_controller_restart_loads_grants_and_revoke_persists(self):
-        self.grant(1)
-        self.grant(7)
+    def test_same_chat_controller_restart_loads_approval_and_revoke_persists(self):
+        self.grant()
         restarted = self.controller()
-        self.assertEqual(restarted._dangerous_grants(restarted._view), [1, 7])
-        restarted.revokeDangerousGrant(1)
-        self.assertEqual(Store(self.path).data["sessionMeta"]["chat-a"]["dangerousGrants"], [7])
-        restarted.revokeDangerousGrant(0)
-        self.assertNotIn("dangerousGrants", Store(self.path).data["sessionMeta"]["chat-a"])
-        restarted._pool.write.assert_called_with(restarted._view, {"type": "dangerous_grants", "categories": []})
+        self.assertTrue(restarted._dangerous_allowed(restarted._view))
+        restarted.revokeDangerousApproval()
+        self.assertNotIn("dangerousAllowed", Store(self.path).data["sessionMeta"]["chat-a"])
+        restarted._pool.write.assert_called_with(restarted._view, {"type": "dangerous_approval", "allowed": False})
+
+    def test_failed_revoke_preserves_saved_and_live_approval(self):
+        self.grant()
+        self.backend._pool.write.reset_mock()
+        with patch.object(self.backend.store, "save", side_effect=OSError("fixture")):
+            self.backend.revokeDangerousApproval()
+        self.assertTrue(self.backend.dangerousAllowed)
+        self.backend._pool.write.assert_not_called()
+        self.assertIs(Store(self.path).data["sessionMeta"]["chat-a"]["dangerousAllowed"], True)
+
+    def test_only_boolean_true_restores_approval(self):
+        for value in (False, 1, "true", [1, 2, 3, 4, 5, 6, 7], {}):
+            self.backend.store.data["sessionMeta"]["chat-a"] = {"dangerousAllowed": value}
+            self.assertFalse(self.backend.dangerousAllowed)
 
     def test_normal_approve_deny_and_generic_dialog_never_grant(self):
         for allowed in (True, False):
             self.approval()
             self.backend.respondApproval(allowed)
-            self.assertEqual(self.backend.dangerousGrants, [])
+            self.assertFalse(self.backend.dangerousAllowed)
         self.backend._view.approval = {"id": "generic", "method": "confirm"}
         self.backend.grantDangerousApproval()
-        self.assertEqual(self.backend.dangerousGrants, [])
+        self.assertFalse(self.backend.dangerousAllowed)
 
     def test_invalid_categories_and_coordinator_cannot_grant(self):
         for category in (0, 8, True, "1", None):
             self.approval(category)
             self.backend.grantDangerousApproval()
-            self.assertEqual(self.backend.dangerousGrants, [])
+            self.assertFalse(self.backend.dangerousAllowed)
         self.backend._view.global_agent = "coordinator"
         self.grant()
-        self.assertEqual(self.backend.dangerousGrants, [])
+        self.assertFalse(self.backend.dangerousAllowed)
 
     def test_failed_save_does_not_approve_or_change_live_policy(self):
         self.approval()
         with patch.object(self.backend.store, "save", side_effect=OSError("fixture")):
             self.backend.grantDangerousApproval()
         self.backend._pool.write.assert_not_called()
-        self.assertEqual(self.backend.dangerousGrants, [])
+        self.assertFalse(self.backend.dangerousAllowed)
         self.assertTrue(self.backend.pendingApproval)
 
     def test_archive_and_unarchive_never_restore_grants(self):
         self.grant()
         self.backend.archiveSession("chat-a", True)
-        self.assertNotIn("dangerousGrants", Store(self.path).data["sessionMeta"]["chat-a"])
+        self.assertNotIn("dangerousAllowed", Store(self.path).data["sessionMeta"]["chat-a"])
         self.backend.archiveSession("chat-a", False)
-        self.assertEqual(self.backend.dangerousGrants, [])
+        self.assertFalse(self.backend.dangerousAllowed)
 
     def test_archive_project_clears_each_chat(self):
         project = self.path / "project"
@@ -112,7 +125,7 @@ class SessionDangerGrantTests(unittest.TestCase):
         self.backend._sessions[0]["workspace"] = str(project)
         self.grant()
         self.backend.archiveProject("project", True)
-        self.assertNotIn("dangerousGrants", Store(self.path).data["sessionMeta"]["chat-a"])
+        self.assertNotIn("dangerousAllowed", Store(self.path).data["sessionMeta"]["chat-a"])
 
     def test_delete_clears_session_metadata_without_touching_real_files(self):
         self.grant()
@@ -123,10 +136,18 @@ class SessionDangerGrantTests(unittest.TestCase):
 
     def test_native_branch_event_clears_owning_chat_only(self):
         self.grant()
-        self.backend.store.data["sessionMeta"]["chat-b"] = {"dangerousGrants": [7]}
-        self.backend._handle_pi_event(self.backend._view, {"type": "dangerous_grants_cleared"})
-        self.assertEqual(self.backend.dangerousGrants, [])
-        self.assertEqual(Store(self.path).data["sessionMeta"]["chat-b"]["dangerousGrants"], [7])
+        self.backend.store.data["sessionMeta"]["chat-b"] = {"dangerousAllowed": True}
+        self.backend._handle_pi_event(self.backend._view, {"type": "dangerous_approval_cleared"})
+        self.assertFalse(self.backend.dangerousAllowed)
+        self.assertIs(Store(self.path).data["sessionMeta"]["chat-b"]["dangerousAllowed"], True)
+
+    def test_new_native_identity_keeps_metadata_without_authorization(self):
+        self.grant()
+        self.backend.store.data["sessionMeta"]["chat-a"]["pinned"] = True
+        self.backend._record_info(self.backend._view, {"id": "new-chat"})
+        self.assertNotIn("chat-a", self.backend.store.data["sessionMeta"])
+        self.assertTrue(self.backend.store.data["sessionMeta"]["new-chat"]["pinned"])
+        self.assertFalse(self.backend.dangerousAllowed)
 
     def test_fork_starts_fresh_record_and_does_not_copy_grants(self):
         self.grant()
@@ -137,8 +158,8 @@ class SessionDangerGrantTests(unittest.TestCase):
         backend._command_pi = Mock()
         backend.forkSessionById("chat-a")
         fork = backend._activate.call_args.args[0]
-        self.assertEqual(backend._dangerous_grants(fork), [])
-        self.assertEqual(backend._dangerous_grants(backend._view), [1])
+        self.assertFalse(backend._dangerous_allowed(fork))
+        self.assertTrue(backend._dangerous_allowed(backend._view))
         backend._command_pi.assert_called_once_with("fork", targetFile="")
 
 

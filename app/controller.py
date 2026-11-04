@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 import base64
 import hashlib
-from .dangerous_permissions import CATEGORIES as DANGEROUS_CATEGORIES, clean_grants
 import json
 import os
 import re
@@ -303,7 +302,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def _activate(self, record):
         self._streaming_timer.stop()
         self.viewAboutToChange.emit()
-        previous_grants = self._dangerous_grants(self._view)
+        previous_approval = self._dangerous_allowed(self._view)
         previous_configuration = {key: self.store.data.get(key) for key in ("workspace", "activeProject", "selectedProvider", "selectedModel")}
         self._view = record
         model = self._conversation_views.select(record.key)
@@ -334,7 +333,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._viewport_save.start()
         # Rebinding every hidden settings page is expensive. Session-specific
         # signals below update the chat; refresh settings only when they changed.
-        if previous_grants != self._dangerous_grants(record) or any(self.store.data.get(key) != value for key, value in previous_configuration.items()):
+        if previous_approval != self._dangerous_allowed(record) or any(self.store.data.get(key) != value for key, value in previous_configuration.items()):
             self.changed.emit()
         self.chatChanged.emit()
         self.viewChanged.emit()
@@ -791,7 +790,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             return
         self.store.data["sessionMeta"].setdefault(session_id, {})["archived"] = archived
         if archived:
-            self._clear_dangerous_grants(session_id)
+            self._clear_dangerous_approval(session_id)
         if archived and self._view.id == session_id:
             self._clear_current()
         record = self._pool.find(session_id)
@@ -809,7 +808,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         for session_id in ids:
             self.store.data["sessionMeta"].setdefault(session_id, {})["archived"] = archived
             if archived:
-                self._clear_dangerous_grants(session_id)
+                self._clear_dangerous_approval(session_id)
         if archived and self._view.id in ids:
             self._clear_current()
         if archived:
@@ -1215,76 +1214,66 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def pendingApproval(self):
         return self._view.approval
 
-    def _dangerous_grants(self, record):
+    def _dangerous_allowed(self, record):
         meta = self.store.data["sessionMeta"].get(record.id, {})
         if not record.id or record.global_agent or meta.get("archived"):
-            return []
-        return clean_grants(meta.get("dangerousGrants"))
+            return False
+        return meta.get("dangerousAllowed") is True
 
-    def _sync_dangerous_grants(self, record):
+    def _sync_dangerous_approval(self, record):
         if record.process is not None:
-            self._pool.write(record, {"type": "dangerous_grants", "categories": self._dangerous_grants(record)})
+            self._pool.write(record, {"type": "dangerous_approval", "allowed": self._dangerous_allowed(record)})
         self.changed.emit()
 
-    def _clear_dangerous_grants(self, session_id):
-        self.store.data["sessionMeta"].get(session_id, {}).pop("dangerousGrants", None)
+    def _clear_dangerous_approval(self, session_id):
+        self.store.data["sessionMeta"].get(session_id, {}).pop("dangerousAllowed", None)
         record = self._pool.find(session_id)
         if record:
-            self._sync_dangerous_grants(record)
+            self._sync_dangerous_approval(record)
 
-    @Property("QVariantList", notify=changed)
-    def dangerousGrants(self):
-        return [{"category": category, "label": DANGEROUS_CATEGORIES[category]} for category in self._dangerous_grants(self._view)]
+    @Property(bool, notify=changed)
+    def dangerousAllowed(self):
+        return self._dangerous_allowed(self._view)
 
-    @Property(int, notify=approvalChanged)
-    def dangerousApprovalCategory(self):
+    @Property(bool, notify=approvalChanged)
+    def canGrantDangerousApproval(self):
         category = self._view.approval.get("dangerCategory")
         meta = self.store.data["sessionMeta"].get(self._view.id, {})
-        return category if (self._view.id and not self._view.global_agent and not meta.get("archived")
-                            and self._view.approval.get("method") == "confirm"
-                            and type(category) is int and category in DANGEROUS_CATEGORIES) else 0
-
-    @Slot(int, result=str)
-    def dangerousCategoryLabel(self, category):
-        return DANGEROUS_CATEGORIES.get(category, "")
+        return bool(self._view.id and not self._view.global_agent and not meta.get("archived")
+                    and self._view.approval.get("method") == "confirm"
+                    and type(category) is int and 1 <= category <= 7)
 
     @Slot()
     def grantDangerousApproval(self):
-        category = self.dangerousApprovalCategory
-        if not category:
+        if not self.canGrantDangerousApproval:
             return
         record = self._view
         meta = self.store.data["sessionMeta"].setdefault(record.id, {})
-        previous = meta.get("dangerousGrants")
-        meta["dangerousGrants"] = sorted(set(self._dangerous_grants(record)) | {category})
+        previous = meta.get("dangerousAllowed")
+        meta["dangerousAllowed"] = True
         try:
             self.store.save()
         except (OSError, RuntimeError):
             if previous is None:
-                meta.pop("dangerousGrants", None)
+                meta.pop("dangerousAllowed", None)
             else:
-                meta["dangerousGrants"] = previous
+                meta["dangerousAllowed"] = previous
             return self.toast.emit("会话授权保存失败")
-        self._sync_dangerous_grants(record)
+        self._sync_dangerous_approval(record)
         self.respondApproval(True)
 
-    @Slot(int)
-    def revokeDangerousGrant(self, category):
+    @Slot()
+    def revokeDangerousApproval(self):
         record = self._view
         meta = self.store.data["sessionMeta"].get(record.id, {})
-        previous = meta.get("dangerousGrants")
-        grants = [value for value in self._dangerous_grants(record) if category != 0 and value != category]
-        if grants:
-            meta["dangerousGrants"] = grants
-        else:
-            meta.pop("dangerousGrants", None)
+        previous = meta.pop("dangerousAllowed", None)
         try:
             self.store.save()
         except (OSError, RuntimeError):
             if previous is not None:
-                meta["dangerousGrants"] = previous
+                meta["dangerousAllowed"] = previous
             return self.toast.emit("会话授权保存失败")
-        self._sync_dangerous_grants(record)
+        self._sync_dangerous_approval(record)
 
     @Property("QVariantMap", notify=changed)
     def agentResources(self):
@@ -2006,6 +1995,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 self._sessions = [session] + [s for s in self._sessions if s["id"] not in (old_id, session["id"])]
                 if old_id != session["id"]:
                     meta = self.store.data["sessionMeta"].pop(old_id, {})
+                    meta.pop("dangerousAllowed", None)
                     self.store.data["sessionMeta"][session["id"]] = meta
                 cached = self._pool.find(old_id)
                 if cached:

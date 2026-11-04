@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {classifyCommand, classifyPath, createToolPermissionExtension, normalizeDangerousGrants,
+import {classifyCommand, classifyPath, createToolPermissionExtension,
   childPermissionPolicy, childPermissionUI} from '../runtime/tool-permissions.mjs';
 
 // These fixtures are passed only to the classifier/gate; no tool executes them.
@@ -38,28 +38,27 @@ test('real classifier covers the existing seven categories',()=>{
  }
 });
 
-test('grants accept only integer categories 1 through 7',()=>{
- assert.deepEqual(normalizeDangerousGrants([1,1,2,3,4,5,6,7,0,8,'1',1.5,null,true]),[1,2,3,4,5,6,7]);
- assert.deepEqual(normalizeDangerousGrants('all'),[]);
+test('only an explicit boolean authorizes the whole chat',async()=>{
+ for(const value of [undefined,false,1,'true',[1,2,3,4,5,6,7],{}]) {
+   const h=harness({dangerousAllowed:value});
+   assert.equal((await h.call(fixtures[0])).block,true);
+ }
 });
 
 for(const fixture of fixtures) {
- test(`category ${fixture.category} requires explicit approval and only its own grant skips it`,async()=>{
-   const h=harness({dangerousGrants:[]});
+ test(`approval from category ${fixture.category} covers every dangerous operation and can be revoked`,async()=>{
+   const h=harness({dangerousAllowed:false});
    assert.equal((await h.call(fixture)).block,true);
    assert.equal(h.calls.at(-1).category,fixture.category);
-   h.update({dangerousGrants:[fixture.category===7?1:fixture.category+1]});
-   assert.equal((await h.call(fixture)).block,true);
-   assert.equal(h.calls.length,2);
-   h.update({dangerousGrants:[fixture.category]});
-   assert.equal(await h.call(fixture),undefined);
-   assert.equal(h.calls.length,2);
-   h.update({dangerousGrants:[]});
-   assert.equal((await h.call(fixture)).block,true);
-   assert.equal(h.calls.length,3);
+   h.update({dangerousAllowed:true});
+   for(const other of fixtures)assert.equal(await h.call(other),undefined);
+   assert.equal(h.calls.length,1);
+   h.update({dangerousAllowed:false});
+   for(const other of fixtures)assert.equal((await h.call(other)).block,true);
+   assert.equal(h.calls.length,8);
  });
  test(`ask mode still prompts after category ${fixture.category} is granted`,async()=>{
-   const h=harness({mode:'ask',dangerousGrants:[fixture.category]});
+   const h=harness({mode:'ask',dangerousAllowed:true});
    assert.equal((await h.call(fixture)).block,true);
    assert.equal(h.calls.length,1);
    assert.equal(h.calls[0].kind,'normal');
@@ -74,8 +73,8 @@ test('ungranted danger merges the ask-mode prompt and uses optional danger metad
  assert.equal(h.calls[0].category,1);
 });
 
-test('all seven grants do not bypass ordinary ask or generation confirmations',async()=>{
- const h=harness({mode:'ask',dangerousGrants:[1,2,3,4,5,6,7]});
+test('chat authorization does not bypass ordinary ask or generation confirmations',async()=>{
+ const h=harness({mode:'ask',dangerousAllowed:true});
  for(const event of [{toolName:'write',input:{path:'notes.txt',content:'test'}},
    {toolName:'bash',input:{command:'echo fixture'}},{toolName:'image_gen',input:{prompt:'fixture'}}]) {
    assert.equal((await h.call(event)).block,true);
@@ -87,29 +86,47 @@ test('all seven grants do not bypass ordinary ask or generation confirmations',a
  assert.equal(h.calls.length,3);
 });
 
+test('one chat authorization covers compound commands and literal shell wrappers',async()=>{
+ const commands=[
+   'rm -rf C:/umeko-data && shutdown /s /t 0',
+   'shutdown /s /t 0; rm -rf C:/umeko-data',
+   'bash -c "rm -rf C:/umeko-data; shutdown /s /t 0"',
+   'git push --force origin main | shutdown /s /t 0',
+   'rm -rf C:/umeko-data\nchmod -R 777 /etc',
+ ];
+ const h=harness({dangerousAllowed:false});
+ for(const command of commands)assert.equal((await h.call({toolName:'bash',input:{command}})).block,true);
+ const count=h.calls.length;
+ h.update({dangerousAllowed:true});
+ for(const command of commands)assert.equal(await h.call({toolName:'bash',input:{command}}),undefined);
+ assert.equal(h.calls.length,count);
+ h.update({dangerousAllowed:false});
+ for(const command of commands)assert.equal((await h.call({toolName:'bash',input:{command}})).block,true);
+});
+
 test('generic UI remains compatible and does not mutate grants after approval',async()=>{
- const h=harness({dangerousGrants:[]},{dangerous:false,approve:true});
+ const h=harness({dangerousAllowed:false},{dangerous:false,approve:true});
  assert.equal(await h.call(fixtures[0]),undefined);
  assert.equal(await h.call(fixtures[0]),undefined);
  assert.deepEqual(h.calls.map(row=>row.kind),['normal','normal']);
 });
 
-test('child policy and UI retain normal settings but strip danger grants and grant action',async()=>{
- const parentPolicy={mode:'auto',language:'zh',...context,dangerousGrants:[1,2,3,4,5,6,7]};
+test('child policy and UI retain normal settings but strip chat authorization and grant action',async()=>{
+ const parentPolicy={mode:'auto',language:'zh',...context,dangerousAllowed:true};
  const calls=[];
  const parentUI={confirm:async(...args)=>{calls.push(args);return false;},confirmDangerous:()=>{throw Error('child exposed grant UI');},notify:()=>{}};
  const policy=childPermissionPolicy(parentPolicy),ui=childPermissionUI(parentUI);
- assert.equal('dangerousGrants' in policy,false);
+ assert.equal('dangerousAllowed' in policy,false);
  assert.equal('confirmDangerous' in ui,false);
  assert.equal(ui.confirm,parentUI.confirm);
  assert.equal(policy.mode,'auto');assert.equal(policy.language,'zh');
- assert.deepEqual(parentPolicy.dangerousGrants,[1,2,3,4,5,6,7]);
+ assert.equal(parentPolicy.dangerousAllowed,true);
  let handler;createToolPermissionExtension({getPolicy:()=>policy})({on:(_name,fn)=>{handler=fn;}});
  assert.equal((await handler(fixtures[0],{cwd:context.cwd,hasUI:true,ui})).block,true);
  assert.equal(calls.length,1);
 });
 
-test('actual child facade binds ordinary confirmation and denies despite all parent grants',async()=>{
+test('actual child facade binds ordinary confirmation and denies despite parent authorization',async()=>{
  const Pi=await import('../runtime/node_modules/@earendil-works/pi-coding-agent/dist/index.js');
  const facade=await import('../runtime/subagent-sdk.mjs');
  const {AuthStorage}=await import('../runtime/node_modules/@earendil-works/pi-coding-agent/dist/core/auth-storage.js');
@@ -117,7 +134,7 @@ test('actual child facade binds ordinary confirmation and denies despite all par
  const hostKey=Symbol.for('umeko:tool-permission-host'),previous=globalThis[hostKey];
  let session,models,normalCalls=0,dangerCalls=0;
  try {
-   globalThis[hostKey]={getPolicy:()=>({mode:'auto',...context,dangerousGrants:[1,2,3,4,5,6,7]}),
+   globalThis[hostKey]={getPolicy:()=>({mode:'auto',...context,dangerousAllowed:true}),
      ui:{confirm:async()=>{normalCalls++;return false;},confirmDangerous:async()=>{dangerCalls++;return true;},notify:()=>{}}};
    models=await Pi.ModelRuntime.create({credentials:AuthStorage.inMemory(),modelsPath:null,allowModelNetwork:false,refreshOnCreate:false});
    const settings=Pi.SettingsManager.inMemory({cacheWarming:'off'});

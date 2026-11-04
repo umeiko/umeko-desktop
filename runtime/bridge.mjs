@@ -15,7 +15,7 @@ import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
 import { createAuxiliaryVision, ANALYZE_IMAGE, AUTO_VISION_ENTRY, automaticVisionView } from "./auxiliary-vision.mjs";
 import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
-import { createToolPermissionExtension, normalizeDangerousGrants, childPermissionPolicy, childPermissionUI } from "./tool-permissions.mjs";
+import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI } from "./tool-permissions.mjs";
 import { blockedToolNames, toolInventory } from "./tool-visibility.mjs";
 import { createGenerationExtension } from "./generation.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -72,9 +72,9 @@ const inputQueue=createInputQueue({getSession:()=>runtime?.session,isRunning:()=
 const dialogs = new Map();
 let permissionPolicy = { mode: "auto", language: "en" };
 const permissionExtension = createToolPermissionExtension({ getPolicy: () => permissionPolicy });
-function clearDangerousGrants() {
-  permissionPolicy = {...permissionPolicy, dangerousGrants: []};
-  emit({type:"dangerous_grants_cleared"});
+function clearDangerousApproval() {
+  permissionPolicy = {...permissionPolicy, dangerousAllowed: false};
+  emit({type:"dangerous_approval_cleared"});
 }
 const commandOutput = new AsyncLocalStorage();
 const piCommands = createPiCommandController({ Pi, getRuntime: () => runtime, getConfig: () => config,
@@ -236,7 +236,7 @@ async function bindSession(session) {
       newSession: options => runtime.newSession(options),
       switchSession: (path, options) => runtime.switchSession(path, options),
       fork: (id, options) => forkSession(id, options),
-      navigateTree: (id, options) => { clearDangerousGrants(); return session.navigateTree(id, options); },
+      navigateTree: (id, options) => { clearDangerousApproval(); return session.navigateTree(id, options); },
       reload: () => reloadSession(session),
     },
   });
@@ -330,7 +330,7 @@ async function init(input) {
   config = input;
   globalThis[Symbol.for("umeko:auxiliary-vision")] = auxiliaryVision;
   globalThis[Symbol.for("umeko:recent-images-policy")] = { getLimit: () => config.agent?.maxContextImages };
-  permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir, generation: input.generation, dangerousGrants: normalizeDangerousGrants(input.dangerousGrants) };
+  permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir, generation: input.generation, dangerousAllowed: input.dangerousAllowed === true };
   configureUmekoDocs({directory: input.docsDir || join(input.agentDir, "cache", "umeko-docs"), models: input.models});
   reasoningEffort = effortLevels.has(input.reasoningEffort) ? input.reasoningEffort : "off";
   setGateway(input.gateway);
@@ -424,7 +424,7 @@ async function init(input) {
   for (const method of ["newSession", "switchSession", "fork", "importFromJsonl"]) {
     const original = runtime[method].bind(runtime);
     runtime[method] = async (...args) => {
-      clearDangerousGrants();
+      clearDangerousApproval();
       return original(...args);
     };
   }
@@ -610,8 +610,8 @@ async function execute(input) {
     permissionPolicy = { ...permissionPolicy, mode: input.mode, language: input.language || permissionPolicy.language, dataDir: input.dataDir || permissionPolicy.dataDir };
     return;
   }
-  if (input.type === "dangerous_grants") {
-    permissionPolicy = {...permissionPolicy, dangerousGrants: normalizeDangerousGrants(input.categories)};
+  if (input.type === "dangerous_approval") {
+    permissionPolicy = {...permissionPolicy, dangerousAllowed: input.allowed === true};
     return;
   }
   if (input.type === "ui_response") {
@@ -658,7 +658,7 @@ async function execute(input) {
       await subagents.command(input.command);
     }
     else if (input.type === "fork") await forkSession(input.entryId || runtime.session.sessionManager.getLeafId(), { position: "at" });
-    else if (input.type === "navigate") { clearDangerousGrants(); await runtime.session.navigateTree(input.entryId, { summarize: false }); }
+    else if (input.type === "navigate") { clearDangerousApproval(); await runtime.session.navigateTree(input.entryId, { summarize: false }); }
     else if (input.type === "compact") await runtime.session.compact(input.customInstructions);
     else if (input.type === "reload") await reloadSession(runtime.session);
     else if (input.type === "rename") runtime.session.setSessionName(input.title);

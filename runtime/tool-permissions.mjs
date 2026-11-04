@@ -356,13 +356,9 @@ export function classifyCommand(command,context={}) {
  return classifyInternal(command,context,0);
 }
 
-export function normalizeDangerousGrants(categories) {
- return Array.isArray(categories) ? [...new Set(categories.filter(category=>Number.isInteger(category)&&category>=1&&category<=7))] : [];
-}
-
-// Children keep the parent's normal policy and UI, never its danger grants.
+// Children keep the parent's normal policy and UI, never its chat approval.
 export function childPermissionPolicy(policy={mode:'auto'}) {
- const {dangerousGrants,...normalPolicy}=policy;
+ const {dangerousAllowed,...normalPolicy}=policy;
  return normalPolicy;
 }
 export function childPermissionUI(ui) {
@@ -394,7 +390,7 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        let hit=generation?decision('ask'):null;
        if(shell)hit=await classify(String(input.command??input.script??''),context);
        else if(file)hit=classifyPath(String(input.path??input.file_path??''),context);
-       if(hit&&normalizeDangerousGrants(policy.dangerousGrants).includes(hit.category))hit=null;
+       if(hit?.category>=1&&hit.category<=7&&policy.dangerousAllowed===true)hit=null;
        if(policy.mode==='ask'){
          if(shell||file)hit=hit||decision('ask');
          else{

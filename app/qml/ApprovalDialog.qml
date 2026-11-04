@@ -41,9 +41,9 @@ Popup {
         }
         ActionButton {
             objectName: root.actionPrefix + "grantDangerousToolButton"
-            visible: root.actionPrefix === "" && root.approvalBackend.dangerousApprovalCategory > 0
+            visible: root.actionPrefix === "" && root.approvalBackend.canGrantDangerousApproval
             Layout.fillWidth: true
-            text: I18n.t("确认，并且本会话不再询问「{category}」").replace("{category}", I18n.t(backend.dangerousCategoryLabel(backend.dangerousApprovalCategory)))
+            text: I18n.t("确认，并且本会话不再询问危险操作")
             implicitHeight: Math.max(38, grantLabel.implicitHeight + 16)
             contentItem: Text {
                 id: grantLabel

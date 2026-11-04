@@ -115,8 +115,8 @@ Item {
             ActionButton {
                 id: permissionButton; objectName: "composerPermissionStatus"
                 glyph: "lock"; quiet: true; height: Theme.control(31)
-                text: (backend.config.agent.toolPermissionMode === "ask" ? I18n.t("询问") : I18n.t("自动")) + (backend.dangerousGrants.length ? " · " + I18n.t("已允许 {count} 项").replace("{count}", backend.dangerousGrants.length) : "")
-                hint: backend.dangerousGrants.length ? I18n.t("本会话已允许：") + backend.dangerousGrants.map(grant => I18n.t(grant.label)).join("、") : I18n.t("工具执行权限")
+                text: (backend.config.agent.toolPermissionMode === "ask" ? I18n.t("询问") : I18n.t("自动")) + (backend.dangerousAllowed ? " · " + I18n.t("本会话已授权") : "")
+                hint: backend.dangerousAllowed ? I18n.t("本会话已允许全部危险操作，可在菜单中撤销。") : I18n.t("工具执行权限")
                 onClicked: permissionMenu.openAt(Qt.point(0, -permissionMenu.implicitHeight - 8))
                 FloatingMenu {
                     id: permissionMenu; objectName: "composerPermissionMenu"
@@ -128,48 +128,12 @@ Item {
                     }
                     ContextAction { text: I18n.t("自动"); glyph: backend.config.agent.toolPermissionMode === "auto" ? "check" : ""; onTriggered: backend.setToolPermissionMode("auto") }
                     ContextAction { text: I18n.t("询问"); glyph: backend.config.agent.toolPermissionMode === "ask" ? "check" : ""; onTriggered: backend.setToolPermissionMode("ask") }
-                    MenuSeparator { visible: backend.dangerousGrants.length > 0; height: visible ? implicitHeight : 0 }
-                    MenuItem {
-                        objectName: "dangerousGrantsHeader"
-                        text: I18n.t("本会话已允许")
-                        visible: backend.dangerousGrants.length > 0; enabled: false; opacity: 1
-                        height: visible ? implicitHeight : 0
-                        implicitWidth: heading.implicitWidth + 22
-                        implicitHeight: Theme.control(28)
-                        leftPadding: 11; rightPadding: 11
-                        contentItem: Text {
-                            id: heading; text: parent.text; color: Theme.muted
-                            font.family: Theme.fontFamily; font.pixelSize: Theme.font(10, visible)
-                        }
-                        background: null
+                    MenuSeparator { visible: backend.dangerousAllowed; height: visible ? implicitHeight : 0 }
+                    ContextAction {
+                        objectName: "revokeDangerousApproval"
+                        text: I18n.t("撤销本会话授权"); visible: backend.dangerousAllowed
+                        onTriggered: backend.revokeDangerousApproval()
                     }
-                    Instantiator {
-                        model: backend.dangerousGrants
-                        delegate: ContextAction {
-                            required property var modelData
-                            objectName: "dangerousGrantRow_" + modelData.category
-                            text: I18n.t(modelData.label)
-                            implicitWidth: Math.max(Theme.control(220), grantName.implicitWidth + revokeAction.implicitWidth + 38)
-                            implicitHeight: Math.max(Theme.control(36), grantRow.implicitHeight + 8)
-                            contentItem: RowLayout {
-                                id: grantRow; spacing: 16
-                                Text {
-                                    id: grantName; text: I18n.t(modelData.label); color: Theme.ink
-                                    Layout.fillWidth: true; wrapMode: Text.Wrap
-                                    font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible)
-                                }
-                                ActionButton {
-                                    id: revokeAction; objectName: "revokeDangerousGrant_" + modelData.category
-                                    text: I18n.t("撤销"); quiet: true
-                                    implicitHeight: Theme.control(28)
-                                    onClicked: { const category = modelData.category; permissionMenu.close(); backend.revokeDangerousGrant(category) }
-                                }
-                            }
-                        }
-                        onObjectAdded: (index, object) => permissionMenu.insertItem(index + 4, object)
-                        onObjectRemoved: (index, object) => permissionMenu.removeItem(object)
-                    }
-                    ContextAction { objectName: "revokeAllDangerousGrants"; text: I18n.t("全部撤销"); visible: backend.dangerousGrants.length > 0; onTriggered: backend.revokeDangerousGrant(0) }
                 }
             }
             ActionButton {
