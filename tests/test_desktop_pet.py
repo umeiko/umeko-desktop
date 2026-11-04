@@ -292,6 +292,16 @@ class PetTests(unittest.TestCase):
         self.assertFalse(self.rpc(control,'show',{'unexpected':True})['ok'])
         self.assertTrue(self.rpc(control,'removeAppearance',{'id':identifier})['ok']);self.assertEqual(self.pet.config['appearance'],'yanami')
         self.assertFalse(self.rpc(control,'removeAppearance',{'id':'yanami'})['ok'])
+        # Future.add_done_callback runs inline when work has already finished.
+        # The response must still arrive after the RPC token is registered.
+        from concurrent.futures import Future
+        from unittest.mock import patch
+        def completed(function,*args,**kwargs):
+            future=Future();future.set_result(function(*args,**kwargs));return future
+        with self.subTest(completion='before_callback_registration'), patch.object(self.pet._executor,'submit',side_effect=completed):
+            immediate=self.rpc(control,'importAppearance',{'path':str(self.image('completed.png'))})
+        self.assertTrue(immediate['ok'],immediate)
+        self.assertTrue(self.rpc(control,'removeAppearance',{'id':immediate['result']['appearance']})['ok'])
     def test_import_pack_fallback_and_zip_path_rejection_leave_existing_art_intact(self):
         image=self.image();folder=self.path/'pack';folder.mkdir()
         value={'format':'umeko-pet','version':1,'id':'fixture','name':'Fixture','states':{'idle':'one.png'},'dialogue':{'tap':['Hello']}}

@@ -43,6 +43,10 @@ The compaction offscreen fixture creates QML delegates synchronously instead of
 depending on a rendered-frame incubation budget. Pi, provider requests and model
 updates still run asynchronously. A fixture request is released explicitly by the
 test (or teardown), and clicks wait for the actual control and viewport geometry.
+Clicks remap that control after mouse movement processes queued Qt layout work.
+Parallel execution also exposed an already-completed pet-import future replying
+before its RPC token was registered. That response is now queued; the existing
+RPC test covers both normal background completion and a completed future.
 
 Runtime verification leaves identical prepared adapters untouched and replaces
 changed files atomically, so concurrent readers cannot see a truncated helper.

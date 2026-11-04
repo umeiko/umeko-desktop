@@ -154,8 +154,17 @@ class ContextCompactionTests(unittest.TestCase):
         point = item.mapToScene(item.boundingRect().center()).toPoint()
         self.assertTrue(self.window.contentItem().contains(point), (name, point))
         QTest.mouseMove(self.window, point)
+        # QTest's QWindow mouseMove processes queued events. Cold history can
+        # hydrate and move this delegate then, so map the current target after
+        # those events and the resulting layout polish, just before the click.
+        self.window.grabWindow()
+        item = self.find(name)
+        self.assertIsNotNone(item, name)
+        point = item.mapToScene(item.boundingRect().center()).toPoint()
+        self.assertTrue(self.window.contentItem().contains(point), (name, point))
         QTest.mouseClick(self.window, Qt.LeftButton, Qt.NoModifier, point)
         QTest.qWait(30)
+        return item
 
     def enter(self, text):
         prompt = self.find("promptInput")
@@ -210,7 +219,10 @@ class ContextCompactionTests(unittest.TestCase):
         toggle = self.find("compactionEventToggle_" + index)
         point = toggle.mapToItem(conversation, toggle.boundingRect().center())
         self.assertTrue(conversation.contains(point), (index, point, conversation.height()))
-        self.click("compactionEventToggle_" + index)
+        toggle = self.click("compactionEventToggle_" + index)
+        row = toggle.parentItem().parentItem()
+        self.assertEqual(row.objectName(), "compactionEvent_" + index)
+        return row
 
     def begin_compaction(self):
         self.adapter.release.clear(); self.adapter.entered.clear(); self.adapter.block_summary = True
@@ -302,8 +314,9 @@ class ContextCompactionTests(unittest.TestCase):
                       and self.event_row() is not None and self.event_row().property("eventState") == "success")
         self.assertFalse(self.event_row().property("expanded"))
         cold_index = self.event_row().objectName().rsplit("_", 1)[1]
-        self.click_event_toggle(cold_index)
-        self.wait_for(lambda: self.event_row().property("expanded"))
+        cold_row = self.click_event_toggle(cold_index)
+        self.wait_for(lambda: self.find("compactionEvent_" + cold_index) is cold_row
+                      and cold_row.property("expanded"))
         self.assertIn("保留测试任务", self.find("compactionEventDetails_" + cold_index).property("text"))
 
     def test_failure_updates_the_running_row(self):
