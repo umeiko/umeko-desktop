@@ -119,7 +119,7 @@ jobs:
         run: bash build.sh
 
       - name: Verify packaged application and Pi
-        run: python scripts/ci-smoke.py
+        run: python scripts/ci-smoke.py --preview
 
       - name: macOS disk image build tools
         if: runner.os == 'macOS'

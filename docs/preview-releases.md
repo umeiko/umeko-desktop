@@ -21,4 +21,4 @@ gh workflow run preview.yml --ref main \
   -f notes='PR #72 历史记录修复、输入框简化及 HTTPS 打包修复'
 ```
 
-源码需要包含现有 `setup`、`build`、`ci-smoke.py` 和 `package-release.py` 流程。失败时查看对应任务日志及 `preview-diagnostics-*` artifact；发布失败可能保留未公开的草稿，不会把未经验证的包发布出去。
+源码需要包含现有 `setup`、`build`、`package-release.py` 和支持 `--preview` 的 `ci-smoke.py`（旧分支可先同步此脚本选项）。Preview 跳过额外浏览器界面和后台任务生命周期场景，默认的正式版 smoke 检查不变。失败时查看对应任务日志及 `preview-diagnostics-*` artifact；发布失败可能保留未公开的草稿，不会把未经验证的包发布出去。

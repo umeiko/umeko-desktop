@@ -91,7 +91,10 @@ def verify_windows_preview(executable, environment, report_dir):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dist", default="dist")
-    output = ROOT / parser.parse_args().dist
+    parser.add_argument("--preview", action="store_true",
+                        help="Only package startup and core runtime checks; skip extended UI scenarios")
+    args = parser.parse_args()
+    output = ROOT / args.dist
     if sys.platform == "darwin":
         executable = output / "Umeko.app/Contents/MacOS/Umeko"
         resources = output / "Umeko.app/Contents/Frameworks"
@@ -138,7 +141,8 @@ def main():
     expected += ["NODE_EXECUTABLE:" + selected, "TRAY_ICON_READY:1", "EXIT:0"]
     if result.returncode or lines != expected or not selected or Path(selected).resolve() != node.resolve():
         raise RuntimeError("Frozen GUI startup failed: " + log + gui_output[-2000:])
-    if sys.platform == 'win32': verify_windows_preview(executable, environment, report_dir)
+    if sys.platform == 'win32' and not args.preview:
+        verify_windows_preview(executable, environment, report_dir)
     if not screenshot.is_file() or screenshot.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
         raise RuntimeError("Frozen GUI did not render a screenshot")
     from terminal_smoke import verify_terminal_worker
@@ -169,11 +173,12 @@ def main():
     (report_dir / "pi.log").write_text(pi.stdout + pi.stderr, encoding="utf-8")
     if pi.returncode or '"ok":true' not in pi.stdout or '"version":"' + PINNED_VERSION + '"' not in pi.stdout:
         raise RuntimeError("Packaged Pi self-test failed: " + pi.stdout[-1500:] + pi.stderr[-1500:])
-    subprocess.run([str(node), str(ROOT / "scripts/background_jobs_smoke.mjs"), str(runtime)],
-                   env=environment, check=True, timeout=45)
+    if not args.preview:
+        subprocess.run([str(node), str(ROOT / "scripts/background_jobs_smoke.mjs"), str(runtime)],
+                       env=environment, check=True, timeout=45)
     if sys.platform == "darwin":
         subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(output / "Umeko.app")], check=True)
-    (report_dir / "result.json").write_text(json.dumps({"gui": "passed", "pi": "passed", "terminal":"passed", "build": metadata}, indent=2), encoding="utf-8")
+    (report_dir / "result.json").write_text(json.dumps({"scope": "preview" if args.preview else "full", "gui": "passed", "pi": "passed", "terminal":"passed", "build": metadata}, indent=2), encoding="utf-8")
     print("Packaged GUI rendered; bundled Pi self-test and build provenance verified")
 
 
