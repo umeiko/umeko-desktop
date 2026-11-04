@@ -90,7 +90,15 @@ def current_preview(client):
 
 
 def main_is_current(client, commit):
-    return client.api('branches/main')['commit']['sha'] == commit
+    current = client.api('branches/main')['commit']['sha']
+    if current == commit:
+        return True
+    # Stable publication refreshes download buttons with [skip ci] commits.
+    # Those two documentation files cannot change the tested desktop package.
+    comparison = client.api(f'compare/{commit}...{current}')
+    files = comparison.get('files', [])
+    return (comparison['status'] == 'ahead' and bool(files)
+            and all(row['filename'] in ('README.md', 'README.zh-CN.md') for row in files))
 
 
 def replace_preview(client, commit, files, notes, run, attempt):

@@ -8,6 +8,8 @@
 
 发布前会再次核对 `main`：过时 CI 不会覆盖新提交的预览包。发布任务串行执行，避免两个 CI 同时替换 `preview`。
 
+正式发布自动更新两个 README 下载区块时不会重复触发 CI，也不会让已经验证的应用包作废；只要包含其他源文件变化，旧 CI 仍会停止发布。
+
 正式版需要多平台构建时，在 **Desktop packages → Run workflow** 勾选 `all_platforms`，再按现有正式发布流程选择这个成功的运行。
 
 正式发布默认仍要求四个平台。需要优先发布 Windows 时，在 **Publish verified desktop release → Run workflow** 选择 `platforms: windows`，填写已成功完成共享测试和 Windows 打包验证的 main CI 运行号。发布说明和 README 只显示实际存在的下载按钮，并保留历史版本的其他平台包。

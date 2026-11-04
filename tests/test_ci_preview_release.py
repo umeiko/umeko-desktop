@@ -29,6 +29,7 @@ class GitHubFixture:
         }
         self.reference = 'b' * 40
         self.main = COMMIT
+        self.changed_files = ['app/controller.py']
         self.fail_upload = self.corrupt_upload = self.stale_upload = self.fail_cutover = False
 
     def pages(self, path, key=None):
@@ -41,6 +42,8 @@ class GitHubFixture:
             return copy.deepcopy(self.run)
         if path == 'branches/main':
             return dict(commit=dict(sha=self.main))
+        if path.startswith('compare/'):
+            return dict(status='ahead', files=[dict(filename=name) for name in self.changed_files])
         if path == 'releases' and method == 'POST':
             self.releases[3] = dict(data, id=3, assets=[],
                                    html_url=f'https://github.com/{REPO}/releases/tag/preview')
@@ -197,6 +200,18 @@ class CiPreviewReleaseTests(unittest.TestCase):
 
     def test_outdated_run_never_replaces_newer_preview(self):
         self.client.main = 'c'*40
+        self.assertIsNone(self.publish())
+        self.assertFalse(any(call[0] in ('POST','DELETE','PATCH','gh') for call in self.client.calls))
+
+    def test_readme_download_updates_do_not_discard_verified_desktop_builds(self):
+        self.client.main = 'c'*40
+        self.client.changed_files = ['README.md', 'README.zh-CN.md']
+        self.assertEqual(self.publish()['target_commitish'], COMMIT)
+        self.assertEqual(self.client.reference, COMMIT)
+
+    def test_documentation_update_with_source_change_is_still_stale(self):
+        self.client.main = 'c'*40
+        self.client.changed_files = ['README.md', 'app/qml/Main.qml']
         self.assertIsNone(self.publish())
         self.assertFalse(any(call[0] in ('POST','DELETE','PATCH','gh') for call in self.client.calls))
 
