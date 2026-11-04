@@ -63,6 +63,9 @@ AnchoredPidPopup {
             Slider {
                 id: effortSlider; objectName: "reasoningEffortSlider"
                 Layout.fillWidth: true
+                implicitHeight: Theme.control(36); padding: 0
+                readonly property real travel: Math.max(0, availableWidth - handle.width)
+                readonly property real handleCenter: leftPadding + handle.width / 2 + visualPosition * travel
                 from: 0; to: Math.max(1, reasoningControls.levels.length - 1)
                 stepSize: 1; snapMode: Slider.SnapAlways
                 enabled: reasoningControls.levels.length > 1
@@ -75,10 +78,35 @@ AnchoredPidPopup {
                         event.accepted = true
                     }
                 }
-                background: Rectangle { x: effortSlider.leftPadding; y: effortSlider.topPadding + effortSlider.availableHeight / 2 - height / 2; width: effortSlider.availableWidth; height: 4; radius: 2; color: Theme.line
-                    Rectangle { width: effortSlider.visualPosition * parent.width; height: parent.height; radius: 2; color: Theme.accent }
+                background: Rectangle {
+                    x: 0; y: (effortSlider.height - height) / 2
+                    width: effortSlider.width; height: Theme.control(24); radius: height / 2
+                    color: Theme.line; antialiasing: true
+                    Rectangle {
+                        width: effortSlider.enabled && effortSlider.value > effortSlider.from ? effortSlider.handleCenter : 0
+                        height: parent.height
+                        topLeftRadius: height / 2; bottomLeftRadius: height / 2
+                        topRightRadius: 0; bottomRightRadius: 0
+                        color: Theme.accent; antialiasing: true
+                    }
+                    Repeater {
+                        model: reasoningControls.levels
+                        Rectangle {
+                            required property int index
+                            width: 4; height: 4; radius: width / 2; antialiasing: true
+                            x: effortSlider.leftPadding + effortSlider.handle.width / 2 + (reasoningControls.levels.length > 1 ? index / (reasoningControls.levels.length - 1) : 0) * effortSlider.travel - width / 2
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: index <= effortSlider.value && effortSlider.enabled ? "#65ffffff" : Theme.muted
+                            opacity: index <= effortSlider.value && effortSlider.enabled ? 1 : 0.45
+                        }
+                    }
                 }
-                handle: Rectangle { x: effortSlider.leftPadding + effortSlider.visualPosition * (effortSlider.availableWidth - width); y: effortSlider.topPadding + effortSlider.availableHeight / 2 - height / 2; implicitWidth: 16; implicitHeight: 16; radius: 8; color: Theme.accent; border.color: effortSlider.activeFocus ? Theme.ink : Theme.bg; border.width: 2 }
+                handle: Rectangle {
+                    x: effortSlider.leftPadding + effortSlider.visualPosition * effortSlider.travel
+                    y: (effortSlider.height - height) / 2
+                    implicitWidth: Theme.control(32); implicitHeight: implicitWidth; radius: width / 2
+                    color: "white"; border.color: "#26000000"; border.width: 1; antialiasing: true
+                }
             }
             RowLayout {
                 Layout.fillWidth: true
@@ -86,15 +114,28 @@ AnchoredPidPopup {
                 Item { Layout.fillWidth: true }
                 Text { text: reasoningControls.levels.length > 1 ? Reasoning.label(reasoningControls.levels[reasoningControls.levels.length - 1]) : ""; textFormat: Text.PlainText; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10); Layout.maximumWidth: reasoningControls.width * 0.6; elide: Text.ElideRight }
             }
-            HoverHandler { id: reasoningHover }
-            HoverTip {
-                objectName: "reasoningEffortHint"
-                heading: I18n.t("思考强度")
-                active: root.desiredOpen && reasoningHover.hovered
-                text: I18n.t("关闭时不发送推理强度参数。可在供应商的模型齿轮中配置支持的档位。")
-            }
         }
-        ActionButton { text: I18n.t("管理供应商与模型"); glyph: "sliders"; quiet: true; Layout.fillWidth: true; onClicked: { root.close(); root.configure() } }
+        ActionButton {
+            id: manageProviders; objectName: "manageProvidersButton"
+            text: I18n.t("管理供应商与模型"); quiet: true; Layout.fillWidth: true
+            contentItem: Item {
+                Row {
+                    anchors.centerIn: parent; spacing: 8
+                    Glyph {
+                        id: providersIcon; name: "providers-stack"
+                        width: Theme.icon(51); height: Theme.icon(17); anchors.verticalCenter: parent.verticalCenter
+                        color: manageProviders.interactionHovered ? Theme.accent : Theme.muted
+                    }
+                    Text {
+                        text: manageProviders.text; textFormat: Text.PlainText
+                        width: Math.min(implicitWidth, Math.max(0, manageProviders.availableWidth - providersIcon.width - 8))
+                        anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight
+                        font.family: Theme.fontFamily; font.pixelSize: Theme.font(12); color: Theme.ink
+                    }
+                }
+            }
+            onClicked: { root.close(); root.configure() }
+        }
     }
     }
 }

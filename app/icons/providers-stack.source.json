@@ -1,0 +1,27 @@
+{
+  "description": "Monochrome overlapping DeepSeek, OpenAI, Claude and Qwen marks. Vector contours include transparent separation and inherit the UI tint.",
+  "sha256": "842401b4470a92526d1fe3b3bda71e85bf25cc7c3e2e44a5e82b6b1a031cce31",
+  "components": [
+    {
+      "name": "DeepSeek",
+      "source": "providers/deepseek.svg",
+      "url": "https://api-docs.deepseek.com/img/favicon.svg"
+    },
+    {
+      "name": "OpenAI",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/2790e33d00f1a59ef59171218b39d26418f48f84/packages/static-svg/icons/openai.svg",
+      "sha256": "a595df6b423920c67a7f8f73c063e4bfb72d415948097b6cac063a2366bb5186"
+    },
+    {
+      "name": "Claude",
+      "source": "providers/claude.svg",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/claude-color.svg"
+    },
+    {
+      "name": "Qwen",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/2790e33d00f1a59ef59171218b39d26418f48f84/packages/static-svg/icons/qwen.svg",
+      "sha256": "b2c16efc3bd32b88a941842d41222e1e1e0e40441222218b725afc0aef6d9a36"
+    }
+  ],
+  "license": "LobeHub Icons: MIT, see licenses/LobeHub-Icons.txt; each brand mark belongs to its respective owner."
+}

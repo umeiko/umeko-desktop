@@ -80,6 +80,8 @@ Release packages include the official Node.js 22.23.3 distribution and npm from 
 
 The Claude and MiniMax marks are from LobeHub Icons (MIT); see `licenses/LobeHub-Icons.txt`. OpenAI, Kimi, DeepSeek and the GLM/ZCode Z icon come from their official sites. Brand marks belong to their respective owners. Source URLs and SHA-256 values are recorded in `app/icons/providers/sources.json`.
 
+The monochrome provider-management icon (`app/icons/providers-stack.svg`) combines the existing DeepSeek and Claude marks with OpenAI and Qwen marks from LobeHub Icons, pinned to `2790e33d00f1a59ef59171218b39d26418f48f84`. Its contours are adapted for overlap and theme tinting. Sources and hashes are recorded in `app/icons/providers-stack.source.json`; the LobeHub Icons MIT notice above also applies to those components.
+
 ## Native notifications
 
 Windows notifications use WinToast 1.3.2 (MIT), pinned to commit 693efb90376809d1e1b4e6ce867171ce20fe7e76; license: `licenses/WinToast.txt`. Small local changes retain Notification Center click handlers after banner timeout and serialize notification-buffer access. macOS uses the system UserNotifications framework; Linux uses the desktop D-Bus service.
