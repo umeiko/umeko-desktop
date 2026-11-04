@@ -44,8 +44,10 @@ class FixtureProvider:
         if (tools and self.block_next) or (not tools and self.block_summary):
             self.block_next = self.block_summary = False
             self.entered.set()
-            if not self.release.wait(20):
-                raise RuntimeError("Fixture provider was not released")
+            # The test owns this request's lifetime. Expiring independently of
+            # QML readiness can turn a running-row assertion into a failure row.
+            # tearDown also releases it when an assertion fails.
+            self.release.wait()
         if not tools and self.fail_summary:
             raise ValueError("测试压缩失败：请稍后重试")
         return Completion("本轮已收到。" if tools else "## 当前任务\n保留测试任务及重要决定。", input_tokens=600, output_tokens=20)
@@ -116,6 +118,11 @@ class ContextCompactionTests(unittest.TestCase):
         self.engine.rootContext().setContextProperty("backend", self.backend)
         self.engine.load(QUrl.fromLocalFile(str(ROOT / "app/qml/Main.qml")))
         self.assertTrue(self.engine.rootObjects(), "QML failed to load")
+        # This offscreen fixture has no continuous render-loop budget for the
+        # window's asynchronous incubation controller. Build QML delegates
+        # synchronously; Pi, provider requests and model updates remain real
+        # and asynchronous. Their state, rather than frame timing, is tested.
+        self.engine.setIncubationController(None)
         self.window = self.engine.rootObjects()[0]
         self.window.setProperty("page", "chat")
         self.window.setWidth(1300); self.window.setHeight(1000)
@@ -196,7 +203,10 @@ class ContextCompactionTests(unittest.TestCase):
         conversation = self.find("conversation")
         self.assertTrue(QMetaObject.invokeMethod(conversation, "jumpToMessage", Q_ARG("QVariant", int(index))))
         self.wait_for(lambda: not conversation.property("restoring")
-                      and self.backend.messageModel.isReady(int(index)))
+                      and self.backend.messageModel.isReady(int(index))
+                      and (toggle := self.find("compactionEventToggle_" + index)) is not None
+                      and toggle.isVisible()
+                      and conversation.contains(toggle.mapToItem(conversation, toggle.boundingRect().center())))
         toggle = self.find("compactionEventToggle_" + index)
         point = toggle.mapToItem(conversation, toggle.boundingRect().center())
         self.assertTrue(conversation.contains(point), (index, point, conversation.height()))

@@ -39,6 +39,11 @@ For local runs install `unittest-parallel==1.8.6` and run the same script;
 `--jobs 4`, `--pattern test_context_compaction.py` and `-k circle` can limit a
 focused run. `--list` prints the discovered IDs without executing them.
 
+The compaction offscreen fixture creates QML delegates synchronously instead of
+depending on a rendered-frame incubation budget. Pi, provider requests and model
+updates still run asynchronously. A fixture request is released explicitly by the
+test (or teardown), and clicks wait for the actual control and viewport geometry.
+
 Runtime verification leaves identical prepared adapters untouched and replaces
 changed files atomically, so concurrent readers cannot see a truncated helper.
 
