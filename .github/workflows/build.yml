@@ -100,57 +100,9 @@ jobs:
           echo "Linux CPU cores: $(nproc)"
           .venv/bin/python -m pip install unittest-parallel==1.8.6
           unit_tests() {
-            .venv/bin/python scripts/ci-unit-tests.py
+            .venv/bin/python scripts/ci-unit-tests.py --jobs "$UNIT_TEST_JOBS"
           }
-          ui_smokes() {
-            .venv/bin/python tests/codearts_plugin_ui_smoke.py
-            .venv/bin/python tests/subagent_pane_ui_smoke.py
-            .venv/bin/python tests/request_details_ui_smoke.py
-            .venv/bin/python tests/provider_error_ui_smoke.py
-            .venv/bin/python tests/provider_login_cancel_ui_smoke.py
-            .venv/bin/python tests/multimodal_ui_smoke.py
-            .venv/bin/python tests/video_ui_smoke.py
-            .venv/bin/python tests/auxiliary_vision_ui_smoke.py
-            .venv/bin/python tests/subagent_queue_ui_smoke.py
-            .venv/bin/python tests/characters_ui_smoke.py
-            .venv/bin/python tests/provider_popup_ui_smoke.py
-            .venv/bin/python tests/model_reasoning_ui_smoke.py
-            .venv/bin/python tests/api_proxy_layout_ui_smoke.py
-            .venv/bin/python tests/desktop_settings_ui_smoke.py
-            .venv/bin/python tests/login_startup_ui_smoke.py
-            .venv/bin/python tests/login_startup_launch_smoke.py
-            .venv/bin/python tests/desktop_plugins_ui_smoke.py
-            .venv/bin/python tests/conversation_search_ui_smoke.py
-            .venv/bin/python tests/sidebar_menu_position_ui_smoke.py
-            .venv/bin/python tests/sidebar_animation_ui_smoke.py
-            .venv/bin/python tests/change_review_ui_smoke.py
-            .venv/bin/python tests/extension_details_ui_smoke.py
-            .venv/bin/python tests/pi_manager_initial_tools_ui_smoke.py
-            .venv/bin/python tests/pi_capabilities_ui_smoke.py
-            .venv/bin/python tests/pi_management_ui_smoke.py
-            .venv/bin/python tests/skill_manager_ui_smoke.py
-            .venv/bin/python tests/skill_manager_host_ui_smoke.py
-            .venv/bin/python tests/slash_commands_ui_smoke.py
-            .venv/bin/python tests/desktop_pet_ui_smoke.py
-            .venv/bin/python tests/global_agents_ui_smoke.py
-            .venv/bin/python tests/subagent_collection_ui_smoke.py
-            .venv/bin/python tests/subagent_reaction_ui_smoke.py
-            .venv/bin/python tests/model_popup_ui_smoke.py
-            .venv/bin/python tests/preview_resize_ui_smoke.py
-            .venv/bin/python tests/large_markdown_ui_smoke.py
-            .venv/bin/python tests/history_window_ui_smoke.py
-            .venv/bin/python tests/motion_ui_smoke.py
-            .venv/bin/python tests/pid_thread_ui_smoke.py
-            .venv/bin/python tests/sidebar_highlight_ui_smoke.py
-            .venv/bin/python tests/chat_loading_ui_smoke.py
-            .venv/bin/python tests/viewport_cache_ui_smoke.py
-            .venv/bin/python tests/scroll_paging_ui_smoke.py
-            .venv/bin/python tests/large_chat_ui_smoke.py
-            .venv/bin/python tests/appearance_ui_smoke.py
-            .venv/bin/python tests/task_state_ui_smoke.py
-            .venv/bin/python tests/thinking_stream_ui_smoke.py
-          }
-          export -f unit_tests ui_smokes
+          export -f unit_tests
           isolated_tests() {
             # Each worker gets its own D-Bus/keyring; test profiles are temporary.
             dbus-run-session -- bash -ec '
@@ -165,12 +117,14 @@ jobs:
               echo "$1 completed in $((SECONDS - started)) seconds"
             ' _ "$1"
           }
-          # Keep the UI sequence serial, but overlap it with discovery. Wait for
-          # both workers and propagate either failure without adding a CI job.
+          cores=$(nproc)
+          export UNIT_TEST_JOBS=$(((cores + 1) / 2))
+          ui_jobs=$((cores / 2))
+          if (( ui_jobs < 1 )); then ui_jobs=1; fi
           isolated_tests unit_tests &
           unit_pid=$!
           ui_status=0
-          isolated_tests ui_smokes || ui_status=$?
+          bash scripts/ci-ui-smokes.bash --jobs "$ui_jobs" || ui_status=$?
           unit_status=0
           wait "$unit_pid" || unit_status=$?
           if (( unit_status != 0 || ui_status != 0 )); then exit 1; fi

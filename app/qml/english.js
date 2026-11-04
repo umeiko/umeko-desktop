@@ -713,6 +713,7 @@ var strings = {
   "发现一块小饼干！🍪": "Found a cookie! 🍪",
   "发送消息": "Send message",
   "取消": "Cancel",
+  "确定": "OK",
   "取消归档": "Unarchive",
   "取消置顶": "Unpin",
   "可用模型 · ": "Available models · ",
