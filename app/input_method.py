@@ -1,10 +1,10 @@
 """Publish the current editor's caret when keyboard focus changes."""
-from PySide6.QtCore import QObject, QTimer, Qt
-from PySide6.QtQuick import QQuickItem
+from PySide6.QtCore import QEvent, QObject, QTimer, Qt
+from PySide6.QtQuick import QQuickItem, QQuickWindow
 
 
 class InputMethodUpdates(QObject):
-    """Refresh after Qt Quick has finished forwarding focus and laying out items.
+    """Keep queries current and publish after focus and layout changes.
 
     Qt can reuse an unchanged input-item transform without emitting a cursor
     rectangle signal. Windows input methods consume that signal, so querying a
@@ -15,6 +15,10 @@ class InputMethodUpdates(QObject):
     def __init__(self, app):
         super().__init__(app)
         self._app = app
+        from .ime_trace import InputMethodTrace
+        self._trace = InputMethodTrace.install(app)
+        self._syncing = False
+        app.installEventFilter(self)
         self._items = ()
         self._connections = []
         self._pending = QTimer(self)
@@ -26,6 +30,46 @@ class InputMethodUpdates(QObject):
 
     def _schedule(self, *_):
         self._pending.start()
+
+    def eventFilter(self, receiver, event):
+        if (event.type() == QEvent.InputMethodQuery
+                and event.queries() & (Qt.ImCursorRectangle | Qt.ImAnchorRectangle)
+                and receiver == self._app.focusObject()):
+            self._synchronize_transform(receiver, self._app.focusWindow())
+        return False
+
+    def _synchronize_transform(self, focus, window):
+        if (self._syncing or not isinstance(window, QQuickWindow) or not isinstance(focus, QQuickItem)
+                or not focus.flags() & QQuickItem.ItemAcceptsInputMethod):
+            return False
+        root = window.contentItem()
+        ancestor = focus
+        while ancestor is not None and ancestor != root:
+            ancestor = ancestor.parentItem()
+        if ancestor != root:
+            return False
+        # Qt Quick may publish a cursor change before its next polish pass
+        # updates inputItemTransform. QInputMethod sends the query event before
+        # mapping its result, so update the transform before that mapping, too.
+        # Use the focus window: item.window() can alter Python ownership.
+        # itemTransform(other) reports success even for separate windows. The
+        # ancestry check prevents a queued old-editor/new-window combination.
+        # None includes the scene root's transform, like Qt's own updater.
+        transform, valid = focus.itemTransform(None)
+        if not valid:
+            return False
+        method = self._app.inputMethod()
+        if transform != method.inputItemTransform():
+            if self._trace is not None:
+                self._trace.note("transform-sync")
+            # setInputItemTransform stores the new value before emitting its
+            # rectangle signals. Nested queries therefore use the new value.
+            self._syncing = True
+            try:
+                method.setInputItemTransform(transform)
+            finally:
+                self._syncing = False
+        return True
 
     def _update(self):
         # Read the current focus, rather than retaining a potentially deleted
@@ -56,11 +100,8 @@ class InputMethodUpdates(QObject):
         if window is None or not editor:
             return
         input_method = self._app.inputMethod()
-        # Use the application's focus window. QQuickItem.window() can attach
-        # the window wrapper to the item in Python's ownership graph.
-        transform, valid = focus.itemTransform(window.contentItem())
-        if valid:
-            # update() only publishes queries; it does not refresh a cached
-            # transform when a ScrollView moves before the next scene sync.
-            input_method.setInputItemTransform(transform)
+        if self._trace is not None:
+            self._trace.note("queued-refresh")
+        if not self._synchronize_transform(focus, window):
+            return
         input_method.update(Qt.ImCursorRectangle | Qt.ImAnchorRectangle | Qt.ImEnabled)
