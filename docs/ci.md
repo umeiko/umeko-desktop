@@ -9,8 +9,19 @@ After the usual setup, use those same commands locally with
 `QT_QPA_PLATFORM=offscreen` and `QT_QUICK_BACKEND=software`. Linux checks also
 use a private D-Bus session and an unlocked ephemeral keyring, as shown in the
 workflow.
-Discovery and the serial UI smoke list run concurrently inside that same
-Linux job, with separate private D-Bus/keyring sessions. Both must succeed.
+Discovery runs first using all cores, followed by the same 43 UI smokes through
+`bash scripts/ci-ui-smokes.bash --jobs "$(nproc)"` inside that same Linux job.
+GNU `xargs -P` schedules scripts; no additional runner dependency is installed.
+Each script gets its own private D-Bus session, ephemeral keyring, XDG directories,
+profile and `PI_CODING_AGENT_DIR`. An explicitly configured agent directory still
+takes precedence; the environment also isolates bundled-skill installation when
+that setting is empty. Units and all smoke scripts must succeed.
+Completed-script output is grouped under its filename, with status and duration.
+Full logs are kept in the run's `build/ui-smokes.*` directory; failures print their
+full log and an error naming the script. Other scripts finish without retries,
+and any failure makes the step fail. There is currently no serial smoke tail.
+If a smoke genuinely needs a machine-exclusive resource that cannot be isolated,
+document its one-line resource reason here before adding it after the pool.
 `scripts/ci-unit-tests.py` uses the same `unittest.TestLoader.discover` start
 directory (`tests`) and pattern (`test_*.py`), including unittest skips and
 module/class fixtures. It passes those suites to pinned `unittest-parallel`
@@ -33,8 +44,8 @@ exclusive resource that cannot be isolated, add its discovery name (for example
 `test_device`) and a one-line reason to `SERIAL_MODULES` in the script. Keep that
 module small. The script removes it from the parallel group and runs it once,
 in a fresh process, after the pool finishes; it never runs in both groups.
-This exception is exclusive among unit tests; UI smokes still run concurrently,
-so it must not share their resources. Fix such a shared fixture instead.
+This exception is exclusive among unit tests; the UI pool starts after the unit
+phase. Resources shared within either pool still need isolated fixtures.
 For local runs install `unittest-parallel==1.8.6` and run the same script;
 `--jobs 4`, `--pattern test_context_compaction.py` and `-k circle` can limit a
 focused run. `--list` prints the discovered IDs without executing them.

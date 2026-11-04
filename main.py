@@ -70,7 +70,7 @@ def create_application():
         QTimer.singleShot(0, lambda: controller.toast.emit(launch_error))
     from app.bundled_skills import install_bundled
     try:
-        install_bundled(root / 'bundled-skills', Path(controller.store.data['agent'].get('agentDir') or Path.home() / '.pi/agent'))
+        install_bundled(root / 'bundled-skills', Path(controller.store.data['agent'].get('agentDir') or os.environ.get('PI_CODING_AGENT_DIR') or Path.home() / '.pi/agent'))
     except (OSError, ValueError) as error:
         print('Bundled Skills could not be installed:', error, file=sys.stderr)
     saved_family = controller.store.data.get("fontFamily", "")
