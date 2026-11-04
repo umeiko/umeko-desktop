@@ -2,7 +2,7 @@
 from __future__ import annotations
 import copy, hashlib, json, os, re, sys, uuid
 from pathlib import Path
-from PySide6.QtCore import QObject, Property, Signal, Slot, QProcess, QProcessEnvironment, QTimer, QUrl
+from PySide6.QtCore import QObject, Property, Signal, Slot, QProcess, QProcessEnvironment, QTimer, QUrl, Qt
 
 LIMIT=2*1024*1024
 
@@ -47,7 +47,9 @@ class DesktopPlugins(QObject):
         from .desktop_pet import DesktopPet
         self._pet=DesktopPet(self)
         self._pet_imports={}
-        self._pet.imported.connect(self.pet_imported)
+        # A tiny import may complete before begin_import returns its token.
+        # Deliver after call_for has registered that token's pending request.
+        self._pet.imported.connect(self.pet_imported, Qt.QueuedConnection)
         from .global_agents import GlobalAgents
         self.global_agents=GlobalAgents(self)
         self.synchronize()

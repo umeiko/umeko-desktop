@@ -324,10 +324,13 @@ class CharacterTests(unittest.TestCase):
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
         package=module.package(self.folder,self.root/'made-by-skill.zip')
         self.assertTrue(self.backend.importCharacter(str(package)))
-        from runpy import run_path
-        run_path(str(ROOT/'scripts/build-provider-resources.py'),run_name='__main__')
+        spec=importlib.util.spec_from_file_location('character_provider_resources',ROOT/'scripts/build-provider-resources.py')
+        builder=importlib.util.module_from_spec(spec);spec.loader.exec_module(builder)
+        resources=self.root/'provider-resources';resources.mkdir()
+        builder.build(resources)
         exported=self.root/'skill.zip'
-        self.assertTrue(self.backend.exportCharacterSkill(QUrl.fromLocalFile(str(exported)).toString()))
+        with patch.object(self.backend,'root',self.root):
+            self.assertTrue(self.backend.exportCharacterSkill(QUrl.fromLocalFile(str(exported)).toString()))
         with zipfile.ZipFile(exported) as archive:
             self.assertIn('create-umeko-character/SKILL.md',archive.namelist())
             self.assertIn('create-umeko-character/scripts/package.py',archive.namelist())

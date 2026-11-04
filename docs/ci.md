@@ -1,7 +1,7 @@
 # CI test locations
 
 `Desktop packages` runs shared checks once on Linux: the Node list in
-`.github/workflows/build.yml`, Python `unittest discover`, and the explicit
+`.github/workflows/build.yml`, Python unit-test discovery, and the explicit
 offscreen UI smoke list. The extra Python list after discovery was an exact
 duplicate and has been removed.
 
@@ -11,6 +11,43 @@ use a private D-Bus session and an unlocked ephemeral keyring, as shown in the
 workflow.
 Discovery and the serial UI smoke list run concurrently inside that same
 Linux job, with separate private D-Bus/keyring sessions. Both must succeed.
+`scripts/ci-unit-tests.py` uses the same `unittest.TestLoader.discover` start
+directory (`tests`) and pattern (`test_*.py`), including unittest skips and
+module/class fixtures. It passes those suites to pinned `unittest-parallel`
+1.8.6, which uses all detected CPU cores and prints per-test results and failure
+tracebacks. The job prints `nproc` too. Only the Linux unit-test step installs
+this test dependency; application requirements and other jobs are unchanged.
+Some existing `load_tests` hooks create local wrapper classes. A small suite
+adapter reloads each module through the same hook inside its worker instead
+of trying to pickle those classes; the runner still owns all scheduling.
+
+Modules run in separate spawned processes, with process reuse disabled: Qt
+modules require different application types and cannot safely share one Qt
+singleton. Tests within each module remain sequential. Shared directories,
+profiles, files and listeners must be isolated in fixtures (temporary directories
+and OS-assigned ports), rather than hidden behind serial execution. The character
+export test builds provider downloads in its own temporary directory.
+
+There are currently no suite-wide serial exceptions. If a module truly needs an
+exclusive resource that cannot be isolated, add its discovery name (for example
+`test_device`) and a one-line reason to `SERIAL_MODULES` in the script. Keep that
+module small. The script removes it from the parallel group and runs it once,
+in a fresh process, after the pool finishes; it never runs in both groups.
+This exception is exclusive among unit tests; UI smokes still run concurrently,
+so it must not share their resources. Fix such a shared fixture instead.
+For local runs install `unittest-parallel==1.8.6` and run the same script;
+`--jobs 4`, `--pattern test_context_compaction.py` and `-k circle` can limit a
+focused run. `--list` prints the discovered IDs without executing them.
+
+The compaction offscreen fixture creates QML delegates synchronously instead of
+depending on a rendered-frame incubation budget. Pi, provider requests and model
+updates still run asynchronously. A fixture request is released explicitly by the
+test (or teardown), and clicks wait for the actual control and viewport geometry.
+Clicks remap that control after mouse movement processes queued Qt layout work.
+Parallel execution also exposed an already-completed pet-import future replying
+before its RPC token was registered. That response is now queued; the existing
+RPC test covers both normal background completion and a completed future.
+
 Runtime verification leaves identical prepared adapters untouched and replaces
 changed files atomically, so concurrent readers cannot see a truncated helper.
 
