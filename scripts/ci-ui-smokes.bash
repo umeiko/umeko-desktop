@@ -20,12 +20,19 @@ if [[ ${1:-} == --run-one ]]; then
     chmod 700 "$XDG_RUNTIME_DIR"
     printf "ci-ephemeral-password" | gnome-keyring-daemon --unlock --components=secrets
     if [[ ${CI_UI_NATIVE_TRACE:-0} == 1 && $1 == tests/large_chat_ui_smoke.py ]]; then
-      ulimit -c 0
+      ulimit -c 524288
       export PYTHONFAULTHANDLER=1
-      gdb --batch --return-child-result -nx \
-        -ex "set print thread-events off" -ex "set debuginfod enabled off" \
-        -ex '\''python gdb.events.stop.connect(lambda event: gdb.execute("thread apply all bt 24") if isinstance(event, gdb.SignalEvent) else None)'\'' \
-        -ex run --args .venv/bin/python "$1"
+      result=0
+      .venv/bin/python "$1" &
+      child=$!
+      wait "$child" || result=$?
+      core="$RUNNER_TEMP/umeko-ui-core.$child"
+      if [[ -f $core ]]; then
+        gdb --batch -nx -ex "set debuginfod enabled off" \
+          -ex "thread apply all bt 32" .venv/bin/python "$core" || true
+        rm -f -- "$core"
+      fi
+      exit "$result"
     else
       .venv/bin/python "$1"
     fi

@@ -121,6 +121,18 @@ jobs:
             ' _ "$1"
           }
           cores=$(nproc)
+          if [[ ${CI_UI_NATIVE_TRACE:-0} == 1 ]]; then
+            sudo sysctl -w "kernel.core_pattern=$RUNNER_TEMP/umeko-ui-core.%p"
+            diagnostic_logs=$(mktemp -d "$PWD/build/large-chat-native.XXXXXX")
+            export diagnostic_logs
+            diagnostic_status=0
+            printf '%s\0' {1..8} | xargs -0 -n 1 -P "$cores" bash -ec '
+              mkdir -p "$diagnostic_logs/$1"
+              bash scripts/ci-ui-smokes.bash --run-one "$diagnostic_logs/$1" tests/large_chat_ui_smoke.py
+            ' _ || diagnostic_status=$?
+            echo "NATIVE_DIAGNOSTIC_END:$diagnostic_status"
+            if (( diagnostic_status != 0 )); then exit "$diagnostic_status"; fi
+          fi
           run_phased() {
             export UNIT_TEST_JOBS=0
             unit_status=0
