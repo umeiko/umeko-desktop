@@ -482,7 +482,99 @@ def assert_trace_geometry(case, trace):
     case.assertTrue(all(e.get("queryError", 0.) <= 1. for e in trace["events"]))
 
 
+def check_focused_filter():
+    """Only the current editor receives the filter; deleted wrappers are safe."""
+    os.environ.update(QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software")
+    sys.path.insert(0, str(ROOT))
+    from PySide6.QtCore import QCoreApplication, QEvent, Qt, QUrl
+    from PySide6.QtGui import QFontDatabase, QGuiApplication, QInputMethodQueryEvent
+    from PySide6.QtQml import QQmlComponent
+    from PySide6.QtQuick import QQuickItem, QQuickView
+    from shiboken6 import delete, isValid
+    from app.input_method import InputMethodUpdates
+
+    class CountedUpdates(InputMethodUpdates):
+        def eventFilter(self, receiver, event):
+            calls.append(receiver)
+            return super().eventFilter(receiver, event)
+
+    app = QGuiApplication([])
+    if os.name == "nt" and not QFontDatabase.families():
+        QFontDatabase.addApplicationFont(str(Path(os.environ["WINDIR"]) / "Fonts/segoeui.ttf"))
+    calls = []
+    updates = CountedUpdates(app)
+    view = QQuickView()
+    component = QQmlComponent(view.engine())
+    url = QUrl.fromLocalFile(str(ROOT / "tests/fixtures/focused-filter.qml"))
+    component.setData(b'''import QtQuick
+Item {
+    width: 640; height: 400
+    TextInput { objectName: "first"; x: 10; y: 20; width: 200; height: 30 }
+    TextInput { objectName: "second"; x: 10; y: 80; width: 200; height: 30 }
+}''', url)
+    assert component.isReady(), [error.toString() for error in component.errors()]
+    view.setContent(url, component, component.create())
+    view.show()
+    view.requestActivate()
+    root = view.rootObject()
+    first = root.findChild(QQuickItem, "first")
+    second = root.findChild(QQuickItem, "second")
+
+    def focus(item):
+        item.forceActiveFocus()
+        QCoreApplication.sendPostedEvents()
+        app.processEvents()
+
+    try:
+        focus(first)
+        assert updates._focus_editor == first
+        calls.clear()
+        QCoreApplication.sendEvent(second, QEvent(QEvent.User))
+        QCoreApplication.sendEvent(app, QEvent(QEvent.User))
+        assert not calls, "unrelated application events reached the editor filter"
+        QCoreApplication.sendEvent(first, QInputMethodQueryEvent(Qt.ImCursorRectangle))
+        assert calls and all(receiver == first for receiver in calls)
+
+        focus(second)
+        assert updates._focus_editor == second
+        calls.clear()
+        QCoreApplication.sendEvent(first, QEvent(QEvent.User))
+        assert not calls, "the previous editor retained its filter"
+        QCoreApplication.sendEvent(second, QEvent(QEvent.User))
+        assert calls == [second]
+
+        focus(root)
+        assert updates._focus_editor is None
+        calls.clear()
+        QCoreApplication.sendEvent(second, QEvent(QEvent.User))
+        assert not calls, "a non-editor focus object retained the previous filter"
+
+        # Simulate the previous editor's C++ deletion before the next focus
+        # notification. Calling removeEventFilter on its wrapper would fail.
+        doomed = QQuickItem(root)
+        doomed.setFlag(QQuickItem.ItemAcceptsInputMethod, True)
+        with patch.object(app, "focusObject", return_value=doomed):
+            updates._focus_changed()
+        delete(doomed)
+        assert not isValid(doomed)
+        focus(second)
+        assert updates._focus_editor == second
+    finally:
+        updates._pending.stop()
+        delete(updates)
+        view.close()
+        delete(view)
+        app.processEvents()
+
+
 class InputMethodGeometryTests(unittest.TestCase):
+    def test_filter_follows_focus_and_tolerates_deleted_editor(self):
+        env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", UMEKO_IME_TRACE="0")
+        result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--focus-filter-contract"],
+                                cwd=ROOT, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                timeout=30, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_live_caret_publication_and_preedit_geometry(self):
         # All GUI imports and QApplication construction stay in the child.
         with tempfile.TemporaryDirectory(prefix="umeko-ime-test-") as temp:
@@ -497,7 +589,9 @@ class InputMethodGeometryTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    if "--trace" in sys.argv:
+    if "--focus-filter-contract" in sys.argv:
+        check_focused_filter()
+    elif "--trace" in sys.argv:
         def arg(name, default=None):
             return sys.argv[sys.argv.index(name)+1] if name in sys.argv else default
         trace = run_trace(arg("--source-root", ROOT), arg("--output"), "--exhaustive" in sys.argv)

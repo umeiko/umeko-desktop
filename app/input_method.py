@@ -1,6 +1,7 @@
 """Publish the current editor's caret when keyboard focus changes."""
 from PySide6.QtCore import QEvent, QObject, QTimer, Qt
 from PySide6.QtQuick import QQuickItem, QQuickWindow
+from shiboken6 import isValid
 
 
 class InputMethodUpdates(QObject):
@@ -18,15 +19,28 @@ class InputMethodUpdates(QObject):
         from .ime_trace import InputMethodTrace
         self._trace = InputMethodTrace.install(app)
         self._syncing = False
-        app.installEventFilter(self)
+        self._focus_editor = None
         self._items = ()
         self._connections = []
         self._pending = QTimer(self)
         self._pending.setSingleShot(True)
         self._pending.setInterval(0)
         self._pending.timeout.connect(self._update)
-        app.focusObjectChanged.connect(self._schedule)
+        app.focusObjectChanged.connect(self._focus_changed)
         app.focusWindowChanged.connect(self._schedule)
+        self._focus_changed()
+
+    def _focus_changed(self, *_):
+        previous = self._focus_editor
+        self._focus_editor = None
+        if previous is not None and isValid(previous):
+            previous.removeEventFilter(self)
+        focus = self._app.focusObject()
+        if (isinstance(focus, QQuickItem) and isValid(focus)
+                and focus.flags() & QQuickItem.ItemAcceptsInputMethod):
+            focus.installEventFilter(self)
+            self._focus_editor = focus
+        self._schedule()
 
     def _schedule(self, *_):
         self._pending.start()
