@@ -9,13 +9,12 @@ After the usual setup, use those same commands locally with
 `QT_QPA_PLATFORM=offscreen` and `QT_QUICK_BACKEND=software`. Linux checks also
 use a private D-Bus session and an unlocked ephemeral keyring, as shown in the
 workflow.
-Discovery runs first using all cores, followed by the same 43 UI smokes through
-`bash scripts/ci-ui-smokes.bash --jobs "$(nproc)"` inside that same Linux job.
+Discovery and the same 43 UI smokes run concurrently inside that Linux job.
+Discovery gets `(nproc + 1) / 2` workers and the UI list gets `nproc / 2`
+(at least one each): two unit workers and two UI workers on the measured
+four-core runner. Use `bash scripts/ci-ui-smokes.bash --jobs N` to set the UI
+worker budget locally; its default is all detected cores.
 GNU `xargs -P` schedules scripts; no additional runner dependency is installed.
-The measurement revision sets `CI_BENCHMARK_CONFIGS=1`: it times two complete
-configurations on the same runner, shared unit/UI workers followed by phased
-execution. Each configuration runs the full unit suite and the same 43 smokes.
-Without that comparison flag, the phased path above runs once.
 Each script gets its own private D-Bus session, ephemeral keyring, XDG directories,
 profile and `PI_CODING_AGENT_DIR`. An explicitly configured agent directory still
 takes precedence; the environment also isolates bundled-skill installation when
@@ -50,8 +49,10 @@ exclusive resource that cannot be isolated, add its discovery name (for example
 `test_device`) and a one-line reason to `SERIAL_MODULES` in the script. Keep that
 module small. The script removes it from the parallel group and runs it once,
 in a fresh process, after the pool finishes; it never runs in both groups.
-This exception is exclusive among unit tests; the UI pool starts after the unit
-phase. Resources shared within either pool still need isolated fixtures.
+This exception is exclusive among unit tests; the UI pool may still be running.
+Resources shared across either pool still need isolated fixtures. A genuinely
+machine-exclusive case must run after both pools, with its resource reason;
+the unit-only serial marker does not provide that machine-wide exclusion.
 For local runs install `unittest-parallel==1.8.6` and run the same script;
 `--jobs 4`, `--pattern test_context_compaction.py` and `-k circle` can limit a
 focused run. `--list` prints the discovered IDs without executing them.

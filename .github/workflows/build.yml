@@ -96,8 +96,6 @@ jobs:
         run: node --test tests/auxiliary-vision.test.mjs tests/auxiliary-vision-bridge.test.mjs tests/video-generation.test.mjs tests/generation.test.mjs tests/markdown-preview.test.mjs tests/widget-catalog.test.mjs tests/session-capabilities.test.mjs tests/session-capabilities-integration.test.mjs tests/skills.test.mjs tests/tool-visibility.test.mjs tests/pet-reminder-local-time.test.mjs tests/conversation-search.test.mjs tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/package-install.test.mjs tests/pi-widget-command.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/global-agents.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs tests/compaction-bridge.test.mjs tests/recent-images.test.mjs tests/recent-images-bridge.test.mjs tests/pid-trajectory.test.mjs
 
       - name: Python unit tests
-        env:
-          CI_BENCHMARK_CONFIGS: '1'
         run: |
           echo "Linux CPU cores: $(nproc)"
           .venv/bin/python -m pip install unittest-parallel==1.8.6
@@ -120,39 +118,16 @@ jobs:
             ' _ "$1"
           }
           cores=$(nproc)
-          run_phased() {
-            export UNIT_TEST_JOBS=0
-            unit_status=0
-            isolated_tests unit_tests || unit_status=$?
-            ui_status=0
-            bash scripts/ci-ui-smokes.bash --jobs "$cores" || ui_status=$?
-            if (( unit_status != 0 || ui_status != 0 )); then return 1; fi
-          }
-          run_shared() {
-            export UNIT_TEST_JOBS=$(((cores + 1) / 2))
-            ui_jobs=$((cores / 2))
-            if (( ui_jobs < 1 )); then ui_jobs=1; fi
-            isolated_tests unit_tests &
-            unit_pid=$!
-            ui_status=0
-            bash scripts/ci-ui-smokes.bash --jobs "$ui_jobs" || ui_status=$?
-            unit_status=0
-            wait "$unit_pid" || unit_status=$?
-            if (( unit_status != 0 || ui_status != 0 )); then return 1; fi
-          }
-          if [[ "${CI_BENCHMARK_CONFIGS:-0}" == 1 ]]; then
-            status=0
-            for config in run_shared run_phased; do
-              echo "CONFIG_BEGIN:$config"
-              started=$SECONDS
-              result=0
-              "$config" || result=$?
-              echo "CONFIG_END:$config:$((SECONDS - started)):$result"
-              if (( result != 0 )); then status=1; fi
-            done
-            exit "$status"
-          fi
-          run_phased
+          export UNIT_TEST_JOBS=$(((cores + 1) / 2))
+          ui_jobs=$((cores / 2))
+          if (( ui_jobs < 1 )); then ui_jobs=1; fi
+          isolated_tests unit_tests &
+          unit_pid=$!
+          ui_status=0
+          bash scripts/ci-ui-smokes.bash --jobs "$ui_jobs" || ui_status=$?
+          unit_status=0
+          wait "$unit_pid" || unit_status=$?
+          if (( unit_status != 0 || ui_status != 0 )); then exit 1; fi
 
   windows-path-checks:
     name: Windows path regressions
