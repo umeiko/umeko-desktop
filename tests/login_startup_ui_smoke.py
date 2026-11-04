@@ -124,9 +124,8 @@ Window {
         x: 266; y: 35; width: parent.width - x - 36; spacing: 23
         Text { text: I18n.t("\u8bbe\u7f6e") + " / Agent"; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: 13 }
         Text { text: "Umeko Desktop"; color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: 25; font.weight: Font.DemiBold }
-        Loader {
-            active: window.desktopActive; width: parent.width
-            sourceComponent: DesktopSettings { width: parent.width }
+        DesktopSettings {
+            width: parent.width; visible: window.desktopActive
         }
     }
 }
@@ -197,12 +196,14 @@ def main():
         assert checked() == (True, True), "Switches must follow a subsequent system refresh"
 
         # Reopening the page queries external changes, instead of retaining a saved bool.
+        originalSwitch = find("desktopLoginUmeko")
         window.setProperty("desktopActive", False)
         settle()
         backend.startup.system.update(umeko=False, proxy=True)
         refreshes = backend.startup.refreshes
         window.setProperty("desktopActive", True)
         settle()
+        assert find("desktopLoginUmeko") is originalSwitch, "Match AgentPage: hide and reuse the settings component"
         assert backend.startup.refreshes == refreshes + 1 and checked() == (False, True)
 
         reason = "开机启动仅适用于打包后的应用。"

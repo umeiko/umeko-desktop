@@ -6,7 +6,12 @@ Column {
     id: root
     objectName: "umekoDesktopSettings"
     spacing: 16
-    Component.onCompleted: backend.loginStartup.refresh()
+    property bool startupSettingsReady: false
+    Component.onCompleted: {
+        startupSettingsReady = true
+        if (visible) backend.loginStartup.refresh()
+    }
+    onVisibleChanged: if (startupSettingsReady && visible) backend.loginStartup.refresh()
     SectionCard {
         width: parent.width
         ColumnLayout {
