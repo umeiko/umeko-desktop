@@ -1,8 +1,4 @@
-"""Exercise real chat QML offscreen; every external action is a recorder.
-
-Run normally with unittest.  ``--screenshots DIR`` additionally writes bilingual
-PNG examples after the suite; it never starts the application or a provider.
-"""
+"""Exercise real chat QML offscreen; every external action is a recorder."""
 import argparse
 import os
 from pathlib import Path
@@ -29,16 +25,13 @@ class ConversationLinkActionsTests(unittest.TestCase):
                        UMEKO_DATA_DIR=str(Path(temporary) / "profile"),
                        PI_CODING_AGENT_DIR=str(Path(temporary) / "agent"), PYTHONUTF8="1")
             command = [sys.executable, str(Path(__file__).resolve()), "--offscreen-child"]
-            screenshots = os.environ.get("UMEKO_CONVERSATION_SCREENSHOTS")
-            if screenshots:
-                command.extend(["--screenshots", screenshots])
             child = subprocess.run(command, cwd=ROOT, env=env, capture_output=True,
                                    text=True, encoding="utf-8", timeout=90,
                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
 
 
-def offscreen_suite(screenshots=None):
+def offscreen_suite():
     # Set these before importing Qt, even if this file is invoked directly.
     os.environ.update(QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software",
                       QSG_RHI_BACKEND="software", QT_QUICK_CONTROLS_STYLE="Basic")
@@ -84,7 +77,7 @@ def offscreen_suite(screenshots=None):
         def __init__(self, workspace):
             super().__init__()
             self.values = {"language": "en", "busy": False,
-                           "conversationWorkspace": str(workspace), "fontScale": 1.0,
+                           "fontScale": 1.0,
                            "themeStyle": {"base": "light", "colors": {}},
                            "config": {"theme": "light"}, "lineSpacing": "standard",
                            "messageText": "", "tools": []}
@@ -92,7 +85,6 @@ def offscreen_suite(screenshots=None):
 
         language = Property(str, lambda self: self.values["language"], notify=changed)
         busy = Property(bool, lambda self: self.values["busy"], notify=changed)
-        conversationWorkspace = Property(str, lambda self: self.values["conversationWorkspace"], notify=changed)
         fontScale = Property(float, lambda self: self.values["fontScale"], notify=changed)
         themeStyle = Property("QVariantMap", lambda self: self.values["themeStyle"], notify=changed)
         config = Property("QVariantMap", lambda self: self.values["config"], notify=changed)
@@ -106,10 +98,6 @@ def offscreen_suite(screenshots=None):
             self.values.update(values)
             self.changed.emit()
             settle()
-
-        @Slot(str, bool)
-        def openConversationPath(self, path, reveal):
-            self.calls.append(("path", path, reveal))
 
         @Slot(str)
         def openConversationUrl(self, url):
@@ -139,9 +127,9 @@ ApplicationWindow {
     }
     Column {
         id: content; x: 42; y: 30; width: 800; spacing: 20
-        Text { text: backend.language === "zh" ? "对话中的文件和网址" : "Files and URLs in conversation"
+        Text { text: backend.language === "zh" ? "对话中的网址" : "URLs in conversation"
                color: Umeko.Theme.ink; font.pixelSize: 21; font.family: Umeko.Theme.fontFamily }
-        Text { text: backend.language === "zh" ? "测试对话 · 项目文件" : "Test conversation · project files"
+        Text { text: backend.language === "zh" ? "测试对话" : "Test conversation"
                color: Umeko.Theme.muted; font.pixelSize: 12; font.family: Umeko.Theme.fontFamily }
         Umeko.MessageBody {
             objectName: "assistantBody"; width: parent.width; messageIndex: 0
@@ -162,12 +150,11 @@ ApplicationWindow {
     class Harness:
         def __init__(self):
             self.temporary = tempfile.TemporaryDirectory(prefix="chat-link-fixture-")
-            # Windows CI may return an 8.3 temp path; link targets use the
-            # canonical resolved spelling rather than that temporary alias.
             self.workspace = Path(self.temporary.name).resolve()
-            for filename in ("guide.txt", "notes.md", "sample.cpp", "run.cmd", "payload.exe", "image.png"):
+            for filename in ("main.py", "README.md", "app.py", "example.com"):
                 (self.workspace / filename).write_text("fixture only\n", encoding="utf-8")
-            (self.workspace / "folder").mkdir()
+            (self.workspace / "src").mkdir()
+            (self.workspace / "src" / "app.py").write_text("fixture only\n", encoding="utf-8")
             self.backend = Backend(self.workspace)
             self.engine = QQmlApplicationEngine()
             self.warnings = []
@@ -251,83 +238,100 @@ ApplicationWindow {
         def tearDown(self):
             self.assertEqual(self.h.warnings, [], "\n".join(self.h.warnings))
 
-        def test_assistant_prose_inline_code_and_fenced_code(self):
+        def test_paths_and_bare_domains_stay_plain_in_replies_and_tool_output(self):
             h = self.h
-            h.backend.update(messageText="Open guide.txt and `guide.txt:12`; visit https://example.com/guide.\n\n```text\nguide.txt https://example.com/fenced\n```")
+            values = ("a/b", "1/2", "and/or", "src/app.py:12", r"C:\x\y",
+                      "~/notes.md", "main.py", "README.md", "example.com", "app.py")
+            plain = " ".join(values)
+            web = "http://example.com/http https://example.com/https www.example.org/guide"
+            h.backend.update(messageText=plain + "\n\n" + web,
+                             tools=[{"id": "tool-1", "name": "read", "state": "done",
+                                     "arguments": {}, "result": plain + "\n" + web}])
+            for editor in (h.prose(), h.find("toolDetail_tool-1")):
+                with self.subTest(editor=editor.objectName()):
+                    self.assertTrue(all(value in h.document(editor).toPlainText() for value in values))
+                    anchors = h.anchors(editor)
+                    # Qt's Markdown importer supplies http for reply www
+                    # anchors; plain tool-output scanning supplies https.
+                    www_target = ("http://www.example.org/guide" if editor.objectName() == "selectText_0_0"
+                                  else "https://www.example.org/guide")
+                    self.assertEqual([row["info"]["target"] for row in anchors], [
+                        "http://example.com/http", "https://example.com/https", www_target])
+                    self.assertEqual([row["info"]["kind"] for row in anchors], ["url"] * 3)
+
+        def test_assistant_web_inline_code_and_fenced_code(self):
+            h = self.h
+            h.backend.update(messageText="Visit `www.example.org/inline` and https://example.com/guide.\n\n```text\nmain.py https://example.com/fenced\n```")
             anchors = h.anchors(h.prose())
-            self.assertEqual([r["info"]["kind"] for r in anchors], ["path", "path", "url"])
-            self.assertEqual(anchors[1]["info"]["line"], 12)
-            self.assertEqual(anchors[1]["info"]["target"], str(h.workspace / "guide.txt"))
-            self.assertTrue(all(r["underline"] for r in anchors))
-            self.assertTrue(all(r["href"].startswith("umeko-conversation:") for r in anchors))
+            self.assertEqual([row["info"]["target"] for row in anchors], [
+                "https://www.example.org/inline", "https://example.com/guide"])
+            self.assertTrue(all(row["underline"] for row in anchors))
+            self.assertTrue(all(row["href"].startswith("umeko-conversation:") for row in anchors))
             code = h.find("codeBlock_1")
             self.assertEqual(h.anchors(code), [])
-            self.assertEqual(h.document(code).toPlainText().strip(), "guide.txt https://example.com/fenced")
+            self.assertEqual(h.document(code).toPlainText().strip(), "main.py https://example.com/fenced")
 
-        def test_left_and_context_actions_use_recorders(self):
+        def test_markdown_web_anchors_remain_and_local_unsafe_targets_are_stripped(self):
             h = self.h
-            h.backend.update(messageText="Open guide.txt:12 or https://example.com/guide")
+            h.backend.update(messageText=("[HTTP](http://example.com/http) [HTTPS](https://example.com/https) "
+                "[WWW](www.example.org/guide) [Local](src/app.py:12) [File](file:///tmp/readme) "
+                "[Unsafe](javascript:alert) [Bare](example.com)"))
             editor = h.prose()
-            path, url = h.anchors(editor)
-            self.assertEqual(qml_call(h.window, "linkAtOffset", editor, path["position"] + 2), path["href"])
+            anchors = h.anchors(editor)
+            self.assertEqual([row["info"]["target"] for row in anchors], [
+                "http://example.com/http", "https://example.com/https", "https://www.example.org/guide"])
+            self.assertEqual([row["text"] for row in anchors], ["HTTP", "HTTPS", "WWW"])
+            for label in ("Local", "File", "Unsafe", "Bare"):
+                self.assertIn(label, h.document(editor).toPlainText())
+
+        def test_left_and_context_web_actions_use_recorders(self):
+            h = self.h
+            h.backend.update(messageText="main.py https://example.com/guide")
+            editor = h.prose()
+            url, = h.anchors(editor)
+            self.assertEqual(qml_call(h.window, "linkAtOffset", editor, 2), "")
+            self.assertEqual(qml_call(h.window, "linkAtOffset", editor, url["position"] + 2), url["href"])
             selection = h.find("chatSelection")
 
-            def route(row, button, moved=False, modifiers=0):
-                point = qml_call(h.window, "selectionPoint", editor, row["position"] + 2)
+            def route(button, moved=False, modifiers=0):
+                point = qml_call(h.window, "selectionPoint", editor, url["position"] + 2)
                 self.assertTrue(qml_call(selection, "rememberLink", point.x(), point.y()))
                 selection.setProperty("pointerMoved", moved)
                 activated = qml_call(selection, "activateLink", point.x(), point.y(), button, modifiers)
                 settle()
                 return activated
 
-            self.assertFalse(route(path, 1, moved=True))
-            self.assertFalse(route(path, 1, modifiers=Qt.ShiftModifier.value))
+            self.assertFalse(route(1, moved=True))
+            self.assertFalse(route(1, modifiers=Qt.ShiftModifier.value))
             self.assertEqual(h.backend.calls, [])
-            self.assertTrue(route(path, 1))
-            self.assertTrue(route(url, 1))
-            self.assertEqual(h.backend.calls, [("path", str(h.workspace / "guide.txt"), False),
-                                                ("url", "https://example.com/guide")])
-            self.assertTrue(route(path, 2))
+            self.assertTrue(route(1))
+            self.assertEqual(h.backend.calls, [("url", "https://example.com/guide")])
+            self.assertTrue(route(2))
             menu = h.find("conversationLinkMenu", selection)
             self.assertTrue(menu.property("visible"))
-            self.assertTrue(h.find("copyConversationPath", menu).property("visible"))
-            self.assertFalse(h.find("copyConversationUrl", menu).property("visible"))
-            QMetaObject.invokeMethod(h.find("copyConversationPath", menu), "triggered", Qt.DirectConnection)
-            QMetaObject.invokeMethod(h.find("revealConversationPath", menu), "triggered", Qt.DirectConnection)
-            self.assertEqual(h.backend.calls[-2:], [("copy", str(h.workspace / "guide.txt")),
-                                                   ("path", str(h.workspace / "guide.txt"), True)])
-            self.assertTrue(route(url, 2))
-            self.assertFalse(h.find("copyConversationPath", menu).property("visible"))
             self.assertTrue(h.find("copyConversationUrl", menu).property("visible"))
             QMetaObject.invokeMethod(h.find("copyConversationUrl", menu), "triggered", Qt.DirectConnection)
             self.assertEqual(h.backend.calls[-1], ("copy", "https://example.com/guide"))
 
-        def test_tool_detail_links_leave_plain_text_and_fences_intact(self):
+        def test_tool_detail_links_leave_raw_markdown_and_fences_intact(self):
             h = self.h
-            result = "Created guide.txt:12\nhttps://example.com/guide\n```text\nguide.txt https://example.com/fenced\n```"
+            result = "Created src/app.py:12\nhttp://example.com/http https://example.com/guide www.example.org\n[Docs](https://example.com/docs)\n```text\nmain.py https://example.com/fenced\n```"
             h.backend.update(tools=[{"id": "tool-1", "name": "read", "state": "done", "arguments": {}, "result": result}])
             editor = h.find("toolDetail_tool-1")
             self.assertEqual(h.document(editor).toPlainText(), "{}\n\n" + result)
             anchors = h.anchors(editor)
-            self.assertEqual([r["info"]["kind"] for r in anchors], ["path", "url"])
-            self.assertEqual(anchors[0]["info"]["line"], 12)
-            h.activate(editor, anchors[0], 1)
-            self.assertEqual(h.backend.calls, [("path", str(h.workspace / "guide.txt"), False)])
-
-        def test_restored_history_rechecks_missing_local_paths(self):
-            h = self.h
-            h.backend.update(messageText="guide.txt missing.txt https://example.com/guide")
-            self.assertEqual([r["info"]["kind"] for r in h.anchors(h.prose())], ["path", "url"])
-            (h.workspace / "guide.txt").unlink()
-            h.backend.update(messageText="")
-            h.backend.update(messageText="guide.txt missing.txt https://example.com/guide")
-            anchors = h.anchors(h.prose())
-            self.assertEqual([r["info"]["kind"] for r in anchors], ["url"])
-            self.assertIn("guide.txt missing.txt", h.document(h.prose()).toPlainText())
+            # Tool output is plain text: only the explicit URL inside Markdown
+            # syntax becomes an anchor; the label and brackets stay visible.
+            self.assertEqual([row["info"]["target"] for row in anchors], [
+                "http://example.com/http", "https://example.com/guide", "https://www.example.org",
+                "https://example.com/docs"])
+            self.assertEqual(anchors[-1]["text"], "https://example.com/docs")
+            h.activate(editor, anchors[1], 1)
+            self.assertEqual(h.backend.calls, [("url", "https://example.com/guide")])
 
         def test_streaming_completion_preserves_text_font_and_blocks(self):
             h = self.h
-            h.backend.update(busy=True, messageText="Open guide.txt and `guide.txt:12` https://example.com/guide")
+            h.backend.update(busy=True, messageText="Open main.py and `app.py:12` https://example.com/guide")
             editor = h.prose()
             document = h.document(editor)
             def appearance():
@@ -347,15 +351,13 @@ ApplicationWindow {
             self.assertTrue(all(not row["info"] for row in streaming_anchors))
             self.assertFalse(any(row["href"].startswith("umeko-conversation:")
                                  for row in streaming_anchors))
-            self.assertFalse(any(row["info"].get("kind") == "path"
-                                 for row in streaming_anchors))
             h.backend.update(busy=False)
-            self.assertEqual(len(h.anchors(editor)), 3)
+            self.assertEqual(len(h.anchors(editor)), 1)
             self.assertEqual(appearance(), before)
 
         def test_theme_updates_link_accent_without_font_size_change(self):
             h = self.h
-            h.backend.update(messageText="guide.txt https://example.com/guide")
+            h.backend.update(messageText="main.py https://example.com/guide")
             editor = h.prose()
             font_before = editor.property("font").pixelSize()
             h.backend.update(themeStyle={"base": "dark", "colors": {"accent": "#d5a34c"}})
@@ -364,7 +366,7 @@ ApplicationWindow {
 
         def test_selection_keeps_original_text_and_code_copy(self):
             h = self.h
-            h.backend.update(messageText="guide.txt https://example.com/guide\n\n```text\nguide.txt\n```")
+            h.backend.update(messageText="main.py https://example.com/guide\n\n```text\nmain.py\n```")
             editor = h.prose()
             plain = h.document(editor).toPlainText()
             selection = h.find("chatSelection")
@@ -379,22 +381,22 @@ ApplicationWindow {
             self.assertTrue(selection.property('hasSelection'))
             QMetaObject.invokeMethod(h.find("copyCode_1"), "clicked", Qt.DirectConnection)
             self.assertEqual(h.backend.calls[-1][0], "copy")
-            self.assertEqual(h.backend.calls[-1][1].strip(), "guide.txt")
+            self.assertEqual(h.backend.calls[-1][1].strip(), "main.py")
 
-        def test_slow_lookup_is_background_and_obsolete_text_is_discarded(self):
+        def test_background_scan_discards_obsolete_text(self):
             from app.text_links import recognize_links
             h = self.h
             entered, release = threading.Event(), threading.Event()
             threads, gui_progress = [], []
             main_thread = threading.get_ident()
-            def slow(text, workspace, **kwargs):
+            def slow(text, **kwargs):
                 threads.append(threading.get_ident())
-                if 'guide.txt' in text:
+                if 'https://example.com/obsolete' in text:
                     entered.set();release.wait(5)
-                return recognize_links(text, workspace, **kwargs)
+                return recognize_links(text, **kwargs)
             with patch('app.text_links.recognize_links',side_effect=slow):
                 try:
-                    h.backend.update(messageText='guide.txt')
+                    h.backend.update(messageText='https://example.com/obsolete')
                     wait_until(entered.is_set)
                     QTimer.singleShot(0,lambda:gui_progress.append(True))
                     h.backend.update(messageText='https://example.com/final')
@@ -406,119 +408,49 @@ ApplicationWindow {
             self.assertTrue(threads)
             self.assertNotIn(main_thread,threads)
 
-        def test_workspace_change_resolves_both_bare_and_markdown_paths_again(self):
-            h = self.h
-            h.backend.update(messageText='[Read](guide.txt) and guide.txt')
-            self.assertEqual(len(h.anchors(h.prose())),2)
-            with tempfile.TemporaryDirectory() as other:
-                root=Path(other).resolve();(root/'guide.txt').write_text('other',encoding='utf-8')
-                h.backend.update(conversationWorkspace=str(root))
-                self.assertEqual([r['info']['target'] for r in h.anchors(h.prose())],[str(root/'guide.txt')]*2)
-
         def test_existing_links_remain_usable_while_new_reply_streams(self):
             h=self.h
-            h.backend.update(messageText='guide.txt')
-            self.assertEqual(h.anchors(h.prose())[0]['info']['kind'],'path')
+            h.backend.update(messageText='https://example.com/obsolete')
+            self.assertEqual(h.anchors(h.prose())[0]['info']['kind'],'url')
             with patch('app.text_links.recognize_links',side_effect=AssertionError('No scan during generation')):
                 h.backend.update(busy=True)
-                self.assertEqual(h.anchors(h.prose())[0]['info']['kind'],'path')
+                self.assertEqual(h.anchors(h.prose())[0]['info']['kind'],'url')
                 h.backend.update(messageText='https://example.com/streamed')
                 self.assertTrue(all(not row['info'] for row in h.anchors(h.prose())))
 
         def test_unicode_offsets_still_hit_the_decorated_link(self):
             h = self.h
-            h.backend.update(messageText='😀 中文 **guide.txt**')
+            h.backend.update(messageText='😀 中文 **www.example.org**')
             editor=h.prose();link=h.anchors(editor)[0]
             self.assertEqual(link['position'],len('😀 中文 '.encode('utf-16-le'))//2)
             self.assertEqual(qml_call(h.window,'linkAtOffset',editor,link['position']+2),link['href'])
 
     class ControllerActions(unittest.TestCase):
-        def test_routes_safe_text_to_viewer_and_other_items_to_existing_opener(self):
-            from app.controller import Controller
-            from app.document_preview import document_kind
-            with tempfile.TemporaryDirectory(prefix="controller-links-") as temporary:
-                workspace = Path(temporary)
-                opened, documents, toasts = [], [], []
-                fake = SimpleNamespace(documentRequested=SimpleNamespace(emit=lambda *args: documents.append(args)),
-                                       toast=SimpleNamespace(emit=lambda *args: toasts.append(args)),
-                                       openChatboxPath=lambda *args: opened.append(args))
-                for filename in ("guide.txt", "notes.md", "sample.cpp", "sample.py", "run.cmd", "script.js"):
-                    path = workspace / filename
-                    path.write_text("fixture\n", encoding="utf-8")
-                    Controller.openConversationPath(fake, str(path), False)
-                    self.assertEqual(documents[-1], (str(path), filename, document_kind(path)))
-                expected_documents = list(documents)
-                for filename in ("payload.exe", "image.png"):
-                    path = workspace / filename
-                    path.write_text("fixture\n", encoding="utf-8")
-                    Controller.openConversationPath(fake, str(path), False)
-                    self.assertEqual(opened[-1], (str(path), filename == "payload.exe"))
-                folder = workspace / "folder"
-                folder.mkdir()
-                Controller.openConversationPath(fake, str(folder), False)
-                self.assertEqual(opened[-1], (str(folder), False))
-                bundle = workspace / "Demo.app"
-                bundle.mkdir()
-                Controller.openConversationPath(fake, str(bundle), False)
-                self.assertEqual(opened[-1], (str(workspace), False))
-                Controller.openConversationPath(fake, str(workspace / "guide.txt"), True)
-                self.assertEqual(opened[-1], (str(workspace / "guide.txt"), True))
-                self.assertEqual(documents, expected_documents)
-                before_opened = list(opened)
-                Controller.openConversationPath(fake, str(workspace / "missing.txt"), False)
-                self.assertEqual(opened, before_opened)
-                self.assertEqual(len(toasts), 1)
-
         def test_url_only_allows_web_and_never_uses_real_desktop_services(self):
             from app.controller import Controller
             with patch("app.controller.QDesktopServices.openUrl", return_value=True) as opener:
                 fake = SimpleNamespace()
-                Controller.openConversationUrl(fake, "https://example.com/guide")
-                opener.assert_called_once()
-                self.assertEqual(opener.call_args.args[0].toString(), "https://example.com/guide")
-                for value in ("file:///tmp/run.exe", "javascript:alert(1)", "data:text/plain,hello"):
+                for value, expected in (("http://example.com/guide", "http://example.com/guide"),
+                                        ("https://example.com/guide", "https://example.com/guide"),
+                                        ("www.example.org", "https://www.example.org")):
                     Controller.openConversationUrl(fake, value)
-                self.assertEqual(opener.call_count, 1)
+                    self.assertEqual(opener.call_args.args[0].toString(), expected)
+                self.assertEqual(opener.call_count, 3)
+                for value in ("file:///tmp/run.exe", "javascript:alert(1)", "data:text/plain,hello",
+                              "example.com", "main.py", "src/app.py:12", r"C:\x\y", "~/notes.md"):
+                    Controller.openConversationUrl(fake, value)
+                self.assertEqual(opener.call_count, 3)
 
     suite = unittest.TestSuite((unittest.defaultTestLoader.loadTestsFromTestCase(RealQmlActions),
                                unittest.defaultTestLoader.loadTestsFromTestCase(ControllerActions)))
     result = unittest.TextTestRunner(verbosity=2).run(suite)
-    if result.wasSuccessful() and screenshots:
-        output = Path(screenshots).resolve()
-        output.mkdir(parents=True, exist_ok=True)
-        h = Harness()
-        try:
-            for language in ("zh", "en"):
-                text = ("请打开 guide.txt，并查看 `guide.txt:12`。\n\n参考网址：https://example.com/guide" if language == "zh"
-                        else "Open guide.txt, then review `guide.txt:12`.\n\nReference: https://example.com/guide")
-                h.backend.update(language=language, messageText=text,
-                                 tools=[{"id": "tool-1", "name": "read", "state": "done", "arguments": {},
-                                         "result": "guide.txt:12\nhttps://example.com/guide"}])
-                path = next(row for row in h.anchors(h.prose()) if row["info"]["kind"] == "path")
-                h.activate(h.prose(), path, 2)
-                if not h.find("conversationLinkMenu", h.prose()).property("visible"):
-                    raise AssertionError("Screenshot requires the real path context menu")
-                # Let the real menu's existing enter animation reach its endpoint.
-                loop = QEventLoop()
-                QTimer.singleShot(350, loop.quit)
-                loop.exec()
-                image = h.window.grabWindow()
-                target = output / (language + "-conversation-links.png")
-                if image.isNull() or not image.save(str(target)):
-                    raise AssertionError("Cannot save screenshot: " + str(target))
-                QMetaObject.invokeMethod(h.find("conversationLinkMenu", h.prose()), "close", Qt.DirectConnection)
-        finally:
-            h.close()
     return result.wasSuccessful()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--offscreen-child", action="store_true")
-    parser.add_argument("--screenshots")
     arguments, remaining = parser.parse_known_args()
     if arguments.offscreen_child:
-        raise SystemExit(0 if offscreen_suite(arguments.screenshots) else 1)
-    if arguments.screenshots:
-        os.environ["UMEKO_CONVERSATION_SCREENSHOTS"] = str(Path(arguments.screenshots).resolve())
+        raise SystemExit(0 if offscreen_suite() else 1)
     unittest.main(argv=[sys.argv[0], *remaining])

@@ -183,22 +183,6 @@ class ControllerCacheTests(unittest.TestCase):
             preview.assert_not_called()
             command.assert_not_called()
 
-    def test_stale_path_is_checked_at_click_without_fallback_open(self):
-        c = self.controller
-        file = self.root / 'guide.txt'
-        file.write_text('content', encoding='utf-8')
-        # The cached link was resolved while the file existed.
-        from app.conversation_links import recognize_links
-        link = recognize_links('guide.txt', self.root)[0]
-        file.unlink()
-        toasts = []
-        c.toast.connect(toasts.append)
-        with patch.object(c, 'openChatboxPath') as opener, patch('app.controller.QDesktopServices.openUrl') as desktop:
-            c.openConversationPath(link.target, False)
-            c.openConversationPath(link.target, True)
-            opener.assert_not_called()
-            desktop.assert_not_called()
-        self.assertEqual(toasts, ['文件已移动或不存在', '文件已移动或不存在'])
 
 
 def load_tests(loader, tests, pattern):
