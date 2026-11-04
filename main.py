@@ -121,14 +121,11 @@ if __name__ == "__main__":
         import faulthandler
         _smoke_stacks = open(os.environ['UMEKO_SMOKE_STACKS'], 'w', encoding='utf-8')
         faulthandler.dump_traceback_later(30, file=_smoke_stacks)
-    instance_lock = None
-    if '--install-update' not in sys.argv:
-        from app.login_session import acquire_instance
-        from app.preview_launch import profile_directory
-        instance_lock = acquire_instance(profile_directory())
-        if instance_lock is None:
-            diagnostic('Umeko is already running for this profile; use its tray icon to open it.')
-            sys.exit(0)
+    from app.login_session import instance_for_launch
+    from app.preview_launch import profile_directory
+    instance_lock, continue_launch = instance_for_launch(profile_directory(), sys.argv)
+    if not continue_launch:
+        sys.exit(0)
     try:
         app, engine, controller = create_application()
     except Exception as exc:
