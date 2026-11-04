@@ -1,6 +1,7 @@
-"""Build PR packages for build inputs; main still packages every source change."""
+"""Select Windows CI packages, with explicit full native builds for releases."""
 from fnmatch import fnmatchcase
 import os
+import json
 import subprocess
 from pathlib import Path
 
@@ -24,6 +25,15 @@ def needs_packages(paths):
     return any(is_package_input(path) for path in paths)
 
 
+def package_matrix(event, all_platforms):
+    rows = [dict(name='Windows x64', runner='windows-2022', platform='windows-x64')]
+    if event == 'workflow_dispatch' and all_platforms == 'true':
+        rows += [dict(name='Linux x64', runner='ubuntu-22.04', platform='linux-x64'),
+                 dict(name='macOS Apple Silicon', runner='macos-15', platform='macos-arm64'),
+                 dict(name='macOS Intel', runner='macos-15-intel', platform='macos-x64')]
+    return {'include': rows}
+
+
 def is_package_input(path):
     if path.startswith(('tests/', 'docs/', 'docs-site/')):
         return False
@@ -33,7 +43,7 @@ def is_package_input(path):
             or path.endswith('.spec')):
         return True
     # Ordinary source changes get shared + Windows-native PR checks. The full
-    # main matrix catches their packaging regressions before release.
+    # main package job catches their packaging regressions before publication.
     if path.startswith(('app/', 'runtime/')):
         # QML module manifests, SVGs and newly added data files are packaging
         # inputs too. Only known source suffixes take the lighter PR path.
@@ -46,13 +56,17 @@ def is_package_input(path):
 
 
 if __name__ == '__main__':
-    result = subprocess.run(
-        ['git', 'diff', '--name-only', '-z', os.environ['PR_BASE'], 'HEAD'],
-        check=True, capture_output=True,
-        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-    paths = result.stdout.decode('utf-8', errors='surrogateescape').split('\0')
-    paths = [p for p in paths if p]
-    packages = needs_packages(paths)
+    event = os.environ.get('GITHUB_EVENT_NAME', 'pull_request')
+    packages = True
+    if event == 'pull_request':
+        result = subprocess.run(
+            ['git', 'diff', '--name-only', '-z', os.environ['PR_BASE'], 'HEAD'],
+            check=True, capture_output=True,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        paths = result.stdout.decode('utf-8', errors='surrogateescape').split('\0')
+        packages = needs_packages([p for p in paths if p])
+    matrix = package_matrix(event, os.environ.get('CI_ALL_PLATFORMS', ''))
     with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as output:
         output.write(f'packages={str(packages).lower()}\n')
+        output.write('matrix=' + json.dumps(matrix) + '\n')
     print(f'Native packages required: {packages}')

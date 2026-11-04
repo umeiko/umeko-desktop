@@ -1,4 +1,16 @@
-# 手动 Preview 发布
+# Preview 发布
+
+## main 的滚动 Windows 预览包
+
+日常 `Desktop packages` CI 保留完整共享测试，只构建 Windows x64 安装包。`main` 的测试和打包验证全部通过后，最后一个发布任务会更新固定的 [preview 预发布版](https://github.com/umeiko/umeko-desktop/releases/tag/preview)。PR 不执行发布，其他分支的手动 CI 也不会替换它。
+
+发布任务仅下载本次 CI 的 Windows 包，核对源码提交、打包后的 GUI/Pi/终端结果及 SHA-256，再上传到临时草稿。确认 GitHub 上的文件大小和校验和后，删除旧 `preview` Release 和标签，将已上传的新包发布到同名 `preview`。上传或校验失败时旧包仍然保留；切换发布时出错会保留已验证的草稿供恢复。版本始终标记为 Pre-release，不替换正式版 Latest，也不修改应用版本号。
+
+发布前会再次核对 `main`：过时 CI 不会覆盖新提交的预览包。发布任务串行执行，避免两个 CI 同时替换 `preview`。
+
+正式版需要多平台构建时，在 **Desktop packages → Run workflow** 勾选 `all_platforms`，再按现有正式发布流程选择这个成功的运行。
+
+## 手动实验 Preview
 
 在 [Actions → Preview desktop release](https://github.com/umeiko/umeko-desktop/actions/workflows/preview.yml) 点击 **Run workflow**：
 
