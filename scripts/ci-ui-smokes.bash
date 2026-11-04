@@ -62,6 +62,7 @@ smokes=(
   tests/sidebar_animation_ui_smoke.py
   tests/extension_details_ui_smoke.py
   tests/provider_popup_ui_smoke.py
+  tests/model_reasoning_ui_smoke.py
   tests/change_review_ui_smoke.py
   tests/motion_ui_smoke.py
   tests/codearts_plugin_ui_smoke.py

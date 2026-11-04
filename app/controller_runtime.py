@@ -67,6 +67,7 @@ class PiControllerMixin:
         for record in self._pool.records.values():
             if not record.busy:
                 record.context_usage = {}
+                self._reconcile_reasoning(record)
         self._pool.invalidate()
         self.contextUsageChanged.emit()
 
@@ -141,6 +142,7 @@ class PiControllerMixin:
             if record.subagents_active:
                 return False
             self._pool.retire(record)
+        self._reconcile_reasoning(record)
         record.action, record.failed, record.cancelled = action, False, False
         record.pet_activity = 'thinking'
         record.prompt_started = time.monotonic() if action in ('prompt','widget-notify') else None

@@ -643,6 +643,8 @@ class ProviderPlugins(QObject):
                 if old.get(automatic) is False and old.get(key + "Source") != "provider":
                     metadata.update({key: old[key], automatic: False})
                     sources[key + "Source"] = "custom"
+            if "reasoningLevels" in old:
+                metadata["reasoningLevels"] = old["reasoningLevels"]
             models.append({"upstream": upstream, "alias": alias, **normalize_model(metadata), **sources})
         return models
 
