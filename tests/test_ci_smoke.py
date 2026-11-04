@@ -5,12 +5,24 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import runpy
+import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class SmokeProfileTests(unittest.TestCase):
+    def test_packaged_preview_network_helper_runs_offline(self):
+        verifier = runpy.run_path(str(ROOT / 'scripts/ci-smoke.py'), run_name='preview_network_fixture')
+        with tempfile.TemporaryDirectory() as directory:
+            resources = Path(directory)
+            (resources / 'runtime').mkdir()
+            for name in ('preview-network.mjs', 'update-engine.mjs'):
+                shutil.copy2(ROOT / 'runtime' / name, resources / 'runtime' / name)
+            env = dict(os.environ, HOME=directory, USERPROFILE=directory, UMEKO_DATA_DIR=directory)
+            verifier['verify_preview_network'](Path(shutil.which('node')), resources, env)
+
     def test_profile_isolation_needs_only_the_standard_library(self):
         with tempfile.TemporaryDirectory() as directory:
             profile = Path(directory) / 'profile'

@@ -56,6 +56,7 @@ for target in targets:
     if target.is_dir():
         shutil.copytree(root / 'runtime/releases' / RELEASE_NAME, target / 'runtime/releases' / RELEASE_NAME, dirs_exist_ok=True, ignore=shutil.ignore_patterns('.cache'))
         shutil.copytree(root / 'runtime/node', target / 'runtime/node', dirs_exist_ok=True, symlinks=True)
+        shutil.copy2(root / 'runtime/preview-network.mjs', target / 'runtime/preview-network.mjs')
 shutil.copy2(root / 'README.md', bundle / 'Umeko/README.md')
 if bundle != output:
     if (output / 'Umeko').exists(): shutil.rmtree(output / 'Umeko')
