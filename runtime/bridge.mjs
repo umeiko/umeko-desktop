@@ -61,7 +61,7 @@ const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit}
 let checkpointLocked = false;
 const backgroundJobs = createBackgroundJobsExtension({ canStart: () => !checkpointLocked });
 let reasoningEffort = "off";
-const effortLevels = new Set(["off", "low", "high", "max"]);
+const validEffort = value => typeof value === "string" && /^[^\s\x00-\x1f\x7f]{1,64}$/u.test(value);
 let mcpEntries = [], mcpStatus = "", capturingMcp = false, pollingResources = false;
 let commandCancellation = 0;
 const inputQueue=createInputQueue({getSession:()=>runtime?.session,isRunning:()=>executing,
@@ -340,7 +340,7 @@ async function init(input) {
   globalThis[Symbol.for("umeko:recent-images-policy")] = { getLimit: () => config.agent?.maxContextImages };
   permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir, generation: input.generation, dangerousAllowed: input.dangerousAllowed === true };
   configureUmekoDocs({directory: input.docsDir || join(input.agentDir, "cache", "umeko-docs"), models: input.models});
-  reasoningEffort = effortLevels.has(input.reasoningEffort) ? input.reasoningEffort : "off";
+  reasoningEffort = validEffort(input.reasoningEffort) ? input.reasoningEffort : "off";
   setGateway(input.gateway);
   process.env.PI_CODING_AGENT_DIR = input.agentDir;
   for (const [name, value] of Object.entries(input.mcpEnv || {})) if (!/^NODE_|^(HTTP|HTTPS|ALL)_PROXY$|_(AK|SK|SECRET_KEY|SECURITY_TOKEN)$/i.test(name)) process.env[name] = value;
@@ -598,7 +598,7 @@ async function execute(input) {
   }
   if (input.type === "subagent-command") { await subagents.command(input); return; }
   if (input.type === "reasoning_effort") {
-    if (effortLevels.has(input.value)) reasoningEffort = input.value;
+    if (validEffort(input.value)) reasoningEffort = input.value;
     return;
   }
   if (["follow-up", "steer", "promote-queue", "edit-queue", "delete-queue", "steer-queued"].includes(input.type)) {
@@ -641,7 +641,7 @@ async function execute(input) {
   if (executing) { emit({ type: "error", message: "Pi 正在处理当前操作" }); return; }
   executing = true;
   try {
-    if (effortLevels.has(input.reasoningEffort)) reasoningEffort = input.reasoningEffort;
+    if (validEffort(input.reasoningEffort)) reasoningEffort = input.reasoningEffort;
     if (!runtime) {
       if (!input.gateway || !input.token || !Array.isArray(input.models)) throw new Error("Pi 尚未完成初始化，请重新加载会话后重试");
       await init(input);
