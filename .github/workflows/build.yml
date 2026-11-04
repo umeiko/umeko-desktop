@@ -118,8 +118,11 @@ jobs:
             ' _ "$1"
           }
           # Compare a full-core unit phase followed by four isolated UI workers.
-          isolated_tests unit_tests
-          bash scripts/ci-ui-smokes.bash --jobs "$(nproc)"
+          unit_status=0
+          isolated_tests unit_tests || unit_status=$?
+          ui_status=0
+          bash scripts/ci-ui-smokes.bash --jobs "$(nproc)" || ui_status=$?
+          if (( unit_status != 0 || ui_status != 0 )); then exit 1; fi
 
   windows-path-checks:
     name: Windows path regressions
