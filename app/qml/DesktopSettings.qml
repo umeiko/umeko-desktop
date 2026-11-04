@@ -6,6 +6,50 @@ Column {
     id: root
     objectName: "umekoDesktopSettings"
     spacing: 16
+    property bool startupSettingsReady: false
+    Component.onCompleted: {
+        startupSettingsReady = true
+        if (visible) backend.loginStartup.refresh()
+    }
+    onVisibleChanged: if (startupSettingsReady && visible) backend.loginStartup.refresh()
+    SectionCard {
+        width: parent.width
+        ColumnLayout {
+            width: parent.width; spacing: 20
+            Text { text: I18n.t("开机启动"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
+            RowLayout {
+                Layout.fillWidth: true; spacing: 8
+                Text { text: I18n.t("开机启动 Umeko"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(13); wrapMode: Text.Wrap; Layout.fillWidth: true }
+                HelpButton { help: I18n.t("登录系统后在托盘中启动 Umeko。"); Layout.alignment: Qt.AlignVCenter }
+                Toggle {
+                    objectName: "desktopLoginUmeko"
+                    enabled: backend.loginStartup.state.available
+                    checked: backend.loginStartup.state.umeko
+                    Accessible.name: I18n.t("开机启动 Umeko")
+                    onClicked: { const value = checked; checked = Qt.binding(function() { return backend.loginStartup.state.umeko }); backend.loginStartup.setEnabled(value, backend.loginStartup.state.proxy) }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true; spacing: 8
+                Text { text: I18n.t("开机启动 API 代理"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(13); wrapMode: Text.Wrap; Layout.fillWidth: true }
+                HelpButton { help: I18n.t("登录系统后在后台启动 API 代理，无需打开 Umeko 窗口。"); Layout.alignment: Qt.AlignVCenter }
+                Toggle {
+                    objectName: "desktopLoginProxy"
+                    enabled: backend.loginStartup.state.available
+                    checked: backend.loginStartup.state.proxy
+                    Accessible.name: I18n.t("开机启动 API 代理")
+                    onClicked: { const value = checked; checked = Qt.binding(function() { return backend.loginStartup.state.proxy }); backend.loginStartup.setEnabled(backend.loginStartup.state.umeko, value) }
+                }
+            }
+            Text {
+                objectName: "desktopLoginStartupReason"
+                Layout.fillWidth: true
+                visible: !backend.loginStartup.state.available && text.length > 0
+                text: I18n.t(backend.loginStartup.state.reason)
+                color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12); wrapMode: Text.Wrap
+            }
+        }
+    }
     SectionCard {
         width: parent.width
         RowLayout {

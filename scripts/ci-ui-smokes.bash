@@ -73,6 +73,8 @@ smokes=(
   tests/large_chat_ui_smoke.py
   tests/provider_error_ui_smoke.py
   tests/desktop_settings_ui_smoke.py
+  tests/login_startup_ui_smoke.py
+  tests/login_startup_launch_smoke.py
   tests/sidebar_highlight_ui_smoke.py
   tests/chat_loading_ui_smoke.py
   tests/scroll_paging_ui_smoke.py

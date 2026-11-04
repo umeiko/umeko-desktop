@@ -19,6 +19,8 @@ COMMON = [
 ]
 
 WINDOWS = [
+    # Unique disposable Run value, guarded again by GITHUB_ACTIONS in the test.
+    'tests.test_login_startup.WindowsCIRegistryTests',
     # Linux discovery cannot verify Windows QProcess cached/retiring cleanup.
     'tests.test_session_cache.SessionCacheTests.test_windows_cached_and_retiring_kernels_exit_on_app_close',
     'tests.test_runtime_paths',

@@ -154,6 +154,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.root = root
         self._app_about = AppAbout(self)
         self.store = Store()
+        from .login_session import LoginStartupSettings
+        self._login_startup = LoginStartupSettings(self, background='--login-startup' in sys.argv)
         self._init_characters()
         self.transcripts = TranscriptRepository(self.store.directory / 'cache/chat-index')
         self.store.data["themes"] = theme_library(self.store.data.get("themes"))
@@ -255,6 +257,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._desktop_plugins = DesktopPlugins(self)
         from .slash_commands import SlashCommands
         self._slash_commands = SlashCommands(self)
+
+    @Property(QObject, constant=True)
+    def loginStartup(self):
+        return self._login_startup
 
     @Property(QObject, constant=True)
     def slashCommands(self):

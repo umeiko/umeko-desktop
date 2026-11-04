@@ -227,6 +227,15 @@ Item {
                     const item = conversation.itemAtIndex(index);
                     if ((!item || !item.bodyReady) && conversation.restoreAttempts < 200)
                         return;
+                    // Nearby rows are loaded asynchronously too. In particular,
+                    // a short target near the tail can be clamped against a
+                    // following placeholder before its real height is known.
+                    for (let row = index + 1; row < Math.min(conversation.count, index + 4); row++) {
+                        const nearby = conversation.itemAtIndex(row);
+                        if ((!pane.messageModel.isReady(row) || (nearby && !nearby.bodyReady))
+                                && conversation.restoreAttempts < 200)
+                            return;
+                    }
                     const bottom = conversation.contentY + conversation.height;
                     const last = Math.min(index + 3, conversation.count - 1);
                     for (const row of conversation.contentItem.children) {
