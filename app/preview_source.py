@@ -137,7 +137,9 @@ class PreviewSource:
         if self._network is not None:
             self._network.close()
         self._network = PreviewNetwork(self.environment, lambda command: self._run(
-            command, timeout=120, environment=self.environment))
+            command, timeout=180, environment=self.environment),
+            python=self.python if self.python.is_file() else self.system_python,
+            cwd=self.checkout if self.checkout.is_dir() else None)
         try:
             return self._network.probe()
         except (OSError, ValueError, PreviewError, RuntimeError):

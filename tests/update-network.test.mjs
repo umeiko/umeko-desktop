@@ -101,7 +101,8 @@ test('proxy/direct failures report route codes without exposing credentials; can
 async function previewOptions(t,environment={}) {
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'umeko-preview-network-'));
   t.after(()=>fs.rm(directory,{recursive:true,force:true}));
-  return {environment,caFile:path.join(directory,'ca.pem'),certificateReader:()=>[ca]};
+  return {environment,caFile:path.join(directory,'ca.pem'),certificateReader:()=>[ca],
+    queryTransport:async({args})=>({stdout:args.includes('-c')?'[]':args.join(' ').includes('ca --json')?'null':args.join(' ').includes('cafile')?'null':''})};
 }
 test('shared routes keep explicit selection and remember the automatic winner',async()=>{
   const environment={UMEKO_UPDATE_PROXY:'http://user:fixture-secret@proxy.invalid:8080'}, network={}, seen=[];
@@ -129,7 +130,7 @@ test('preview Git probe falls back to direct, exports selected overrides, and re
   assert.equal(seen[1].env.PATH,'keep-python-path');assert.equal(seen[1].env.npm_config_registry,'https://registry.example.test');
   assert.equal(result.environment.PATH,undefined);assert.equal(result.environment.npm_config_registry,undefined);
   assert.equal(result.environment.HTTPS_PROXY,'');assert.equal(result.environment.NO_PROXY,'*');
-  assert.ok(result.removeEnvironment.includes('node_tls_reject_unauthorized'));
+  assert.ok(!result.removeEnvironment.includes('node_tls_reject_unauthorized'));
   assert.ok(!JSON.stringify({route:result.route,attempts:result.attempts}).includes('proxy.invalid'));
   assert.ok(!JSON.stringify(result).includes('fixture-secret'));
   assert.equal((await probePreviewNetwork(options,transport)).ok,true);
@@ -145,28 +146,50 @@ test('preview trust file merges default, extra and system roots through updater 
   assert.equal(result.environment.GIT_SSL_CAINFO,options.caFile);
   assert.equal(result.environment.NODE_EXTRA_CA_CERTS,options.caFile);
 });
-test('preview environments replace conflicting proxy and TLS settings while preserving unrelated configuration',()=>{
-  const base={PATH:'python-dir',npm_config_registry:'https://npm.example.test',ALL_PROXY:'socks5://old.invalid',all_proxy:'old',NO_PROXY:'old',npm_proxy:'old',PIP_PROXY:'old',GIT_SSL_NO_VERIFY:'1',NODE_TLS_REJECT_UNAUTHORIZED:'0',GIT_CONFIG_COUNT:'1',GIT_CONFIG_KEY_0:'core.autocrlf',GIT_CONFIG_VALUE_0:'true'};
+test('preview changes the route while preserving native verification and bypass choices',()=>{
+  const base={PATH:'python-dir',npm_config_registry:'https://npm.example.test',ALL_PROXY:'socks5://old.invalid',all_proxy:'old',NO_PROXY:'keep.example.test',npm_proxy:'old',PIP_PROXY:'old',PIP_TRUSTED_HOST:'packages.example.test',npm_config_strict_ssl:'false',GIT_SSL_NO_VERIFY:'1',NODE_TLS_REJECT_UNAUTHORIZED:'0',GIT_CONFIG_COUNT:'1',GIT_CONFIG_KEY_0:'http.sslVerify',GIT_CONFIG_VALUE_0:'false'};
   const env=previewEnvironment(base,'http://proxy.invalid:8080','fixture-ca.pem');
   for(const name of ['HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','http_proxy','https_proxy','all_proxy','PIP_PROXY','npm_config_proxy','npm_config_https_proxy'])assert.equal(env[name],'http://proxy.invalid:8080');
-  assert.equal(env.NO_PROXY,'');assert.equal(env.no_proxy,'');assert.equal(env.npm_config_noproxy,'');
-  assert.equal(env.npm_proxy,undefined);assert.equal(env.GIT_SSL_NO_VERIFY,undefined);assert.equal(env.NODE_TLS_REJECT_UNAUTHORIZED,undefined);
-  assert.equal(env.npm_config_strict_ssl,'true');assert.equal(env.GIT_CONFIG_COUNT,'9');
-  assert.equal(env.PIP_TRUSTED_HOST,' ');assert.equal(env.UMEKO_PREVIEW_DIRECT,'0');
-  assert.equal(env.GIT_CONFIG_KEY_0,'core.autocrlf');assert.equal(env.GIT_CONFIG_VALUE_0,'true');
+  assert.equal(env.NO_PROXY,base.NO_PROXY);assert.equal(env.no_proxy,undefined);assert.equal(env.npm_config_noproxy,undefined);
+  assert.equal(env.npm_proxy,undefined);assert.equal(env.GIT_SSL_NO_VERIFY,'1');assert.equal(env.NODE_TLS_REJECT_UNAUTHORIZED,'0');
+  assert.equal(env.npm_config_strict_ssl,'false');assert.equal(env.GIT_CONFIG_COUNT,'3');
+  assert.equal(env.PIP_TRUSTED_HOST,base.PIP_TRUSTED_HOST);assert.equal(env.UMEKO_PREVIEW_DIRECT,'0');
+  assert.equal(env.GIT_CONFIG_KEY_0,'http.sslVerify');assert.equal(env.GIT_CONFIG_VALUE_0,'false');
   assert.equal(env.GIT_CONFIG_KEY_1,'http.proxy');assert.equal(env.GIT_CONFIG_VALUE_1,'http://proxy.invalid:8080');
-  assert.equal(env.GIT_CONFIG_KEY_2,'http.sslVerify');assert.equal(env.GIT_CONFIG_VALUE_2,'true');
-  assert.equal(env.GIT_CONFIG_KEY_3,'http.proxySSLVerify');assert.equal(env.GIT_CONFIG_VALUE_3,'true');
-  assert.equal(env.GIT_CONFIG_KEY_6,'http.schannelUseSSLCAInfo');assert.equal(env.GIT_CONFIG_VALUE_6,'true');
-  assert.equal(env.GIT_CONFIG_KEY_7,'http.https://github.com/umeiko/umeko-desktop.git.proxy');
-  assert.equal(env.GIT_CONFIG_KEY_8,'http.https://github.com/umeiko/umeko-desktop.git.sslVerify');assert.equal(env.GIT_CONFIG_VALUE_8,'true');
-  for(const name of ['SSL_CERT_FILE','REQUESTS_CA_BUNDLE','CURL_CA_BUNDLE','PIP_CERT','npm_config_cafile','NODE_EXTRA_CA_CERTS','GIT_SSL_CAINFO','GIT_PROXY_SSL_CAINFO'])assert.equal(env[name],'fixture-ca.pem');
+  assert.equal(env.GIT_CONFIG_KEY_2,'http.https://github.com/umeiko/umeko-desktop.git.proxy');
+  for(const name of ['SSL_CERT_FILE','REQUESTS_CA_BUNDLE','CURL_CA_BUNDLE','NODE_EXTRA_CA_CERTS'])assert.equal(env[name],'fixture-ca.pem');
+  for(const name of ['PIP_CERT','npm_config_cafile','GIT_SSL_CAINFO','GIT_PROXY_SSL_CAINFO'])assert.equal(env[name],undefined);
   assert.equal(env.PATH,base.PATH);assert.equal(env.npm_config_registry,base.npm_config_registry);
   const direct=previewEnvironment(base,'','fixture-ca.pem');
-  assert.equal(direct.HTTPS_PROXY,'');assert.equal(direct.ALL_PROXY,'');assert.equal(direct.PIP_PROXY,'');assert.equal(direct.NO_PROXY,'*');assert.equal(direct.npm_config_noproxy,'*');
+  assert.equal(direct.HTTPS_PROXY,'');assert.equal(direct.ALL_PROXY,'');assert.equal(direct.PIP_PROXY,'');assert.equal(direct.NO_PROXY,'keep.example.test,*');assert.equal(direct.no_proxy,'keep.example.test,*');assert.equal(direct.npm_config_noproxy,'*');
   assert.equal(direct.UMEKO_PREVIEW_DIRECT,'1');
   assert.equal(direct.npm_config_proxy,'null');assert.equal(direct.npm_config_https_proxy,'null');
   assert.equal(direct.UMEKO_UPDATE_PROXY,'');assert.equal(env.UMEKO_UPDATE_PROXY,'http://proxy.invalid:8080');
+});
+test('preview adds configured CA files and npm inline trust to the updater bundle',async t=>{
+  const options=await previewOptions(t), directory=path.dirname(options.caFile);
+  const files={};
+  for(const name of ['pip','npm','requests','git']){files[name]=path.join(directory,name+'.pem');await fs.writeFile(files[name],`# ${name} fixture\n`+ca);}
+  options.environment={REQUESTS_CA_BUNDLE:files.requests,NO_PROXY:'keep.example.test'};
+  options.queryTransport=async({command,args})=>({stdout:args.includes('-c')?JSON.stringify([files.pip]):args.join(' ').includes('cafile')?files.npm:args.join(' ').includes('ca --json')?JSON.stringify(['# inline npm fixture\n'+ca]):files.git+'\n'});
+  const result=await probePreviewNetwork(options,async()=>({stdout:'fixture refs/heads/main'}));
+  assert.equal(result.ok,true);
+  const bundle=await fs.readFile(options.caFile,'utf8');
+  assert.ok(bundle.startsWith(ca+'\n'));
+  for(const name of Object.keys(files))assert.ok(bundle.includes(`# ${name} fixture\n`+ca));
+  assert.ok(bundle.includes('# inline npm fixture\n'+ca));
+  for(const key of ['PIP_CERT','npm_config_cafile','GIT_SSL_CAINFO','REQUESTS_CA_BUNDLE'])assert.equal(result.environment[key],options.caFile);
+});
+test('preview leaves a tool CA setting untouched when its native query is unreliable',async t=>{
+  const base={PIP_CERT:'pip-custom.pem',npm_config_cafile:'npm-custom.pem',GIT_SSL_CAINFO:'git-custom.pem'};
+  const options=await previewOptions(t,base);
+  options.queryTransport=async()=>{throw Error('fixture query unavailable');};
+  const result=await probePreviewNetwork(options,async call=>{
+    for(const [key,value] of Object.entries(base))assert.equal(call.env[key],value);
+    return {stdout:'fixture refs/heads/main'};
+  });
+  assert.equal(result.ok,true);
+  for(const key of Object.keys(base)){assert.equal(result.environment[key],undefined);assert.ok(!result.removeEnvironment.includes(key.toLowerCase()));}
 });
 test('preview direct route clears a configured npm proxy without changing its file',async t=>{
   const {execFile}=await import('node:child_process');

@@ -22,7 +22,7 @@ class PreviewNetworkTests(unittest.TestCase):
 
     def selected_network(self, proxy):
         def helper(command):
-            ca = command[-1]
+            ca = command[3]
             Path(ca).write_text("fixture CA", encoding="utf-8")
             overrides = {key: ca for key in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
                          "PIP_CERT", "npm_config_cafile", "NODE_EXTRA_CA_CERTS", "GIT_SSL_CAINFO")}
@@ -119,16 +119,93 @@ class PreviewNetworkTests(unittest.TestCase):
         self.assertEqual(len({network_failure(key)["detail"] for key in NETWORK_MESSAGES}), 5)
         self.assertEqual(network_failure("unrecognized"), network_failure("other"))
 
-    def test_pip_direct_argument_overrides_config_proxy_and_clears_trusted_hosts(self):
+    def test_pip_direct_argument_overrides_only_the_config_proxy(self):
         from pip._internal.commands import create_command
         config = self.directory / "pip.ini"
-        config.write_text("[global]\nproxy = http://stale.invalid:8080\ntrusted-host = unverified.invalid\n", encoding="utf-8")
-        with patch.dict(os.environ, {"PIP_CONFIG_FILE": str(config), "PIP_PROXY": "", "PIP_TRUSTED_HOST": " "}):
+        cert = self.directory / "pip-ca.pem"
+        cert.write_text("fixture CA", encoding="utf-8")
+        config.write_text(f"[global]\nproxy = http://stale.invalid:8080\ncert = {cert}\ntrusted-host = packages.example.test\nindex-url = https://packages.example.test/simple\n", encoding="utf-8")
+        with patch.dict(os.environ, {"PIP_CONFIG_FILE": str(config), "PIP_PROXY": "", "PIP_TRUSTED_HOST": "packages.example.test", "PIP_CERT": str(cert)}):
             inherited, _ = create_command("install").parse_args([])
             direct, _ = create_command("install").parse_args(["--proxy="])
         self.assertEqual(inherited.proxy, "http://stale.invalid:8080")
         self.assertEqual(direct.proxy, "")
-        self.assertEqual(direct.trusted_hosts, [])
+        self.assertEqual(direct.trusted_hosts, ["packages.example.test"])
+        self.assertEqual(direct.cert, str(cert))
+        self.assertEqual(direct.index_url, "https://packages.example.test/simple")
+
+    def test_native_tool_queries_add_user_ca_files_without_changing_tool_choices(self):
+        root = Path(__file__).resolve().parents[1]
+        updater_ca = root / "tests/fixtures/update-tls/ca.pem"
+        ca = updater_ca.read_text(encoding="utf-8")
+        files = {}
+        for name in ("pip", "npm", "requests", "git"):
+            files[name] = self.directory / (name + ".pem")
+            files[name].write_text(ca + f"\n# {name} fixture\n", encoding="utf-8")
+        pip_config = self.directory / "pip.ini"
+        pip_config.write_text(f"[global]\ncert = {files['pip']}\ntrusted-host = packages.example.test\nindex-url = https://packages.example.test/simple\n", encoding="utf-8")
+        npm_config = self.directory / ".npmrc"
+        npm_config.write_text(f"cafile={files['npm'].as_posix()}\nstrict-ssl=false\nregistry=https://registry.example.test/\n", encoding="utf-8")
+        git_config = self.directory / ".gitconfig"
+        git_config.write_text(f'[http]\nsslCAInfo = "{files["git"].as_posix()}"\nsslVerify = false\n', encoding="utf-8")
+        empty = self.directory / "empty-config"
+        empty.write_text("", encoding="utf-8")
+        original = {file: file.read_bytes() for file in (pip_config, npm_config, git_config)}
+        # Every tool reads only this fixture's config locations, never the
+        # developer's profile; all transport calls below are injected fakes.
+        environment = {key: value for key, value in os.environ.items() if not key.upper().startswith((
+            "PIP_", "NPM_CONFIG_", "GIT_CONFIG", "GIT_SSL", "GIT_PROXY_SSL", "NODE_EXTRA_CA", "NODE_TLS", "SSL_CERT", "REQUESTS_CA", "CURL_CA"))}
+        environment.update(HOME=str(self.directory), USERPROFILE=str(self.directory),
+            APPDATA=str(self.directory), LOCALAPPDATA=str(self.directory), PROGRAMDATA=str(self.directory),
+            XDG_CONFIG_HOME=str(self.directory), XDG_CONFIG_DIRS=str(self.directory),
+            PIP_CONFIG_FILE=str(pip_config), NPM_CONFIG_USERCONFIG=str(npm_config),
+            NPM_CONFIG_GLOBALCONFIG=str(empty), NPM_CONFIG_CACHE=str(self.directory / "npm-cache"),
+            GIT_CONFIG_GLOBAL=str(git_config), GIT_CONFIG_NOSYSTEM="1",
+            REQUESTS_CA_BUNDLE=str(files["requests"]), NO_PROXY="keep.example.test")
+        options = {"caFile": str(self.directory / "combined.pem"), "python": sys.executable,
+                   "cwd": str(self.directory), "fixture": str(updater_ca), "proxy": ""}
+        script = """import fs from 'node:fs';
+const {probePreviewNetwork}=await import(process.argv[1]);
+const options=JSON.parse(process.argv[2]);
+options.certificateReader=()=>[fs.readFileSync(options.fixture,'utf8')];
+const result=await probePreviewNetwork(options,async()=>({stdout:'fixture refs/heads/main'}));
+console.log(JSON.stringify(result));"""
+        result = subprocess.run([shutil.which("node"), "--input-type=module", "-e", script,
+            (root / "runtime/preview-network.mjs").as_uri(), json.dumps(options)],
+            cwd=self.directory, env=environment, capture_output=True, text=True, timeout=40,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        network = json.loads(result.stdout)
+        self.assertTrue(network["ok"], network)
+        bundle = Path(options["caFile"]).read_text(encoding="utf-8")
+        self.assertTrue(bundle.startswith(ca + "\n"))
+        for name in files:
+            self.assertIn(f"# {name} fixture", bundle)
+        for key in ("PIP_CERT", "npm_config_cafile", "GIT_SSL_CAINFO", "REQUESTS_CA_BUNDLE"):
+            self.assertEqual(network["environment"][key], options["caFile"])
+        self.assertNotIn("PIP_TRUSTED_HOST", network["environment"])
+        self.assertNotIn("npm_config_strict_ssl", network["environment"])
+        self.assertEqual(network["environment"]["NO_PROXY"], "keep.example.test,*")
+        handed = dict(environment, **network["environment"])
+        with patch.dict(os.environ, handed, clear=True):
+            from pip._internal.commands import create_command
+            pip_options, _ = create_command("install").parse_args(["--proxy="])
+        self.assertEqual(pip_options.cert, options["caFile"])
+        self.assertEqual(pip_options.trusted_hosts, ["packages.example.test"])
+        self.assertEqual(pip_options.index_url, "https://packages.example.test/simple")
+        git = subprocess.run(["git", "config", "--get", "http.sslVerify"], cwd=self.directory,
+            env=handed, capture_output=True, text=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        self.assertEqual(git.stdout.strip(), "false")
+        npm_command = ([environment.get("COMSPEC", "cmd.exe"), "/d", "/c", "npm.cmd --prefix runtime config get strict-ssl"]
+                       if os.name == "nt" else ["npm", "--prefix", "runtime", "config", "get", "strict-ssl"])
+        npm = subprocess.run(npm_command, cwd=self.directory, env=handed,
+            capture_output=True, text=True, timeout=15,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        self.assertEqual(npm.returncode, 0, npm.stderr)
+        self.assertEqual(npm.stdout.strip(), "false")
+        for file, content in original.items():
+            self.assertEqual(file.read_bytes(), content)
 
     def test_unsupported_route_is_explained_when_direct_also_fails(self):
         result = {"ok": False, "category": "dns", "attempts": [

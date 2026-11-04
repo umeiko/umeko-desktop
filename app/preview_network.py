@@ -19,12 +19,13 @@ UNSUPPORTED_PROXY_HINT = "依赖下载脚本不支持 SOCKS 或 HTTPS 代理；�
 
 
 class PreviewNetwork:
-    def __init__(self, environment, run):
+    def __init__(self, environment, run, *, python=None, cwd=None):
         self.environment = dict(environment)
         self.run = run
         self.temporary = tempfile.TemporaryDirectory(prefix="umeko-preview-network-")
         self.directory = Path(self.temporary.name)
         self.result = None
+        self.tools = {key: str(value) for key, value in {"python": python, "cwd": cwd}.items() if value}
 
     def _command(self, mode, file):
         from .pi_runtime import node_executable
@@ -32,7 +33,9 @@ class PreviewNetwork:
         return [node_executable(), str(root / "runtime/preview-network.mjs"), mode, str(file)]
 
     def probe(self):
-        self.result = json.loads(self.run(self._command("probe", self.directory / "ca.pem")))
+        configuration = self.directory / "tools.json"
+        configuration.write_text(json.dumps(self.tools), encoding="utf-8")
+        self.result = json.loads(self.run([*self._command("probe", self.directory / "ca.pem"), str(configuration)]))
         if not isinstance(self.result, dict) or type(self.result.get("ok")) is not bool:
             raise ValueError("Invalid Preview network result")
         return self.result

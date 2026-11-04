@@ -1,6 +1,7 @@
 // Private child-process network settings shared with the verified updater routes.
 // No machine settings, package-manager config files, or trust stores are changed.
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {X509Certificate} from 'node:crypto';
 import {withUpdateRoutes, updateCertificates} from './update-engine.mjs';
@@ -34,67 +35,134 @@ export function classifyPreviewFailure(raw) {
   return {category:'other',code:SAFE_CODES.has(code)?code:'PREVIEW_NETWORK'};
 }
 
-const removedNames=['http_proxy','https_proxy','all_proxy','no_proxy','npm_proxy','pip_proxy','pip_trusted_host','npm_config_proxy','npm_config_https_proxy','npm_config_noproxy','npm_config_cafile','npm_config_strict_ssl','ssl_cert_file','requests_ca_bundle','curl_ca_bundle','pip_cert','node_extra_ca_certs','node_tls_reject_unauthorized','git_ssl_no_verify','git_ssl_cainfo','git_proxy_ssl_cainfo'];
-function environmentSettings(base,proxy,caFile) {
+const removedNames=['http_proxy','https_proxy','all_proxy','npm_proxy','pip_proxy','npm_config_proxy','npm_config_https_proxy'];
+const caNames=['ssl_cert_file','requests_ca_bundle','curl_ca_bundle','pip_cert','node_extra_ca_certs','git_ssl_cainfo','git_proxy_ssl_cainfo','npm_config_cafile'];
+function environmentSettings(base,proxy,caFile,toolTrust={}) {
   const environment={...base}, overrides={};
   for(const key of Object.keys(environment))if(removedNames.includes(key.toLowerCase()))delete environment[key];
-  const put=(key,value)=>{environment[key]=overrides[key]=value;};
+  const put=(key,value)=>{
+    for(const existing of Object.keys(environment))if(existing.toLowerCase()===key.toLowerCase())environment[existing]=overrides[existing]=value;
+    environment[key]=overrides[key]=value;
+  };
   for(const name of ['HTTP_PROXY','HTTPS_PROXY','ALL_PROXY']){put(name,proxy);put(name.toLowerCase(),proxy);}
   put('UMEKO_UPDATE_PROXY',proxy);
-  put('NO_PROXY',proxy?'':'*');put('no_proxy',proxy?'':'*');
+  if(!proxy){
+    // urllib and other inherited clients need '*' to ignore stale native proxy
+    // settings on the selected direct route. Keep every existing bypass entry.
+    for(const name of ['NO_PROXY','no_proxy','npm_config_noproxy']){
+      const existing=Object.keys(base).filter(key=>key.toLowerCase()===name.toLowerCase()).map(key=>base[key]).filter(Boolean).join(',');
+      const value=existing.split(/[\s,]+/).includes('*')?existing:[existing,'*'].filter(Boolean).join(',');
+      put(name,value);
+    }
+  }
   // npm ignores empty env values too. Its typed null clears .npmrc proxies.
   for(const name of ['npm_config_proxy','npm_config_https_proxy'])put(name,proxy || 'null');
   put('PIP_PROXY',proxy);
   put('UMEKO_PREVIEW_DIRECT',proxy?'0':'1');
-  // pip skips empty environment values; whitespace explicitly empties its
-  // append-style trusted-host list instead of inheriting a verification bypass.
-  put('PIP_TRUSTED_HOST',' ');
-  put('npm_config_noproxy',proxy?'':'*');put('npm_config_strict_ssl','true');
-  for(const name of ['SSL_CERT_FILE','REQUESTS_CA_BUNDLE','CURL_CA_BUNDLE','PIP_CERT','npm_config_cafile','NODE_EXTRA_CA_CERTS','GIT_SSL_CAINFO','GIT_PROXY_SSL_CAINFO'])put(name,caFile);
+  // Only add trust; verification flags and native indexes/registries stay intact.
+  for(const name of ['SSL_CERT_FILE','REQUESTS_CA_BUNDLE','CURL_CA_BUNDLE','NODE_EXTRA_CA_CERTS'])put(name,caFile);
+  if(toolTrust.pip)put('PIP_CERT',caFile);
+  if(toolTrust.npm)put('npm_config_cafile',caFile);
+  if(toolTrust.git)for(const name of ['GIT_SSL_CAINFO','GIT_PROXY_SSL_CAINFO'])put(name,caFile);
   // Command-scope Git settings override inherited generic file settings without
   // writing ~/.gitconfig. Keep unrelated existing command-scope settings.
   const countKey=Object.keys(environment).find(key=>key.toUpperCase()==='GIT_CONFIG_COUNT');
   const count=Number(countKey?environment[countKey]:0);
   if(!Number.isSafeInteger(count)||count<0||count>10000)throw Object.assign(Error('Invalid Git environment'),{code:'PREVIEW_HELPER_UNAVAILABLE'});
   if(countKey && countKey!=='GIT_CONFIG_COUNT')delete environment[countKey];
-  const settings=[['http.proxy',proxy],['http.sslVerify','true'],['http.proxySSLVerify','true'],['http.sslCAInfo',caFile],['http.proxySSLCAInfo',caFile],['http.schannelUseSSLCAInfo','true'],[`http.${UPSTREAM}.proxy`,proxy],[`http.${UPSTREAM}.sslVerify`,'true']];
+  const settings=[['http.proxy',proxy],[`http.${UPSTREAM}.proxy`,proxy]];
   settings.forEach(([key,value],index)=>{put(`GIT_CONFIG_KEY_${count+index}`,key);put(`GIT_CONFIG_VALUE_${count+index}`,value);});
   put('GIT_CONFIG_COUNT',String(count+settings.length));
   return {environment,overrides,removeEnvironment:[...removedNames,'git_config_count']};
 }
-export function previewEnvironment(base,proxy,caFile) {
-  return environmentSettings(base,proxy,caFile).environment;
+export function previewEnvironment(base,proxy,caFile,toolTrust={}) {
+  return environmentSettings(base,proxy,caFile,toolTrust).environment;
 }
 
-async function commandTransport({command,args,env,signal}) {
+async function commandTransport({command,args,env,signal,cwd,timeout=60000}) {
   return new Promise((resolve,reject)=>{
-    const child=spawn(command,args,{env,windowsHide:true,stdio:['ignore','pipe','pipe'],signal});
-    let stdout='',stderr='';
-    const bounded=(current,chunk)=>(current+chunk.toString()).slice(-65536);
+    const child=spawn(command,args,{env,cwd,windowsHide:true,stdio:['ignore','pipe','pipe'],signal});
+    let stdout='',stderr='',truncated=false;
+    const bounded=(current,chunk)=>{const value=current+chunk.toString();if(value.length>65536)truncated=true;return value.slice(-65536);};
     child.stdout.on('data',chunk=>{stdout=bounded(stdout,chunk);});
     child.stderr.on('data',chunk=>{stderr=bounded(stderr,chunk);});
     let timedOut=false;
-    const timer=setTimeout(()=>{timedOut=true;child.kill();},60000);
+    const timer=setTimeout(()=>{timedOut=true;child.kill();},timeout);
     child.on('error',error=>{clearTimeout(timer);reject(error);});
     child.on('close',code=>{
       clearTimeout(timer);
       if(timedOut)reject(Object.assign(Error('Preview request timed out'),{code:'ETIMEDOUT'}));
-      else if(code===0)resolve({stdout});
-      else reject(Object.assign(Error('Preview request failed'),{stdout,stderr}));
+      else if(code===0)resolve({stdout,truncated});
+      else reject(Object.assign(Error('Preview request failed'),{stdout,stderr,exitCode:code}));
     });
   });
+}
+
+// pip prints Python repr values, including escaped Windows paths. Let Python
+// decode them with literal_eval rather than guessing or evaluating tool output.
+const pipCaQuery=String.raw`import ast,json,os,subprocess,sys
+r=subprocess.run([sys.executable,'-m','pip','config','list'],capture_output=True,text=True,timeout=10,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+if r.returncode: sys.exit(1)
+paths=[]
+for line in r.stdout.splitlines():
+    key,sep,value=line.partition('=')
+    if sep and key.endswith('.cert'):
+        value=ast.literal_eval(value)
+        if not isinstance(value,str): sys.exit(1)
+        paths.append(value)
+print(json.dumps(paths))`;
+
+async function nativeTrust(options,base) {
+  const query=options.queryTransport || commandTransport;
+  const run=async(command,args,absent=false)=>{
+    try{const result=await query({command,args,env:base,cwd:options.cwd,signal:options.signal,timeout:15000});
+      if(result.truncated)throw Error('Incomplete tool config');return result.stdout;}
+    catch(error){if(absent && error.exitCode===1 && !error.stdout && !error.stderr)return '';throw error;}
+  };
+  const npm=args=>process.platform==='win32'
+    ?run(base.ComSpec || base.COMSPEC || 'cmd.exe',['/d','/c',`npm.cmd --prefix runtime config get ${args}`])
+    :run('npm',['--prefix','runtime','config','get',...args.split(' ')]);
+  const [pip,npmTrust,git]=await Promise.allSettled([
+    (async()=>{const paths=JSON.parse(await run(options.python || (process.platform==='win32'?'python':'python3'),['-c',pipCaQuery]));
+      if(!Array.isArray(paths)||!paths.every(value=>typeof value==='string'))throw Error('Invalid pip config');return {paths};})(),
+    (async()=>{const [file,raw]=await Promise.all([npm('cafile'),npm('ca --json')]);
+      const value=JSON.parse(raw), certificates=value===null?[]:Array.isArray(value)?value:[value];
+      if(!certificates.every(value=>typeof value==='string'))throw Error('Invalid npm config');
+      const configured=file.replace(/\r?\n$/,'');
+      return {paths:configured==='null'?[]:[configured],certificates};})(),
+    (async()=>({paths:await Promise.all([
+      run(options.git || 'git',['config','--get','http.sslCAInfo'],true),
+      run(options.git || 'git',['config','--get-urlmatch','http.sslCAInfo',UPSTREAM],true),
+      run(options.git || 'git',['config','--get','http.proxySSLCAInfo'],true),
+    ]).then(values=>values.map(value=>value.replace(/\r?\n$/,'')))}))(),
+  ]);
+  const paths=Object.entries(base).filter(([key])=>caNames.includes(key.toLowerCase())).map(([,value])=>value);
+  const certificates=[], toolTrust={};
+  for(const [name,result] of [['pip',pip],['npm',npmTrust],['git',git]]){
+    toolTrust[name]=result.status==='fulfilled';
+    if(toolTrust[name]){paths.push(...result.value.paths);certificates.push(...result.value.certificates || []);}
+  }
+  for(const file of new Set(paths.filter(Boolean))){
+    // Missing/unreadable configured files are deliberately silent. A failed
+    // tool query, however, leaves that tool's CA override completely untouched.
+    try{certificates.push(await fs.readFile(path.resolve(options.cwd || '.',file),'utf8'));}catch{}
+  }
+  return {certificates,toolTrust};
 }
 
 export async function probePreviewNetwork(options={},transport=options.transport || commandTransport) {
   const base=options.environment || process.env, attempts=[], network=options.network || {};
   const cancelled=()=>options.signal?.aborted || options.cancelled?.();
+  let toolTrust;
   try {
     if(cancelled())throw Object.assign(Error('Cancelled'),{code:'PREVIEW_CANCELLED'});
     const certificates=updateCertificates(options.certificateReader);
     if(!certificates.length)throw Error('Empty CA bundle');
     for(const certificate of certificates)new X509Certificate(certificate);
     if(!options.caFile)throw Error('Missing CA file');
-    await fs.writeFile(options.caFile,certificates.join('\n')+'\n',{mode:0o600});
+    const native=await nativeTrust(options,base);
+    toolTrust=native.toolTrust;
+    await fs.writeFile(options.caFile,[...certificates,...native.certificates].join('\n')+'\n',{mode:0o600});
     await fs.chmod(options.caFile,0o600);
   } catch(error) {
     return {ok:false,category:error.code==='PREVIEW_CANCELLED'?'other':'certificate',code:error.code==='PREVIEW_CANCELLED'?'PREVIEW_CANCELLED':'PREVIEW_CA_INVALID',attempts};
@@ -108,7 +176,7 @@ export async function probePreviewNetwork(options={},transport=options.transport
         // probe on those routes would incorrectly promise Python download access.
         if(proxy){let protocol;try{protocol=new URL(proxy).protocol;}catch{}
           if(protocol!=='http:')throw Object.assign(Error('Unsupported preview proxy'),{code:'PREVIEW_PROXY_UNSUPPORTED',routeUnavailable:true});}
-        const settings=environmentSettings(base,proxy,options.caFile);
+        const settings=environmentSettings(base,proxy,options.caFile,toolTrust);
         const result=await transport({command:options.git || 'git',args:['ls-remote','--exit-code',UPSTREAM,'refs/heads/main'],env:settings.environment,signal:options.signal});
         if(cancelled())throw Object.assign(Error('Cancelled'),{code:'PREVIEW_CANCELLED'});
         const output=typeof result==='string'?result:result?.stdout;
@@ -129,8 +197,8 @@ export async function probePreviewNetwork(options={},transport=options.transport
 if(import.meta.main) {
   let result;
   try {
-    const [mode,file]=process.argv.slice(2);
-    if(mode==='probe')result=await probePreviewNetwork({caFile:file});
+    const [mode,file,configuration]=process.argv.slice(2);
+    if(mode==='probe')result=await probePreviewNetwork({...(configuration?JSON.parse(await fs.readFile(configuration,'utf8')):{}),caFile:file});
     else if(mode==='classify'){
       let raw='';
       if(file)raw=await fs.readFile(file,'utf8');
