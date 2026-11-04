@@ -12,6 +12,7 @@ from PySide6.QtGui import QGuiApplication
 from .npm_config import npm_environment
 from .preview_launch import channel_state, start_channel, wait_for_previous_process
 from .preview_source import PreviewSource, PreviewError
+from .preview_network import network_failure
 from .update import update_environment
 from .update_proxy import system_proxy
 
@@ -59,9 +60,7 @@ class PreviewChannel(QObject):
                             if key.lower().startswith('npm_config_')})
         # Provider network settings are deliberately not global update settings.
         proxy = system_proxy('https://github.com/umeiko/umeko-desktop.git')
-        if proxy:
-            environment.setdefault('HTTPS_PROXY', proxy)
-            environment.setdefault('HTTP_PROXY', proxy)
+        environment['UMEKO_UPDATE_PROXY'] = proxy
         if getattr(sys, 'frozen', False):
             from .pi_runtime import node_executable
             environment['PATH'] = str(Path(node_executable()).parent) + os.pathsep + environment.get('PATH', '')
@@ -85,6 +84,9 @@ class PreviewChannel(QObject):
                     self._manager.environment = environment
                 return operation(self._manager)
             except PreviewError as error:
+                if error.category:
+                    return {'state': 'error', 'message': error.message, **network_failure(error.category),
+                            **({'limitation': error.limitation} if error.limitation else {})}
                 return {'state': 'cancelled' if self._cancel.is_set() else 'error',
                         'message': error.message, 'detail': error.detail}
             except (OSError, ValueError, RuntimeError) as error:

@@ -21,8 +21,8 @@ ColumnLayout {
     function details() {
         const checks = root.channel.status.details
         if (checks && checks.length)
-            return checks.map(check => I18n.t(check.ready ? "已满足" : "未满足") + " · " + I18n.t(check.name) + ": " + String(check.detail || "").split("\n").map(line => I18n.t(line)).join("\n") + (check.ready ? "" : "\n" + root.remedy(check.name))).join("\n")
-        return String(root.channel.status.detail || "").split("\n").map(line => I18n.t(line)).join("\n")
+            return checks.map(check => I18n.t(check.ready ? "已满足" : "未满足") + " · " + I18n.t(check.name) + ": " + String(check.detail || "").split("\n").map(line => I18n.t(line)).join("\n") + (check.ready ? "" : "\n" + (check.hint ? I18n.t(check.hint) : root.remedy(check.name))) + (check.limitation ? "\n" + I18n.t(check.limitation) : "")).join("\n")
+        return String(root.channel.status.detail || "").split("\n").map(line => I18n.t(line)).join("\n") + (root.channel.status.hint ? "\n" + I18n.t(root.channel.status.hint) : "") + (root.channel.status.limitation ? "\n" + I18n.t(root.channel.status.limitation) : "")
     }
     spacing: 14
     RowLayout {

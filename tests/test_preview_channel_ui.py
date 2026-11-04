@@ -26,6 +26,8 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow
 import shiboken6
 from app.preview_channel import PreviewChannel
+from app.preview_network import NETWORK_MESSAGES, network_failure
+from app.preview_source import PreviewError
 from test_preview_channel import JobController, isolated_test_module, qt_application
 
 
@@ -349,6 +351,41 @@ class PreviewChannelUiTests(unittest.TestCase):
         self.assertNotIn("未满足", self.ui.find("previewChannelDetails").property("text"))
         self.assertEqual(self.ui.manager.preflight.call_count, 2)
         self.ui.manager.switch_to_preview.assert_not_called()
+        self.assertEqual(self.ui.warnings, [])
+
+    def test_network_failure_categories_and_hints_are_bilingual_and_private(self):
+        english = {
+            "certificate": ("Certificate problem", "root certificate"),
+            "proxy": ("Proxy problem", "HTTP proxy"),
+            "dns": ("DNS problem", "DNS and proxy"),
+            "timeout": ("Connection timed out", "network connectivity"),
+            "other": ("Other network problem", "required tools"),
+        }
+        for category, (label, hint) in NETWORK_MESSAGES.items():
+            for language in ("zh", "en"):
+                with self.subTest(category=category, language=language):
+                    failure = network_failure(category, [{"code": "PREVIEW_PROXY_UNSUPPORTED"}])
+                    self.finish_preflight([{"name": "官方 main 分支连接", "ready": False, **failure}], language)
+                    self.assertFalse(self.ui.find("preparePreviewButton").property("enabled"))
+                    text = self.ui.find("previewChannelDetails").property("text")
+                    expected_label, expected_hint = (label, hint) if language == "zh" else english[category]
+                    self.assertIn(expected_label, text)
+                    self.assertIn(expected_hint, text)
+                    self.assertIn("SOCKS", text)
+                    # A later fetch/setup error follows the same controller/UI contract.
+                    self.ui.status({}, channel="preview")
+                    self.ui.manager.check_update.side_effect = PreviewError(
+                        "预览版网络步骤失败。", "https://private.invalid/path user:secret@proxy.invalid", category, failure["limitation"])
+                    self.ui.click("checkPreviewUpdatesButton")
+                    self.ui.controller.finish()
+                    self.app.processEvents()
+                    text = self.ui.find("previewChannelDetails").property("text")
+                    self.assertIn(expected_label, text)
+                    self.assertIn(expected_hint, text)
+                    self.assertNotIn("private.invalid", text)
+                    self.assertNotIn("secret", text)
+                    self.assertIn("SOCKS", text)
+                    self.ui.status({}, channel="release")
         self.assertEqual(self.ui.warnings, [])
 
 

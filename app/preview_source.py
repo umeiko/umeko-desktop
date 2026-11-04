@@ -13,14 +13,18 @@ import tempfile
 import time
 from typing import Callable
 
+from .preview_network import PreviewNetwork, network_failure
+
 OFFICIAL_REPOSITORY = "https://github.com/umeiko/umeko-desktop.git"
 MINIMUM_FREE_BYTES = 2 * 1024 ** 3
 
 
 class PreviewError(RuntimeError):
-    def __init__(self, message: str, detail: str = ""):
+    def __init__(self, message: str, detail: str = "", category: str = "", limitation: str = ""):
         self.message = message
         self.detail = _redact(detail)[-16000:]
+        self.category = category
+        self.limitation = limitation
         super().__init__(message + ("\n" + self.detail if self.detail else ""))
 
 
@@ -44,6 +48,7 @@ class PreviewSource:
         self.cancelled = cancelled or (lambda: False)
         self.upstream = upstream
         self.system_python: str | None = None
+        self._network = None
 
     def read_state(self) -> dict:
         state = {"channel": "release", "releaseExecutable": "", "dependencyPending": False}
@@ -74,10 +79,12 @@ class PreviewSource:
         self.progress({"state": state, "message": message, "detail": _redact(detail)})
 
     def _run(self, args: list[str], cwd: Path | None = None, timeout: int = 120,
-             complete: bool = False) -> str:
+             complete: bool = False, network: bool = False, environment: dict | None = None) -> str:
         if self.cancelled():
             raise PreviewError("操作已取消")
-        env = self.environment.copy()
+        env = dict(self.environment if environment is None else environment)
+        if environment is None and self._network is not None:
+            env = self._network.apply(env)
         env["GIT_TERMINAL_PROMPT"] = "0"
         env["GCM_INTERACTIVE"] = "Never"
         # Disk-backed output avoids accumulating unbounded installation logs in RAM.
@@ -88,6 +95,8 @@ class PreviewSource:
                                            stderr=subprocess.STDOUT, creationflags=flags,
                                            start_new_session=os.name != "nt")
             except OSError as exc:
+                if network:
+                    raise self._network_error(str(exc)) from exc
                 raise PreviewError("命令无法启动", str(exc)) from exc
             started = time.monotonic()
             failure = ""
@@ -107,10 +116,40 @@ class PreviewSource:
             output.seek(max(0, size - 65536))
             detail = output.read().decode("utf-8", errors="replace")
             if failure:
+                if network and failure != "操作已取消":
+                    raise self._network_error("ETIMEDOUT" if failure == "命令执行超时" else detail)
                 raise PreviewError(failure, detail)
             if process.returncode:
+                if network:
+                    raise self._network_error(detail)
                 raise PreviewError("命令执行失败", detail)
             return detail.strip()
+
+    def _network_error(self, detail):
+        try:
+            category = self._network.classify(detail) if self._network else "other"
+        except (OSError, ValueError, PreviewError, RuntimeError):
+            category = "other"
+        failure = network_failure(category)
+        return PreviewError("预览版网络步骤失败。", failure["detail"], category)
+
+    def _prepare_network(self):
+        if self._network is not None:
+            self._network.close()
+        self._network = PreviewNetwork(self.environment, lambda command: self._run(
+            command, timeout=120, environment=self.environment))
+        try:
+            return self._network.probe()
+        except (OSError, ValueError, PreviewError, RuntimeError):
+            return {"ok": False, "category": "other"}
+
+    def _ensure_network(self):
+        if self.upstream != OFFICIAL_REPOSITORY:
+            return
+        result = self._network.result if self._network else self._prepare_network()
+        if not result or not result["ok"]:
+            failure = network_failure((result or {}).get("category", "other"), (result or {}).get("attempts", []))
+            raise PreviewError("预览版网络步骤失败。", failure["detail"], failure["category"], failure.get("limitation", ""))
 
     @staticmethod
     def _terminate(process):
@@ -151,14 +190,14 @@ class PreviewSource:
         raise PreviewError("未找到系统 Python 3.10+", "\n".join(failures))
 
     def preflight(self) -> dict:
-        """Probe tools/network/disk without creating a checkout or profile files."""
+        """Probe tools/disk and updater routes using a temporary CA bundle."""
         details = []
         release = self.release_executable or Path(self.read_state().get('releaseExecutable') or '')
         release_available = release.is_file()
         details.append({'name': '保留的正式版', 'ready': release_available, 'command': [],
                         'detail': '正式版启动程序可用' if release_available else '找不到正式版程序，无法切回'})
         details.append({'name': '网络与代理', 'ready': True, 'command': [],
-                        'detail': '沿用系统及 Git、pip、npm 各自的网络配置；供应商代理不适用于此操作。'})
+                        'detail': '按更新器策略尝试系统代理和直连，后续下载沿用成功路径及系统信任证书；供应商代理不适用于此操作。'})
 
         def probe(label, command, validate=lambda value: True):
             try:
@@ -194,7 +233,17 @@ class PreviewSource:
         free = shutil.disk_usage(ancestor).free
         details.append({"name": "磁盘空间 (至少 2 GiB)", "ready": free >= MINIMUM_FREE_BYTES,
                         "command": [], "detail": str(free) + " bytes free"})
-        probe("官方 main 分支连接", [git or "git", "ls-remote", "--exit-code", self.upstream, "refs/heads/main"], bool)
+        if self.upstream == OFFICIAL_REPOSITORY:
+            result = self._prepare_network()
+            check = {"name": "官方 main 分支连接", "ready": result["ok"], "command": []}
+            if result["ok"]:
+                check.update(detail="网络连接成功：" + result["route"], route=result["route"])
+            else:
+                check.update(network_failure(result.get("category", "other"), result.get("attempts", [])))
+            check["attempts"] = result.get("attempts", [])
+            details.append(check)
+        else:
+            probe("官方 main 分支连接", [git or "git", "ls-remote", "--exit-code", self.upstream, "refs/heads/main"], bool)
         return {"ready": all(item["ready"] for item in details), "details": details,
                 "detail": "\n".join(item["name"] + ": " + item["detail"] for item in details)}
 
@@ -208,6 +257,7 @@ class PreviewSource:
         return self.checkout / (".venv/Scripts/python.exe" if os.name == "nt" else ".venv/bin/python")
 
     def _setup(self):
+        self._ensure_network()
         self._emit("setup", "正在安装预览版依赖")
         if not self.system_python:
             self._select_python()
@@ -218,7 +268,7 @@ class PreviewSource:
             command = [self._setup_shell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(self.checkout / "setup.ps1")]
         else:
             command = [self._setup_shell(), str(self.checkout / "setup.sh")]
-        self._run(command, self.checkout, timeout=1800)
+        self._run(command, self.checkout, timeout=1800, network=self.upstream == OFFICIAL_REPOSITORY)
         self._verify()
 
     def _verify(self):
@@ -227,7 +277,10 @@ class PreviewSource:
         self._run([str(self.python), "-c", "import PySide6.QtCore, PySide6.QtGui, PySide6.QtWidgets"], self.checkout)
 
     def _git(self, *args: str) -> str:
-        return self._run(["git", "-C", str(self.checkout), *args], complete=True)
+        network = args[0] in ("fetch", "pull") and self.upstream == OFFICIAL_REPOSITORY
+        if network:
+            self._ensure_network()
+        return self._run(["git", "-C", str(self.checkout), *args], complete=True, network=network)
 
     def _origin(self):
         effective = self._git("remote", "get-url", "--all", "origin").splitlines()
@@ -256,7 +309,10 @@ class PreviewSource:
     def switch_to_preview(self) -> dict:
         preflight = self.preflight()
         if not preflight["ready"]:
-            raise PreviewError("预览版运行条件不满足", "\n".join(item["name"] + ": " + item["detail"] for item in preflight["details"] if not item["ready"]))
+            failed = [item for item in preflight["details"] if not item["ready"]]
+            category = next((item["category"] for item in failed if item.get("category")), "")
+            limitation = next((item["limitation"] for item in failed if item.get("limitation")), "")
+            raise PreviewError("预览版运行条件不满足", "\n".join(item["name"] + ": " + item["detail"] for item in failed), category, limitation)
         if self.checkout.exists():
             self._managed()
             self._branch()
@@ -266,7 +322,8 @@ class PreviewSource:
             self._emit("clone", "正在下载官方 main 分支")
             staging = Path(tempfile.mkdtemp(prefix="source-install-", dir=self.checkout.parent))
             try:
-                self._run(["git", "clone", "--branch", "main", "--single-branch", self.upstream, str(staging)], timeout=600)
+                self._run(["git", "clone", "--branch", "main", "--single-branch", self.upstream, str(staging)], timeout=600,
+                          network=self.upstream == OFFICIAL_REPOSITORY)
                 staging.rename(self.checkout)
             finally:
                 if staging.exists():

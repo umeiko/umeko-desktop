@@ -4,7 +4,10 @@ if (-not (Test-Path -LiteralPath '.venv/Scripts/python.exe')) {
     python -m venv .venv
     if ($LASTEXITCODE -ne 0) { throw 'Python venv creation failed' }
 }
-& '.venv/Scripts/python.exe' -m pip install -r requirements.txt
+$PreviewPipArgs = @()
+# An empty PIP_PROXY environment value does not override pip.ini.
+if ($env:UMEKO_PREVIEW_DIRECT -eq '1') { $PreviewPipArgs = @('--proxy=') }
+& '.venv/Scripts/python.exe' -m pip install @PreviewPipArgs -r requirements.txt
 if ($LASTEXITCODE -ne 0) { throw 'Qt dependency installation failed' }
 & '.venv/Scripts/python.exe' scripts/build-provider-resources.py
 if ($LASTEXITCODE -ne 0) { throw 'Provider resource preparation failed' }
