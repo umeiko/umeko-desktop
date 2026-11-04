@@ -176,7 +176,10 @@ test('preview direct route clears a configured npm proxy without changing its fi
   const globalconfig=path.join(path.dirname(options.caFile),'global-npmrc');
   const original='https-proxy=http://stale.invalid:8080\nproxy=http://stale.invalid:8080\n';
   await fs.writeFile(userconfig,original);await fs.writeFile(globalconfig,'');
-  const env=previewEnvironment({...process.env,NPM_CONFIG_USERCONFIG:userconfig,NPM_CONFIG_GLOBALCONFIG:globalconfig},'',options.caFile);
+  const profile=path.dirname(options.caFile), appdata=path.join(profile,'appdata');
+  await fs.mkdir(appdata);
+  const env=previewEnvironment({...process.env,HOME:profile,USERPROFILE:profile,APPDATA:appdata,LOCALAPPDATA:appdata,
+    NPM_CONFIG_CACHE:path.join(profile,'cache'),NPM_CONFIG_USERCONFIG:userconfig,NPM_CONFIG_GLOBALCONFIG:globalconfig},'',options.caFile);
   // This only reads npm's parsed configuration, without a registry request.
   const command=process.platform==='win32'?[process.env.ComSpec || 'cmd.exe',['/d','/c','npm.cmd config get https-proxy']]:['npm',['config','get','https-proxy']];
   const result=await promisify(execFile)(...command,{env,cwd:path.dirname(options.caFile),windowsHide:true});
