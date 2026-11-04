@@ -323,11 +323,12 @@ class UmekoControl(QObject):
                 if target.busy: raise ValueError('Session is still busy')
                 b.gateway.resolve(args['model'], args['provider'])
                 target.provider, target.model = args['provider'], args['model']
+                b._reconcile_reasoning(target)
                 target.context_usage = {}
                 if target is b._view:
                     b.store.data.update(selectedProvider=target.provider, selectedModel=target.model)
             else:
-                if args.get('value') not in ('off', 'low', 'high', 'max'): raise ValueError('Reasoning must be off, low, high or max')
+                if args.get('value') != 'off' and args.get('value') not in b._reasoning_levels(target): raise ValueError('Reasoning must be off or one of the configured model levels')
                 target.reasoning_effort = args['value']
                 if target.id: b.store.data['sessionMeta'].setdefault(target.id, {})['reasoningEffort'] = args['value']
                 if target is b._view: b.store.data['ui']['reasoningEffort'] = args['value']

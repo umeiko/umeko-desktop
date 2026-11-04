@@ -30,6 +30,7 @@ from .transcripts import preview
 from .chat_model import ChatModel
 from .transcript_index import TranscriptRepository
 from .model_context import context_suggestion
+from .model_reasoning import reasoning_levels, reconcile_effort
 from .provider_models import fetch_model_windows
 from .model_capabilities import normalize_model, vision_suggestion
 from .provider_plugins import ProviderPlugins
@@ -302,7 +303,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self._welcome_portraits = list(range(12))
             secrets.SystemRandom().shuffle(self._welcome_portraits)
         return SessionState(workspace=self.store.data["workspace"] if workspace is None else workspace,
-            reasoning_effort=self.store.data["ui"].get("reasoningEffort", "off") if self.store.data["ui"].get("reasoningEffort") in ("low", "high", "max") else "off",
+            reasoning_effort=reconcile_effort(self.store.data["ui"].get("reasoningEffort", "off"), self._reasoning_levels()),
             model=self.store.data["selectedModel"], provider=self.store.data["selectedProvider"], greeting=self._welcome_greetings.pop(), portrait=self._welcome_portraits.pop())
 
     def _activate(self, record):
@@ -335,6 +336,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             record.context_usage = {}
         if (record.provider, record.model) in available:
             self.store.data.update(selectedModel=record.model, selectedProvider=record.provider)
+        self._reconcile_reasoning(record)
         self._mark_read(record)
         self._viewport_save.start()
         # Rebinding every hidden settings page is expensive. Session-specific
@@ -1048,13 +1050,34 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def compacting(self):
         return self._view.compaction_running or (self._view.busy and self._view.action == "compact")
 
+    def _reasoning_levels(self, record=None):
+        provider_id = record.provider if record else self.store.data["selectedProvider"]
+        alias = record.model if record else self.store.data["selectedModel"]
+        provider = next((p for p in self.store.data["providers"] if p["id"] == provider_id), {})
+        model = next((m for m in provider.get("models", []) if m["alias"] == alias), {})
+        return reasoning_levels(model)
+
+    def _reconcile_reasoning(self, record):
+        value = reconcile_effort(record.reasoning_effort, self._reasoning_levels(record))
+        if value != record.reasoning_effort:
+            record.reasoning_effort = value
+            if record.id:
+                self.store.data["sessionMeta"].setdefault(record.id, {})["reasoningEffort"] = value
+            if record is self._view:
+                self.store.data["ui"]["reasoningEffort"] = value
+                self.reasoningChanged.emit()
+
+    @Property("QStringList", notify=changed)
+    def reasoningLevels(self):
+        return self._reasoning_levels(self._view)
+
     @Property(str, notify=reasoningChanged)
     def reasoningEffort(self):
         return self._view.reasoning_effort
 
     @Slot(str, result=bool)
     def setReasoningEffort(self, value):
-        if value not in ("off", "low", "high", "max"): return False
+        if value != "off" and value not in self.reasoningLevels: return False
         record = self._view
         record.reasoning_effort = value
         self.store.data["ui"]["reasoningEffort"] = value
@@ -1546,6 +1569,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self._view.context_usage = {}
         self.store.data.update(selectedProvider=provider, selectedModel=model)
         self._view.model, self._view.provider = model, provider
+        self._reconcile_reasoning(self._view)
         self.store.save()
         self.changed.emit()
         self.contextUsageChanged.emit()
@@ -1764,7 +1788,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             record.blocked_tools = clean_blocked_tools(self.store.data["sessionMeta"].get(session_id, {}).get("blockedTools"))
             record.pi_capabilities = self.store.data["sessionMeta"].get(session_id, {}).get("piCapabilities") or {}
             effort = self.store.data["sessionMeta"].get(session_id, {}).get("reasoningEffort", record.reasoning_effort)
-            record.reasoning_effort = effort if effort in ("off", "low", "high", "max") else "off"
+            record.reasoning_effort = effort
             record.history = copy.deepcopy(session.get("history", []))
             record.messages = copy.deepcopy(session.get("messages", []))
             record.model, record.provider = session.get("model") or record.model, session.get("provider") or record.provider

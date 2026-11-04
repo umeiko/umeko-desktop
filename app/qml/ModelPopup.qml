@@ -1,13 +1,14 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "ReasoningLevels.js" as Reasoning
 
 AnchoredPidPopup {
     id: root
     objectName: "modelPopup"
     property real heightLimit: 470
     fullWidth: 365
-    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 200))
+    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 230))
     signal configure()
     signal dismissed()
     onAboutToShow: modelSearch.clear()
@@ -48,26 +49,49 @@ AnchoredPidPopup {
             }
         }
         Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
-        RowLayout {
+        ColumnLayout {
             id: reasoningControls
             objectName: "reasoningControls"
-            Layout.fillWidth: true; spacing: 8
-            Repeater {
-                model: [{value:"off",label:I18n.t("关闭")},{value:"low",label:"Low"},{value:"high",label:"High"},{value:"max",label:"Max"}]
-                ActionButton {
-                    required property var modelData
-                    Layout.fillWidth: true; Layout.preferredWidth: 1; Layout.minimumWidth: 0
-                    objectName: "reasoningEffort_" + modelData.value
-                    text: modelData.label; quiet: true; primary: backend.reasoningEffort === modelData.value
-                    onClicked: backend.setReasoningEffort(modelData.value)
+            Layout.fillWidth: true; spacing: 3
+            readonly property var levels: { let values = ["off"]; for (const level of backend.reasoningLevels) values.push(level); return values }
+            RowLayout {
+                Layout.fillWidth: true
+                Text { text: I18n.t("思考强度"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
+                Item { Layout.fillWidth: true }
+                Text { objectName: "reasoningSelectedLabel"; text: backend.reasoningEffort === "off" ? I18n.t("关闭") : Reasoning.label(backend.reasoningEffort); textFormat: Text.PlainText; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12); Layout.maximumWidth: reasoningControls.width * 0.6; elide: Text.ElideRight }
+            }
+            Slider {
+                id: effortSlider; objectName: "reasoningEffortSlider"
+                Layout.fillWidth: true
+                from: 0; to: Math.max(1, reasoningControls.levels.length - 1)
+                stepSize: 1; snapMode: Slider.SnapAlways
+                enabled: reasoningControls.levels.length > 1
+                value: Math.max(0, reasoningControls.levels.indexOf(backend.reasoningEffort))
+                Accessible.name: I18n.t("思考强度")
+                onMoved: backend.setReasoningEffort(reasoningControls.levels[Math.round(value)])
+                Keys.onPressed: event => {
+                    if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
+                        backend.setReasoningEffort(reasoningControls.levels[event.key === Qt.Key_Home ? 0 : reasoningControls.levels.length - 1])
+                        event.accepted = true
+                    }
                 }
+                background: Rectangle { x: effortSlider.leftPadding; y: effortSlider.topPadding + effortSlider.availableHeight / 2 - height / 2; width: effortSlider.availableWidth; height: 4; radius: 2; color: Theme.line
+                    Rectangle { width: effortSlider.visualPosition * parent.width; height: parent.height; radius: 2; color: Theme.accent }
+                }
+                handle: Rectangle { x: effortSlider.leftPadding + effortSlider.visualPosition * (effortSlider.availableWidth - width); y: effortSlider.topPadding + effortSlider.availableHeight / 2 - height / 2; implicitWidth: 16; implicitHeight: 16; radius: 8; color: Theme.accent; border.color: effortSlider.activeFocus ? Theme.ink : Theme.bg; border.width: 2 }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Text { text: I18n.t("关闭"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10) }
+                Item { Layout.fillWidth: true }
+                Text { text: reasoningControls.levels.length > 1 ? Reasoning.label(reasoningControls.levels[reasoningControls.levels.length - 1]) : ""; textFormat: Text.PlainText; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10); Layout.maximumWidth: reasoningControls.width * 0.6; elide: Text.ElideRight }
             }
             HoverHandler { id: reasoningHover }
             HoverTip {
                 objectName: "reasoningEffortHint"
                 heading: I18n.t("思考强度")
                 active: root.desiredOpen && reasoningHover.hovered
-                text: I18n.t("关闭：不发送推理强度参数。\nLow / High / Max：以模型支持的档位为准。")
+                text: I18n.t("关闭时不发送推理强度参数。可在供应商的模型齿轮中配置支持的档位。")
             }
         }
         ActionButton { text: I18n.t("管理供应商与模型"); glyph: "sliders"; quiet: true; Layout.fillWidth: true; onClicked: { root.close(); root.configure() } }
