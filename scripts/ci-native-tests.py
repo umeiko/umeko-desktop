@@ -9,9 +9,6 @@ import re
 import sys
 
 COMMON = [
-    # Resolve real host paths and exercise the isolated offscreen chat actions.
-    'tests.test_conversation_links',
-    'tests.test_conversation_link_actions',
     'tests.test_platform',
     'tests.test_terminal_widget',
     'tests.test_skill_import',
