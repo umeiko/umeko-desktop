@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts.preview_release import collect_assets, digest, publish, select_matrix, verify_uploaded
+from scripts.preview_release import collect_assets, digest, publish, select_matrix, verify_uploaded, verify_build_run
 
 
 COMMIT = 'a' * 40
@@ -60,7 +60,7 @@ class PreviewReleaseTests(unittest.TestCase):
         self.assertEqual(len(list(self.output.iterdir())), 14)
         self.assertEqual(len(list(self.output.glob('*.dmg'))), 2)
 
-    def test_rejects_unverified_mismatched_dirty_or_corrupt_package(self):
+    def test_rejects_unverified_mismatched_or_corrupt_package(self):
         metadata, report = self.fixture()
         for field, value in [('gui', 'failed'), ('pi', 'failed'), ('terminal', 'failed'),
                              ('https', 'failed'), ('platform', 'linux-x64'),
@@ -71,12 +71,37 @@ class PreviewReleaseTests(unittest.TestCase):
                 metadata.write_text(json.dumps(broken))
                 with self.assertRaises(ValueError):
                     collect_assets(self.incoming, self.output, ['windows-x64'], COMMIT)
-        for field, value in [('commit', 'b' * 40), ('dirty', True)]:
+        for field, value in [('commit', 'b' * 40)]:
             broken = copy.deepcopy(report)
             broken['build'][field] = value
             metadata.write_text(json.dumps(broken))
             with self.assertRaises(ValueError):
                 collect_assets(self.incoming, self.output, ['windows-x64'], COMMIT)
+
+    def test_generated_icons_can_mark_verified_build_dirty(self):
+        metadata, report = self.fixture()
+        report['build']['dirty'] = True
+        metadata.write_text(json.dumps(report))
+        collect_assets(self.incoming, self.output, ['windows-x64'], COMMIT)
+        copied = json.loads((self.output / 'Umeko-preview-windows-x64.json').read_text())
+        self.assertTrue(copied['build']['dirty'])
+
+    def test_reuse_requires_successful_selected_native_jobs(self):
+        repo = 'umeiko/umeko-desktop'
+        run = dict(head_repository=dict(full_name=repo), path='.github/workflows/preview.yml',
+                   event='workflow_dispatch')
+        for conclusion in ['success', 'failure', 'cancelled']:
+            jobs = dict(jobs=[dict(name='Preview Windows x64', conclusion=conclusion)])
+            with patch('scripts.preview_release.gh', side_effect=[json.dumps(run), json.dumps(jobs)]):
+                if conclusion == 'success':
+                    verify_build_run(repo, '1234', ['windows-x64'])
+                else:
+                    with self.assertRaisesRegex(ValueError, 'No successful'):
+                        verify_build_run(repo, '1234', ['windows-x64'])
+        run['path'] = '.github/workflows/other.yml'
+        with patch('scripts.preview_release.gh', return_value=json.dumps(run)):
+            with self.assertRaisesRegex(ValueError, 'Not a trusted'):
+                verify_build_run(repo, '1234', ['windows-x64'])
 
     def test_missing_selected_platform_blocks_release(self):
         with self.assertRaises(FileNotFoundError):
@@ -120,6 +145,7 @@ class PreviewReleaseTests(unittest.TestCase):
         self.fixture()
         environment = dict(GITHUB_REPOSITORY='umeiko/umeko-desktop', GITHUB_RUN_ID='1234',
                            GITHUB_RUN_ATTEMPT='1', PREVIEW_COMMIT=COMMIT,
+                           PREVIEW_BUILD_RUN='1234',
                            PREVIEW_PLATFORMS='["windows-x64"]', PREVIEW_NOTES='Test preview',
                            GITHUB_STEP_SUMMARY=str(self.root / 'summary.md'))
         import os

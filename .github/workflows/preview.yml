@@ -29,6 +29,10 @@ on:
         description: Features or fixes included in this Preview
         type: string
         default: ''
+      build_run:
+        description: Optional successful Preview package run to reuse (blank builds fresh)
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -64,6 +68,7 @@ jobs:
 
   package:
     needs: prepare
+    if: inputs.build_run == ''
     name: Preview ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
@@ -156,6 +161,7 @@ jobs:
   publish:
     name: Publish verified Preview
     needs: [prepare, package]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && (needs.package.result == 'success' || (inputs.build_run != '' && needs.package.result == 'skipped')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -164,6 +170,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       PREVIEW_COMMIT: ${{ needs.prepare.outputs.commit }}
+      PREVIEW_BUILD_RUN: ${{ inputs.build_run || github.run_id }}
       PREVIEW_PLATFORMS: ${{ needs.prepare.outputs.platforms }}
       PREVIEW_NOTES: ${{ inputs.notes }}
     steps:

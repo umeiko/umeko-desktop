@@ -67,7 +67,9 @@ def collect_assets(incoming, output, platforms, commit):
         build = report['build']
         require(report['platform'] == platform and build['commit'] == commit,
                 'Artifact platform or source commit mismatch')
-        require(build.get('dirty') is False, 'Refusing a dirty build')
+        # build_icons.py regenerates tracked assets before recording metadata.
+        # The selected commit and successful native CI job establish provenance;
+        # retain the accurate dirty marker in the attached manifest.
         version = build['version']
         require(re.fullmatch(r'\d+\.\d+\.\d+', version), 'Invalid version')
         versions.add(version)
@@ -98,6 +100,19 @@ def gh(*args):
     return subprocess.check_output(['gh', *map(str, args)], text=True)
 
 
+def verify_build_run(repo, run, platforms):
+    require(run.isdigit(), 'Invalid build run')
+    metadata = json.loads(gh('api', f'repos/{repo}/actions/runs/{run}'))
+    require(metadata['head_repository']['full_name'] == repo
+            and metadata['path'] == '.github/workflows/preview.yml'
+            and metadata['event'] == 'workflow_dispatch', 'Not a trusted Preview build')
+    jobs = json.loads(gh('api', f'repos/{repo}/actions/runs/{run}/jobs?per_page=100'))['jobs']
+    for platform in platforms:
+        name = 'Preview ' + PLATFORMS[platform][0]
+        require(any(job['name'] == name and job['conclusion'] == 'success' for job in jobs),
+                f'No successful native package job for {platform}')
+
+
 def verify_uploaded(release, files):
     rows = {row['name']: row for row in release['assets']}
     require(set(rows) == {path.name for path in files}, 'Release assets do not match')
@@ -112,16 +127,19 @@ def publish():
     repo = os.environ['GITHUB_REPOSITORY']
     run = os.environ['GITHUB_RUN_ID']
     attempt = os.environ['GITHUB_RUN_ATTEMPT']
+    build_run = os.environ.get('PREVIEW_BUILD_RUN') or run
     commit = os.environ['PREVIEW_COMMIT']
     platforms = json.loads(os.environ['PREVIEW_PLATFORMS'])
     require(repo == 'umeiko/umeko-desktop', 'Unexpected repository')
     require(run.isdigit() and attempt.isdigit(), 'Invalid workflow run')
+    if build_run != run:
+        verify_build_run(repo, build_run, platforms)
     base = Path('.preview-release')
     incoming, output = base / 'input', base / 'publish'
     # Only this run's selected package artifacts; no older build or SDK assets.
     for platform in platforms:
         require(platform in PLATFORMS, 'Invalid platform')
-        gh('run', 'download', run, '--repo', repo, '--name', 'Preview-' + platform,
+        gh('run', 'download', build_run, '--repo', repo, '--name', 'Preview-' + platform,
            '--dir', incoming / ('Preview-' + platform))
     version = collect_assets(incoming, output, platforms, commit)
     tag = f'preview-v{version}-{run}-{attempt}'
@@ -133,7 +151,8 @@ def publish():
         + '手动构建的实验预览版，不替换正式版 Latest。 / Manually built experimental prerelease.\n\n'
         + f'- Source: [{commit}](https://github.com/{repo}/commit/{commit})\n'
         + f'- Platforms: {", ".join(platforms)}\n'
-        + f'- Verified CI: https://github.com/{repo}/actions/runs/{run}\n'
+        + f'- Verified build: https://github.com/{repo}/actions/runs/{build_run}\n'
+        + f'- Publication: https://github.com/{repo}/actions/runs/{run}\n'
         + '- Packaged GUI, Pi and terminal checks passed; build manifests and SHA-256 checksums are attached.\n',
         encoding='utf-8')
     # A unique tag per run attempt avoids overwriting another experiment.
