@@ -135,9 +135,12 @@ class PreviewReleaseTests(unittest.TestCase):
                                      digest='sha256:' + digest(path)))
             if args[:2] == ('release', 'edit'):
                 self.assertEqual(len(uploaded), 4)
-                self.assertTrue(any(c[0] == 'api' and '/releases/tags/' in c[1] for c in calls))
+                self.assertTrue(any(c[0] == 'api' and c[1].endswith('/releases/42') for c in calls))
                 state['draft'] = False
+            if args[:2] == ('release', 'view'):
+                return json.dumps(dict(databaseId=42))
             if args[0] == 'api':
+                self.assertNotIn('/releases/tags/', args[1], 'Draft tags are not published yet')
                 return json.dumps(dict(object=dict(sha=COMMIT)) if '/git/ref/' in args[1] else state)
             return ''
 

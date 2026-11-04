@@ -161,12 +161,15 @@ def publish():
        '--notes-file', notes, '--draft', '--prerelease', '--latest=false')
     for path in files:
         gh('release', 'upload', tag, path, '--repo', repo)
-    release = json.loads(gh('api', f'repos/{repo}/releases/tags/{tag}'))
+    # The releases/tags endpoint does not resolve an unpublished draft tag.
+    identifier = json.loads(gh('release', 'view', tag, '--repo', repo, '--json', 'databaseId'))['databaseId']
+    endpoint = f'repos/{repo}/releases/{identifier}'
+    release = json.loads(gh('api', endpoint))
     require(release['draft'] and release['prerelease']
             and release['target_commitish'] == commit, 'Unexpected draft release')
     verify_uploaded(release, files)
     gh('release', 'edit', tag, '--repo', repo, '--draft=false', '--prerelease', '--latest=false')
-    release = json.loads(gh('api', f'repos/{repo}/releases/tags/{tag}'))
+    release = json.loads(gh('api', endpoint))
     require(not release['draft'] and release['prerelease'], 'Preview was not published')
     actual_tag = json.loads(gh('api', f'repos/{repo}/git/ref/tags/{tag}'))
     require(actual_tag['object']['sha'] == commit, 'Preview tag points at another commit')
