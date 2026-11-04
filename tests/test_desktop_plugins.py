@@ -176,7 +176,7 @@ def create_plugin(context):return Fixture(context)
 
     def test_official_tree_is_lazy_bounded_and_closes_worker(self):
         directory=Path(self.host._view.workspace);(directory/'a.py').write_text('print(1)');(directory/'nested').mkdir();(directory/'nested/x.txt').write_text('hello')
-        self.assertEqual({row['id'] for row in self.manager.sessionPlugins},{'file-tree','git-viewer','global-agents','pi-manager','skill-manager'})
+        self.assertEqual({row['id'] for row in self.manager.sessionPlugins},{'file-tree','git-viewer','global-agents','pi-manager','skill-manager','widget-market'})
         self.assertNotIn('pi-manager',self.manager.workers)
         self.assertTrue(self.manager.openPage('file-tree'));result=self.call('list',{'path':'.'})
         self.assertTrue(result['ok']);entries=result['result']['entries'];self.assertEqual(entries[0]['name'],'nested')
@@ -561,6 +561,7 @@ def create_plugin(context):return Fixture(context)
         self.assertEqual(self.manager.page['config'],config)
         self.assertIs(self.manager.workers['file-tree'],worker)
     def test_recent_widget_is_remembered_per_workspace_and_only_uses_enabled_pages(self):
+        self.manager.setSessionEnabled('widget-market',False)
         first_workspace=self.host._view.workspace
         self.assertTrue(self.manager.openPage('file-tree'));self.manager.closePage()
         self.assertEqual(self.manager.recentPlugin['id'],'file-tree')
