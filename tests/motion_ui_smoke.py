@@ -63,8 +63,16 @@ try:
     assert max(direction*(position-path['destination']) for position in positions)>1, 'PID lost its damped overshoot'
     # Retarget while moving: retain position, velocity and integral, including
     # the brief motion in the old direction before reversing.
-    backend._view.id='2';backend.chatChanged.emit();QTest.qWait(5)
-    retarget=evaluate(motion,'trajectory.samples[0]')
+    backend._view.id='2';backend.chatChanged.emit()
+    assert evaluate(find('projectList'),'model[selectedRow].id')=='2','Selection did not bind to row 2'
+    # syncSelection normally runs through Qt.callLater. Sample and consume the
+    # changed selection in one GUI call, without a Python/event-loop gap between
+    # observations of the same retarget.
+    state,retarget=evaluate(motion,'''(function() {
+        const state = currentState()
+        target.updateTarget()
+        return [state, trajectory.samples[0]]
+    })()''')
     assert abs(retarget[0]-state[0])<20, (state,retarget)
     assert state[1]*retarget[1]>0 and abs(retarget[1])>1, (state,retarget)
     assert state[2]*retarget[2]>0, (state,retarget)

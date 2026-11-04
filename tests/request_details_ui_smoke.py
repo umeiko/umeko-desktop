@@ -106,7 +106,7 @@ try:
         'content':[{'type':'text','text':'Partial child answer'}], 'stopReason':'error','errorMessage':str(failure)}})+'\n',encoding='utf-8')
     backend.subagents.merge(record, {'id':'failed-child','status':'error','outputFile':str(native),'task':'Fixture'})
     backend.subagents.open('failed-child')
-    wait(lambda:not backend.subagents.context['loading'] and not find('webPane').property('moving'), 'Child error history did not load')
+    wait(lambda:not backend.subagents.context['loading'] and (pane:=find('webPane', required=False)) is not None and not pane.property('moving'), 'Child error history did not load')
     wait(lambda:(item := find('subagentRequestDetails_0', required=False)) is not None and item.isVisible(), 'Child request-details button is missing')
     click('subagentRequestDetails_0')
     wait(lambda:dialog.property('opened'), 'Child request-details button did not open the shared report')

@@ -79,7 +79,13 @@ try:
     def render(count):
         record.messages = [{"role": "assistant", "text": "已安排子智能体。", "tools": tools[:count]}]
         backend.chatChanged.emit()
-        QTest.qWait(200)
+        def rendered():
+            # The conversation body loads asynchronously after chatChanged.
+            window.grabWindow()
+            visible = [item.objectName() for item in items() if item.isVisible()]
+            cards = sum(name.startswith("subagentCard_") for name in visible)
+            return cards == count if count <= 4 else cards == 0 and "subagentGroupCard" in visible
+        wait(rendered, f"Subagent collection did not render {count} children")
 
     render(4)
     assert sum(item.objectName().startswith("subagentCard_") and item.isVisible() for item in items()) == 4

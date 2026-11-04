@@ -36,30 +36,55 @@ class PackageChangesTests(unittest.TestCase):
         bash = shutil.which('bash') if os.name != 'nt' else str(Path(shutil.which('git')).parents[1]/'bin/bash.exe') if shutil.which('git') else ''
         if not bash or not Path(bash).is_file():self.skipTest('Bash is unavailable')
         workflow=(ROOT/'.github/workflows/build.yml').read_text(encoding='utf-8')
-        block=textwrap.dedent(workflow.split('      - name: Python unit tests\n        run: |\n',1)[1].split('\n  windows-path-checks:',1)[0])
-        orchestration=block.split('          export -f unit_tests ui_smokes'.strip(),1)[1]
+        step=workflow.split('      - name: Python unit tests\n',1)[1].split('\n  windows-path-checks:',1)[0]
+        block=textwrap.dedent(step.split('        run: |\n',1)[1])
+        orchestration=block.split('export -f unit_tests',1)[1]
+        runner=(ROOT/'scripts/ci-ui-smokes.bash').read_text(encoding='utf-8')
+        smoke_names=('fixture_first_ui_smoke.py','fixture_second_ui_smoke.py')
+        before,after=runner.split('smokes=(\n',1)
+        _,after=after.split('\n)',1)
+        runner=before+'smokes=(\n'+''.join('  tests/'+name+'\n' for name in smoke_names)+')'+after
         fixture='''
 set -e
 export RUNNER_TEMP="$(pwd -P)"
 dbus-run-session() { if [[ "$1" == -- ]]; then shift; fi; export DBUS_SESSION_BUS_ADDRESS="fixture:$BASHPID"; "$@"; }
 gnome-keyring-daemon() { cat >/dev/null; }
+flock() { :; }
 # Validate every recursive cleanup target against this disposable workspace.
 rm() {
   target="$(realpath -- "${@: -1}")"
-  case "$target" in "$RUNNER_TEMP"/umeko-ci.*) command rm "$@";; *) return 77;; esac
+  case "$target" in "$RUNNER_TEMP"/umeko-ci.*|"$RUNNER_TEMP"/umeko-ui.*) command rm "$@";; *) return 77;; esac
 }
 unit_tests() { printf '%s\\n%s\\n' "$XDG_DATA_HOME" "$DBUS_SESSION_BUS_ADDRESS" > unit.env; return "$UNIT_STATUS"; }
-ui_smokes() { printf '%s\\n%s\\n' "$XDG_DATA_HOME" "$DBUS_SESSION_BUS_ADDRESS" > ui.env; return "$UI_STATUS"; }
-export -f unit_tests ui_smokes dbus-run-session gnome-keyring-daemon rm
+export -f unit_tests dbus-run-session gnome-keyring-daemon flock rm
 '''
         for unit,ui in ((0,0),(1,0),(0,1),(1,1)):
             with self.subTest(unit=unit,ui=ui), tempfile.TemporaryDirectory(prefix='umeko-ci-workers-') as temporary:
                 root=Path(temporary).resolve()
+                (root/'scripts').mkdir()
+                (root/'scripts/ci-ui-smokes.bash').write_text(runner,encoding='utf-8',newline='\n')
+                python=root/'.venv/bin/python';python.parent.mkdir(parents=True)
+                python.write_text('#!/usr/bin/env bash\n'
+                    'printf "%s\\n" "$XDG_DATA_HOME" "$DBUS_SESSION_BUS_ADDRESS" "$PI_CODING_AGENT_DIR" '
+                    '"$UMEKO_DATA_DIR" "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" > "${1##*/}.env"\n'
+                    'exit "$UI_STATUS"\n',encoding='utf-8',newline='\n')
+                python.chmod(0o755)
                 result=subprocess.run([bash,'-c',fixture+orchestration],cwd=root,
                     env=dict(os.environ,UNIT_STATUS=str(unit),UI_STATUS=str(ui)),
                     capture_output=True,text=True,timeout=20,
                     creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
                 self.assertEqual(result.returncode,1 if unit or ui else 0,result.stdout+result.stderr)
-                first=(root/'unit.env').read_text().splitlines();second=(root/'ui.env').read_text().splitlines()
-                self.assertNotEqual(first[0],second[0]);self.assertNotEqual(first[1],second[1])
+                first=(root/'unit.env').read_text().splitlines()
+                workers=[(root/(name+'.env')).read_text().splitlines() for name in smoke_names]
+                self.assertEqual(len({first[0],*(worker[0] for worker in workers)}),3)
+                self.assertEqual(len({first[1],*(worker[1] for worker in workers)}),3)
+                self.assertNotEqual(workers[0][2],workers[1][2])
+                for worker in workers:
+                    profile=worker[0].rsplit('/',1)[0]
+                    self.assertEqual(worker[2:],[profile+'/agent',profile+'/profile',profile+'/run',profile+'/config',profile+'/cache'])
                 self.assertFalse(list(root.glob('umeko-ci.*')))
+                self.assertFalse(list(root.glob('umeko-ui.*')))
+                results=list((root/'build').glob('ui-smokes.*/*.result'))
+                self.assertEqual(len(results),2)
+                for path in results:
+                    self.assertEqual(path.read_text().strip().split('\t')[2],str(ui))

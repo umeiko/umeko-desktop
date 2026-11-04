@@ -1,6 +1,6 @@
 """Decorate explicit web links in the unchanged rendered document."""
+import queue
 import threading
-import weakref
 
 from PySide6.QtCore import QObject, Property, Signal, Slot, QTimer
 from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor, QTextFormat
@@ -59,10 +59,14 @@ class TextLinks(QObject):
         self._color = QColor('#387756')
         self._applying, self._reading = False, False
         self._links, self._generation, self._pending = {}, 0, None
+        self._results = queue.SimpleQueue()
+        self._lifetime = {'alive': True, 'generation': 0}
+        lifetime = self._lifetime
+        self.destroyed.connect(lambda: lifetime.update(alive=False))
         self._applied_generation = -1
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
-        self._timer.timeout.connect(self._start)
+        self._timer.timeout.connect(self._poll)
         self.resolved.connect(self._deliver)
 
     def get_document(self): return self._quick
@@ -117,6 +121,7 @@ class TextLinks(QObject):
     def refresh(self):
         if self._applying: return
         self._generation += 1
+        self._lifetime['generation'] = self._generation
         self._pending = None
         if self._document is not None and self._enabled and self._active:
             plain, fragments = self._document.toPlainText(), []
@@ -135,14 +140,24 @@ class TextLinks(QObject):
                 self._timer.start(0)
         self.changed.emit()
 
+    def _poll(self):
+        if not self._reading:
+            self._start()
+            return
+        try:
+            generation, spans = self._results.get_nowait()
+        except queue.Empty:
+            self._timer.start(16)
+            return
+        self.resolved.emit(generation, spans)
+
     def _start(self):
         if self._reading or self._pending is None: return
         generation, plain, fragments, previous = self._pending
         self._pending, self._reading = None, True
-        reference = weakref.ref(self)
+        lifetime, results = self._lifetime, self._results
         def cancelled():
-            owner = reference()
-            return owner is None or not shiboken6.isValid(owner) or owner._generation != generation
+            return not lifetime['alive'] or lifetime['generation'] != generation
         def read():
             acquired = False
             try:
@@ -154,17 +169,18 @@ class TextLinks(QObject):
                 result = []
             finally:
                 if acquired: _SCANNERS.release()
-            owner = reference()
-            if owner is not None:
-                try: owner.resolved.emit(generation, result)
-                except RuntimeError: pass
+            # QML can destroy the C++ owner while this thread is scanning.
+            # Hand off only Python data; its GUI timer owns Qt delivery.
+            results.put((generation, result))
         threading.Thread(target=read, daemon=True, name='conversation-links').start()
+        # Poll only while a scanner is active, at the desktop frame cadence.
+        self._timer.start(16)
         self.changed.emit()
 
     @Slot(int, object)
     def _deliver(self, generation, spans):
         self._reading = False
-        if generation == self._generation and self._document is not None and self._enabled and self._active:
+        if generation == self._generation and self._document is not None and shiboken6.isValid(self._document) and self._enabled and self._active:
             self._applying = True
             try:
                 links, cursor = {}, QTextCursor(self._document)
