@@ -103,6 +103,10 @@ def run_child(base, screenshots=None):
 
     def click(item):
         point = item.mapToScene(item.boundingRect().center()).toPoint()
+        # Populate the selection overlay's passive hover target before pressing,
+        # as a real pointer does. Some offscreen platforms omit this implicit move.
+        QTest.mouseMove(window, point)
+        QTest.qWait(25)
         QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
         QTest.qWait(80)
 
