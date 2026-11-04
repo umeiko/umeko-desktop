@@ -1,0 +1,19 @@
+{
+  "kind": "umeko-plugin",
+  "apiVersion": 1,
+  "id": "widget-market",
+  "version": "1.0.0",
+  "name": "Widget 市场",
+  "description": "发现、安装和管理桌面 Widget。",
+  "summary": "浏览和安装 Widget",
+  "author": "Umeko",
+  "icon": "puzzle",
+  "lifecycle": "session",
+  "entrypoint": "scripts/plugin.py:create_plugin",
+  "page": "qml/Main.qml",
+  "readme": "README.md",
+  "config": "config.json",
+  "configSchema": "config.schema.json",
+  "permissions": ["pi.read", "pi.manage"],
+  "agent": {"document": "AGENT.md", "methods": {}}
+}

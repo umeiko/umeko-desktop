@@ -17,6 +17,7 @@ class DesktopPlugins(QObject):
     sessionChanged=Signal()
     pageChanged=Signal()
     requested=Signal()
+    importRequested=Signal()
     dismissed=Signal()
     response=Signal(str,"QVariantMap")
     managed=Signal(str,"QVariantMap")
@@ -28,7 +29,7 @@ class DesktopPlugins(QObject):
         self._icons=read(backend.root/'plugin-runtime/umeko_plugin_sdk/icons.json',[]) or []
         self.settings=read(self.registry,{}) or {};self.entries={}
         for identifier,record in self.settings.get('installed',{}).items():
-            if re.fullmatch('[a-z][a-z0-9-]{0,63}',identifier) and re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?',record.get('version','')):
+            if re.fullmatch('[a-z0-9][a-z0-9-]{0,63}',identifier) and re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?',record.get('version','')):
                 self.entries[identifier]={**record,'builtin':False}
         for folder in (backend.root/'umeko-plugins').glob('*'):
             m=read(folder/'manifest.json',{}) or {}
@@ -458,7 +459,10 @@ class DesktopPlugins(QObject):
             if not self.closed:
                 applied=done(result)
                 if applied is False:result={'ok':False,'error':self._status or '插件设置未能保存'}
-                self.changed.emit();self.b.toast.emit(self._status);self.managed.emit(token,result)
+                self.changed.emit();self.b.toast.emit(self._status)
+            # MarketJobs needs completion to clean its ZIP after shutdown too;
+            # UI changes and toasts above remain suppressed when closed.
+            self.managed.emit(token,result)
             p.deleteLater()
         p.finished.connect(finish);p.errorOccurred.connect(finish)
         program,args=self.command();p.start(program,args);QTimer.singleShot(30000,p,p.kill);return token

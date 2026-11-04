@@ -18,6 +18,15 @@ from PySide6.QtCore import QObject, Property, QTimer, Signal, Slot
 
 
 OPERATIONS = {
+    'market.list': ('pi.read', None),
+    'market.prepare': ('pi.read', None),
+    'market.discard': ('pi.read', None),
+    'market.install': ('pi.manage', None),
+    'market.uninstall': ('pi.manage', None),
+    'market.enable': ('pi.manage', None),
+    'market.open': ('pi.read', None),
+    'market.browse': ('pi.read', None),
+    'market.importLocal': ('pi.read', None),
     'pi.status': ('pi.read', None),
     'pi.network': ('pi.read', None),
     'pi.preset': ('pi.manage',None),
@@ -64,7 +73,7 @@ DIRECT_SKILL_IMPORTS = frozenset(('skills.paste', 'skills.importLocal'))
 
 
 def requires_confirmation(name):
-    return OPERATIONS[name][0] in ('pi.manage', 'skills.manage') and name != 'pi.cancel' and name not in DIRECT_SKILL_IMPORTS
+    return OPERATIONS[name][0] in ('pi.manage', 'skills.manage') and name not in ('pi.cancel', 'market.enable') and name not in DIRECT_SKILL_IMPORTS
 
 
 class WidgetHost(QObject):
@@ -81,6 +90,7 @@ class WidgetHost(QObject):
         self.checkpoint_locks = {}
         self._panel_approval = {}
         self._skills = None
+        self._market = None
         self.activity_timer = QTimer(self)
         self.activity_timer.setSingleShot(True)
         self.activity_timer.setInterval(200)
@@ -117,6 +127,12 @@ class WidgetHost(QObject):
             self._skills = SkillJobs(self)
         return self._skills
 
+    def _market_service(self):
+        if self._market is None:
+            from .widget_market_host import MarketJobs
+            self._market = MarketJobs(self)
+        return self._market
+
     def workspace_locked(self, workspace):
         target = self.m.bridge.workspace(workspace)
         return bool(target and any(lock['workspace'] == target for lock in self.checkpoint_locks.values()))
@@ -138,6 +154,7 @@ class WidgetHost(QObject):
         for token in [token for token, lock in self.checkpoint_locks.items() if lock['widget'] == identifier]:
             self.release_checkpoint(identifier, token)
         if self._skills: self._skills.stop(identifier)
+        if self._market: self._market.stop(identifier)
         self.activity.pop(identifier, None)
         if any(owner['widget']==identifier and owner.get('operation')=='pi.install' and getattr(self.b._umeko_control,'jobs',{}).get(key,{}).get('status')=='running' for key,owner in self.jobs.items()):
             cancel=getattr(self.b.piManagement,'cancelInstall',None)
@@ -233,7 +250,10 @@ class WidgetHost(QObject):
             permission, _ = OPERATIONS[operation]
             if permission not in self.m.entries[identifier].get('permissions', []):
                 raise ValueError('Widget permission is required: ' + permission)
-            fields = {'pi.status': {'offset', 'limit', 'query', 'details', 'toolOffset'}, 'pi.inventory': set(), 'pi.toolVisibility': {'id','name','visible'}, 'pi.network': set(), 'pi.scan': set(), 'pi.refresh': set(),
+            fields = {'market.list': {'force'}, 'market.prepare': {'id'}, 'market.install': {'token'},
+                      'market.discard': {'token'}, 'market.uninstall': {'id'}, 'market.enable': {'id'},
+                      'market.open': {'id'}, 'market.browse': {'target','id'}, 'market.importLocal': set(),
+                      'pi.status': {'offset', 'limit', 'query', 'details', 'toolOffset'}, 'pi.inventory': set(), 'pi.toolVisibility': {'id','name','visible'}, 'pi.network': set(), 'pi.scan': set(), 'pi.refresh': set(),
                       'pi.enable': {'id', 'enabled'}, 'pi.install': {'source', 'project'},
                       'pi.remove': {'id'}, 'pi.job': {'id'}, 'pi.cancel': {'id'}, 'pi.checkUpdate': {'id'}, 'pi.details': {'id'}, 'pi.activation': {'id','mode'},
                       'pi.preset': {'preset'},'pi.tool': {'name','enabled'},'pi.plugin': {'id','enabled'},'pi.tools': {'id','query','offset','limit'},
@@ -247,6 +267,17 @@ class WidgetHost(QObject):
                       'checkpoints.acquire': {'id'}, 'checkpoints.release': {'token'}}[operation]
             if set(args) - fields:
                 raise ValueError('Unknown host arguments')
+            if operation.startswith('market.'):
+                if identifier != 'widget-market' or not self.m.entries[identifier].get('builtin') or self.m._page != identifier:
+                    raise ValueError('Open the built-in Widget market to use this operation')
+                if 'force' in args and type(args['force']) is not bool:
+                    raise ValueError('force must be boolean')
+                if (operation in ('market.prepare', 'market.uninstall', 'market.enable', 'market.open') or operation=='market.browse' and args.get('target')=='readme') and (not isinstance(args.get('id'), str) or not re.fullmatch('[a-z0-9][a-z0-9-]{0,63}', args['id'])):
+                    raise ValueError('A valid Widget id is required')
+                if operation=='market.browse' and (args.get('target') not in ('repository','readme') or args.get('target')=='repository' and 'id' in args):
+                    raise ValueError('A valid market link target is required')
+                if operation in ('market.install', 'market.discard') and (not isinstance(args.get('token'), str) or not re.fullmatch('[a-f0-9]{32}', args['token'])):
+                    raise ValueError('A valid download token is required')
             if operation == 'checkpoints.acquire' and not re.fullmatch('[a-f0-9]{32}', args.get('id', '')):
                 raise ValueError('A valid checkpoint id is required')
             if operation == 'checkpoints.release' and not re.fullmatch('[a-f0-9]{32}', args.get('token', '')):
@@ -304,10 +335,12 @@ class WidgetHost(QObject):
                     raise ValueError('Pi is busy; Agent installs must use run_pi_command and its native queued reload')
                 if self._pending or self.b.pendingApproval:
                     raise ValueError('Another confirmation is pending')
-                self._pending = request
                 approval = {'id': request['id'], 'method': 'confirm',
                     'title': 'Widget · ' + self.m.entries[identifier]['name'],
                     'detail': operation + '\n' + json.dumps(args, ensure_ascii=False, indent=2)}
+                if operation.startswith('market.'):
+                    approval.update(self._market_service().confirmation(request))
+                self._pending = request
                 if permission == 'skills.manage' or identifier == 'skill-manager':
                     # Only the host surface receives these controls. The SDK has
                     # no operation, method or event capable of approving them.
@@ -329,6 +362,8 @@ class WidgetHost(QObject):
                 return
             self._execute(request)
         except (ValueError, TypeError, KeyError) as error:
+            if request['operation'] == 'market.install' and self._market:
+                self._market.declined(request)
             self._reply(request, {'ok': False, 'error': str(error)})
 
     @Slot(bool)
@@ -339,11 +374,15 @@ class WidgetHost(QObject):
         if not request:
             return
         if not allowed:
+            if request['operation'].startswith('market.') and self._market:
+                self._market.declined(request)
             self._reply(request, {'ok': False, 'status': 'declined', 'error': 'User declined the Widget operation'})
             return
         try:
             self._execute(request)
         except (ValueError, TypeError, KeyError) as error:
+            if request['operation'] == 'market.install' and self._market:
+                self._market.declined(request)
             self._reply(request, {'ok': False, 'error': str(error)})
 
     def _tool_target(self, args):
@@ -356,6 +395,9 @@ class WidgetHost(QObject):
     def _execute(self, request):
         identifier = self._owner(request)  # Revalidate after the user spends time in confirmation.
         operation, args = request['operation'], request['arguments']
+        if operation.startswith('market.'):
+            self._market_service().start(request)
+            return
         if operation.startswith('checkpoints.'):
             if identifier != 'change-review':
                 raise ValueError('Checkpoint locks are owned by the change review Widget')

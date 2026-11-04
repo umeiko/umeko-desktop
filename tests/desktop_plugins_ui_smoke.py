@@ -55,7 +55,7 @@ try:
     window.grabWindow().save(str(out/'agent-plugin-entry.png'))
     click('openDesktopPluginsButton')
     assert find('desktopPluginsPage').isVisible()
-    assert {row['id'] for row in backend.desktopPlugins.rows}=={'file-tree','git-viewer','desktop-pet','terminal','global-agents','pi-manager','change-review','skill-manager'}
+    assert {row['id'] for row in backend.desktopPlugins.rows}=={'file-tree','git-viewer','desktop-pet','terminal','global-agents','pi-manager','change-review','skill-manager','widget-market'}
     assert find('desktopPluginInstalledList').property('count')==len(backend.desktopPlugins.rows)
     search=find('desktopPluginSearch');search.setProperty('text','版本管理');QTest.qWait(50);assert find('desktopPluginInstalledList').property('count')==1
     search.setProperty('text','');QTest.qWait(50);window.grabWindow().save(str(out/'manager.png'))
@@ -65,7 +65,7 @@ try:
     check_launcher_boundary()
     click('desktopPluginMenuButton')
     wait(lambda:find('desktopPluginSessionMenu').property('desiredOpen') and not find('desktopPluginSessionMenu').property('animating'),'Plugin menu did not open')
-    assert find('desktopPluginQuickList').property('count')==5
+    assert find('desktopPluginQuickList').property('count')==6
     window.grabWindow().save(str(out/'quick-menu.png'))
     click('desktopPluginMenuButton')
     wait(lambda:not find('desktopPluginSessionMenu').property('visible'),'Second click did not close menu')
@@ -78,7 +78,7 @@ try:
     manager.setSessionEnabled('git-viewer',False)
     click('desktopPluginMenuButton')
     wait(lambda:not find('desktopPluginSessionMenu').property('animating'),'Filtered menu did not settle')
-    assert find('desktopPluginQuickList').property('count')==4
+    assert find('desktopPluginQuickList').property('count')==5
     click('openDesktopPlugin_file-tree')
     wait(lambda:find('fileTreeEntries') is not None and find('fileTreeEntries').property('count')>=3,'Tree did not load')
     assert window.property('page')=='chat';assert find('webPane').property('mode')=='plugin'
@@ -210,7 +210,7 @@ try:
     window.grabWindow().save(str(out/'git-diff.png'))
     window.setProperty('page','settings');QTest.qWait(200);assert not manager.page;assert not find('webPane').property('opened')
     window.setProperty('page','chat');assert manager.openPage('file-tree');QTest.qWait(200);backend.newSession();QTest.qWait(250);assert not manager.page and set(manager.workers)=={'desktop-pet','global-agents'}
-    manager.setSessionEnabled('file-tree',False);manager.setSessionEnabled('git-viewer',False);manager.setEnabled('global-agents',False);manager.setSessionEnabled('pi-manager',False);manager.setSessionEnabled('skill-manager',False)
+    manager.setSessionEnabled('file-tree',False);manager.setSessionEnabled('git-viewer',False);manager.setEnabled('global-agents',False);manager.setSessionEnabled('pi-manager',False);manager.setSessionEnabled('skill-manager',False);manager.setSessionEnabled('widget-market',False)
     click('desktopPluginMenuButton')
     wait(lambda:find('desktopPluginSessionMenu').property('desiredOpen') and not find('desktopPluginSessionMenu').property('animating'),'Empty plugin menu did not open')
     assert find('desktopPluginQuickList').property('count')==0

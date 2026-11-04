@@ -14,7 +14,8 @@ Item {
     readonly property var detail: selected && I18n.language ? manager.details(selectedId) : ({})
     Component.onCompleted: if (allRows.length) selectedId=allRows[0].id
     onAllRowsChanged: if (!allRows.some(p=>p.id===selectedId)) selectedId=allRows.length ? allRows[0].id : ""
-    FileDialog {id:picker;title:I18n.t("导入 Umeko 插件");nameFilters:["Umeko plugins (*.zip)"];onAccepted:root.manager.importZip(String(selectedFile))}
+    function openImport() { picker.open() }
+    FileDialog {id:picker;objectName:"desktopPluginImportDialog";title:I18n.t("导入 Umeko 插件");nameFilters:["Umeko plugins (*.zip)"];onAccepted:root.manager.importZip(String(selectedFile))}
     FileDialog {id:sdkPicker;title:I18n.t("导出插件 SDK 和示例");fileMode:FileDialog.SaveFile;defaultSuffix:"zip";nameFilters:["ZIP (*.zip)"];onAccepted:root.manager.exportSdk(String(selectedFile))}
     QtObject {
         id:settingsSdk
@@ -40,7 +41,7 @@ Item {
             InputField {id:search;objectName:"desktopPluginSearch";Layout.fillWidth:true;placeholderText:I18n.t("搜索已安装插件…")}
             ActionButton {objectName:"desktopPluginIconCatalogButton";text:I18n.t("内置图标");quiet:true;onClicked:iconCatalog.open()}
             ActionButton {objectName:"exportDesktopPluginSdkButton";text:I18n.t("导出 SDK 和示例");quiet:true;onClicked:sdkPicker.open()}
-            ActionButton {objectName:"importDesktopPluginButton";text:I18n.t("导入 ZIP");glyph:"plus";enabled:!root.manager.busy;onClicked:picker.open()}
+            ActionButton {objectName:"importDesktopPluginButton";text:I18n.t("导入 ZIP");glyph:"plus";enabled:!root.manager.busy;onClicked:root.openImport()}
         }
         Text { font.family: Theme.fontFamily;visible:!!root.manager.status;text:root.manager.status;textFormat:Text.PlainText;color:Theme.muted;Layout.fillWidth:true;wrapMode:Text.Wrap;font.pixelSize: Theme.font(11, visible)}
         Rectangle {

@@ -12,6 +12,7 @@ Item {
     property bool multimodalOpen: false
     property string editId: ""
     function openPluginManagement(identifier) { agentPage.openPlugins(identifier) }
+    function openPluginImport() { agentPage.openPlugins("", true) }
     CommonProviderDialog { id: commonProviders }
     property string mappingSignature: ""
     property string mappingProviderId: ""

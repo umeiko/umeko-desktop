@@ -223,7 +223,11 @@ ApplicationWindow {
         targetRect: Qt.rect(0, 0, (sidebarResizeHandle.resizing ? sidebarResizeHandle.dragWidth : window.sidebarLayoutCollapsed ? 0 : Math.min(window.sidebarPreferredWidth, window.sidebarMaximumWidth)) + 1, 1)
         onMovingChanged: if (!moving) window.showSidebarCollapseHint()
     }
-    Connections { target: backend.desktopPlugins; function onRequested() { window.page = "chat"; webPane.showPlugin() } }
+    Connections {
+        target: backend.desktopPlugins
+        function onRequested() { window.page = "chat"; webPane.showPlugin() }
+        function onImportRequested() { window.settingsTab=3;window.page="settings";Qt.callLater(()=>settingsPage.openPluginImport()) }
+    }
     Connections { target: backend.subagents; function onRequested() { window.page = "chat"; webPane.showSubagent() } }
     Rectangle {
         id: sidebar; objectName: "sidebar"
