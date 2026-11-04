@@ -13,7 +13,10 @@ Popup {
     visible: root.approvalBackend.pendingApproval.id !== undefined
     x: (parent.width - width) / 2; y: (parent.height - height) / 2
     closePolicy: Popup.NoAutoClose
-    onVisibleChanged: if (visible) dialogInput.text = root.approvalBackend.pendingApproval.method === "editor" ? root.approvalBackend.pendingApproval.detail || "" : ""
+    onVisibleChanged: if (visible) {
+        dialogInput.text = root.approvalBackend.pendingApproval.method === "editor" ? root.approvalBackend.pendingApproval.detail || "" : ""
+        if (root.approvalBackend.pendingApproval.method === "confirm") Qt.callLater(() => denyButton.forceActiveFocus())
+    }
     background: Rectangle { color: Theme.surface; radius: 13; border.color: Theme.line }
     Overlay.modal: Rectangle { color: "#60000000" }
     Shortcut { sequence: "Escape"; enabled: root.visible; onActivated: root.approvalBackend.respondApproval(false) }
@@ -36,10 +39,26 @@ Popup {
             Layout.fillWidth: true; Layout.fillHeight: true; clip: true
             TextArea { font.family: Theme.fontFamily; id: dialogInput; color: Theme.ink; font.pixelSize: Theme.font(12, visible); selectByMouse: true; wrapMode: TextArea.Wrap; placeholderText: root.approvalBackend.pendingApproval.method === "input" ? root.approvalBackend.pendingApproval.detail || "" : "" }
         }
+        ActionButton {
+            objectName: root.actionPrefix + "grantDangerousToolButton"
+            visible: root.actionPrefix === "" && root.approvalBackend.canGrantDangerousApproval
+            Layout.fillWidth: true
+            text: I18n.t("确认，并且本会话不再询问危险操作")
+            implicitHeight: Math.max(38, grantLabel.implicitHeight + 16)
+            contentItem: Text {
+                id: grantLabel
+                text: parent.text; textFormat: Text.PlainText
+                wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible); color: Theme.ink
+            }
+            Keys.onReturnPressed: event => { event.accepted = true }
+            Keys.onEnterPressed: event => { event.accepted = true }
+            onClicked: backend.grantDangerousApproval()
+        }
         RowLayout {
             Layout.fillWidth: true
             Item { Layout.fillWidth: true }
-            ActionButton { objectName: root.actionPrefix + "denyToolButton"; text: I18n.t("拒绝"); onClicked: root.approvalBackend.respondApproval(false) }
+            ActionButton { id: denyButton; objectName: root.actionPrefix + "denyToolButton"; text: I18n.t("拒绝"); onClicked: root.approvalBackend.respondApproval(false) }
             ActionButton { objectName: root.actionPrefix + "allowToolButton"; text: I18n.t("确认"); primary: true; onClicked: { if (root.approvalBackend.pendingApproval.method === "confirm") root.approvalBackend.respondApproval(true); else root.approvalBackend.respondPiDialog(root.approvalBackend.pendingApproval.method === "select" ? choice.currentText : dialogInput.text) } }
         }
     }

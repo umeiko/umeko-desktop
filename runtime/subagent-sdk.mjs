@@ -7,7 +7,7 @@ import { DefaultResourceLoader as NativeResourceLoader } from "./node_modules/@e
 import { NETWORK_RETRY } from "./network-retry.mjs";
 import { SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
 import { backgroundJobsExtension } from "./background-jobs.mjs";
-import { createToolPermissionExtension } from "./tool-permissions.mjs";
+import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI } from "./tool-permissions.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 
 const permissionHost = () => globalThis[Symbol.for("umeko:tool-permission-host")];
@@ -26,7 +26,7 @@ export class DefaultResourceLoader extends NativeResourceLoader {
       ...(factories.some(item => item.name === "background-jobs") ? [] :
         [{ name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobsExtension }]),
       { name: "tool-permissions", hidden: true, replaceable: false,
-        factory: createToolPermissionExtension({ getPolicy: () => permissionHost()?.getPolicy() || { mode: "auto" } }) },
+        factory: createToolPermissionExtension({ getPolicy: () => childPermissionPolicy(permissionHost()?.getPolicy()) }) },
     ], ...(globalThis[Symbol.for("umeko:skill-policy-host")]?.enabled() === false ? {
       noSkills: true, skillsOverride: result => ({ ...result, skills: [] }),
     } : {}) });
@@ -49,7 +49,7 @@ export async function createAgentSession(options) {
   const bind = result.session.bindExtensions.bind(result.session);
   result.session.bindExtensions = (options = {}) => {
     const host = permissionHost();
-    return bind(host?.ui ? { ...options, uiContext: host.ui, mode: "rpc" } : options);
+    return bind(host?.ui ? { ...options, uiContext: childPermissionUI(host.ui), mode: "rpc" } : options);
   };
   globalThis[Symbol.for("umeko:subagent-session")]?.(result.session, options);
   return result;

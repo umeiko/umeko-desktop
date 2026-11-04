@@ -1,5 +1,11 @@
 .pragma library
 var strings = {
+    "确认，并且本会话不再询问危险操作": "Confirm and don't ask again for dangerous operations in this chat",
+    "本会话已授权": "Chat authorized",
+    "本会话已允许全部危险操作，可在菜单中撤销。": "All dangerous operations are allowed in this chat. Revoke in this menu.",
+    "撤销本会话授权": "Revoke chat authorization",
+    "询问": "Ask",
+    "会话授权保存失败": "Could not save chat approval",
   "图片与语音生成": "Image and voice generation",
   "图片、语音与视频生成": "Image, voice and video generation",
   "多模态模型": "Multimodal models",

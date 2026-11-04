@@ -15,7 +15,7 @@ import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
 import { createAuxiliaryVision, ANALYZE_IMAGE, AUTO_VISION_ENTRY, automaticVisionView } from "./auxiliary-vision.mjs";
 import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
-import { createToolPermissionExtension } from "./tool-permissions.mjs";
+import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI } from "./tool-permissions.mjs";
 import { blockedToolNames, toolInventory } from "./tool-visibility.mjs";
 import { createGenerationExtension } from "./generation.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -72,6 +72,10 @@ const inputQueue=createInputQueue({getSession:()=>runtime?.session,isRunning:()=
 const dialogs = new Map();
 let permissionPolicy = { mode: "auto", language: "en" };
 const permissionExtension = createToolPermissionExtension({ getPolicy: () => permissionPolicy });
+function clearDangerousApproval() {
+  permissionPolicy = {...permissionPolicy, dangerousAllowed: false};
+  emit({type:"dangerous_approval_cleared"});
+}
 const commandOutput = new AsyncLocalStorage();
 const piCommands = createPiCommandController({ Pi, getRuntime: () => runtime, getConfig: () => config,
   reload: reloadSession, notify: message => emit({ type: "notice", message }),
@@ -84,10 +88,11 @@ const piCommands = createPiCommandController({ Pi, getRuntime: () => runtime, ge
   },
 });
 
-function ask(method, title, detail = "", options = []) {
+function ask(method, title, detail = "", options = [], dangerCategory) {
   const id = crypto.randomUUID();
   return new Promise(resolve => {
     const event = { type: "ui_request", id, method, title, detail, options };
+    if (Number.isInteger(dangerCategory) && dangerCategory >= 1 && dangerCategory <= 7) event.dangerCategory = dangerCategory;
     dialogs.set(id, { resolve, event });
     if (dialogs.size === 1) emit(event);
   });
@@ -103,6 +108,7 @@ function canonicalPath(path) {
 const ui = {
   select: (title, options) => ask("select", title, "", options),
   confirm: async (title, detail) => (await ask("confirm", title, detail)) === true,
+  confirmDangerous: async (title, detail, category) => (await ask("confirm", title, detail, [], category)) === true,
   input: (title, placeholder) => ask("input", title, placeholder),
   editor: (title, prefill) => ask("editor", title, prefill),
   notify: (message, level) => { const output = commandOutput.getStore(); if (output) output.push({ message, level }); else if (capturingMcp) mcpStatus = message; else emit({ type: "notice", message }); },
@@ -230,7 +236,7 @@ async function bindSession(session) {
       newSession: options => runtime.newSession(options),
       switchSession: (path, options) => runtime.switchSession(path, options),
       fork: (id, options) => forkSession(id, options),
-      navigateTree: (id, options) => session.navigateTree(id, options),
+      navigateTree: (id, options) => { clearDangerousApproval(); return session.navigateTree(id, options); },
       reload: () => reloadSession(session),
     },
   });
@@ -301,7 +307,8 @@ async function restoreSubagentSession(child, context, customTools) {
     extensionFactories: [
       { name: "recent-images", hidden: true, replaceable: false, factory: createRecentImagesExtension({ getLimit: () => config.agent?.maxContextImages }) },
       { name: "auxiliary-vision", hidden: true, replaceable: false, factory: auxiliaryVision.contextExtension },
-      { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
+      { name: "tool-permissions", hidden: true, replaceable: false,
+        factory: createToolPermissionExtension({getPolicy:()=>childPermissionPolicy(permissionPolicy)}) },
       { name: "umeko-control", builtin: true, replaceable: false, factory: auxiliaryVision.toolExtension },
       { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
     ],
@@ -314,7 +321,7 @@ async function restoreSubagentSession(child, context, customTools) {
     customTools,excludeTools:["subagent","get_subagent_result","steer_subagent",...blockedToolNames(config.blockedTools)],
     tools:context?.tools || (readonly ? ["read","grep","find","ls"] : undefined)});
   auxiliaryVision.guardSession(session);
-  await session.bindExtensions({uiContext:ui,mode:"rpc",abortHandler:()=>session.abort(),
+  await session.bindExtensions({uiContext:childPermissionUI(ui),mode:"rpc",abortHandler:()=>session.abort(),
     shutdownHandler:()=>session.abort(),onError:error=>emit({type:"notice",message:error.message})});
   return session;
 }
@@ -323,7 +330,7 @@ async function init(input) {
   config = input;
   globalThis[Symbol.for("umeko:auxiliary-vision")] = auxiliaryVision;
   globalThis[Symbol.for("umeko:recent-images-policy")] = { getLimit: () => config.agent?.maxContextImages };
-  permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir, generation: input.generation };
+  permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir, generation: input.generation, dangerousAllowed: input.dangerousAllowed === true };
   configureUmekoDocs({directory: input.docsDir || join(input.agentDir, "cache", "umeko-docs"), models: input.models});
   reasoningEffort = effortLevels.has(input.reasoningEffort) ? input.reasoningEffort : "off";
   setGateway(input.gateway);
@@ -412,6 +419,15 @@ async function init(input) {
     for (const message of input.legacyHistory || []) if (["user", "assistant", "toolResult"].includes(message.role)) manager.appendMessage(message);
   }
   runtime = await Pi.createAgentSessionRuntime(factory, { cwd: manager.getCwd(), agentDir: input.agentDir, sessionManager: manager });
+  // A new conversation identity never reuses this process's previous grants.
+  // Wrap the native lifecycle so extension commands and desktop commands agree.
+  for (const method of ["newSession", "switchSession", "fork", "importFromJsonl"]) {
+    const original = runtime[method].bind(runtime);
+    runtime[method] = async (...args) => {
+      clearDangerousApproval();
+      return original(...args);
+    };
+  }
   runtime.setRebindSession(bindSession);
   await bindSession(runtime.session);
   emit({ type: "ready", version, session: sessionInfo() });
@@ -594,6 +610,10 @@ async function execute(input) {
     permissionPolicy = { ...permissionPolicy, mode: input.mode, language: input.language || permissionPolicy.language, dataDir: input.dataDir || permissionPolicy.dataDir };
     return;
   }
+  if (input.type === "dangerous_approval") {
+    permissionPolicy = {...permissionPolicy, dangerousAllowed: input.allowed === true};
+    return;
+  }
   if (input.type === "ui_response") {
     const dialog = dialogs.get(input.id);
     if (!dialog || dialogs.keys().next().value !== input.id) return;
@@ -638,7 +658,7 @@ async function execute(input) {
       await subagents.command(input.command);
     }
     else if (input.type === "fork") await forkSession(input.entryId || runtime.session.sessionManager.getLeafId(), { position: "at" });
-    else if (input.type === "navigate") await runtime.session.navigateTree(input.entryId, { summarize: false });
+    else if (input.type === "navigate") { clearDangerousApproval(); await runtime.session.navigateTree(input.entryId, { summarize: false }); }
     else if (input.type === "compact") await runtime.session.compact(input.customInstructions);
     else if (input.type === "reload") await reloadSession(runtime.session);
     else if (input.type === "rename") runtime.session.setSessionName(input.title);

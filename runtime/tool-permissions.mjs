@@ -356,6 +356,17 @@ export function classifyCommand(command,context={}) {
  return classifyInternal(command,context,0);
 }
 
+// Children keep the parent's normal policy and UI, never its chat approval.
+export function childPermissionPolicy(policy={mode:'auto'}) {
+ const {dangerousAllowed,...normalPolicy}=policy;
+ return normalPolicy;
+}
+export function childPermissionUI(ui) {
+ if(!ui)return ui;
+ const {confirmDangerous,...normalUI}=ui;
+ return normalUI;
+}
+
 /** Per-session factory; getPolicy is the sole source of the active mode. */
 export function createToolPermissionExtension({getPolicy,classify=classifyCommand}={}) {
  if(typeof getPolicy!=='function')throw new TypeError('getPolicy is required');
@@ -379,6 +390,7 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        let hit=generation?decision('ask'):null;
        if(shell)hit=await classify(String(input.command??input.script??''),context);
        else if(file)hit=classifyPath(String(input.path??input.file_path??''),context);
+       if(hit?.category>=1&&hit.category<=7&&policy.dangerousAllowed===true)hit=null;
        if(policy.mode==='ask'){
          if(shell||file)hit=hit||decision('ask');
          else{
@@ -402,7 +414,9 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        }
        const title=language==='zh'?'批准工具操作':'Approve tool operation';
        const message=language==='zh'?`原因：${reason}\n\n原始${shell?'命令':'路径/输入'}：\n${original}`:`Reason: ${reason}\n\nOriginal ${shell?'command':'path/input'}:\n${original}`;
-       const approved=await ctx.ui.confirm(title,message);
+       const approved=hit.category>=1&&hit.category<=7&&typeof ctx.ui.confirmDangerous==='function'
+         ? await ctx.ui.confirmDangerous(title,message,hit.category)
+         : await ctx.ui.confirm(title,message);
        if(approved!==true)return {block:true,reason:language==='zh'?`用户拒绝执行。${reason}`:`User denied execution. ${reason}`};
        return undefined;
      }catch(error){
