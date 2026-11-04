@@ -5,10 +5,23 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     property var channel: backend.appAbout.preview
+    function remedy(name) {
+        switch (name) {
+        case "保留的正式版": return I18n.t("请从完整解压的正式版安装包启动，再检查运行前提。")
+        case "Git": return I18n.t("请安装 Git 并将其加入 PATH，然后重新打开 Umeko。")
+        case "Python 3.10+ / venv": return I18n.t("请安装含 venv 和 ensurepip 的 Python 3.10 或更新版本，并将 Python 或 py 启动器加入 PATH，然后重新打开 Umeko。")
+        case "Node.js 22.19+": return I18n.t("请安装 Node.js 22.19 或更新版本并将其加入 PATH；打包版请先重新解压完整安装包。然后重新打开 Umeko。")
+        case "npm": return I18n.t("请安装含 npm 的 Node.js，并将 npm 加入 PATH，然后重新打开 Umeko。")
+        case "安装脚本 Shell": return I18n.t("Windows 请确保 PowerShell 可用；macOS 和 Linux 请安装 Bash 并将其加入 PATH。")
+        case "磁盘空间 (至少 2 GiB)": return I18n.t("请在用户数据目录所在磁盘腾出至少 2 GiB 可用空间，然后重新检查。")
+        case "官方 main 分支连接": return I18n.t("请检查系统和 Git 的网络、代理及证书配置，确保 Git 能连接官方仓库，然后重新检查。供应商代理不用于此操作。")
+        default: return I18n.t("请根据下方检查详情处理问题，然后重新检查。")
+        }
+    }
     function details() {
         const checks = root.channel.status.details
         if (checks && checks.length)
-            return checks.map(check => I18n.t(check.name) + ": " + String(check.detail || "").split("\n").map(line => I18n.t(line)).join("\n")).join("\n")
+            return checks.map(check => I18n.t(check.ready ? "已满足" : "未满足") + " · " + I18n.t(check.name) + ": " + String(check.detail || "").split("\n").map(line => I18n.t(line)).join("\n") + (check.ready ? "" : "\n" + root.remedy(check.name))).join("\n")
         return String(root.channel.status.detail || "").split("\n").map(line => I18n.t(line)).join("\n")
     }
     spacing: 14
@@ -44,8 +57,17 @@ ColumnLayout {
         color: root.channel.status.state === "error" ? Theme.danger : Theme.ink
     }
     Text {
+        objectName: "previewPrerequisiteResult"
+        Layout.fillWidth: true
+        visible: root.channel.status.state === "prerequisites"
+        text: I18n.t(root.channel.status.ready ? "运行前提全部满足，可以确认并安装预览版。" : "运行前提尚未满足，安装按钮暂不可用。请处理下列未满足项目后重新检查。")
+        textFormat: Text.PlainText; wrapMode: Text.Wrap
+        font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible)
+        color: root.channel.status.ready ? Theme.ink : Theme.danger
+    }
+    Text {
         objectName: "previewChannelDetails"
-        Layout.fillWidth: true; visible: !!root.channel.status.detail
+        Layout.fillWidth: true; visible: !!root.channel.status.detail || !!(root.channel.status.details && root.channel.status.details.length)
         text: root.details(); textFormat: Text.PlainText; wrapMode: Text.Wrap
         font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible); color: Theme.muted
     }
@@ -56,6 +78,7 @@ ColumnLayout {
         ActionButton { objectName: "checkPreviewUpdatesButton"; visible: root.channel.channel === "preview"; enabled: !root.channel.busy; text: I18n.t("检查预览版更新"); glyph: "refresh"; onClicked: root.channel.checkUpdates() }
         ActionButton { objectName: "removeRetainedPreviewButton"; visible: root.channel.channel === "release" && root.channel.cleanupPending; enabled: !root.channel.busy; text: I18n.t("重试删除预览版源码"); onClicked: root.channel.finishRemoval() }
         ActionButton { objectName: "reviewPreviewUpdateButton"; visible: root.channel.status.state === "available"; enabled: !root.channel.busy; text: I18n.t("查看并更新"); primary: true; onClicked: updateConfirmation.open() }
+        ActionButton { objectName: "recheckPreviewPrerequisitesButton"; visible: root.channel.channel === "release" && root.channel.status.state === "prerequisites"; enabled: !root.channel.busy; text: I18n.t("重新检查运行前提"); glyph: "refresh"; onClicked: root.channel.preflight() }
         ActionButton { objectName: "preparePreviewButton"; visible: root.channel.status.state === "prerequisites"; enabled: !!root.channel.status.ready && !root.channel.busy; text: I18n.t("确认并安装预览版"); primary: true; onClicked: switchConfirmation.open() }
         ActionButton { objectName: "cancelPreviewButton"; visible: root.channel.busy; text: I18n.t("取消"); onClicked: root.channel.cancel() }
         ActionButton { objectName: "restartChannelButton"; visible: root.channel.status.state === "restart-required"; enabled: !root.channel.busy; text: I18n.t("保存并重启"); primary: true; onClicked: restartConfirmation.open() }
