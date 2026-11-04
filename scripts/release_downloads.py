@@ -15,14 +15,19 @@ PLATFORMS = (
 )
 
 
-def download_buttons(repo, tag, assets, section='release', language='bilingual'):
+def download_buttons(repo, tag, assets, section='release', language='bilingual', *, platforms=None):
     assert repo in REPOS and re.fullmatch(r'v\d+\.\d+\.\d+(?:-minimal)?', tag)
     assert section in ('standard', 'minimal', 'release')
     assert language in ('en', 'zh', 'bilingual')
     names = [a['name'] if isinstance(a, dict) else a for a in assets]
+    selected = {p[0] for p in PLATFORMS} if platforms is None else set(platforms)
+    if not selected or not selected <= {p[0] for p in PLATFORMS}:
+        raise ValueError('Invalid download platforms')
     prefix = ('UmekoCpp-' + tag if repo.endswith('-cpp') else 'Umeko-' + tag[1:]) + '-'
     links = []
     for platform, suffix, icon, label in PLATFORMS:
+        if platform not in selected:
+            continue
         candidates = [name for name in names if name.startswith(prefix + platform) and name.endswith(suffix)]
         if len(candidates) != 1:
             raise ValueError(f'Expected exactly one {platform} {suffix} download, found {len(candidates)}')
@@ -44,21 +49,21 @@ def replace_block(text, block, section):
     return re.sub(pattern, lambda _: block, text, flags=re.S)
 
 
-def release_notes(text, repo, tag, assets):
-    block = download_buttons(repo, tag, assets)
+def release_notes(text, repo, tag, assets, *, platforms=None):
+    block = download_buttons(repo, tag, assets, platforms=platforms)
     if '<!-- umeko-downloads:release:start -->' in text:
         return replace_block(text, block, 'release')
     heading, separator, rest = text.partition('\n')
     return heading + '\n\n' + block + '\n' + (rest if separator else '')
 
 
-def refresh_readmes(repo, tag, assets, api, gh):
+def refresh_readmes(repo, tag, assets, api, gh, *, platforms=None):
     """Update only marked blocks on main after all release assets are verified."""
     section = 'minimal' if tag.endswith('-minimal') else 'standard'
     paths = ('README.md',) if repo.endswith('-cpp') else ('README.md', 'README.zh-CN.md')
     for path in paths:
         language = 'bilingual' if repo.endswith('-cpp') else 'zh' if path.endswith('.zh-CN.md') else 'en'
-        block = download_buttons(repo, tag, assets, section, language=language)
+        block = download_buttons(repo, tag, assets, section, language=language, platforms=platforms)
         for attempt in range(3):
             current = api('contents/' + path + '?ref=main')
             text = base64.b64decode(current['content']).decode('utf-8')

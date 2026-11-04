@@ -7,10 +7,15 @@ on:
         required: true
         type: string
       tag:
-        description: Version tag matching all four build manifests
-        default: v0.6.9
+        description: Version tag matching the selected build manifests
+        default: v0.7.0
         required: true
         type: string
+      platforms:
+        description: Publish all four platforms or the verified Windows package first
+        type: choice
+        options: [all, windows]
+        default: all
       replace_existing:
         description: Explicitly overwrite the existing same-version assets and retarget its tag
         default: false
@@ -29,6 +34,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_BUILD_RUN: ${{ inputs.build_run }}
       RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_PLATFORM_MODE: ${{ inputs.platforms }}
       REPLACE_EXISTING_RELEASE: ${{ inputs.replace_existing }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

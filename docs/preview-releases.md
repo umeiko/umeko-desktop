@@ -10,6 +10,8 @@
 
 正式版需要多平台构建时，在 **Desktop packages → Run workflow** 勾选 `all_platforms`，再按现有正式发布流程选择这个成功的运行。
 
+正式发布默认仍要求四个平台。需要优先发布 Windows 时，在 **Publish verified desktop release → Run workflow** 选择 `platforms: windows`，填写已成功完成共享测试和 Windows 打包验证的 main CI 运行号。发布说明和 README 只显示实际存在的下载按钮，并保留历史版本的其他平台包。
+
 ## 手动实验 Preview
 
 在 [Actions → Preview desktop release](https://github.com/umeiko/umeko-desktop/actions/workflows/preview.yml) 点击 **Run workflow**：

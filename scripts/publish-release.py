@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import time
 from release_downloads import release_notes, refresh_readmes
+from release_platforms import ALL_PLATFORMS, asset_count, select_platforms
 
 REPO=os.environ['GITHUB_REPOSITORY']
 RUN=os.environ['RELEASE_BUILD_RUN']
@@ -32,11 +33,13 @@ commit=run['head_sha']
 base=Path('.release');incoming=base/'input';publish=base/'publish'
 publish.mkdir(parents=True,exist_ok=True)
 gh('run','download',RUN,'--repo',REPO,'--pattern','Umeko-*','--dir',incoming)
-platforms={'windows-x64','macos-arm64','macos-x64','linux-x64'}
+platforms=select_platforms(os.environ.get('RELEASE_PLATFORM_MODE', 'all'))
 seen=set();sizes=[]
 for metadata in incoming.rglob('build.json'):
     report=json.loads(metadata.read_text(encoding='utf-8'))
-    target=report['platform'];assert target in platforms and target not in seen
+    target=report['platform'];assert target in ALL_PLATFORMS
+    if target not in platforms:continue
+    assert target not in seen
     assert report['build']['commit']==commit and report['build']['version']==version
     assert report['gui']=='passed' and report['pi']=='passed'
     if tuple(map(int,version.split('.'))) >= (0,6,1):assert report.get('terminal')=='passed'
@@ -66,26 +69,26 @@ for name in ['umeko-provider-sdk-0.2.1.zip','develop-umeko-provider.zip']:
     matches=list(incoming.rglob(name));assert len(matches)==1
     shutil.copy2(matches[0],publish/name)
 files=sorted(publish.iterdir(),key=lambda p:p.name.casefold())
-assert len(files)==18
+assert len(files)==asset_count(platforms)-1
 (publish/'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files),encoding='ascii',newline='\n')
 files=sorted(publish.iterdir(),key=lambda p:p.stat().st_size)
 releases=api('releases')
 release=next((r for r in releases if r['tag_name']==TAG),None)
 if release and not release['draft'] and os.environ.get('REPLACE_EXISTING_RELEASE')=='true':
     from replace_release_assets import replace_published_release
-    notes = release_notes((Path(__file__).resolve().parents[1]/'docs/releases'/('v'+version+'.md')).read_text(encoding='utf-8'), REPO, TAG, [f.name for f in files]) + '\n'
+    notes = release_notes((Path(__file__).resolve().parents[1]/'docs/releases'/('v'+version+'.md')).read_text(encoding='utf-8'), REPO, TAG, [f.name for f in files], platforms=platforms) + '\n'
     notes += 'Verified CI: https://github.com/'+REPO+'/actions/runs/'+RUN+'\n\n'
     notes += ''.join(f'- {p}: {n/1048576:.2f} MiB\n' for p,n in sizes)
     published = replace_published_release(REPO,TAG,commit,files,notes,gh,api,authorized=True)
-    refresh_readmes(REPO,TAG,published['assets'],api,gh)
+    refresh_readmes(REPO,TAG,published['assets'],api,gh,platforms=platforms)
     print('Replaced same-version release:',published['html_url'],flush=True)
     with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as out:
-        out.write('Replaced ['+TAG+']('+published['html_url']+') from verified build '+RUN+'. All 19 server-side asset digests verified.\n')
+        out.write('Replaced ['+TAG+']('+published['html_url']+') from verified build '+RUN+f'. All {len(files)} server-side asset digests verified.\n')
     raise SystemExit(0)
 if release is None:
     notes=base/'notes.md'
     notes.write_text(
-        release_notes((Path(__file__).resolve().parents[1]/'docs/releases'/('v'+version+'.md')).read_text(encoding='utf-8'), REPO, TAG, [f.name for f in files]) + '\n'
+        release_notes((Path(__file__).resolve().parents[1]/'docs/releases'/('v'+version+'.md')).read_text(encoding='utf-8'), REPO, TAG, [f.name for f in files], platforms=platforms) + '\n'
         + 'Verified CI: https://github.com/' + REPO + '/actions/runs/' + RUN + '\n\n'
         + ''.join(f'- {p}: {n/1048576:.2f} MiB\n' for p, n in sizes), encoding='utf-8')
     payload=base/'create-release.json'
@@ -131,9 +134,12 @@ published=api('releases/'+str(rid));assert not published['draft'] and published[
 if not minimal:
     latest=api('releases/latest');assert latest['tag_name']==TAG and not latest['prerelease']
 assert api('git/ref/tags/'+TAG)['object']['sha']==commit
-refresh_readmes(REPO, TAG, published['assets'], api, gh)
+refresh_readmes(REPO, TAG, published['assets'], api, gh, platforms=platforms)
 from release_retention import prune_releases
-prune_releases(REPO, TAG, api, gh)
+if platforms == ALL_PLATFORMS:
+    prune_releases(REPO, TAG, api, gh)
+else:
+    print('Retaining older platform releases while publishing Windows first',flush=True)
 print('Published:',published['html_url'],flush=True)
 with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as out:
-    out.write('Published ['+TAG+']('+published['html_url']+') from verified build ['+RUN+'](https://github.com/'+REPO+'/actions/runs/'+RUN+'). All 19 server-side asset digests verified.\n')
+    out.write('Published ['+TAG+']('+published['html_url']+') from verified build ['+RUN+'](https://github.com/'+REPO+'/actions/runs/'+RUN+f'). All {len(files)} server-side asset digests verified.\n')
