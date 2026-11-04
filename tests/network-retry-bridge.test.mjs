@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { createInterface } from "node:readline";
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -45,7 +45,10 @@ async function fixture(t, { compaction = false } = {}) {
       return emit.call(this, event);
     };
   `);
-  copyFileSync(join(root, "runtime/bridge.mjs"), join(release, "bridge.mjs"));
+  // Parallel unittest modules share this prepared release. Never truncate a
+  // bridge file that another worker may be importing.
+  assert.deepEqual(readFileSync(join(release, "bridge.mjs")), readFileSync(join(root, "runtime/bridge.mjs")),
+    "Run prepare_runtime.py before testing a changed bridge");
   const replies = [], calls = [];
   const server = createServer(async (req, res) => {
     let raw = ""; for await (const chunk of req) raw += chunk;
