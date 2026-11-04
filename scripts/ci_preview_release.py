@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -24,6 +25,9 @@ class GitHub:
         self.repo, self.token = repo, token
 
     def api(self, path, method='GET', data=None, missing_ok=False):
+        if method == 'GET':
+            separator = '&' if '?' in path else '?'
+            path += separator + '_umeko=' + str(time.time_ns())
         request = urllib.request.Request(
             f'https://api.github.com/repos/{self.repo}/{path}',
             data=json.dumps(data).encode('utf-8') if data is not None else None,
@@ -64,11 +68,19 @@ def verify_ci_run(client, run, commit):
             and metadata['head_sha'] == commit
             and metadata['status'] in ('in_progress', 'completed')
             and metadata['conclusion'] in (None, 'success'), 'Not a trusted main CI build')
-    jobs = client.pages(f'actions/runs/{run}/jobs', 'jobs')
-    names = {job['name'] for job in jobs if job['conclusion'] == 'success'}
-    require({'checks', 'Windows x64'} <= names, 'Tests and Windows package must pass')
-    require(all(job['conclusion'] == 'success' for job in jobs if job['name'] in PACKAGE_JOBS),
-            'All selected native packages must pass')
+    # The final job can start before the REST replica reflects its successful
+    # dependencies. Refresh briefly, while still rejecting real failed checks.
+    for attempt in range(6):
+        jobs = client.pages(f'actions/runs/{run}/jobs', 'jobs')
+        relevant = [job for job in jobs if job['name'] in PACKAGE_JOBS | {'checks'}]
+        require(not any(job['conclusion'] in ('failure', 'cancelled', 'timed_out', 'action_required')
+                        for job in relevant), 'Tests and selected native packages must pass')
+        names = {job['name'] for job in relevant if job['conclusion'] == 'success'}
+        if {'checks', 'Windows x64'} <= names and all(job['conclusion'] == 'success' for job in relevant):
+            return
+        if attempt < 5:
+            time.sleep(2)
+    require(False, 'Tests and Windows package must pass (status refresh timed out)')
 
 
 def current_preview(client):

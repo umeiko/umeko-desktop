@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       build_run:
-        description: Successful native build run ID (main branch)
+        description: Main build with passed shared tests and selected native jobs
         required: true
         type: string
       tag:

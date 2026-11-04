@@ -12,6 +12,8 @@
 
 正式发布默认仍要求四个平台。需要优先发布 Windows 时，在 **Publish verified desktop release → Run workflow** 选择 `platforms: windows`，填写已成功完成共享测试和 Windows 打包验证的 main CI 运行号。发布说明和 README 只显示实际存在的下载按钮，并保留历史版本的其他平台包。
 
+正式发布逐项核验共享测试和所选平台任务，而不把独立的 `preview` 上传步骤作为成品验证。预览上传失败时，已经通过测试和成品校验的 Windows 包仍可正式发布。
+
 ## 手动实验 Preview
 
 在 [Actions → Preview desktop release](https://github.com/umeiko/umeko-desktop/actions/workflows/preview.yml) 点击 **Run workflow**：

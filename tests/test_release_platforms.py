@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from scripts import release_downloads, release_platforms, release_retention
 
@@ -20,6 +20,16 @@ COMMIT = 'a' * 40
 
 
 class ReleasePlatformsTests(unittest.TestCase):
+    def test_shared_checks_and_selected_native_builds_cannot_be_skipped(self):
+        jobs = [dict(name=name, conclusion='success') for name in ('checks', 'Windows x64')]
+        release_platforms.require_verified_jobs(jobs, {'windows-x64'})
+        with self.assertRaises(ValueError):
+            release_platforms.require_verified_jobs(jobs, release_platforms.ALL_PLATFORMS)
+        for name in ('checks', 'Windows x64'):
+            for conclusion in (None, 'failure', 'cancelled', 'skipped'):
+                with self.subTest(name=name, conclusion=conclusion), self.assertRaises(ValueError):
+                    release_platforms.require_verified_jobs([
+                        dict(j, conclusion=conclusion) if j['name']==name else j for j in jobs], {'windows-x64'})
     def test_modes_keep_full_releases_default_and_windows_explicit(self):
         self.assertEqual(release_platforms.asset_count(release_platforms.select_platforms('all')), 19)
         self.assertEqual(release_platforms.select_platforms('windows'), {'windows-x64'})
@@ -62,6 +72,7 @@ class WindowsPublishTests(unittest.TestCase):
         self.release = None
         self.created = False
         self.run_conclusion = 'success'
+        self.checks_conclusion = 'success'
 
     def check_output(self, command, **kwargs):
         self.assertEqual(command[0], 'gh')
@@ -80,6 +91,9 @@ class WindowsPublishTests(unittest.TestCase):
             self.created = True
             return json.dumps(self.release)
         path = args[1].split('umeiko/umeko-desktop/')[1].split('?')[0]
+        if path == 'actions/runs/777/jobs':
+            return json.dumps(dict(jobs=[dict(name='checks',conclusion=self.checks_conclusion),
+                                         dict(name='Windows x64',conclusion='success')]))
         if path == 'actions/runs/777':
             return json.dumps(dict(conclusion=self.run_conclusion, head_branch='main',
                                    head_repository=dict(full_name='umeiko/umeko-desktop'),
@@ -126,17 +140,22 @@ class WindowsPublishTests(unittest.TestCase):
         self.assertIn('All 6 server-side asset digests verified', (self.root / 'summary.md').read_text())
 
     def test_failed_build_or_wrong_version_or_failed_gui_cannot_create_a_release(self):
-        for field, value in (('version', '0.6.9'), ('gui', 'failed'), ('run', 'failure')):
+        for field, value in (('version', '0.6.9'), ('gui', 'failed'), ('checks', 'failure')):
             with self.subTest(field=field), tempfile.TemporaryDirectory() as work:
                 self.root = Path(work)
                 report = dict(self.report, build=dict(self.report['build']))
                 if field == 'version': report['build']['version'] = value
                 elif field == 'gui': report['gui'] = value
-                self.run_conclusion = value if field == 'run' else 'success'
+                self.checks_conclusion = value if field == 'checks' else 'success'
                 self.metadata.write_text(json.dumps(report))
-                with self.assertRaises(AssertionError):
+                with self.assertRaises((AssertionError,ValueError)):
                     self.publish()
                 self.assertFalse(self.created)
+
+    def test_independent_preview_upload_failure_does_not_invalidate_passed_builds(self):
+        self.run_conclusion = 'failure'
+        self.publish()
+        self.assertEqual(len(self.release['assets']), 6)
 
 
 if __name__ == '__main__':

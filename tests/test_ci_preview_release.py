@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from scripts.ci_preview_release import publish, verify_ci_run
 from scripts.preview_release import digest
@@ -85,6 +86,9 @@ class GitHubFixture:
 
 class CiPreviewReleaseTests(unittest.TestCase):
     def setUp(self):
+        sleep = patch('scripts.ci_preview_release.time.sleep')
+        self.pause = sleep.start()
+        self.addCleanup(sleep.stop)
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
@@ -130,6 +134,20 @@ class CiPreviewReleaseTests(unittest.TestCase):
         del self.client.releases[2]
         self.client.reference = None
         self.assertEqual(self.publish()['tag_name'], 'preview')
+
+    def test_rest_replica_can_lag_behind_successful_dependencies(self):
+        original = self.client.pages
+        reads = []
+        def pages(path, key=None):
+            if key == 'jobs':
+                reads.append(path)
+                if len(reads) < 3:
+                    return [dict(name='checks', conclusion=None)]
+            return original(path, key)
+        self.client.pages = pages
+        self.assertEqual(self.publish()['tag_name'], 'preview')
+        self.assertEqual(len(reads), 3)
+        self.assertEqual(self.pause.call_count, 2)
 
     def test_fork_pr_other_branch_and_wrong_head_cannot_publish(self):
         for field,value in [('head_repository',dict(full_name='fork/umeko-desktop')),

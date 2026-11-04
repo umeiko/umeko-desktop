@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import time
 from release_downloads import release_notes, refresh_readmes
-from release_platforms import ALL_PLATFORMS, asset_count, select_platforms
+from release_platforms import ALL_PLATFORMS, asset_count, select_platforms, require_verified_jobs
 
 REPO=os.environ['GITHUB_REPOSITORY']
 RUN=os.environ['RELEASE_BUILD_RUN']
@@ -25,15 +25,16 @@ def api(path):
     separator='&' if '?' in path else '?'
     return json.loads(gh('api',f'repos/{REPO}/'+path+separator+'_umeko='+str(time.time_ns())))
 
+platforms=select_platforms(os.environ.get('RELEASE_PLATFORM_MODE', 'all'))
 run=api('actions/runs/'+RUN)
-assert run['conclusion']=='success' and run['head_branch']=='main'
+assert run['head_branch']=='main'
 assert run['head_repository']['full_name']==REPO and run['event'] in ('push','workflow_dispatch')
 assert run['path']=='.github/workflows/build.yml'
+require_verified_jobs(api('actions/runs/'+RUN+'/jobs?per_page=100')['jobs'],platforms)
 commit=run['head_sha']
 base=Path('.release');incoming=base/'input';publish=base/'publish'
 publish.mkdir(parents=True,exist_ok=True)
 gh('run','download',RUN,'--repo',REPO,'--pattern','Umeko-*','--dir',incoming)
-platforms=select_platforms(os.environ.get('RELEASE_PLATFORM_MODE', 'all'))
 seen=set();sizes=[]
 for metadata in incoming.rglob('build.json'):
     report=json.loads(metadata.read_text(encoding='utf-8'))
