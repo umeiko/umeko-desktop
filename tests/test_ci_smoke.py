@@ -23,6 +23,29 @@ class SmokeProfileTests(unittest.TestCase):
             env = dict(os.environ, HOME=directory, USERPROFILE=directory, UMEKO_DATA_DIR=directory)
             verifier['verify_preview_network'](Path(shutil.which('node')), resources, env)
 
+    def test_packaged_preview_network_helper_runs_through_resource_symlink(self):
+        verifier = runpy.run_path(str(ROOT / 'scripts/ci-smoke.py'), run_name='preview_network_fixture')
+        with tempfile.TemporaryDirectory() as directory:
+            resources = Path(directory) / 'Resources'
+            (resources / 'runtime').mkdir(parents=True)
+            for name in ('preview-network.mjs', 'update-engine.mjs'):
+                shutil.copy2(ROOT / 'runtime' / name, resources / 'runtime' / name)
+            frameworks = Path(directory) / 'Frameworks'
+            frameworks.mkdir()
+            node = Path(shutil.which('node'))
+            if os.name == 'nt':
+                # Junctions model the same resolved-directory alias without
+                # requiring Windows' privileged symbolic-link permission.
+                result = subprocess.run([str(node), '-e',
+                    "require('node:fs').symlinkSync(process.argv[1],process.argv[2],'junction')",
+                    str(resources / 'runtime'), str(frameworks / 'runtime')],
+                    capture_output=True, text=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+                self.assertEqual(result.returncode, 0, result.stderr)
+            else:
+                (frameworks / 'runtime').symlink_to(resources / 'runtime', target_is_directory=True)
+            env = dict(os.environ, HOME=directory, USERPROFILE=directory, UMEKO_DATA_DIR=directory)
+            verifier['verify_preview_network'](node, frameworks, env)
+
     def test_profile_isolation_needs_only_the_standard_library(self):
         with tempfile.TemporaryDirectory() as directory:
             profile = Path(directory) / 'profile'

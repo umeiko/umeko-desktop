@@ -1,10 +1,8 @@
 // Private child-process network settings shared with the verified updater routes.
 // No machine settings, package-manager config files, or trust stores are changed.
 import fs from 'node:fs/promises';
-import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {X509Certificate} from 'node:crypto';
-import {fileURLToPath} from 'node:url';
 import {withUpdateRoutes, updateCertificates} from './update-engine.mjs';
 
 const UPSTREAM='https://github.com/umeiko/umeko-desktop.git';
@@ -128,7 +126,7 @@ export async function probePreviewNetwork(options={},transport=options.transport
   } catch(error) {return {ok:false,...classifyPreviewFailure(error),attempts};}
 }
 
-if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
+if(import.meta.main) {
   let result;
   try {
     const [mode,file]=process.argv.slice(2);

@@ -34,7 +34,11 @@ def verify_preview_network(node, resources, environment):
     result = subprocess.run([str(node), str(resources / 'runtime/preview-network.mjs'), 'classify'],
         input='CERTIFICATE_VERIFY_FAILED', capture_output=True, text=True, env=environment,
         timeout=15, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
-    if result.returncode or json.loads(result.stdout).get('category') != 'certificate':
+    try:
+        category = json.loads(result.stdout).get('category')
+    except (ValueError, AttributeError):
+        category = None
+    if result.returncode or category != 'certificate':
         raise RuntimeError('Packaged Preview network helper is unavailable')
 
 
