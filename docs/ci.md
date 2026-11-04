@@ -9,7 +9,7 @@ After the usual setup, use those same commands locally with
 `QT_QPA_PLATFORM=offscreen` and `QT_QUICK_BACKEND=software`. Linux checks also
 use a private D-Bus session and an unlocked ephemeral keyring, as shown in the
 workflow.
-Discovery and the same 43 UI smokes run concurrently inside that Linux job.
+Discovery and the UI smokes run concurrently inside that Linux job.
 Discovery gets `(nproc + 1) / 2` workers and the UI list gets `nproc / 2`
 (at least one each): two unit workers and two UI workers on the measured
 four-core runner. Use `bash scripts/ci-ui-smokes.bash --jobs N` to set the UI
@@ -100,7 +100,7 @@ The remaining shared Node cases run only in Linux checks.
 
 For PRs, a small scope job keeps ordinary `app/`, QML, `runtime/` source and
 test changes on Linux shared checks plus the Windows native regression job.
-It requests all four packages for dependency/build inputs and explicitly
+It requests a Windows package for dependency/build inputs and explicitly
 copied non-source resources: runtime package manifests, requirements,
 PyInstaller specs, app icons/data files, runtime documentation/data,
 skills/plugins/licenses, build/setup scripts and packaging workflows.
@@ -110,13 +110,18 @@ in the Windows package job instead of repeating it in a separate job.
 Within `app/` and `runtime/`, only known source suffixes use the light path;
 module manifests such as `qmldir`, SVGs and new data files still request packages.
 
-Main pushes and manual desktop dispatches always build Windows x64, Linux
-x64, macOS Intel and Apple Silicon. Native IME caret checks, Windows window
+Main pushes and ordinary manual dispatches build Windows x64. A manual
+`all_platforms=true` dispatch additionally builds Linux x64, macOS Intel and
+Apple Silicon for a stable release. Linux IME caret checks run in the shared
+UI pool even when no Linux package is requested. Windows window
 and embedded-browser checks, macOS DMG tests, and frozen application/Pi
 smokes remain on their original platforms. Shared tests are no longer
 repeated in every package job; no test file is deleted.
 
-The existing PR concurrency cancellation remains in place. Documentation
-and release publishing workflows, their triggers and deployment conditions
-are unchanged. Release publishing still requires a successful main desktop
-run and its complete native artifacts; Preview still uses source main.
+The existing PR concurrency cancellation remains in place. A final job on
+successful main CI publishes only its verified Windows package to the rolling
+`preview` prerelease. It stages and verifies uploads before replacing the old
+Release/tag, rejects stale main builds, and never marks the Preview as Latest.
+PRs and other branches do not receive this publication job. Stable release
+publishing still requires a successful main desktop run with all four native
+artifacts; use the explicit full-platform dispatch for that run.

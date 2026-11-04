@@ -1,5 +1,6 @@
 """PR package boundaries and the workflow's real parallel exit-status handling."""
 import importlib.util
+import json
 import os
 from pathlib import Path
 import shutil
@@ -15,6 +16,26 @@ spec.loader.exec_module(scope)
 
 
 class PackageChangesTests(unittest.TestCase):
+    def test_daily_builds_use_windows_and_full_releases_require_explicit_dispatch(self):
+        for event,value in [('push',''),('pull_request','true'),('workflow_dispatch','false')]:
+            with self.subTest(event=event,value=value):
+                self.assertEqual([row['platform'] for row in scope.package_matrix(event,value)['include']], ['windows-x64'])
+        full = scope.package_matrix('workflow_dispatch','true')['include']
+        self.assertEqual({row['platform'] for row in full},
+                         {'windows-x64','linux-x64','macos-arm64','macos-x64'})
+
+    def test_main_push_plans_windows_package_without_a_pr_diff_base(self):
+        import sys
+        with tempfile.TemporaryDirectory() as temporary:
+            output=Path(temporary)/'outputs'
+            env={**os.environ,'GITHUB_EVENT_NAME':'push','GITHUB_OUTPUT':str(output)}
+            env.pop('PR_BASE',None)
+            subprocess.run([sys.executable,str(ROOT/'scripts/ci-package-changes.py')],
+                           env=env,check=True,capture_output=True,text=True)
+            values=dict(line.split('=',1) for line in output.read_text().splitlines())
+            self.assertEqual(values['packages'],'true')
+            self.assertEqual(json.loads(values['matrix'])['include'][0]['platform'],'windows-x64')
+
     def test_source_and_test_changes_keep_the_light_path(self):
         for path in ('app/controller.py','app/qml/Main.qml','app/qml/markdown.js','runtime/bridge.mjs',
                      'tests/test_links.py','tests/fixtures/requirements.txt','tests/fixtures/demo.spec',
