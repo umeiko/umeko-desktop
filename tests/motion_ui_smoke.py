@@ -65,23 +65,13 @@ try:
     # the brief motion in the old direction before reversing.
     backend._view.id='2';backend.chatChanged.emit()
     assert evaluate(find('projectList'),'model[selectedRow].id')=='2','Selection did not bind to row 2'
-    # syncSelection normally runs through Qt.callLater. Consume the changed
-    # selection synchronously, using one fixture clock instant for both state
-    # samples even if the OS preempts this GUI turn. Restore the clock before
-    # event processing resumes.
+    # syncSelection normally runs through Qt.callLater. Sample and consume the
+    # changed selection in one GUI call, without a Python/event-loop gap between
+    # observations of the same retarget.
     state,retarget=evaluate(motion,'''(function() {
-        const realNow = Date.now
-        const instant = realNow()
-        const fixtureNow = function() { return instant }
-        try {
-            Date.now = fixtureNow
-            if (Date.now !== fixtureNow) throw new Error("Fixture clock is not writable")
-            const state = currentState()
-            target.updateTarget()
-            return [state, trajectory.samples[0]]
-        } finally {
-            Date.now = realNow
-        }
+        const state = currentState()
+        target.updateTarget()
+        return [state, trajectory.samples[0]]
     })()''')
     assert abs(retarget[0]-state[0])<20, (state,retarget)
     assert state[1]*retarget[1]>0 and abs(retarget[1])>1, (state,retarget)
