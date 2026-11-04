@@ -10,7 +10,7 @@ from app.storage import Store
 from app.integration import Completion
 from app.pi_runtime import verify_runtime, RELEASE_NAME
 verify_runtime(ROOT/"runtime/releases"/RELEASE_NAME, ROOT/"runtime/bridge.mjs")
-store=Store(base/'profile');store.data.update(selectedProvider='internal',selectedModel='fixture',providers=[{'id':'internal','name':'Local fixture','api':'internal','baseUrl':'','key':'','models':[{'upstream':'fixture','alias':'fixture'}]}]);store.save()
+store=Store(base/'profile');store.data.update(selectedProvider='internal',selectedModel='fixture',providers=[{'id':'internal','name':'Local fixture','api':'internal','baseUrl':'','key':'','models':[{'upstream':'fixture','alias':'fixture'}]}]);store.data['agent']['agentDir']=str(base/'agent');store.save()
 from main import create_application
 app,engine,b=create_application();window=engine.rootObjects()[0];warnings=[]
 engine.warnings.connect(lambda values:warnings.extend(x.toString() for x in values))

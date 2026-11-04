@@ -9,12 +9,28 @@ After the usual setup, use those same commands locally with
 `QT_QPA_PLATFORM=offscreen` and `QT_QUICK_BACKEND=software`. Linux checks also
 use a private D-Bus session and an unlocked ephemeral keyring, as shown in the
 workflow.
-Discovery and the serial UI smoke list run concurrently inside that same
-Linux job, with separate private D-Bus/keyring sessions. Both must succeed.
+Discovery and the same 43 UI smokes run concurrently inside that Linux job.
+Discovery gets `(nproc + 1) / 2` workers and the UI list gets `nproc / 2`
+(at least one each): two unit workers and two UI workers on the measured
+four-core runner. Use `bash scripts/ci-ui-smokes.bash --jobs N` to set the UI
+worker budget locally; its default is all detected cores.
+GNU `xargs -P` schedules scripts; no additional runner dependency is installed.
+Each script gets its own private D-Bus session, ephemeral keyring, XDG directories,
+profile and `PI_CODING_AGENT_DIR`. An explicitly configured agent directory still
+takes precedence; the environment also isolates bundled-skill installation when
+that setting is empty. Units and all smoke scripts must succeed.
+Completed-script output is grouped under its filename, with status and duration.
+Full logs are kept in the run's `build/ui-smokes.*` directory; failures print their
+full log and an error naming the script. Other scripts finish without retries,
+and any failure makes the step fail. Scripts are ordered longest first using
+per-script measurements from CI run 41779809091. There is no serial smoke tail.
+If a smoke genuinely needs a machine-exclusive resource that cannot be isolated,
+document its one-line resource reason here before adding it after the pool.
 `scripts/ci-unit-tests.py` uses the same `unittest.TestLoader.discover` start
 directory (`tests`) and pattern (`test_*.py`), including unittest skips and
 module/class fixtures. It passes those suites to pinned `unittest-parallel`
-1.8.6, which uses all detected CPU cores and prints per-test results and failure
+1.8.6, which uses the requested worker budget (all detected cores by default)
+and prints per-test results and failure
 tracebacks. The job prints `nproc` too. Only the Linux unit-test step installs
 this test dependency; application requirements and other jobs are unchanged.
 Some existing `load_tests` hooks create local wrapper classes. A small suite
@@ -33,8 +49,10 @@ exclusive resource that cannot be isolated, add its discovery name (for example
 `test_device`) and a one-line reason to `SERIAL_MODULES` in the script. Keep that
 module small. The script removes it from the parallel group and runs it once,
 in a fresh process, after the pool finishes; it never runs in both groups.
-This exception is exclusive among unit tests; UI smokes still run concurrently,
-so it must not share their resources. Fix such a shared fixture instead.
+This exception is exclusive among unit tests; the UI pool may still be running.
+Resources shared across either pool still need isolated fixtures. A genuinely
+machine-exclusive case must run after both pools, with its resource reason;
+the unit-only serial marker does not provide that machine-wide exclusion.
 For local runs install `unittest-parallel==1.8.6` and run the same script;
 `--jobs 4`, `--pattern test_context_compaction.py` and `-k circle` can limit a
 focused run. `--list` prints the discovered IDs without executing them.
@@ -47,6 +65,26 @@ Clicks remap that control after mouse movement processes queued Qt layout work.
 Parallel execution also exposed an already-completed pet-import future replying
 before its RPC token was registered. That response is now queued; the existing
 RPC test covers both normal background completion and a completed future.
+
+UI smoke readiness follows actual delegates and geometry: request-details waits
+for its asynchronous button to exist and be visible, while large-chat waits for
+the original jump-position condition after scene polish, as well as ready data
+and restoration completion. Neither changes the original timeout or assertion.
+Near the end of a paged conversation, restoration also waits for relevant visible
+neighbour bodies in its existing requested range, explicitly polishes their
+loaded layout and repositions before completing. Loader readiness alone does
+not guarantee final nested Column/text heights. The original retry cap remains.
+Concurrent paging also exposed a link-scanner lifetime race: a Python weak
+reference can survive destruction of its QML-owned C++ object. Scanner workers
+now exchange only Python cancellation state and queued results; the owner's GUI
+timer delivers results while it exists, so a late scan never signals a deleted
+delegate. The timer runs only while a scan is active.
+The character artwork smoke fixes its backend's normal-artwork fixture: valid
+random rare covers have different paths and are outside its normal-asset
+assertions. Product rare-cover selection remains unchanged.
+Subagent collection waits for the visible card/group state instead of a fixed
+sleep. Motion retargeting samples and calls the real update method in one
+synchronous QML call, without processing queued work between the samples.
 
 Runtime verification leaves identical prepared adapters untouched and replaces
 changed files atomically, so concurrent readers cannot see a truncated helper.

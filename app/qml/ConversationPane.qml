@@ -75,6 +75,11 @@ Item {
             cancelFlick();
             followTail = false;
         }
+        function polishBody(item) {
+            for (const child of item.children)
+                polishBody(child);
+            item.ensurePolished();
+        }
         function jumpToMessage(row) {
             if (row < 0 || row >= count)
                 return;
@@ -231,10 +236,38 @@ Item {
                                 && conversation.restoreAttempts < 200)
                             return;
                     }
+                    const bottom = conversation.contentY + conversation.height;
+                    const last = Math.min(index + 3, conversation.count - 1);
+                    for (const row of conversation.contentItem.children) {
+                        if (row.messageSlot !== true || row.index < index || row.index > last ||
+                                row.y + row.height <= conversation.contentY || row.y >= bottom)
+                            continue;
+                        if (!row.bodyReady) {
+                            if (conversation.restoreAttempts < 200)
+                                return;
+                        } else {
+                            // Loader.Ready precedes deferred TextEdit/Column
+                            // polish; consume their actual sizes before clamping.
+                            conversation.polishBody(row);
+                        }
+                    }
+                    conversation.forceLayout();
                     if (item) {
                         conversation.positionViewAtIndex(index, ListView.Beginning);
                         if (!conversation.atYEnd)
                             conversation.contentY += Math.min(conversation.restoreOffset, item.height - 1);
+                    }
+                    conversation.forceLayout();
+                    if (conversation.restoreAttempts < 200) {
+                        const bottom = conversation.contentY + conversation.height;
+                        const last = Math.min(index + 3, conversation.count - 1);
+                        // A pending visible neighbour can still change the end
+                        // clamp after the target body itself has become ready.
+                        for (const row of conversation.contentItem.children) {
+                            if (row.messageSlot === true && row.index >= index && row.index <= last &&
+                                    row.y + row.height > conversation.contentY && row.y < bottom && !row.bodyReady)
+                                return;
+                        }
                     }
                 }
                 if (conversation.restoreAttempts >= 2) {
