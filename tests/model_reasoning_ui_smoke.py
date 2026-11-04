@@ -11,7 +11,7 @@ os.environ['UMEKO_DATA_DIR'] = tempfile.mkdtemp(prefix='umeko-model-reasoning-')
 os.environ['UMEKO_LANGUAGE'] = 'zh'
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 os.environ.setdefault('QT_QUICK_BACKEND', 'software')
-from PySide6.QtCore import QObject, QMetaObject, Q_ARG, Qt
+from PySide6.QtCore import QObject, QMetaObject, Q_ARG, QPointF, Qt
 from PySide6.QtTest import QTest
 from main import create_application
 
@@ -113,6 +113,17 @@ try:
     assert backend.reasoningEffort == 'high'
     QTest.keyClick(window, Qt.Key_Home); QTest.qWait(100)
     assert backend.reasoningEffort == 'off'
+    # The large handle and ticks must agree with the native Slider hit mapping.
+    handle = slider.property('handle')
+    for index, level in enumerate(['off', 'low', 'medium', 'high', 'xhigh']):
+        x = handle.width()/2 + index/4*(slider.width()-handle.width())
+        QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, slider.mapToScene(QPointF(x, slider.height()/2)).toPoint())
+        QTest.qWait(50)
+        assert backend.reasoningEffort == level, (index, backend.reasoningEffort)
+    QTest.mousePress(window, Qt.LeftButton, Qt.NoModifier, handle.mapToScene(handle.boundingRect().center()).toPoint())
+    QTest.mouseMove(window, slider.mapToScene(QPointF(handle.width()/2, slider.height()/2)).toPoint(), 60)
+    QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, slider.mapToScene(QPointF(handle.width()/2, slider.height()/2)).toPoint())
+    assert backend.reasoningEffort == 'off'
     assert window.grabWindow().save(str(out / 'model-reasoning-slider.png'))
     # Large text must still leave the footer and all fields reachable.
     QMetaObject.invokeMethod(find('modelPopup'), 'close'); QTest.qWait(700)
@@ -129,7 +140,7 @@ try:
     click('providerModelReasoning_reset');QTest.qWait(100)
     assert find('providerModelReasoning_count').property('value') == 3
     assert not warnings, warnings
-    print('MODEL_REASONING_UI_OK: gears, draft/cancel, names/count, persistence, validation, model fallback, off-only, slider, font bounds')
+    print('MODEL_REASONING_UI_OK: gears, draft/cancel, names/count, persistence, validation, model fallback, off-only, slider pointer/keyboard, font bounds')
 finally:
     backend.close(); window.hide()
     import shiboken6

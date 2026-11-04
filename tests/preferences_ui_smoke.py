@@ -61,10 +61,8 @@ try:
     assert backend.reasoningEffort=='off'
     assert not find('reasoningEffortBadge').isVisible()
     slider.forceActiveFocus();QTest.keyClick(window,Qt.Key_Right);QTest.keyClick(window,Qt.Key_Right);QTest.qWait(100)
-    hint=window.findChild(QObject,'reasoningEffortHint')
-    assert hint is not None
+    assert window.findChild(QObject,'reasoningEffortHint') is None
     QTest.mouseMove(window,find('modelSearch').mapToScene(QPointF(10,10)).toPoint());QTest.qWait(200)
-    assert not hint.property('visible')
     window.grabWindow().save(str(out/'reasoning-effort-v034.png'))
     row=find('reasoningControls')
     for scale in (.5,1,2):
@@ -72,11 +70,12 @@ try:
         assert slider.x() < 1 and slider.x()+slider.width() <= row.width()+1
         assert slider.width() >= row.width()*.8
     backend.setFontScale(1);QTest.qWait(120)
+    effort_before_hover=backend.reasoningEffort
     QTest.mouseMove(window,row.mapToScene(row.boundingRect().center()).toPoint());QTest.qWait(700)
-    assert hint.property('visible')
-    window.grabWindow().save(str(out/'reasoning-effort-hover-v034.png'))
+    assert window.findChild(QObject,'reasoningEffortHint') is None
+    assert backend.reasoningEffort==effort_before_hover
+    window.grabWindow().save(str(out/'reasoning-effort-no-hover.png'))
     QTest.mouseMove(window,find('modelSearch').mapToScene(QPointF(10,10)).toPoint());QTest.qWait(200)
-    assert not hint.property('visible')
     QTest.keyClick(window,Qt.Key_Escape);QTest.qWait(850)
     assert backend.setReasoningEffort('off')
     window.setProperty('page','settings')
@@ -115,7 +114,7 @@ try:
     assert not warnings,'\n'.join(warnings)
     saved=json.loads(backend.store.path.read_text(encoding='utf-8'))
     assert saved['ui']['fontScale']==2 and saved['ui']['language']=='en'
-    print('PREFERENCES_UI_OK: editor toggle, network settings, reasoning hover, fonts/language, error details and persistence')
+    print('PREFERENCES_UI_OK: editor toggle, network settings, reasoning without hover popup, fonts/language, error details and persistence')
 finally:
     backend.close()
     import shiboken6
