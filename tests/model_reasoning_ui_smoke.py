@@ -56,15 +56,26 @@ def count(prefix, value):
 
 try:
     window.resize(1200, 850)
-    rows = [{'upstream': 'fixture-a', 'alias': 'fixture-a'}, {'upstream': 'fixture-b', 'alias': 'fixture-b', 'reasoningLevels': ['medium', 'xhigh']}]
+    # Exercise editor drafts with deterministic metadata, not live discovery.
+    rows = [{'upstream': 'fixture-a', 'alias': 'fixture-a',
+             'reasoningLevelsAuto': True,
+             'reasoningDetection': {'state': 'known', 'source': 'metadata', 'levels': [], 'verified': True},
+             'reasoningFormat': 'openai', 'reasoningFormatAuto': False},
+            {'upstream': 'fixture-b', 'alias': 'fixture-b',
+             'reasoningLevels': ['medium', 'xhigh'], 'reasoningLevelsAuto': False,
+             'reasoningFormat': 'openai', 'reasoningFormatAuto': False}]
     assert backend.saveProvider('', '档位配置预览', 'openai', 'http://127.0.0.1:1/v1', 'fixture-only-key', json.dumps(rows))
     provider = backend.config['providers'][0]['id']
     backend.selectModel(provider, 'fixture-a')
+    before = backend.reasoningLevels  # the cached automatic result offers only off
     window.setProperty('page', 'settings'); window.setProperty('settingsTab', 0); QTest.qWait(200)
     click('editProvider_' + provider)
     click('providerModelSettings_0')
     popup = find('providerModelReasoning')
     assert popup.property('visible'), (find('providerModelSettings_0').mapToScene(find('providerModelSettings_0').boundingRect().center()), warnings)
+    # The first model opens in automatic mode; choose manual to edit names.
+    mode = find('providerModelReasoning_levelsMode'); mode.setProperty('currentIndex', 1)
+    assert QMetaObject.invokeMethod(mode, 'activated', Q_ARG(int, 1)); QTest.qWait(50)
     assert find('providerModelReasoning_count').property('value') == 3
     click('providerModelReasoning_increase')
     assert find('providerModelReasoning_count').property('value') == 4
@@ -74,7 +85,7 @@ try:
     assert window.grabWindow().save(str(out / 'model-reasoning-gear.png'))
     click('providerModelReasoning_save')
     assert not popup.property('visible')
-    assert backend.reasoningLevels == ['low', 'high', 'max'], 'gear must remain an outer-editor draft'
+    assert backend.reasoningLevels == before == [], 'gear must remain an outer-editor draft'
     click('saveProviderButton')
     assert backend.reasoningLevels == ['low', 'medium', 'high', 'xhigh']
     saved = json.loads((Path(os.environ['UMEKO_DATA_DIR']) / 'settings.json').read_text())
@@ -108,7 +119,7 @@ try:
     slider = find('reasoningEffortSlider')
     slider.forceActiveFocus(); QTest.keyClick(window, Qt.Key_End); QTest.qWait(100)
     assert backend.reasoningEffort == 'xhigh'
-    assert find('reasoningEffortBadge').property('text') == '· xhigh'
+    assert find('reasoningEffortBadge').property('text') == '· XHigh'
     QTest.keyClick(window, Qt.Key_Left); QTest.qWait(100)
     assert backend.reasoningEffort == 'high'
     QTest.keyClick(window, Qt.Key_Home); QTest.qWait(100)

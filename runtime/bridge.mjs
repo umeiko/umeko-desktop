@@ -168,6 +168,7 @@ async function bindSession(session) {
   const configurePayload = async (payload, model) => {
     const result = await originalPayload?.(payload, model) ?? payload;
     const configured = { ...result };
+    configured._umeko_reasoning_effort = reasoningEffort;
     delete configured.reasoning_effort;
     if (reasoningEffort !== "off") configured.reasoning_effort = reasoningEffort;
     return configured;

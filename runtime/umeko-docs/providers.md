@@ -25,7 +25,17 @@ Umeko 使用自己的供应商网关。不要指导用户执行 Pi `/login`、�
 {"operation":"sessions.reasoning","arguments":{"value":"high"}}
 ```
 
-`value` 为 `off` 或当前模型的 `reasoningLevels` 中的名称。未配置时默认 `low`、`high`、`max`；空列表仅支持关闭。可在供应商的模型齿轮中按从低到高设置数量与名称；名称原样发送，刷新模型会保留手动设置。`off` 完全不发送 `reasoning_effort`；实际服务是否接受其他级别依其协议与模型能力。模型切换若排队，下一轮才使用新连接。
+`value` 为 `off` 或当前模型的 `reasoningLevels` 中的原始名称；空列表仅支持关闭。在供应商设置添加或刷新模型、打开模型弹窗或已保存模型的齿轮时，对未检测的自动模型后台排队检测：先读取模型目录中明确的档位元数据，再解析无效档位的错误枚举，最后逐档探测。启动、切换模型/会话和发送消息不会触发检测。同一模型有进行中的轮次时，探测等该轮结束；聊天与探测不会同时请求该模型。尚未检测时可以直接以 `off` 聊天。结果按供应商和模型缓存，重启后保留；模型切换或打开会话时，失效的档位会调整到最近的可用档位。
+
+档位和思考参数格式各有独立的自动开关。模型字段为 `reasoningLevels`（从低到高的字符串数组）、`reasoningLevelsAuto`（布尔值）、`reasoningFormat`（字符串）、`reasoningFormatAuto`（布尔值）。保存过的旧版 `reasoningLevels` 自动视为手动设置，保持原来的数量、名称与顺序；现有齿轮编辑档位也会切换为手动。手动设置优先于检测，模型刷新不会覆盖它。
+
+格式支持 `openai`（顶层 `reasoning_effort`，off 省略）、`openai-none`（off 发送 `none`）、`chat-template`（`chat_template_kwargs.enable_thinking`，开启时另带嵌套 `reasoning_effort`）、`qwen`（顶层 `enable_thinking` 和开启时的 effort）、`deepseek`（`thinking.type: enabled/disabled` 和开启时的 effort），以及原生 Anthropic 的 `anthropic-adaptive`。原生 Anthropic 的力度仍映射到 `output_config.effort`，Responses 映射到 `reasoning.effort`。
+
+自动格式检测依据实际返回的思考字段或 `<think>` 内容，而非请求被接受。探测使用支持的最强标准档位（优先 `max`，拒绝时降低），并独立尝试每种候选的关闭开关，即使该格式的开启请求没有思考输出或被拒绝。优先使用同一格式完成开关；OpenAI 兼容路径有多种已验证组合时优先原生 effort 加显式 `none`。必要时自动缓存可分别保存开启格式和 `offFormat`。省略参数可能继续采用上游默认的思考模式。探测的档位不替换用户当前选择。
+
+检测记录 `reasoningDetection`、`reasoningFormatDetection` 包含状态、来源和验证结果；服务端若默默接受任意档位，使用公开请求 schema 的档位并标记 `verified:false`，不代表它们产生不同的力度。格式结果的 `status` 为 `on-off-verified`（观察到开关）、`cannot-disable`（所有候选关闭方式均未关闭）或 `on-not-observable`（所有格式均未观察到开启）。`offSupported:false` 会同时保留完整 `offSwitchesTried`；它表示本次受限探测未找到关闭方式，供界面提示无法关闭。手动或尚未完成时可为 null。`offVerified` 记录是否观察到关闭，不能证明隐藏的思考没有发生。已有的旧自动缓存会补测这些关闭结果，手动设置不被替换。
+
+上游若拒绝正在使用的档位，当前轮报错并列出已知可用档位，缓存移除该档位，等该模型当前轮结束后重新检测；不会自动重发这一轮。手动重新检测也会等待同模型空闲。模型切换若排队，下一轮才使用新连接。
 
 每个供应商的网络模式通过 `providers.network` 设置，参数 `id`、`mode`、`address`。模式 `system` 跟随系统，`direct` 不走代理，`custom` 使用指定的 HTTP/HTTPS 代理地址。非 custom 时 `address` 留空。不要把它称为独立供应商类型。
 
@@ -58,6 +68,6 @@ Python 模型请求使用系统证书信任链，并可按供应商追加可信�
 
 错误详情保留底层异常链和证书校验原因。代理 CONNECT 失败与证书错误应分别排查；证书配置不会改变用户选择的代理模式，也不会自动信任服务端返回的未知证书或关闭 TLS 校验。
 
-`models.mappings` 的 `models` 是完整映射数组，行格式包含 `provider`、`upstream`、`alias`、`contextWindow`、`contextWindowAuto`、`vision`、`visionAuto`。这是替换操作，先读取所有供应商并保留其他映射；插件模型 ID 由刷新获取，不能在映射中凭空新增。
+`models.mappings` 的 `models` 是完整映射数组，行格式包含 `provider`、`upstream`、`alias`、`contextWindow`、`contextWindowAuto`、`vision`、`visionAuto` 及上述 reasoning 配置。省略 reasoning 字段时保留原配置；这是替换操作，先读取所有供应商并保留其他映射。插件模型 ID 由刷新获取，不能在映射中凭空新增。
 
 `providers.remove` 删除一个供应商账号，参数 `id`。它不等同于卸载整个插件，参阅 [Provider 插件](provider-plugins.md)。

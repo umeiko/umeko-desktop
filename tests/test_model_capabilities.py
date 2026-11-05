@@ -25,7 +25,9 @@ class VisionTests(unittest.TestCase):
         self.assertEqual(normalize_vision({"upstream": "gpt-4o", "visionAuto": True}, manual), {"vision": True, "visionAuto": True})
         self.assertTrue(normalize_vision({"upstream": "private", "vision": True})["vision"])
         combined = normalize_model({**model, "contextWindow": "256K", "contextWindowAuto": False, "vision": False})
-        self.assertEqual(combined, {"contextWindow": 262144, "contextWindowAuto": False, "vision": False, "visionAuto": False})
+        self.assertEqual(combined, {"contextWindow": 262144, "contextWindowAuto": False, "vision": False, "visionAuto": False,
+            "reasoningLevelsAuto": True, "reasoningFormat": "openai", "reasoningFormatAuto": True,
+            "reasoningDetection": {"state": "unknown"}, "reasoningFormatDetection": {"state": "unknown"}})
         for bad in ({"vision": "false"}, {"visionAuto": "false"}, {"visionAuto": False}):
             with self.assertRaises(ValueError):
                 normalize_vision({"upstream": "k3", **bad})
