@@ -82,9 +82,19 @@ try:
         def rendered():
             # The conversation body loads asynchronously after chatChanged.
             window.grabWindow()
-            visible = [item.objectName() for item in items() if item.isVisible()]
+            visible_items = [item for item in items() if item.isVisible()]
+            visible = [item.objectName() for item in visible_items]
             cards = sum(name.startswith("subagentCard_") for name in visible)
-            return cards == count if count <= 4 else cards == 0 and "subagentGroupCard" in visible
+            if count <= 4:
+                expected = {prefix + tool["subagent"]["id"] for tool in tools[:count]
+                            for prefix in ("subagentTitle_", "subagentSummary_")}
+                summaries = {item.objectName(): item for item in visible_items if item.objectName() in expected}
+                # A visible delegate can precede its Column's layout polish.
+                # Wait for every expected text parent, then keep the bounds assertions below.
+                return (cards == count and summaries.keys() == expected
+                        and all(item.parentItem() is not None and item.parentItem().height() > 0
+                                for item in summaries.values()))
+            return cards == 0 and "subagentGroupCard" in visible
         wait(rendered, f"Subagent collection did not render {count} children")
 
     render(4)

@@ -6,6 +6,7 @@ import time
 import unittest
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.pi_install import parse_install_command, install_package, remove_package
@@ -24,9 +25,26 @@ class PiInstallTests(unittest.TestCase):
             cli.parent.mkdir(parents=True)
             marker = base / "child-ran"
             started = base / "started"
-            child = "setTimeout(() => require('fs').writeFileSync(" + json.dumps(str(marker)) + ", 'unexpected'), 2500)"
-            cli.write_text("require('child_process').spawn(process.execPath, ['-e', " + json.dumps(child) + "]); require('fs').writeFileSync(" + json.dumps(str(started)) + ", 'started'); setTimeout(() => {}, 60000)", encoding="utf-8")
-            with self.assertRaisesRegex(RuntimeError, "安装超时"):
+            child = ("setTimeout(() => require('fs').writeFileSync(" + json.dumps(str(marker)) + ", 'unexpected'), 2500); "
+                     "require('fs').writeFileSync(" + json.dumps(str(started)) + ", 'started')")
+            cli.write_text("require('child_process').spawn(process.execPath, ['-e', " + json.dumps(child) + "]); setTimeout(() => {}, 60000)", encoding="utf-8")
+            started_at = None
+            startup_at = None
+            def installer_time():
+                nonlocal started_at, startup_at
+                now = time.monotonic()
+                if startup_at is None:
+                    startup_at = now
+                if started_at is None:
+                    if not started.exists():
+                        # Reuse the fixture's existing 60-second lifetime as a
+                        # startup bound, then let the real timeout clean it up.
+                        return 1 if now - startup_at >= 60 else 0
+                    started_at = now
+                return now - started_at
+            # Start the one-second budget after the real child arms its timer,
+            # rather than timing Node/npm startup under concurrent test load.
+            with patch("app.pi_install.time", SimpleNamespace(monotonic=installer_time)), self.assertRaisesRegex(RuntimeError, "安装超时"):
                 install_package(base, base, base / "agent", "npm:fixture", timeout=1)
             self.assertTrue(started.exists(), "fixture did not start")
             time.sleep(2)

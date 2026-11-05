@@ -43,7 +43,7 @@ class LoginSessionTests(unittest.TestCase):
             window.visibility.return_value = QWindow.Hidden
             tray.icon.return_value.isNull.return_value = False
             owner = SimpleNamespace(window=window, tray=tray, tray_available=lambda: available,
-                                    english=True, notificationRequested=Mock())
+                                    english=True, personality_enabled=True, notificationRequested=Mock())
             TrayController.minimize_to_tray(owner, notify=False)
             if available:
                 window.hide.assert_called_once()

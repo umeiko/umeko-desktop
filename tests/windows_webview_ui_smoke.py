@@ -2,6 +2,7 @@
 import ctypes
 import json
 import os
+import shutil
 import socket
 import sys
 import tempfile
@@ -69,6 +70,13 @@ def browser_children(window):
 
 with tempfile.TemporaryDirectory(prefix='umeko-windows-webview-') as temporary:
     os.environ['UMEKO_DATA_DIR'] = str(Path(temporary) / 'profile')
+    # Qt's Windows backend uses AppLocalDataLocation/WebView2, independently
+    # of UMEKO_DATA_DIR. Give this process a fresh native browser profile too.
+    # WebView2 may retain file locks briefly after Qt releases the controller;
+    # cleanup below is best-effort and the CI runner has an ephemeral temp dir.
+    browser_profile = tempfile.mkdtemp(prefix='umeko-webview2-')
+    os.environ['WEBVIEW2_USER_DATA_FOLDER'] = browser_profile
+    print('WEBVIEW2_TEST_PROFILE:' + browser_profile, flush=True)
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = 'http://127.0.0.1:' + str(server.server_port)
@@ -96,7 +104,17 @@ with tempfile.TemporaryDirectory(prefix='umeko-windows-webview-') as temporary:
             QTest.qWait(25)
             if check():
                 return
-        raise AssertionError('Timeout: ' + str(warnings))
+        surface = find('webSurfaceLoader').property('item')
+        state = {
+            'warnings': warnings,
+            'requests': dict(Handler.counts),
+            'children': browser_children(window),
+            'surface': None if surface is None else {
+                key: str(surface.property(key))
+                for key in ('url', 'title', 'loading', 'loadProgress', 'errorMessage', 'visible')
+            },
+        }
+        raise AssertionError('Timeout: ' + json.dumps(state, ensure_ascii=False))
 
     def invoke(item, method):
         assert QMetaObject.invokeMethod(item, method, Qt.DirectConnection)
@@ -170,3 +188,4 @@ with tempfile.TemporaryDirectory(prefix='umeko-windows-webview-') as temporary:
         import shiboken6
         shiboken6.delete(engine)
         server.shutdown()
+        shutil.rmtree(browser_profile, ignore_errors=True)
