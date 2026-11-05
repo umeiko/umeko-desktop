@@ -11,7 +11,7 @@ from unittest.mock import patch
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 from PySide6.QtGui import QImage, QGuiApplication
 from PySide6.QtCore import QUrl
-from app.characters import read_character, CONFIG_DEFAULTS
+from app.characters import read_character, CONFIG_DEFAULTS, SLOTS
 from app.controller import Controller
 from app.umeko_control import UmekoControl
 
@@ -150,8 +150,8 @@ class CharacterTests(unittest.TestCase):
 
     def test_all_builtin_characters_are_complete_and_protected(self):
         b=self.backend
-        self.assertEqual({row['id'] for row in b.characterPacks if row['builtin']},{'yanami','komari','kaju','tiara','whale-girl','doubao'})
-        for identifier in ('yanami','komari','kaju','tiara','whale-girl','doubao'):
+        self.assertEqual({row['id'] for row in b.characterPacks if row['builtin']},{'yanami','komari','kaju','tiara','whale-girl','doubao','system'})
+        for identifier in ('yanami','komari','kaju','tiara','whale-girl','doubao','system'):
             self.assertFalse(b.removeCharacter(identifier))
             self.manifest['id']=identifier;self.write()
             self.assertFalse(b.importCharacter(str(self.make_zip(self.zip_entries()))))
@@ -164,6 +164,51 @@ class CharacterTests(unittest.TestCase):
         self.assertEqual(b.characterStyle['id'],'kaju')
         self.assertEqual(json.loads(b.store.path.read_text())['character'],'kaju')
         self.assertTrue(all(row['portrait'].startswith('file:') for row in b.characterPacks))
+
+    def test_system_character_preserves_and_restores_personal_configuration(self):
+        b = self.backend
+        self.assertTrue(b.importCharacter(str(self.file)))
+        self.assertTrue(b.selectSubagentCharacter(0, 'doubao'))
+        self.assertTrue(b.configureCharacter(json.dumps({**b._character_options,
+            'scenes': {'welcome': {'greetings': ['Personal greeting']}}})))
+        original = b.characterStyle
+        saved_options = (b.store.directory/'character-config.json').read_bytes()
+        self.assertTrue(b.setCharacterEnabled(False))
+        self.assertTrue(b.setCharacterEnabled(False))  # Repeated requests retain the previous choice.
+        self.assertEqual(b.characterStyle['id'], 'system')
+        self.assertEqual(b.characterNames, [f'子智能体 {i}' for i in range(1, 5)])
+        self.assertEqual(b.characterStyle['dialogue']['welcome']['greetings'], ['请输入任务或问题'])
+        self.assertTrue(b.characterStyle['customGreetings'])
+        self.assertFalse(b.characterStyle['easterEgg'])
+        self.assertFalse(b.characterStyle['animatedSources'])
+        self.assertEqual(set(b.characterStyle['assets']), set(SLOTS))
+        read_character(ROOT/'app/icons/characters/system/manifest.json', check_images=True)
+        self.assertEqual((b.store.directory/'character-config.json').read_bytes(), saved_options)
+        b.close()
+        self.backend = b = Controller(ROOT)
+        self.assertEqual(b.characterStyle['id'], 'system')
+        b.setTheme('dark')
+        self.assertTrue(b.setCharacterEnabled(True))
+        self.assertEqual(b.characterStyle, original)
+
+    def test_system_character_failed_save_and_removed_previous_choice(self):
+        b = self.backend
+        self.assertTrue(b.selectCharacter('kaju'))
+        before = dict(b.store.data)
+        with patch('app.storage.Store.save', side_effect=OSError('Write failed')):
+            self.assertFalse(b.setCharacterEnabled(False))
+        self.assertEqual(b.store.data, before)
+        self.assertEqual(b.characterStyle['id'], 'kaju')
+        self.assertTrue(b.importCharacter(str(self.file)))
+        # The existing public character selection API has exactly the same behavior.
+        self.assertTrue(b._umeko_control.execute({'operation':'characters.select', 'arguments':{'id':'system'}})['ok'])
+        self.assertTrue(b.removeCharacter('test-character'))
+        self.assertEqual(b.characterStyle['id'], 'system')
+        with patch('app.storage.Store.save', side_effect=OSError('Write failed')):
+            self.assertFalse(b.setCharacterEnabled(True))
+        self.assertEqual(b.characterStyle['id'], 'system')
+        self.assertTrue(b.setCharacterEnabled(True))
+        self.assertEqual(b.characterStyle['id'], 'yanami')
 
     def test_doubao_art_dialogue_subagent_and_selection_persist(self):
         b = self.backend

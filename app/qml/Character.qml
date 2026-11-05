@@ -4,6 +4,7 @@ import QtQuick
 QtObject {
     readonly property var style: backend.characterStyle
     readonly property string id: style.id || "yanami"
+    readonly property bool personalityEnabled: id !== "system"
     readonly property var assets: style.assets || ({})
     readonly property var lines: style.lines || ({})
     // A bounded per-conversation cache: UI updates and settings navigation never reroll.

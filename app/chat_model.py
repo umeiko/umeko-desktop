@@ -523,7 +523,11 @@ class ChatModel(QAbstractListModel):
             if current.get("role") == "assistant" and current.get("customType") != "umeko-compaction":
                 # Native failures can contain both partial output and a separate
                 # errorMessage. Keep both; the report ID belongs to the failure.
-                failure = current.get('errorMessage', '') if current.get('stopReason') != 'aborted' else ''
+                # The error is projected into activity below. Keeping its raw
+                # copy on the display row duplicates the entire failure in every
+                # bounded fragment (and every serialized index/cache payload).
+                raw_failure = current.pop('errorMessage', '')
+                failure = raw_failure if current.get('stopReason') != 'aborted' else ''
                 if not failure and current.get('error'):
                     failure = current['error'] if isinstance(current['error'], str) else current.get('text', '')
                 marker = re.search(r'\[Umeko:([a-f0-9-]{36})\]', failure)

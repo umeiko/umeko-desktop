@@ -2,9 +2,9 @@ import QtQuick
 
 Item {
     id: root
-    width: 192; height: 192
+    width: Character.personalityEnabled ? 192 : 88; height: width
     property bool running: visible
-    readonly property bool nativeDecoration: !Character.has("loading") || portrait.failed
+    readonly property bool nativeDecoration: Character.personalityEnabled && (!Character.has("loading") || portrait.failed)
     readonly property bool loaded: portrait.status === Image.Ready
     // Keep the approved artwork intact. Only the baked loading marks are
     // covered and redrawn as lightweight native items sharing its palette.
@@ -13,7 +13,7 @@ Item {
         artwork: Character.asset("loading", "../icons/yanami-loading.png"); fallbackSource: "../icons/yanami-loading.png"; sourceSize: Qt.size(384,384)
         asynchronous: true; smooth: false; fillMode: Image.PreserveAspectFit
         SequentialAnimation on scale {
-            running: root.running && !root.nativeDecoration; loops: Animation.Infinite
+            running: Character.personalityEnabled && root.running && !root.nativeDecoration; loops: Animation.Infinite
             NumberAnimation { from: 0.98; to: 1.02; duration: 850; easing.type: Easing.InOutSine }
             NumberAnimation { from: 1.02; to: 0.98; duration: 850; easing.type: Easing.InOutSine }
         }

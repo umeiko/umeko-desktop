@@ -24,7 +24,7 @@ DropArea {
             CharacterArt {
                 id: mascot
                 objectName: root.mascotName; anchors.horizontalCenter: parent.horizontalCenter
-                width: Math.min(184,parent.width); height: width
+                width: Math.min(Character.personalityEnabled ? 184 : 88,parent.width); height: width
                 artwork: root.containsDrag ? root.mascotSource : ""
                 fallbackSource: "../icons/yanami-catch.png"
                 asynchronous: true; sourceSize: Qt.size(368,368); fillMode: Image.PreserveAspectFit; mipmap: true; smooth: false

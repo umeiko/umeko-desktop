@@ -1445,5 +1445,22 @@ var strings = {
   "已检测：": "Detected: ",
   "按所选方式发送，自动检测结果不会覆盖。": "Requests use the selected method; detection results do not replace it.",
   "这个模型总会思考，选「关闭」也会思考": "This model always thinks, even when Off is selected",
-  "重新检测": "Detect again"
+  "重新检测": "Detect again",
+  "不启用": "Disable characters",
+  "纯白": "Pure White",
+  "草绿": "Grass Green",
+  "base 应为 white、light、dark 或 yanami": "base must be white, light, dark or yanami",
+  "使用简洁机器人和系统提示，保留原有角色设置。": "Use a simple robot and standard prompts. Your character settings are preserved.",
+  "默认助手": "Default assistant",
+  "请输入任务或问题": "Enter a task or question",
+  "准备就绪": "Ready",
+  "回复已完成": "Response complete",
+  "任务已完成": "Task complete",
+  "已达到最小窗口宽度": "Minimum window width reached",
+  "正在加载会话…": "Loading conversation…",
+  "正在读取消息记录，请稍候。": "Reading message history. Please wait.",
+  "子智能体 1": "Subagent 1",
+  "子智能体 2": "Subagent 2",
+  "子智能体 3": "Subagent 3",
+  "子智能体 4": "Subagent 4"
 }

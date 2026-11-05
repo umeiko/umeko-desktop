@@ -6,7 +6,7 @@ hero:
   tagline: Your projects. Your model providers. A desktop home for getting things done together.
   image:
     src: /logo.png
-    alt: Umeko pixel-art Yanami
+    alt: Umeko robot
   actions:
     - theme: brand
       text: Quick start

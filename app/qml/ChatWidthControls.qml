@@ -90,7 +90,7 @@ Item {
             opacity: control.visualFocus ? 0.5 : 0
         }
         SequentialAnimation on effort {
-            running: root.canReveal && control.nearby && control.opacity > 0.95
+            running: Character.personalityEnabled && root.canReveal && control.nearby && control.opacity > 0.95
             loops: Animation.Infinite
             NumberAnimation { to: control.effortDirection * 1.5; duration: 380; easing.type: Easing.InOutSine }
             NumberAnimation { to: 0; duration: 380; easing.type: Easing.InOutSine }
