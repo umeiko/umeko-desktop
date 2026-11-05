@@ -44,9 +44,13 @@ class SessionSettingsDisplayTests(unittest.TestCase):
         seed.data['ui']['language'] = 'en'
         seed.data['providers'] = [
             {'id': 'fixture-one', 'name': 'Fixture One', 'api': 'openai', 'baseUrl': 'https://example.invalid',
-             'key': '', 'models': [{'alias': 'fixture-alpha', 'upstream': 'fixture-alpha'}]},
+             'key': '', 'models': [{'alias': 'fixture-alpha', 'upstream': 'fixture-alpha',
+                 'reasoningLevels': ['low', 'high', 'max'], 'reasoningLevelsAuto': False,
+                 'reasoningFormat': 'openai', 'reasoningFormatAuto': False}]},
             {'id': 'fixture-two', 'name': 'Fixture Two', 'api': 'openai', 'baseUrl': 'https://example.invalid',
-             'key': '', 'models': [{'alias': 'fixture-beta', 'upstream': 'fixture-beta'}]},
+             'key': '', 'models': [{'alias': 'fixture-beta', 'upstream': 'fixture-beta',
+                 'reasoningLevels': ['low', 'high', 'max'], 'reasoningLevelsAuto': False,
+                 'reasoningFormat': 'openai', 'reasoningFormatAuto': False}]},
         ]
         seed.data.update(selectedProvider='fixture-one', selectedModel='fixture-alpha')
         seed.save()

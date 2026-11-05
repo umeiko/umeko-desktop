@@ -8,24 +8,27 @@ ColumnLayout {
     spacing: 10
     property int count: entries.count
     property bool fixedModels: false
+    // Saved provider used to show detection results in the gear dialog.
+    property string providerId: ""
+    property string api: ""
     function load(models) {
         entries.clear()
-        models.forEach(m => entries.append({upstream:m.upstream, alias:m.alias || "", contextWindowText:String(m.contextWindow || ""), contextWindowAuto:m.contextWindowAuto !== false, providerContextWindow:Number(m.providerContextWindow || 0), visionValue:m.vision === true, visionAuto:m.visionAuto !== false, reasoningLevelsJson:JSON.stringify(m.reasoningLevels || Reasoning.defaults)}))
+        models.forEach(m => entries.append({upstream:m.upstream, alias:m.alias || "", contextWindowText:String(m.contextWindow || ""), contextWindowAuto:m.contextWindowAuto !== false, providerContextWindow:Number(m.providerContextWindow || 0), visionValue:m.vision === true, visionAuto:m.visionAuto !== false, reasoningLevelsJson:JSON.stringify(m.reasoningLevels || Reasoning.defaults), reasoningLevelsAuto:m.reasoningLevelsAuto === true || m.reasoningLevels === undefined, reasoningFormat:m.reasoningFormat || "openai", reasoningFormatAuto:m.reasoningFormatAuto !== false, savedAlias:m.alias || ""}))
         if (!entries.count && !fixedModels) addModel()
     }
-    function addModel() { entries.append({upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, providerContextWindow:0, visionValue:false, visionAuto:true, reasoningLevelsJson:JSON.stringify(Reasoning.defaults)}) }
+    function addModel() { entries.append({upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, providerContextWindow:0, visionValue:false, visionAuto:true, reasoningLevelsJson:JSON.stringify(Reasoning.defaults), reasoningLevelsAuto:true, reasoningFormat:"openai", reasoningFormatAuto:true, savedAlias:""}) }
     function json() {
         let rows = []
         for(let i = 0; i < entries.count; i++) {
             let item = entries.get(i)
-            rows.push({upstream:item.upstream, alias:item.alias, contextWindow:item.contextWindowText, contextWindowAuto:item.contextWindowAuto, vision:item.visionValue, visionAuto:item.visionAuto, reasoningLevels:JSON.parse(item.reasoningLevelsJson)})
+            rows.push({upstream:item.upstream, alias:item.alias, contextWindow:item.contextWindowText, contextWindowAuto:item.contextWindowAuto, vision:item.visionValue, visionAuto:item.visionAuto, reasoningLevels:JSON.parse(item.reasoningLevelsJson), reasoningLevelsAuto:item.reasoningLevelsAuto, reasoningFormat:item.reasoningFormat, reasoningFormatAuto:item.reasoningFormatAuto})
         }
         return JSON.stringify(rows)
     }
     ListModel { id: entries }
     ModelReasoningDialog {
         id: reasoningDialog; objectName: root.fixedModels ? "pluginModelReasoning" : "providerModelReasoning"
-        onConfirmed: (rowIndex, levelsJson) => entries.setProperty(rowIndex, "reasoningLevelsJson", levelsJson)
+        onConfirmed: (rowIndex, levelsJson, levelsAuto, format, formatAuto) => entries.set(rowIndex, {reasoningLevelsJson:levelsJson, reasoningLevelsAuto:levelsAuto, reasoningFormat:format, reasoningFormatAuto:formatAuto})
     }
     RowLayout {
         Layout.fillWidth: true
@@ -58,7 +61,7 @@ ColumnLayout {
                 Layout.fillWidth: true; spacing: 12
                 InputField { objectName: "providerModelId_" + index; readOnly: root.fixedModels; Layout.fillWidth: true; Layout.preferredWidth: 1; text: upstream; placeholderText: I18n.t("服务端模型 ID"); onTextEdited: entries.setProperty(index, "upstream", text) }
                 InputField { objectName: "providerModelAlias_" + index; Layout.fillWidth: true; Layout.preferredWidth: 1; text: alias; placeholderText: I18n.t("与模型 ID 相同"); onTextEdited: entries.setProperty(index, "alias", text) }
-                ActionButton { objectName: (root.fixedModels ? "pluginModelSettings_" : "providerModelSettings_") + index; glyph: "settings"; Layout.preferredWidth: Theme.control(34); quiet: true; hint: I18n.t("模型思考档位"); Accessible.name: hint; onClicked: reasoningDialog.edit(index, alias || upstream, reasoningLevelsJson) }
+                ActionButton { objectName: (root.fixedModels ? "pluginModelSettings_" : "providerModelSettings_") + index; glyph: "settings"; Layout.preferredWidth: Theme.control(34); quiet: true; hint: I18n.t("模型思考档位"); Accessible.name: hint; onClicked: reasoningDialog.edit(index, alias || upstream, reasoningLevelsJson, entries.get(index), root.providerId, root.api) }
                 ActionButton { visible: !root.fixedModels; glyph: "trash"; width: Theme.control(32); quiet: true; enabled: entries.count > 1; onClicked: entries.remove(index) }
             }
             RowLayout {

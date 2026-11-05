@@ -31,7 +31,8 @@ from .chat_model import ChatModel
 from .transcript_index import TranscriptRepository
 from .model_context import context_suggestion
 from .model_reasoning import reasoning_levels, reconcile_effort
-from .provider_models import fetch_model_windows
+from .controller_reasoning import ReasoningDiscovery
+from .thinking_formats import FORMAT_OPTIONS
 from .model_capabilities import normalize_model, vision_suggestion
 from .provider_plugins import ProviderPlugins
 from .api_keys import KeyCatalog, generate_key, key_summary, lan_addresses, make_key
@@ -138,6 +139,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     attachmentsChanged = Signal()
     contextUsageChanged = Signal()
     reasoningChanged = Signal()
+    reasoningDetectionChanged = Signal()
     retryChanged = Signal()
 
     @Property("QVariantMap", notify=retryChanged)
@@ -206,7 +208,6 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._chat_visible = True
         self._management_jobs = set()
         self._mcp_jobs = {}
-        self._model_refresh_jobs = {}
         self._closing = False
         self._copy_request = 0
         self._session_preview = SessionPreview(self)
@@ -258,6 +259,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._desktop_plugins = DesktopPlugins(self)
         from .slash_commands import SlashCommands
         self._slash_commands = SlashCommands(self)
+        self._reasoning_discovery = ReasoningDiscovery(self)
 
     @Property(QObject, constant=True)
     def loginStartup(self):
@@ -337,6 +339,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if (record.provider, record.model) in available:
             self.store.data.update(selectedModel=record.model, selectedProvider=record.provider)
         self._reconcile_reasoning(record)
+        self._reasoning_discovery.sync_active()
         self._mark_read(record)
         self._viewport_save.start()
         # Rebinding every hidden settings page is expensive. Session-specific
@@ -1067,13 +1070,96 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 self.store.data["ui"]["reasoningEffort"] = value
                 self.reasoningChanged.emit()
 
-    @Property("QStringList", notify=changed)
+    @Property("QStringList", notify=reasoningDetectionChanged)
     def reasoningLevels(self):
         return self._reasoning_levels(self._view)
 
     @Property(str, notify=reasoningChanged)
     def reasoningEffort(self):
         return self._view.reasoning_effort
+
+    @Property(str, notify=reasoningDetectionChanged)
+    def reasoningLevelsState(self):
+        return self._reasoning_discovery.states()['levels']
+
+    @Property(str, notify=reasoningDetectionChanged)
+    def reasoningFormatState(self):
+        return self._reasoning_discovery.states()['format']
+
+    @Property(str, notify=reasoningDetectionChanged)
+    def reasoningDetectionState(self):
+        states = list(self._reasoning_discovery.states().values())
+        return next((state for state in ('probing', 'failed', 'unknown') if state in states),
+                    'manual' if all(state == 'manual' for state in states) else 'known')
+
+    @Property(str, notify=reasoningDetectionChanged)
+    def reasoningFormat(self):
+        return (self._reasoning_discovery.current() or {}).get('reasoningFormat', 'openai')
+
+    @Property('QVariantMap', notify=reasoningDetectionChanged)
+    def reasoningSettings(self):
+        return self.modelReasoningSettings(self.store.data['selectedProvider'], self.store.data['selectedModel'])
+
+    @Property(bool, notify=reasoningDetectionChanged)
+    def reasoningLevelsAuto(self):
+        return self.reasoningSettings.get('reasoningLevelsAuto', True)
+
+    @Property(bool, notify=reasoningDetectionChanged)
+    def reasoningFormatAuto(self):
+        return self.reasoningSettings.get('reasoningFormatAuto', True)
+
+    @Property('QVariant', notify=reasoningDetectionChanged)
+    def reasoningOffSupported(self):
+        if not self.reasoningFormatAuto:
+            return None
+        return self.reasoningSettings.get('reasoningFormatDetection', {}).get('offSupported')
+
+    @Property(str, notify=reasoningDetectionChanged)
+    def reasoningSwitchStatus(self):
+        if not self.reasoningFormatAuto:
+            return 'manual'
+        return self.reasoningSettings.get('reasoningFormatDetection', {}).get('status', 'unknown')
+
+    @Property('QVariantList', constant=True)
+    def reasoningFormatOptions(self):
+        return FORMAT_OPTIONS
+
+    @Slot(str, str, result='QVariantMap')
+    def modelReasoningSettings(self, provider, alias):
+        return self._reasoning_discovery.settings(provider, alias)
+
+    @Slot(str, str, 'QVariantList', bool, result=bool)
+    def setModelReasoningLevels(self, provider, alias, levels, automatic):
+        try:
+            return self._reasoning_discovery.set_levels(provider, alias, levels, automatic)
+        except (ValueError, OSError, RuntimeError) as error:
+            self.toast.emit(str(error))
+            return False
+
+    @Slot(str, str, str, bool, result=bool)
+    def setModelReasoningFormat(self, provider, alias, value, automatic):
+        try:
+            return self._reasoning_discovery.set_format(provider, alias, value, automatic)
+        except (ValueError, OSError, RuntimeError) as error:
+            self.toast.emit(str(error))
+            return False
+
+    @Slot(str, str, result=bool)
+    def redetectModelReasoning(self, provider, alias):
+        row = self._reasoning_discovery.model(provider, alias)
+        return self._reasoning_discovery.refresh(provider, only=row['upstream']) if row else False
+
+    @Slot(result=bool)
+    def redetectReasoning(self):
+        return self.redetectModelReasoning(self.store.data['selectedProvider'], self.store.data['selectedModel'])
+
+    @Slot(str, str, result=bool)
+    def ensureModelReasoningDetection(self, provider, alias):
+        return self._reasoning_discovery.ensure(provider, alias)
+
+    @Slot(result=bool)
+    def ensureReasoningDetection(self):
+        return self.ensureModelReasoningDetection(self.store.data['selectedProvider'], self.store.data['selectedModel'])
 
     @Slot(str, result=bool)
     def setReasoningEffort(self, value):
@@ -1618,6 +1704,13 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             models = self._validate_model_mappings(rows, (existing or {}).get("models", []), taken)
             provider = {**(existing or {}), "id": provider_id, "name": name.strip(), "api": api, "baseUrl": base_url, "key": kept_key, "models": models,
                         "proxy": (existing or {}).get('proxy', {'mode':'system', 'url':''})}
+            if existing and ReasoningDiscovery.connection(existing) != ReasoningDiscovery.connection(provider):
+                for model in models:
+                    if model['reasoningLevelsAuto']:
+                        model.pop('reasoningLevels', None)
+                        model['reasoningDetection'] = {'state': 'unknown'}
+                    if model['reasoningFormatAuto']:
+                        model.update(reasoningFormat='openai', reasoningFormatDetection={'state': 'unknown'})
             self.store.data["providers"] = [provider if p["id"] == provider_id else p for p in self.store.data["providers"]]
             if not existing:
                 self.store.data["providers"].append(provider)
@@ -1629,6 +1722,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("供应商配置已保存")
+            QTimer.singleShot(0, lambda: self._reasoning_discovery.refresh(provider_id, force=False))
             return True
         except (ValueError, KeyError, TypeError) as exc:
             self.toast.emit(str(exc))
@@ -1639,14 +1733,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         provider = self.gateway.provider(provider_id)
         if not provider or provider["api"] not in ("openai", "anthropic"):
             return self.toast.emit("请在账号页刷新插件模型 / Refresh plugin models on the account page")
-        if self._models_busy(provider_id):
-            return self.toast.emit("请等待当前任务结束后刷新模型 / Wait for the current task before refreshing models")
-        if provider_id in self._model_refresh_jobs:
-            return
-        snapshot = copy.deepcopy(provider)
-        self._model_refresh_jobs[provider_id] = snapshot
         self.toast.emit("正在获取供应商模型信息 / Fetching provider model information")
-        self._job("model-windows:" + provider_id, lambda: fetch_model_windows(snapshot))
+        self._reasoning_discovery.refresh(provider_id)
 
     @Slot(str)
     def removeProvider(self, provider_id):
@@ -1687,6 +1775,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("模型映射已保存")
+            for provider in providers:
+                self._reasoning_discovery.refresh(provider['id'], force=False)
             return True
         except (ValueError, KeyError, TypeError, StopIteration) as exc:
             self.toast.emit(str(exc))
@@ -1910,40 +2000,6 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def _on_job_done(self, name, result):
         if self._closing:
             return
-        if name.startswith("model-windows:"):
-            provider_id = name.split(":", 1)[1]
-            snapshot = self._model_refresh_jobs.pop(provider_id, None)
-            provider = self.gateway.provider(provider_id)
-            if not result["ok"]:
-                self.toast.emit(str(result["value"]))
-                return
-            if not snapshot or provider != snapshot or self._models_busy(provider_id):
-                self.toast.emit("配置已变化或会话已开始，请重新刷新模型 / Configuration changed or a task started; refresh models again")
-                return
-            try:
-                models = copy.deepcopy(provider["models"])
-                windows = result["value"]
-                for row in models:
-                    if row["upstream"] not in windows:
-                        continue
-                    limit = windows[row["upstream"]]
-                    row.pop("providerContextWindow", None)
-                    if limit is not None:
-                        row["providerContextWindow"] = limit
-                    row.update(normalize_model(row))
-                previous = provider["models"]
-                provider["models"] = models
-                try:
-                    self.store.save()
-                except (OSError, RuntimeError):
-                    provider["models"] = previous
-                    raise
-                self._restart_pi()
-                self.changed.emit()
-                self.toast.emit("供应商模型信息已更新 / Provider model information updated")
-            except (ValueError, OSError, RuntimeError) as exc:
-                self.toast.emit(str(exc))
-            return
         if name.startswith('copy-chat:'):
             if int(name.split(':', 1)[1]) != self._copy_request:
                 return
@@ -2109,6 +2165,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if self._closing:
             return
         self._closing = True
+        self._reasoning_discovery.close()
         self._desktop_plugins.close()
         self._appearance_save.stop()
         self._viewport_save.stop()
