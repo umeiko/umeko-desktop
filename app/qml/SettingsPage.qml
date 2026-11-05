@@ -68,14 +68,14 @@ Item {
         mappingSignature = signature
         if (mappingProviderId && !backend.config.providers.some(p => p.id === mappingProviderId)) mappingProviderId = ""
         mappingRows.clear()
-        backend.config.providers.forEach(p => p.models.forEach(m => mappingRows.append({provider:p.id, providerName:p.name, upstream:m.upstream, alias:m.alias, contextWindowText:String(m.contextWindow), contextWindowAuto:m.contextWindowAuto, providerContextWindow:Number(m.providerContextWindow || 0), visionValue:m.vision, visionAuto:m.visionAuto, reasoningLevelsJson:JSON.stringify(m.reasoningLevels || Reasoning.defaults)})))
+        backend.config.providers.forEach(p => p.models.forEach(m => mappingRows.append({provider:p.id, providerName:p.name, upstream:m.upstream, alias:m.alias, contextWindowText:String(m.contextWindow), contextWindowAuto:m.contextWindowAuto, providerContextWindow:Number(m.providerContextWindow || 0), visionValue:m.vision, visionAuto:m.visionAuto, reasoningLevelsJson:JSON.stringify(m.reasoningLevels || Reasoning.defaults), reasoningLevelsAuto:m.reasoningLevelsAuto === true || m.reasoningLevels === undefined})))
     }
     Component.onCompleted: reloadMappings()
     Connections { target: backend; function onChanged() { root.reloadMappings() } }
     ListModel { id: mappingRows }
     ModelReasoningDialog {
         id: mappingReasoning; objectName: "mappingModelReasoning"
-        onConfirmed: (rowIndex, levelsJson) => mappingRows.setProperty(rowIndex, "reasoningLevelsJson", levelsJson)
+        onConfirmed: (rowIndex, levelsJson) => { mappingRows.setProperty(rowIndex, "reasoningLevelsJson", levelsJson); mappingRows.setProperty(rowIndex, "reasoningLevelsAuto", false) }
     }
     ColumnLayout {
         anchors.fill: parent; anchors.leftMargin: 40; anchors.rightMargin: 40; anchors.topMargin: 19; anchors.bottomMargin: 24; spacing: 0
@@ -281,10 +281,10 @@ Item {
                                 }
                             }
                             RowLayout { Layout.fillWidth: true; spacing: 10
-                                ActionButton { objectName: "addMappingButton"; text: I18n.t("添加映射"); glyph: "plus"; enabled: !!root.mappingAccount && (root.mappingAccount.api === "openai" || root.mappingAccount.api === "anthropic"); onClicked: { const p = root.mappingAccount; if (p) mappingRows.append({provider:p.id, providerName:p.name, upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, providerContextWindow:0, visionValue:false, visionAuto:true, reasoningLevelsJson:JSON.stringify(Reasoning.defaults)}) } }
+                                ActionButton { objectName: "addMappingButton"; text: I18n.t("添加映射"); glyph: "plus"; enabled: !!root.mappingAccount && (root.mappingAccount.api === "openai" || root.mappingAccount.api === "anthropic"); onClicked: { const p = root.mappingAccount; if (p) mappingRows.append({provider:p.id, providerName:p.name, upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, providerContextWindow:0, visionValue:false, visionAuto:true, reasoningLevelsJson:JSON.stringify(Reasoning.defaults), reasoningLevelsAuto:true}) } }
                                 ActionButton { objectName: "refreshProviderModelsButton"; text: I18n.t("刷新模型信息"); glyph: "refresh"; enabled: !!root.mappingAccount && (root.mappingAccount.api === "openai" || root.mappingAccount.api === "anthropic"); onClicked: backend.refreshProviderModels(root.mappingProviderId) }
                                 Item { Layout.fillWidth: true }
-                                ActionButton { objectName: "saveMappingsButton"; text: I18n.t("保存映射"); primary: true; onClicked: { let rows = []; for(let i=0;i<mappingRows.count;i++) { let m=mappingRows.get(i); rows.push({provider:m.provider,upstream:m.upstream,alias:m.alias,contextWindow:m.contextWindowText,contextWindowAuto:m.contextWindowAuto,vision:m.visionValue,visionAuto:m.visionAuto, reasoningLevels:JSON.parse(m.reasoningLevelsJson)}) } backend.saveMappings(JSON.stringify(rows)) } }
+                                ActionButton { objectName: "saveMappingsButton"; text: I18n.t("保存映射"); primary: true; onClicked: { let rows = []; for(let i=0;i<mappingRows.count;i++) { let m=mappingRows.get(i); rows.push({provider:m.provider,upstream:m.upstream,alias:m.alias,contextWindow:m.contextWindowText,contextWindowAuto:m.contextWindowAuto,vision:m.visionValue,visionAuto:m.visionAuto, reasoningLevels:JSON.parse(m.reasoningLevelsJson), reasoningLevelsAuto:m.reasoningLevelsAuto}) } backend.saveMappings(JSON.stringify(rows)) } }
                             }
                             }
                         }

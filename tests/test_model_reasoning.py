@@ -7,7 +7,7 @@ from app.model_reasoning import reasoning_levels, reconcile_effort
 
 class ModelReasoningTests(unittest.TestCase):
     def test_legacy_defaults_custom_and_off_only(self):
-        self.assertEqual(reasoning_levels(normalize_model({})), ['low', 'high', 'max'])
+        self.assertEqual(reasoning_levels(normalize_model({})), [])
         custom = normalize_model({'reasoningLevels': [' medium ', 'xhigh', 'vendor-custom']})
         self.assertEqual(custom['reasoningLevels'], ['medium', 'xhigh', 'vendor-custom'])
         self.assertEqual(reasoning_levels(normalize_model({'alias': 'renamed'}, custom)), custom['reasoningLevels'])

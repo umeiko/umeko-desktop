@@ -10,22 +10,22 @@ ColumnLayout {
     property bool fixedModels: false
     function load(models) {
         entries.clear()
-        models.forEach(m => entries.append({upstream:m.upstream, alias:m.alias || "", contextWindowText:String(m.contextWindow || ""), contextWindowAuto:m.contextWindowAuto !== false, providerContextWindow:Number(m.providerContextWindow || 0), visionValue:m.vision === true, visionAuto:m.visionAuto !== false, reasoningLevelsJson:JSON.stringify(m.reasoningLevels || Reasoning.defaults)}))
+        models.forEach(m => entries.append({upstream:m.upstream, alias:m.alias || "", contextWindowText:String(m.contextWindow || ""), contextWindowAuto:m.contextWindowAuto !== false, providerContextWindow:Number(m.providerContextWindow || 0), visionValue:m.vision === true, visionAuto:m.visionAuto !== false, reasoningLevelsJson:JSON.stringify(m.reasoningLevels || Reasoning.defaults), reasoningLevelsAuto:m.reasoningLevelsAuto === true || m.reasoningLevels === undefined}))
         if (!entries.count && !fixedModels) addModel()
     }
-    function addModel() { entries.append({upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, providerContextWindow:0, visionValue:false, visionAuto:true, reasoningLevelsJson:JSON.stringify(Reasoning.defaults)}) }
+    function addModel() { entries.append({upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, providerContextWindow:0, visionValue:false, visionAuto:true, reasoningLevelsJson:JSON.stringify(Reasoning.defaults), reasoningLevelsAuto:true}) }
     function json() {
         let rows = []
         for(let i = 0; i < entries.count; i++) {
             let item = entries.get(i)
-            rows.push({upstream:item.upstream, alias:item.alias, contextWindow:item.contextWindowText, contextWindowAuto:item.contextWindowAuto, vision:item.visionValue, visionAuto:item.visionAuto, reasoningLevels:JSON.parse(item.reasoningLevelsJson)})
+            rows.push({upstream:item.upstream, alias:item.alias, contextWindow:item.contextWindowText, contextWindowAuto:item.contextWindowAuto, vision:item.visionValue, visionAuto:item.visionAuto, reasoningLevels:JSON.parse(item.reasoningLevelsJson), reasoningLevelsAuto:item.reasoningLevelsAuto})
         }
         return JSON.stringify(rows)
     }
     ListModel { id: entries }
     ModelReasoningDialog {
         id: reasoningDialog; objectName: root.fixedModels ? "pluginModelReasoning" : "providerModelReasoning"
-        onConfirmed: (rowIndex, levelsJson) => entries.setProperty(rowIndex, "reasoningLevelsJson", levelsJson)
+        onConfirmed: (rowIndex, levelsJson) => { entries.setProperty(rowIndex, "reasoningLevelsJson", levelsJson); entries.setProperty(rowIndex, "reasoningLevelsAuto", false) }
     }
     RowLayout {
         Layout.fillWidth: true

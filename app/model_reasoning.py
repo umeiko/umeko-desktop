@@ -1,15 +1,43 @@
 """Per-model reasoning effort names, in ascending order; off is always separate."""
 import re
+import copy
+
+from .thinking_formats import valid_format
 
 DEFAULT_LEVELS = ["low", "high", "max"]
-_ORDER = ["minimal", "low", "medium", "high", "xhigh", "max"]
+_ORDER = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
 
 
 def normalize_reasoning(model, previous=None):
-    source = model if "reasoningLevels" in model else previous or {}
-    if "reasoningLevels" not in source:
-        return {}
-    levels = source["reasoningLevels"]
+    previous = previous or {}
+    source = model if "reasoningLevels" in model else previous
+    result = {}
+    if 'reasoningLevels' in source:
+        result['reasoningLevels'] = _levels(source['reasoningLevels'])
+    automatic = model.get('reasoningLevelsAuto', previous.get('reasoningLevelsAuto', 'reasoningLevels' not in source))
+    if 'reasoningLevels' in model and 'reasoningLevelsAuto' not in model and previous.get('reasoningLevelsAuto') is True:
+        automatic = model['reasoningLevels'] == previous.get('reasoningLevels')
+    format_auto = model.get('reasoningFormatAuto', previous.get('reasoningFormatAuto', True))
+    if type(automatic) is not bool or type(format_auto) is not bool:
+        raise ValueError('思考自动设置必须为 true 或 false')
+    value = model.get('reasoningFormat', previous.get('reasoningFormat', 'openai'))
+    if not valid_format(value):
+        raise ValueError('未知思考参数格式')
+    result.update(reasoningLevelsAuto=automatic, reasoningFormat=value, reasoningFormatAuto=format_auto)
+    for field in ('reasoningDetection', 'reasoningFormatDetection'):
+        detection = copy.deepcopy(model.get(field, previous.get(field, {'state': 'unknown'})))
+        if not isinstance(detection, dict) or detection.get('state', 'unknown') not in ('unknown', 'probing', 'known', 'failed'):
+            raise ValueError('思考检测状态无效')
+        detection.setdefault('state', 'unknown')
+        if 'levels' in detection:
+            detection['levels'] = _levels(detection['levels'])
+        if 'rejected' in detection:
+            detection['rejected'] = _levels(detection['rejected'])
+        result[field] = detection
+    return result
+
+
+def _levels(levels):
     if not isinstance(levels, list) or len(levels) > 32:
         raise ValueError("思考档位必须是最多 32 项的列表")
     result = []
@@ -20,10 +48,14 @@ def normalize_reasoning(model, previous=None):
         if level.lower() == "off" or level.casefold() in {item.casefold() for item in result}:
             raise ValueError("档位名称不能重复，也不能使用保留名称 off")
         result.append(level)
-    return {"reasoningLevels": result}
+    return result
 
 
 def reasoning_levels(model):
+    if model.get('reasoningLevelsAuto') is True and (
+            'reasoningLevels' not in model or (model.get('reasoningDetection', {}).get('state', 'unknown') in ('unknown', 'probing')
+            and 'levels' not in model.get('reasoningDetection', {}))):
+        return []
     return list(model.get("reasoningLevels", DEFAULT_LEVELS))
 
 

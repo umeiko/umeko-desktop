@@ -21,6 +21,8 @@ from umeko_provider_sdk import Provider, ProviderContext, ProviderError, request
 from umeko_provider_sdk.packages import PackageValidationError, unpack_package, validate_folder, validate_config
 from umeko_provider_sdk.network import network_scope
 from .model_capabilities import normalize_model
+from .model_reasoning import normalize_reasoning
+from .reasoning_detection import metadata_levels
 from .model_context import provider_context_window
 from .storage import protect
 from .bundled_providers import BundledProviders
@@ -643,8 +645,15 @@ class ProviderPlugins(QObject):
                 if old.get(automatic) is False and old.get(key + "Source") != "provider":
                     metadata.update({key: old[key], automatic: False})
                     sources[key + "Source"] = "custom"
-            if "reasoningLevels" in old:
-                metadata["reasoningLevels"] = old["reasoningLevels"]
+            reasoning = normalize_reasoning({}, old)
+            declared = metadata_levels(row)
+            if declared is not None:
+                reasoning['reasoningDetection'] = {'state': 'known', 'source': 'metadata', 'levels': list(declared), 'verified': True}
+                if reasoning['reasoningLevelsAuto']:
+                    reasoning['reasoningLevels'] = list(declared)
+            elif reasoning['reasoningLevelsAuto']:
+                reasoning['reasoningDetection']['state'] = 'unknown'
+            metadata.update(reasoning)
             models.append({"upstream": upstream, "alias": alias, **normalize_model(metadata), **sources})
         return models
 
@@ -683,6 +692,8 @@ class ProviderPlugins(QObject):
             if "models" in result:
                 self.repair_selection(provider_id)
                 self._notify()
+                if hasattr(self.c, '_reasoning_discovery'):
+                    self.c._reasoning_discovery.refresh(provider_id)
             else: self.changed.emit()
             if result.get("url"): QDesktopServices.openUrl(QUrl(self._public_url(provider_id, result["url"])))
             self.c.toast.emit(result.get("message") or ("供应商操作已完成" if payload["action"] == "card-action" else "可用模型已更新"))

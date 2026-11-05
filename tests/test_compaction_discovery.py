@@ -3,10 +3,13 @@ import json
 import os
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
+
+from PySide6.QtGui import QGuiApplication
 
 from app.controller import Controller
 from app.provider_models import fetch_model_windows
@@ -16,6 +19,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ModelWindowDiscoveryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+        cls.app = QGuiApplication.instance() or QGuiApplication([])
+
+    def wait_discovery(self, controller):
+        deadline = time.monotonic() + 4
+        while time.monotonic() < deadline:
+            self.app.processEvents()
+            if not controller._reasoning_discovery.jobs:
+                return
+            time.sleep(.005)
+        self.fail('offline catalog discovery deadline exceeded')
+
     def test_http_catalog_protocols_and_missing_metadata(self):
         requests = []
 
@@ -55,7 +72,15 @@ class ModelWindowDiscoveryTests(unittest.TestCase):
             thread.join()
 
     def test_refresh_save_cap_restart_and_unknown_default(self):
-        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": temp}):
+        result = {'levels': {'state': 'known', 'levels': [], 'source': 'probe', 'verified': True},
+                  'format': {'state': 'known', 'format': 'openai', 'source': 'probe', 'verified': True}}
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": temp}), \
+                patch('app.provider_plugins.BundledProviders.sync', return_value=[]), \
+                patch('app.controller.LocalServer'), \
+                patch('app.controller.Controller._restart_pi', new=lambda self: None), \
+                patch('app.controller.Controller._write_pi', new=lambda self, payload, record=None: None), \
+                patch('app.controller_reasoning.fetch_model_windows', return_value={'known': 64000, 'unknown': None}), \
+                patch('app.gateway.Gateway.detect_reasoning', return_value=result):
             controller = Controller(ROOT)
             messages = []
             controller.toast.connect(messages.append)
@@ -66,11 +91,8 @@ class ModelWindowDiscoveryTests(unittest.TestCase):
                 provider = controller.store.data["providers"][0]
                 identifier = provider["id"]
 
-                def synchronous_job(name, fn):
-                    controller._on_job_done(name, {"ok": True, "value": fn()})
-
-                with patch("app.controller.fetch_model_windows", return_value={"known": 64000, "unknown": None}), patch.object(controller, "_job", side_effect=synchronous_job):
-                    controller.refreshProviderModels(identifier)
+                controller.refreshProviderModels(identifier)
+                self.wait_discovery(controller)
                 known, unknown = provider["models"]
                 self.assertEqual((known["providerContextWindow"], known["contextWindow"]), (64000, 64000))
                 self.assertEqual(unknown["contextWindow"], 128000)
@@ -90,12 +112,35 @@ class ModelWindowDiscoveryTests(unittest.TestCase):
                 controller.close()
 
     def test_refresh_failure_leaves_settings_and_reports_error(self):
-        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": temp}):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": temp}), \
+                patch('app.provider_plugins.BundledProviders.sync', return_value=[]), \
+                patch('app.controller.LocalServer'), \
+                patch('app.controller.Controller._restart_pi', new=lambda self: None), \
+                patch('app.controller.Controller._write_pi', new=lambda self, payload, record=None: None), \
+                patch('app.controller_reasoning.fetch_model_windows', side_effect=ValueError('fixture catalog unavailable')) as catalog, \
+                patch('app.gateway.Gateway.detect_reasoning', side_effect=ValueError('fixture probe unavailable')) as probe:
             controller = Controller(ROOT)
             messages = []
             controller.toast.connect(messages.append)
             try:
-                controller._on_job_done("model-windows:missing", {"ok": False, "value": "fixture catalog unavailable"})
-                self.assertEqual(messages[-1], "fixture catalog unavailable")
+                known = {'state': 'known', 'verified': True, 'source': 'probe'}
+                self.assertTrue(controller.saveProvider('', 'Fixture', 'openai', 'https://fixture.invalid/v1', 'fixture', json.dumps([
+                    {'upstream': 'model', 'alias': 'model', 'contextWindow': 64000, 'contextWindowAuto': False,
+                     'reasoningLevels': ['vendor-level'], 'reasoningLevelsAuto': True,
+                     'reasoningDetection': {**known, 'levels': ['vendor-level']},
+                     'reasoningFormat': 'qwen', 'reasoningFormatAuto': True,
+                     'reasoningFormatDetection': {**known, 'format': 'qwen'}}])))
+                provider = controller.store.data['providers'][0]
+                controller.refreshProviderModels(provider['id'])
+                self.wait_discovery(controller)
+                row = provider['models'][0]
+                self.assertTrue(catalog.called)
+                self.assertTrue(probe.called)
+                self.assertEqual(row['contextWindow'], 64000)
+                self.assertEqual(row['reasoningLevels'], ['vendor-level'])
+                self.assertEqual(row['reasoningFormat'], 'qwen')
+                self.assertEqual(row['reasoningDetection']['state'], 'failed')
+                self.assertEqual(row['reasoningFormatDetection']['state'], 'failed')
+                self.assertEqual(row['reasoningDetection']['error'], '[redacted] probe unavailable')
             finally:
                 controller.close()
