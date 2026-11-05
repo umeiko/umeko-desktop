@@ -47,6 +47,9 @@ def click(name):
 
 
 try:
+    system_character = '--system-character' in sys.argv
+    if system_character:
+        assert backend.setCharacterEnabled(False)
     shots = ROOT / 'artifacts/screenshots'
     shots.mkdir(parents=True, exist_ok=True)
     backend.setTheme('yanami')
@@ -78,13 +81,14 @@ try:
     assert composer.x() < original_left - 60
     assert abs(composer.x() + composer.width() - original_right) < 1
     assert find('expandChatLeft').property('text') == '\u25b6'
-    assert 'yanami-pull.png' in find('expandChatLeftMascot').property('source').toString()
+    assert ('system/pull.png' if system_character else 'yanami-pull.png') in find('expandChatLeftMascot').property('source').toString()
     assert find('expandChatLeftMascot').property('mirror')
     QTest.mouseMove(window, left_button.mapToScene(left_button.boundingRect().center()).toPoint())
     QTest.qWait(300)
     assert find('expandChatLeftMascot').property('loaded')
     assert window.grabWindow().save(str(shots / 'chat-width-hover-pull.png'))
-    assert abs(conversation.x() - composer.x() - 10) < 1
+    # The retained conversation pane has its own parent; compare in page coordinates.
+    assert abs(conversation.mapToItem(composer.parentItem(), 0, 0).x() - composer.x() - 10) < 1
     left_width = composer.width()
     click('expandChatRight')
     assert composer.width() > left_width + 60

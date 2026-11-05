@@ -163,7 +163,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.transcripts = TranscriptRepository(self.store.directory / 'cache/chat-index')
         self.store.data["themes"] = theme_library(self.store.data.get("themes"))
         if self.store.data["theme"] not in BASES and not any("custom:" + row["id"] == self.store.data["theme"] for row in self.store.data["themes"]):
-            self.store.data["theme"] = "dark" if self.store.data["dark"] else "light"
+            self.store.data["theme"] = "dark" if self.store.data["dark"] else "white"
         self._proxy_keys = KeyCatalog(self.store.data["server"]["keys"])
         self._created_proxy_key = {}
         self._proxy_usage_timer = QTimer(self)
@@ -1568,7 +1568,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Slot(bool)
     def setDark(self, value):
-        self.setTheme("dark" if value else "light")
+        self.setTheme("dark" if value else "white")
 
     @Slot(str)
     def setTheme(self, value):

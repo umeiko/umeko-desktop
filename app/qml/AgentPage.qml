@@ -84,10 +84,12 @@ Column {
             spacing: 16
             Item {
                 Layout.preferredWidth: Theme.icon(40); Layout.preferredHeight: Theme.icon(40)
-                Image {
+                CharacterArt {
                     objectName: "umekoDesktopSettingsArtwork"
                     anchors.centerIn: parent; width: Theme.icon(42); height: width
-                    source: "../icons/yanami-desktop-settings-v2.png"; sourceSize: Qt.size(256,256)
+                    fallbackSource: "../icons/app.png"
+                    artwork: Character.personalityEnabled ? fallbackSource : Character.asset("avatarSmile", fallbackSource)
+                    sourceSize: Qt.size(256,256)
                     fillMode: Image.PreserveAspectFit; mipmap: true
                 }
             }

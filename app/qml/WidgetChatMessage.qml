@@ -17,7 +17,7 @@ Column {
         visible: !root.user; spacing: 9; width: root.width
         CharacterArt {
             objectName: "widgetAssistantAvatar_" + root.messageIndex
-            artwork: root.portrait; fallbackSource: "../icons/avatars/smile.webp"
+            artwork: Character.personalityEnabled ? root.portrait : Character.asset("avatarSmile", ""); fallbackSource: "../icons/avatars/smile.webp"
             width: Theme.icon(40); height: width; sourceSize: Qt.size(96,96)
             fillMode: Image.PreserveAspectFit; smooth: false
         }
@@ -71,7 +71,7 @@ Column {
     }
     ReplyMascot {
         objectName: "widgetReplyMascot_" + root.messageIndex
-        x: 33; portraitSource: root.replyPortrait || root.portrait; interactionLabel: root.assistantName
+        x: 33; portraitSource: Character.personalityEnabled ? root.replyPortrait || root.portrait : Character.asset("reply", ""); interactionLabel: root.assistantName
         tapLines: []; celebrationLine: ""
         visible: root.last && !root.busy && root.message.role === "assistant" && !root.message.error && !!(root.message.text || "").trim()
     }

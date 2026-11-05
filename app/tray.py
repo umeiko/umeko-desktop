@@ -1,6 +1,6 @@
 """Close the main window into the system tray without stopping its agents."""
-from PySide6.QtCore import QObject, QEvent, QTimer, Signal, Slot
-from PySide6.QtGui import QAction, QGuiApplication, QWindow
+from PySide6.QtCore import QObject, QEvent, QTimer, Signal, Slot, QUrl
+from PySide6.QtGui import QAction, QGuiApplication, QWindow, QIcon
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 
@@ -13,6 +13,8 @@ class TrayController(QObject):
         self.window = window
         self.quitting = False
         self.english = False
+        self.personality_enabled = True
+        self.default_icon = icon
         self.previous_visibility = QWindow.Windowed
         self.tray = QSystemTrayIcon(icon, self)
         self.tray.setObjectName('umekoTrayIcon')
@@ -31,6 +33,10 @@ class TrayController(QObject):
         self.tray.activated.connect(self.activated)
         self.tray.messageClicked.connect(self.restore)
         self.app = QGuiApplication.instance()
+        self.default_application_icon = self.app.windowIcon()
+        if parent is not None and hasattr(parent, 'characterCatalogChanged'):
+            parent.characterCatalogChanged.connect(self.sync_character)
+            self.sync_character()
         self.app.setQuitOnLastWindowClosed(False)
         self.app.aboutToQuit.connect(self.mark_quitting)
         window.destroyed.connect(self.window_destroyed)
@@ -54,6 +60,15 @@ class TrayController(QObject):
         self.open_action.setText('Open Umeko' if self.english else '打开 Umeko')
         self.quit_action.setText('Quit' if self.english else '退出')
 
+    def sync_character(self):
+        style = self.parent().characterStyle
+        self.personality_enabled = style['id'] != 'system'
+        icon = self.default_icon if self.personality_enabled else QIcon(QUrl(style['assets']['avatarSmile']).toLocalFile())
+        self.tray.setIcon(icon)
+        application_icon = self.default_application_icon if self.personality_enabled else icon
+        self.app.setWindowIcon(application_icon)
+        if self.window is not None: self.window.setIcon(application_icon)
+
     def refresh(self):
         if self.tray_available() and not self.tray.icon().isNull() and not self.quitting:
             self.tray.show(); self.availability.stop(); return True
@@ -74,13 +89,18 @@ class TrayController(QObject):
             self.tray.show()
             self.window.hide()
             message = "I'll keep working here! To quit completely, right-click the icon in the system tray~" if self.english else '我在这里继续执行任务！需要完全退出你可以右键点击任务栏中的图标~'
+            if not self.personality_enabled:
+                message = 'Running in the background. Right-click the system tray icon to quit.' if self.english else '应用正在后台运行。右键点击系统托盘图标可退出。'
             if notify:
                 self.notificationRequested.emit(message)
                 self.tray.showMessage('Umeko', message, self.tray.icon(), 4000)
         else:
             self.window.showMinimized()
             if notify:
-                self.notificationRequested.emit("The system tray is unavailable, so I'm minimized to the taskbar. I'll keep working here." if self.english else '系统托盘不可用，已最小化到任务栏。我会在这里继续执行任务。')
+                message = "The system tray is unavailable, so I'm minimized to the taskbar. I'll keep working here." if self.english else '系统托盘不可用，已最小化到任务栏。我会在这里继续执行任务。'
+                if not self.personality_enabled:
+                    message = 'System tray unavailable. Minimized to the taskbar; tasks are still running.' if self.english else '系统托盘不可用，已最小化到任务栏。任务仍在运行。'
+                self.notificationRequested.emit(message)
 
     def activated(self, reason):
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick): self.restore()

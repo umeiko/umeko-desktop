@@ -75,32 +75,29 @@ for name, path in paths.items():
     (root / (name + ".svg")).write_text(svg, encoding="utf-8")
 mark = '<path d="m9 5-6 7 6 7m6-14 6 7-6 7m-2-9-2 4"/>'
 (root / "mark.svg").write_text(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#42674d" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">{mark}</svg>')
-(root / "logo.svg").write_text(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="10" fill="#365e47"/><g transform="translate(6 6)" fill="none" stroke="#edf3e8" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">{mark}</g></svg>')
+(root / "logo.svg").write_text((root / 'characters/system/robot.svg').read_text(encoding='utf-8'), encoding='utf-8')
 print("Vector icons:", len(paths) + 2)
 try:
-    from PySide6.QtGui import QGuiApplication, QImage, QPainter, QPainterPath
-    from PySide6.QtCore import QRectF, Qt
+    from PySide6.QtGui import QGuiApplication, QImage, QPainter
+    from PySide6.QtCore import Qt
     from PySide6.QtSvg import QSvgRenderer
     app = QGuiApplication.instance() or QGuiApplication([])
-    image = QImage(str(root / "app.png"))
-    if image.isNull():
-        image = QImage(256, 256, QImage.Format_ARGB32)
-        image.fill(0)
-        painter = QPainter(image)
-        QSvgRenderer(str(root / "logo.svg")).render(painter)
+    # The system character is authored as vectors and uses the same raster pack
+    # entry points as every other built-in character.
+    system = root / 'characters/system'
+    for name in ('robot', 'push', 'pull'):
+        rendered = QImage(256, 256, QImage.Format_ARGB32_Premultiplied)
+        rendered.fill(Qt.transparent)
+        painter = QPainter(rendered)
+        QSvgRenderer(str(system / (name + '.svg'))).render(painter)
         painter.end()
-    else:
-        rounded = QImage(256, 256, QImage.Format_ARGB32)
-        rounded.fill(Qt.transparent)
-        painter = QPainter(rounded)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setRenderHint(QPainter.SmoothPixmapTransform)
-        clip = QPainterPath()
-        clip.addRoundedRect(QRectF(0, 0, 256, 256), 46, 46)
-        painter.setClipPath(clip)
-        painter.drawImage(QRectF(0, 0, 256, 256), image)
-        painter.end()
-        image = rounded
+        assert rendered.save(str(system / (name + '.png')))
+    background = QImage(1, 1, QImage.Format_ARGB32)
+    background.fill(Qt.transparent)
+    assert background.save(str(system / 'background.png'))
+    image = QImage(str(system / "robot.png"))
+    assert not image.isNull()
+    assert image.save(str(root / "app.png"))
     assert image.save(str(root / "app.ico"))
     from PySide6.QtCore import QByteArray, QBuffer, QIODevice
     import struct

@@ -79,13 +79,14 @@ try:
     wait_idle()
     assert abs(mascot.property("offsetX")) < 0.2 and abs(mascot.property("offsetY")) < 0.2
     assert abs(mascot.property("tilt")) < 0.2
-    # Hold and release: exactly one hold, with a finite, local cookie burst.
+    # Hold and release: exactly one hold, with a finite, local spark burst.
     count = spy.count()
     QTest.mousePress(window, Qt.LeftButton, Qt.NoModifier, center)
     QTest.qWait(750)
     assert spy.count() == count + 1 and spy.at(count) == ["hold"]
-    assert mascot.property("celebrating") and find("welcomeCookie").isVisible()
-    capture("57-mascot-cookie-surprise")
+    assert mascot.property("celebrating")
+    assert any(child.isVisible() and child.property('name') == 'spark' for child in mascot.childItems())
+    capture("57-mascot-spark-surprise")
     QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, center)
     assert spy.count() == count + 1, "hold also fired a click"
     wait_idle()

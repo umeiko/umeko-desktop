@@ -1,0 +1,28 @@
+{
+  "format": "umeko-character",
+  "version": 1,
+  "id": "system",
+  "name": "默认助手",
+  "assets": {
+    "picker": "robot.png",
+    "welcome": "robot.png",
+    "avatarSmile": "robot.png",
+    "avatarWink": "robot.png",
+    "avatarHappy": "robot.png",
+    "reply": "robot.png",
+    "loading": "robot.png",
+    "catch": "robot.png",
+    "push": "push.png",
+    "pull": "pull.png",
+    "background": "background.png",
+    "subagent0": "robot.png",
+    "subagent1": "robot.png",
+    "subagent2": "robot.png",
+    "subagent3": "robot.png",
+    "subagentCatch0": "robot.png",
+    "subagentCatch1": "robot.png",
+    "subagentCatch2": "robot.png",
+    "subagentCatch3": "robot.png"
+  },
+  "dialogue": "dialogue.json"
+}

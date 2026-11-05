@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, QUrl
+from .themes import BASES
 
 
 def redacted(value):
@@ -285,7 +286,7 @@ class UmekoControl(QObject):
         if operation == 'plugins.getConfig':
             b.providerPlugins._record(args.get('id'))
             return {'config': redacted(json.loads(b.providerPlugins.configJson(args['id'])))}
-        if operation == 'themes.list': return {'selected': b.config['theme'], 'themes': b.customThemes, 'builtins': ['light', 'dark', 'yanami']}
+        if operation == 'themes.list': return {'selected': b.config['theme'], 'themes': b.customThemes, 'builtins': list(BASES)}
         if operation == 'themes.prompt': return {'prompt': (b.root/'app/theme-prompt.txt').read_text(encoding='utf-8')}
         if operation == 'appearance.fonts': return {'fonts': b.availableFonts}
         if operation == 'projects.list': return {'projects': copy.deepcopy(b.store.data['projects'])}
@@ -360,7 +361,7 @@ class UmekoControl(QObject):
         if operation == 'desktop.configure':
             from .desktop_preferences import validate_patch
             validate_patch(values[0])
-        if operation == 'themes.select' and args['id'] not in ['light', 'dark', 'yanami', *[t['id'] for t in b.customThemes]]: raise ValueError('Theme ID does not exist')
+        if operation == 'themes.select' and args['id'] not in [*BASES, *[t['id'] for t in b.customThemes]]: raise ValueError('Theme ID does not exist')
         if operation == 'themes.remove' and args['id'] not in [t['id'] for t in b.customThemes]: raise ValueError('Custom theme ID does not exist')
         if operation == 'items.pin':
             items = b.store.data['projects'] if args['kind'] == 'project' else self._sessions() if args['kind'] == 'session' else []

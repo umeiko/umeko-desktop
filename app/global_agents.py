@@ -185,6 +185,11 @@ class GlobalAgents(QObject):
         return PROMPT+'\nHost-assigned identity (authoritative JSON data): '+json.dumps(self.self_info(record),ensure_ascii=False)+"\nYou are exactly this ID, never another member of the overview. The overview's self and isSelf fields identify you. Disabled bus targets cannot receive delegated tasks. Match the user's latest message language.\nUser-defined coordinator instructions:\n"+self.agents[record.global_agent].get('instructions','')
     def snapshot(self, selected=''):
         appearances = getattr(self.b,'subagentCharacterPacks',self.b.characterPacks)
+        if self.b.characterStyle['id'] == 'system':
+            # Keep each agent's saved identity; only its displayed artwork follows
+            # the main character preference, including the Widget's own images.
+            system = next(row for row in appearances if row['id'] == 'system')
+            appearances = [dict(row, portrait=system['portrait'], replyPortrait=system.get('replyPortrait',system['portrait'])) for row in appearances]
         portraits = {row['id']:row['portrait'] for row in appearances}
         replies = {row['id']:row.get('replyPortrait',row['portrait']) for row in appearances}
         fallback = self.b.characterStyle['id']

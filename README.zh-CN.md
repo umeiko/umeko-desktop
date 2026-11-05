@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="app/icons/yanami-pixel.png" alt="Umeko 像素八奈见 Logo" width="128">
+<img src="app/icons/app.png" alt="Umeko 机器人 Logo" width="128">
 
 # Umeko Desktop
 
@@ -70,7 +70,7 @@ Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原�
 | **清晰的工作过程** | 可折叠思考与工具记录、代码着色、内嵌附件、稳定滚动与跨消息文字选取。 |
 | **自由配置模型** | OpenAI 兼容与 Anthropic 服务、逐模型上下文与视觉配置，以及可导入的账号供应商插件。 |
 | **给其他工具的 API** | 可选 API 代理服务、模型别名、局域网访问，以及可命名、停用和撤销的 API Key。 |
-| **一点自己的风格** | 浅色、深色与海盐蓝主题，独立选择主角色与人设包，以及应用里的互动小细节。 |
+| **一点自己的风格** | 纯白（默认）、草绿、深色与海盐蓝主题，独立选择主角色与人设包。在主角色选择中勾选「不启用」，即可使用简洁机器人、普通系统提示和箭头控件。 |
 
 使用 [`submit_to_chatbox`](docs/chatbox-media.md) 可直接展示图片和紧凑文件卡片。单击文件打开，右键复制文件或路径、在文件管理器中查看、重新附加到聊天。图片预览支持滚轮缩放、拖动查看和单击关闭。文件可以拖到聊天区任意位置，添加后自动聚焦输入框。排队消息支持逐条引导、编辑与删除；双击选词，三击选择整段。
 
@@ -138,4 +138,4 @@ Windows 使用 `./build.ps1`，macOS/Linux 使用 `bash build.sh` 打包。CI �
 
 作者：[umeiko](https://github.com/umeiko)。基于 [Pi Coding Agent](https://github.com/earendil-works/pi)、[Qt for Python](https://doc.qt.io/qtforpython-6/) 与 [Pygments](https://pygments.org/) 构建。
 
-项目 Logo 沿用应用已有的[像素八奈见同人素材](app/icons/yanami-pixel.provenance.json)。本项目为独立同人项目，与角色权利方无关联。依赖遵循各自许可证，见[第三方声明](THIRD_PARTY_NOTICES.md)。
+项目 Logo 使用几何机器人。可选角色形象包含已有的[像素八奈见同人素材](app/icons/yanami-pixel.provenance.json)，本项目与角色权利方无关联。依赖遵循各自许可证，见[第三方声明](THIRD_PARTY_NOTICES.md)。

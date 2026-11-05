@@ -69,7 +69,7 @@ def keyring_protect(value, decrypt=False, account=""):
 DEFAULTS = {
     "projects": [], "activeProject": "", "removedProjects": [], "sessionMeta": {},
     "fontFamily": "",
-    "employeeId": "", "password": "", "workspace": "", "dark": False, "theme": "light", "character": "yanami",
+    "employeeId": "", "password": "", "workspace": "", "dark": False, "theme": "white", "character": "yanami", "previousCharacter": "yanami",
     "selectedProvider": "", "selectedModel": "",
     "providers": [],
     "multimodal": MULTIMODAL_DEFAULTS,
@@ -102,7 +102,8 @@ class Store:
         if self.path.exists():
             saved = json.loads(self.path.read_text(encoding="utf-8"))
             self.data.update(copy.deepcopy(saved))
-            self.data["theme"] = saved.get("theme", "dark" if saved.get("dark") else "light")
+            # Preserve explicit legacy light/dark choices; new profiles use white.
+            self.data["theme"] = saved.get("theme", ("dark" if saved["dark"] else "light") if "dark" in saved else DEFAULTS["theme"])
             saved_server = saved.get("server", {})
             self.data["server"] = {**copy.deepcopy(DEFAULTS["server"]), **saved_server}
             self.data["agent"] = {**copy.deepcopy(DEFAULTS["agent"]), **saved.get("agent", {})}
