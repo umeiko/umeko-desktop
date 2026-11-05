@@ -178,12 +178,23 @@ Item {
                 return;
             const model = pane.messageModel, map = slotMap(), slots = map.slots;
             const top = above || followTail || restoring ? -1 : visibleRows(slots).first;
+            // While the view follows the latest message, the last group keeps
+            // receiving rows as the reply streams, so on a slow machine it is
+            // rarely complete: waiting for it would hide the streaming row and
+            // keep the restore after a reset from finishing. Its rows are shown
+            // one by one as they load; the view is positioned at the end, so
+            // nothing the reader is looking at moves.
+            const tail = followTail ? model.groupOf(count - 1) : -1;
             const checked = {}, ready = [];
             for (let row = map.first; map.first >= 0 && row <= map.last; row++) {
                 const item = slots[row];
                 if (!item || item.shown || !item.bodyLoaded)
                     continue;
                 const group = model.groupOf(row);
+                if (group === tail) {
+                    ready.push(item);
+                    continue;
+                }
                 if (checked[group])
                     continue;
                 checked[group] = true;

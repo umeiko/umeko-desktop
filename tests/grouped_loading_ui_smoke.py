@@ -10,7 +10,10 @@ offscreen window and checks, by counting rather than timing, that:
 3. streaming the last message does not recreate, resize or regroup any row
    of the groups above it;
 4. opening the session creates no more row bodies than the screen and its
-   usual margin need, i.e. grouping does not make opening load more.
+   usual margin need, i.e. grouping does not make opening load more;
+5. while following a streaming reply, the latest row is shown as soon as it
+   has loaded even if another row of its group is still loading (a slow
+   machine, simulated by stopping incubation rather than by timing).
 """
 import json
 import os
@@ -27,6 +30,7 @@ os.environ.update(UMEKO_DATA_DIR=str(base / 'profile'), QT_QPA_PLATFORM='offscre
                   QT_QUICK_BACKEND='software', PI_OFFLINE='1')
 from PySide6.QtCore import QCoreApplication, QMetaObject, QPoint, QPointF, Q_ARG, Qt
 from PySide6.QtGui import QWheelEvent
+from PySide6.QtQml import QQmlIncubationController
 from PySide6.QtTest import QTest
 import shiboken6
 from main import create_application
@@ -256,6 +260,43 @@ try:
                     if size != snapshot[row][1] or group != snapshot[row][2] or pointer not in (None, snapshot[row][0]))
     print('STREAM', json.dumps({'rows_above': len(snapshot), 'still_instantiated': len(now), 'relaid_out': relaid}), flush=True)
     assert len(now) and not relaid, relaid
+    assert view.property('followTail') and view.property('atYEnd')
+
+    # 5. A slow machine while following the reply: the latest row appears as
+    # soon as it has loaded, even while another row of its group is still
+    # loading. Incubation is stopped, so no asynchronous body completes, and the
+    # latest row alone is loaded synchronously; the result is a count of passes.
+    stalled = QQmlIncubationController()
+    engine.setIncubationController(stalled)
+    try:
+        backend._handle_pi_event(record, {'type': 'message', 'role': 'assistant', 'text': '', 'stopReason': 'stop'})
+        backend._handle_pi_event(record, {'type': 'user_start', 'text': 'Second live question'})
+        backend._handle_pi_event(record, {'type': 'assistant_start'})
+        backend._handle_pi_event(record, {'type': 'thinking_delta', 'text': 'thinking about the second question\n'})
+        QTest.qWait(50)
+        latest_row = model.rowCount() - 1
+        waiting = [item for item in slots(view) if model.groupOf(item.property('index')) == model.groupOf(latest_row)
+                   and item.property('index') < latest_row and not item.property('bodyLoaded')]
+        assert waiting, 'no row of the latest group is still loading'
+        view.setProperty('urgentFirst', latest_row)
+        view.setProperty('urgentLast', latest_row)
+        latest = next(item for item in slots(view) if item.property('index') == latest_row)
+        hidden = empty = 0
+        for part in range(60):
+            backend._handle_pi_event(record, {'type': 'delta', 'text': f'second answer part {part}\n'})
+            QTest.qWait(16)
+            hidden += bool(latest.property('bodyLoaded') and not latest.property('bodyReady'))
+            rows = on_screen(view)
+            empty += bool(rows) and not any(item.property('bodyReady') for item in rows)
+        loaded = bool(latest.property('bodyLoaded'))
+        print('SLOW_STREAM', json.dumps({'passes': 60, 'loading_rows_in_group': len(waiting), 'latest_loaded': loaded,
+                                         'latest_hidden_passes': hidden, 'no_content_passes': empty}), flush=True)
+        assert loaded and hidden == 0 and empty == 0, (loaded, hidden, empty)
+    finally:
+        view.setProperty('urgentFirst', -1)
+        view.setProperty('urgentLast', -2)
+        engine.setIncubationController(window.incubationController())
+    wait(lambda: not placeholders(view), 'rows load once incubation resumes')
     assert view.property('followTail') and view.property('atYEnd')
     assert not warnings, warnings[:5]
     print('GROUPED_LOADING_UI_OK', flush=True)
