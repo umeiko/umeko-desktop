@@ -174,7 +174,12 @@ Item {
             // A group wholly above the screen changes the rows' heights above
             // the reader, so it waits, laid out, until scrolling reaches it
             // (above = true) and is then inserted with one position correction.
-            if (!pane.messageModel || !count)
+            // A cached view that was shown and is now hidden keeps its groups
+            // as they are: keepAnchor() does not correct a hidden view, so a
+            // group above the reader that finished loading in the background
+            // would move the reading position. Activation settles them with
+            // the anchor. A view still being created has no position yet.
+            if (!pane.messageModel || !count || (!pane.current && pane.initialized))
                 return;
             const model = pane.messageModel, map = slotMap(), slots = map.slots;
             const top = above || followTail || restoring ? -1 : visibleRows(slots).first;
