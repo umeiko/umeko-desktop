@@ -68,6 +68,9 @@ class SessionState:
     phase: str = "idle"
     action: str = ""
     prompt_started: float | None = None
+    prepared_task: str = ""
+    task_attempt: int = 0
+    task_record_error: bool = False
     tool_status: str = ""
     pet_activity: str = "thinking"
     process: QProcess | None = None

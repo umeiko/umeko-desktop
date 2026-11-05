@@ -55,6 +55,11 @@ const textOf = content => typeof content === "string" ? content : (content || []
 const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
 const compactionText = data => `已压缩：${data.before} → ${data.after} tokens`;
 let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe, closing = false;
+let trackingTask = false;
+
+function taskDelivery(source, id, items, failed = 0) {
+  if (trackingTask) emit({ type: "task_delivery", source, id, items, failed });
+}
 const compactionFailures = new WeakMap();
 const loopReview=createLoopReview({emit});
 const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit});
@@ -212,6 +217,7 @@ async function bindSession(session) {
       args: event.toolName === ANALYZE_IMAGE ? {...event.args,model:auxiliaryVision.label(),provider:auxiliaryVision.provider()} : event.args, result: event.type === "tool_execution_end" ? textOf(event.result?.content).slice(0,8192) : undefined,
       media: event.type === "tool_execution_end" ? chatboxItems(event.toolName, {...event.result, isError: event.isError}) : undefined,
       video: event.toolName === "video_gen" ? event.partialResult?.details?.video : undefined,
+      taskStep: trackingTask && event.type === "tool_execution_update" ? false : undefined,
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
     const willRetry = event.type === "message_end" && session.retryAttempt < NETWORK_RETRY.maxRetries &&
       isRetryableAssistantError(event.message) && !isContextOverflow(event.message, session.model?.contextWindow || 128000);
@@ -391,8 +397,8 @@ async function init(input) {
           { name: "recent-images", hidden: true, replaceable: false, factory: createRecentImagesExtension({ getLimit: () => config.agent?.maxContextImages }) },
       { name: "auxiliary-vision", hidden: true, replaceable: false, factory: auxiliaryVision.contextExtension },
           { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
-          { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}) },
-          { name: "generation", builtin: true, replaceable: false, factory: createGenerationExtension({getConfig: () => config}) },
+          { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}, (id, items, failed) => taskDelivery("submitted", id, items, failed)) },
+          { name: "generation", builtin: true, replaceable: false, factory: createGenerationExtension({getConfig: () => config, onDelivery: (id, items) => taskDelivery("generated", id, items)}) },
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },
           { name: "umeko-control", builtin: true, replaceable: false, factory: pi => { umekoControl.extension(pi); auxiliaryVision.toolExtension(pi); } },
           { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
@@ -640,6 +646,7 @@ async function execute(input) {
   if (input.type === "shutdown") { await shutdown(); return; }
   if (executing) { emit({ type: "error", message: "Pi 正在处理当前操作" }); return; }
   executing = true;
+  trackingTask = input.type === "prompt" && input.trackTask === true;
   try {
     if (validEffort(input.reasoningEffort)) reasoningEffort = input.reasoningEffort;
     if (!runtime) {
@@ -689,6 +696,7 @@ async function execute(input) {
     await inputQueue.chain;
     if (runtime && (inputQueue.items.length || inputQueue.hasInterrupts)) inputQueue.returnQueue();
     piCommands.clear();
+    trackingTask = false;
     executing = false; emit({ type: "done", action: input.type });
   }
 }

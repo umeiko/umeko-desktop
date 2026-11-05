@@ -714,6 +714,7 @@ class PiTests(unittest.TestCase):
         self.response_fn = reply
         self.command(self.payload)
         events = self.command({"type":"prompt", "text":"Show the image and deliver the report"})
+        self.assertFalse(any(event["type"] == "task_delivery" for event in events))
         live = next(event for event in events if event.get("type") == "tool" and event.get("media"))
         self.assertEqual([item["kind"] for item in live["media"]], ["image", "text", "folder"])
         state = next(event for event in events if event["type"] == "state")
@@ -733,7 +734,9 @@ class PiTests(unittest.TestCase):
     def test_chatbox_tool_rejects_unsupported_urls_or_missing_paths_without_media(self):
         self.command(self.payload)
         self.response_fn = lambda _model,messages,*_: Completion("Invalid files were not delivered") if messages[-1]["role"] == "tool" else Completion(tool_calls=[{"id":"invalid-delivery", "name":"submit_to_chatbox", "arguments":{"items":[{"path":"javascript:alert(1)"}, {"path":"missing.png"}]}}])
-        events = self.command({"type":"prompt", "text":"Invalid delivery fixture"})
+        events = self.command({"type":"prompt", "text":"Invalid delivery fixture", "trackTask":True})
+        receipt, = [event for event in events if event["type"] == "task_delivery"]
+        self.assertEqual((receipt["failed"], receipt["items"]), (2, []))
         failed = next(event for event in events if event.get("type") == "tool" and event.get("state") == "error")
         self.assertFalse(failed.get("media"))
 
@@ -745,7 +748,10 @@ class PiTests(unittest.TestCase):
         });''',encoding="utf-8")
         self.command(self.payload)
         self.response_fn = lambda _model,messages,*_: Completion("Delivered") if messages[-1]["role"] == "tool" else Completion(tool_calls=[{"id":"parent-delivery", "name":"proxy_delivery", "arguments":{}}])
-        events = self.command({"type":"prompt", "text":"Deliver through another tool"})
+        events = self.command({"type":"prompt", "text":"Deliver through another tool", "trackTask":True})
+        receipt, = [event for event in events if event["type"] == "task_delivery"]
+        self.assertEqual((receipt["source"], receipt["id"], receipt["items"][0]["path"]),
+                         ("submitted", "parent-delivery/1", str(report)))
         state = next(event for event in events if event["type"] == "state")
         delivered = [tool for row in state["messages"] for tool in row.get("tools", []) if tool.get("media")]
         self.assertEqual(len(delivered),1)
