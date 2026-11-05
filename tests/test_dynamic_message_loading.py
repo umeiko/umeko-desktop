@@ -209,12 +209,15 @@ def run_history(base):
             results.append({'target': target, 'covered': settled, 'visible': visible(view)})
         assert all(result['covered'] for result in results), results
         assert {'toggleToolDetail_command-0', 'toggleToolDetail_command-1'} <= details, details
-        assert len(backend.messageModel._prepared) <= 16
+        # Prepared rows stay within the requested groups, never the whole history.
+        model = backend.messageModel
+        assert len(model._prepared) <= max(16, len(model._wanted)) <= model.rowCount() // 2, (len(model._prepared), len(model._wanted))
         warm = open_session('normal', 3)
         assert warm is normal and backend.messageModel is normal_model
         assert shiboken6.getCppPointer(find('messageBubble_399'))[0] == identity
         assert sum(value for (name, _), value in counts.items() if name == 'normal') == normal_creations
-        assert normal_creations < 20, counts  # Only the viewport, not 400 bodies.
+        # The screen's groups and one group on each side, not 400 bodies.
+        assert normal_creations < 60, counts
         assert not warnings, warnings[:10]
         print(json.dumps({'normal_controls': normal_creations, 'sequences': len(results),
                           'empty': sum(not result['covered'] for result in results),

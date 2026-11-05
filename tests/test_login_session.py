@@ -38,12 +38,12 @@ class LoginSessionTests(unittest.TestCase):
         from unittest.mock import Mock
         from PySide6.QtGui import QWindow
         from app.tray import TrayController
-        for available in (True, False):
+        for available, personality in ((True, True), (False, True), (True, False), (False, False)):
             window, tray = Mock(), Mock()
             window.visibility.return_value = QWindow.Hidden
             tray.icon.return_value.isNull.return_value = False
             owner = SimpleNamespace(window=window, tray=tray, tray_available=lambda: available,
-                                    english=True, personality_enabled=True, notificationRequested=Mock())
+                                    english=True, personality_enabled=personality, notificationRequested=Mock())
             TrayController.minimize_to_tray(owner, notify=False)
             if available:
                 window.hide.assert_called_once()

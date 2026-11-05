@@ -11,6 +11,10 @@ from .chatbox import media_view
 RENDER_ROWS = 1
 MAX_PREPARED_ROWS = 8
 MAX_CACHED_ROWS = 16
+# ListView spacing between rows; the content hints exclude it.
+ROW_SPACING = 27
+# Upper bound on the rows one viewport request may keep prepared.
+MAX_GROUP_ROWS = 512
 
 
 class ChatModel(QAbstractListModel):
@@ -40,6 +44,13 @@ class ChatModel(QAbstractListModel):
         self._owns_reader = reader is None
         self._reader = reader or ThreadPoolExecutor(max_workers=1, thread_name_prefix='chat-pages')
         self._suspended = False
+        # Display groups: runs of consecutive rows whose content hints add up
+        # to about groupHeight pixels. The view loads, shows and recycles whole
+        # groups. Hints do not change when a row is measured, so groups stay
+        # put while the user scrolls; only edited live rows are regrouped.
+        self._group_height = 0.0
+        self._group_starts, self._group_next, self._group_open = [], 0, None
+        self._live_hints = []
         self.pageReady.connect(self._page_ready)
 
     def suspend(self, value):
@@ -89,6 +100,8 @@ class ChatModel(QAbstractListModel):
         self._heights.clear()
         self.snapshot = snapshot
         self.rows, self._questions, self._source_starts = [], [], []
+        self._live_hints = []
+        self._reset_groups()
         self._source, self._source_count = None, 0
         if snapshot and snapshot.count:
             focus = snapshot.focus_row if snapshot.focus_row >= 0 else snapshot.count - 1
@@ -104,8 +117,36 @@ class ChatModel(QAbstractListModel):
         first, last = max(0, first), min(self.base_count - 1, max(first, last))
         if first > last:
             return
+        if self._group_height > 0:
+            rows = list(range(first, last + 1))
+            rows += [row for row in range(self.groupFirst(self.groupOf(first)), self.groupLast(self.groupOf(last)) + 1)
+                     if not first <= row <= last and row < self.base_count]
+            self._set_wanted(rows[:MAX_GROUP_ROWS])
+            return
         last = min(last, first + MAX_PREPARED_ROWS - 1)
         self._set_wanted(list(range(first // RENDER_ROWS, last // RENDER_ROWS + 1)))
+
+    @Slot(int, int, int)
+    def requestGroups(self, first, last, keep):
+        """Prepare the groups of the on-screen rows first, then keep groups on each side."""
+        if not self.snapshot or self._closed:
+            return
+        if self._group_height <= 0:
+            self.requestViewport(list(range(first, last + 1)), [])
+            return
+        first, last = max(0, first), min(self.base_count - 1, max(first, last))
+        if first > last:
+            return
+        g0, g1 = self.groupOf(first), self.groupOf(last)
+        rows = list(range(first, last + 1))
+        rows += [row for row in range(self.groupFirst(g0), self.groupLast(g1) + 1) if not first <= row <= last]
+        count = len(self._partition())
+        for step in range(1, max(0, keep) + 1):
+            for group in (g1 + step, g0 - step):
+                if 0 <= group < count:
+                    rows += range(self.groupFirst(group), self.groupLast(group) + 1)
+        rows = [row for row in dict.fromkeys(rows) if row < self.base_count]
+        self._set_wanted(rows[:MAX_GROUP_ROWS])
 
     @Slot('QVariantList', 'QVariantList')
     def requestViewport(self, visible, nearby):
@@ -151,16 +192,26 @@ class ChatModel(QAbstractListModel):
             row in self._prepared for row in range(p * RENDER_ROWS, min(self.base_count, (p + 1) * RENDER_ROWS)))), None)
         if page is None:
             return
+        # One job prepares every wanted row of a display group, so the group's
+        # rows change from placeholders to content in a single dataChanged.
+        pages = [page]
+        if self._group_height > 0:
+            group = self.groupOf(page)
+            members = range(self.groupFirst(group), self.groupLast(group) + 1)
+            pages = [p for p in self._wanted if p in members and p not in self._failed and p not in self._prepared]
         snapshot, generation = self.snapshot, self._generation
         self._job = generation, page
-        self._pending.add(page)
+        self._pending.update(pages)
         def read():
             from .transcript_index import PAGE_ROWS
-            first = page * RENDER_ROWS
-            cancelled = lambda: self._closed or self._suspended or generation != self._generation or page not in self._wanted
+            cancelled = lambda: (self._closed or self._suspended or generation != self._generation
+                                 or not any(p in self._wanted for p in pages))
             if cancelled(): return {}
-            rows = snapshot.page(first // PAGE_ROWS)
-            rows = {row:value for row,value in rows.items() if first <= row < first + RENDER_ROWS}
+            rows = {}
+            for number in sorted({p * RENDER_ROWS // PAGE_ROWS for p in pages}):
+                rows.update(snapshot.page(number))
+            wanted = {row for p in pages for row in range(p * RENDER_ROWS, (p + 1) * RENDER_ROWS)}
+            rows = {row:value for row,value in rows.items() if row in wanted}
             return self._presentation.prepare(rows, cancelled)
         future = self._reader.submit(read)
         def complete(job):
@@ -172,30 +223,31 @@ class ChatModel(QAbstractListModel):
                 error = True
             try:
                 if not self._closed:
-                    self.pageReady.emit((generation, page, error, prepared))
+                    self.pageReady.emit((generation, pages, error, prepared))
             except RuntimeError:
                 pass
         future.add_done_callback(complete)
 
     @Slot(object)
     def _page_ready(self, value):
-        generation, page, error, prepared = value
+        generation, pages, error, prepared = value
         self._job = None
-        self._pending.discard(page)
+        self._pending.difference_update(pages)
         if self._closed or generation != self._generation or not self.snapshot:
             self._pump()
             return
-        if page not in self._wanted:
+        if not any(page in self._wanted for page in pages):
             self._pump()
             return
         if not error and not prepared:
             self._pump()
             return
         if error:
-            self._failed.add(page)
+            self._failed.update(pages)
         self._prepared.update(prepared)
         self._trim_prepared()
-        first, last = page * RENDER_ROWS, min(self.base_count - 1, (page + 1) * RENDER_ROWS - 1)
+        first = min(pages) * RENDER_ROWS
+        last = min(self.base_count - 1, (max(pages) + 1) * RENDER_ROWS - 1)
         self.viewportAboutToChange.emit()
         self.dataChanged.emit(self.index(first), self.index(last), [self.MessageRole])
         self.viewportChanged.emit()
@@ -203,8 +255,10 @@ class ChatModel(QAbstractListModel):
 
     @Slot(int)
     def retryPage(self, row):
-        page = row // RENDER_ROWS
-        self._failed.discard(page)
+        if self._group_height > 0:
+            group = self.groupOf(row)
+            self._failed.difference_update(range(self.groupFirst(group), self.groupLast(group) + 1))
+        self._failed.discard(row // RENDER_ROWS)
         self.requestRange(row, row)
 
     @Slot(int, result=bool)
@@ -215,7 +269,12 @@ class ChatModel(QAbstractListModel):
 
     @Slot(int, float)
     def recordHeight(self, row, height):
-        if not self.snapshot or not 0 <= row < self.base_count or not 0 < height < 10000000:
+        # ListView destroys delegates outside its cache and recreates them from
+        # this estimate. Live rows (unindexed sessions and the streaming tail)
+        # need the same memory as indexed pages: a forgotten tall row comes back
+        # as a short guess, its real height then pushes the tail out of view,
+        # and following the tail recreates the same rows again (issue #95).
+        if not 0 <= row < self.rowCount() or not 0 < height < 10000000:
             return
         self._heights[row] = height
         self._heights.move_to_end(row)
@@ -228,12 +287,95 @@ class ChatModel(QAbstractListModel):
             self._layout = key
             self._heights.clear()
 
+    def _reset_groups(self):
+        self._group_starts, self._group_next, self._group_open = [], 0, None
+
+    def _invalidate_groups(self, row):
+        """Regroup from the group containing row; earlier groups stay as they are."""
+        if row >= self._group_next:
+            return
+        group = bisect_right(self._group_starts, row) - 1
+        if group < 0:
+            self._reset_groups()
+            return
+        self._group_next = self._group_starts[group]
+        del self._group_starts[group:]
+        self._group_open = None
+
+    def _row_hint(self, row):
+        if row < self.base_count:
+            return float(self.snapshot.metadata(row).get('hint', 100))
+        index = row - self.base_count
+        hint = self._live_hints[index] if index < len(self._live_hints) else None
+        if hint is None:
+            from .transcript_index import estimated_height
+            hint = float(estimated_height(self.rows[index]))
+            if index < len(self._live_hints):
+                self._live_hints[index] = hint
+        return hint
+
+    def _partition(self):
+        """Greedy groups over the content hints, continued as rows are appended."""
+        total = self.rowCount()
+        if self._group_next < total:
+            starts, limit, used = self._group_starts, self._group_height, self._group_open
+            for row in range(self._group_next, total):
+                # Indexed and live rows never share a group: Pi re-sends the
+                # live part, the indexed part does not change.
+                if used is None or used >= limit or row == self.base_count:
+                    starts.append(row)
+                    used = 0.0
+                used += self._row_hint(row) + ROW_SPACING
+            self._group_next, self._group_open = total, used
+        return self._group_starts
+
+    @Slot(float)
+    def setGroupHeight(self, height):
+        height = max(0.0, float(height))
+        if abs(height - self._group_height) >= 1:
+            self._group_height = height
+            self._reset_groups()
+
+    @Slot(int, result=int)
+    def groupOf(self, row):
+        starts = self._partition()
+        if not starts or row < 0:
+            return 0
+        return max(0, bisect_right(starts, min(row, self.rowCount() - 1)) - 1)
+
+    @Slot(int, result=int)
+    def groupFirst(self, group):
+        starts = self._partition()
+        return starts[max(0, min(group, len(starts) - 1))] if starts else 0
+
+    @Slot(int, result=int)
+    def groupLast(self, group):
+        starts = self._partition()
+        if not starts:
+            return -1
+        group = max(0, min(group, len(starts) - 1))
+        return starts[group + 1] - 1 if group + 1 < len(starts) else self.rowCount() - 1
+
+    @Slot(result=int)
+    def groupCount(self):
+        return len(self._partition())
+
+    @Slot(int, int, result=float)
+    def spanHeight(self, first, last):
+        """Estimated pixels of rows first..last, measured heights preferred."""
+        first, last = max(0, first), min(self.rowCount() - 1, last)
+        return sum(self.estimatedHeight(row) + ROW_SPACING for row in range(first, last + 1))
+
     @Slot(int, result=float)
     def estimatedHeight(self, row):
         if row in self._heights:
             return self._heights[row]
         if self.snapshot and 0 <= row < self.base_count:
             return float(self.snapshot.metadata(row).get('hint', 100))
+        if 0 <= row - self.base_count < len(self.rows):
+            # The same visible-content hint the index stores for paged rows.
+            from .transcript_index import estimated_height
+            return float(estimated_height(self.rows[row - self.base_count]))
         return 100.0
 
     def message(self, row, synchronous=False):
@@ -291,7 +433,7 @@ class ChatModel(QAbstractListModel):
             start = self._source_starts[first]
             first = bisect_left(self._source_starts, start)
         projected, native_starts = self.project(source[start:], with_starts=True, max_group=16)
-        from .transcript_index import display_fragments
+        from .transcript_index import display_fragments, estimated_height
         messages, starts = [], []
         for row, native in zip(projected, native_starts):
             pieces = list(display_fragments(row))
@@ -305,19 +447,30 @@ class ChatModel(QAbstractListModel):
         self._source, self._source_count = source, len(source)
         total = first + len(messages)
         questions_dirty = total != len(self.rows)
+        self._live_hints.extend([None] * (len(self.rows) - len(self._live_hints)))
         for row in range(first, min(total, len(self.rows))):
             value = messages[row - first]
             if self.rows[row] != value:
                 questions_dirty |= self.rows[row].get('role') == 'user' or value.get('role') == 'user'
                 self.rows[row] = copy.deepcopy(value)
+                # Only an edited row's own group and later groups regroup.
+                hint = float(estimated_height(self.rows[row]))
+                if hint != self._live_hints[row]:
+                    self._live_hints[row] = hint
+                    self._invalidate_groups(self.base_count + row)
                 self.dataChanged.emit(self.index(self.base_count + row), self.index(self.base_count + row), [self.MessageRole])
         if total > len(self.rows):
             self.beginInsertRows(QModelIndex(), self.base_count + len(self.rows), self.base_count + total - 1)
             self.rows.extend(copy.deepcopy(messages[len(self.rows) - first:]))
+            self._live_hints.extend([None] * (len(self.rows) - len(self._live_hints)))
             self.endInsertRows()
         elif total < len(self.rows):
             self.beginRemoveRows(QModelIndex(), self.base_count + total, self.base_count + len(self.rows) - 1)
+            for row in range(self.base_count + total, self.base_count + len(self.rows)):
+                self._heights.pop(row, None)
             del self.rows[total:]
+            del self._live_hints[total:]
+            self._invalidate_groups(self.base_count + total)
             self.endRemoveRows()
         if questions_dirty:
             questions = []
