@@ -117,7 +117,7 @@ class GatedProvider:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--record', type=Path)
-    parser.add_argument('--scenario', action='append', choices=['normal', 'stop', 'error', 'consecutive'])
+    parser.add_argument('--scenario', action='append', choices=['normal', 'queued', 'stop', 'error', 'consecutive'])
     args = parser.parse_args()
     from PySide6.QtCore import QEventLoop, QObject, QTimer, Signal, Slot
 
@@ -219,6 +219,7 @@ AgentSession.prototype._emit = function(event) {
                        'footerVisible': status.isVisible() if status is not None else False,
                        'composerState': composer.property('state') if composer is not None else None,
                        'composerText': composer_text.property('text') if composer_text is not None else None,
+                       'composerVisible': composer.isVisible() if composer is not None else False,
                        'phase': backend._view.phase, 'cancelled': backend._view.cancelled}
                 if event is not None:
                     row['event'] = {key: event[key] for key in ('type', 'event', 'role', 'stopReason', 'text', 'error') if key in event}
@@ -253,15 +254,50 @@ AgentSession.prototype._emit = function(event) {
                 snapshot('release-request-' + str(number))
                 provider.current()[number - 1]['release'].set()
 
-            for scenario in args.scenario or ['normal', 'stop', 'error', 'consecutive']:
+            def check_labels(row, state, label):
+                for prefix in ('footer', 'composer'):
+                    if (not row[prefix + 'Visible'] or row[prefix + 'State'] != state
+                            or label not in str(row[prefix + 'Text'])):
+                        violations.append(active['scenario'] + ': ' + prefix + ' label ' + str(row))
+
+            for scenario in args.scenario or ['normal', 'queued', 'stop', 'error', 'consecutive']:
                 active['scenario'] = provider.scenario = scenario
                 backend.newSession()
                 assert backend.send('INITIAL_' + scenario), 'Initial backend.send was rejected'
                 snapshot('action-send')
                 until(lambda: streamed(1) and event_seen('delta') and backend._view.phase == 'running'
                       and find('turnStatus') is not None, 'Initial real streaming draft')
-                snapshot('initial-stream-ready')
-                if scenario == 'stop':
+                check_labels(snapshot('initial-stream-ready'), 'running', 'Running')
+                if scenario == 'queued':
+                    # Composer.handleEnter -> sendMessage() -> backend.send(),
+                    # which sends a native follow-up while the desktop is busy.
+                    queued_text = 'QUEUED_' + scenario
+                    assert backend.send(queued_text), 'Busy backend.send was rejected'
+                    snapshot('action-queue')
+                    until(lambda: any(item.get('text') == queued_text and item.get('mode') == 'followUp'
+                                      for item in backend._view.queue), 'Enter message entered follow-up queue')
+                    check_labels(snapshot('queued-waiting'), 'running', 'Running')
+                    assert len(provider.current()) == 1, 'Queued request started before the first stream was released'
+                    assert not event_seen('user_start', text=queued_text), 'Queued user turn started before completion'
+                    release(1)
+                    until(lambda: event_seen('user_start', text=queued_text) and streamed(2)
+                          and any(row['scenario'] == scenario and row.get('event', {}).get('type') == 'delta'
+                                  and 'STREAMING_queued_2' in row['event'].get('text', '') for row in samples),
+                          'Queued message started its own native turn')
+                    check_labels(snapshot('queued-turn-streaming'), 'running', 'Running')
+                    current = [row for row in samples if row['scenario'] == scenario]
+                    first_end = next(row for row in current if row.get('event', {}).get('type') == 'message'
+                                     and row['event'].get('role') == 'assistant' and row['event'].get('stopReason') == 'stop')
+                    queued_start = next(row for row in current if row.get('event', {}).get('type') == 'user_start'
+                                        and row['event'].get('text') == queued_text)
+                    first_turn_end = next(row for row in current if row.get('event', {}).get('type') == 'pi_event'
+                                          and row['event'].get('event') == 'turn_end')
+                    assert first_end['index'] < first_turn_end['index'] < queued_start['index'], 'Queue overtook the first completed turn'
+                    check_labels(first_end, 'running', 'Running')
+                    release(2)
+                    until(lambda: event_seen('done') and not backend.busy, 'Queued turn normal completion')
+                    expected, label = 'finished', 'Done'
+                elif scenario == 'stop':
                     backend.stop()
                     row = snapshot('action-stop')
                     if row['footerState'] != 'stopping' or 'Stopping' not in str(row['footerText']):
@@ -295,6 +331,7 @@ AgentSession.prototype._emit = function(event) {
                     until(lambda: event_seen('done') and not backend.busy, 'Steering terminal')
                     expected, label = ('failed', 'Failed') if scenario == 'error' else ('finished', 'Done')
                 terminal = snapshot('terminal')
+                check_labels(terminal, expected, label)
                 scenario_rows = [row for row in samples if row['scenario'] == scenario]
                 states = list(dict.fromkeys(row['footerState'] for row in scenario_rows))
                 composer_states = list(dict.fromkeys(row['composerState'] for row in scenario_rows))
@@ -303,18 +340,27 @@ AgentSession.prototype._emit = function(event) {
                                      'composerState': terminal['composerState'], 'composerText': terminal['composerText'],
                                      'composerStates': composer_states,
                                      'providerRequests': len(provider.current())}
-                if terminal['footerState'] != expected or label not in str(terminal['footerText']):
-                    violations.append(scenario + ': terminal ' + str(results[scenario]))
                 if scenario != 'stop' and any(state in ('stopping', 'stopped') for state in states):
                     violations.append(scenario + ': steering displayed cancellation ' + str(states))
-                if terminal['composerState'] != expected or label not in str(terminal['composerText']):
-                    violations.append(scenario + ': composer terminal ' + str(results[scenario]))
                 if scenario != 'stop' and any(state in ('stopping', 'stopped') for state in composer_states):
                     violations.append(scenario + ': composer displayed cancellation ' + str(composer_states))
                 if not event_seen('pi_event', event='agent_end'):
                     violations.append(scenario + ': native Pi agent_end was not captured')
-                if not event_seen('pi_event', event='message_end', role='assistant', stopReason='aborted'):
+                if scenario != 'queued' and not event_seen('pi_event', event='message_end', role='assistant', stopReason='aborted'):
                     violations.append(scenario + ': native Pi aborted assistant was not captured')
+                if scenario == 'queued':
+                    completions = [row for row in scenario_rows if row['source'] == 'bridge'
+                                   and row.get('event', {}).get('type') == 'message' and row['event'].get('role') == 'assistant']
+                    turn_ends = [row for row in scenario_rows if row.get('event', {}).get('type') == 'pi_event'
+                                 and row['event'].get('event') == 'turn_end']
+                    turn_starts = [row for row in scenario_rows if row.get('event', {}).get('type') == 'pi_event'
+                                   and row['event'].get('event') == 'turn_start']
+                    assert [row['event'].get('stopReason') for row in completions] == ['stop', 'stop'], 'Both queued-path replies must finish normally'
+                    assert len(turn_starts) == len(turn_ends) == 2, 'Queued message did not execute as a separate Pi turn'
+                    assert len(provider.current()) == 2, 'Expected one provider request per queued-path turn'
+                    assert not any(row.get('event', {}).get('stopReason') == 'aborted' for row in scenario_rows), 'Enter queue unexpectedly aborted a reply'
+                    results[scenario]['normalCompletions'] = len(completions)
+                    results[scenario]['nativeTurns'] = len(turn_ends)
                 if scenario == 'error' and not event_seen('message', role='assistant', stopReason='error'):
                     violations.append('error: real provider failure was not propagated')
                 if scenario == 'consecutive':
