@@ -215,7 +215,12 @@ class ChatModel(QAbstractListModel):
 
     @Slot(int, float)
     def recordHeight(self, row, height):
-        if not self.snapshot or not 0 <= row < self.base_count or not 0 < height < 10000000:
+        # ListView destroys delegates outside its cache and recreates them from
+        # this estimate. Live rows (unindexed sessions and the streaming tail)
+        # need the same memory as indexed pages: a forgotten tall row comes back
+        # as a short guess, its real height then pushes the tail out of view,
+        # and following the tail recreates the same rows again (issue #95).
+        if not 0 <= row < self.rowCount() or not 0 < height < 10000000:
             return
         self._heights[row] = height
         self._heights.move_to_end(row)
@@ -234,6 +239,10 @@ class ChatModel(QAbstractListModel):
             return self._heights[row]
         if self.snapshot and 0 <= row < self.base_count:
             return float(self.snapshot.metadata(row).get('hint', 100))
+        if 0 <= row - self.base_count < len(self.rows):
+            # The same visible-content hint the index stores for paged rows.
+            from .transcript_index import estimated_height
+            return float(estimated_height(self.rows[row - self.base_count]))
         return 100.0
 
     def message(self, row, synchronous=False):
@@ -317,6 +326,8 @@ class ChatModel(QAbstractListModel):
             self.endInsertRows()
         elif total < len(self.rows):
             self.beginRemoveRows(QModelIndex(), self.base_count + total, self.base_count + len(self.rows) - 1)
+            for row in range(self.base_count + total, self.base_count + len(self.rows)):
+                self._heights.pop(row, None)
             del self.rows[total:]
             self.endRemoveRows()
         if questions_dirty:
