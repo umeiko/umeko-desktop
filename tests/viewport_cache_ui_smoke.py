@@ -37,6 +37,10 @@ def open_session(identifier):
  wait(lambda:not view.property('restoring'),'restore')
  wait(lambda:any(item.objectName().startswith('messageBubble_') and item.isVisible() for item in items(view)),'body')
  return view,(time.perf_counter()-start)*1000
+def bounded(model):
+ # Prepared rows stay within the requested groups (the screen's groups and one
+ # on each side), never the whole history.
+ return len(model._prepared)<=max(16,len(model._wanted)) and len(model._wanted)<=model.rowCount()//2
 try:
  c._sessions=[]
  for name in 'abcd':
@@ -63,10 +67,10 @@ try:
  assert shiboken6.getCppPointer(current)[0]==identity,'Warm switch recreated a cached body'
  assert abs(current.mapToItem(a,QPointF()).y()-y)<2,'Warm anchor moved'
  assert len(c._conversation_views.models)==3
- assert len(c.messageModel._prepared)<=16
+ assert bounded(c.messageModel),(len(c.messageModel._prepared),len(c.messageModel._wanted))
  for row in (4,80,152):
   invoke(a,'jumpToMessage',row);wait(lambda:not a.property('restoring'),'jump '+str(row));QTest.qWait(100)
-  assert len(c.messageModel._prepared)<=16
+  assert bounded(c.messageModel),(len(c.messageModel._prepared),len(c.messageModel._wanted))
  open_session('d');QTest.qWait(50)
  assert not shiboken6.isValid(b),'LRU did not release old QML view'
  b2,_=open_session('b');assert b2 is not b

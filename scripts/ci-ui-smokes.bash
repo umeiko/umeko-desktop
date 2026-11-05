@@ -73,6 +73,7 @@ smokes=(
   tests/api_proxy_layout_ui_smoke.py
   tests/large_chat_ui_smoke.py
   tests/scroll_oscillation_ui_smoke.py
+  tests/grouped_loading_ui_smoke.py
   tests/provider_error_ui_smoke.py
   tests/desktop_settings_ui_smoke.py
   tests/login_startup_ui_smoke.py
