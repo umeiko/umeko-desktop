@@ -263,6 +263,7 @@ function exposeNativeTools(session) {
   if (config?.globalCoordinator) { session.setActiveToolsByName([UMEKO_TOOL]); return; }
   const declared = session.getAllTools().filter(tool => ["direct", "model-only"].includes(tool.exposure));
   session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...declared.map(tool => tool.name)])]
+    .filter(name => !config?.pluginSessionPolicy || config.pluginSessionPolicy.allowedTools.includes(name))
     .filter(name => name !== ANALYZE_IMAGE || auxiliaryVision.available(session.model)));
 }
 
@@ -340,6 +341,8 @@ async function init(input) {
   globalThis[Symbol.for("umeko:auxiliary-vision")] = auxiliaryVision;
   globalThis[Symbol.for("umeko:recent-images-policy")] = { getLimit: () => config.agent?.maxContextImages };
   permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir, generation: input.generation, dangerousAllowed: input.dangerousAllowed === true };
+  if (input.pluginSessionPolicy) permissionPolicy = {...permissionPolicy,
+    allowedTools: input.pluginSessionPolicy.allowedTools, dangerousAllowed: false};
   configureUmekoDocs({directory: input.docsDir || join(input.agentDir, "cache", "umeko-docs"), models: input.models});
   reasoningEffort = validEffort(input.reasoningEffort) ? input.reasoningEffort : "off";
   setGateway(input.gateway);
@@ -433,6 +436,7 @@ async function init(input) {
   for (const method of ["newSession", "switchSession", "fork", "importFromJsonl"]) {
     const original = runtime[method].bind(runtime);
     runtime[method] = async (...args) => {
+      if (config.pluginSessionPolicy) throw new Error("Acquire a separate external key to change a plugin session identity");
       clearDangerousApproval();
       return original(...args);
     };
@@ -616,11 +620,11 @@ async function execute(input) {
   }
   if (input.type === "tool_permission_mode") {
     if (!["auto", "ask"].includes(input.mode)) { emit({ type: "error", message: "Invalid tool permission mode" }); return; }
-    permissionPolicy = { ...permissionPolicy, mode: input.mode, language: input.language || permissionPolicy.language, dataDir: input.dataDir || permissionPolicy.dataDir };
+    permissionPolicy = { ...permissionPolicy, mode: config?.pluginSessionPolicy?.mode === 'ask' ? 'ask' : input.mode, language: input.language || permissionPolicy.language, dataDir: input.dataDir || permissionPolicy.dataDir };
     return;
   }
   if (input.type === "dangerous_approval") {
-    permissionPolicy = {...permissionPolicy, dangerousAllowed: input.allowed === true};
+    permissionPolicy = {...permissionPolicy, dangerousAllowed: !config?.pluginSessionPolicy && input.allowed === true};
     return;
   }
   if (input.type === "ui_response") {
@@ -658,6 +662,18 @@ async function execute(input) {
       if (!runtime.session.sessionManager.getSessionName()) runtime.session.setSessionName(input.text.replace(/\s+/g, " ").slice(0, 28));
       emit({ type: "session", session: sessionInfo() });
       await promptWithInterrupts(input);
+    }
+    else if (input.type === "plugin-session-acquire") {
+      // Pi normally defers creating empty transcripts until the first prompt.
+      // An acquired identity must already survive a desktop restart. Use Pi's
+      // native branch export/reopen, without manufacturing a user message.
+      const manager = runtime.session.sessionManager;
+      runtime.session.setSessionName("Plugin session");
+      const file = manager.getSessionFile();
+      if (!existsSync(file)) {
+        runtime.session.exportToJsonl(file);
+        manager.setSessionFile(file);
+      }
     }
     else if (input.type === "widget-notify") await widgetMessages.deliver(input.notification);
     else if (input.type === "new") await runtime.newSession();

@@ -15,6 +15,7 @@ import threading
 import time
 import types
 import unittest
+from unittest.mock import patch
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -328,16 +329,51 @@ class TransportTests(unittest.TestCase):
         call = assistant["tool_calls"][0]
         messages += [assistant, {"role": "tool", "call_id": call["id"], "content": "loadout changed"}]
         changed = [{**TOOLS[0], "name": "cube"}]
-        with concurrent.futures.ThreadPoolExecutor() as pool:
+        state = next(state for state in provider._states.values() if call["id"] in state.pending)
+        pending = state.pending[call["id"]]
+        handoff_order = []
+        wrong_ack_consumed, matching_ack_consumed = threading.Event(), threading.Event()
+        original_observe, original_set = provider._observe, pending["event"].set
+
+        def observe(current, event):
+            # The real observer uses this RLock. Record acceptance before
+            # its waiting worker can release the held RPC under the same lock.
+            with current.lock:
+                refresh = current.refresh
+                result = original_observe(current, event)
+                if current is state and event.get("type") == "mcp.tools.changed":
+                    server = (event.get("properties") or {}).get("server")
+                    if server == "pi2":
+                        wrong_ack_consumed.set()
+                    elif server == f"pi{state.slot}" and refresh and refresh["ack"]:
+                        handoff_order.append("ack")
+                        matching_ack_consumed.set()
+                return result
+
+        def release_result():
+            # No recorder lock: an actual premature release remains observable.
+            handoff_order.append("result")
+            return original_set()
+
+        with (patch.object(provider, "_observe", new=observe),
+              patch.object(pending["event"], "set", new=release_result),
+              concurrent.futures.ThreadPoolExecutor() as pool):
             future = pool.submit(collect, provider.events("fixture/model", messages, changed, 100, {}))
             self.assertTrue(fake.refresh_listed.wait(2))
+            with state.lock:
+                refresh = state.refresh
+            self.assertIsNotNone(refresh)
             self.assertEqual(fake.results, [])
             fake.emit("mcp.tools.changed", server="pi2")
+            self.assertTrue(wrong_ack_consumed.wait(2))
+            self.assertFalse(refresh["ack"])
             self.assertFalse(future.done())
+            self.assertEqual(fake.results, [])
             fake.allow_ack.set()
+            self.assertTrue(matching_ack_consumed.wait(2))
             self.assertEqual(future.result(timeout=4)[0]["content"], "Done now.")
         self.assertEqual(fake.refreshed[0]["name"], "cube")
-        self.assertLess(fake.order.index("ack"), fake.order.index("result"))
+        self.assertLess(handoff_order.index("ack"), handoff_order.index("result"))
 
     def test_three_slots_and_fifo_fourth_waiter(self):
         fake, provider, _, controller = self.setup_fixture("silent")

@@ -17,11 +17,11 @@ os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 os.environ.setdefault('QT_QUICK_BACKEND','software')
 os.environ.setdefault('QT_QUICK_CONTROLS_STYLE','Basic')
 os.environ['UMEKO_LANGUAGE']='en'
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QPointF, QUrl
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtQml import QQmlExpression
-from PySide6.QtTest import QTest
+from PySide6.QtTest import QSignalSpy, QTest
 import shiboken6
 from app.storage import Store
 from main import create_application
@@ -90,7 +90,7 @@ def main():
         try:
             assert not backend.store.data['providers'] and backend.public_server is None
             assert manager.openPage('skill-manager')
-            wait_for(lambda:idle() and bool(variant(find('skillManagerWidget').property('roots')).get('global')),
+            wait_for(lambda:idle() and bool((variant(find('skillManagerWidget').property('roots')) or {}).get('global')),
                      lambda:'Widget did not initialize: '+repr(manager.page))
             widget=find('skillManagerWidget')
             actual=variant(widget.property('skills'))
@@ -142,10 +142,56 @@ def main():
             owner=backend._view;owner.id='skill-switch-fixture';backend.chatChanged.emit()
             search=find('skillManagerSearch');search.setProperty('text','global-guide')
             checkbox_name='skillManagerEnabled_'+global_row['id']
-            wait_for(lambda:find(checkbox_name) is not None and find(checkbox_name).isVisible(),'Checkbox not visible')
+            def checkbox_ready():
+                checkbox=find(checkbox_name)
+                return idle() and pane.property('mode')=='plugin' and pane.property('live') and checkbox is not None and checkbox.isVisible() and checkbox.isEnabled()
+            checkbox_geometry={}
+            def checkbox_not_ready():
+                widget=find('skillManagerWidget')
+                return 'Checkbox not interactive: '+repr({'working':widget.property('working') if widget is not None else None,
+                    'mode':pane.property('mode'),'live':pane.property('live'),'geometry':checkbox_geometry})
+            def prepare_checkbox():
+                checkbox_geometry.clear()
+                wait_for(checkbox_ready,checkbox_not_ready)
+                # Fence a frame requested only after the current page is interactive.
+                frame=QSignalSpy(window.frameSwapped);window.requestUpdate()
+                target=[]
+                def positioned():
+                    checkbox_geometry['frames']=frame.count()
+                    if not frame.count() or not checkbox_ready():return False
+                    checkbox=find(checkbox_name);listing=find('skillManagerList')
+                    point=checkbox.mapToScene(checkbox.boundingRect().center()).toPoint()
+                    scene_point=QPointF(point)
+                    viewport_point=listing.mapFromScene(scene_point)
+                    viewport=listing.boundingRect()
+                    in_list=viewport.contains(viewport_point)
+                    content=window.contentItem()
+                    in_window=content.boundingRect().contains(content.mapFromScene(scene_point))
+                    clips=[];ancestor=checkbox.parentItem();in_clips=True
+                    while ancestor is not None:
+                        if ancestor.clip():
+                            local=ancestor.mapFromScene(scene_point);rect=ancestor.boundingRect()
+                            inside=rect.contains(local);in_clips=in_clips and inside
+                            clips.append({'item':ancestor.objectName() or ancestor.metaObject().className(),
+                                'point':(round(local.x(),2),round(local.y(),2)),
+                                'rect':(round(rect.x(),2),round(rect.y(),2),round(rect.width(),2),round(rect.height(),2)),
+                                'inside':inside})
+                        ancestor=ancestor.parentItem()
+                    checkbox_geometry.update({'point':(point.x(),point.y()),'size':(checkbox.width(),checkbox.height()),
+                        'listPoint':(round(viewport_point.x(),2),round(viewport_point.y(),2)),
+                        'listSize':(viewport.width(),viewport.height()),'contentY':listing.property('contentY'),
+                        'moving':listing.property('moving'),'inList':in_list,'inWindow':in_window,'clips':clips})
+                    if checkbox.width()<=0 or checkbox.height()<=0 or listing.property('moving') or not (in_list and in_window and in_clips):return False
+                    target[:]=[checkbox,point]
+                    return True
+                wait_for(positioned,checkbox_not_ready)
+                return target[0],target[1]
+            checkbox,point=prepare_checkbox()
             from PySide6.QtCore import Qt
-            checkbox=find(checkbox_name);assert checkbox.property('checked')
-            QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,checkbox.mapToScene(checkbox.boundingRect().center()).toPoint())
+            assert checkbox.property('checked')
+            click=QSignalSpy(checkbox.clicked)
+            QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,point)
+            assert click.count()==1,'Disable click did not reach the checkbox: '+repr(checkbox_geometry)
             wait_for(lambda:idle() and owner.skill_modes.get(global_row['path']) is False,'Disabling did not save')
             assert not host.panelApproval and not find(checkbox_name).property('checked')
             assert Store(profile).data['sessionMeta'][owner.id]['skillModes'][global_row['path']] is False
@@ -156,10 +202,11 @@ def main():
             assert find(checkbox_name).property('checked'),'Skill state leaked to a second chat'
             backend._activate(owner);assert manager.openPage('skill-manager');wait_for(idle,'Original chat did not reload')
             widget=find('skillManagerWidget');find('skillManagerSearch').setProperty('text','global-guide')
-            wait_for(lambda:find(checkbox_name) is not None,'Restored checkbox missing')
-            assert not find(checkbox_name).property('checked')
-            checkbox=find(checkbox_name)
-            QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,checkbox.mapToScene(checkbox.boundingRect().center()).toPoint())
+            checkbox,point=prepare_checkbox()
+            assert not checkbox.property('checked')
+            click=QSignalSpy(checkbox.clicked)
+            QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,point)
+            assert click.count()==1,'Enable click did not reach the checkbox: '+repr(checkbox_geometry)
             wait_for(lambda:idle() and owner.skill_modes.get(global_row['path']) is True,'Re-enabling did not save')
             assert ((agent/'settings.json').read_bytes() if (agent/'settings.json').exists() else None)==before
             find('skillManagerSearch').setProperty('text','');wait_for(idle,'Search reset did not settle')

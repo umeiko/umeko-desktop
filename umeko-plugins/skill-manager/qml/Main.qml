@@ -67,7 +67,7 @@ FocusScope {
     }
     function previewResponse(value) {
         previewRequest=""
-        if(value.jobId){previewJob=value.jobId;Qt.callLater(()=>{if(previewJob && !previewRequest)previewRequest=sdk.requestHost("skills.job",{id:previewJob,wait:true})});return}
+        if(value.jobId){previewJob=value.jobId;previewPollSoon.restart();return}
         const item=(value.jobs || [])[0]
         if(item && item.status==="running")return
         previewJob=""
@@ -87,6 +87,11 @@ FocusScope {
         if(previewSkill!==selectedId || requestedGeneration!==previewGeneration)previewDelay.restart()
     }
     onSelectedIdChanged:{previewError="";previewDelay.restart()}
+    Timer {
+        id:previewPollSoon;interval:0;repeat:false
+        onTriggered:if(root.sdk.active && root.previewJob && !root.previewRequest)
+            root.previewRequest=root.sdk.requestHost("skills.job",{id:root.previewJob,wait:true})
+    }
     Timer{id:previewDelay;interval:80;onTriggered:root.loadPreview()}
     Timer{interval:80;repeat:true;running:root.sdk.active && !!root.previewJob;onTriggered:if(!root.previewRequest)root.previewRequest=root.sdk.requestHost("skills.job",{id:root.previewJob})}
     function folderEntries() {

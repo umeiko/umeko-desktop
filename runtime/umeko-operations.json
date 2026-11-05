@@ -1,5 +1,16 @@
 {
   "version": 1,
+  "pluginSessionOperations": {
+    "sessions.acquire": {"permission":"sessions.manage","lifecycle":"application","arguments":{"namespace":"default","externalKey":"string","createIfMissing":"boolean","profile":"string"},"result":{"handle":"string","sessionId":"string","created":"boolean"}},
+    "sessions.submit": {"permission":"sessions.manage","lifecycle":"application","arguments":{"handle":"string","requestId":"string","content":"string"},"result":{"runId":"string","disposition":"started|queued"}},
+    "sessions.subscribe": {"permission":"sessions.manage","lifecycle":"application","arguments":{"handle":"string"},"result":{"subscribed":"boolean"},"event":"sessions.event"},
+    "sessions.wait": {"permission":"sessions.manage","lifecycle":"application","arguments":{"handle":"string","runId":"string"},"terminal":true,"result":{"runId":"string","status":"completed|failed|cancelled","assistantMessages":"array","error":"optional string"}},
+    "sessions.cancel": {"permission":"sessions.manage","lifecycle":"application","arguments":{"handle":"string","runId":"optional string"}},
+    "sessions.history": {"permission":"sessions.manage","lifecycle":"application","arguments":{"handle":"string","limit":"optional integer 1..200 (default 50)"},"result":{"sessionId":"string","messages":"array","truncated":"boolean"}},
+    "sessions.release": {"permission":"sessions.manage","lifecycle":"application","arguments":{"handle":"string"}},
+    "approvals.registerHandler": {"permission":"sessions.manage","lifecycle":"application","arguments":{"handle":"string"},"profileRequirement":"allowApprovals","result":{"registered":"boolean"}},
+    "approvals.respond": {"permission":"sessions.manage","lifecycle":"application","arguments":{"handle":"string","requestId":"string","decision":"allow|deny|unhandled"},"profileRequirement":"allowApprovals","result":{"accepted":"boolean"}}
+  },
   "operations": {
   "vision.configure": {"target":"backend","method":"saveAuxiliaryVision","args":[["config","json"]]},
   "generation.configure": {"target":"backend","method":"saveMultimodalSettings","args":[["config","json"]]},

@@ -1,0 +1,10 @@
+{
+  "kind":"umeko-plugin","apiVersion":1,"id":"session-task-service","name":"会话任务服务","version":"1.0.0",
+  "summary":"定时创建独立会话并等待任务结果",
+  "description":"无页面的应用服务，通过用户批准的宿主配置执行独立任务。",
+  "lifecycle":"application","author":"Umeko","entrypoint":"scripts/plugin.py:create_plugin",
+  "permissions":["sessions.manage"],"readme":"README.md","config":"config.json","configSchema":"config.schema.json",
+  "agent":{"document":"AGENT.md","methods":{
+    "status":{"description":"读取最近一次任务状态，不创建任务","parameters":{"type":"object","properties":{},"additionalProperties":false}}
+  }}
+}

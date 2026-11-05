@@ -80,7 +80,9 @@ def main():
                 result={'updated':True}
             elif op=='event':
                 if plugin is None:raise PluginError('插件尚未启动')
-                plugin.on_event(args['name'],args.get('data',{}));result={'received':True}
+                data=args.get('data',{})
+                context._dispatch_host_event(args['name'],data)
+                plugin.on_event(args['name'],data);result={'received':True}
             else:raise PluginError('未知插件请求')
             emit({'type':'response','id':request.get('id'),'ok':True,'result':result})
         except Exception as error:
