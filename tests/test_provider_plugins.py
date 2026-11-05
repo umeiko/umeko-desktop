@@ -224,6 +224,23 @@ class ProviderPluginTests(unittest.TestCase):
         self.assertEqual(self.manager.rows[0]["models"], [])
         self.assertEqual(self.controller.config["selectedModel"], "")
 
+    def test_gateway_preserves_tool_history_and_supplies_empty_assistant_content(self):
+        provider_id = self.install()
+        self.login(provider_id)
+        alias = self.manager.rows[0]['models'][0]['alias']
+        call = {'id': 'look', 'type': 'function', 'function': {
+            'name': 'analyze_image', 'arguments': '{"paths":["square.png"],"question":"Describe it"}'}}
+        messages = [{'role': 'user', 'content': 'Describe square.png'},
+                    {'role': 'assistant', 'content': None, 'tool_calls': [call], 'reasoning_content': 'Inspect the image.'},
+                    {'role': 'tool', 'tool_call_id': 'look', 'content': 'A blue square.'}]
+        original = copy.deepcopy(messages)
+        self.assertEqual(self.controller.gateway.complete(alias, messages, provider_id=provider_id).text, 'fixture')
+        received = self.manager.clients[provider_id].received[1]
+        expected = copy.deepcopy(original)
+        expected[1]['content'] = ''
+        self.assertEqual(received, expected)
+        self.assertEqual(messages, original)
+
     def test_instance_isolation_busy_guard_and_config_invalidation(self):
         first, second = self.install(), self.install()
         self.login(first)

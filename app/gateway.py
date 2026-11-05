@@ -23,7 +23,7 @@ from pathlib import Path
 
 from .integration import Completion, IntegrationRequired
 from .model_capabilities import normalize_model, normalize_vision
-from .protocols import response_events, collect_openai, anthropic_events_to_openai, openai_events_to_anthropic
+from .protocols import response_events, collect_openai, anthropic_events_to_openai, openai_events_to_anthropic, chat_completion_messages
 from .openai_responses import responses_request, responses_events
 from .request_diagnostics import RequestDiagnostics, RequestFailure
 from .network_retry import upstream_failure
@@ -220,7 +220,7 @@ class Gateway:
         if p["api"] == "plugin":
             if self.plugins is None:
                 raise IntegrationRequired("请先导入供应商实现")
-            yield from self.plugins.events(p["id"], model, messages, tools, max_tokens, parameters)
+            yield from self.plugins.events(p["id"], model, chat_completion_messages(messages), tools, max_tokens, parameters)
             return
         if p["api"] == "internal":
             if callable(getattr(self.adapter, "events", None)):
@@ -266,7 +266,7 @@ class Gateway:
         else:
             url = base + "/chat/completions"
             headers["Authorization"] = "Bearer " + p["key"]
-            body = {**parameters, "model": model, "messages": messages, "max_tokens": max_tokens, "stream": True}
+            body = {**parameters, "model": model, "messages": chat_completion_messages(messages), "max_tokens": max_tokens, "stream": True}
             if tools:
                 body["tools"] = [{"type": "function", "function": t} for t in tools]
         request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")

@@ -512,6 +512,62 @@ class PiTests(unittest.TestCase):
         self.command({"type":"prompt", "text":"changed off fixture"})
         self.assertNotIn("reasoning_effort", captured[-1])
 
+    def test_auxiliary_image_tool_continues_on_strict_chat_provider(self):
+        requests = []
+        class StrictProvider(BaseHTTPRequestHandler):
+            def log_message(self, *_): pass
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                requests.append(body)
+                invalid = next((i for i, message in enumerate(body['messages'])
+                                if not message.get('role') or message.get('content') is None), None)
+                if invalid is not None:
+                    raw = json.dumps({'error': {'message': f'Invalid message at index {invalid}: missing role or content'}}).encode()
+                    self.send_response(400); self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(raw))); self.end_headers(); self.wfile.write(raw)
+                    return
+                if body['model'] == 'vision-fixture':
+                    delta, finish = {'content': 'The image shows a blue square.'}, 'stop'
+                elif any(message['role'] == 'tool' for message in body['messages']):
+                    delta, finish = {'content': 'Auxiliary image inspection completed.'}, 'stop'
+                else:
+                    delta = {'content': None, 'tool_calls': [{'index': 0, 'id': 'inspect-image', 'type': 'function',
+                        'function': {'name': 'analyze_image', 'arguments': json.dumps({'paths': ['square.png'], 'question': 'Describe the square.'})}}]}
+                    finish = 'tool_calls'
+                self.send_response(200); self.send_header('Content-Type', 'text/event-stream'); self.end_headers()
+                self.wfile.write(('data: ' + json.dumps({'choices': [{'index': 0, 'delta': delta, 'finish_reason': finish}]})
+                                  + '\n\ndata: [DONE]\n\n').encode())
+        server = ThreadingHTTPServer(('127.0.0.1', 0), StrictProvider)
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        try:
+            (self.path / 'square.png').write_bytes(base64.b64decode(
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF2kAAAAASUVORK5CYII='))
+            provider = self.store.data['providers'][0]
+            provider.update(api='openai', baseUrl=f'http://127.0.0.1:{server.server_port}/v1')
+            provider['models'].append({'upstream': 'vision-fixture', 'alias': 'eyes', 'vision': True, 'visionAuto': False})
+            self.payload.update(models=self.gateway.models(), auxiliaryVision={
+                'providerId': 'internal', 'model': 'eyes', 'toolEnabled': True, 'autoAnalyze': False})
+            self.command(self.payload)
+            events = self.command({'type': 'prompt', 'text': 'Use analyze_image to inspect square.png.'})
+            replies = [event for event in events if event['type'] == 'message' and event.get('role') == 'assistant']
+            self.assertEqual(replies[-1]['text'], 'Auxiliary image inspection completed.', replies)
+            self.assertEqual([body['model'] for body in requests], ['default', 'vision-fixture', 'default'])
+            history = requests[-1]['messages']
+            call = next(message for message in history if message.get('tool_calls'))
+            self.assertEqual(call['content'], '')
+            self.assertEqual(call['tool_calls'][0]['function']['name'], 'analyze_image')
+            result = next(message for message in history if message['role'] == 'tool')
+            self.assertEqual(result['tool_call_id'], call['tool_calls'][0]['id'])
+            self.assertIn('blue square', result['content'])
+            self.assertFalse(any(block.get('type') == 'image_url' for message in history
+                                 if isinstance(message.get('content'), list) for block in message['content']))
+            self.assertTrue(any(block.get('type') == 'image_url' for message in requests[1]['messages']
+                                if isinstance(message.get('content'), list) for block in message['content']))
+            self.command({'type': 'prompt', 'text': 'Summarize that observation again.'})
+            self.assertEqual([body['model'] for body in requests], ['default', 'vision-fixture', 'default', 'default'])
+        finally:
+            server.shutdown(); server.server_close(); thread.join(timeout=2)
+
     def test_native_reasoning_reaches_live_events_and_cold_history(self):
         self.response_fn = lambda *_: Completion("Visible answer", thinking="Compare the local fixture.")
         self.command(self.payload)

@@ -5,6 +5,17 @@ import codecs
 import json
 
 
+def chat_completion_messages(messages):
+    """Give tool-only assistant turns explicit text for strict compatible APIs.
+
+    Pi emits null content on these turns. Preserve their calls and reasoning,
+    and adapt only the outgoing representation, never the stored conversation.
+    """
+    return [{**message, "content": ""}
+            if message.get("role") == "assistant" and message.get("tool_calls")
+            and message.get("content") is None else message for message in messages]
+
+
 def iter_sse(chunks):
     decoder = codecs.getincrementaldecoder("utf-8")()
     buffer, lines = "", []

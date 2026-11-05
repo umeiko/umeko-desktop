@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import os
 import subprocess
 import tempfile
@@ -159,6 +160,53 @@ class GatewayTests(unittest.TestCase):
 
 
 class ManualProviderTests(unittest.TestCase):
+    def test_tool_call_history_has_explicit_content_for_strict_chat_endpoints(self):
+        received = []
+        class Upstream(BaseHTTPRequestHandler):
+            def log_message(self, *_): pass
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                received.append(body)
+                invalid = next((i for i, message in enumerate(body['messages'])
+                                if not message.get('role') or message.get('content') is None), None)
+                response = ({'error': {'message': f'Invalid message at index {invalid}: missing role or content'}}
+                            if invalid is not None else {'choices': [{'message': {'content': 'continued'}}]})
+                raw = json.dumps(response).encode()
+                self.send_response(400 if invalid is not None else 200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(raw)))
+                self.end_headers(); self.wfile.write(raw)
+        upstream = ThreadingHTTPServer(('127.0.0.1', 0), Upstream)
+        thread = threading.Thread(target=upstream.serve_forever, daemon=True); thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                store = Store(Path(temp))
+                store.data['providers'] = [{'id': 'strict', 'name': 'strict', 'api': 'openai',
+                    'baseUrl': f'http://127.0.0.1:{upstream.server_port}/v1', 'key': 'fixture-key',
+                    'models': [{'upstream': 'fixture-model', 'alias': 'strict', 'vision': True}]}]
+                gateway = Gateway(store, UnconfiguredAdapter())
+                call = lambda identifier: {'id': identifier, 'type': 'function',
+                    'function': {'name': 'read', 'arguments': '{"path":"fixture.txt"}'}}
+                for empty in ({}, {'content': None}, {'content': ''}):
+                    with self.subTest(empty=empty):
+                        messages = [
+                            {'role': 'system', 'content': 'Read the fixture.'},
+                            {'role': 'user', 'content': [{'type': 'text', 'text': 'Inspect'},
+                                {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,cGl4ZWxz'}}]},
+                            {'role': 'assistant', 'content': 'Reading.', 'tool_calls': [call('first')]},
+                            {'role': 'tool', 'tool_call_id': 'first', 'content': 'first result'},
+                            {'role': 'assistant', **empty, 'tool_calls': [call('second')],
+                                'reasoning_content': 'Need one more read.'},
+                            {'role': 'tool', 'tool_call_id': 'second', 'content': 'second result'}]
+                        original = copy.deepcopy(messages)
+                        self.assertEqual(gateway.complete('strict', messages).text, 'continued')
+                        expected = copy.deepcopy(original)
+                        expected[4]['content'] = ''
+                        self.assertEqual(received[-1]['messages'], expected)
+                        self.assertEqual(messages, original, 'Request adaptation must not rewrite stored history')
+        finally:
+            upstream.shutdown(); upstream.server_close(); thread.join(timeout=2)
+
     def test_explicit_provider_url_and_tool_result_conversion(self):
         received = []
         class Upstream(BaseHTTPRequestHandler):
