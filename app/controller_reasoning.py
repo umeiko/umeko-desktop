@@ -3,7 +3,7 @@ import copy
 import queue
 import threading
 
-from PySide6.QtCore import QObject, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, Signal, Slot
 
 from .model_capabilities import normalize_model
 from .model_reasoning import normalize_reasoning
@@ -18,7 +18,8 @@ class ReasoningDiscovery(QObject):
     def __init__(self, controller):
         super().__init__(controller)
         self.c, self.closed = controller, False
-        self.jobs, self.sequence = {}, 0
+        self.jobs, self.pending, self.sequence = {}, {}, 0
+        self.busy_keys = set()
         self.tasks = queue.Queue()
         self.finished.connect(self._finished)
         self.rejected.connect(self._rejected)
@@ -37,7 +38,7 @@ class ReasoningDiscovery(QObject):
         for _ in range(2):
             threading.Thread(target=self._worker, daemon=True).start()
         self.c.changed.connect(self.sync_active)
-        QTimer.singleShot(0, self.sync_active)
+        self.c.chatChanged.connect(self.sync_active)
 
     def _worker(self):
         while True:
@@ -48,11 +49,15 @@ class ReasoningDiscovery(QObject):
                 continue
             kind, snapshot, upstream, alias, token = task
             try:
-                result = ({'windows': fetch_model_windows(snapshot)} if kind == 'catalog' else
-                          self.c.gateway.detect_reasoning(alias, snapshot['id'],
+                if kind == 'catalog':
+                    keys = {(snapshot['id'], upstream) for upstream in snapshot['_reasoning_targets']}
+                    with self.c.gateway.reasoning_activity.probe(keys):
+                        result = {'windows': fetch_model_windows(snapshot)}
+                else:
+                    result = self.c.gateway.detect_reasoning(alias, snapshot['id'],
                               advertised_levels=next((row.get('reasoningDetection', {}).get('levels')
                                   for row in snapshot['models'] if row['upstream'] == upstream
-                                  and row.get('reasoningDetection', {}).get('source') == 'metadata'), None)))
+                                  and row.get('reasoningDetection', {}).get('source') == 'metadata'), None))
             except Exception as error:
                 message = str(error).replace(snapshot.get('key') or '\0', '[redacted]')[:500]
                 failure = {'state': 'failed', 'error': message, 'verified': False}
@@ -95,29 +100,82 @@ class ReasoningDiscovery(QObject):
         self.c.reasoningDetectionChanged.emit()
         self.c.reasoningChanged.emit()
 
+    def update_activity(self):
+        busy = set()
+        for record in self.c._pool.records.values():
+            if not record.busy:
+                continue
+            provider = record.provider or self.c.store.data['selectedProvider']
+            alias = record.model or self.c.store.data['selectedModel']
+            row = self.model(provider, alias)
+            if row:
+                busy.add((provider, row['upstream']))
+        previous, self.busy_keys = self.busy_keys, busy
+        self.c.gateway.reasoning_activity.set_busy(busy)
+        return previous - busy
+
+    def _busy(self, kind, provider, upstream):
+        if kind == 'catalog':
+            targets = self.jobs.get((kind, provider, upstream), (None, set()))[1]
+            return any((provider, target) in self.busy_keys for target in targets)
+        return (provider, upstream) in self.busy_keys
+
+    def _snapshot(self, provider, key):
+        snapshot = copy.deepcopy(provider)
+        if key[0] == 'catalog':
+            snapshot['_reasoning_targets'] = list(self.jobs[key][1])
+        return snapshot
+
     def sync_active(self):
         if self.closed or self.c._closing:
             return
-        row = self.current()
-        if row and 'unknown' in self.states(row).values():
-            self.refresh(self.c.store.data['selectedProvider'], only=row['upstream'], force=False)
+        if self.update_activity():
+            for key, task in list(self.pending.items()):
+                if not self._busy(*key):
+                    self.pending.pop(key)
+                    kind, snapshot, upstream, alias, token = task
+                    provider = self.c.gateway.provider(snapshot['id'])
+                    row = next((row for row in provider['models'] if row['upstream'] == upstream), None) if provider else None
+                    if not provider or (kind == 'probe' and row is None):
+                        self.jobs.pop(key, None)
+                        continue
+                    self.tasks.put((kind, self._snapshot(provider, key), upstream,
+                                    row['alias'] if row else alias, token))
         self.c.reasoningDetectionChanged.emit()
+
+    def ensure(self, provider_id, alias):
+        row = self.model(provider_id, alias)
+        if row is None:
+            return False
+        if 'unknown' in self.states(row).values():
+            return self.refresh(provider_id, only=row['upstream'], force=False)
+        return True
 
     def _submit(self, kind, provider, upstream='', alias='', targets=None):
         key = (kind, provider['id'], upstream)
         if key in self.jobs:
             if targets:
                 self.jobs[key][1].update(targets)
+            if key in self.pending:
+                old = self.pending[key]
+                self.pending[key] = (kind, self._snapshot(provider, key), upstream, alias, old[-1])
             return False
+        self.update_activity()
         self.sequence += 1
         self.jobs[key] = (self.sequence, set(targets or []))
-        self.tasks.put((kind, copy.deepcopy(provider), upstream, alias, self.sequence))
+        task = (kind, self._snapshot(provider, key), upstream, alias, self.sequence)
+        if self._busy(*key):
+            self.pending[key] = task
+        else:
+            self.tasks.put(task)
         return True
 
     def refresh(self, provider_id, only=None, force=True):
         provider = self.c.gateway.provider(provider_id)
         if self.closed or not provider:
             return False
+        for row in provider['models']:
+            row.update(normalize_reasoning(row))
         catalog = provider['api'] in ('openai', 'anthropic')
         rows = [row for row in provider['models'] if (only is None or row['upstream'] == only)
                 and ((force and catalog) or any(state != 'manual' and (force or state == 'unknown')
@@ -128,7 +186,7 @@ class ReasoningDiscovery(QObject):
             self._submit('catalog', provider, targets=[row['upstream'] for row in rows])
             for row in rows:
                 self._mark_probing(row)
-            self.notify()
+            self.notify(save=True)
         else:
             for row in rows:
                 self.probe(provider, row)
@@ -142,21 +200,26 @@ class ReasoningDiscovery(QObject):
     def probe(self, provider, row):
         if self._submit('probe', provider, row['upstream'], row['alias']):
             self._mark_probing(row)
-            self.notify()
+            self.notify(save=True)
 
     @Slot(object)
     def _finished(self, payload):
         kind, snapshot, upstream, token, result = payload
         provider = self.c.gateway.provider(snapshot['id'])
-        job = self.jobs.pop((kind, snapshot['id'], upstream), None)
-        if self.closed or not provider or not job or job[0] != token:
+        key = (kind, snapshot['id'], upstream)
+        job = self.jobs.get(key)
+        if self.closed or not job or job[0] != token:
+            return
+        self.jobs.pop(key)
+        if not provider:
             return
         if self.connection(provider) != self.connection(snapshot):
             for row in provider['models']:
                 for field in ('reasoningDetection', 'reasoningFormatDetection'):
                     if row.get(field, {}).get('state') == 'probing':
                         row[field]['state'] = 'unknown'
-            self.sync_active()
+            self.notify(save=True)
+            self.refresh(provider['id'], force=False)
             return
         if kind == 'catalog':
             windows = result.get('windows', {})
@@ -165,6 +228,7 @@ class ReasoningDiscovery(QObject):
             for row in provider['models']:
                 if row['upstream'] not in job[1]:
                     continue
+                row.update(normalize_reasoning(row))
                 old_context = (row.get('contextWindow'), row.get('providerContextWindow'))
                 if row['upstream'] in windows:
                     row.pop('providerContextWindow', None)
@@ -183,7 +247,7 @@ class ReasoningDiscovery(QObject):
             self.notify(save=True)
             if context_changed:
                 self.c._restart_pi()
-            self.c.changed.emit()
+                self.c.changed.emit()
             return
         for row in provider['models']:
             if row['upstream'] != upstream:
@@ -207,7 +271,6 @@ class ReasoningDiscovery(QObject):
                 self.c._reconcile_reasoning(record)
                 self.send(record)
         self.notify(save=True)
-        self.c.changed.emit()
 
     @Slot(str, str, str, object)
     def _rejected(self, provider_id, upstream, effort, allowed):
@@ -223,7 +286,6 @@ class ReasoningDiscovery(QObject):
             if rows:
                 self.probe(provider, rows[0])
             self.notify(save=True)
-            self.c.changed.emit()
             return
         for row in rows:
             old = row.get('reasoningDetection', {})
@@ -235,7 +297,6 @@ class ReasoningDiscovery(QObject):
         if rows:
             self.probe(provider, rows[0])
         self.notify(save=True)
-        self.c.changed.emit()
 
     def send(self, record):
         self.c._write_pi({'type': 'reasoning_effort', 'value': record.reasoning_effort}, record)
@@ -259,6 +320,8 @@ class ReasoningDiscovery(QObject):
                 row.pop('reasoningLevels', None)
         self.notify(save=True)
         self.c.changed.emit()
+        if automatic:
+            self.ensure(provider_id, alias)
         return True
 
     def set_format(self, provider_id, alias, value, automatic):
@@ -274,11 +337,15 @@ class ReasoningDiscovery(QObject):
                 cached['state'] = 'unknown'
         self.notify(save=True)
         self.c.changed.emit()
+        if automatic:
+            self.ensure(provider_id, alias)
         return True
 
     def close(self):
         self.closed = True
         self.c.gateway.reasoning_rejected = None
+        self.c.gateway.reasoning_activity.close()
         self.jobs.clear()
+        self.pending.clear()
         for _ in range(2):
             self.tasks.put(None)

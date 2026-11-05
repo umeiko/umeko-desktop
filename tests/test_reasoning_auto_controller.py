@@ -1,5 +1,6 @@
 """Offline controller discovery lifecycle; no model transport or Node process."""
 import copy
+import io
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ from unittest.mock import patch
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 from PySide6.QtGui import QGuiApplication
+from PySide6.QtCore import QProcess
 
 from app.controller import Controller
 from app.model_capabilities import normalize_model
@@ -81,7 +83,7 @@ class ReasoningAutoControllerTests(unittest.TestCase):
                                 'levels': list(advertised_levels), 'verified': True}
         return result
 
-    def controller(self, rows=None, selected='model'):
+    def controller(self, rows=None, selected='model', discover=True):
         if rows is not None:
             store = Store()
             store.data['providers'] = [{'id': 'fixture', 'name': 'Fixture', 'api': 'openai',
@@ -92,6 +94,8 @@ class ReasoningAutoControllerTests(unittest.TestCase):
             store.save()
         controller = Controller(ROOT)
         self.controllers.append(controller)
+        if discover:
+            controller.ensureReasoningDetection()
         return controller
 
     def until(self, predicate):
@@ -108,6 +112,145 @@ class ReasoningAutoControllerTests(unittest.TestCase):
     def row(self, controller, alias='model'):
         return controller._reasoning_discovery.model('fixture', alias)
 
+    def test_startup_changes_and_selection_do_not_authorize_discovery(self):
+        controller = self.controller([{}, {'alias': 'second'}], discover=False)
+        controller.changed.emit()
+        controller.selectModel('fixture', 'second')
+        self.app.processEvents()
+        self.assertEqual(self.catalog_calls, [])
+        self.assertEqual(self.calls, [])
+        self.assertFalse(controller._reasoning_discovery.jobs)
+        self.assertEqual(controller.reasoningDetectionState, 'unknown')
+
+    def test_picker_ensure_repeated_deduplicates_unknown_and_reuses_result(self):
+        self.release.clear()
+        controller = self.controller([{}], discover=False)
+        controller.ensureReasoningDetection()
+        self.until(self.started.is_set)
+        for _ in range(3):
+            controller.ensureReasoningDetection()
+            controller.ensureModelReasoningDetection('fixture', 'model')
+        self.assertEqual(self.catalog_calls, ['fixture'])
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(len(controller._reasoning_discovery.jobs), 1)
+        persisted = Store(Path(self.temp.name)).data['providers'][0]['models'][0]
+        self.assertEqual(persisted['reasoningFormatDetection']['state'], 'probing')
+        self.release.set()
+        self.settled(controller)
+        controller.ensureReasoningDetection()
+        controller.ensureModelReasoningDetection('fixture', 'model')
+        self.app.processEvents()
+        self.assertEqual(self.catalog_calls, ['fixture'])
+        self.assertEqual(len(self.calls), 1)
+
+    def test_busy_picker_ensure_defers_catalog_and_probe_until_turn_ends(self):
+        controller = self.controller([{}], discover=False)
+        record = controller._view
+        record.provider, record.model, record.busy = 'fixture', 'model', True
+        controller._reasoning_discovery.sync_active()
+        controller.ensureReasoningDetection()
+        controller.ensureReasoningDetection()
+        self.app.processEvents()
+        self.assertEqual(self.catalog_calls, [])
+        self.assertEqual(self.calls, [])
+        self.assertEqual(len(controller._reasoning_discovery.jobs), 1)
+        record.busy = False
+        controller._reasoning_discovery.sync_active()
+        self.settled(controller)
+        self.assertEqual(self.catalog_calls, ['fixture'])
+        self.assertEqual(len(self.calls), 1)
+
+    def test_busy_other_model_does_not_block_explicit_saved_model_detection(self):
+        controller = self.controller([{}, {'alias': 'other'}], discover=False)
+        record = controller._view
+        record.provider, record.model, record.busy = 'fixture', 'model', True
+        controller._reasoning_discovery.sync_active()
+        controller.ensureModelReasoningDetection('fixture', 'other')
+        self.until(lambda: len(self.calls) == 1 and not controller._reasoning_discovery.jobs)
+        self.assertEqual([call[0] for call in self.calls], ['other'])
+        self.assertEqual(self.row(controller)['reasoningDetection']['state'], 'unknown')
+
+    def test_pure_discovery_results_notify_reasoning_without_global_changed(self):
+        self.release.clear()
+        controller = self.controller([{}], discover=False)
+        changed, reasoning = [], []
+        controller.changed.connect(lambda: changed.append(True))
+        controller.reasoningDetectionChanged.connect(lambda: reasoning.append(True))
+        controller.ensureReasoningDetection()
+        self.until(self.started.is_set)
+        self.release.set()
+        self.settled(controller)
+        self.assertTrue(reasoning)
+        self.assertEqual(changed, [])
+
+    def test_completion_clears_removed_provider_job_but_preserves_newer_token(self):
+        self.release.clear()
+        controller = self.controller([{}], discover=False)
+        controller.ensureReasoningDetection()
+        self.until(self.started.is_set)
+        manager = controller._reasoning_discovery
+        key = ('probe', 'fixture', 'model')
+        snapshot = copy.deepcopy(controller.gateway.provider('fixture'))
+        token = manager.jobs[key][0]
+        controller.store.data['providers'] = []
+
+        # A real in-flight job still owns its slot after its provider is deleted.
+        manager._finished(('probe', snapshot, 'model', token, detected()))
+        self.assertNotIn(key, manager.jobs)
+
+        # An older completion cannot consume a replacement job under the same key,
+        # including while that provider remains absent.
+        replacement = (token + 1, {'model'})
+        manager.jobs[key] = replacement
+        manager._finished(('probe', snapshot, 'model', token, detected()))
+        self.assertIs(manager.jobs[key], replacement)
+        manager._finished(('probe', snapshot, 'model', token + 1, detected()))
+        self.assertNotIn(key, manager.jobs)
+        self.release.set()
+
+    def test_first_send_unknown_uses_one_upstream_post_without_discovery(self):
+        controller = self.controller([{}], discover=False)
+        requests, commands, replies = [], [], []
+
+        def open_request(request, timeout):
+            requests.append((request.get_method(), request.full_url, json.loads(request.data)))
+            response = io.BytesIO(json.dumps({'choices': [{'message': {'content': 'one answer'},
+                                                         'finish_reason': 'stop'}]}).encode())
+            response.status = 200
+            response.headers = {'Content-Type': 'application/json'}
+            return response
+
+        # Retain Controller.send -> _send -> real _command_pi -> pool.write.
+        # Only the native Pi process is replaced with its documented prompt adapter.
+        def write_pi(raw):
+            payload = json.loads(raw)
+            commands.append(payload)
+            if payload['type'] == 'prompt':
+                replies.append(controller.gateway.complete(payload['model'],
+                    [{'role': 'user', 'content': payload['text']}], provider_id='fixture',
+                    parameters={'_umeko_reasoning_effort': payload['reasoningEffort']}))
+
+        record = controller._view
+        record.process = SimpleNamespace(state=lambda: QProcess.Running, write=write_pi)
+        record.ready = True
+        try:
+            with patch('app.gateway.urllib.request.build_opener',
+                       return_value=SimpleNamespace(open=open_request)):
+                self.assertTrue(controller.send('first real controller prompt'))
+                self.app.processEvents()
+            self.assertEqual([request[0] for request in requests], ['POST'])
+            self.assertEqual(requests[0][1], 'https://fixture.invalid/v1/chat/completions')
+            self.assertEqual(requests[0][2]['messages'],
+                             [{'role': 'user', 'content': 'first real controller prompt'}])
+            self.assertEqual([command['type'] for command in commands], ['prompt'])
+            self.assertEqual(replies[0].text, 'one answer')
+            self.assertEqual(self.catalog_calls, [])
+            self.assertEqual(self.calls, [])
+            self.assertFalse(controller._reasoning_discovery.jobs)
+            self.assertEqual(controller.reasoningDetectionState, 'unknown')
+        finally:
+            record.process, record.busy = None, False
+
     def test_legacy_manual_order_and_zero_levels_survive_format_discovery(self):
         controller = self.controller([{'reasoningLevels': ['vendor-z', 'minimal', 'vendor-a']},
                                       {'alias': 'off-only', 'reasoningLevels': []}])
@@ -117,6 +260,7 @@ class ReasoningAutoControllerTests(unittest.TestCase):
         self.assertEqual(controller.reasoningFormatState, 'known')
         self.assertFalse(self.row(controller)['reasoningLevelsAuto'])
         controller.selectModel('fixture', 'off-only')
+        controller.ensureReasoningDetection()
         self.settled(controller)
         self.assertEqual(controller.reasoningLevels, [])
         self.assertEqual(controller.reasoningEffort, 'off')
@@ -160,12 +304,15 @@ class ReasoningAutoControllerTests(unittest.TestCase):
         self.assertEqual(len(self.calls), 2)
         self.assertEqual(len(self.catalog_calls), 2)
 
-    def test_lazy_selected_model_runs_only_its_unknown_discovery(self):
+    def test_opening_selected_model_runs_only_its_unknown_discovery(self):
         controller = self.controller([{'reasoningLevels': ['manual'], 'reasoningFormatAuto': False},
                                       {'alias': 'lazy'}])
         self.app.processEvents()
         self.assertEqual(self.calls, [])
         controller.selectModel('fixture', 'lazy')
+        self.app.processEvents()
+        self.assertEqual(self.calls, [])
+        controller.ensureReasoningDetection()
         self.settled(controller)
         self.assertEqual([call[0] for call in self.calls], ['lazy'])
         self.assertEqual(self.row(controller)['reasoningLevels'], ['manual'])
@@ -204,7 +351,7 @@ class ReasoningAutoControllerTests(unittest.TestCase):
         self.assertFalse(self.row(controller)['reasoningLevelsAuto'])
         self.assertEqual(controller.reasoningLevels, ['new-z', 'new-a'])
 
-    def test_rejection_removes_bad_level_reprobes_and_never_replays_chat(self):
+    def test_rejection_removes_bad_level_defers_reprobe_and_never_replays_chat(self):
         self.result = detected(['low', 'high', 'max'])
         controller = self.controller([{}])
         self.settled(controller)
@@ -214,6 +361,13 @@ class ReasoningAutoControllerTests(unittest.TestCase):
             self.assertTrue(controller.send('one fake chat'))
             controller._view.busy = True
             controller.gateway.reasoning_rejected('fixture', 'model', 'max', ['low', 'high'])
+            self.app.processEvents()
+            self.assertEqual(controller.reasoningLevels, ['low', 'high'])
+            self.assertEqual(controller.reasoningEffort, 'high')
+            self.assertEqual(len(self.calls), 1)
+            self.assertTrue(controller._reasoning_discovery.jobs)
+            controller._view.busy = False
+            controller._reasoning_discovery.sync_active()
             self.until(lambda: len(self.calls) == 2 and not controller._reasoning_discovery.jobs)
             self.assertEqual(command.call_count, 1)
         self.assertEqual(controller.reasoningLevels, ['low', 'high'])
@@ -273,13 +427,18 @@ class ReasoningAutoControllerTests(unittest.TestCase):
             self.assertTrue(controller.send('one fake chat with off'))
             controller._view.busy = True
             controller.gateway.reasoning_rejected('fixture', 'model', 'off', None)
-            self.until(self.started.is_set)
+            self.app.processEvents()
+            self.assertFalse(self.started.is_set())
             row = self.row(controller)
             self.assertEqual(row['reasoningFormatDetection']['state'], 'probing')
             self.assertFalse(row['reasoningFormatDetection']['offVerified'])
             self.assertEqual(row['reasoningLevels'], original_levels)
             self.assertNotIn('off', row['reasoningDetection'].get('rejected', []))
             self.assertNotEqual(row['reasoningDetection'].get('source'), 'error')
+            self.assertEqual(len(self.calls), 1)
+            controller._view.busy = False
+            controller._reasoning_discovery.sync_active()
+            self.until(self.started.is_set)
             self.release.set()
             self.until(lambda: len(self.calls) == 2 and not controller._reasoning_discovery.jobs)
             self.assertEqual(command.call_count, 1)
@@ -374,13 +533,18 @@ class ReasoningAutoControllerTests(unittest.TestCase):
                 self.release.clear()
                 self.started.clear()
                 controller.gateway.reasoning_rejected('fixture', 'model', 'high', ['low'])
-                self.until(self.started.is_set)
+                self.app.processEvents()
+                self.assertFalse(self.started.is_set())
                 self.assertFalse(self.release.is_set())
                 self.assertTrue(controller._reasoning_discovery.jobs)
                 self.assertEqual(writes, [{'type': 'reasoning_effort', 'value': 'low'}])
                 self.assertEqual(controller.reasoningEffort, 'low')
                 self.assertEqual(controller.store.data['sessionMeta']['live-fixture']['reasoningEffort'], 'low')
                 self.assertEqual(command.call_count, 1)
+                self.assertEqual(len(self.calls), 1)
+                record.busy = False
+                controller._reasoning_discovery.sync_active()
+                self.until(self.started.is_set)
                 self.release.set()
                 self.until(lambda: not controller._reasoning_discovery.jobs)
         finally:
@@ -393,12 +557,13 @@ class ReasoningAutoControllerTests(unittest.TestCase):
             {'reasoningLevels': ['vendor-z', 'vendor-a'], 'reasoningFormatDetection': legacy},
             {'alias': 'manual-format', 'reasoningLevels': ['manual-only'], 'reasoningFormat': 'qwen',
              'reasoningFormatAuto': False, 'reasoningFormatDetection': legacy},
-        ])
+        ], discover=False)
         self.assertEqual(controller.reasoningFormatState, 'unknown')
         self.assertEqual(controller.reasoningLevelsState, 'manual')
         self.assertIsNone(controller.reasoningOffSupported)
         self.assertEqual(controller.reasoningSwitchStatus, 'unknown')
         self.assertEqual(self.calls, [])
+        controller.ensureReasoningDetection()
         self.settled(controller)
         self.assertEqual(controller.reasoningLevels, ['vendor-z', 'vendor-a'])
         self.assertFalse(controller.reasoningLevelsAuto)
@@ -461,7 +626,8 @@ class ReasoningAutoControllerTests(unittest.TestCase):
             self.assertTrue(controller.send('single fake prompt before off rejection'))
             controller._view.busy = True
             controller.gateway.reasoning_rejected('fixture', 'model', 'off', None)
-            self.until(self.started.is_set)
+            self.app.processEvents()
+            self.assertFalse(self.started.is_set())
             self.assertFalse(self.release.is_set())
             self.assertTrue(controller._reasoning_discovery.jobs)
             self.assertIsNone(controller.reasoningOffSupported)
@@ -476,6 +642,10 @@ class ReasoningAutoControllerTests(unittest.TestCase):
             self.assertNotIn('off', settings['reasoningDetection'].get('rejected', []))
             self.assertNotIn('off', settings['reasoningLevels'])
             self.assertEqual(command.call_count, 1)
+            self.assertEqual(len(self.calls), 1)
+            controller._view.busy = False
+            controller._reasoning_discovery.sync_active()
+            self.until(self.started.is_set)
             self.release.set()
             self.until(lambda: not controller._reasoning_discovery.jobs)
 

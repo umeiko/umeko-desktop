@@ -30,6 +30,7 @@ from .network_retry import upstream_failure
 from .provider_errors import format_http_error, safe_text
 from .model_reasoning import reasoning_levels
 from .reasoning_detection import allowed_levels, is_effort_rejection, detect_model
+from .reasoning_activity import ReasoningActivity
 from .thinking_formats import format_parameters, valid_format
 from umeko_provider_sdk.network import network_scope, proxy_handler, tls_context, trace, TracedResponse
 from umeko_provider_sdk import request_scope
@@ -53,6 +54,7 @@ class Gateway:
     def __init__(self, store, adapter, plugins=None, reasoning_rejected=None):
         self.store, self.adapter, self.plugins = store, adapter, plugins
         self.reasoning_rejected = reasoning_rejected
+        self.reasoning_activity = ReasoningActivity()
         self.diagnostics = RequestDiagnostics(store.directory)
 
     def provider(self, provider_id):
@@ -69,7 +71,7 @@ class Gateway:
                 continue
             for model in p["models"]:
                 metadata = normalize_model(model)
-                rows.append({"id": model["alias"], "object": "model", "owned_by": p["name"], "providerID": p["id"],
+                rows.append({"id": model["alias"], "object": "model", "owned_by": p["name"], "providerID": p.get("id", ""),
                              "contextWindow": metadata["contextWindow"],
                              **{key: metadata[key] for key in ("providerContextWindow",) if key in metadata},
                              "input": ["text", "image"] if metadata["vision"] else ["text"],
@@ -90,7 +92,7 @@ class Gateway:
             records, content = [], []
             reasoning = False
             try:
-                with network_scope(provider.get("proxy"), records):
+                with self.reasoning_activity.probe({(provider['id'], configured['upstream'])}), network_scope(provider.get("proxy"), records):
                     for event in self._events(alias, [{"role": "user", "content": "Reply OK."}],
                                               max_tokens=max_tokens, provider_id=provider["id"],
                                               parameters={"_umeko_reasoning_effort": effort,
@@ -153,7 +155,7 @@ class Gateway:
         request = {'transport': p['api'], 'model': model, 'messages': messages,
                    'tools': tools or [], 'max_tokens': max_tokens, 'parameters': parameters or {}}
         try:
-            with network_scope(p.get('proxy'), records):
+            with self.reasoning_activity.chat((p.get('id', ''), model)), network_scope(p.get('proxy'), records):
                 for event in self._events(alias, messages, tools, max_tokens, provider_id, parameters):
                     if event.get('error'):
                         raise ValueError(json.dumps(event, ensure_ascii=False))

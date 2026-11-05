@@ -48,7 +48,9 @@ try:
     providers = []
     for name, models in [("Alpha", ["swift", "careful"]), ("Beta", ["breeze"])]:
         assert backend.saveProvider("", name, "openai", "http://127.0.0.1:1/v1", "fixture-only",
-                                    json.dumps([{"upstream": model, "alias": model} for model in models]))
+                                    json.dumps([{"upstream": model, "alias": model,
+                                                 "reasoningLevels": ["low", "high", "max"], "reasoningLevelsAuto": False,
+                                                 "reasoningFormat": "openai", "reasoningFormatAuto": False} for model in models]))
         providers.append(next(row["id"] for row in backend.store.data["providers"] if row["name"] == name))
     popup = window.findChild(QObject, "modelPopup")
 

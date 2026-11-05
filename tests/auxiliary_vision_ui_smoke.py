@@ -41,7 +41,10 @@ try:
     warnings=[];engine.warnings.connect(lambda rows:warnings.extend(row.toString() for row in rows))
     b.store.data['agent'].update(agentDir=str(Path(temp.name)/'agent'),safeMode=True,autoCompaction=False)
     b.store.data.update(providers=[{'id':'p','name':'Local vision fixture','api':'openai','baseUrl':f'http://127.0.0.1:{server.server_port}/v1','key':'',
-        'models':[{'upstream':VISION_MODEL if name=='eyes' else name,'alias':name,'vision':name=='eyes','visionAuto':False} for name in ('text','eyes')]}],selectedProvider='p',selectedModel='text')
+        # Business-call counts exclude discovery by declaring fixture capabilities.
+        'models':[{'upstream':VISION_MODEL if name=='eyes' else name,'alias':name,'vision':name=='eyes','visionAuto':False,
+                   'reasoningLevels':[],'reasoningLevelsAuto':False,
+                   'reasoningFormat':'openai','reasoningFormatAuto':False} for name in ('text','eyes')]}],selectedProvider='p',selectedModel='text')
     b._view.provider='p';b._view.model='text';b.changed.emit()
     def find(name):
         stack=[window.contentItem()]

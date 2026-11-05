@@ -13,7 +13,10 @@ AnchoredPidPopup {
     signal dismissed()
     onAboutToShow: modelSearch.clear()
     onAboutToHide: { focus = false; dismissed() }
-    onOpened: modelSearch.forceActiveFocus()
+    onOpened: {
+        modelSearch.forceActiveFocus()
+        if (typeof backend.ensureReasoningDetection === "function") backend.ensureReasoningDetection()
+    }
     onClosed: dismissed()
     contentItem: Item {
         clip: true
@@ -43,7 +46,14 @@ AnchoredPidPopup {
                             Text { font.family: Theme.fontFamily; text: modelData.upstream; width: parent.width; elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(9, visible) }
                         }
                         Glyph { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "check"; width: Theme.icon(15); height: Theme.icon(15); visible: backend.config.selectedProvider === provider.id && backend.config.selectedModel === modelData.alias }
-                        MouseArea { id: modelMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { backend.selectModel(provider.id, modelData.alias); root.close() } }
+                        MouseArea {
+                            id: modelMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                const controller = backend, providerId = provider.id, alias = modelData.alias
+                                root.close()
+                                controller.selectModel(providerId, alias)
+                            }
+                        }
                     }
                 }
             }

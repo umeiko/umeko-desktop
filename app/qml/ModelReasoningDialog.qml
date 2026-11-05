@@ -23,6 +23,11 @@ Popup {
     property string lookupAlias: ""
     property string api: ""
     property var settings: ({})
+    onOpened: {
+        if (providerId && lookupAlias && typeof backend.ensureModelReasoningDetection === "function")
+            backend.ensureModelReasoningDetection(providerId, lookupAlias)
+        refreshDetection()
+    }
     readonly property bool saved: !!settings && settings.states !== undefined
     readonly property var levelsDetection: saved && settings.reasoningDetection ? settings.reasoningDetection : ({})
     readonly property var formatDetection: saved && settings.reasoningFormatDetection ? settings.reasoningFormatDetection : ({})

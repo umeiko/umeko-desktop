@@ -1070,7 +1070,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 self.store.data["ui"]["reasoningEffort"] = value
                 self.reasoningChanged.emit()
 
-    @Property("QStringList", notify=changed)
+    @Property("QStringList", notify=reasoningDetectionChanged)
     def reasoningLevels(self):
         return self._reasoning_levels(self._view)
 
@@ -1152,6 +1152,14 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Slot(result=bool)
     def redetectReasoning(self):
         return self.redetectModelReasoning(self.store.data['selectedProvider'], self.store.data['selectedModel'])
+
+    @Slot(str, str, result=bool)
+    def ensureModelReasoningDetection(self, provider, alias):
+        return self._reasoning_discovery.ensure(provider, alias)
+
+    @Slot(result=bool)
+    def ensureReasoningDetection(self):
+        return self.ensureModelReasoningDetection(self.store.data['selectedProvider'], self.store.data['selectedModel'])
 
     @Slot(str, result=bool)
     def setReasoningEffort(self, value):
@@ -1721,8 +1729,6 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         provider = self.gateway.provider(provider_id)
         if not provider or provider["api"] not in ("openai", "anthropic"):
             return self.toast.emit("请在账号页刷新插件模型 / Refresh plugin models on the account page")
-        if self._models_busy(provider_id):
-            return self.toast.emit("请等待当前任务结束后刷新模型 / Wait for the current task before refreshing models")
         self.toast.emit("正在获取供应商模型信息 / Fetching provider model information")
         self._reasoning_discovery.refresh(provider_id)
 
