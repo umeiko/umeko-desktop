@@ -438,15 +438,6 @@ ApplicationWindow {
                 ActionButton { glyph: "maximize"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最大化"); onClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
                 ActionButton { objectName: "closeToTrayButton"; glyph: "x"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("收起到托盘"); onClicked: window.close() }
             }
-            ActionButton {
-                anchors.right: subagentIndicator.visible ? subagentIndicator.left : windowControls.left
-                anchors.rightMargin: 8; anchors.verticalCenter: windowControls.verticalCenter
-                objectName: "taskRecordsButton"
-                text: backend.taskRecords.selected ? I18n.t("下条消息已关联任务") : I18n.t("任务记录")
-                quiet: !backend.taskRecords.selected
-                visible: window.page === "chat"
-                onClicked: taskRecords.show()
-            }
             SubagentIndicator { id: subagentIndicator; anchors.right: windowControls.left; anchors.rightMargin: 13; anchors.verticalCenter: windowControls.verticalCenter; visible: window.page === "chat" && backend.subagents.activeCount > 0 }
         }
 
@@ -644,7 +635,6 @@ ApplicationWindow {
         onConfigure: { window.settings(0) }
         onDismissed: Qt.callLater(function() { if (window.page === "chat" && !modelPopup.desiredOpen && !window.mediaOverlayActive) composer.focusInput() })
     }
-    TaskRecords { id: taskRecords }
     SubagentMatrix { id: subagentMatrix; parent: Overlay.overlay }
     Connections { target: backend; function onViewChanged() { subagentMatrix.close() } }
     ApprovalDialog { parent: Overlay.overlay }

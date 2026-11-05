@@ -1,6 +1,7 @@
 # Local task records
 
-Open **Task records** from the chat header and save the objective and scope.
+Open **Task records** from the Widget menu in the lower-right corner of chat.
+Save the objective and scope.
 From an idle chat in the same project, choose **Link next message** and send a
 message. Each linked send creates an attempt. To continue or retry, select the
 same task from the original chat or another chat in the project. Follow-ups
@@ -38,3 +39,6 @@ Records are retained until deleted. Deletion cascades through the task's
 attempts, steps and file references. Pi history and project files are retained.
 Opening the panel reads records and checks references independently of Pi,
 the active chat, and its draft and attachments.
+
+The built-in Widget uses the scoped Widget Host API. The ledger and execution
+tracking belong to the application and survive closing the Widget.

@@ -188,7 +188,6 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._view = self._new_view()
         from .controller_tasks import TaskRecords
         self._task_records = TaskRecords(self)
-        self.viewChanged.connect(self._task_records.changed)
         self._pool.touch(self._view, current=True)
         self._pool.event.connect(self._handle_pi_event)
         from .conversation_views import ConversationViews
@@ -297,10 +296,6 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Property(QObject, constant=True)
     def desktopPlugins(self):
         return self._desktop_plugins
-
-    @Property(QObject, constant=True)
-    def taskRecords(self):
-        return self._task_records
 
     def _new_view(self, workspace=None):
         if not self._welcome_greetings:
@@ -1914,7 +1909,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if self._closing:
             return
         if name.startswith("task-details:"):
-            self._task_records.details_result(name, result)
+            self._desktop_plugins.hostServices.task_result(name.split(":", 1)[1], result)
             return
         if name.startswith("model-windows:"):
             provider_id = name.split(":", 1)[1]

@@ -44,6 +44,9 @@ class DesktopPlugins(QObject):
         self.bridge=WidgetChannel(self)
         from .widget_host import WidgetHost
         self._host_services=WidgetHost(self)
+        tasks = getattr(backend, '_task_records', None)
+        if tasks is not None:
+            tasks.changed.connect(self._task_records_changed)
         from .desktop_pet import DesktopPet
         self._pet=DesktopPet(self)
         self._pet_imports={}
@@ -53,6 +56,10 @@ class DesktopPlugins(QObject):
         from .global_agents import GlobalAgents
         self.global_agents=GlobalAgents(self)
         self.synchronize()
+    def _task_records_changed(self):
+        if self._page == 'task-records':
+            self.event.emit('tasks.changed', {})
+
     def review_response(self,request,value):
         target=self._review_requests.pop(request,None)
         if target:self.b._pool.write(target[0],{'type':'loop_review_response','id':target[1]})
@@ -89,7 +96,7 @@ class DesktopPlugins(QObject):
         if len(raw.encode("utf-8"))>16384:return ""
         try:args=json.loads(raw)
         except ValueError:return ''
-        return self._host_services.request_for(self._page,{'operation':operation,'arguments':args,'session':self._session})
+        return self._host_services.request_for(self._page,{'operation':operation,'arguments':args,'session':self._session},page=True)
     def session_enabled(self,identifier):
         if self.application(identifier):return self.enabled(identifier)
         sessions=self.settings.get('sessions',{})

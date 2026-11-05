@@ -121,41 +121,47 @@ class TaskStore:
             db.execute("INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?)", (task_id, objective, scope, project, now, now))
         return task_id
 
-    def tasks(self):
+    def tasks(self, offset=0, limit=-1):
         with self.connection() as db:
             return [dict(row) for row in db.execute("""
                 SELECT tasks.*, COALESCE(CASE WHEN attempts.accepted IS NOT NULL THEN 'accepted'
                     ELSE attempts.state END, 'draft') AS state
                 FROM tasks LEFT JOIN attempts ON attempts.id = (
                     SELECT id FROM attempts WHERE task_id = tasks.id ORDER BY id DESC LIMIT 1
-                ) ORDER BY tasks.updated DESC, tasks.id
-            """)]
+                ) ORDER BY tasks.updated DESC, tasks.id LIMIT ? OFFSET ?
+            """, (limit, offset))]
 
     def task(self, task_id):
         with self.connection() as db:
             row = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
             return dict(row) if row else None
 
-    def attempts(self, task_id):
+    def attempts(self, task_id, offset=0, limit=-1):
         with self.connection() as db:
             return [dict(row) for row in db.execute(
-                "SELECT * FROM attempts WHERE task_id = ? ORDER BY id DESC", (task_id,))]
+                "SELECT * FROM attempts WHERE task_id = ? ORDER BY id DESC LIMIT ? OFFSET ?", (task_id, limit, offset))]
 
-    def details(self, task_id, attempt_id):
+    def running(self, task_id):
+        with self.connection() as db:
+            return db.execute("SELECT 1 FROM attempts WHERE task_id = ? AND state = 'running'", (task_id,)).fetchone() is not None
+
+    def details(self, task_id, attempt_id, offset=0, limit=-1):
         with self.connection() as db:
             db.execute("BEGIN")
             attempt = db.execute("SELECT * FROM attempts WHERE task_id = ? AND id = ?", (task_id, attempt_id)).fetchone()
             if not attempt:
                 return {}
             steps = [dict(row) for row in db.execute(
-                "SELECT * FROM steps WHERE attempt_id = ? ORDER BY rowid", (attempt_id,))]
+                "SELECT * FROM steps WHERE attempt_id = ? ORDER BY rowid LIMIT ? OFFSET ?", (attempt_id, limit, offset))]
             files = [dict(row) for row in db.execute(
-                "SELECT * FROM files WHERE attempt_id = ? ORDER BY id", (attempt_id,))]
+                "SELECT * FROM files WHERE attempt_id = ? ORDER BY id LIMIT ? OFFSET ?", (attempt_id, limit, offset))]
+            has_deliveries = db.execute("SELECT 1 FROM files WHERE attempt_id = ? AND source != 'input' LIMIT 1",
+                                        (attempt_id,)).fetchone() is not None
         for step in steps:
             if step["kind"] == "session":
                 step["state"] = current_session_state(step["key"], step["detail"])
         return {**dict(attempt), "session_state": current_session_state(attempt["session_id"], attempt["session_file"]),
-                "steps": steps, "files": [{**row, "state": current_file_state(row)} for row in files]}
+                "hasDeliveries": has_deliveries, "steps": steps, "files": [{**row, "state": current_file_state(row)} for row in files]}
 
     def recover(self, reason):
         now = timestamp()
@@ -226,6 +232,14 @@ class TaskStore:
             db.execute("UPDATE attempts SET ended = ?, state = ?, reason = ? WHERE id = ? AND state = 'running'",
                        (now, state, reason, attempt_id))
             self._touch(db, attempt_id, now)
+
+    def check_files(self, task_id, attempt_id):
+        with self.connection() as db:
+            files = [dict(row) for row in db.execute("""
+                SELECT files.* FROM files JOIN attempts ON files.attempt_id = attempts.id
+                WHERE task_id = ? AND attempt_id = ? AND source != 'input'
+            """, (task_id, attempt_id))]
+        return [{**row, "state": current_file_state(row)} for row in files]
 
     def save_checks(self, attempt_id, files):
         now = timestamp()

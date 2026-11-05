@@ -2,14 +2,13 @@
 import sqlite3
 import uuid
 
-from PySide6.QtCore import QObject, Property, QLockFile, Signal, Slot
+from PySide6.QtCore import QObject, QLockFile, Signal
 
 from .task_records import TaskStore, versions_of
 
 
 class TaskRecords(QObject):
     changed = Signal()
-    detailsReady = Signal(int, "QVariantMap")
 
     def __init__(self, host):
         super().__init__(host)
@@ -45,20 +44,6 @@ class TaskRecords(QObject):
     def _project(self, record):
         return self.host.store.data["workspace"] or self._cwd(record)
 
-    @Property(str, notify=changed)
-    def selected(self):
-        return self.host._view.prepared_task
-
-    @Slot(result="QVariantList")
-    def listTasks(self):
-        store = self._storage()
-        return (self._write(store.tasks) or []) if store else []
-
-    @Slot(str, result="QVariantList")
-    def listAttempts(self, task_id):
-        return (self._write(self.store.attempts, task_id) or []) if self.store else []
-
-    @Slot(str, str, result=str)
     def create(self, objective, scope):
         objective, scope = objective.strip(), scope.strip()
         if not objective or not scope or len(objective) > 1000 or len(scope) > 4000:
@@ -71,15 +56,15 @@ class TaskRecords(QObject):
                 return result
         return ""
 
-    @Slot(str, result=bool)
     def canPrepare(self, task_id):
         record = self.host._view
         if record.busy or record.approval or record.global_agent or not self.store:
             return False
         task = self._write(self.store.task, task_id)
-        return bool(task and task["project"] == self._project(record))
+        if not task or task["project"] != self._project(record):
+            return False
+        return self._write(self.store.running, task_id) is False
 
-    @Slot(str, result=bool)
     def prepare(self, task_id):
         if not self.canPrepare(task_id):
             return False
@@ -87,12 +72,10 @@ class TaskRecords(QObject):
         self.changed.emit()
         return True
 
-    @Slot()
     def clear(self):
         self.host._view.prepared_task = ""
         self.changed.emit()
 
-    @Slot(str, result=bool)
     def remove(self, task_id):
         if not self.store or not self._write(self.store.delete, task_id):
             return False
@@ -102,29 +85,9 @@ class TaskRecords(QObject):
         self.changed.emit()
         return True
 
-    @Slot(int, str, int, bool)
-    def inspect(self, request, task_id, attempt_id, verify):
-        if self.store:
-            store = self.store
-            self.host._job(f"task-details:{request}:{int(verify)}", lambda: store.details(task_id, attempt_id))
-
-    def details_result(self, name, result):
-        _, request, verify = name.split(":")
-        details = result["value"] if result["ok"] else {}
-        if not result["ok"]:
-            self.host.toast.emit("无法读取任务详情")
-        if verify == "1" and details and self.store:
-            checked = self._write(self.store.save_checks, details["id"], details["files"])
-            if checked:
-                for row in details["files"]:
-                    if row["source"] != "input":
-                        row.update(checked=checked, check_result=row["state"])
-        self.detailsReady.emit(int(request), details)
-
-    @Slot(str, int)
     def accept(self, task_id, attempt_id):
         if self.store:
-            self._write(self.store.accept, task_id, attempt_id)
+            self.store.accept(task_id, attempt_id)
             self.changed.emit()
 
     def start(self, record, attachments):
