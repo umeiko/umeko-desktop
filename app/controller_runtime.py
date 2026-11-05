@@ -392,7 +392,8 @@ class PiControllerMixin:
                 transcript = True
         elif kind == "message" and event.get("role") == "assistant":
             if event.get('error') or event.get('stopReason') == 'error': record.failed = True
-            if event.get('stopReason') == 'aborted': record.cancelled = True
+            # Steering aborts one assistant response before continuing the turn.
+            # Only an explicit desktop stop marks the whole turn cancelled.
             if record.messages and (record.messages[-1]["role"] == "assistant" and record.messages[-1].get("customType") != "umeko-compaction"):
                 record.messages[-1].update(text=event.get("text") or event.get("error") or record.messages[-1]["text"], error=bool(event.get("error")), errorMessage=event.get("error") or "", stopReason=event.get("stopReason", ""))
                 if event.get("timestamp"): record.messages[-1]["timestamp"] = event["timestamp"]
