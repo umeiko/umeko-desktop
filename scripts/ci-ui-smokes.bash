@@ -82,6 +82,7 @@ smokes=(
   tests/chat_loading_ui_smoke.py
   tests/scroll_paging_ui_smoke.py
   tests/task_state_ui_smoke.py
+  tests/steering_status_ui_smoke.py
   tests/conversation_search_ui_smoke.py
   tests/sidebar_menu_position_ui_smoke.py
   tests/pi_manager_initial_tools_ui_smoke.py
