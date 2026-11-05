@@ -24,7 +24,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def detected(levels=('low', 'high'), format='chat-template', source='probe'):
     return {'levels': {'state': 'known', 'source': source, 'levels': list(levels), 'verified': True},
-            'format': {'state': 'known', 'source': 'probe', 'format': format, 'verified': True}}
+            'format': {'state': 'known', 'source': 'probe', 'format': format, 'verified': True,
+                       'onObserved': True, 'offObserved': True, 'offVerified': True,
+                       'offSupported': True, 'offFormat': format, 'status': 'on-off-verified',
+                       'onEffort': next(iter(levels), 'high'), 'formatsTried': [format],
+                       'onAttempts': [], 'offSwitchesTried': []}}
 
 
 class ReasoningAutoControllerTests(unittest.TestCase):
@@ -382,6 +386,98 @@ class ReasoningAutoControllerTests(unittest.TestCase):
         finally:
             record.process = None
             self.release.set()
+
+    def test_old_auto_format_cache_is_upgraded_lazily_without_changing_manual_levels(self):
+        legacy = {'state': 'known', 'source': 'probe', 'format': 'openai', 'verified': True}
+        controller = self.controller([
+            {'reasoningLevels': ['vendor-z', 'vendor-a'], 'reasoningFormatDetection': legacy},
+            {'alias': 'manual-format', 'reasoningLevels': ['manual-only'], 'reasoningFormat': 'qwen',
+             'reasoningFormatAuto': False, 'reasoningFormatDetection': legacy},
+        ])
+        self.assertEqual(controller.reasoningFormatState, 'unknown')
+        self.assertEqual(controller.reasoningLevelsState, 'manual')
+        self.assertIsNone(controller.reasoningOffSupported)
+        self.assertEqual(controller.reasoningSwitchStatus, 'unknown')
+        self.assertEqual(self.calls, [])
+        self.settled(controller)
+        self.assertEqual(controller.reasoningLevels, ['vendor-z', 'vendor-a'])
+        self.assertFalse(controller.reasoningLevelsAuto)
+        self.assertEqual(controller.reasoningFormatState, 'known')
+        self.assertTrue(controller.reasoningOffSupported)
+        self.assertEqual([call[0] for call in self.calls], ['model'])
+        self.assertEqual(self.catalog_calls, [])
+        manual = self.row(controller, 'manual-format')
+        self.assertEqual(manual['reasoningFormatDetection'], legacy)
+        controller.selectModel('fixture', 'manual-format')
+        self.app.processEvents()
+        self.assertEqual(controller.reasoningFormatState, 'manual')
+        self.assertIsNone(controller.reasoningOffSupported)
+        self.assertEqual(controller.reasoningSwitchStatus, 'manual')
+        self.assertEqual(len(self.calls), 1)
+
+    def test_cannot_disable_cache_survives_restart_and_manual_format_hides_auto_status(self):
+        cached = detected(['high'], 'qwen')
+        switches = [{'format': 'qwen', 'accepted': True, 'thinkingObserved': True},
+                    {'format': 'deepseek', 'accepted': False}]
+        cached['format'].update(offSupported=False, status='cannot-disable', offVerified=False,
+                                offObserved=False, offFormat=None, offSwitchesTried=switches,
+                                verified=False)
+        controller = self.controller([{
+            'reasoningLevels': ['high'], 'reasoningLevelsAuto': True,
+            'reasoningDetection': cached['levels'], 'reasoningFormat': 'qwen',
+            'reasoningFormatAuto': True, 'reasoningFormatDetection': cached['format'],
+        }])
+        self.app.processEvents()
+        self.assertEqual(self.calls, [])
+        controller.close()
+        self.controllers.remove(controller)
+        restarted = self.controller()
+        self.app.processEvents()
+        meta = restarted.metaObject()
+        self.assertEqual(meta.property(meta.indexOfProperty('reasoningOffSupported')).typeName(), 'QVariant')
+        self.assertEqual(meta.property(meta.indexOfProperty('reasoningSwitchStatus')).typeName(), 'QString')
+        self.assertIs(restarted.reasoningOffSupported, False)
+        self.assertEqual(restarted.reasoningSwitchStatus, 'cannot-disable')
+        settings = restarted.modelReasoningSettings('fixture', 'model')
+        self.assertEqual(settings, restarted.reasoningSettings)
+        self.assertEqual(settings['reasoningFormatDetection'], cached['format'])
+        self.assertEqual(settings['reasoningFormatDetection']['offSwitchesTried'], switches)
+        self.assertTrue(restarted.setModelReasoningFormat('fixture', 'model', 'deepseek', False))
+        self.assertIsNone(restarted.reasoningOffSupported)
+        self.assertEqual(restarted.reasoningSwitchStatus, 'manual')
+        self.assertFalse(restarted.reasoningSettings['reasoningFormatAuto'])
+        self.assertEqual(restarted.reasoningSettings['reasoningFormat'], 'deepseek')
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.catalog_calls, [])
+
+    def test_off_rejection_immediately_clears_verified_switch_status_before_reprobe(self):
+        controller = self.controller([{}])
+        self.settled(controller)
+        self.assertIs(controller.reasoningOffSupported, True)
+        self.assertEqual(controller.reasoningSwitchStatus, 'on-off-verified')
+        self.release.clear()
+        self.started.clear()
+        with patch.object(controller, '_command_pi', return_value=True) as command:
+            self.assertTrue(controller.send('single fake prompt before off rejection'))
+            controller._view.busy = True
+            controller.gateway.reasoning_rejected('fixture', 'model', 'off', None)
+            self.until(self.started.is_set)
+            self.assertFalse(self.release.is_set())
+            self.assertTrue(controller._reasoning_discovery.jobs)
+            self.assertIsNone(controller.reasoningOffSupported)
+            self.assertEqual(controller.reasoningSwitchStatus, 'unknown')
+            settings = controller.modelReasoningSettings('fixture', 'model')
+            cache = settings['reasoningFormatDetection']
+            self.assertEqual(cache['state'], 'probing')
+            self.assertFalse(cache['offVerified'])
+            self.assertIsNone(cache['offSupported'])
+            self.assertIsNone(cache['offFormat'])
+            self.assertEqual(cache['status'], 'unknown')
+            self.assertNotIn('off', settings['reasoningDetection'].get('rejected', []))
+            self.assertNotIn('off', settings['reasoningLevels'])
+            self.assertEqual(command.call_count, 1)
+            self.release.set()
+            self.until(lambda: not controller._reasoning_discovery.jobs)
 
 
 if __name__ == '__main__':

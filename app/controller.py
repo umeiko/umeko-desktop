@@ -1108,6 +1108,18 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def reasoningFormatAuto(self):
         return self.reasoningSettings.get('reasoningFormatAuto', True)
 
+    @Property('QVariant', notify=reasoningDetectionChanged)
+    def reasoningOffSupported(self):
+        if not self.reasoningFormatAuto:
+            return None
+        return self.reasoningSettings.get('reasoningFormatDetection', {}).get('offSupported')
+
+    @Property(str, notify=reasoningDetectionChanged)
+    def reasoningSwitchStatus(self):
+        if not self.reasoningFormatAuto:
+            return 'manual'
+        return self.reasoningSettings.get('reasoningFormatDetection', {}).get('status', 'unknown')
+
     @Property('QVariantList', constant=True)
     def reasoningFormatOptions(self):
         return FORMAT_OPTIONS

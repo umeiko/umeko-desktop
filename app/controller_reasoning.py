@@ -29,6 +29,11 @@ class ReasoningDiscovery(QObject):
                 for key in ('reasoningDetection', 'reasoningFormatDetection'):
                     if row[key]['state'] == 'probing':
                         row[key]['state'] = 'unknown'
+                # Earlier caches never tried off for formats without visible on.
+                # Revisit only automatic format results after this upgrade.
+                cached = row['reasoningFormatDetection']
+                if row['reasoningFormatAuto'] and cached['state'] == 'known' and 'offSupported' not in cached:
+                    cached['state'] = 'unknown'
         for _ in range(2):
             threading.Thread(target=self._worker, daemon=True).start()
         self.c.changed.connect(self.sync_active)
@@ -213,7 +218,8 @@ class ReasoningDiscovery(QObject):
         if effort == 'off':
             for row in rows:
                 row['reasoningFormatDetection'] = {**row.get('reasoningFormatDetection', {}),
-                    'state': 'unknown', 'offVerified': False}
+                    'state': 'unknown', 'offVerified': False, 'offSupported': None,
+                    'offFormat': None, 'status': 'unknown'}
             if rows:
                 self.probe(provider, rows[0])
             self.notify(save=True)

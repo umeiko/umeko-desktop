@@ -30,7 +30,7 @@ from .network_retry import upstream_failure
 from .provider_errors import format_http_error, safe_text
 from .model_reasoning import reasoning_levels
 from .reasoning_detection import allowed_levels, is_effort_rejection, detect_model
-from .thinking_formats import format_parameters
+from .thinking_formats import format_parameters, valid_format
 from umeko_provider_sdk.network import network_scope, proxy_handler, tls_context, trace, TracedResponse
 from umeko_provider_sdk import request_scope
 
@@ -195,6 +195,7 @@ class Gateway:
         tools = tools or []
         parameters = dict(parameters or {})
         private_intent = "_umeko_reasoning_effort" in parameters
+        probe_override = "_umeko_reasoning_format" in parameters
         format_override = parameters.pop("_umeko_reasoning_format", None)
         already_formatted = any(key in parameters for key in
                                 ("enable_thinking", "chat_template_kwargs", "thinking", "reasoning"))
@@ -205,6 +206,12 @@ class Gateway:
             configured = next(m for m in p["models"] if m["alias"] == alias)
             format = format_override or configured.get("reasoningFormat") or (
                 "anthropic" if p["api"] == "anthropic" else "responses" if p.get("wireApi") == "responses" else "openai")
+            detection = configured.get("reasoningFormatDetection", {})
+            if (not probe_override and private_intent and intent == "off"
+                    and configured.get("reasoningFormatAuto", True) is not False
+                    and isinstance(detection, dict) and detection.get("state") == "known"
+                    and detection.get("offVerified") is True and valid_format(detection.get("offFormat"))):
+                format = detection["offFormat"]
             for key in ("reasoning_effort", "enable_thinking", "chat_template_kwargs", "thinking", "reasoning"):
                 parameters.pop(key, None)
             parameters.update(format_parameters(format, intent))

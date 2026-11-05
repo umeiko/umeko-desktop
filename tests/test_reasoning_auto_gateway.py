@@ -66,6 +66,15 @@ class ReasoningGatewayTests(unittest.TestCase):
                 if mode == "auth-effort":
                     return self.send({"error": {"message": "invalid reasoning_effort", "allowed": ["low", "high"],
                                                "param": "reasoning_effort"}}, 401)
+                if mode in ("anthropic-switch-reject-http", "anthropic-switch-reject-sse"):
+                    return self.send({"type": "error", "error": {"type": "invalid_request_error",
+                                      "message": "enable_thinking is an unsupported field"}},
+                                     400 if mode.endswith("http") else 200, mode.endswith("sse"))
+                if mode in ("anthropic-effort-reject-http", "anthropic-effort-reject-sse"):
+                    return self.send({"type": "error", "error": {"type": "invalid_request_error",
+                                      "param": "output_config.effort", "message": "invalid effort",
+                                      "allowed": ["low", "high"]}},
+                                     400 if mode.endswith("http") else 200, mode.endswith("sse"))
                 if mode == "anthropic":
                     return self.send({"content": [{"type": "text", "text": "OK"}], "stop_reason": "end_turn"})
                 thinking = mode == "chat-template" and nested.get("enable_thinking") is True
@@ -205,6 +214,84 @@ class ReasoningGatewayTests(unittest.TestCase):
             self.assertEqual(forwarded["chat_template_kwargs"], body["chat_template_kwargs"])
         finally:
             server.close()
+
+    def test_anthropic_compatible_switch_fields_reach_upstream_for_every_format(self):
+        self.provider["api"] = "anthropic"
+        self.mode = "anthropic"
+        expected = {
+            "anthropic": ({"output_config": {"effort": "high"}}, {}),
+            "deepseek": ({"thinking": {"type": "enabled"}, "output_config": {"effort": "high"}},
+                         {"thinking": {"type": "disabled"}}),
+            "anthropic-adaptive": ({"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+                                   {"thinking": {"type": "disabled"}}),
+            "qwen": ({"enable_thinking": True, "output_config": {"effort": "high"}}, {"enable_thinking": False}),
+            "chat-template": ({"chat_template_kwargs": {"enable_thinking": True, "reasoning_effort": "high"}},
+                              {"chat_template_kwargs": {"enable_thinking": False}}),
+            "openai-none": ({"output_config": {"effort": "high"}}, {"output_config": {"effort": "none"}}),
+        }
+        for format, cases in expected.items():
+            for effort, fields in zip(("high", "off"), cases):
+                with self.subTest(format=format, effort=effort):
+                    self.complete({"_umeko_reasoning_effort": effort, "_umeko_reasoning_format": format})
+                    path, body = self.calls[-1]
+                    self.assertEqual(path, "/v1/messages")
+                    observed = {key: body[key] for key in
+                                ("output_config", "thinking", "enable_thinking", "chat_template_kwargs", "reasoning", "reasoning_effort")
+                                if key in body}
+                    self.assertEqual(observed, fields)
+                    self.assertFalse(any(key.startswith("_umeko_") for key in body))
+
+    def test_anthropic_compatible_rejected_switch_keeps_http_and_sse_probe_details(self):
+        self.provider["api"] = "anthropic"
+        for mode, status in (("anthropic-switch-reject-http", 400), ("anthropic-switch-reject-sse", 200)):
+            with self.subTest(mode=mode):
+                self.mode = mode
+                before = len(self.calls)
+                with patch("app.gateway.detect_model", side_effect=lambda request, **kwargs: request("off", "qwen", 1)):
+                    with self.assertRaises(ValueError) as error:
+                        self.gateway.detect_reasoning("friendly")
+                self.assertIn("enable_thinking", str(error.exception))
+                self.assertEqual(error.exception.status_code, status)
+                self.assertEqual(len(self.calls), before + 1)
+                self.assertEqual(self.calls[-1][1]["enable_thinking"], False)
+        self.assertFalse(self.rejections)
+        self.assertFalse((self.store.directory / "request-errors").exists())
+
+    def test_anthropic_compatible_effort_rejection_notifies_without_retry(self):
+        self.provider["api"] = "anthropic"
+        for mode in ("anthropic-effort-reject-http", "anthropic-effort-reject-sse"):
+            with self.subTest(mode=mode):
+                self.mode = mode
+                before, notifications = len(self.calls), len(self.rejections)
+                with self.assertRaises(RequestFailure) as error:
+                    self.complete({"_umeko_reasoning_effort": "max", "_umeko_reasoning_format": "qwen"})
+                self.assertFalse(error.exception.retryable)
+                self.assertEqual(self.calls[-1][1]["output_config"], {"effort": "max"})
+                self.assertEqual(len(self.calls), before + 1)
+                self.assertEqual(len(self.rejections), notifications + 1)
+                self.assertEqual(self.rejections[-1], ("fixture", "actual", "max", ["low", "high"]))
+
+    def test_automatic_verified_off_format_applies_only_to_private_off_chat(self):
+        self.provider["api"] = "anthropic"
+        self.mode = "anthropic"
+        self.model.update(reasoningFormat="anthropic", reasoningFormatAuto=True,
+                          reasoningFormatDetection={"state": "known", "offVerified": True, "offFormat": "qwen"})
+        self.complete({"_umeko_reasoning_effort": "high"})
+        self.assertEqual(self.calls[-1][1]["output_config"], {"effort": "high"})
+        self.assertNotIn("enable_thinking", self.calls[-1][1])
+        self.complete({"_umeko_reasoning_effort": "off"})
+        self.assertIs(self.calls[-1][1]["enable_thinking"], False)
+        self.assertNotIn("output_config", self.calls[-1][1])
+        self.model["reasoningFormatAuto"] = False
+        self.complete({"_umeko_reasoning_effort": "off"})
+        self.assertNotIn("enable_thinking", self.calls[-1][1])
+        self.model["reasoningFormatAuto"] = True
+        self.complete({"_umeko_reasoning_effort": "off", "_umeko_reasoning_format": "deepseek"})
+        self.assertEqual(self.calls[-1][1]["thinking"], {"type": "disabled"})
+        self.assertNotIn("enable_thinking", self.calls[-1][1])
+        self.model["reasoningFormatDetection"]["offFormat"] = "not-a-format"
+        self.complete({"_umeko_reasoning_effort": "off"})
+        self.assertNotIn("enable_thinking", self.calls[-1][1])
 
     def test_http_and_sse_effort_rejections_notify_once_without_retry(self):
         for mode in ("reject-http", "reject-sse"):

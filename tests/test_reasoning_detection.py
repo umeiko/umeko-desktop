@@ -8,6 +8,8 @@ from app.thinking_formats import format_parameters, valid_format
 
 
 INVALID = "__umeko_invalid_effort__"
+OPENAI_FORMATS = ["qwen", "deepseek", "chat-template", "openai-none", "openai"]
+ANTHROPIC_FORMATS = ["deepseek", "anthropic-adaptive", "qwen", "chat-template", "openai-none", "anthropic"]
 
 
 def observation(thinking=False, content=False):
@@ -63,7 +65,54 @@ class ReasoningDetectionTests(unittest.TestCase):
         self.assertEqual(result["levels"]["levels"], ["low", "medium", "high"])
         self.assertTrue(result["levels"]["verified"])
         self.assertTrue(result["format"]["offVerified"])
-        self.assertEqual(calls, [(INVALID, "openai", 1), ("medium", "openai", 1), ("off", "openai", 1)])
+        self.assertEqual(result["format"]["format"], "openai-none")
+        self.assertEqual(result["format"]["offFormat"], "openai-none")
+        self.assertEqual(result["format"]["onEffort"], "high")
+        self.assertEqual(result["format"]["status"], "on-off-verified")
+        self.assertEqual(result["format"]["formatsTried"], OPENAI_FORMATS)
+        self.assertEqual(calls, [(INVALID, "openai", 1),
+            *((effort, format, 1) for format in OPENAI_FORMATS for effort in ("high", "off")),
+            (INVALID, "openai-none", 1)])
+
+    def test_native_effort_pair_precedes_extension_and_omission(self):
+        calls = []
+        def request(effort, format, cap):
+            calls.append((effort, format, cap))
+            return observation(thinking=effort != "off" and format in ("qwen", "openai-none", "openai"),
+                               content=effort == "off")
+        facts = detect_model(request, advertised_levels=["medium", "high"], caps=(1,))["format"]
+        self.assertEqual(facts["formatsTried"], OPENAI_FORMATS)
+        self.assertEqual([format for effort, format, _ in calls if effort == "high"], OPENAI_FORMATS)
+        self.assertEqual([format for effort, format, _ in calls if effort == "off"], OPENAI_FORMATS)
+        self.assertEqual(facts["format"], "openai-none")
+        self.assertEqual(facts["offFormat"], "openai-none")
+        self.assertEqual(facts["status"], "on-off-verified")
+        self.assertTrue(facts["verified"])
+        self.assertEqual(next(item for item in facts["offSwitchesTried"] if item["format"] == "openai-none")
+                         ["parameters"], {"reasoning_effort": "none"})
+
+    def test_late_rate_limit_or_timeout_is_failed_instead_of_cannot_disable(self):
+        class RateLimitError(Exception):
+            status_code = 429
+        for error in (RateLimitError("request rate limited"), TimeoutError("network timeout")):
+            with self.subTest(error=type(error).__name__):
+                def request(effort, format, cap):
+                    if effort == INVALID:
+                        raise enum_error(["low", "high"])
+                    if effort == "off" and format == "deepseek":
+                        raise error
+                    return observation(thinking=True)
+                facts = detect_model(request)["format"]
+                self.assertEqual(facts["state"], "failed")
+                self.assertEqual(facts["status"], "unknown")
+                self.assertIsNone(facts["offSupported"])
+                self.assertFalse(facts["offVerified"])
+                self.assertNotEqual(facts["status"], "cannot-disable")
+                self.assertIn(str(error), facts["error"])
+                self.assertTrue(facts["onAttempts"])
+                off_attempts = {item["format"]: item for item in facts["offSwitchesTried"]}
+                self.assertEqual(off_attempts["qwen"]["status"], "still-thinking")
+                self.assertIn(str(error), off_attempts["deepseek"]["error"])
 
     def test_silent_levels_use_documented_fallback_and_only_ctk_proves_switch(self):
         calls = []
@@ -93,13 +142,18 @@ class ReasoningDetectionTests(unittest.TestCase):
         result = detect_model(request)
         self.assertEqual(result["format"]["format"], "qwen")
         self.assertEqual(result["format"]["outputCap"], 4)
-        self.assertNotIn(("low", "qwen", 16), calls)
+        self.assertEqual(result["format"]["onEffort"], "high")
+        self.assertNotIn(("high", "qwen", 16), calls)
         self.assertNotIn(("off", "qwen", 16), calls)
 
     def test_acceptance_or_one_token_silence_does_not_prove_format(self):
         result = detect_model(lambda *args: observation())
-        self.assertEqual(result["format"]["state"], "failed")
-        self.assertIsNone(result["format"]["format"])
+        self.assertEqual(result["format"]["state"], "known")
+        self.assertEqual(result["format"]["format"], "openai")
+        self.assertEqual(result["format"]["status"], "on-not-observable")
+        self.assertFalse(result["format"]["onObserved"])
+        self.assertFalse(result["format"]["offSupported"])
+        self.assertFalse(result["format"]["verified"])
         self.assertEqual(result["levels"]["state"], "known")
         self.assertFalse(result["levels"]["verified"])
 
@@ -113,6 +167,14 @@ class ReasoningDetectionTests(unittest.TestCase):
         self.assertTrue(result["format"]["onObserved"])
         self.assertFalse(result["format"]["verified"])
         self.assertFalse(result["format"]["offVerified"])
+        self.assertFalse(result["format"]["offSupported"])
+        self.assertEqual(result["format"]["status"], "cannot-disable")
+        self.assertEqual(result["format"]["formatsTried"], OPENAI_FORMATS)
+        self.assertEqual(result["format"]["offSwitchesTried"], [
+            {"format": format, "parameters": format_parameters(format, "off"),
+             "status": "still-thinking", "thinkingObserved": True,
+             "ordinaryContentObserved": False, "outputCap": 1}
+            for format in OPENAI_FORMATS])
         self.assertTrue(all(cap == 1 for _, _, cap in calls))
 
     def test_manual_fields_are_independent_and_preserve_names(self):
@@ -124,12 +186,14 @@ class ReasoningDetectionTests(unittest.TestCase):
             return observation(thinking=effort != "off", content=effort == "off")
         result = detect_model(request, manual_levels=["Custom-B", "Custom-A"])
         self.assertEqual(result["levels"]["levels"], ["Custom-B", "Custom-A"])
-        self.assertEqual(calls[0], ("Custom-B", "openai", 1))
+        self.assertEqual(calls[0], ("Custom-B", "qwen", 1))
         calls.clear()
         result = detect_model(request, manual_format="chat-template")
         self.assertEqual(calls, [(INVALID, "chat-template", 1)])
         self.assertEqual(result["levels"]["levels"], ["low", "high"])
         self.assertEqual(result["format"]["source"], "manual")
+        self.assertIsNone(result["format"]["offSupported"])
+        self.assertEqual(result["format"]["formatsTried"], [])
         calls.clear()
         detect_model(request, manual_levels=[], manual_format="qwen")
         self.assertEqual(calls, [])
@@ -159,10 +223,13 @@ class ReasoningDetectionTests(unittest.TestCase):
         result = detect_model(request)
         self.assertEqual(result["levels"]["levels"], ["medium", "max"])
         self.assertTrue(result["levels"]["verified"])
-        self.assertEqual(calls.count(("medium", "openai", 1)), 1)
+        selected = result["format"]["format"]
+        self.assertEqual(result["format"]["onEffort"], "max")
+        self.assertEqual(calls.count(("medium", selected, 1)), 1)
+        self.assertEqual(calls.count(("max", selected, 1)), 1)
         self.assertTrue(all(cap == 1 for _, _, cap in calls))
 
-    def test_no_enum_finds_valid_on_effort_when_medium_rejected(self):
+    def test_no_enum_finds_valid_on_effort_when_max_rejected(self):
         calls = []
         def request(effort, format, cap):
             calls.append((effort, format, cap))
@@ -172,7 +239,31 @@ class ReasoningDetectionTests(unittest.TestCase):
         result = detect_model(request)
         self.assertTrue(result["format"]["offVerified"])
         self.assertEqual(result["levels"]["levels"], ["low", "high"])
-        self.assertEqual(calls.count(("low", "openai", 1)), 1)
+        self.assertEqual(calls.count(("high", "qwen", 1)), 1)
+        self.assertEqual(result["format"]["onEffort"], "high")
+        self.assertEqual(calls[1], ("max", "qwen", 1))
+
+    def test_strongest_probe_effort_descends_after_rejection_without_rewriting_custom_names(self):
+        for mode in ("declared", "max-rejected", "manual-custom"):
+            with self.subTest(mode=mode):
+                calls = []
+                def request(effort, format, cap):
+                    calls.append((effort, format, cap))
+                    if mode == "max-rejected" and effort == "max":
+                        raise enum_error(["low", "high"])
+                    return observation(thinking=effort != "off", content=effort == "off")
+                arguments = ({"manual_levels": ["vendor-a", "vendor-z"]}
+                             if mode == "manual-custom" else
+                             {"advertised_levels": ["low", "high", "max"]})
+                result = detect_model(request, caps=(1,), **arguments)
+                expected = {"declared": "max", "max-rejected": "high", "manual-custom": "vendor-a"}[mode]
+                self.assertEqual(result["format"]["onEffort"], expected)
+                on_requests = [effort for effort, format, cap in calls if format == "qwen" and effort != "off"]
+                self.assertEqual(on_requests, ["max", "high"] if mode == "max-rejected" else [expected])
+                if mode == "manual-custom":
+                    self.assertEqual(result["levels"]["levels"], ["vendor-a", "vendor-z"])
+                    self.assertEqual(result["levels"]["source"], "manual")
+                    self.assertEqual({effort for effort, _, _ in calls if effort != "off"}, {"vendor-a"})
 
     def test_unrelated_error_fails_without_trying_candidate_values(self):
         for message in ("unauthorized", "network timeout", "max_tokens must be at least 32"):
@@ -196,12 +287,77 @@ class ReasoningDetectionTests(unittest.TestCase):
         result = detect_model(request, protocol="anthropic")
         self.assertEqual(result["format"]["format"], "anthropic-adaptive")
         self.assertTrue(result["format"]["offVerified"])
-        self.assertFalse(any(format == "qwen" for _, format, _ in calls))
+        self.assertEqual(result["format"]["formatsTried"], ANTHROPIC_FORMATS)
+        self.assertEqual([format for effort, format, _ in calls if effort == "off"], ANTHROPIC_FORMATS)
         calls.clear()
         result = detect_model(request, protocol="responses")
         self.assertEqual(calls, [(INVALID, "responses", 1)])
         self.assertEqual(result["format"]["format"], "responses")
         self.assertFalse(result["format"]["verified"])
+
+    def test_all_off_switches_are_tried_even_when_on_is_rejected_or_invisible(self):
+        calls = []
+        def request(effort, format, cap):
+            calls.append((effort, format, cap))
+            if effort != "off" and format in ("qwen", "deepseek"):
+                raise ValueError("thinking control is not supported")
+            return observation(content=effort == "off")
+        result = detect_model(request, advertised_levels=["high"], caps=(1, 4))
+        facts = result["format"]
+        self.assertEqual([format for effort, format, _ in calls if effort == "off"], OPENAI_FORMATS)
+        self.assertEqual(facts["status"], "on-not-observable")
+        self.assertTrue(facts["offSupported"])
+        self.assertFalse(facts["onObserved"])
+        self.assertFalse(facts["verified"])
+        self.assertEqual([item["status"] for item in facts["onAttempts"]],
+                         ["rejected", "rejected", "not-observable", "not-observable", "not-observable"])
+        self.assertTrue(all(item["status"] == "disabled" for item in facts["offSwitchesTried"]))
+        self.assertTrue(all(item["outputCap"] == 1 for item in facts["offSwitchesTried"]))
+
+    def test_later_paired_qwen_wins_over_first_on_and_hybrid(self):
+        def request(effort, format, cap):
+            if effort == "off":
+                return observation(thinking=format != "qwen", content=format == "qwen")
+            return observation(thinking=format in ("deepseek", "qwen"))
+        result = detect_model(request, advertised_levels=["low", "medium", "high"], protocol="anthropic")
+        facts = result["format"]
+        self.assertEqual(facts["format"], "qwen")
+        self.assertEqual(facts["offFormat"], "qwen")
+        self.assertEqual(facts["onAttempts"][0]["format"], "deepseek")
+        self.assertTrue(facts["onAttempts"][0]["thinkingObserved"])
+        self.assertEqual(facts["offSwitchesTried"][0]["status"], "still-thinking")
+        self.assertEqual(facts["onEffort"], "high")
+        self.assertEqual(facts["status"], "on-off-verified")
+        self.assertTrue(facts["verified"])
+
+    def test_hybrid_on_and_off_formats_are_both_reported(self):
+        def request(effort, format, cap):
+            if effort == "off":
+                return observation(thinking=format != "deepseek", content=format == "deepseek")
+            return observation(thinking=format == "qwen")
+        facts = detect_model(request, advertised_levels=["high"])["format"]
+        self.assertEqual(facts["format"], "qwen")
+        self.assertEqual(facts["offFormat"], "deepseek")
+        self.assertTrue(facts["offSupported"])
+        self.assertTrue(facts["verified"])
+        self.assertEqual(facts["status"], "on-off-verified")
+
+    def test_chat_template_real_observation_needs_cap_four(self):
+        calls = []
+        def request(effort, format, cap):
+            calls.append((effort, format, cap))
+            if format != "chat-template":
+                return observation(thinking=effort == "off")
+            return observation(thinking=effort != "off" and cap >= 4,
+                               content=effort == "off" and cap >= 4)
+        facts = detect_model(request, advertised_levels=["low", "high"], caps=(1, 4, 16))["format"]
+        self.assertEqual(facts["format"], "chat-template")
+        self.assertEqual(facts["offFormat"], "chat-template")
+        self.assertEqual(facts["outputCap"], 4)
+        self.assertEqual(facts["onEffort"], "high")
+        self.assertNotIn(("high", "chat-template", 16), calls)
+        self.assertNotIn(("off", "chat-template", 16), calls)
+        self.assertEqual(facts["status"], "on-off-verified")
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ import json
 import re
 from collections.abc import Callable, Mapping
 
-from .thinking_formats import OPENAI_FORMATS, valid_format
+from .thinking_formats import format_parameters, valid_format
 
 
 EFFORT_CANDIDATES = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
@@ -306,6 +306,7 @@ def detect_model(request: Callable[[str, str, int], object], advertised_levels=N
         raise ValueError("Output caps must be positive integers")
     initial = manual_format or (protocol if protocol in ("anthropic", "responses") else "openai")
     cache = {}
+    blocked = []
 
     def probe(effort, format, cap):
         key = effort, format, cap
@@ -315,6 +316,12 @@ def detect_model(request: Callable[[str, str, int], object], advertised_levels=N
                 cache[key] = True, observation
             except Exception as error:
                 cache[key] = False, error
+                status = getattr(error, 'status_code', None)
+                if (status in (401, 403, 408, 429) or (isinstance(status, int) and status >= 500)
+                        or re.search(r'unauthori[sz]ed|authentication|invalid.api.key|quota|rate.limit|'
+                                     r'too many requests|timed?\s*out|timeout|connection|network|'
+                                     r'insufficient.{0,12}(?:credit|balance)', _error_text(error), re.I)):
+                    blocked.append(_error_text(error)[:500])
         return cache[key]
 
     def observed(value, name):
@@ -339,22 +346,34 @@ def detect_model(request: Callable[[str, str, int], object], advertised_levels=N
     provisional = levels["levels"] if levels is not None else (
         allowed_levels(first[1]) if not first[0] else list(OPENROUTER_EFFORTS))
     available = [level for level in (provisional or []) if level != "none"]
-    on_effort = "medium" if "medium" in available else (available[0] if available else "medium")
+    # Use the strongest documented canonical value for observation. Real APIs
+    # can return empty thinking even at high; this is still an observation,
+    # never a guarantee or a rewrite of the user's selected session effort.
+    on_effort = next((level for level in ("max", "xhigh", "high", "medium") if level in available),
+                     available[0] if available else "max")
     format_result = {"state": "unknown", "source": "probe", "format": None,
                      "verified": False, "onObserved": False, "offObserved": False,
-                     "offVerified": False}
+                     "offVerified": False, "offSupported": None, "offFormat": None,
+                     "status": "unknown", "onEffort": on_effort,
+                     "formatsTried": [], "onAttempts": [], "offSwitchesTried": []}
     if manual_format is not None or protocol == "responses":
         format_result.update(state="known", source="manual" if manual_format else "protocol", format=initial)
     elif first is not None and not first[0] and not is_effort_rejection(first[1]):
         # Authentication, network and token-cap failures are not schema facts.
         format_result.update(state="failed", error=_error_text(first[1]))
     else:
-        candidates = (("anthropic", "deepseek", "anthropic-adaptive")
-                      if protocol == "anthropic" else OPENAI_FORMATS)
-        best = None
+        # Prefer explicit switches over an omitted parameter that happens to
+        # return ordinary text. Compatible Anthropic hosts can also implement
+        # the documented top-level/template controls; the native transport
+        # retains them and maps effort to output_config.effort as usual.
+        candidates = (("deepseek", "anthropic-adaptive", "qwen", "chat-template", "openai-none", "anthropic")
+                      if protocol == "anthropic" else
+                      ("qwen", "deepseek", "chat-template", "openai-none", "openai"))
+        attempts = []
         last_error = None
         for candidate in candidates:
-            on_cap = None
+            on = {"format": candidate, "effort": on_effort, "status": "not-observable",
+                  "thinkingObserved": False, "ordinaryContentObserved": False}
             candidate_effort = on_effort
             for cap in caps:
                 ok, value = probe(candidate_effort, candidate, cap)
@@ -363,6 +382,7 @@ def detect_model(request: Callable[[str, str, int], object], advertised_levels=N
                     alternatives = ([level for level in declared if level != "none"]
                                     if declared is not None else available if provisional is not None
                                     else [level for level in EFFORT_CANDIDATES if level != "none"])
+                    alternatives = sorted(alternatives, key=lambda level: _RANK.get(level, -1), reverse=True)
                     if is_effort_rejection(value) and not _parameter_unsupported(value):
                         # A validation error without an enum may reject medium
                         # while accepting low. Find an on request on this wire;
@@ -376,38 +396,70 @@ def detect_model(request: Callable[[str, str, int], object], advertised_levels=N
                                 break
                 if not ok:
                     last_error = _error_text(value)
+                    on.update(status="rejected", error=last_error[:500], outputCap=cap,
+                              effort=candidate_effort)
                     break  # A rejected wire is not evidence against other wires.
+                on.update(outputCap=cap, effort=candidate_effort,
+                          ordinaryContentObserved=observed(value, "content"))
                 if observed(value, "thinking"):
-                    on_cap = cap
+                    on.update(status="thinking", thinkingObserved=True)
                     break
-            if on_cap is None:
-                continue
-            current = {**format_result, "state": "known", "format": candidate,
-                       "onObserved": True, "outputCap": on_cap}
-            # Expand only missing observations. Actual off-thinking is conclusive
-            # evidence that this switch did not turn visible thinking off.
+            # Off is independent: an unobserved/rejected on request must not
+            # prevent a documented off switch from ever reaching the server.
+            off = {"format": candidate, "parameters": format_parameters(candidate, "off"),
+                   "status": "not-observable", "thinkingObserved": False,
+                   "ordinaryContentObserved": False}
             for cap in caps:
                 ok, value = probe("off", candidate, cap)
-                current["outputCap"] = max(current["outputCap"], cap)
+                off['outputCap'] = cap
                 if not ok:
-                    current["error"] = _error_text(value)
+                    off.update(status="rejected", error=_error_text(value)[:500])
                     break
+                off.update(thinkingObserved=observed(value, "thinking"),
+                           ordinaryContentObserved=observed(value, "content"))
                 if observed(value, "thinking"):
+                    off['status'] = 'still-thinking'
                     break
                 if observed(value, "content"):
-                    current.update(verified=True, offObserved=True, offVerified=True)
+                    off['status'] = 'disabled'
                     break
-            if best is None:
-                best = current
-            if current["offVerified"]:
-                best = current
-                break
-        if best is not None:
-            format_result = best
-        else:
-            format_result.update(state="failed")
-            if last_error:
-                format_result["error"] = last_error
+            attempts.append((on, off))
+        # When both work, prefer the native effort shape with an explicit none
+        # over a compatible server extension. Omission is never this preference:
+        # it may simply inherit the server's thinking-enabled default.
+        pair_order = (('openai-none', *[name for name in candidates if name != 'openai-none'])
+                      if protocol == 'openai' else candidates)
+        paired = next(((on, off) for name in pair_order for on, off in attempts
+                       if on['format'] == name and on['thinkingObserved']
+                       and off['status'] == 'disabled'), None)
+        best_off = paired[1] if paired else next((off for _, off in attempts if off['status'] == 'disabled'), None)
+        best_on = paired[0] if paired else next((on for on, _ in attempts if on['thinkingObserved']), None)
+        if best_off is None:
+            # An always-thinking model can reject explicit disable switches.
+            # Retain a usable legacy request when it has positive on evidence,
+            # instead of making the existing off selection break normal chat.
+            best_on = next((on for on, off in attempts if on['format'] == initial
+                            and on['thinkingObserved'] and off['status'] != 'rejected'), best_on)
+        format_result.update(state='known', format=best_on['format'] if best_on else initial,
+            onObserved=best_on is not None, offObserved=best_off is not None,
+            offVerified=best_off is not None, offSupported=best_off is not None,
+            offFormat=best_off['format'] if best_off else None,
+            verified=best_on is not None and best_off is not None,
+            status=('on-not-observable' if best_on is None else
+                    'on-off-verified' if best_off else 'cannot-disable'),
+            onEffort=best_on['effort'] if best_on else on_effort,
+            formatsTried=list(candidates), onAttempts=[on for on, _ in attempts],
+            offSwitchesTried=[off for _, off in attempts])
+        selected_caps = [part['outputCap'] for part in (best_on, best_off) if part]
+        if selected_caps:
+            format_result['outputCap'] = max(selected_caps)
+        if not best_on and last_error:
+            format_result['error'] = last_error[:500]
+        if blocked:
+            # A service failure during one of the extra switches cannot prove
+            # that every documented off switch is unsupported.
+            format_result.update(state='failed', status='unknown', verified=False,
+                                 offVerified=False, offSupported=None, error=blocked[0])
 
     final_format = format_result["format"] or initial
     if levels is None:

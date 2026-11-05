@@ -31,7 +31,9 @@ Umeko 使用自己的供应商网关。不要指导用户执行 Pi `/login`、�
 
 格式支持 `openai`（顶层 `reasoning_effort`，off 省略）、`openai-none`（off 发送 `none`）、`chat-template`（`chat_template_kwargs.enable_thinking`，开启时另带嵌套 `reasoning_effort`）、`qwen`（顶层 `enable_thinking` 和开启时的 effort）、`deepseek`（`thinking.type: enabled/disabled` 和开启时的 effort），以及原生 Anthropic 的 `anthropic-adaptive`。原生 Anthropic 的力度仍映射到 `output_config.effort`，Responses 映射到 `reasoning.effort`。
 
-自动格式检测依据实际返回的思考字段或 `<think>` 内容，而非请求被接受。检测记录 `reasoningDetection`、`reasoningFormatDetection` 包含状态、来源和验证结果；服务端若默默接受任意档位，使用公开请求 schema 的档位并标记 `verified:false`，不代表它们产生不同的力度。`offVerified:false` 表示尚未观察到可靠的关闭结果；有些模型始终思考，省略参数也不能保证关闭。检测不修改手动值，不能证明隐藏的思考是否发生。
+自动格式检测依据实际返回的思考字段或 `<think>` 内容，而非请求被接受。探测使用支持的最强标准档位（优先 `max`，拒绝时降低），并独立尝试每种候选的关闭开关，即使该格式的开启请求没有思考输出或被拒绝。优先使用同一格式完成开关；OpenAI 兼容路径有多种已验证组合时优先原生 effort 加显式 `none`。必要时自动缓存可分别保存开启格式和 `offFormat`。省略参数可能继续采用上游默认的思考模式。探测的档位不替换用户当前选择。
+
+检测记录 `reasoningDetection`、`reasoningFormatDetection` 包含状态、来源和验证结果；服务端若默默接受任意档位，使用公开请求 schema 的档位并标记 `verified:false`，不代表它们产生不同的力度。格式结果的 `status` 为 `on-off-verified`（观察到开关）、`cannot-disable`（所有候选关闭方式均未关闭）或 `on-not-observable`（所有格式均未观察到开启）。`offSupported:false` 会同时保留完整 `offSwitchesTried`；它表示本次受限探测未找到关闭方式，供界面提示无法关闭。手动或尚未完成时可为 null。`offVerified` 记录是否观察到关闭，不能证明隐藏的思考没有发生。已有的旧自动缓存会补测这些关闭结果，手动设置不被替换。
 
 上游若拒绝正在使用的档位，当前轮报错并列出已知可用档位，缓存移除该档位并重新检测；不会自动重发这一轮。模型切换若排队，下一轮才使用新连接。
 
