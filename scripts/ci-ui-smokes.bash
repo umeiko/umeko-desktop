@@ -64,6 +64,7 @@ smokes=(
   tests/provider_popup_ui_smoke.py
   tests/model_reasoning_ui_smoke.py
   tests/reasoning_auto_ui_smoke.py
+  tests/reasoning_detection_ui_smoke.py
   tests/change_review_ui_smoke.py
   tests/motion_ui_smoke.py
   tests/codearts_plugin_ui_smoke.py

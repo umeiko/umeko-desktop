@@ -68,14 +68,14 @@ Item {
         mappingSignature = signature
         if (mappingProviderId && !backend.config.providers.some(p => p.id === mappingProviderId)) mappingProviderId = ""
         mappingRows.clear()
-        backend.config.providers.forEach(p => p.models.forEach(m => mappingRows.append({provider:p.id, providerName:p.name, upstream:m.upstream, alias:m.alias, contextWindowText:String(m.contextWindow), contextWindowAuto:m.contextWindowAuto, providerContextWindow:Number(m.providerContextWindow || 0), visionValue:m.vision, visionAuto:m.visionAuto, reasoningLevelsJson:JSON.stringify(m.reasoningLevels || Reasoning.defaults), reasoningLevelsAuto:m.reasoningLevelsAuto === true || m.reasoningLevels === undefined})))
+        backend.config.providers.forEach(p => p.models.forEach(m => mappingRows.append({provider:p.id, providerName:p.name, upstream:m.upstream, alias:m.alias, contextWindowText:String(m.contextWindow), contextWindowAuto:m.contextWindowAuto, providerContextWindow:Number(m.providerContextWindow || 0), visionValue:m.vision, visionAuto:m.visionAuto, reasoningLevelsJson:JSON.stringify(m.reasoningLevels || Reasoning.defaults), reasoningLevelsAuto:m.reasoningLevelsAuto === true || m.reasoningLevels === undefined, reasoningFormat:m.reasoningFormat || "openai", reasoningFormatAuto:m.reasoningFormatAuto !== false, savedAlias:m.alias || "", api:p.api || ""})))
     }
     Component.onCompleted: reloadMappings()
     Connections { target: backend; function onChanged() { root.reloadMappings() } }
     ListModel { id: mappingRows }
     ModelReasoningDialog {
         id: mappingReasoning; objectName: "mappingModelReasoning"
-        onConfirmed: (rowIndex, levelsJson) => { mappingRows.setProperty(rowIndex, "reasoningLevelsJson", levelsJson); mappingRows.setProperty(rowIndex, "reasoningLevelsAuto", false) }
+        onConfirmed: (rowIndex, levelsJson, levelsAuto, format, formatAuto) => mappingRows.set(rowIndex, {reasoningLevelsJson:levelsJson, reasoningLevelsAuto:levelsAuto, reasoningFormat:format, reasoningFormatAuto:formatAuto})
     }
     ColumnLayout {
         anchors.fill: parent; anchors.leftMargin: 40; anchors.rightMargin: 40; anchors.topMargin: 19; anchors.bottomMargin: 24; spacing: 0
@@ -255,7 +255,7 @@ Item {
                                         InputField { objectName: "mappingModelId_" + mappingDelegate.index; readOnly: mappingDelegate.pluginModel; text: mappingDelegate.upstream; Layout.fillWidth: true; Layout.preferredWidth: 1; onTextEdited: mappingRows.setProperty(mappingDelegate.index, "upstream", text) }
                                         Glyph { name: "arrow-right"; width: Theme.icon(24); height: Theme.icon(17) }
                                         InputField { objectName: "mappingAlias_" + mappingDelegate.index; text: mappingDelegate.alias; Layout.fillWidth: true; Layout.preferredWidth: 1; onTextEdited: mappingRows.setProperty(mappingDelegate.index, "alias", text) }
-                                        ActionButton { objectName: "mappingModelSettings_" + mappingDelegate.index; glyph: "settings"; Layout.preferredWidth: Theme.control(34); quiet: true; hint: I18n.t("模型思考档位"); Accessible.name: hint; onClicked: mappingReasoning.edit(mappingDelegate.index, mappingDelegate.alias || mappingDelegate.upstream, mappingDelegate.reasoningLevelsJson) }
+                                        ActionButton { objectName: "mappingModelSettings_" + mappingDelegate.index; glyph: "settings"; Layout.preferredWidth: Theme.control(34); quiet: true; hint: I18n.t("模型思考档位"); Accessible.name: hint; onClicked: mappingReasoning.edit(mappingDelegate.index, mappingDelegate.alias || mappingDelegate.upstream, mappingDelegate.reasoningLevelsJson, mappingRows.get(mappingDelegate.index), mappingDelegate.provider, mappingRows.get(mappingDelegate.index).api) }
                                         ActionButton { enabled: !mappingDelegate.pluginModel; glyph: "trash"; quiet: true; width: Theme.control(34); hint: I18n.t("删除映射"); onClicked: mappingRows.remove(mappingDelegate.index) }
                                     }
                                     RowLayout {
@@ -281,10 +281,10 @@ Item {
                                 }
                             }
                             RowLayout { Layout.fillWidth: true; spacing: 10
-                                ActionButton { objectName: "addMappingButton"; text: I18n.t("添加映射"); glyph: "plus"; enabled: !!root.mappingAccount && (root.mappingAccount.api === "openai" || root.mappingAccount.api === "anthropic"); onClicked: { const p = root.mappingAccount; if (p) mappingRows.append({provider:p.id, providerName:p.name, upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, providerContextWindow:0, visionValue:false, visionAuto:true, reasoningLevelsJson:JSON.stringify(Reasoning.defaults), reasoningLevelsAuto:true}) } }
+                                ActionButton { objectName: "addMappingButton"; text: I18n.t("添加映射"); glyph: "plus"; enabled: !!root.mappingAccount && (root.mappingAccount.api === "openai" || root.mappingAccount.api === "anthropic"); onClicked: { const p = root.mappingAccount; if (p) mappingRows.append({provider:p.id, providerName:p.name, upstream:"", alias:"", contextWindowText:"", contextWindowAuto:true, providerContextWindow:0, visionValue:false, visionAuto:true, reasoningLevelsJson:JSON.stringify(Reasoning.defaults), reasoningLevelsAuto:true, reasoningFormat:"openai", reasoningFormatAuto:true, savedAlias:"", api:p.api || ""}) } }
                                 ActionButton { objectName: "refreshProviderModelsButton"; text: I18n.t("刷新模型信息"); glyph: "refresh"; enabled: !!root.mappingAccount && (root.mappingAccount.api === "openai" || root.mappingAccount.api === "anthropic"); onClicked: backend.refreshProviderModels(root.mappingProviderId) }
                                 Item { Layout.fillWidth: true }
-                                ActionButton { objectName: "saveMappingsButton"; text: I18n.t("保存映射"); primary: true; onClicked: { let rows = []; for(let i=0;i<mappingRows.count;i++) { let m=mappingRows.get(i); rows.push({provider:m.provider,upstream:m.upstream,alias:m.alias,contextWindow:m.contextWindowText,contextWindowAuto:m.contextWindowAuto,vision:m.visionValue,visionAuto:m.visionAuto, reasoningLevels:JSON.parse(m.reasoningLevelsJson), reasoningLevelsAuto:m.reasoningLevelsAuto}) } backend.saveMappings(JSON.stringify(rows)) } }
+                                ActionButton { objectName: "saveMappingsButton"; text: I18n.t("保存映射"); primary: true; onClicked: { let rows = []; for(let i=0;i<mappingRows.count;i++) { let m=mappingRows.get(i); rows.push({provider:m.provider,upstream:m.upstream,alias:m.alias,contextWindow:m.contextWindowText,contextWindowAuto:m.contextWindowAuto,vision:m.visionValue,visionAuto:m.visionAuto, reasoningLevels:JSON.parse(m.reasoningLevelsJson), reasoningLevelsAuto:m.reasoningLevelsAuto, reasoningFormat:m.reasoningFormat, reasoningFormatAuto:m.reasoningFormatAuto}) } backend.saveMappings(JSON.stringify(rows)) } }
                             }
                             }
                         }
@@ -347,7 +347,7 @@ Item {
                         RowLayout { Text { font.family: Theme.fontFamily; text: "API Key"; color: Theme.ink; font.pixelSize: Theme.font(11, visible) } HelpButton { help: I18n.t("密钥使用系统凭据保护保存。编辑供应商时留空可保持已有密钥。") } }
                         InputField { id: providerKey; objectName: "providerKey"; Layout.fillWidth: true; echoMode: TextInput.Password; placeholderText: I18n.t("输入 API Key") }
                     }
-                    ProviderModels { id: providerModels; objectName: "providerModelsEditor"; Layout.fillWidth: true }
+                    ProviderModels { id: providerModels; objectName: "providerModelsEditor"; Layout.fillWidth: true; providerId: root.editId; api: providerProtocol.currentIndex === 0 ? "openai" : "anthropic" }
                 }
             }
             RowLayout {

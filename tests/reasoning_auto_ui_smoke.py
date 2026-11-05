@@ -150,6 +150,10 @@ ApplicationWindow {
         invoke(find("providerModelSettings_0"), "clicked")
         dialog = find("providerModelReasoning")
         assert dialog.property("rowIndex") == 0 and dialog.property("visible")
+        assert dialog.property("levelsAuto"), "an automatic row opens in automatic mode"
+        mode = find("providerModelReasoning_levelsMode")
+        mode.setProperty("currentIndex", 1)
+        invoke(mode, "activated", Q_ARG(int, 1))
         counter = find("providerModelReasoning_count")
         counter.setProperty("value", 2)
         invoke(counter, "valueModified")

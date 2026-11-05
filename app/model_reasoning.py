@@ -34,7 +34,35 @@ def normalize_reasoning(model, previous=None):
         if 'rejected' in detection:
             detection['rejected'] = _levels(detection['rejected'])
         result[field] = detection
+    same_model = not model.get('upstream') or not previous.get('upstream') or model['upstream'] == previous['upstream']
+    if previous and same_model:
+        _keep_automatic(result, previous)
     return result
+
+
+def _keep_automatic(result, previous):
+    """Editor drafts never own automatic values; mirror the controller setters."""
+    if result['reasoningLevelsAuto']:
+        cached = result['reasoningDetection']
+        if previous.get('reasoningLevelsAuto') is False:
+            if cached['state'] == 'known':
+                result['reasoningLevels'] = list(cached.get('levels', []))
+            else:
+                cached['state'] = 'unknown'
+                result.pop('reasoningLevels', None)
+        elif 'reasoningLevels' in previous:
+            result['reasoningLevels'] = _levels(previous['reasoningLevels'])
+        else:
+            result.pop('reasoningLevels', None)
+    if result['reasoningFormatAuto']:
+        cached = result['reasoningFormatDetection']
+        if previous.get('reasoningFormatAuto') is False:
+            if cached['state'] == 'known' and valid_format(cached.get('format')):
+                result['reasoningFormat'] = cached['format']
+            else:
+                cached['state'] = 'unknown'
+        elif valid_format(previous.get('reasoningFormat')):
+            result['reasoningFormat'] = previous['reasoningFormat']
 
 
 def _levels(levels):
