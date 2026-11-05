@@ -11,8 +11,8 @@ offscreen window and checks, by counting rather than timing, that:
    of the groups above it;
 4. opening the session creates no more row bodies than the screen and its
    usual margin need, i.e. grouping does not make opening load more;
-5. while following a streaming reply, the latest row is shown as soon as it
-   has loaded even if another row of its group is still loading (a slow
+5. while following a streaming reply, the latest row shows its content on
+   every pass even if another row of its group is still loading (a slow
    machine, simulated by stopping incubation rather than by timing).
 """
 import json
@@ -262,10 +262,10 @@ try:
     assert len(now) and not relaid, relaid
     assert view.property('followTail') and view.property('atYEnd')
 
-    # 5. A slow machine while following the reply: the latest row appears as
-    # soon as it has loaded, even while another row of its group is still
-    # loading. Incubation is stopped, so no asynchronous body completes, and the
-    # latest row alone is loaded synchronously; the result is a count of passes.
+    # 5. A slow machine while following the reply: the latest row is on screen
+    # with its content on every pass, even while another row of its group is
+    # still loading. Incubation is stopped, so no asynchronous body completes;
+    # the result is a count of passes, not a time.
     stalled = QQmlIncubationController()
     engine.setIncubationController(stalled)
     try:
@@ -278,14 +278,12 @@ try:
         waiting = [item for item in slots(view) if model.groupOf(item.property('index')) == model.groupOf(latest_row)
                    and item.property('index') < latest_row and not item.property('bodyLoaded')]
         assert waiting, 'no row of the latest group is still loading'
-        view.setProperty('urgentFirst', latest_row)
-        view.setProperty('urgentLast', latest_row)
         latest = next(item for item in slots(view) if item.property('index') == latest_row)
         hidden = empty = 0
         for part in range(60):
             backend._handle_pi_event(record, {'type': 'delta', 'text': f'second answer part {part}\n'})
             QTest.qWait(16)
-            hidden += bool(latest.property('bodyLoaded') and not latest.property('bodyReady'))
+            hidden += not latest.property('bodyReady')
             rows = on_screen(view)
             empty += bool(rows) and not any(item.property('bodyReady') for item in rows)
         loaded = bool(latest.property('bodyLoaded'))
@@ -293,8 +291,13 @@ try:
                                          'latest_hidden_passes': hidden, 'no_content_passes': empty}), flush=True)
         assert loaded and hidden == 0 and empty == 0, (loaded, hidden, empty)
     finally:
-        view.setProperty('urgentFirst', -1)
-        view.setProperty('urgentLast', -2)
+        # Finish the stopped loads here; the window's controller only starts
+        # on new incubations, not on ones queued while it was detached.
+        for _ in range(200):
+            if not stalled.incubatingObjectCount():
+                break
+            stalled.incubateFor(50)
+            QTest.qWait(5)
         engine.setIncubationController(window.incubationController())
     wait(lambda: not placeholders(view), 'rows load once incubation resumes')
     assert view.property('followTail') and view.property('atYEnd')

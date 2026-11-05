@@ -586,7 +586,11 @@ Item {
             Loader {
                 id: bodyLoader
                 width: parent.width
-                asynchronous: rowShell.index < conversation.urgentFirst || rowShell.index > conversation.urgentLast
+                // The latest row loads at once while the view follows it: its
+                // placeholder is as tall as the expected reply, so loading it
+                // in the background on a slow machine leaves the screen blank.
+                asynchronous: (rowShell.index < conversation.urgentFirst || rowShell.index > conversation.urgentLast)
+                    && !(conversation.followTail && rowShell.index === conversation.count - 1)
                 active: !pane.released && !rowShell.modelData._loading && rowShell.wanted
                 opacity: rowShell.shown ? 1 : 0
                 enabled: rowShell.shown
