@@ -140,8 +140,77 @@ Agent 可调用插件公开方法传入结构化数据。插件通过 `context.p
 
 ## 当前能力边界
 
+### 应用服务管理独立会话
+
+应用级插件可声明 `sessions.manage`，通过 `context.sessions` 管理自己的原生会话。它适合定时任务和外部任务队列：任务不需要当前聊天已打开，也不会借用前台输入框。完整无页面示例位于导出 SDK 的 `examples/session-task-service`。
+
+用户先停止应用，再编辑当前或隔离应用 profile 的 `settings.json`，在**顶层**为插件添加 `pluginSessionProfiles` 命名配置。当前没有新增的图形化配置编辑器。例如：
+
+```json
+{
+  "pluginSessionProfiles": {
+    "session-task-service": {
+      "tasks": {
+        "workspace": "/path/to/workspace",
+        "model": "test-model",
+        "provider": "Test provider",
+        "tools": [],
+        "permissionMode": "ask",
+        "allowApprovals": false
+      }
+    }
+  }
+}
+```
+
+`workspace` 必须是绝对路径。`model` 填已存在的**桌面模型别名**，不是上游模型名称；选填的 `provider` 必须是已配置的 Provider ID，宿主会核对该别名确实路由到这个 Provider。两个 Provider 的别名冲突时应使用唯一别名。示例值只是占位符。插件的 `acquire` 只能选择 `profile` 名称，不能自行传入工作目录、模型或工具。
+
+`tools` 为精确工具名列表，与桌面策略取交集；服务始终排除桌面管理工具 `umeko_desktop`、`pi` 和 `pi_commands`，避免通过管理操作绕过配置。其他核心工具与可选子 Agent 工具仍须显式配置并受桌面策略限制。子 Agent 运行时继承同一强制工具与权限上限，模型注册表只提供配置选定的模型。`permissionMode` 仅为 `ask` 或 `auto`，不能超过桌面允许的权限。`allowApprovals` 默认 `false`，独立于是否允许使用工具，不授予整场会话的审批豁免。
+
+下面的代码必须在插件创建的**后台线程**执行，不能直接放在 `handle()`、构造函数或 `on_event()` 中：
+
+```python
+import uuid
+
+session = context.sessions.acquire("task-42", profile="tasks")
+handle = session["handle"]
+try:
+    context.sessions.subscribe(handle)
+    run = context.sessions.submit(handle, uuid.uuid4().hex, "Summarize this task.")
+    result = context.sessions.wait(handle, run["runId"])
+    # result: runId, status, assistantMessages, optional error
+finally:
+    context.sessions.release(handle)
+```
+
+| SDK 方法 | 宿主操作与结果 |
+| --- | --- |
+| `acquire(external_key, profile=..., namespace="default", create_if_missing=True)` | `sessions.acquire`；返回 `{handle, sessionId, created}`。外部键按插件和 namespace 隔离；保留宿主数据时可在重启后重新取得同一原生会话，旧 handle 不可复用。 |
+| `submit(handle, request_id, content)` | `sessions.submit`；返回 `{runId, disposition:"started"或"queued"}`。服务按 FIFO 排队，每个任务通过已有定向提示入口启动独立回合，不会合并成原生 follow-up。接收成功不等于任务完成。 |
+| `subscribe(handle)` | `sessions.subscribe`；返回 `{subscribed:true}`，后续事件进入 `on_event("sessions.event", data)`。 |
+| `wait(handle, run_id)` | `sessions.wait`；宿主只在终态回复 `{runId, status, assistantMessages, error?}`。`status` 为 `completed`、`failed` 或 `cancelled`。 |
+| `cancel(handle, run_id=None)` | `sessions.cancel`；指定 run 时取消该任务，省略时取消该 handle 的活动和排队任务。 |
+| `history(handle, limit=None)` | `sessions.history`；返回 `{sessionId, messages, truncated}`，按原生当前分支的顺序提供最近 `limit` 条 `{role,text,...}` 消息；默认 50，最大 200，不是完整历史导出。 |
+| `release(handle)` | `sessions.release`；释放当前 handle。持久外部键映射与原生历史不依赖临时 handle。 |
+| `register_approval_handler(handle)` | `approvals.registerHandler`；配置允许 `allowApprovals` 时返回 `{registered:true}`。 |
+| `respond_approval(handle, request_id, decision)` | `approvals.respond`；`decision` 为 `allow`、`deny` 或 `unhandled`，返回 `{accepted:bool}`；只能回应所属 handle 的待处理单次审批。 |
+
+每个阻塞方法都支持 `timeout=None`，默认等到宿主回复或 `Context.close()`。传入秒数只限制本地等待，超时不取消原生任务；要取消须调用 `cancel`。worker 先把 `host.response` 交给 SDK 等待器，再调用插件的 `on_event`，因此后台等待不占用事件读取线程。关闭上下文会唤醒所有本地等待。
+
+运行时回收空闲原生会话后，宿主会在下次任务时透明恢复该会话；插件不必因这次回收重新取得 handle。
+
+为保持外部键与原生会话的绑定，受管理的 Pi 会拒绝会话 new、fork、import、switch 等身份切换操作。需要另一会话时，使用新的 `externalKey` 获取它。
+
+事件包含 `handle`、`sessionId`、`runId` 与 `type`。类型为 `assistant_text`、`stream_delta`、`tool_call`、`tool_result`、`turn_end`、`error`、`approval_request`；各类型附上相关数据。`turn_end` 同样带 `status`、`assistantMessages` 和可选 `error`。流式事件用于观察过程，真实终态与最终文本以 `wait` 的返回为准。工具结果为有界投影，文本最多 8192 字符，不是完整工具日志。
+
+处理审批时，`on_event` 只应保存或转交数据，然后让后台线程调用 `respond_approval`；也可以直接用非阻塞的 `context.request_host("approvals.respond", {...})`。插件未注册、停用、崩溃、返回 `unhandled` 或在 5 秒内没有响应时，宿主回到桌面原有审批流程；整个审批请求最多等待 120 秒，未解决则拒绝。插件不能通过批量、整场会话授权或旧请求的答案绕过审批。
+
+需要自行处理异步协议时，使用 `context.request_host(operation, arguments)`，并在 `on_event("host.response", data)` 接收 `{requestId, operation, ok, result}` 或失败的 `error`。只有此处列出的九个独立会话操作可以省略捕获的前台 `session`，且仍要求 application 生命周期和 `sessions.manage`；其他宿主操作继续遵守原来的会话绑定。请求 JSON 最多 16 KiB，宿主响应最多 256 KiB。`runtime/umeko-operations.json` 的 `pluginSessionOperations` 列出这组插件协议，它不属于 Agent 可直接调用的桌面 `operations`。
+
+停用、升级、卸载或 worker 退出时，宿主清理等待、订阅和审批处理器，并取消活动和排队任务。如果活动原生回合正在等待审批，宿主保留该回合，把审批交回桌面原有流程，继续保留超时拒绝机制，仅取消其排队任务。应用退出时仍按应用关闭流程处理。插件之间不能访问彼此的 handle、外部键映射或历史。配置与事件不提供 Provider 凭据。此接口仍执行用户批准的本机代码，不构成操作系统沙箱。
+
 - Agent 收到的是正常聊天消息与已发送附件，不会直接收到 QML 事件，也不会自动理解 Widget 的内部状态。
-- Widget 可以通过有权限的会话快照观察 Agent 的最新文本，但这是有界摘要，不是完整历史、逐条事件流或可靠的任务结果回调。
+- 普通前台会话快照是有界摘要；需要独立任务事件和结果时，应用插件使用上面的 `sessions.manage` 协议。它不扩大前台快照的范围。
 - Agent 通过统一桌面工具调用 Widget 公开方法和传入结构化数据；插件不会另行注册为 Pi 扩展或 MCP。
 - 快照和 SDK 不提供供应商密钥、登录凭据或完整系统提示词。前台快照只包含当前聊天；应用服务的每次调用还可取得发起调用聊天的授权快照。应用服务跨聊天运行，方法结果和通知仍按目标聊天隔离。
 - Widget 的 Python、QML 和所附程序属于用户选择执行的本机代码；独立进程和 SDK 权限检查不等同于操作系统沙箱。

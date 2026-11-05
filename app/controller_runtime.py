@@ -130,6 +130,12 @@ class PiControllerMixin:
 
     def _command_pi(self, action, record=None, **values):
         record = record or self._view
+        from .plugin_sessions import apply_session_policy
+        try:
+            plugin_policy = apply_session_policy(self, record)
+        except (OSError, ValueError) as error:
+            self.toast.emit(str(error))
+            return False
         plugins = getattr(self, 'desktopPlugins', None)
         locked = getattr(plugins, 'checkpoint_locked', None)
         if callable(locked) and locked(record.workspace):
@@ -177,6 +183,10 @@ class PiControllerMixin:
                     dataDir=str(self.store.directory),
                     generation=generation_config(self.store.data),
                     mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
+                if plugin_policy:
+                    payload.update(pluginSessionPolicy=plugin_policy,
+                        permissionMode=plugin_policy['mode'], dangerousAllowed=False,
+                        models=[model for model in payload['models'] if model['id'] == plugin_policy['model']])
                 if record.global_agent:
                     service=self._desktop_plugins.global_agents
                     payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(service.root/"sessions"/record.global_agent),
@@ -456,6 +466,13 @@ class PiControllerMixin:
             if visible:
                 self.editorText.emit(record.draft)
         elif kind == "ui_request":
+            host = getattr(getattr(self, '_desktop_plugins', None), '_host_services', None)
+            if host and host._sessions is None and self.store.data['sessionMeta'].get(record.id, {}).get('pluginSession'):
+                from .plugin_sessions import PluginSessions
+                host._sessions = PluginSessions(host)
+            service = getattr(host, '_sessions', None)
+            if service and service.approval(record, event):
+                return
             record.approval = event
             if visible:
                 self.approvalChanged.emit()

@@ -44,6 +44,7 @@ if [[ $# != 0 || ! $jobs =~ ^[1-9][0-9]*$ ]]; then
 fi
 # Slowest scripts first, using timings from CI run 41779809091.
 smokes=(
+  scripts/smoke-plugin-sessions.py
   tests/model_popup_ui_smoke.py
   tests/pi_capabilities_ui_smoke.py
   tests/global_agents_ui_smoke.py

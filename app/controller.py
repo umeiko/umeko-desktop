@@ -1221,7 +1221,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     def _dangerous_allowed(self, record):
         meta = self.store.data["sessionMeta"].get(record.id, {})
-        if not record.id or record.global_agent or meta.get("archived"):
+        if not record.id or record.global_agent or meta.get("archived") or meta.get('pluginSession'):
             return False
         return meta.get("dangerousAllowed") is True
 
@@ -1244,7 +1244,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def canGrantDangerousApproval(self):
         category = self._view.approval.get("dangerCategory")
         meta = self.store.data["sessionMeta"].get(self._view.id, {})
-        return bool(self._view.id and not self._view.global_agent and not meta.get("archived")
+        return bool(self._view.id and not self._view.global_agent and not meta.get("archived") and not meta.get('pluginSession')
                     and self._view.approval.get("method") == "confirm"
                     and type(category) is int and 1 <= category <= 7)
 
@@ -1296,6 +1296,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Slot(bool)
     def respondApproval(self, allowed):
         value = allowed if self._view.approval.get("method") == "confirm" else None
+        host = getattr(getattr(self, '_desktop_plugins', None), '_host_services', None)
+        service = getattr(host, '_sessions', None)
+        if service and service.desktop_answer(self._view, self._view.approval.get('id'), value):
+            return
         self._write_pi({"type": "ui_response", "id": self._view.approval.get("id"), "value": value})
         self._view.approval = {}
         self.approvalChanged.emit()
