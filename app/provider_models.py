@@ -6,7 +6,15 @@ import urllib.request
 from .gateway import NoRedirect, validate_base_url
 from .model_context import provider_context_window
 from .provider_errors import format_http_error
+from .reasoning_detection import metadata_levels
 from umeko_provider_sdk.network import proxy_handler, tls_context
+
+
+class ModelWindows(dict):
+    """Backward-compatible context windows with explicit remote effort metadata."""
+    def __init__(self):
+        super().__init__()
+        self.reasoning = {}
 
 
 def fetch_model_windows(provider):
@@ -20,7 +28,7 @@ def fetch_model_windows(provider):
         headers["Authorization"] = "Bearer " + provider["key"]
     opener = urllib.request.build_opener(proxy_handler(provider.get("proxy")),
                                         urllib.request.HTTPSHandler(context=tls_context(provider.get("proxy"))), NoRedirect())
-    windows = {}
+    windows = ModelWindows()
     # Anthropic and compatible services may paginate their model catalog.
     for _ in range(100):
         try:
@@ -40,6 +48,9 @@ def fetch_model_windows(provider):
                 name = row.get("id") or row.get("name")
                 if isinstance(name, str) and name:
                     windows[name] = provider_context_window(row)
+                    levels = metadata_levels(row)
+                    if levels is not None:
+                        windows.reasoning[name] = levels
         if not isinstance(payload, dict) or not payload.get("has_more"):
             return windows
         last = payload.get("last_id")

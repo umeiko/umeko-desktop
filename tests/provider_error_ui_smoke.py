@@ -85,7 +85,10 @@ def main():
         engine.warnings.connect(lambda errors: warnings.extend(error.toString() for error in errors))
         configured = {'id': 'test-provider', 'name': 'Test provider', 'api': 'openai',
                       'baseUrl': f'http://127.0.0.1:{upstream.server_port}/v1', 'key': provider_key,
-                      'models': [{'upstream': 'test-model', 'alias': 'test-model', 'vision': True}]}
+                      # This fixture tests the business HTTP error, not discovery.
+                      'models': [{'upstream': 'test-model', 'alias': 'test-model', 'vision': True,
+                                  'reasoningLevels': [], 'reasoningLevelsAuto': False,
+                                  'reasoningFormat': 'openai', 'reasoningFormatAuto': False}]}
         backend.store.data.update(providers=[configured], selectedProvider='test-provider', selectedModel='test-model')
         record = backend._view
         record.id = 'provider-error-fixture'

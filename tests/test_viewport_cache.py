@@ -15,7 +15,7 @@ os.environ.setdefault('QT_QUICK_BACKEND', 'software')
 from tests.test_preview_channel import qt_application, isolated_test_module
 from app.conversation_views import ConversationViews
 from app.chat_model import MAX_PREPARED_ROWS, MAX_CACHED_ROWS
-from app.storage import Store
+from app.storage import Store, keyring_protect
 from app.transcript_index import TranscriptRepository
 
 
@@ -108,7 +108,11 @@ class RetainedViewTests(unittest.TestCase):
             def get_password(self, service, account): return self.values.get((service, account))
         Keyring.__module__ = 'keyring.backends.SecretService'
         ring = Keyring()
-        with tempfile.TemporaryDirectory() as directory, patch.dict(sys.modules, {'keyring': types.SimpleNamespace(get_keyring=lambda: ring)}):
+        # Exercise secret-reference reuse with the same fake on every platform;
+        # Windows normally uses DPAPI instead of this keyring backend.
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.dict(sys.modules, {'keyring': types.SimpleNamespace(get_keyring=lambda: ring)}), \
+                patch('app.storage.protect', side_effect=keyring_protect):
             store = Store(Path(directory))
             store.data['password'] = 'fixture-password'
             store.data['providers'] = [{'id': 'fixture', 'key': 'fixture-key', 'models': []}]

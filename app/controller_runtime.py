@@ -147,6 +147,8 @@ class PiControllerMixin:
         record.pet_activity = 'thinking'
         record.prompt_started = time.monotonic() if action in ('prompt','widget-notify') else None
         record.phase = "loading" if not record.process else "running" if action in ("prompt", "compact", "widget-notify") else "working"
+        if getattr(self, '_reasoning_discovery', None):
+            self._reasoning_discovery.update_activity()
         record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在压缩上下文" if action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
         payload = {"type": action, "model": record.model or self.store.data["selectedModel"], "reasoningEffort": record.reasoning_effort, **values}
         try:
@@ -392,7 +394,8 @@ class PiControllerMixin:
                 transcript = True
         elif kind == "message" and event.get("role") == "assistant":
             if event.get('error') or event.get('stopReason') == 'error': record.failed = True
-            if event.get('stopReason') == 'aborted': record.cancelled = True
+            # Steering aborts one assistant response before continuing the turn.
+            # Only an explicit desktop stop marks the whole turn cancelled.
             if record.messages and (record.messages[-1]["role"] == "assistant" and record.messages[-1].get("customType") != "umeko-compaction"):
                 record.messages[-1].update(text=event.get("text") or event.get("error") or record.messages[-1]["text"], error=bool(event.get("error")), errorMessage=event.get("error") or "", stopReason=event.get("stopReason", ""))
                 if event.get("timestamp"): record.messages[-1]["timestamp"] = event["timestamp"]

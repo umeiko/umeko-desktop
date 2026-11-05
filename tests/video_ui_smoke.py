@@ -127,7 +127,10 @@ def run():
                 backend.store.data['workspace'] = str(workspace)
                 backend._view.workspace = str(workspace)
                 assert backend.saveProvider('', 'Test provider', 'openai',
-                    f'http://127.0.0.1:{server.server_port}/v1', 'local-test-key', 'test-video-model')
+                    f'http://127.0.0.1:{server.server_port}/v1', 'local-test-key', json.dumps([{
+                        'upstream': 'test-video-model', 'alias': 'test-video-model',
+                        'reasoningLevels': [], 'reasoningLevelsAuto': False,
+                        'reasoningFormat': 'openai', 'reasoningFormatAuto': False}]))
                 provider = backend.store.data['providers'][0]
                 provider['proxy'] = {'mode': 'direct', 'url': ''}
                 backend.changed.emit()

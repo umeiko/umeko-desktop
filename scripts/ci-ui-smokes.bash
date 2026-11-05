@@ -63,6 +63,8 @@ smokes=(
   tests/extension_details_ui_smoke.py
   tests/provider_popup_ui_smoke.py
   tests/model_reasoning_ui_smoke.py
+  tests/reasoning_auto_ui_smoke.py
+  tests/reasoning_detection_ui_smoke.py
   tests/change_review_ui_smoke.py
   tests/motion_ui_smoke.py
   tests/codearts_plugin_ui_smoke.py
@@ -82,6 +84,7 @@ smokes=(
   tests/chat_loading_ui_smoke.py
   tests/scroll_paging_ui_smoke.py
   tests/task_state_ui_smoke.py
+  tests/steering_status_ui_smoke.py
   tests/conversation_search_ui_smoke.py
   tests/sidebar_menu_position_ui_smoke.py
   tests/pi_manager_initial_tools_ui_smoke.py

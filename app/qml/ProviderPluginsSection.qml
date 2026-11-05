@@ -299,7 +299,7 @@ Column {
             spacing: 16
             Text { font.family: Theme.fontFamily; textFormat: Text.PlainText; text: I18n.t("模型设置"); color: Theme.ink; font.pixelSize: Theme.font(17, visible) }
             ScrollView { Layout.fillWidth: true; Layout.fillHeight: true; contentWidth: availableWidth; clip: true
-                ProviderModels { id: modelsEditor; width: parent.width; fixedModels: true }
+                ProviderModels { id: modelsEditor; width: parent.width; fixedModels: true; providerId: root.currentId }
             }
             RowLayout { Layout.fillWidth: true; Item { Layout.fillWidth: true } ActionButton { text: I18n.t("取消"); quiet: true; onClicked: modelsDialog.close() } ActionButton { objectName: "savePluginModelsButton"; text: I18n.t("保存模型设置"); primary: true; onClicked: { if (root.manager.saveModels(root.currentId, modelsEditor.json())) modelsDialog.close() } } }
         }

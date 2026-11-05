@@ -187,6 +187,10 @@ class KernelUpdateTests(unittest.TestCase):
                 # Raw names, not arbitrary display aliases, determine defaults.
                 models = [{"upstream": "k3", "alias": "tiny"},
                           {"upstream": "k3-256", "alias": "large", "contextWindow": "200000", "contextWindowAuto": False, "vision": False, "visionAuto": False}]
+                # Reasoning is fixed here; exercise context discovery explicitly below.
+                for model in models:
+                    model.update(reasoningLevels=[], reasoningLevelsAuto=False,
+                                 reasoningFormat='openai', reasoningFormatAuto=False)
                 self.assertTrue(controller.saveProvider("", "Fixture", "openai", "http://127.0.0.1:18181/v1", "synthetic", json.dumps(models)))
                 provider = controller.gateway.provider(controller.config["providers"][-1]["id"])
                 self.assertEqual([m["contextWindow"] for m in provider["models"]], [1048576, 200000])
@@ -208,6 +212,21 @@ class KernelUpdateTests(unittest.TestCase):
                 controller.saveMappings(json.dumps(rows))
                 self.assertEqual(controller.gateway.provider(provider["id"])["models"][0]["contextWindow"], 524288)
                 self.assertEqual(controller.gateway.provider(provider["id"])["models"][1]["contextWindow"], 200000)
+                # Drive the real discovery completion with a controlled catalog task.
+                # Keep worker/network scheduling outside this persistence test.
+                import queue
+                manager = controller._reasoning_discovery
+                with patch.object(manager, 'tasks', queue.Queue()):
+                    self.assertTrue(manager.refresh(provider['id']))
+                    kind, snapshot, upstream, alias, token = manager.tasks.get_nowait()
+                    self.assertEqual(kind, 'catalog')
+                    manager._finished((kind, snapshot, upstream, token,
+                                       {'windows': {'k3': 300000, 'k3-256': 400000}}))
+                    self.assertTrue(manager.tasks.empty())
+                discovered = controller.gateway.provider(provider['id'])['models']
+                self.assertEqual([model['providerContextWindow'] for model in discovered], [300000, 400000])
+                self.assertEqual([model['contextWindow'] for model in discovered], [524288, 200000])
+                self.assertEqual([model['vision'] for model in discovered], [False, False])
                 self.assertEqual(Store(controller.store.directory).data["providers"], controller.store.data["providers"])
                 # Invalid custom input is rejected atomically; keys and limits survive.
                 before = json.dumps(controller.store.data["providers"], sort_keys=True)
