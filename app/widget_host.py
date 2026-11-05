@@ -12,12 +12,14 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from .tool_visibility import catalog, NATIVE_ID
+from .plugin_sessions import OPERATIONS as SESSION_OPERATIONS, PluginSessions
 from collections import OrderedDict
 
 from PySide6.QtCore import QObject, Property, QTimer, Signal, Slot
 
 
 OPERATIONS = {
+    **{name: ('sessions.manage', None) for name in SESSION_OPERATIONS},
     'market.list': ('pi.read', None),
     'market.prepare': ('pi.read', None),
     'market.discard': ('pi.read', None),
@@ -91,6 +93,7 @@ class WidgetHost(QObject):
         self._panel_approval = {}
         self._skills = None
         self._market = None
+        self._sessions = None
         self.activity_timer = QTimer(self)
         self.activity_timer.setSingleShot(True)
         self.activity_timer.setInterval(200)
@@ -151,6 +154,7 @@ class WidgetHost(QObject):
             pool.write(record, {'type': 'checkpoint_lock', 'locked': self.workspace_locked(record.workspace)})
 
     def stop(self, identifier):
+        if self._sessions: self._sessions.stop(identifier)
         for token in [token for token, lock in self.checkpoint_locks.items() if lock['widget'] == identifier]:
             self.release_checkpoint(identifier, token)
         if self._skills: self._skills.stop(identifier)
@@ -198,6 +202,10 @@ class WidgetHost(QObject):
             raise ValueError('Widget instance has stopped')
         if not self.m.enabled(identifier) or not self.m.session_enabled(identifier):
             raise ValueError('Widget is not enabled')
+        if request['operation'] in SESSION_OPERATIONS:
+            if not self.m.application(identifier):
+                raise ValueError('Session service requires an application lifecycle Widget')
+            return identifier
         session = request['session']
         current = self.m._session
         if not isinstance(session, dict) or not session.get('token') or session.get('token') != current.get('token') or session.get('workspace') != current.get('workspace'):
@@ -250,6 +258,10 @@ class WidgetHost(QObject):
             permission, _ = OPERATIONS[operation]
             if permission not in self.m.entries[identifier].get('permissions', []):
                 raise ValueError('Widget permission is required: ' + permission)
+            if operation in SESSION_OPERATIONS:
+                if self._sessions is None: self._sessions = PluginSessions(self)
+                self._sessions.request(request)
+                return
             fields = {'market.list': {'force'}, 'market.prepare': {'id'}, 'market.install': {'token'},
                       'market.discard': {'token'}, 'market.uninstall': {'id'}, 'market.enable': {'id'},
                       'market.open': {'id'}, 'market.browse': {'target','id'}, 'market.importLocal': set(),
@@ -361,7 +373,7 @@ class WidgetHost(QObject):
                                   if self._pending is request else None)
                 return
             self._execute(request)
-        except (ValueError, TypeError, KeyError) as error:
+        except (ValueError, TypeError, KeyError, OSError) as error:
             if request['operation'] == 'market.install' and self._market:
                 self._market.declined(request)
             self._reply(request, {'ok': False, 'error': str(error)})

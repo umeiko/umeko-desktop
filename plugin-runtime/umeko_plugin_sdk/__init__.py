@@ -23,6 +23,23 @@ class Context:
     host_capabilities: dict = field(default_factory=dict)
     runtimes: dict = field(default_factory=dict)
     _request: threading.local = field(default_factory=threading.local,init=False,repr=False)
+    _sessions: object = field(default=None,init=False,repr=False)
+    _event_thread_id: int = field(default_factory=threading.get_ident,init=False,repr=False)
+
+    @property
+    def sessions(self):
+        """Plugin-owned native sessions; blocking helpers require a background thread."""
+        from .sessions import Sessions
+        # Creation is protected because plugins may start several task threads.
+        with self._sessions_lock:
+            if self._sessions is None:self._sessions=Sessions(self)
+            return self._sessions
+
+    _sessions_lock: object = field(default_factory=threading.Lock,init=False,repr=False)
+
+    def _dispatch_host_event(self,name,data):
+        if name=='host.response' and self._sessions is not None:
+            self._sessions._receive(data)
 
     @property
     def request_id(self):return getattr(self._request,'id','')
@@ -117,8 +134,12 @@ class Context:
         """Nonblocking host request; receive on_event('host.response', result).
 
         Return a correlation ID, never a claim that a native job completed.
-        Application background work must supply a captured target session.
+        Application background work must supply a captured target session,
+        except plugin-owned sessions/approvals operations (sessions.manage).
         """
+        return self._request_host(operation,arguments,session=session)
+
+    def _request_host(self, operation, arguments=None, *, session=None, before_emit=None):
         if not isinstance(operation,str):raise PluginError('Host operation must be a string')
         spec=self.host_capabilities.get('operations',{}).get(operation)
         if not isinstance(spec,dict):raise PluginError('Host operation unavailable; inspect host_capabilities')
@@ -128,9 +149,16 @@ class Context:
         try:raw=json.dumps(arguments,ensure_ascii=False,allow_nan=False).encode('utf-8')
         except (ValueError,TypeError):raise PluginError('Host arguments must be valid JSON') from None
         if len(raw)>16384:raise PluginError('Host arguments exceed 16 KiB')
+        from .sessions import OPERATIONS
+        if operation in OPERATIONS:
+            if self.lifecycle!='application':raise PluginError('Session service requires application lifecycle')
+            self.require('sessions.manage')
+            target={}
+        else:target=self._target_session(session)
         identifier=uuid.uuid4().hex
+        if before_emit is not None:before_emit(identifier)
         self.emit({'event':'host.request','arguments':{'id':identifier,'operation':operation,
-            'arguments':copy.deepcopy(arguments),'session':self._target_session(session)}})
+            'arguments':copy.deepcopy(arguments),'session':target}})
         return identifier
 
     def notify_agent(self, message, *, data=None, request_id=None, wake=True, session=None):
@@ -214,6 +242,7 @@ class Context:
 
     def close(self):
         self.cancelled.set()
+        if self._sessions is not None:self._sessions._close()
         for process in list(self._processes):self._stop_process(process)
 
 class Plugin:
