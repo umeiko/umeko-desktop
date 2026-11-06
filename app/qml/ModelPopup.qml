@@ -28,8 +28,8 @@ AnchoredPidPopup {
             Layout.fillWidth: true
             Text { text: I18n.t("会话后端"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
             Item { Layout.fillWidth: true }
-            ActionButton { objectName: "choosePiBackend"; text: "Pi"; quiet: backend.sessionBackend !== "pi"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("pi") }
-            ActionButton { objectName: "chooseDshBackend"; text: "DeepSeek Harness"; quiet: backend.sessionBackend !== "dsh"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("dsh") }
+            BackendChoice { objectName: "choosePiBackend"; text: "Pi Coding Agent"; artwork: "../icons/pi.svg"; selected: backend.sessionBackend === "pi"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("pi") }
+            BackendChoice { objectName: "chooseDshBackend"; text: "DeepSeek Harness"; artwork: "../icons/dsh.svg"; monochrome: true; experimental: true; selected: backend.sessionBackend === "dsh"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("dsh") }
         }
         InputField { id: modelSearch; objectName: "modelSearch"; Layout.fillWidth: true; placeholderText: I18n.t("搜索供应商或模型…"); height: 39 }
         Text {
