@@ -56,6 +56,13 @@ NODE_HOST = [
     ('update-engine', 'replacement failure rolls back the existing directory'),
     ('update-engine', 'prepare copies the helper executable and runtime outside the install directory'),
     ('update-engine', 'an uncommitted or cancelled handoff never replaces the application'),
+    ('update-engine', 'successful update cleanup removes the old bundle and downloaded package'),
+    ('update-engine', 'real package installation keeps rollback files until post-launch cleanup'),
+    ('update-engine', 'cleanup prunes historical packages only for the same edition and platform'),
+    ('update-engine', 'failed, superseded, or concurrently installing updates do not trigger cleanup'),
+    ('update-engine', 'cleanup keeps modified archives and never follows backup directory links'),
+    ('update-engine', 'cleanup removes abandoned partials but preserves recent pauses and active downloads'),
+    ('update-engine', 'cleanup bounds installer caches while retaining active jobs and recent failure logs'),
 ]
 NODE_WINDOWS = [
     ('tool-permissions-integration', 'actual native powershell tool is intercepted before its harmless write'),
