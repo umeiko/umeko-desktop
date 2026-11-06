@@ -12,6 +12,7 @@ import {createGunzip, createInflateRaw, crc32} from 'node:zlib';
 import {Readable, Transform} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import {fileURLToPath} from 'node:url';
+import {cleanupStartup} from './update-cleanup.mjs';
 
 const MAX_ARCHIVE = 2 * 1024 ** 3, MAX_EXPANDED = 8 * 1024 ** 3;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -557,6 +558,10 @@ function insideDirectory(root, file) {
 }
 export async function prepare(job, jobFile) {
   const install = await fsp.realpath(job.installDir), executable = await fsp.realpath(job.executable);
+  if (job.profileDir) {
+    const profile=await fsp.realpath(job.profileDir).catch(error=>{if(error.code==='ENOENT')return path.resolve(job.profileDir);throw error;});
+    if(profile===install || insideDirectory(install,profile))throw Error('用户数据位于安装目录内，不能自动替换程序');
+  }
   if (!insideDirectory(install,executable) || !await exists(path.join(install,job.resourceRelative,'build-info.json'))) throw Error('仅打包版支持安装更新；源码版本请使用 Git 更新');
   if (path.dirname(install) === install || !/^[a-f0-9]{64}$/.test(job.sha256 || '')) throw Error('安装任务无效');
   // Copy the running app and libraries out of the destination before Windows locks them.
@@ -595,6 +600,7 @@ export async function install(job, jobFile) {
   let stage, backup, outcome, moved = false, activated = false;
   try {
     stage = await fsp.mkdtemp(path.join(path.dirname(installDir),'.umeko-stage-'));
+    await writeJSON(jobFile,{...job,stage});
     status('verifying','安装前再次校验 SHA-256…',0.05);
     if (await digest(job.archive) !== job.sha256) throw Error('安装包已改变，SHA-256 校验失败');
     const archiveName = job.archiveName || path.basename(job.archive);
@@ -618,7 +624,7 @@ export async function install(job, jobFile) {
     await renameRetry(installDir,backup); moved = true;
     try {await renameRetry(payload,installDir); activated = true;}
     catch (error) {await renameRetry(backup,installDir); moved = false; throw error;}
-    await writeJSON(jobFile + '.result',{backup,installDir,version:job.version});
+    await writeJSON(jobFile + '.result',{backup,stage,installDir,version:job.version});
     outcome = {backup};
   } catch (error) {
     if (moved && !activated && !await exists(installDir)) {
@@ -629,146 +635,14 @@ export async function install(job, jobFile) {
   status('complete','安装完成，点击确定启动新版本。',1,outcome);
 }
 
-const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
-const STALE_UPDATE = 7 * 24 * 60 * 60 * 1000;
-function versionParts(version) {
-  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-minimal)?$/.exec(String(version));
-  return match ? match.slice(1).map(Number) : null;
-}
-function noNewer(candidate, current) {
-  const a = versionParts(candidate), b = versionParts(current);
-  if (!a || !b) return false;
-  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i];
-  return true;
-}
-function processRunning(pid) {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return true;
-  try {process.kill(pid,0);return true;} catch (error) {return error.code !== 'ESRCH';}
-}
-async function plainDirectory(directory) {
-  try {
-    const info = await fsp.lstat(directory);
-    return info.isDirectory() && !info.isSymbolicLink() && await fsp.realpath(directory) === path.resolve(directory);
-  } catch {return false;}
-}
-async function removeUpdateFile(file) {
-  try {await fsp.rm(file,{recursive:true,force:true,maxRetries:10,retryDelay:300});return true;}
-  catch {return false;} // Retain the job so a later successful update can retry.
-}
-function archiveVersion(name, job) {
-  const match = job.repo === 'umeko-desktop' ?
-    /^Umeko-(\d+\.\d+\.\d+)-(windows-x64|windows-arm64|linux-x64|linux-arm64|macos-x64|macos-arm64)-[a-f0-9]{7,40}(?:-\d+)?\.(?:zip|tar(?:-\d+)?\.gz)$/.exec(name) :
-    /^UmekoCpp-v(\d+\.\d+\.\d+)(-minimal)?-(windows-x64|windows-arm64|linux-x64|linux-arm64|macos-x64|macos-arm64)(?:-\d+)?\.(?:zip|tar(?:-\d+)?\.gz)$/.exec(name);
-  if (!match) return '';
-  if (job.repo === 'umeko-desktop') return match[2] === platformKey() ? match[1] : '';
-  return match[3] === platformKey() && !!match[2] === (job.edition === 'minimal' || job.version.endsWith('-minimal')) ? match[1] : '';
-}
-async function cleanupDownloads(job) {
-  const directory = path.dirname(path.resolve(job.archive));
-  if (!await plainDirectory(directory) || directory === job.installDir || insideDirectory(job.installDir,directory)) return true;
-  let removed = true;
-  for (const entry of await fsp.readdir(directory,{withFileTypes:true})) {
-    if (!entry.isFile() || entry.isSymbolicLink()) continue;
-    const file = path.join(directory,entry.name);
-    // Do not remove an archive the user replaced after installation.
-    if (file === path.resolve(job.archive)) {
-      if (await digest(file) === job.sha256) removed = await removeUpdateFile(file) && removed;
-    } else if (noNewer(archiveVersion(entry.name,job),job.version)) {
-      removed = await removeUpdateFile(file) && removed;
-    }
-  }
-  const partials = path.join(directory,'.umeko-downloads');
-  if (!await plainDirectory(partials)) return removed;
-  for (const entry of await fsp.readdir(partials,{withFileTypes:true})) {
-    const folder = path.join(partials,entry.name);
-    if (!/^[a-f0-9]{64}$/.test(entry.name) || !await plainDirectory(folder)) continue;
-    // Preserve active transfers and recent paused downloads. Old releases did
-    // not record a version beside their SHA-keyed parts, so use their last I/O.
-    const files = await fsp.readdir(folder);
-    const times = await Promise.all([folder,...files.map(name=>path.join(folder,name))].map(file=>fsp.lstat(file).then(info=>info.mtimeMs)));
-    if (Date.now() - Math.max(...times) < STALE_UPDATE) continue;
-    const lock = path.join(folder,'lock.json');
-    if (await exists(lock)) {
-      try {if (processRunning((await readJSON(lock)).pid)) continue;} catch {continue;}
-      await fsp.rm(lock).catch(()=>{});
-    }
-    // Claim the same lock as download() before deleting abandoned parts.
-    try {
-      const handle = await fsp.open(lock,'wx',0o600);
-      try {await handle.writeFile(JSON.stringify({pid:process.pid,token:randomUUID()}));} finally {await handle.close();}
-    } catch {continue;}
-    const latest = await Promise.all((await fsp.readdir(folder)).filter(name=>name!=='lock.json')
-      .map(name=>fsp.lstat(path.join(folder,name)).then(info=>info.mtimeMs)));
-    if (latest.some(time=>Date.now()-time<STALE_UPDATE)) {await fsp.rm(lock);continue;}
-    removed = await removeUpdateFile(folder) && removed;
-  }
-  await fsp.rmdir(partials).catch(()=>{}); // Only remove the root when empty.
-  return removed;
-}
-async function cleanupOldJobs(job, cache) {
-  // Only updater-created siblings for this installation; never a general cache sweep.
-  const parent = path.dirname(cache);
-  for (const entry of await fsp.readdir(parent,{withFileTypes:true})) {
-    const directory = path.join(parent,entry.name), file = path.join(directory,'job.json');
-    if (directory === cache || !/^[a-f0-9]{32}$/.test(entry.name) || !await plainDirectory(directory)) continue;
-    try {
-      const old = await readJSON(file);
-      if (path.resolve(old.cache) !== directory || path.resolve(old.installDir) !== job.installDir ||
-          old.repo !== job.repo || !noNewer(old.version,job.version) || processRunning(old.parentPid)) continue;
-      if (await exists(file+'.ready') && processRunning((await readJSON(file+'.ready')).pid)) continue;
-      if (await exists(file+'.result')) {
-        const result = await readJSON(file+'.result');
-        if (path.resolve(result.installDir) !== job.installDir || result.version !== old.version) continue;
-      } else {
-        // Failed/abandoned installers retain their diagnostic logs for a week.
-        const times = await Promise.all((await fsp.readdir(directory)).map(name=>fsp.lstat(path.join(directory,name)).then(info=>info.mtimeMs)));
-        if (Date.now() - Math.max(...times) < STALE_UPDATE) continue;
-      }
-      await removeUpdateFile(directory);
-    } catch {} // Unknown or incomplete records are not deletion authority.
-  }
-}
 async function cleanup(job, jobFile) {
-  jobFile = path.resolve(jobFile);
-  const cache = path.dirname(jobFile);
-  if (typeof job.cache !== 'string' || path.resolve(job.cache) !== cache || !await plainDirectory(cache) ||
-      typeof job.installDir !== 'string' || !await plainDirectory(job.installDir) ||
-      cache === job.installDir || insideDirectory(cache,job.installDir) || insideDirectory(job.installDir,cache) ||
-      !await exists(jobFile+'.result')) return;
-  const result = await readJSON(jobFile+'.result');
-  const resource = path.resolve(job.installDir,job.resourceRelative);
-  if (resource !== job.installDir && !insideDirectory(job.installDir,resource)) return;
-  const installed = await readJSON(path.join(resource,'build-info.json'));
-  if (result.installDir !== job.installDir || result.version !== job.version ||
-      job.edition && installed.edition !== job.edition ||
-      !versionParts(job.version) || !noNewer(installed.version,job.version) || !noNewer(job.version,installed.version)) return;
-  const ready = await readJSON(jobFile + '.ready'), until = Date.now() + 120000;
-  while (processRunning(ready.pid)) {
-    if (Date.now() > until) return;
-    await sleep(250);
-  }
-  // Serialize with another installer so cleanup never consumes its rollback.
-  const parent = path.dirname(job.installDir), prefix = path.basename(job.installDir)+'.previous-';
-  const lock = path.join(parent,'.'+path.basename(job.installDir)+'.update-lock');
-  try {await fsp.mkdir(lock);} catch (error) {if (error.code === 'EEXIST') return;throw error;}
-  let removed = true;
-  try {
-    const current = await readJSON(path.join(resource,'build-info.json'));
-    if (current.version !== installed.version) return; // Another update finished while we waited.
-    for (const entry of await fsp.readdir(parent,{withFileTypes:true})) {
-      const directory = path.join(parent,entry.name);
-      if (!entry.name.startsWith(prefix) || !UUID.test(entry.name.slice(prefix.length)) || !await plainDirectory(directory)) continue;
-      try {
-        const info = await readJSON(path.join(directory,job.resourceRelative,'build-info.json'));
-        if (info.system !== installed.system || info.architecture !== installed.architecture || info.edition !== installed.edition ||
-            !noNewer(info.version,installed.version)) continue;
-        removed = await removeUpdateFile(directory) && removed;
-      } catch {} // Leave unrecognized directories untouched.
-    }
-    removed = await cleanupDownloads(job) && removed;
-    await cleanupOldJobs(job,cache);
-    if (removed) await removeUpdateFile(cache);
-  } finally {await fsp.rmdir(lock).catch(()=>{});}
+  // Older installers still invoke this command. A successful OS spawn alone
+  // does not confirm that the new application's UI can start.
+  if(!await exists(jobFile+'.started') || !await exists(jobFile+'.result'))return;
+  const context=await readJSON(jobFile+'.started');
+  const cache=await fsp.realpath(path.dirname(jobFile));
+  if(await fsp.realpath(job.cache)!==cache || await fsp.realpath(context.updatesDir)!==path.dirname(cache))return;
+  await cleanupStartup(context);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -782,7 +656,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       process.exitCode=0;
     } else {
     const job = await readJSON(jobFile);
-    if (mode !== 'cleanup') logFile = jobFile + '.log';
+    if (!['cleanup','cleanup-startup'].includes(mode)) logFile = jobFile + '.log';
     if (mode === 'download') {
       const controller=new AbortController();
       const pause=()=>controller.abort();
@@ -795,6 +669,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     else if (mode === 'prepare') await prepare(job,jobFile);
     else if (mode === 'install') await install(job,jobFile);
     else if (mode === 'cleanup') await cleanup(job,jobFile);
+    else if (mode === 'cleanup-startup') await cleanupStartup(job);
     else throw Error('未知更新操作');
     }
   } catch (error) {const detail=error.downloadState || {};status(error.code==='PAUSED'?'paused':'error',detail.message || error.message,detail.progress ?? -1,detail);process.exitCode=error.code==='PAUSED'?0:1;}

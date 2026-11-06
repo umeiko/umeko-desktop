@@ -26,6 +26,7 @@ from .npm_config import npm_environment
 from .storage import Store
 from .pi_sessions import PiSessionPool, SessionState, clean_extension_modes, clean_skill_modes, clean_blocked_tools, saved_viewport
 from .controller_runtime import PiControllerMixin
+from .dsh_backend import DshControllerMixin, is_dsh
 from .transcripts import preview
 from .chat_model import ChatModel
 from .transcript_index import TranscriptRepository
@@ -66,7 +67,7 @@ GREETINGS = (
 )
 
 
-class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, PreferencesMixin, PiControllerMixin, QObject):
+class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, PreferencesMixin, DshControllerMixin, PiControllerMixin, QObject):
     changed = Signal()
     appearanceChanged = Signal()
     characterCatalogChanged = Signal()
@@ -157,6 +158,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.root = root
         self._app_about = AppAbout(self)
         self.store = Store()
+        self._init_dsh()
         from .login_session import LoginStartupSettings
         self._login_startup = LoginStartupSettings(self, background='--login-startup' in sys.argv)
         self._init_characters()
@@ -274,6 +276,46 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Property(QObject, constant=True)
     def piManagement(self):
         return self._pi_management
+
+    @Property(QObject, constant=True)
+    def dshRuntime(self):
+        return self._dsh_runtime
+
+    @Property(bool, notify=chatChanged)
+    def dshOwnConfig(self):
+        return is_dsh(self._view) and self._dsh_own(self._view)
+
+    @Property('QVariantList', notify=chatChanged)
+    def dshModelProviders(self):
+        return self._dsh_model_providers(self._view)
+
+    @Property(str, notify=chatChanged)
+    def dshCurrentModelValue(self):
+        return self._dsh_model_option(self._view).get('currentValue', '')
+
+    @Property(str, notify=chatChanged)
+    def dshModelName(self):
+        return self._dsh_current_model(self._view)[1]
+
+    @Property(str, notify=chatChanged)
+    def dshProviderName(self):
+        return self._dsh_current_model(self._view)[0]
+
+    @Slot(str, result=bool)
+    def selectDshModel(self, value):
+        return self._select_dsh_model(value)
+
+    @Property(str, notify=chatChanged)
+    def sessionBackend(self):
+        return getattr(self._view, 'backend', 'pi')
+
+    @Property(bool, notify=chatChanged)
+    def canChooseBackend(self):
+        return not (self._view.id or self._view.messages or self._view.busy)
+
+    @Slot(str, result=bool)
+    def setSessionBackend(self, value):
+        return self._choose_dsh_backend(value)
 
     @Property(QObject, constant=True)
     def sessionPreview(self):
@@ -1049,6 +1091,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Property(bool, notify=chatChanged)
     def compactionAvailable(self):
+        if is_dsh(self._view): return False
         return bool(self._view.id and self._view.file and self._view.model and not self._kernel_busy)
 
     @Property(bool, notify=chatChanged)
@@ -1056,6 +1099,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         return self._view.compaction_running or (self._view.busy and self._view.action == "compact")
 
     def _reasoning_levels(self, record=None):
+        if record and is_dsh(record) and getattr(record, 'dsh_options', None):
+            return self._dsh_efforts(record)
         provider_id = record.provider if record else self.store.data["selectedProvider"]
         alias = record.model if record else self.store.data["selectedModel"]
         provider = next((p for p in self.store.data["providers"] if p["id"] == provider_id), {})
@@ -1063,6 +1108,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         return reasoning_levels(model)
 
     def _reconcile_reasoning(self, record):
+        if is_dsh(record): return
         value = reconcile_effort(record.reasoning_effort, self._reasoning_levels(record))
         if value != record.reasoning_effort:
             record.reasoning_effort = value
@@ -1165,6 +1211,16 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Slot(str, result=bool)
     def setReasoningEffort(self, value):
+        if is_dsh(self._view):
+            if self._view.busy or (value != 'off' and value not in self._reasoning_levels(self._view)):
+                return False
+            self._view.reasoning_effort = value
+            if self._view.id:
+                self.store.data['sessionMeta'].setdefault(self._view.id, {})['reasoningEffort'] = value
+            self.store.save()
+            self._switch_dsh_config()
+            self.reasoningChanged.emit()
+            return True
         if value != "off" and value not in self.reasoningLevels: return False
         record = self._view
         record.reasoning_effort = value
@@ -1308,6 +1364,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         return self._view.approval
 
     def _dangerous_allowed(self, record):
+        if is_dsh(record): return False
         meta = self.store.data["sessionMeta"].get(record.id, {})
         if not record.id or record.global_agent or meta.get("archived") or meta.get('pluginSession'):
             return False
@@ -1330,6 +1387,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Property(bool, notify=approvalChanged)
     def canGrantDangerousApproval(self):
+        if is_dsh(self._view): return False
         category = self._view.approval.get("dangerCategory")
         meta = self.store.data["sessionMeta"].get(self._view.id, {})
         return bool(self._view.id and not self._view.global_agent and not meta.get("archived") and not meta.get('pluginSession')
@@ -1662,6 +1720,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.store.data.update(selectedProvider=provider, selectedModel=model)
         self._view.model, self._view.provider = model, provider
         self._reconcile_reasoning(self._view)
+        if is_dsh(self._view): self._switch_dsh_config()
         self.store.save()
         self.changed.emit()
         self.contextUsageChanged.emit()
@@ -1870,6 +1929,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         session = next((s for s in self._sessions if s["id"] == session_id), None)
         if not session:
             return
+        if session.get('backend') == 'dsh':
+            return self._open_dsh(session)
         record = self._pool.find(session_id)
         stale = record and record.transcript and not record.busy and not record.transcript.matches_source()
         if (record and (not record.loaded or stale)) or (record is None and session.get('file') and self.transcripts.large(session['file'])):
@@ -1903,6 +1964,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if (record and self._pool.protected(record)) or session_id in self._management_jobs:
             return self.toast.emit("此会话正在运行，请先停止该会话")
         session = next((s for s in self._sessions if s["id"] == session_id), {})
+        if session.get('backend') == 'dsh':
+            self._dsh_history.path(session_id).unlink(missing_ok=True)
         file = Path(session["file"]) if session.get("file") else None
         if file:
             base = (self.store.directory / "pi/sessions").resolve()
@@ -1943,6 +2006,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self._command_pi("navigate", entryId=entry_id)
 
     def _save_session(self):
+        if is_dsh(self._view):
+            return self._save_dsh(self._view)
         # UI index only. Native Pi JSONL is the sole transcript and tree store.
         self.store.save_sessions(self._sessions)
 
@@ -1964,6 +2029,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Slot(str, result=bool)
     def steer(self, text):
+        if is_dsh(self._view): return self._send(text, steering=True)
         if not text.strip() and not self._view.attachments:
             if self._view.phase == "running" and self._view.queue:
                 self._write_pi({"type": "promote-queue"})
@@ -2002,6 +2068,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def _on_job_done(self, name, result):
         if self._closing:
             return
+        if name.startswith('dsh-open:'):
+            return self._dsh_opened(name.split(':', 1)[1], result)
         if name.startswith("task-details:"):
             self._desktop_plugins.hostServices.task_result(name.split(":", 1)[1], result)
             return
@@ -2163,6 +2231,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._job("update", update)
 
     def close(self):
+        self._dsh_runtime.cancel()
         if self._app_about._preview is not None:
             self._app_about._preview.cancel()
         self._chat_search.close()
@@ -2182,6 +2251,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._subagents.close()
         self._proxy_usage_timer.stop()
         self._pool.close()
+        self._dsh_history.close()
         self._task_records.close()
         if self.public_server:
             self.public_server.close()

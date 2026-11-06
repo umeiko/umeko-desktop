@@ -7,15 +7,16 @@ AnchoredPidPopup {
     id: root
     objectName: "modelPopup"
     property real heightLimit: 470
+    readonly property bool useDshModels: backend.sessionBackend === "dsh" && backend.dshOwnConfig === true
     fullWidth: 365
-    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 230 + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0)))
+    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 270 + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0) + (ownModelsHint.visible ? ownModelsHint.implicitHeight + 10 : 0)))
     signal configure()
     signal dismissed()
     onAboutToShow: modelSearch.clear()
     onAboutToHide: { focus = false; dismissed() }
     onOpened: {
         modelSearch.forceActiveFocus()
-        if (typeof backend.ensureReasoningDetection === "function") backend.ensureReasoningDetection()
+        if (backend.sessionBackend !== "dsh" && typeof backend.ensureReasoningDetection === "function") backend.ensureReasoningDetection()
     }
     onClosed: dismissed()
     contentItem: Item {
@@ -23,10 +24,25 @@ AnchoredPidPopup {
     ColumnLayout {
         width: root.expandedWidth - root.padding * 2; height: root.expandedHeight - root.padding * 2; spacing: 10
         opacity: root.contentOpacity
+        RowLayout {
+            Layout.fillWidth: true
+            Text { text: I18n.t("会话后端"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
+            Item { Layout.fillWidth: true }
+            ActionButton { objectName: "choosePiBackend"; text: "Pi"; quiet: backend.sessionBackend !== "pi"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("pi") }
+            ActionButton { objectName: "chooseDshBackend"; text: "DeepSeek Harness"; quiet: backend.sessionBackend !== "dsh"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("dsh") }
+        }
         InputField { id: modelSearch; objectName: "modelSearch"; Layout.fillWidth: true; placeholderText: I18n.t("搜索供应商或模型…"); height: 39 }
+        Text {
+            id: ownModelsHint; objectName: "dshOwnModelsHint"
+            Layout.fillWidth: true; wrapMode: Text.Wrap
+            visible: root.useDshModels && modelList.count === 0
+            text: I18n.t("连接 dsh 后显示其 ACP profile 的模型")
+            textFormat: Text.PlainText; color: Theme.muted
+            font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible)
+        }
         ListView {
             id: modelList; Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 9
-            model: backend.config.providers
+            model: root.useDshModels ? backend.dshModelProviders : backend.config.providers
             ScrollBar.vertical: ScrollBar {}
             delegate: Column {
                 required property var modelData
@@ -38,20 +54,22 @@ AnchoredPidPopup {
                     Rectangle {
                         required property var modelData
                         objectName: "modelOption_" + provider.id + "_" + modelData.alias
-                        property bool matches: (provider.name + " " + modelData.alias + " " + modelData.upstream).toLowerCase().indexOf(modelSearch.text.toLowerCase()) >= 0
+                        property bool matches: (provider.name + " " + modelData.alias + (root.useDshModels ? "" : " " + modelData.upstream)).toLowerCase().indexOf(modelSearch.text.toLowerCase()) >= 0
+                        property bool selected: root.useDshModels ? backend.dshCurrentModelValue === modelData.value : backend.config.selectedProvider === provider.id && backend.config.selectedModel === modelData.alias
                         width: modelList.width; height: matches ? 44 : 0; visible: matches; radius: 7
-                        color: modelMouse.containsMouse ? Theme.hover : backend.config.selectedProvider === provider.id && backend.config.selectedModel === modelData.alias ? Theme.accentBg : "transparent"
+                        color: modelMouse.containsMouse ? Theme.hover : selected ? Theme.accentBg : "transparent"
                         Column { x: 11; width: parent.width - 44; anchors.verticalCenter: parent.verticalCenter; spacing: 3
                             Text { font.family: Theme.fontFamily; text: modelData.alias; width: parent.width; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: Theme.font(12, visible) }
-                            Text { font.family: Theme.fontFamily; text: modelData.upstream; width: parent.width; elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(9, visible) }
+                            Text { font.family: Theme.fontFamily; text: modelData.upstream; visible: !root.useDshModels; width: parent.width; elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(9, visible) }
                         }
-                        Glyph { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "check"; width: Theme.icon(15); height: Theme.icon(15); visible: backend.config.selectedProvider === provider.id && backend.config.selectedModel === modelData.alias }
+                        Glyph { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "check"; width: Theme.icon(15); height: Theme.icon(15); visible: parent.selected }
                         MouseArea {
                             id: modelMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                const controller = backend, providerId = provider.id, alias = modelData.alias
+                                const controller = backend, providerId = provider.id, alias = modelData.alias, nativeValue = modelData.value, useDshModels = root.useDshModels
                                 root.close()
-                                controller.selectModel(providerId, alias)
+                                if (useDshModels) controller.selectDshModel(nativeValue)
+                                else controller.selectModel(providerId, alias)
                             }
                         }
                     }
@@ -79,7 +97,7 @@ AnchoredPidPopup {
                 readonly property real handleCenter: leftPadding + handle.width / 2 + visualPosition * travel
                 from: 0; to: Math.max(1, reasoningControls.levels.length - 1)
                 stepSize: 1; snapMode: Slider.SnapAlways
-                enabled: reasoningControls.levels.length > 1
+                enabled: reasoningControls.levels.length > 1 && (backend.sessionBackend !== "dsh" || !backend.busy)
                 value: Math.max(0, reasoningControls.levels.indexOf(backend.reasoningEffort))
                 Accessible.name: I18n.t("思考强度")
                 onMoved: backend.setReasoningEffort(reasoningControls.levels[Math.round(value)])
@@ -135,6 +153,7 @@ AnchoredPidPopup {
         }
         ActionButton {
             id: manageProviders; objectName: "manageProvidersButton"
+            visible: !root.useDshModels
             text: I18n.t("管理供应商与模型"); quiet: true; Layout.fillWidth: true
             contentItem: Item {
                 Row {

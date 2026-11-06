@@ -13,6 +13,7 @@ COMMON = [
     'tests.test_terminal_widget',
     'tests.test_skill_import',
     'tests.test_update',
+    'tests.test_update_cleanup',
     'tests.test_preview_source',
     # Keep the module entrypoint: load_tests isolates its Qt application.
     'tests.test_preview_channel',
@@ -63,6 +64,17 @@ NODE_HOST = [
     ('update-engine', 'cleanup keeps modified archives and never follows backup directory links'),
     ('update-engine', 'cleanup removes abandoned partials but preserves recent pauses and active downloads'),
     ('update-engine', 'cleanup bounds installer caches while retaining active jobs and recent failure logs'),
+    ('update-engine', 'successful startup removes the package and old program as well as installer cache'),
+    ('update-engine', 'installer launch without successful application startup keeps rollback and its receipt'),
+    ('update-engine', 'first successful start removes legacy orphans, staging and stale partials only'),
+    ('update-engine', 'cleanup refuses user-data overlap and receipts pointing outside updater folders'),
+    ('update-engine', 'directory aliases cannot redirect cleanup into another directory'),
+    ('update-engine', 'a locked old program is logged, retained and retried on the next successful start'),
+    ('update-engine', 'partially removed installer cache retains its receipt for the next start'),
+    ('update-engine', 'cleanup preserves a live installer even after replacement completed'),
+    ('update-engine', 'cleanup receipts cannot override newer or other-edition backup metadata'),
+    ('update-engine', 'recent partial-file writes survive cleanup even with an old cache directory'),
+    ('update-engine', 'cleanup keeps another installation staging while its update lock is held'),
 ]
 NODE_WINDOWS = [
     ('tool-permissions-integration', 'actual native powershell tool is intercepted before its harmless write'),

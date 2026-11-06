@@ -96,7 +96,9 @@ def verify_windows_preview(executable, environment, report_dir):
             (report_dir / 'web-preview-output.log').write_bytes(stdout + stderr)
             log = diagnostic.read_text(encoding='utf-8') if diagnostic.exists() else ''
             if process.returncode or not ready.is_set() or not seen or 'WebSurface.qml:' in log or 'EXIT:0' not in log:
-                raise RuntimeError('Frozen Windows browser failed: ' + log)
+                raise RuntimeError('Frozen Windows browser failed: '
+                    + f'returncode={process.returncode}, ready={ready.is_set()}, visibleChromeChild={bool(seen)}\n'
+                    + log + '\nstderr:\n' + stderr.decode('utf-8', errors='replace'))
         finally:
             server.shutdown()
 
@@ -171,7 +173,7 @@ def main():
     for name in ("fd", "rg"):
         tool = runtime / "bin" / (name + (".exe" if os.name == "nt" else ""))
         subprocess.run([str(tool), "--version"], check=True, capture_output=True, timeout=15)
-    for name in ("bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "background-jobs.mjs", "process-guard.mjs", "tool-permissions.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
+    for name in ("bridge.mjs", "package-install.mjs", "update-engine.mjs", "update-cleanup.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "background-jobs.mjs", "process-guard.mjs", "tool-permissions.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         if hashlib.sha256((runtime / name).read_bytes()).digest() != hashlib.sha256((ROOT / "runtime" / name).read_bytes()).digest():
             raise RuntimeError("Packaged Pi bridge differs from the source: " + name)
     for name in ("subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "rpc-ui.mjs", "widget-messages.mjs", "background-jobs.mjs", "process-guard.mjs", "tool-permissions.mjs"):

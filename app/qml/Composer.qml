@@ -58,7 +58,7 @@ Item {
         query: prompt.text
         onChosen: entry => root.chooseSlash(entry)
     }
-    QueuedMessages { id: queued; width: parent.width }
+    QueuedMessages { id: queued; width: parent.width; primaryActionVisible: backend.sessionBackend !== "dsh" }
     Rectangle { x: 0; y: root.queueOffset + 6; width: parent.width; height: parent.height - root.queueOffset; radius: 17; color: "#090f0a"; opacity: Theme.dark ? 0.1 : 0.035 }
     Rectangle {
         x: 0; y: root.queueOffset; width: parent.width; height: parent.height - root.queueOffset; radius: 15; color: Theme.surface
@@ -137,7 +137,7 @@ Item {
                 ActionButton {
                     id: permissionButton; objectName: "composerPermissionStatus"
                     glyph: "lock"; quiet: true; height: Theme.control(31)
-                    readonly property string fullText: (backend.config.agent.toolPermissionMode === "ask" ? I18n.t("询问") : I18n.t("自动")) + (backend.dangerousAllowed ? " · " + I18n.t("本会话已授权") : "")
+                    readonly property string fullText: backend.sessionBackend === "dsh" ? I18n.t("单次审批") : (backend.config.agent.toolPermissionMode === "ask" ? I18n.t("询问") : I18n.t("自动")) + (backend.dangerousAllowed ? " · " + I18n.t("本会话已授权") : "")
                     text: footer.permissionTextVisible ? fullText : ""
                     width: footer.permissionTextVisible ? implicitWidth : Theme.control(31)
                     Accessible.name: fullText
@@ -151,8 +151,9 @@ Item {
                             y = requestedPosition.y
                             Qt.callLater(fitToWindow)
                         }
-                        ContextAction { text: I18n.t("自动"); glyph: backend.config.agent.toolPermissionMode === "auto" ? "check" : ""; onTriggered: backend.setToolPermissionMode("auto") }
-                        ContextAction { text: I18n.t("询问"); glyph: backend.config.agent.toolPermissionMode === "ask" ? "check" : ""; onTriggered: backend.setToolPermissionMode("ask") }
+                        ContextAction { visible: backend.sessionBackend !== "dsh"; text: I18n.t("自动"); glyph: backend.config.agent.toolPermissionMode === "auto" ? "check" : ""; onTriggered: backend.setToolPermissionMode("auto") }
+                        ContextAction { visible: backend.sessionBackend !== "dsh"; text: I18n.t("询问"); glyph: backend.config.agent.toolPermissionMode === "ask" ? "check" : ""; onTriggered: backend.setToolPermissionMode("ask") }
+                        ContextAction { visible: backend.sessionBackend === "dsh"; text: I18n.t("仅支持本次允许或拒绝"); enabled: false }
                         MenuSeparator { visible: backend.dangerousAllowed; height: visible ? implicitHeight : 0 }
                         ContextAction {
                             objectName: "revokeDangerousApproval"
@@ -167,14 +168,15 @@ Item {
                 x: footer.stacked ? 0 : utilityRow.implicitWidth + footer.gap
                 y: footer.height - Theme.control(33) + (Theme.control(33) - height) / 2
                 width: Math.max(0, Math.min(Theme.control(350), naturalWidth, footer.width - x - trailingRow.width - footer.gap))
-                readonly property string providerName: { const p = backend.config.providers.find(p => p.id === backend.config.selectedProvider); return p ? p.name : I18n.t("选择供应商") }
-                readonly property string modelName: backend.config.selectedModel
+                readonly property bool useDshModels: backend.sessionBackend === "dsh" && backend.dshOwnConfig === true
+                readonly property string providerName: { if (useDshModels) return I18n.t(backend.dshProviderName); const p = backend.config.providers.find(p => p.id === backend.config.selectedProvider); return p ? p.name : I18n.t("选择供应商") }
+                readonly property string modelName: useDshModels ? I18n.t(backend.dshModelName) : backend.config.selectedModel
                 readonly property string effort: backend.reasoningEffort !== "off" ? "· " + Reasoning.label(backend.reasoningEffort) : ""
                 readonly property real naturalWidth: providerMetrics.advanceWidth + (modelName.length ? slashMetrics.advanceWidth + Math.min(modelMetrics.advanceWidth, Theme.control(135)) + 14 : 0) + (effort.length ? effortMetrics.advanceWidth + 7 : 0) + Theme.icon(12) + 27
                 readonly property real namesWidth: Math.max(0, width - 20 - Theme.icon(12) - 7 - (effortBadge.visible ? effortMetrics.advanceWidth + 7 : 0))
                 readonly property bool showProvider: !modelName.length || namesWidth >= Math.min(providerMetrics.advanceWidth, Theme.control(48)) + Math.min(modelMetrics.advanceWidth, Theme.control(90)) + slashMetrics.advanceWidth + 14
                 readonly property real providerWidth: Math.min(providerMetrics.advanceWidth, modelName.length ? Math.max(Math.min(providerMetrics.advanceWidth, Theme.control(48)), namesWidth - Math.min(modelMetrics.advanceWidth, Theme.control(135)) - slashMetrics.advanceWidth - 14) : namesWidth)
-                hint: providerName + (modelName.length ? " / " + modelName : "") + (effort.length ? " " + effort : "")
+                hint: (backend.sessionBackend === "dsh" ? "DeepSeek Harness · " : "") + providerName + (modelName.length ? " / " + modelName : "") + (effort.length ? " " + effort : "")
                 Accessible.name: hint
                 TextMetrics { renderType: Text.QtRendering; id: providerMetrics; text: modelButton.providerName; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
                 TextMetrics { renderType: Text.QtRendering; id: modelMetrics; text: modelButton.modelName; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
@@ -194,7 +196,7 @@ Item {
                 id: trailingRow; objectName: "composerSendControls"
                 anchors.right: parent.right; anchors.bottom: parent.bottom; spacing: 13
                 TaskStatus { id: taskStatus; objectName: "composerTaskStatus"; status: backend.turnStatus; compact: true; width: Theme.icon(13) + 6 + taskMetrics.advanceWidth; visible: state.length > 0 && footer.trailingBudget >= sendButton.width + width + 13; anchors.verticalCenter: parent.verticalCenter }
-                Text { id: statusText; font.family: Theme.fontFamily; objectName: "composerStatus"; visible: footer.trailingBudget >= sendButton.width + (taskStatus.visible ? taskStatus.width + 13 : 0) + statusMetrics.advanceWidth + 13; text: backend.compacting ? I18n.t(backend.toolStatus) : backend.loading ? I18n.t(backend.toolStatus || "正在加载 Pi") : backend.running ? I18n.t("Enter 加入队列 · Ctrl+S 优先") : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
+                Text { id: statusText; font.family: Theme.fontFamily; objectName: "composerStatus"; visible: footer.trailingBudget >= sendButton.width + (taskStatus.visible ? taskStatus.width + 13 : 0) + statusMetrics.advanceWidth + 13; text: backend.compacting ? I18n.t(backend.toolStatus) : backend.loading ? I18n.t(backend.toolStatus || "正在加载 Pi") : backend.running ? (backend.sessionBackend === "dsh" ? I18n.t("Enter 加入队列") : I18n.t("Enter 加入队列 · Ctrl+S 优先")) : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
                 Rectangle {
                     id: sendButton; objectName: "sendButton"
                     readonly property bool stopAction: backend.running

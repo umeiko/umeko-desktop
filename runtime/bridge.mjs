@@ -18,6 +18,7 @@ import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
 import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI } from "./tool-permissions.mjs";
 import { blockedToolNames, toolInventory } from "./tool-visibility.mjs";
 import { createGenerationExtension } from "./generation.mjs";
+import { createSystemPromptController } from "./system-prompt.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
@@ -61,6 +62,7 @@ function taskDelivery(source, id, items, failed = 0) {
   if (trackingTask) emit({ type: "task_delivery", source, id, items, failed });
 }
 const compactionFailures = new WeakMap();
+const promptControllers = new WeakMap();
 const loopReview=createLoopReview({emit});
 const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit});
 let checkpointLocked = false;
@@ -387,8 +389,18 @@ async function init(input) {
       codemode: { ...nativeSettings.codemode, mode: "on" },
       cacheWarming: "off", compaction: { ...nativeSettings.compaction, enabled: input.agent?.autoCompaction !== false },
     }, { projectTrusted: !input.agent?.safeMode });
+    const promptController = await createSystemPromptController({ cwd, agentDir,
+      stateDir: input.systemPromptStateDir || join(input.agentDir, "umeko-system-prompts"),
+      enabled: input.systemPromptEnabled === true,
+      appendSources: [
+        { id: "desktop-pi", name: "Pi 操作说明", text: input.globalCoordinator || toolSelection(input.piCapabilities,{name:PI_COMMAND_TOOL,source:"builtin:pi-commands"}) ? DESKTOP_PI_PROMPT+" " : "" },
+        { id: "desktop-control", name: "桌面能力说明", text: input.globalCoordinator || toolSelection(input.piCapabilities,{name:UMEKO_TOOL,source:"builtin:umeko-control"}) ? UMEKO_PROMPT+" " : "" },
+        { id: "language", name: "回复语言", text: "Reply in the user's language." },
+        { id: "instructions", name: "自定义指令", text: input.agent?.instructions || "" },
+      ] });
     const services = await Pi.createAgentSessionServices({ cwd, agentDir, modelRuntime, settingsManager,
       resourceLoaderOptions: {
+        extensionsOverride: promptController.extensionsOverride,
         ...await sessionSkillOptions(Pi, {...input,cwd,agentDir}, nativeManager),
         ...(input.agent?.safeMode || input.globalCoordinator ? { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
           additionalExtensionPaths: builtins.map(name => "builtin:" + name) } : {}),
@@ -423,6 +435,8 @@ async function init(input) {
     // generation/compaction overrides stay in memory on the session itself.
     services.settingsManager = settings;
     const result = await Pi.createAgentSessionFromServices({ services, sessionManager, sessionStartEvent, model: selectedModel, excludeTools: input.globalCoordinator ? undefined : [...new Set([...blockedToolNames(input.blockedTools),...excludedSessionTools(input.piCapabilities)])] });
+    await promptController.attach(result.session, services.resourceLoader);
+    promptControllers.set(result.session, promptController);
     auxiliaryVision.guardSession(result.session);
     return { ...result, services, diagnostics: services.diagnostics };
   };
@@ -659,13 +673,21 @@ async function execute(input) {
       await init(input);
     }
     else if (input.targetFile && resolve(input.targetFile) !== resolve(runtime.session.sessionManager.getSessionFile() || ".")) await runtime.switchSession(input.targetFile);
+    if (typeof input.systemPromptEnabled === "boolean") config.systemPromptEnabled = input.systemPromptEnabled;
+    const promptController = promptControllers.get(runtime.session);
+    promptController?.setEnabled(config.systemPromptEnabled === true);
     if (input.model && runtime.session.model?.id !== input.model) {
       selectedModel = modelRuntime.getModel("umeko", input.model);
       if (!selectedModel) throw new Error("模型未配置");
       await runtime.session.setModel(selectedModel);
       exposeNativeTools(runtime.session);
     }
-    if (input.type === "prompt") {
+    if (input.type === "system-prompt") {
+      const snapshot = input.promptOperation === "inspect" ? await promptController.refresh()
+        : await promptController.mutate({ action: input.promptOperation, id: input.id, text: input.text, enabled: input.enabled });
+      emit({ type: "system_prompt", requestId: input.requestId, result: { ok: true, ...snapshot } });
+    }
+    else if (input.type === "prompt") {
       if (!runtime.session.sessionManager.getSessionName()) runtime.session.setSessionName(input.text.replace(/\s+/g, " ").slice(0, 28));
       emit({ type: "session", session: sessionInfo() });
       await promptWithInterrupts(input);

@@ -129,7 +129,9 @@ def verify_runtime(release: Path, bridge_source: Path):
     patch_retry_diagnostics(release)
     for name in ("tool-visibility.mjs", "session-capabilities.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         copy_runtime_file(bridge_source.parent / name, release / name)
+    copy_runtime_file(bridge_source.parent / 'update-cleanup.mjs', release / 'update-cleanup.mjs')
     copy_runtime_file(bridge_source.parent / 'generation.mjs', release / 'generation.mjs')
+    copy_runtime_file(bridge_source.parent / 'system-prompt.mjs', release / 'system-prompt.mjs')
     copy_runtime_file(bridge_source.parent / 'skills.mjs', release / 'skills.mjs')
     copy_runtime_file(bridge_source.parent / 'markdown-preview.mjs', release / 'markdown-preview.mjs')
     shutil.copytree(bridge_source.parent/'umeko-docs', release/'umeko-docs', dirs_exist_ok=True, copy_function=copy_runtime_file)

@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -31,6 +33,46 @@ def update_environment():
 def save_job(file, job):
     file.write_text(json.dumps(job), encoding='utf-8')
     file.chmod(0o600)
+
+
+def start_update_cleanup(root, profile):
+    """Best-effort cleanup after the packaged application's UI has started."""
+    if not getattr(sys, 'frozen', False): return None
+    try:
+        directory = Path(sys.executable).resolve().parent
+        if sys.platform == 'darwin': directory = directory.parent.parent
+        cache = Path(QStandardPaths.writableLocation(QStandardPaths.CacheLocation))
+        downloads = Path(QStandardPaths.writableLocation(QStandardPaths.DownloadLocation) or Path.home() / 'Downloads') / 'Umeko'
+        info = json.loads((Path(root) / 'build-info.json').read_text(encoding='utf-8'))
+        cache.mkdir(parents=True, exist_ok=True)
+        job_file = cache / ('cleanup-' + uuid.uuid4().hex + '.json')
+        save_job(job_file, dict(installDir=str(directory), executable=sys.executable,
+            resourceRelative=os.path.relpath(root, directory), profileDir=str(profile),
+            version=info['version'], updatesDir=str(cache / 'updates'), downloadsDir=str(downloads),
+            tempDir=tempfile.gettempdir()))
+        app = QGuiApplication.instance()
+        process = QProcess(app)
+        # Retain the worker until it exits. It never feeds the updater UI or toast.
+        workers = getattr(app, '_update_cleanup_workers', None)
+        if workers is None: app._update_cleanup_workers = workers = []
+        workers.append(process)
+        process.setProcessEnvironment(update_environment())
+        process.setStandardErrorFile(str(cache / 'update-cleanup.log'), QProcess.Append)
+        def finished(*_):
+            try: job_file.unlink(missing_ok=True)
+            except OSError: logging.exception('Unable to remove update cleanup job')
+            if process in workers: workers.remove(process)
+            process.deleteLater()
+        process.finished.connect(finished)
+        def failed(error):
+            logging.warning('Update cleanup worker: %s', process.errorString())
+            if error == QProcess.FailedToStart: finished()
+        process.errorOccurred.connect(failed)
+        process.start(node_executable(), [str(Path(root) / 'runtime/update-engine.mjs'), 'cleanup-startup', str(job_file)])
+        return process
+    except (OSError, ValueError, KeyError, RuntimeError):
+        logging.exception('Update cleanup will be retried on the next start')
+        return None
 
 
 class AppUpdater(QObject):
@@ -226,12 +268,6 @@ class UpdateInstaller(QObject):
         p.setProcessEnvironment(environment)
         ok = p.startDetached(); p.deleteLater()
         if ok:
-            resources = Path(self.job['installDir']) / self.job['resourceRelative']
-            cleaner = QProcess(self)
-            cleaner.setProgram(str(resources / 'runtime/node' / ('node.exe' if os.name == 'nt' else 'bin/node')))
-            cleaner.setArguments([str(resources / 'runtime/update-engine.mjs'), 'cleanup', str(self.job_file)])
-            cleaner.setWorkingDirectory(self.job['installDir']); cleaner.setProcessEnvironment(update_environment())
-            cleaner.startDetached(); cleaner.deleteLater()
             QGuiApplication.instance().quit()
         else:
             self._status['launchError'] = ('Launch failed. Retry or open: ' if self.language == 'en' else '启动失败，请重试或从安装目录手动启动：') + self.job['executable']
