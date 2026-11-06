@@ -157,6 +157,7 @@ class PiControllerMixin:
             self._reasoning_discovery.update_activity()
         record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在压缩上下文" if action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
         payload = {"type": action, "model": record.model or self.store.data["selectedModel"], "reasoningEffort": record.reasoning_effort, **values}
+        payload['systemPromptEnabled'] = self._desktop_plugins.system_prompt_enabled(record)
         try:
             if record.process:
                 self._pool.write(record, payload)
@@ -183,6 +184,7 @@ class PiControllerMixin:
                     permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,
                     dangerousAllowed=False if action in ("fork", "navigate", "new") else self._dangerous_allowed(record),
                     dataDir=str(self.store.directory),
+                    systemPromptStateDir=str(self.store.directory / 'system-prompts'),
                     generation=generation_config(self.store.data),
                     mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
                 if plugin_policy:
@@ -312,6 +314,7 @@ class PiControllerMixin:
         if self._closing:
             return
         kind, visible = event.get("type"), record is self._view
+        if kind == 'system_prompt':return  # The built-in page host owns this reply.
         if kind=='widget_delivery':return  # WidgetChannel observes the same pool event.
         if getattr(record, "task_attempt", 0):
             self._task_records.observe(record, event)
