@@ -8,6 +8,7 @@ AnchoredPidPopup {
     objectName: "modelPopup"
     property real heightLimit: 470
     readonly property bool useDshModels: backend.sessionBackend === "dsh" && backend.dshOwnConfig === true
+    readonly property bool hasDshPath: String(backend.dshRuntime.path || backend.dshRuntime.resolvedPath || "").trim().length > 0
     fullWidth: 365
     fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 270 + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0) + (ownModelsHint.visible ? ownModelsHint.implicitHeight + 10 : 0)))
     signal configure()
@@ -29,7 +30,7 @@ AnchoredPidPopup {
             Text { text: I18n.t("会话后端"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
             Item { Layout.fillWidth: true }
             BackendChoice { objectName: "choosePiBackend"; text: "Pi Coding Agent"; artwork: "../icons/pi.svg"; selected: backend.sessionBackend === "pi"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("pi") }
-            BackendChoice { objectName: "chooseDshBackend"; text: "DeepSeek Harness"; artwork: "../icons/dsh.svg"; monochrome: true; experimental: true; selected: backend.sessionBackend === "dsh"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("dsh") }
+            BackendChoice { objectName: "chooseDshBackend"; text: "DeepSeek Harness"; artwork: "../icons/dsh.svg"; monochrome: true; experimental: true; visible: root.hasDshPath || backend.sessionBackend === "dsh"; selected: backend.sessionBackend === "dsh"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("dsh") }
         }
         InputField { id: modelSearch; objectName: "modelSearch"; Layout.fillWidth: true; placeholderText: I18n.t("搜索供应商或模型…"); height: 39 }
         Text {
