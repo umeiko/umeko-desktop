@@ -209,6 +209,11 @@ class SystemPromptUiSmoke(unittest.TestCase):
             self.assertEqual(root.property("selectedId"), "intro")
             self.assertEqual(js("Number(checkState)", find("systemPromptCheck_group")), 1)
             self.assertEqual(len(value(root, "entries")), 5)
+            initial_entries = {row["id"]: row for row in value(root, "entries")}
+            for identifier in ("archive", "nested", "group"):
+                self.assertTrue(initial_entries[identifier]["changed"], identifier + " did not reflect disabled effective text")
+                self.assertEqual(find("systemPromptName_" + identifier).property("color").name(), "#d7b65b")
+            self.assertFalse(initial_entries["intro"]["changed"])
             screenshot("01-mixed-tree")
             js('fold("nested")')
             self.assertEqual(len(value(root, "entries")), 3)
@@ -239,6 +244,8 @@ class SystemPromptUiSmoke(unittest.TestCase):
             self.assertEqual(root.property("draftText"), sdk.find("intro")["originalText"])
             js('selectedId="archive"')
             self.assertTrue(find("systemPromptDisabledNotice").isVisible())
+            self.assertEqual(find("systemPromptName_archive").property("color").name(), "#d7b65b")
+            self.assertEqual(js("Number(checkState)", find("systemPromptCheck_archive")), 0)
             self.assertEqual(sdk.find("archive")["effectiveText"], "")
             self.assertEqual(root.property("draftText"), sdk.find("archive")["currentText"])
             self.assertTrue(find("systemPromptCharacterCount").property("text").startswith("Now 0 chars"))
@@ -267,6 +274,7 @@ class SystemPromptUiSmoke(unittest.TestCase):
             self.assertEqual(sdk.find("intro")["effectiveText"], "")
             self.assertEqual(sdk.find("intro")["currentText"], sdk.find("intro")["originalText"])
             self.assertTrue(find("systemPromptShadowedNotice").isVisible())
+            self.assertTrue(next(row for row in value(root, "entries") if row["id"] == "intro")["changed"])
             self.assertTrue(find("systemPromptCharacterCount").property("text").startswith("Now 0 chars"))
             self.assertEqual(root.property("draftText"), "Retain this unsaved draft.")
             self.assertEqual(find("systemPromptEditor").property("text"), "Retain this unsaved draft.")

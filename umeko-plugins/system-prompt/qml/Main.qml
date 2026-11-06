@@ -48,6 +48,7 @@ FocusScope {
     function changed(node) {
         if (node.modified) return true
         if (node.children) return node.children.some(child => changed(child))
+        if ((node.effectiveText || "") !== (node.originalText || "")) return true
         return Object.prototype.hasOwnProperty.call(drafts, node.id) && drafts[node.id] !== currentText(node)
     }
     function flatten(nodes, depth) {
