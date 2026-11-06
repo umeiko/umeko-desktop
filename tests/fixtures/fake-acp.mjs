@@ -26,6 +26,11 @@ lines.on('line', line => {
     case 'session/resume': sessionId = params.sessionId; result(message.id, { configOptions: options() }); break;
     case 'session/set_config_option': currentValue = params.value; result(message.id, { configOptions: options() }); break;
     case 'session/prompt': {
+      if (params.prompt.at(-1).text === 'prompt-blocks') {
+        update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: JSON.stringify(params.prompt) } });
+        result(message.id, { stopReason: 'end_turn' });
+        break;
+      }
       const text = params.prompt[0].text;
       if (text === 'crash') { process.exit(3); }
       if (text === 'wait') { pendingPrompt = message.id; break; }

@@ -152,7 +152,7 @@ export class DshAcpBridge {
       this.emit({ type: 'dsh_done', stopReason: 'cancelled' });
       return;
     }
-    if (spec.action === 'prompt') return this.prompt(spec.text ?? '');
+    if (spec.action === 'prompt') return this.prompt(spec.text ?? '', [], spec.interruptionNotice ?? '');
     this.emit({ type: 'dsh_done', stopReason: 'end_turn' });
     } catch (error) {
       this.reportFailure('DeepSeek Harness 启动会话失败，请检查运行环境、模型设置或会话状态');
@@ -233,7 +233,7 @@ export class DshAcpBridge {
     for (const { finish } of [...this.permissions.values()]) finish({ outcome: { outcome: 'cancelled' } });
   }
 
-  async prompt(text, config = []) {
+  async prompt(text, config = [], interruptionNotice = '') {
     if (!this.sessionId || this.closing) throw new Error('DeepSeek Harness 会话尚未就绪');
     if (this.busy) throw new Error('DeepSeek Harness 正在处理上一条消息');
     this.busy = true;
@@ -249,7 +249,12 @@ export class DshAcpBridge {
         this.emit({ type: 'dsh_done', ...result });
         return result;
       }
-      const result = await this.agent.request('session/prompt', { sessionId: this.sessionId, prompt: [{ type: 'text', text }] });
+      // ACP has no host status-message role. Keep the persisted Stop note in
+      // its own standard block, separate from the unchanged user text. DSH
+      // joins adjacent text blocks, so the boundary includes blank lines.
+      const prompt = [...(interruptionNotice ? [{ type: 'text', text: interruptionNotice + '\n\n' }] : []),
+        { type: 'text', text }];
+      const result = await this.agent.request('session/prompt', { sessionId: this.sessionId, prompt });
       this.emit({ type: 'dsh_done', stopReason: result.stopReason });
       return result;
     } catch (error) {
@@ -349,7 +354,7 @@ export async function runCli(argv = process.argv.slice(2)) {
           started = true;
           work = bridge.start(message).catch(error => { input.close(); throw error; });
           break;
-        case 'prompt': work = bridge.prompt(message.text ?? '', message.config ?? []); break;
+        case 'prompt': work = bridge.prompt(message.text ?? '', message.config ?? [], message.interruptionNotice ?? ''); break;
         case 'cancel': work = bridge.cancel(); break;
         case 'set_config': work = bridge.setConfig(message); break;
         case 'ui_response': bridge.respond(message); break;

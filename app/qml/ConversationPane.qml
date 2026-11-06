@@ -611,6 +611,8 @@ Item {
                     property var modelData: rowShell.modelData
                     property int index: rowShell.index
                     readonly property bool compactionNotice: modelData.customType === "umeko-compaction"
+                    readonly property bool dshInterruptionNotice: modelData.customType === "umeko-dsh-interruption"
+                    readonly property bool statusNotice: compactionNotice || dshInterruptionNotice
                     readonly property point hoverPoint: chatSelection.mapToItem(messageRow, chatSelection.pointer.x, chatSelection.pointer.y)
                     readonly property bool hovered: chatSelection.hovering && hoverPoint.x >= 0 && hoverPoint.x <= width && hoverPoint.y >= 0 && hoverPoint.y <= height
                     width: conversation.width - 16
@@ -618,7 +620,7 @@ Item {
                     onImplicitHeightChanged: if (bodyLoader.status === Loader.Ready)
                         pane.messageModel.recordHeight(index, implicitHeight)
                     Row {
-                        visible: !modelData._loading && !messageRow.compactionNotice && !modelData.continuation && modelData.role !== "user"
+                        visible: !modelData._loading && !messageRow.statusNotice && !modelData.continuation && modelData.role !== "user"
                         spacing: 9
                         AssistantAvatar {
                             objectName: "assistantAvatar_" + messageRow.index
@@ -644,7 +646,7 @@ Item {
                                 duration: 180
                             }
                         }
-                        visible: !modelData._loading && !messageRow.compactionNotice
+                        visible: !modelData._loading && !messageRow.statusNotice
                         readonly property bool userMessage: modelData.role === "user"
                         width: userMessage ? (modelData.text.length > 512 ? messageRow.width * 0.82 : Math.min(messageRow.width * 0.82, Math.max(64, userBody.implicitWidth + 28))) : parent.width - 33
                         x: userMessage ? parent.width - width : 33
@@ -688,12 +690,24 @@ Item {
                     ActionButton {
                         objectName: "requestDetails_" + messageRow.index
                         selectionController: chatSelection
-                        visible: !modelData._loading && !messageRow.compactionNotice && !!modelData.error && (modelData.diagnosticId || "").length > 0
+                        visible: !modelData._loading && !messageRow.statusNotice && !!modelData.error && (modelData.diagnosticId || "").length > 0
                         x: 33
                         text: I18n.t("查看请求与返回")
                         glyph: "code"
                         quiet: true
                         onClicked: requestInspector.show(modelData.diagnosticId)
+                    }
+                    Text {
+                        objectName: "dshInterruptionNotice_" + messageRow.index
+                        x: 33
+                        width: parent.width - 33
+                        visible: !modelData._loading && messageRow.dshInterruptionNotice
+                        text: I18n.t(modelData.text || "")
+                        textFormat: Text.PlainText
+                        wrapMode: Text.Wrap
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.font(12, visible)
                     }
                     Column {
                         id: compactionEvent
@@ -788,13 +802,13 @@ Item {
                         objectName: "outputLimitNotice_" + messageRow.index
                         x: 33
                         width: parent.width - 33
-                        visible: !modelData._loading && !messageRow.compactionNotice && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
+                        visible: !modelData._loading && !messageRow.statusNotice && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
                         continuable: messageRow.index === conversation.count - 1 && !pane.busy
                         onContinued: backend.send(I18n.t("继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。"))
                     }
                     Item {
                         objectName: "messageActions_" + messageRow.index
-                        visible: !modelData._loading && !messageRow.compactionNotice && modelData.segmentLast !== false
+                        visible: !modelData._loading && !messageRow.statusNotice && modelData.segmentLast !== false
                         width: parent.width
                         height: 18
                         opacity: messageRow.hovered || actionHover.hovered ? 1 : 0
@@ -838,7 +852,7 @@ Item {
                         objectName: "replyEndMascot_" + messageRow.index
                         selectionController: chatSelection
                         width: Character.id === "doubao" ? Theme.icon(72) : 56
-                        visible: !modelData._loading && !messageRow.compactionNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
+                        visible: !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
                         x: 33
                     }
                 }

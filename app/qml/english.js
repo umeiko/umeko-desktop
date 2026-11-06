@@ -1,5 +1,8 @@
 .pragma library
 var strings = {
+    "查看完整路径": "Show full path",
+    "收起完整路径": "Hide full path",
+    "[用户已停止上一条请求；请只处理新消息，除非用户明确要求继续。]": "[The user stopped the previous request. Handle only the new message unless the user explicitly asks to continue.]",
     "配置 DeepSeek Harness": "Configure DeepSeek Harness",
     "运行时路径、检查与下载": "Runtime path, checks and download",
     "本次拒绝": "Reject once",

@@ -67,6 +67,21 @@ test('reopening passes stored session id through resume', async t => {
   assert.ok(events.some(event => event.type === 'delta' && event.text === 'after resume'));
 });
 
+test('host interruption is a separate standard block before unchanged user text', async t => {
+  const { bridge, events, spec } = await setup(t);
+  await bridge.start(spec);
+  const notice = '[The user stopped the previous request]';
+  await bridge.prompt('prompt-blocks', [], notice);
+  assert.deepEqual(JSON.parse(events.find(event => event.type === 'delta').text), [
+    { type: 'text', text: notice + '\n\n' }, { type: 'text', text: 'prompt-blocks' },
+  ]);
+  events.length = 0;
+  await bridge.prompt('prompt-blocks');
+  assert.deepEqual(JSON.parse(events.find(event => event.type === 'delta').text), [
+    { type: 'text', text: 'prompt-blocks' },
+  ]);
+});
+
 test('partial tool failure keeps original arguments and name', () => {
   const { event } = projectTool({ toolCallId: 'x', title: 'write', rawInput: { path: 'x' } }, { toolCallId: 'x', status: 'failed', rawOutput: 'denied' });
   assert.deepEqual(event, { type: 'tool', id: 'x', name: 'write', args: { path: 'x' }, state: 'error', result: 'denied' });

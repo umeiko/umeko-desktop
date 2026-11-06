@@ -263,8 +263,45 @@ class DshBackendTests(unittest.TestCase):
         self.assertFalse(record.busy)
         self.assertEqual(record.queue, [])
         self.assertEqual(record.draft, "留到稍后")
-        self.assertEqual(record.messages[-1]["stopReason"], "aborted")
+        self.assertEqual(record.messages[-1]["customType"], "umeko-dsh-interruption")
+        self.assertEqual(record.messages[-1]["role"], "status")
+        self.assertTrue(record.dsh_interruption_pending)
+        self.assertFalse(any(row['role'] == 'assistant' and not row.get('text')
+                             and not row.get('thinking') and not row.get('tools') for row in record.messages))
         self.assertFalse(any(row.get("type") == "prompt" for row in process.writes))
+
+    def test_stop_notice_is_separate_from_next_user_text_and_consumed_after_success(self):
+        c = self.controller
+        record, process = self.start_dsh("先前的任务")
+        self.event("thinking_delta", text="尚未完成的思考")
+        c.stop()
+        self.event("dsh_done", stopReason="cancelled")
+        self.assertEqual(record.messages[-2]['stopReason'], 'aborted')
+        self.assertEqual(record.messages[-2]['thinking'], '尚未完成的思考')
+        self.assertTrue(c._dsh_history.read(record.id)['interruptionPending'])
+        self.assertTrue(c.send("1+1 等于几？"))
+        prompt = next(row for row in reversed(process.writes) if row['type'] == 'prompt')
+        self.assertEqual(prompt['text'], "1+1 等于几？")
+        self.assertEqual(prompt['interruptionNotice'], dsh_backend.INTERRUPTION_NOTICE)
+        self.assertEqual([row['text'] for row in record.messages if row['role'] == 'user'],
+                         ['先前的任务', '1+1 等于几？'])
+        self.event('delta', text='2')
+        self.event('dsh_done', stopReason='end_turn')
+        self.assertFalse(c._dsh_history.read(record.id)['interruptionPending'])
+        c.send('下一个问题')
+        self.assertEqual(process.writes[-1]['interruptionNotice'], '')
+
+    def test_failed_next_prompt_keeps_pending_stop_notice(self):
+        c = self.controller
+        record, process = self.start_dsh()
+        c.stop()
+        self.event('dsh_done', stopReason='cancelled')
+        c.send('新的问题')
+        self.event('error', message='模型暂时不可用')
+        self.event('dsh_done', stopReason='error')
+        self.assertTrue(c._dsh_history.read(record.id)['interruptionPending'])
+        c.send('再次发送新问题')
+        self.assertEqual(process.writes[-1]['interruptionNotice'], dsh_backend.INTERRUPTION_NOTICE)
 
     def test_model_and_reasoning_changes_reuse_advertised_opaque_config_values(self):
         c = self.controller

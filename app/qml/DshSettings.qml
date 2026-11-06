@@ -8,6 +8,8 @@ Column {
     objectName: "dshSettings"
     spacing: 16
     readonly property var runtime: backend.dshRuntime
+    property bool fullRuntimePathOpen: false
+    readonly property string runtimeFileName: String(runtime.resolvedPath || "").replace(/\\/g, "/").split("/").pop()
 
     function savePath() { runtime.setPath(runtimePath.text) }
     function localPath(url) {
@@ -65,9 +67,26 @@ Column {
                 text: I18n.t("Windows：选择 dsh 安装目录，或 node_modules\\@deepseek-ai\\dsh\\lib\\bin.js；全局安装可选择 dsh.cmd。")
                 color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible)
             }
+            RowLayout {
+                Layout.fillWidth: true; spacing: 8
+                visible: !!root.runtime.resolvedPath
+                Text {
+                    objectName: "dshRuntimeLocationSummary"
+                    Layout.fillWidth: true; elide: Text.ElideMiddle
+                    text: root.runtimeFileName + (root.runtime.version ? " · " + root.runtime.version : "")
+                    textFormat: Text.PlainText
+                    color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible)
+                }
+                ActionButton {
+                    objectName: "dshRuntimeLocationToggle"
+                    text: root.fullRuntimePathOpen ? I18n.t("收起完整路径") : I18n.t("查看完整路径")
+                    glyph: root.fullRuntimePathOpen ? "chevron-up" : "chevron-down"; quiet: true
+                    onClicked: root.fullRuntimePathOpen = !root.fullRuntimePathOpen
+                }
+            }
             Text {
                 objectName: "dshRuntimeResolvedPath"
-                Layout.fillWidth: true; visible: text.length > 0
+                Layout.fillWidth: true; visible: root.fullRuntimePathOpen && text.length > 0
                 text: root.runtime.resolvedPath ? I18n.t("使用路径：") + root.runtime.resolvedPath : ""
                 textFormat: Text.PlainText; wrapMode: Text.WrapAnywhere
                 color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible)

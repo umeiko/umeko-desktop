@@ -19,6 +19,9 @@ from .npm_config import npm_environment
 from .pi_runtime import CREATE_NO_WINDOW, node_executable
 
 
+INTERRUPTION_NOTICE = '[用户已停止上一条请求；请只处理新消息，除非用户明确要求继续。]'
+
+
 def is_dsh(record):
     return getattr(record, 'backend', 'pi') == 'dsh'
 
@@ -180,7 +183,8 @@ class DshControllerMixin:
             return
         self._index_record(record)
         self._dsh_history.save(record.id, {'messages': record.messages,
-            'contextUsage': record.context_usage, 'configOptions': getattr(record, 'dsh_options', [])})
+            'contextUsage': record.context_usage, 'configOptions': getattr(record, 'dsh_options', []),
+            'interruptionPending': getattr(record, 'dsh_interruption_pending', False)})
         self.store.save_sessions(self._sessions)
 
     def _open_dsh(self, session):
@@ -207,6 +211,7 @@ class DshControllerMixin:
             record.messages = value.get('messages', [])
             record.context_usage = value.get('contextUsage', {})
             record.dsh_options = value.get('configOptions', [])
+            record.dsh_interruption_pending = value.get('interruptionPending', False)
         else:
             record.messages = [{'role': 'assistant', 'text': 'DeepSeek Harness 显示历史暂时无法读取；请保留本地会话目录。', 'error': True}]
         self.chatChanged.emit()
@@ -295,12 +300,24 @@ class DshControllerMixin:
             record.id = 'dsh-' + record.key
         if not record.messages:
             record.title = ' '.join(text.split())[:28]
+        interrupted = getattr(record, 'dsh_interruption_pending', False)
+        record.dsh_prompt_has_interruption = interrupted
+        if interrupted:
+            self._dsh_interruption_notice(record)
         record.messages.extend([{'role': 'user', 'text': text, 'error': False},
                                 {'role': 'assistant', 'text': '', 'error': False}])
         record.optimistic_user = True
         record.body_dirty = True
         self._save_dsh(record)
-        return self._command_dsh('prompt', record, text=text)
+        return self._command_dsh('prompt', record, text=text,
+                                 interruptionNotice=INTERRUPTION_NOTICE if interrupted else '')
+
+    def _dsh_interruption_notice(self, record):
+        if record.messages and record.messages[-1].get('customType') == 'umeko-dsh-interruption':
+            return
+        record.messages.append({'role': 'status', 'customType': 'umeko-dsh-interruption',
+                                'text': INTERRUPTION_NOTICE, 'error': False})
+        record.body_dirty = True
 
     def _write_pi(self, payload, record=None):
         record = record or self._view
@@ -324,6 +341,9 @@ class DshControllerMixin:
             return super()._stop()
         if record.busy:
             record.cancelled = True
+            # Keep the host's Stop intent across a real application restart.
+            record.dsh_interruption_pending = True
+            self._save_dsh(record)
             self._pool.write(record, {'type': 'cancel'})
             record.approval = {}
             self.approvalChanged.emit()
@@ -396,6 +416,16 @@ class DshControllerMixin:
                 record.ready = False
             if stopped and record.messages and record.messages[-1].get('role') == 'assistant':
                 record.messages[-1]['stopReason'] = 'aborted'
+                # The optimistic placeholder has no content to preserve. Keep
+                # partial thinking and tools, but never render an empty reply.
+                if not any(record.messages[-1].get(field) for field in ('text', 'thinking', 'tools')):
+                    record.messages.pop()
+            if stopped:
+                record.dsh_interruption_pending = True
+                self._dsh_interruption_notice(record)
+            elif (record.action == 'prompt' and getattr(record, 'dsh_prompt_has_interruption', False)
+                  and not record.failed and kind != 'exit'):
+                record.dsh_interruption_pending = False
             self._save_dsh(record)
             self.approvalChanged.emit()
             if record.queue and not stopped and not record.failed and kind != 'exit':
