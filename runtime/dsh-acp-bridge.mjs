@@ -215,9 +215,15 @@ export class DshAcpBridge {
       this.permissions.set(id, { params, finish });
       signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted || this.closing) return abort();
-      const tool = params.toolCall ?? {};
-      const detail = [tool.title || '工具调用', tool.rawInput === undefined ? '' : JSON.stringify(tool.rawInput)].filter(Boolean).join('\n');
-      this.emit({ type: 'ui_request', backend: 'dsh', id, method: 'confirm', title: 'DeepSeek Harness 请求授权', message: detail, detail, options: params.options });
+      const offeredTool = params.toolCall ?? {};
+      const cachedTool = this.tools.get(offeredTool.toolCallId) ?? {};
+      const tool = {
+        ...cachedTool, ...offeredTool,
+        title: typeof offeredTool.title === 'string' && offeredTool.title.trim() ? offeredTool.title : cachedTool.title,
+        rawInput: offeredTool.rawInput ?? cachedTool.rawInput,
+      };
+      const detail = [tool.title || '工具调用', tool.rawInput == null ? '' : JSON.stringify(tool.rawInput), textOf(tool.content)].filter(Boolean).join('\n');
+      this.emit({ type: 'ui_request', backend: 'dsh', id, toolCallId: tool.toolCallId, method: 'confirm', title: 'DeepSeek Harness 请求授权', message: detail, detail, options: params.options });
     });
   }
 

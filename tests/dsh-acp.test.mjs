@@ -156,3 +156,30 @@ test('packaged runtime resolves SDK from its prepared release dependency tree', 
   await writeFile(join(sdk, 'acp.js'), 'export {};\n');
   assert.equal(resolveSdkEntry(join(home, 'runtime')), join(sdk, 'acp.js'));
 });
+
+test('permission-partial preserves cached tool details, explanations and one-shot choices', async () => {
+  const events = [];
+  const bridge = new DshAcpBridge({ emit: event => events.push(event) });
+  bridge.tools.set('write-notes', {
+    toolCallId: 'write-notes', title: 'Write notes file', rawInput: { path: 'out/notes.txt', content: 'notes' },
+    content: [{ type: 'content', content: { type: 'text', text: 'Cached write explanation' } }],
+  });
+  const options = [{ optionId: 'offered-allow', name: 'Allow once', kind: 'allow_once' }, { optionId: 'offered-reject', name: 'Reject once', kind: 'reject_once' }];
+  for (const value of [true, false]) {
+    const pending = bridge.permission({
+      sessionId: 'session',
+      toolCall: { toolCallId: 'write-notes', title: '  ', rawInput: null,
+        ...(value ? { content: [{ type: 'content', content: { type: 'text', text: 'Permission-specific write explanation' } }] } : {}) },
+      options,
+    });
+    const event = events.at(-1);
+    assert.equal(event.toolCallId, 'write-notes');
+    assert.equal(event.backend, 'dsh');
+    assert.equal(event.options, options);
+    assert.match(event.detail, /Write notes file/);
+    assert.match(event.detail, /out\/notes\.txt/);
+    assert.match(event.detail, value ? /Permission-specific write explanation/ : /Cached write explanation/);
+    bridge.respond({ id: event.id, value });
+    assert.deepEqual(await pending, { outcome: { outcome: 'selected', optionId: value ? 'offered-allow' : 'offered-reject' } });
+  }
+});
