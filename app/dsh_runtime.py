@@ -383,7 +383,9 @@ class DshRuntimeService(QObject):
         if self._ready:
             self._resolved_path, self._version, self._progress = result["path"], result["version"], 1.
             if result.get("downloaded"):
-                self.config["dshPath"] = result["path"]
+                # Managed installs follow the application's runtime directory;
+                # only an explicitly selected external runtime needs a path.
+                self.config["dshPath"] = ""
                 if self._save_config: self._save_config()
                 self.configChanged.emit()
         self.changed.emit()

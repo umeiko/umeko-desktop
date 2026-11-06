@@ -702,7 +702,7 @@ Item {
                         x: 33
                         width: parent.width - 33
                         visible: !modelData._loading && messageRow.dshInterruptionNotice
-                        text: I18n.t(modelData.text || "")
+                        text: messageRow.dshInterruptionNotice ? I18n.t(modelData.text || "") : ""
                         textFormat: Text.PlainText
                         wrapMode: Text.Wrap
                         color: Theme.muted
@@ -852,7 +852,7 @@ Item {
                         objectName: "replyEndMascot_" + messageRow.index
                         selectionController: chatSelection
                         width: Character.id === "doubao" ? Theme.icon(72) : 56
-                        visible: !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
+                        visible: backend.sessionBackend !== "dsh" && !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
                         x: 33
                     }
                 }

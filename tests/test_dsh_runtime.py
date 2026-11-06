@@ -272,7 +272,7 @@ class DshRuntimeTests(unittest.TestCase):
             timer.cancel()
         self.assertLess(time.monotonic() - started, 10)
 
-    def test_qobject_work_is_background_and_persistence_returns_to_owner_thread(self):
+    def test_download_keeps_managed_path_auto_and_persists_on_owner_thread(self):
         app = QCoreApplication.instance() or QCoreApplication([])
         owner = threading.get_ident()
         calls, saved, results = [], [], []
@@ -284,7 +284,8 @@ class DshRuntimeTests(unittest.TestCase):
         def download(*args, **kwargs):
             calls.append(threading.get_ident())
             kwargs["progress"]({"progress": .8, "message": "fixture health"})
-            return {"ok": True, "message": "fixture ready", "path": "installed/bin.js", "version": runtime.PINNED_VERSION}
+            installed = package(self.root / "own" / runtime.RELEASE_NAME)
+            return {"ok": True, "message": "fixture ready", "path": str(installed), "version": runtime.PINNED_VERSION}
         service.finished.connect(results.append)
         with patch.object(runtime, "install_dsh", side_effect=download):
             service.download()
@@ -295,7 +296,13 @@ class DshRuntimeTests(unittest.TestCase):
         self.assertTrue(results)
         self.assertNotEqual(calls, [owner])
         self.assertEqual(saved, [owner, owner])
-        self.assertEqual(config["dshPath"], "installed/bin.js")
+        self.assertEqual(config["dshPath"], "")
+        self.assertEqual(service.path, "")
+        found = runtime.discover_dsh(service.path, service.runtime_root)
+        self.assertEqual(found, {"path": results[0]["path"], "source": "managed"})
+        self.assertEqual(service.resolvedPath, found["path"])
+        self.assertEqual(service.version, runtime.PINNED_VERSION)
+        self.assertEqual(service.status, "fixture ready")
         self.assertTrue(service.ready)
         self.assertFalse(service.busy)
 
