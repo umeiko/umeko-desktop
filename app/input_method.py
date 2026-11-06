@@ -18,6 +18,9 @@ class InputMethodUpdates(QObject):
         self._app = app
         from .ime_trace import InputMethodTrace
         self._trace = InputMethodTrace.install(app)
+        from .windows_ime import WindowsImePosition
+        self._windows_ime = WindowsImePosition.install(app)
+        self._publishing_windows = False
         self._syncing = False
         self._focus_editor = None
         self._items = ()
@@ -28,6 +31,8 @@ class InputMethodUpdates(QObject):
         self._pending.timeout.connect(self._update)
         app.focusObjectChanged.connect(self._focus_changed)
         app.focusWindowChanged.connect(self._schedule)
+        if self._windows_ime is not None:
+            app.inputMethod().cursorRectangleChanged.connect(self._publish_windows)
         self._focus_changed()
 
     def _focus_changed(self, *_):
@@ -50,7 +55,27 @@ class InputMethodUpdates(QObject):
                 and event.queries() & (Qt.ImCursorRectangle | Qt.ImAnchorRectangle)
                 and receiver == self._app.focusObject()):
             self._synchronize_transform(receiver, self._app.focusWindow())
+        elif (event.type() == QEvent.InputMethod and self._windows_ime is not None
+              and receiver == self._app.focusObject()):
+            # Prime the current caret before the focused editor consumes a new
+            # composition, then refresh again after commit/preedit layout.
+            self._publish_windows()
+            self._schedule()
         return False
+
+    def _publish_windows(self, *_):
+        if self._windows_ime is None or self._publishing_windows:
+            return
+        self._publishing_windows = True
+        try:
+            focus, window = self._app.focusObject(), self._app.focusWindow()
+            if not self._synchronize_transform(focus, window):
+                return
+            result = self._windows_ime.publish(window, self._app.inputMethod().cursorRectangle())
+            if result is not None and self._trace is not None:
+                self._trace.record_imm(result)
+        finally:
+            self._publishing_windows = False
 
     def _synchronize_transform(self, focus, window):
         if (self._syncing or not isinstance(window, QQuickWindow) or not isinstance(focus, QQuickItem)

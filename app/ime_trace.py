@@ -25,11 +25,12 @@ def _values(rectangle):
 
 
 class InputMethodTrace(QObject):
-    """Append rectangle signals to the profile's logs/ime-geometry.log.
+    """Append rectangle signals and Windows IMM writes to logs/ime-geometry.log.
 
     Native pixels are the source-derived Windows IMM client coordinates, even
-    on other Qt platforms. This observes Qt publications, not an IME's final
-    candidate-window placement. Event names describe the latest relevant Qt
+    on other Qt platforms. ``imm`` records contain the coordinates actually
+    passed to IMM and both API results, not an IME's final rendered placement.
+    Event names describe the latest relevant Qt
     event, or the application's explicit queued refresh.
     """
 
@@ -67,6 +68,12 @@ class InputMethodTrace(QObject):
             self.note(event.type().name)
         return False
 
+    def record_imm(self, placement):
+        """Log only geometry sent by the Windows publisher, never event text."""
+        record = dict(time=datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+                      kind="imm", event=self._event, **placement)
+        self._append(record)
+
     def _record(self, kind):
         if self._failed:
             return
@@ -84,6 +91,11 @@ class InputMethodTrace(QObject):
                       native=_values(native_rectangle(rectangle, factor)) if factor is not None else None,
                       dpr=factor, screen=screen.name() if screen is not None else None,
                       event=self._event)
+        self._append(record)
+
+    def _append(self, record):
+        if self._failed:
+            return
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as handle:
