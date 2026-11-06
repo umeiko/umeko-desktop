@@ -60,6 +60,9 @@ export class DshAcpBridge {
     this.closing = false;
     this.busy = false;
     this.configTail = Promise.resolve();
+    this.permissionTail = Promise.resolve();
+    this.modeRequests = new Map();
+    this.modeSequence = 0;
   }
 
   reportFailure(message) {
@@ -71,22 +74,31 @@ export class DshAcpBridge {
     this.emit({ type: 'dsh_done', stopReason: 'error' });
   }
 
-  async connect({ runtime, home, workspace, patchFiles = [] }) {
+  async connect({ runtime, home, workspace, patchFiles = [], permissionMode }) {
     if (this.child) throw new Error('DeepSeek Harness 已启动');
     if (!runtime || !home || !workspace) throw new Error('DeepSeek Harness 的运行入口、独立目录或工作区缺失');
     this.workspace = resolve(workspace);
+    this.permissionManaged = permissionMode !== undefined;
+    this.permissionMode = permissionMode;
     const isScript = /\.[cm]?js$/i.test(runtime);
     this.child = this.spawnProcess(isScript ? process.execPath : runtime,
       [...(isScript ? [runtime] : []), '--profile', 'acp', ...patchFiles.flatMap(file => ['--patch', file])], {
         cwd: this.workspace, env: { ...this.env, DSH_HOME: resolve(home) },
-        windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true, stdio: ['pipe', 'pipe', 'pipe', ...(this.permissionManaged ? ['ipc'] : [])],
       });
     const child = this.child;
+    child.on('message', message => {
+      if (message?.type !== 'umeko_tool_permission_mode_applied') return;
+      const request = this.modeRequests.get(message.id);
+      if (!request) return;
+      request.finish(!message.error && message.mode === request.mode);
+    });
     // Do not echo runtime stderr: it may contain upstream request details.
     child.stderr?.on('data', () => {});
     this.exited = new Promise(done => {
       child.once('exit', (code, signal) => {
         this.exitObserved = true;
+        for (const request of [...this.modeRequests.values()]) request.finish(false);
         this.cancelPermissions();
         if (!this.closing) {
           this.reportFailure('DeepSeek Harness 进程已退出，请检查运行环境后重新打开会话');
@@ -97,6 +109,7 @@ export class DshAcpBridge {
       });
       child.once('error', () => {
         this.exitObserved = true;
+        for (const request of [...this.modeRequests.values()]) request.finish(false);
         this.cancelPermissions();
         if (!this.closing) {
           this.reportFailure('DeepSeek Harness 无法启动，请检查运行入口');
@@ -122,6 +135,10 @@ export class DshAcpBridge {
     this.starting = true;
     try {
     const initialized = await this.connect(spec);
+    if (this.permissionManaged) {
+      this.permissionInitialized = true;
+      await this.setPermissionMode(this.permissionMode);
+    }
     this.capabilities = initialized.agentCapabilities ?? {};
     let session;
     if (spec.sessionId) {
@@ -249,6 +266,7 @@ export class DshAcpBridge {
     this.assistantTextSeen = false;
     try {
       await this.configTail;
+      await this.permissionTail;
       for (const option of config) await this.setConfig(option);
       if (this.cancelRequested || this.closing) {
         const result = { stopReason: 'cancelled' };
@@ -285,6 +303,42 @@ export class DshAcpBridge {
     return operation;
   }
 
+  setPermissionMode(mode) {
+    if (mode !== 'auto' && mode !== 'ask') return Promise.reject(new Error('工具权限模式只能为 auto 或 ask'));
+    this.permissionMode = mode;
+    // Latch changes during official profile startup. Initialization completes
+    // only after the profile's permission extension has registered its channel.
+    if (!this.permissionInitialized) return Promise.resolve();
+    const operation = this.permissionTail.catch(() => {}).then(() => this.applyPermissionMode(mode));
+    this.permissionTail = operation;
+    return operation;
+  }
+
+  async applyPermissionMode(mode) {
+    try {
+      if (!this.permissionManaged || !this.child?.connected || this.closing) throw new Error('permission channel unavailable');
+      const id = `mode-${++this.modeSequence}`;
+      await new Promise((resolveMode, rejectMode) => {
+        const finish = ok => {
+          if (!this.modeRequests.delete(id)) return;
+          clearTimeout(timer);
+          if (ok) resolveMode();
+          else rejectMode(new Error('permission mode was not applied'));
+        };
+        const timer = setTimeout(() => finish(false), 30000);
+        this.modeRequests.set(id, { mode, finish });
+        try {
+          this.child.send({ type: 'umeko_tool_permission_mode', id, value: mode }, error => { if (error) finish(false); });
+        } catch { finish(false); }
+      });
+    } catch (error) {
+      this.reportFailure('DeepSeek Harness 权限同步失败，已停止此运行时；请重新打开会话。');
+      await this.shutdown();
+      error.dshReported = true;
+      throw error;
+    }
+  }
+
   async applyConfig({ configId, value }, publish = true) {
     if (!this.sessionId || this.closing) throw new Error('DeepSeek Harness 会话尚未就绪');
     const response = await this.agent.request('session/set_config_option', { sessionId: this.sessionId, configId, value }, { signal: AbortSignal.timeout(30000) });
@@ -303,6 +357,7 @@ export class DshAcpBridge {
       }
       this.connection?.close();
       this.child?.stdin.end();
+      if (this.child?.connected) this.child.disconnect();
       if (this.child && !this.exitObserved) {
         let timer;
         await Promise.race([this.exited, new Promise(resolveTimeout => { timer = setTimeout(resolveTimeout, 5000); })]);
@@ -363,6 +418,7 @@ export async function runCli(argv = process.argv.slice(2)) {
         case 'prompt': work = bridge.prompt(message.text ?? '', message.config ?? [], message.interruptionNotice ?? ''); break;
         case 'cancel': work = bridge.cancel(); break;
         case 'set_config': work = bridge.setConfig(message); break;
+        case 'tool_permission_mode': work = bridge.setPermissionMode(message.mode); break;
         case 'ui_response': bridge.respond(message); break;
         case 'shutdown': work = bridge.shutdown().then(() => input.close()); break;
         default: throw new Error('unsupported command');

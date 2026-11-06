@@ -3,6 +3,14 @@ import { createInterface } from 'node:readline';
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 const send = message => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
 let sessionId = 'fake-session', currentValue = 'opaque:model:first', pendingPrompt, permissionPrompt;
+let permissionMode = 'auto';
+process.on('message', message => {
+  if (message?.type !== 'umeko_tool_permission_mode') return;
+  permissionMode = message.value;
+  process.send?.({ type: 'umeko_tool_permission_mode_applied', id: message.id, mode: permissionMode,
+    ...(process.env.FAKE_ACP_PERMISSION_FAILURE ? { error: 'fixture_permission_failure' } : {}) });
+});
+process.channel?.unref();
 const options = () => [{ id: 'model', name: 'Model', type: 'select', currentValue, options: [{ name: 'First', value: 'opaque:model:first' }, { name: 'Second', value: 'opaque:model:second' }] }];
 const update = data => send({ method: 'session/update', params: { sessionId, update: data } });
 const result = (id, data) => send({ id, result: data });
@@ -26,6 +34,11 @@ lines.on('line', line => {
     case 'session/resume': sessionId = params.sessionId; result(message.id, { configOptions: options() }); break;
     case 'session/set_config_option': currentValue = params.value; result(message.id, { configOptions: options() }); break;
     case 'session/prompt': {
+      if (params.prompt.at(-1).text === 'permission-mode') {
+        update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: permissionMode } });
+        result(message.id, { stopReason: 'end_turn' });
+        break;
+      }
       if (params.prompt.at(-1).text === 'prompt-blocks') {
         update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: JSON.stringify(params.prompt) } });
         result(message.id, { stopReason: 'end_turn' });

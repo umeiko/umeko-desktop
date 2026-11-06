@@ -26,8 +26,12 @@ def is_dsh(record):
     return getattr(record, 'backend', 'pi') == 'dsh'
 
 
-def profile_configuration(providers, selected_provider, selected_model, max_tokens):
+def profile_configuration(providers, selected_provider, selected_model, max_tokens,
+                          permission_mode='auto', permission_plugin=None):
     """Return a Cordis patch and environment; credentials never enter the patch."""
+    if permission_mode not in ('auto', 'ask'):
+        raise ValueError('DeepSeek Harness 不支持当前权限模式，请选择自动或询问。')
+    plugin = Path(permission_plugin or Path(__file__).resolve().parents[1] / 'runtime/dsh-permissions.mjs')
     configured, environment = {}, {}
     for index, provider in enumerate(providers):
         if provider.get('api') not in ('openai', 'anthropic'):
@@ -56,6 +60,15 @@ def profile_configuration(providers, selected_provider, selected_model, max_toke
     selection = {'provider': selected_provider, 'model': model['upstream']}
     patch = [{'id': 'llm-pi-ai', 'config': {'providers': configured}},
              {'id': 'acp', 'config': selection}, {'id': 'agent-default-model', 'config': selection},
+             {'id': 'sandbox-policy', 'config': {'mode': 'workspace-write', 'additionalWritableRoots': []}},
+             {'id': 'approval', 'config': {'policy': 'ask'}},
+             {'id': 'permission', 'config': {'defaultPreset': 'workspace-write', 'presets': {
+                 'read-only': {'sandbox': 'read-only', 'approval': 'ask'},
+                 'workspace-write': {'sandbox': 'workspace-write', 'approval': 'ask'},
+                 'danger-full-access': {'sandbox': 'danger-full-access', 'approval': 'never'}}}},
+             {'insert': [{'id': 'umeko-tool-permissions', 'name': plugin.resolve().as_uri(),
+                          'inject': ['tools', 'approval', 'sandboxPolicy', 'permissionPresets'],
+                          'config': {'mode': permission_mode}}]},
              *[{'id': name, 'disabled': True} for name in ('llm-deepseek', 'llm-deepseek-account', 'deepseek-account', 'session-telemetry-otel')]]
     return patch, environment
 
@@ -235,7 +248,9 @@ class DshControllerMixin:
         record.prompt_started = time.monotonic() if action == 'prompt' else None
         try:
             patch, keys = profile_configuration(self.store.data['providers'], record.provider, record.model,
-                                               self.store.data['agent']['maxTokens'])
+                                               self.store.data['agent']['maxTokens'],
+                                               self.store.data['agent'].get('toolPermissionMode', 'auto'),
+                                               self.root / 'runtime/dsh-permissions.mjs')
             if record.process and record.ready and not record.stale:
                 self._pool.write(record, {'type': action, **values, 'config': self._dsh_selection(record)})
             else:
@@ -267,6 +282,7 @@ class DshControllerMixin:
                            'config': [], 'model': {'provider': record.provider, 'id': next(
                                model['upstream'] for model in selected['models'] if model['alias'] == record.model)},
                            'reasoningEffort': record.reasoning_effort, **values}
+                payload['permissionMode'] = self.store.data['agent'].get('toolPermissionMode', 'auto')
                 DshProcess(self._pool, record, self.root / 'runtime/dsh-acp-bridge.mjs', payload, environment)
                 record.stale = False
         except (OSError, RuntimeError, ValueError, KeyError) as error:

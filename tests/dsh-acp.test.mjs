@@ -183,3 +183,42 @@ test('permission-partial preserves cached tool details, explanations and one-sho
     assert.deepEqual(await pending, { outcome: { outcome: 'selected', optionId: value ? 'offered-allow' : 'offered-reject' } });
   }
 });
+
+test('permissions use private IPC for live mode changes without restarting ACP', async t => {
+  const { bridge, events, spec } = await setup(t);
+  await bridge.start({ ...spec, permissionMode: 'auto' });
+  const pid = bridge.child.pid;
+  await bridge.setPermissionMode('ask');
+  await bridge.prompt('permission-mode');
+  assert.ok(events.some(event => event.type === 'delta' && event.text === 'ask'));
+  const pending = bridge.prompt('wait');
+  await bridge.setPermissionMode('auto');
+  await bridge.cancel();
+  await pending;
+  assert.equal(bridge.child.pid, pid);
+  events.length = 0;
+  await bridge.prompt('permission-mode');
+  assert.ok(events.some(event => event.type === 'delta' && event.text === 'auto'));
+  assert.equal(events.some(event => event.type === 'error'), false);
+});
+
+test('permissions changed during startup apply before the first prompt', async t => {
+  const { bridge, events, spec } = await setup(t);
+  bridge.env = { ...bridge.env, FAKE_ACP_INITIALIZE_DELAY: '30' };
+  const starting = bridge.start({ ...spec, permissionMode: 'auto' });
+  await bridge.setPermissionMode('ask');
+  await starting;
+  await bridge.prompt('permission-mode');
+  assert.ok(events.some(event => event.type === 'delta' && event.text === 'ask'));
+});
+
+test('permissions failure closes the child instead of running under a stale policy', async t => {
+  const { bridge, events, spec } = await setup(t);
+  bridge.env = { ...bridge.env, FAKE_ACP_PERMISSION_FAILURE: '1' };
+  await assert.rejects(bridge.start({ ...spec, permissionMode: 'ask' }));
+  assert.equal(bridge.closing, true);
+  assert.equal(bridge.exitObserved, true);
+  assert.equal(events.filter(event => event.type === 'dsh_done').length, 1);
+  assert.ok(events.some(event => event.type === 'error' && event.message.includes('权限同步失败')));
+  assert.equal(events.some(event => event.type === 'delta'), false);
+});
