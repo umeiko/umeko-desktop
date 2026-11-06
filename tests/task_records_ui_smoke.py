@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import time
 from unittest.mock import patch
 
@@ -24,10 +25,15 @@ class Fixture:
     def __init__(self):
         self.calls = 0
         self.partial = False
+        self.release = None
+        self.waiting = False
 
     def complete(self, model, messages, tools, max_tokens):
         self.calls += 1
         if messages[-1]["role"] == "tool":
+            if self.release:
+                self.waiting = True
+                self.release.wait(20)
             return Completion("Report submitted.")
         items = [{"path": "report.txt"}]
         if self.partial:
@@ -83,6 +89,10 @@ with tempfile.TemporaryDirectory(prefix="umeko-task-records-ui-") as temp:
 
     manager = backend.desktopPlugins
     ledger = backend._task_records
+    assert not manager.enabled('task-records')
+    assert 'task-records' not in {row['id'] for row in manager.sessionPlugins}
+    assert ledger.store is None
+    manager.setEnabled('task-records', True)
 
     def open_widget():
         menu = control("desktopPluginSessionMenu")
@@ -250,15 +260,42 @@ with tempfile.TemporaryDirectory(prefix="umeko-task-records-ui-") as temp:
             until(lambda:not panel.property('request'),'Large detail page did not load')
             elapsed.append(round((time.perf_counter()-start)*1000,1))
             assert len(panel.property('nodes').toVariant())<=20
-            assert QMetaObject.invokeMethod(panel,'showAttempt',Qt.DirectConnection,Q_ARG('QVariant',1),Q_ARG('QVariant',9992),Q_ARG('QVariant',False))
+            assert QMetaObject.invokeMethod(panel,'showAttempt',Qt.DirectConnection,Q_ARG('QVariant',1),Q_ARG('QVariant',9992),Q_ARG('QVariant',False),Q_ARG('QVariant',False))
             until(lambda:not panel.property('request') and panel.property('edgeReady'),'Late history page did not load')
             assert len(panel.property('nodes').toVariant())<=20
             assert QMetaObject.invokeMethod(panel,'edgePage',Qt.DirectConnection,Q_ARG('QVariant',-1))
             until(lambda:not panel.property('request') and panel.property('edgeReady'),'Reverse pagination did not finish')
             assert panel.property('detailOffset')==9984
+            timeline=control('taskTimeline')
+            timeline.setProperty('contentY', min(100, max(0, timeline.property('contentHeight')-timeline.property('height'))))
+            QTest.qWait(100)
+            scroll_before=timeline.property('contentY')
+            ledger.changed.emit()
+            until(lambda:not panel.property('request') and panel.property('edgeReady'),'Live refresh did not settle')
+            QTest.qWait(100)
+            assert abs(timeline.property('contentY')-scroll_before)<2, (scroll_before,timeline.property('contentY'))
             assert large.draft=='Retained large-history draft' and large.attachments==large_attachments and fixture.calls==before
             manager.closePage()
         print('LARGE_TASK_RECORDS_UI_OK',json.dumps({'messages':2002,'steps':10000,'offscreen_open_and_select_ms':elapsed,'max_nodes':20}))
+        # Keep the actual Pi turn running after delivery; the open Widget must
+        # receive the new file before completion or any manual refresh.
+        backend.newSession()
+        backend.store.data['desktop']['autoOpenSubmissions']=False
+        fixture.partial=False
+        fixture.release=threading.Event()
+        live_task=ledger.create('Live delivery fixture','Only this isolated project')
+        assert ledger.prepare(live_task)
+        panel=open_widget()
+        select_task(panel,live_task)
+        assert backend.send('Submit the report and wait')
+        until(lambda:fixture.waiting,'Pi did not reach the paused final response')
+        until(lambda:any(row.get('file') for row in panel.property('nodes').toVariant()),'Running Widget did not refresh its delivery')
+        assert backend._view.busy and backend._view.task_attempt
+        assert ledger.store.tasks()[0]['state']=='running'
+        fixture.release.set()
+        until(lambda:not backend._view.busy,'Live fixture did not finish')
+        manager.closePage()
+        print('LIVE_TASK_RECORDS_UI_OK: new delivery visible before the Pi turn ended; scroll retained on refresh')
         print("TASK_RECORDS_UI_OK: isolated browsing, real Pi delivery, retry, partial failure, and changed artifact")
     except AssertionError:
         panel = find("taskRecordsWidget")
@@ -266,6 +303,8 @@ with tempfile.TemporaryDirectory(prefix="umeko-task-records-ui-") as temp:
             print({key: panel.property(key) for key in ("view", "request", "loaded", "error")}, warnings, file=sys.stderr)
         raise
     finally:
+        if fixture.release:
+            fixture.release.set()
         backend.close()
         window.hide()
         import shiboken6

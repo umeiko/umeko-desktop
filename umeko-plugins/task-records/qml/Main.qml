@@ -45,6 +45,8 @@ Rectangle {
     property bool navigationOpen: false
     property bool edgeReady: false
     property bool edgeAtEnd: false
+    property bool keepDetailPosition: false
+    property bool refreshingDetail: false
 
     function t(zh, en) { return sdk.language.indexOf("zh") === 0 ? zh : en }
     function timeText(value) {
@@ -99,23 +101,26 @@ Rectangle {
         return !!request
     }
     function showList(offset) { if (request) return; view="list"; taskOffset=offset; call("list",{offset:offset}) }
-    function showTask(id, offset) {
+    function showTask(id, offset, preserve) {
         if (request) return
+        refreshingDetail=!!preserve && taskId===id
         if (taskId !== id) { task=null; attempts=[]; detail=null; checkResult=null; technical=false }
         view="task"; taskId=id; attemptOffset=offset; confirmingDelete=false; confirmingAccept=false
         call("get",{taskId:id, offset:offset})
     }
-    function showAttempt(index, offset, atEnd) {
+    function showAttempt(index, offset, atEnd, preserve) {
         if (request) return
         if (attemptIndex !== index) checkResult=null
-        attemptIndex=index; detailOffset=offset; detail=null; selectedNode=0; edgeReady=false; edgeAtEnd=!!atEnd
+        keepDetailPosition=!!preserve && attemptIndex===index && detailOffset===offset && !!detail
+        attemptIndex=index; detailOffset=offset; edgeReady=false; edgeAtEnd=!!atEnd
+        if (!keepDetailPosition) { detail=null; selectedNode=0 }
         confirmingAccept=false
         if (attempt) call("detail",{taskId:taskId,attemptId:attempt.id,offset:offset,deliveriesOnly:deliveryMode})
     }
     function refresh() {
         if (!sdk.active || request || view==="create") return
         refreshPending=false
-        if (view==="task") showTask(taskId,attemptOffset); else showList(taskOffset)
+        if (view==="task") showTask(taskId,attemptOffset,true); else showList(taskOffset)
     }
     function linkState(result) { linked=result.linked || ""; linkedObjective=result.linkedObjective || ""; chatTitle=result.chatTitle || "" }
     function edgePage(direction) {
@@ -146,13 +151,24 @@ Rectangle {
                 root.task=result.task; root.attempts=result.attempts; root.attemptsMore=result.hasMore; root.canLink=result.canLink; root.linkState(result)
                 const index=root.attempts.findIndex(row=>row.id===previous)
                 if(previous===0 || index<0) root.deliveryMode=!!(root.attempts.length && root.attempts[0].state!=="running")
-                root.showAttempt(index>=0?index:root.attempts.length?0:-1,index>=0?root.detailOffset:0,false)
+                root.showAttempt(index>=0?index:root.attempts.length?0:-1,index>=0?root.detailOffset:0,false,root.refreshingDetail && index>=0)
                 break
             }
-            case "tasks.detail":
+            case "tasks.detail": {
+                const y=timeline.contentY
+                const key=root.nodes[root.selectedNode] ? root.nodes[root.selectedNode].key : ""
+                const preserve=root.keepDetailPosition
                 root.detail=result.id?result:null
-                Qt.callLater(function(){ if(root.edgeAtEnd) timeline.positionViewAtEnd(); else timeline.positionViewAtBeginning(); root.edgeReady=true })
+                Qt.callLater(function(){
+                    if(preserve) {
+                        timeline.contentY=Math.max(timeline.originY,Math.min(y,timeline.originY+Math.max(0,timeline.contentHeight-timeline.height)))
+                        const index=root.nodes.findIndex(row=>row.key===key)
+                        if(index>=0) root.selectedNode=index
+                    } else if(root.edgeAtEnd) timeline.positionViewAtEnd(); else timeline.positionViewAtBeginning()
+                    root.edgeReady=true
+                })
                 break
+            }
             case "tasks.create":
                 objective.clear(); scope.clear(); root.taskId=result.taskId; root.task=null; root.attempts=[]; root.detail=null; root.checkResult=null
                 root.refreshPending=false; root.view="task"

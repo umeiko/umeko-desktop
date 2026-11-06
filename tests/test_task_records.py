@@ -1,4 +1,5 @@
 import json
+from contextlib import closing
 import os
 from pathlib import Path
 import sqlite3
@@ -100,7 +101,7 @@ os._exit(23)
         from app.task_records import SCHEMA
         from unittest.mock import patch
         legacy = self.root / 'legacy.sqlite3'
-        with sqlite3.connect(legacy) as db:
+        with closing(sqlite3.connect(legacy)) as db, db:
             db.executescript(SCHEMA)
             db.execute('PRAGMA user_version = 1')
             db.execute("INSERT INTO tasks VALUES ('legacy','Goal','Scope','/project','old','old')")
@@ -116,9 +117,55 @@ os._exit(23)
         with patch('app.task_records.timestamp',return_value='later'):
             migrated.step(1,'tool','new-tool','read · done')
             migrated.step(1,'tool','old-tool','read · updated')
-        rows=migrated.details('legacy',1)['steps']
-        self.assertIsNone(rows[0]['observed'])
-        self.assertEqual(rows[1]['observed'],'first')
-        self.assertEqual(rows[1]['updated'],'later')
-        self.assertEqual(rows[1]['detail'],'read · done')
-        self.assertEqual(TaskStore(legacy).details('legacy',1)['steps'][1]['observed'],'first')
+        rows={row['key']:row for row in migrated.details('legacy',1)['steps']}
+        self.assertIsNone(rows['old-tool']['observed'])
+        self.assertEqual(rows['new-tool']['observed'],'first')
+        self.assertEqual(rows['new-tool']['updated'],'later')
+        self.assertEqual(rows['new-tool']['detail'],'read · done')
+        restored={row['key']:row for row in TaskStore(legacy).details('legacy',1)['steps']}
+        self.assertEqual(restored['new-tool']['observed'],'first')
+
+    def test_timeline_pages_share_one_order_without_repeating_milestones(self):
+        from unittest.mock import patch
+        def at(minute):
+            return patch('app.task_records.timestamp', return_value=f'2026-11-06T00:{minute:02}:00Z')
+        with at(0):
+            attempt = self.store.begin(self.task, str(self.root), '', '', [])
+        for index in range(18):
+            with at(index + 1):
+                self.store.step(attempt, 'tool', str(index), 'read · done')
+        for index in range(5):
+            path = self.root / f'report-{index}.txt'
+            path.write_text('delivered')
+            with at(19 + index):
+                self.store.files(attempt, 'submitted', str(index), versions_of([{'path':str(path)}]))
+        with at(24):
+            self.store.finish(attempt, 'finished', '')
+        with at(25):
+            self.store.accept(self.task, attempt)
+        whole = self.store.details(self.task, attempt)
+        keys, times, offset = [], [], 0
+        while True:
+            page = self.store.details(self.task, attempt, offset, 8)
+            self.assertLessEqual(len(page['timelineKeys']), 8)
+            keys.extend(page['timelineKeys'])
+            observed = {row['kind']+'-'+row['key']:row['observed'] for row in page['steps']}
+            observed.update({'file-'+str(row['id']):row['observed'] for row in page['files']})
+            observed.update(start=page['started'], end=page['ended'], accepted=page['accepted'])
+            times.extend(observed[key] for key in page['timelineKeys'])
+            if offset == 0:
+                self.assertEqual(page['files'], [])
+                self.assertNotIn('end', page['timelineKeys'])
+            if not page['hasMore']:
+                break
+            offset += 8
+        self.assertEqual(keys, whole['timelineKeys'])
+        self.assertEqual(len(keys), 26)
+        self.assertEqual(len(set(keys)), len(keys))
+        self.assertEqual(times, sorted(times))
+        self.assertEqual(keys[-2:], ['end', 'accepted'])
+        deliveries = self.store.details(self.task, attempt, 0, 8, deliveries_only=True)
+        self.assertEqual(deliveries['steps'], [])
+        self.assertEqual(len(deliveries['timelineKeys']), 6)
+        self.assertEqual(deliveries['timelineKeys'][-1], 'accepted')
+        self.assertFalse(deliveries['hasMore'])

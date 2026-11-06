@@ -157,17 +157,43 @@ class TaskStore:
             attempt = db.execute("SELECT * FROM attempts WHERE task_id = ? AND id = ?", (task_id, attempt_id)).fetchone()
             if not attempt:
                 return {}
-            steps = [dict(row) for row in db.execute(
-                "SELECT * FROM steps WHERE attempt_id = ? ORDER BY rowid LIMIT ? OFFSET ?", (attempt_id, limit, offset))] if not deliveries_only else []
-            files = [dict(row) for row in db.execute(
-                "SELECT * FROM files WHERE attempt_id = ?" + (" AND source != 'input'" if deliveries_only else "") + " ORDER BY id LIMIT ? OFFSET ?", (attempt_id, limit, offset))]
+            # Page one ordered event stream. Independently paging each table can
+            # show a late delivery/end before the next page's earlier tool steps.
+            sources = ["SELECT 'file' AS category, id AS row_id, observed AS time, 1 AS rank FROM files WHERE attempt_id = :attempt"
+                       + (" AND source != 'input'" if deliveries_only else "")]
+            if not deliveries_only:
+                sources.extend((
+                    "SELECT 'step', rowid, observed, 2 FROM steps WHERE attempt_id = :attempt",
+                    "SELECT 'start', 0, :started, 0",
+                    "SELECT 'end', 0, :ended, 3 WHERE :ended IS NOT NULL"))
+            sources.append("SELECT 'accepted', 0, :accepted, 4 WHERE :accepted IS NOT NULL")
+            events = db.execute("SELECT * FROM (" + " UNION ALL ".join(sources) + ") "
+                "ORDER BY time IS NULL OR time = '', time, rank, row_id LIMIT :limit OFFSET :offset",
+                {"attempt": attempt_id, "started": attempt['started'], "ended": attempt['ended'],
+                 "accepted": attempt['accepted'], "limit": limit + 1 if limit >= 0 else -1, "offset": offset}).fetchall()
+            has_more = limit >= 0 and len(events) > limit
+            if limit >= 0:
+                events = events[:limit]
+            steps, files, timeline_keys = [], [], []
+            for event in events:
+                if event['category'] == 'step':
+                    row = dict(db.execute('SELECT * FROM steps WHERE rowid = ?', (event['row_id'],)).fetchone())
+                    steps.append(row)
+                    timeline_keys.append(row['kind'] + '-' + row['key'])
+                elif event['category'] == 'file':
+                    row = dict(db.execute('SELECT * FROM files WHERE id = ?', (event['row_id'],)).fetchone())
+                    files.append(row)
+                    timeline_keys.append('file-' + str(row['id']))
+                else:
+                    timeline_keys.append(event['category'])
             has_deliveries = db.execute("SELECT 1 FROM files WHERE attempt_id = ? AND source != 'input' LIMIT 1",
                                         (attempt_id,)).fetchone() is not None
         for step in steps:
             if step["kind"] == "session":
                 step["state"] = current_session_state(step["key"], step["detail"])
         return {**dict(attempt), "session_state": current_session_state(attempt["session_id"], attempt["session_file"]),
-                "hasDeliveries": has_deliveries, "steps": steps, "files": [{**row, "state": current_file_state(row)} for row in files]}
+                "hasMore": has_more, "timelineKeys": timeline_keys, "hasDeliveries": has_deliveries,
+                "steps": steps, "files": [{**row, "state": current_file_state(row)} for row in files]}
 
     def recover(self, reason):
         now = timestamp()

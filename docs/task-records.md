@@ -1,6 +1,9 @@
 # Task records
 
-Open **Task records** from the Widget menu in the lower-right corner of chat.
+Task records is disabled by default. Enable **Task records** in Widget management,
+then open it from the Widget menu in the lower-right corner of chat. An explicit
+saved enable/disable choice is preserved. Disabling it cancels unsent preparation;
+an already running work record can still finish normally.
 This is a record of a goal, its work history and delivered files. Work happens
 in chat; opening or browsing records never starts an Agent request.
 
@@ -51,8 +54,10 @@ checks or confirmation. Directories retain paths only. Remote URLs and temporary
 Diff snapshots are outside the ledger. File contents remain in the filesystem.
 
 The built-in Widget uses a scoped, asynchronous Host API. Its read/detail pages
-remain bounded (12 goals/work records, 8 steps/files plus one lookahead); it does
-not accumulate every previous page. File checks run outside the GUI thread and
+remain bounded (12 goals/work records, 8 chronological events plus one lookahead); it does
+not accumulate every previous page. Steps, files, start/end and confirmation share
+one timeline order across pages. Live changes are coalesced and refresh the current
+page without returning its scroll position to the beginning. File checks run outside the GUI thread and
 must still belong to the active Widget/chat before their results are persisted.
 File preview accepts a stored file ID belonging to the specified task and work
 record, not an arbitrary requested path. Execution tracking survives closing the

@@ -314,7 +314,7 @@ class PiControllerMixin:
         kind, visible = event.get("type"), record is self._view
         if kind=='widget_delivery':return  # WidgetChannel observes the same pool event.
         if getattr(record, "task_attempt", 0):
-            self._task_records.event(record, event)
+            self._task_records.observe(record, event)
         if kind == "task_delivery":
             return
         if kind == "dangerous_approval_cleared":

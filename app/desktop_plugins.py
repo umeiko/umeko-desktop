@@ -87,7 +87,10 @@ class DesktopPlugins(QObject):
         e=self.entries[identifier]
         return self.b.root/'umeko-plugins'/identifier if e.get('builtin') else self.root/'packages'/identifier/e['version']
     def application(self,identifier):return self.entries.get(identifier,{}).get('lifecycle','session')=='application'
-    def enabled(self,identifier):return self.settings.get('enabled',{}).get(identifier,not self.application(identifier) or identifier in ('desktop-pet','global-agents') and self.entries[identifier].get('builtin',False))
+    def enabled(self,identifier):
+        default = identifier != 'task-records' and (not self.application(identifier)
+            or identifier in ('desktop-pet','global-agents') and self.entries[identifier].get('builtin',False))
+        return self.settings.get('enabled',{}).get(identifier,default)
     @Property(QObject,constant=True)
     def pet(self):return self._pet
     @Property(QObject,constant=True)
@@ -197,6 +200,8 @@ class DesktopPlugins(QObject):
         if not value:
             if self._page==identifier:self.closePage()
             self.stop(identifier)
+            if identifier == 'task-records':
+                self._clear_prepared_tasks(self.b._pool.records.values())
         elif self.session_enabled(identifier) and (self.application(identifier) or not self.entries[identifier].get('page')):self.start(identifier)
         if identifier=='skill-manager' and old.get('enabled',{}).get(identifier,True)!=value:self.b._skills_widget_changed()
         self.changed.emit()
@@ -215,9 +220,17 @@ class DesktopPlugins(QObject):
         if not value:
             if self._page==identifier:self.closePage()
             self.stop(identifier)
+            if identifier == 'task-records':
+                self._clear_prepared_tasks((self.b._view,))
         elif self.enabled(identifier) and not self.entries[identifier].get('page'):self.start(identifier)
         if identifier=='skill-manager':self.b._skills_widget_changed(self.b._view)
         self.changed.emit()
+    def _clear_prepared_tasks(self, records):
+        ledger = getattr(self.b, '_task_records', None)
+        if ledger:
+            for record in records:
+                if getattr(record, 'prepared_task', ''):
+                    ledger.clear(record)
     @Slot(str,result=bool)
     def openPage(self,identifier):
         if self.closed:return False

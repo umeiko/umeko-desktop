@@ -48,6 +48,44 @@ class DesktopPluginTests(unittest.TestCase):
     def call(self,method,args=None):
         key=self.manager.call(method,json.dumps(args or {}));self.assertTrue(key)
         self.wait(lambda:key in self.responses);return self.responses[key]
+
+    def test_task_records_require_opt_in_and_preserve_explicit_choices(self):
+        manager = self.manager
+        self.assertFalse(manager.enabled('task-records'))
+        self.assertFalse(manager.openPage('task-records'))
+        self.assertNotIn('task-records', manager.workers)
+        self.assertNotIn('task-records', {row['id'] for row in manager.sessionPlugins})
+        manager.setEnabled('task-records', True)
+        self.assertIn('task-records', {row['id'] for row in manager.sessionPlugins})
+        manager.close()
+        restored = DesktopPlugins(self.host)
+        try:
+            self.assertTrue(restored.enabled('task-records'))
+            restored.setEnabled('task-records', False)
+        finally:
+            restored.close()
+        restored = DesktopPlugins(self.host)
+        try:
+            self.assertFalse(restored.enabled('task-records'))
+        finally:
+            restored.close()
+
+    def test_disabling_task_records_clears_preparation_without_stopping_live_work(self):
+        from unittest.mock import Mock
+        owner = self.host._view
+        owner.prepared_task = 'goal-one'
+        other = SimpleNamespace(prepared_task='goal-two', task_attempt=42)
+        self.host._pool.records['other'] = other
+        ledger = Mock()
+        ledger.clear.side_effect = lambda record: setattr(record, 'prepared_task', '')
+        self.host._task_records = ledger
+        self.manager.setEnabled('task-records', True)
+        self.manager.setSessionEnabled('task-records', False)
+        self.assertEqual(owner.prepared_task, '')
+        self.assertEqual(other.prepared_task, 'goal-two')
+        self.manager.setEnabled('task-records', False)
+        self.assertEqual(other.prepared_task, '')
+        self.assertEqual(other.task_attempt, 42)
     def fixture(self,identifier='session-demo',version='1.0.0',config=None,lifecycle='session'):
         folder=self.path/(identifier+'-'+version);shutil.copytree(ROOT/'umeko-plugins/file-tree',folder)
         manifest=json.loads((folder/'manifest.json').read_text());manifest.update(id=identifier,version=version,builtin=True,permissions=['workspace.read','session.read','session.write'])
@@ -176,7 +214,7 @@ def create_plugin(context):return Fixture(context)
 
     def test_official_tree_is_lazy_bounded_and_closes_worker(self):
         directory=Path(self.host._view.workspace);(directory/'a.py').write_text('print(1)');(directory/'nested').mkdir();(directory/'nested/x.txt').write_text('hello')
-        self.assertEqual({row['id'] for row in self.manager.sessionPlugins},{'file-tree','git-viewer','global-agents','pi-manager','skill-manager','widget-market','task-records'})
+        self.assertEqual({row['id'] for row in self.manager.sessionPlugins},{'file-tree','git-viewer','global-agents','pi-manager','skill-manager','widget-market'})
         self.assertNotIn('pi-manager',self.manager.workers)
         self.assertTrue(self.manager.openPage('file-tree'));result=self.call('list',{'path':'.'})
         self.assertTrue(result['ok']);entries=result['result']['entries'];self.assertEqual(entries[0]['name'],'nested')
@@ -574,8 +612,6 @@ def create_plugin(context):return Fixture(context)
         self.manager.setSessionEnabled('file-tree',False)
         self.assertEqual(self.manager.recentPlugin['id'],'skill-manager')
         self.manager.setSessionEnabled('skill-manager',False)
-        self.assertEqual(self.manager.recentPlugin['id'],'task-records')
-        self.manager.setSessionEnabled('task-records',False)
         self.assertEqual(self.manager.recentPlugin['id'],'pi-manager')
         self.manager.setSessionEnabled('pi-manager',False)
         self.assertEqual(self.manager.recentPlugin['id'],'git-viewer')

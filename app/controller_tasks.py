@@ -2,7 +2,7 @@
 import sqlite3
 import uuid
 
-from PySide6.QtCore import QObject, QLockFile, Signal
+from PySide6.QtCore import QObject, QLockFile, QTimer, Signal
 
 from .task_records import TaskStore, versions_of
 
@@ -16,6 +16,10 @@ class TaskRecords(QObject):
         self.store = None
         self.lock = QLockFile(str(host.store.directory / "tasks.lock"))
         self.lock.setStaleLockTime(0)
+        self._updates = QTimer(self)
+        self._updates.setSingleShot(True)
+        self._updates.setInterval(200)
+        self._updates.timeout.connect(self.changed)
 
     def _storage(self):
         if self.store is None:
@@ -72,8 +76,8 @@ class TaskRecords(QObject):
         self.changed.emit()
         return True
 
-    def clear(self):
-        self.host._view.prepared_task = ""
+    def clear(self, record=None):
+        (record or self.host._view).prepared_task = ""
         self.changed.emit()
 
     def remove(self, task_id):
@@ -113,12 +117,15 @@ class TaskRecords(QObject):
     def _attempt_write(self, record, operation, *args):
         try:
             operation(record.task_attempt, *args)
+            # Coalesce tool/message/delivery bursts without starving a live page.
+            if not self._updates.isActive():
+                self._updates.start()
         except sqlite3.Error:
             if not record.task_record_error:
                 self.host.toast.emit("无法完整保存任务尝试")
             record.task_record_error = True
 
-    def event(self, record, event):
+    def observe(self, record, event):
         kind = event["type"]
         if kind in ("ready", "session", "state") and event.get("session"):
             session = event["session"]
@@ -144,6 +151,7 @@ class TaskRecords(QObject):
             self.finish(record, "finished", "")
 
     def finish(self, record, state, reason):
+        self._updates.stop()
         if record.task_record_error:
             state, reason = "pending", "任务记录写入不完整"
         self._write(self.store.finish, record.task_attempt, state, reason)
@@ -151,6 +159,7 @@ class TaskRecords(QObject):
         self.changed.emit()
 
     def close(self):
+        self._updates.stop()
         if self.store:
             self._write(self.store.recover, "应用已退出")
             self.store = None

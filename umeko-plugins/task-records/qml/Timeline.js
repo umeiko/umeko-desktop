@@ -12,6 +12,10 @@ function nodes(data) {
         code: step.kind === 'delivery_error' ? 'failed' : 'draft', body: step.detail, reference: step.key})
     if (data.ended) rows.push({key: 'end', kind: 'end', time: data.ended, code: data.state, body: data.reason || ''})
     if (data.accepted) rows.push({key: 'accepted', kind: 'accepted', time: data.accepted, code: 'accepted', body: ''})
+    if (Array.isArray(data.timelineKeys)) {
+        const byKey = new Map(rows.map(row => [row.key, row]))
+        return data.timelineKeys.map(key => byKey.get(key)).filter(Boolean)
+    }
     // Keep undated legacy events in observed storage order, explicitly undated.
     return rows.map((row, index) => { row.order=index; return row }).sort((a,b) => {
         if (!a.time || !b.time) return a.time ? -1 : b.time ? 1 : a.order-b.order

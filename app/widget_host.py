@@ -468,7 +468,7 @@ class WidgetHost(QObject):
             self.b.widgetDocumentRequested.emit(row['path'], Path(row['path']).name, 'file', 'task-records')
             return {'opened': True}
         if operation == 'tasks.detail':
-            self.b._job('task-details:' + request['id'], lambda: store.details(task_id, attempt_id, offset, 9, deliveries_only=args.get('deliveriesOnly', False)))
+            self.b._job('task-details:' + request['id'], lambda: store.details(task_id, attempt_id, offset, 8, deliveries_only=args.get('deliveriesOnly', False)))
             return None
         if operation == 'tasks.verify':
             self.b._job('task-details:' + request['id'], lambda: store.check_files(task_id, attempt_id))
@@ -526,9 +526,6 @@ class WidgetHost(QObject):
                 for row in value:
                     counts[row['state']] = counts.get(row['state'], 0) + 1
                 value = {'checked': checked, 'total': len(value), 'counts': counts}
-            elif value:
-                value['hasMore'] = len(value['steps']) > 8 or len(value['files']) > 8
-                value['steps'], value['files'] = value['steps'][:8], value['files'][:8]
             self._reply(request, {'ok': True, 'result': value})
         except (ValueError, sqlite3.Error) as error:
             self._reply(request, {'ok': False, 'error': str(error)})

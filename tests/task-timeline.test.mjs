@@ -26,3 +26,14 @@ test('file check counts stay explicit rather than implying acceptance',()=>{
  assert.deepEqual(JSON.parse(JSON.stringify(context.checkSummary({counts:{available:2,changed:1}}))),[{code:'available',count:2},{code:'changed',count:1}]);
  assert.deepEqual(nodes(null),[]);
 });
+
+test('bounded host pages retain their shared order and include each milestone only on its page',()=>{
+ const common={started:'2026-01-01T00:00Z',ended:'2026-01-01T00:12Z',state:'finished',cwd:'/project'};
+ const first=nodes({...common,timelineKeys:['start','tool-1'],steps:[{kind:'tool',key:'1',detail:'read',observed:'2026-01-01T00:01Z'}]});
+ const last=nodes({...common,timelineKeys:['tool-2','file-1','end'],steps:[{kind:'tool',key:'2',detail:'write',observed:'2026-01-01T00:09Z'}],
+  files:[{id:1,source:'submitted',path:'/project/report',observed:'2026-01-01T00:11Z',state:'available'}]});
+ const all=[...first,...last];
+ assert.deepEqual(all.map(row=>row.key),['start','tool-1','tool-2','file-1','end']);
+ assert.deepEqual(all.map(row=>row.time),all.map(row=>row.time).sort());
+ assert.deepEqual(nodes({...common,timelineKeys:[]}),[]);
+});
