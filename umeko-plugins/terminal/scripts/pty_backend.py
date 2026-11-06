@@ -151,4 +151,7 @@ else:
             for group in groups:
                 try:os.killpg(group,signal.SIGHUP)
                 except ProcessLookupError:pass
+            # macOS close(fd) can wait for an in-flight read. Terminate the
+            # shell first so that reader can finish even when SIGHUP is ignored.
+            self.process.terminate(force=True)
             self.process.close(force=True);self._exit=self.process.exitstatus;self.writer.join(.5)
