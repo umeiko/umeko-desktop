@@ -110,6 +110,8 @@ def create_application():
     controller._task_notifications.activated.connect(open_finished_session)
     from app.login_session import start_login_proxy
     QTimer.singleShot(0, lambda: start_login_proxy(controller, sys.argv))
+    from app.update import start_update_cleanup
+    QTimer.singleShot(0, lambda: start_update_cleanup(root, controller.store.directory))
     QTimer.singleShot(150, controller.loadNativeIndex)
     return app, engine, controller
 

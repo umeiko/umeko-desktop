@@ -12,6 +12,7 @@ import {createGunzip, createInflateRaw, crc32} from 'node:zlib';
 import {Readable, Transform} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import {fileURLToPath} from 'node:url';
+import {cleanupStartup} from './update-cleanup.mjs';
 
 const MAX_ARCHIVE = 2 * 1024 ** 3, MAX_EXPANDED = 8 * 1024 ** 3;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -557,6 +558,10 @@ function insideDirectory(root, file) {
 }
 export async function prepare(job, jobFile) {
   const install = await fsp.realpath(job.installDir), executable = await fsp.realpath(job.executable);
+  if (job.profileDir) {
+    const profile=await fsp.realpath(job.profileDir).catch(error=>{if(error.code==='ENOENT')return path.resolve(job.profileDir);throw error;});
+    if(profile===install || insideDirectory(install,profile))throw Error('用户数据位于安装目录内，不能自动替换程序');
+  }
   if (!insideDirectory(install,executable) || !await exists(path.join(install,job.resourceRelative,'build-info.json'))) throw Error('仅打包版支持安装更新；源码版本请使用 Git 更新');
   if (path.dirname(install) === install || !/^[a-f0-9]{64}$/.test(job.sha256 || '')) throw Error('安装任务无效');
   // Copy the running app and libraries out of the destination before Windows locks them.
@@ -595,6 +600,7 @@ export async function install(job, jobFile) {
   let stage, backup, outcome, moved = false, activated = false;
   try {
     stage = await fsp.mkdtemp(path.join(path.dirname(installDir),'.umeko-stage-'));
+    await writeJSON(jobFile,{...job,stage});
     status('verifying','安装前再次校验 SHA-256…',0.05);
     if (await digest(job.archive) !== job.sha256) throw Error('安装包已改变，SHA-256 校验失败');
     const archiveName = job.archiveName || path.basename(job.archive);
@@ -618,7 +624,7 @@ export async function install(job, jobFile) {
     await renameRetry(installDir,backup); moved = true;
     try {await renameRetry(payload,installDir); activated = true;}
     catch (error) {await renameRetry(backup,installDir); moved = false; throw error;}
-    await writeJSON(jobFile + '.result',{backup,installDir,version:job.version});
+    await writeJSON(jobFile + '.result',{backup,stage,installDir,version:job.version});
     outcome = {backup};
   } catch (error) {
     if (moved && !activated && !await exists(installDir)) {
@@ -630,16 +636,12 @@ export async function install(job, jobFile) {
 }
 
 async function cleanup(job, jobFile) {
-  const ready = await readJSON(jobFile + '.ready'), until = Date.now() + 120000;
-  while (true) {
-    try {process.kill(ready.pid,0);} catch (error) {if (error.code === 'ESRCH') break; throw error;}
-    if (Date.now() > until) return;
-    await sleep(250);
-  }
-  const cache = path.dirname(jobFile);
-  if (path.resolve(job.cache) !== cache || !await exists(jobFile+'.result') ||
-    path.resolve(job.installDir).startsWith(cache + path.sep)) return;
-  await fsp.rm(cache,{recursive:true,force:true,maxRetries:10,retryDelay:300});
+  // Older installers still invoke this command. A successful OS spawn alone
+  // does not confirm that the new application's UI can start.
+  if(!await exists(jobFile+'.started'))return;
+  const context=await readJSON(jobFile+'.started');
+  if(path.resolve(job.cache)!==path.dirname(jobFile) || path.resolve(context.updatesDir)!==path.dirname(path.dirname(jobFile)))return;
+  await cleanupStartup(context);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -653,7 +655,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       process.exitCode=0;
     } else {
     const job = await readJSON(jobFile);
-    if (mode !== 'cleanup') logFile = jobFile + '.log';
+    if (!['cleanup','cleanup-startup'].includes(mode)) logFile = jobFile + '.log';
     if (mode === 'download') {
       const controller=new AbortController();
       const pause=()=>controller.abort();
@@ -666,6 +668,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     else if (mode === 'prepare') await prepare(job,jobFile);
     else if (mode === 'install') await install(job,jobFile);
     else if (mode === 'cleanup') await cleanup(job,jobFile);
+    else if (mode === 'cleanup-startup') await cleanupStartup(job);
     else throw Error('未知更新操作');
     }
   } catch (error) {const detail=error.downloadState || {};status(error.code==='PAUSED'?'paused':'error',detail.message || error.message,detail.progress ?? -1,detail);process.exitCode=error.code==='PAUSED'?0:1;}
