@@ -18,10 +18,10 @@ on:
         description: Build all native platforms for a stable release
         type: boolean
         default: false
-      theme_variations:
-        description: Exercise long chats, streaming, popups and 150% scale for theme switching
-        type: boolean
-        default: false
+      theme_cases:
+        description: 'Theme capture cases, comma-separated scenario:scale (baseline,long,streaming,popup; 1 or 1.5)'
+        type: string
+        default: 'baseline:1'
 
 permissions:
   contents: read
@@ -257,20 +257,15 @@ jobs:
           QT_QUICK_BACKEND: ''
           QSG_RHI_BACKEND: d3d11
           QSG_INFO: '1'
-          THEME_VARIATIONS: ${{ inputs.theme_variations }}
+          THEME_CASES: ${{ inputs.theme_cases || 'baseline:1' }}
         run: |
           unset QT_QUICK_BACKEND
           status=0
-          scales=(1)
-          scenarios=(baseline)
-          if [ "$THEME_VARIATIONS" = true ]; then
-            scales=(1 1.5)
-            scenarios=(baseline long streaming popup)
-          fi
-          for scale in "${scales[@]}"; do
-            for scenario in "${scenarios[@]}"; do
-              QT_SCALE_FACTOR="$scale" .venv/Scripts/python.exe tests/theme_switch_windows_ui_smoke.py --scenario "$scenario" || status=1
-            done
+          IFS=',' read -r -a cases <<< "$THEME_CASES"
+          for capture_case in "${cases[@]}"; do
+            scenario="${capture_case%%:*}"
+            scale="${capture_case#*:}"
+            QT_SCALE_FACTOR="$scale" .venv/Scripts/python.exe tests/theme_switch_windows_ui_smoke.py --scenario "$scenario" --scale "$scale" || status=1
           done
           exit "$status"
 

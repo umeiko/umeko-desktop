@@ -9,6 +9,7 @@ import argparse
 import ctypes
 from ctypes import wintypes
 import json
+import math
 import os
 import operator
 from pathlib import Path
@@ -29,6 +30,18 @@ def ci_display_mode():
     user.EnumDisplaySettingsW.argtypes = [ctypes.c_wchar_p, wintypes.DWORD, ctypes.c_void_p]
     user.ChangeDisplaySettingsExW.argtypes = [ctypes.c_wchar_p, ctypes.c_void_p,
                                             ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p]
+    user.SystemParametersInfoW.argtypes = [wintypes.UINT, wintypes.UINT,
+                                         ctypes.c_void_p, wintypes.UINT]
+    user.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+    user.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+    old_dpi = user.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
+    if not old_dpi:
+        raise RuntimeError("Cannot enter PerMonitorV2 display measurement context")
+    def work_area():
+        value = wintypes.RECT()
+        if not user.SystemParametersInfoW(0x0030, 0, ctypes.byref(value), 0):
+            raise RuntimeError("SPI_GETWORKAREA failed")
+        return [value.left, value.top, value.right, value.bottom]
     # DEVMODEW is 220 bytes. dmSize, dmPelsWidth/Height are fixed SDK offsets.
     def mode(index):
         value = ctypes.create_string_buffer(220)
@@ -36,32 +49,76 @@ def ci_display_mode():
         if not user.EnumDisplaySettingsW(None, index, value):
             return None
         return value
-    original = mode(0xFFFFFFFF)
-    if original is None:
-        raise RuntimeError("EnumDisplaySettingsW current mode failed")
-    size = lambda value: struct.unpack_from("II", value, 172)
-    initial = size(original)
-    if initial[0] >= 1920 and initial[1] >= 1080:
-        return {"initial": initial, "selected": initial, "changed": False}, lambda: None
-    candidates = []
-    for index in range(4096):
-        value = mode(index)
-        if value is None:
-            break
-        w, h = size(value)
-        if w >= 1920 and h >= 1080:
-            candidates.append((w * h, value))
-    if not candidates:
-        raise RuntimeError(f"No supported desktop mode >=1920x1080 (current {initial})")
-    selected = min(candidates, key=lambda row: row[0])[1]
-    status = user.ChangeDisplaySettingsExW(None, selected, None, 4, None)  # CDS_FULLSCREEN, no registry write
+    changed = False
+    try:
+        original = mode(0xFFFFFFFF)
+        if original is None:
+            raise RuntimeError("EnumDisplaySettingsW current mode failed")
+        size = lambda value: struct.unpack_from("II", value, 172)
+        initial = size(original)
+        initial_work = work_area()
+        reserved = [max(0, initial[0] - (initial_work[2] - initial_work[0])),
+                    max(0, initial[1] - (initial_work[3] - initial_work[1]))]
+        scale = float(os.environ["QT_SCALE_FACTOR"])
+        client_required = [math.ceil(1060 * scale), math.ceil(700 * scale)]
+        required = [max(1920, client_required[0] + reserved[0]),
+                    max(1080, client_required[1] + reserved[1])]
+        info = {"initial": initial, "initial_work_area_physical": initial_work,
+                "reserved_physical": reserved, "required_client_physical": client_required,
+                "required_desktop_physical": required}
+        selected = original
+        if initial[0] < required[0] or initial[1] < required[1]:
+            candidates = []
+            for index in range(4096):
+                value = mode(index)
+                if value is None:
+                    break
+                w, h = size(value)
+                if w >= required[0] and h >= required[1]:
+                    candidates.append((w * h, value))
+            if not candidates:
+                raise RuntimeError(f"No supported desktop mode fits measured requirements: {info}")
+            selected = min(candidates, key=lambda row: row[0])[1]
+            status = user.ChangeDisplaySettingsExW(None, selected, None, 4, None)
+            if status != 0:
+                raise RuntimeError(f"Temporary desktop mode change failed: {status}")
+            changed = True
+        selected_work = work_area() if changed else initial_work
+        if (selected_work[2] - selected_work[0] < client_required[0]
+                or selected_work[3] - selected_work[1] < client_required[1]):
+            raise RuntimeError(f"Selected desktop work area does not fit client: {selected_work}, {info}")
+        info.update(selected=size(selected), selected_work_area_physical=selected_work, changed=changed)
+        def restore():
+            if changed:
+                status = user.ChangeDisplaySettingsExW(None, original, None, 4, None)
+                if status != 0:
+                    raise RuntimeError(f"Desktop mode restore failed: {status}")
+        return info, restore
+    except Exception:
+        if changed:
+            status = user.ChangeDisplaySettingsExW(None, original, None, 4, None)
+            if status != 0:
+                raise RuntimeError(f"Desktop mode setup and restore failed: restore={status}")
+        raise
+    finally:
+        user.SetThreadDpiAwarenessContext(old_dpi)
+
+
+def wait_for_desktop_presentation(app):
+    """Wait for queued presentation, without requesting another application frame.
+
+    Qt frameSwapped means queued for presentation, not drawn on the desktop.
+    DwmFlush waits for this calling application's queued DirectX changes.
+    https://doc.qt.io/qt-6/qquickwindow.html#frameSwapped
+    https://learn.microsoft.com/windows/win32/api/dwmapi/nf-dwmapi-dwmflush
+    """
+    app.processEvents()
+    flush = ctypes.windll.dwmapi.DwmFlush
+    flush.argtypes, flush.restype = [], ctypes.c_long
+    status = flush()
     if status != 0:
-        raise RuntimeError(f"Temporary desktop mode change failed: {status}")
-    def restore():
-        status = user.ChangeDisplaySettingsExW(None, original, None, 4, None)
-        if status != 0:
-            raise RuntimeError(f"Desktop mode restore failed: {status}")
-    return {"initial": initial, "selected": size(selected), "changed": True}, restore
+        raise RuntimeError(f"DwmFlush failed: HRESULT 0x{status & 0xFFFFFFFF:08x}")
+    return {"qt_state": "frame-queued", "desktop_wait": "DwmFlush", "hresult": status}
 
 
 def native_capture(window):
@@ -280,7 +337,7 @@ def main():
             if not args.offscreen:
                 report["display_mode"], restore_display = ci_display_mode()
             global QImage, QObject, QPointF, QQmlEngine, QQmlExpression, QEventLoop, QTimer
-            from PySide6.QtCore import QObject, QPointF, QEventLoop, QTimer
+            from PySide6.QtCore import QObject, QPointF, QEventLoop, QTimer, Qt
             from PySide6.QtGui import QImage
             from PySide6.QtQml import QQmlEngine, QQmlExpression
             from app.storage import Store
@@ -398,11 +455,21 @@ def main():
                 if args.scenario == "streaming":
                     backend._handle_pi_event(record, {"type": "delta", "text": f"Streaming chunk {index}.\n\n"})
                 swaps = []
+                synchronized = []
+                armed = []
+                def after_sync():
+                    if armed:
+                        synchronized.append(time.monotonic())
                 def swapped():
-                    swaps.append(time.monotonic())
-                window.frameSwapped.connect(swapped)
+                    if synchronized:
+                        swaps.append(time.monotonic())
+                # Direct callbacks observe the render thread's signal order.
+                # Ignore a frame that was already synchronized before the click.
+                window.afterSynchronizing.connect(after_sync, Qt.ConnectionType.DirectConnection)
+                window.frameSwapped.connect(swapped, Qt.ConnectionType.DirectConnection)
                 try:
                     click_theme(window, theme)
+                    armed.append(True)
                     if backend.config.get("theme") != theme:
                         raise RuntimeError("Actual QML theme handler did not update backend config")
                     # A pre-presentation capture is diagnostic: old pixels are valid until a frame is swapped.
@@ -411,15 +478,28 @@ def main():
                     while not swaps and time.monotonic() < deadline:
                         pump(app, 10)
                     if not swaps and not args.offscreen:
-                        failure = f"{index:02d}-{theme}: no natural frameSwapped within 3 seconds"
+                        failure = f"{index:02d}-{theme}: no naturally synchronized post-click frameSwapped within 3 seconds"
                         report["failures"].append(failure)
                         report["presentation_failures"].append(failure)
+                    if swaps and not args.offscreen:
+                        try:
+                            presentation = wait_for_desktop_presentation(app)
+                            presentation["theme"] = theme
+                            presentation["qt_after_synchronizing_at"] = synchronized[0]
+                            presentation["qt_frame_queued_at"] = swaps[-1]
+                            report.setdefault("presentation_waits", []).append(presentation)
+                        except Exception as error:
+                            failure = f"{index:02d}-{theme}: {error}"
+                            report["failures"].append(failure)
+                            report["presentation_failures"].append(failure)
+                            raise
                     capture(f"{index:02d}-{theme}-presented", theme)
                     pump(app, 350)
                     capture(f"{index:02d}-{theme}-settled", theme)
                 except Exception as error:
                     report["failures"].append(f"{index:02d}-{theme}: {error}")
                 finally:
+                    window.afterSynchronizing.disconnect(after_sync)
                     window.frameSwapped.disconnect(swapped)
             if args.scenario == "streaming":
                 backend._handle_pi_event(record, {"type": "done"})
