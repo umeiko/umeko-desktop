@@ -193,7 +193,7 @@ export async function cleanupStartup(context, options={}) {
         const directory=path.join(temporary,entry.name);
         try {
           const job=await read(path.join(directory,'job.json'));
-          if(await canonical(job.cache)===downloads && (await fs.stat(directory)).mtimeMs<cutoff)await erase(directory,temporary,/^umeko-download-job-[a-z0-9_-]{8}$/);
+          if(await canonical(job.cache)===downloads && !alive(job.parentPid) && await lastActivity(directory)<staleCutoff)await erase(directory,temporary,/^umeko-download-job-[a-z0-9_-]{8}$/);
         } catch(error) {note('failed',directory,error);}
       }
     }

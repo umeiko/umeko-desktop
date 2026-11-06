@@ -489,3 +489,20 @@ test('cleanup canonicalizes receipt aliases and still protects modified packages
   await assert.rejects(fs.stat(f.backup),{code:'ENOENT'});
   await assert.rejects(fs.stat(f.job.cache),{code:'ENOENT'});
 });
+
+test('cleanup retains recent or active temporary download jobs and reclaims abandoned ones',async t=>{
+  const f=await cleanup113Fixture(t), temporary=path.join(f.base,'temp');
+  f.job.tempDir=temporary;await fs.mkdir(temporary);
+  const locations={};
+  for(const [kind,suffix] of [['recent','11111111'],['abandoned','22222222'],['active','33333333']]) {
+    const directory=path.join(temporary,'umeko-download-job-'+suffix);locations[kind]=directory;
+    await fs.mkdir(directory);await fs.writeFile(path.join(directory,'job.json'),JSON.stringify({cache:f.downloads,...(kind==='active'?{parentPid:process.pid}:{})}));
+    if(kind!=='recent') {
+      const old=new Date(Date.now()-8*24*60*60*1000);
+      for(const file of [path.join(directory,'job.json'),directory])await fs.utimes(file,old,old);
+    }
+  }
+  await f.run();
+  await fs.access(path.join(locations.recent,'job.json'));await fs.access(path.join(locations.active,'job.json'));
+  await assert.rejects(fs.stat(locations.abandoned),{code:'ENOENT'});
+});
