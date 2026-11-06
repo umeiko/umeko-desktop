@@ -189,7 +189,9 @@ test('existing installation paths through a directory alias are canonicalized', 
 });
 
 async function cleanupFixture(t) {
-  const base=await fs.mkdtemp(path.join(os.tmpdir(),'umeko-cleanup-test-'));
+  // Failure-injection hooks and reported paths must use the same spelling on
+  // Windows (os.tmpdir() can contain an 8.3 alias). Separate cases retain aliases.
+  const base=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'umeko-cleanup-test-')));
   t.after(()=>fs.rm(base,{recursive:true,force:true}));
   const installDir=path.join(base,'Umeko'), updatesDir=path.join(base,'cache','updates');
   const cache=path.join(updatesDir,'a'.repeat(32)), downloadsDir=path.join(base,'downloads','Umeko');
