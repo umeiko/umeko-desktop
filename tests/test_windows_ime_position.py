@@ -174,6 +174,15 @@ Item { Umeko.Composer { x: 24; width: parent.width - 48
                 snapshot(label + "-composition-start")
                 composition_end()
             assert not failures, "IMM caret positions lagged: " + ", ".join(failures)
+            records = [json.loads(line) for line in
+                       (Path(folder) / "profile/logs/ime-geometry.log").read_text(encoding="utf-8").splitlines()]
+            writes = [row for row in records if row["kind"] == "imm"]
+            assert writes, "Enabled diagnostics did not record the actual IMM writes"
+            allowed = {"time", "kind", "event", "dpr", "native", "composition", "candidate",
+                       "exclude", "compositionSet", "candidateSet"}
+            assert all(set(row) == allowed and row["compositionSet"] and row["candidateSet"] for row in writes)
+            for row in writes[-3:]:
+                print("IMM_WRITE " + json.dumps(row), flush=True)
         finally:
             updates._pending.stop()
             view.close()

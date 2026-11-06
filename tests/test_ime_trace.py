@@ -93,6 +93,19 @@ class InputMethodTraceTests(unittest.TestCase):
         rect = native_rectangle(QRectF(1.1, 2.1, 1, 10), 1.5)
         self.assertEqual((rect.x(), rect.y(), rect.width(), rect.height()), (2, 3, 1, 15))
 
+    def test_imm_log_contains_actual_sent_geometry_and_api_results_only(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.dict(os.environ, {"UMEKO_DATA_DIR": folder, "UMEKO_IME_TRACE": "1"}):
+                trace = InputMethodTrace.install(Application())
+                placement = dict(dpr=1.5, native=[2, 3, 1, 15], composition=[2, 3],
+                                 candidate=[2, 18], exclude=[2, 3, 3, 18],
+                                 compositionSet=True, candidateSet=False)
+                trace.record_imm(placement)
+                raw = trace.path.read_text(encoding="utf-8")
+                row = json.loads(raw)
+                self.assertEqual(row, dict(time=row["time"], kind="imm", event="startup", **placement))
+                self.assertNotIn("private typed content", raw)
+
 
 if __name__ == "__main__":
     unittest.main()
