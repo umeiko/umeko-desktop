@@ -88,7 +88,7 @@ class DesktopPlugins(QObject):
         return self.b.root/'umeko-plugins'/identifier if e.get('builtin') else self.root/'packages'/identifier/e['version']
     def application(self,identifier):return self.entries.get(identifier,{}).get('lifecycle','session')=='application'
     def enabled(self,identifier):
-        default = identifier != 'task-records' and (not self.application(identifier)
+        default = identifier not in ('task-records', 'system-prompt') and (not self.application(identifier)
             or identifier in ('desktop-pet','global-agents') and self.entries[identifier].get('builtin',False))
         return self.settings.get('enabled',{}).get(identifier,default)
     @Property(QObject,constant=True)
@@ -113,6 +113,13 @@ class DesktopPlugins(QObject):
         for key in (record.id,'draft:'+record.key):
             if key and key in sessions:return identifier in sessions[key]
         return self.entries[identifier].get('builtin',False)
+    def system_prompt_enabled(self, record):
+        identifier = 'system-prompt'
+        if identifier not in self.entries or not self.enabled(identifier):return False
+        sessions = self.settings.get('sessions', {})
+        for key in (record.id, 'draft:' + record.key):
+            if key and key in sessions:return identifier in sessions[key]
+        return self.entries[identifier].get('builtin', False)
     @Property('QVariantList',notify=changed)
     def rows(self):return sorted([{**e,**self.icon_for(k),'lifecycle':e.get('lifecycle','session'),'enabled':self.enabled(k),'sessionEnabled':self.session_enabled(k),'hasPage':bool(e.get('page')),'running':bool(self.workers.get(k,{}).get('ready')),'starting':k in self.workers and not self.workers[k]['ready']} for k,e in self.entries.items()],key=lambda e:e['name'])
     @Property('QVariantList',constant=True)

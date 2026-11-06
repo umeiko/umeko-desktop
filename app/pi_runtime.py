@@ -131,6 +131,7 @@ def verify_runtime(release: Path, bridge_source: Path):
         copy_runtime_file(bridge_source.parent / name, release / name)
     copy_runtime_file(bridge_source.parent / 'update-cleanup.mjs', release / 'update-cleanup.mjs')
     copy_runtime_file(bridge_source.parent / 'generation.mjs', release / 'generation.mjs')
+    copy_runtime_file(bridge_source.parent / 'system-prompt.mjs', release / 'system-prompt.mjs')
     copy_runtime_file(bridge_source.parent / 'skills.mjs', release / 'skills.mjs')
     copy_runtime_file(bridge_source.parent / 'markdown-preview.mjs', release / 'markdown-preview.mjs')
     shutil.copytree(bridge_source.parent/'umeko-docs', release/'umeko-docs', dirs_exist_ok=True, copy_function=copy_runtime_file)

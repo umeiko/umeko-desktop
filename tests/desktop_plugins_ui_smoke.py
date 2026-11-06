@@ -55,7 +55,8 @@ try:
     window.grabWindow().save(str(out/'agent-plugin-entry.png'))
     click('openDesktopPluginsButton')
     assert find('desktopPluginsPage').isVisible()
-    assert {row['id'] for row in backend.desktopPlugins.rows}=={'file-tree','git-viewer','desktop-pet','terminal','global-agents','pi-manager','change-review','skill-manager','widget-market','task-records'}
+    assert {row['id'] for row in backend.desktopPlugins.rows}=={'file-tree','git-viewer','desktop-pet','terminal','global-agents','pi-manager','change-review','skill-manager','widget-market','task-records','system-prompt'}
+    assert not backend.desktopPlugins.enabled('system-prompt')
     assert find('desktopPluginInstalledList').property('count')==len(backend.desktopPlugins.rows)
     search=find('desktopPluginSearch');search.setProperty('text','版本管理');QTest.qWait(50);assert find('desktopPluginInstalledList').property('count')==1
     search.setProperty('text','');QTest.qWait(50);window.grabWindow().save(str(out/'manager.png'))
