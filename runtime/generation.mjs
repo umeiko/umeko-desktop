@@ -99,7 +99,7 @@ async function readVideoResult(response, signal, onUpdate, language) {
   }
 }
 
-export function createGenerationExtension({getConfig, fetchImpl = globalThis.fetch} = {}) {
+export function createGenerationExtension({getConfig, fetchImpl = globalThis.fetch, onDelivery = () => {}} = {}) {
   return pi => {
     for (const [kind, name, parameters] of [
       ["image", "image_gen", Type.Object({prompt: Type.String({minLength: 1, maxLength: 32000}),
@@ -177,7 +177,9 @@ export function createGenerationExtension({getConfig, fetchImpl = globalThis.fet
                 kind: kind === "image" ? "image" : "file", bytes: item.data.length});
             }
             signal?.throwIfAborted();
-            return deliverChatboxItems(pi, id, items, {paths, provider: result.provider, model: result.model});
+            const delivery = deliverChatboxItems(pi, id, items, {paths, provider: result.provider, model: result.model});
+            onDelivery(id, items);
+            return delivery;
           } catch (error) {
             await Promise.all(paths.map(path => unlink(path).catch(() => {})));
             throw error;

@@ -1,0 +1,25 @@
+{
+  "kind": "umeko-plugin",
+  "apiVersion": 1,
+  "id": "task-records",
+  "version": "1.0.0",
+  "name": "任务记录",
+  "description": "记录工作目标，在聊天中开始或继续，查看交付并确认结果。",
+  "summary": "记录目标、查看交付与工作过程",
+  "author": "Umeko",
+  "icon": "hourglass",
+  "lifecycle": "session",
+  "entrypoint": "scripts/plugin.py:create_plugin",
+  "page": "qml/Main.qml",
+  "readme": "README.md",
+  "config": "config.json",
+  "configSchema": "config.schema.json",
+  "permissions": [
+    "tasks.read",
+    "tasks.manage"
+  ],
+  "agent": {
+    "document": "README.md",
+    "methods": {}
+  }
+}

@@ -17,6 +17,7 @@ from umeko_plugin_sdk import Context, PluginError
 
 class Manager(QObject):
     hostResponse = Signal(str, str, 'QVariantMap')
+    inputRequested = Signal()
 
     def __init__(self):
         super().__init__()
@@ -67,6 +68,69 @@ class WidgetHostTests(unittest.TestCase):
             'arguments': args or {}, 'session': session or dict(self.manager._session)})
         self.app.processEvents()
         return identifier
+
+    def test_task_records_require_the_active_builtin_qml_page(self):
+        from app.task_records import TaskStore
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / 'tasks.sqlite3')
+            for i in range(13):
+                store.create(f'Objective {i}', 'Scope stays out of the list', '/fixture')
+            manager = self.manager
+            manager.b._task_records = SimpleNamespace(_storage=lambda: store)
+            manager.b._view.key = manager._session['token']
+            manager.b._view.prepared_task = ''
+            manager._page = 'task-records'
+            manager.entries['task-records'] = {'name': 'Tasks', 'builtin': True, 'permissions': ['tasks.read']}
+            manager.workers['task-records'] = {'ready': True}
+            manager.entries['a']['permissions'].append('tasks.read')
+
+            def request(widget, page=False, offset=0):
+                identifier = self.host.request_for(widget, {'operation': 'tasks.list',
+                    'arguments': {'offset': offset}, 'session': dict(manager._session), 'page': True}, page=page)
+                self.app.processEvents()
+                return manager.replies[identifier]
+
+            self.assertFalse(request('task-records')['ok'])
+            self.assertFalse(request('a', page=True)['ok'])
+            first = request('task-records', page=True)
+            self.assertTrue(first['ok'], first)
+            self.assertEqual(len(first['result']['tasks']), 12)
+            self.assertTrue(first['result']['hasMore'])
+            self.assertNotIn('scope', first['result']['tasks'][0])
+            last = request('task-records', page=True, offset=12)
+            self.assertEqual(len(last['result']['tasks']), 1)
+            manager.b._view.key = 'chat-two'
+            self.assertFalse(request('task-records', page=True)['ok'])
+
+    def test_task_verification_does_not_save_after_the_page_changes(self):
+        from app.task_records import TaskStore, versions_of
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = TaskStore(root / 'tasks.sqlite3')
+            task_id = store.create('Deliver', 'Local output only', str(root))
+            attempt_id = store.begin(task_id, str(root), '', '', [])
+            artifact = root / 'report.txt'
+            artifact.write_text('report')
+            store.files(attempt_id, 'submitted', 'delivery', versions_of([{'path': str(artifact)}]))
+            store.finish(attempt_id, 'finished', '')
+            manager = self.manager
+            manager.b._task_records = SimpleNamespace(_storage=lambda: store, store=store)
+            manager.b._view.key = manager._session['token']
+            manager._page = 'task-records'
+            manager.entries['task-records'] = {'name': 'Tasks', 'builtin': True, 'permissions': ['tasks.manage']}
+            manager.workers['task-records'] = {'ready': True}
+            pending = {}
+            manager.b._job = lambda name, run: pending.update({name: run})
+            identifier = self.host.request_for('task-records', {'operation': 'tasks.verify',
+                'arguments': {'taskId': task_id, 'attemptId': attempt_id}, 'session': dict(manager._session)}, page=True)
+            self.app.processEvents()
+            result = pending['task-details:' + identifier]()
+            manager._page = 'a'
+            self.host.task_result(identifier, {'ok': True, 'value': result})
+            self.assertFalse(manager.replies[identifier]['ok'])
+            self.assertIsNone(store.details(task_id, attempt_id)['files'][0]['check_result'])
 
     def test_pagination_and_allow_list_never_expose_other_desktop_settings(self):
         identifier = self.request('pi.status', {'offset': 200, 'limit': 100})
@@ -457,6 +521,71 @@ class WidgetHostTests(unittest.TestCase):
         released = self.request('checkpoints.release', {'token': reply['result']['token']}, widget='change-review')
         self.assertTrue(self.manager.replies[released]['ok'])
         self.assertEqual(notifications[-1], {'type': 'checkpoint_lock', 'locked': False})
+
+    def test_task_check_returns_counts_time_and_scoped_file_preview(self):
+        from app.task_records import TaskStore, versions_of
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            store=TaskStore(root/'tasks.sqlite3')
+            task=store.create('Report','Local only',str(root))
+            attempt=store.begin(task,str(root),'','',[])
+            first=root/'report.md'; first.write_text('# Report')
+            second=root/'changed.md'; second.write_text('original')
+            store.files(attempt,'submitted','delivery',versions_of([{'path':str(first)},{'path':str(second)}]))
+            second.write_text('revised')
+            manager=self.manager
+            manager.b._task_records=SimpleNamespace(_storage=lambda:store,store=store)
+            manager.b._view.key=manager._session['token']
+            manager._page='task-records'
+            manager.entries['task-records']={'builtin':True,'permissions':['tasks.manage']}
+            manager.workers['task-records']={'ready':True}
+            manager.b.widgetDocumentRequested=Mock()
+            pending={}
+            manager.b._job=lambda name,run:pending.update({name:run})
+            def request(operation,args):
+                key=self.host.request_for('task-records',{'operation':operation,'arguments':args,'session':dict(manager._session)},page=True)
+                self.app.processEvents()
+                return key
+            key=request('tasks.verify',{'taskId':task,'attemptId':attempt})
+            self.host.task_result(key,{'ok':True,'value':pending['task-details:'+key]()})
+            result=manager.replies[key]['result']
+            self.assertEqual(result['counts'],{'available':1,'changed':1})
+            self.assertEqual(result['total'],2)
+            self.assertTrue(result['checked'])
+            self.assertIsNone(store.details(task,attempt)['accepted'])
+            file_id=store.details(task,attempt)['files'][0]['id']
+            key=request('tasks.preview',{'taskId':task,'attemptId':attempt,'fileId':file_id})
+            self.assertTrue(manager.replies[key]['ok'])
+            manager.b.widgetDocumentRequested.emit.assert_called_once_with(str(first),'report.md','file','task-records')
+            key=request('tasks.preview',{'taskId':'f'*32,'attemptId':attempt,'fileId':file_id})
+            self.assertFalse(manager.replies[key]['ok'])
+            self.assertEqual(manager.b.widgetDocumentRequested.emit.call_count,1)
+
+    def test_returning_to_task_chat_requires_preparation_and_does_not_send(self):
+        from app.task_records import TaskStore
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as directory:
+            store=TaskStore(Path(directory)/'tasks.sqlite3')
+            task=store.create('Report','Local only',directory)
+            manager=self.manager
+            manager.b._task_records=SimpleNamespace(_storage=lambda:store)
+            manager.b._view.key=manager._session['token']
+            manager.b._view.prepared_task=''
+            manager._page='task-records'
+            manager.entries['task-records']={'builtin':True,'permissions':['tasks.manage']}
+            manager.workers['task-records']={'ready':True}
+            manager.closePage=Mock()
+            manager.b.send=Mock()
+            def request():
+                key=self.host.request_for('task-records',{'operation':'tasks.chat','arguments':{'taskId':task},'session':dict(manager._session)},page=True)
+                self.app.processEvents();return key
+            self.assertFalse(manager.replies[request()]['ok'])
+            manager.b._view.prepared_task=task
+            key=request();self.app.processEvents()
+            self.assertTrue(manager.replies[key]['ok'])
+            manager.closePage.assert_called_once()
+            manager.b.send.assert_not_called()
 
 
 class WidgetHostWorkerTests(unittest.TestCase):

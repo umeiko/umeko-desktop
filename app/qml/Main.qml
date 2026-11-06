@@ -226,6 +226,7 @@ ApplicationWindow {
     Connections {
         target: backend.desktopPlugins
         function onRequested() { window.page = "chat"; webPane.showPlugin() }
+        function onInputRequested() { window.focusChatInput() }
         function onImportRequested() { window.settingsTab=3;window.page="settings";Qt.callLater(()=>settingsPage.openPluginImport()) }
     }
     Connections { target: backend.subagents; function onRequested() { window.page = "chat"; webPane.showSubagent() } }

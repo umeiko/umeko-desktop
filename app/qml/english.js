@@ -1,5 +1,8 @@
 .pragma library
 var strings = {
+    "任务记录": "Task records",
+    "记录工作目标，在聊天中开始或继续，查看交付并确认结果。": "Record goals, start or continue in chat, then review deliveries and confirm the result.",
+    "记录目标、查看交付与工作过程": "Record goals and review deliveries and work history",
     "确认，并且本会话不再询问危险操作": "Confirm and don't ask again for dangerous operations in this chat",
     "本会话已授权": "Chat authorized",
     "本会话已允许全部危险操作，可在菜单中撤销。": "All dangerous operations are allowed in this chat. Revoke in this menu.",

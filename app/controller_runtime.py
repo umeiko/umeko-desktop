@@ -236,11 +236,15 @@ class PiControllerMixin:
                 attachments = [{**item, "kind": "file" if item["kind"] == "image" else item["kind"]} for item in attachments]
         text = attachment_prompt(text, attachments)
         if record.phase == "running":
+            if record.task_attempt:
+                self._task_records.input_files(record, attachments)
             self._write_pi({"type": "steer" if steering else "follow-up", "text": text, "images": images}, record)
             record.attachments, record.draft = [], ""
             self.attachmentsChanged.emit()
             self.editorText.emit("")
             return True
+        if record.prepared_task and not self._task_records.start(record, attachments):
+            return False
         record.model, record.provider = self.store.data["selectedModel"], self.store.data["selectedProvider"]
         if not record.id:
             record.id = "pending-" + record.key
@@ -251,13 +255,16 @@ class PiControllerMixin:
         record.optimistic_user = True
         self._index_record(record)
         self.store.data["sessionMeta"].setdefault(record.id, {})["unread"] = False
-        if self._command_pi("prompt", text=text, images=images):
+        tracking = {"trackTask": True} if record.task_attempt else {}
+        if self._command_pi("prompt", text=text, images=images, **tracking):
             record.attachments, record.draft = [], ""
             self.attachmentsChanged.emit()
             self.editorText.emit("")
             self._save_session()
             self.transcriptChanged.emit()
             return True
+        if record.task_attempt:
+            self._task_records.finish(record, "failed", "Pi 未能启动尝试")
         return False
 
     def _request_compaction(self):
@@ -306,6 +313,10 @@ class PiControllerMixin:
             return
         kind, visible = event.get("type"), record is self._view
         if kind=='widget_delivery':return  # WidgetChannel observes the same pool event.
+        if getattr(record, "task_attempt", 0):
+            self._task_records.event(record, event)
+        if kind == "task_delivery":
+            return
         if kind == "dangerous_approval_cleared":
             self._clear_dangerous_approval(record.id)
             self.store.save()
@@ -550,6 +561,8 @@ class PiControllerMixin:
                 self.retryChanged.emit()
             was_busy = record.busy
             long_running = record.prompt_started is not None and time.monotonic() - record.prompt_started > 180
+            if record.task_attempt:
+                self._task_records.end_turn(record, exited=kind == "exit")
             self._finish_turn(record, failed=kind == 'exit')
             record.prompt_started = None
             if record.queue:

@@ -34,7 +34,7 @@ export function deliverChatboxItems(pi, toolCallId, items, extra = {}) {
   })}], details: {umekoChatbox: {version: 1, items}}};
 }
 
-export function chatboxExtension(pi, getWebview = () => ({})) {
+export function chatboxExtension(pi, getWebview = () => ({}), onDelivery = () => {}) {
   pi.registerTool({
     name: CHATBOX_TOOL, label: "展示产物与网页", exposure: "direct",
     description: "Show artifacts directly in Umeko chat. Accept local files/folders as absolute paths, file URLs or workspace-relative paths, and HTTP(S) URLs. Images preview inline independently of model vision support. Markdown, source code and plain text open in the side pane. Markdown offers source/rendered views; local static HTML offers source/webpage views when the WebView component is available. The desktop remembers the user's view choice globally per file type. Large/complex files use bounded partial, simplified or source previews. Other files have cards for opening or revealing their folder. Webpage/HTML opening follows the user's embedded-view/system-browser preference; automatic opening can be disabled. Users can click delivered cards to reopen previews. URL context actions open the system browser, copy the URL or attach it to chat. Download remote images before submitting them as inline images.",
@@ -75,11 +75,16 @@ export function chatboxExtension(pi, getWebview = () => ({})) {
           if (info.isFile() && /\.html?$/i.test(path)) webview ||= await webviewStatus(getWebview());
         } catch (error) { errors.push({path: input.path, message: error.code === "ENOENT" ? "文件不存在" : error.message}); }
       }
-      if (!items.length) throw new Error(errors.map(item => `${item.path}: ${item.message}`).join("\n"));
+      if (!items.length) {
+        onDelivery(_id, [], errors.length);
+        throw new Error(errors.map(item => `${item.path}: ${item.message}`).join("\n"));
+      }
       // Nested tool results keep only a bounded call summary in Pi. A native
       // custom entry preserves delivery details on the same branch as the call.
-      return deliverChatboxItems(pi, _id, items, {errors,
+      const result = deliverChatboxItems(pi, _id, items, {errors,
         ...(getWebview().autoOpen === false ? {autoOpen:false} : {}), ...(webview ? {webview} : {})});
+      onDelivery(_id, items, errors.length);
+      return result;
     },
   });
 }

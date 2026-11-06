@@ -188,6 +188,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._welcome_greetings, self._welcome_portraits = [], []
         self._pool = PiSessionPool(self, limit=self.store.data['ui']['sessionCacheSize'])
         self._view = self._new_view()
+        from .controller_tasks import TaskRecords
+        self._task_records = TaskRecords(self)
         self._pool.touch(self._view, current=True)
         self._pool.event.connect(self._handle_pi_event)
         from .conversation_views import ConversationViews
@@ -2000,6 +2002,9 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def _on_job_done(self, name, result):
         if self._closing:
             return
+        if name.startswith("task-details:"):
+            self._desktop_plugins.hostServices.task_result(name.split(":", 1)[1], result)
+            return
         if name.startswith('copy-chat:'):
             if int(name.split(':', 1)[1]) != self._copy_request:
                 return
@@ -2177,6 +2182,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._subagents.close()
         self._proxy_usage_timer.stop()
         self._pool.close()
+        self._task_records.close()
         if self.public_server:
             self.public_server.close()
         self._sync_proxy_usage()
