@@ -58,6 +58,17 @@ def ci_display_mode():
     shell_modified = False
     restored = False
     info = {}
+    def prepare_after_app():
+        nonlocal shell_modified
+        if not fallback:
+            return
+        # Run exactly once after QApplication/tray creation, before placement.
+        # Do not assume QScreen.availableGeometry reflects this shell change.
+        shell_modified = True
+        user.ShowWindow(taskbar, 0)
+        set_work_area(full_area)
+        info["shell_work_area_fallback"]["prepared_after_application"] = True
+        info["shell_work_area_fallback"]["active_work_area_physical"] = work_area()
     def set_work_area(rect):
         value = wintypes.RECT(*rect)
         # Flags=0 changes the live work area without writing the user profile.
@@ -142,15 +153,12 @@ def ci_display_mode():
                 "selected_work_area_before_physical": selected_before,
                 "temporary_work_area_physical": full_area,
                 "registry_write": False}
-            shell_modified = True
-            user.ShowWindow(taskbar, 0)  # SW_HIDE, never stop or restart Explorer.
-            set_work_area(full_area)
         selected_work = work_area() if changed else initial_work
-        if (selected_work[2] - selected_work[0] < client_required[0]
+        if not fallback and (selected_work[2] - selected_work[0] < client_required[0]
                 or selected_work[3] - selected_work[1] < client_required[1]):
             raise RuntimeError(f"Selected desktop work area does not fit client: {selected_work}, {info}")
         info.update(selected=size(selected), selected_work_area_physical=selected_work, changed=changed)
-        return info, restore
+        return info, prepare_after_app, restore
     except Exception:
         restore()
         raise
@@ -382,6 +390,7 @@ def main():
               "healthy_preswitch": False}
     app = engine = backend = window = None
     restore_display = lambda: None
+    prepare_display = lambda: None
     reasoning_patch = None
     with tempfile.TemporaryDirectory(prefix="umeko-theme-ci-") as temporary:
         os.environ["UMEKO_DATA_DIR"] = str(Path(temporary) / "profile")
@@ -389,7 +398,7 @@ def main():
         sys.path.insert(0, str(ROOT))
         try:
             if not args.offscreen:
-                report["display_mode"], restore_display = ci_display_mode()
+                report["display_mode"], prepare_display, restore_display = ci_display_mode()
             global QImage, QObject, QPointF, QQmlEngine, QQmlExpression, QEventLoop, QTimer
             from PySide6.QtCore import QObject, QPointF, QEventLoop, QTimer, Qt
             from PySide6.QtGui import QImage
@@ -416,9 +425,16 @@ def main():
             reasoning_patch.start()
             report["network_detection_disabled"] = True
             app, engine, backend = application.create_application()
+            prepare_display()
             window = engine.rootObjects()[0]
             screen = app.primaryScreen()
-            area = screen.availableGeometry()
+            shell_fallback = bool(report.get("display_mode", {}).get("shell_work_area_fallback"))
+            # geometry is the full screen; availableGeometry excludes taskbars.
+            # Native capture independently enforces the physical client bounds.
+            area = screen.geometry() if shell_fallback else screen.availableGeometry()
+            report["placement_geometry"] = {
+                "source": "screen.geometry" if shell_fallback else "screen.availableGeometry",
+                "logical_rect": [area.x(), area.y(), area.width(), area.height()]}
             if not args.offscreen:
                 if area.width() < 1060 or area.height() < 700:
                     raise RuntimeError(f"Desktop too small at scale {args.scale}: {area.width()}x{area.height()} logical pixels")
