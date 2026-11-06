@@ -1,5 +1,5 @@
 """Real PTY sharing, Unicode/VT output, chat grants and process cleanup."""
-import importlib.util, json, os, subprocess, sys, tempfile, time, types, unittest
+import importlib.util, json, os, signal, subprocess, sys, tempfile, time, types, unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];PACKAGE=ROOT/'umeko-plugins/terminal'
 sys.path.insert(0,str(ROOT/'plugin-runtime'));sys.path.insert(0,str(PACKAGE/'vendor'))
@@ -133,11 +133,24 @@ class PosixTerminalProcessTests(unittest.TestCase):
         # The application runs this plugin in a separate Python worker. The
         # full unit suite also loads Qt and its native threads; calling forkpty
         # in that shared process can deadlock before the shell is exec'd.
-        result=subprocess.run([sys.executable,str(Path(__file__).resolve()),'--pty-worker-tests'],
-            capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=90,
-            env=dict(os.environ,PYTHONUTF8='1',PYTHONUNBUFFERED='1',PYTHONDONTWRITEBYTECODE='1'),
-            creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
-        self.assertEqual(result.returncode,0,(result.stdout+result.stderr)[-16000:])
+        # A timed-out forkpty worker can retain inherited pipes or be stuck
+        # during shutdown on macOS. Keep its diagnostics in a regular file,
+        # own its process group, and bound the wait after killing it too.
+        with tempfile.TemporaryDirectory(prefix='umeko-pty-worker-') as directory:
+            output=Path(directory)/'worker.log'
+            with output.open('wb') as stream:
+                process=subprocess.Popen([sys.executable,str(Path(__file__).resolve()),'--pty-worker-tests'],
+                    stdout=stream,stderr=subprocess.STDOUT,start_new_session=True,
+                    env=dict(os.environ,PYTHONUTF8='1',PYTHONUNBUFFERED='1',PYTHONDONTWRITEBYTECODE='1'))
+                try:
+                    code=process.wait(timeout=90)
+                except subprocess.TimeoutExpired:
+                    try:os.killpg(process.pid,signal.SIGKILL)
+                    except ProcessLookupError:pass
+                    try:process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:pass
+                    self.fail('Independent terminal worker timed out:\n'+output.read_text(encoding='utf-8',errors='replace')[-16000:])
+            self.assertEqual(code,0,output.read_text(encoding='utf-8',errors='replace')[-16000:])
 
 
 def load_tests(loader, tests, pattern):
@@ -146,4 +159,9 @@ def load_tests(loader, tests, pattern):
     return loader.loadTestsFromTestCase(PosixTerminalProcessTests)
 
 
-if __name__=='__main__':unittest.main(argv=[sys.argv[0]])
+if __name__=='__main__':
+    import faulthandler
+    faulthandler.enable()
+    faulthandler.dump_traceback_later(20,repeat=True)
+    try:unittest.main(argv=[sys.argv[0]])
+    finally:faulthandler.cancel_dump_traceback_later()
