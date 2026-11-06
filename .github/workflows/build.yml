@@ -18,6 +18,10 @@ on:
         description: Build all native platforms for a stable release
         type: boolean
         default: false
+      theme_variations:
+        description: Exercise long chats, streaming, popups and 150% scale for theme switching
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -243,6 +247,41 @@ jobs:
         run: |
           & '.venv/Scripts/python.exe' tests/window_resize_ui_smoke.py
           if ($LASTEXITCODE -ne 0) { throw 'Window interaction regression failed' }
+
+      - name: Windows theme switch screen capture
+        if: runner.os == 'Windows'
+        timeout-minutes: 10
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: windows
+          QT_QUICK_BACKEND: ''
+          QSG_RHI_BACKEND: d3d11
+          QSG_INFO: '1'
+          THEME_VARIATIONS: ${{ inputs.theme_variations }}
+        run: |
+          unset QT_QUICK_BACKEND
+          status=0
+          scales=(1)
+          scenarios=(baseline)
+          if [ "$THEME_VARIATIONS" = true ]; then
+            scales=(1 1.5)
+            scenarios=(baseline long streaming popup)
+          fi
+          for scale in "${scales[@]}"; do
+            for scenario in "${scenarios[@]}"; do
+              QT_SCALE_FACTOR="$scale" .venv/Scripts/python.exe tests/theme_switch_windows_ui_smoke.py --scenario "$scenario" || status=1
+            done
+          done
+          exit "$status"
+
+      - name: Upload theme switch screen captures
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: theme-switch-windows
+          path: artifacts/theme-switch/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Build Windows
         if: runner.os == 'Windows'
