@@ -18,7 +18,7 @@ class SmokeProfileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             resources = Path(directory)
             (resources / 'runtime').mkdir()
-            for name in ('preview-network.mjs', 'update-engine.mjs'):
+            for name in ('preview-network.mjs', 'update-engine.mjs', 'update-cleanup.mjs'):
                 shutil.copy2(ROOT / 'runtime' / name, resources / 'runtime' / name)
             env = dict(os.environ, HOME=directory, USERPROFILE=directory, UMEKO_DATA_DIR=directory)
             verifier['verify_preview_network'](Path(shutil.which('node')), resources, env)
@@ -28,7 +28,7 @@ class SmokeProfileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             resources = Path(directory) / 'Resources'
             (resources / 'runtime').mkdir(parents=True)
-            for name in ('preview-network.mjs', 'update-engine.mjs'):
+            for name in ('preview-network.mjs', 'update-engine.mjs', 'update-cleanup.mjs'):
                 shutil.copy2(ROOT / 'runtime' / name, resources / 'runtime' / name)
             frameworks = Path(directory) / 'Frameworks'
             frameworks.mkdir()

@@ -1,6 +1,7 @@
 """Cleanup runs in a background worker only after a packaged application's startup."""
 import json
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -32,9 +33,11 @@ class StartupCleanupTests(unittest.TestCase):
             backup = base / 'Umeko.previous-12345678-1234-1234-1234-123456789abc'
             for directory in (install, profile, cache, downloads, backup): directory.mkdir(parents=True)
             metadata = dict(version='1.2.3', system='test', architecture='test')
+            executable = Path('Contents/MacOS/Umeko') if sys.platform == 'darwin' else Path('Umeko.exe')
             for directory in (install, backup):
                 (directory / 'build-info.json').write_text(json.dumps(metadata))
-                (directory / 'Umeko.exe').write_text('program')
+                (directory / executable).parent.mkdir(parents=True, exist_ok=True)
+                (directory / executable).write_text('program')
             (profile / 'settings.json').write_text('settings')
             package = downloads / 'Umeko-1.2.3-windows-x64-123abcd.zip'
             package.write_text('download')
@@ -43,8 +46,7 @@ class StartupCleanupTests(unittest.TestCase):
             for name in ('update-engine.mjs', 'update-cleanup.mjs'): shutil.copyfile(source / name, runtime / name)
             locations = {QStandardPaths.CacheLocation: str(cache), QStandardPaths.DownloadLocation: str(base / 'downloads')}
             with patch('app.update.sys.frozen', True, create=True), \
-                    patch('app.update.sys.executable', str(install / 'Umeko.exe')), \
-                    patch('app.update.sys.platform', 'win32'), \
+                    patch('app.update.sys.executable', str(install / executable)), \
                     patch('app.update.QStandardPaths.writableLocation', side_effect=locations.__getitem__), \
                     patch('app.update.node_executable', return_value=shutil.which('node')):
                 worker = start_update_cleanup(install, profile)
@@ -53,7 +55,7 @@ class StartupCleanupTests(unittest.TestCase):
             self.assertFalse(backup.exists())
             self.assertFalse(package.exists())
             self.assertEqual((profile / 'settings.json').read_text(), 'settings')
-            self.assertTrue((install / 'Umeko.exe').exists())
+            self.assertTrue((install / executable).exists())
             self.assertFalse(list(cache.glob('cleanup-*.json')))
 
     def test_missing_runtime_is_logged_without_a_startup_exception(self):
