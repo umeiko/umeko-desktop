@@ -96,7 +96,9 @@ def verify_windows_preview(executable, environment, report_dir):
             (report_dir / 'web-preview-output.log').write_bytes(stdout + stderr)
             log = diagnostic.read_text(encoding='utf-8') if diagnostic.exists() else ''
             if process.returncode or not ready.is_set() or not seen or 'WebSurface.qml:' in log or 'EXIT:0' not in log:
-                raise RuntimeError('Frozen Windows browser failed: ' + log)
+                raise RuntimeError('Frozen Windows browser failed: '
+                    + f'returncode={process.returncode}, ready={ready.is_set()}, visibleChromeChild={bool(seen)}\n'
+                    + log + '\nstderr:\n' + stderr.decode('utf-8', errors='replace'))
         finally:
             server.shutdown()
 
