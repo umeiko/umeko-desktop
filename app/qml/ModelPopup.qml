@@ -8,14 +8,14 @@ AnchoredPidPopup {
     objectName: "modelPopup"
     property real heightLimit: 470
     fullWidth: 365
-    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 230 + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0)))
+    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 270 + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0)))
     signal configure()
     signal dismissed()
     onAboutToShow: modelSearch.clear()
     onAboutToHide: { focus = false; dismissed() }
     onOpened: {
         modelSearch.forceActiveFocus()
-        if (typeof backend.ensureReasoningDetection === "function") backend.ensureReasoningDetection()
+        if (backend.sessionBackend !== "dsh" && typeof backend.ensureReasoningDetection === "function") backend.ensureReasoningDetection()
     }
     onClosed: dismissed()
     contentItem: Item {
@@ -23,6 +23,13 @@ AnchoredPidPopup {
     ColumnLayout {
         width: root.expandedWidth - root.padding * 2; height: root.expandedHeight - root.padding * 2; spacing: 10
         opacity: root.contentOpacity
+        RowLayout {
+            Layout.fillWidth: true
+            Text { text: I18n.t("会话后端"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
+            Item { Layout.fillWidth: true }
+            ActionButton { objectName: "choosePiBackend"; text: "Pi"; quiet: backend.sessionBackend !== "pi"; enabled: backend.canChooseBackend; onClicked: backend.setSessionBackend("pi") }
+            ActionButton { objectName: "chooseDshBackend"; text: "DeepSeek Harness"; quiet: backend.sessionBackend !== "dsh"; enabled: backend.canChooseBackend; onClicked: backend.setSessionBackend("dsh") }
+        }
         InputField { id: modelSearch; objectName: "modelSearch"; Layout.fillWidth: true; placeholderText: I18n.t("搜索供应商或模型…"); height: 39 }
         ListView {
             id: modelList; Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 9
@@ -79,7 +86,7 @@ AnchoredPidPopup {
                 readonly property real handleCenter: leftPadding + handle.width / 2 + visualPosition * travel
                 from: 0; to: Math.max(1, reasoningControls.levels.length - 1)
                 stepSize: 1; snapMode: Slider.SnapAlways
-                enabled: reasoningControls.levels.length > 1
+                enabled: reasoningControls.levels.length > 1 && (backend.sessionBackend !== "dsh" || !backend.busy)
                 value: Math.max(0, reasoningControls.levels.indexOf(backend.reasoningEffort))
                 Accessible.name: I18n.t("思考强度")
                 onMoved: backend.setReasoningEffort(reasoningControls.levels[Math.round(value)])

@@ -103,3 +103,11 @@ Six community animation assets from [yanzwzz/dsh-whale-girl-pet](https://github.
 Public OpenAI Skills (Apache-2.0), Hermes Skills (MIT), and Archify (Apache-2.0 with its retained third-party notices) are distributed in `bundled-skills/`. Each folder retains its own license; `bundled-skills/sources.json` records immutable upstream commits, adaptations and file hashes. These are portable public packages, not extracted proprietary Codex runtime Skills. Optional Python/CLI/browser dependencies are not bundled or implicitly installed.
 
 Composer pinyin matching uses pypinyin 0.55.0 (MIT); see `licenses/pypinyin-MIT.txt`.
+
+## DeepSeek Harness backend mark
+
+`app/icons/dsh.svg` is the unmodified official whale favicon from `@deepseek-ai/dsh-web-frontend` 0.2.2-rc.1 (`dist/favicon.svg`), published from https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.2-rc.1/apps/web . Copyright (c) 2026 DeepSeek, MIT; the original license is retained at `licenses/dsh-logo-LICENSE`.
+
+## Agent Client Protocol SDK
+
+The optional DeepSeek Harness backend uses the official `@agentclientprotocol/sdk` 2.4.0, licensed under Apache-2.0. The original license is included in `licenses/acp-sdk-LICENSE`. Source: https://github.com/agentclientprotocol/typescript-sdk.

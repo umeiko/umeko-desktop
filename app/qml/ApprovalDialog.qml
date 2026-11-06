@@ -58,8 +58,8 @@ Popup {
         RowLayout {
             Layout.fillWidth: true
             Item { Layout.fillWidth: true }
-            ActionButton { id: denyButton; objectName: root.actionPrefix + "denyToolButton"; text: I18n.t("拒绝"); onClicked: root.approvalBackend.respondApproval(false) }
-            ActionButton { objectName: root.actionPrefix + "allowToolButton"; text: I18n.t("确认"); primary: true; onClicked: { if (root.approvalBackend.pendingApproval.method === "confirm") root.approvalBackend.respondApproval(true); else root.approvalBackend.respondPiDialog(root.approvalBackend.pendingApproval.method === "select" ? choice.currentText : dialogInput.text) } }
+            ActionButton { id: denyButton; objectName: root.actionPrefix + "denyToolButton"; text: root.approvalBackend.pendingApproval.backend === "dsh" ? I18n.t("本次拒绝") : I18n.t("拒绝"); onClicked: root.approvalBackend.respondApproval(false) }
+            ActionButton { objectName: root.actionPrefix + "allowToolButton"; text: root.approvalBackend.pendingApproval.backend === "dsh" ? I18n.t("本次允许") : I18n.t("确认"); primary: true; onClicked: { if (root.approvalBackend.pendingApproval.method === "confirm") root.approvalBackend.respondApproval(true); else root.approvalBackend.respondPiDialog(root.approvalBackend.pendingApproval.method === "select" ? choice.currentText : dialogInput.text) } }
         }
     }
 }

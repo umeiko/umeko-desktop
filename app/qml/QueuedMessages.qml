@@ -7,6 +7,7 @@ Item {
     property string objectPrefix: ""
     property string primaryActionText: I18n.t("引导")
     property string primaryActionGlyph: "steer"
+    property bool primaryActionVisible: true
     property bool editEnabled: true
     property bool showSourceNames: false
     signal inspected(var message)
@@ -35,6 +36,7 @@ Item {
                     Row {
                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 5
                         Item {
+                            visible: root.primaryActionVisible
                             width: Theme.control(62); height: Theme.control(28)
                             Row { anchors.centerIn: parent; spacing: 4; Glyph { name: root.primaryActionGlyph; width: Theme.icon(13); height: Theme.icon(13); anchors.verticalCenter: parent.verticalCenter } Text { font.family: Theme.fontFamily; text: root.primaryActionText; font.pixelSize: Theme.font(12, visible); color: Theme.muted } }
                             MouseArea { objectName: root.objectPrefix + "steerQueued_" + row.index; anchors.fill: parent; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.controller.steerQueued(row.modelData.id) }
