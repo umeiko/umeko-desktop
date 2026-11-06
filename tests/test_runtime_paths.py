@@ -85,6 +85,7 @@ class RuntimePathTests(unittest.TestCase):
         (source_io / "session-capabilities.mjs").write_text("fixture")
         (source_io / "skills.mjs").write_text("fixture")
         (source_io / "generation.mjs").write_text("fixture")
+        (source_io / "system-prompt.mjs").write_text("fixture")
         (source_io / "update-cleanup.mjs").write_text("fixture")
         (source_io / "markdown-preview.mjs").write_text("fixture")
         (source_io / "umeko-docs").mkdir()
@@ -97,6 +98,7 @@ class RuntimePathTests(unittest.TestCase):
         self.assertEqual((release_io / "session-capabilities.mjs").read_text(), "fixture")
         self.assertEqual((release_io / "markdown-preview.mjs").read_text(), "fixture")
         self.assertEqual((release_io / "generation.mjs").read_text(), "fixture")
+        self.assertEqual((release_io / "system-prompt.mjs").read_text(), "fixture")
         self.assertEqual((release_io / "update-cleanup.mjs").read_text(), "fixture")
         self.assertEqual(ordinary_path(filesystem_path(release)), release)
 

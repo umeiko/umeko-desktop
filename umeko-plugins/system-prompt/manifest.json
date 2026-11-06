@@ -1,0 +1,19 @@
+{
+  "kind": "umeko-plugin",
+  "apiVersion": 1,
+  "id": "system-prompt",
+  "version": "1.0.0",
+  "name": "系统提示词",
+  "description": "按来源查看系统提示词，在当前工作区启停、编辑和恢复各段提示词。",
+  "summary": "查看和调整当前工作区的系统提示词",
+  "author": "Umeko",
+  "icon": {"path": "assets/system-prompt.svg"},
+  "lifecycle": "session",
+  "entrypoint": "scripts/plugin.py:create_plugin",
+  "page": "qml/Main.qml",
+  "readme": "README.md",
+  "config": "config.json",
+  "configSchema": "config.schema.json",
+  "permissions": ["pi.read", "pi.manage"],
+  "agent": {"document": "AGENT.md", "methods": {}}
+}

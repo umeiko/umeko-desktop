@@ -34,6 +34,10 @@ TASK_FIELDS = {
 }
 
 OPERATIONS = {
+    'systemPrompt.inspect': ('pi.read', None),
+    'systemPrompt.toggle': ('pi.manage', None),
+    'systemPrompt.save': ('pi.manage', None),
+    'systemPrompt.restore': ('pi.manage', None),
     **{name: ('tasks.read' if name in ('tasks.list', 'tasks.get', 'tasks.detail') else 'tasks.manage', None)
        for name in TASK_FIELDS},
     **{name: ('sessions.manage', None) for name in SESSION_OPERATIONS},
@@ -92,6 +96,8 @@ DIRECT_SKILL_IMPORTS = frozenset(('skills.paste', 'skills.importLocal'))
 
 
 def requires_confirmation(name):
+    if name.startswith('systemPrompt.'):
+        return False  # Restore is confirmed in the built-in page before dispatch.
     return OPERATIONS[name][0] in ('pi.manage', 'skills.manage') and name not in ('pi.cancel', 'market.enable') and name not in DIRECT_SKILL_IMPORTS
 
 
@@ -111,6 +117,7 @@ class WidgetHost(QObject):
         self._skills = None
         self._market = None
         self._sessions = None
+        self._system_prompt = None
         self.activity_timer = QTimer(self)
         self.activity_timer.setSingleShot(True)
         self.activity_timer.setInterval(200)
@@ -280,6 +287,12 @@ class WidgetHost(QObject):
             permission, _ = OPERATIONS[operation]
             if permission not in self.m.entries[identifier].get('permissions', []):
                 raise ValueError('Widget permission is required: ' + permission)
+            if operation.startswith('systemPrompt.'):
+                if self._system_prompt is None:
+                    from .system_prompt import SystemPromptHost
+                    self._system_prompt = SystemPromptHost(self)
+                self._system_prompt.request(request)
+                return
             if operation in TASK_FIELDS:
                 self._task_request(request)
                 return
