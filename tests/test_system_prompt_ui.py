@@ -42,12 +42,13 @@ class FakeSdk(QObject):
         self.counter = 0
         self.busy = False
         self.fail = False
-        self.lang = "en"
-        self.tree = [dict(id="group", name="Instructions", children=[
-            leaf("intro", "Defaults.md", "Be clear and helpful.\nExplain your reasoning briefly."),
-            dict(id="nested", name="Workspace", children=[
-                leaf("notes", "Notes.md", "Keep answers concise.\nUse examples when useful."),
-                leaf("archive", "Archived.md", "A disabled instruction example.", False)])])]
+        self.lang = "zh"
+        self.tree = [dict(id="group", name="项目指令文件", labelKey="group:workspace", children=[
+            leaf("intro", "CLAUDE.md", "Be clear and helpful.\nExplain your reasoning briefly."),
+            dict(id="nested", name="docs", children=[
+                leaf("notes", "notes.md", "Keep answers concise.\nUse examples when useful."),
+                leaf("archive", "archived.md", "A disabled instruction example.", False)])]),
+            dict(id="widgets", name="Widgets", labelKey="group:widgets", children=[])]
         self.recompute()
 
     @Property(bool, notify=activeChanged)
@@ -77,7 +78,7 @@ class FakeSdk(QObject):
     @Property("QVariantMap", constant=True)
     def colors(self):
         return dict(surface="#202521", bg="#181d19", ink="#e4e9e3", muted="#929e94",
-                    accent="#9cc69f", accentBg="#334636", hover="#29362b", line="#465148", danger="#f0a4a0")
+                    accent="#9cc69f", accentBg="#334636", hover="#29362b", line="#465148", danger="#f0a4a0", dark=True)
 
     @Property("QVariantMap", constant=True)
     def hostCapabilities(self):
@@ -103,7 +104,9 @@ class FakeSdk(QObject):
                         enabled=any(child["enabled"] for child in node["children"]),
                         modified=any(child["modified"] for child in node["children"]),
                         stale=any(child["stale"] for child in node["children"]))
-        for node in self.tree: visit(node)
+        for node in self.tree:
+            if node["children"]: visit(node)
+            else: node.update(checkState=2, enabled=True, modified=False, stale=False)
 
     def snapshot(self):
         leaves = [self.find(identifier) for identifier in ("intro", "notes", "archive")]
@@ -208,7 +211,12 @@ class SystemPromptUiSmoke(unittest.TestCase):
             idle()
             self.assertEqual(root.property("selectedId"), "intro")
             self.assertEqual(js("Number(checkState)", find("systemPromptCheck_group")), 1)
-            self.assertEqual(len(value(root, "entries")), 5)
+            self.assertEqual(len(value(root, "entries")), 7)
+            hint = value(root, "entries")[-1]
+            self.assertTrue(hint["hint"] and "Widget" in hint["label"])
+            self.assertFalse(find("systemPromptCheck_widgets").isEnabled())
+            self.assertEqual(find("systemPromptName_group").property("text"), "项目指令文件")
+            self.assertEqual(find("systemPromptTotals").property("text"), "当前注入 100 字 · 原文 131 字")
             initial_entries = {row["id"]: row for row in value(root, "entries")}
             for identifier in ("archive", "nested", "group"):
                 self.assertTrue(initial_entries[identifier]["changed"], identifier + " did not reflect disabled effective text")
@@ -216,7 +224,7 @@ class SystemPromptUiSmoke(unittest.TestCase):
             self.assertFalse(initial_entries["intro"]["changed"])
             screenshot("01-mixed-tree")
             js('fold("nested")')
-            self.assertEqual(len(value(root, "entries")), 3)
+            self.assertEqual(len(value(root, "entries")), 5)
             js('fold("nested")')
             find("systemPromptEditor").setProperty("text", "Be clear and helpful.\nUse concrete, friendly examples.")
             self.assertTrue(root.property("dirty"))
@@ -248,7 +256,7 @@ class SystemPromptUiSmoke(unittest.TestCase):
             self.assertEqual(js("Number(checkState)", find("systemPromptCheck_archive")), 0)
             self.assertEqual(sdk.find("archive")["effectiveText"], "")
             self.assertEqual(root.property("draftText"), sdk.find("archive")["currentText"])
-            self.assertTrue(find("systemPromptCharacterCount").property("text").startswith("Now 0 chars"))
+            self.assertTrue(find("systemPromptCharacterCount").property("text").startswith("本段未注入"))
             screenshot("04-disabled-segment")
             js('request("systemPrompt.toggle", {id:"nested",enabled:true})'); idle()
             self.assertTrue(sdk.find("archive")["enabled"])
@@ -275,13 +283,15 @@ class SystemPromptUiSmoke(unittest.TestCase):
             self.assertEqual(sdk.find("intro")["currentText"], sdk.find("intro")["originalText"])
             self.assertTrue(find("systemPromptShadowedNotice").isVisible())
             self.assertTrue(next(row for row in value(root, "entries") if row["id"] == "intro")["changed"])
-            self.assertTrue(find("systemPromptCharacterCount").property("text").startswith("Now 0 chars"))
+            self.assertTrue(find("systemPromptCharacterCount").property("text").startswith("本段未注入"))
             self.assertEqual(root.property("draftText"), "Retain this unsaved draft.")
             self.assertEqual(find("systemPromptEditor").property("text"), "Retain this unsaved draft.")
             self.assertFalse(find("systemPromptEditor").property("readOnly"))
-            sdk.lang = "zh"; sdk.languageChanged.emit(); QTest.qWait(30)
-            self.assertEqual(find("systemPromptSave").property("text"), "保存")
-            self.assertIn("当前", find("systemPromptCharacterCount").property("text"))
+            self.assertEqual(find("systemPromptBreadcrumb").property("text"), "项目指令文件")
+            sdk.lang = "en"; sdk.languageChanged.emit(); QTest.qWait(30)
+            self.assertEqual(find("systemPromptSave").property("text"), "Save")
+            self.assertEqual(find("systemPromptName_group").property("text"), "Project instruction files")
+            self.assertTrue(find("systemPromptCharacterCount").property("text").startswith("Not injected"))
             window.setWidth(360); window.setHeight(650); QTest.qWait(30)
             self.assertGreater(find("systemPromptEditor").width(), 200)
             self.assertFalse(warnings, "\n".join(warnings))

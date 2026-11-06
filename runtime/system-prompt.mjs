@@ -21,10 +21,12 @@ function identity(key) { return createHash('sha256').update(key).digest('hex').s
 const copyOptions = (options) => normalizeBuildSystemPromptOptions(options);
 const joinParts = (parts, separator = '') => ({ type: 'join', parts, separator });
 const wrap = (part, prefix, suffix = '') => ({ type: 'wrap', part, prefix, suffix });
+// Display order follows the maintainer's spec. Optional groups are hidden while empty.
 const groupNames = {
-  core: 'Pi 核心提示词', skills: 'Skills', workspace: '工作区指令文件',
-  umeko: 'Umeko 提示词', extensions: '扩展与 Widget',
+  core: 'Pi 内核', skills: 'Skills', umeko: 'Umeko Desktop', widgets: 'Widgets',
+  workspace: '项目指令文件', extensions: 'Pi 扩展',
 };
+const optionalGroups = new Set(['workspace', 'extensions']);
 const sectionNames = {
   preamble: '角色说明', tools: '工具说明', rules: '工作规则', docs: 'Pi 文档指引',
   cwd: '当前工作目录', addendum: '附加说明', project_context: '工作区指令', skills: '技能目录',
@@ -169,7 +171,7 @@ class SystemPromptController {
   defineGroup(group, name = groupNames[group]) {
     const key = `group:${group}`;
     if (!this.definitions.has(key)) this.definitions.set(key, {
-      key, id: identity(key), name, children: [], directory: true,
+      key, id: identity(key), name, children: [], directory: true, labelKey: key,
     });
     return key;
   }
@@ -219,8 +221,8 @@ class SystemPromptController {
           const contribution = one.slice(one.indexOf('  <skill>'), one.lastIndexOf('\n</available_skills>'));
           const parent = this.sourceDirectory('skills', `skill:${canonical(skill.filePath)}`, skill.name,
             { path: skill.filePath });
-          return this.leaf(parent, 'segment:catalog', '技能说明', contribution,
-            { path: skill.filePath, contributionKind: 'skill-catalog' });
+          return this.leaf(parent, 'segment:catalog', '技能简介', contribution,
+            { path: skill.filePath, contributionKind: 'skill-catalog', labelKey: 'skill:catalog' });
         });
         result.push(wrap(joinParts(skills, '\n'), `<skills>\n${formatted.slice(0, start)}`,
           `${formatted.slice(end)}\n</skills>`));
@@ -231,7 +233,8 @@ class SystemPromptController {
         result.push(this.leaf('workspace', `system:${path ? canonical(path) : 'configured'}`,
           path ? basename(path) : 'SYSTEM 提示词', text, { path, contributionKind: 'system-file' }));
       } else {
-        result.push(this.leaf('core', `section:${name}`, sectionNames[name] ?? name, text, { contributionKind: 'pi-section' }));
+        result.push(this.leaf('core', `section:${name}`, sectionNames[name] ?? name, text,
+          { contributionKind: 'pi-section', ...(sectionNames[name] ? { labelKey: `section:${name}` } : {}) }));
       }
     }
     return { ...joinParts(result, '\n\n'), sectionNames: Object.keys(sections) };
@@ -278,7 +281,7 @@ class SystemPromptController {
         if (offset < 0) continue;
         const prefix = (first ? separator : '') + value.slice(cursor, offset);
         const leaf = this.leaf('umeko', `append:${source.id}`, source.name ?? source.id,
-          source.text, { contributionKind: 'host-prompt' });
+          source.text, { contributionKind: 'host-prompt', labelKey: `umeko:${source.id}` });
         parts.push(wrap(leaf, prefix));
         cursor = offset + source.text.length;
         first = false;
@@ -338,8 +341,10 @@ class SystemPromptController {
       representation = { type: 'extension', previous: representation, leaf, mode: 'replace' };
     }
     for (const record of this.records) {
-      const parent = this.sourceDirectory('extensions', `extension:${record.extensionKey}`,
-        record.extensionName, { path: record.path });
+      const widget = widgetOwner(record.path);
+      const parent = widget
+        ? this.sourceDirectory('widgets', `widget:${widget}`, widget, { path: record.path })
+        : this.sourceDirectory('extensions', `extension:${record.extensionKey}`, record.extensionName, { path: record.path });
       const before = this.render(representation, false);
       if (record.before !== before) {
         const leaf = this.leaf(parent, `transition:${record.key}`, `${record.name} · 前置上下文`, record.before,
@@ -391,6 +396,7 @@ class SystemPromptController {
           shadowed, partlyShadowed,
           ...(shadowed ? { note: '被后续提示词替换覆盖，当前未注入模型。' }
             : partlyShadowed ? { note: '部分内容被后续提示词替换覆盖。' } : {}),
+          ...(definition.labelKey ? { labelKey: definition.labelKey } : {}),
           ...(definition.path ? { path: definition.path } : {}) };
       } else {
         const edit = this.state.edits[key];
@@ -401,12 +407,15 @@ class SystemPromptController {
           shadowed, ...(shadowed ? { note: '被后续提示词替换覆盖，当前未注入模型。' } : {}),
           originalText: definition.originalText, currentText: text,
           effectiveText: shadowed ? '' : !this.enabled ? definition.originalText : enabled ? text : '',
+          ...(definition.labelKey ? { labelKey: definition.labelKey } : {}),
           ...(definition.path ? { path: definition.path } : {}), contributionKind: definition.contributionKind };
       }
       this.nodes.set(node.id, { key, node });
       return node;
     };
-    const tree = Object.keys(groupNames).map((group) => makeNode(`group:${group}`));
+    const tree = Object.keys(groupNames)
+      .filter((group) => !optionalGroups.has(group) || this.definitions.get(`group:${group}`).children.length)
+      .map((group) => makeNode(`group:${group}`));
     this.snapshot = { tree, originalCharacters: originalText.length, effectiveCharacters: effectiveText.length,
       originalText, effectiveText, originalPrompt: originalText, effectivePrompt: effectiveText,
       enabled: this.enabled, dynamicStatus: this.dynamic ? 'last-run' : 'not-run' };
@@ -451,9 +460,13 @@ function canonicalExtension(extension) {
   const path = extension.resolvedPath ?? extension.path;
   return path.startsWith('<') || path.startsWith('builtin:') ? path : canonical(path);
 }
+// Extensions shipped inside a Widget package are listed under that Widget.
+function widgetOwner(path) {
+  const match = /(?:^|[\\/])(?:umeko-plugins|desktop-plugins[\\/]packages)[\\/]([^\\/]+)/i.exec(path ?? '');
+  return match?.[1];
+}
 function extensionName(extension) {
   const path = extension.resolvedPath ?? extension.path;
-  if (/widget/i.test(path)) return 'Widget 扩展';
   if (path.startsWith('<inline:')) {
     const name = path.slice('<inline:'.length, -1);
     return /^\d+$/.test(name) ? `内联扩展 ${name}` : name.replace(/[-_]/g, ' ');
