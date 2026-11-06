@@ -45,5 +45,7 @@ $generatedRuntimeCache = Join-Path $releaseParent 'coding-1.3.0/node_modules/.ca
 if (Test-Path -LiteralPath $generatedRuntimeCache) { Remove-Item -LiteralPath $generatedRuntimeCache -Recurse -Force }
 Copy-Item -LiteralPath 'runtime/node' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Recurse -Force
 Copy-Item -LiteralPath 'runtime/preview-network.mjs' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Force
+Copy-Item -LiteralPath 'runtime/dsh-acp-bridge.mjs' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Force
+Copy-Item -LiteralPath 'runtime/dsh-permissions.mjs' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Force
 Copy-Item -LiteralPath 'README.md' -Destination (Join-Path $buildDestination 'Umeko/README.md') -Force
 Write-Output ('Portable app: ' + (Join-Path $buildDestination 'Umeko/Umeko.exe'))
