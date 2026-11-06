@@ -8,7 +8,7 @@ AnchoredPidPopup {
     objectName: "modelPopup"
     property real heightLimit: 470
     readonly property bool useDshModels: backend.sessionBackend === "dsh" && backend.dshOwnConfig === true
-    readonly property bool hasDshPath: String(backend.dshRuntime.path || backend.dshRuntime.resolvedPath || "").trim().length > 0
+    readonly property bool hasDshPath: backend.dshRuntime ? String(backend.dshRuntime.path || backend.dshRuntime.resolvedPath || "").trim().length > 0 : false
     fullWidth: 365
     fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 270 + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0) + (ownModelsHint.visible ? ownModelsHint.implicitHeight + 10 : 0)))
     signal configure()
