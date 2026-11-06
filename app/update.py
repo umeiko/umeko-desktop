@@ -39,6 +39,7 @@ def start_update_cleanup(root, profile):
     """Best-effort cleanup after the packaged application's UI has started."""
     if not getattr(sys, 'frozen', False): return None
     try:
+        root = Path(root).resolve()
         directory = Path(sys.executable).resolve().parent
         if sys.platform == 'darwin': directory = directory.parent.parent
         cache = Path(QStandardPaths.writableLocation(QStandardPaths.CacheLocation))

@@ -47,15 +47,23 @@ class StartupCleanupTests(unittest.TestCase):
             runtime = install / 'runtime'; runtime.mkdir()
             source = Path(__file__).resolve().parents[1] / 'runtime'
             for name in ('update-engine.mjs', 'update-cleanup.mjs'): shutil.copyfile(source / name, runtime / name)
+            resources = install
+            if sys.platform != 'win32':
+                # Exercise the same resolved-executable/aliased-resource boundary
+                # that Windows temporary 8.3 paths expose on native runners.
+                resources = base / 'install-alias'
+                resources.symlink_to(install, target_is_directory=True)
             locations = {QStandardPaths.CacheLocation: str(cache), QStandardPaths.DownloadLocation: str(base / 'downloads')}
             with patch('app.update.sys.frozen', True, create=True), \
                     patch('app.update.sys.executable', str(install / executable)), \
                     patch('app.update.QStandardPaths.writableLocation', side_effect=locations.__getitem__), \
                     patch('app.update.node_executable', return_value=shutil.which('node')):
-                worker = start_update_cleanup(install, profile)
+                worker = start_update_cleanup(resources, profile)
                 self.assertIsNotNone(worker)
                 self.wait(worker)
-            self.assertFalse(backup.exists())
+            log = cache / 'update-cleanup.log'
+            diagnostic = log.read_text(encoding='utf-8', errors='replace') if log.exists() else 'No cleanup worker log'
+            self.assertFalse(backup.exists(), diagnostic)
             self.assertFalse(package.exists())
             self.assertEqual((profile / 'settings.json').read_text(), 'settings')
             self.assertTrue((install / executable).exists())
