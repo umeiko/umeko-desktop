@@ -143,9 +143,27 @@ def bridge_path():
     return root / "runtime/dsh-acp-bridge.mjs"
 
 
+def child_environment(environment, providers=(), *, own_config=False):
+    """Remove upstream credentials from default chat and initialize-only checks."""
+    environment = dict(environment)
+    for name in list(environment):
+        upper = name.upper()
+        if upper.startswith('UMEKO_DSH_KEY_') or upper == 'UMEKO_DSH_PROXY_TOKEN':
+            environment.pop(name)
+    if not own_config:
+        keys = {p.get('key') for p in providers if p.get('key')}
+        for name, value in list(environment.items()):
+            if name.upper().endswith(('API_KEY', 'APIKEY', 'ACCESS_TOKEN', 'AUTH_TOKEN', '_SECRET_KEY')) or value in keys:
+                environment.pop(name)
+        no_proxy = environment.get('NO_PROXY') or environment.get('no_proxy', '')
+        environment['NO_PROXY'] = ','.join(filter(None, [no_proxy, '127.0.0.1', 'localhost']))
+    environment['DSH_TELEMETRY_DISABLED'] = '1'
+    return environment
+
+
 def _check_entry(entry, source, *, bridge=None, npm_config=None, cancelled=None):
     entry = ordinary_path(entry)
-    environment = npm_environment(npm_config or {})
+    environment = child_environment(npm_environment(npm_config or {}))
     environment.update(NO_COLOR="1", DO_NOT_TRACK="1", DSH_TELEMETRY_DISABLED="1")
     with tempfile.TemporaryDirectory(prefix="umeko-dsh-check-") as temporary:
         home = Path(temporary)
@@ -301,6 +319,22 @@ class DshRuntimeService(QObject):
 
     @Property(str, notify=changed)
     def path(self): return str(self.config.get("dshPath", ""))
+
+    @Property(bool, notify=changed)
+    def useOwnConfig(self): return self.config.get("useOwnConfig") is True
+
+    @Slot(bool)
+    def setUseOwnConfig(self, value):
+        if value == self.useOwnConfig: return
+        previous = self.config.get("useOwnConfig", False)
+        self.config["useOwnConfig"] = value
+        try:
+            if self._save_config: self._save_config()
+        except (OSError, RuntimeError):
+            self.config["useOwnConfig"] = previous
+            raise
+        self.configChanged.emit()
+        self.changed.emit()
 
     @Property(bool, notify=changed)
     def busy(self): return self._busy

@@ -110,6 +110,37 @@ Column {
         }
     }
     SectionCard {
+        objectName: "dshModelConfiguration"
+        width: parent.width
+        ColumnLayout {
+            width: parent.width; spacing: 12
+            RowLayout {
+                Layout.fillWidth: true; spacing: 8
+                Text {
+                    Layout.fillWidth: true; wrapMode: Text.Wrap
+                    text: I18n.t("使用 dsh 自己的模型和 API Key 配置")
+                    color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(13, visible)
+                }
+                Toggle {
+                    objectName: "dshUseOwnConfig"
+                    checked: root.runtime.useOwnConfig === true
+                    Accessible.name: I18n.t("使用 dsh 自己的模型和 API Key 配置")
+                    onClicked: {
+                        const value = checked
+                        checked = Qt.binding(function() { return root.runtime.useOwnConfig === true })
+                        root.runtime.setUseOwnConfig(value)
+                    }
+                }
+            }
+            Text {
+                objectName: "dshUseOwnConfigHint"
+                Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                text: I18n.t("默认通过 Umeko 现有 API 代理使用已配置的模型（包括已登录供应商），无需为 dsh 另填 API Key。开启后，读取 dsh 的 ACP profile（含其全局配置）中的模型和 API Key，Umeko 不注入供应商配置。模型来源在会话开始后固定，更改后请新建 dsh 会话。")
+                color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible)
+            }
+        }
+    }
+    SectionCard {
         width: parent.width
         ColumnLayout {
             width: parent.width; spacing: 12

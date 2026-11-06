@@ -281,6 +281,30 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def dshRuntime(self):
         return self._dsh_runtime
 
+    @Property(bool, notify=chatChanged)
+    def dshOwnConfig(self):
+        return is_dsh(self._view) and self._dsh_own(self._view)
+
+    @Property('QVariantList', notify=chatChanged)
+    def dshModelProviders(self):
+        return self._dsh_model_providers(self._view)
+
+    @Property(str, notify=chatChanged)
+    def dshCurrentModelValue(self):
+        return self._dsh_model_option(self._view).get('currentValue', '')
+
+    @Property(str, notify=chatChanged)
+    def dshModelName(self):
+        return self._dsh_current_model(self._view)[1]
+
+    @Property(str, notify=chatChanged)
+    def dshProviderName(self):
+        return self._dsh_current_model(self._view)[0]
+
+    @Slot(str, result=bool)
+    def selectDshModel(self, value):
+        return self._select_dsh_model(value)
+
     @Property(str, notify=chatChanged)
     def sessionBackend(self):
         return getattr(self._view, 'backend', 'pi')

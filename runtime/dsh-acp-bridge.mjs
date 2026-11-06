@@ -74,16 +74,16 @@ export class DshAcpBridge {
     this.emit({ type: 'dsh_done', stopReason: 'error' });
   }
 
-  async connect({ runtime, home, workspace, patchFiles = [], permissionMode }) {
+  async connect({ runtime, home, workspace, patchFiles = [], permissionMode, useOwnConfig = false }) {
     if (this.child) throw new Error('DeepSeek Harness 已启动');
-    if (!runtime || !home || !workspace) throw new Error('DeepSeek Harness 的运行入口、独立目录或工作区缺失');
+    if (!runtime || (!useOwnConfig && !home) || !workspace) throw new Error('DeepSeek Harness 的运行入口、独立目录或工作区缺失');
     this.workspace = resolve(workspace);
     this.permissionManaged = permissionMode !== undefined;
     this.permissionMode = permissionMode;
     const isScript = /\.[cm]?js$/i.test(runtime);
     this.child = this.spawnProcess(isScript ? process.execPath : runtime,
       [...(isScript ? [runtime] : []), '--profile', 'acp', ...patchFiles.flatMap(file => ['--patch', file])], {
-        cwd: this.workspace, env: { ...this.env, DSH_HOME: resolve(home) },
+        cwd: this.workspace, env: useOwnConfig ? { ...this.env } : { ...this.env, DSH_HOME: resolve(home) },
         windowsHide: true, stdio: ['pipe', 'pipe', 'pipe', ...(this.permissionManaged ? ['ipc'] : [])],
       });
     const child = this.child;
@@ -151,12 +151,12 @@ export class DshAcpBridge {
     }
     this.configOptions = session.configOptions ?? [];
     for (const config of spec.config ?? []) await this.setConfig(config, false);
-    if (spec.model?.provider && spec.model?.id) {
+    if (!spec.useOwnConfig && spec.model?.provider && spec.model?.id) {
       const value = advertisedModelValue(this.configOptions, spec.model);
       if (value === undefined) throw new Error('DeepSeek Harness 没有提供所选模型');
       await this.setConfig({ configId: 'model', value }, false);
     }
-    if (spec.reasoningEffort !== undefined) {
+    if (!spec.useOwnConfig && spec.reasoningEffort !== undefined) {
       const reasoning = this.configOptions.find(option => option.id === 'reasoning_effort');
       if (reasoning?.options?.some(option => option.value === spec.reasoningEffort)) {
         await this.setConfig({ configId: 'reasoning_effort', value: spec.reasoningEffort }, false);

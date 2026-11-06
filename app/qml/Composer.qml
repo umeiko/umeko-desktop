@@ -168,8 +168,9 @@ Item {
                 x: footer.stacked ? 0 : utilityRow.implicitWidth + footer.gap
                 y: footer.height - Theme.control(33) + (Theme.control(33) - height) / 2
                 width: Math.max(0, Math.min(Theme.control(350), naturalWidth, footer.width - x - trailingRow.width - footer.gap))
-                readonly property string providerName: { const p = backend.config.providers.find(p => p.id === backend.config.selectedProvider); return p ? p.name : I18n.t("选择供应商") }
-                readonly property string modelName: backend.config.selectedModel
+                readonly property bool useDshModels: backend.sessionBackend === "dsh" && backend.dshOwnConfig === true
+                readonly property string providerName: { if (useDshModels) return I18n.t(backend.dshProviderName); const p = backend.config.providers.find(p => p.id === backend.config.selectedProvider); return p ? p.name : I18n.t("选择供应商") }
+                readonly property string modelName: useDshModels ? I18n.t(backend.dshModelName) : backend.config.selectedModel
                 readonly property string effort: backend.reasoningEffort !== "off" ? "· " + Reasoning.label(backend.reasoningEffort) : ""
                 readonly property real naturalWidth: providerMetrics.advanceWidth + (modelName.length ? slashMetrics.advanceWidth + Math.min(modelMetrics.advanceWidth, Theme.control(135)) + 14 : 0) + (effort.length ? effortMetrics.advanceWidth + 7 : 0) + Theme.icon(12) + 27
                 readonly property real namesWidth: Math.max(0, width - 20 - Theme.icon(12) - 7 - (effortBadge.visible ? effortMetrics.advanceWidth + 7 : 0))

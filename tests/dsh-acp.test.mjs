@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { DshAcpBridge, projectTool, advertisedModelValue, resolveSdkEntry } from '../runtime/dsh-acp-bridge.mjs';
 
@@ -16,6 +16,79 @@ async function setup(t, onEvent = () => {}) {
   t.after(async () => { await bridge.shutdown(); await rm(home, { recursive: true, force: true }); });
   return { bridge, events, spec: { runtime, home, workspace: home, action: 'open' } };
 }
+
+test('own-config inherits native home and overlays without replacing initial model or reasoning', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'umeko-own-acp-test-'));
+  const nativeRuntime = join(directory, 'native-acp.mjs');
+  await writeFile(nativeRuntime, `
+    import { createInterface } from 'node:readline';
+    let model = 'native:custom-model', effort = 'native:default';
+    const options = () => [
+      { id: 'model', name: 'Model', type: 'select', currentValue: model,
+        options: [{ name: 'Native model', value: 'native:custom-model' }, { name: 'Other native model', value: 'native:other-model' }] },
+      { id: 'reasoning_effort', name: 'Reasoning', type: 'select', currentValue: effort,
+        options: [{ name: 'Native default', value: 'native:default' }, { name: 'High', value: 'high' }] },
+    ];
+    createInterface({ input: process.stdin }).on('line', line => {
+      const message = JSON.parse(line);
+      let result;
+      if (message.method === 'initialize') result = { protocolVersion: 1, agentCapabilities: {}, authMethods: [] };
+      else if (message.method === 'session/new') result = { sessionId: 'own-session', configOptions: options() };
+      else if (message.method === 'session/set_config_option') {
+        if (message.params.configId === 'model') model = message.params.value;
+        if (message.params.configId === 'reasoning_effort') effort = message.params.value;
+        result = { configOptions: options() };
+      } else result = {};
+      if (message.id !== undefined) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + '\\n');
+    });
+  `);
+  const environment = { ...process.env, DSH_HOME: join(directory, 'native-home'),
+    HOME: join(directory, 'native-os-home'), USERPROFILE: join(directory, 'native-user-profile') };
+  const overlays = [join(directory, 'policy.yml'), join(directory, 'session-root.yml')];
+  const launches = [], events = [];
+  const bridge = new DshAcpBridge({ env: environment, emit: event => events.push(event),
+    spawnProcess: (command, args, options) => {
+      launches.push({ command, args, options });
+      return spawn(command, args, options);
+    } });
+  t.after(async () => { await bridge.shutdown(); await rm(directory, { recursive: true, force: true }); });
+  const writes = [];
+  const setConfig = bridge.setConfig.bind(bridge);
+  bridge.setConfig = (config, emit) => { writes.push(config); return setConfig(config, emit); };
+  await bridge.start({ runtime: nativeRuntime, workspace: directory, useOwnConfig: true,
+    patchFiles: overlays, model: { provider: 'umeko', id: 'must-not-select' }, reasoningEffort: 'high', action: 'open' });
+  assert.deepEqual(launches[0].args, [nativeRuntime, '--profile', 'acp', '--patch', overlays[0], '--patch', overlays[1]]);
+  assert.deepEqual(launches[0].options.env, environment);
+  assert.notEqual(launches[0].options.env, environment);
+  assert.equal(launches[0].options.windowsHide, true);
+  assert.deepEqual(writes, []);
+  const native = events.find(event => event.type === 'dsh_session').configOptions;
+  assert.equal(native[0].currentValue, 'native:custom-model');
+  assert.equal(native[0].options[0].name, 'Native model');
+  assert.equal(native[1].currentValue, 'native:default');
+  await bridge.setConfig({ configId: 'model', value: 'native:other-model' });
+  await bridge.setConfig({ configId: 'reasoning_effort', value: 'high' });
+  assert.equal(bridge.configOptions[0].currentValue, 'native:other-model');
+  assert.equal(bridge.configOptions[1].currentValue, 'high');
+});
+
+test('own-config default remains managed and requires its home', async t => {
+  const { bridge, spec } = await setup(t);
+  await assert.rejects(bridge.connect({ runtime, workspace: spec.workspace }), /独立目录/);
+  const environment = { ...process.env, DSH_HOME: 'inherited-home', HOME: 'inherited-os-home', USERPROFILE: 'inherited-user-profile' };
+  bridge.env = environment;
+  let launch;
+  bridge.spawnProcess = (command, args, options) => {
+    launch = { command, args, options };
+    return spawn(command, args, options);
+  };
+  await bridge.start(spec);
+  assert.equal(launch.options.env.DSH_HOME, resolve(spec.home));
+  assert.equal(launch.options.env.HOME, environment.HOME);
+  assert.equal(launch.options.env.USERPROFILE, environment.USERPROFILE);
+  assert.equal(launch.options.windowsHide, true);
+  assert.equal(bridge.configOptions[0].currentValue, 'opaque:model:first');
+});
 
 test('ACP lifecycle projects text, thoughts, merged tools, usage and opaque config', async t => {
   const { bridge, events, spec } = await setup(t);

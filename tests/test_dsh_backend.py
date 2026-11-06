@@ -108,6 +108,7 @@ class DshBackendTests(unittest.TestCase):
 
     def make_controller(self):
         controller = Controller(ROOT)
+        controller.private_server.port = 19001
         self.controllers.append(controller)
         return controller
 
@@ -307,7 +308,7 @@ class DshBackendTests(unittest.TestCase):
     def test_model_and_reasoning_changes_reuse_advertised_opaque_config_values(self):
         c = self.controller
         record, process = self.start_dsh()
-        opaque_model = '["fixture-openai", "upstream-beta"]'
+        opaque_model = '["fixture-openai", "Beta"]'
         self.event("dsh_config", configOptions=[{
             "id": "provider_model", "category": "model", "options": [{"name": "Fixture", "options": [
                 {"name": "Beta", "value": opaque_model}]}],
@@ -335,17 +336,21 @@ class DshBackendTests(unittest.TestCase):
         self.assertIn("未找到 DeepSeek Harness 运行时", reply["text"])
         self.assertIn("设置", reply["text"])
 
-    def test_profile_patch_references_environment_keys_without_secret_files(self):
+    def test_profile_patch_uses_local_proxy_without_forwarding_provider_keys(self):
         record, process = self.start_dsh()
         home = Path(process.start["home"])
         profile = home / "profiles/acp/cordis.patch.yml"
         patch_text = profile.read_text(encoding="utf-8")
         patch_value = json.loads(patch_text)
         providers = next(row for row in patch_value if row["id"] == "llm-pi-ai")["config"]["providers"]
-        self.assertEqual(providers["fixture-openai"]["apiKeyEnv"], "UMEKO_DSH_KEY_0")
-        self.assertEqual(providers["fixture-anthropic"]["api"], "anthropic-messages")
-        self.assertEqual(process.environment["UMEKO_DSH_KEY_0"], "fixture-openai-secret")
-        self.assertEqual(process.environment["UMEKO_DSH_KEY_1"], "fixture-anthropic-secret")
+        self.assertEqual(providers["fixture-openai"]["apiKeyEnv"], "UMEKO_DSH_PROXY_TOKEN")
+        self.assertEqual(providers["fixture-anthropic"]["api"], "openai-completions")
+        self.assertEqual(providers["fixture-openai"]["baseURL"], "http://127.0.0.1:19001/v1")
+        self.assertEqual(providers["fixture-openai"]["models"][0]["id"], "Alpha")
+        self.assertEqual(process.environment["UMEKO_DSH_PROXY_TOKEN"], self.controller.private_token)
+        self.assertFalse(any(name.startswith("UMEKO_DSH_KEY_") for name in process.environment))
+        self.assertNotIn("fixture-openai-secret", process.environment.values())
+        self.assertNotIn("fixture-anthropic-secret", process.environment.values())
         self.assertNotIn("UNRELATED_API_KEY", process.environment)
         self.assertNotIn("fixture-openai-secret", patch_text)
         self.assertNotIn("fixture-anthropic-secret", patch_text)

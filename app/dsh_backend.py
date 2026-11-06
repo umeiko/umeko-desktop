@@ -29,40 +29,37 @@ def is_dsh(record):
 
 
 def profile_configuration(providers, selected_provider, selected_model, max_tokens,
-                          permission_mode='auto', permission_plugin=None):
-    """Return a Cordis patch and environment; credentials never enter the patch."""
+                          permission_mode='auto', permission_plugin=None, *,
+                          proxy_url='', proxy_token='', own_config=False, session_root=None):
+    """Compose the official profile; only the ephemeral local proxy token leaves Umeko."""
     if permission_mode not in ('auto', 'ask'):
         raise ValueError('DeepSeek Harness 不支持当前权限模式，请选择自动或询问。')
     plugin = Path(permission_plugin or Path(__file__).resolve().parents[1] / 'runtime/dsh-permissions.mjs')
-    configured, environment = {}, {}
-    for index, provider in enumerate(providers):
-        if provider.get('api') not in ('openai', 'anthropic'):
-            continue
-        models = []
-        for model in provider.get('models', []):
-            levels = reasoning_levels(model)
-            models.append({'id': model['upstream'], 'name': model.get('alias', model['upstream']),
-                           'contextWindow': model.get('contextWindow', 128000), 'maxTokens': max_tokens,
-                           'reasoningEfforts': {'off': None, **{level: level for level in levels}} if levels else False})
-        key_name = f'UMEKO_DSH_KEY_{index}'
-        environment[key_name] = provider.get('key', '')
-        configured[provider['id']] = {
-            'api': 'anthropic-messages' if provider['api'] == 'anthropic' else 'openai-completions',
-            'baseURL': provider['baseUrl'], 'apiKeyEnv': key_name,
-            'models': models, 'defaultMaxTokens': max_tokens,
-            'compat': {'supportsDeveloperRole': False, 'thinkingFormat': 'deepseek' if any(
-                model.get('reasoningFormat') == 'deepseek' for model in provider.get('models', [])) else 'openai'},
-        }
-    if selected_provider not in configured:
-        raise ValueError('DeepSeek Harness 首版支持已配置 API Key 的 OpenAI 兼容或 Anthropic 供应商，请先选择此类模型。')
-    provider = next(p for p in providers if p['id'] == selected_provider)
-    model = next((m for m in provider['models'] if m['alias'] == selected_model), None)
-    if model is None:
-        raise ValueError('请选择一个可用模型。')
-    selection = {'provider': selected_provider, 'model': model['upstream']}
-    patch = [{'id': 'llm-pi-ai', 'config': {'providers': configured}},
-             {'id': 'acp', 'config': selection}, {'id': 'agent-default-model', 'config': selection},
-             {'id': 'sandbox-policy', 'config': {'mode': 'workspace-write', 'additionalWritableRoots': []}},
+    patch, environment = [], {}
+    if not own_config:
+        if not proxy_url or not proxy_token:
+            raise RuntimeError('Umeko 内部 API 代理不可用，请重新启动 Umeko 后重试。')
+        configured = {}
+        for provider in providers:
+            models = []
+            for model in provider.get('models', []):
+                levels = reasoning_levels(model)
+                models.append({'id': model['alias'], 'name': model['alias'],
+                               'contextWindow': model.get('contextWindow', 128000), 'maxTokens': max_tokens,
+                               'reasoningEfforts': {'off': None, **{level: level for level in levels}} if levels else False})
+            configured[provider['id']] = {
+                'api': 'openai-completions', 'baseURL': proxy_url, 'apiKeyEnv': 'UMEKO_DSH_PROXY_TOKEN',
+                'models': models, 'defaultMaxTokens': max_tokens,
+                'compat': {'supportsDeveloperRole': False, 'thinkingFormat': 'openai'},
+            }
+        provider = next((p for p in providers if p['id'] == selected_provider), {})
+        if not any(model['alias'] == selected_model for model in provider.get('models', [])):
+            raise ValueError('请选择一个已在 Umeko 配置的可用模型。')
+        selection = {'provider': selected_provider, 'model': selected_model}
+        patch.extend([{'id': 'llm-pi-ai', 'config': {'providers': configured}},
+                      {'id': 'acp', 'config': selection}, {'id': 'agent-default-model', 'config': selection}])
+        environment['UMEKO_DSH_PROXY_TOKEN'] = proxy_token
+    patch.extend([{'id': 'sandbox-policy', 'config': {'mode': 'workspace-write', 'additionalWritableRoots': []}},
              {'id': 'approval', 'config': {'policy': 'ask'}},
              {'id': 'permission', 'config': {'defaultPreset': 'workspace-write', 'presets': {
                  'read-only': {'sandbox': 'read-only', 'approval': 'ask'},
@@ -71,8 +68,18 @@ def profile_configuration(providers, selected_provider, selected_model, max_toke
              {'insert': [{'id': 'umeko-tool-permissions', 'name': plugin.resolve().as_uri(),
                           'inject': ['tools', 'approval', 'sandboxPolicy', 'permissionPresets'],
                           'config': {'mode': permission_mode}}]},
-             *[{'id': name, 'disabled': True} for name in ('llm-deepseek', 'llm-deepseek-account', 'deepseek-account', 'session-telemetry-otel')]]
+             {'id': 'session-telemetry-otel', 'disabled': True}])
+    if session_root is not None:
+        patch.append({'id': 'session-persistence-jsonl', 'config': {'root': str(session_root)}})
+    if not own_config:
+        patch.extend({'id': name, 'disabled': True} for name in ('llm-deepseek', 'llm-deepseek-account', 'deepseek-account'))
     return patch, environment
+
+
+def dsh_environment(config, providers, *, own_config=False):
+    """Keep native credential resolution opt-in; default dsh only calls loopback."""
+    from .dsh_runtime import child_environment
+    return child_environment(npm_environment(config), providers, own_config=own_config)
 
 
 class DshProcess(QObject):
@@ -176,6 +183,44 @@ class DshControllerMixin:
         self._dsh_runtime = DshRuntimeService(self.store.directory / 'dsh/runtime',
             config=self.store.data.setdefault('dsh', {}), save_config=self.store.save,
             npm_config=self.store.data['agent'], parent=self)
+        self._dsh_runtime.configChanged.connect(self.changed)
+        self._dsh_runtime.configChanged.connect(self.chatChanged)
+
+    def _dsh_own(self, record):
+        saved = getattr(record, 'dsh_own_config', None)
+        return saved if saved is not None else self._dsh_runtime.useOwnConfig
+
+    def _dsh_model_option(self, record):
+        return next((option for option in getattr(record, 'dsh_options', [])
+                     if option.get('category') == 'model' or option.get('id') == 'model'), {})
+
+    def _dsh_model_providers(self, record):
+        rows = []
+        for index, group in enumerate(self._dsh_model_option(record).get('options', [])):
+            choices = group.get('options', [group])
+            models = [{'alias': choice.get('name', ''), 'upstream': '', 'value': choice['value']}
+                      for choice in choices if isinstance(choice.get('value'), str)]
+            if models:
+                rows.append({'id': f'dsh-native-{index}',
+                             'name': group.get('name', 'DeepSeek Harness') if 'options' in group else 'DeepSeek Harness',
+                             'models': models})
+        return rows
+
+    def _dsh_current_model(self, record):
+        value = self._dsh_model_option(record).get('currentValue', '')
+        return next(((group['name'], model['alias']) for group in self._dsh_model_providers(record)
+                     for model in group['models'] if model['value'] == value), ('DeepSeek Harness', '默认模型'))
+
+    def _select_dsh_model(self, value):
+        record = self._view
+        if not is_dsh(record) or not self._dsh_own(record) or record.busy or not record.ready:
+            return False
+        option = self._dsh_model_option(record)
+        if not any(model['value'] == value for group in self._dsh_model_providers(record) for model in group['models']):
+            return False
+        if value != option.get('currentValue'):
+            self._pool.write(record, {'type': 'set_config', 'configId': option['id'], 'value': value})
+        return True
 
     def _choose_dsh_backend(self, value):
         record = self._view
@@ -191,7 +236,9 @@ class DshControllerMixin:
         if is_dsh(record):
             row = next(s for s in self._sessions if s['id'] == record.id)
             row.update(backend='dsh', acpSessionId=getattr(record, 'acp_session_id', ''),
-                       dshHome=getattr(record, 'dsh_home', ''), file='')
+                       dshHome=getattr(record, 'dsh_home', ''), file='',
+                       dshOwnConfig=self._dsh_own(record),
+                       dshSessionRoot=getattr(record, 'dsh_session_root', ''))
 
     def _save_dsh(self, record):
         if not record.id:
@@ -211,6 +258,8 @@ class DshControllerMixin:
         record.backend, record.id, record.title = 'dsh', session['id'], session['title']
         record.model, record.provider = session.get('model', record.model), session.get('provider', record.provider)
         record.acp_session_id, record.dsh_home = session.get('acpSessionId', ''), session.get('dshHome', '')
+        record.dsh_own_config = session.get('dshOwnConfig') is True
+        record.dsh_session_root = session.get('dshSessionRoot', '')
         record.reasoning_effort = self.store.data['sessionMeta'].get(record.id, {}).get('reasoningEffort', 'off')
         record.phase = 'loading'
         self._activate(record)
@@ -249,10 +298,6 @@ class DshControllerMixin:
         record.tool_status = '正在连接 DeepSeek Harness' if not record.process else '正在生成'
         record.prompt_started = time.monotonic() if action == 'prompt' else None
         try:
-            patch, keys = profile_configuration(self.store.data['providers'], record.provider, record.model,
-                                               self.store.data['agent']['maxTokens'],
-                                               self.store.data['agent'].get('toolPermissionMode', 'auto'),
-                                               self.root / 'runtime/dsh-permissions.mjs')
             if record.process and record.ready and not record.stale:
                 self._pool.write(record, {'type': action, **values, 'config': self._dsh_selection(record)})
             else:
@@ -262,28 +307,36 @@ class DshControllerMixin:
                 runtime = discover_dsh(self._dsh_runtime.path, self.store.directory / 'dsh/runtime')['path']
                 if not runtime:
                     raise RuntimeError('未找到 DeepSeek Harness 运行时，请到设置 → Agent → DeepSeek Harness 选择路径或下载运行时。')
-                # A home per Umeko session avoids provider/profile races across chats.
-                home = Path(getattr(record, 'dsh_home', '') or self.store.directory / 'dsh/profiles' / record.key)
-                record.dsh_home = str(home)
-                profile = home / 'profiles/acp'
-                profile.mkdir(parents=True, exist_ok=True)
-                (profile / 'cordis.patch.yml').write_text(json.dumps(patch, ensure_ascii=False), encoding='utf-8')
+                own = self._dsh_own(record)
+                record.dsh_own_config = own
+                managed = self.store.directory / 'dsh/profiles' / record.key
+                home = None if own else Path(getattr(record, 'dsh_home', '') or managed)
+                session_root = Path(getattr(record, 'dsh_session_root', '') or (home or managed) / 'sessions')
+                record.dsh_session_root = str(session_root)
+                server = self.private_server
+                if not own and (server is None or server.closed is True):
+                    raise RuntimeError('Umeko 内部 API 代理不可用，请重新启动 Umeko 后重试。')
+                patch, credentials = profile_configuration(self.store.data['providers'], record.provider, record.model,
+                    self.store.data['agent']['maxTokens'], self.store.data['agent'].get('toolPermissionMode', 'auto'),
+                    self.root / 'runtime/dsh-permissions.mjs', own_config=own, session_root=session_root,
+                    proxy_url=f'http://127.0.0.1:{server.port}/v1' if not own else '',
+                    proxy_token=self.private_token if not own else '')
+                overlay = session_root.parent / 'umeko.patch.json' if own else home / 'profiles/acp/cordis.patch.yml'
+                overlay.parent.mkdir(parents=True, exist_ok=True)
+                overlay.write_text(json.dumps(patch, ensure_ascii=False), encoding='utf-8')
                 workspace = Path(record.workspace) if record.workspace else self.store.directory / 'workspace'
                 workspace.mkdir(parents=True, exist_ok=True)
-                environment = npm_environment(self.store.data['agent'])
-                for key in list(environment):
-                    if key.upper().endswith(('API_KEY', 'ACCESS_TOKEN', '_SECRET_KEY')):
-                        environment.pop(key)
-                environment.update(keys)
-                selected = next(p for p in self.store.data['providers'] if p['id'] == record.provider)
-                proxy = selected.get('proxy') or {}
-                if proxy.get('mode') == 'custom' and proxy.get('url'):
-                    environment.update(HTTPS_PROXY=proxy['url'], HTTP_PROXY=proxy['url'])
-                payload = {'type': 'start', 'runtime': str(runtime), 'home': str(home), 'workspace': str(workspace),
+                environment = dsh_environment(self.store.data['agent'], self.store.data['providers'], own_config=own)
+                environment.update(credentials)
+                payload = {'type': 'start', 'runtime': str(runtime), 'workspace': str(workspace),
                            'sessionId': getattr(record, 'acp_session_id', ''), 'action': action,
-                           'config': [], 'model': {'provider': record.provider, 'id': next(
-                               model['upstream'] for model in selected['models'] if model['alias'] == record.model)},
-                           'reasoningEffort': record.reasoning_effort, **values}
+                           'config': [], 'useOwnConfig': own, **values}
+                if own:
+                    payload['patchFiles'] = [str(overlay)]
+                else:
+                    record.dsh_home = str(home)
+                    payload.update(home=str(home), model={'provider': record.provider, 'id': record.model},
+                                   reasoningEffort=record.reasoning_effort)
                 payload['permissionMode'] = self.store.data['agent'].get('toolPermissionMode', 'auto')
                 DshProcess(self._pool, record, self.root / 'runtime/dsh-acp-bridge.mjs', payload, environment)
                 record.stale = False
@@ -315,6 +368,7 @@ class DshControllerMixin:
 
     def _dsh_prompt(self, record, text):
         if not record.id:
+            record.dsh_own_config = self._dsh_runtime.useOwnConfig
             record.id = 'dsh-' + record.key
         if not record.messages:
             record.title = ' '.join(text.split())[:28]
@@ -370,11 +424,9 @@ class DshControllerMixin:
     def _dsh_selection(self, record):
         """Use opaque values advertised by ACP, rather than manufacturing them."""
         options = getattr(record, 'dsh_options', [])
-        provider = next((p for p in self.store.data['providers'] if p['id'] == record.provider), {})
-        model = next((m for m in provider.get('models', []) if m['alias'] == record.model), {})
         selected = []
         for option in options:
-            target = model.get('upstream') if option.get('category') == 'model' or option.get('id') == 'model' else record.reasoning_effort if option.get('id') == 'reasoning_effort' else None
+            target = (None if self._dsh_own(record) else record.model) if option.get('category') == 'model' or option.get('id') == 'model' else record.reasoning_effort if option.get('id') == 'reasoning_effort' else None
             if target is None:
                 continue
             choices = option.get('options', [])
@@ -454,7 +506,8 @@ class DshControllerMixin:
                 record.queue = []
         else:
             if kind == 'context_usage':
-                event = {**event, 'usage': {**event.get('usage', {}), 'model': record.model}}
+                name = self._dsh_current_model(record)[1] if self._dsh_own(record) else record.model
+                event = {**event, 'usage': {**event.get('usage', {}), 'model': name}}
             elif kind == 'ui_request':
                 event = {**event, 'backend': 'dsh'}
             super()._handle_pi_event(record, event)
