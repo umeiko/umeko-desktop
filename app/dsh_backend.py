@@ -20,6 +20,8 @@ from .pi_runtime import CREATE_NO_WINDOW, node_executable
 
 
 INTERRUPTION_NOTICE = '[用户已停止上一条请求；请只处理新消息，除非用户明确要求继续。]'
+# Shown in the chat; the model still receives INTERRUPTION_NOTICE with the next prompt.
+INTERRUPTION_STATUS = '已停止上一条请求'
 
 
 def is_dsh(record):
@@ -332,7 +334,7 @@ class DshControllerMixin:
         if record.messages and record.messages[-1].get('customType') == 'umeko-dsh-interruption':
             return
         record.messages.append({'role': 'status', 'customType': 'umeko-dsh-interruption',
-                                'text': INTERRUPTION_NOTICE, 'error': False})
+                                'text': INTERRUPTION_STATUS, 'error': False})
         record.body_dirty = True
 
     def _write_pi(self, payload, record=None):

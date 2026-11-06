@@ -701,13 +701,16 @@ Item {
                         objectName: "dshInterruptionNotice_" + messageRow.index
                         x: 33
                         width: parent.width - 33
+                        height: Math.max(Theme.control(24), implicitHeight)
                         visible: !modelData._loading && messageRow.dshInterruptionNotice
-                        text: messageRow.dshInterruptionNotice ? I18n.t(modelData.text || "") : ""
+                        // Saved items may still hold the full model instruction; users see the short status.
+                        text: messageRow.dshInterruptionNotice ? I18n.t("已停止上一条请求") : ""
                         textFormat: Text.PlainText
                         wrapMode: Text.Wrap
+                        verticalAlignment: Text.AlignVCenter
                         color: Theme.muted
                         font.family: Theme.fontFamily
-                        font.pixelSize: Theme.font(12, visible)
+                        font.pixelSize: Theme.font(12, visible, chatSelection)
                     }
                     Column {
                         id: compactionEvent

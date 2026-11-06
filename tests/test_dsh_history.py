@@ -5,6 +5,8 @@ import unittest
 
 from PySide6.QtTest import QTest
 
+from app import dsh_backend
+
 try:
     from . import test_dsh_backend as backend_fixture
 except ImportError:
@@ -46,7 +48,8 @@ class DshHistoryTests(unittest.TestCase):
         notice = record.messages[-1]
         self.assertEqual(notice["role"], "status")
         self.assertEqual(notice["customType"], "umeko-dsh-interruption")
-        self.assertIn("用户已停止上一条请求", notice["text"])
+        # The chat keeps the short status; the full instruction goes only to the model.
+        self.assertEqual(notice["text"], dsh_backend.INTERRUPTION_STATUS)
         self.assertTrue(record.dsh_interruption_pending)
         self.assertEqual(controller._turn_status(record)["state"], "stopped")
         expected = copy.deepcopy(record.messages)
@@ -80,7 +83,7 @@ class DshHistoryTests(unittest.TestCase):
         prompt = fixture.launches[-1].writes[-1]
         self.assertEqual(prompt["type"], "prompt")
         self.assertEqual(prompt["text"], new_text)
-        self.assertEqual(prompt["interruptionNotice"], notice["text"])
+        self.assertEqual(prompt["interruptionNotice"], dsh_backend.INTERRUPTION_NOTICE)
         self.assertEqual(restored._view.messages[-2]["text"], new_text)
         self.assertEqual(sum(row.get("customType") == "umeko-dsh-interruption" for row in restored._view.messages), 1)
         self.assertTrue(restored._view.dsh_interruption_pending)

@@ -239,8 +239,14 @@ export class DshAcpBridge {
         title: typeof offeredTool.title === 'string' && offeredTool.title.trim() ? offeredTool.title : cachedTool.title,
         rawInput: offeredTool.rawInput ?? cachedTool.rawInput,
       };
-      const detail = [tool.title || '工具调用', tool.rawInput == null ? '' : JSON.stringify(tool.rawInput), textOf(tool.content)].filter(Boolean).join('\n');
-      this.emit({ type: 'ui_request', backend: 'dsh', id, toolCallId: tool.toolCallId, method: 'confirm', title: 'DeepSeek Harness 请求授权', message: detail, detail, options: params.options });
+      const note = textOf(tool.content);
+      const detail = [tool.title || '工具调用', tool.rawInput == null ? '' : JSON.stringify(tool.rawInput), note].filter(Boolean).join('\n');
+      // The structured copies only feed the readable dialog; detail stays the full record.
+      this.emit({
+        type: 'ui_request', backend: 'dsh', id, toolCallId: tool.toolCallId, method: 'confirm', title: 'DeepSeek Harness 请求授权',
+        message: detail, detail, options: params.options,
+        toolTitle: tool.title || '', toolKind: tool.kind || '', rawInput: tool.rawInput ?? null, toolContent: note,
+      });
     });
   }
 

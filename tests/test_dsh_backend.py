@@ -265,6 +265,7 @@ class DshBackendTests(unittest.TestCase):
         self.assertEqual(record.draft, "留到稍后")
         self.assertEqual(record.messages[-1]["customType"], "umeko-dsh-interruption")
         self.assertEqual(record.messages[-1]["role"], "status")
+        self.assertEqual(record.messages[-1]["text"], dsh_backend.INTERRUPTION_STATUS)
         self.assertTrue(record.dsh_interruption_pending)
         self.assertFalse(any(row['role'] == 'assistant' and not row.get('text')
                              and not row.get('thinking') and not row.get('tools') for row in record.messages))

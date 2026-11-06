@@ -179,6 +179,10 @@ test('permission-partial preserves cached tool details, explanations and one-sho
     assert.match(event.detail, /Write notes file/);
     assert.match(event.detail, /out\/notes\.txt/);
     assert.match(event.detail, value ? /Permission-specific write explanation/ : /Cached write explanation/);
+    // Structured copies for the readable dialog mirror what detail already carries.
+    assert.equal(event.toolTitle, 'Write notes file');
+    assert.deepEqual(event.rawInput, { path: 'out/notes.txt', content: 'notes' });
+    assert.equal(event.toolContent, value ? 'Permission-specific write explanation' : 'Cached write explanation');
     bridge.respond({ id: event.id, value });
     assert.deepEqual(await pending, { outcome: { outcome: 'selected', optionId: value ? 'offered-allow' : 'offered-reject' } });
   }

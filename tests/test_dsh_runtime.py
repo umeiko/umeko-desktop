@@ -305,6 +305,31 @@ class DshRuntimeTests(unittest.TestCase):
         self.assertEqual(service.status, "fixture ready")
         self.assertTrue(service.ready)
         self.assertFalse(service.busy)
+        self.assertFalse(service.failed)
+
+    def test_failed_marks_errors_but_not_cancel_and_clears_on_retry(self):
+        app = QCoreApplication.instance() or QCoreApplication([])
+        service = runtime.DshRuntimeService(self.root / "own", {}, bridge=self.bridge)
+        def finish(result):
+            results = []
+            service.finished.connect(results.append)
+            with patch.object(runtime, "check_dsh", side_effect=result):
+                service.check()
+                self.assertFalse(service.failed)
+                deadline = time.monotonic() + 3
+                while not results and time.monotonic() < deadline:
+                    app.processEvents(); time.sleep(.01)
+            service.finished.disconnect(results.append)
+            self.assertTrue(results)
+        finish(runtime.RuntimeFailure("missing", "未找到 dsh", "hint"))
+        self.assertTrue(service.failed)
+        self.assertEqual(service.status, "未找到 dsh")
+        finish(InterruptedError())
+        self.assertFalse(service.failed)
+        finish(runtime.RuntimeFailure("download", "dsh 下载失败", "hint"))
+        self.assertTrue(service.failed)
+        service.setPath("another path")
+        self.assertFalse(service.failed)
 
 
 if __name__ == "__main__":

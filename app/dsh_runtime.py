@@ -291,7 +291,7 @@ class DshRuntimeService(QObject):
         self._save_config = save_config
         self._bridge = bridge
         self._npm_config = npm_config if npm_config is not None else {}
-        self._busy = self._ready = False
+        self._busy = self._ready = self._failed = False
         self._status, self._hint = "尚未检查 dsh", "选择安装路径，或下载官方版本。"
         self._version = self._resolved_path = ""
         self._progress = 0.
@@ -307,6 +307,10 @@ class DshRuntimeService(QObject):
 
     @Property(bool, notify=changed)
     def ready(self): return self._ready
+
+    # Display only: the last check or download ended in an error (not a cancel).
+    @Property(bool, notify=changed)
+    def failed(self): return self._failed
 
     @Property(str, notify=changed)
     def status(self): return self._status
@@ -329,7 +333,7 @@ class DshRuntimeService(QObject):
         value = value.strip().strip('"')
         if value == self.path: return
         self.config["dshPath"] = value
-        self._ready, self._version, self._resolved_path = False, "", ""
+        self._ready, self._failed, self._version, self._resolved_path = False, False, "", ""
         self._status, self._hint = "路径已更改，请检查", "检查通过后即可使用。"
         if self._save_config: self._save_config()
         self.configChanged.emit()
@@ -351,7 +355,7 @@ class DshRuntimeService(QObject):
     def _start(self, download):
         if self._busy: return
         self._cancelled.clear()
-        self._busy, self._ready, self._progress = True, False, 0.
+        self._busy, self._ready, self._failed, self._progress = True, False, False, 0.
         self._status, self._hint = "正在下载 dsh" if download else "正在检查 dsh", ""
         configured, npm_config = self.path, dict(self._npm_config)
         self.changed.emit()
@@ -379,6 +383,7 @@ class DshRuntimeService(QObject):
     @Slot(object)
     def _complete(self, result):
         self._busy, self._ready = False, bool(result.get("ok"))
+        self._failed = not self._ready and result.get("code") != "cancelled"
         self._status, self._hint = result["message"], result.get("hint", "")
         if self._ready:
             self._resolved_path, self._version, self._progress = result["path"], result["version"], 1.

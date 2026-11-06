@@ -67,7 +67,7 @@ Column {
                 id: dshIcon
                 width: Theme.icon(48); height: Theme.icon(48); radius: 10; color: Theme.accentBg
                 anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                Image { objectName: "dshSettingsArtwork"; anchors.fill: parent; anchors.margins: 5; source: "../icons/dsh.svg"; sourceSize: Qt.size(96,96); fillMode: Image.PreserveAspectFit }
+                IconImage { objectName: "dshSettingsArtwork"; anchors.fill: parent; anchors.margins: 5; source: "../icons/dsh.svg"; color: Theme.ink; sourceSize: Qt.size(96,96); fillMode: Image.PreserveAspectFit }
             }
             Column {
                 anchors.left: dshIcon.right; anchors.leftMargin: 16
