@@ -19,6 +19,11 @@ ApplicationWindow {
     title: "Umeko"
     font.family: Theme.fontFamily
     color: Theme.bg
+    // Present a complete frame after all theme bindings settle (#110).
+    // Compare palette values so unrelated backend changes do not repaint,
+    // and custom themes with the same background still request a frame.
+    readonly property string themePaletteKey: JSON.stringify(Theme.palette)
+    onThemePaletteKeyChanged: Qt.callLater(window.update)
     flags: Qt.Window | Qt.FramelessWindowHint
     property string page: "chat"
     property bool searchVisible: false

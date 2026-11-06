@@ -59,6 +59,7 @@ smokes=(
   tests/multimodal_ui_smoke.py
   tests/auxiliary_vision_ui_smoke.py
   tests/appearance_ui_smoke.py
+  tests/theme_repaint_ui_smoke.py
   tests/characters_ui_smoke.py
   tests/sidebar_animation_ui_smoke.py
   tests/extension_details_ui_smoke.py
