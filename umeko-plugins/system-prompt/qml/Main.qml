@@ -18,6 +18,7 @@ FocusScope {
     property string notice: ""
     property int originalCharacters: 0
     property int effectiveCharacters: 0
+    property real treeHeight: 240 * sdk.scale
     readonly property bool working: Object.keys(pending).length > 0
     readonly property bool sessionBusy: !!(sdk.session && sdk.session.busy)
     readonly property bool available: !!sdk.active && !working && !sessionBusy
@@ -25,7 +26,41 @@ FocusScope {
     readonly property string draftText: selected ? Object.prototype.hasOwnProperty.call(drafts, selectedId) ? drafts[selectedId] : currentText(selected) : ""
     readonly property bool dirty: !!selected && draftText !== currentText(selected)
     readonly property var entries: flatten(tree, 0)
+    readonly property bool dark: !!sdk.colors.dark
+    // Amber stays legible on both the dark and the light surfaces.
+    readonly property color changedColor: dark ? "#d7b65b" : "#946200"
+    readonly property color changedBg: dark ? "#1fd7b65b" : "#1fe0a526"
+    readonly property var breadcrumb: pathTo(tree, selectedId, [])
     function t(zh, en) { return sdk.language.indexOf("zh") === 0 ? zh : en }
+    function count(value) { return Number(value || 0).toLocaleString(Qt.locale("en_US"), "f", 0) }
+    // Known runtime names are translated here; Skill, Widget and file names are shown as they are.
+    readonly property var labels: ({
+        "group:core": ["Pi 内核", "Pi core"], "group:skills": ["Skills", "Skills"],
+        "group:umeko": ["Umeko Desktop", "Umeko Desktop"], "group:widgets": ["Widgets", "Widgets"],
+        "group:workspace": ["项目指令文件", "Project instruction files"], "group:extensions": ["Pi 扩展", "Pi extensions"],
+        "section:preamble": ["角色说明", "Role"], "section:tools": ["工具说明", "Tools"],
+        "section:rules": ["工作规则", "Working rules"], "section:docs": ["Pi 文档指引", "Pi documentation"],
+        "section:cwd": ["当前工作目录", "Working directory"], "section:addendum": ["附加说明", "Addendum"],
+        "section:project_context": ["工作区指令", "Workspace instructions"], "section:skills": ["技能目录", "Skill catalog"],
+        "skill:catalog": ["技能简介", "Skill summary"],
+        "umeko:desktop-pi": ["Pi 操作说明", "Pi usage"], "umeko:desktop-control": ["桌面能力说明", "Desktop capabilities"],
+        "umeko:language": ["回复语言", "Reply language"], "umeko:instructions": ["自定义指令", "Custom instructions"]
+    })
+    function label(node) {
+        const known = node && node.labelKey ? labels[node.labelKey] : undefined
+        return known ? t(known[0], known[1]) : node ? node.name : ""
+    }
+    function pathTo(nodes, identifier, trail) {
+        for (const node of nodes) {
+            const next = trail.concat([label(node)])
+            if (node.id === identifier) return next
+            if (node.children) {
+                const match = pathTo(node.children, identifier, next)
+                if (match.length) return match
+            }
+        }
+        return []
+    }
     function currentText(node) { return node.currentText === undefined ? node.effectiveText || "" : node.currentText }
     function findNode(nodes, identifier) {
         for (const node of nodes) {
@@ -57,10 +92,15 @@ FocusScope {
             const folder = !!node.children
             const expanded = !collapsed[node.id]
             rows.push(Object.assign({}, node, {
-                folder: folder, depth: depth, expanded: expanded, changed: changed(node),
+                folder: folder, depth: depth, expanded: expanded, changed: changed(node), label: label(node),
+                empty: folder && node.children.length === 0,
                 checkState: node.checkState === undefined ? node.enabled ? 2 : 0 : node.checkState
             }))
-            if (folder && expanded) rows = rows.concat(flatten(node.children, depth + 1))
+            if (folder && expanded && node.children.length === 0)
+                rows.push({id: node.id + ":empty", hint: true, depth: depth + 1, label: node.labelKey === "group:widgets"
+                    ? t("当前没有 Widget 写入系统提示词，Widget 说明由模型在需要时通过工具读取", "No Widget adds text to the system prompt; the model reads Widget docs through tools when needed")
+                    : t("此来源当前没有内容", "Nothing from this source")})
+            else if (folder && expanded) rows = rows.concat(flatten(node.children, depth + 1))
         }
         return rows
     }
@@ -158,7 +198,9 @@ FocusScope {
         }
         Text {
             Layout.fillWidth: true
-            text: root.t("生效 ", "Active ") + root.effectiveCharacters + root.t(" 字符 · 原文 ", " chars · Original ") + root.originalCharacters
+            objectName: "systemPromptTotals"
+            text: root.t("当前注入 " + root.count(root.effectiveCharacters) + " 字 · 原文 " + root.count(root.originalCharacters) + " 字",
+                         "Injected " + root.count(root.effectiveCharacters) + " chars · Original " + root.count(root.originalCharacters) + " chars")
             color: root.sdk.colors.muted
             font.family: Umeko.Theme.fontFamily
             font.pixelSize: Umeko.Theme.font(10)
@@ -181,15 +223,17 @@ FocusScope {
                 Rectangle { anchors.centerIn: parent; width: 42 * (root.sdk ? root.sdk.scale : 1); height: 3 * (root.sdk ? root.sdk.scale : 1); radius: 2; color: !root.sdk ? "transparent" : SplitHandle.hovered || SplitHandle.pressed ? root.sdk.colors.accent : root.sdk.colors.line }
             }
             Item {
-                SplitView.preferredHeight: 240 * root.sdk.scale
+                objectName: "systemPromptTreePane"
+                SplitView.preferredHeight: root.treeHeight
                 SplitView.minimumHeight: 70 * root.sdk.scale
                 ColumnLayout {
                     anchors.fill: parent
                     spacing: 5 * root.sdk.scale
                     RowLayout {
                         Layout.fillWidth: true
-                        Text { Layout.fillWidth: true; text: root.t("来源", "Sources"); color: root.sdk.colors.muted; font.family: Umeko.Theme.fontFamily; font.pixelSize: Umeko.Theme.font(10) }
-                        Text { text: root.t("● 已修改", "● Changed"); color: "#d7b65b"; font.family: Umeko.Theme.fontFamily; font.pixelSize: Umeko.Theme.font(10) }
+                        Text { Layout.fillWidth: true; text: root.t("来源", "Sources"); color: root.sdk.colors.muted; font.family: Umeko.Theme.fontFamily; font.pixelSize: Umeko.Theme.font(10); font.weight: Font.DemiBold }
+                        Rectangle { width: 8 * root.sdk.scale; height: width; radius: 2 * root.sdk.scale; color: root.changedColor }
+                        Text { text: root.t("与原文不同", "Differs from original"); color: root.sdk.colors.muted; font.family: Umeko.Theme.fontFamily; font.pixelSize: Umeko.Theme.font(10) }
                     }
                     PromptTree {
                         Layout.fillWidth: true
@@ -198,6 +242,9 @@ FocusScope {
                         entries: root.entries
                         selectedId: root.selectedId
                         available: root.available
+                        changedColor: root.changedColor
+                        changedBg: root.changedBg
+                        dark: root.dark
                         onSelectedLeaf: identifier => root.selectedId = identifier
                         onFold: identifier => root.fold(identifier)
                         onToggled: (identifier, value) => root.request("systemPrompt.toggle", {id: identifier, enabled: value})
@@ -216,6 +263,9 @@ FocusScope {
                 SplitView.minimumHeight: 190 * root.sdk.scale
                 sdk: root.sdk
                 selected: root.selected
+                title: root.label(root.selected)
+                breadcrumb: root.breadcrumb.slice(0, -1).join("  ›  ")
+                changedColor: root.changedColor
                 draft: root.draftText
                 dirty: root.dirty
                 available: root.available
@@ -229,7 +279,7 @@ FocusScope {
         anchors.fill: parent
         visible: !!root.restoreId
         sdk: root.sdk
-        segmentName: { const node = root.findNode(root.tree, root.restoreId); return node ? node.name : "" }
+        segmentName: root.label(root.findNode(root.tree, root.restoreId))
         available: root.available
         onCancelled: root.restoreId = ""
         onConfirmed: root.restore()

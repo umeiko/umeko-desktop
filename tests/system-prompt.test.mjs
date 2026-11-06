@@ -179,7 +179,7 @@ test('genuine extension handlers retain order, attribution and replacement fallb
   assert.deepEqual(calls, ['first', 'second']);
   const snapshot = runtime.controller.refresh();
   assert.match(snapshot.originalPrompt, /<example>\nStructured extension content\.\n<\/example>\nEXTENSION SUFFIX$/);
-  const sources = snapshot.tree.find((node) => node.name === '扩展与 Widget').children;
+  const sources = snapshot.tree.find((node) => node.name === 'Pi 扩展').children;
   assert.equal(sources.length, 2);
   assert.ok(sources.every((node) => node.children?.length === 1));
   assert.ok(flatten(sources).every((node) => !/<inline|before_agent_start/.test(node.name)));
@@ -203,7 +203,7 @@ test('already-open sessions reload shared workspace controls at command and mode
   assert.match(second.captured.at(-1).prompt, /Latest shared workspace edit\./);
   const skillDirectory = second.controller.refresh().tree.find((node) => node.name === 'Skills').children[0];
   assert.equal(skillDirectory.name, 'alpha');
-  assert.equal(skillDirectory.children[0].name, '技能说明');
+  assert.equal(skillDirectory.children[0].name, '技能简介');
   await first.controller.mutate({ action: 'toggle', id: skillDirectory.id, enabled: false });
   assert.equal(find(second.controller.refresh(), (node) => node.id === skillDirectory.children[0].id).enabled, false);
   await second.controller.mutate({ action: 'restore', id: skillDirectory.id });
@@ -246,7 +246,7 @@ test('named inline source identity and saved overrides survive unrelated factory
   const first = await fixture(t, root, { extensionFactories: [existing] });
   await first.session.prompt('First named source');
   const source = find(first.controller.refresh(), (node) => node.contributionKind === 'extension-append');
-  const parent = first.controller.refresh().tree.find((node) => node.name === '扩展与 Widget').children[0];
+  const parent = first.controller.refresh().tree.find((node) => node.name === 'Pi 扩展').children[0];
   assert.equal(parent.name, 'persistent prompt source');
   await first.controller.mutate({ action: 'save', id: source.id, text: '\nSaved named source override.' });
   const unrelated = { name: 'unrelated-source', factory: (pi) => {
@@ -279,7 +279,7 @@ test('superseded sources expose empty effective text while retaining editable pr
   assert.equal(file.checkState, 2);
   assert.equal(file.currentText, file.originalText);
   assert.match(file.note, /未注入模型/);
-  assert.equal(snapshot.tree.find((node) => node.name === '工作区指令文件').shadowed, true);
+  assert.equal(snapshot.tree.find((node) => node.name === '项目指令文件').shadowed, true);
   await runtime.controller.mutate({ action: 'save', id: file.id, text: 'Edited upstream contribution.' });
   await runtime.session.prompt('Keep replacement precedence');
   assert.equal(runtime.captured.at(-1).prompt, 'Whole replacement.\nFinal suffix.');
@@ -290,4 +290,30 @@ test('superseded sources expose empty effective text while retaining editable pr
   const restored = find(runtime.controller.refresh(), (node) => node.id === file.id);
   assert.equal(restored.shadowed, false);
   assert.equal(restored.effectiveText, 'Edited upstream contribution.');
+});
+
+test('tree follows the source layout: Pi core, Skills per Skill, Umeko Desktop and Widgets per Widget', async (t) => {
+  const root = await sandbox(t);
+  const widget = { name: 'demo-widget', factory: (pi) => {
+    pi.on('before_agent_start', (event) => ({ systemPrompt: `${event.systemPrompt}\nWidget contribution.` }));
+  } };
+  const runtime = await fixture(t, root, { skills: ['alpha', 'beta'], extensionFactories: [widget],
+    appendSources: [{ id: 'language', name: '回复语言', text: 'Host prompt. ' }] });
+  const initial = runtime.controller.refresh();
+  assert.deepEqual(initial.tree.map((node) => node.name), ['Pi 内核', 'Skills', 'Umeko Desktop', 'Widgets', '项目指令文件']);
+  assert.deepEqual(initial.tree.map((node) => node.labelKey),
+    ['group:core', 'group:skills', 'group:umeko', 'group:widgets', 'group:workspace']);
+  const skills = initial.tree.find((node) => node.name === 'Skills').children;
+  assert.deepEqual(skills.map((node) => [node.name, node.children.map((child) => child.name)]),
+    [['alpha', ['技能简介']], ['beta', ['技能简介']]]);
+  assert.deepEqual(initial.tree.find((node) => node.name === 'Widgets').children, []);
+  const [extension] = runtime.session.resourceLoader.getExtensions().extensions;
+  extension.resolvedPath = join(root, 'umeko-plugins', 'demo-widget', 'extension.mjs');
+  await runtime.session.prompt('Hello');
+  const snapshot = runtime.controller.refresh();
+  const widgets = snapshot.tree.find((node) => node.name === 'Widgets').children;
+  assert.equal(widgets.length, 1);
+  assert.equal(widgets[0].name, 'demo-widget');
+  assert.equal(widgets[0].children[0].contributionKind, 'extension-append');
+  assert.equal(snapshot.tree.some((node) => node.name === 'Pi 扩展'), false);
 });
