@@ -1,5 +1,6 @@
 .pragma library
 var strings = {
+    "实验版": "Experimental",
     "使用 dsh 自己的模型和 API Key 配置": "Use dsh's own model and API Key configuration",
     "默认通过 Umeko 现有 API 代理使用已配置的模型（包括已登录供应商），无需为 dsh 另填 API Key。开启后，读取 dsh 的 ACP profile（含其全局配置）中的模型和 API Key，Umeko 不注入供应商配置。模型来源在会话开始后固定，更改后请新建 dsh 会话。": "By default, dsh uses configured models through Umeko's existing API proxy, including providers you have signed in to. No separate API Key is needed for dsh. When enabled, dsh reads models and API Keys from its ACP profile, including its global configuration; Umeko does not inject provider configuration. The model source is fixed once a session starts. Start a new dsh session after changing this setting.",
     "连接 dsh 后显示其 ACP profile 的模型": "Models from dsh's ACP profile appear after connecting to dsh",
