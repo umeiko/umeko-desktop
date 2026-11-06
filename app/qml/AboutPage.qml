@@ -23,7 +23,7 @@ Column {
             width: parent.width; spacing: 22
             RowLayout {
                 Layout.fillWidth: true; spacing: 16
-                Image { source: "../icons/app.png"; Layout.preferredWidth: 60; Layout.preferredHeight: 60; sourceSize: Qt.size(120, 120); mipmap: true }
+                CharacterArt { objectName: "aboutApplicationArtwork"; fallbackSource: "../icons/app.png"; artwork: Character.personalityEnabled ? fallbackSource : Character.asset("avatarSmile", fallbackSource); Layout.preferredWidth: 60; Layout.preferredHeight: 60; sourceSize: Qt.size(120, 120); mipmap: true }
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 6
                     Text { font.family: Theme.fontFamily; text: root.about.info.name; color: Theme.ink; font.pixelSize: Theme.font(24, visible); font.weight: Font.DemiBold }

@@ -2,6 +2,7 @@ import QtQuick
 
 FocusScope {
     id: root
+    enabled: Character.personalityEnabled
     property var selectionController: null
     property url portraitSource: Character.asset("reply", "../icons/yanami-pixel.png")
     property string interactionLabel: Character.id === "yanami" ? I18n.t("八奈见：点击互动，连续点击或长按有彩蛋") : Character.style.name
@@ -18,20 +19,22 @@ FocusScope {
     property real progress: 1
     width: 56; height: Math.max(width, bubble.visible ? bubble.height : 0)
     smooth: false
-    activeFocusOnTab: true
-    Accessible.role: Accessible.Button
+    activeFocusOnTab: enabled
+    Accessible.role: enabled ? Accessible.Button : Accessible.Graphic
     Accessible.name: interactionLabel
     Accessible.onPressAction: tap()
     function tap() {
+        if (!enabled) return
         combo++; comboTimer.restart()
         reaction = tapLines.length ? tapLines[Math.floor(Math.random() * tapLines.length)] : ""
         if (combo >= 3) celebrate()
         else { wiggle.restart(); reactionTimer.restart() }
     }
-    function celebrate() { combo = 0; reaction = celebrationLine; wiggle.restart(); burst.restart(); reactionTimer.restart() }
+    function celebrate() { if (!enabled) return; combo = 0; reaction = celebrationLine; wiggle.restart(); burst.restart(); reactionTimer.restart() }
     function say(text) { combo = 0; comboTimer.stop(); reaction = text; wiggle.restart(); reactionTimer.restart() }
     function reset() { wiggle.stop(); burst.stop(); reactionTimer.stop(); comboTimer.stop(); combo = 0; reaction = ""; tilt = 0; progress = 1 }
     onVisibleChanged: if (ready && !visible) reset()
+    onEnabledChanged: if (ready) reset()
     onPortraitSourceChanged: if (ready) reset()
     SequentialAnimation {
         id: wiggle

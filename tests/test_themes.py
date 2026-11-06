@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from app.storage import Store
 
 from app.themes import normalize_theme, read_theme, theme_library
 
@@ -15,6 +16,18 @@ class ThemesTest(unittest.TestCase):
         self.assertEqual(normalize_theme(self.theme), self.theme)
         self.theme['colors'] = {}
         self.assertEqual(normalize_theme(self.theme)['colors'], {})
+        self.assertEqual(normalize_theme(dict(self.theme, base='white'))['base'], 'white')
+
+    def test_new_profiles_default_to_white_and_preserve_saved_theme_choices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.assertEqual(Store(root).data['theme'], 'white')
+            for saved, expected in (({}, 'white'), ({'dark': False}, 'light'),
+                                    ({'dark': True}, 'dark'), ({'theme': 'light'}, 'light'),
+                                    ({'theme': 'yanami'}, 'yanami'), ({'theme': 'custom:moon'}, 'custom:moon')):
+                with self.subTest(saved=saved):
+                    (root/'settings.json').write_text(json.dumps(saved), encoding='utf-8')
+                    self.assertEqual(Store(root).data['theme'], expected)
 
     def test_invalid_input_and_paths(self):
         for key, value in [('format','javascript'),('version',True),('version','1'),('id','../moon'),('id','light/../../x'),('name',''),('base','custom'),('colors',{'unknown':'#112233'}),('colors',{'bg':'url(http://example.invalid)'}),('colors',{'bg':'#11223344'})]:

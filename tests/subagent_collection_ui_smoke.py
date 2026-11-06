@@ -12,8 +12,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 os.environ["UMEKO_LANGUAGE"] = "zh"
 os.environ["UMEKO_DATA_DIR"] = tempfile.mkdtemp(prefix="umeko-child-collection-")
-from PySide6.QtCore import QObject, QMimeData, QPointF, Qt, QUrl
+from PySide6.QtCore import QObject, QMimeData, QPointF, Qt, QUrl, QMetaObject, Q_ARG, Q_RETURN_ARG
 from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
+from PySide6.QtQml import QJSValue
 from PySide6.QtTest import QTest
 from main import create_application
 
@@ -31,8 +32,11 @@ def items():
         pending.extend(item.childItems())
 
 
-def find(name):
-    return next(item for item in items() if item.objectName() == name)
+def find(name, required=True):
+    item = next((item for item in items() if item.objectName() == name), None)
+    if required and item is None:
+        raise AssertionError(name)
+    return item
 
 
 def wait(predicate, label):
@@ -43,6 +47,31 @@ def wait(predicate, label):
 
 
 def click(name):
+    if name == "subagentGroupCard":
+        def group_hit_ready():
+            window.grabWindow()
+            item = find(name, required=False)
+            view = find("conversation", required=False)
+            if (item is None or view is None or not item.isVisible() or not item.isEnabled()
+                    or item.width() <= 0 or item.height() <= 0 or view.property("restoring")):
+                return False
+            center = item.boundingRect().center()
+            if not view.boundingRect().contains(item.mapToItem(view, center)):
+                return False
+            controller = item.parentItem().property("selectionController")
+            if isinstance(controller, QJSValue):
+                controller = controller.toQObject()
+            if controller is None or not controller.isEnabled():
+                return False
+            point = item.mapToItem(controller, center)
+            # The visible group Rectangle can precede its async HitArea/layout.
+            target = QMetaObject.invokeMethod(controller, "interactionAt", Qt.DirectConnection,
+                                             Q_RETURN_ARG("QVariant"), Q_ARG("QVariant", point.x()),
+                                             Q_ARG("QVariant", point.y()))
+            if isinstance(target, QJSValue):
+                target = target.toQObject()
+            return target is not None and target.parentItem() == item
+        wait(group_hit_ready, "Subagent group did not become clickable")
     item = find(name)
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, item.mapToScene(item.boundingRect().center()).toPoint())
 
@@ -82,9 +111,19 @@ try:
         def rendered():
             # The conversation body loads asynchronously after chatChanged.
             window.grabWindow()
-            visible = [item.objectName() for item in items() if item.isVisible()]
+            visible_items = [item for item in items() if item.isVisible()]
+            visible = [item.objectName() for item in visible_items]
             cards = sum(name.startswith("subagentCard_") for name in visible)
-            return cards == count if count <= 4 else cards == 0 and "subagentGroupCard" in visible
+            if count <= 4:
+                expected = {prefix + tool["subagent"]["id"] for tool in tools[:count]
+                            for prefix in ("subagentTitle_", "subagentSummary_")}
+                summaries = {item.objectName(): item for item in visible_items if item.objectName() in expected}
+                # A visible delegate can precede its Column's layout polish.
+                # Wait for every expected text parent, then keep the bounds assertions below.
+                return (cards == count and summaries.keys() == expected
+                        and all(item.parentItem() is not None and item.parentItem().height() > 0
+                                for item in summaries.values()))
+            return cards == 0 and "subagentGroupCard" in visible
         wait(rendered, f"Subagent collection did not render {count} children")
 
     render(4)
@@ -103,6 +142,7 @@ try:
         opening.append(tuple(matrix.property(key) for key in ("x","y","width","height")))
     matrix.aboutToShow.connect(capture_opening)
     click("subagentGroupCard")
+    wait(lambda: bool(opening), "Matrix did not announce its first opening")
     assert opening, "Matrix did not announce its first opening"
     x,y,width,height=opening[0]
     assert abs(width-anchor.width())<2 and abs(height-anchor.height())<2, ("First frame started at the overlay size instead of the widget",opening[0])

@@ -62,7 +62,7 @@ Item {
     Rectangle { x: 0; y: root.queueOffset + 6; width: parent.width; height: parent.height - root.queueOffset; radius: 17; color: "#090f0a"; opacity: Theme.dark ? 0.1 : 0.035 }
     Rectangle {
         x: 0; y: root.queueOffset; width: parent.width; height: parent.height - root.queueOffset; radius: 15; color: Theme.surface
-        border.color: prompt.activeFocus && Theme.yanami ? Theme.accent : prompt.activeFocus ? (Theme.dark ? "#59735e" : "#b3c3b0") : Theme.line
+        border.color: prompt.activeFocus && (Theme.yanami || Theme.base === "white") ? Theme.accent : prompt.activeFocus ? (Theme.dark ? "#59735e" : "#b3c3b0") : Theme.line
         Behavior on border.color { ColorAnimation { duration: 180 } }
         Flickable {
             x: 16; y: 12; width: parent.width - 32; height: Theme.control(36); visible: backend.attachments.length > 0
@@ -112,7 +112,10 @@ Item {
             x: 14; width: parent.width - 28; anchors.bottom: parent.bottom; anchors.bottomMargin: 12
             readonly property real gap: 8
             readonly property real minimumModelWidth: Theme.control(96)
-            readonly property bool permissionTextVisible: width >= utilityIcons.implicitWidth + permissionMetrics.advanceWidth + Theme.icon(17) + 36 + minimumModelWidth + sendButton.width + gap * 3
+            readonly property bool permissionTextVisible: width >= utilityIcons.naturalWidth + permissionMetrics.advanceWidth + Theme.icon(17) + 36 + minimumModelWidth + sendButton.width + gap * 3
+            // Keep the four utility gaps within the live width during pane motion.
+            // The permission-label threshold uses natural spacing, avoiding a binding loop.
+            readonly property real utilityGap: Math.min(5, Math.max(0, (width - (utilityIcons.naturalWidth - 15) - permissionButton.width) / 4))
             readonly property bool stacked: width < utilityRow.implicitWidth + minimumModelWidth + sendButton.width + gap * 2
             readonly property real trailingBudget: width - (stacked ? 0 : utilityRow.implicitWidth + gap) - minimumModelWidth - gap
             height: Theme.control(33) * (stacked ? 2 : 1) + (stacked ? gap : 0)
@@ -121,14 +124,15 @@ Item {
             TextMetrics { renderType: Text.QtRendering; id: statusMetrics; text: statusText.text; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10) }
             TextMetrics { renderType: Text.QtRendering; id: taskMetrics; text: taskStatus.text; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10) }
             Row {
-                id: utilityRow; objectName: "composerUtilityControls"; spacing: 5
+                id: utilityRow; objectName: "composerUtilityControls"; spacing: footer.utilityGap
                 y: (Theme.control(33) - height) / 2
                 Row {
-                    id: utilityIcons; objectName: "composerUtilityIcons"; spacing: 5
-                    ActionButton { objectName: "attachFilesButton"; glyph: "plus"; quiet: true; width: Theme.control(31); height: Theme.control(31); hint: I18n.t("添加文件"); onClicked: root.chooseFiles() }
-                    ActionButton { objectName: "openChatDirectoryButton"; glyph: "folder"; quiet: true; width: Theme.control(31); height: Theme.control(31); hint: I18n.t("在文件管理器中打开当前目录"); onClicked: backend.openChatDirectory() }
-                    Rectangle { width: 1; height: 15; color: Theme.line; anchors.verticalCenter: parent.verticalCenter }
-                    ContextUsage {}
+                    id: utilityIcons; objectName: "composerUtilityIcons"; spacing: footer.utilityGap
+                    readonly property real naturalWidth: attachButton.width + directoryButton.width + utilityDivider.width + contextIndicator.width + 15
+                    ActionButton { id: attachButton; objectName: "attachFilesButton"; glyph: "plus"; quiet: true; width: Theme.control(31); height: Theme.control(31); hint: I18n.t("添加文件"); onClicked: root.chooseFiles() }
+                    ActionButton { id: directoryButton; objectName: "openChatDirectoryButton"; glyph: "folder"; quiet: true; width: Theme.control(31); height: Theme.control(31); hint: I18n.t("在文件管理器中打开当前目录"); onClicked: backend.openChatDirectory() }
+                    Rectangle { id: utilityDivider; width: 1; height: 15; color: Theme.line; anchors.verticalCenter: parent.verticalCenter }
+                    ContextUsage { id: contextIndicator }
                 }
                 ActionButton {
                     id: permissionButton; objectName: "composerPermissionStatus"

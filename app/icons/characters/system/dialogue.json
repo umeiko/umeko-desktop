@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "scenes": {
+    "welcome": {
+      "greetings": ["请输入任务或问题"],
+      "tap": ["准备就绪"],
+      "celebration": "准备就绪",
+      "dragReturn": "准备就绪"
+    },
+    "reply": {"tap": ["回复已完成"], "celebration": "回复已完成"},
+    "layout": {
+      "tooNarrow": "已达到最小窗口宽度",
+      "expandLeft": "向左展开",
+      "collapseLeft": "收起左侧",
+      "expandRight": "向右展开",
+      "collapseRight": "收起右侧"
+    },
+    "files": {"drop": "松开以添加附件"},
+    "loading": {
+      "title": "正在加载会话…",
+      "tips": ["正在读取消息记录，请稍候。"]
+    }
+  },
+  "subagents": [
+    {"name": "子智能体 1", "avatar": "", "catch": "", "tap": ["任务已完成"], "celebration": "任务已完成", "fileDrop": "松开以添加附件"},
+    {"name": "子智能体 2", "avatar": "", "catch": "", "tap": ["任务已完成"], "celebration": "任务已完成", "fileDrop": "松开以添加附件"},
+    {"name": "子智能体 3", "avatar": "", "catch": "", "tap": ["任务已完成"], "celebration": "任务已完成", "fileDrop": "松开以添加附件"},
+    {"name": "子智能体 4", "avatar": "", "catch": "", "tap": ["任务已完成"], "celebration": "任务已完成", "fileDrop": "松开以添加附件"}
+  ]
+}

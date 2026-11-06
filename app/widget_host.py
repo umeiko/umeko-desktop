@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from .tool_visibility import catalog, NATIVE_ID
+from .plugin_sessions import OPERATIONS as SESSION_OPERATIONS, PluginSessions
 from collections import OrderedDict
 
 from PySide6.QtCore import QObject, Property, QTimer, Signal, Slot
@@ -21,10 +22,12 @@ from PySide6.QtCore import QObject, Property, QTimer, Signal, Slot
 TASK_FIELDS = {
     'tasks.list': {'offset'},
     'tasks.get': {'taskId', 'offset'},
-    'tasks.detail': {'taskId', 'attemptId', 'offset'},
+    'tasks.detail': {'taskId', 'attemptId', 'offset', 'deliveriesOnly'},
     'tasks.create': {'objective', 'scope'},
     'tasks.link': {'taskId'},
     'tasks.unlink': set(),
+    'tasks.chat': {'taskId'},
+    'tasks.preview': {'taskId', 'attemptId', 'fileId'},
     'tasks.verify': {'taskId', 'attemptId'},
     'tasks.accept': {'taskId', 'attemptId'},
     'tasks.delete': {'taskId'},
@@ -33,6 +36,7 @@ TASK_FIELDS = {
 OPERATIONS = {
     **{name: ('tasks.read' if name in ('tasks.list', 'tasks.get', 'tasks.detail') else 'tasks.manage', None)
        for name in TASK_FIELDS},
+    **{name: ('sessions.manage', None) for name in SESSION_OPERATIONS},
     'market.list': ('pi.read', None),
     'market.prepare': ('pi.read', None),
     'market.discard': ('pi.read', None),
@@ -106,6 +110,7 @@ class WidgetHost(QObject):
         self._panel_approval = {}
         self._skills = None
         self._market = None
+        self._sessions = None
         self.activity_timer = QTimer(self)
         self.activity_timer.setSingleShot(True)
         self.activity_timer.setInterval(200)
@@ -169,6 +174,7 @@ class WidgetHost(QObject):
             pool.write(record, {'type': 'checkpoint_lock', 'locked': self.workspace_locked(record.workspace)})
 
     def stop(self, identifier):
+        if self._sessions: self._sessions.stop(identifier)
         for token in [token for token, lock in self.checkpoint_locks.items() if lock['widget'] == identifier]:
             self.release_checkpoint(identifier, token)
         if self._skills: self._skills.stop(identifier)
@@ -216,6 +222,10 @@ class WidgetHost(QObject):
             raise ValueError('Widget instance has stopped')
         if not self.m.enabled(identifier) or not self.m.session_enabled(identifier):
             raise ValueError('Widget is not enabled')
+        if request['operation'] in SESSION_OPERATIONS:
+            if not self.m.application(identifier):
+                raise ValueError('Session service requires an application lifecycle Widget')
+            return identifier
         session = request['session']
         current = self.m._session
         if not isinstance(session, dict) or not session.get('token') or session.get('token') != current.get('token') or session.get('workspace') != current.get('workspace'):
@@ -272,6 +282,10 @@ class WidgetHost(QObject):
                 raise ValueError('Widget permission is required: ' + permission)
             if operation in TASK_FIELDS:
                 self._task_request(request)
+                return
+            if operation in SESSION_OPERATIONS:
+                if self._sessions is None: self._sessions = PluginSessions(self)
+                self._sessions.request(request)
                 return
             fields = {'market.list': {'force'}, 'market.prepare': {'id'}, 'market.install': {'token'},
                       'market.discard': {'token'}, 'market.uninstall': {'id'}, 'market.enable': {'id'},
@@ -384,7 +398,7 @@ class WidgetHost(QObject):
                                   if self._pending is request else None)
                 return
             self._execute(request)
-        except (ValueError, TypeError, KeyError) as error:
+        except (ValueError, TypeError, KeyError, OSError) as error:
             if request['operation'] == 'market.install' and self._market:
                 self._market.declined(request)
             self._reply(request, {'ok': False, 'error': str(error)})
@@ -400,11 +414,15 @@ class WidgetHost(QObject):
         self._task_owner(request)
         operation, args = request['operation'], request['arguments']
         fields = TASK_FIELDS[operation]
-        if set(args) - fields or fields - {'offset'} - set(args):
+        if set(args) - fields or fields - {'offset', 'deliveriesOnly'} - set(args):
             raise ValueError('Invalid task arguments')
+        if 'deliveriesOnly' in args and type(args['deliveriesOnly']) is not bool:
+            raise ValueError('deliveriesOnly must be boolean')
         task_id, attempt_id, offset = args.get('taskId'), args.get('attemptId'), args.get('offset', 0)
         if 'taskId' in args and (not isinstance(task_id, str) or not re.fullmatch('[a-f0-9]{32}', task_id)):
             raise ValueError('A valid task ID is required')
+        if 'fileId' in args and (type(args['fileId']) is not int or args['fileId'] <= 0):
+            raise ValueError('A valid file ID is required')
         if 'attemptId' in args and (type(attempt_id) is not int or not 0 < attempt_id < 2**53):
             raise ValueError('A valid attempt ID is required')
         if type(offset) is not int or not 0 <= offset <= 1000000:
@@ -427,16 +445,30 @@ class WidgetHost(QObject):
             rows = store.tasks(offset, 13)
             for row in rows:
                 row.pop('scope')
-            return {'tasks': rows[:12], 'hasMore': len(rows) > 12, 'linked': record.prepared_task}
+            return {'tasks': rows[:12], 'hasMore': len(rows) > 12, **self._task_link_state(store, record)}
         if operation == 'tasks.get':
             task = store.task(task_id)
             if not task:
                 raise ValueError('Task record is missing')
             attempts = store.attempts(task_id, offset, 13)
             return {'task': task, 'attempts': attempts[:12], 'hasMore': len(attempts) > 12,
-                    'linked': record.prepared_task, 'canLink': ledger.canPrepare(task_id)}
+                    **self._task_link_state(store, record), 'canLink': ledger.canPrepare(task_id)}
+        if operation == 'tasks.chat':
+            if record.prepared_task != task_id:
+                raise ValueError('Link the task to this chat first')
+            # Reply before closing the page; no prompt, draft or attachment is changed.
+            QTimer.singleShot(0, self.m, lambda: self._task_return_chat(request))
+            return {'pending': True}
+        if operation == 'tasks.preview':
+            with store.connection() as db:
+                row = db.execute("SELECT files.path FROM files JOIN attempts ON attempts.id = files.attempt_id WHERE attempts.task_id = ? AND attempts.id = ? AND files.id = ?",
+                                 (task_id, attempt_id, args['fileId'])).fetchone()
+            if not row:
+                raise ValueError('The file does not belong to this record')
+            self.b.widgetDocumentRequested.emit(row['path'], Path(row['path']).name, 'file', 'task-records')
+            return {'opened': True}
         if operation == 'tasks.detail':
-            self.b._job('task-details:' + request['id'], lambda: store.details(task_id, attempt_id, offset, 9))
+            self.b._job('task-details:' + request['id'], lambda: store.details(task_id, attempt_id, offset, 9, deliveries_only=args.get('deliveriesOnly', False)))
             return None
         if operation == 'tasks.verify':
             self.b._job('task-details:' + request['id'], lambda: store.check_files(task_id, attempt_id))
@@ -455,9 +487,27 @@ class WidgetHost(QObject):
             ledger.clear()
         if operation == 'tasks.accept':
             ledger.accept(task_id, attempt_id)
+            with store.connection() as db:
+                accepted = db.execute('SELECT accepted FROM attempts WHERE id = ? AND task_id = ?', (attempt_id, task_id)).fetchone()
+            if not accepted or not accepted['accepted']:
+                raise ValueError('Only the latest finished work can be confirmed')
         if operation == 'tasks.delete' and not ledger.remove(task_id):
             raise ValueError('A missing or active task cannot be deleted')
         return {}
+
+    def _task_return_chat(self, request):
+        try:
+            self._task_owner(request)
+        except ValueError:
+            return
+        if self.b._view.prepared_task == request['arguments']['taskId']:
+            self.m.closePage()
+            self.m.inputRequested.emit()
+
+    def _task_link_state(self, store, record):
+        task = store.task(record.prepared_task) if record.prepared_task else None
+        return {'linked': record.prepared_task, 'linkedObjective': task['objective'] if task else '',
+                'chatTitle': getattr(record, 'title', '') or '新聊天'}
 
     def task_result(self, token, result):
         request = self.requests.get(('task-records', token))
@@ -471,8 +521,11 @@ class WidgetHost(QObject):
             if request['operation'] == 'tasks.verify':
                 if not value:
                     raise ValueError('No delivered files to verify')
-                self.b._task_records.store.save_checks(request['arguments']['attemptId'], value)
-                value = {}
+                checked = self.b._task_records.store.save_checks(request['arguments']['attemptId'], value)
+                counts = {}
+                for row in value:
+                    counts[row['state']] = counts.get(row['state'], 0) + 1
+                value = {'checked': checked, 'total': len(value), 'counts': counts}
             elif value:
                 value['hasMore'] = len(value['steps']) > 8 or len(value['files']) > 8
                 value['steps'], value['files'] = value['steps'][:8], value['files'][:8]

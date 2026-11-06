@@ -10,8 +10,9 @@ PidPopup {
     parent: Overlay.overlay
     anchors.centerIn: parent
     width: Math.min(600, parent.width - 32)
-    height: Math.min(700, parent.height - 32, grid.implicitHeight + heading.implicitHeight + modeRow.implicitHeight + description.implicitHeight + (roleMode ? roleSlot.implicitHeight : 0) + actions.implicitHeight + content.spacing * (roleMode ? 6 : 5) + padding * 2 + 2)
+    height: Math.min(700, parent.height - 32, grid.implicitHeight + heading.implicitHeight + modeRow.implicitHeight + description.implicitHeight + (roleMode ? roleSlot.implicitHeight : disableCharacter.implicitHeight) + actions.implicitHeight + content.spacing * 6 + padding * 2 + 2)
     property bool roleMode: false
+    Connections { target: Character; function onPersonalityEnabledChanged() { if (!Character.personalityEnabled) root.roleMode = false } }
     function selected(entry) { return roleMode ? Character.role(roleSlot.currentIndex).name === entry.name : backend.characterStyle.id === entry.id }
     property var removal: ({})
     FileDialog {
@@ -63,10 +64,18 @@ PidPopup {
         RowLayout {
             id: modeRow; Layout.fillWidth: true; spacing: 8
             ActionButton { objectName: "mainCharacterTab"; text: I18n.t("主角色"); primary: !root.roleMode; quiet: root.roleMode; onClicked: root.roleMode = false }
-            ActionButton { objectName: "subagentCharacterTab"; text: I18n.t("子智能体"); primary: root.roleMode; quiet: !root.roleMode; onClicked: root.roleMode = true }
+            ActionButton { objectName: "subagentCharacterTab"; text: I18n.t("子智能体"); enabled: Character.personalityEnabled; primary: root.roleMode; quiet: !root.roleMode; onClicked: root.roleMode = true }
             Item { Layout.fillWidth: true }
         }
-        Text { font.family: Theme.fontFamily; id: description; text: I18n.t(root.roleMode ? "选择一个槽位，再点击形象。全局子智能体可在创建时单独选择。" : "独立于主题，即时切换形象与互动台词。"); color: Theme.muted; font.pixelSize: Theme.font(12, visible); Layout.fillWidth: true; wrapMode: Text.Wrap }
+        CheckBox {
+            id: disableCharacter; objectName: "disableCharacter"
+            visible: !root.roleMode; text: I18n.t("不启用")
+            checked: !Character.personalityEnabled
+            font.family: Theme.fontFamily; font.pixelSize: Theme.font(13, visible)
+            palette.windowText: Theme.ink; palette.buttonText: Theme.ink; palette.highlight: Theme.accent
+            onToggled: { backend.setCharacterEnabled(!checked); checked = Qt.binding(() => !Character.personalityEnabled) }
+        }
+        Text { font.family: Theme.fontFamily; id: description; text: I18n.t(!Character.personalityEnabled ? "使用简洁机器人和系统提示，保留原有角色设置。" : root.roleMode ? "选择一个槽位，再点击形象。全局子智能体可在创建时单独选择。" : "独立于主题，即时切换形象与互动台词。"); color: Theme.muted; font.pixelSize: Theme.font(12, visible); Layout.fillWidth: true; wrapMode: Text.Wrap }
         ComboBox {
             id: roleSlot; objectName: "subagentCharacterSlot"; visible: root.roleMode
             Layout.fillWidth: true
@@ -100,7 +109,7 @@ PidPopup {
                 width: scroll.width - 12; columns: scroll.width < 420 ? 2 : 3
                 columnSpacing: 12; rowSpacing: 16
                 Repeater {
-                    model: root.roleMode ? backend.subagentCharacterPacks : backend.characterPacks
+                    model: (root.roleMode ? backend.subagentCharacterPacks : backend.characterPacks).filter(entry => Character.personalityEnabled ? entry.id !== "system" : entry.id === "system")
                     ColumnLayout {
                         id: entry
                         required property var modelData

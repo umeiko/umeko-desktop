@@ -19,6 +19,7 @@ class DesktopPlugins(QObject):
     requested=Signal()
     importRequested=Signal()
     dismissed=Signal()
+    inputRequested=Signal()
     response=Signal(str,"QVariantMap")
     managed=Signal(str,"QVariantMap")
     event=Signal(str,"QVariantMap")

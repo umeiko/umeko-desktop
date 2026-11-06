@@ -104,8 +104,14 @@ class TaskStore:
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version == 0:
                 db.executescript("BEGIN IMMEDIATE;\n" + SCHEMA + "\nPRAGMA user_version = 1;\nCOMMIT;")
-            elif version != 1:
+            elif version not in (1, 2):
                 raise sqlite3.DatabaseError("Unsupported task record schema")
+            if version < 2:
+                # Historical rows stay undated. Never infer observation time from migration.
+                db.execute("ALTER TABLE steps ADD COLUMN observed TEXT")
+                db.execute("ALTER TABLE steps ADD COLUMN updated TEXT")
+                db.execute("ALTER TABLE files ADD COLUMN observed TEXT")
+                db.execute("PRAGMA user_version = 2")
 
     @contextmanager
     def connection(self):
@@ -145,16 +151,16 @@ class TaskStore:
         with self.connection() as db:
             return db.execute("SELECT 1 FROM attempts WHERE task_id = ? AND state = 'running'", (task_id,)).fetchone() is not None
 
-    def details(self, task_id, attempt_id, offset=0, limit=-1):
+    def details(self, task_id, attempt_id, offset=0, limit=-1, *, deliveries_only=False):
         with self.connection() as db:
             db.execute("BEGIN")
             attempt = db.execute("SELECT * FROM attempts WHERE task_id = ? AND id = ?", (task_id, attempt_id)).fetchone()
             if not attempt:
                 return {}
             steps = [dict(row) for row in db.execute(
-                "SELECT * FROM steps WHERE attempt_id = ? ORDER BY rowid LIMIT ? OFFSET ?", (attempt_id, limit, offset))]
+                "SELECT * FROM steps WHERE attempt_id = ? ORDER BY rowid LIMIT ? OFFSET ?", (attempt_id, limit, offset))] if not deliveries_only else []
             files = [dict(row) for row in db.execute(
-                "SELECT * FROM files WHERE attempt_id = ? ORDER BY id LIMIT ? OFFSET ?", (attempt_id, limit, offset))]
+                "SELECT * FROM files WHERE attempt_id = ?" + (" AND source != 'input'" if deliveries_only else "") + " ORDER BY id LIMIT ? OFFSET ?", (attempt_id, limit, offset))]
             has_deliveries = db.execute("SELECT 1 FROM files WHERE attempt_id = ? AND source != 'input' LIMIT 1",
                                         (attempt_id,)).fetchone() is not None
         for step in steps:
@@ -200,9 +206,9 @@ class TaskStore:
     @staticmethod
     def _step(db, attempt_id, kind, key, detail):
         db.execute("""
-            INSERT INTO steps VALUES (?, ?, ?, ?)
-            ON CONFLICT (attempt_id, kind, key) DO UPDATE SET detail = excluded.detail
-        """, (attempt_id, kind, key, detail))
+            INSERT INTO steps (attempt_id, kind, key, detail, observed, updated) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (attempt_id, kind, key) DO UPDATE SET detail = excluded.detail, updated = excluded.updated
+        """, (attempt_id, kind, key, detail, timestamp(), timestamp()))
 
     def files(self, attempt_id, source, event_id, versions, failed=0):
         with self.connection() as db:
@@ -214,9 +220,9 @@ class TaskStore:
     @staticmethod
     def _files(db, attempt_id, source, event_id, versions):
         db.executemany("""
-            INSERT INTO files (attempt_id, source, event_id, path, version, recorded_state)
-            VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (attempt_id, source, event_id, path) DO NOTHING
-        """, ((attempt_id, source, event_id, path, version, state) for path, state, version in versions))
+            INSERT INTO files (attempt_id, source, event_id, path, version, recorded_state, observed)
+            VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (attempt_id, source, event_id, path) DO NOTHING
+        """, ((attempt_id, source, event_id, path, version, state, timestamp()) for path, state, version in versions))
 
     @staticmethod
     def _touch(db, attempt_id, now):

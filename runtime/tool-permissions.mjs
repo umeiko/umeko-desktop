@@ -377,6 +377,8 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
      try{
        const policy=await getPolicy();language=policy.language==='zh'?'zh':'en';
        const name=String(event.toolName||'').toLowerCase();
+       if(Array.isArray(policy.allowedTools) && !policy.allowedTools.includes(event.toolName))
+         return {block:true,reason:'This tool is outside the desktop plugin session profile.'};
        if(['read','grep','find','ls'].includes(name))return undefined;
        // Product configuration tools retain their own operation dispatch.
        if(name==='umeko_desktop'||name==='pi'||name==='pi_commands')return undefined;

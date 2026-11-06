@@ -130,6 +130,12 @@ class PiControllerMixin:
 
     def _command_pi(self, action, record=None, **values):
         record = record or self._view
+        from .plugin_sessions import apply_session_policy
+        try:
+            plugin_policy = apply_session_policy(self, record)
+        except (OSError, ValueError) as error:
+            self.toast.emit(str(error))
+            return False
         plugins = getattr(self, 'desktopPlugins', None)
         locked = getattr(plugins, 'checkpoint_locked', None)
         if callable(locked) and locked(record.workspace):
@@ -147,6 +153,8 @@ class PiControllerMixin:
         record.pet_activity = 'thinking'
         record.prompt_started = time.monotonic() if action in ('prompt','widget-notify') else None
         record.phase = "loading" if not record.process else "running" if action in ("prompt", "compact", "widget-notify") else "working"
+        if getattr(self, '_reasoning_discovery', None):
+            self._reasoning_discovery.update_activity()
         record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在压缩上下文" if action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
         payload = {"type": action, "model": record.model or self.store.data["selectedModel"], "reasoningEffort": record.reasoning_effort, **values}
         try:
@@ -177,6 +185,10 @@ class PiControllerMixin:
                     dataDir=str(self.store.directory),
                     generation=generation_config(self.store.data),
                     mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
+                if plugin_policy:
+                    payload.update(pluginSessionPolicy=plugin_policy,
+                        permissionMode=plugin_policy['mode'], dangerousAllowed=False,
+                        models=[model for model in payload['models'] if model['id'] == plugin_policy['model']])
                 if record.global_agent:
                     service=self._desktop_plugins.global_agents
                     payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(service.root/"sessions"/record.global_agent),
@@ -403,7 +415,8 @@ class PiControllerMixin:
                 transcript = True
         elif kind == "message" and event.get("role") == "assistant":
             if event.get('error') or event.get('stopReason') == 'error': record.failed = True
-            if event.get('stopReason') == 'aborted': record.cancelled = True
+            # Steering aborts one assistant response before continuing the turn.
+            # Only an explicit desktop stop marks the whole turn cancelled.
             if record.messages and (record.messages[-1]["role"] == "assistant" and record.messages[-1].get("customType") != "umeko-compaction"):
                 record.messages[-1].update(text=event.get("text") or event.get("error") or record.messages[-1]["text"], error=bool(event.get("error")), errorMessage=event.get("error") or "", stopReason=event.get("stopReason", ""))
                 if event.get("timestamp"): record.messages[-1]["timestamp"] = event["timestamp"]
@@ -467,6 +480,13 @@ class PiControllerMixin:
             if visible:
                 self.editorText.emit(record.draft)
         elif kind == "ui_request":
+            host = getattr(getattr(self, '_desktop_plugins', None), '_host_services', None)
+            if host and host._sessions is None and self.store.data['sessionMeta'].get(record.id, {}).get('pluginSession'):
+                from .plugin_sessions import PluginSessions
+                host._sessions = PluginSessions(host)
+            service = getattr(host, '_sessions', None)
+            if service and service.approval(record, event):
+                return
             record.approval = event
             if visible:
                 self.approvalChanged.emit()

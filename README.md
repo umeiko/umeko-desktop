@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="app/icons/yanami-pixel.png" alt="Umeko pixel Yanami logo" width="128">
+<img src="app/icons/app.png" alt="Umeko robot logo" width="128">
 
 # Umeko Desktop
 
@@ -25,9 +25,9 @@ Your projects, your providers, the full Pi Coding Agent — with a little Yanami
 
 <!-- umeko-downloads:standard:start -->
 
-**Download v0.7.0**
+**Download v0.7.1**
 
-[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.0/Umeko-0.7.0-windows-x64-8c6e9d6.zip)
+[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.1/Umeko-0.7.1-windows-x64-82f0e80.zip)
 
 <!-- umeko-downloads:standard:end -->
 
@@ -69,7 +69,7 @@ After a verified update download, the independent Yanami installer can stop all 
 | **Readable agent work** | Foldable thinking and tool history, colored code blocks, inline attachments, stable scrolling and text selection across messages. |
 | **Your model services** | OpenAI-compatible and Anthropic providers, per-model context limits and vision settings, plus importable account-provider plugins. |
 | **An API for your other tools** | An optional OpenAI / Anthropic API proxy, model aliases, LAN access and named, revocable API keys. |
-| **A little personality** | Light, dark and sea-salt blue themes, selectable characters and appearance packs, plus small interactions throughout the app. |
+| **A little personality** | Pure White (default), Grass Green, Dark and Sea-salt Blue themes, selectable characters and appearance packs. Select **Disable characters** in the main character picker for a simple robot, standard prompts and arrow controls. |
 
 Pi can deliver images and compact file cards directly with [`submit_to_chatbox`](docs/chatbox-media.md). Click a file to open it; right-click to copy it, reveal it or attach it to chat again. Image previews support wheel zoom, drag to pan and click to close. Drag files anywhere in the chat to attach them and focus the input. Queued messages sit above the composer with editing and deletion; steering interrupts the active run and submits a normal message immediately. Hover a message for its timestamp and copy action. Double-click selects a word; triple-click selects a paragraph. Pi settings have searchable, nested sections and click-activated inline scrolling. Model selection, sidebar highlights and compact context menus use continuous PID motion.
 
@@ -137,7 +137,7 @@ Build with `./build.ps1` on Windows or `bash build.sh` on macOS/Linux. Each plat
 
 Created by [umeiko](https://github.com/umeiko). Powered by [Pi Coding Agent](https://github.com/earendil-works/pi), [Qt for Python](https://doc.qt.io/qtforpython-6/) and [Pygments](https://pygments.org/).
 
-The pixel Yanami logo reuses the app's existing [fan-art asset and provenance](app/icons/yanami-pixel.provenance.json). This is an independent fan project, unaffiliated with the character's rights holders. Dependencies retain their upstream licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
+The app logo is a geometric robot. Optional character artwork includes the existing [Yanami fan-art asset and provenance](app/icons/yanami-pixel.provenance.json). This project is unaffiliated with the character's rights holders. Dependencies retain their upstream licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
 
 Custom color themes use portable JSON files. Import, update or delete them under **Settings → Appearance**, and copy a complete creation prompt from the same page. See the [theme format and example](docs/themes.md). Reply mascots react to taps, click combos and holds.
 

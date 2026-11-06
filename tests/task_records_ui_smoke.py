@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -11,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
-from PySide6.QtCore import QObject, Qt, QUrl
+from PySide6.QtCore import QObject, Qt, QUrl, QMetaObject, Q_ARG
 from PySide6.QtTest import QTest
 from app.integration import Completion
 from main import create_application
@@ -51,7 +52,13 @@ with tempfile.TemporaryDirectory(prefix="umeko-task-records-ui-") as temp:
     fixture = Fixture()
     with patch("app.controller.load_adapter", return_value=fixture):
         app, engine, backend = create_application()
+    if os.environ.get('UMEKO_TEST_FONT'):
+        from PySide6.QtGui import QFont, QFontDatabase
+        assert QFontDatabase.addApplicationFont(os.environ['UMEKO_TEST_FONT']) >= 0
+        app.setFont(QFont('Noto Sans CJK SC',10))
     window = engine.rootObjects()[0]
+    window.setWidth(1440)
+    window.setHeight(960)
     warnings = []
     engine.warnings.connect(lambda errors: warnings.extend(error.toString() for error in errors))
 
@@ -114,18 +121,27 @@ with tempfile.TemporaryDirectory(prefix="umeko-task-records-ui-") as temp:
         assert window.findChild(QObject, "taskRecordsButton") is None
         panel = open_widget()
         click("newTaskRecord")
-        control("taskObjective").setProperty("text", "Deliver the review report")
-        control("taskScope").setProperty("text", "Read input.txt and submit report.txt in this project.")
+        control("taskObjective").setProperty("text", "生成项目验收报告" if os.environ.get("UMEKO_LANGUAGE")=="zh" else "Deliver the review report")
+        control("taskScope").setProperty("text", "读取本项目参考资料，生成验收报告，不修改原始文件。" if os.environ.get("UMEKO_LANGUAGE")=="zh" else "Read input.txt and submit report.txt in this project.")
         click("saveTaskRecord")
         until(lambda: panel.property("view") == "task" and not panel.property("request"), "Task was not created")
         task_id = ledger.store.tasks()[0]["id"]
         assert backend._view is view and view.draft == "Existing unsent draft"
         assert view.attachments == attachments and view.process is None and fixture.calls == 0
 
-        click("prepareTaskAttempt")
         until(lambda: not panel.property("request") and view.prepared_task == task_id, "Task was not linked")
         assert fixture.calls == 0 and view.draft == "Existing unsent draft"
-        manager.closePage()
+        if len(sys.argv)>1:
+            QTest.qWait(300)
+            assert window.grabWindow().save(str(Path(sys.argv[1]).with_stem('task-pending')))
+        click("cancelPreparedTask")
+        until(lambda: not panel.property("request") and not view.prepared_task, "Preparation was not cancelled")
+        assert view.attachments == attachments and view.draft == "Existing unsent draft" and fixture.calls == 0
+        click("prepareNewTask")
+        until(lambda: not panel.property("request") and view.prepared_task == task_id, "Task was not prepared again")
+        click("goToTaskChat")
+        until(lambda: manager.page.get("id") != "task-records" and not control("webPane").property("opened") and control("promptInput").property("activeFocus"), "Chat entry did not focus the input")
+        assert view.draft == "Existing unsent draft" and view.attachments == attachments and fixture.calls == 0
         assert backend.send("Submit the report")
         until(lambda: ledger.store.tasks()[0]["state"] != "running", "Pi did not finish")
         assert ledger.store.tasks()[0]["state"] == "finished", warnings
@@ -141,7 +157,15 @@ with tempfile.TemporaryDirectory(prefix="umeko-task-records-ui-") as temp:
         click("verifyTaskArtifacts")
         until(lambda: control("acceptTaskAttempt").property("enabled"), "Acceptance action did not load")
         assert ledger.store.details(task_id, first["id"])["files"][-1]["check_result"] == "available"
+        assert "1" in control("taskCheckResult").property("text")
+        file_id=ledger.store.details(task_id,first["id"])["files"][-1]["id"]
+        click("viewTaskFile_"+str(file_id))
+        until(lambda: control("webPane").property("mode")=="document", "File preview did not open")
+        click("backDocumentPreviewButton")
+        until(lambda: control("webPane").property("mode")=="plugin" and panel.property("sdk").property("active") and not panel.property("request"), "Could not return to task record")
         click("acceptTaskAttempt")
+        assert ledger.store.tasks()[0]["state"] == "finished"
+        click("confirmTaskAcceptance")
         until(lambda: ledger.store.tasks()[0]["state"] == "accepted", "Acceptance was not stored")
         manager.closePage()
 
@@ -170,11 +194,71 @@ with tempfile.TemporaryDirectory(prefix="umeko-task-records-ui-") as temp:
         control("taskAttemptSelector").activated.emit(1)
         until(lambda: not panel.property("request"), "Earlier attempt not rendered")
         assert "report.txt" in control("taskAttemptDetails").property("text")
+        assert panel.property("nodes").toVariant()
+        assert control("taskTimelineRail").property("visible")
         assert fixture.calls == before
         assert not [line for line in warnings if "task-records/qml" in line or "taskRecords" in line], warnings
         if len(sys.argv) > 1:
             QTest.qWait(300)
             assert window.grabWindow().save(sys.argv[1])
+        # Verify preview navigation uses the actual rendered page.
+        click("showTaskProcess")
+        until(lambda:not panel.property("request"),"History not loaded")
+        panel.setProperty("navigationOpen",True)
+        QTest.qWait(100)
+        assert control("taskTimelinePreview").property("visible")
+        assert QMetaObject.invokeMethod(panel,"jump",Qt.DirectConnection,Q_ARG("QVariant",2))
+        assert panel.property("selectedNode")==2
+        panel.setProperty("navigationOpen",True)
+        if len(sys.argv)>1:
+            QTest.qWait(100)
+            assert window.grabWindow().save(str(Path(sys.argv[1]).with_stem('task-timeline')))
+        manager.closePage()
+        for label,state in [('整理客户素材','running'),('生成产品文案','pending'),('检查测试结果','failed'),('归档项目资料','finished'),('准备发布说明','draft')]:
+            other=ledger.store.create(label,'仅处理当前项目资料',str(workspace))
+            if state!='draft':
+                attempt_id=ledger.store.begin(other,str(workspace),'','',[])
+                if state!='running':ledger.store.finish(attempt_id,state,'')
+        panel=open_widget()
+        if len(sys.argv)>1:
+            QTest.qWait(200)
+            assert window.grabWindow().save(str(Path(sys.argv[1]).with_stem('task-list')))
+        manager.closePage()
+
+        # Read a real large Pi history, retaining draft and attachments while browsing 10k steps.
+        history=profile/'large.jsonl'
+        with history.open('w',encoding='utf-8') as output:
+            output.write(json.dumps({'type':'session','id':'large-history','cwd':str(workspace)})+'\n')
+            for index in range(2002):
+                output.write(json.dumps({'type':'message','id':str(index),'parentId':str(index-1) if index else None,
+                    'message':{'role':'user' if index%2==0 else 'assistant','content':'Large history message '+str(index)}})+'\n')
+        backend._sessions.append({'id':'large-history','file':str(history),'title':'Large history','workspace':str(workspace)})
+        backend.openSession('large-history')
+        until(lambda:backend._view.id=='large-history' and backend.messageCount>=2002,'Large chat did not load')
+        large=backend._view
+        large.draft='Retained large-history draft'
+        backend.editorText.emit(large.draft)
+        assert backend.addAttachments(json.dumps([QUrl.fromLocalFile(str(input_file)).toString()]))
+        large_attachments=list(large.attachments)
+        with ledger.store.connection() as db:
+            db.executemany("INSERT INTO steps (attempt_id,kind,key,detail,observed,updated) VALUES (?,'tool',?,'read · done',NULL,NULL)",
+                ((first['id'],'large-step-'+str(index)) for index in range(10000)))
+        elapsed=[]
+        for repeat in range(3):
+            start=time.perf_counter()
+            panel=open_widget();select_task(panel,task_id);click('showTaskProcess')
+            until(lambda:not panel.property('request'),'Large detail page did not load')
+            elapsed.append(round((time.perf_counter()-start)*1000,1))
+            assert len(panel.property('nodes').toVariant())<=20
+            assert QMetaObject.invokeMethod(panel,'showAttempt',Qt.DirectConnection,Q_ARG('QVariant',1),Q_ARG('QVariant',9992),Q_ARG('QVariant',False))
+            until(lambda:not panel.property('request') and panel.property('edgeReady'),'Late history page did not load')
+            assert len(panel.property('nodes').toVariant())<=20
+            assert QMetaObject.invokeMethod(panel,'edgePage',Qt.DirectConnection,Q_ARG('QVariant',-1))
+            until(lambda:not panel.property('request') and panel.property('edgeReady'),'Reverse pagination did not finish')
+            assert panel.property('detailOffset')==9984
+            assert large.draft=='Retained large-history draft' and large.attachments==large_attachments and fixture.calls==before
+            manager.closePage()
+        print('LARGE_TASK_RECORDS_UI_OK',json.dumps({'messages':2002,'steps':10000,'offscreen_open_and_select_ms':elapsed,'max_nodes':20}))
         print("TASK_RECORDS_UI_OK: isolated browsing, real Pi delivery, retry, partial failure, and changed artifact")
     except AssertionError:
         panel = find("taskRecordsWidget")

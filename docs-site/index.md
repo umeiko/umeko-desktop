@@ -6,7 +6,7 @@ hero:
   tagline: 你的项目，你的模型服务。一起把桌面上的工作做好。
   image:
     src: /logo.png
-    alt: Umeko 像素八奈见
+    alt: Umeko 机器人
   actions:
     - theme: brand
       text: 五分钟上手

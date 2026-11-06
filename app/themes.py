@@ -1,10 +1,10 @@
-"""Versioned, declarative color themes shared by both desktop editions."""
+"""Versioned, declarative color themes."""
 import json
 import re
 from pathlib import Path
 
 COLORS = frozenset('bg sidebar surface userBubble hover line ink muted accent accentBg selectionBg selectionText button buttonText danger'.split())
-BASES = ('light', 'dark', 'yanami')
+BASES = ('white', 'light', 'dark', 'yanami')
 LIMIT = 32
 
 
@@ -17,7 +17,7 @@ def normalize_theme(value):
     if not isinstance(name, str) or not name.strip() or len(name) > 48:
         raise ValueError('主题名称应为 1–48 个字符')
     if value.get('base') not in BASES:
-        raise ValueError('base 应为 light、dark 或 yanami')
+        raise ValueError('base 应为 white、light、dark 或 yanami')
     colors = value.get('colors')
     if not isinstance(colors, dict) or colors.keys() - COLORS or any(not isinstance(color, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', color) for color in colors.values()):
         raise ValueError('颜色需使用支持的颜色名称及 #RRGGBB 格式')

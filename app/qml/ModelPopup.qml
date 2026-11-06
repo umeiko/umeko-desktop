@@ -8,12 +8,15 @@ AnchoredPidPopup {
     objectName: "modelPopup"
     property real heightLimit: 470
     fullWidth: 365
-    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 230))
+    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 230 + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0)))
     signal configure()
     signal dismissed()
     onAboutToShow: modelSearch.clear()
     onAboutToHide: { focus = false; dismissed() }
-    onOpened: modelSearch.forceActiveFocus()
+    onOpened: {
+        modelSearch.forceActiveFocus()
+        if (typeof backend.ensureReasoningDetection === "function") backend.ensureReasoningDetection()
+    }
     onClosed: dismissed()
     contentItem: Item {
         clip: true
@@ -43,7 +46,14 @@ AnchoredPidPopup {
                             Text { font.family: Theme.fontFamily; text: modelData.upstream; width: parent.width; elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(9, visible) }
                         }
                         Glyph { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "check"; width: Theme.icon(15); height: Theme.icon(15); visible: backend.config.selectedProvider === provider.id && backend.config.selectedModel === modelData.alias }
-                        MouseArea { id: modelMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { backend.selectModel(provider.id, modelData.alias); root.close() } }
+                        MouseArea {
+                            id: modelMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                const controller = backend, providerId = provider.id, alias = modelData.alias
+                                root.close()
+                                controller.selectModel(providerId, alias)
+                            }
+                        }
                     }
                 }
             }
@@ -53,7 +63,8 @@ AnchoredPidPopup {
             id: reasoningControls
             objectName: "reasoningControls"
             Layout.fillWidth: true; spacing: 3
-            readonly property var levels: { let values = ["off"]; for (const level of backend.reasoningLevels) values.push(level); return values }
+            // Effective levels; detection results can replace them while the popup is open.
+            readonly property var levels: { backend.reasoningDetectionState; let values = ["off"]; for (const level of backend.reasoningLevels) values.push(level); return values }
             RowLayout {
                 Layout.fillWidth: true
                 Text { text: I18n.t("思考强度"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
@@ -113,6 +124,13 @@ AnchoredPidPopup {
                 Text { text: I18n.t("关闭"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10) }
                 Item { Layout.fillWidth: true }
                 Text { text: reasoningControls.levels.length > 1 ? Reasoning.label(reasoningControls.levels[reasoningControls.levels.length - 1]) : ""; textFormat: Text.PlainText; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10); Layout.maximumWidth: reasoningControls.width * 0.6; elide: Text.ElideRight }
+            }
+            Text {
+                id: offNote; objectName: "reasoningOffNote"
+                visible: backend.reasoningOffSupported === false
+                text: I18n.t("这个模型总会思考，选「关闭」也会思考")
+                Layout.fillWidth: true; Layout.topMargin: 3; wrapMode: Text.Wrap
+                color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10)
             }
         }
         ActionButton {

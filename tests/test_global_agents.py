@@ -38,6 +38,17 @@ class GlobalAgentTests(unittest.TestCase):
         self.assertEqual(row['diagnosticId'],identifier)
         self.assertEqual(row['activity'][0]['text'],'partial coordinator reply')
         self.assertTrue(row['activity'][-1]['error'])
+    def test_system_character_changes_widget_art_without_overwriting_agent_identity(self):
+        original = dict(self.g.agents[self.id])
+        self.b.characterPacks.append({'id':'system','name':'默认助手','portrait':'robot.png','replyPortrait':'robot.png'})
+        self.b.characterStyle = {'id':'system'}
+        snapshot = self.g.snapshot(self.id)
+        self.assertTrue(all(row['portrait']=='robot.png' for row in snapshot['appearances']))
+        self.assertEqual(snapshot['agents'][0]['portrait'], 'robot.png')
+        self.assertEqual(snapshot['agents'][0]['replyPortrait'], 'robot.png')
+        self.assertEqual(self.g.agents[self.id], original)
+        self.b.characterStyle = {'id':'komari'}
+        self.assertEqual(self.g.snapshot(self.id)['agents'][0]['portrait'], 'komari.png')
     def test_global_agents_cannot_create_even_when_user_allows_automatic_creation(self):
         for automatic in (False,True):
             self.g.handle('setAutomaticCreation',{'enabled':automatic})

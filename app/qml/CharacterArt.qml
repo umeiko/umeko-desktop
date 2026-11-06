@@ -7,7 +7,7 @@ Item {
     property url artwork: fallbackSource
     property url fallbackSource: ""
     property bool failed: false
-    readonly property url source: failed ? fallbackSource : artwork
+    readonly property url source: failed ? (Character.personalityEnabled ? fallbackSource : "../icons/characters/system/robot.png") : artwork
     readonly property bool animated: Character.isAnimated(source)
     readonly property int status: animated && movie.item ? movie.item.status : picture.status
     readonly property int frameCount: movie.item ? movie.item.frameCount : 1

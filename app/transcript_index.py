@@ -22,7 +22,7 @@ from .chat_model import ChatModel
 from .message_attachments import split_attachments
 from .transcripts import content_text, content_thinking, present, compaction_view, compaction_status, automatic_vision_view
 
-SCHEMA = 6
+SCHEMA = 7
 LARGE_FILE = 256 * 1024
 PAGE_ROWS = 24
 GROUP_MESSAGES = 16

@@ -1,7 +1,14 @@
-# 任务记录 · Task records
+# 任务记录 / Task records
 
-从聊天页右下角的 Widget 菜单打开「任务记录」。新建任务时填写目标和授权范围。在同一项目的空闲聊天中打开任务，选择「关联下条消息」。下一次手动发送将为该任务建立一次尝试。可从原聊天或同一项目的其他聊天继续。关闭面板后，已关联的下一条消息仍会记录尝试。可重新打开面板解除关联。
+记录目标，在聊天中开始或继续，在这里查看交付并由用户确认完成。
+Record a goal, work in chat, then review deliveries and confirm completion here.
 
-Widget 可查看历史尝试、关联会话、交付文件、核验和验收状态。删除任务记录会保留 Pi 会话和项目文件。授权范围用于记录，工具操作仍适用现有 Pi 权限。
+保存并准备后不会自动执行；去聊天输入具体要求并手动发送才开始。准备卡显示目标和聊天，可随时取消准备，保留草稿和附件。继续工作会新增一条记录，历史结果保留；换聊天时应在消息中补充上下文。
+Preparing a goal never sends a prompt. The pending card names the goal and chat;
+canceling keeps drafts and attachments. Continuing creates a new work record and
+keeps history. Include needed context when using another chat.
 
-任务记录的 Host 接口仅供当前打开的内置 Widget 页面调用。Widget 不向 Agent 发布任何方法。
+检查交付文件只比较文件元信息，不代表内容正确，也不会替用户验收。请查看文件后再确认完成。
+File checks compare metadata only; review the content before confirming completion.
+
+详细说明 / Details: `docs/task-records.md`.

@@ -102,6 +102,16 @@ class TerminalTests(unittest.TestCase):
         self.assertTrue(self.call('read',{'terminalId':left},source='agent')['changed'])
         with self.assertRaises(PluginError):self.call('read',{'terminalId':right},source='agent')
 
+    @unittest.skipIf(os.name=='nt','POSIX signal and PTY shutdown behavior')
+    def test_close_terminates_an_idle_shell_which_ignores_sighup(self):
+        identifier=self.create();terminal=self.plugin.terminals[identifier]
+        self.call('run',{'terminalId':identifier,'command':"trap '' HUP; printf 'HUP_%s\\n' IGNORED"})
+        self.wait_text(identifier,'HUP_IGNORED')
+        # No more output is forthcoming. Closing must still reach the forced
+        # termination path while the terminal reader waits for PTY output.
+        self.call('kill',{'terminalId':identifier})
+        self.assertFalse(terminal.backend.isalive());self.assertFalse(terminal.reader.is_alive())
+
     def test_bounded_scrollback_and_read_cursor_do_not_return_unbounded_output(self):
         self.context.config['scrollback']=100;identifier=self.create();terminal=self.plugin.terminals[identifier]
         with terminal.lock:

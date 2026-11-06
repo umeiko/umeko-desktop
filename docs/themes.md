@@ -2,6 +2,8 @@
 
 如果还想替换动画形象，请访问 [动画形象文档](characters.md)。
 
+内置主题为「纯白」（默认，蓝白配色）、「草绿」（原浅色）、「深色」和「海盐蓝」。已有的主题选择会保留。
+
 在 **设置 → 外观 → 导入主题** 选择 UTF-8 JSON 文件。导入后自动应用，也可以点击卡片切换；垃圾桶按钮删除自定义主题。导入相同 `id` 会更新原主题，删除当前主题会回到它的基础主题。主题随本机设置保存，重新启动后仍可使用。
 
 点击旁边的 **制作提示词** 可复制完整规范、配色字段、示例和使用步骤，交给你自己的 AI 生成文件。也可以修改[可直接导入的月夜紫示例](../examples/themes/moon-violet.umeko-theme.json)。[完整制作提示词](../app/theme-prompt.txt)随客户端内置。
@@ -13,7 +15,7 @@
 | `format` / `version` | 固定为 `"umeko-theme"` / 整数 `1` |
 | `id` | 1–48 位小写字母、数字、短横线；首位为字母或数字 |
 | `name` | 显示名称，1–48 个字符 |
-| `base` | `light`、`dark` 或 `yanami`；继承默认颜色与对应模式 |
+| `base` | `white`（纯白）、`light`（草绿）、`dark` 或 `yanami`；继承默认颜色与对应模式 |
 | `colors` | 覆盖所需颜色，使用不透明的 `#RRGGBB` |
 
 颜色字段：`bg`（页面）、`sidebar`（侧栏）、`surface`（卡片和浮层）、`userBubble`（用户气泡）、`hover`（悬停）、`line`（边框）、`ink`（正文）、`muted`（辅助文字及图标）、`accent`（强调）、`accentBg`（柔和强调背景）、`selectionBg` / `selectionText`（选区）、`button` / `buttonText`（主要按钮与文字图标）、`danger`（危险操作）。未指定的颜色沿用 `base`。

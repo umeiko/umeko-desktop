@@ -8,6 +8,7 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import json
+import re
 import select
 import socket
 import threading
@@ -22,11 +23,15 @@ from pathlib import Path
 
 from .integration import Completion, IntegrationRequired
 from .model_capabilities import normalize_model, normalize_vision
-from .protocols import response_events, collect_openai, anthropic_events_to_openai, openai_events_to_anthropic
+from .protocols import response_events, collect_openai, anthropic_events_to_openai, openai_events_to_anthropic, chat_completion_messages
 from .openai_responses import responses_request, responses_events
 from .request_diagnostics import RequestDiagnostics, RequestFailure
 from .network_retry import upstream_failure
-from .provider_errors import format_http_error
+from .provider_errors import format_http_error, safe_text
+from .model_reasoning import reasoning_levels
+from .reasoning_detection import allowed_levels, is_effort_rejection, detect_model
+from .reasoning_activity import ReasoningActivity
+from .thinking_formats import format_parameters, valid_format
 from umeko_provider_sdk.network import network_scope, proxy_handler, tls_context, trace, TracedResponse
 from umeko_provider_sdk import request_scope
 
@@ -46,8 +51,10 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class Gateway:
-    def __init__(self, store, adapter, plugins=None):
+    def __init__(self, store, adapter, plugins=None, reasoning_rejected=None):
         self.store, self.adapter, self.plugins = store, adapter, plugins
+        self.reasoning_rejected = reasoning_rejected
+        self.reasoning_activity = ReasoningActivity()
         self.diagnostics = RequestDiagnostics(store.directory)
 
     def provider(self, provider_id):
@@ -64,11 +71,64 @@ class Gateway:
                 continue
             for model in p["models"]:
                 metadata = normalize_model(model)
-                rows.append({"id": model["alias"], "object": "model", "owned_by": p["name"],
+                rows.append({"id": model["alias"], "object": "model", "owned_by": p["name"], "providerID": p.get("id", ""),
                              "contextWindow": metadata["contextWindow"],
                              **{key: metadata[key] for key in ("providerContextWindow",) if key in metadata},
-                             "input": ["text", "image"] if metadata["vision"] else ["text"]})
+                             "input": ["text", "image"] if metadata["vision"] else ["text"],
+                             "reasoningLevels": reasoning_levels(model),
+                             "reasoningFormat": model.get("reasoningFormat", "openai"),
+                             "reasoningState": (model.get("reasoningDetection", {}).get("state", "unknown")
+                                                if model.get("reasoningLevelsAuto", "reasoningLevels" not in model) else "manual"),
+                             "reasoningFormatState": (model.get("reasoningFormatDetection", {}).get("state", "unknown")
+                                                      if model.get("reasoningFormatAuto", True) else "manual")})
         return rows
+
+    def detect_reasoning(self, alias, provider_id=None, advertised_levels=None):
+        """Use the normal mapper/transport, with ephemeral probe observations only."""
+        provider, _ = self.resolve(alias, provider_id)
+        configured = next(model for model in provider["models"] if model["alias"] == alias)
+
+        def request(effort, format, max_tokens):
+            records, content = [], []
+            reasoning = False
+            try:
+                with self.reasoning_activity.probe({(provider['id'], configured['upstream'])}), network_scope(provider.get("proxy"), records):
+                    for event in self._events(alias, [{"role": "user", "content": "Reply OK."}],
+                                              max_tokens=max_tokens, provider_id=provider["id"],
+                                              parameters={"_umeko_reasoning_effort": effort,
+                                                          "_umeko_reasoning_format": format}):
+                        if event.get("error"):
+                            raise ValueError(json.dumps(event, ensure_ascii=False))
+                        for choice in event.get("choices", []):
+                            delta = choice.get("delta", choice.get("message", {}))
+                            reasoning = reasoning or any(isinstance(delta.get(key), str) and bool(delta[key].strip())
+                                                         for key in ("reasoning_content", "reasoning", "reasoning_text"))
+                            value = delta.get("content")
+                            if isinstance(value, str):
+                                content.append(value)
+                            elif isinstance(value, list):
+                                content.extend(part.get("text", "") for part in value
+                                               if isinstance(part, dict) and isinstance(part.get("text"), str))
+            except Exception as error:
+                response = records[-1].get("response", {}) if records else {}
+                failure = ValueError(safe_text(response.get("body") or str(error), [provider.get("key", "")]))
+                failure.status_code = response.get("status")
+                raise failure from None
+            text = "".join(content)
+            reasoning = reasoning or "<think>" in text.lower()
+            ordinary = re.sub(r"<think>.*?(?:</think>|$)", "", text, flags=re.I | re.S)
+            return {"thinking": bool(reasoning), "content": bool(ordinary.strip())}
+
+        protocol = "anthropic" if provider["api"] == "anthropic" else (
+            "responses" if provider.get("wireApi") == "responses" else "openai")
+        return detect_model(request, advertised_levels=advertised_levels,
+                            manual_levels=None if configured.get("reasoningLevelsAuto", "reasoningLevels" not in configured)
+                            else reasoning_levels(configured),
+                            manual_format=None if configured.get("reasoningFormatAuto", True)
+                            else configured.get("reasoningFormat", "openai"), protocol=protocol)
+
+    def detect_reasoning_levels(self, alias, provider_id=None):
+        return self.detect_reasoning(alias, provider_id)["levels"]
 
     def supports_vision(self, alias, provider_id=None):
         return any(m["alias"] == alias and normalize_vision(m)["vision"]
@@ -95,7 +155,7 @@ class Gateway:
         request = {'transport': p['api'], 'model': model, 'messages': messages,
                    'tools': tools or [], 'max_tokens': max_tokens, 'parameters': parameters or {}}
         try:
-            with network_scope(p.get('proxy'), records):
+            with self.reasoning_activity.chat((p.get('id', ''), model)), network_scope(p.get('proxy'), records):
                 for event in self._events(alias, messages, tools, max_tokens, provider_id, parameters):
                     if event.get('error'):
                         raise ValueError(json.dumps(event, ensure_ascii=False))
@@ -103,19 +163,64 @@ class Gateway:
         except (IntegrationRequired, PermissionError):
             raise
         except Exception as error:
+            effort = (parameters or {}).get("_umeko_reasoning_effort", (parameters or {}).get("reasoning_effort"))
+            rejection = self._reasoning_rejection(p, model, effort, error, records)
+            if rejection is not None:
+                raise rejection from None
             raise self.diagnostics.failure(p, request, records[-1]['response'] if records else {},
                                            error, records) from None
+
+    def _reasoning_rejection(self, provider, model, effort, error, records):
+        if effort is None:
+            return None
+        response = records[-1].get("response", {}) if records else {}
+        status = response.get("status")
+        if status in (401, 403, 408, 425, 429) or (isinstance(status, int) and status >= 500):
+            return None
+        detail = response.get("body") or str(error)
+        if not is_effort_rejection(detail):
+            return None
+        levels = allowed_levels(detail)
+        if callable(self.reasoning_rejected):
+            self.reasoning_rejected(provider["id"], model, effort, levels)
+        if levels is None:
+            configured = next((item for item in provider["models"] if item["upstream"] == model), {})
+            levels = reasoning_levels(configured)
+        supported = ["off"] + [item for item in levels if item not in (effort, "off")]
+        message = safe_text(str(error), [provider.get("key", "")])
+        return RequestFailure(f'{message}\n当前可选推理档位：{", ".join(supported)}。请调整档位后重新发送。', retryable=False)
 
     def _events(self, alias, messages, tools=None, max_tokens=4096, provider_id=None, parameters=None):
         p, model = self.resolve(alias, provider_id)
         if any(isinstance(m.get("content"), list) and any(block.get("type") == "image_url" for block in m["content"]) for m in messages) and not self.supports_vision(alias, p["id"]):
             raise ValueError("当前模型未启用视觉，请在模型配置中勾选“视觉”或切换支持图片的模型")
         tools = tools or []
-        parameters = parameters or {}
+        parameters = dict(parameters or {})
+        private_intent = "_umeko_reasoning_effort" in parameters
+        probe_override = "_umeko_reasoning_format" in parameters
+        format_override = parameters.pop("_umeko_reasoning_format", None)
+        already_formatted = any(key in parameters for key in
+                                ("enable_thinking", "chat_template_kwargs", "thinking", "reasoning"))
+        intent = parameters.pop("_umeko_reasoning_effort", None) if private_intent else (
+            parameters.get("reasoning_effort") if format_override or not already_formatted else None)
+        parameters = {key: value for key, value in parameters.items() if not key.startswith("_umeko_")}
+        if intent is not None:
+            configured = next(m for m in p["models"] if m["alias"] == alias)
+            format = format_override or configured.get("reasoningFormat") or (
+                "anthropic" if p["api"] == "anthropic" else "responses" if p.get("wireApi") == "responses" else "openai")
+            detection = configured.get("reasoningFormatDetection", {})
+            if (not probe_override and private_intent and intent == "off"
+                    and configured.get("reasoningFormatAuto", True) is not False
+                    and isinstance(detection, dict) and detection.get("state") == "known"
+                    and detection.get("offVerified") is True and valid_format(detection.get("offFormat"))):
+                format = detection["offFormat"]
+            for key in ("reasoning_effort", "enable_thinking", "chat_template_kwargs", "thinking", "reasoning"):
+                parameters.pop(key, None)
+            parameters.update(format_parameters(format, intent))
         if p["api"] == "plugin":
             if self.plugins is None:
                 raise IntegrationRequired("请先导入供应商实现")
-            yield from self.plugins.events(p["id"], model, messages, tools, max_tokens, parameters)
+            yield from self.plugins.events(p["id"], model, chat_completion_messages(messages), tools, max_tokens, parameters)
             return
         if p["api"] == "internal":
             if callable(getattr(self.adapter, "events", None)):
@@ -156,10 +261,12 @@ class Gateway:
             url = base + '/responses'
             headers['Authorization'] = 'Bearer ' + p['key']
             body = {**responses_request(messages, tools, max_tokens, parameters), 'model': model}
+            if "reasoning" in parameters:
+                body["reasoning"] = parameters["reasoning"]
         else:
             url = base + "/chat/completions"
             headers["Authorization"] = "Bearer " + p["key"]
-            body = {**parameters, "model": model, "messages": messages, "max_tokens": max_tokens, "stream": True}
+            body = {**parameters, "model": model, "messages": chat_completion_messages(messages), "max_tokens": max_tokens, "stream": True}
             if tools:
                 body["tools"] = [{"type": "function", "function": t} for t in tools]
         request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
@@ -170,7 +277,12 @@ class Gateway:
         try:
             with opener.open(request, timeout=90) as response:
                 record['response'].update(status=response.status, headers=dict(response.headers))
-                events = response_events(TracedResponse(response, record))
+                def checked_events():
+                    for event in response_events(TracedResponse(response, record)):
+                        if event.get("error") or event.get("type") == "response.failed":
+                            raise ValueError(json.dumps(event, ensure_ascii=False))
+                        yield event
+                events = checked_events()
                 yield from anthropic_events_to_openai(events) if p["api"] == "anthropic" else responses_events(events) if p.get('wireApi') == 'responses' else events
         except urllib.error.HTTPError as exc:
             record['response'].update(status=exc.code, headers=dict(exc.headers), body=exc.read().decode('utf-8', 'replace'))
@@ -306,7 +418,12 @@ class LocalServer:
                             messages.insert(0, {"role": "system", "content": system})
                     tools = body.get("tools", [])
                     tools = [{"name": t["name"], "description": t.get("description", ""), "parameters": t["input_schema"]} for t in tools] if anth else [t["function"] for t in tools]
-                    parameters = {k: body[k] for k in ("temperature", "top_p", "top_k", "stop", "tool_choice", "parallel_tool_calls", "reasoning_effort") if k in body}
+                    parameters = {k: body[k] for k in ("temperature", "top_p", "top_k", "stop", "tool_choice", "parallel_tool_calls", "reasoning_effort", "enable_thinking", "chat_template_kwargs", "thinking", "reasoning") if k in body}
+                    if owner.private and "_umeko_reasoning_effort" in body:
+                        effort = body["_umeko_reasoning_effort"]
+                        if not isinstance(effort, str) or not effort:
+                            raise ValueError("Invalid private reasoning effort")
+                        parameters["_umeko_reasoning_effort"] = effort
                     if anth and "effort" in body.get("output_config", {}):
                         parameters["reasoning_effort"] = body["output_config"]["effort"]
                     if anth and "stop_sequences" in body:

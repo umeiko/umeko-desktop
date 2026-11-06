@@ -6,7 +6,7 @@ import "theme.js" as Colors
 
 SectionCard {
     id: root
-    readonly property var choices: [{id:"light",name:I18n.t("浅色"),base:"light"},{id:"dark",name:I18n.t("深色"),base:"dark"},{id:"yanami",name:I18n.t("海盐蓝"),base:"yanami"}].concat(backend.customThemes)
+    readonly property var choices: [{id:"white",name:I18n.t("纯白"),base:"white"},{id:"light",name:I18n.t("草绿"),base:"light"},{id:"dark",name:I18n.t("深色"),base:"dark"},{id:"yanami",name:I18n.t("海盐蓝"),base:"yanami"}].concat(backend.customThemes)
     FileDialog { id: picker; title: I18n.t("导入主题"); nameFilters: [I18n.t("Umeko 主题 (*.umeko-theme.json *.json)")]; onAccepted: backend.importTheme(selectedFile.toString()) }
     CharacterDialog { id: characterDialog }
     ColumnLayout {
@@ -20,7 +20,7 @@ SectionCard {
             ActionButton { objectName: "importThemeButton"; glyph: "plus"; text: I18n.t("导入主题"); onClicked: picker.open() }
         }
         GridLayout {
-            Layout.fillWidth: true; columns: width < 640 ? 2 : 3; columnSpacing: 20; rowSpacing: 18
+            Layout.fillWidth: true; columns: width < 640 ? 2 : 4; columnSpacing: 20; rowSpacing: 18
             Repeater {
                 model: root.choices
                 ColumnLayout {

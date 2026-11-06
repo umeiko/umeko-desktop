@@ -91,7 +91,7 @@ def create_application():
         raise RuntimeError("QML 界面加载失败")
     app.aboutToQuit.connect(controller.close)
     from app.tray import TrayController
-    controller._system_tray = TrayController(engine.rootObjects()[0], QIcon(str(root / "app/icons/yanami-pixel.png")), controller)
+    controller._system_tray = TrayController(engine.rootObjects()[0], QIcon(str(root / "app/icons/app.png")), controller)
     controller._system_tray.set_language(controller.language)
     controller.appearanceChanged.connect(lambda: controller._system_tray.set_language(controller.language))
     controller._system_tray.quitRequested.connect(app.quit)

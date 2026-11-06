@@ -44,6 +44,7 @@ if [[ $# != 0 || ! $jobs =~ ^[1-9][0-9]*$ ]]; then
 fi
 # Slowest scripts first, using timings from CI run 41779809091.
 smokes=(
+  scripts/smoke-plugin-sessions.py
   tests/model_popup_ui_smoke.py
   tests/pi_capabilities_ui_smoke.py
   tests/global_agents_ui_smoke.py
@@ -63,6 +64,8 @@ smokes=(
   tests/extension_details_ui_smoke.py
   tests/provider_popup_ui_smoke.py
   tests/model_reasoning_ui_smoke.py
+  tests/reasoning_auto_ui_smoke.py
+  tests/reasoning_detection_ui_smoke.py
   tests/change_review_ui_smoke.py
   tests/motion_ui_smoke.py
   tests/codearts_plugin_ui_smoke.py
@@ -72,6 +75,8 @@ smokes=(
   tests/preview_resize_ui_smoke.py
   tests/api_proxy_layout_ui_smoke.py
   tests/large_chat_ui_smoke.py
+  tests/scroll_oscillation_ui_smoke.py
+  tests/grouped_loading_ui_smoke.py
   tests/provider_error_ui_smoke.py
   tests/desktop_settings_ui_smoke.py
   tests/login_startup_ui_smoke.py
@@ -80,6 +85,7 @@ smokes=(
   tests/chat_loading_ui_smoke.py
   tests/scroll_paging_ui_smoke.py
   tests/task_state_ui_smoke.py
+  tests/steering_status_ui_smoke.py
   tests/conversation_search_ui_smoke.py
   tests/sidebar_menu_position_ui_smoke.py
   tests/pi_manager_initial_tools_ui_smoke.py

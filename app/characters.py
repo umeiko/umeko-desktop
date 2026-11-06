@@ -18,7 +18,7 @@ from PySide6.QtGui import QImageReader
 SLOTS = frozenset('picker welcome avatarSmile avatarWink avatarHappy reply loading catch push pull background subagent0 subagent1 subagent2 subagent3 subagentCatch0 subagentCatch1 subagentCatch2 subagentCatch3'.split())
 LINES = frozenset(('tap', 'celebration', 'greeting'))
 DEFAULT = {'id': 'yanami', 'name': '八奈见杏菜', 'assets': {}, 'lines': {}}
-BUILTINS = frozenset(('yanami', 'komari', 'kaju', 'tiara', 'whale-girl', 'doubao', 'kazuhiko'))
+BUILTINS = frozenset(('yanami', 'komari', 'kaju', 'tiara', 'whale-girl', 'doubao', 'kazuhiko', 'system'))
 CONFIG_DEFAULTS = json.loads((Path(__file__).parent/'character-defaults.json').read_text(encoding='utf-8'))
 
 
@@ -195,7 +195,9 @@ class CharactersMixin:
             if legacy.get('tap'): configuration['scenes'][key]['tap'] = legacy['tap']
             if legacy.get('celebration'): configuration['scenes'][key]['celebration'] = legacy['celebration']
         if legacy.get('greeting'): configuration['scenes']['welcome']['greetings'] = [legacy['greeting']]
-        self._character_config = merge_configuration(configuration,self._character_options)
+        # The system pack uses the same assets/dialogue pipeline, while keeping
+        # personal character overrides intact for when the user enables them again.
+        self._character_config = configuration if self._character_record['id'] == 'system' else merge_configuration(configuration,self._character_options)
         self._character_animated_slots = set()
         for key,value in self._character_record['assets'].items():
             if Path(value).suffix.lower()=='.webp' and QImageReader(str(Path(self._character_record['directory'])/value)).imageCount()>1:
@@ -215,7 +217,7 @@ class CharactersMixin:
 
     def _character_packs(self, subagents=False):
         rows = [dict(DEFAULT, builtin=True)]
-        identifiers = ('komari', 'kaju', 'tiara', 'whale-girl', 'doubao') + (('kazuhiko',) if subagents else ())
+        identifiers = ('komari', 'kaju', 'tiara', 'whale-girl', 'doubao', 'system') + (('kazuhiko',) if subagents else ())
         files = [(self.root/f'app/icons/characters/{identifier}/manifest.json', True)
                  for identifier in identifiers if (self.root/f'app/icons/characters/{identifier}/manifest.json').is_file()]
         files += [(path, False) for path in sorted((self.store.directory/'characters').glob('*/manifest.json'))
@@ -320,15 +322,27 @@ class CharactersMixin:
     def selectCharacter(self, identifier):
         if not any(row['id'] == identifier for row in self._character_packs()): return False
         previous = self.store.data.get('character', 'yanami')
+        remembered = self.store.data.get('previousCharacter', 'yanami')
+        if previous == identifier == 'system': return True
         try:
+            if identifier == 'system': self.store.data['previousCharacter'] = previous
             self.store.data['character'] = identifier
             self.store.save()
         except (OSError, RuntimeError):
             self.store.data['character'] = previous
+            self.store.data['previousCharacter'] = remembered
             return False
         self._refresh_characters()
         self.changed.emit()
         return True
+
+    @Slot(bool, result=bool)
+    def setCharacterEnabled(self, enabled):
+        if not enabled: return self.selectCharacter('system')
+        if self._character_record['id'] != 'system': return True
+        previous = self.store.data.get('previousCharacter', 'yanami')
+        available = {row['id'] for row in self._character_packs()} - {'system'}
+        return self.selectCharacter(previous if previous in available else 'yanami')
 
     @Slot(str, result=bool)
     def importCharacter(self, url):

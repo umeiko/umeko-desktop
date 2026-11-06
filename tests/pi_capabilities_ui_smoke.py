@@ -29,7 +29,7 @@ def wait(check,label):
         if check():return
     page=find('piManagerWidget')
     output=ROOT/'build/pi-capabilities-ui';output.mkdir(parents=True,exist_ok=True);window.grabWindow().save(str(output/'failure.png'))
-    raise AssertionError(label+' '+repr({'notice':page.property('notice') if page else None,'working':page.property('working') if page else None,'sessionBusy':page.property('sessionBusy') if page else None,'profile':backend._view.pi_capabilities,'phase':backend._view.phase,'approval':backend.desktopPlugins._host_services.pendingApproval})+'\n'+'\n'.join(warnings))
+    raise AssertionError(label+' '+repr({'notice':page.property('notice') if page else None,'working':page.property('working') if page else None,'sessionBusy':page.property('sessionBusy') if page else None,'recordId':backend._view.id,'widgetSessionKey':page.property('sessionKey') if page else None,'widgetProfile':profile(),'profile':backend._view.pi_capabilities,'phase':backend._view.phase,'approval':backend.desktopPlugins._host_services.pendingApproval})+'\n'+'\n'.join(warnings))
 def click(name):
     wait(lambda:find(name) is not None and find(name).isEnabled() and ready(),name);item=find(name);window.grabWindow()
     QTest.qWait(120);wait(lambda:ready() and item.isEnabled(),name+' did not settle')
@@ -41,6 +41,17 @@ def click(name):
     QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,point);QTest.qWait(80)
     assert spy.count()==1,(name,'click was not delivered')
 def ready():return find('piManagerWidget') is not None and not find('piManagerWidget').property('working') and not backend._view.busy and not backend.kernelBusy
+def profile():
+    page=find('piManagerWidget')
+    if page is None:return {}
+    value=page.property('profile')
+    value=value.toVariant() if hasattr(value,'toVariant') else value
+    return value if isinstance(value,dict) else {}
+def restored_profile_ready(identifier):
+    page=find('piManagerWidget');record=backend._view
+    if page is None or record.id!=identifier or not ready():return False
+    session_key=json.dumps([record.key,record.workspace],ensure_ascii=False,separators=(',',':'))
+    return page.property('sessionKey')==session_key and record.pi_capabilities.get('preset')=='custom' and profile().get('preset')=='custom'
 def open_page():
     assert manager.openPage('pi-manager');wait(lambda:find('piManagerWidget') is not None,'Widget failed to load');wait(ready,'Widget did not settle')
     wait(lambda:find('webPane') and not find('webPane').property('moving'),'Widget pane did not settle')
@@ -57,7 +68,7 @@ try:
     click('piExtension_builtin:pi-tools')
     wait(lambda:find('piToolSwitch_read') is not None and find('piToolSwitch_read').isVisible() and ready(),'Native tools did not expand on click')
     QTest.qWait(500);wait(ready,'Initial inspection did not settle')
-    assert find('piManagerWidget').property('profile')['preset']=='full'
+    assert profile()['preset']=='full'
     # One plugin with two tools: a child switch must not disable its sibling.
     search=find('piManagerSearch');search.setProperty('text','capability-fixture')
     wait(lambda:find('piManagerList').property('count')==1 and ready(),'Fixture plugin not found')
@@ -93,10 +104,11 @@ try:
     assert 'grep' not in backend._view.resources['tools']
     origin=backend._view;identifier=origin.id;assert identifier
     assert backend.store.data['sessionMeta'][identifier]['piCapabilities']==origin.pi_capabilities
-    backend.newSession();open_page();assert find('piManagerWidget').property('profile')['preset']=='full'
+    backend.newSession();open_page();assert profile()['preset']=='full'
     backend._pool.retire(origin);backend._pool.records.pop(origin.key,None)
     backend.openSession(identifier);wait(lambda:not backend._view.busy,'Restored chat did not settle');open_page()
-    assert find('piManagerWidget').property('profile')['preset']=='custom'
+    wait(lambda:restored_profile_ready(identifier),'Restored custom profile did not reach the current Widget')
+    assert profile()['preset']=='custom'
     assert find('piManagerWidget').property('expandedId')=='', 'Reopening expanded a plugin automatically'
     icon=next(r for r in manager.rows if r['id']=='pi-manager');assert icon['iconGlyph']=='pi-widget' and not icon.get('iconSource')
     output=ROOT/'build/pi-capabilities-ui';output.mkdir(parents=True,exist_ok=True);window.grabWindow().save(str(output/'capabilities.png'))

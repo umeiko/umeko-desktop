@@ -3,7 +3,8 @@ import QtQuick
 FocusScope {
     id: root
     objectName: "welcomeMascot"
-    width: 210; height: 210
+    width: Character.personalityEnabled ? 210 : 88; height: width
+    enabled: Character.personalityEnabled
     property int portraitIndex: 0
     readonly property var rareScene: Character.rareCover(backend.conversationToken)
     readonly property string rareGreeting: rareScene.line ? I18n.t(rareScene.line) : ""
@@ -24,12 +25,13 @@ FocusScope {
     readonly property bool animating: jump.running || burst.running || springX.running || springY.running || springTilt.running || springSquashX.running || springSquashY.running
     readonly property var tapLines: Character.scene("welcome.tap", [])
     signal interaction(string kind)
-    activeFocusOnTab: true
-    Accessible.role: Accessible.Button
+    activeFocusOnTab: enabled
+    Accessible.role: enabled ? Accessible.Button : Accessible.Graphic
     Accessible.name: Character.id === "yanami" ? I18n.t("八奈见：点击互动，拖拽回弹，长按有彩蛋") : Character.style.name
     Accessible.onPressAction: tap()
     Component.onCompleted: ready = true
     onVisibleChanged: if (ready && !visible) reset()
+    onEnabledChanged: if (ready) reset()
 
     function say(text) { reactionText = text; reactionTimer.restart() }
     function pressPose() {
@@ -41,6 +43,7 @@ FocusScope {
         offsetX = 0; offsetY = 0; tilt = 0; squashX = 1; squashY = 1
     }
     function tap() {
+        if (!enabled) return
         returnHome()
         interaction("tap")
         combo++
@@ -50,6 +53,7 @@ FocusScope {
         jump.restart()
     }
     function celebrate() {
+        if (!enabled) return
         combo = 0; comboTimer.stop()
         say(Character.scene("welcome.celebration", ""))
         returnHome(); jump.restart(); burst.restart()

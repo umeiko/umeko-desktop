@@ -1,44 +1,59 @@
-# Local task records
+# Task records
 
 Open **Task records** from the Widget menu in the lower-right corner of chat.
-Save the objective and scope.
-From an idle chat in the same project, choose **Link next message** and send a
-message. Each linked send creates an attempt. To continue or retry, select the
-same task from the original chat or another chat in the project. Follow-ups
-during the turn belong to the active attempt. The scope records the user's
-authorization and existing Pi tool permissions continue to apply.
+This is a record of a goal, its work history and delivered files. Work happens
+in chat; opening or browsing records never starts an Agent request.
 
-A local SQLite ledger stores stable task IDs, project paths, actual execution
-directories, session and message identifiers, steps, and file references. Pi
-JSONL holds the messages. The panel checks whether referenced session files
-still carry the expected session ID. A removed message entry leaves a
-historical reference that can no longer be resolved in Pi.
+1. Choose **Record a goal**, enter the goal and the allowed scope, then choose
+   **Save and prepare in this chat**. The scope is a record of the user's
+   instructions; it does not grant permissions or change Pi tool permissions.
+2. The pending card names the goal and target chat and says **Not started**.
+   Choose **Go to chat and send**, type the actual request and send it. Existing
+   drafts and attachments are retained. **Cancel** removes preparation only.
+   While a chat is busy, a goal can be saved without preparing it.
+3. When work ends, the record opens **Delivered files** first. **View file** uses
+   the existing document preview and returns to the same Widget. **Work history**
+   shows a colored timeline; the right-side nodes preview and jump within the
+   current bounded page. Scrolling beyond a page edge loads the next or previous
+   page. A single work record uses a timestamp/status label; multiple records use
+   a selector. IDs, paths, scope and other references are folded by default.
+4. **Check delivered files** shows progress, counts by result and the check time.
+   It compares filesystem metadata, not content correctness. **Confirm
+   completion…** asks the user to confirm they reviewed the result before saving
+   a user-confirmation timestamp. Execution ending, a file being unchanged and a
+   user confirming completion are separate facts.
 
-The ledger updates each operation in a transaction. One desktop process holds
-the profile's ledger lock while using it. On the next open, an interrupted
-attempt becomes **Needs recovery**. User stops and runtime exits also require
-recovery. Continuing creates a fresh attempt through a user send.
+**Continue in this chat…** prepares the next manually sent message. Each new
+linked send creates a new work record under the same goal. Earlier work and
+confirmation timestamps remain read-only. Continuing in another chat does not
+copy its predecessor's conversation; the user should include the needed context.
+Follow-ups during a running turn stay in that work record. Interrupted or failed
+work explains the cause and offers continuation through an idle chat in the same
+project. Opening, canceling preparation, and returning to chat do not send text.
 
-Execution, submission, generation, verification and acceptance are recorded
-separately. A tool can submit some files and fail to deliver others. The
-attempt preserves those files and reports the delivery failure. **Check file
-versions** saves a point-in-time result for the delivered files. **Accept
-attempt** records the user's decision on the latest finished attempt. Earlier
-attempts and their acceptance timestamps remain available across retries.
+## Storage and limits
 
-Local attachment versions are captured at send. Delivery versions are captured
-when the desktop receives the Pi delivery event, including nested delivery
-calls. A regular file version is a fingerprint of its resolved path, device,
-file identity, size and change and modification times. A missing or moved file
-is marked as such. A changed version at the same path is shown separately from
-historical verification or acceptance. Directories retain a path without a
-verifiable version. Remote URLs and temporary Diff snapshots are outside the
-local file ledger. File bytes stay in the original filesystem.
+A local SQLite ledger stores stable task IDs, project paths, execution
+directories, session/message references, steps and local file references. Pi
+JSONL remains the source of chat messages. Removing a chat/message may leave an
+unresolvable historical reference. The ledger is transactional and one process
+holds the profile's ledger lock. Interrupted work becomes pending on next open.
 
-Records are retained until deleted. Deletion cascades through the task's
-attempts, steps and file references. Pi history and project files are retained.
-Opening the panel reads records and checks references independently of Pi,
-the active chat, and its draft and attachments.
+New steps and files retain their first observed timestamp. Updating a tool's
+state preserves its first time and records the update separately. Schema-1 data
+migrates without inventing historical timestamps; undated nodes are labeled
+**Time not recorded**.
 
-The built-in Widget uses the scoped Widget Host API. The ledger and execution
-tracking belong to the application and survive closing the Widget.
+Partial delivery preserves successful files and records a failed result.
+Versions fingerprint resolved path, device, identity, size and change/modified
+times. Replacement at the same path is shown as changed, independently of past
+checks or confirmation. Directories retain paths only. Remote URLs and temporary
+Diff snapshots are outside the ledger. File contents remain in the filesystem.
+
+The built-in Widget uses a scoped, asynchronous Host API. Its read/detail pages
+remain bounded (12 goals/work records, 8 steps/files plus one lookahead); it does
+not accumulate every previous page. File checks run outside the GUI thread and
+must still belong to the active Widget/chat before their results are persisted.
+File preview accepts a stored file ID belonging to the specified task and work
+record, not an arbitrary requested path. Execution tracking survives closing the
+Widget. Deleting a record preserves Pi history and project files.

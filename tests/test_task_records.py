@@ -95,3 +95,30 @@ os._exit(23)
         self.assertEqual(detail["files"][0]["path"], str(path))
         self.assertEqual(detail["steps"][0]["kind"], "delivery_error")
         self.assertIsNone(detail["accepted"])
+
+    def test_observation_time_survives_updates_and_legacy_migration_stays_undated(self):
+        from app.task_records import SCHEMA
+        from unittest.mock import patch
+        legacy = self.root / 'legacy.sqlite3'
+        with sqlite3.connect(legacy) as db:
+            db.executescript(SCHEMA)
+            db.execute('PRAGMA user_version = 1')
+            db.execute("INSERT INTO tasks VALUES ('legacy','Goal','Scope','/project','old','old')")
+            db.execute("INSERT INTO attempts (id,task_id,cwd,started,state) VALUES (1,'legacy','/project','old','finished')")
+            db.execute("INSERT INTO steps VALUES (1,'tool','old-tool','read · done')")
+            db.execute("INSERT INTO files (attempt_id,source,event_id,path,version,recorded_state) VALUES (1,'submitted','delivery','/old/report','','missing')")
+        migrated=TaskStore(legacy)
+        detail=migrated.details('legacy',1)
+        self.assertIsNone(detail['steps'][0]['observed'])
+        self.assertIsNone(detail['files'][0]['observed'])
+        with patch('app.task_records.timestamp',return_value='first'):
+            migrated.step(1,'tool','new-tool','read · running')
+        with patch('app.task_records.timestamp',return_value='later'):
+            migrated.step(1,'tool','new-tool','read · done')
+            migrated.step(1,'tool','old-tool','read · updated')
+        rows=migrated.details('legacy',1)['steps']
+        self.assertIsNone(rows[0]['observed'])
+        self.assertEqual(rows[1]['observed'],'first')
+        self.assertEqual(rows[1]['updated'],'later')
+        self.assertEqual(rows[1]['detail'],'read · done')
+        self.assertEqual(TaskStore(legacy).details('legacy',1)['steps'][1]['observed'],'first')
