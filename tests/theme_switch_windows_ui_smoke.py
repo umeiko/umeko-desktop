@@ -34,6 +34,10 @@ def ci_display_mode():
                                          ctypes.c_void_p, wintypes.UINT]
     user.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
     user.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+    user.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+    user.FindWindowW.restype = ctypes.c_void_p
+    user.IsWindowVisible.argtypes = [ctypes.c_void_p]
+    user.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
     old_dpi = user.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
     if not old_dpi:
         raise RuntimeError("Cannot enter PerMonitorV2 display measurement context")
@@ -50,6 +54,38 @@ def ci_display_mode():
             return None
         return value
     changed = False
+    taskbar = None
+    shell_modified = False
+    restored = False
+    info = {}
+    def set_work_area(rect):
+        value = wintypes.RECT(*rect)
+        # Flags=0 changes the live work area without writing the user profile.
+        if not user.SystemParametersInfoW(0x002F, 0, ctypes.byref(value), 0):
+            raise RuntimeError("SPI_SETWORKAREA failed")
+    def restore():
+        nonlocal restored
+        if restored:
+            return
+        receipt = info.setdefault("restore_receipt", {})
+        errors = []
+        if changed:
+            status = user.ChangeDisplaySettingsExW(None, original, None, 4, None)
+            receipt["display_mode_status"] = status
+            if status != 0:
+                errors.append(f"Desktop mode restore failed: {status}")
+        if shell_modified:
+            user.ShowWindow(taskbar, 4 if taskbar_was_visible else 0)  # SW_SHOWNOACTIVATE / SW_HIDE
+            receipt["taskbar_visibility_restored_to"] = taskbar_was_visible
+            try:
+                set_work_area(initial_work)
+                receipt["work_area_restored_to"] = initial_work
+            except Exception as error:
+                errors.append(str(error))
+        restored = True
+        receipt["completed"] = not errors
+        if errors:
+            raise RuntimeError("; ".join(errors))
     try:
         original = mode(0xFFFFFFFF)
         if original is None:
@@ -67,8 +103,10 @@ def ci_display_mode():
                 "reserved_physical": reserved, "required_client_physical": client_required,
                 "required_desktop_physical": required}
         selected = original
+        fallback = False
         if initial[0] < required[0] or initial[1] < required[1]:
             candidates = []
+            client_candidates = []
             for index in range(4096):
                 value = mode(index)
                 if value is None:
@@ -76,29 +114,45 @@ def ci_display_mode():
                 w, h = size(value)
                 if w >= required[0] and h >= required[1]:
                     candidates.append((w * h, value))
+                if w >= client_required[0] and h >= client_required[1]:
+                    client_candidates.append((w * h, value))
             if not candidates:
-                raise RuntimeError(f"No supported desktop mode fits measured requirements: {info}")
+                if not client_candidates:
+                    raise RuntimeError(f"No supported desktop mode fits the client: {info}")
+                # CI display adapters may top out at 1080p. Preserve application
+                # flags and make only the shell's reserved work area available.
+                candidates = client_candidates
+                fallback = True
             selected = min(candidates, key=lambda row: row[0])[1]
             status = user.ChangeDisplaySettingsExW(None, selected, None, 4, None)
             if status != 0:
                 raise RuntimeError(f"Temporary desktop mode change failed: {status}")
             changed = True
+        if fallback:
+            taskbar = user.FindWindowW("Shell_TrayWnd", None)
+            if not taskbar:
+                raise RuntimeError("CI taskbar fallback could not find Shell_TrayWnd")
+            taskbar_was_visible = bool(user.IsWindowVisible(taskbar))
+            selected_before = work_area()
+            full_area = [0, 0, *size(selected)]
+            info["shell_work_area_fallback"] = {
+                "mode": "temporary-hide-taskbar-and-use-full-primary-screen",
+                "original_taskbar_visible": taskbar_was_visible,
+                "original_work_area_physical": initial_work,
+                "selected_work_area_before_physical": selected_before,
+                "temporary_work_area_physical": full_area,
+                "registry_write": False}
+            shell_modified = True
+            user.ShowWindow(taskbar, 0)  # SW_HIDE, never stop or restart Explorer.
+            set_work_area(full_area)
         selected_work = work_area() if changed else initial_work
         if (selected_work[2] - selected_work[0] < client_required[0]
                 or selected_work[3] - selected_work[1] < client_required[1]):
             raise RuntimeError(f"Selected desktop work area does not fit client: {selected_work}, {info}")
         info.update(selected=size(selected), selected_work_area_physical=selected_work, changed=changed)
-        def restore():
-            if changed:
-                status = user.ChangeDisplaySettingsExW(None, original, None, 4, None)
-                if status != 0:
-                    raise RuntimeError(f"Desktop mode restore failed: {status}")
         return info, restore
     except Exception:
-        if changed:
-            status = user.ChangeDisplaySettingsExW(None, original, None, 4, None)
-            if status != 0:
-                raise RuntimeError(f"Desktop mode setup and restore failed: restore={status}")
+        restore()
         raise
     finally:
         user.SetThreadDpiAwarenessContext(old_dpi)
