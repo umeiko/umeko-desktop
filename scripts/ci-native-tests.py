@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import threading
 
 COMMON = [
     'tests.test_platform',
@@ -100,14 +101,39 @@ if __name__ == '__main__':
         # Windows no-console children need explicit output handles. Keep the
         # complete output in uploaded diagnostics even when a suite fails.
         output = log_dir / f'native-{name}.log'
+        output.write_text('', encoding='utf-8')
+        stopped = threading.Event()
+
+        def report():
+            # Tail a regular file rather than a pipe: descendants retaining
+            # stdout must not prevent the checked process from finishing.
+            with output.open(encoding='utf-8', errors='replace') as stream:
+                while not stopped.is_set():
+                    print(stream.read(), end='', flush=True)
+                    stopped.wait(1)
+                print(stream.read(), end='', flush=True)
+
+        reporter = threading.Thread(target=report, daemon=True)
+        reporter.start()
         try:
-            result = run_logged(command, output, timeout=None, cwd=root)
+            result = run_logged(command, output, timeout=900, cwd=root)
         finally:
-            print(output.read_text(encoding='utf-8', errors='replace'), end='', flush=True)
+            stopped.set()
+            reporter.join()
         result.check_returncode()
 
     suites = COMMON + (WINDOWS if os.name == 'nt' else UNIX)
-    run_suite([sys.executable, '-m', 'unittest', *suites, '-v'], 'python')
+    # Keep unittest's module loader and its load_tests isolation hooks while
+    # emitting stacks before a stalled native runner reaches the job deadline.
+    diagnostic_runner = '''import faulthandler, unittest
+faulthandler.enable()
+faulthandler.dump_traceback_later(120, repeat=True)
+try:
+    unittest.main(module=None)
+finally:
+    faulthandler.cancel_dump_traceback_later()
+'''
+    run_suite([sys.executable, '-u', '-c', diagnostic_runner, *suites, '-v'], 'python')
     # Linux discovery/Node checks already run all Linux branches. Other hosts
     # retain actual process/filesystem/tool branches, not the shared Node suite.
     if sys.platform in ('win32', 'darwin'):
