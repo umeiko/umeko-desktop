@@ -129,7 +129,11 @@ else:
         def __init__(self,argv,cwd,env,columns,rows):
             self.process=PtyProcess.spawn(argv,cwd=str(cwd),env=env,dimensions=(rows,columns));self.pid=self.process.pid;self._exit=None;self.start_writer()
         def read(self):
-            try:return self.process.read(32768)
+            # PtyProcess.read holds its BufferedRWPair's reader lock while
+            # waiting for output. Its close() needs that same lock before it
+            # can terminate a shell which ignores SIGHUP, so read the raw PTY
+            # descriptor instead and let close reach its termination path.
+            try:return os.read(self.process.fd,32768)
             except (EOFError,OSError):return b''
         def write_bytes(self,data):
             while data:data=data[self.process.write(data):]

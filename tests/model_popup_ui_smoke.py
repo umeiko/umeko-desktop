@@ -21,13 +21,15 @@ warnings = []
 engine.warnings.connect(lambda errors: warnings.extend(error.toString() for error in errors))
 
 
-def find(name):
+def find(name, required=True):
     stack = [window.contentItem()]
     while stack:
         item = stack.pop()
         if item.objectName() == name: return item
         stack.extend(item.childItems())
-    raise AssertionError(name)
+    if required:
+        raise AssertionError(name)
+    return None
 
 
 def wait(predicate, label):
@@ -40,6 +42,11 @@ def wait(predicate, label):
 def click(name):
     item = find(name)
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, item.mapToScene(item.boundingRect().center()).toPoint())
+
+
+def prompt_focused():
+    prompt = find("promptInput", required=False)
+    return prompt is not None and prompt.hasActiveFocus()
 
 
 try:
@@ -72,9 +79,11 @@ try:
     assert not find("modelOption_" + providers[0] + "_swift").isVisible()
     click("modelOption_" + providers[1] + "_breeze")
     assert (backend.config["selectedProvider"], backend.config["selectedModel"]) == (providers[1], "breeze")
-    QTest.qWait(80)
+    wait(prompt_focused, "Selected model did not restore input focus")
     assert find("promptInput").hasActiveFocus()
     wait(lambda: not popup.property("visible"), "Selected model did not close popup")
+    # onClosed emits dismissed; Main.qml restores focus with Qt.callLater.
+    wait(prompt_focused, "Closed model popup did not restore input focus")
     assert find("promptInput").hasActiveFocus()
     open_popup()
     assert find("modelSearch").property("text") == ""
@@ -101,6 +110,7 @@ try:
     open_popup()
     QTest.keyClick(window, Qt.Key_Escape)
     wait(lambda: not popup.property("visible"), "Escape did not close popup")
+    wait(prompt_focused, "Escape did not restore input focus")
     assert not popup.property("desiredOpen") and find("promptInput").hasActiveFocus()
     open_popup()
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, QPoint(400, 90))

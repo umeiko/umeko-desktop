@@ -12,7 +12,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 os.environ.setdefault("UMEKO_LANGUAGE", "zh")
 os.environ["UMEKO_DATA_DIR"] = tempfile.mkdtemp(prefix="umeko-subagent-pane-ui-")
-from PySide6.QtCore import Qt, QPoint, QPointF, QObject
+from PySide6.QtCore import Qt, QPoint, QPointF, QObject, QMetaObject, Q_ARG, Q_RETURN_ARG
+from PySide6.QtQml import QJSValue
 from PySide6.QtTest import QTest
 from main import create_application
 
@@ -20,26 +21,91 @@ app, engine, backend = create_application()
 window = engine.rootObjects()[0]
 warnings = []
 engine.warnings.connect(lambda errors: warnings.extend(error.toString() for error in errors))
+last_click = {}
 
-def find(name):
+def find(name, required=True):
     pending = [window.contentItem()]
     while pending:
         item = pending.pop()
         if item.objectName() == name:
             return item
         pending.extend(item.childItems())
-    raise AssertionError(name)
+    if required:
+        raise AssertionError(name)
+    return None
 
-def wait(predicate, label):
+def wait(predicate, label, diagnostics=None):
     for _ in range(300):
         QTest.qWait(10)
         if predicate():
             return
-    raise AssertionError(label + "\n" + "\n".join(warnings))
+    detail = "\n" + json.dumps(diagnostics(), ensure_ascii=False, default=str) if diagnostics else ""
+    raise AssertionError(label + detail + "\n" + "\n".join(warnings))
+
+def child_pane_state():
+    pane = find("webPane", required=False)
+    view = find("conversation", required=False)
+    cover = find("chatLoadingOverlay", required=False)
+    sidebar = find("sidebarWidthMotion", required=False)
+    return {"selected": backend.subagents.selected.get("id"),
+            "loading": backend.subagents.context["loading"],
+            "error": backend.subagents.context["error"],
+            "mode": pane.property("mode") if pane is not None else None,
+            "moving": pane.property("moving") if pane is not None else None,
+            "opened": pane.property("opened") if pane is not None else None,
+            "fixtureRecordKey": record.key, "currentRecordKey": backend._view.key,
+            "currentRecordId": backend._view.id,
+            "viewKey": view.parentItem().property("viewKey") if view is not None else None,
+            "restoring": view.property("restoring") if view is not None else None,
+            "contentY": view.property("contentY") if view is not None else None,
+            "coverVisible": cover.isVisible() if cover is not None else None,
+            "sidebarMoving": sidebar.property("moving") if sidebar is not None else None}
 
 def click(name):
+    def ready():
+        if name.startswith("subagentCard_"):
+            window.grabWindow()
+        item = find(name, required=False)
+        if item is None or not item.isVisible() or not item.isEnabled() or item.width() <= 0 or item.height() <= 0:
+            return False
+        if name.startswith("subagentCard_"):
+            view = find("conversation", required=False)
+            if view is None or view.property("restoring"):
+                return False
+            center = item.boundingRect().center()
+            if not view.boundingRect().contains(item.mapToItem(view, center)):
+                return False
+            controller = item.property("selectionController")
+            if isinstance(controller, QJSValue):
+                controller = controller.toQObject()
+            if controller is None:
+                return False
+            point = item.mapToItem(controller, center)
+            # Loader.Ready/restoring=false can precede Column polish. Require
+            # the real selection router to hit this card, not an overlapping sibling.
+            target = QMetaObject.invokeMethod(controller, "interactionAt", Qt.DirectConnection,
+                                             Q_RETURN_ARG("QVariant"), Q_ARG("QVariant", point.x()),
+                                             Q_ARG("QVariant", point.y()))
+            if isinstance(target, QJSValue):
+                target = target.toQObject()
+            return target is not None and target.parentItem() == item
+        return True
+    wait(ready, name + " did not become clickable")
     item = find(name)
-    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, item.mapToScene(item.boundingRect().center()).toPoint())
+    point = item.mapToScene(item.boundingRect().center()).toPoint()
+    if name.startswith("subagentCard_"):
+        last_click.update(name=name, point=(point.x(), point.y()), before=child_pane_state())
+    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
+    if name.startswith("subagentCard_"):
+        last_click["after"] = child_pane_state()
+
+def pane_ready(mode=None):
+    pane = find("webPane", required=False)
+    return pane is not None and (mode is None or pane.property("mode") == mode) and not pane.property("moving")
+
+def active_menu_closed():
+    menu = window.findChild(QObject, "subagentActiveMenu")
+    return menu is not None and not menu.property("visible")
 
 try:
     QTest.qWait(300)
@@ -64,9 +130,9 @@ try:
     record.messages = [{"role": "user", "text": "请分工检查这次修改。"}, {"role": "assistant", "text": "我把这次检查分给四个子代理。你可以单独查看它们的上下文并发送指引。", "tools": tools}]
     backend.chatChanged.emit()
     wait(lambda: backend.messageCount == 2, "No parent transcript")
-    QTest.qWait(300)
     click("subagentCard_preview-0")
-    wait(lambda: not backend.subagents.context["loading"] and find("webPane").property("mode") == "subagent" and not find("webPane").property("moving"), "Child pane did not settle")
+    wait(lambda: not backend.subagents.context["loading"] and pane_ready("subagent"), "Child pane did not settle",
+         lambda: {"atTimeout": child_pane_state(), "click": last_click})
     assert backend.subagents.selected["id"] == "preview-0"
     assert backend.subagents.messageCount == 2
     assert find("subagentPromptInput").isVisible()
@@ -87,7 +153,7 @@ try:
     QTest.qWait(450)
     click("activeSubagent_preview-3")
     wait(lambda: backend.subagents.selected.get("id") == "preview-3" and not backend.subagents.context["loading"], "Active menu did not open the chosen child")
-    wait(lambda: not window.findChild(QObject, "subagentActiveMenu").property("visible"), "Active menu did not finish closing")
+    wait(active_menu_closed, "Active menu did not finish closing")
     output = ROOT / "artifacts/screenshots"
     output.mkdir(parents=True, exist_ok=True)
     assert window.grabWindow().save(str(output / "subagent-pane.png"))
@@ -101,13 +167,13 @@ try:
         "before": before, "after": find("webPane").width(), "handleEnabled": handle.isEnabled(),
         "blocked": find("webPane").property("blocked"), "popupVisible": find("subagentIndicator").property("popupVisible")}
     window.setProperty("page", "settings")
-    wait(lambda: not find("webPane").property("moving"), "Settings left the right pane open")
+    wait(pane_ready, "Settings left the right pane open")
     assert not find("webPane").property("opened") and not backend.subagents.selected
     window.setProperty("page", "chat")
     backend.subagents.open("preview-1")
-    wait(lambda: not backend.subagents.context["loading"] and not find("webPane").property("moving"), "Could not reopen child history")
+    wait(lambda: not backend.subagents.context["loading"] and pane_ready("subagent"), "Could not reopen child history")
     click("closeSubagentPaneButton")
-    wait(lambda: not find("webPane").property("moving"), "Child close did not settle")
+    wait(pane_ready, "Child close did not settle")
     assert not find("webPane").property("opened") and backend.subagents.activeCount == 4
     backend.subagents.open("preview-0")
     backend.newSession()

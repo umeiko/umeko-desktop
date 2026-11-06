@@ -70,7 +70,7 @@ def descendants(root):
         pending.extend(item.childItems())
 
 
-def find(name, root=None):
+def find(name, root=None, required=True):
     matches = []
     for item in descendants(root or window.contentItem()):
         if item.objectName() == name:
@@ -79,7 +79,17 @@ def find(name, root=None):
     # SelectableText delegates deliberately share the selection identity.
     if matches:
         return next((item for item in matches if item.isVisible()), matches[0])
-    raise AssertionError("Missing QML item: " + name)
+    if required:
+        raise AssertionError("Missing QML item: " + name)
+    return None
+
+
+def wait(predicate, label):
+    for _ in range(300):
+        QTest.qWait(10)
+        if predicate():
+            return
+    raise AssertionError(label + "\n" + "\n".join(warnings))
 
 
 def signal(item, name, *args):
@@ -111,8 +121,23 @@ def assert_spacing(item, percent):
 
 def show_message(index):
     window.setProperty("page", "chat")
+    def conversation_ready():
+        view = find("conversation", required=False)
+        return view is not None and view.isVisible() and view.property("count") > index
+    wait(conversation_ready, "Conversation did not become current")
     signal("conversation", "jumpToMessage", Q_ARG("QVariant", index))
-    return find("messageBubble_" + str(index))
+    def message_ready():
+        # A model row exists before its asynchronous Loader and viewport restore finish.
+        view = find("conversation", required=False)
+        if view is None or not view.isVisible() or view.property("restoring"):
+            return False
+        bubble = find("messageBubble_" + str(index), view, required=False)
+        if bubble is None or not bubble.isVisible() or bubble.width() <= 0 or bubble.height() <= 0:
+            return False
+        rows = view.property("contentItem").childItems()
+        return any(row.property("messageSlot") and row.property("index") == index and row.property("bodyReady") for row in rows)
+    wait(message_ready, "Message " + str(index) + " did not finish loading")
+    return find("messageBubble_" + str(index), find("conversation"))
 
 
 def text_items(root):

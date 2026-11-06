@@ -9,6 +9,10 @@ import unittest
 
 from scripts.ci_process import run_logged
 
+# The real interpreter can outlive a killed Windows venv redirector.
+# These stdlib-only fixtures need the owned PID to be the actual interpreter.
+FIXTURE_PYTHON = getattr(sys, "_base_executable", sys.executable) if os.name == "nt" else sys.executable
+
 
 def process_running(pid):
     if os.name == "nt":
@@ -78,7 +82,7 @@ while not ready.exists():
 print("EXIT:0", flush=True)
 '''
         try:
-            result = run_logged([sys.executable, "-S", "-c", parent, descendant,
+            result = run_logged([FIXTURE_PYTHON, "-S", "-c", parent, descendant,
                 str(release), str(ready), str(done)], output, timeout=5)
             self.assertEqual(result.returncode, 0)
             self.assertTrue(process_running(int(ready.read_text())))
@@ -94,7 +98,7 @@ print("EXIT:0", flush=True)
     def test_running_parent_still_times_out_and_keeps_output(self):
         output = self.temporary() / "application-output.log"
         with self.assertRaises(subprocess.TimeoutExpired):
-            run_logged([sys.executable, "-S", "-c",
+            run_logged([FIXTURE_PYTHON, "-S", "-c",
                 'import time; print("PARENT_STILL_RUNNING", flush=True); time.sleep(30)'],
                 output, timeout=1)
         self.assertTrue(output.is_file())
