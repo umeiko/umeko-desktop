@@ -70,7 +70,8 @@ export async function cleanupStartup(context, options={}) {
     const protectedPaths=[], handledBackups=new Set();
     const isProtected=file=>protectedPaths.some(p=>overlaps(p,file));
     async function erase(file, root, pattern) {
-      const target=path.resolve(file);
+      // Normalize parent aliases without following a symlink at the deletion leaf.
+      const target=path.join(await canonical(path.dirname(path.resolve(file))),path.basename(file));
       if(path.dirname(target)!==root || !pattern.test(path.basename(target)) || isProtected(target) || overlaps(target,profile)||overlaps(target,install)) {note('refused',target);return false;}
       try {
         const stat=await fs.lstat(target);
@@ -88,7 +89,7 @@ export async function cleanupStartup(context, options={}) {
         const job=await read(file);
         if(job.profileDir)protectedPaths.push(await canonical(job.profileDir));
         if(await canonical(job.installDir)!==install || await canonical(job.cache)!==directory) {
-          for(const value of [job.archive,job.stage])if(value)protectedPaths.push(path.resolve(value));
+          for(const value of [job.archive,job.stage])if(value)protectedPaths.push(await canonical(value));
           continue;
         }
         let result;try {result=await read(file+'.result');}catch(error){if(error.code!=='ENOENT')throw error;}
@@ -96,7 +97,7 @@ export async function cleanupStartup(context, options={}) {
         if(job.archive && /^[a-f0-9]{64}$/.test(job.sha256 || '')) {
           try {
             const stat=await fs.lstat(job.archive);
-            if(!stat.isFile() || stat.isSymbolicLink() || await digest(job.archive)!==job.sha256)protectedPaths.push(path.resolve(job.archive));
+            if(!stat.isFile() || stat.isSymbolicLink() || await digest(job.archive)!==job.sha256)protectedPaths.push(await canonical(job.archive));
           }catch(error){if(error.code!=='ENOENT')throw error;}
         }
         let ready;try{ready=await read(file+'.ready');}catch(error){if(error.code!=='ENOENT')throw error;}
@@ -104,11 +105,11 @@ export async function cleanupStartup(context, options={}) {
         if(alive(job.parentPid) || alive(ready?.pid) || !noNewer(job.version,info.version) ||
             job.edition && job.edition!==info.edition || job.repo && context.repo && job.repo!==context.repo ||
             !result && await lastActivity(directory)>=staleCutoff) {
-          for(const value of [directory,job.archive,job.stage,result?.backup])if(value)protectedPaths.push(path.resolve(value));
+          for(const value of [directory,job.archive,job.stage,result?.backup])if(value)protectedPaths.push(await canonical(value));
           continue;
         }
         if(result && (!result.installDir || await canonical(result.installDir)!==install || result.version!==job.version)) {
-          if(result.backup)note('refused',path.resolve(result.backup));
+          if(result.backup)note('refused',await canonical(result.backup));
           throw Error('安装结果与任务不匹配');
         }
         jobs.push({directory,file,job,result});
@@ -130,7 +131,7 @@ export async function cleanupStartup(context, options={}) {
       const {job,result,file,directory}=item;
       let done=true;
       if(result?.backup) {
-        const backup=path.resolve(result.backup);
+        const backup=path.join(await canonical(path.dirname(path.resolve(result.backup))),path.basename(result.backup));
         if(handledBackups.has(backup))done=![...report.failed,...report.refused].includes(backup);
         else if(path.dirname(backup)===parent && backupName.test(path.basename(backup))) {
           // A receipt cannot override the metadata/edition checks of the backup sweep.

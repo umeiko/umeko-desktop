@@ -75,6 +75,7 @@ NODE_HOST = [
     ('update-engine', 'cleanup receipts cannot override newer or other-edition backup metadata'),
     ('update-engine', 'recent partial-file writes survive cleanup even with an old cache directory'),
     ('update-engine', 'cleanup keeps another installation staging while its update lock is held'),
+    ('update-engine', 'cleanup canonicalizes receipt aliases and still protects modified packages'),
 ]
 NODE_WINDOWS = [
     ('tool-permissions-integration', 'actual native powershell tool is intercepted before its harmless write'),

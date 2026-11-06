@@ -476,3 +476,16 @@ test('cleanup keeps another installation staging while its update lock is held',
   await f.run();
   assert.equal(await fs.readFile(path.join(stage,'payload'),'utf8'),'installing another app');
 });
+
+test('cleanup canonicalizes receipt aliases and still protects modified packages',async t=>{
+  const f=await cleanup113Fixture(t), alias=f.base+'-alias';
+  await fs.symlink(f.base,alias,process.platform==='win32'?'junction':'dir');
+  t.after(()=>fs.rm(alias,{force:true,recursive:process.platform==='win32'}));
+  for(const key of ['installDir','cache','archive','executable','profileDir'])f.job[key]=path.join(alias,path.relative(f.base,f.job[key]));
+  await fs.writeFile(f.jobFile,JSON.stringify(f.job));
+  await fs.writeFile(f.job.archive,'user replacement');
+  await f.run();
+  assert.equal(await fs.readFile(f.job.archive,'utf8'),'user replacement');
+  await assert.rejects(fs.stat(f.backup),{code:'ENOENT'});
+  await assert.rejects(fs.stat(f.job.cache),{code:'ENOENT'});
+});
