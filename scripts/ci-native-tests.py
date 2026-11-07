@@ -7,12 +7,14 @@ import os
 from pathlib import Path
 import re
 import sys
+import threading
 
 COMMON = [
     'tests.test_platform',
     'tests.test_terminal_widget',
     'tests.test_skill_import',
     'tests.test_update',
+    'tests.test_update_cleanup',
     'tests.test_preview_source',
     # Keep the module entrypoint: load_tests isolates its Qt application.
     'tests.test_preview_channel',
@@ -56,6 +58,26 @@ NODE_HOST = [
     ('update-engine', 'replacement failure rolls back the existing directory'),
     ('update-engine', 'prepare copies the helper executable and runtime outside the install directory'),
     ('update-engine', 'an uncommitted or cancelled handoff never replaces the application'),
+    ('update-engine', 'successful update cleanup removes the old bundle and downloaded package'),
+    ('update-engine', 'real package installation keeps rollback files until post-launch cleanup'),
+    ('update-engine', 'cleanup prunes historical packages only for the same edition and platform'),
+    ('update-engine', 'failed, superseded, or concurrently installing updates do not trigger cleanup'),
+    ('update-engine', 'cleanup keeps modified archives and never follows backup directory links'),
+    ('update-engine', 'cleanup removes abandoned partials but preserves recent pauses and active downloads'),
+    ('update-engine', 'cleanup bounds installer caches while retaining active jobs and recent failure logs'),
+    ('update-engine', 'successful startup removes the package and old program as well as installer cache'),
+    ('update-engine', 'installer launch without successful application startup keeps rollback and its receipt'),
+    ('update-engine', 'first successful start removes legacy orphans, staging and stale partials only'),
+    ('update-engine', 'cleanup refuses user-data overlap and receipts pointing outside updater folders'),
+    ('update-engine', 'directory aliases cannot redirect cleanup into another directory'),
+    ('update-engine', 'a locked old program is logged, retained and retried on the next successful start'),
+    ('update-engine', 'partially removed installer cache retains its receipt for the next start'),
+    ('update-engine', 'cleanup preserves a live installer even after replacement completed'),
+    ('update-engine', 'cleanup receipts cannot override newer or other-edition backup metadata'),
+    ('update-engine', 'recent partial-file writes survive cleanup even with an old cache directory'),
+    ('update-engine', 'cleanup keeps another installation staging while its update lock is held'),
+    ('update-engine', 'cleanup canonicalizes receipt aliases and still protects modified packages'),
+    ('update-engine', 'cleanup retains recent or active temporary download jobs and reclaims abandoned ones'),
 ]
 NODE_WINDOWS = [
     ('tool-permissions-integration', 'actual native powershell tool is intercepted before its harmless write'),
@@ -79,14 +101,39 @@ if __name__ == '__main__':
         # Windows no-console children need explicit output handles. Keep the
         # complete output in uploaded diagnostics even when a suite fails.
         output = log_dir / f'native-{name}.log'
+        output.write_text('', encoding='utf-8')
+        stopped = threading.Event()
+
+        def report():
+            # Tail a regular file rather than a pipe: descendants retaining
+            # stdout must not prevent the checked process from finishing.
+            with output.open(encoding='utf-8', errors='replace') as stream:
+                while not stopped.is_set():
+                    print(stream.read(), end='', flush=True)
+                    stopped.wait(1)
+                print(stream.read(), end='', flush=True)
+
+        reporter = threading.Thread(target=report, daemon=True)
+        reporter.start()
         try:
-            result = run_logged(command, output, timeout=None, cwd=root)
+            result = run_logged(command, output, timeout=900, cwd=root)
         finally:
-            print(output.read_text(encoding='utf-8', errors='replace'), end='', flush=True)
+            stopped.set()
+            reporter.join()
         result.check_returncode()
 
     suites = COMMON + (WINDOWS if os.name == 'nt' else UNIX)
-    run_suite([sys.executable, '-m', 'unittest', *suites, '-v'], 'python')
+    # Keep unittest's module loader and its load_tests isolation hooks while
+    # emitting stacks before a stalled native runner reaches the job deadline.
+    diagnostic_runner = '''import faulthandler, unittest
+faulthandler.enable()
+faulthandler.dump_traceback_later(120, repeat=True)
+try:
+    unittest.main(module=None)
+finally:
+    faulthandler.cancel_dump_traceback_later()
+'''
+    run_suite([sys.executable, '-u', '-c', diagnostic_runner, *suites, '-v'], 'python')
     # Linux discovery/Node checks already run all Linux branches. Other hosts
     # retain actual process/filesystem/tool branches, not the shared Node suite.
     if sys.platform in ('win32', 'darwin'):

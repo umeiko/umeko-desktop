@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import {createHash} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
 import {deflateRawSync, gzipSync, crc32} from 'node:zlib';
 import {Readable} from 'node:stream';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
+import {fileURLToPath} from 'node:url';
 import {selectAsset, download, install, prepare, platformKey, safeName} from '../runtime/update-engine.mjs';
 import {cleanupStartup} from '../runtime/update-cleanup.mjs';
 
@@ -188,7 +189,9 @@ test('existing installation paths through a directory alias are canonicalized', 
 });
 
 async function cleanupFixture(t) {
-  const base=await fs.mkdtemp(path.join(os.tmpdir(),'umeko-cleanup-test-'));
+  // Failure-injection hooks and reported paths must use the same spelling on
+  // Windows (os.tmpdir() can contain an 8.3 alias). Separate cases retain aliases.
+  const base=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'umeko-cleanup-test-')));
   t.after(()=>fs.rm(base,{recursive:true,force:true}));
   const installDir=path.join(base,'Umeko'), updatesDir=path.join(base,'cache','updates');
   const cache=path.join(updatesDir,'a'.repeat(32)), downloadsDir=path.join(base,'downloads','Umeko');
@@ -199,7 +202,7 @@ async function cleanupFixture(t) {
     await fs.writeFile(path.join(dir,exe),dir===installDir?'current':'rollback');
   }
   await fs.writeFile(path.join(profileDir,'settings.json'),'user data');
-  const archive=path.join(downloadsDir,'Umeko-0.3.0-windows-x64-123abcd.zip');
+  const archive=path.join(downloadsDir,`Umeko-0.3.0-${platformKey()}-123abcd.zip`);
   await fs.writeFile(archive,'downloaded package');
   const job={installDir,executable:path.join(installDir,exe),cache,archive,resourceRelative:'',version:'v0.3.0',profileDir};
   const jobFile=path.join(cache,'job.json');
@@ -309,4 +312,199 @@ test('packaged application data inside the install directory prevents replacemen
   job.profileDir=path.join(job.installDir,'profile');
   await assert.rejects(prepare(job,jobFile),/用户数据/);
   assert.equal(await fs.readFile(job.executable,'utf8'),'old app');
+});
+
+async function cleanup113Fixture(t) {
+  const base=await fs.mkdtemp(path.join(os.tmpdir(),'umeko-cleanup-test-'));
+  t.after(()=>fs.rm(base,{recursive:true,force:true}));
+  const installDir=path.join(base,'installed'), cache=path.join(base,'updates',randomUUID().replaceAll('-',''));
+  const downloads=path.join(base,'Downloads','Umeko');
+  const profileDir=path.join(base,'profile');
+  for(const directory of [installDir,cache,downloads,profileDir])await fs.mkdir(directory,{recursive:true});
+  await fs.writeFile(path.join(installDir,'build-info.json'),JSON.stringify(info));
+  await fs.writeFile(path.join(installDir,exe),'new app');
+  const archive=path.join(downloads,`UmekoCpp-${version}-${platformKey()}.zip`);
+  await fs.writeFile(archive,'package');
+  const backup=installDir+'.previous-'+randomUUID();
+  await fs.cp(installDir,backup,{recursive:true});
+  await fs.writeFile(path.join(backup,exe),'old app');
+  const child=spawn(process.execPath,['-e','']);await once(child,'exit');
+  const job={repo,version,cache,installDir,executable:path.join(installDir,exe),resourceRelative:'',archive,
+    sha256:sha(Buffer.from('package')),parentPid:child.pid,profileDir};
+  const jobFile=path.join(cache,'job.json');
+  await fs.writeFile(jobFile,JSON.stringify(job));
+  await fs.writeFile(jobFile+'.ready',JSON.stringify({pid:child.pid}));
+  await fs.writeFile(jobFile+'.result',JSON.stringify({backup,installDir,version}));
+  const run=async()=>{
+    await fs.writeFile(jobFile+'.started',JSON.stringify({...job,updatesDir:path.dirname(cache),downloadsDir:downloads}));
+    const worker=spawn(process.execPath,[fileURLToPath(new URL('../runtime/update-engine.mjs',import.meta.url)),'cleanup',jobFile],{stdio:'pipe'});
+    let output='';worker.stdout.on('data',data=>output+=data);worker.stderr.on('data',data=>output+=data);
+    const [code]=await once(worker,'exit');assert.equal(code,0,output);
+  };
+  return {base,job,jobFile,backup,downloads,run};
+}
+
+test('successful update cleanup removes the old bundle and downloaded package',async t=>{
+  const f=await cleanup113Fixture(t);
+  await f.run();
+  for(const item of [f.backup,f.job.archive,f.job.cache])assert.equal(await fs.stat(item).then(()=>true,()=>false),false,item);
+  assert.equal(await fs.readFile(f.job.executable,'utf8'),'new app');
+});
+
+test('real package installation keeps rollback files until post-launch cleanup',async t=>{
+  const f=await cleanup113Fixture(t), bytes=zip(entries());
+  f.job.payloadRelative='UmekoCpp';f.job.sha256=sha(bytes);
+  await fs.writeFile(f.job.archive,bytes);await fs.writeFile(f.jobFile,JSON.stringify(f.job));
+  await fs.writeFile(f.jobFile+'.commit','{}');
+  await install(f.job,f.jobFile);
+  const result=JSON.parse(await fs.readFile(f.jobFile+'.result','utf8'));
+  assert.ok((await fs.stat(result.backup)).isDirectory());assert.ok((await fs.stat(f.job.archive)).isFile());
+  await f.run();
+  for(const item of [result.backup,f.backup,f.job.archive,f.job.cache])assert.equal(await fs.stat(item).then(()=>true,()=>false),false,item);
+  assert.equal(await fs.readFile(f.job.executable,'utf8'),'new app');
+});
+
+test('cleanup prunes historical packages only for the same edition and platform',async t=>{
+  for (const repository of ['umeko-desktop','umeko-desktop-cpp']) {
+    const f=await cleanup113Fixture(t);f.job.repo=repository;
+    await fs.writeFile(f.jobFile,JSON.stringify(f.job));
+    const name=(release,target=platformKey())=>repository==='umeko-desktop' ?
+      `Umeko-${release}-${target}-abcdef0.zip` : `UmekoCpp-v${release}-${target}.zip`;
+    const obsolete=[name('0.1.0'),name('0.2.0').replace('.zip','-2.zip'),name('0.2.0').replace('.zip','.tar-1.gz')];
+    const keep=[name('0.4.0'),name('0.2.0',platformKey()==='linux-arm64'?'windows-x64':'linux-arm64'),
+      'report.zip','UmekoCpp-v0.2.0-minimal-'+platformKey()+'.zip',
+      repository==='umeko-desktop'?'UmekoCpp-v0.2.0-'+platformKey()+'.zip':'Umeko-0.2.0-'+platformKey()+'-abcdef0.zip'];
+    for(const file of [...obsolete,...keep])await fs.writeFile(path.join(f.downloads,file),'old package');
+    const older=f.job.installDir+'.previous-'+randomUUID(), newer=f.job.installDir+'.previous-'+randomUUID();
+    for(const directory of [older,newer])await fs.cp(f.backup,directory,{recursive:true});
+    await fs.writeFile(path.join(older,'build-info.json'),JSON.stringify({...info,version:'0.1.0'}));
+    await fs.writeFile(path.join(newer,'build-info.json'),JSON.stringify({...info,version:'0.4.0'}));
+    const unrelated=f.job.installDir+'.previous-not-an-update';await fs.mkdir(unrelated);
+    await f.run();
+    for(const file of obsolete)assert.equal(await fs.stat(path.join(f.downloads,file)).then(()=>true,()=>false),false,file);
+    for(const file of keep)assert.equal(await fs.readFile(path.join(f.downloads,file),'utf8'),'old package',file);
+    assert.equal(await fs.stat(older).then(()=>true,()=>false),false);
+    assert.ok((await fs.stat(newer)).isDirectory());assert.ok((await fs.stat(unrelated)).isDirectory());
+  }
+});
+
+test('failed, superseded, or concurrently installing updates do not trigger cleanup',async t=>{
+  for(const situation of ['failed','superseded','locked']) {
+    const f=await cleanup113Fixture(t);
+    if(situation==='failed')await fs.rm(f.jobFile+'.result');
+    if(situation==='superseded')await fs.writeFile(path.join(f.job.installDir,'build-info.json'),JSON.stringify({...info,version:'0.4.0'}));
+    if(situation==='locked')await fs.mkdir(path.join(f.base,'.installed.update-lock'));
+    await f.run();
+    assert.equal(await fs.readFile(path.join(f.backup,exe),'utf8'),'old app');
+    assert.equal(await fs.readFile(f.job.archive,'utf8'),'package');
+    assert.ok((await fs.stat(f.job.cache)).isDirectory());
+  }
+});
+
+test('cleanup keeps modified archives and never follows backup directory links',async t=>{
+  const f=await cleanup113Fixture(t);
+  await fs.writeFile(f.job.archive,'user replacement');
+  const outside=path.join(f.base,'unrelated');await fs.cp(f.backup,outside,{recursive:true});
+  const link=f.job.installDir+'.previous-'+randomUUID();
+  await fs.symlink(outside,link,process.platform==='win32'?'junction':'dir');
+  await f.run();
+  assert.equal(await fs.readFile(f.job.archive,'utf8'),'user replacement');
+  assert.equal(await fs.readFile(path.join(outside,exe),'utf8'),'old app');
+  assert.ok((await fs.lstat(link)).isSymbolicLink());
+});
+
+test('cleanup removes abandoned partials but preserves recent pauses and active downloads',async t=>{
+  const f=await cleanup113Fixture(t), root=path.join(f.downloads,'.umeko-downloads');
+  const old=new Date(Date.now()-8*24*60*60*1000);
+  const paths=[];
+  for(const [index,kind] of ['abandoned','paused','active'].entries()) {
+    const folder=path.join(root,String(index).repeat(64));paths.push(folder);
+    await fs.mkdir(folder,{recursive:true});await fs.writeFile(path.join(folder,'full.part'),'partial');
+    if(kind==='active')await fs.writeFile(path.join(folder,'lock.json'),JSON.stringify({pid:process.pid}));
+    if(kind!=='paused')for(const file of [...(await fs.readdir(folder)).map(name=>path.join(folder,name)),folder])await fs.utimes(file,old,old);
+  }
+  await f.run();
+  assert.equal(await fs.stat(paths[0]).then(()=>true,()=>false),false);
+  for(const folder of paths.slice(1))assert.equal(await fs.readFile(path.join(folder,'full.part'),'utf8'),'partial');
+});
+
+test('cleanup bounds installer caches while retaining active jobs and recent failure logs',async t=>{
+  const f=await cleanup113Fixture(t), root=path.dirname(f.job.cache), locations={};
+  const old=new Date(Date.now()-8*24*60*60*1000);
+  for(const kind of ['successful','abandoned','recent','active','other-install']) {
+    const directory=path.join(root,randomUUID().replaceAll('-',''));locations[kind]=directory;
+    await fs.mkdir(directory);await fs.writeFile(path.join(directory,'installer-runtime'),'copied app');
+    const job={...f.job,cache:directory,version:'v0.2.0',...(kind==='other-install'?{installDir:path.join(f.base,'other')}:{})};
+    const file=path.join(directory,'job.json');await fs.writeFile(file,JSON.stringify(job));
+    if(kind==='successful')await fs.writeFile(file+'.result',JSON.stringify({installDir:job.installDir,version:job.version}));
+    if(kind==='active')await fs.writeFile(file+'.ready',JSON.stringify({pid:process.pid}));
+    if(['abandoned','active','other-install'].includes(kind))for(const file of [...(await fs.readdir(directory)).map(name=>path.join(directory,name)),directory])await fs.utimes(file,old,old);
+  }
+  await f.run();
+  for(const kind of ['successful','abandoned'])assert.equal(await fs.stat(locations[kind]).then(()=>true,()=>false),false,kind);
+  for(const kind of ['recent','active','other-install'])assert.equal(await fs.readFile(path.join(locations[kind],'installer-runtime'),'utf8'),'copied app',kind);
+});
+
+test('cleanup preserves a live installer even after replacement completed',async t=>{
+  const f=await cleanup113Fixture(t);
+  await fs.writeFile(f.jobFile+'.ready',JSON.stringify({pid:process.pid}));
+  await f.run();
+  assert.equal(await fs.readFile(path.join(f.backup,exe),'utf8'),'old app');
+  await fs.access(f.jobFile);await fs.access(f.job.archive);
+});
+
+test('cleanup receipts cannot override newer or other-edition backup metadata',async t=>{
+  for(const metadata of [{...info,version:'0.4.0'},{...info,edition:'minimal'}]) {
+    const f=await cleanup113Fixture(t);
+    await fs.writeFile(path.join(f.backup,'build-info.json'),JSON.stringify(metadata));
+    await f.run();
+    assert.equal(await fs.readFile(path.join(f.backup,exe),'utf8'),'old app');
+    await fs.access(f.jobFile+'.result');
+  }
+});
+
+test('recent partial-file writes survive cleanup even with an old cache directory',async t=>{
+  const f=await cleanup113Fixture(t), directory=path.join(f.downloads,'.umeko-downloads','f'.repeat(64));
+  await fs.mkdir(directory,{recursive:true});await fs.writeFile(path.join(directory,'full.part'),'recent progress');
+  const old=new Date(Date.now()-8*24*60*60*1000);await fs.utimes(directory,old,old);
+  await f.run();
+  assert.equal(await fs.readFile(path.join(directory,'full.part'),'utf8'),'recent progress');
+});
+
+test('cleanup keeps another installation staging while its update lock is held',async t=>{
+  const f=await cleanup113Fixture(t), stage=path.join(f.base,'.umeko-stage-Ab1234');
+  await fs.mkdir(stage);await fs.writeFile(path.join(stage,'payload'),'installing another app');
+  await fs.mkdir(path.join(f.base,'.another.update-lock'));
+  await f.run();
+  assert.equal(await fs.readFile(path.join(stage,'payload'),'utf8'),'installing another app');
+});
+
+test('cleanup canonicalizes receipt aliases and still protects modified packages',async t=>{
+  const f=await cleanup113Fixture(t), alias=f.base+'-alias';
+  await fs.symlink(f.base,alias,process.platform==='win32'?'junction':'dir');
+  t.after(()=>fs.rm(alias,{force:true,recursive:process.platform==='win32'}));
+  for(const key of ['installDir','cache','archive','executable','profileDir'])f.job[key]=path.join(alias,path.relative(f.base,f.job[key]));
+  await fs.writeFile(f.jobFile,JSON.stringify(f.job));
+  await fs.writeFile(f.job.archive,'user replacement');
+  await f.run();
+  assert.equal(await fs.readFile(f.job.archive,'utf8'),'user replacement');
+  await assert.rejects(fs.stat(f.backup),{code:'ENOENT'});
+  await assert.rejects(fs.stat(f.job.cache),{code:'ENOENT'});
+});
+
+test('cleanup retains recent or active temporary download jobs and reclaims abandoned ones',async t=>{
+  const f=await cleanup113Fixture(t), temporary=path.join(f.base,'temp');
+  f.job.tempDir=temporary;await fs.mkdir(temporary);
+  const locations={};
+  for(const [kind,suffix] of [['recent','11111111'],['abandoned','22222222'],['active','33333333']]) {
+    const directory=path.join(temporary,'umeko-download-job-'+suffix);locations[kind]=directory;
+    await fs.mkdir(directory);await fs.writeFile(path.join(directory,'job.json'),JSON.stringify({cache:f.downloads,...(kind==='active'?{parentPid:process.pid}:{})}));
+    if(kind!=='recent') {
+      const old=new Date(Date.now()-8*24*60*60*1000);
+      for(const file of [path.join(directory,'job.json'),directory])await fs.utimes(file,old,old);
+    }
+  }
+  await f.run();
+  await fs.access(path.join(locations.recent,'job.json'));await fs.access(path.join(locations.active,'job.json'));
+  await assert.rejects(fs.stat(locations.abandoned),{code:'ENOENT'});
 });

@@ -638,9 +638,10 @@ export async function install(job, jobFile) {
 async function cleanup(job, jobFile) {
   // Older installers still invoke this command. A successful OS spawn alone
   // does not confirm that the new application's UI can start.
-  if(!await exists(jobFile+'.started'))return;
+  if(!await exists(jobFile+'.started') || !await exists(jobFile+'.result'))return;
   const context=await readJSON(jobFile+'.started');
-  if(path.resolve(job.cache)!==path.dirname(jobFile) || path.resolve(context.updatesDir)!==path.dirname(path.dirname(jobFile)))return;
+  const cache=await fsp.realpath(path.dirname(jobFile));
+  if(await fsp.realpath(job.cache)!==cache || await fsp.realpath(context.updatesDir)!==path.dirname(cache))return;
   await cleanupStartup(context);
 }
 

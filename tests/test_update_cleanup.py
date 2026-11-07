@@ -1,5 +1,6 @@
 """Cleanup runs in a background worker only after a packaged application's startup."""
 import json
+import platform
 import shutil
 import sys
 import tempfile
@@ -32,27 +33,37 @@ class StartupCleanupTests(unittest.TestCase):
             downloads = base / 'downloads' / 'Umeko'
             backup = base / 'Umeko.previous-12345678-1234-1234-1234-123456789abc'
             for directory in (install, profile, cache, downloads, backup): directory.mkdir(parents=True)
-            metadata = dict(version='1.2.3', system='test', architecture='test')
+            metadata = dict(version='1.2.3', system=platform.system(), architecture=platform.machine())
             executable = Path('Contents/MacOS/Umeko') if sys.platform == 'darwin' else Path('Umeko.exe')
             for directory in (install, backup):
                 (directory / 'build-info.json').write_text(json.dumps(metadata))
                 (directory / executable).parent.mkdir(parents=True, exist_ok=True)
                 (directory / executable).write_text('program')
             (profile / 'settings.json').write_text('settings')
-            package = downloads / 'Umeko-1.2.3-windows-x64-123abcd.zip'
+            target = {'win32': 'windows', 'darwin': 'macos', 'linux': 'linux'}[sys.platform]
+            architecture = 'arm64' if platform.machine().lower() in ('arm64', 'aarch64') else 'x64'
+            package = downloads / f'Umeko-1.2.3-{target}-{architecture}-123abcd.zip'
             package.write_text('download')
             runtime = install / 'runtime'; runtime.mkdir()
             source = Path(__file__).resolve().parents[1] / 'runtime'
             for name in ('update-engine.mjs', 'update-cleanup.mjs'): shutil.copyfile(source / name, runtime / name)
+            resources = install
+            if sys.platform != 'win32':
+                # Exercise the same resolved-executable/aliased-resource boundary
+                # that Windows temporary 8.3 paths expose on native runners.
+                resources = base / 'install-alias'
+                resources.symlink_to(install, target_is_directory=True)
             locations = {QStandardPaths.CacheLocation: str(cache), QStandardPaths.DownloadLocation: str(base / 'downloads')}
             with patch('app.update.sys.frozen', True, create=True), \
                     patch('app.update.sys.executable', str(install / executable)), \
                     patch('app.update.QStandardPaths.writableLocation', side_effect=locations.__getitem__), \
                     patch('app.update.node_executable', return_value=shutil.which('node')):
-                worker = start_update_cleanup(install, profile)
+                worker = start_update_cleanup(resources, profile)
                 self.assertIsNotNone(worker)
                 self.wait(worker)
-            self.assertFalse(backup.exists())
+            log = cache / 'update-cleanup.log'
+            diagnostic = log.read_text(encoding='utf-8', errors='replace') if log.exists() else 'No cleanup worker log'
+            self.assertFalse(backup.exists(), diagnostic)
             self.assertFalse(package.exists())
             self.assertEqual((profile / 'settings.json').read_text(), 'settings')
             self.assertTrue((install / executable).exists())
