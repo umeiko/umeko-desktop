@@ -153,8 +153,9 @@ def main():
             def prepare_checkbox():
                 checkbox_geometry.clear()
                 wait_for(checkbox_ready,checkbox_not_ready)
-                # Fence a frame requested only after the current page is interactive.
-                frame=QSignalSpy(window.frameSwapped);window.requestUpdate()
+                # QQuickWindow.update() forces a frame even when the scene is idle;
+                # QWindow.requestUpdate() alone does not dirty the Quick render loop.
+                frame=QSignalSpy(window.frameSwapped);window.update()
                 target=[]
                 def positioned():
                     checkbox_geometry['frames']=frame.count()

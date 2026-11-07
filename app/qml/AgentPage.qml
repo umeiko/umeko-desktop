@@ -73,7 +73,12 @@ Column {
                 anchors.left: dshIcon.right; anchors.leftMargin: 16
                 anchors.right: dshAction.left; anchors.rightMargin: 24
                 anchors.verticalCenter: parent.verticalCenter; spacing: 7
-                Text { font.family: Theme.fontFamily; text: "DeepSeek Harness"; color: Theme.ink; font.pixelSize: Theme.font(16, visible); font.weight: Font.DemiBold }
+                RowLayout {
+                    width: parent.width; spacing: 8
+                    Text { Layout.maximumWidth: Math.max(0, parent.width - dshExperimentalBadge.width - parent.spacing); elide: Text.ElideRight; font.family: Theme.fontFamily; text: "DeepSeek Harness"; color: Theme.ink; font.pixelSize: Theme.font(16, visible); font.weight: Font.DemiBold }
+                    ExperimentalBadge { id: dshExperimentalBadge; objectName: "dshSettingsExperimentalBadge"; Layout.alignment: Qt.AlignVCenter }
+                    Item { Layout.fillWidth: true }
+                }
                 Text { font.family: Theme.fontFamily; width: parent.width; text: I18n.t("运行时路径、检查与下载"); color: Theme.muted; font.pixelSize: Theme.font(12, visible); elide: Text.ElideRight }
             }
             Row {
