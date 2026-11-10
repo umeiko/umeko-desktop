@@ -2,7 +2,7 @@
 
 这是可选 Widget 的能力。普通会话先通过 `widgets.list`（`activeOnly:true`）确认 `global-agents` 已启用，再读取它的 `widgets.docs`。
 
-**只有普通聊天会话中的 Agent 可以申请创建全局子智能体；全局子智能体本身不能创建全局子智能体，委派给其他代理也一样。** 宿主按绑定的真实会话身份执行这条规则，“允许自动被创建”开关只影响是否需要用户确认。`agent_bus.overview` 的 `creation.canCreate` 表示当前调用者是否可创建，`automaticAllowed` 表示该调用者是否可免确认创建。
+**只有普通聊天会话中的 Agent 可以申请创建全局子智能体；全局子智能体不能再创建全局子智能体，委派给其他代理也一样。** 宿主按绑定的真实会话身份执行这条规则，“允许自动被创建”开关只影响是否需要用户确认。`agent_bus.overview` 的 `creation.canCreate` 表示当前调用者是否可创建，`automaticAllowed` 表示该调用者是否可免确认创建。
 
 普通会话通过宿主工具 `umeko_desktop` 的 `agent_bus.create` 创建；`widgets.docs` 中显示 `methods:{}` 是因为这个 Widget 的功能都由 `agent_bus.*` 提供。
 
