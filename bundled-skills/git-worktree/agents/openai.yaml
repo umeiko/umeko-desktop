@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Worktree"
+  short_description: "Isolate task directories and preserve unfinished work"
+  default_prompt: "Use $git-worktree to prepare an isolated Git worktree for this task and verify the actual execution directory."

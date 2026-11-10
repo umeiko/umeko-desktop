@@ -119,7 +119,7 @@ def main():
     if not executable.is_file(): raise RuntimeError("Packaged executable is missing")
     skill_source = resources / 'bundled-skills/sources.json'
     skills = json.loads(skill_source.read_text(encoding='utf-8'))
-    if len(skills) != 9 or any(not (skill_source.parent / row['name'] / 'SKILL.md').is_file() for row in skills):
+    if len(skills) != 10 or any(not (skill_source.parent / row['name'] / 'SKILL.md').is_file() for row in skills):
         raise RuntimeError('Preinstalled Skill distribution is incomplete')
     report_dir = ROOT / "build/ci-smoke"
     report_dir.mkdir(parents=True, exist_ok=True)
