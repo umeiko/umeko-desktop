@@ -9,8 +9,26 @@ AnchoredPidPopup {
     property real heightLimit: 470
     readonly property bool useDshModels: backend.sessionBackend === "dsh" && backend.dshOwnConfig === true
     readonly property bool hasDshPath: backend.dshRuntime ? String(backend.dshRuntime.path || backend.dshRuntime.resolvedPath || "").trim().length > 0 : false
+    readonly property var reasoningSettings: {
+        backend.reasoningDetectionState
+        const config = backend.config
+        return typeof backend.modelReasoningSettings === "function"
+            ? backend.modelReasoningSettings(config.selectedProvider || "", config.selectedModel || "") || ({}) : ({})
+    }
+    readonly property string reasoningEffectHint: {
+        const row = reasoningSettings
+        if (!row.states) return ""
+        const levels = row.reasoningDetection || {}, format = row.reasoningFormatDetection || {}
+        const levelText = row.reasoningLevelsAuto === false ? I18n.t("档位手动设置")
+            : levels.state === "probing" ? I18n.t("档位检测中…")
+            : levels.verified === true ? I18n.t("已观察到档位变化") : I18n.t("档位效果未能确认")
+        const formatText = row.reasoningFormatAuto === false ? I18n.t("开关手动设置")
+            : format.state === "probing" ? I18n.t("开关检测中…")
+            : format.verified === true ? I18n.t("开关已确认") : I18n.t("开关效果未能确认")
+        return levelText + " · " + formatText
+    }
     fullWidth: 365
-    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 270 + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0) + (ownModelsHint.visible ? ownModelsHint.implicitHeight + 10 : 0)))
+    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 270 + (effectHint.visible ? effectHint.implicitHeight + reasoningControls.spacing + 3 : 0) + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0) + (ownModelsHint.visible ? ownModelsHint.implicitHeight + 10 : 0)))
     signal configure()
     signal dismissed()
     onAboutToShow: modelSearch.clear()
@@ -145,9 +163,16 @@ AnchoredPidPopup {
                 Text { text: reasoningControls.levels.length > 1 ? Reasoning.label(reasoningControls.levels[reasoningControls.levels.length - 1]) : ""; textFormat: Text.PlainText; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10); Layout.maximumWidth: reasoningControls.width * 0.6; elide: Text.ElideRight }
             }
             Text {
+                id: effectHint; objectName: "reasoningEffectHint"
+                visible: !root.useDshModels && text !== ""
+                text: root.reasoningEffectHint; textFormat: Text.PlainText
+                Layout.fillWidth: true; Layout.topMargin: 3; wrapMode: Text.Wrap
+                color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10)
+            }
+            Text {
                 id: offNote; objectName: "reasoningOffNote"
-                visible: backend.reasoningOffSupported === false
-                text: I18n.t("这个模型总会思考，选「关闭」也会思考")
+                visible: backend.reasoningOffSupported === false && (root.useDshModels || (root.reasoningSettings.reasoningFormatDetection || {}).onObserved === true)
+                text: I18n.t("本次未找到可关闭思考的方式")
                 Layout.fillWidth: true; Layout.topMargin: 3; wrapMode: Text.Wrap
                 color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10)
             }

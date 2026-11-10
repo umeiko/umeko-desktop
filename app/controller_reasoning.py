@@ -30,11 +30,13 @@ class ReasoningDiscovery(QObject):
                 for key in ('reasoningDetection', 'reasoningFormatDetection'):
                     if row[key]['state'] == 'probing':
                         row[key]['state'] = 'unknown'
-                # Earlier caches never tried off for formats without visible on.
-                # Revisit only automatic format results after this upgrade.
+                # Acceptance-only caches get one background effect measurement.
                 cached = row['reasoningFormatDetection']
-                if row['reasoningFormatAuto'] and cached['state'] == 'known' and 'offSupported' not in cached:
+                if row['reasoningFormatAuto'] and cached['state'] == 'known' and cached.get('evidenceVersion') != 1:
                     cached['state'] = 'unknown'
+                levels = row['reasoningDetection']
+                if row['reasoningLevelsAuto'] and levels['state'] == 'known' and levels.get('evidenceVersion') != 1:
+                    levels['state'] = 'unknown'
         for _ in range(2):
             threading.Thread(target=self._worker, daemon=True).start()
         self.c.changed.connect(self.sync_active)
@@ -239,7 +241,7 @@ class ReasoningDiscovery(QObject):
                 if row['upstream'] in levels:
                     found = levels[row['upstream']]
                     row['reasoningDetection'] = {'state': 'known', 'source': 'metadata',
-                                                 'levels': list(found), 'verified': True}
+                                                 'levels': list(found), 'verified': False}
                     if row['reasoningLevelsAuto']:
                         row['reasoningLevels'] = list(found)
                 if row.get('reasoningFormatAuto', True) or (row['reasoningLevelsAuto'] and row['upstream'] not in levels):
