@@ -24,9 +24,9 @@ class Service:
                 body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 owner.requests.append(body)
                 status, payload, headers = reply(body, len(owner.requests))
-                raw = json.dumps(payload).encode()
+                raw = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
                 self.send_response(status)
-                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Type', 'text/event-stream' if isinstance(payload, bytes) else 'application/json')
                 self.send_header('Content-Length', str(len(raw)))
                 for key, value in headers.items(): self.send_header(key, value)
                 self.end_headers()
@@ -242,6 +242,20 @@ class GatewayCompatibilityTests(unittest.TestCase):
     def test_invalid_millisecond_header_uses_valid_retry_after_seconds(self):
         from umeko_provider_sdk.compatibility import retry_delay
         self.assertEqual(retry_delay({'Retry-After-Ms': 'invalid', 'Retry-After': '2.5'}, 0), 2.5)
+
+    def test_null_keepalive_frame_allows_later_stream_output(self):
+        final = {'choices': [{'delta': {'content': 'OK'}, 'finish_reason': 'stop'}]}
+        stream = b'data: null\n\ndata: {}\n\n' + b'data: ' + json.dumps(final).encode() + b'\n\n'
+        gateway, _, _ = self.gateway(lambda body, n: (200, stream, {}))
+        self.assertEqual(gateway.complete('fixture', MESSAGES).text, 'OK')
+
+    def test_http_200_explicit_failure_status_retains_cause(self):
+        for payload in ({'success': False, 'message': 'response_format rejected', 'param': 'response_format'},
+                        {'status': 'failed', 'message': 'response_format rejected', 'param': 'response_format'}):
+            with self.subTest(payload=payload):
+                gateway, _, _ = self.gateway(lambda body, n, payload=payload: (200, payload, {}))
+                with self.assertRaisesRegex(Exception, 'response_format rejected'):
+                    gateway.complete('fixture', MESSAGES)
 
 
 if __name__ == '__main__':

@@ -35,6 +35,8 @@ def finish_reason(value):
 
 def upstream_error(event):
     error = event.get('error')
+    if error is None and (event.get('success') is False or event.get('status') in ('error', 'failed')):
+        error = event
     if error is None and event.get('type') == 'response.failed':
         error = (event.get('response') or {}).get('error') or {'message': 'Response failed'}
     if error is None and event.get('type') == 'error':
@@ -136,6 +138,8 @@ def normalize_openai_events(events):
     thoughts, tools, ids, last_tool = {}, {}, {}, {}
     completed, has_output = False, False
     for event in events:
+        if event is None:
+            continue
         if not isinstance(event, dict):
             raise ValueError('Invalid upstream completion event')
         error = upstream_error(event)

@@ -23,6 +23,7 @@ import urllib.request
 from . import current_request_cancelled
 from .errors import format_http_error
 from .network import TracedResponse
+from .streaming import upstream_error
 
 
 def _payload(value):
@@ -34,10 +35,9 @@ def _payload(value):
 
 def raise_api_error(payload):
     """Surface service error envelopes even when the HTTP status is 200."""
-    if isinstance(payload, dict) and (payload.get('error') or payload.get('type') == 'error'
-                                     or payload.get('type') == 'response.failed'):
-        detail = payload.get('response', {}).get('error') if payload.get('type') == 'response.failed' else payload
-        raise ValueError(format_http_error(200, detail or payload))
+    error = upstream_error(payload) if isinstance(payload, dict) else None
+    if error:
+        raise error
 
 
 def rejected_parameters(status, raw, automatic):
