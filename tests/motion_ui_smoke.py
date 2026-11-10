@@ -39,8 +39,14 @@ def evaluate(item, expression):
     return value.toVariant() if hasattr(value,'toVariant') else value
 try:
     backend.store.data.update(selectedProvider='fixture',selectedModel='fixture',providers=[{'id':'fixture','name':'Fixture','api':'openai','baseUrl':'http://127.0.0.1:1/v1','models':[{'upstream':'fixture','alias':'fixture'}]}]);backend.changed.emit();QTest.qWait(150)
-    button=find('modelSelector');popup=window.findChild(QObject,'modelPopup');click(button);QTest.qWait(30)
+    button=find('modelSelector');popup=window.findChild(QObject,'modelPopup');click(button)
     assert popup.property('desiredOpen') and popup.property('animating')
+    # The first FrameAnimation callback may not arrive within a fixed 30 ms
+    # on a shared CI runner. Observe an actual intermediate width, with a
+    # bounded wait; a popup that snaps directly to its target still fails.
+    for _ in range(200):
+        QTest.qWait(5)
+        if button.width()<popup.property('width')<365:break
     assert button.width()<popup.property('width')<365,'Popup did not grow from its button'
     click(button);QTest.qWait(30);assert not popup.property('desiredOpen'),'Second click reopened popup'
     before=popup.property('width');click(button);QTest.qWait(20)
