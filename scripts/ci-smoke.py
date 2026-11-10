@@ -60,8 +60,14 @@ def verify_windows_preview(executable, environment, report_dir):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     diagnostic = report_dir / 'web-preview.log'
     diagnostic.unlink(missing_ok=True)
+    finish_file = report_dir / 'web-preview-finish'
+    finish_file.unlink(missing_ok=True)
+    screenshot = report_dir / 'web-preview.png'
+    screenshot.unlink(missing_ok=True)
     env = dict(environment, QT_QPA_PLATFORM='windows', UMEKO_DIAGNOSTICS=str(diagnostic),
-               UMEKO_DATA_DIR=str(report_dir / 'preview-profile'), UMEKO_WEB_PREVIEW_URL=f'http://127.0.0.1:{server.server_port}/')
+               UMEKO_DATA_DIR=str(report_dir / 'preview-profile'), UMEKO_WEB_PREVIEW_URL=f'http://127.0.0.1:{server.server_port}/',
+               WEBVIEW2_USER_DATA_FOLDER=str((report_dir / 'preview-profile/webview2').resolve()),
+               UMEKO_SMOKE_FINISH_FILE=str(finish_file.resolve()))
     isolated_profile(report_dir / 'preview-profile')
     user32 = ctypes.windll.user32
     callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -70,7 +76,7 @@ def verify_windows_preview(executable, environment, report_dir):
     user32.IsWindowVisible.argtypes = [wintypes.HWND]
     user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
     seen = []
-    with subprocess.Popen([str(executable), '--demo', '--smoke'], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
+    with subprocess.Popen([str(executable), '--demo', '--smoke', '--snapshot', str(screenshot.resolve())], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
         @callback
         def child(handle, unused):
             name = ctypes.create_unicode_buffer(200)
@@ -88,6 +94,12 @@ def verify_windows_preview(executable, environment, report_dir):
             deadline = time.monotonic() + 20
             while process.poll() is None and time.monotonic() < deadline:
                 user32.EnumWindows(window, 0)
+                # Native WebView2 startup can outlast the application's old 5.5 s
+                # demo timer. Finish only after JavaScript's rendered-frame
+                # callback AND a visible native browser child are observed.
+                # Keep the existing 20 s deadline and all failure checks.
+                if ready.is_set() and seen and not finish_file.exists():
+                    finish_file.write_text('ready\n', encoding='utf-8')
                 time.sleep(0.05)
             if process.poll() is None:
                 process.kill()
@@ -99,6 +111,8 @@ def verify_windows_preview(executable, environment, report_dir):
                 raise RuntimeError('Frozen Windows browser failed: '
                     + f'returncode={process.returncode}, ready={ready.is_set()}, visibleChromeChild={bool(seen)}\n'
                     + log + '\nstderr:\n' + stderr.decode('utf-8', errors='replace'))
+            if not screenshot.is_file() or screenshot.read_bytes()[:8] != b'\x89PNG\r\n\x1a\n':
+                raise RuntimeError('Frozen Windows browser did not capture its verified preview')
         finally:
             server.shutdown()
 

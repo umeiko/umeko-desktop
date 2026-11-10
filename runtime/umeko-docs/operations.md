@@ -103,6 +103,8 @@
 | `agent_bus.set_connection` | `sessionId: string`, `enabled: boolean` | 无 | 否 |
 | `agent_bus.overview` | 无 | 无 | 否 |
 | `agent_bus.requests` | 无 | 无 | 否 |
+| `agent_bus.routes` | 无 | 无 | 否 |
+| `agent_bus.route` | `routeId: string`, `decision: string`, `reason: string`, `taskId: string=""`, `targetId: string=""` | 无 | 否 |
 | `agent_bus.dispatch` | `targetId: string`, `text: string` | 无 | 否 |
 | `agent_bus.reply` | `requestId: string`, `result: string`, `status: string="completed"` | 无 | 否 |
 

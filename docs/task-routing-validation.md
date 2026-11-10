@@ -46,3 +46,11 @@ English shared task report:
 - Earlier acceptance also passed the existing global-agents and task-records UI regressions. The latter recorded QML incubation/destruction and teardown QProcess warnings; those historical runs are not represented as fresh submission runs.
 - No installer/package verification, upstream merge, release or publication was performed. CI results must be assessed independently after the PR opens.
 - Queue scheduling, structured execution attempts and human-action management remain in #44. Executor-reported completion remains distinct from user acceptance. Work is never automatically replayed after restart or timeout.
+
+## CI follow-up
+
+The first PR run (`42763460635`) found one failure among 1,117 Linux Python tests: the generated `runtime/umeko-docs/operations.md` omitted the two new routing operations. Regenerating it with `scripts/build-umeko-docs.py` fixes the reference contract without changing the allowlist.
+
+Windows packaging reached `QML_READY` and a visible native Chromium child, but the packaged preview exited successfully before the page's rendered-frame callback reached the verifier. The preview smoke had a fixed 5.5-second application quit timer, independent of the verifier's existing 20-second deadline. The controlled packaged-preview run now waits for the verifier's completion marker, after both the JavaScript callback and visible native child are observed; it requests an active rendering window, uses a private WebView2 profile, and captures a preview PNG before exiting. Normal launches and ordinary smoke timing are unchanged. The original readiness, native-window, QML-error, exit-status and 20-second timeout checks remain in place, with an additional valid-PNG check.
+
+Local follow-up: 134 targeted Python tests and 12 Node tests passed. A real Qt entrypoint process was kept alive beyond the old 5.5-second cutoff, captured no early snapshot, then saved its PNG and exited only when its verifier marker arrived. Capture failure has a failing-exit regression. This Linux lifecycle test is not a Windows browser test; native packaged-browser verification and the full suite must be assessed from the new CI run.
