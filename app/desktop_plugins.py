@@ -58,6 +58,8 @@ class DesktopPlugins(QObject):
         self.global_agents=GlobalAgents(self)
         self.synchronize()
     def _task_records_changed(self):
+        if hasattr(self, 'global_agents'):
+            self.global_agents.changed(persist=False)
         if self._page == 'task-records':
             self.event.emit('tasks.changed', {})
 

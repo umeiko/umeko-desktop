@@ -54,7 +54,7 @@ export function createUmekoControl({ emit, timeoutMs = 90000 }) {
 export function coordinatorToolGate(event) {
   if (event.toolName === UMEKO_TOOL && event.input?.operation === 'agent_bus.create')
     return { block: true, reason: 'Only ordinary session Agents may create global subagents. Global subagents cannot create other global subagents.' };
-  if (event.toolName !== UMEKO_TOOL || !['agent_bus.overview','agent_bus.dispatch','agent_bus.requests','agent_bus.reply','agent_bus.connections','agent_bus.set_connection','help','models.list'].includes(event.input?.operation))
+  if (event.toolName !== UMEKO_TOOL || !['agent_bus.overview','agent_bus.routes','agent_bus.route','agent_bus.dispatch','agent_bus.requests','agent_bus.reply','agent_bus.connections','agent_bus.set_connection','help','models.list'].includes(event.input?.operation))
     return { block: true, reason: 'Global coordinators use the opt-in agent_bus.* API; delegate workspace work to a bridged session.' };
 }
 export function coordinatorExtension(pi) { pi.on('tool_call', coordinatorToolGate); }

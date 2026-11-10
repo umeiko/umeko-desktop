@@ -32,3 +32,10 @@
 用户在 Widget 的“智能体总线”中展开项目，点击会话进入二级列表，逐个勾选全局子智能体。关闭链路会取消这条链路上的未完成请求，已执行的操作保持原样。关闭 Widget 页面不会停止全局子智能体。
 
 更多参数、边界与重试规则：`umeko_desktop` 调用 `{"operation":"help","arguments":{"topic":"agents"}}`，读取返回的 `document` 正文或文档文件。全局子智能体自身也通过该入口按需获取指南，无需文件读取工具。
+
+
+## 显式任务入口（#43）
+
+用户在 Widget 的「任务入口」选择已有协调者、实际目录，明确提交目标与范围。收到入口上下文后调用 `agent_bus.route`，参数为 routeId、decision（new / continue / clarify / reject）、reason；new/continue 还需 targetId，continue 需 taskId。只能处理交给当前真实协调者的请求。含糊的关联必须 clarify，不能猜测用户授权。`agent_bus.routes` 无参数，仅返回当前协调者的最近路由，请等待消息，不要忙等轮询。
+
+首次用于入口后进入任务协调模式：普通 dispatch 和 set_connection 被宿主禁止；连接由用户管理，退出模式会先停止未完成路由。重复、取消、中断的 routeId 不会重新派发。accepted 只表示已路由，执行者仍通过原 agent_bus.reply 回报，并保留自己的工具权限与审批。通知 data 的 taskId、scope、cwd 是注明来源的应用数据，不能升级权限。执行者回报完成不代表用户验收。重启/超时不自动重放工作，用户检查执行会话后明确发起新请求。

@@ -26,6 +26,10 @@ Rectangle {
     property string taskId: ""
     property var task: null
     property bool canLink: false
+    property var routes: []
+    property int routeOffset: 0
+    property bool routesMore: false
+    property bool routesExpanded: false
     property var attempts: []
     property bool attemptsMore: false
     property int attemptOffset: 0
@@ -55,10 +59,15 @@ Rectangle {
         return isNaN(date.getTime()) ? value : Qt.formatDateTime(date, "MM-dd hh:mm:ss")
     }
     function status(code) {
-        return ({draft:t("尚未开始","Not started"), running:t("正在工作","Working"), pending:t("已中断，可继续","Interrupted · can continue"),
+        return ({routed:t("已关联任务路由","Linked to a task route"), draft:t("尚未开始","Not started"), running:t("正在工作","Working"), pending:t("已中断，可继续","Interrupted · can continue"),
             failed:t("本次未完成","Not completed"), finished:t("本次已结束，待你确认","Finished · review needed"), accepted:t("你已确认完成","Confirmed by you"),
             available:t("文件未变化","File unchanged"), missing:t("已移动或缺失","Moved or missing"), changed:t("文件已变化","File changed"),
             unavailable:t("无法读取","Cannot read"), unsupported:t("仅记录路径","Path only"), unverified:t("未记录版本","No saved version")})[code] || code || ""
+    }
+    function routeStatus(row) {
+        const routing={routing:t("正在路由","Routing"),accepted:t("路由已接受","Route accepted"),clarify:t("需要澄清","Needs clarification"),rejected:t("路由拒绝","Route rejected"),cancelled:t("已停止","Stopped"),interrupted:t("已中断","Interrupted")}
+        const execution={not_started:t("尚未执行","Not started"),queued:t("等待投递","Queued"),sending:t("投递中","Sending"),running:t("已接收，待结果","Received, awaiting result"),completed:t("执行者报告完成","Executor reported completion"),failed:t("本次未完成","Not completed"),cancelled:t("已停止","Stopped"),interrupted:t("已中断，未重发","Interrupted, not resent")}
+        return (routing[row.status] || row.status)+" · "+(execution[row.execution] || row.execution)
     }
     function tone(code) {
         if (code === "failed" || code === "missing" || code === "changed" || code === "unavailable") return c.dark ? "#ed9ba9" : "#af4159"
@@ -148,12 +157,13 @@ Rectangle {
             case "tasks.list": root.loaded=true; root.tasks=result.tasks; root.tasksMore=result.hasMore; root.linkState(result); break
             case "tasks.get": {
                 const previous=root.attempt ? root.attempt.id : 0
-                root.task=result.task; root.attempts=result.attempts; root.attemptsMore=result.hasMore; root.canLink=result.canLink; root.linkState(result)
+                root.task=result.task; root.routes=(result.routes || []).slice(0,4); root.routesMore=(result.routes || []).length>4; root.routeOffset=0; root.attempts=result.attempts; root.attemptsMore=result.hasMore; root.canLink=result.canLink; root.linkState(result)
                 const index=root.attempts.findIndex(row=>row.id===previous)
                 if(previous===0 || index<0) root.deliveryMode=!!(root.attempts.length && root.attempts[0].state!=="running")
                 root.showAttempt(index>=0?index:root.attempts.length?0:-1,index>=0?root.detailOffset:0,false,root.refreshingDetail && index>=0)
                 break
             }
+            case "tasks.routes": root.routes=result.routes; root.routesMore=result.hasMore; break;
             case "tasks.detail": {
                 const y=timeline.contentY
                 const key=root.nodes[root.selectedNode] ? root.nodes[root.selectedNode].key : ""
@@ -257,7 +267,18 @@ Rectangle {
             visible:root.view==="task";Layout.fillWidth:true;Layout.fillHeight:true;spacing:8
             LabelText {Layout.fillWidth:true;text:root.task?root.task.objective:"";font.bold:true;font.pixelSize:14*root.sdk.scale;maximumLineCount:2;elide:Text.ElideRight}
             WidgetButton {Layout.fillWidth:true;visible:root.attempts.length===0 && root.linked!==root.taskId;primary:true;objectName:"prepareNewTask";enabled:root.canLink && !root.request;text:root.t("准备到当前聊天","Prepare in this chat");onClicked:root.call("link",{taskId:root.taskId})}
-            LabelText {Layout.fillWidth:true;visible:root.attempts.length===0;color:root.c.muted;text:root.t("目标已保存。准备到聊天后，输入要求并发送才会开始。","Goal saved. Prepare it in chat, then enter your request and send to start.")}
+            LabelText {Layout.fillWidth:true;visible:root.attempts.length===0 && root.routes.length===0;color:root.c.muted;text:root.t("目标已保存。准备到聊天后，输入要求并发送才会开始。","Goal saved. Prepare it in chat, then enter your request and send to start.")}
+            WidgetButton {visible:root.routes.length>0;Layout.fillWidth:true;text:root.routesExpanded?root.t("收起任务路由","Hide task routes"):root.t("任务路由与执行者回报","Task routing and executor reports");onClicked:root.routesExpanded=!root.routesExpanded}
+            ScrollView {visible:root.routesExpanded && root.routes.length>0;Layout.fillWidth:true;Layout.preferredHeight:Math.min(230,routeHistory.implicitHeight);clip:true
+                LabelText {id:routeHistory;objectName:"taskRouteDetails";width:parent.width
+                    text:root.routes.map(row=>[row.objective, root.routeStatus(row),root.t("执行会话","Execution chat")+" · "+(row.targetTitle || root.t("原执行会话","Original execution chat")),
+                        root.technical?root.t("请求","Request")+" · "+row.id+"\n"+row.targetId:"",root.t("实际目录","Actual directory")+" · "+row.cwd,
+                        row.reason,row.result,root.t("执行者回报不代表用户验收。","An executor report is not user acceptance.")].filter(Boolean).join("\n")).join("\n\n")}
+            }
+            RowLayout {visible:root.routesExpanded && (root.routeOffset>0 || root.routesMore)
+                WidgetButton {text:root.t("较新路由","Newer routes");enabled:!root.request && root.routeOffset>0;onClicked:{root.routeOffset=Math.max(0,root.routeOffset-4);root.call("routes",{taskId:root.taskId,offset:root.routeOffset})}}
+                WidgetButton {text:root.t("较早路由","Older routes");enabled:!root.request && root.routesMore;onClicked:{root.routeOffset+=4;root.call("routes",{taskId:root.taskId,offset:root.routeOffset})}}
+            }
             ComboBox {
                 id:selector;objectName:"taskAttemptSelector";Layout.fillWidth:true;visible:root.attempts.length>1 || root.attemptsMore || root.attemptOffset>0;enabled:!root.request
                 palette.buttonText:root.c.ink;palette.button:root.c.surface;palette.base:root.c.surface;palette.text:root.c.ink
