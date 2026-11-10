@@ -1,5 +1,6 @@
 """Response compatibility through a real local HTTP connection."""
 import json
+import os
 import tempfile
 import threading
 import unittest
@@ -203,8 +204,11 @@ class OpenAIResponseCompatibility(unittest.TestCase):
             [delta({'content': '<thi'}), delta({'content': 'nk>plan</think>answer'}, 'end_turn')],
             [delta({'tool_calls': [dict(id='call', function=dict(name='lookup', arguments={'value': 1}))]}, 'tool_use')],
         ]
+        temp_root = Path('C:/UmekoTests/p124') if os.name == 'nt' else None
+        if temp_root is not None:
+            temp_root.mkdir(parents=True, exist_ok=True)
         for events in cases:
-            with fake_response(events, done=False) as response, tempfile.TemporaryDirectory(dir=r'C:\UmekoTests\p124') as directory:
+            with fake_response(events, done=False) as response, tempfile.TemporaryDirectory(dir=temp_root) as directory:
                 store = Store(Path(directory))
                 store.data['providers'] = [dict(id='fixture', name='Fixture', api='openai', key='fixture-key', baseUrl=response.url + '/v1', proxy=dict(mode='direct'), models=[dict(alias='fixture-model', upstream='fixture-model')])]
                 gateway = Gateway(store, UnconfiguredAdapter())

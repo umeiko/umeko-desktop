@@ -9,10 +9,7 @@ from email.utils import format_datetime
 import http.client
 import importlib
 import json
-import os
-from pathlib import Path
 import socket
-import tempfile
 import threading
 import time
 import unittest
@@ -29,12 +26,6 @@ try:
     compatibility = importlib.import_module('umeko_provider_sdk.compatibility')
 except ModuleNotFoundError:
     compatibility = None
-
-TEMP_ROOT = Path('C:/UmekoTests/p124')
-TEMP_ROOT.mkdir(parents=True, exist_ok=True)
-tempfile.tempdir = str(TEMP_ROOT)
-os.environ['TMP'] = os.environ['TEMP'] = str(TEMP_ROOT)
-
 
 def open_compatible(opener, request, **kwargs):
     if compatibility is None:

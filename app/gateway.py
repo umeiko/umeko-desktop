@@ -291,7 +291,7 @@ class Gateway:
             automatic.add('max_output_tokens' if p.get('wireApi') == 'responses' else 'max_tokens')
         if not probe_override and 'stream' not in user_parameters:
             automatic.add('stream')
-        if p.get('wireApi') == 'responses':
+        if p.get('wireApi') == 'responses' and not probe_override:
             automatic.update(name for name in ('store',) if name not in user_parameters)
             if 'reasoning_effort' in automatic:
                 automatic.add('reasoning')
@@ -306,10 +306,20 @@ class Gateway:
                                  records=trace.get()) as response:
                 def checked_events():
                     for event in response_events(response):
-                        raise_api_error(event)
+                        try:
+                            raise_api_error(event)
+                        except ValueError:
+                            # Retain both SSE bytes and a structured error for
+                            # the existing reasoning capability reader.
+                            records = trace.get()
+                            if records:
+                                failure = records[-1]['response']
+                                failure['streamBody'] = failure.get('body', '')
+                                failure['body'] = json.dumps(event, ensure_ascii=False)
+                            raise
                         yield event
                 events = checked_events()
-                yield from anthropic_events_to_openai(events) if p["api"] == "anthropic" else responses_events(events) if p.get('wireApi') == 'responses' else normalize_openai_events(events)
+                yield from anthropic_events_to_openai(events) if p["api"] == "anthropic" else responses_events(events) if p.get('wireApi') == 'responses' else events if probe_override else normalize_openai_events(events)
         except urllib.error.HTTPError as exc:
             try:
                 raise ValueError(format_http_error(exc.code, exc.read(), exc.headers, [p['key']])) from None

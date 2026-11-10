@@ -15,17 +15,16 @@ from umeko_provider_sdk import ProviderError
 from umeko_provider_sdk.http import HttpSession
 from umeko_provider_sdk.network import network_scope
 
-# Acceptance artifacts and temporary profiles stay outside the Codex profile.
-TEMP_ROOT = Path('C:/UmekoTests/p124')
-TEMP_ROOT.mkdir(parents=True, exist_ok=True)
-tempfile.tempdir = str(TEMP_ROOT)
-os.environ['TMP'] = os.environ['TEMP'] = str(TEMP_ROOT)
 PNG = b'\x89PNG\r\n\x1a\nfixture'
 
 
 class DirectCompatibilityTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir=TEMP_ROOT)
+        # Keep this Windows fixture outside Codex without changing other tests.
+        temp_root = Path('C:/UmekoTests/p124') if os.name == 'nt' else None
+        if temp_root is not None:
+            temp_root.mkdir(parents=True, exist_ok=True)
+        self.temp = tempfile.TemporaryDirectory(dir=temp_root)
         self.addCleanup(self.temp.cleanup)
         self.calls = []
         self.reject = None
