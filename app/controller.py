@@ -183,6 +183,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.adapter = load_adapter(self.store.directory)
         self._provider_plugins = ProviderPlugins(self)
         self.gateway = Gateway(self.store, self.adapter, self._provider_plugins)
+        self.gateway.diagnostics.changed.connect(self.changed.emit)
         self.private_token = secrets.token_urlsafe(40)
         self.private_server = LocalServer(self.gateway, 0, self.private_token, private=True)
         self.public_server = None
@@ -530,6 +531,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         data["server"].pop("keys", None)
         for provider in data["providers"]:
             provider["hasKey"] = bool(provider.pop("key", ""))
+            provider.update(self.gateway.diagnostics.latest_compatibility(provider['id'], data.get('language', 'zh')))
             for model in provider["models"]:
                 model.update(normalize_model(model))
         return data
@@ -1195,6 +1197,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Slot(str, str, result=bool)
     def redetectModelReasoning(self, provider, alias):
         row = self._reasoning_discovery.model(provider, alias)
+        if row:
+            self.gateway.compatibility.clear_provider(provider)
         return self._reasoning_discovery.refresh(provider, only=row['upstream']) if row else False
 
     @Slot(result=bool)
@@ -1780,6 +1784,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 self.store.data["selectedModel"] = current if current in [m["alias"] for m in models] else models[0]["alias"]
             self._provider_plugins.repair_selection(provider_id)
             self.store.save()
+            self.gateway.compatibility.clear_provider(provider_id)
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("供应商配置已保存")
@@ -1795,6 +1800,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if not provider or provider["api"] not in ("openai", "anthropic"):
             return self.toast.emit("请在账号页刷新插件模型 / Refresh plugin models on the account page")
         self.toast.emit("正在获取供应商模型信息 / Fetching provider model information")
+        self.gateway.compatibility.clear_provider(provider_id)
         self._reasoning_discovery.refresh(provider_id)
 
     @Slot(str)
@@ -1830,9 +1836,13 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 if p["api"] == "plugin" and {m["upstream"] for m in models} != {m["upstream"] for m in p["models"]}:
                     raise ValueError("插件的模型 ID 请在账号页通过刷新获取")
                 p["models"] = models
+            changed_providers = [p['id'] for p in providers
+                                 if p['models'] != self.gateway.provider(p['id'])['models']]
             self.store.data["providers"] = providers
             self._provider_plugins.repair_selection()
             self.store.save()
+            for provider_id in changed_providers:
+                self.gateway.compatibility.clear_provider(provider_id)
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("模型映射已保存")

@@ -244,6 +244,9 @@ test('first successful start removes legacy orphans, staging and stale partials 
   const recent=path.join(context.downloadsDir,'.umeko-downloads','d'.repeat(64));
   for(const directory of [stage,stale,active,recent])await fs.mkdir(directory,{recursive:true});
   await fs.writeFile(path.join(stale,'full.part'),'old partial');
+  const old=new Date(Date.now()-60000);
+  await fs.utimes(path.join(stale,'full.part'),old,old);
+  await fs.utimes(stale,old,old);
   await fs.writeFile(path.join(active,'lock.json'),JSON.stringify({pid:process.pid}));
   await fs.utimes(recent,new Date(Date.now()+60000),new Date(Date.now()+60000));
   const unrelated=path.join(context.downloadsDir,'my-document.zip');await fs.writeFile(unrelated,'user file');

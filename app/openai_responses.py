@@ -1,4 +1,5 @@
 """Bridge the agent's chat/tool history to the official Responses API."""
+from umeko_provider_sdk.streaming import tool_arguments, upstream_error
 
 def text_of(content):
     return content if isinstance(content, str) else '\n'.join(p.get('text', '') for p in content or [] if p.get('type') == 'text')
@@ -23,14 +24,21 @@ def responses_request(messages, tools, max_tokens, parameters):
                 if role == 'assistant': parts = text_of(content)
             items.append(dict(role=role, content=parts))
         for call in message.get('tool_calls') or []:
-            items.append(dict(type='function_call', call_id=call['id'], name=call['function']['name'], arguments=call['function']['arguments']))
-    body = dict(input=items, max_output_tokens=max_tokens, stream=True, store=False)
-    if tools: body['tools'] = [dict(type='function', name=t['name'], description=t.get('description', ''), parameters=t['parameters'], strict=False) for t in tools]
-    for name in ('temperature', 'top_p', 'parallel_tool_calls', 'tool_choice'):
-        if name in parameters: body[name] = parameters[name]
-    if isinstance(body.get('tool_choice'), dict) and body['tool_choice'].get('type') == 'function':
+            items.append(dict(type='function_call', call_id=call['id'], name=call['function']['name'], arguments=tool_arguments(call['function']['arguments'])))
+    # Provider options are explicit user input, including vendor extensions.
+    # Only private host metadata and the translated chat reasoning alias leave
+    # this mapping; native Responses fields retain their configured values.
+    body = {name: value for name, value in parameters.items()
+            if not name.startswith('_umeko_') and name != 'reasoning_effort'}
+    body.setdefault('input', items)
+    body.setdefault('stream', True)
+    body.setdefault('store', False)
+    if not any(name in body for name in ('max_output_tokens', 'max_completion_tokens', 'max_tokens')):
+        body['max_output_tokens'] = max_tokens
+    if tools and 'tools' not in body: body['tools'] = [dict(type='function', name=t['name'], description=t.get('description', ''), parameters=t['parameters'], strict=t.get('strict', False)) for t in tools]
+    if isinstance(body.get('tool_choice'), dict) and body['tool_choice'].get('type') == 'function' and 'function' in body['tool_choice']:
         body['tool_choice'] = dict(type='function', name=body['tool_choice']['function']['name'])
-    if parameters.get('reasoning_effort'): body['reasoning'] = dict(effort=parameters['reasoning_effort'])
+    if parameters.get('reasoning_effort') and 'reasoning' not in body: body['reasoning'] = dict(effort=parameters['reasoning_effort'])
     return body
 
 
@@ -41,11 +49,12 @@ def responses_events(events):
     def tool(item):
         slot = len(calls)
         calls[item['id']] = dict(index=slot, arguments=bool(item.get('arguments')))
-        return chunk(dict(tool_calls=[dict(index=slot, id=item['call_id'], type='function', function=dict(name=item['name'], arguments=item.get('arguments') or ''))]))
+        return chunk(dict(tool_calls=[dict(index=slot, id=item['call_id'], type='function', function=dict(name=item['name'], arguments=tool_arguments(item.get('arguments'))))]))
     for event in events:
         kind = event.get('type')
-        if kind in ('error', 'response.failed'):
-            raise ValueError(str(event.get('error') or event.get('response', {}).get('error') or 'Responses API failed'))
+        error = upstream_error(event)
+        if error:
+            raise error
         if kind == 'response.output_text.delta' or kind == 'response.refusal.delta':
             text_seen = True
             yield chunk(dict(content=event['delta']))
@@ -56,13 +65,14 @@ def responses_events(events):
         elif kind in ('response.function_call_arguments.delta', 'response.function_call_arguments.done'):
             slot = calls.get(event['item_id'])
             if slot is None: raise ValueError('Responses tool call missing its declaration')
-            arguments = event.get('delta', '') if kind.endswith('.delta') else (event.get('arguments', '') if not slot['arguments'] else '')
+            arguments = tool_arguments(event.get('delta', '')) if kind.endswith('.delta') else (tool_arguments(event.get('arguments', '')) if not slot['arguments'] else '')
             if arguments:
                 slot['arguments'] = True
                 yield chunk(dict(tool_calls=[dict(index=slot['index'], function=dict(arguments=arguments))]))
         elif kind in ('response.completed', 'response.incomplete') or event.get('object') == 'response':
             response = event.get('response', event)
-            if response.get('status') == 'failed': raise ValueError(str(response.get('error')))
+            if response.get('status') == 'failed':
+                raise upstream_error(dict(type='response.failed', response=response))
             for item in response.get('output', []):
                 if item['type'] == 'function_call' and item['id'] not in calls: yield tool(item)
                 elif item['type'] == 'message' and not text_seen:

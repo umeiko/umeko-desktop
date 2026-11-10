@@ -66,6 +66,6 @@ def transient_failure(error, http=()):
 
 def upstream_failure(error):
     retryable = bool(getattr(error, 'retryable', False))
-    return {'type': 'upstream_error', 'code': 'umeko_tls_certificate' if getattr(error, 'tls_code', '') else 'umeko_stream_interrupted' if retryable else 'umeko_request_failed',
+    return {'type': 'upstream_error', 'code': 'umeko_tls_certificate' if getattr(error, 'tls_code', '') else 'umeko_http_retry_finished' if getattr(error, 'http_retry_managed', False) else 'umeko_stream_interrupted' if retryable else 'umeko_request_failed',
             **({'tlsCode': error.tls_code} if getattr(error, 'tls_code', '') else {}),
             'retryable': retryable, 'message': ('Network error: stream interrupted. ' if retryable and '供应商返回 HTTP ' not in str(error) else '') + str(error)}

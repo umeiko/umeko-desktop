@@ -85,6 +85,7 @@ class RuntimePathTests(unittest.TestCase):
         (source_io / "session-capabilities.mjs").write_text("fixture")
         (source_io / "skills.mjs").write_text("fixture")
         (source_io / "generation.mjs").write_text("fixture")
+        (source_io / "http-retry-boundary.mjs").write_text("fixture")
         (source_io / "system-prompt.mjs").write_text("fixture")
         (source_io / "update-cleanup.mjs").write_text("fixture")
         (source_io / "markdown-preview.mjs").write_text("fixture")

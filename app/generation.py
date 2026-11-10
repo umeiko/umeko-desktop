@@ -1,7 +1,7 @@
 """Bounded OpenAI-compatible media generation using existing provider accounts.
 
 Successful binary/base64 bodies are deliberately excluded from HTTP diagnostics.
-No retries are performed here: request failures use the shared classification.
+Compatibility retries preserve user options and share provider rejection memory.
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ import urllib.parse
 import urllib.request
 
 from umeko_provider_sdk import ProviderError, current_request_cancelled
+from umeko_provider_sdk.compatibility import compatible_open, raise_api_error
 from umeko_provider_sdk.network import network_scope, proxy_handler, tls_context
 from .multimodal_settings import normalize
 from .provider_errors import format_http_error, safe_text
@@ -88,9 +89,10 @@ class _Transport:
     a duplicate still permits shutdown while that response's file is being read.
     DNS is resolved by the OS, then cancellation is checked before connecting.
     """
-    def __init__(self, settings, cancelled, timeout=TIMEOUT):
+    def __init__(self, settings, cancelled, timeout=TIMEOUT, *, memory=None, scope=()):
         self.cancelled = cancelled
         self.timeout = timeout
+        self.memory, self.scope = memory, scope
         self.done = threading.Event()
         self.lock = threading.Lock()
         self.handles = []
@@ -181,22 +183,33 @@ class _Transport:
             for handle in self.handles:
                 handle.close()
 
-    def request(self, url, headers, records, data=None, method=None):
+    def request(self, url, headers, records, data=None, method=None, *, automatic=()):
         self.check()
         method = method or ('POST' if data is not None else 'GET')
-        record = {'request': {'url': urllib.parse.urlunsplit(urllib.parse.urlsplit(url)._replace(query='')),
-                              'method': method, 'headers': headers},
-                  'response': {'status': None, 'headers': {}, 'body': ''}}
-        records.append(record)
+        first_attempt = len(records)
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
-            with self.opener.open(request, timeout=self.timeout) as response:
-                record['response'].update(status=response.status, headers=dict(response.headers))
+            with compatible_open(self.opener, request, timeout=self.timeout, memory=self.memory,
+                                 scope=self.scope, automatic=automatic, records=records,
+                                 cancelled=self.cancelled) as response:
                 raw = self.read(response, MAX_RESPONSE)
+                record = records[-1]
                 record['response']['bytes'] = len(raw)
+                # Some services report API errors with HTTP 200, including on
+                # binary media routes. Keep their JSON cause in diagnostics.
+                if (response.headers.get_content_type() == 'application/json'
+                        or raw.lstrip().startswith((b'{', b'['))):
+                    try:
+                        payload = json.loads(raw)
+                    except (ValueError, UnicodeError):
+                        pass
+                    else:
+                        raise_api_error(payload)
+                record['response']['body'] = ''
                 return raw, response.headers
         except urllib.error.HTTPError as exc:
             try:
+                record = records[-1]
                 record['response'].update(status=exc.code, headers=dict(exc.headers))
                 record['response']['body'] = self.read(exc, 64 * 1024, truncate=True).decode('utf-8', 'replace')
             finally:
@@ -206,6 +219,11 @@ class _Transport:
         except Exception:
             self.check()
             raise
+        finally:
+            for record in records[first_attempt:]:
+                request_record = record.get('request', {})
+                request_record['url'] = urllib.parse.urlunsplit(
+                    urllib.parse.urlsplit(request_record.get('url', url))._replace(query=''))
 
     def read(self, response, limit, truncate=False):
         declared = response.headers.get('Content-Length')
@@ -398,13 +416,23 @@ def generate(gateway, body, on_progress=None, *, poll_interval=2.0):
                     payload.update(input=text, voice=options['voice'], response_format=options.get('format', 'mp3'), speed=options.get('speed', 1))
                 else:
                     payload.update(prompt=text, **options)
-                with _Transport(provider.get('proxy'), cancelled) as transport:
+                saved = (gateway.store.data.get('multimodal') or {}).get(kind) or {}
+                automatic = set()
+                if kind == 'image' and 'count' not in body and 'count' not in saved:
+                    automatic.add('n')
+                elif kind == 'speech':
+                    for setting, parameter in (('format', 'response_format'), ('speed', 'speed')):
+                        if setting not in body and setting not in saved:
+                            automatic.add(parameter)
+                with _Transport(provider.get('proxy'), cancelled,
+                                memory=getattr(gateway, 'compatibility', None),
+                                scope=(provider['id'], provider['baseUrl'], model)) as transport:
                     if kind == 'video':
                         items = _openai_video(provider, base, payload, transport, records, on_progress, poll_interval)
                     else:
                         raw, headers = transport.request(base + ('/images/generations' if kind == 'image' else '/audio/speech'),
                             {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + provider['key'], 'User-Agent': 'Umeko-Desktop'},
-                            records, json.dumps(payload).encode())
+                            records, json.dumps(payload).encode(), automatic=automatic)
                     if kind == 'speech':
                         items = [_media(raw, kind, options.get('format', 'mp3'), headers.get_content_type())]
                     elif kind == 'image':
@@ -435,6 +463,7 @@ def generate(gateway, body, on_progress=None, *, poll_interval=2.0):
                 raise ValueError('生成结果总大小超过限制')
             if cancelled.is_set():
                 raise GenerationCancelled('生成已取消')
+            gateway.diagnostics.compatibility(provider, request, records)
             return {'items': items, 'provider': provider.get('name', ''), 'model': model}
     except GenerationCancelled:
         raise

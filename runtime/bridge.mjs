@@ -6,6 +6,7 @@ import { prepareNativeSettings, sessionResourceSettings, sessionExtensionPaths, 
 import { sessionSkillOptions, manageSkills } from "./skills.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
+import { bindHttpRetryBoundary } from "./http-retry-boundary.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
 import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
@@ -173,15 +174,23 @@ async function bindSession(session) {
   };
   const originalPayload = session.agent.onPayload;
   const configurePayload = async (payload, model) => {
+    const optional = ['stream', 'tool_choice', 'parallel_tool_calls', 'response_format', 'stream_options',
+      'temperature', 'top_p', 'seed', 'n', 'user'];
+    const generated = new Map(optional.filter(name => Object.hasOwn(payload, name))
+      .map(name => [name, JSON.stringify(payload[name])]));
     const result = await originalPayload?.(payload, model) ?? payload;
     const configured = { ...result };
+    configured._umeko_auto_parameters = [...generated]
+      .filter(([name, value]) => JSON.stringify(result[name]) === value).map(([name]) => name);
     configured._umeko_reasoning_effort = reasoningEffort;
     delete configured.reasoning_effort;
     if (reasoningEffort !== "off") configured.reasoning_effort = reasoningEffort;
     return configured;
   };
   session.agent.onPayload = configurePayload;
+  const httpRetryBoundary = bindHttpRetryBoundary(session);
   const unbind = session.subscribe(event => {
+    httpRetryBoundary.observe(event);
     if (event.type === "message_end" && ["user", "assistant"].includes(event.message.role)) {
       // Pi persists after notifying listeners. Read the new leaf in the next
       // microtask, after that append, without rebuilding its complete branch.
@@ -222,7 +231,7 @@ async function bindSession(session) {
       video: event.toolName === "video_gen" ? event.partialResult?.details?.video : undefined,
       taskStep: trackingTask && event.type === "tool_execution_update" ? false : undefined,
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
-    const willRetry = event.type === "message_end" && session.retryAttempt < NETWORK_RETRY.maxRetries &&
+    const willRetry = event.type === "message_end" && session.autoRetryEnabled && session.retryAttempt < NETWORK_RETRY.maxRetries &&
       isRetryableAssistantError(event.message) && !isContextOverflow(event.message, session.model?.contextWindow || 128000);
     if (event.type === "message_end" && !willRetry) emit({ type: "message", role: event.message.role,
       text: textOf(event.message.content), thinking: thinkingOf(event.message.content), stopReason: event.message.stopReason || "", error: event.message.stopReason === "aborted" ? "" : event.message.errorMessage || "", timestamp:event.message.timestamp });
@@ -243,6 +252,7 @@ async function bindSession(session) {
   unsubscribe = () => {
     compactionFailures.delete(session);
     clearTimeout(retryTimer);
+    httpRetryBoundary.close();
     unbind();
     if (session.agent.onPayload === configurePayload) session.agent.onPayload = originalPayload;
   };
