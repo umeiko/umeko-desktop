@@ -85,6 +85,8 @@ class TracedResponse:
         return self._read('read', *args)
     def readline(self, *args):
         return self._read('readline', *args)
+    def read1(self, *args):
+        return self._read('read1' if hasattr(self.response, 'read1') else 'read', *args)
     def __enter__(self):
         return self
     def __exit__(self, *args):

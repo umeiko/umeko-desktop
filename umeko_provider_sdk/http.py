@@ -9,7 +9,8 @@ from html.parser import HTMLParser
 from http.cookies import SimpleCookie
 
 from . import ProviderError
-from .errors import format_http_error
+from .errors import format_http_error, safe_text
+from .compatibility import compatible_open
 from .network import proxy_handler, tls_context, trace, TracedResponse, secret_values
 
 
@@ -75,7 +76,13 @@ class HttpSession:
     def validate(self, url):
         if self._origin(url) not in self.origins: raise ProviderError("登录返回了未配置的服务地址")
 
-    def request(self, url, *, method="GET", headers=None, data=None, timeout=20):
+    def request(self, url, *, method="GET", headers=None, data=None, timeout=20,
+                memory=None, scope=(), automatic=(), compatibility=False):
+        """Retry inference/model calls; login and account writes remain one-shot.
+
+        Plugin builders can opt custom inference routes into compatibility and
+        identify only parameters inserted by their own request builder.
+        """
         self.validate(url)
         headers = {"User-Agent":"Umeko-Provider/0.1", **(headers or {})}
         request_secrets = secret_values(headers) + secret_values(data)
@@ -85,12 +92,20 @@ class HttpSession:
         elif isinstance(data, str): data = data.encode()
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         records = trace.get()
+        path = urllib.parse.urlsplit(url).path.rstrip('/')
+        inference = (compatibility or memory is not None or bool(automatic) or bool(scope)
+                     or path.endswith(('/models', '/chat/completions', '/completions',
+                                       '/responses', '/messages', '/images/generations',
+                                       '/audio/speech', '/videos')))
         record = {'request': {'url': url, 'method': method, 'headers': headers,
                   'body': data.decode('utf-8', 'replace') if isinstance(data, bytes) else data},
                   'response': {'status': None, 'headers': {}, 'body': ''}}
-        if records is not None:
+        if records is not None and not inference:
             records.append(record)
         try:
+            if inference:
+                return compatible_open(self.opener, req, timeout=timeout, memory=memory,
+                                       scope=scope, automatic=automatic, records=records)
             response = self.opener.open(req, timeout=timeout)
             record['response'].update(status=response.status, headers=dict(response.headers))
             return TracedResponse(response, record) if records is not None else response
@@ -103,7 +118,7 @@ class HttpSession:
             record['exception'] = traceback.format_exc()
             if isinstance(error, TimeoutError) or isinstance(getattr(error, 'reason', None), TimeoutError):
                 raise ProviderError('供应商请求超时，请检查网络或超时设置') from None
-            raise ProviderError("无法连接服务，请检查网络和证书") from None
+            raise ProviderError('无法连接服务：' + safe_text(str(error), request_secrets)) from None
 
 
 class ConsentForm(HTMLParser):

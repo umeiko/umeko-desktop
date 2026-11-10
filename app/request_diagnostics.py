@@ -29,19 +29,19 @@ class RequestDiagnostics(QObject):
                   'provider': provider.get('name', ''), 'request': request,
                   'response': response, 'error': describe_failure(error), 'http': http or []}
         record = redact(record, [provider.get('key', '')] + secret_values(record))
-        failed_response = next((call.get('response', {}) for call in reversed(record['http'])
-                                if str(call.get('response', {}).get('status', '')).isdigit()
-                                and int(call['response']['status']) >= 400), record['response'])
+        failed_response = record['http'][-1].get('response', record['response']) if record['http'] else record['response']
         status = failed_response.get('status')
         code = certificate_failure(error)
         if str(status).isdigit() and int(status) >= 400:
             message = format_http_error(status, failed_response.get('body', ''), failed_response.get('headers', {}))
         elif code:
             message = f'TLS certificate validation failed ({code}); check the provider\'s Network settings and CA file, then open request details'
+        elif str(error).startswith('供应商返回 HTTP 200：'):
+            message = str(error)
         elif isinstance(error, TimeoutError) or isinstance(getattr(error, 'reason', None), TimeoutError) or str(error) == '供应商请求超时，请检查网络或超时设置':
             message = '供应商请求超时，请检查网络或超时设置'
         else:
-            message = '供应商请求失败，请查看请求详情'
+            message = '供应商请求失败：' + safe_text(str(error), [provider.get('key', '')])
         record['summary'] = safe_text(message, [provider.get('key', '')])
         with self.lock:
             self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -51,7 +51,10 @@ class RequestDiagnostics(QObject):
             for old in sorted(self.directory.glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True)[30:]:
                 old.unlink()
         self.changed.emit()
-        failure = RequestFailure(f'{record["summary"]} [Umeko:{record["id"]}]', transient_failure(error, http or []))
+        managed = bool(record['http'] and record['http'][-1].get('httpRetryManaged'))
+        failure = RequestFailure(f'{record["summary"]} [Umeko:{record["id"]}]',
+                                 transient_failure(error, http or []) and not managed)
+        failure.http_retry_managed = managed
         failure.tls_code = code
         return failure
 

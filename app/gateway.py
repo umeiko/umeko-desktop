@@ -34,6 +34,8 @@ from .reasoning_activity import ReasoningActivity
 from .thinking_formats import format_parameters, valid_format
 from umeko_provider_sdk.network import network_scope, proxy_handler, tls_context, trace, TracedResponse
 from umeko_provider_sdk import request_scope
+from umeko_provider_sdk.compatibility import ParameterMemory, compatible_open, raise_api_error
+from umeko_provider_sdk.streaming import normalize_openai_events
 
 
 def validate_base_url(url: str) -> str:
@@ -56,6 +58,7 @@ class Gateway:
         self.reasoning_rejected = reasoning_rejected
         self.reasoning_activity = ReasoningActivity()
         self.diagnostics = RequestDiagnostics(store.directory)
+        self.compatibility = ParameterMemory(store.directory)
 
     def provider(self, provider_id):
         return next((p for p in self.store.data["providers"] if p["id"] == provider_id), None)
@@ -143,20 +146,20 @@ class Gateway:
                         return p, m["upstream"]
         raise ValueError("模型别名不存在，请检查模型映射")
 
-    def complete(self, alias, messages, tools=None, max_tokens=4096, provider_id=None, parameters=None):
+    def complete(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None):
         data = collect_openai(self.events(alias, messages, tools, max_tokens, provider_id, parameters))
         msg, usage = data["choices"][0]["message"], data.get("usage", {})
         calls = [{"id": c["id"], "name": c["function"]["name"], "arguments": json.loads(c["function"]["arguments"])} for c in msg.get("tool_calls") or []]
         return Completion(msg.get("content") or "", calls, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), data["choices"][0]["finish_reason"], msg.get("reasoning_content") or "")
 
-    def events(self, alias, messages, tools=None, max_tokens=4096, provider_id=None, parameters=None):
+    def events(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None):
         p, model = self.resolve(alias, provider_id)
         records = []
         request = {'transport': p['api'], 'model': model, 'messages': messages,
                    'tools': tools or [], 'max_tokens': max_tokens, 'parameters': parameters or {}}
         try:
             with self.reasoning_activity.chat((p.get('id', ''), model)), network_scope(p.get('proxy'), records):
-                for event in self._events(alias, messages, tools, max_tokens, provider_id, parameters):
+                for event in normalize_openai_events(self._events(alias, messages, tools, max_tokens, provider_id, parameters)):
                     if event.get('error'):
                         raise ValueError(json.dumps(event, ensure_ascii=False))
                     yield event
@@ -190,11 +193,19 @@ class Gateway:
         message = safe_text(str(error), [provider.get("key", "")])
         return RequestFailure(f'{message}\n当前可选推理档位：{", ".join(supported)}。请调整档位后重新发送。', retryable=False)
 
-    def _events(self, alias, messages, tools=None, max_tokens=4096, provider_id=None, parameters=None):
+    def _events(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None):
         p, model = self.resolve(alias, provider_id)
         if any(isinstance(m.get("content"), list) and any(block.get("type") == "image_url" for block in m["content"]) for m in messages) and not self.supports_vision(alias, p["id"]):
             raise ValueError("当前模型未启用视觉，请在模型配置中勾选“视觉”或切换支持图片的模型")
         tools = tools or []
+        automatic = set((parameters or {}).get('_umeko_auto_parameters', ()))
+        default_tokens = max_tokens is None
+        max_tokens = 4096 if default_tokens else max_tokens
+        # Capture provenance before the reasoning mapper consumes private intent.
+        user_parameters = {key: value for key, value in (parameters or {}).items()
+                           if not key.startswith('_umeko_') and key not in automatic}
+        if '_umeko_reasoning_effort' in (parameters or {}):
+            user_parameters.pop('reasoning_effort', None)
         parameters = dict(parameters or {})
         private_intent = "_umeko_reasoning_effort" in parameters
         probe_override = "_umeko_reasoning_format" in parameters
@@ -217,6 +228,11 @@ class Gateway:
             for key in ("reasoning_effort", "enable_thinking", "chat_template_kwargs", "thinking", "reasoning"):
                 parameters.pop(key, None)
             parameters.update(format_parameters(format, intent))
+        if not probe_override:
+            automatic.update(set(parameters) - set(user_parameters))
+            parameters.update(user_parameters)
+        else:
+            automatic.clear()
         if p["api"] == "plugin":
             if self.plugins is None:
                 raise IntegrationRequired("请先导入供应商实现")
@@ -250,7 +266,7 @@ class Gateway:
             parallel = parameters.pop("parallel_tool_calls", None)
             if parallel is not None:
                 parameters.setdefault("tool_choice", {"type": "auto"})["disable_parallel_tool_use"] = not parallel
-            body = {**parameters, "model": model, "max_tokens": max_tokens, "stream": True,
+            body = {**parameters, "model": model, "max_tokens": max_tokens, "stream": parameters.get('stream', True),
                     "messages": [self.to_anthropic_message(m) for m in messages if m["role"] != "system"]}
             system = "\n".join(str(m.get("content", "")) for m in messages if m["role"] == "system")
             if system:
@@ -266,33 +282,43 @@ class Gateway:
         else:
             url = base + "/chat/completions"
             headers["Authorization"] = "Bearer " + p["key"]
-            body = {**parameters, "model": model, "messages": chat_completion_messages(messages), "max_tokens": max_tokens, "stream": True}
+            body = {**parameters, "model": model, "messages": chat_completion_messages(messages), "stream": parameters.get('stream', True)}
+            if 'max_completion_tokens' not in body:
+                body.setdefault('max_tokens', max_tokens)
             if tools:
                 body["tools"] = [{"type": "function", "function": t} for t in tools]
+        if default_tokens and not probe_override:
+            automatic.add('max_output_tokens' if p.get('wireApi') == 'responses' else 'max_tokens')
+        if not probe_override and 'stream' not in user_parameters:
+            automatic.add('stream')
+        if p.get('wireApi') == 'responses':
+            automatic.update(name for name in ('store',) if name not in user_parameters)
+            if 'reasoning_effort' in automatic:
+                automatic.add('reasoning')
+            if 'tools' not in user_parameters:
+                automatic.update(f'tools.{index}.strict' for index, tool in enumerate(tools)
+                                 if 'strict' not in tool)
         request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
         opener = urllib.request.build_opener(proxy_handler(p.get('proxy')), urllib.request.HTTPSHandler(context=tls_context(p.get('proxy'))), NoRedirect())
-        record = {'request': {'url': url, 'method': 'POST', 'headers': headers, 'body': body},
-                  'response': {'status': None, 'headers': {}, 'body': ''}}
-        trace.get().append(record)
         try:
-            with opener.open(request, timeout=90) as response:
-                record['response'].update(status=response.status, headers=dict(response.headers))
+            with compatible_open(opener, request, timeout=90, memory=self.compatibility,
+                                 scope=(p['id'], base, model), automatic=automatic,
+                                 records=trace.get()) as response:
                 def checked_events():
-                    for event in response_events(TracedResponse(response, record)):
-                        if event.get("error") or event.get("type") == "response.failed":
-                            raise ValueError(json.dumps(event, ensure_ascii=False))
+                    for event in response_events(response):
+                        raise_api_error(event)
                         yield event
                 events = checked_events()
-                yield from anthropic_events_to_openai(events) if p["api"] == "anthropic" else responses_events(events) if p.get('wireApi') == 'responses' else events
+                yield from anthropic_events_to_openai(events) if p["api"] == "anthropic" else responses_events(events) if p.get('wireApi') == 'responses' else normalize_openai_events(events)
         except urllib.error.HTTPError as exc:
-            record['response'].update(status=exc.code, headers=dict(exc.headers), body=exc.read().decode('utf-8', 'replace'))
-            exc.close()
-            raise ValueError(format_http_error(exc.code, record['response']['body'], exc.headers, [p['key']])) from None
+            try:
+                raise ValueError(format_http_error(exc.code, exc.read(), exc.headers, [p['key']])) from None
+            finally:
+                exc.close()
         except (urllib.error.URLError, TimeoutError) as exc:
-            record['exception'] = traceback.format_exc()
             if isinstance(exc, TimeoutError) or isinstance(getattr(exc, 'reason', None), TimeoutError):
                 raise ValueError('供应商请求超时，请检查网络或超时设置') from None
-            raise ValueError("无法连接供应商，请检查地址、网络与证书") from None
+            raise ValueError('无法连接供应商：' + safe_text(str(exc), [p['key']])) from None
 
     @staticmethod
     def to_anthropic_message(m):
@@ -313,7 +339,8 @@ class Gateway:
                     head, data = url.split(",", 1)
                     content.append({"type": "image", "source": {"type": "base64", "media_type": head[5:].split(";")[0], "data": data}})
         for call in m.get("tool_calls", []):
-            content.append({"type": "tool_use", "id": call["id"], "name": call["function"]["name"], "input": json.loads(call["function"]["arguments"])})
+            arguments = call['function']['arguments']
+            content.append({"type": "tool_use", "id": call["id"], "name": call["function"]["name"], "input": json.loads(arguments) if isinstance(arguments, str) else arguments})
         return {"role": m["role"], "content": content or [{"type": "text", "text": " "}]}
 
 class LocalServer:
@@ -418,7 +445,17 @@ class LocalServer:
                             messages.insert(0, {"role": "system", "content": system})
                     tools = body.get("tools", [])
                     tools = [{"name": t["name"], "description": t.get("description", ""), "parameters": t["input_schema"]} for t in tools] if anth else [t["function"] for t in tools]
-                    parameters = {k: body[k] for k in ("temperature", "top_p", "top_k", "stop", "tool_choice", "parallel_tool_calls", "reasoning_effort", "enable_thinking", "chat_template_kwargs", "thinking", "reasoning") if k in body}
+                    parameters = {key: value for key, value in body.items()
+                                  if key not in ('model', 'messages', 'tools', 'max_tokens', 'system', 'output_config', 'stop_sequences')
+                                  and not key.startswith('_umeko_')}
+                    if owner.private and '_umeko_auto_parameters' in body:
+                        automatic = body['_umeko_auto_parameters']
+                        allowed = {'tool_choice', 'parallel_tool_calls', 'response_format', 'stream_options',
+                                   'temperature', 'top_p', 'top_k', 'seed', 'n', 'user', 'dimensions', 'max_tokens',
+                                   'max_completion_tokens', 'stream', 'reasoning_effort', 'thinking', 'reasoning', 'enable_thinking', 'chat_template_kwargs'}
+                        if not isinstance(automatic, list) or any(not isinstance(key, str) or key not in allowed for key in automatic):
+                            raise ValueError('Invalid automatic parameter metadata')
+                        parameters['_umeko_auto_parameters'] = automatic
                     if owner.private and "_umeko_reasoning_effort" in body:
                         effort = body["_umeko_reasoning_effort"]
                         if not isinstance(effort, str) or not effort:
@@ -433,7 +470,9 @@ class LocalServer:
                         if "disable_parallel_tool_use" in choice:
                             parameters["parallel_tool_calls"] = not choice["disable_parallel_tool_use"]
                         parameters["tool_choice"] = {"type": "function", "function": {"name": choice["name"]}} if choice.get("type") == "tool" else {"any": "required"}.get(choice.get("type"), choice.get("type", "auto"))
-                    max_tokens = min(max(int(body.get("max_tokens", body.get("max_completion_tokens", 4096))), 1), 32768)
+                    max_tokens = body.get('max_tokens', body.get('max_completion_tokens'))
+                    if max_tokens is not None and (type(max_tokens) is not int or max_tokens <= 0):
+                        raise ValueError('max_tokens must be a positive integer')
                     provider_id = body.get('_umeko_provider') if owner.private else None
                     if provider_id is not None and not isinstance(provider_id, str):
                         raise ValueError('Invalid private provider identity')
