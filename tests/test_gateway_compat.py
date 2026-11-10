@@ -264,6 +264,21 @@ class GatewayCompatibilityTests(unittest.TestCase):
         with patch('app.gateway.detect_model', side_effect=lambda request, **kwargs: request('high', 'openai', 16)):
             self.assertEqual(gateway.detect_reasoning('fixture'), {'thinking': True, 'content': True})
 
+    def test_other_client_parameter_status_uses_the_same_recovery(self):
+        gateway, service, _ = self.gateway(lambda body, n: (415, {'error': {
+            'message': 'response_format is not supported', 'param': 'response_format'}}, {})
+            if 'response_format' in body else (200, OK, {}))
+        self.assertEqual(gateway.complete('fixture', MESSAGES, parameters={
+            'response_format': {'type': 'json_object'}, '_umeko_auto_parameters': ['response_format']}).text, 'OK')
+        self.assertNotIn('response_format', service.requests[-1])
+
+    def test_explicit_error_parameter_precedes_an_incidental_field_mention(self):
+        gateway, service, _ = self.gateway(lambda body, n: (400, {'error': {
+            'message': 'messages are malformed; seed was supplied', 'param': 'messages'}}, {}))
+        with self.assertRaisesRegex(Exception, 'messages'):
+            gateway.complete('fixture', MESSAGES, parameters={'seed': 7, '_umeko_auto_parameters': ['seed']})
+        self.assertEqual(len(service.requests), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

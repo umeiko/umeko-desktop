@@ -42,7 +42,7 @@ def raise_api_error(payload):
 
 def rejected_parameters(status, raw, automatic):
     """Select named automatic fields from parameter-specific client errors."""
-    if status not in (400, 404, 409, 422):
+    if not 400 <= status < 500 or status in (401, 403, 408, 425, 429):
         return set()
     payload = _payload(raw)
     detail = payload.get('error', payload) if isinstance(payload, dict) else {}
@@ -67,7 +67,7 @@ def rejected_parameters(status, raw, automatic):
         return set()
     return {name for name in automatic if name in explicit or any(
         value.startswith(name + '.') or name.startswith(value + '.') for value in explicit
-    ) or re.search(r'(?<![\w])' + re.escape(name) + r'(?![\w])', text)}
+    ) or (not explicit and re.search(r'(?<![\w])' + re.escape(name) + r'(?![\w])', text))}
 
 
 def _adapt(body, name):
