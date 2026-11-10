@@ -306,6 +306,8 @@ class Gateway:
                                  records=trace.get()) as response:
                 def checked_events():
                     for event in response_events(response):
+                        if event is None:
+                            continue
                         try:
                             raise_api_error(event)
                         except ValueError:

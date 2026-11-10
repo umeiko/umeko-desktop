@@ -257,6 +257,13 @@ class GatewayCompatibilityTests(unittest.TestCase):
                 with self.assertRaisesRegex(Exception, 'response_format rejected'):
                     gateway.complete('fixture', MESSAGES)
 
+    def test_probe_skips_null_frames_and_keeps_unfinished_observation(self):
+        frame = {'choices': [{'delta': {'content': '<think>reason</think>OK'}}]}
+        stream = b'data: null\n\ndata: ' + json.dumps(frame).encode() + b'\n\n'
+        gateway, _, _ = self.gateway(lambda body, n: (200, stream, {}))
+        with patch('app.gateway.detect_model', side_effect=lambda request, **kwargs: request('high', 'openai', 16)):
+            self.assertEqual(gateway.detect_reasoning('fixture'), {'thinking': True, 'content': True})
+
 
 if __name__ == '__main__':
     unittest.main()
