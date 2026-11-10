@@ -294,7 +294,7 @@ class ReasoningGatewayTests(unittest.TestCase):
         self.complete({"_umeko_reasoning_effort": "off"})
         self.assertNotIn("enable_thinking", self.calls[-1][1])
 
-    def test_http_and_sse_effort_rejections_notify_once_with_bounded_recovery(self):
+    def test_http_and_sse_other_format_rejections_notify_once(self):
         for mode in ("reject-http", "reject-sse"):
             with self.subTest(mode=mode):
                 self.mode = mode
@@ -304,7 +304,9 @@ class ReasoningGatewayTests(unittest.TestCase):
                     self.complete({"_umeko_reasoning_effort": "max"})
                 self.assertFalse(error.exception.retryable)
                 self.assertIn("off, low, high", str(error.exception))
-                self.assertEqual(len(self.calls), before + (2 if mode == 'reject-http' else 1))
+                # The service names a nested field; this request sends the
+                # top-level format. Keep that field and report the rejection.
+                self.assertEqual(len(self.calls), before + 1)
                 self.assertEqual(len(self.rejections), notifications + 1)
                 self.assertEqual(self.rejections[-1], ("fixture", "actual", "max", ["low", "high"]))
         self.assertFalse((self.store.directory / "request-errors").exists())
