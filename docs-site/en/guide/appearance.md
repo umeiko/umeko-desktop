@@ -2,15 +2,15 @@
 
 ## Make text comfortable {#make-text-comfortable}
 
-**Settings → Appearance** switches between Simplified Chinese and English and scales text from 50% to 200%. Preferences save immediately. Conversation contents, project names and custom provider data keep their original language.
+**Settings → Appearance** switches between Simplified Chinese and English and scales text from 50% to 200%. Preferences save immediately. Conversation contents, project names and custom provider data stay in their original language.
 
 [![Language and text-size settings](/images/appearance-en.png)](/images/appearance-en.png)
 
 ## Choose colors and characters separately {#choose-colors-and-characters-separately}
 
-Themes control colors. The main character supplies welcome art, avatars, reply interactions, loading and file-catching art. Changing a theme preserves your chosen character and does not change the agent's identity or capabilities.
+Themes control colors. The main character supplies welcome art, avatars, reply interactions, loading and file-catching art. You set them separately, and your character stays the same when you change themes.
 
-Sea-salt blue is a color theme; its preview is not tied to Yanami. Open **Appearance → Themes → Main character** to select a built-in or import a character ZIP. Complete built-in main characters include Yanami, Komari, Kaju Nukumizu, Tiara Basori and Whale Girl. They cannot be deleted or overwritten.
+Sea-salt blue is a color theme that works with any main character. Open **Appearance → Themes → Main character** to select a built-in or import a character ZIP. Complete built-in main characters include Yanami, Komari, Kaju Nukumizu, Tiara Basori and Whale Girl. They are always kept, so you can switch back at any time.
 
 You can assign the four ordinary subagent appearance slots separately. Global agents choose a character during creation or editing; Kazuhiko Nukumizu is available as a subagent character. Desktop pets have independent appearance settings.
 
@@ -28,10 +28,10 @@ Copy the creation prompt in Appearance, or ask the agent:
 
 > Create and apply a pure-white theme with a muted green accent and readable text. Keep my current character.
 
-Themes are color-only JSON without scripts. Importing applies a theme; the same ID updates it. Deleting the selected custom theme restores its base colors.
+Themes are color-only JSON files. Importing applies a theme; the same ID updates it. Deleting the selected custom theme restores its base colors.
 
 ## Create character packs {#create-character-packs}
 
-Export the character-making Skill from the character dialog. Give it to an agent to prepare transparent art, a manifest and optional dialogue, then package them in a ZIP. Imported assets are copied into the profile and no longer depend on the original creation directory.
+Export the character-making Skill from the character dialog. Give it to an agent to prepare transparent art, a manifest and optional dialogue, then package them in a ZIP. Importing copies the whole pack into the profile, so you can delete the original creation folder afterwards.
 
-Packs contain only JSON and images, with no scripts or external asset paths. See the [character asset specification](https://github.com/umeiko/umeko-desktop/blob/main/docs/characters.md) for formats and limits; this reference is currently in Chinese.
+Packs consist of JSON and images, with every asset inside the pack. See the [character asset specification](https://github.com/umeiko/umeko-desktop/blob/main/docs/characters.md) for formats and limits; this reference is written in Chinese.

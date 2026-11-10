@@ -16,7 +16,7 @@
 
 ## Python 版从源码启动 {#run-the-python-edition-from-source}
 
-需要 Python 3.10+、Node.js 22.19+ 和 npm。在当前操作系统上安装依赖，不要从其他系统复制虚拟环境。
+需要 Python 3.10+、Node.js 22.19+ 和 npm。虚拟环境与系统绑定，请在要运行的系统上执行安装脚本。
 
 ::: code-group
 ```bash [Linux / macOS]
@@ -29,7 +29,7 @@ bash Start-Umeko.sh
 ```
 :::
 
-在目标平台使用 `build.sh` 或 `build.ps1` 构建。更完整的环境、测试与打包要求见[仓库手册](https://github.com/umeiko/umeko-desktop/blob/main/docs/user-guide.md)。开发与验收应使用隔离配置，不复用日常账号和会话。
+在目标平台使用 `build.sh` 或 `build.ps1` 构建。更完整的环境、测试与打包要求见[仓库手册](https://github.com/umeiko/umeko-desktop/blob/main/docs/user-guide.md)。开发和测试时使用单独的配置目录，与日常账号和会话分开。
 
 ## 选对插件接口 {#choose-the-right-plugin-interface}
 
@@ -37,6 +37,6 @@ bash Start-Umeko.sh
 - 扩展桌面页面、应用服务、小窗以及与当前聊天通信：Widget SDK。
 - 扩展 Pi 内核工具、命令与任务行为：Pi 扩展；通过内嵌 Pi 安装。
 
-优先使用应用导出的 SDK 和示例，与本机版本保持一致。先验证包，再导入隔离环境；不要依赖宿主私有 Python 模块或把特定供应商实现写进通用 SDK。
+使用应用导出的 SDK 和示例，与本机版本保持一致。先验证包，再导入单独的测试环境。插件只调用公开的 SDK 接口，特定供应商的实现放在各自的插件里。
 
-SDK 能力不足时，提供最小复现与通用接口需求，让兼容性修补可以独立验证。
+需要 SDK 增加能力时，请提交最小复现和通用的接口需求。

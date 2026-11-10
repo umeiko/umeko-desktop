@@ -2,7 +2,7 @@
 
 ## Tool permission classifier
 
-`runtime/tool-permissions.mjs` adapts the command-position guard (`AT_CMD`), quote masking (`stripQuoted`), recursive Windows deletion family (`WINDOWS_ROOT_WIPE`), critical command families and write-only normalized path-rule structure from `@xynogen/pix-gate` 0.4.5, copyright 2026 xynogen (MIT). Source: https://github.com/xynogen/pix-mono/blob/f07f04c186a8b43adb5c443ee65a2ebee53f4e0c/packages/pix-gate/src/lib.ts . The complete license appears in both that module and `licenses/pix-gate-MIT.txt`. The broader upstream default policy is intentionally not enabled; the local implementation uses the desktop's seven categories. Pi Coding Agent 1.3.0's `permission-gate` and `protected-paths` extension examples (https://github.com/earendil-works/pi/tree/main/packages/coding-agent/examples/extensions) supply the `tool_call` integration pattern under the Pi MIT notice below. `cc-safety-net` 2.7.0 (https://github.com/kenryu42/cc-safety-net/tree/v2.7.0) supplied categories and the test checklist only; no implementation code is copied or bundled.
+`runtime/tool-permissions.mjs` adapts the command-position guard (`AT_CMD`), quote masking (`stripQuoted`), recursive Windows deletion family (`WINDOWS_ROOT_WIPE`), critical command families and write-only normalized path-rule structure from `@xynogen/pix-gate` 0.4.5, copyright 2026 xynogen (MIT). Source: https://github.com/xynogen/pix-mono/blob/f07f04c186a8b43adb5c443ee65a2ebee53f4e0c/packages/pix-gate/src/lib.ts . The complete license appears in both that module and `licenses/pix-gate-MIT.txt`. Umeko applies its own seven permission categories in place of the upstream default policy. Pi Coding Agent 1.3.0's `permission-gate` and `protected-paths` extension examples (https://github.com/earendil-works/pi/tree/main/packages/coding-agent/examples/extensions) supply the `tool_call` integration pattern under the Pi MIT notice below. `cc-safety-net` 2.7.0 (https://github.com/kenryu42/cc-safety-net/tree/v2.7.0) supplied categories and the test checklist only; no implementation code is copied or bundled.
 
 ## Desktop plugin artwork
 
@@ -96,11 +96,11 @@ Python Linux builds use dbus-next 0.2.3 (https://github.com/altdesktop/python-db
 
 ## Whale-girl desktop pet artwork
 
-Six community animation assets from [yanzwzz/dsh-whale-girl-pet](https://github.com/yanzwzz/dsh-whale-girl-pet), pinned at `53e9ab8e2c779f4c0feb902cfa940c098c83d228`, are distributed under the upstream MIT license. Copyright (c) 2026 dsh-whale-girl-pet contributors. The animations were transcoded from VP9 alpha WebM to looping animated WebP; the character artwork was not redesigned. The full license and per-file source URLs/checksums are shipped in `umeko-plugins/desktop-pet/assets/whale-girl/LICENSE.txt` and `source.json`. This community character is not an official DeepSeek endorsement.
+Six community animation assets from [yanzwzz/dsh-whale-girl-pet](https://github.com/yanzwzz/dsh-whale-girl-pet), pinned at `53e9ab8e2c779f4c0feb902cfa940c098c83d228`, are distributed under the upstream MIT license. Copyright (c) 2026 dsh-whale-girl-pet contributors. The animations were transcoded from VP9 alpha WebM to looping animated WebP; the character artwork was not redesigned. The full license and per-file source URLs/checksums are shipped in `umeko-plugins/desktop-pet/assets/whale-girl/LICENSE.txt` and `source.json`. This is a community character, unaffiliated with DeepSeek.
 
 ## Preinstalled Skills (0.6.4)
 
-Public OpenAI Skills (Apache-2.0), Hermes Skills (MIT), and Archify (Apache-2.0 with its retained third-party notices) are distributed in `bundled-skills/`. Each folder retains its own license; `bundled-skills/sources.json` records immutable upstream commits, adaptations and file hashes. These are portable public packages, not extracted proprietary Codex runtime Skills. Optional Python/CLI/browser dependencies are not bundled or implicitly installed.
+Public OpenAI Skills (Apache-2.0), Hermes Skills (MIT), and Archify (Apache-2.0 with its retained third-party notices) are distributed in `bundled-skills/`. Each folder retains its own license; `bundled-skills/sources.json` records immutable upstream commits, adaptations and file hashes. All of them come from these public upstream repositories. Optional Python/CLI/browser dependencies are not bundled or implicitly installed.
 
 Composer pinyin matching uses pypinyin 0.55.0 (MIT); see `licenses/pypinyin-MIT.txt`.
 

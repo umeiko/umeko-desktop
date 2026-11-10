@@ -56,7 +56,7 @@ Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原�
 
 </details>
 
-以上为真实应用的纯白主题界面，使用隔离的演示数据拍摄；不含真实账号、凭据或模型请求。中英文 README 分别展示对应语言的界面。
+以上为纯白主题界面，使用演示数据拍摄。界面支持简体中文和英文，首次启动时跟随系统语言。
 
 ## 主要特性
 
@@ -69,45 +69,53 @@ Umeko 是基于 [Pi Coding Agent](https://github.com/earendil-works/pi) 的原�
 | **给其他工具的 API** | 可选 API 代理服务、模型别名、局域网访问，以及可命名、停用和撤销的 API Key。 |
 | **一点自己的风格** | 纯白（默认）、草绿、深色与海盐蓝主题，独立选择主角色与人设包。在主角色选择中勾选「不启用」，即可使用简洁机器人、普通系统提示和箭头控件。 |
 
-使用 [`submit_to_chatbox`](docs/chatbox-media.md) 可直接展示图片和紧凑文件卡片。单击文件打开，右键复制文件或路径、在文件管理器中查看、重新附加到聊天。图片预览支持滚轮缩放、拖动查看和单击关闭。文件可以拖到聊天区任意位置，添加后自动聚焦输入框。排队消息支持逐条引导、编辑与删除；双击选词，三击选择整段。
+使用 [`submit_to_chatbox`](docs/chatbox-media.md) 可直接展示图片和紧凑文件卡片。单击文件打开，右键复制文件或路径、在文件管理器中查看、重新附加到聊天。图片预览支持滚轮缩放、拖动查看和单击关闭。文件可以拖到聊天区任意位置，添加后自动聚焦输入框。排队消息显示在输入框上方，可编辑和删除；steering 会中断当前运行并立即发送你的消息。鼠标悬停在消息上可看到时间和复制按钮。双击选词，三击选择整段。Pi 设置支持搜索和分级展开。
 
-宽屏时，鼠标进入左右任一侧的整块留白区域，就会出现八奈见推拉控件，支持两侧独立展开或收回。模型明确返回输出长度上限时，最多自动接续五次，保留已完成的工具结果，并连续显示代码块。
+宽屏时，鼠标进入左右任一侧的留白区域，就会出现八奈见推拉控件，两侧可分别展开或收回。模型返回输出长度上限时，Umeko 最多自动接续五次，并把已完成的工具结果和代码块连在一起显示。
 
-侧栏高光先响应点击，再加载聊天；连续切换只打开最后一项。文件卡片提供主题悬浮提示、手型光标和统一的右键菜单。选中聊天文字后可右键复制或全选。
+切换聊天时立即显示八奈见加载页，历史记录在后台读取；连续切换时打开最后选中的聊天。选中聊天文字后可右键复制或全选。
 
-外观设置可导入、更新、切换和删除 JSON 配色主题，也能一键复制完整制作提示词；参见[主题格式与示例](docs/themes.md)。回复末尾的小八奈见支持点击、长按和连击彩蛋。
+可在模型设置中刷新供应商报告的上下文窗口。点击上下文用量圆环可手动压缩空闲会话；自动压缩沿用 Pi 原生策略。每次压缩作为可展开事件保留在历史中。见[上下文窗口与压缩说明](docs/context-compaction.md)。
 
-切换聊天时立即显示八奈见加载页，历史记录在后台读取；连续切换只展示最后选中的聊天，排版完成后快速渐显。
-
-可在模型设置中刷新供应商报告的上下文窗口。点击上下文用量圆环可手动压缩空闲会话；自动压缩沿用 Pi 原生策略。压缩会作为可展开事件保留在历史中。见[上下文窗口与压缩说明](docs/context-compaction.md)。
+窗口最小化或在托盘中时，后台任务完成会发送[系统通知](docs/notifications.md)；超过三分钟的任务在窗口可见时也会通知。点击通知回到对应会话。关闭主窗口后 Agent 在托盘中继续运行，右键八奈见头像退出应用。
 
 ## 开始使用
 
-点击[上方下载按钮](#downloads)直接获取对应平台的安装包，解压后运行。请保留完整应用目录。
+点击[上方下载按钮](#downloads)获取对应平台的安装包，解压后运行。请保留完整应用目录。
 
 | 平台 | 下载包 | 入口 |
 | --- | --- | --- |
 | Windows x64 | `windows-x64.zip` | `Umeko/Umeko.exe` |
-| macOS Apple Silicon | `macos-arm64.zip` | `Umeko.app` |
-| macOS Intel | `macos-x64.zip` | `Umeko.app` |
+| macOS Apple Silicon | `macos-arm64-*.dmg` 或 `.zip` | 把 `Umeko.app` 拖入「应用程序」 |
+| macOS Intel | `macos-x64-*.dmg` 或 `.zip` | 把 `Umeko.app` 拖入「应用程序」 |
 | Linux x64 | `linux-x64.tar.gz` | `Umeko/Umeko` |
 
-文件名包含版本与源码提交号。**Node.js、npm、Python、Qt、Pi 和文件搜索程序已随包提供**，无需另行安装 Node.js 或 Python。Linux 需要图形桌面及 Qt 运行库；macOS 包使用临时签名，尚未公证。详见[平台说明](docs/user-guide.md#requirements)。
+文件名包含版本与源码提交号。**Node.js、npm、Python、Qt、Pi 和文件搜索程序已随包提供**，解压即可运行。Linux 需要图形桌面及 Qt 运行库。macOS 包使用临时签名，未经公证；可用[拖入安装的 DMG](docs/macos-dmg.md) 安装，自动更新使用 ZIP 包。详见[平台说明](docs/user-guide.md#requirements)。
 
 1. 在 **设置 → 账号与供应商** 添加模型 API，或点击 **+** 导入可信的供应商 ZIP。
 2. 从边栏打开项目目录，也可以直接拖入文件夹。
 3. 选择模型开始聊天。Agent 工作时，**Enter** 加入队列，**Ctrl+S** 优先处理补充内容。
 
-应用不附带模型账号，请配置自己使用的服务。
+Umeko 连接你自己配置的模型服务，使用你自己的账号和 API Key。
+
+**常见供应商：** **设置 → 账号与供应商 → 常见供应商** 提供 Claude Code、Codex、Kimi Code、DeepSeek、GLM Coding Plan（含 Z.ai）和 MiniMax 订阅（M Plan）。GLM 与 MiniMax 在 Key 表单中选择国内站（默认）或国际站。填写 API Key 和可选的账号别名即可，地址和模型已预先配置；每增加一个账号，都会得到独立的名称和模型映射。见[常见供应商账号](https://umeiko.github.io/umeko-desktop/guide/providers.html)。
+
+供应商和已导入的插件保存在用户目录中，升级后继续保留。可在供应商的齿轮中单独设置代理，请求失败后可打开脱敏的请求详情，并在外观中调整语言和文字大小（50%–200%）。见[偏好设置与升级](docs/preferences-and-upgrades.md)。
+
+Pi 的网络类扩展需要联网。在 **设置 → Agent → Pi** 中可设置 npm 镜像、可选的 `.npmrc` 和 CA 文件；见[npm 与扩展网络](docs/npm-and-network.md)。
+
+更新下载并校验通过后，独立的八奈见安装器会停止所有 Agent、安装新版本并重新启动 Umeko。见[更新与恢复](docs/updating.md)。
 
 ## 扩展你的工作方式
 
-- **桌面小宠物：** 官方 Widget 默认加载、默认隐藏。在 **设置 → Agent → 插件管理 → 桌面小宠物** 中开启显示，可拖动、点击互动、使用右键菜单，并导入自己的 WebP / GIF / PNG 或多动作形象 ZIP。Agent 通过已有的 [Widget 接口](runtime/umeko-docs/widget-plugins.md) 管理它。
+- **桌面小宠物：** 官方 Widget 默认加载、窗口默认隐藏。在 **设置 → Agent → 插件管理 → 桌面小宠物** 中开启显示，可拖动、点击互动、使用右键菜单，并导入自己的 WebP / GIF / PNG 或多动作形象 ZIP。Agent 通过 [Widget 接口](runtime/umeko-docs/widget-plugins.md) 管理它。
 - **配置 Agent：** 在 **设置 → Agent → Pi** 管理扩展、MCP 与工具，粘贴 `pi install npm:<package>` 安装扩展，或在本机终端打开内嵌 Pi。
 - **接入账号服务：** 用 [umeko-provider-sdk](provider_dev/README.md) 开发供应商 ZIP，也可以把[开发 Skill](provider_dev/skills/develop-umeko-provider/SKILL.md) 交给 AI。登录实现独立放在插件中。
-- **连接其他客户端：** 在 **API 代理服务** 中配置模型映射、创建 API Key 并启动服务。
+- **连接其他客户端：** 在 **API 代理服务** 中配置模型映射、创建 API Key 并启动服务。别名按[供应商二级菜单组织，Base URL 自动生成](docs/api-proxy-menus.md)。
+- **制作自己的主题：** 外观设置可导入、更新、切换和删除 JSON 配色主题，也能一键复制完整制作提示词；参见[主题格式与示例](docs/themes.md)。回复末尾的小八奈见支持点击、长按和连击彩蛋。
+- **让 Agent 管理应用：** Agent 通过 **`umeko_desktop`** 管理正在运行的应用中的供应商、插件、主题、设置、项目、聊天和更新，界面随即刷新。需要等任务空闲的操作会返回排队中的任务。`/help` 指向内置的 [Umeko 管理文档](runtime/umeko-docs/README.md)，Agent 按主题读取。Umeko 的供应商和主题设置与 Pi 终端配置分开保存。
 
-供应商 ZIP 与 Pi 扩展会执行本机代码，请使用可信来源。账号凭据使用 Windows DPAPI 或 macOS/Linux 系统密钥环；会话保存在本机 Pi JSONL 文件中。详见[数据目录](docs/user-guide.md#local-data)与[内核恢复](docs/user-guide.md#factory-recovery)。
+供应商 ZIP 与 Pi 扩展以你的用户权限作为本机代码运行，请从可信来源安装。账号凭据使用 Windows DPAPI 或 macOS/Linux 系统密钥环；会话保存在本机 Pi JSONL 文件中。详见[数据目录](docs/user-guide.md#local-data)与[内核恢复](docs/user-guide.md#factory-recovery)。
 
 ## 从源码运行
 
@@ -127,7 +135,7 @@ bash setup.sh
 bash Start-Umeko.sh
 ```
 
-Windows 使用 `./build.ps1`，macOS/Linux 使用 `bash build.sh` 打包。CI 在四种原生环境中构建，检查打包后的界面启动、搜索程序、Pi 与版本信息；Windows 还运行回归测试与供应商导入交互检查。
+Windows 使用 `./build.ps1`，macOS/Linux 使用 `bash build.sh` 打包。CI 在各平台的原生环境中构建，检查打包后的应用再上传。
 
 [构建详情](docs/user-guide.md#build) · [测试方法](docs/user-guide.md#validation) · [CI 流水线](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
 
@@ -135,4 +143,4 @@ Windows 使用 `./build.ps1`，macOS/Linux 使用 `bash build.sh` 打包。CI �
 
 作者：[umeiko](https://github.com/umeiko)。基于 [Pi Coding Agent](https://github.com/earendil-works/pi)、[Qt for Python](https://doc.qt.io/qtforpython-6/) 与 [Pygments](https://pygments.org/) 构建。
 
-项目 Logo 使用几何机器人。可选角色形象包含已有的[像素八奈见同人素材](app/icons/yanami-pixel.provenance.json)，本项目与角色权利方无关联。依赖遵循各自许可证，见[第三方声明](THIRD_PARTY_NOTICES.md)。
+项目 Logo 使用几何机器人。可选角色形象包含[像素八奈见同人素材](app/icons/yanami-pixel.provenance.json)，本项目与角色权利方无关联。依赖遵循各自许可证，见[第三方声明](THIRD_PARTY_NOTICES.md)。

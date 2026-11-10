@@ -34,5 +34,5 @@ features:
 ---
 
 <div class="home-note">
-这份手册面向 Python / Qt 与 C++ / Qt 两个版本；差异会在对应页面注明。内容跟随 main 演进，尚未进入稳定版的功能可能需要最新构建。右上角可切换 English，也可以直接搜索。
+这份手册适用于 Python / Qt 与 C++ / Qt 两个版本，差异在对应页面注明。内容跟随 main，部分新功能需要最新构建。右上角可切换 English，也可以直接搜索。
 </div>

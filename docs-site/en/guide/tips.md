@@ -46,4 +46,4 @@ Versions, error details and repeatable steps help more than “it's broken.” [
 
 > Start with a short plan and make only the necessary changes. Explain before expanding the scope.
 
-More context is not always clearer. Record decisions in project documents and compact after milestones. Concurrent agents and retries can incur additional model charges.
+Focused context is easier for the model to follow. Record decisions in project documents and compact after milestones. Concurrent agents and retries can incur additional model charges.

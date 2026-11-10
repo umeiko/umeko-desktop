@@ -11,7 +11,7 @@ Preparing a goal never sends a prompt. The pending card names the goal and chat;
 canceling keeps drafts and attachments. Continuing creates a new work record and
 keeps history. Include needed context when using another chat.
 
-检查交付文件只比较文件元信息，不代表内容正确，也不会替用户验收。请查看文件后再确认完成。
+交付文件检查比较的是文件元信息；内容请打开查看后再确认完成。
 File checks compare metadata only; review the content before confirming completion.
 
 详细说明 / Details: `docs/task-records.md`.

@@ -1,127 +1,104 @@
 # CI test locations
 
-`Desktop packages` runs shared checks once on Linux: the Node list in
+`Desktop packages` runs the shared checks once on Linux: the Node list in
 `.github/workflows/build.yml`, Python unit-test discovery, and the explicit
-offscreen UI smoke list. The extra Python list after discovery was an exact
-duplicate and has been removed.
+offscreen UI smoke list.
 
-After the usual setup, use those same commands locally with
+To run the same commands locally after the usual setup, set
 `QT_QPA_PLATFORM=offscreen` and `QT_QUICK_BACKEND=software`. Linux checks also
 use a private D-Bus session and an unlocked ephemeral keyring, as shown in the
 workflow.
-Discovery and the UI smokes run concurrently inside that Linux job.
+
+## Parallel UI smokes
+
+Discovery and the UI smokes run concurrently inside the Linux job.
 Discovery gets `(nproc + 1) / 2` workers and the UI list gets `nproc / 2`
-(at least one each): two unit workers and two UI workers on the measured
-four-core runner. Use `bash scripts/ci-ui-smokes.bash --jobs N` to set the UI
-worker budget locally; its default is all detected cores.
-GNU `xargs -P` schedules scripts; no additional runner dependency is installed.
+(at least one each). Use `bash scripts/ci-ui-smokes.bash --jobs N` to set the UI
+worker budget locally; the default is all detected cores. GNU `xargs -P`
+schedules the scripts.
+
 Each script gets its own private D-Bus session, ephemeral keyring, XDG directories,
-profile and `PI_CODING_AGENT_DIR`. An explicitly configured agent directory still
-takes precedence; the environment also isolates bundled-skill installation when
-that setting is empty. Units and all smoke scripts must succeed.
+profile and `PI_CODING_AGENT_DIR`. An explicitly configured agent directory takes
+precedence; the environment also isolates bundled-skill installation when that
+setting is empty. Unit tests and all smoke scripts must succeed.
 Completed-script output is grouped under its filename, with status and duration.
-Full logs are kept in the run's `build/ui-smokes.*` directory; failures print their
-full log and an error naming the script. Other scripts finish without retries,
-and any failure makes the step fail. Scripts are ordered longest first using
-per-script measurements from CI run 41779809091. There is no serial smoke tail.
-If a smoke genuinely needs a machine-exclusive resource that cannot be isolated,
-document its one-line resource reason here before adding it after the pool.
+Full logs are kept in the run's `build/ui-smokes.*` directory; a failure prints its
+full log and an error naming the script. Scripts run once each, ordered longest
+first by measured duration, and any failure fails the step. If a smoke needs a
+machine-exclusive resource that cannot be isolated, add a one-line resource reason
+here and run it after the pool.
+
+## Parallel unit tests
+
 `scripts/ci-unit-tests.py` uses the same `unittest.TestLoader.discover` start
 directory (`tests`) and pattern (`test_*.py`), including unittest skips and
 module/class fixtures. It passes those suites to pinned `unittest-parallel`
 1.8.6, which uses the requested worker budget (all detected cores by default)
-and prints per-test results and failure
-tracebacks. The job prints `nproc` too. Only the Linux unit-test step installs
-this test dependency; application requirements and other jobs are unchanged.
-Some existing `load_tests` hooks create local wrapper classes. A small suite
-adapter reloads each module through the same hook inside its worker instead
-of trying to pickle those classes; the runner still owns all scheduling.
+and prints per-test results and failure tracebacks. The job also prints `nproc`.
+Only the Linux unit-test step installs this test dependency.
+Some `load_tests` hooks create local wrapper classes; a small suite adapter
+reloads each module through the same hook inside its worker.
 
-Modules run in separate spawned processes, with process reuse disabled: Qt
-modules require different application types and cannot safely share one Qt
-singleton. Tests within each module remain sequential. Shared directories,
-profiles, files and listeners must be isolated in fixtures (temporary directories
-and OS-assigned ports), rather than hidden behind serial execution. The character
-export test builds provider downloads in its own temporary directory.
+Modules run in separate spawned processes, with process reuse disabled, because
+Qt modules require different application types. Tests within each module run
+sequentially. Isolate shared directories, profiles, files and listeners in
+fixtures (temporary directories and OS-assigned ports).
 
-There are currently no suite-wide serial exceptions. If a module truly needs an
-exclusive resource that cannot be isolated, add its discovery name (for example
-`test_device`) and a one-line reason to `SERIAL_MODULES` in the script. Keep that
-module small. The script removes it from the parallel group and runs it once,
-in a fresh process, after the pool finishes; it never runs in both groups.
-This exception is exclusive among unit tests; the UI pool may still be running.
-Resources shared across either pool still need isolated fixtures. A genuinely
-machine-exclusive case must run after both pools, with its resource reason;
-the unit-only serial marker does not provide that machine-wide exclusion.
+A module that needs an exclusive resource can be added to `SERIAL_MODULES` in the
+script with its discovery name (for example `test_device`) and a one-line reason.
+Keep such modules small. The script runs them once, in a fresh process, after the
+unit pool finishes; the UI pool may still be running at that time, so a
+machine-exclusive case belongs after both pools. The list is currently empty.
+
 For local runs install `unittest-parallel==1.8.6` and run the same script;
-`--jobs 4`, `--pattern test_context_compaction.py` and `-k circle` can limit a
+`--jobs 4`, `--pattern test_context_compaction.py` and `-k circle` narrow a
 focused run. `--list` prints the discovered IDs without executing them.
 
-The compaction offscreen fixture creates QML delegates synchronously instead of
-depending on a rendered-frame incubation budget. Pi, provider requests and model
-updates still run asynchronously. A fixture request is released explicitly by the
-test (or teardown), and clicks wait for the actual control and viewport geometry.
-Clicks remap that control after mouse movement processes queued Qt layout work.
-Parallel execution also exposed an already-completed pet-import future replying
-before its RPC token was registered. That response is now queued; the existing
-RPC test covers both normal background completion and a completed future.
+## Writing stable UI tests
 
-UI smoke readiness follows actual delegates and geometry: request-details waits
-for its asynchronous button to exist and be visible, while large-chat waits for
-the original jump-position condition after scene polish, as well as ready data
-and restoration completion. Neither changes the original timeout or assertion.
-Near the end of a paged conversation, restoration also waits for relevant visible
-neighbour bodies in its existing requested range, explicitly polishes their
-loaded layout and repositions before completing. Loader readiness alone does
-not guarantee final nested Column/text heights. The original retry cap remains.
-Concurrent paging also exposed a link-scanner lifetime race: a Python weak
-reference can survive destruction of its QML-owned C++ object. Scanner workers
-now exchange only Python cancellation state and queued results; the owner's GUI
-timer delivers results while it exists, so a late scan never signals a deleted
-delegate. The timer runs only while a scan is active.
-The character artwork smoke fixes its backend's normal-artwork fixture: valid
-random rare covers have different paths and are outside its normal-asset
-assertions. Product rare-cover selection remains unchanged.
-Subagent collection waits for the visible card/group state instead of a fixed
-sleep. Motion retargeting samples and calls the real update method in one
-synchronous QML call, without processing queued work between the samples.
+- Wait for the actual delegate, control and viewport geometry rather than fixed
+  sleeps or frame budgets. The compaction fixture, for example, creates QML
+  delegates synchronously and releases its fixture request explicitly.
+- Re-map a control's position after mouse movement has processed queued Qt
+  layout work, then click it.
+- Keep the original timeouts, retry caps and assertions when changing readiness
+  conditions.
+- Runtime verification replaces changed adapter files atomically, so concurrent
+  readers always see a complete helper.
 
-Runtime verification leaves identical prepared adapters untouched and replaces
-changed files atomically, so concurrent readers cannot see a truncated helper.
+## Native regressions
 
 `python scripts/ci-native-tests.py` runs the actual-host regressions. The
 lists live in that script: native paths, PTY/process behavior, filesystem
 boundaries and Preview source launching on each OS, plus Windows-only
 ConPTY, font, argv, socket and process-tree checks. Preview and terminal
-module entrypoints preserve their existing isolated Qt/PTY workers.
+module entrypoints use their isolated Qt/PTY workers.
 The same script selects native Node process-tree, search-tool and installer
 cases by exact test name, plus Windows PowerShell and macOS symlink cases.
-The remaining shared Node cases run only in Linux checks.
+The remaining shared Node cases run in the Linux checks.
 
-For PRs, a small scope job keeps ordinary `app/`, QML, `runtime/` source and
-test changes on Linux shared checks plus the Windows native regression job.
-It requests a Windows package for dependency/build inputs and explicitly
-copied non-source resources: runtime package manifests, requirements,
-PyInstaller specs, app icons/data files, runtime documentation/data,
-skills/plugins/licenses, build/setup scripts and packaging workflows.
-Unclassified paths also request packages. The exact exceptions live in
-`scripts/ci-package-changes.py`. Packaging PRs run the Windows native list
-in the Windows package job instead of repeating it in a separate job.
-Within `app/` and `runtime/`, only known source suffixes use the light path;
-module manifests such as `qmldir`, SVGs and new data files still request packages.
+## Which jobs run
+
+For PRs, a small scope job runs ordinary `app/`, QML, `runtime/` source and
+test changes on the Linux shared checks plus the Windows native regression job.
+It adds a Windows package for dependency/build inputs and copied non-source
+resources: runtime package manifests, requirements, PyInstaller specs, app
+icons/data files, runtime documentation/data, skills/plugins/licenses,
+build/setup scripts and packaging workflows. Unclassified paths also add a
+package. Within `app/` and `runtime/`, known source suffixes use the light path;
+module manifests such as `qmldir`, SVGs and new data files add a package. The
+exact rules live in `scripts/ci-package-changes.py`. Packaging PRs run the
+Windows native list inside the Windows package job.
 
 Main pushes and ordinary manual dispatches build Windows x64. A manual
-`all_platforms=true` dispatch additionally builds Linux x64, macOS Intel and
+`all_platforms=true` dispatch also builds Linux x64, macOS Intel and
 Apple Silicon for a stable release. Linux IME caret checks run in the shared
-UI pool even when no Linux package is requested. Windows window
-and embedded-browser checks, macOS DMG tests, and frozen application/Pi
-smokes remain on their original platforms. Shared tests are no longer
-repeated in every package job; no test file is deleted.
+UI pool. Windows window and embedded-browser checks, macOS DMG tests, and
+frozen application/Pi smokes run on their own platforms.
 
-The existing PR concurrency cancellation remains in place. A final job on
-successful main CI publishes only its verified Windows package to the rolling
-`preview` prerelease. It stages and verifies uploads before replacing the old
-Release/tag, rejects stale main builds, and never marks the Preview as Latest.
-PRs and other branches do not receive this publication job. Stable release
-publishing still requires a successful main desktop run with all four native
-artifacts; use the explicit full-platform dispatch for that run.
+A newer PR run cancels the previous one. After a successful main CI, a final job
+publishes its verified Windows package to the rolling `preview` prerelease. It
+stages and verifies uploads before replacing the old Release/tag, skips stale
+main builds, and keeps Preview as a prerelease (never Latest). Only main runs
+publish Preview. A stable release needs a successful main desktop run with all
+four native artifacts; use the full-platform dispatch for that run.
