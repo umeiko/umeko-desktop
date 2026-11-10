@@ -26,11 +26,11 @@ The full Qt WebEngine is distributed separately to keep the base package smaller
 
 ## Why can I add several accounts from one provider? {#why-can-i-add-several-accounts-from-one-provider}
 
-Each Key can have its own alias, region, models and proxy. `Kimi(Work)` and `Kimi(2)` are separate accounts, each with its own upstream quota.
+Each Key can have its own alias, region, models and proxy. `Kimi(Work)` and `Kimi(2)` are separate account entries; quota follows the upstream account each Key belongs to.
 
 ## Are Skills, plugins and MCP automatically sandboxed? {#are-skills-plugins-and-mcp-automatically-sandboxed}
 
-Pi extensions, local MCP processes, provider plugins and Widgets run local code with your user permissions. Package validation and host permissions limit some operations; hiding a tool only changes which tools the model sees. Install content from trusted sources.
+Pi extensions, local MCP processes, provider plugins and Widgets can run local code with your user permissions. Package validation and host permissions limit some operations; hiding a tool only changes which tools the model sees. Install content from trusted sources.
 
 ## Where does my data go? {#where-does-my-data-go}
 

@@ -67,7 +67,7 @@ Widget 清单可选 `icon`：填写 `"terminal"`、`"folder"`、`"branch"`、`"c
 {"operation":"widgets.call","arguments":{"id":"git-viewer","method":"status","arguments":{}}}
 ```
 
-调用立即返回 `accepted`、`requestId`、`jobId`。用 `widgets.result` 的 `requestId` 查询到 `completed` 或 `failed`，其中 `result` 包含 `{ok,result}` 或 `{ok:false,error}`，`updates` 包含该 Widget 在此请求期间推送的消息。也可用 `jobs.get` 观察最终状态。默认调用超时 20 秒，可通过 `timeoutMs` 调整为 1–120 秒；超时会停止该插件进程。最多保留 64 项请求；应用退出时未完成的调用随之结束。
+调用立即返回 `accepted`、`requestId`、`jobId`。用 `widgets.result` 的 `requestId` 查询到 `completed` 或 `failed`，其中 `result` 包含 `{ok,result}` 或 `{ok:false,error}`，`updates` 包含该 Widget 在此请求期间推送的消息。也可用 `jobs.get` 观察最终状态。默认调用超时 20 秒，可通过 `timeoutMs` 调整为 1–120 秒；超时会停止该插件进程。最多保留 64 项请求；应用退出后未完成的调用不会恢复。
 
 会话级 Widget 调用绑定当前显示的主会话。应用级插件也接受后台运行的其他聊天发起的调用，每次调用的参数、工作区、结果和更新都绑定发起它的聊天，只有该聊天能查询其结果。已激活的 Widget 会在调用时按需启动；`widgets.open` 用于有页面的插件。
 
@@ -118,7 +118,7 @@ def create_plugin(context):
 
 应用级后台任务应在开始时保存 `target = context.capture_session()`，完成后使用 `context.notify_agent(..., session=target)`。调用中的 `context.request_session`、`request_id` 和 `call_source` 为线程隔离的请求上下文，额外线程需要显式传入保存的值。应用级通知需要指定目标，或能通过原请求 ID 关联到目标，否则会被拒绝。目标在捕获时确定，用户切到其他聊天时保持不变；原聊天已加载时可唤醒其后台 Agent，未加载时等待它再次加载。聊天的工作区改变后，旧目标会收到失败回执，此时需要在新目标重新发起。
 
-每条通知文本最多 8000 字，总事件最多 32 KiB；每个 Widget 每分钟最多 60 条。每个目标聊天保留最近 100 条、最多 1 MiB 的消息记录，`historyTruncated` 标明更早记录被淘汰。应用级服务尚未投递且目标暂未加载的消息可等待它再次加载；应用退出或进程中断后，已尝试但未确认的消息标为 `interrupted`，需要时由插件重新发送。任务结果来自方法返回或插件文档中明确约定的结构化协议。
+每条通知文本最多 8000 字，总事件最多 32 KiB；每个 Widget 每分钟最多 60 条。每个目标聊天保留最近 100 条、最多 1 MiB 的消息记录，`historyTruncated` 标明更早记录被淘汰。应用级服务尚未投递且目标暂未加载的消息可等待它再次加载；应用退出或进程中断后，已尝试但未确认的消息标为 `interrupted`，不会自动重放。任务结果来自方法返回或插件文档中明确约定的结构化协议。
 
 ## Widget 如何读取 Umeko 的信息
 
@@ -165,9 +165,9 @@ Agent 可调用插件公开方法传入结构化数据。插件通过 `context.p
 
 `workspace` 必须是绝对路径。`model` 填已存在的**桌面模型别名**（上游模型名称在这里无效）；选填的 `provider` 必须是已配置的 Provider ID，宿主会核对该别名确实路由到这个 Provider。两个 Provider 的别名冲突时使用唯一别名。示例值都是占位符。插件的 `acquire` 按 `profile` 名称选择配置，工作目录、模型和工具都由配置决定。
 
-`tools` 为精确工具名列表，与桌面策略取交集；服务始终排除桌面管理工具 `umeko_desktop`、`pi` 和 `pi_commands`，保证配置无法通过管理操作被修改。其他核心工具与可选子 Agent 工具需要显式配置，并受桌面策略限制。子 Agent 运行时继承同一强制工具与权限上限，模型注册表只提供配置选定的模型。`permissionMode` 为 `ask` 或 `auto`，上限是桌面允许的权限。`allowApprovals` 默认 `false`，与工具配置相互独立，只允许插件逐次处理审批。
+`tools` 为精确工具名列表，与桌面策略取交集；服务始终排除桌面管理工具 `umeko_desktop`、`pi` 和 `pi_commands`，保证配置无法通过管理操作被修改。其他核心工具与可选子 Agent 工具需要显式配置，并受桌面策略限制。子 Agent 运行时继承同一强制工具与权限上限，模型注册表只提供配置选定的模型。`permissionMode` 为 `ask` 或 `auto`，上限是桌面允许的权限。`allowApprovals` 默认 `false`，与工具配置相互独立；开启后插件可以注册审批处理器，逐个回应 confirm 类审批请求。
 
-下面的代码必须在插件创建的**后台线程**执行（`handle()`、构造函数和 `on_event()` 会被它阻塞）：
+下面的代码必须在插件创建的**后台线程**执行，放在 `handle()`、构造函数或 `on_event()` 之外：
 
 ```python
 import uuid

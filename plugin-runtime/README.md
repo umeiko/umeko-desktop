@@ -76,7 +76,7 @@ python -m umeko_plugin_sdk validate my-plugin
 python -m umeko_plugin_sdk pack my-plugin my-plugin.zip
 ```
 
-在“设置 → Agent → 插件管理”导入 ZIP；会话插件勾选“在当前会话启用”，应用服务使用全局开关。导入和读取说明时只做校验，插件入口在启用后才运行；配置保存后的运行行为由生命周期决定。内置插件的 ID 保留给官方包。升级时使用新的版本号；已有配置需通过新版本 schema 校验，校验失败时保留旧版本。卸载清除插件包和设置，会话工作目录中的文件保持不变。
+在“设置 → Agent → 插件管理”导入 ZIP；会话插件勾选“在当前会话启用”，应用服务使用全局开关。导入和读取说明时不执行插件入口；配置保存后的运行行为由生命周期决定。使用内置官方插件 ID 的 ZIP 会被拒绝导入。升级时使用新的版本号；已有配置需通过新版本 schema 校验，校验失败时保留旧版本。卸载清除插件包和设置，会话工作目录中的文件保持不变。
 
 ## 生命周期
 
@@ -145,7 +145,7 @@ Agent 通过现有的 `umeko_desktop` 使用 Widget：`widgets.list` 发现激�
 
 Python 的 `context.notify_agent(message, data={}, request_id=None, wake=True, session=None)` 要求 `session.write`，主动向主 Agent 推送文字和结构化数据，返回消息 ID。默认关联当前 `context.request_id`；后台线程应保存该 ID 并显式传入。应用级后台通知必须指定已捕获的 `session`，或通过原请求 ID 关联目标。每条最多 8000 字，整个事件最多 32 KiB，每个 Widget 每分钟最多 60 条。`wake=True` 在 Agent 忙碌时走 Pi 原生 steer，在安全处理节点送达；空闲时触发新回合。`wake=False` 只注入上下文，留待当前或下次回合读取。聊天输入框的草稿和附件保持不变。
 
-通知会同时保存到本用户配置目录的目标聊天记录中（每聊天最近 100 条、最多 1 MiB），并出现在 `widgets.messages` 和对应 `widgets.result.updates` 中。投递状态 `pending`/`sending`/`queued`/`delivered`/`failed` 可通过 `Plugin.on_event("agent.delivery", data)` 接收；`delivered` 表示已进入 Agent 上下文，任务结果以方法返回或业务协议为准。同次应用运行内，因目标未加载而尚未投递的消息会等待该聊天再次加载；服务停止时取消尚未投递的消息，应用退出时未确认的消息需要由插件重新发送。
+通知会同时保存到本用户配置目录的目标聊天记录中（每聊天最近 100 条、最多 1 MiB），并出现在 `widgets.messages` 和对应 `widgets.result.updates` 中。投递状态 `pending`/`sending`/`queued`/`delivered`/`failed` 可通过 `Plugin.on_event("agent.delivery", data)` 接收；`delivered` 表示已进入 Agent 上下文，任务结果以方法返回或业务协议为准。同次应用运行内，因目标未加载而尚未投递的消息会等待该聊天再次加载；服务停止时取消尚未投递的消息，应用退出后未确认的消息不会自动重放。
 
 `context.publish(topic, data)` 将最多 64 KiB 的 JSON 对象异步发给当前可见页面的 `sdk.event(topic, data)`。Agent 调用插件方法后可由这个接口更新界面。Python 可覆盖 `Plugin.on_event("session.changed", snapshot)` 接收会话更新；回调运行在该插件的消息线程，耗时工作应转到可取消的后台任务。
 
@@ -206,7 +206,7 @@ Rectangle {
 - 官方文件树逐层加载，默认每层 1000 项、总缓存 10000 项、可见模型 4000 项、深度 32 层；Git 状态最多 2000 项，读取差异最多 256 KiB，未跟踪文件最多 128 KiB；渲染进一步限制为 48000 字符、1000 行、每行 2000 字符。大型差异关闭高亮，并显示截断提示。
 - 会话插件的进程和回调随聊天结束而撤销，应用服务的后台任务持续到实例停止。所有结果保持目标聊天归属。使用 SDK 管理的进程可获得超时与清理；插件自行启动的线程、文件监听和进程需要在 `close()` 中自行停止。
 
-开发时用临时工作目录和假数据测试错误、超时、切换会话、关闭页面、卸载和大文件行为。Git 示例只做本地操作，不联网推送，也不清理工作文件。
+开发时用临时工作目录和假数据测试错误、超时、切换会话、关闭页面、卸载和大文件行为。Git 示例不联网推送，也不自动清理工作文件。
 
 ## 宿主服务（Widget Host API v1）
 
@@ -288,8 +288,8 @@ Widget 管理接口在忙碌时会拒绝写操作。
 `"node" in context.runtimes` 检查能力。运行时名称固定为 `node`。
 
 宿主只提供 Node 运行时本身。Widget 随包携带自己固定版本的
-JS 依赖和许可证，例如将入口与 `node_modules` 一起放在 `vendor/` 下；ESM 按相对路径解析，
-无需 `NODE_PATH`。调用 `pi.network` 获取应用的 npm 覆盖项，再交给自己的 registry 客户端，
+JS 依赖和许可证，例如将入口与 `node_modules` 一起放在 `vendor/` 下；ESM 无需
+`NODE_PATH`。调用 `pi.network` 获取应用的 npm 覆盖项，再交给自己的 registry 客户端，
 让 npm 在捕获的项目中解析其正常配置。完整 npm 配置和凭据只在本地使用，不写入公开结果。
 应用级后台程序默认在 `state_dir` 运行；需要项目 npm 配置时还需 `workspace.read`，
 并显式向 `run_executable(..., session=target)` 传入捕获的聊天。
@@ -299,7 +299,7 @@ JS 依赖和许可证，例如将入口与 `node_modules` 一起放在 `vendor/`
 需要统计扩展使用情况的 Widget 可声明 `pi.observe`。激活后在
 `on_event("pi.activity", data)` 收到至多每 200ms 一批的已结束工具元数据：
 `events[].kind/id/name/state/source/time/session`，以及本批 `dropped` 数量。
-`source` 原样取自当前 Pi 资源目录，可能为空。
+`source` 是该会话已加载工具清单中同名工具登记的来源字段，原样传递（最长 2048 字符）；清单中找不到该工具时为空字符串。
 会话 Widget 只观察绑定聊天，应用 Widget 可观察各聊天；每条携带原聊天的 token/id/workspace。
 事件只含上述元数据，不含工具参数、工具结果、思考、聊天正文或 token 增量，也不包括历史记录。
 

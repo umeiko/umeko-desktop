@@ -35,7 +35,7 @@ Umeko 使用自己的供应商网关，桌面供应商通过下面的 `providers
 
 检测记录 `reasoningDetection`、`reasoningFormatDetection` 包含状态、来源和验证结果；服务端接受任意档位值时，使用公开请求 schema 中的档位并标记 `verified:false`，表示各档位的实际效果未经确认。格式结果的 `status` 为 `on-off-verified`（观察到开关）、`cannot-disable`（所有候选关闭方式均未关闭）或 `on-not-observable`（所有格式均未观察到开启）。`offSupported:false` 时同时保留完整 `offSwitchesTried`，表示探测没有找到关闭方式，界面据此提示无法关闭。手动设置或检测尚未完成时为 null。`offVerified` 记录是否在返回内容中观察到关闭。已有的旧自动缓存会补测这些关闭结果，手动设置保持不变。
 
-上游若拒绝正在使用的档位，当前轮报错并列出已知可用档位，缓存移除该档位，等该模型当前轮结束后重新检测；用户可以重新发送这一轮。手动重新检测也会等待同模型空闲。模型切换若排队，下一轮才使用新连接。
+上游若拒绝正在使用的档位，当前轮报错并列出已知可用档位，缓存移除该档位，等该模型当前轮结束后重新检测；这一轮不会自动重发。手动重新检测也会等待同模型空闲。模型切换若排队，下一轮才使用新连接。
 
 每个供应商的网络模式通过 `providers.network` 设置，参数 `id`、`mode`、`address`。模式 `system` 跟随系统，`direct` 不走代理，`custom` 使用指定的 HTTP/HTTPS 代理地址。非 custom 时 `address` 留空。网络模式是每个供应商的一项设置。
 
@@ -50,7 +50,7 @@ Umeko 使用自己的供应商网关，桌面供应商通过下面的 `providers
 
 `image_gen` 必填 `prompt`，可选 `size`、`count`、`format`、`output_filename`；`voice_gen` 必填 `text`，可选 `voice`、`format`、`speed`、`output_filename`。每次发送提示词或文本前都会请求一次权限确认，自动模式也一样。文件写入当前聊天工作目录，只接受安全文件名，始终创建新文件，重名时追加后缀。聊天展示图片缩略图或音频文件卡片，用户点击后打开或播放。Agent 收到文件路径和文本；需要看图时另行读取，受最近图片数量限制（默认 `3`）。
 
-`video_gen` 必填 `prompt`，可选字符串 `seconds`（正整数秒）、`size`（如 `1280x720`）、`output_filename`（MP4 文件名）。时长与分辨率不传时沿用视频设置，设置留空则由供应商决定。每次发送前确认一次；配置了视频账号及模型后才注册此工具。创建任务、轮询状态和下载都在同一次工具调用中完成，工具栏显示状态与百分比。停止会结束轮询、丢弃之后到达的结果，并尝试 `DELETE /videos/{id}`；无论删除是否成功，取消都会完成。文件保存为当前工作目录中的新 MP4，点击文件卡片后由系统程序打开，会话历史保留卡片。应用重启时，运行中的视频任务随之结束。
+`video_gen` 必填 `prompt`，可选字符串 `seconds`（正整数秒）、`size`（如 `1280x720`）、`output_filename`（MP4 文件名）。时长与分辨率不传时沿用视频设置，设置留空则由供应商决定。每次发送前确认一次；配置了视频账号及模型后才注册此工具。创建任务、轮询状态和下载都在同一次工具调用中完成，工具栏显示状态与百分比。停止会结束轮询、丢弃之后到达的结果，并尝试 `DELETE /videos/{id}`；无论删除是否成功，取消都会完成。文件保存为当前工作目录中的新 MP4，点击文件卡片后由系统程序打开，会话历史保留卡片。运行中的任务在应用重启后不会恢复。
 
 OpenAI 兼容接入使用 `/images/generations`，接受 `b64_json` 或 URL 图片结果；`/audio/speech` 接受二进制音频结果。视频使用 [Videos 协议](https://developers.openai.com/api/reference/resources/videos/methods/create)：`POST /videos`，`GET /videos/{id}`，`GET /videos/{id}/content`。OpenAI 自身已关闭该 API，所选供应商需要提供此兼容协议。其他视频任务协议通过插件接入：声明 `generationCapabilities: ["video"]` 并实现 `generate_video(model, prompt, parameters, on_progress=None)`，通过回调上报 `{id,status,progress}` 并遵守请求取消状态，返回 MP4 媒体列表。
 
@@ -66,7 +66,7 @@ Python 模型请求使用系统证书信任链，并可按供应商追加可信�
 
 传 `caFile:""` 清除此供应商的额外 CA；修改代理模式会保留已配置的 CA。保存后下一次请求生效，只作用于这个供应商。通用配置可使用 `UMEKO_MODEL_CA_FILE`、`NODE_EXTRA_CA_CERTS`；环境变量变更后须完全重启应用。模型、npm 安装和客户端更新下载证书分别管理。
 
-错误详情保留底层异常链和证书校验原因。代理 CONNECT 失败与证书错误分别排查；证书配置与代理模式互相独立，只有配置的 CA 会被加入信任。
+错误详情保留底层异常链和证书校验原因。代理 CONNECT 失败与证书错误分别排查；证书配置与代理模式互相独立；信任范围是系统证书链加上已配置的 CA，服务端返回的未知证书不会被自动信任，TLS 校验始终开启。
 
 `models.mappings` 的 `models` 是完整映射数组，行格式包含 `provider`、`upstream`、`alias`、`contextWindow`、`contextWindowAuto`、`vision`、`visionAuto` 及上述 reasoning 配置。省略 reasoning 字段时保留原配置；这是替换操作，先读取所有供应商并保留其他映射。插件模型 ID 来自 `plugins.refreshModels` 的刷新结果。
 

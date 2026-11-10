@@ -1,6 +1,6 @@
 # Umeko Provider SDK
 
-`umeko-provider-sdk` is the public Python API for custom account login, model discovery and inference. The SDK has no imports from the desktop application. Protocol-specific login pages, OAuth flows, enterprise endpoints and routing belong in a separately distributed Provider package. Importing a package only stores it; its code runs on demand for login, refresh and inference.
+`umeko-provider-sdk` is the public Python API for custom account login, model discovery and inference. The SDK has no imports from the desktop application. Protocol-specific login pages, OAuth flows, enterprise endpoints and routing belong in a separately distributed Provider package. Importing a package unpacks it and adds an account without running its code; the code runs on demand for login, refresh and inference.
 
 ## Get started
 
@@ -77,4 +77,4 @@ Use synthetic local fixtures for login success/failure, account switching, expir
 
 Provider API v1 remains compatible. Inside Umeko, `HttpSession` follows the provider card's proxy policy (system, direct or custom), including login, model discovery and inference. This host policy takes precedence over the standalone `environment_proxy` default. Avoid changing process-global proxy variables in provider code. The C++ worker also supplies the selected policy to conventional environment-aware transports.
 
-During inference, the host captures the complete SDK call. `HttpSession` additionally records the actual HTTP request, status and error response for the local request-details window. Keep using `ProviderError` for concise user-facing failures; do not put passwords or raw authentication responses in it. Login requests are not recorded. Transports outside `HttpSession` handle the proxy policy themselves, and the request-details window shows only `HttpSession` traffic. Existing v1 packages continue to load.
+During inference, the host captures the complete SDK call. `HttpSession` additionally records the actual HTTP request, status and error response for the local request-details window. Keep using `ProviderError` for concise user-facing failures; do not put passwords or raw authentication responses in it. Login requests are not recorded. Transports outside `HttpSession` handle the proxy policy themselves; their individual HTTP requests are not recorded, though the SDK call itself still is. Existing v1 packages continue to load.

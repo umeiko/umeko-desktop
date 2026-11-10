@@ -14,7 +14,7 @@
 | 平台 | 操作 |
 | --- | --- |
 | Windows x64 | 把完整 ZIP 解压到可写目录，运行其中的 `Umeko.exe` 或 `UmekoCpp.exe`。程序需要同目录的其他文件。 |
-| macOS Apple Silicon / Intel | 选择匹配架构的 DMG，打开后拖入「应用程序」；也可使用完整 ZIP。安装包未经公证，首次打开时在系统的「隐私与安全性」中确认打开。 |
+| macOS Apple Silicon / Intel | 选择匹配架构的 DMG，打开后拖入「应用程序」；也可使用完整 ZIP。安装包未经公证，首次打开时可能需要在系统的「隐私与安全性」中确认。 |
 | Linux x64 | 解压完整 `tar.gz`，在图形桌面中运行 `Umeko` 或 `UmekoCpp`。保留同目录的库、插件与运行时。 |
 
 Linux 需要桌面的 Qt 平台依赖与可用的密钥环。中文输入问题见[故障排查](../troubleshooting#linux-input-methods)。安装包已携带 Pi、Node.js/npm、搜索程序和对应运行时。
@@ -35,7 +35,7 @@ Release 使用已发布的稳定包。Preview 使用官方仓库最新的 `main`
 
 选择 Preview 后，应用先检查 Git、带 `venv` 的 Python 3.10+、Node.js 22.19+ 和 npm、平台安装脚本所需的 shell、至少 2 GiB 可用空间，以及到官方仓库的网络连接。查看检查结果并确认后，应用在用户目录下的专用 Preview 源码目录克隆 `https://github.com/umeiko/umeko-desktop.git`，运行其中的 `setup.ps1` 或 `setup.sh`，并显示进度，可随时取消。准备失败或取消时继续使用 Release；依赖安装失败可以重试。
 
-准备成功后，通道状态单独保存在 `settings.json` 之外。之后从保留的 Release 程序启动时，应用直接用 Preview 虚拟环境中的 Python 运行 `main.py`，始终启动 Preview 的最新源码。
+准备成功后，通道状态单独保存在 `settings.json` 之外。之后从保留的 Release 程序启动时，应用直接用 Preview 虚拟环境中的 Python 运行 `main.py`，不经过源码启动脚本（该脚本会优先选用已打包的 `dist`）。
 
 Preview 的 **检查更新** 会获取官方提交，展示当前提交 → 目标提交及提交摘要。确认后快进到该目标提交。遇到本地修改、暂存修改、会被覆盖的未跟踪文件、非官方来源或分叉历史时，更新会停下并保留你的本地工作。依赖相关的文件变化时才会重新运行安装脚本；安装失败时保留待重试状态。
 

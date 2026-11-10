@@ -29,7 +29,7 @@ Queued messages can be edited, deleted or promoted. Drop attachments into chat, 
 
 ## Context and compaction {#context-and-compaction}
 
-The ring beside the model shows context usage. Click it while idle to compact manually; automatic compaction follows Pi settings. Compaction replaces earlier content with a summary so the conversation can continue within the model's context window. Save important constraints in project files so every task can read them.
+The ring beside the model shows context usage. Click it while idle to compact manually; automatic compaction follows Pi settings. Compaction replaces earlier content with a summary so the conversation can continue within the model's context window. Save important constraints in project files.
 
 ## Closing and notifications {#closing-and-notifications}
 

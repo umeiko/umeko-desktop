@@ -11,7 +11,7 @@ Ask Umeko to start a command in the background, read its output, wait for it, or
 | `kill` | `id` | Stops this session's recorded job tree and reports its exit |
 | `list` | — | Jobs owned by this session |
 
-Start with `{"action":"start","command":"your command"}`. Save the returned `id`. Read with `{"action":"read","id":"…"}`, then pass both returned offsets on the next read to avoid repeating output. Each command gets different log files, even when the command text is identical. Logs remain in the session's temporary directory after the job exits; after an app restart they remain as log files, and the job list starts empty.
+Start with `{"action":"start","command":"your command"}`. Save the returned `id`. Read with `{"action":"read","id":"…"}`, then pass both returned offsets on the next read to avoid repeating output. Each command gets different log files, even when the command text is identical. The job list is kept in memory; log files are written to a temporary directory and are not deleted when the job exits. After an app restart, earlier jobs are no longer listed or controllable, and their log files remain on disk.
 
 Reads default to 64 KiB per stream; the maximum is 1 MiB per stream. A multibyte UTF-8 character can exceed a requested page size by up to three bytes so that even a one-byte page can advance. Wait defaults to ten seconds and accepts zero to sixty seconds. A wait timeout leaves the job running. Use another wait/read, or stop it by job ID.
 

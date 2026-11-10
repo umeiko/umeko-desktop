@@ -9,7 +9,7 @@ Qt 输入法插件依赖 Qt 私有 ABI，必须用与应用相同版本的 Qt �
 两个项目都从 SHA-256 固定的 fcitx5-qt **5.1.13** 源码编译插件，使用各自应用的 Qt SDK。源码和构建规则见 `native/input-method/`，系统 Qt 和输入法设置保持原样。
 
 - `BUILD_ONLY_PLUGIN=ON` 将 DBusAddons 编入插件，无需系统 `libFcitx5Qt6DBusAddons`。
-- 未启用私有 Qt Wayland workaround，因此只加载应用自带的 Qt Wayland 组件。未指定输入法的 Wayland 会话使用 Qt 原生文本输入协议。
+- 未启用私有 Qt Wayland workaround，因此不会额外加载系统的旧版 `Qt6WaylandClient`。未指定输入法的 Wayland 会话使用 Qt 原生文本输入协议。
 - 插件位于应用自己的 `plugins/platforminputcontexts/`；Python 源码开发使用 `build/input-method/plugins/`。启动时优先选择应用自己的插件。
 - 输入法模块保持用户的选择；旧的 `.local/fcitx5-qt6` 目录已不再需要。
 - 发布包自带插件和许可；打包检查会在移除 SDK/外部库路径后确认 `IME_PLUGIN_READY:1`。插件源码归档中的链接会解引用复制，因此可在不支持符号链接的 exFAT 工作区中构建。

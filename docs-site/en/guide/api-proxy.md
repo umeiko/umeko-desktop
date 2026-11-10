@@ -26,7 +26,7 @@ Clients use a Key created by the proxy; the upstream provider's own Key stays in
 
 Local mode displays `127.0.0.1`. After saving LAN mode, copyable addresses use an available local IPv4 address; if none is available, Umeko shows a hint. Clients use a specific IP address; `0.0.0.0` is only the listening address.
 
-Turn on LAN mode when another device on the network needs access, and check your OS firewall so the service stays reachable only on your local network. Clients always need a Key. Switching back to local mode restores loopback addresses.
+Turn on LAN mode when another device on the network needs access, and check your OS firewall. LAN mode listens on all IPv4 interfaces over HTTP, so use it only on trusted networks. Clients always need a Key. Switching back to local mode restores loopback addresses.
 
 ## Manage Keys {#manage-keys}
 

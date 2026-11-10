@@ -13,8 +13,8 @@ published v0.6.0 is too old. Source builds after that change still report versio
 Download `umeko-codearts-provider-<version>.zip` from the Release attachments when
 available, then choose **Settings → Accounts & Providers → + → Import custom
 provider implementation**. Activate the imported account with **Log in and refresh
-models**, then import the access-key CSV on its card. The CLI is downloaded, if
-missing, when you log in. **Installed plugins → Uninstall plugin** removes the
+models**, then import the access-key CSV on its card. If the CLI is missing, the
+official installer runs when you log in. **Installed plugins → Uninstall plugin** removes the
 installed version and its accounts and credentials; removing an account alone
 keeps the plugin installed.
 

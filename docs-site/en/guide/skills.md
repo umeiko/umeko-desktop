@@ -21,7 +21,7 @@ Open **Widgets → Skill manager** at the bottom-right of chat. It has Workspace
 
 - Single-click selects; double-click attaches the whole folder without sending.
 - Right-click to preview, edit, reveal, copy, paste, rename or delete a package.
-- Drop a Skill folder, ZIP or `.skill` onto the target section, or paste there, to import in place. A dialog opens only when import fails; on a name conflict the existing package is kept.
+- Drop a Skill folder, ZIP or `.skill` onto the target section, or paste there, to import in place. A dialog explains any failure; if any name conflicts, the whole batch is skipped and existing packages stay unchanged.
 - Use the explicit Import entry to preview results or replace an existing package.
 
 [![Whole-folder Skill context menu](/images/skill-menu-en.png)](/images/skill-menu-en.png)

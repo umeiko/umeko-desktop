@@ -1,6 +1,6 @@
 # Troubleshooting {#troubleshooting}
 
-Note the version and reproduction steps, then start with the part that is failing. Your profile holds settings, credentials and sessions; keep it in place while you troubleshoot.
+Note the version and reproduction steps, then start with the part that is failing. Your profile holds settings, provider configuration and session history; keep it in place while you troubleshoot.
 
 ## Model connection failures {#model-connection-failures}
 

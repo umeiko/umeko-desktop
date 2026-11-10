@@ -18,12 +18,12 @@ Closing a page and disabling a plugin have different effects, and each Widget de
 
 The official pet loads hidden by default. Enable its display in its plugin settings to drag it, interact with it and use its context menu. Its character selection is independent of the main interface. It can import WebP, GIF, PNG and multi-action character ZIPs.
 
-Showing or hiding the pet affects only its desktop figure. Configure reminders and related features in the pet's own settings.
+Showing or hiding the pet is independent of agent permissions. Configure reminders and related features in the pet's own settings.
 
 ## Let an agent use a Widget {#let-an-agent-use-a-widget}
 
 > Open the file tree and help me find this project's configuration directory.
 
-Agents use `umeko_desktop` operations under `widgets.*` to read documentation, open pages or call public methods. A third-party Widget can use only the capabilities it declares and you approve; application keys and other backend access stay closed to it.
+Agents use `umeko_desktop` operations under `widgets.*` to read documentation, open pages or call public methods. Through the host interface, a third-party Widget can use only the capabilities it declares and you approve; the host does not hand it application keys.
 
 To build one, export the SDK and development Skill, then validate and package it using the [development guide](../reference/development). Check sources and permissions before installing third-party plugins.

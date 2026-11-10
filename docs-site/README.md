@@ -35,7 +35,7 @@ Change matching language pages together. Headings use explicit shared `{#anchor}
 
 Content follows `main`. Mark edition differences and features that are not in a stable Release yet. Source links point to each repository's `main`; the build checks internal links only.
 
-Local search uses `Intl.Segmenter` for Chinese and mixed-language text, which current browsers support. The site runs as static files with local search, fonts and assets.
+Local search uses `Intl.Segmenter` for Chinese and mixed-language text and needs a browser that supports it. The site runs as static files with local search, fonts and assets.
 
 ## Update screenshots
 

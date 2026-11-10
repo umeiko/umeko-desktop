@@ -100,7 +100,7 @@ Six community animation assets from [yanzwzz/dsh-whale-girl-pet](https://github.
 
 ## Preinstalled Skills (0.6.4)
 
-Public OpenAI Skills (Apache-2.0), Hermes Skills (MIT), and Archify (Apache-2.0 with its retained third-party notices) are distributed in `bundled-skills/`. Each folder retains its own license; `bundled-skills/sources.json` records immutable upstream commits, adaptations and file hashes. All of them come from these public upstream repositories. Optional Python/CLI/browser dependencies are not bundled or implicitly installed.
+Public OpenAI Skills (Apache-2.0), Hermes Skills (MIT), and Archify (Apache-2.0 with its retained third-party notices) are distributed in `bundled-skills/`. Each folder retains its own license; `bundled-skills/sources.json` records immutable upstream commits, adaptations and file hashes. All of them come from the public upstream repositories recorded there. Optional Python/CLI/browser dependencies are not bundled or implicitly installed.
 
 Composer pinyin matching uses pypinyin 0.55.0 (MIT); see `licenses/pypinyin-MIT.txt`.
 

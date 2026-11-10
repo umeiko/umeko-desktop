@@ -26,11 +26,11 @@ Umeko 使用完整的 Pi 内核，它内嵌在桌面会话中，模型连接来�
 
 ## 为什么同一家服务有多个账号？ {#why-can-i-add-several-accounts-from-one-provider}
 
-每个 Key 可以单独配置别名、区域、模型与代理。`Kimi(工作)` 和 `Kimi(2)` 是两个独立账号，各用各的上游额度。
+每个 Key 可以单独配置别名、区域、模型与代理。`Kimi(工作)` 和 `Kimi(2)` 是两条独立的账号配置；额度由各自 Key 所属的上游账号决定。
 
 ## Skill、插件、MCP 能自动隔离风险吗？ {#are-skills-plugins-and-mcp-automatically-sandboxed}
 
-Pi 扩展、本地 MCP、供应商插件和 Widget 以你的用户权限在本机运行代码。来源校验和宿主权限会限制部分操作；隐藏工具只影响模型能看到哪些工具。请只安装可信来源的内容。
+Pi 扩展、本地 MCP、供应商插件和 Widget 可以在本机运行代码，权限与你的用户账号相同。来源校验和宿主权限会限制部分操作；隐藏工具只影响模型能看到哪些工具。请只安装可信来源的内容。
 
 ## 数据会发送到哪里？ {#where-does-my-data-go}
 

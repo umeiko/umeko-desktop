@@ -4,8 +4,7 @@ CodeArts is an **unofficial, optional Provider SDK API v1 plugin** in
 [`provider_dev/plugins/codearts`](../provider_dev/plugins/codearts/PROVIDER.md),
 distributed separately from the desktop installer as a Provider ZIP Release
 attachment for personal research, learning and exchange. It is not one of
-Umeko's default providers. Use it at your own risk and in line with the
-service's terms.
+Umeko's default providers. Use it at your own risk.
 
 Requires **Umeko v0.6.1 or newer**. The plugin also checks the required SDK
 capabilities at runtime.
@@ -42,8 +41,8 @@ field is cleared as soon as the host submits it to the plugin.
 A Windows Credential Manager entry from the earlier preview is moved once into
 SDK protected secrets and then deleted; if deletion fails, it is retried without
 reading the old keys again. Existing protected credentials take precedence. Keys
-are kept only in protected secrets, and the plugin signs in with the access key
-pair rather than the CLI's browser login.
+are kept only in protected secrets, and the plugin does not read the CLI's own
+stored browser-login credentials.
 
 After connection, CLI model IDs appear in the normal model list. Python
 `scripts/provider.py:create_provider` implements `events(model, messages, tools,

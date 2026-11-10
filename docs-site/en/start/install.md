@@ -14,7 +14,7 @@ Choose the asset matching your OS and CPU. The editions use different profile an
 | Platform | Steps |
 | --- | --- |
 | Windows x64 | Extract the complete ZIP into a writable directory and run `Umeko.exe` or `UmekoCpp.exe` from it. The program needs the other files in that directory. |
-| macOS Apple Silicon / Intel | Open the matching DMG and drag the app into Applications, or use a complete ZIP. Packages are not notarized; on first launch, confirm opening it in system Privacy & Security settings. |
+| macOS Apple Silicon / Intel | Open the matching DMG and drag the app into Applications, or use a complete ZIP. Packages are not notarized; first launch may need confirmation in system Privacy & Security settings. |
 | Linux x64 | Extract the complete `tar.gz` and run `Umeko` or `UmekoCpp` in a graphical desktop. Keep its libraries, plugins and runtimes together. |
 
 Linux needs desktop Qt platform dependencies and a working keyring. See [Troubleshooting](../troubleshooting#linux-input-methods) for input methods. Packaged apps include Pi, Node.js/npm, search binaries and the matching runtimes.
@@ -35,7 +35,7 @@ Release uses published stable packages. Preview runs the latest official `main`,
 
 Choosing Preview checks Git, Python 3.10+ with `venv`, Node.js 22.19+ with npm, the platform setup shell, at least 2 GiB of free space and access to the official repository. After you review the result and confirm, the app clones `https://github.com/umeiko/umeko-desktop.git` into a dedicated Preview source directory under the profile and runs its `setup.ps1` or `setup.sh`, showing progress with a cancel option. If preparation fails or you cancel, Umeko stays on Release; failed dependency setup can be retried.
 
-After success, channel state is stored separately from `settings.json`. From then on, starting the retained Release application launches `main.py` directly with Preview's virtual-environment Python, so you always start Preview's current source.
+After success, channel state is stored separately from `settings.json`. From then on, starting the retained Release application launches `main.py` directly with Preview's virtual-environment Python, bypassing the source launcher, which prefers a packaged `dist` build.
 
 Preview's **Check for updates** fetches official commits and shows the current → target commit and commit summary. After confirmation, it fast-forwards to that target. If it finds local modifications, staged changes, untracked files that would be overwritten, an unexpected origin or diverged history, the update stops and keeps your work. Setup runs again when dependency inputs change; a failed setup stays pending for retry.
 
