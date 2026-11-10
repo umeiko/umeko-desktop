@@ -6,7 +6,7 @@
 
 ### 本机提醒与待办
 
-先读取 `widgets.docs {"id":"desktop-pet"}`。调用仍使用 `widgets.call`，取得 requestId 后通过 `widgets.result` 读取完成结果，确认保存成功。不要把调用已受理当作已经保存。
+先读取 `widgets.docs {"id":"desktop-pet"}`。调用仍使用 `widgets.call`，取得 requestId 后通过 `widgets.result` 读取完成结果，看到 `completed` 后再告诉用户已保存。
 
 - `listItems {"status":"open"}`：返回 `{items,now,localNow}`；status 可为 open（默认）、completed、all。items 包含完整事项和 overdue，按逾期、未来提醒、无时间待办排序。
 - `getItem {"id":"..."}`：返回 `{item,now,localNow}`。
@@ -19,9 +19,9 @@
 
 事项包含 id、title、notes、dueAt、completed、createdAt、updatedAt、revision、occurrence、firedOccurrence、processedAt 和 notificationOutcome。只有 title、notes、dueAt 可编辑；处理标记和版本由宿主管理。新普通待办 occurrence=0，此后设置、改变或清除时间都会增加 occurrence。
 
-定时由桌宠后台服务负责，不需要模型等待、持续查询或派全局子智能体。改期、完成和删除取消旧计划。重启和休眠恢复后仅处理尚未处理的 occurrence；已处理不等于已完成。先保存处理标记再显示的顺序避免重复，但崩溃可能使一次气泡未显示，事项仍保留在逾期列表。
+定时由桌宠后台服务负责，不需要模型等待、持续查询或派全局子智能体。改期、完成和删除取消旧计划。重启和休眠恢复后只处理尚未处理的 occurrence；处理标记（`processedAt`）与完成状态（`completed`）相互独立。宿主先保存处理标记再显示气泡以避免重复；如果恰好在两步之间崩溃，这次气泡可能不显示，事项仍保留在逾期列表。
 
-`status` 还返回 `{reminders:{openCount,overdueCount,nextDueAt,error},now,localNow}`。通过既有 `configure {"reminderNotificationsEnabled":false}` 控制到期气泡；隐藏桌宠或关闭气泡时抑制该次提示，重新显示不补播。Widget 停用或应用退出则停止调度，启用/启动后恢复。首版不发系统通知，不支持重复周期、稍后提醒或重开已完成项。
+`status` 还返回 `{reminders:{openCount,overdueCount,nextDueAt,error},now,localNow}`。通过既有 `configure {"reminderNotificationsEnabled":false}` 控制到期气泡；隐藏桌宠或关闭气泡时抑制该次提示，重新显示不补播。Widget 停用或应用退出则停止调度，启用/启动后恢复。提醒只以桌宠气泡显示；目前不支持系统通知、重复周期、稍后提醒或重开已完成项。
 
 ### 桌宠与形象
 
@@ -65,8 +65,8 @@
 
 只必须提供 idle；其他状态缺省时使用当前形象的 idle。建议所有动作统一透明画布、人物基线与尺寸，使用无限循环的 WebP / GIF。建议 384×576、12–24fps、3–5 秒。每个资源最多 1024px、240 帧、30 秒、32 MiB，ZIP 最多 64 文件且解压后 128 MiB；另有总解码像素上限。只保留清单声明的图像数据，不执行包内脚本、QML 或网页。id 不能与已安装形象重复。
 
-活动观察是确定性后台服务，不是另一个 LLM。动作不会逐 token 切换：所有状态至少持续 3 秒；点击时先给出即时轻摇与台词，动画在保持时间到达后变化。停止/取消任务不会伪装成成功。任务完成动作短暂保持后回到待机。
+活动观察是确定性后台服务，不是另一个 LLM。动作不会逐 token 切换：所有状态至少持续 3 秒；点击时先给出即时轻摇与台词，动画在保持时间到达后变化。任务成功结束显示 done，失败显示 error，各保持约 6 秒后回到待机；停止或取消的任务不显示这两种动作。
 
-`dialogue` 可选 `done`、`error` 台词，仅在实际任务结束或失败的状态变化时播报一次；点击互动不会误报任务完成。内置图片元数据的 `contentTop` 用于将气泡贴近可见角色上缘，不在运行时扫描像素。
+`dialogue` 可选 `done`、`error` 台词，只在任务实际结束或失败时播报一次。内置图片元数据的 `contentTop` 用于将气泡贴近可见角色上缘，不在运行时扫描像素。
 
 可选的 `rareIdle` 对象包含 `image`（包内 PNG/WebP/GIF 相对路径）及 `line`（1–120 字符）。其资源遵循普通动画相同的路径、文件大小、像素和帧数限制。宿主固定以每完整待机轮次 0.5% 的概率抽取，形象包不能改变概率。内置彩蛋使用与普通待机画布、头身比例一致的全身动画；不复用主页半身插画。

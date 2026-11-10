@@ -10,8 +10,8 @@
 {"operation":"widgets.call","arguments":{"id":"file-watch-service","method":"subscribe","arguments":{"path":"README.md"}}}
 ```
 
-立即返回 `accepted` 和 `requestId`；使用 `widgets.result` 查询本次方法调用是否完成。文件发生变化时会另外主动发送具名 Widget 消息，`data` 包含 `path` 和 `exists`。该通知不属于某次已经结束的调用，可用 `widgets.messages` 的 `id:"file-watch-service"` 查询。消息只发给订阅时的聊天，切换到其他聊天不会改变目标。
+立即返回 `accepted` 和 `requestId`；使用 `widgets.result` 查询本次方法调用是否完成。文件发生变化时会另外主动发送具名 Widget 消息，`data` 包含 `path` 和 `exists`。这些通知独立于方法调用，可用 `widgets.messages` 的 `id:"file-watch-service"` 查询。消息始终发给订阅时的聊天，与用户当前查看哪个聊天无关。
 
-服务在后台每 5 秒检测一次文件状态，可通过配置调整。通知默认唤醒目标聊天的主 Agent；目标聊天当前未加载时通知保留等待，不投递给正在查看的其他聊天。后台线程捕获 `context.capture_session()` 的返回值，再通过 `notify_agent(..., session=target)` 指定原目标。
+服务在后台每 5 秒检测一次文件状态，可通过配置调整。通知默认唤醒目标聊天的主 Agent；目标聊天当前未加载时，通知等待它再次加载。后台线程捕获 `context.capture_session()` 的返回值，再通过 `notify_agent(..., session=target)` 指定原目标。
 
-服务关闭、配置修改或应用重启后，内存订阅清空。工作目录改变后需要重新订阅。重新启用服务会影响所有聊天的监听，应符合用户意图。
+服务关闭、配置修改或应用重启后，内存订阅清空。工作目录改变后需要重新订阅。重新启用服务会影响所有聊天的监听，按用户的要求操作。

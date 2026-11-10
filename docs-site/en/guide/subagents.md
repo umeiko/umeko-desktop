@@ -6,13 +6,13 @@ Ask the main agent to delegate independent parts of a task: review separate modu
 
 ## Follow their work {#follow-their-work}
 
-Click a task card in the main chat or choose a running subagent from the top-right activity menu. Its side pane shows messages, thinking and tool calls. Closing the pane does not stop the task.
+Click a task card in the main chat or choose a running subagent from the top-right activity menu. Its side pane shows messages, thinking and tool calls. The task keeps running when you close the pane.
 
 [![Subagent side pane and message queue](/images/subagents-en.png)](/images/subagents-en.png)
 
 *Select a task card in the main chat to inspect its independent context. Follow-ups enter that subagent's own queue.*
 
-Each pane has its own input, draft, attachments and queue. **Enter** queues a message; **Ctrl+S** prioritizes an intervention. Stop interrupts only that subagent. Historical tasks can continue if their native context files and configured models remain available.
+Each pane has its own input, draft, attachments and queue. **Enter** queues a message; **Ctrl+S** prioritizes an intervention. Stop interrupts only that subagent. Finished tasks can continue while their native context files and configured models are available.
 
 ## Session subagents versus global agents {#session-subagents-versus-global-agents}
 
@@ -21,9 +21,9 @@ Each pane has its own input, draft, attachments and queue. **Enter** queues a me
 | Session subagents | Helpers delegated by the main agent for the current task |
 | Global agents Widget | Persistent coordinators with user-configured roles, models and conversation links |
 
-Session delegation runs through the community package `@gotgenes/pi-subagents`; Umeko adapts its display and interaction. Current builds no longer impose a default limit of four. Explicit community-package concurrency settings still apply. More concurrent agents consume more model resources; use only what the task needs.
+Session delegation runs through the community package `@gotgenes/pi-subagents`; Umeko adapts its display and interaction. Concurrency has no default cap, and concurrency limits you set in the community package apply as configured. More concurrent agents use more model resources, so run as many as the task needs.
 
-Open Global agents from Widgets at the bottom-right of chat. It retains up to 16 agents, with 4 running concurrently. Tasks can reach only conversations connected by the user in the agent bus. Closing its page keeps agents running; disabling the Widget stops them.
+Open Global agents from Widgets at the bottom-right of chat. It keeps up to 16 agents, with 4 running concurrently. Tasks go to the conversations you connect in the agent bus. Closing its page keeps agents running; disabling the Widget stops them.
 
 ## Get better results {#get-better-results}
 

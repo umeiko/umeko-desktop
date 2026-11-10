@@ -3,22 +3,18 @@
 This **unofficial, optional Provider SDK API v1 plugin** uses the official
 China-site CodeArts CLI. It is distributed as a separate Provider ZIP Release
 attachment for personal research, learning and exchange, outside the desktop
-installer and default provider list. This is the project's integration and
-distribution boundary; that purpose is not any authorization or exemption from
-risk.
+installer and default provider list. You use it at your own risk and under the
+CodeArts terms of service.
 
-Use an Umeko build containing PR #10 (`facef966` or later) with the required SDK
-capabilities. The published v0.6.0 predates that change and is unsupported. Current
-source builds still report version `0.6.0`; the plugin checks SDK capabilities at
-runtime instead of relying on that version string.
+It requires an Umeko build that includes PR #10 (`facef966` or later); the
+published v0.6.0 is too old. Source builds after that change still report version
+`0.6.0`, so the plugin checks SDK capabilities at runtime.
 
 Download `umeko-codearts-provider-<version>.zip` from the Release attachments when
 available, then choose **Settings → Accounts & Providers → + → Import custom
-provider implementation**. Importing does not execute the plugin. Explicitly
-activate the imported account with **Log in and refresh models**, then import the
-access-key CSV on its card. First startup does not install the plugin, create a
-CodeArts account or download the CLI. Missing CLI installation happens only after
-that explicit login action. **Installed plugins → Uninstall plugin** removes the
+provider implementation**. Activate the imported account with **Log in and refresh
+models**, then import the access-key CSV on its card. If the CLI is missing, the
+official installer runs when you log in. **Installed plugins → Uninstall plugin** removes the
 installed version and its accounts and credentials; removing an account alone
 keeps the plugin installed.
 
@@ -42,12 +38,11 @@ Model requests use a private `codearts serve` process and a schema-only MCP
 broker. Pi executes the tools; pending results continue the same CodeArts
 session. Three slots bound concurrency. Text, thinking and usage travel through
 the normal SDK gateway; timeout, cancellation and close release owned resources.
-The context metadata and request-token defaults follow Umeko's existing defaults;
-the plugin does not claim measured model limits.
+Context-window and request-token values use Umeko's defaults.
 
 Sources: the prior `runtime/codearts.mjs` bridge and `app/codearts_server.py` /
 `app/codearts_account.py` implementation, adapted from @saccolabs/pi-claude-cli
 0.10.0 (MIT attribution in `licenses/pi-claude-cli-MIT.txt`), pi-claude-cli and
 claude-code-pi; official OpenCode 1.2.27 HTTP/SSE comparison; the public standalone
-CodeArts fork's config/event behavior verified in the earlier real checks;
+CodeArts fork's config/event behavior;
 Provider SDK API v1 and Umeko's existing protected secrets and cards.

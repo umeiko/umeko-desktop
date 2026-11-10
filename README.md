@@ -56,9 +56,7 @@ Umeko is a native desktop app for working with [Pi Coding Agent](https://github.
 
 </details>
 
-Screenshots show the actual app in the pure white theme with isolated demo data. No real accounts, credentials or model requests were used. The interface supports Simplified Chinese and English; its first-run language follows your system.
-
-After a verified update download, the independent Yanami installer can stop all agents, install the new version and restart it. Closing the main window keeps agents running in the system tray; right-click the Yanami avatar to quit. [Updates and recovery](docs/updating.md).
+Screenshots show the app in the pure white theme with demo data. The interface comes in Simplified Chinese and English and starts in your system language.
 
 ## Why Umeko
 
@@ -71,19 +69,17 @@ After a verified update download, the independent Yanami installer can stop all 
 | **An API for your other tools** | An optional OpenAI / Anthropic API proxy, model aliases, LAN access and named, revocable API keys. |
 | **A little personality** | Pure White (default), Grass Green, Dark and Sea-salt Blue themes, selectable characters and appearance packs. Select **Disable characters** in the main character picker for a simple robot, standard prompts and arrow controls. |
 
-Pi can deliver images and compact file cards directly with [`submit_to_chatbox`](docs/chatbox-media.md). Click a file to open it; right-click to copy it, reveal it or attach it to chat again. Image previews support wheel zoom, drag to pan and click to close. Drag files anywhere in the chat to attach them and focus the input. Queued messages sit above the composer with editing and deletion; steering interrupts the active run and submits a normal message immediately. Hover a message for its timestamp and copy action. Double-click selects a word; triple-click selects a paragraph. Pi settings have searchable, nested sections and click-activated inline scrolling. Model selection, sidebar highlights and compact context menus use continuous PID motion.
+Pi can deliver images and compact file cards directly with [`submit_to_chatbox`](docs/chatbox-media.md). Click a file to open it; right-click to copy it, reveal it or attach it to chat again. Image previews support wheel zoom, drag to pan and click to close. Drag files anywhere in the chat to attach them and focus the input. Queued messages sit above the composer, where you can edit or delete them; steering interrupts the active run and sends your message immediately. Hover a message for its timestamp and copy action. Double-click selects a word; triple-click selects a paragraph. Pi settings have searchable, nested sections.
 
-On wide windows, hover either blank side margin to reveal a Yanami control and independently expand or collapse that side. Explicit output-length limits automatically continue up to five times, preserving completed tools and continuous code blocks.
+On wide windows, hover either blank side margin to reveal a Yanami control and expand or collapse that side. When a model reports an output-length limit, Umeko continues the reply automatically up to five times and keeps completed tools and code blocks together.
 
-Selecting a chat immediately shows an animated Yanami loading cover while cold history loads in the background. Rapid switching keeps only your latest choice; the conversation fades in after its layout is ready. File cards have themed hover details and clear menu states, and selected chat text offers a Copy / Select all context menu.
+Selecting a chat shows a Yanami loading cover while its history loads in the background; when you switch quickly, Umeko opens the last chat you picked. Selected chat text offers a Copy / Select all context menu.
 
-Providers and imported plugins stay in your home directory across upgrades. Configure a per-provider proxy from its gear, open complete redacted request diagnostics after failures, and adjust language and text size (50%–200%) in Appearance. See [preferences and upgrades](docs/preferences-and-upgrades.md).
+Refresh provider-reported context windows in model settings. Click the context-usage circle to compact an idle conversation; automatic compaction follows Pi's own policy. Each compaction appears as a collapsible history event. See [context windows and compaction](docs/context-compaction.md).
 
-Refresh provider-reported context windows in model settings. Click the context-usage circle to compact an idle conversation; automatic compaction keeps Pi’s native policy. Compaction appears as a collapsible history event. See [context windows and compaction](docs/context-compaction.md).
+Background task completion uses [native desktop notifications](docs/notifications.md) while the window is minimized or in the tray; tasks lasting more than three minutes also notify while the window is visible. Click a notification to return to its conversation. Closing the main window keeps agents running in the system tray; right-click the Yanami avatar to quit.
 
 ## Get started
-
-Pi web extensions can access the network. Configure company npm mirrors, an optional `.npmrc` and CA file under **Settings → Agent → Pi**; see [npm and extension networking](docs/npm-and-network.md).
 
 Use the [download buttons above](#downloads) for your platform, extract the package and open Umeko. Keep the complete application bundle together.
 
@@ -94,22 +90,32 @@ Use the [download buttons above](#downloads) for your platform, extract the pack
 | macOS Intel | `macos-x64-*.dmg` or `.zip` | Drag `Umeko.app` to Applications |
 | Linux x64 | `linux-x64.tar.gz` | `Umeko/Umeko` |
 
-Package names include the version and source commit. **Node.js, npm, Python, Qt, Pi and file-search binaries are bundled.** No separate Node.js or Python installation is required. Linux requires a graphical desktop and Qt runtime libraries; macOS packages are ad-hoc signed and are not notarized. See the [platform notes](docs/user-guide.md#requirements).
+Package names include the version and source commit. **Node.js, npm, Python, Qt, Pi and file-search binaries are bundled**, so Umeko runs right after you extract it. Linux needs a graphical desktop and the Qt runtime libraries. macOS packages are ad-hoc signed and not notarized; install from the [drag-to-Applications DMG](docs/macos-dmg.md), while automatic updates use the ZIP. See the [platform notes](docs/user-guide.md#requirements).
 
 1. In **Settings → Accounts & Providers**, add a model API, or use **+** to import a trusted provider ZIP.
 2. Open a project folder from the sidebar, or drag one into it.
 3. Choose a model and start a conversation. While the agent is working, **Enter** queues your next message and **Ctrl+S** steers it.
 
-No model account is included. Configure the services you want to use.
+Umeko connects to the model services you configure, using your own accounts and API keys.
+
+**Common providers:** **Settings → Accounts & Providers → Common providers** offers Claude Code, Codex, Kimi Code, DeepSeek, GLM Coding Plan (including Z.ai) and MiniMax subscriptions (M Plan). For GLM and MiniMax, choose China (default) or International in the Key form. Enter an API Key and an optional account alias; endpoints and models are preconfigured, and each additional account gets its own name and model mappings. See [Common provider accounts](https://umeiko.github.io/umeko-desktop/en/guide/providers.html).
+
+Providers and imported plugins stay in your home directory across upgrades. Set a per-provider proxy from its gear, open redacted request details after a failure, and adjust language and text size (50%–200%) in Appearance. See [preferences and upgrades](docs/preferences-and-upgrades.md).
+
+Pi web extensions use the network. Set an npm mirror, an optional `.npmrc` and a CA file under **Settings → Agent → Pi**; see [npm and extension networking](docs/npm-and-network.md).
+
+After an update downloads and passes verification, the separate Yanami installer stops all agents, installs the new version and restarts Umeko. See [Updates and recovery](docs/updating.md).
 
 ## Make it yours
 
-- **Keep a desktop companion:** the official desktop-pet Widget is loaded by default with its window hidden. Enable the pet under **Settings → Agent → Plugin management → Desktop pet**. It follows task activity at a gentle pace, supports drag/click/right-click interactions, and accepts your own WebP/GIF/PNG or multi-action appearance ZIP. Agents manage it through the existing [Widget interface](runtime/umeko-docs/widget-plugins.md).
+- **Keep a desktop companion:** the official desktop-pet Widget loads with its window hidden. Turn it on under **Settings → Agent → Plugin management → Desktop pet**. It follows task activity at a gentle pace, supports drag/click/right-click interactions, and accepts your own WebP/GIF/PNG or multi-action appearance ZIP. Agents manage it through the [Widget interface](runtime/umeko-docs/widget-plugins.md).
 - **Extend the agent:** open **Settings → Agent → Pi** to manage extensions, MCP and tools, install a package such as `pi install npm:<package>`, or open the embedded Pi in a terminal.
 - **Connect an account service:** build a provider ZIP with [umeko-provider-sdk](provider_dev/README.md). The [developer Skill](provider_dev/skills/develop-umeko-provider/SKILL.md) guides an AI through the same public interface; login implementations live in plugins.
-- **Use Umeko as a gateway:** enable **Settings → API Proxy Service**, configure model aliases and create an API key for your other clients.
+- **Use Umeko as a gateway:** enable **Settings → API Proxy Service**, configure model aliases and create an API key for your other clients. Aliases are organized in [provider submenus with automatic Base URLs](docs/api-proxy-menus.md).
+- **Make your own theme:** custom color themes are portable JSON files. Import, update or delete them under **Settings → Appearance**, and copy a complete creation prompt from the same page. See the [theme format and example](docs/themes.md). Reply mascots react to taps, click combos and holds.
+- **Let the agent manage the app:** with **`umeko_desktop`**, the agent manages providers, plugins, themes, settings, projects, chats and updates in the running app, and the UI refreshes right away. Operations that need idle tasks return a queued job. `/help` points to the bundled [Umeko management documentation](runtime/umeko-docs/README.md), which the agent reads by topic. Umeko provider and theme settings are kept apart from Pi's terminal configuration.
 
-Provider ZIPs and Pi extensions run trusted local code. Account credentials use Windows DPAPI or the macOS/Linux system keyring. Conversations stay as local Pi JSONL files. See [local data](docs/user-guide.md#local-data) and [recovery](docs/user-guide.md#factory-recovery).
+Provider ZIPs and Pi extensions run as local code with your user permissions, so install them from sources you trust. Account credentials use Windows DPAPI or the macOS/Linux system keyring. Conversations stay as local Pi JSONL files. See [local data](docs/user-guide.md#local-data) and [recovery](docs/user-guide.md#factory-recovery).
 
 ## Run from source
 
@@ -129,7 +135,7 @@ bash setup.sh
 bash Start-Umeko.sh
 ```
 
-Build with `./build.ps1` on Windows or `bash build.sh` on macOS/Linux. Each platform is built on its native runner; CI checks packaged GUI startup, bundled search binaries, Pi and build provenance before uploading packages. The Windows job also runs the regression suite and provider import interaction checks.
+Build with `./build.ps1` on Windows or `bash build.sh` on macOS/Linux. CI builds each platform on its native runner and checks the packaged app before uploading it.
 
 [Build and platform details](docs/user-guide.md#build) · [Tests](docs/user-guide.md#validation) · [CI packages](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
 
@@ -137,14 +143,4 @@ Build with `./build.ps1` on Windows or `bash build.sh` on macOS/Linux. Each plat
 
 Created by [umeiko](https://github.com/umeiko). Powered by [Pi Coding Agent](https://github.com/earendil-works/pi), [Qt for Python](https://doc.qt.io/qtforpython-6/) and [Pygments](https://pygments.org/).
 
-The app logo is a geometric robot. Optional character artwork includes the existing [Yanami fan-art asset and provenance](app/icons/yanami-pixel.provenance.json). This project is unaffiliated with the character's rights holders. Dependencies retain their upstream licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
-
-Custom color themes use portable JSON files. Import, update or delete them under **Settings → Appearance**, and copy a complete creation prompt from the same page. See the [theme format and example](docs/themes.md). Reply mascots react to taps, click combos and holds.
-
-Common providers: **Settings → Accounts & Providers → Common providers** offers Claude Code, Codex, Kimi Code, DeepSeek, GLM Coding Plan (including Z.ai) and MiniMax subscriptions (M Plan). GLM and MiniMax offer a site dropdown inside the Key form with just China and International; China is selected by default. Enter an API Key and optional account alias; endpoints and models are preconfigured. Multiple accounts receive distinct names and model mappings. See [Common provider accounts](https://umeiko.github.io/umeko-desktop/en/guide/providers.html).
-
-The Agent can manage this running desktop through **`umeko_desktop`**: providers, plugins, themes, settings, projects, chats and updates. Changes refresh the UI; operations that need idle tasks return a queued job. `/help` points to the bundled [Umeko management documentation](runtime/umeko-docs/README.md), loaded by topic instead of adding a large command list to every prompt. Umeko provider and theme settings are separate from Pi's terminal configuration.
-
-Background task completion uses [native desktop notifications](docs/notifications.md) while the window is minimized or in the tray. Tasks lasting more than three minutes also notify while the window is visible. Click a notification to return to its conversation; permissions and sound follow system settings.
-
-macOS releases include a [drag-to-Applications DMG](docs/macos-dmg.md) for Apple Silicon and Intel, alongside the ZIP used by automatic updates. API proxy aliases use [provider submenus and automatic Base URLs](docs/api-proxy-menus.md).
+The app logo is a geometric robot. Optional character artwork includes the [Yanami fan-art asset and provenance](app/icons/yanami-pixel.provenance.json). This project is unaffiliated with the character's rights holders. Dependencies retain their upstream licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
