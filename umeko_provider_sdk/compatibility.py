@@ -17,6 +17,7 @@ from pathlib import Path
 import random
 import re
 import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -91,17 +92,32 @@ def _adapt(body, name):
     return True
 
 
+REJECTION_TTL_SECONDS = 7 * 24 * 60 * 60
+
+
 class ParameterMemory:
-    """Persist named rejections by provider, service address and model."""
-    def __init__(self, directory=None):
+    """Keep dated provider/model rejections for one week, with explicit refresh."""
+    def __init__(self, directory=None, *, clock=None, app_version=None):
         self.path = Path(directory) / 'provider-compatibility.json' if directory else None
         self.lock = threading.RLock()
+        self.clock = clock if clock is not None else lambda: time.time()
+        self.app_version = app_version
         self.rejections = {}
         if self.path and self.path.exists():
             try:
                 data = json.loads(self.path.read_text(encoding='utf-8'))
-                self.rejections = {key: set(names) for key, names in data.get('rejections', {}).items()
-                                   if isinstance(names, list) and all(isinstance(name, str) for name in names)}
+                same_app = app_version is None or data.get('appVersion') == app_version
+                if data.get('version') == 2 and same_app:
+                    self.app_version = data.get('appVersion') if app_version is None else app_version
+                    self.rejections = {key: {name: stamp for name, stamp in names.items()
+                        if isinstance(name, str) and type(stamp) in (int, float) and math.isfinite(stamp)}
+                        for key, names in data.get('rejections', {}).items() if isinstance(names, dict)}
+                    if self._prune(self.clock()):
+                        self._write()
+                else:
+                    # Old undated records and records from another app version
+                    # start a new observation period on the next request.
+                    self._write()
             except (OSError, ValueError, AttributeError):
                 pass
 
@@ -110,25 +126,67 @@ class ParameterMemory:
         return json.dumps(list(scope), ensure_ascii=False)
 
     def apply(self, scope, body, automatic):
+        return self.apply_with_details(scope, body, automatic)[0]
+
+    def _prune(self, now):
+        previous = sum(len(names) for names in self.rejections.values())
+        self.rejections = {key: {name: stamp for name, stamp in names.items()
+            if 0 <= now - stamp < REJECTION_TTL_SECONDS} for key, names in self.rejections.items()}
+        self.rejections = {key: names for key, names in self.rejections.items() if names}
+        return sum(len(names) for names in self.rejections.values()) != previous
+
+    def apply_with_details(self, scope, body, automatic):
         body = copy.deepcopy(body)
+        details = []
         with self.lock:
-            names = self.rejections.get(self.key(scope), set()) & set(automatic)
-        for name in names:
-            _adapt(body, name)
-        return body
+            now = self.clock()
+            if self._prune(now):
+                self._write()
+            names = self.rejections.get(self.key(scope), {})
+            for name in sorted(set(names) & set(automatic)):
+                if _adapt(body, name):
+                    details.append({'parameter': name, 'recordedAt': names[name],
+                                    'ageDays': int((now - names[name]) // 86400),
+                                    'action': 'auto' if name == 'tool_choice' and body.get(name) == 'auto' else 'omitted'})
+        return body, details
+
+    def clear_provider(self, provider_id):
+        with self.lock:
+            removed = []
+            for key in self.rejections:
+                try:
+                    scope = json.loads(key)
+                except ValueError:
+                    continue
+                if isinstance(scope, list) and scope and scope[0] == provider_id:
+                    removed.append(key)
+            for key in removed:
+                del self.rejections[key]
+            if removed:
+                self._write()
+
+    def clear_all(self):
+        with self.lock:
+            self.rejections.clear()
+            self._write()
 
     def remember(self, scope, names):
         with self.lock:
-            self.rejections.setdefault(self.key(scope), set()).update(names)
-            if self.path:
-                self.path.parent.mkdir(parents=True, exist_ok=True)
-                temporary = self.path.with_name(self.path.name + '.' + str(threading.get_ident()) + '.tmp')
-                try:
-                    temporary.write_text(json.dumps({'version': 1, 'rejections': {
-                        key: sorted(value) for key, value in self.rejections.items()}}, ensure_ascii=False, indent=2), encoding='utf-8')
-                    os.replace(temporary, self.path)
-                finally:
-                    temporary.unlink(missing_ok=True)
+            now = self.clock()
+            self._prune(now)
+            self.rejections.setdefault(self.key(scope), {}).update({name: now for name in names})
+            self._write()
+
+    def _write(self):
+        if self.path:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.path.with_name(self.path.name + '.' + str(threading.get_ident()) + '.tmp')
+            try:
+                temporary.write_text(json.dumps({'version': 2, 'appVersion': self.app_version,
+                    'rejections': self.rejections}, ensure_ascii=False, indent=2), encoding='utf-8')
+                os.replace(temporary, self.path)
+            finally:
+                temporary.unlink(missing_ok=True)
 
 
 def retry_delay(headers, attempt):
@@ -161,7 +219,7 @@ def compatible_open(opener, request, *, timeout=20, memory=None, scope=(), autom
     cancelled = cancelled if cancelled is not None else current_request_cancelled()
     original = _payload(request.data)
     automatic = set(automatic) if isinstance(original, dict) else set()
-    body = memory.apply(scope, original, automatic) if memory and isinstance(original, dict) else copy.deepcopy(original)
+    body, remembered = memory.apply_with_details(scope, original, automatic) if memory and isinstance(original, dict) else (copy.deepcopy(original), [])
     rejected_once, retries = False, 0
     while True:
         if cancelled.is_set():
@@ -171,6 +229,8 @@ def compatible_open(opener, request, *, timeout=20, memory=None, scope=(), autom
         record = {'request': {'url': request.full_url, 'method': request.get_method(),
                              'headers': dict(request.header_items()), 'body': copy.deepcopy(body) if isinstance(body, dict) else None},
                   'response': {'status': None, 'headers': {}, 'body': ''}}
+        if remembered:
+            record['compatibility'] = copy.deepcopy(remembered)
         if records is not None:
             records.append(record)
         try:

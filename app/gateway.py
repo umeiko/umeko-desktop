@@ -36,6 +36,7 @@ from umeko_provider_sdk.network import network_scope, proxy_handler, tls_context
 from umeko_provider_sdk import request_scope
 from umeko_provider_sdk.compatibility import ParameterMemory, compatible_open, raise_api_error
 from umeko_provider_sdk.streaming import normalize_openai_events
+from .project_info import VERSION
 
 
 def validate_base_url(url: str) -> str:
@@ -58,7 +59,7 @@ class Gateway:
         self.reasoning_rejected = reasoning_rejected
         self.reasoning_activity = ReasoningActivity()
         self.diagnostics = RequestDiagnostics(store.directory)
-        self.compatibility = ParameterMemory(store.directory)
+        self.compatibility = ParameterMemory(store.directory, app_version=VERSION)
 
     def provider(self, provider_id):
         return next((p for p in self.store.data["providers"] if p["id"] == provider_id), None)
@@ -163,6 +164,7 @@ class Gateway:
                     if event.get('error'):
                         raise ValueError(json.dumps(event, ensure_ascii=False))
                     yield event
+            self.diagnostics.compatibility(p, request, records)
         except (IntegrationRequired, PermissionError):
             raise
         except Exception as error:

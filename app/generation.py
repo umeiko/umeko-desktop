@@ -463,6 +463,7 @@ def generate(gateway, body, on_progress=None, *, poll_interval=2.0):
                 raise ValueError('生成结果总大小超过限制')
             if cancelled.is_set():
                 raise GenerationCancelled('生成已取消')
+            gateway.diagnostics.compatibility(provider, request, records)
             return {'items': items, 'provider': provider.get('name', ''), 'model': model}
     except GenerationCancelled:
         raise

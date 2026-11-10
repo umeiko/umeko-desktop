@@ -279,6 +279,31 @@ class GatewayCompatibilityTests(unittest.TestCase):
             gateway.complete('fixture', MESSAGES, parameters={'seed': 7, '_umeko_auto_parameters': ['seed']})
         self.assertEqual(len(service.requests), 1)
 
+    def test_successful_saved_omission_has_accessible_dated_request_details(self):
+        from umeko_provider_sdk.compatibility import ParameterMemory
+        gateway, service, store = self.gateway(lambda body, n: (200, OK, {}))
+        now = [1_800_000_000.0]
+        gateway.compatibility = ParameterMemory(store.directory, clock=lambda: now[0])
+        gateway.compatibility.remember(('fixture', service.base, 'fixture'), {'thinking'})
+        now[0] += 3 * 86400
+        gateway.complete('fixture', MESSAGES, parameters={
+            'thinking': {'type': 'enabled'}, '_umeko_auto_parameters': ['thinking']})
+        self.assertNotIn('thinking', service.requests[-1])
+        latest = gateway.diagnostics.latest_compatibility('fixture')
+        self.assertIn('省略 thinking（3 天前记录）', latest['compatibilityNotice'])
+        report = gateway.diagnostics.read(latest['compatibilityReportId'])
+        self.assertNotIn('fixture-key', report)
+        data = json.loads(report)
+        self.assertEqual(data['http'][0]['compatibility'][0]['ageDays'], 3)
+        self.assertEqual(data['response']['status'], 200)
+        self.assertNotIn('error', data)
+        self.assertIn('recorded 3 days ago', gateway.diagnostics.latest_compatibility('fixture', 'en')['compatibilityNotice'])
+        gateway.compatibility.clear_provider('fixture')
+        gateway.complete('fixture', MESSAGES, parameters={
+            'thinking': {'type': 'enabled'}, '_umeko_auto_parameters': ['thinking']})
+        self.assertIn('thinking', service.requests[-1])
+        self.assertEqual(gateway.diagnostics.latest_compatibility('fixture')['compatibilityReportId'], '')
+
 
 if __name__ == '__main__':
     unittest.main()
