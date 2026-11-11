@@ -9,6 +9,7 @@ Rectangle {
     readonly property var c: sdk.colors
     property var state: ({agents:[],targets:[],projects:[],appearances:[],models:[],requests:[],messages:[],queue:[]})
     property string selected: ""
+    property var drafts: ({})
     property string section: "agents"
     property string error: ""
     property string snapshotSelection: ""
@@ -41,7 +42,7 @@ Rectangle {
     Timer {interval:1000;repeat:true;running:root.sdk.active;onTriggered:root.clock=Date.now()}
     readonly property var current: state.agents.find(row => row.id===selected) || ({})
     readonly property string helpTitle: selected?"与子智能体对话":section==="bridge"?"Agent Bus（智能体总线）":section==="requests"?"请求":"全局子智能体"
-    readonly property string helpText: selected?"连接的会话可双向发送任务和回复。总线消息按到达顺序排队，聊天上方可删除待处理消息或移到队首，优先处理不打断当前任务。输入框可手动 steering；停止会取消其未完成请求。":section==="bridge"?"展开项目并点击会话，进入二级列表。勾选对应的全局子智能体，建立与该会话的一条双向链路；双方均可发送任务并接收回复。关闭会取消这条链路上的未完成请求。":section==="requests"?"记录通过智能体总线分派的任务，查看投递状态、执行进度和返回结果。已投递不代表已完成；取消未完成的请求不会撤销已执行的操作。":"创建拥有独立上下文的子智能体，向已授权的对话分派任务。开启‘允许自动被创建’后，模型请求直接创建；关闭时需要你在预填表单中确认。模型未指定形象时随机分配，创建成功后自动连接来源对话。"
+    readonly property string helpText: selected?"连接的会话可双向发送任务和回复。总线消息按到达顺序排队，聊天上方可删除待处理消息或移到队首，优先处理不打断当前任务。输入框可手动 steering；停止会取消其未完成请求。历史保留最近一个完整压缩区间和本轮对话。点击上下文圈环查看用量或压缩，通过右侧问题目录跳转。":section==="bridge"?"展开项目并点击会话，进入二级列表。勾选对应的全局子智能体，建立与该会话的一条双向链路；双方均可发送任务并接收回复。关闭会取消这条链路上的未完成请求。":section==="requests"?"记录通过智能体总线分派的任务，查看投递状态、执行进度和返回结果。已投递不代表已完成；取消未完成的请求不会撤销已执行的操作。":"创建拥有独立上下文的子智能体，向已授权的对话分派任务。开启‘允许自动被创建’后，模型请求直接创建；关闭时需要你在预填表单中确认。模型未指定形象时随机分配，创建成功后自动连接来源对话。"
     color: c.surface
     function bridgeTree(projects, targets, query, collapsed) {
         // Pi returns native paths; saved projects may use forward slashes.
@@ -100,17 +101,8 @@ Rectangle {
         const next=Object.assign({},pending);next[id]=method;pending=next
         return id
     }
-    ListModel {id:chatRows;dynamicRoles:true}
-    function updateMessages(rows) {
-        while(chatRows.count>rows.length)chatRows.remove(chatRows.count-1)
-        for(let i=0;i<rows.length;i++) {
-            const row=rows[i]
-            if(i>=chatRows.count)chatRows.append({rowData:row})
-            else if(JSON.stringify(chatRows.get(i).rowData)!==JSON.stringify(row))chatRows.setProperty(i,"rowData",row)
-        }
-    }
-    function refresh() {if(!polling){snapshotSelection=selected;polling=!!call("snapshot",{selected:selected,revision:state.selectedId===selected?state.revision:-1})}}
-    function openAgent(id) {chatRows.clear();selected=id;section="agents";conversation.following=true;refresh()}
+    function refresh() {if(!polling){snapshotSelection=selected;polling=!!call("snapshot",{selected:selected,revision:state.selectedId===selected?state.revision:-1,includeMessages:false})}}
+    function openAgent(id) {if(selected)drafts[selected]=input.text;if(id && !sdk.openConversation(id))return;if(!id)sdk.openConversation("");selected=id;input.text=drafts[id] || "";section="agents";refresh()}
     function form(id) {
         proposalId="";proposalSource="";formSubmitting=false
         editing=id || ""
@@ -159,16 +151,15 @@ Rectangle {
                 if(root.snapshotSelection!==root.selected){Qt.callLater(root.refresh);return}
                 const data=value.result
                 if(data.unchanged)return
-                root.updateMessages(data.messages)
                 if(root.state.revision!==data.revision || root.state.currentTarget!==data.currentTarget || JSON.stringify(root.state.messages)!==JSON.stringify(data.messages) || JSON.stringify(root.state.targets)!==JSON.stringify(data.targets) || JSON.stringify(root.state.projects)!==JSON.stringify(data.projects) || root.state.defaultCharacter!==data.defaultCharacter || JSON.stringify(root.state.appearances)!==JSON.stringify(data.appearances) || JSON.stringify(root.state.models)!==JSON.stringify(data.models) || JSON.stringify(root.state.approval)!==JSON.stringify(data.approval))root.state=data
                 // The first snapshot initializes defaults even at revision zero.
                 if(!root.state.defaultCharacter)root.state=data
                 Qt.callLater(root.showCreationDraft)
             } else {
-                if(method==="create" || method==="confirmCreation"){root.dismissedProposalId=root.proposalId;root.proposalId="";root.proposalSource="";root.selected=value.result.id;root.section="agents";createDialog.close()}
+                if(method==="create" || method==="confirmCreation"){root.dismissedProposalId=root.proposalId;root.proposalId="";root.proposalSource="";root.openAgent(value.result.id);root.section="agents";createDialog.close()}
                 if(method==="update")createDialog.close()
                 if(method==="send")input.clear()
-                if(method==="delete"){root.selected="";deleteDialog.close()}
+                if(method==="delete"){root.openAgent("");deleteDialog.close()}
                 root.refresh()
             }
         }
@@ -210,7 +201,7 @@ Rectangle {
         anchors.fill:parent;anchors.margins:18;spacing:14
         RowLayout {
             Layout.fillWidth:true;spacing:10
-            SmallButton {visible:!!root.selected;text:"‹";onClicked:{root.selected="";root.refresh()}}
+            SmallButton {visible:!!root.selected;text:"‹";onClicked:{root.openAgent("")}}
             Image {visible:!!root.selected;source:root.current.portrait || "";Layout.preferredWidth:38;Layout.preferredHeight:38;fillMode:Image.PreserveAspectFit;sourceSize.width:76;sourceSize.height:76}
             ColumnLayout {
                 Layout.fillWidth:true;spacing:3
@@ -347,29 +338,18 @@ Rectangle {
             }
             ColumnLayout {
                 spacing:12
-                ListView {
-                    id:conversation;objectName:"globalAgentConversation"
-                    Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:16
-                    model:chatRows
-                    property bool following:true
-                    onMovementEnded:following=atYEnd
-                    onCountChanged:if(following)Qt.callLater(()=>positionViewAtEnd())
-                    onContentHeightChanged:if(following)Qt.callLater(()=>positionViewAtEnd())
-                    delegate:Loader {
-                        id:messageRenderer
-                        required property var rowData
-                        required property int index
-                        width:conversation.width;height:item?item.implicitHeight:0
-                        sourceComponent:root.sdk.chatMessageComponent
-                        onLoaded: {
-                            item.message=Qt.binding(()=>messageRenderer.rowData)
-                            item.messageIndex=Qt.binding(()=>messageRenderer.index)
-                            item.assistantName=Qt.binding(()=>root.current.name || "子智能体")
-                            item.portrait=Qt.binding(()=>root.current.portrait || "")
-                            item.replyPortrait=Qt.binding(()=>root.current.replyPortrait || root.current.portrait || "")
-                            item.busy=Qt.binding(()=>!!root.current.busy)
-                            item.last=Qt.binding(()=>messageRenderer.index===chatRows.count-1)
-                        }
+                Loader {
+                    id:conversation
+                    Layout.fillWidth:true;Layout.fillHeight:true
+                    active:!!root.selected && !!root.sdk.conversation
+                    sourceComponent:root.sdk.conversationComponent
+                    onLoaded: {
+                        item.controller=root.sdk.conversation
+                        item.viewName="globalAgentConversation"
+                        item.messagePrefix="widget"
+                        item.assistantName=Qt.binding(()=>root.current.name || "子智能体")
+                        item.portrait=Qt.binding(()=>root.current.portrait || "")
+                        item.replyPortrait=Qt.binding(()=>root.current.replyPortrait || root.current.portrait || "")
                     }
                 }
                 Rectangle {
@@ -406,6 +386,12 @@ Rectangle {
                 }
                 }
                 RowLayout {Layout.fillWidth:true;spacing:8
+                    Loader {
+                        active:!!root.selected && !!root.sdk.conversation
+                        sourceComponent:root.sdk.contextUsageComponent
+                        Layout.preferredWidth:25*root.sdk.scale;Layout.preferredHeight:31*root.sdk.scale
+                        onLoaded:{item.objectName="globalAgentContextUsage";item.controller=root.sdk.conversation}
+                    }
                     SmallButton {visible:root.current.busy || root.state.requests.some(row=>!(["completed","failed","cancelled","interrupted"].includes(row.status)) && row.source==="agent:"+root.selected);text:"停止";dangerous:true;onClicked:root.call("stop",{id:root.selected})}
                     Item {Layout.fillWidth:true}
                     LabelText {text:"Shift + Enter 换行";font.pixelSize:10*root.sdk.scale;color:root.c.muted}

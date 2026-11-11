@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import copy
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import uuid
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Property, QTimer, Signal, Slot
 
 from .chat_model import ChatModel
+from .conversation_state import ConversationState
 from .transcripts import preview, tool_view
 
 
@@ -29,7 +31,13 @@ class Subagents(QObject):
     def __init__(self, controller):
         super().__init__(controller)
         self.controller = controller
-        self.model = ChatModel(self)
+        self.presentation = ConversationState(controller, self)
+        self.model = self.presentation.model
+        self.presentation.compact = self._compact
+        self.presentation.submit = self.send
+        self._full_history = False
+        self._history_read = False
+        self._pending_live, self._pending_events = [], []
         self.messages = []
         self.owner = None
         self.selected_id = ""
@@ -57,6 +65,9 @@ class Subagents(QObject):
         self._deadline.timeout.connect(self._expire)
         self._deadline.start()
         self.loaded.connect(self._loaded)
+        self._history_cache = {}
+        self._file_reader = ThreadPoolExecutor(max_workers=1, thread_name_prefix="child-history")
+        self._file_job = None
         controller.viewChanged.connect(self._view_changed)
         controller.changed.connect(self._characters_changed)
 
@@ -105,6 +116,14 @@ class Subagents(QObject):
         return len(self.activeAgents)
 
     @Property(QObject, constant=True)
+    def conversation(self):
+        return self.presentation
+
+    def _compact(self):
+        if self.owner:
+            self._command(self.owner, {'action': 'compact', 'id': self.selected_id, 'requestId': uuid.uuid4().hex})
+
+    @Property(QObject, notify=contextChanged)
     def messageModel(self):
         return self.model
 
@@ -209,6 +228,8 @@ class Subagents(QObject):
             return
         self.closeView()
         self.owner, self.selected_id = record, agent_id
+        self.presentation.switch_to(record.key + "/" + agent_id)
+        self.model = self.presentation.model
         self.error, self.loading, self.truncated = "", True, False
         self.changed.emit()
         self.queueChanged.emit()
@@ -221,6 +242,7 @@ class Subagents(QObject):
             self._command(record, {"action": "watch", "id": agent_id})
         elif row.get("outputFile"):
             self._load_file(row["outputFile"])
+            self.presentation.available = bool(record.model)
         else:
             if not self._command(record, {"action": "watch", "id": agent_id}):
                 self.loading, self.error = False, "暂时无法加载子代理上下文"
@@ -235,6 +257,11 @@ class Subagents(QObject):
         self._generation += 1
         self._stream.stop()
         self.owner, self.selected_id = None, ""
+        self.presentation.switch_to("")
+        self.model = self.presentation.model
+        self._full_history = False
+        self._history_read = False
+        self._pending_live, self._pending_events = [], []
         self.queueChanged.emit()
         self._projection_cache.clear()
         self.messages = []
@@ -368,11 +395,20 @@ class Subagents(QObject):
                     self.messageSent.emit(self.selected_id)
             self.contextChanged.emit()
         elif record is self.owner and event.get("id") == self.selected_id:
+            if kind == "subagent_usage":
+                self.presentation.usage = event.get("usage", {})
+                self.presentation.available = bool(event.get("compactAvailable"))
+                self.presentation.busy_value = bool(event.get("busy"))
+                self.presentation.chatChanged.emit()
+                return
             if kind == "subagent_context":
                 self._generation += 1
                 self.error = ""
+                self.presentation.usage = event.get("usage", {})
+                self.presentation.available = bool(event.get("compactAvailable"))
                 if event.get("file"):
-                    self._load_file(event["file"])
+                    self._pending_live, self._pending_events = copy.deepcopy(event.get("live", [])), []
+                    self._load_file(event["file"], event.get("leafId") or None)
                 else:
                     self.model.set_snapshot(None)
                     self.messages = copy.deepcopy(event.get("messages", []))
@@ -400,8 +436,21 @@ class Subagents(QObject):
         if self.owner is record and self.selected_id == identifier: self.draftRestored.emit(identifier)
 
     def _event(self, event):
+        if self._history_read:
+            self._pending_events.append(copy.deepcopy(event))
+            return
         kind = event["type"]
         self.loading = False
+        if kind == "compaction_event":
+            from .transcripts import compaction_view
+            row = compaction_view({'type':'custom','customType':'umeko-compaction','data':event,'id':event.get('entryId'),'timestamp':event.get('timestamp')})
+            if row:
+                found = next((message for message in self.messages if message.get('compaction',{}).get('eventId') == event.get('eventId')), None)
+                if found is None: self.messages.append(row)
+                else: found['compaction'] = row['compaction']
+                self.presentation.status = "正在压缩上下文" if event.get('state') == 'running' else ""
+            self._publish()
+            return
         if kind == "user_start":
             message = {"role": "user", "text": event.get("text", "")[-131072:], "timestamp": event.get("timestamp")}
             if self.messages and self.messages[-1].get("role") == "user" and event.get("timestamp") is not None and self.messages[-1].get("timestamp") == event["timestamp"]:
@@ -439,7 +488,7 @@ class Subagents(QObject):
                 if len(tools) > 32:
                     del tools[:-32]
                     self.truncated = True
-        if len(self.messages) > 200:
+        if not self._full_history and len(self.messages) > 200:
             self.messages = self.messages[-200:]
             self.truncated = True
         if not self._stream.isActive():
@@ -452,41 +501,65 @@ class Subagents(QObject):
         for offset, message in enumerate(reversed(self.messages)):
             weight += len(message.get("text", "")) + len(message.get("thinking", ""))
             weight += sum(len(tool.get("result", "")) + 16384 for tool in message.get("tools", []))
-            if weight > 1024 * 1024 and offset:
+            if not self._full_history and weight > 1024 * 1024 and offset:
                 self.messages = self.messages[-offset:]
                 self.truncated = True
                 break
-        self.model.update(self.messages)
+        self.presentation.busy_value = self.selected.get("status") in ACTIVE or bool(self.presentation.status)
+        self.presentation.update(self.messages)
         self.contextChanged.emit()
 
-    def _load_file(self, file):
+    def _load_file(self, file, leaf=None):
         self._generation += 1
         generation = self._generation
-        self.loading = True
+        self.loading = self._history_read = True
         self.contextChanged.emit()
         def read():
             result = {"generation": generation}
             try:
                 if not Path(file).is_file():
                     raise OSError("子代理的会话文件已不存在")
-                if self.controller.transcripts.large(file):
-                    result["snapshot"] = self.controller.transcripts.open(file, cancelled=lambda: generation != self._generation or self._closed)
+                stat = Path(file).stat()
+                signature = (str(file), stat.st_size, stat.st_mtime_ns, leaf)
+                if signature in self._history_cache:
+                    result.update(self._history_cache[signature])
+                elif self.controller.transcripts.large(file):
+                    result["snapshot"] = self.controller.transcripts.open(file, leaf=leaf, cancelled=lambda: generation != self._generation or self._closed)
                 else:
-                    result["messages"], _ = preview(file)
+                    result["messages"], _ = preview(file, leaf)
+                result["signature"] = signature
             except Exception as error:
                 result["error"] = str(error)
             if not self._closed:
                 self.loaded.emit(result)
-        threading.Thread(target=read, name="subagent-preview", daemon=True).start()
+        if self._file_job is not None: self._file_job.cancel()
+        self._file_job = self._file_reader.submit(read)
 
     @Slot(object)
     def _loaded(self, result):
         if self._closed or result["generation"] != self._generation:
             return
         self.loading = False
+        self._full_history = True
         self.error = result.get("error", "")
+        if 'signature' in result:
+            self._history_cache[result['signature']] = {k:result[k] for k in ('snapshot','messages') if k in result}
+            while len(self._history_cache) > 3:
+                self._history_cache.pop(next(iter(self._history_cache)))
         self.model.set_snapshot(result.get("snapshot"))
-        self.messages = result.get("messages", [])
+        self.messages = copy.deepcopy(result.get("messages", []))
+        for live in self._pending_live:
+            if live.get('customType') == 'umeko-compaction':
+                if result.get('snapshot'): continue  # indexed receipts preserve the live native state
+                row = next((row for row in self.messages if row.get('compaction', {}).get('eventId') == live['compaction']['eventId']), None)
+                if row is not None:
+                    row['compaction'] = copy.deepcopy(live['compaction'])
+                    continue
+            self.messages.append(live)
+        self._pending_live = []
+        self._history_read = False
+        events, self._pending_events = self._pending_events, []
+        for event in events: self._event(event)
         self._publish()
 
     def _expire(self):
@@ -500,9 +573,10 @@ class Subagents(QObject):
 
     def close(self):
         self._closed = True
+        self._file_reader.shutdown(wait=False, cancel_futures=True)
         self.closeView()
         self._deadline.stop()
         if self._save.isActive():
             self._save.stop()
             self.controller.store.save()
-        self.model.close()
+        self.presentation.close()

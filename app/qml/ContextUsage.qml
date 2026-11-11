@@ -5,9 +5,12 @@ import QtQuick.Layouts
 Item {
     id: root
     objectName: "contextUsageIndicator"
+    property var controller: backend
+    property bool menuBelow: false
+    property string selectedModel: controller === backend ? backend.config.selectedModel : ""
     property var usage: {
-        const current = backend.contextUsage
-        return current.model === backend.config.selectedModel ? current : ({})
+        const current = root.controller.contextUsage
+        return !root.selectedModel || current.model === root.selectedModel ? current : ({})
     }
     readonly property bool known: usage.tokens !== undefined && usage.tokens !== null && usage.contextWindow > 0 && typeof usage.percent === "number"
     readonly property real fraction: known ? Math.max(0, Math.min(1, usage.percent / 100)) : 0
@@ -51,6 +54,7 @@ Item {
     AnchoredPidPopup {
         id: compactPopup; objectName: "compactContextPopup"
         parent: root
+        openBelow: root.menuBelow
         fullWidth: 320
         fullHeight: popupContents.implicitHeight + padding * 2
         contentItem: Item {
@@ -68,11 +72,11 @@ Item {
                     objectName: "compactContextAction"
                     Layout.fillWidth: true; quiet: true
                     text: I18n.t("压缩上下文")
-                    enabled: backend.compactionAvailable && !backend.busy && !!backend.activeSession
-                    onClicked: { compactPopup.close(); backend.compactSession() }
+                    enabled: root.controller.compactionAvailable && !root.controller.busy && !!root.controller.activeSession
+                    onClicked: { compactPopup.close(); root.controller.compactSession() }
                 }
                 Text { font.family: Theme.fontFamily;
-                    visible: backend.busy
+                    visible: root.controller.busy
                     Layout.fillWidth: true
                     text: I18n.t("仅在当前任务结束后可压缩上下文。")
                     color: Theme.muted; font.pixelSize: Theme.font(10, visible); wrapMode: Text.Wrap

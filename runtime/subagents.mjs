@@ -4,6 +4,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createJiti } from "jiti";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { createInputQueue } from "./input-queue.mjs";
 
@@ -30,12 +31,12 @@ function modelSelectionHelp(message, args, ctx) {
 
 // Bound the live snapshot crossing JSONL/QML. Complete transcripts remain in
 // native files and are paged by the desktop when the child is not streaming.
-export function childMessages(session) {
+export function childMessages(session, {limit=32768, tail=false} = {}) {
   const source = session.messages || [];
   const pending = session.agent?.state?.pendingToolCalls;
   const rows = [], tools = new Map();
   let budget = 512 * 1024, clipped = false;
-  const take = value => { value = String(value || ""); const result = value.slice(0, Math.min(32768, budget)); clipped ||= result.length < value.length; budget -= result.length; return result; };
+  const take = value => { value = String(value || ""); const count=Math.min(limit,budget); const result = tail ? value.slice(-count) : value.slice(0,count); clipped ||= result.length < value.length; budget -= result.length; return result; };
   for (const message of source.slice(-200)) {
     if (!budget) break;
     if (message.role === "toolResult") {
@@ -157,20 +158,57 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession } = 
   const rows = new Map();
   const sessions = new Map(), contexts = new Map(), restoring = new Map();
   const pendingSessions = new Set(), observed = new Set();
+  const compacting = new Set(), loadingChildren = new Map(), restoredChildren = new Set();
   let api, getService, timer, unbind = [], watching = "", hook, generation = 0, resumeTools;
 
+  function publishUsage(id) {
+    if (watching !== id) return;
+    const session = sessions.get(id)?.session, row = rows.get(id)?.tool.subagent;
+    const busy = compacting.has(id) || active.has(row?.status) || !!session?.isStreaming || !!session?.isCompacting;
+    emit({type:"subagent_usage",id,busy,compactAvailable:!busy && (!!session || !!restoreSession && !!row?.outputFile),
+      usage:{tokens:null,contextWindow:null,percent:null,...session?.getContextUsage?.(),model:session?.model?.id || contexts.get(id)?.model || ""}});
+  }
   function publishContext(id) {
     const observed = sessions.get(id), session = observed?.session;
     if (watching !== id) return;
     observed?.queue.publish();
     const row = rows.get(id)?.tool.subagent;
-    emit({type:"subagent_context",id,...(session && active.has(row?.status) ? childMessages(session) : {file:row?.outputFile || "",messages:[]})});
+    const file = session?.sessionManager.getSessionFile() || row?.outputFile || "";
+    // The native transcript is the same source read by the main chat. JSONL
+    // events below carry only the live overlay, not a truncated history copy.
+    const partial=session?.agent?.state?.streamingMessage;
+    const live=partial?.role === "assistant" ? childMessages({messages:[partial],agent:session.agent},{limit:131072,tail:true}) : {messages:[],truncated:false};
+    const compaction=observed?.compactionRow?.();if(compaction)live.messages.unshift(compaction);
+    emit({type:"subagent_context",id,...(file && existsSync(file)
+      ? {file,leafId:session?.sessionManager.getLeafId?.() || "",live:live.messages,truncated:live.truncated}
+      : session ? childMessages(session) : {messages:[]})});
+    publishUsage(id);
+  }
+  async function childSession(id) {
+    if (sessions.has(id)) return sessions.get(id).session;
+    if (loadingChildren.has(id)) return loadingChildren.get(id);
+    const row=rows.get(id)?.tool.subagent, token=generation;
+    if (!restoreSession || !row?.outputFile) throw new Error("没有可加载的原生子代理会话文件。");
+    const work=(async()=>{
+      const session=await restoreSession(row,contexts.get(id),[]);
+      if (token!==generation) { await session.dispose?.(); throw new Error("子代理会话已切换。"); }
+      observe(session,{},id);restoredChildren.add(id);
+      for (const old of [...restoredChildren]) {
+        if (restoredChildren.size<=3) break;
+        if (old===id || old===watching || compacting.has(old) || active.has(rows.get(old)?.tool.subagent.status)) continue;
+        const entry=sessions.get(old);entry?.unsubscribe();sessions.delete(old);restoredChildren.delete(old);await entry?.session.dispose?.();
+      }
+      return session;
+    })();
+    loadingChildren.set(id,work);
+    try { return await work; } finally { if(loadingChildren.get(id)===work)loadingChildren.delete(id); }
   }
   function observe(session, options = {}, explicitId) {
     let id = explicitId || calls.getStore()?.agentId;
+    if(id && sessions.get(id)?.session === session)return;
     const identify = () => id ||= getService?.()?.listAgents?.().find(row => row.outputFile === session.sessionManager.getSessionFile())?.id
       || [...rows.values()].find(row => row.tool.subagent.outputFile === session.sessionManager.getSessionFile())?.tool.subagent.id;
-    let prompting=false;
+    let prompting=false, compaction, compactionRow;
     const queue=createInputQueue({getSession:()=>session,isRunning:()=>prompting || !session.isIdle,
       onQueue:(_steering,_followUp,items)=>{if (identify()) emit({type:"subagent_queue",id,items});},
       onEdited:item=>{if (identify()) emit({type:"subagent_queue_edited",id,item});},
@@ -196,16 +234,37 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession } = 
         model:session.model?.id,thinkingLevel:session.thinkingLevel,cwd:session.sessionManager.getCwd()};
       contexts.set(id,metadata);
       api?.appendEntry("umeko-subagent-context",{version:1,id,context:metadata});
-      sessions.set(id,{session,queue,unsubscribe:cleanup});
+      sessions.set(id,{session,queue,unsubscribe:cleanup,compactionRow:()=>compaction?compactionRow:undefined,failCompaction:error=>{
+        if(compaction)finishCompaction({errorMessage:error.message});
+      }});
       pendingSessions.delete(attach);
       const row = rows.get(id);
       if (row) update("progress",{id},{...row.tool.subagent,outputFile:session.sessionManager.getSessionFile()});
       publishContext(id);
     };
+    const receipt = value => {
+      const entryId=session.sessionManager.appendCustomEntry("umeko-compaction",value);
+      compactionRow={role:"assistant",text:"",customType:"umeko-compaction",entryId,timestamp:Date.now(),compaction:{...value}};
+      if(watching===id)emit({type:"subagent_event",id,event:{type:"compaction_event",entryId,timestamp:Date.now(),...value}});
+    };
+    const startCompaction = reason => {
+      compaction={version:2,eventId:crypto.randomUUID(),state:"running",mode:reason==="manual"?"manual":"auto",before:session.getContextUsage()?.tokens ?? null,after:null,afterEstimated:true,summary:"",error:""};
+      receipt(compaction);
+    };
+    const finishCompaction = event => {
+      if(!compaction)startCompaction(event.reason);
+      const success=!!event.result && !event.aborted;
+      receipt({...compaction,state:success?"success":"failure",before:event.result?.tokensBefore ?? compaction.before,
+        after:event.result?.estimatedTokensAfter ?? null,summary:success?event.result.summary || "":"",error:success?"":event.errorMessage || (event.aborted?"Compaction cancelled":"Compaction failed")});
+      compaction=undefined;
+    };
     const unsubscribe = session.subscribe(event => {
       attach();
       if (!id) return;
       if (event.type==="queue_update") queue.sync(event.steering,event.followUp);
+      if(event.type==="compaction_start")startCompaction(event.reason);
+      if(event.type==="compaction_end")finishCompaction(event);
+      if (["message_end","agent_end","compaction_start","compaction_end"].includes(event.type)) publishUsage(id);
       const projected = childEvent(event);
       if (projected && watching === id) emit({type:"subagent_event",id,event:projected});
       if (["tool_execution_start","tool_execution_end"].includes(event.type)) {
@@ -258,7 +317,12 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession } = 
       if (action === "unwatch") { watching = ""; return; }
       const row = rows.get(id);
       if (!row) throw new Error("当前会话中没有这个子代理。");
-      if (action === "watch") { watching = id; publishContext(id); return; }
+      if (action === "watch") {
+        watching = id; publishContext(id);
+        if (!active.has(row.tool.subagent.status) && !sessions.has(id) && restoreSession && row.tool.subagent.outputFile)
+          void childSession(id).then(()=>publishUsage(id)).catch(()=>{});
+        return;
+      }
       const service = getService?.(), live = service?.getRecord(id);
       const observed=sessions.get(id);
       if (["edit-queue","delete-queue","steer-queued","promote-queue"].includes(action)) {
@@ -271,6 +335,17 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession } = 
         if (restoring.has(id)) { restoring.get(id).abort(); await sessions.get(id)?.session.abort(); }
         else if (!service?.abort(id)) throw new Error("这个子代理已经停止。");
         reply(true); return;
+      }
+      if (action === "compact") {
+        if (active.has(row.tool.subagent.status) || compacting.has(id)) throw new Error("请在子代理当前任务结束后压缩上下文。");
+        compacting.add(id);publishUsage(id);
+        let session;
+        try {
+          session=await childSession(id);
+          if (session.isStreaming || session.isCompacting) throw new Error("子代理正在工作，请稍后压缩上下文。");
+          await session.compact();reply(true);publishContext(id);
+        } catch(error) {sessions.get(id)?.failCompaction(error);publishContext(id);throw error;} finally {compacting.delete(id);publishUsage(id);}
+        return;
       }
       if (action !== "send") throw new Error("未知的子代理操作。");
       const text = String(input.text || "").trim();
@@ -301,7 +376,7 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession } = 
             update("progress",{id,activity:text});
             api.sendMessage?.({customType:"subagent-update",content:`Subagent ${id}: ${text}`,display:true},{triggerTurn:false});
           };
-          session = await restoreSession(row.tool.subagent,contexts.get(id),resumeTools?.(report) || []);
+          session = sessions.get(id)?.session || await (loadingChildren.get(id) || restoreSession(row.tool.subagent,contexts.get(id),resumeTools?.(report) || []));
           if (token !== generation || cancellation.signal.aborted) return;
           observe(session,{},id);
           update("started",{id},{...rows.get(id).tool.subagent,status:"running"});
@@ -318,7 +393,7 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession } = 
           await session?.dispose?.();
           if (token === generation) {
             if (active.has(rows.get(id)?.tool.subagent.status)) update("progress",{id},{...rows.get(id).tool.subagent,status:"stopped"});
-            sessions.get(id)?.unsubscribe(); sessions.delete(id); restoring.delete(id);
+            sessions.get(id)?.unsubscribe(); sessions.delete(id); restoredChildren.delete(id); restoring.delete(id);
           }
         }
       })();
@@ -331,6 +406,8 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession } = 
     restoring.clear();
     for (const unsubscribe of observed) unsubscribe();
     observed.clear(); pendingSessions.clear();
+    for (const id of restoredChildren) void sessions.get(id)?.session.dispose?.();
+    restoredChildren.clear();loadingChildren.clear();compacting.clear();
     sessions.clear(); contexts.clear(); watching = "";
     if (globalThis[sessionHook] === hook) delete globalThis[sessionHook];
     clearInterval(timer); timer = undefined;

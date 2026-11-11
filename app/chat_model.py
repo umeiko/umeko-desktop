@@ -493,11 +493,28 @@ class ChatModel(QAbstractListModel):
                 row = db.execute('''SELECT d.seq FROM native n JOIN display d
                     ON n.pos BETWEEN d.first_native AND d.last_native WHERE n.id=? ORDER BY d.seq LIMIT 1''', (entry_id,)).fetchone()
                 if row is not None:
-                    return row[0]
+                    local = row[0] - self.snapshot.row_offset
+                    return local if 0 <= local < self.snapshot.count else -1
         for row, message in enumerate(self.rows):
             if entry_id in message.get('_entries', []) or entry_id == message.get('entryId'):
                 return self.base_count + row
         return -1
+
+    @staticmethod
+    def recent_compaction_interval(messages):
+        boundaries, seen = [], set()
+        for index in range(len(messages) - 1, -1, -1):
+            row = messages[index]
+            event = row.get('compaction', {})
+            identifier = event.get('eventId')
+            if row.get('customType') == 'umeko-compaction' and event.get('state', 'success') == 'success' and identifier and identifier not in seen:
+                boundaries.append(index); seen.add(identifier)
+                if len(boundaries) == 2:
+                    first = index
+                    while first and messages[first-1].get('compaction', {}).get('eventId') == identifier:
+                        first -= 1
+                    return messages[first:]
+        return messages
 
     @staticmethod
     def project(messages, with_starts=False, max_group=None):

@@ -101,7 +101,7 @@ def compaction_status(row, active_compactions=()):
     return {**row, "compaction": {**details, "state": "failure", "error": "Compaction interrupted"}}
 
 
-def preview(file):
+def preview(file, leaf=None):
     entries = []
     cwd = str(Path(file).parent)
     with Path(file).open(encoding="utf-8") as handle:
@@ -116,7 +116,7 @@ def preview(file):
                 entries.append(entry)
     index = {entry["id"]: entry for entry in entries}
     branch, visited = [], set()
-    current = entries[-1] if entries else None
+    current = index.get(leaf) if leaf else (entries[-1] if entries else None)
     while current and current["id"] not in visited:
         visited.add(current["id"])
         branch.append(current)
