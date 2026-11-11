@@ -243,11 +243,15 @@ test('first successful start removes legacy orphans, staging and stale partials 
   const active=path.join(context.downloadsDir,'.umeko-downloads','c'.repeat(64));
   const recent=path.join(context.downloadsDir,'.umeko-downloads','d'.repeat(64));
   for(const directory of [stage,stale,active,recent])await fs.mkdir(directory,{recursive:true});
-  await fs.writeFile(path.join(stale,'full.part'),'old partial');
+  const cutoff=Date.now(), oldTime=new Date(cutoff-60000), recentTime=new Date(cutoff+60000);
+  const partial=path.join(stale,'full.part');
+  await fs.writeFile(partial,'old partial');
+  await fs.utimes(partial,oldTime,oldTime);
+  await fs.utimes(stale,oldTime,oldTime);
   await fs.writeFile(path.join(active,'lock.json'),JSON.stringify({pid:process.pid}));
-  await fs.utimes(recent,new Date(Date.now()+60000),new Date(Date.now()+60000));
+  await fs.utimes(recent,recentTime,recentTime);
   const unrelated=path.join(context.downloadsDir,'my-document.zip');await fs.writeFile(unrelated,'user file');
-  const logs=[];const result=await cleanupStartup(context,{cutoff:Date.now()+1,log:entry=>logs.push(entry)});
+  const logs=[];const result=await cleanupStartup(context,{cutoff,log:entry=>logs.push(entry)});
   assert.deepEqual(result.failed,[]);
   await assert.rejects(fs.stat(backup),{code:'ENOENT'});
   await assert.rejects(fs.stat(stage),{code:'ENOENT'});

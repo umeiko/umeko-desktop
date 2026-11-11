@@ -1,6 +1,7 @@
 """Session-scoped subagent roster and one independently streamed conversation."""
 from __future__ import annotations
 
+from collections import OrderedDict
 import copy
 import threading
 import uuid
@@ -21,6 +22,7 @@ class Subagents(QObject):
     changed = Signal()
     contextChanged = Signal()
     requested = Signal()
+    viewClosing = Signal()
     messageSent = Signal(str)
     draftRestored = Signal(str)
     queueChanged = Signal()
@@ -42,6 +44,7 @@ class Subagents(QObject):
         self._attachments = {}
         self._queues = {}
         self._projection_cache = {}
+        self._viewports = OrderedDict()
         self._deferred = {}
         self._closed = False
         self._stream = QTimer(self)
@@ -111,6 +114,32 @@ class Subagents(QObject):
     @Property(int, notify=contextChanged)
     def messageCount(self):
         return self.model.rowCount()
+
+    def _viewport(self):
+        key = (self.owner.key, self.selected_id) if self.owner else None
+        return self._viewports.get(key, (-1, 0.0, True))
+
+    @Property(int, notify=changed)
+    def scrollAnchor(self):
+        return self._viewport()[0]
+
+    @Property(float, notify=changed)
+    def scrollPosition(self):
+        return self._viewport()[1]
+
+    @Property(bool, notify=changed)
+    def followTail(self):
+        return self._viewport()[2]
+
+    @Slot(int, float, bool)
+    def saveViewport(self, index, position, follow):
+        if self.owner is None or index < 0:
+            return
+        key = (self.owner.key, self.selected_id)
+        self._viewports[key] = (index, position, follow)
+        self._viewports.move_to_end(key)
+        if len(self._viewports) > 16:
+            self._viewports.popitem(last=False)
 
     @Slot(int, result="QVariantMap")
     def displayMessage(self, row):
@@ -229,6 +258,7 @@ class Subagents(QObject):
     @Slot()
     def closeView(self):
         if self.owner:
+            self.viewClosing.emit()
             self._deferred[self.owner.key] = [command for command in self._deferred.get(self.owner.key, []) if command.get("action") != "watch"]
         if self.owner and self.owner.process:
             self.controller._write_pi({"type": "subagent-command", "action": "unwatch"}, self.owner)

@@ -7,6 +7,9 @@ Item {
     required property var messageModel
     required property string viewKey
     required property var requestInspector
+    property var subagentPane: null
+    readonly property var viewportOwner: subagentPane ? backend.subagents : backend
+    property bool modelAttached: true
     property bool current: false
     property bool blocked: false
     property bool initialized: false
@@ -22,6 +25,8 @@ Item {
     enabled: current
     function refreshState() {
         if (!current)
+            return;
+        if (subagentPane)
             return;
         busy = backend.busy;
         running = backend.running;
@@ -54,7 +59,7 @@ Item {
     }
     ListView {
         id: conversation
-        objectName: pane.current ? "conversation" : "cachedConversation_" + pane.viewKey
+        objectName: pane.subagentPane ? "subagentConversation" : pane.current ? "conversation" : "cachedConversation_" + pane.viewKey
         property bool followTail: true
         property bool restoring: false
         property real restoreOffset: -1
@@ -363,15 +368,15 @@ Item {
             if (index < 0)
                 index = indexAt(1, contentY + spacing + 2);
             const item = index >= 0 ? itemAtIndex(index) : null;
-            backend.saveViewport(index, item ? contentY - item.y : 0, followTail);
+            pane.viewportOwner.saveViewport(index, item ? contentY - item.y : 0, followTail);
         }
         function restoreViewport() {
             releaseGroups();
             restoring = true;
             tailTimer.stop();
-            followTail = backend.followTail;
-            restoreOffset = backend.scrollPosition;
-            restoreIndex = backend.scrollAnchor;
+            followTail = pane.viewportOwner.followTail;
+            restoreOffset = pane.viewportOwner.scrollPosition;
+            restoreIndex = pane.viewportOwner.scrollAnchor;
             restoreAttempts = 0;
             restoreTimer.restart();
         }
@@ -380,7 +385,7 @@ Item {
         anchors.fill: parent
         clip: true
         spacing: 27
-        model: pane.messageModel
+        model: pane.modelAttached ? pane.messageModel : null
         cacheBuffer: Math.max(0, reach)
         currentIndex: -1
         // A hidden attached ScrollBar still writes contentY when its
@@ -444,7 +449,7 @@ Item {
                 }
                 conversation.forceLayout();
                 conversation.restoreAttempts++;
-                if (conversation.followTail || conversation.restoreIndex < 0) {
+                if (conversation.followTail || conversation.restoreIndex < 0 || !conversation.count) {
                     conversation.positionViewAtEnd();
                     pane.messageModel.requestRange(Math.max(0, conversation.count - 4), conversation.count - 1);
                     const tail = conversation.itemAtIndex(conversation.count - 1);
@@ -522,7 +527,7 @@ Item {
             }
         }
         Connections {
-            target: backend
+            target: pane.subagentPane ? null : backend
             function onTranscriptChanged() {
                 if (pane.current && conversation.followTail && !conversation.restoring)
                     tailTimer.restart();
@@ -620,7 +625,7 @@ Item {
                     onImplicitHeightChanged: if (bodyLoader.status === Loader.Ready)
                         pane.messageModel.recordHeight(index, implicitHeight)
                     Row {
-                        visible: !modelData._loading && !messageRow.statusNotice && !modelData.continuation && modelData.role !== "user"
+                        visible: !pane.subagentPane && !modelData._loading && !messageRow.statusNotice && !modelData.continuation && modelData.role !== "user"
                         spacing: 9
                         AssistantAvatar {
                             objectName: "assistantAvatar_" + messageRow.index
@@ -640,7 +645,7 @@ Item {
                     Rectangle {
                         objectName: "messageBubble_" + messageRow.index
                         border.width: 1
-                        border.color: window.searchHighlightRow === messageRow.index ? Theme.accent : "transparent"
+                        border.color: !pane.subagentPane && window.searchHighlightRow === messageRow.index ? Theme.accent : "transparent"
                         Behavior on border.color {
                             ColorAnimation {
                                 duration: 180
@@ -688,14 +693,19 @@ Item {
                         }
                     }
                     ActionButton {
-                        objectName: "requestDetails_" + messageRow.index
+                        objectName: (pane.subagentPane ? "subagentRequestDetails_" : "requestDetails_") + messageRow.index
                         selectionController: chatSelection
                         visible: !modelData._loading && !messageRow.statusNotice && !!modelData.error && (modelData.diagnosticId || "").length > 0
                         x: 33
                         text: I18n.t("查看请求与返回")
                         glyph: "code"
                         quiet: true
-                        onClicked: requestInspector.show(modelData.diagnosticId)
+                        onClicked: {
+                            if (pane.subagentPane)
+                                backend.showRequestDetails(modelData.diagnosticId)
+                            else
+                                requestInspector.show(modelData.diagnosticId)
+                        }
                     }
                     Text {
                         objectName: "dshInterruptionNotice_" + messageRow.index
@@ -805,13 +815,13 @@ Item {
                         objectName: "outputLimitNotice_" + messageRow.index
                         x: 33
                         width: parent.width - 33
-                        visible: !modelData._loading && !messageRow.statusNotice && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
+                        visible: !pane.subagentPane && !modelData._loading && !messageRow.statusNotice && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
                         continuable: messageRow.index === conversation.count - 1 && !pane.busy
                         onContinued: backend.send(I18n.t("继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。"))
                     }
                     Item {
                         objectName: "messageActions_" + messageRow.index
-                        visible: !modelData._loading && !messageRow.statusNotice && modelData.segmentLast !== false
+                        visible: !pane.subagentPane && !modelData._loading && !messageRow.statusNotice && modelData.segmentLast !== false
                         width: parent.width
                         height: 18
                         opacity: messageRow.hovered || actionHover.hovered ? 1 : 0
@@ -855,8 +865,23 @@ Item {
                         objectName: "replyEndMascot_" + messageRow.index
                         selectionController: chatSelection
                         width: Character.id === "doubao" ? Theme.icon(72) : 56
-                        visible: backend.sessionBackend !== "dsh" && !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
+                        visible: !pane.subagentPane && backend.sessionBackend !== "dsh" && !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
                         x: 33
+                    }
+                    Loader {
+                        active: !!pane.subagentPane
+                        visible: active && modelData.role === "assistant" && !modelData._loading
+                            && !pane.subagentPane.contextState.loading && !pane.subagentPane.contextState.pending
+                            && messageRow.index === conversation.count - 1 && modelData.segmentLast !== false
+                            && pane.subagentPane.agent.status === "completed" && !modelData.error
+                            && (modelData.text || "").trim().length > 0
+                        x: 33
+                        sourceComponent: SubagentReplyMascot {
+                            objectName: "subagentReplyMascot_" + messageRow.index
+                            avatarSlot: pane.subagentPane.agent.avatarSlot || 0
+                            characterName: pane.subagentPane.agent.name || ""
+                            selectionController: chatSelection
+                        }
                     }
                 }
             }
@@ -885,6 +910,7 @@ Item {
         id: chatSelection
         anchors.fill: conversation
         view: conversation
+        dataSource: pane.viewportOwner
         enabled: pane.current && !pane.blocked
         retainedView: true
         sessionActive: pane.current

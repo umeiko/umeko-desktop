@@ -37,67 +37,34 @@ Rectangle {
         ActionButton { objectName: "closeSubagentPaneButton"; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(29); height: width; quiet: true; glyph: "x"; hint: I18n.t("关闭子代理对话"); onClicked: root.closed() }
     }
     Rectangle { anchors.top: header.bottom; width: parent.width; height: 1; color: Theme.line }
-    ListView {
-        id: conversation; objectName: "subagentConversation"
-        anchors.top: header.bottom; anchors.topMargin: 18; anchors.bottom: activity.top; anchors.bottomMargin: 12
-        anchors.left: parent.left; anchors.right: parent.right; clip: true; spacing: 15
-        model: backend.subagents.messageModel
-        reuseItems: true; cacheBuffer: 250
-        property bool followTail: true
-        property bool dragging: false
-        function beginBrowsing() { followTail = false; cancelFlick() }
-        function scrollBy(delta) { beginBrowsing(); contentY = Math.max(originY,Math.min(Math.max(originY,originY+contentHeight-height),contentY+delta)); if (atYEnd) followTail = true }
-        onMovementStarted: followTail = false
-        onAtYEndChanged: if (atYEnd) followTail = true
-        onCountChanged: if (followTail) tail.restart()
-        onContentHeightChanged: if (followTail) tail.restart()
-        onContentYChanged: prefetch.restart()
-        Timer { id: tail; interval: 0; onTriggered: if (conversation.followTail) conversation.positionViewAtEnd() }
-        Timer { id: prefetch; interval: 0; onTriggered: {
-            let first = conversation.indexAt(1,conversation.contentY+1)
-            backend.subagents.messageModel.requestRange(Math.max(0,first),Math.max(0,first)+8)
-        } }
-        delegate: Column {
-            id: message
-            required property int index
-            required property var modelData
-            readonly property bool user: modelData.role === "user"
-            width: conversation.width; spacing: 5
-            Rectangle {
-                x: message.user ? 35 : 17; width: parent.width-x-17
-                height: body.implicitHeight + 20; radius: 11
-                color: message.user ? Theme.userBubble : "transparent"
-                Column {
-                    id: body; x: 10; y: 10; width: parent.width-20; spacing: 6
-                    Text { font.family: Theme.fontFamily; visible: !!message.modelData._loading; text: I18n.t("正在加载历史…"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
-                    UserMessageBody { visible: message.user; width: parent.width; text: message.modelData.text || ""; attachments: message.modelData.attachments || []; selectionController: selection; messageIndex: message.index }
-                    ActivityHistory { visible: !message.user; width: parent.width; activity: message.modelData.activity || []; selectionController: selection; messageIndex: message.index }
-                    MessageBody { width: parent.width; text: !message.user && !(message.modelData.activity || []).length ? message.modelData.text || "" : ""; visible: text.length>0; markdown: true; selectionController: selection; messageIndex: message.index }
-                    ActionButton {
-                        objectName: "subagentRequestDetails_" + message.index
-                        visible: !message.modelData._loading && !!message.modelData.error && (message.modelData.diagnosticId || "").length > 0
-                        text: I18n.t("查看请求与返回"); glyph: "code"; quiet: true
-                        onClicked: backend.showRequestDetails(message.modelData.diagnosticId)
-                    }
-                }
-            }
-            SubagentReplyMascot {
-                objectName: "subagentReplyMascot_" + message.index
-                x: 27
-                avatarSlot: root.agent.avatarSlot || 0; characterName: root.agent.name || ""
-                selectionController: selection
-                visible: !message.user && !message.modelData._loading && !root.contextState.loading && !root.contextState.pending
-                         && message.index === conversation.count-1 && message.modelData.segmentLast !== false
-                         && root.agent.status === "completed" && !message.modelData.error && (message.modelData.text || "").trim().length > 0
-            }
-        }
+    ConversationPane {
+        id: transcript
+        anchors.top: header.bottom; anchors.topMargin: 18
+        anchors.bottom: activity.top; anchors.bottomMargin: 12
+        anchors.left: parent.left; anchors.right: parent.right
+        window: root.Window.window
+        messageModel: backend.subagents.messageModel
+        viewKey: root.agent.id || ""
+        requestInspector: null
+        subagentPane: root
+        Component.onCompleted: activate()
     }
-    ChatSelection { id: selection; anchors.fill: conversation; view: conversation; dataSource: backend.subagents }
+    readonly property var conversation: transcript.view
+    readonly property var selection: transcript.selection
+    QuestionNavigator {
+        objectName: "subagentQuestionNavigator"
+        anchors.right: parent.right
+        anchors.top: transcript.top; anchors.bottom: transcript.bottom
+        view: transcript.view
+        messageModel: transcript.messageModel
+        enabled: !root.contextState.loading
+        z: 20
+    }
     Shortcut { sequences: [StandardKey.Copy]; enabled: selection.activeFocus && selection.hasSelection; onActivated: selection.copy() }
     Shortcut { sequences: [StandardKey.SelectAll]; enabled: selection.activeFocus; onActivated: selection.selectAll() }
     Shortcut { sequence: "Ctrl+S"; enabled: prompt.activeFocus && !root.contextState.loading && !root.contextState.pending; onActivated: composer.send(true) }
     Item {
-        id: empty; anchors.fill: conversation; visible: root.contextState.loading || !!root.contextState.error || conversation.count === 0
+        id: empty; anchors.fill: transcript; visible: root.contextState.loading || !!root.contextState.error || conversation.count === 0
         Column { anchors.centerIn: parent; width: parent.width-48; spacing: 15
             ActivitySpinner { anchors.horizontalCenter: parent.horizontalCenter; width: 20; height: 20; visible: root.contextState.loading }
             Text { font.family: Theme.fontFamily; width: parent.width; text: root.contextState.error || (root.contextState.loading ? I18n.t("正在加载子代理上下文…") : root.running ? I18n.t("子代理已开始工作…") : I18n.t("发送消息继续这个子代理的工作")); color: Theme.muted; font.pixelSize: Theme.font(12, visible); wrapMode: Text.WrapAnywhere; horizontalAlignment: Text.AlignHCenter }
@@ -170,7 +137,15 @@ Rectangle {
     Connections { target: backend.subagents
         function onMessageSent(id) { if (id === root.agent.id) prompt.text = backend.subagents.context.draft || "" }
         function onDraftRestored(id) { if (id === root.agent.id) { prompt.text = backend.subagents.context.draft || ""; root.focusInput() } }
-        function onRequested() { conversation.followTail = true; selection.clear() }
+        function onViewClosing() {
+            transcript.deactivate()
+            // Cancel incubating delegates while the old model indexes still exist.
+            transcript.modelAttached = false
+        }
+        function onRequested() {
+            transcript.modelAttached = true
+            transcript.activate()
+        }
     }
     ChatFileDrop {
         anchors.fill: parent; z: 70; chatWindow: root

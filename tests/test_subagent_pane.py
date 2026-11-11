@@ -225,6 +225,30 @@ class SubagentPaneTests(unittest.TestCase):
         self.hub.handle(record, {"type": "subagent_event", "id": "b", "event": {"type": "delta", "text": " updated"}})
         self.assertEqual(self.hub.messages[-1]["text"], "B updated")
 
+    def test_viewport_restores_the_selected_child_and_is_bounded(self):
+        record = self.host._view
+        for index in range(17):
+            child = f"child-{index}"
+            self.hub.merge(record, {"id": child, "status": "running"})
+            self.hub.open(child)
+            self.assertTrue(self.hub.followTail)
+            self.assertEqual(self.hub.scrollAnchor, -1)
+            self.hub.saveViewport(index, index + 0.5, False)
+
+        self.hub.open("child-16")
+        self.assertEqual(self.hub.scrollAnchor, 16)
+        self.assertEqual(self.hub.scrollPosition, 16.5)
+        self.assertFalse(self.hub.followTail)
+        self.hub.open("child-0")
+        self.assertEqual(self.hub.scrollAnchor, -1)
+        self.assertTrue(self.hub.followTail)
+
+        self.host._view = SessionState(id="another-parent")
+        self.hub.merge(self.host._view, {"id": "child-16", "status": "running"})
+        self.hub.open("child-16")
+        self.assertEqual(self.hub.scrollAnchor, -1)
+        self.assertTrue(self.hub.followTail)
+
     def test_live_message_and_row_limits_bound_ui_memory(self):
         record = self.host._view
         self.hub.merge(record, {"id": "a", "status": "running"})
