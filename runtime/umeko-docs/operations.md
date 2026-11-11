@@ -6,6 +6,8 @@
 
 只读及组合操作：`help`、`operations.list`、`batch`、`settings.get`、`providers.list`、`models.list`、`characters.list`、`characters.get`、`characters.config`、`plugins.list`、`plugins.getConfig`、`themes.list`、`themes.prompt`、`projects.list`、`sessions.list`、`sessions.get`、`mcp.get`、`status.get`、`jobs.get`。
 
+`extensions.install` 不接受模型直接调用。Agent 安装扩展使用当前实例的 `run_pi_command`，由原生安装权限处理；操作目录中的条目不代表模型拥有执行权限。
+
 会话专用：`models.select(provider, model, sessionId?)`、`sessions.reasoning(value, sessionId?)`。缺省关联调用会话。
 
 | operation | arguments（类型；=默认值） | 等待空闲范围 | 启动后台工作 |
@@ -76,7 +78,7 @@
 | `extensions.enable` | `id: string`, `enabled: boolean` | all | 是 |
 | `extensions.remove` | `id: string` | all | 是 |
 | `extensions.checkUpdate` | `id: string` | 无 | 是 |
-| `extensions.install` | `source: string`, `project: boolean=false` | all | 是 |
+| `extensions.install`（仅用户确认后的 Widget 私有宿主入口） | `source: string`, `project: boolean=false` | all | 是 |
 | `mcp.add` | `text: string`, `project: boolean=false` | all | 是 |
 | `mcp.save` | `scope: string`, `config: json` | all | 是 |
 | `mcp.reconnect` | `name: string` | view | 是 |
