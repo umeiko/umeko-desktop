@@ -38,6 +38,7 @@ Rectangle {
     }
     ContextUsage { objectName: "subagentContextUsage"; menuBelow: true; controller: backend.subagents.conversation; anchors.right: parent.right; anchors.rightMargin: 50; y: Theme.control(22) }
     Rectangle { anchors.top: header.bottom; width: parent.width; height: 1; color: Theme.line }
+    readonly property int roleSlot: Math.max(0, Math.min(3, root.agent.avatarSlot || 0))
     readonly property var conversation: chat.view
     readonly property var selection: chat.selection
     AgentConversationPane {
@@ -47,8 +48,9 @@ Rectangle {
         controller: backend.subagents.conversation
         viewName: "subagentConversation"; messagePrefix: "subagent"
         assistantName: root.agent.name || I18n.t("子代理")
-        portrait: Character.roleAsset(root.agent.avatarSlot || 0, "avatar", "../icons/subagents/" + ["lemon-yakishio","chika-komari","kaju-nukumizu","yumeko-shikiya"][root.agent.avatarSlot || 0] + "-catch.png")
-        replyPortrait: portrait
+        roleSlot: root.roleSlot
+        portrait: Character.roleAsset(root.roleSlot, "avatar", "../icons/subagents/" + ["lemon-yakishio","chika-komari","kaju-nukumizu","yumeko-shikiya"][root.roleSlot] + "-catch.png")
+        replyPortrait: Character.roleAsset(root.roleSlot, "avatar", "../icons/subagents/" + ["lemon-yakishio","chika-komari","kaju-nukumizu","yumeko-shikiya"][root.roleSlot] + ".png")
     }
     Shortcut { sequence: "Ctrl+S"; enabled: prompt.activeFocus && !root.contextState.loading && !root.contextState.pending; onActivated: composer.send(true) }
     Item {

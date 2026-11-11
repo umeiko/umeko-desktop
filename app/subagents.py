@@ -70,6 +70,11 @@ class Subagents(QObject):
         self._file_job = None
         controller.viewChanged.connect(self._view_changed)
         controller.changed.connect(self._characters_changed)
+        self.changed.connect(self._refresh_presentation_state)
+
+    def _refresh_presentation_state(self):
+        self.presentation.busy_value = self.selected.get("status") in ACTIVE or bool(self.presentation.status)
+        self.presentation.chatChanged.emit()
 
     def _characters_changed(self):
         self._projection_cache.clear()

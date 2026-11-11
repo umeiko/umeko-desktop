@@ -10,6 +10,7 @@ Item {
     property string assistantName: ""
     property url portrait: ""
     property url replyPortrait: ""
+    property int roleSlot: -1
     property bool active: visible
     property alias view: chat.view
     property alias selection: chat.selection
@@ -20,6 +21,7 @@ Item {
         viewKey: root.controller ? root.controller.viewKey : ""
         viewName: root.viewName; messagePrefix: root.messagePrefix
         assistantName: root.assistantName; portrait: root.portrait; replyPortrait: root.replyPortrait
+        roleSlot: root.roleSlot
         blocked: !root.active
         messageModel: root.controller.messageModel
         window: root.Window.window
