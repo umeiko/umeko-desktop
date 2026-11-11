@@ -10,6 +10,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QTimer
 from .pi_sessions import SessionState
 from .chat_model import ChatModel
+from .conversation_state import ConversationState
 from .task_routing import TaskRouting
 
 TERMINAL = {'completed', 'failed', 'cancelled', 'interrupted'}
@@ -19,6 +20,11 @@ class GlobalAgents(QObject):
     def __init__(self, manager):
         super().__init__(manager)
         self.m, self.b = manager, manager.b
+        self.presentation = ConversationState(self.b, self)
+        self.selected_conversation = ""
+        self.presentation.bounded_history = True
+        self.chat_refresh = QTimer(self); self.chat_refresh.setSingleShot(True); self.chat_refresh.setInterval(32)
+        self.chat_refresh.timeout.connect(self._refresh_conversation)
         self.root = self.b.store.directory/'global-agents'
         self.registry = self.root/'state.json'
         self.agents, self.bridges, self.requests, self.records, self.outbox = {}, {}, {}, {}, {}
@@ -105,9 +111,10 @@ class GlobalAgents(QObject):
         for row in list(self.requests.values()):
             if row['status'] not in TERMINAL: self.finish(row,'cancelled','全局子智能体服务已停用。')
         self.outbox.clear(); self.save()
-    def close(self): self.stop(); self.save_timer.stop()
+    def close(self): self.stop(); self.save_timer.stop(); self.chat_refresh.stop(); self.presentation.close()
     def changed(self, persist=True):
         self._revision += 1
+        if self.selected_conversation and not self.chat_refresh.isActive(): self.chat_refresh.start()
         if persist and not self.save_timer.isActive(): self.save_timer.start()
     def save(self):
         try:
@@ -183,12 +190,47 @@ class GlobalAgents(QObject):
             Path(record.workspace).mkdir(parents=True, exist_ok=True)
             self.records[identifier] = record; self.b._pool.touch(record)
         return self.records[identifier]
+    def _refresh_conversation(self):
+        record = self.records.get(self.selected_conversation)
+        if not record:
+            return
+        self.presentation.busy_value = record.busy
+        self.presentation.status = record.tool_status
+        self.presentation.usage = record.context_usage
+        self.presentation.available = bool(record.file and record.model)
+        if not record.file or record.process and record.ready:
+            self.presentation.update(record.messages)
+        else:
+            self.presentation.chatChanged.emit()
+
+    def select_conversation(self, identifier):
+        if identifier == self.selected_conversation:
+            return self.presentation
+        record = self.ensure(identifier) if identifier else None
+        self.selected_conversation = identifier
+        self.presentation.switch_to('global/' + identifier if identifier else '')
+        if record:
+            self.presentation.compact = lambda: self._compact(record)
+            self.presentation.submit = lambda text: self.handle('send', {'id':identifier, 'text':text})
+            self.presentation.busy_value = record.busy
+            self.presentation.usage = record.context_usage
+            self.presentation.available = bool(record.file and record.model)
+            if record.file:
+                self.presentation.load(record.file)
+            else:
+                self.presentation.update(record.messages)
+        return self.presentation
+
+    def _compact(self, record):
+        if not record.busy and record.file and record.model:
+            self.b._command_pi('compact', record=record)
+
     def self_info(self, record):
         row=self.agents.get(record.global_agent,{})
         return {'id':self.identifier(record),'name':row.get('name',record.title),'kind':'global' if record.global_agent else 'session','character':row.get('character','')}
     def prompt(self, record):
         return PROMPT+'\nHost-assigned identity (authoritative JSON data): '+json.dumps(self.self_info(record),ensure_ascii=False)+"\nYou are exactly this ID, never another member of the overview. The overview's self and isSelf fields identify you. Disabled bus targets cannot receive delegated tasks. Match the user's latest message language.\nUser-defined coordinator instructions:\n"+self.agents[record.global_agent].get('instructions','')
-    def snapshot(self, selected=''):
+    def snapshot(self, selected='', include_messages=True):
         appearances = getattr(self.b,'subagentCharacterPacks',self.b.characterPacks)
         if self.b.characterStyle['id'] == 'system':
             # Keep each agent's saved identity; only its displayed artwork follows
@@ -203,7 +245,7 @@ class GlobalAgents(QObject):
             record=self.records.get(identifier)
             agents.append({key:row.get(key,'') for key in ('id','name','character','model','instructions')} | {'taskRouter':bool(row.get('taskRouter')),'autoName':bool(row.get('autoName')),'portrait':portraits.get(row['character'],portraits.get(fallback,'')),'replyPortrait':replies.get(row['character'],replies.get(fallback,'')),**self.activity(identifier),'status':record.tool_status if record else '','bridge':True})
         selected_row = self.records.get(selected)
-        messages = ChatModel.project(self.messages(selected_row.messages if selected_row and selected_row.messages else self.agents.get(selected,{}).get('messages',[])))
+        messages = ChatModel.project(self.messages(selected_row.messages if selected_row and selected_row.messages else self.agents.get(selected,{}).get('messages',[]))) if include_messages else []
         draft=next((self.creation_result(row) | {'sourceTitle':row['sourceTitle']} for row in self.creation_requests.values() if row['status']=='awaiting_approval'),{})
         return {'agents':agents,'appearances':appearances,'defaultCharacter':fallback,'models':self.b.gateway.models(),'defaultModel':self.b.store.data.get('selectedModel',''), 'targets':self.overview()['targets'],'projects':self.project_rows(),'requests':[{**row,'text':row.get('text','')[:500],'result':row.get('result','')[:500]} for row in list(self.requests.values())[-64:]],'messages':messages,'revision':self._revision,'error':self.error,'approval':copy.deepcopy(selected_row.approval) if selected_row else {},'selectedId':selected,'currentTarget':self.identifier(self.b._view),'allowAutomaticCreation':self.allow_automatic_creation,'creationDraft':draft,'queue':[{key:row.get(key,'') for key in ('id','source','sourceTitle','text','created')} for row in self.pending_queue(selected)]}
     def project_rows(self):
@@ -290,7 +332,7 @@ class GlobalAgents(QObject):
             return self.creation_result(row)
         if method=='snapshot':
             if args.get('revision')==self._revision: return {'unchanged':True}
-            return self.snapshot(args.get('selected',''))
+            return self.snapshot(args.get('selected',''), include_messages=args.get('includeMessages') is not False)
         if method in ('create','update'):
             if method=='create' and len(self.agents)>=16: raise ValueError('最多保留 16 个全局子智能体')
             name=self.text(args,'name',60,False); character=args.get('character') or self.b.characterStyle['id']; model=args.get('model') or self.b.store.data.get('selectedModel','')
@@ -370,6 +412,7 @@ class GlobalAgents(QObject):
             self.halt(identifier)
             for row in list(self.requests.values()):
                 if 'agent:'+identifier in (row['source'],row['target']) and row['status'] not in TERMINAL: self.finish(row,'cancelled','全局子智能体已删除。')
+            if self.selected_conversation == identifier: self.select_conversation('')
             self.agents.pop(identifier)
             for key,value in list(self.bridges.items()):
                 if isinstance(value,list):
@@ -602,5 +645,9 @@ class GlobalAgents(QObject):
                         self.task_routing.execution(row,'running')
                         row['status']='running';self.changed()
                     else: self.finish(row,'failed',event.get('error') or '目标未能接收消息','delivery')
+        if getattr(record, 'global_agent', '') == self.selected_conversation and self.selected_conversation:
+            if not self.chat_refresh.isActive(): self.chat_refresh.start()
+            if kind in ('state','done') and record.file:
+                self.presentation.load(record.file)
         if getattr(record,'global_agent',''):
             self.changed(persist=kind in ('session','state','done','exit','error'))

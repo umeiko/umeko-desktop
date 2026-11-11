@@ -20,7 +20,7 @@ Unit coverage also includes two-task/two-session result separation, schema 1/2 m
 
 ## Actual screenshots
 
-These PNGs are actual Qt offscreen captures from the tested source. They contain isolated, explicitly labelled demonstration data. The parent global-agents Widget retains its existing Chinese labels in the English run; the new task-entry controls and shared task records use English.
+These PNGs are actual Qt offscreen captures from the integration with upstream `700e48c`. They contain isolated, explicitly labelled demonstration data. The parent global-agents Widget retains its existing Chinese labels in the English run; the new task-entry controls and shared task records use English.
 
 Chinese task entry:
 
@@ -54,3 +54,7 @@ The first PR run (`42763460635`) found one failure among 1,117 Linux Python test
 Windows packaging reached `QML_READY` and a visible native Chromium child, but the packaged preview exited successfully before the page's rendered-frame callback reached the verifier. The preview smoke had a fixed 5.5-second application quit timer, independent of the verifier's existing 20-second deadline. The controlled packaged-preview run now waits for the verifier's completion marker, after both the JavaScript callback and visible native child are observed; it requests an active rendering window, uses a private WebView2 profile, and captures a preview PNG before exiting. Normal launches and ordinary smoke timing are unchanged. The original readiness, native-window, QML-error, exit-status and 20-second timeout checks remain in place, with an additional valid-PNG check.
 
 Local follow-up: 134 targeted Python tests and 12 Node tests passed. A real Qt entrypoint process was kept alive beyond the old 5.5-second cutoff, captured no early snapshot, then saved its PNG and exited only when its verifier marker arrived. Capture failure has a failing-exit regression. This Linux lifecycle test is not a Windows browser test; native packaged-browser verification and the full suite must be assessed from the new CI run.
+
+## Integration with upstream `700e48c`
+
+The merge preserves task routing's execution updates on bus delivery and upstream's shared conversation refresh and transcript loading. The integration passed 150 targeted Python tests, 46 Node tests, the Widget SDK build and the source-matched Pi runtime self-test. Both language runs of `tests/task_routing_ui_smoke.py` and `tests/global_agents_ui_smoke.py` passed with a local model fixture. The Qt teardown warning about six incubating items appeared in all three runs. The refreshed screenshots above are from the two routing runs. Windows and installation package checks were not run locally.

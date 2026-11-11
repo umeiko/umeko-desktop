@@ -80,9 +80,8 @@ jobs:
           cache-dependency-path: runtime/package-lock.json
 
       - name: Linux desktop libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xterm gnome-keyring dbus-x11 extra-cmake-modules libgl1-mesa-dev libxkbcommon-dev libxcb1-dev libx11-dev libegl1 libopengl0 libgl1 libdbus-1-3 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-image0 libxcb-render-util0 libxcb-randr0 libxcb-xfixes0 libnss3 libasound2
+        timeout-minutes: 5
+        run: bash scripts/ci-linux-libraries.bash xterm gnome-keyring dbus-x11 extra-cmake-modules libgl1-mesa-dev libxkbcommon-dev libxcb1-dev libx11-dev libegl1 libopengl0 libgl1 libdbus-1-3 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-image0 libxcb-render-util0 libxcb-randr0 libxcb-xfixes0 libnss3 libasound2
 
       - name: Set up Linux
         run: bash setup.sh
@@ -101,7 +100,7 @@ jobs:
       - name: Node tests
         run: |
           node --test tests/system-prompt.test.mjs
-          node --test runtime/test-plugin-session-permissions.mjs tests/auxiliary-vision.test.mjs tests/auxiliary-vision-bridge.test.mjs tests/video-generation.test.mjs tests/generation.test.mjs tests/markdown-preview.test.mjs tests/widget-catalog.test.mjs tests/session-capabilities.test.mjs tests/session-capabilities-integration.test.mjs tests/skills.test.mjs tests/tool-visibility.test.mjs tests/pet-reminder-local-time.test.mjs tests/conversation-search.test.mjs tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/package-install.test.mjs tests/pi-widget-command.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/global-agents.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs tests/compaction-bridge.test.mjs tests/recent-images.test.mjs tests/recent-images-bridge.test.mjs tests/pid-trajectory.test.mjs
+          node --test runtime/test-plugin-session-permissions.mjs tests/auxiliary-vision.test.mjs tests/auxiliary-vision-bridge.test.mjs tests/video-generation.test.mjs tests/generation.test.mjs tests/markdown-preview.test.mjs tests/widget-catalog.test.mjs tests/session-capabilities.test.mjs tests/session-capabilities-integration.test.mjs tests/skills.test.mjs tests/tool-visibility.test.mjs tests/pet-reminder-local-time.test.mjs tests/conversation-search.test.mjs tests/background-jobs.test.mjs tests/tool-permissions.test.mjs tests/tool-permissions-integration.test.mjs tests/package-install.test.mjs tests/pi-widget-command.test.mjs tests/extension-metadata.test.mjs tests/update-engine.test.mjs tests/update-download.test.mjs tests/update-network.test.mjs tests/webview.test.mjs tests/pi-commands.test.mjs tests/pi-commands-integration.test.mjs tests/umeko-control.test.mjs tests/global-agents.test.mjs tests/umeko-documents.test.mjs tests/widget-messages.test.mjs tests/subagents.test.mjs tests/subagent-context.test.mjs tests/subagent-ui.test.mjs tests/subagent-queue.test.mjs tests/rpc-ui.test.mjs tests/compaction-bridge.test.mjs tests/recent-images.test.mjs tests/recent-images-bridge.test.mjs tests/pid-trajectory.test.mjs
 
       - name: Official ACP bridge tests
         run: node --test tests/dsh-acp.test.mjs tests/dsh-permissions.test.mjs tests/approval-view.test.mjs
@@ -210,9 +209,8 @@ jobs:
 
       - name: Linux desktop libraries
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xterm gnome-keyring dbus-x11 extra-cmake-modules libgl1-mesa-dev libxkbcommon-dev libxcb1-dev libx11-dev libegl1 libopengl0 libgl1 libdbus-1-3 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-image0 libxcb-render-util0 libxcb-randr0 libxcb-xfixes0 libnss3 libasound2
+        timeout-minutes: 5
+        run: bash scripts/ci-linux-libraries.bash xterm gnome-keyring dbus-x11 extra-cmake-modules libgl1-mesa-dev libxkbcommon-dev libxcb1-dev libx11-dev libegl1 libopengl0 libgl1 libdbus-1-3 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-image0 libxcb-render-util0 libxcb-randr0 libxcb-xfixes0 libnss3 libasound2
 
       - name: Set up Windows
         if: runner.os == 'Windows'

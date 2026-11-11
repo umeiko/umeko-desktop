@@ -46,6 +46,29 @@ class SubagentPaneTests(unittest.TestCase):
         self.hub.close()
         self.directory.cleanup()
 
+    def test_file_watermark_replays_live_prefix_and_deltas_once(self):
+        import json
+        record = self.host._view
+        self.hub.merge(record, {"id":"child", "status":"running"})
+        self.hub.open("child")
+        path=Path(self.directory.name)/"live.jsonl"
+        entries=[{"type":"session","id":"s"},
+                 {"type":"message","id":"u","message":{"role":"user","content":"task"}},
+                 {"type":"message","id":"a","parentId":"u","message":{"role":"assistant","content":"prefix suffix"}}]
+        path.write_text(''.join(json.dumps(e)+'\n' for e in entries))
+        self.hub.handle(record,{"type":"subagent_context","id":"child","file":str(path),"leafId":"u","live":[{"role":"assistant","text":"prefix ","timestamp":12}]})
+        self.hub.handle(record,{"type":"subagent_event","id":"child","event":{"type":"delta","text":"suffix"}})
+        self.hub.handle(record,{"type":"subagent_event","id":"child","event":{"type":"message","text":"prefix suffix","timestamp":12}})
+        # Let the real worker finish without a QTest wait that holds the GIL.
+        import time
+        deadline=time.monotonic()+5
+        while self.hub._history_read and time.monotonic()<deadline:
+            self.app.processEvents();time.sleep(.005)
+        self.assertFalse(self.hub._history_read)
+        self.assertEqual([m['text'] for m in self.hub.messages],['task','prefix suffix'])
+        self.assertEqual(self.hub.messageCount,2)
+        self.assertFalse(record.messages)
+
     def test_live_child_failure_keeps_request_details_with_partial_or_empty_output(self):
         failure = 'Provider failed [Umeko:12345678-1234-1234-1234-123456789abc]'
         for text in ('partial child response', ''):

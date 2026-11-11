@@ -25,9 +25,9 @@ Your projects, your providers, the full Pi Coding Agent — with a little Yanami
 
 <!-- umeko-downloads:standard:start -->
 
-**Download v0.7.1**
+**Download v0.7.2**
 
-[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.1/Umeko-0.7.1-windows-x64-82f0e80.zip)
+[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.2/Umeko-0.7.2-windows-x64-f8e5952.zip)
 
 <!-- umeko-downloads:standard:end -->
 

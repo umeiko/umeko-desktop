@@ -57,6 +57,20 @@ class DesktopPlugins(QObject):
         from .global_agents import GlobalAgents
         self.global_agents=GlobalAgents(self)
         self.synchronize()
+    @Property(QObject, notify=pageChanged)
+    def agentConversation(self):
+        return self.global_agents.presentation if self._page == 'global-agents' else None
+
+    @Slot(str, result=QObject)
+    def selectConversation(self, identifier):
+        if self._page != 'global-agents' or not self.enabled('global-agents'):
+            return None
+        try:
+            return self.global_agents.select_conversation(identifier)
+        except (ValueError, OSError) as error:
+            self.b.toast.emit(str(error))
+            return None
+
     def _task_records_changed(self):
         if hasattr(self, 'global_agents'):
             self.global_agents.changed(persist=False)

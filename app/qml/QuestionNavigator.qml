@@ -5,7 +5,8 @@ Item {
     id: root
     objectName: "questionNavigator"
     property var view
-    property int questionCount: backend.messageModel.questionCount
+    property var messageModel: backend.messageModel
+    property int questionCount: root.messageModel.questionCount
     property int questionRevision: 0
     property int activeQuestion: -1
     property real openY: height / 2
@@ -20,7 +21,7 @@ Item {
         if (row < 0) row = view.indexAt(1, view.contentY + view.spacing + 2)
         if (row < 0) row = view.indexAt(1, view.contentY + view.height / 2)
         if (row < 0) row = view.atYEnd ? view.count - 1 : 0
-        activeQuestion = backend.messageModel.questionIndexForRow(row)
+        activeQuestion = root.messageModel.questionIndexForRow(row)
     }
     function reveal(y) {
         if (!enabled || !visible || !questionCount) return
@@ -38,11 +39,11 @@ Item {
     function jump(index) {
         if (index < 0 || index >= questionCount) return
         activeQuestion = index
-        view.jumpToMessage(backend.messageModel.question(index).row)
+        view.jumpToMessage(root.messageModel.question(index).row)
     }
     onEnabledChanged: if (!enabled) dismiss()
     onVisibleChanged: if (!visible) dismiss()
-    Connections { target: backend.messageModel; function onQuestionsChanged() { root.questionRevision++; if (!root.questionCount) root.dismiss(); else if (root.expanded) root.updateActive() } }
+    Connections { target: root.messageModel; function onQuestionsChanged() { root.questionRevision++; if (!root.questionCount) root.dismiss(); else if (root.expanded) root.updateActive() } }
 
     TapHandler { onTapped: root.reveal(point.position.y) }
     HoverHandler {
@@ -114,7 +115,7 @@ Item {
             delegate: ItemDelegate {
                 id: option
                 required property int index
-                readonly property var questionData: { const revision = root.questionRevision; return backend.messageModel.question(index) }
+                readonly property var questionData: { const revision = root.questionRevision; return root.messageModel.question(index) }
                 objectName: "questionNavigationItem_" + index
                 width: questionList.width; height: root.rowHeight
                 focusPolicy: Qt.NoFocus; hoverEnabled: true
