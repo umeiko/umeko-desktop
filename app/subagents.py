@@ -22,6 +22,7 @@ class Subagents(QObject):
     changed = Signal()
     contextChanged = Signal()
     requested = Signal()
+    viewClosing = Signal()
     messageSent = Signal(str)
     draftRestored = Signal(str)
     queueChanged = Signal()
@@ -257,6 +258,7 @@ class Subagents(QObject):
     @Slot()
     def closeView(self):
         if self.owner:
+            self.viewClosing.emit()
             self._deferred[self.owner.key] = [command for command in self._deferred.get(self.owner.key, []) if command.get("action") != "watch"]
         if self.owner and self.owner.process:
             self.controller._write_pi({"type": "subagent-command", "action": "unwatch"}, self.owner)

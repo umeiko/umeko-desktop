@@ -137,7 +137,15 @@ Rectangle {
     Connections { target: backend.subagents
         function onMessageSent(id) { if (id === root.agent.id) prompt.text = backend.subagents.context.draft || "" }
         function onDraftRestored(id) { if (id === root.agent.id) { prompt.text = backend.subagents.context.draft || ""; root.focusInput() } }
-        function onRequested() { selection.clear(); conversation.restoreViewport() }
+        function onViewClosing() {
+            transcript.deactivate()
+            // Cancel incubating delegates while the old model indexes still exist.
+            transcript.modelAttached = false
+        }
+        function onRequested() {
+            transcript.modelAttached = true
+            transcript.activate()
+        }
     }
     ChatFileDrop {
         anchors.fill: parent; z: 70; chatWindow: root

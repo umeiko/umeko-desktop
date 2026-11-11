@@ -9,6 +9,7 @@ Item {
     required property var requestInspector
     property var subagentPane: null
     readonly property var viewportOwner: subagentPane ? backend.subagents : backend
+    property bool modelAttached: true
     property bool current: false
     property bool blocked: false
     property bool initialized: false
@@ -384,7 +385,7 @@ Item {
         anchors.fill: parent
         clip: true
         spacing: 27
-        model: pane.messageModel
+        model: pane.modelAttached ? pane.messageModel : null
         cacheBuffer: Math.max(0, reach)
         currentIndex: -1
         // A hidden attached ScrollBar still writes contentY when its
