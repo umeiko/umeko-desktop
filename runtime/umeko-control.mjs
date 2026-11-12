@@ -10,7 +10,7 @@ export const umekoDocs = () => instanceDocs?.docsRoot || fileURLToPath(new URL('
 export const umekoHelp = () => ({...(instanceDocs || { docsRoot: umekoDocs(), entry: fileURLToPath(new URL('./umeko-docs/README.md', import.meta.url)) }),
   topics:{plugins:'plugins.md',provider:'provider-plugins.md',widget:'widget-plugins.md',agents:'global-agents.md'}});
 export function configureUmekoDocs(options) { instanceDocs = prepareDocumentation(options); }
-export const UMEKO_PROMPT = 'Umeko owns providers, credentials, themes, desktop settings, projects and chats; Pi provider configuration does not apply. First call umeko_desktop operation help to discover its documentation. Discover enabled Widgets with widgets.list (activeOnly true) and read widgets.docs before using them. Apply desktop changes through umeko_desktop, not by editing its settings files.';
+export const UMEKO_PROMPT = 'umeko-desk 的临时文件存放在 ./.umeko 目录下。 Umeko owns providers, credentials, themes, desktop settings, projects and chats; Pi provider configuration does not apply. First call umeko_desktop operation help to discover its documentation. Discover enabled Widgets with widgets.list (activeOnly true) and read widgets.docs before using them. Apply desktop changes through umeko_desktop, not by editing its settings files.';
 
 export function createUmekoControl({ emit, timeoutMs = 90000 }) {
   const pending = new Map();
