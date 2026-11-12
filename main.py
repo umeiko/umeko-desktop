@@ -155,11 +155,21 @@ if __name__ == "__main__":
         diagnostic("NODE_EXECUTABLE:" + node_executable())
         if hasattr(controller, "_system_tray"):
             diagnostic("TRAY_ICON_READY:" + str(int(not controller._system_tray.tray.icon().pixmap(32,32).isNull())))
-    if "--snapshot" in sys.argv:
+    smoke_finish = os.environ.get('UMEKO_SMOKE_FINISH_FILE', '') if preview_url and '--smoke' in sys.argv else ''
+    if "--snapshot" in sys.argv and not smoke_finish:
         output = sys.argv[sys.argv.index("--snapshot") + 1]
         QTimer.singleShot(4000 if preview_url else 650, lambda: engine.rootObjects()[0].grabWindow().save(output))
     if "--smoke" in sys.argv:
-        QTimer.singleShot(5500 if preview_url else 1500, app.quit)
+        if smoke_finish:
+            from app.smoke_lifecycle import watch_smoke_finish
+            # Match the native preview test: let WebView2 render in an active
+            # window rather than leave requestAnimationFrame occluded by CI.
+            engine.rootObjects()[0].raise_()
+            engine.rootObjects()[0].requestActivate()
+            snapshot = sys.argv[sys.argv.index('--snapshot') + 1] if '--snapshot' in sys.argv else ''
+            _smoke_finish_timer = watch_smoke_finish(app, engine.rootObjects()[0], smoke_finish, snapshot)
+        else:
+            QTimer.singleShot(5500 if preview_url else 1500, app.quit)
     result = app.exec()
     diagnostic("EXIT:" + str(result))
     import shiboken6
