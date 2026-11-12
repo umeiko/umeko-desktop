@@ -38,6 +38,7 @@ class ToolPermissionTests(unittest.TestCase):
                                         write=Mock(), start=Mock())
         backend._restart_pi = Mock()
         backend._sessions = []
+        backend._session_files = SimpleNamespace(pending=set())
         backend._provider_plugins = SimpleNamespace()
         backend._pi_management = SimpleNamespace(busy=False)
         backend._app_about = SimpleNamespace()
@@ -111,6 +112,13 @@ class ToolPermissionTests(unittest.TestCase):
         self.assertTrue(applied["ok"], applied)
         self.assertEqual(backend.store.data["agent"]["toolPermissionMode"], "ask")
         self.assertEqual(backend.store.data["agent"]["instructions"], "new")
+
+    def test_native_start_is_blocked_during_session_deletion(self):
+        backend = self.controller()
+        backend._view = SessionState(id="pending-deletion")
+        backend._session_files.pending.add(backend._view.id)
+        self.assertFalse(backend._command_pi("inspect"))
+        backend._pool.start.assert_not_called()
 
     def test_native_start_receives_current_permission_context(self):
         backend = self.controller()

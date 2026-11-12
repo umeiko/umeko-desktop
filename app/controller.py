@@ -42,6 +42,7 @@ from .message_attachments import split_attachments
 from .app_about import AppAbout
 from .themes import BASES, LIMIT as THEME_LIMIT, theme_library, read_theme
 from .session_preview import SessionPreview
+from .session_files import SessionFiles
 from .document_preview import DocumentPreview
 from .preferences import PreferencesMixin
 from .common_providers import CommonProvidersMixin
@@ -220,6 +221,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._session_preview = SessionPreview(self)
         from .conversation_search import ConversationSearch
         self._chat_search = ConversationSearch(self)
+        self._session_files = SessionFiles(self)
         self._document_preview = DocumentPreview(self, store=self.store)
         self._subagents = Subagents(self)
         self._view.id = ""
@@ -823,15 +825,19 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         metadata = self.store.data["sessionMeta"]
         visible_sessions = []
         by_workspace = {}
+        projects_by_key = {os.path.normcase(p['path']): p for p in self.store.data['projects']}
         for session in self._sessions:
             workspace = session.get("workspace", "")
             if workspace:
                 key = self._project_workspace_key(workspace)
-                if hashlib.sha256(key.encode()).hexdigest()[:16] in self.store.data["removedProjects"]:
-                    continue
+            else:
+                key = ''
             meta = metadata.get(session["id"], {})
-            if bool(meta.get("archived")) == self._show_archived:
-                item = {**session, "pinned": bool(meta.get("pinned")), "archived": bool(meta.get("archived"))}
+            project = projects_by_key.get(key, {})
+            removed = bool(key and hashlib.sha256(key.encode()).hexdigest()[:16] in self.store.data['removedProjects'])
+            archived = bool(meta.get('archived') or project.get('archived') or removed)
+            if archived == self._show_archived:
+                item = {**session, "pinned": bool(meta.get("pinned")), "archived": archived, 'projectId': project.get('id', '')}
                 visible_sessions.append(item)
                 if workspace:
                     by_workspace.setdefault(key, []).append(item)
@@ -839,8 +845,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         for children in by_workspace.values():
             children.sort(key=lambda s: not s["pinned"])
         for project in sorted(self.store.data["projects"], key=lambda p: not p.get("pinned", False)):
+            if project.get('archived') and not self._show_archived:
+                continue
             children = by_workspace.get(os.path.normcase(project["path"]), [])
-            if self._show_archived and not children:
+            if self._show_archived and not children and not project.get('archived'):
                 continue
             collapsed = project["id"] in self._collapsed_projects
             rows.append({**project, "kind": "project", "title": project["name"], "collapsed": collapsed, "pinned": bool(project.get("pinned")),
@@ -848,11 +856,11 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             for session in children:
                 grouped.add(session["id"])
                 if not collapsed:
-                    rows.append({"id": session["id"], "title": session["title"], "kind": "session", "pinned": session["pinned"], "archived": session["archived"], "selected": self._view.id == session["id"], **self._session_flags(session["id"])})
+                    rows.append({"id": session["id"], "title": session["title"], "kind": "session", "projectId": project['id'], "pinned": session["pinned"], "archived": session["archived"], "selected": self._view.id == session["id"], **self._session_flags(session["id"])})
         ungrouped = [s for s in visible_sessions if s["id"] not in grouped]
         if ungrouped:
             rows.append({"id": "ungrouped", "kind": "label", "title": "其他会话", "selected": False})
-            rows.extend({"id": s["id"], "title": s["title"], "kind": "session", "pinned": s["pinned"], "archived": s["archived"], "selected": self._view.id == s["id"], **self._session_flags(s["id"])} for s in ungrouped)
+            rows.extend({"id": s["id"], "title": s["title"], "kind": "session", "projectId": s.get('projectId', ''), "pinned": s["pinned"], "archived": s["archived"], "selected": self._view.id == s["id"], **self._session_flags(s["id"])} for s in ungrouped)
         return rows
 
     @Property(bool, notify=chatChanged)
@@ -879,9 +887,15 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Slot(str, bool)
     def archiveSession(self, session_id, archived):
-        if not any(s["id"] == session_id for s in self._sessions):
+        if session_id in self._session_files.pending:
+            return
+        session = next((s for s in self._sessions if s['id'] == session_id), None)
+        if not session:
             return
         self.store.data["sessionMeta"].setdefault(session_id, {})["archived"] = archived
+        if not archived and session.get('workspace'):
+            project = self._ensure_project(session['workspace'], reopen=True)
+            project['archived'] = False
         if archived:
             self._clear_dangerous_approval(session_id)
         if archived and self._view.id == session_id:
@@ -895,14 +909,16 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Slot(str, bool)
     def archiveProject(self, project_id, archived):
         project = next((p for p in self.store.data["projects"] if p["id"] == project_id), None)
-        if not project:
+        if not project or self._session_files.busy:
             return
+        project['archived'] = archived
         ids = [s["id"] for s in self._sessions if s.get("workspace") and os.path.normcase(str(Path(s["workspace"]).resolve())) == os.path.normcase(project["path"])]
         for session_id in ids:
             self.store.data["sessionMeta"].setdefault(session_id, {})["archived"] = archived
             if archived:
                 self._clear_dangerous_approval(session_id)
-        if archived and self._view.id in ids:
+        if archived and (self._view.id in ids or self._project_workspace_key(self._view.workspace) == self._project_workspace_key(project['path'])):
+            self.store.data.update(activeProject='', workspace='')
             self._clear_current()
         if archived:
             for record in tuple(self._pool.records.values()):
@@ -911,19 +927,13 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.store.save()
         self.chatChanged.emit()
 
+    @Property(QObject, constant=True)
+    def sessionFiles(self):
+        return self._session_files
+
     @Slot(str)
     def removeProject(self, project_id):
-        if not any(p["id"] == project_id for p in self.store.data["projects"]):
-            return
-        self.store.data["projects"] = [p for p in self.store.data["projects"] if p["id"] != project_id]
-        if project_id not in self.store.data["removedProjects"]:
-            self.store.data["removedProjects"].append(project_id)
-        if self.store.data["activeProject"] == project_id:
-            self.store.data.update(activeProject="", workspace="")
-            self._clear_current()
-        self.store.save()
-        self.changed.emit()
-        self.chatChanged.emit()
+        self._session_files.deleteProject(project_id)
 
     @Slot(str)
     def revealProject(self, project_id):
@@ -1012,19 +1022,23 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self.setWorkspace(QUrl.fromLocalFile(project["path"]).toString())
 
     @Slot(str)
-    def dropProjects(self, raw):
+    @Slot(str, str)
+    def dropProjects(self, raw, project_id=''):
         try:
-            paths = [Path(QUrl(url).toLocalFile()) for url in json.loads(raw) if QUrl(url).isLocalFile()]
-            folders = [path for path in paths if path.is_dir()]
-            for path in folders:
-                self._ensure_project(path, reopen=True)
-            if folders:
-                self.store.save()
-                self.setWorkspace(QUrl.fromLocalFile(str(folders[0])).toString())
+            urls = json.loads(raw)
+        except (ValueError, TypeError):
+            return
+        files = []
+        for value in urls:
+            url = QUrl(value)
+            if not url.isLocalFile():
+                files.append(value)
+            elif Path(url.toLocalFile()).is_dir():
+                self.setWorkspace(value)
             else:
-                self.toast.emit("把文件夹拖到这里即可打开项目")
-        except (ValueError, OSError):
-            self.toast.emit("无法打开拖入的目录")
+                files.append(value)
+        if files:
+            self._session_files.importFiles(json.dumps(files), project_id)
 
     @Slot(str, result=bool)
     def addAttachments(self, raw):
@@ -1988,6 +2002,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Slot(str)
     def openSession(self, session_id):
+        if session_id in self._session_files.pending or session_id in self._session_files.deleted:
+            return
         session = next((s for s in self._sessions if s["id"] == session_id), None)
         if not session:
             return
@@ -2022,36 +2038,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Slot(str)
     def deleteSession(self, session_id):
-        record = self._pool.find(session_id)
-        if (record and self._pool.protected(record)) or session_id in self._management_jobs:
-            return self.toast.emit("此会话正在运行，请先停止该会话")
-        session = next((s for s in self._sessions if s["id"] == session_id), {})
-        if session.get('backend') == 'dsh':
-            self._dsh_history.path(session_id).unlink(missing_ok=True)
-        file = Path(session["file"]) if session.get("file") else None
-        if file:
-            base = (self.store.directory / "pi/sessions").resolve()
-            if not file.resolve().is_relative_to(base):
-                return self.toast.emit("只能删除 Umeko 会话目录中的文件")
-        if record:
-            self._conversation_views.discard(record.key)
-            self._pool._clear_body(record)
-        if file:
-            file.unlink(missing_ok=True)
-            images = file.with_name(file.name + '.images')
-            linked = images.is_symlink() or getattr(images, 'is_junction', lambda: False)()
-            if not linked and images.is_dir() and images.resolve().is_relative_to(base):
-                shutil.rmtree(images)
-            self._job('discard-chat-index', lambda: self.transcripts.discard(file))
-        if record:
-            self._pool.records.pop(record.key, None)
-        self._sessions = [s for s in self._sessions if s["id"] != session_id]
-        self.store.data["sessionMeta"].pop(session_id, None)
-        self.store.save()
-        self.store.save_sessions(self._sessions)
-        if self._view.id == session_id:
-            self.newSession()
-        self.chatChanged.emit()
+        self._session_files.deleteSession(session_id)
 
     @Slot()
     def forkSession(self):
@@ -2129,6 +2116,9 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     def _on_job_done(self, name, result):
         if self._closing:
+            return
+        if name == 'session-files':
+            self._session_files.complete(result)
             return
         if name.startswith('dsh-open:'):
             return self._dsh_opened(name.split(':', 1)[1], result)
@@ -2213,11 +2203,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self.chatChanged.emit()
         elif name == "index":
             if result["ok"]:
-                native = result["value"]
+                native = [row for row in result["value"] if row["id"] not in self._session_files.deleted and row["id"] not in self._session_files.pending]
                 self._merge_native_sessions(native)
-                for session in native:
-                    if session.get("workspace"):
-                        self._ensure_project(session["workspace"])
                 self.store.save()
                 self._save_session()
                 self.chatChanged.emit()
