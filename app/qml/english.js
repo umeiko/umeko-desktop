@@ -792,6 +792,8 @@ var strings = {
   "全局": "Global",
   "全局 · 所有项目": "Global · All projects",
   "全选": "Select all",
+  "附加到聊天": "Attach to chat",
+  "无法附加所选内容：": "Unable to attach selected text: ",
   "八奈见：点击互动，拖拽回弹，长按有彩蛋": "Yanami: tap, drag and hold for surprises",
   "八奈见：点击互动，连续点击或长按有彩蛋": "Yanami: tap, tap repeatedly or hold for surprises",
   "公司 npm 源使用的 PEM 证书文件路径": "PEM certificate path for your company npm registry",

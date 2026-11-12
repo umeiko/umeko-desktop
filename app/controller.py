@@ -215,6 +215,9 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._mcp_jobs = {}
         self._closing = False
         self._copy_request = 0
+        self._selection_attachment = None
+        self._selection_epoch = 0
+        self.viewChanged.connect(self._invalidate_selection_attachment)
         self._session_preview = SessionPreview(self)
         from .conversation_search import ConversationSearch
         self._chat_search = ConversationSearch(self)
@@ -609,6 +612,65 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         snapshot, overlay = model.snapshot, list(model.rows)
         script = (self.root / 'app/qml/markdown.js').read_text(encoding='utf-8')
         self._copy_chat(lambda: selected_text(script, snapshot, overlay, selection['anchor'], selection['cursor'], selection.get('expanded', {})))
+
+    def _invalidate_selection_attachment(self):
+        self._selection_epoch += 1
+
+    @Property(bool, notify=attachmentsChanged)
+    def selectionAttachmentBusy(self):
+        return self._selection_attachment is not None
+
+    @Slot(str)
+    def attachChatSelection(self, raw):
+        if self._selection_attachment is not None:
+            return
+        if len(self._view.attachments) >= 20:
+            self.toast.emit("一次最多添加 20 个附件")
+            return
+        if self._view.busy and self._view.phase != "running":
+            self.toast.emit("Pi 加载完成后可添加附件")
+            return
+        try:
+            selection = json.loads(raw)
+            for point in (selection['anchor'], selection['cursor']):
+                if not all(isinstance(point[key], int) for key in ('row', 'block', 'offset')):
+                    return
+        except (ValueError, KeyError, TypeError):
+            return
+        from .chat_copy import selected_text
+        from .selection_attachment import write_selection
+        model = self._chat_model
+        snapshot, overlay = model.snapshot, copy.deepcopy(model.rows)
+        context = (self._view, self._selection_epoch, model, model._generation, snapshot, overlay)
+        self._selection_attachment = context
+        self.attachmentsChanged.emit()
+        workspace = self._view.workspace or self.store.data['workspace']
+        script_path = self.root / 'app/qml/markdown.js'
+        def prepare():
+            text = selected_text(script_path.read_text(encoding='utf-8'), snapshot, overlay,
+                                 selection['anchor'], selection['cursor'], selection.get('expanded', {}))
+            return write_selection(workspace, text)
+        self._job('attach-chat-selection', prepare)
+
+    def _selection_attachment_ready(self, result):
+        context, self._selection_attachment = self._selection_attachment, None
+        item = result['value'] if result['ok'] else None
+        if context is None:
+            return
+        record, epoch, model, generation, snapshot, overlay = context
+        valid = (record is self._view and epoch == self._selection_epoch
+                 and model is self._chat_model and generation == model._generation
+                 and snapshot is model.snapshot and overlay == model.rows)
+        if item and valid and len(record.attachments) < 20 and (not record.busy or record.phase == 'running'):
+            item['id'] = uuid.uuid4().hex
+            record.attachments.append(item)
+        elif item:
+            self._job('discard-selection-attachment', lambda: Path(item['path']).unlink(missing_ok=True))
+            if valid:
+                self.toast.emit('一次最多添加 20 个附件' if len(record.attachments) >= 20 else 'Pi 加载完成后可添加附件')
+        elif not result['ok'] and valid:
+            self.toast.emit('无法附加所选内容：' + result['value'])
+        self.attachmentsChanged.emit()
 
     def _copy_chat(self, job):
         self._copy_request += 1
@@ -2062,6 +2124,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             return self._dsh_opened(name.split(':', 1)[1], result)
         if name.startswith("task-details:"):
             self._desktop_plugins.hostServices.task_result(name.split(":", 1)[1], result)
+            return
+        if name == 'attach-chat-selection':
+            return self._selection_attachment_ready(result)
+        if name == 'discard-selection-attachment':
             return
         if name.startswith('copy-chat:'):
             if int(name.split(':', 1)[1]) != self._copy_request:
