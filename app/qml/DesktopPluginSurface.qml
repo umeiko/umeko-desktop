@@ -18,6 +18,10 @@ FocusScope {
         readonly property string revealPath: root.page.selection || ""
         readonly property bool active: root.live
         readonly property var hostCapabilities: root.manager.hostServices.capabilities
+        readonly property var conversation: root.manager.agentConversation
+        readonly property Component conversationComponent: conversationRenderer
+        readonly property Component contextUsageComponent: usageRenderer
+        function openConversation(id) { return root.manager.selectConversation(id) }
         readonly property Component chatMessageComponent: chatMessageRenderer
         readonly property Component queuedMessagesComponent: queueRenderer
         signal response(string request, var value)
@@ -29,6 +33,8 @@ FocusScope {
         function saveConfig(value) { return root.manager.saveConfig(root.page.id,JSON.stringify(value)) }
         function copyText(text) { backend.copy(text) }
     }
+    Component { id: conversationRenderer; AgentConversationPane {} }
+    Component { id: usageRenderer; ContextUsage {} }
     Component { id: chatMessageRenderer; WidgetChatMessage {} }
     Component { id: queueRenderer; QueuedMessages {} }
     Connections {target:root.manager;function onResponse(request,value) {bridge.response(request,value)}function onEvent(topic,data){bridge.event(topic,data)}}

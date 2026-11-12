@@ -125,6 +125,7 @@ test("native child streams, repeated roles and more than four background agents,
     assert.match(JSON.stringify(pending[8].body.messages),/resumed-answer/);
     assert.match(JSON.stringify(pending[8].body.messages),/wake-after-restart/);
     assert.equal(JSON.stringify(pending[8].body.messages).split(SUBAGENT_COMPLETION_HINT).length-1,1);
+    assert.equal(events.filter(e=>e.type==="subagent_event" && e.id===ids[0] && e.event.type==="user_start" && e.event.text==="wake-after-restart").length,1,"cold usage restoration and send must share one observer");
     pending[8].respond("cold-answer");
     await waitFor(()=>events.some(event=>event.subagent?.id===ids[0] && event.subagent.result==="cold-answer"));
     assert.equal(restored.sessionManager.getSessionFile(),file);

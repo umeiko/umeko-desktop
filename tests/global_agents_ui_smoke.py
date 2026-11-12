@@ -81,9 +81,9 @@ try:
     find('globalAgentInput').setProperty('text','coordinate '+target);click('sendGlobalAgentButton')
     wait(lambda:fixture.pause_started.is_set(),'Native model did not reach pending interval')
     assert sum(row['role']=='user' and row['text']=='coordinate '+target for row in coordinator.messages)==1,'Native echo duplicated the user message before reply'
-    wait(lambda:sum(row['role']=='user' for row in (page.property('state').toVariant() if hasattr(page.property('state'),'toVariant') else page.property('state'))['messages'])==1,'Pending user message missing from Widget')
+    wait(lambda:sum(row['role']=='user' for row in [g.presentation.displayMessage(i) for i in range(g.presentation.messageCount)])==1,'Pending user message missing from Widget')
     QTest.qWait(750)
-    assert sum(row['role']=='user' for row in (page.property('state').toVariant() if hasattr(page.property('state'),'toVariant') else page.property('state'))['messages'])==1,'Pending user message displayed twice'
+    assert sum(row['role']=='user' for row in [g.presentation.displayMessage(i) for i in range(g.presentation.messageCount)])==1,'Pending user message displayed twice'
     window.grabWindow().save(str(out/'pending-single-message.png'));fixture.pause.set()
     wait(lambda:b.pendingApproval,'Target permission prompt was bypassed')
     b.respondApproval(True)
@@ -94,7 +94,7 @@ try:
     assert all(row['id']!=coordinator.id for row in b._sessions)
     # Coordinator model sees only its allowlisted host tool; target keeps native tools.
     assert any(len(tools)==1 and tools[0].get('name',tools[0].get('function',{}).get('name'))=='umeko_desktop' for _,tools in fixture.calls)
-    wait(lambda:len((page.property('state').toVariant() if hasattr(page.property('state'),'toVariant') else page.property('state'))['messages'])>0,'Transcript not visible')
+    wait(lambda:len([g.presentation.displayMessage(i) for i in range(g.presentation.messageCount)])>0,'Transcript not visible')
     QTest.qWait(500);window.grabWindow().save(str(out/'conversation.png'))
     projected=g.snapshot(identifier)['messages'];last_index=len(projected)-1
     wait(lambda:find('widgetAssistantAvatar_'+str(last_index)) is not None,'Shared renderer avatar missing')

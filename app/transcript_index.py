@@ -248,6 +248,8 @@ class Snapshot:
     active_compactions: frozenset = frozenset()
     focus_row: int = -1
     row_metadata: tuple = ()
+    row_offset: int = 0
+    question_offset: int = 0
 
     def matches_source(self):
         try:
@@ -257,7 +259,7 @@ class Snapshot:
             return False
 
     def key(self, row):
-        return self.database, self.revision, row
+        return self.database, self.revision, row + self.row_offset
 
     def cached(self, row):
         return compaction_status(self.repository.cache.get(self.key(row)), self.active_compactions)
@@ -270,11 +272,11 @@ class Snapshot:
             if int(db.execute("SELECT value FROM meta WHERE key='revision'").fetchone()[0]) != self.revision:
                 raise StaleIndex('Transcript index has been refreshed')
             result = {}
-            for row in db.execute('SELECT seq,body,logical,continuation,last FROM display WHERE seq>=? AND seq<?', (page * PAGE_ROWS, (page + 1) * PAGE_ROWS)):
+            for row in db.execute('SELECT seq,body,logical,continuation,last FROM display WHERE seq>=? AND seq<?', (self.row_offset + page * PAGE_ROWS, min(self.row_offset + self.count, self.row_offset + (page + 1) * PAGE_ROWS))):
                 value = json.loads(zlib.decompress(row['body']))
                 value.update(_logical=row['logical'], continuation=bool(row['continuation']), segmentLast=bool(row['last']))
-                self.repository.cache.put(self.key(row['seq']), value)
-                result[row['seq']] = compaction_status(value, self.active_compactions)
+                self.repository.cache.put(self.key(row['seq'] - self.row_offset), value)
+                result[row['seq'] - self.row_offset] = compaction_status(value, self.active_compactions)
         return result
 
     def row(self, row):
@@ -286,18 +288,18 @@ class Snapshot:
             role, hint, continuation = self.row_metadata[row]
             return {'role':role, 'hint':hint, 'continuation':continuation}
         with connect(self.database) as db:
-            value = db.execute('SELECT role,hint,continuation FROM display WHERE seq=?', (row,)).fetchone()
+            value = db.execute('SELECT role,hint,continuation FROM display WHERE seq=?', (row + self.row_offset,)).fetchone()
             return dict(value) if value else {}
 
     def question(self, index):
         with connect(self.database) as db:
-            value = db.execute('SELECT row,title FROM questions WHERE seq=?', (index,)).fetchone()
-            return dict(value) if value else {}
+            value = db.execute('SELECT row,title FROM questions WHERE seq=?', (index + self.question_offset,)).fetchone()
+            return {'row':value['row'] - self.row_offset, 'title':value['title']} if value else {}
 
     def question_index(self, row):
         with connect(self.database) as db:
-            value = db.execute('SELECT seq FROM questions WHERE row<=? ORDER BY row DESC LIMIT 1', (row,)).fetchone()
-            return value[0] if value else 0
+            value = db.execute('SELECT seq FROM questions WHERE row<=? ORDER BY row DESC LIMIT 1', (row + self.row_offset,)).fetchone()
+            return max(0, value[0] - self.question_offset) if value else 0
 
     def contains(self, entry_id):
         with connect(self.database) as db:
@@ -312,13 +314,42 @@ class Snapshot:
                 result.update(row[0] for row in db.execute('SELECT id FROM native WHERE id IN (' + ','.join('?' for _ in values) + ')', values))
         return result
 
+    def recent_compaction_interval(self):
+        """A view onto the last completed interval and its live successor."""
+        from dataclasses import replace
+        boundaries, seen = [], set()
+        with connect(self.database) as db:
+            receipts = db.execute("""SELECT d.seq,d.body FROM display d JOIN native n ON n.pos=d.first_native
+                JOIN entries e ON e.id=n.id WHERE e.tool LIKE 'umeko-compaction:%' ORDER BY d.seq DESC""")
+            for item in receipts:
+                event = json.loads(zlib.decompress(item['body'])).get('compaction', {})
+                identifier = event.get('eventId')
+                if event.get('state', 'success') == 'success' and identifier and identifier not in seen:
+                    boundaries.append(item['seq']); seen.add(identifier)
+                    if len(boundaries) == 2:
+                        break
+            if len(boundaries) < 2:
+                return self
+            start = boundaries[-1]
+            questions = db.execute('SELECT COUNT(*) FROM questions WHERE row<?', (start,)).fetchone()[0]
+        # Derived bodies from older intervals no longer occupy the shared LRU.
+        cache = self.repository.cache
+        with cache.lock:
+            for key in list(cache.items):
+                if key[0] == self.database and key[2] < start:
+                    cache.weight -= cache.items.pop(key)[1]
+                    cache.pinned.discard(key)
+        return replace(self, count=self.count-start, row_offset=start, question_offset=questions,
+                       question_count=self.question_count-questions, row_metadata=self.row_metadata[start:],
+                       focus_row=max(0, self.count-start-1))
+
     def copy_text(self, row):
         with connect(self.database) as db, Path(self.source).open('rb') as source:
             db.execute('BEGIN')
             if int(db.execute("SELECT value FROM meta WHERE key='revision'").fetchone()[0]) != self.revision:
                 raise StaleIndex('聊天内容已更新，请重新复制')
             bounds = db.execute('''SELECT MIN(first_native),MAX(last_native) FROM display
-                WHERE logical=(SELECT logical FROM display WHERE seq=?)''', (row,)).fetchone()
+                WHERE logical=(SELECT logical FROM display WHERE seq=?)''', (row + self.row_offset,)).fetchone()
             if bounds[0] is None:
                 return ''
             entries = db.execute('SELECT e.offset,e.length FROM native n JOIN entries e ON e.id=n.id WHERE n.pos>=? AND n.pos<=? ORDER BY n.pos', tuple(bounds))

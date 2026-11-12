@@ -3,6 +3,14 @@ import QtQuick.Controls
 
 Item {
     id: pane
+    property var controller: backend
+    property string viewName: "conversation"
+    property string messagePrefix: ""
+    property string assistantName: "umeko"
+    property url portrait: ""
+    property url replyPortrait: ""
+    property int roleSlot: -1
+    property int highlightRow: window ? window.searchHighlightRow : -1
     required property var window
     required property var messageModel
     required property string viewKey
@@ -23,10 +31,10 @@ Item {
     function refreshState() {
         if (!current)
             return;
-        busy = backend.busy;
-        running = backend.running;
-        toolStatus = backend.toolStatus;
-        turnStatus = backend.turnStatus;
+        busy = pane.controller.busy;
+        running = pane.controller.running;
+        toolStatus = pane.controller.toolStatus;
+        turnStatus = pane.controller.turnStatus;
     }
     function activate() {
         current = true;
@@ -54,7 +62,7 @@ Item {
     }
     ListView {
         id: conversation
-        objectName: pane.current ? "conversation" : "cachedConversation_" + pane.viewKey
+        objectName: pane.current ? pane.viewName : "cachedConversation_" + pane.viewKey
         property bool followTail: true
         property bool restoring: false
         property real restoreOffset: -1
@@ -363,16 +371,19 @@ Item {
             if (index < 0)
                 index = indexAt(1, contentY + spacing + 2);
             const item = index >= 0 ? itemAtIndex(index) : null;
-            backend.saveViewport(index, item ? contentY - item.y : 0, followTail);
+            pane.controller.saveViewport(index, item ? contentY - item.y : 0, followTail);
         }
         function restoreViewport() {
             releaseGroups();
             restoring = true;
             tailTimer.stop();
-            followTail = backend.followTail;
-            restoreOffset = backend.scrollPosition;
-            restoreIndex = backend.scrollAnchor;
+            followTail = pane.controller.followTail;
+            restoreOffset = pane.controller.scrollPosition;
+            restoreIndex = pane.controller.scrollAnchor;
             restoreAttempts = 0;
+            if (!count && !pane.controller.loading && !pane.controller.messageCount) {
+                restoreTimer.stop(); restoring = false; return;
+            }
             restoreTimer.restart();
         }
         acceptedButtons: Qt.NoButton
@@ -522,7 +533,7 @@ Item {
             }
         }
         Connections {
-            target: backend
+            target: pane.controller
             function onTranscriptChanged() {
                 if (pane.current && conversation.followTail && !conversation.restoring)
                     tailTimer.restart();
@@ -536,7 +547,6 @@ Item {
             target: pane.messageModel
             function onModelAboutToBeReset() {
                 if (!pane.current) return;
-                conversation.saveViewport();
                 conversation.restoring = true;
                 tailTimer.stop();
                 restoreTimer.stop();
@@ -607,6 +617,7 @@ Item {
                 }
                 sourceComponent: Column {
                     id: messageRow
+                    objectName: pane.messagePrefix === "widget" ? "widgetChatMessage_" + index : "chatMessage_" + index
                     readonly property var replyMascot: closingMascot
                     property var modelData: rowShell.modelData
                     property int index: rowShell.index
@@ -623,14 +634,15 @@ Item {
                         visible: !modelData._loading && !messageRow.statusNotice && !modelData.continuation && modelData.role !== "user"
                         spacing: 9
                         AssistantAvatar {
-                            objectName: "assistantAvatar_" + messageRow.index
+                            objectName: pane.messagePrefix ? pane.messagePrefix + "AssistantAvatar_" + messageRow.index : "assistantAvatar_" + messageRow.index
                             messageKey: pane.viewKey + "/" + messageRow.index
+                            artwork: String(pane.portrait).length ? pane.portrait : Character.asset(["avatarSmile", "avatarWink", "avatarHappy"][variant], fallbackSource)
                         }
                         SelectableText {
                             selectionController: chatSelection
                             messageIndex: messageRow.index
                             blockIndex: -100000
-                            text: "umeko"
+                            text: pane.assistantName
                             anchors.verticalCenter: parent.verticalCenter
                             color: Theme.ink
                             font.pixelSize: Theme.font(11, visible, chatSelection)
@@ -640,7 +652,7 @@ Item {
                     Rectangle {
                         objectName: "messageBubble_" + messageRow.index
                         border.width: 1
-                        border.color: window.searchHighlightRow === messageRow.index ? Theme.accent : "transparent"
+                        border.color: pane.highlightRow === messageRow.index ? Theme.accent : "transparent"
                         Behavior on border.color {
                             ColorAnimation {
                                 duration: 180
@@ -688,14 +700,14 @@ Item {
                         }
                     }
                     ActionButton {
-                        objectName: "requestDetails_" + messageRow.index
+                        objectName: (pane.messagePrefix ? pane.messagePrefix + "RequestDetails_" : "requestDetails_") + messageRow.index
                         selectionController: chatSelection
                         visible: !modelData._loading && !messageRow.statusNotice && !!modelData.error && (modelData.diagnosticId || "").length > 0
                         x: 33
                         text: I18n.t("查看请求与返回")
                         glyph: "code"
                         quiet: true
-                        onClicked: requestInspector.show(modelData.diagnosticId)
+                        onClicked: backend.showRequestDetails(modelData.diagnosticId)
                     }
                     Text {
                         objectName: "dshInterruptionNotice_" + messageRow.index
@@ -807,7 +819,7 @@ Item {
                         width: parent.width - 33
                         visible: !modelData._loading && !messageRow.statusNotice && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
                         continuable: messageRow.index === conversation.count - 1 && !pane.busy
-                        onContinued: backend.send(I18n.t("继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。"))
+                        onContinued: pane.controller.send(I18n.t("继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。"))
                     }
                     Item {
                         objectName: "messageActions_" + messageRow.index
@@ -838,7 +850,7 @@ Item {
                                 }
                             }
                             ActionButton {
-                                objectName: "copyMessage_" + messageRow.index
+                                objectName: pane.messagePrefix ? pane.messagePrefix + "CopyMessage_" + messageRow.index : "copyMessage_" + messageRow.index
                                 selectionController: chatSelection
                                 glyph: "copy"
                                 width: Theme.control(22)
@@ -846,16 +858,20 @@ Item {
                                 quiet: true
                                 enabled: parent.parent.opacity > 0
                                 hint: I18n.t("复制消息")
-                                onClicked: backend.copyDisplayMessage(messageRow.index)
+                                onClicked: pane.controller.copyDisplayMessage(messageRow.index)
                             }
                         }
                     }
                     ReplyMascot {
                         id: closingMascot
-                        objectName: "replyEndMascot_" + messageRow.index
+                        portraitSource: String(pane.replyPortrait).length ? pane.replyPortrait : String(pane.portrait).length ? pane.portrait : Character.asset("reply", "../icons/yanami-pixel.png")
+                        interactionLabel: pane.roleSlot >= 0 ? pane.assistantName + (Character.personalityEnabled ? I18n.t("：点击互动，连续点击或长按有彩蛋") : "") : pane.messagePrefix ? pane.assistantName : Character.id === "yanami" ? I18n.t("八奈见：点击互动，连续点击或长按有彩蛋") : Character.style.name
+                        tapLines: pane.roleSlot >= 0 ? Character.roleLine(pane.roleSlot, "tap", []) : pane.messagePrefix === "widget" ? [] : Character.scene("reply.tap", [])
+                        celebrationLine: pane.roleSlot >= 0 ? Character.roleLine(pane.roleSlot, "celebration", "") : pane.messagePrefix === "widget" ? "" : Character.scene("reply.celebration", "")
+                        objectName: pane.messagePrefix === "subagent" ? "subagentReplyMascot_" + messageRow.index : "replyEndMascot_" + messageRow.index
                         selectionController: chatSelection
                         width: Character.id === "doubao" ? Theme.icon(72) : 56
-                        visible: backend.sessionBackend !== "dsh" && !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
+                        visible: pane.controller.sessionBackend !== "dsh" && !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
                         x: 33
                     }
                 }
@@ -885,6 +901,7 @@ Item {
         id: chatSelection
         anchors.fill: conversation
         view: conversation
+        dataSource: pane.controller
         enabled: pane.current && !pane.blocked
         retainedView: true
         sessionActive: pane.current

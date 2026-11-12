@@ -55,11 +55,11 @@ def selected_text(script, snapshot, overlay, anchor, cursor, expanded):
             revision = db.execute("SELECT value FROM meta WHERE key='revision'").fetchone()[0]
             if int(revision) != snapshot.revision:
                 raise StaleIndex('聊天内容已更新，请重新选择后复制')
-            rows = db.execute('SELECT seq,body,continuation FROM display WHERE seq>=? AND seq<=? ORDER BY seq', (start['row'], min(base - 1, end['row'])))
+            rows = db.execute('SELECT seq,body,continuation FROM display WHERE seq>=? AND seq<=? ORDER BY seq', (start['row'] + snapshot.row_offset, min(base - 1, end['row']) + snapshot.row_offset))
             for row in rows:
                 message = json.loads(zlib.decompress(row['body']))
                 message['continuation'] = bool(row['continuation'])
-                append(row['seq'], message)
+                append(row['seq'] - snapshot.row_offset, message)
     for row in range(max(base, start['row']), min(base + len(overlay), end['row'] + 1)):
         append(row, overlay[row - base])
     return '\n\n'.join(pieces).replace('\u2029', '\n').replace('\u2028', '\n')

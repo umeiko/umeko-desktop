@@ -1,6 +1,9 @@
 """Retain minor-version milestones and only the newest patch in each series."""
 import re
 
+# Retain this user-designated milestone until its retention is explicitly lifted.
+RETAINED_MILESTONES = frozenset(("v0.7.1",))
+
 
 def obsolete_patches(releases, tag):
     pattern = r"v(\d+)\.(\d+)\.(\d+)(?:-minimal)?"
@@ -9,6 +12,8 @@ def obsolete_patches(releases, tag):
     series = (current[1], current[2])
     result = []
     for release in releases:
+        if release["tag_name"] in RETAINED_MILESTONES:
+            continue
         match = re.fullmatch(pattern, release["tag_name"])
         if match and not release["draft"] and (match[1], match[2]) == series and 0 < int(match[3]) < int(current[3]):
             result.append(release)

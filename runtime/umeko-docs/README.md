@@ -2,6 +2,8 @@
 
 这里描述的是**当前 Umeko Desktop**，适用于 Python 版和 C++ 版。Pi 是内嵌的 Agent 内核；供应商连接、账号、模型映射、桌面主题、项目及聊天由 Umeko 管理，配置这些内容时以本文档为准。
 
+umeko-desk 的临时文件存放在当前项目的 `./.umeko` 目录下。聊天中选中文字后可用「附加到聊天」生成 Markdown 文本附件，文件名取选中文字的前 20 个字符；重名时自动加序号，内容保留原选文。
+
 桌面管理入口是 `umeko_desktop`；当前内嵌 Pi 的原生命令使用 `run_pi_command`，见 [Pi 扩展、Skills 与 MCP](extensions.md)。第一次使用先调用 `{"operation":"help"}`，再用文件读取工具打开相应文档。Umeko 的“插件”分为 **Provider 插件**和 **Widget 插件**：接入模型、登录认证查 Provider；桌面面板、与已激活插件通讯查 Widget。`help` 的 `arguments.topic` 可为 `provider`、`widget` 或 `plugins`，会定位相应文档；Widget 分类还列出当前会话已激活的 Widget 和文档路径。`/help` 只提供目录位置。配置一律通过 `umeko_desktop` 修改，Pi 相关操作使用 Umeko 内嵌的 Pi；不要手工改写 `settings.json`。
 
 - [委派子代理：选择不同模型、正确调用名称、并行任务](delegate-subagents.md)

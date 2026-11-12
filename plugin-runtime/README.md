@@ -49,6 +49,26 @@ my-plugin/
 
 `config.json` 是非秘密的 JSON 对象，`config.schema.json` 支持 type、properties、required、additionalProperties、items、enum。配置、Markdown、公开返回值和日志都会被其他人或模型看到，账号密码和密钥放在它们之外。示例和 SDK ZIP 可在插件管理页面导出，导出包中包含文件树与 Git 示例。
 
+## 可选的 Agent 提示词
+
+Widget 可以在 `manifest.json` 的 `agent` 中声明简短的静态提示词：
+
+```json
+"agent": {
+  "document": "AGENT.md",
+  "prompt": "当用户要求查看项目状态时，先通过 widgets.docs 读取 my-plugin 的文档，再调用其公开方法。",
+  "methods": {}
+}
+```
+
+`agent.prompt` 是可选的 UTF-8 文本，最多 8 KiB；省略、空字符串或全空白均不注入任何内容。旧版 API v1 包无需修改，也不会自动注入 `summary`、README 或 `agent.document`。它是字面文本，不读取文件、不执行模板、不展开配置或环境变量；不要包含密钥。
+
+仅全局启用且在发起请求的会话中激活的 Widget 注入提示词，应用级 Widget 则在全局启用时生效。打开/关闭页面不改变注入状态，后台会话按自己的激活列表解析。启用、停用、卸载或升级后的配置在下一次请求生效，不会重启已有 Pi 会话或改写历史。全局子智能体仅接收启用的应用级 Widget 提示词，不继承普通聊天的会话级 Widget。
+
+在内置「系统提示词」Widget 中，可从 `Widgets → Widget 名称 → 提示词` 查看真实贡献，并按工作区停用、编辑或恢复；关闭「系统提示词」管理 Widget 只停用这些覆盖，不停用其他 Widget 自己声明的原始提示词。完整文档仍由 Agent 按需读取，建议只注入必要的使用触发条件，避免重复长篇文档。
+
+**English:** Optional `agent.prompt` is literal UTF-8 text (at most 8 KiB). Missing, empty or whitespace-only values inject nothing; existing API v1 packages keep their behavior. No files, templates, config values or environment variables are expanded. Enabled application Widgets contribute globally; session Widgets must also be active in the requesting chat. Opening or closing a page has no effect. Changes apply on the next request without restarting Pi or rewriting history. The System Prompt Widget displays these contributions under `Widgets → Widget name → Prompt` and supports workspace overrides; disabling that manager disables its overrides, not the original declarations. Full Widget documentation remains on demand.
+
 ## Widget 图标
 
 清单中的 `icon` 可以直接选择内置图标，例如 `"icon": "terminal"`，无需提供图片。在插件管理页点击“内置图标”预览，点击某个图标即可复制对应清单配置。启动按钮、插件菜单和插件管理统一使用这个图标；不声明时使用 `puzzle`。
