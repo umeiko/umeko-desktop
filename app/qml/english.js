@@ -1560,5 +1560,6 @@ var strings = {
   "会话未能完全删除": "Conversation deletion incomplete",
   "导入 JSONL 会话": "Import JSONL conversation",
   "导入会话到 %1": "Import conversation into %1",
-  "归档会话": "Archived conversations"
+  "归档会话": "Archived conversations",
+  "知道了": "Got it"
 }
