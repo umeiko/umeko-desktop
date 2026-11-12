@@ -130,8 +130,9 @@ class ToolPermissionTests(unittest.TestCase):
         backend.private_server = SimpleNamespace(port=1)
         backend.private_token = "fixture"
         backend.gateway = SimpleNamespace(models=Mock(return_value=[]))
+        widget_prompts = [{"id":"fixture-widget", "name":"Fixture Widget", "text":"Fixture Widget instructions."}]
         backend._desktop_plugins = SimpleNamespace(skills_enabled=Mock(return_value=False),
-            system_prompt_enabled=Mock(return_value=False))
+            system_prompt_enabled=Mock(return_value=False), prompt_sources=Mock(return_value=widget_prompts))
         backend._mcp_environment = Mock(return_value={})
         with patch("app.controller_runtime.node_executable", return_value="node"), \
                 patch("app.controller_runtime.webview_configuration", return_value={}):
@@ -141,6 +142,8 @@ class ToolPermissionTests(unittest.TestCase):
         self.assertEqual(payload["sessionSkills"], {"/fixture/skills/example/SKILL.md": False})
         self.assertFalse(payload['skillsEnabled'])
         self.assertFalse(payload['systemPromptEnabled'])
+        self.assertEqual(payload['widgetPrompts'], widget_prompts)
+        backend._desktop_plugins.prompt_sources.assert_called_once_with(record)
         backend._desktop_plugins.system_prompt_enabled.assert_called_once_with(record)
         backend._desktop_plugins.skills_enabled.assert_called_once_with(record)
         self.assertEqual(payload["blockedTools"], ["write"])
