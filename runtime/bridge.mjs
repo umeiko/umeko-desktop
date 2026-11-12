@@ -576,6 +576,14 @@ async function capabilities() {
 
 async function promptWithInterrupts(first) {
   await inputQueue.run(first,async next=>{
+    if (next.model && runtime.session.model?.id !== next.model) {
+      selectedModel = modelRuntime.getModel("umeko", next.model);
+      if (!selectedModel) throw new Error("模型未配置");
+      await runtime.session.setModel(selectedModel);
+      exposeNativeTools(runtime.session);
+    }
+    if (validEffort(next.reasoningEffort)) reasoningEffort = next.reasoningEffort;
+    emit({type:"active_model",model:runtime.session.model.id});
     const generation = commandCancellation;
     await runtime.session.prompt(next.text, { images: next.images || [] });
     for (let continuation = 0; continuation < 4 && !closing && generation === commandCancellation && !inputQueue.hasInterrupts; continuation++) {

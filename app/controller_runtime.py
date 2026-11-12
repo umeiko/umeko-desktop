@@ -11,6 +11,7 @@ from .pi_runtime import node_executable
 from .webview import configuration as webview_configuration
 from .transcripts import tool_view, compaction_view, compaction_status
 from .message_attachments import attachment_prompt, split_attachments
+from .model_reasoning import reconcile_effort
 
 
 class PiControllerMixin:
@@ -227,9 +228,10 @@ class PiControllerMixin:
             return False
         if (not text and not record.attachments) or (record.busy and record.phase != "running"):
             return False
+        if not record.busy:
+            self._apply_pending_selection(record)
         images = [{"type": "image", "data": item["data"], "mimeType": item["mime"]} for item in record.attachments if item["kind"] == "image"]
-        model = record.model if record.phase == "running" else self.store.data["selectedModel"]
-        provider = record.provider if record.phase == "running" else self.store.data["selectedProvider"]
+        model, provider = self.store.data["selectedModel"], self.store.data["selectedProvider"]
         attachments = record.attachments
         if images and not self.gateway.supports_vision(model, provider) and not self._can_analyze_attachments(model, provider):
             images = []
@@ -241,7 +243,8 @@ class PiControllerMixin:
         if record.phase == "running":
             if record.task_attempt:
                 self._task_records.input_files(record, attachments)
-            self._write_pi({"type": "steer" if steering else "follow-up", "text": text, "images": images}, record)
+            self._write_pi({"type": "steer" if steering else "follow-up", "text": text, "images": images,
+                "model": model, "reasoningEffort": reconcile_effort(record.reasoning_effort, self._reasoning_levels())}, record)
             record.attachments, record.draft = [], ""
             self.attachmentsChanged.emit()
             self.editorText.emit("")
@@ -361,6 +364,15 @@ class PiControllerMixin:
                 self._record_info(record, event["session"])
         elif kind == "session":
             self._record_info(record, event["session"])
+        elif kind == "active_model":
+            # Queued sends start at their own request boundary, after the old reply.
+            desired = record.pending_selection or (record.provider, record.model)
+            provider, _ = self.gateway.resolve(event["model"])
+            record.provider, record.model = provider["id"], event["model"]
+            record.pending_selection = desired if desired != (record.provider, record.model) else None
+            record.context_usage = {}
+            if visible:
+                self.contextUsageChanged.emit()
         elif kind in ("delta", "thinking_delta"):
             record.pet_activity = 'thinking' if kind == 'thinking_delta' else 'working'
             if not record.messages or (record.messages[-1]["role"] != "assistant" or record.messages[-1].get("customType") == "umeko-compaction"):
@@ -573,6 +585,7 @@ class PiControllerMixin:
                 self._restore_queued(record, [row["text"] for row in record.queue])
                 record.queue = []
             record.phase, record.tool_status, record.approval = "idle", "", {}
+            self._apply_pending_selection(record)
             if kind == "done":
                 self._subagents.process_ready(record)
             if kind == "exit":
