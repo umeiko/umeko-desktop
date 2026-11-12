@@ -391,7 +391,7 @@ async function init(input) {
     }, { projectTrusted: !input.agent?.safeMode });
     const promptController = await createSystemPromptController({ cwd, agentDir,
       stateDir: input.systemPromptStateDir || join(input.agentDir, "umeko-system-prompts"),
-      enabled: input.systemPromptEnabled === true,
+      enabled: config.systemPromptEnabled === true, widgetPrompts: config.widgetPrompts || [],
       appendSources: [
         { id: "desktop-pi", name: "Pi 操作说明", text: input.globalCoordinator || toolSelection(input.piCapabilities,{name:PI_COMMAND_TOOL,source:"builtin:pi-commands"}) ? DESKTOP_PI_PROMPT+" " : "" },
         { id: "desktop-control", name: "桌面能力说明", text: input.globalCoordinator || toolSelection(input.piCapabilities,{name:UMEKO_TOOL,source:"builtin:umeko-control"}) ? UMEKO_PROMPT+" " : "" },
@@ -674,7 +674,9 @@ async function execute(input) {
     }
     else if (input.targetFile && resolve(input.targetFile) !== resolve(runtime.session.sessionManager.getSessionFile() || ".")) await runtime.switchSession(input.targetFile);
     if (typeof input.systemPromptEnabled === "boolean") config.systemPromptEnabled = input.systemPromptEnabled;
+    if (Array.isArray(input.widgetPrompts)) config.widgetPrompts = input.widgetPrompts;
     const promptController = promptControllers.get(runtime.session);
+    if (config.widgetPrompts) promptController?.setWidgetPrompts(config.widgetPrompts);
     promptController?.setEnabled(config.systemPromptEnabled === true);
     if (input.model && runtime.session.model?.id !== input.model) {
       selectedModel = modelRuntime.getModel("umeko", input.model);

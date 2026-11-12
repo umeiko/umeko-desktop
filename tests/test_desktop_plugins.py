@@ -49,6 +49,47 @@ class DesktopPluginTests(unittest.TestCase):
         key=self.manager.call(method,json.dumps(args or {}));self.assertTrue(key)
         self.wait(lambda:key in self.responses);return self.responses[key]
 
+    def test_optional_agent_prompt_is_literal_bounded_and_backward_compatible(self):
+        with tempfile.TemporaryDirectory() as name:
+            folder=Path(name)/'widget';shutil.copytree(ROOT/'umeko-plugins/file-tree',folder)
+            file=folder/'manifest.json';original=json.loads(file.read_text(encoding='utf-8'))
+            self.assertNotIn('prompt',validate(folder)[0]['agent'])
+            for prompt in ('', '  \n', 'Use widgets.docs before calling this Widget.', '中'*2730):
+                manifest={**original,'agent':{**original['agent'],'prompt':prompt}}
+                file.write_text(json.dumps(manifest),encoding='utf-8')
+                self.assertEqual(validate(folder)[0]['agent']['prompt'],prompt)
+            for prompt in (None, False, 1, [], {}, '中'*2731, 'x'*8193):
+                file.write_text(json.dumps({**original,'agent':{**original['agent'],'prompt':prompt}}),encoding='utf-8')
+                with self.subTest(prompt_type=type(prompt).__name__),self.assertRaisesRegex(PluginError,'agent.prompt'):
+                    validate(folder)
+
+    def test_prompt_sources_follow_callers_and_do_not_start_workers(self):
+        manager=self.manager
+        owner=self.host._view
+        manager.entries.update({
+            'prompt-a':{'id':'prompt-a','name':'A','builtin':False,'agent':{'prompt':'A instructions'}},
+            'prompt-b':{'id':'prompt-b','name':'B','builtin':False,'agent':{'prompt':'B instructions'}},
+            'prompt-service':{'id':'prompt-service','name':'Service','lifecycle':'application','agent':{'prompt':'Service instructions'}},
+            'empty':{'id':'empty','builtin':True,'agent':{'prompt':'  '}},
+        })
+        other=SimpleNamespace(id='other',key='other-key',global_agent='')
+        manager.settings={'sessions':{owner.id:['prompt-a'],other.id:['prompt-b']},'enabled':{'prompt-service':True}}
+        with patch.object(manager,'start',side_effect=AssertionError('Prompt discovery must not start a worker')):
+            self.assertEqual([s['id'] for s in manager.prompt_sources(owner)],['prompt-a','prompt-service'])
+            self.assertEqual([s['id'] for s in manager.prompt_sources(other)],['prompt-b','prompt-service'])
+            manager.settings['enabled']['prompt-a']=False
+            self.assertEqual([s['id'] for s in manager.prompt_sources(owner)],['prompt-service'])
+            manager.settings['enabled']['prompt-service']=False
+            self.assertEqual(manager.prompt_sources(owner),[])
+            manager.settings['enabled']['prompt-a']=True
+            manager.settings['sessions'][owner.id]=[]
+            self.assertEqual(manager.prompt_sources(owner),[])
+            del manager.settings['sessions'][owner.id]
+            manager.settings['sessions']['draft:'+owner.key]=['prompt-a']
+            self.assertEqual(manager.prompt_sources(owner)[0]['text'],'A instructions')
+            owner.global_agent='global-agent'
+            self.assertEqual(manager.prompt_sources(owner),[])
+
     def test_task_records_require_opt_in_and_preserve_explicit_choices(self):
         manager = self.manager
         self.assertFalse(manager.enabled('task-records'))

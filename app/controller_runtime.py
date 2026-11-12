@@ -164,6 +164,7 @@ class PiControllerMixin:
         record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在压缩上下文" if action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
         payload = {"type": action, "model": record.model or self.store.data["selectedModel"], "reasoningEffort": record.reasoning_effort, **values}
         payload['systemPromptEnabled'] = self._desktop_plugins.system_prompt_enabled(record)
+        payload['widgetPrompts'] = self._desktop_plugins.prompt_sources(record)
         try:
             if record.process:
                 self._pool.write(record, payload)

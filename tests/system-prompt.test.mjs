@@ -27,7 +27,7 @@ async function sandbox(t) {
 }
 
 async function fixture(t, root, { name = 'workspace', skills = ['alpha'], content = 'Workspace rules.\n',
-  controller: useController = true, enabled = true, extensionFactories = [], appendSources, append,
+  controller: useController = true, enabled = true, extensionFactories = [], appendSources, append, widgetPrompts,
 } = {}) {
   const cwd = join(root, name);
   const agentDir = join(root, 'agent');
@@ -38,7 +38,7 @@ async function fixture(t, root, { name = 'workspace', skills = ['alpha'], conten
     await writeFile(join(cwd, name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${name} examples\n---\nfull skill body\n`);
   }
   const controller = useController ? await createSystemPromptController({
-    cwd, agentDir, stateDir: join(root, 'state'), enabled, appendSources,
+    cwd, agentDir, stateDir: join(root, 'state'), enabled, appendSources, widgetPrompts,
   }) : undefined;
   const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
   const resourceLoader = new DefaultResourceLoader({
@@ -316,4 +316,93 @@ test('tree follows the source layout: Pi core, Skills per Skill, Umeko Desktop a
   assert.equal(widgets[0].name, 'demo-widget');
   assert.equal(widgets[0].children[0].contributionKind, 'extension-append');
   assert.equal(snapshot.tree.some((node) => node.name === 'Pi 扩展'), false);
+});
+
+
+test('optional Widget prompts reach Pi without enabling prompt overrides or opening a page', async (t) => {
+  const root = await sandbox(t);
+  const legacy = await fixture(t, root, { enabled: false });
+  const original = legacy.controller.refresh().originalPrompt;
+  const runtime = await fixture(t, root, { enabled: false, widgetPrompts: [
+    { id: 'example-widget', name: 'Example Widget', text: 'Widget workflow instructions.' },
+    { id: 'empty-widget', text: '  \n' },
+  ] });
+  const snapshot = runtime.controller.refresh();
+  const widgets = snapshot.tree.find((node) => node.labelKey === 'group:widgets');
+  assert.equal(widgets.children.length, 1);
+  assert.equal(widgets.children[0].name, 'Example Widget');
+  assert.equal(widgets.children[0].children[0].contributionKind, 'widget-prompt');
+  await runtime.session.prompt('Hello');
+  assert.equal(runtime.captured.at(-1).prompt, snapshot.originalPrompt);
+  assert.match(runtime.captured.at(-1).prompt, /Widget workflow instructions\./);
+  runtime.controller.setWidgetPrompts([]);
+  assert.equal(runtime.controller.refresh().originalPrompt, original);
+  await runtime.session.prompt('Disabled Widget');
+  assert.equal(runtime.captured.at(-1).prompt, original);
+});
+
+test('cached Pi updates Widget prompts, preserves source controls and reloads without accumulation', async (t) => {
+  const root = await sandbox(t);
+  const runtime = await fixture(t, root);
+  await runtime.session.prompt('Existing conversation');
+  const widget = { id: 'example-widget', name: 'Example Widget', text: 'First Widget prompt.' };
+  runtime.controller.setWidgetPrompts([widget]);
+  const source = find(runtime.controller.refresh(), (node) => node.contributionKind === 'widget-prompt');
+  assert.ok(source);
+  await runtime.controller.mutate({ action: 'save', id: source.id, text: 'Workspace override.' });
+  await runtime.session.prompt('Edited Widget');
+  assert.match(runtime.captured.at(-1).prompt, /Workspace override\./);
+  assert.doesNotMatch(runtime.captured.at(-1).prompt, /First Widget prompt\./);
+  runtime.controller.setWidgetPrompts([{ ...widget, name: 'Renamed Widget', text: 'Second Widget prompt.' }]);
+  const changed = find(runtime.controller.refresh(), (node) => node.id === source.id);
+  assert.equal(changed.stale, true);
+  assert.equal(changed.currentText, 'Workspace override.');
+  await runtime.controller.mutate({ action: 'restore', id: source.id });
+  await runtime.session.reload();
+  await runtime.session.prompt('Reloaded Widget');
+  assert.equal(runtime.captured.at(-1).prompt.split('Second Widget prompt.').length, 2);
+  const group = runtime.controller.refresh().tree.find((node) => node.labelKey === 'group:widgets');
+  await runtime.controller.mutate({ action: 'toggle', id: group.id, enabled: false });
+  await runtime.session.prompt('Opted out');
+  assert.doesNotMatch(runtime.captured.at(-1).prompt, /Second Widget prompt\./);
+  runtime.controller.setEnabled(false);
+  await runtime.session.prompt('Manager disabled, declared prompt remains');
+  assert.match(runtime.captured.at(-1).prompt, /Second Widget prompt\./);
+  runtime.controller.setWidgetPrompts([]);
+  assert.equal(runtime.controller.refresh().tree.find((node) => node.labelKey === 'group:widgets').children.length, 0);
+  await runtime.session.prompt('Uninstalled Widget');
+  assert.doesNotMatch(runtime.captured.at(-1).prompt, /Second Widget prompt\./);
+});
+
+test('identical Widget and host text keep independent attribution and stable Widget identities', async (t) => {
+  const root = await sandbox(t);
+  const shared = 'Identical instructions.';
+  const runtime = await fixture(t, root, {
+    append: [shared], appendSources: [{ id: 'instructions', name: 'Custom instructions', text: shared }],
+    widgetPrompts: [{ id: 'one', name: 'One', text: shared }, { id: 'two', name: 'Two', text: shared }],
+  });
+  const widgets = runtime.controller.refresh().tree.find((node) => node.labelKey === 'group:widgets');
+  assert.equal(widgets.children.length, 2);
+  const one = widgets.children[0].children[0];
+  const two = widgets.children[1].children[0];
+  assert.notEqual(one.id, two.id);
+  await runtime.controller.mutate({ action: 'toggle', id: one.id, enabled: false });
+  await runtime.session.prompt('Only one Widget disabled');
+  assert.equal(runtime.captured.at(-1).prompt.split(shared).length, 3);
+  runtime.controller.setWidgetPrompts([{ id: 'two', name: 'Two', text: shared }]);
+  assert.equal(find(runtime.controller.refresh(), (node) => node.contributionKind === 'widget-prompt').id, two.id);
+});
+
+
+test('Widget declarations are literal text, not file paths or templates', async (t) => {
+  const root = await sandbox(t);
+  const path = join(root, 'not-a-prompt.txt');
+  await writeFile(path, 'PRIVATE_FILE_CONTENT_MUST_NOT_BE_LOADED');
+  const runtime = await fixture(t, root, { enabled: false, widgetPrompts: [
+    { id: 'literal', text: path }, { id: 'template', text: '${ENV_VAR} {{config.key}}' },
+  ] });
+  await runtime.session.prompt('Check literal declarations');
+  assert.ok(runtime.captured.at(-1).prompt.includes(path));
+  assert.match(runtime.captured.at(-1).prompt, /\$\{ENV_VAR\} \{\{config.key\}\}/);
+  assert.doesNotMatch(runtime.captured.at(-1).prompt, /PRIVATE_FILE_CONTENT_MUST_NOT_BE_LOADED/);
 });
