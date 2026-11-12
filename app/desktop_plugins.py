@@ -127,6 +127,23 @@ class DesktopPlugins(QObject):
         for key in (record.id,'draft:'+record.key):
             if key and key in sessions:return identifier in sessions[key]
         return self.entries[identifier].get('builtin',False)
+    def prompt_sources(self, record):
+        """Cached declarations only; resolve the requesting chat, never the visible page."""
+        sessions = self.settings.get('sessions', {})
+        selected = next((sessions[key] for key in (record.id, 'draft:' + record.key)
+                         if key and key in sessions), None)
+        sources = []
+        for identifier, entry in sorted(self.entries.items()):
+            agent = entry.get('agent', {})
+            text = agent.get('prompt', '') if isinstance(agent, dict) else ''
+            if not isinstance(text, str) or not text.strip() or len(text.encode('utf-8')) > 8192:
+                continue
+            if not self.enabled(identifier):continue
+            if not self.application(identifier) and (record.global_agent or
+                not (identifier in selected if selected is not None else entry.get('builtin', False))):continue
+            sources.append({'id': identifier, 'name': entry.get('name', identifier), 'text': text})
+        return sources
+
     def system_prompt_enabled(self, record):
         identifier = 'system-prompt'
         if identifier not in self.entries or not self.enabled(identifier):return False
