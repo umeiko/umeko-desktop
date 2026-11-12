@@ -93,6 +93,7 @@ smokes=(
   tests/slash_commands_ui_smoke.py
   tests/large_markdown_ui_smoke.py
   tests/history_window_ui_smoke.py
+  tests/selection_attachment_ui_smoke.py
   tests/request_details_ui_smoke.py
   tests/skill_manager_ui_smoke.py
   tests/provider_login_cancel_ui_smoke.py

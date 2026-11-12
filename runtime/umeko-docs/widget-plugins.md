@@ -46,6 +46,8 @@ python -m umeko_plugin_sdk pack my-widget my-widget.zip
 
 Widget 清单可选 `icon`：填写 `"terminal"`、`"folder"`、`"branch"`、`"code"`、`"pet"` 等内置名称，或 `{"path":"assets/icon.svg"}` 使用包内图标。插件管理的“内置图标”可以预览并复制清单配置；SDK 的 `umeko_plugin_sdk/icons.json` 列出全部 21 个选项。未填写时使用通用插件图标。自带图标最多 512 KiB，支持 SVG/PNG/WebP/JPEG。
 
+清单可选 `agent.prompt`：简短的静态提示词（UTF-8，最多 8 KiB）。缺省、空串或全空白不注入，旧包保持现状；不会自动注入简介或完整文档。仅在 Widget 全局启用且在发起请求的聊天中激活时注入；应用级 Widget 在全局启用时注入，页面是否打开不影响它。配置变化在下一次请求生效，来源可在「系统提示词 → Widgets → Widget 名称 → 提示词」中查看和管理。文本是字面值，不做模板、文件或环境变量展开。开发时只放必要的触发与用法提示，完整说明仍放在 `agent.document`。
+
 ## Agent 如何发现、管理和调用 Widget
 
 先调用 `help`，参数 `{"topic":"widget"}`，获取本指南和已激活的 Widget；或调用 `widgets.list`，参数 `{"activeOnly":true}`。列表包含简介、激活/打开状态、文档路径和公开方法名。再调用 `widgets.docs`，参数 `{"id":"目标 ID"}`，获取完整文档与参数 schema。

@@ -38,6 +38,7 @@ class ToolPermissionTests(unittest.TestCase):
                                         write=Mock(), start=Mock())
         backend._restart_pi = Mock()
         backend._sessions = []
+        backend._session_files = SimpleNamespace(pending=set())
         backend._provider_plugins = SimpleNamespace()
         backend._pi_management = SimpleNamespace(busy=False)
         backend._app_about = SimpleNamespace()
@@ -112,6 +113,13 @@ class ToolPermissionTests(unittest.TestCase):
         self.assertEqual(backend.store.data["agent"]["toolPermissionMode"], "ask")
         self.assertEqual(backend.store.data["agent"]["instructions"], "new")
 
+    def test_native_start_is_blocked_during_session_deletion(self):
+        backend = self.controller()
+        backend._view = SessionState(id="pending-deletion")
+        backend._session_files.pending.add(backend._view.id)
+        self.assertFalse(backend._command_pi("inspect"))
+        backend._pool.start.assert_not_called()
+
     def test_native_start_receives_current_permission_context(self):
         backend = self.controller()
         backend.store.data["agent"]["toolPermissionMode"] = "ask"
@@ -130,8 +138,9 @@ class ToolPermissionTests(unittest.TestCase):
         backend.private_server = SimpleNamespace(port=1)
         backend.private_token = "fixture"
         backend.gateway = SimpleNamespace(models=Mock(return_value=[]))
+        widget_prompts = [{"id":"fixture-widget", "name":"Fixture Widget", "text":"Fixture Widget instructions."}]
         backend._desktop_plugins = SimpleNamespace(skills_enabled=Mock(return_value=False),
-            system_prompt_enabled=Mock(return_value=False))
+            system_prompt_enabled=Mock(return_value=False), prompt_sources=Mock(return_value=widget_prompts))
         backend._mcp_environment = Mock(return_value={})
         with patch("app.controller_runtime.node_executable", return_value="node"), \
                 patch("app.controller_runtime.webview_configuration", return_value={}):
@@ -141,6 +150,8 @@ class ToolPermissionTests(unittest.TestCase):
         self.assertEqual(payload["sessionSkills"], {"/fixture/skills/example/SKILL.md": False})
         self.assertFalse(payload['skillsEnabled'])
         self.assertFalse(payload['systemPromptEnabled'])
+        self.assertEqual(payload['widgetPrompts'], widget_prompts)
+        backend._desktop_plugins.prompt_sources.assert_called_once_with(record)
         backend._desktop_plugins.system_prompt_enabled.assert_called_once_with(record)
         backend._desktop_plugins.skills_enabled.assert_called_once_with(record)
         self.assertEqual(payload["blockedTools"], ["write"])

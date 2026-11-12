@@ -104,6 +104,15 @@ class Schedule:
         if values.get('frequency') == 'interval':
             return cls('interval', interval_value=values['interval_value'], interval_unit=values['interval_unit'],
                        anchor_at=now if now is not None else values.get('anchor_at'))
+        if values.get('frequency') == 'once' and {'delay_value', 'delay_unit'} & values.keys():
+            if now is None or set(values) != {'frequency', 'delay_value', 'delay_unit'}:
+                raise ValueError('Use either a countdown or a calendar date, not both')
+            delay = cls('interval', interval_value=values['delay_value'], interval_unit=values['delay_unit'])
+            # Round up to the next second so decimal countdowns never fire early.
+            due = (cls.timestamp_us(now) + delay.interval_us() + 999999) // 1000000
+            cls.timestamp_us(due)
+            instant = datetime.fromtimestamp(due, timezone.utc)
+            return cls('once', instant.date(), instant.time().replace(tzinfo=None), 'UTC')
         return cls(values['frequency'], date.fromisoformat(values['first_date']),
                    time.fromisoformat(values['local_time']), values['zone'])
 
@@ -127,6 +136,8 @@ class ScheduledTasks:
             for column, default in (('owner', ''), ('source', '{}'), ('target', 'main')):
                 if column not in columns:
                     db.execute(f"ALTER TABLE schedules ADD COLUMN {column} TEXT NOT NULL DEFAULT '{default}'")
+            if 'model_oneshot' not in columns:
+                db.execute('ALTER TABLE schedules ADD COLUMN model_oneshot INTEGER NOT NULL DEFAULT 0')
             db.execute('CREATE INDEX IF NOT EXISTS due_schedules ON schedules(enabled, next_at)')
             db.execute('CREATE TABLE IF NOT EXISTS session_owners (token TEXT PRIMARY KEY, owner TEXT NOT NULL)')
 
@@ -162,29 +173,45 @@ class ScheduledTasks:
                 db.execute('UPDATE schedules SET source=? WHERE owner=?', (json.dumps(source), owner))
         return owner, source
 
-    def save(self, *, name, message, schedule, enabled, now, task_id=None, profile='', owner='', source=None, target='main'):
+    def save(self, *, name, message, schedule, enabled, now, task_id=None, profile='', owner='', source=None, target='main', model_oneshot=False):
         if not all(isinstance(value, str) and value.strip() for value in (name, message)):
             raise ValueError('Name and message are required')
         next_at = schedule.next_after(now) if enabled else None
         if enabled and next_at is None:
             raise ValueError('Schedule has no future occurrence')
+        model_oneshot = bool(model_oneshot and enabled and schedule.frequency == 'once')
         with self._write() as db:
+            if task_id is None and model_oneshot:
+                # Reuse only a proven model-created, automatically expired slot.
+                # The same transaction protects quota and concurrent create/claim.
+                candidates = db.execute('''SELECT * FROM schedules s
+                    WHERE owner=? AND model_oneshot=1 AND enabled=0 AND next_at IS NULL
+                    AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.task_id=s.id AND r.state='running')
+                    ORDER BY s.rowid''', (owner,)).fetchall()
+                for previous in candidates:
+                    prior_schedule = Schedule.from_dict(json.loads(previous['schedule']))
+                    if prior_schedule.frequency == 'once' and prior_schedule.next_after(now) is None:
+                        task_id = previous['id']
+                        break
             if task_id is not None:self._task(db, task_id, owner)
             elif db.execute('SELECT count(*) FROM schedules WHERE owner=?', (owner,)).fetchone()[0] >= 5:
                 raise ValueError('每个会话最多 5 个定时器（含停用项） / Maximum 5 timers per conversation, including disabled timers')
             task_id = task_id or uuid4().hex
-            db.execute('''INSERT INTO schedules (id,name,message,profile,schedule,enabled,next_at,owner,source,target)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            db.execute('''INSERT INTO schedules (id,name,message,profile,schedule,enabled,next_at,owner,source,target,model_oneshot)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET name=excluded.name, message=excluded.message,
                 profile=excluded.profile, schedule=excluded.schedule, enabled=excluded.enabled,
-                next_at=excluded.next_at, source=excluded.source, target=excluded.target''',
+                next_at=excluded.next_at, source=excluded.source, target=excluded.target,
+                model_oneshot=excluded.model_oneshot''',
                 (task_id, name.strip(), message, profile, json.dumps(schedule.serialize()), enabled,
-                 next_at, owner, json.dumps(source or {}), target))
+                 next_at, owner, json.dumps(source or {}), target, model_oneshot))
         return task_id
 
     def set_enabled(self, task_id, enabled, now, *, owner=None):
         with self._write() as db:
             task = self._task(db, task_id, owner)
+            # An explicit pause transfers control back to the user/ordinary API.
+            if not enabled:db.execute('UPDATE schedules SET model_oneshot=0 WHERE id=?', (task_id,))
             if task['enabled'] == enabled:
                 return
             schedule = Schedule.from_dict(json.loads(task['schedule']))

@@ -792,6 +792,8 @@ var strings = {
   "全局": "Global",
   "全局 · 所有项目": "Global · All projects",
   "全选": "Select all",
+  "附加到聊天": "Attach to chat",
+  "无法附加所选内容：": "Unable to attach selected text: ",
   "八奈见：点击互动，拖拽回弹，长按有彩蛋": "Yanami: tap, drag and hold for surprises",
   "八奈见：点击互动，连续点击或长按有彩蛋": "Yanami: tap, tap repeatedly or hold for surprises",
   "公司 npm 源使用的 PEM 证书文件路径": "PEM certificate path for your company npm registry",
@@ -1546,5 +1548,18 @@ var strings = {
   "子智能体 1": "Subagent 1",
   "子智能体 2": "Subagent 2",
   "子智能体 3": "Subagent 3",
-  "子智能体 4": "Subagent 4"
+  "子智能体 4": "Subagent 4",
+  "删除项目": "Delete project",
+  "永久删除这条会话？": "Permanently delete this conversation?",
+  "会话历史、附件副本、子智能体记录和缓存将被删除，无法撤销。": "Conversation history, attachment copies, subagent records and caches will be permanently deleted.",
+  "删除项目及其会话？": "Delete the project and its conversations?",
+  "将永久删除项目下的全部会话（含归档），以及会话历史、附件副本、子智能体记录和缓存。项目文件夹和源文件会保留。此操作无法撤销。": "Permanently delete every conversation in this project, including archived conversations, history, attachment copies, subagent records and caches. Your project folder and source files will be kept. This cannot be undone.",
+  "项目仍有任务运行，请先停止任务。": "Stop the running tasks in this project first.",
+  "永久删除": "Delete permanently",
+  "无法导入会话": "Unable to import conversation",
+  "会话未能完全删除": "Conversation deletion incomplete",
+  "导入 JSONL 会话": "Import JSONL conversation",
+  "导入会话到 %1": "Import conversation into %1",
+  "归档会话": "Archived conversations",
+  "知道了": "Got it"
 }

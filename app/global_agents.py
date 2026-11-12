@@ -126,6 +126,14 @@ class GlobalAgents(QObject):
         except OSError as error: self.error = str(error)
 
     def identifier(self, record): return 'agent:'+record.global_agent if record.global_agent else 'session:'+(record.id or record.key)
+    def forget_sessions(self, identifiers, keys=()):
+        addresses = {'session:'+identifier for identifier in identifiers} | {'session:'+key for key in keys}
+        for address in addresses | set(identifiers) | {'draft:'+key for key in keys}: self.bridges.pop(address, None)
+        self.requests = {key: row for key, row in self.requests.items() if row.get('source') not in addresses and row.get('target') not in addresses}
+        self.creation_requests = {key: row for key, row in self.creation_requests.items() if row.get('source') not in addresses}
+        self.outbox = {key: value for key, value in self.outbox.items() if value.get('target') not in addresses and value.get('requestId') in self.requests}
+        self.changed()
+        self.save()
     def bridge_access(self, *keys):
         values=[self.bridges.get(key) for key in keys]
         all_agents=any(value is True for value in values)

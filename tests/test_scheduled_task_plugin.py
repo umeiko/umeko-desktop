@@ -6,11 +6,12 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'plugin-runtime'))
 from umeko_plugin_sdk import Context, PluginError
-from umeko_plugin_sdk.packages import validate_config
+from umeko_plugin_sdk.packages import validate, validate_config
 package = types.ModuleType('_scheduled_plugin_tests')
 package.__path__ = [str(ROOT/'umeko-plugins/scheduled-tasks/scripts')]
 sys.modules[package.__name__] = package
@@ -68,3 +69,80 @@ class ScheduledTaskPluginTests(unittest.TestCase):
             args = dict(name='Invalid', message='No dispatch', schedule={'frequency':'interval', 'interval_value':value, 'interval_unit':'minutes'})
             with self.subTest(value=value), self.assertRaises(PluginError):self.call('create', args)
         self.assertEqual(len(self.call('list', {})['tasks']), 1)
+
+    def stop_scheduler(self):
+        self.context.cancelled.set()
+        self.plugin.commands.put(('stop', None))
+        self.plugin.thread.join(timeout=2)
+        self.assertFalse(self.plugin.thread.is_alive())
+
+    def countdown(self, **extra):
+        return dict(name='Wake up', message='Resume work', enabled=True,
+            schedule={'frequency':'once', 'delay_value':5, 'delay_unit':'minutes'}, **extra)
+
+    def test_injected_example_arms_now_and_reuses_only_finished_slot_at_quota(self):
+        self.stop_scheduler()
+        manifest = validate(ROOT/'umeko-plugins/scheduled-tasks')[0]
+        text = manifest['agent']['prompt']
+        calls = [json.JSONDecoder().raw_decode(part)[0] for part in text.split('umeko_desktop(')[1:]]
+        self.assertEqual(calls[0], {'operation':'widgets.docs','arguments':{'id':'scheduled-tasks'}})
+        example = calls[1]
+        self.assertEqual((example['operation'], example['arguments']['id']), ('widgets.call', 'scheduled-tasks'))
+        args = example['arguments']['arguments']
+        self.assertEqual(args['schedule'], {'frequency':'once','delay_value':5,'delay_unit':'minutes'})
+        now = self.plugin.now()
+        with patch.object(self.plugin, 'now', return_value=now):
+            for _ in range(4):self.create()
+            key = self.call(example['arguments']['method'], args)['task_id']
+        original = next(row for row in self.call('list', {})['tasks'] if row['id']==key)
+        self.assertEqual((original['enabled'], original['next_at'], original['model_oneshot']), (1, now+300, 1))
+        run, = self.plugin.store.claim_due(now+300, eligible_since=now)
+        # A claimed delivery is still running even though its schedule expired.
+        with patch.object(self.plugin, 'now', return_value=now+301), self.assertRaisesRegex(PluginError, '5'):
+            self.call('create', self.countdown())
+        self.plugin.store.finish(run['id'], 'delivered', now+301)
+        with patch.object(self.plugin, 'now', return_value=now+302):
+            replacement = self.call('create', self.countdown(target='agent:'+'a'*32))['task_id']
+        self.assertEqual(replacement, key)
+        tasks = self.call('list', {})['tasks']
+        self.assertEqual(len(tasks), 5)
+        updated = next(row for row in tasks if row['id']==key)
+        self.assertEqual((updated['next_at'], updated['target'], updated['color_index']),
+                         (now+602, 'agent:'+'a'*32, original['color_index']))
+        history = self.call('history', {'task_id':key})['runs']
+        self.assertEqual((len(history), history[0]['snapshot']['message'], history[0]['snapshot']['target']),
+                         (1, args['message'], 'main'))
+
+    def test_disabled_manual_edited_and_interval_timers_are_not_reused(self):
+        self.stop_scheduler()
+        now = self.plugin.now()
+        with patch.object(self.plugin, 'now', return_value=now):
+            manual = self.plugin.handle('save', self.countdown())['task_id']
+            disabled = self.countdown();disabled['enabled']=False
+            self.call('create', disabled)
+            paused = self.call('create', self.countdown())['task_id']
+            self.call('disable', {'task_id':paused})
+            edited = self.call('create', self.countdown())['task_id']
+            self.plugin.handle('save', dict(self.countdown(), task_id=edited))
+            self.create()
+        for run in self.plugin.store.claim_due(now+300, eligible_since=now):
+            self.plugin.store.finish(run['id'], 'delivered', now+301)
+        before = self.call('list', {})['tasks']
+        self.assertTrue(all(not row['model_oneshot'] for row in before))
+        with patch.object(self.plugin, 'now', return_value=now+302), self.assertRaisesRegex(PluginError, '5'):
+            self.call('create', self.countdown())
+        self.assertEqual(self.call('list', {})['tasks'], before)
+        self.context.request_session = {**self.context.request_session, 'id':'two', 'token':'token-two'}
+        with patch.object(self.plugin, 'now', return_value=now+302):
+            other = self.call('create', self.countdown())['task_id']
+        self.assertNotEqual(other, manual)
+
+    def test_armed_model_timer_is_preserved_and_bad_countdowns_are_rejected(self):
+        self.stop_scheduler()
+        first = self.call('create', self.countdown())['task_id']
+        second = self.call('create', self.countdown())['task_id']
+        self.assertNotEqual(first, second)
+        for delay in (0, -1, 0.249999, float('nan'), True):
+            args = self.countdown();args['schedule']['delay_value']=delay
+            with self.subTest(delay=delay), self.assertRaises(PluginError):self.call('create', args)
+        self.assertEqual(len(self.call('list', {})['tasks']), 2)

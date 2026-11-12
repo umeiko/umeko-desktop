@@ -202,6 +202,10 @@ Item {
             dataSource.copyChatSelection(JSON.stringify({anchor:anchor, cursor:cursor, expanded:expandedDetails}))
         else backend.copy(selectedText())
     }
+    function attachToChat() {
+        if (hasSelection && dataSource === backend)
+            backend.attachChatSelection(JSON.stringify({anchor:anchor, cursor:cursor, expanded:expandedDetails}))
+    }
     function selectAll() {
         const count = dataSource.messageCount
         if (!count) return
@@ -232,6 +236,7 @@ Item {
     FloatingMenu {
         id: selectionMenu; objectName: "selectionContextMenu"
         ContextAction { objectName: "copySelectedText"; text: I18n.t("复制"); glyph: "copy"; enabled: root.hasSelection; onTriggered: root.copy() }
+        ContextAction { objectName: "attachSelectedText"; text: I18n.t("附加到聊天"); glyph: "plus"; visible: root.dataSource === backend; enabled: root.hasSelection && !backend.selectionAttachmentBusy; onTriggered: root.attachToChat() }
         ContextAction { objectName: "selectAllChatText"; text: I18n.t("全选"); onTriggered: root.selectAll() }
         onClosed: if (root.visible) root.forceActiveFocus()
     }

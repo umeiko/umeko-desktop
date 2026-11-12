@@ -84,8 +84,11 @@ class PiControllerMixin:
         self.changed.emit()
 
     def _merge_native_sessions(self, native):
+        native = [row for row in native if row["id"] not in self._session_files.deleted and row["id"] not in self._session_files.pending]
         existing = {session["id"]: session for session in self._sessions}
         for session in native:
+            if session.get('workspace') and Path(session['workspace']).resolve() == (self.store.directory/'workspace').resolve():
+                session = {**session, 'workspace': ''}
             if session["id"] in existing:
                 existing[session["id"]].update(session)
             else:
@@ -129,6 +132,9 @@ class PiControllerMixin:
             row.update(values)
 
     def _command_pi(self, action, record=None, **values):
+        if (record or self._view).id in self._session_files.pending:
+            self.toast.emit('会话数据正在删除，请稍后再试')
+            return False
         record = record or self._view
         from .plugin_sessions import apply_session_policy
         try:
@@ -158,6 +164,7 @@ class PiControllerMixin:
         record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在压缩上下文" if action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
         payload = {"type": action, "model": record.model or self.store.data["selectedModel"], "reasoningEffort": record.reasoning_effort, **values}
         payload['systemPromptEnabled'] = self._desktop_plugins.system_prompt_enabled(record)
+        payload['widgetPrompts'] = self._desktop_plugins.prompt_sources(record)
         try:
             if record.process:
                 self._pool.write(record, payload)

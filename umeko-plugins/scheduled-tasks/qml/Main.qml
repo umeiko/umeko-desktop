@@ -189,6 +189,13 @@ Rectangle {
                             }
                         }
                         ScheduleLabel { Layout.fillWidth: true; Layout.minimumWidth: 0; text: root.frequencyLabel(modelData) + " · " + (modelData.enabled ? root.tr("下次运行 ", "Next run ") + modelData.next_label : root.tr("未启用", "Inactive")); color: root.c.muted }
+                        ScheduleLabel {
+                            objectName: "scheduledTaskModelSlot_" + modelData.id
+                            Layout.fillWidth: true; Layout.minimumWidth: 0
+                            visible: !!modelData.model_oneshot
+                            text: modelData.enabled ? root.tr("模型单次计时 · 到期后复用", "Agent one-shot · reusable after expiry") : root.tr("模型计时槽 · 可复用", "Agent timer slot · ready to reuse")
+                            color: root.c.accent; font.pixelSize: Umeko.Theme.font(10)
+                        }
                         ScheduleLabel { Layout.fillWidth: true; Layout.minimumWidth: 0; text: modelData.message; maximumLineCount: 2; elide: Text.ElideRight; color: root.c.muted }
                         RowLayout {
                             Layout.fillWidth: true

@@ -1,6 +1,8 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time
 from pathlib import Path
+import json
+import sqlite3
 import sys
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -15,6 +17,16 @@ def stamp(value):
 
 
 class CalendarTests(TestCase):
+    def test_relative_oneshot_uses_server_clock_and_never_fires_early(self):
+        now = stamp('2026-11-13T09:00:00+00:00')
+        for value, unit, seconds in ((5,'minutes',300), (0.5,'hours',1800), (0.25,'days',21600), (0.255,'minutes',16)):
+            schedule = Schedule.from_dict({'frequency':'once','delay_value':value,'delay_unit':unit}, now=now)
+            self.assertEqual(schedule.next_after(now), now+seconds)
+            self.assertIsNone(schedule.next_after(now+seconds))
+            self.assertEqual(Schedule.from_dict(schedule.serialize()), schedule)
+        with self.assertRaisesRegex(ValueError, 'not both'):
+            Schedule.from_dict({'frequency':'once','delay_value':5,'delay_unit':'minutes','zone':'UTC'}, now=now)
+
     def test_decimal_intervals_in_all_three_units_and_exact_minimum(self):
         anchor = stamp('2026-11-13T09:00:00+00:00')
         for value, unit, seconds in (('0.25', 'minutes', 15), ('1.25', 'minutes', 75),
@@ -193,3 +205,39 @@ class ScheduledTasksTests(TestCase):
         self.assertEqual(self.store.claim_due(self.due + 30, eligible_since=self.due), [])
         self.assertTrue(self.store.finish(run['id'], 'delivered', self.due + 16))
         self.assertEqual(self.store.history(task)[0]['state'], 'delivered')
+
+    def test_reusable_slot_is_atomic_and_preserves_history_across_restart(self):
+        def create(now):
+            return self.store.save(name='Wake up', message='Current task', owner='one',
+                schedule=Schedule.from_dict({'frequency':'once','delay_value':5,'delay_unit':'minutes'}, now=now),
+                enabled=True, now=now, model_oneshot=True)
+        for _ in range(4):self.scoped('one')
+        key = create(self.due)
+        run, = self.store.claim_due(self.due+300, eligible_since=self.due)
+        self.store.finish(run['id'], 'delivered', self.due+301)
+        self.store = ScheduledTasks(self.database)
+        def attempt(_):
+            try:return create(self.due+302)
+            except ValueError:return None
+        with ThreadPoolExecutor(max_workers=8) as workers:
+            results = [value for value in workers.map(attempt, range(8)) if value]
+        self.assertEqual(results, [key])
+        self.assertEqual(len(self.store.tasks(owner='one')), 5)
+        self.assertEqual(self.store.history(key)[0]['id'], run['id'])
+
+    def test_legacy_unmarked_rows_are_migrated_without_becoming_reusable(self):
+        legacy = self.database.with_name('legacy.sqlite3')
+        with sqlite3.connect(legacy) as db:
+            db.execute('''CREATE TABLE schedules (id TEXT PRIMARY KEY, name TEXT NOT NULL,
+                message TEXT NOT NULL, profile TEXT NOT NULL, schedule TEXT NOT NULL,
+                enabled INTEGER NOT NULL, next_at INTEGER)''')
+            db.execute('INSERT INTO schedules VALUES (?,?,?,?,?,?,?)',
+                ('legacy', 'Existing timer', 'Preserve this', '',
+                 json.dumps(Schedule('once', date(2026,11,13), time(9),'UTC').serialize()), 0, None))
+        migrated = ScheduledTasks(legacy)
+        current = migrated.save(name='New wake-up', message='Resume', enabled=True,
+            schedule=Schedule.from_dict({'frequency':'once','delay_value':5,'delay_unit':'minutes'}, now=self.due),
+            now=self.due, model_oneshot=True)
+        self.assertNotEqual(current, 'legacy')
+        old = next(row for row in migrated.tasks() if row['id']=='legacy')
+        self.assertEqual((old['message'], old['model_oneshot']), ('Preserve this', 0))

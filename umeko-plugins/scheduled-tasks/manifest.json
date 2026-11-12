@@ -37,7 +37,7 @@
         }
       },
       "create": {
-        "description": "新建定时器；默认启用、目标main。周期首次触发在一个完整间隔后，最短15秒；只能选择targets列出的对象。",
+        "description": "Create and arm a timer (enabled=true by default). One-shot countdowns start now. Reuses an expired, immediately enabled model-created one-shot in this conversation; never overwrites an armed/running or manually edited timer. Maximum 5 timers.",
         "parameters": {
           "type": "object",
           "properties": {
@@ -84,6 +84,19 @@
                   "description": "Decimal interval; converted duration must be at least 15 seconds"
                 },
                 "interval_unit": {
+                  "type": "string",
+                  "enum": [
+                    "days",
+                    "hours",
+                    "minutes"
+                  ]
+                },
+                "delay_value": {
+                  "type": "number",
+                  "description": "One-shot countdown from creation; converted duration must be at least 15 seconds. Do not combine with calendar fields.",
+                  "minimum": 0
+                },
+                "delay_unit": {
                   "type": "string",
                   "enum": [
                     "days",
@@ -170,6 +183,7 @@
           "additionalProperties": false
         }
       }
-    }
+    },
+    "prompt": "For scheduled wake-up tasks, read this Widget’s own docs: umeko_desktop({\"operation\":\"widgets.docs\",\"arguments\":{\"id\":\"scheduled-tasks\"}}).\nExample: start a one-shot countdown now and wake this chat in 5 minutes:\numeko_desktop({\"operation\":\"widgets.call\",\"arguments\":{\"id\":\"scheduled-tasks\",\"method\":\"create\",\"arguments\":{\"name\":\"Wake up in 5 minutes\",\"message\":\"Resume the current task and report progress.\",\"enabled\":true,\"schedule\":{\"frequency\":\"once\",\"delay_value\":5,\"delay_unit\":\"minutes\"}}}})."
   }
 }

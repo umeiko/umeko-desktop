@@ -252,6 +252,14 @@ with tempfile.TemporaryDirectory(prefix='umeko-scheduled-demo-') as temp:
         assert agent('delete', {'task_id':key})['ok']
         bus.handle('setBridge', {'id':'session:' + foreground.id,'agentId':connected,'enabled':True})
 
+        # Immediate model one-shots reuse their expired slot through the real
+        # Widget channel, without replacing the manual tasks above.
+        countdown_args = {'name':'Agent wake-up slot', 'message':'Resume the local demo', 'enabled':True,
+            'schedule':{'frequency':'once','delay_value':0.25,'delay_unit':'minutes'}}
+        countdown = agent('create', countdown_args)
+        assert countdown['ok'], countdown
+        slot = countdown['result']['task_id']
+
         # The 15-second interval continues for the captured original chat even
         # while another chat is displayed. Drafts and attachments stay in place.
         assert agent('enable', {'task_id':inactive['id']})['ok']
@@ -267,6 +275,13 @@ with tempfile.TemporaryDirectory(prefix='umeko-scheduled-demo-') as temp:
         assert abs(periodic[0]['scheduled_at'] - periodic[1]['scheduled_at'] - 15) < 0.000001
         assert all(row['session_id'] == foreground.id for row in periodic)
         assert agent('disable', {'task_id':inactive['id']})['ok']
+        first_slot_runs = agent('history', {'task_id':slot})['result']['runs']
+        assert len(first_slot_runs)==1 and first_slot_runs[0]['state']=='delivered', first_slot_runs
+        before_reuse = agent('list')['result']['tasks']
+        replacement = agent('create', {**countdown_args, 'schedule':{'frequency':'once','delay_value':5,'delay_unit':'minutes'}})
+        assert replacement['ok'] and replacement['result']['task_id']==slot, replacement
+        assert len(agent('list')['result']['tasks'])==len(before_reuse)==4
+        assert agent('history', {'task_id':slot})['result']['runs']==first_slot_runs
         assert (foreground.draft, foreground.attachments) == before
         backend.openSession(foreground.id)
         until(lambda: backend._view is foreground, 'Original chat did not reactivate')
@@ -274,6 +289,10 @@ with tempfile.TemporaryDirectory(prefix='umeko-scheduled-demo-') as temp:
         until(lambda: find('scheduledTasksWidget') is not None, 'Timer page did not reopen')
         panel = find('scheduledTasksWidget')
         until(lambda: not panel.property('pending') and not panel.property('hostRequest') and values('tasks'), 'Timer page not ready')
+        until(lambda: find('scheduledTaskModelSlot_' + slot) is not None, 'Reusable Agent slot is not visible')
+        assert find('scheduledTaskModelSlot_' + slot).property('visible')
+        screenshot('reusable-agent-slot')
+        assert agent('delete', {'task_id':slot})['ok']
         click('scheduledTaskEdit_' + inactive['id'])
         backend.setFontScale(2.0)
         window.setWidth(window.minimumWidth())

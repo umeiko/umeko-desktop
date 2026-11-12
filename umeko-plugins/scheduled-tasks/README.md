@@ -28,13 +28,39 @@ No separate session profile or provider key is required. Main-chat timer deliver
 
 ## Agent 自主管理 / Agent API
 
-使用现有 `umeko_desktop` 工具，不添加第二条工具或直接编辑数据库。先用 `widgets.list` 和 `widgets.docs` 读取入口，再通过 `widgets.call` 调用。返回 `accepted` 后，用 `widgets.result` 查询真实结果。
+使用现有 `umeko_desktop` 工具，不添加第二条工具或直接编辑数据库。用下方带 `id: "scheduled-tasks"` 的调用直接读取**本 Widget 的文档**；返回 `accepted` 后，用 `widgets.result` 查询真实结果。
 
-Use the existing `umeko_desktop` Widget API. Discover it through `widgets.list` / `widgets.docs`, call `widgets.call`, then inspect `widgets.result` after an accepted request. Do not edit the database directly.
+Use `umeko_desktop` with the exact `widgets.docs` call below to read **this Widget’s own documentation**. After an accepted call, inspect `widgets.result`; accepted is not success. Do not edit the database directly.
+
+启用后，此 Widget 通过 `agent.prompt` 注入简短英文指引，提醒 Agent 按需读取本文档并使用现有 Widget API 设置定时唤醒；停用后不再注入。
+
+When enabled, this Widget contributes a short English `agent.prompt` directing the Agent to these instructions and the existing Widget API for scheduled wake-up tasks. Disabling the Widget removes that guidance.
 
 ```json
 {"operation":"widgets.docs","arguments":{"id":"scheduled-tasks"}}
 ```
+
+### 立即启动一个 5 分钟单次计时 / Start a 5-minute one-shot now
+
+下面是传给 `umeko_desktop` 的完整参数。计时在创建时立即开始，**5 分钟后只发送一次**，不是立即执行消息；不需要模型换算当前日期或时区。`enabled: true` 明确立即启用。
+
+Pass this complete example to `umeko_desktop`. The countdown starts immediately and **fires once after 5 minutes**, rather than sending immediately. No current-date or time-zone calculation is needed.
+
+```json
+{"operation":"widgets.call","arguments":{"id":"scheduled-tasks","method":"create","arguments":{"name":"Wake up in 5 minutes","message":"Resume the current task and report progress.","enabled":true,"schedule":{"frequency":"once","delay_value":5,"delay_unit":"minutes"}}}}
+```
+
+用返回的 `requestId` 查询 `{"operation":"widgets.result","arguments":{"requestId":"<returned requestId>"}}`。成功结果中的 `task_id` 可用于启停、删除和历史查询。倒计时也支持小数 `days`、`hours`、`minutes`，最短 15 秒；不要混用倒计时字段与日期、时间、时区字段。
+
+Poll `widgets.result` with the returned `requestId`. A successful result provides the `task_id` for timer management. Countdowns accept decimal `days`, `hours` or `minutes`, with a 15-second minimum. Do not mix countdown and calendar fields.
+
+### 模型单次计时槽 / Reusable Agent one-shot slot
+
+模型通过 `create` 新建且立即启用的单次任务，会标记为可复用计时槽。它到期且投递结束后，下一次同会话的模型单次计时自动复用该行：保留 `task_id`、颜色和旧运行快照，更新任务内容与下一次时间；即使已有 5 个任务，也先尝试复用，不创建第 6 个。连续“稍后再唤醒我”只占同一个名额。
+
+不会覆盖仍在计时或投递的任务，也不覆盖手动创建、手动编辑、明确停用、创建时未启用的任务或周期任务；旧版本没有来源标记的任务同样保留。若仍有一个计时在运行，新建的独立计时照常占用另一个名额，仍受总数 5 个限制。计时槽也可明确删除，不额外预留第 6 个隐藏名额。
+
+An immediately enabled, model-created one-shot is a reusable slot. After it expires and delivery finishes, the next such timer in the same conversation reuses its row, ID and color, while preserving old run snapshots. Reuse happens before the 5-timer quota check. Repeated “wake me later” requests therefore retain one slot. Armed or in-flight timers are preserved; an additional independent timer uses another slot within the same limit. Manual/edited/paused timers, initially disabled timers, recurring timers and unmarked older timers are never replaced. You can delete the slot normally; there is no hidden sixth slot.
 
 公开方法：
 

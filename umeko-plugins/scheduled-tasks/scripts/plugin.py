@@ -68,11 +68,13 @@ class ScheduledTasksPlugin(Plugin):
             if target not in allowed:raise ValueError('目标未与本会话建立 Agent Bus / Target is not connected')
             if args['schedule'].get('frequency') not in ('once', 'interval'):
                 raise ValueError('Only once and interval timers can be created')
-            schedule = Schedule.from_dict(args['schedule'], now=self.now())
+            now = self.now()
+            schedule = Schedule.from_dict(args['schedule'], now=now)
             enabled = args.get('enabled', True)
             if type(enabled) is not bool:raise ValueError('Enabled must be true or false')
             return {'task_id': self.store.save(task_id=task_id, name=name, message=message,
-                schedule=schedule, enabled=enabled, now=self.now(), owner=owner, source=source, target=target)}
+                schedule=schedule, enabled=enabled, now=now, owner=owner, source=source, target=target,
+                model_oneshot=method == 'create' and schedule.frequency == 'once' and enabled)}
         if method in ('enable', 'disable', 'set_enabled'):
             enabled = args.get('enabled') if method == 'set_enabled' else method == 'enable'
             if type(enabled) is not bool:raise ValueError('Enabled must be true or false')
