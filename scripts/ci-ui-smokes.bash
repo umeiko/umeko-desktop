@@ -49,6 +49,7 @@ smokes=(
   tests/pi_capabilities_ui_smoke.py
   tests/global_agents_ui_smoke.py
   tests/desktop_plugins_ui_smoke.py
+  tests/scheduled_tasks_ui_smoke.py
   tests/pi_management_ui_smoke.py
   tests/subagent_collection_ui_smoke.py
   tests/thinking_stream_ui_smoke.py

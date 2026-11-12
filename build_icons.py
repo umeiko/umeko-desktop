@@ -39,6 +39,7 @@ paths = {
     "folder-code": '<path d="M3 7V5h6l2 3h10v12H3Z"/><path d="m10 12-3 3 3 3m4-6 3 3-3 3"/>',
     "code": '<path d="m8 5-6 7 6 7m8-14 6 7-6 7m-3-16-2 18"/>',
     "terminal": '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 8 4 4-4 4m6 0h4"/>',
+    "clock": '<circle cx="12" cy="12" r="8.75"/><path d="M12 7.5V12l3.25 1.9"/>',
     "bulb": '<path d="M9 18v-2c0-2-4-3-4-7a7 7 0 0 1 14 0c0 4-4 5-4 7v2m-6 0h6m-5 3h4m-2-3v-7m-2-2 2 2 2-2"/>',
     "layers": '<path d="m12 3 10 5-10 5L2 8Zm-9 9 9 5 9-5M3 16l9 5 9-5"/>',
     "settings": gear(),

@@ -57,7 +57,7 @@ try:
     assert find('desktopPluginsPage').isVisible()
     assert {row['id'] for row in backend.desktopPlugins.rows} == {
         'file-tree', 'git-viewer', 'desktop-pet', 'terminal', 'global-agents', 'pi-manager',
-        'change-review', 'skill-manager', 'widget-market', 'task-records', 'system-prompt',
+        'change-review', 'skill-manager', 'widget-market', 'system-prompt',
         'scheduled-tasks',
     }
     assert not backend.desktopPlugins.enabled('scheduled-tasks')

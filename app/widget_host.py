@@ -43,6 +43,7 @@ OPERATIONS = {
     **{name: ('sessions.manage', None) for name in SESSION_OPERATIONS},
     'scheduledTasks.profiles': ('sessions.manage', None),
     'scheduledTasks.openSession': ('sessions.manage', None),
+    **{name: ('sessions.manage', None) for name in ('scheduledTasks.targets', 'scheduledTasks.trigger', 'scheduledTasks.status', 'scheduledTasks.openTarget')},
     'market.list': ('pi.read', None),
     'market.prepare': ('pi.read', None),
     'market.discard': ('pi.read', None),
@@ -144,6 +145,12 @@ class WidgetHost(QObject):
         from .pi_runtime import node_executable
         return {'node': {'executable': node_executable()}}
 
+    def scheduled_service(self):
+        if not hasattr(self, '_scheduled_tasks'):
+            from .scheduled_task_host import ScheduledTaskHost
+            self._scheduled_tasks = ScheduledTaskHost(self)
+        return self._scheduled_tasks
+
     @Property('QVariantMap', notify=changed)
     def pendingApproval(self):
         return self._approval
@@ -235,6 +242,10 @@ class WidgetHost(QObject):
             if not self.m.application(identifier):
                 raise ValueError('Session service requires an application lifecycle Widget')
             return identifier
+        if request['operation'] in ('scheduledTasks.trigger', 'scheduledTasks.status') and identifier == 'scheduled-tasks' and self.m.entries[identifier].get('builtin') and self.m.application(identifier):
+            # This built-in service revalidates the captured persistent source
+            # and Agent Bus relation, independently of the displayed chat.
+            return identifier
         session = request['session']
         current = self.m._session
         if not isinstance(session, dict) or not session.get('token') or session.get('token') != current.get('token') or session.get('workspace') != current.get('workspace'):
@@ -297,6 +308,10 @@ class WidgetHost(QObject):
                 return
             if operation in TASK_FIELDS:
                 self._task_request(request)
+                return
+            if operation in ('scheduledTasks.targets', 'scheduledTasks.trigger', 'scheduledTasks.status', 'scheduledTasks.openTarget'):
+                result = self.scheduled_service().request(request)
+                self._reply(request, {'ok': True, 'result': result})
                 return
             if operation in ('scheduledTasks.profiles', 'scheduledTasks.openSession'):
                 if identifier != 'scheduled-tasks' or not self.m.entries[identifier].get('builtin') or not request['page'] or self.m._page != identifier:

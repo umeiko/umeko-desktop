@@ -15,6 +15,26 @@ def stamp(value):
 
 
 class CalendarTests(TestCase):
+    def test_decimal_intervals_in_all_three_units_and_exact_minimum(self):
+        anchor = stamp('2026-11-13T09:00:00+00:00')
+        for value, unit, seconds in (('0.25', 'minutes', 15), ('1.25', 'minutes', 75),
+                                     ('0.5', 'hours', 1800), ('0.5', 'days', 43200),
+                                     ('0.255', 'minutes', 15.3)):
+            with self.subTest(value=value, unit=unit):
+                schedule = Schedule('interval', interval_value=value, interval_unit=unit, anchor_at=anchor)
+                due = schedule.next_after(anchor)
+                self.assertAlmostEqual(due, anchor + seconds, places=6)
+                for step in range(2, 200):
+                    due = schedule.next_after(due)
+                    self.assertAlmostEqual(due, anchor + seconds * step, places=6)
+                self.assertEqual(Schedule.from_dict(schedule.serialize()), schedule)
+
+    def test_short_nonfinite_or_unsupported_intervals_are_rejected(self):
+        for value, unit in (('0.249999999', 'minutes'), ('0', 'days'), ('-1', 'hours'),
+                            ('NaN', 'minutes'), ('Infinity', 'days'), ('abc', 'hours'),
+                            (True, 'minutes'), ('20', 'seconds')):
+            with self.subTest(value=value, unit=unit), self.assertRaises(ValueError):
+                Schedule('interval', interval_value=value, interval_unit=unit, anchor_at=1)
     def test_weekdays_and_weekly_use_local_calendar(self):
         first = date(2026, 11, 13)  # Friday
         friday = stamp('2026-11-13T01:00:00+00:00')
@@ -116,3 +136,60 @@ class ScheduledTasksTests(TestCase):
         self.store.set_enabled(task, True, self.due + 60)
         self.assertEqual(self.store.tasks()[0]['next_at'], self.due + 86400)
         self.assertEqual(self.store.history(task), [])
+
+    def scoped(self, owner, *, enabled=False, task_id=None):
+        return self.store.save(name='Timer', message='Check progress',
+            schedule=Schedule('interval', interval_value='0.25', interval_unit='minutes', anchor_at=self.due),
+            enabled=enabled, now=self.due, owner=owner, task_id=task_id)
+
+    def test_quota_is_atomic_includes_disabled_and_is_per_conversation(self):
+        def create(_):
+            try:return self.scoped('one')
+            except ValueError:return None
+        with ThreadPoolExecutor(max_workers=8) as workers:
+            created = [key for key in workers.map(create, range(8)) if key]
+        self.assertEqual(len(created), 5)
+        other = self.scoped('two')
+        self.assertEqual(len(self.store.tasks(owner='two')), 1)
+        with self.assertRaises(KeyError):self.store.delete(other, owner='one')
+        with self.assertRaises(KeyError):self.store.set_enabled(other, True, self.due, owner='one')
+        with self.assertRaises(KeyError):self.store.history(other, owner='one')
+        with self.assertRaises(KeyError):self.scoped('one', task_id=other)
+        self.store.delete(created[0], owner='one')
+        self.scoped('one')
+        self.assertEqual(len(self.store.tasks(owner='one')), 5)
+
+    def test_draft_promotion_preserves_quota_and_saved_source_across_restart(self):
+        draft = {'token': 'draft-token', 'id': '', 'workspace': '/project'}
+        owner, source = self.store.bind_session(draft)
+        for _ in range(5):self.scoped(owner)
+        native = {**draft, 'id': 'native-one'}
+        owner, source = self.store.bind_session(native)
+        reopened = ScheduledTasks(self.database)
+        self.assertEqual(len(reopened.tasks(owner=owner)), 5)
+        self.assertTrue(all(row['source']['id'] == 'native-one' for row in reopened.tasks(owner=owner)))
+        old_owner, source = reopened.bind_session(draft)
+        self.assertEqual(old_owner, owner)
+        self.assertEqual(source['id'], 'native-one')
+        with self.assertRaises(ValueError):self.scoped(owner)
+
+    def test_interval_reenable_waits_a_full_period_and_backlog_is_bounded(self):
+        task = self.scoped('one', enabled=True)
+        first, = self.store.claim_due(self.due + 15, eligible_since=self.due)
+        self.store.finish(first['id'], 'delivered', self.due + 16)
+        self.store.set_enabled(task, False, self.due + 20, owner='one')
+        self.store.set_enabled(task, True, self.due + 100, owner='one')
+        self.assertEqual(self.store.tasks(owner='one')[0]['next_at'], self.due + 115)
+        startup = self.due + 86400 * 300
+        self.store.claim_due(startup, eligible_since=startup)
+        self.assertGreater(self.store.tasks(owner='one')[0]['next_at'], startup)
+        self.assertLessEqual(len(self.store.history(task)), 33)
+
+    def test_delete_during_delivery_stops_future_trigger_and_keeps_receipt_history(self):
+        task = self.scoped('one', enabled=True)
+        run, = self.store.claim_due(self.due + 15, eligible_since=self.due)
+        self.store.delete(task, owner='one')
+        self.assertEqual(self.store.tasks(owner='one'), [])
+        self.assertEqual(self.store.claim_due(self.due + 30, eligible_since=self.due), [])
+        self.assertTrue(self.store.finish(run['id'], 'delivered', self.due + 16))
+        self.assertEqual(self.store.history(task)[0]['state'], 'delivered')

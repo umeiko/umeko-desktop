@@ -92,6 +92,10 @@ with tempfile.TemporaryDirectory(prefix="umeko-task-records-ui-") as temp:
     assert not manager.enabled('task-records')
     assert 'task-records' not in {row['id'] for row in manager.sessionPlugins}
     assert ledger.store is None
+    # Source-only regression coverage for the withheld Widget. It is absent
+    # from normal discovery and packages, so opt this fixture in explicitly.
+    assert 'task-records' not in manager.entries
+    manager.entries['task-records'] = {**json.loads((ROOT/'umeko-plugins/task-records/manifest.json').read_text(encoding='utf-8')), 'builtin': True}
     manager.setEnabled('task-records', True)
 
     def open_widget():

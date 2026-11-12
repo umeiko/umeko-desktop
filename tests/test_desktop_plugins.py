@@ -49,28 +49,52 @@ class DesktopPluginTests(unittest.TestCase):
         key=self.manager.call(method,json.dumps(args or {}));self.assertTrue(key)
         self.wait(lambda:key in self.responses);return self.responses[key]
 
-    def test_task_records_require_opt_in_and_preserve_explicit_choices(self):
+    def test_withheld_task_records_stay_hidden_with_saved_opt_in_and_preserve_data(self):
+        self.manager.close()
+        registry = self.manager.registry
+        registry.parent.mkdir(parents=True, exist_ok=True)
+        preferences = {'enabled': {'task-records': True}, 'sessions': {'session-one': ['task-records']}}
+        registry.write_text(json.dumps(preferences), encoding='utf-8')
+        history = self.host.store.directory / 'task-records' / 'records.db'
+        history.parent.mkdir(parents=True, exist_ok=True)
+        history.write_bytes(b'Existing user records, do not migrate or delete')
+        original = history.read_bytes()
+        restored = DesktopPlugins(self.host)
+        try:
+            self.assertNotIn('task-records', restored.entries)
+            self.assertNotIn('task-records', {row['id'] for row in restored.rows})
+            self.assertFalse(restored.enabled('task-records'))
+            self.assertFalse(restored.openPage('task-records'))
+            restored.setEnabled('task-records', True)
+            self.assertNotIn('task-records', restored.workers)
+            self.assertNotIn('task-records', {row['id'] for row in restored.sessionPlugins})
+            self.assertEqual(json.loads(registry.read_text(encoding='utf-8')), preferences)
+            self.assertEqual(history.read_bytes(), original)
+        finally:
+            restored.close()
+
+    def test_system_prompt_requires_opt_in_and_preserves_explicit_choices(self):
         manager = self.manager
-        self.assertFalse(manager.enabled('task-records'))
-        self.assertFalse(manager.openPage('task-records'))
-        self.assertNotIn('task-records', manager.workers)
-        self.assertNotIn('task-records', {row['id'] for row in manager.sessionPlugins})
-        manager.setEnabled('task-records', True)
-        self.assertIn('task-records', {row['id'] for row in manager.sessionPlugins})
+        self.assertFalse(manager.enabled('system-prompt'))
+        manager.setEnabled('system-prompt', True)
+        self.assertIn('system-prompt', {row['id'] for row in manager.sessionPlugins})
         manager.close()
         restored = DesktopPlugins(self.host)
         try:
-            self.assertTrue(restored.enabled('task-records'))
-            restored.setEnabled('task-records', False)
+            self.assertTrue(restored.enabled('system-prompt'))
+            restored.setEnabled('system-prompt', False)
         finally:
             restored.close()
         restored = DesktopPlugins(self.host)
         try:
-            self.assertFalse(restored.enabled('task-records'))
+            self.assertFalse(restored.enabled('system-prompt'))
         finally:
             restored.close()
 
     def test_disabling_task_records_clears_preparation_without_stopping_live_work(self):
+        # Retained source can still be exercised explicitly; product discovery
+        # must not register this withheld Widget.
+        self.manager.entries['task-records'] = {**json.loads((ROOT/'umeko-plugins/task-records/manifest.json').read_text(encoding='utf-8')), 'builtin': True}
         from unittest.mock import Mock
         owner = self.host._view
         owner.prepared_task = 'goal-one'
@@ -231,7 +255,8 @@ def create_plugin(context):return Fixture(context)
         self.assertEqual(rows['desktop-pet']['iconGlyph'],'pet')
         self.assertEqual(rows['pi-manager']['iconGlyph'],'pi-widget')
         self.assertEqual(rows['pi-manager']['iconSource'],'')
-        self.assertEqual(len(self.manager.iconCatalog),23)
+        self.assertEqual(rows['scheduled-tasks']['iconGlyph'],'clock')
+        self.assertEqual(len(self.manager.iconCatalog),24)
         for icon in self.manager.iconCatalog:self.assertTrue((ROOT/'app/icons'/(icon['glyph']+'.svg')).is_file())
         self.fixture();folder=self.path/'session-demo-1.0.0';manifest=json.loads((folder/'manifest.json').read_text())
         manifest['icon']='does-not-exist';(folder/'manifest.json').write_text(json.dumps(manifest))

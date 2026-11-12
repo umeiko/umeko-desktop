@@ -4,10 +4,10 @@
   "id": "scheduled-tasks",
   "version": "1.0.0",
   "name": "定时任务",
-  "summary": "安排预写消息在独立 Pi 会话中运行",
-  "description": "在 Umeko 运行时按计划执行，查看每次运行的结果。",
+  "summary": "向本会话或已关联全局智能体定时发消息",
+  "description": "单次或周期触发，周期支持小数天、小时、分钟，最短15秒；每会话最多5个。",
   "author": "Umeko",
-  "icon": "hourglass",
+  "icon": "clock",
   "lifecycle": "application",
   "entrypoint": "scripts/plugin.py:create_plugin",
   "page": "qml/Main.qml",
@@ -17,6 +17,159 @@
   ],
   "agent": {
     "document": "README.md",
-    "methods": {}
+    "methods": {
+      "targets": {
+        "description": "列出本次会话可触发的主 Agent 和已连接 AgentBus 的全局智能体。",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "list": {
+        "description": "列出仅属于调用会话的定时器；含停用项，上限5个。",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "create": {
+        "description": "新建定时器；默认启用、目标main。周期首次触发在一个完整间隔后，最短15秒；只能选择targets列出的对象。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 8000
+            },
+            "target": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "schedule": {
+              "type": "object",
+              "properties": {
+                "frequency": {
+                  "type": "string",
+                  "enum": [
+                    "once",
+                    "interval"
+                  ]
+                },
+                "first_date": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "local_time": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "zone": {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "interval_value": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Decimal interval; converted duration must be at least 15 seconds"
+                },
+                "interval_unit": {
+                  "type": "string",
+                  "enum": [
+                    "days",
+                    "hours",
+                    "minutes"
+                  ]
+                }
+              },
+              "required": [
+                "frequency"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "name",
+            "message",
+            "schedule"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "enable": {
+        "description": "启用本会话的定时器；周期从本次启用重新计时。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "task_id": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          "required": [
+            "task_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "disable": {
+        "description": "停用本会话的定时器，停止后续触发；已投递消息不撤回。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "task_id": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          "required": [
+            "task_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "delete": {
+        "description": "删除本会话的定时器以释放名额；已投递消息不撤回、运行记录保留。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "task_id": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          "required": [
+            "task_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "history": {
+        "description": "查看本会话定时器的最近20次触发结果；已投递不代表Agent任务已完成。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "task_id": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          "required": [
+            "task_id"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
   }
 }
