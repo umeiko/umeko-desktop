@@ -113,7 +113,8 @@ class ScheduledTasks:
 
     def tasks(self):
         with closing(self._connect()) as db:
-            rows = db.execute('SELECT * FROM schedules ORDER BY name, id').fetchall()
+            # The insertion slot stays with the task when its name or schedule changes.
+            rows = db.execute('SELECT *, rowid - 1 AS color_index FROM schedules ORDER BY name, id').fetchall()
         return [{**dict(row), 'schedule': json.loads(row['schedule'])} for row in rows]
 
     def history(self, task_id, *, limit=50):

@@ -21,7 +21,7 @@ class Fixture:
     calls = 0
     def complete(self, model, messages, tools, max_tokens):
         self.calls += 1
-        return Completion("演示周报已生成：本周完成定时调度，下一步验证审批和重启恢复。")
+        return Completion("【演示】任务已完成。" if language == "zh" else "[Demo] Task completed.")
 
 def until(test, label, attempts=400):
     for _ in range(attempts):
@@ -100,38 +100,86 @@ with tempfile.TemporaryDirectory(prefix='umeko-scheduled-demo-') as temp:
         panel = find('scheduledTasksWidget')
         until(lambda: panel.property('readyForInteraction') and not panel.property('pending') and not panel.property('hostRequest'), 'Widget not ready')
         assert panel.property('error') == '' and not manager.page['error'], (panel.property('error'), manager.page['error'])
-        click('scheduledNewOrBack')
-        find('scheduledTaskName').setProperty('text', '【演示】每周项目周报' if language == 'zh' else '[Demo] Weekly project report')
-        find('scheduledTaskPrompt').setProperty('text', '【演示】根据本周项目进展，整理已完成工作、待解决问题和下周计划。' if language == 'zh' else '[Demo] Summarize this week’s completed work, open questions and next week’s plan.')
-        find('scheduledTaskFrequency').setProperty('currentIndex', 2)
-        due = datetime.now(timezone.utc) + timedelta(seconds=12)
-        find('scheduledTaskDate').setProperty('text', due.strftime('%Y-%m-%d'))
-        find('scheduledTaskTime').setProperty('text', due.strftime('%H:%M:%S'))
-        find('scheduledTaskZone').setProperty('text', 'UTC')
-        find('scheduledTaskEnabled').setProperty('checked', True)
-        screenshot('new')
-        click('scheduledTaskSave')
-        until(lambda: not panel.property('pending'), 'Save reply missing')
-        until(lambda: panel.property('page') == 'list' and find('scheduledTaskHistory') is not None, 'Save failed')
-        click('scheduledTaskHistory')
-        until(lambda: panel.property('page') == 'history' and not panel.property('pending'), 'History did not open')
+        def values(name):
+            value = panel.property(name)
+            return value.toVariant() if hasattr(value, 'toVariant') else value
+
+        def save_task(name, frequency, enabled):
+            find('scheduledTaskName').setProperty('text', name)
+            find('scheduledTaskPrompt').setProperty(
+                'text', '【演示】请整理任务摘要。' if language == 'zh' else '[Demo] Summarize this task.')
+            find('scheduledTaskFrequency').setProperty('currentIndex', frequency)
+            find('scheduledTaskDate').setProperty('text', due.strftime('%Y-%m-%d'))
+            find('scheduledTaskTime').setProperty('text', due.strftime('%H:%M:%S'))
+            find('scheduledTaskZone').setProperty('text', 'UTC')
+            find('scheduledTaskEnabled').setProperty('checked', enabled)
+            click('scheduledTaskSave')
+            until(lambda: panel.property('page') == 'list' and not panel.property('pending'), 'Save failed')
+            return next(task for task in values('tasks') if task['name'] == name)
+
+        def color(task):
+            name = 'scheduledTaskAccent_' + task['id']
+            until(lambda: find(name) is not None, 'Task color marker missing')
+            return find(name).property('color').name()
+
+        def open_history(task):
+            click('scheduledTaskHistory_' + task['id'])
+            until(lambda: panel.property('page') == 'history' and not panel.property('pending'), 'History did not open')
+
+        def complete_runs(count):
+            until(lambda: len(values('runs')) == count and all(r['state'] == 'completed' for r in values('runs')),
+                  f'Expected {count} completed runs', attempts=1000)
+            return values('runs')
+
+        due = datetime.now(timezone.utc) + timedelta(seconds=16)
+        names = (['【演示】每周项目周报', '【演示】每日进度整理', '【演示】资料归档']
+                 if language == 'zh' else ['[Demo] Weekly project report', '[Demo] Daily progress digest', '[Demo] Archive materials'])
+        tasks = []
+        colors = {}
+        for name, frequency, enabled in zip(names, (2, 1, 0), (True, True, False)):
+            click('scheduledNewOrBack')
+            task = save_task(name, frequency, enabled)
+            tasks.append(task)
+            colors[task['id']] = color(task)
+        weekly, daily, inactive = tasks
+        assert len(set(colors.values())) == 3, colors
+        assert {task['id']: color(task) for task in tasks} == colors
+        assert weekly['next_at'] == daily['next_at'] == int(due.timestamp())
+        assert not inactive['enabled'] and inactive['next_at'] is None
+        screenshot('multi-task-list')
+        original_theme = backend.store.data['theme']
+        backend.setTheme('dark')
+        until(lambda: all(color(task) != colors[task['id']] for task in tasks), 'Dark task colors did not update')
+        assert len({color(task) for task in tasks}) == 3
+        screenshot('multi-task-dark')
+        backend.setTheme(original_theme)
+        until(lambda: all(color(task) == colors[task['id']] for task in tasks), 'Light task colors did not restore')
+
+        open_history(weekly)
         click('scheduledTaskRunNow')
-        def completed():
-            runs = panel.property('runs')
-            runs = runs.toVariant() if hasattr(runs, 'toVariant') else runs
-            return len(runs) == 2 and all(r['state'] == 'completed' for r in runs)
-        until(completed, 'Scheduled and manual runs did not both complete', attempts=1000)
-        runs = panel.property('runs')
-        runs = runs.toVariant() if hasattr(runs, 'toVariant') else runs
-        assert len({r['session_id'] for r in runs}) == 2 and all(r['session_id'] for r in runs)
-        assert sum(r['scheduled_at'] is not None for r in runs) == 1
-        assert fixture.calls == 2, fixture.calls
+        weekly_runs = complete_runs(2)
+        assert {r['scheduled_at'] for r in weekly_runs} == {None, int(due.timestamp())}
+        screenshot('multi-task-history')
+        click('scheduledNewOrBack')
+        until(lambda: not panel.property('pending'), 'List did not refresh')
+        assert {task['id']: color(task) for task in tasks} == colors
+
+        open_history(daily)
+        daily_runs = complete_runs(1)
+        assert daily_runs[0]['scheduled_at'] == int(due.timestamp())
+        sessions = [run['session_id'] for run in weekly_runs + daily_runs]
+        assert all(sessions) and len(set(sessions)) == 3
+        click('scheduledNewOrBack')
+        until(lambda: not panel.property('pending'), 'List did not refresh')
+
+        open_history(inactive)
+        assert values('runs') == []
+        assert fixture.calls == 3, fixture.calls
         assert backend._view is foreground and (foreground.draft, foreground.attachments) == before
         assert not [w for w in warnings if 'scheduled-tasks/qml' in w], warnings
-        screenshot('history')
         manager.closePage()
         assert manager.workers['scheduled-tasks']['ready']
-        print(f'{language}: scheduled and manual Pi runs completed in separate sessions; foreground draft and attachment preserved')
+        print(f'{language}: 3 distinct colors; 2 tasks shared a due time; 3 separate Pi sessions including the manual run; inactive task did not run; foreground draft and attachment preserved')
     finally:
         backend.close()
         app.processEvents()
