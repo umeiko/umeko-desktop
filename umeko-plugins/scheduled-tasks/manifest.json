@@ -1,0 +1,22 @@
+{
+  "kind": "umeko-plugin",
+  "apiVersion": 1,
+  "id": "scheduled-tasks",
+  "version": "1.0.0",
+  "name": "定时任务",
+  "summary": "安排预写消息在独立 Pi 会话中运行",
+  "description": "在 Umeko 运行时按计划执行，查看每次运行的结果。",
+  "author": "Umeko",
+  "icon": "hourglass",
+  "lifecycle": "application",
+  "entrypoint": "scripts/plugin.py:create_plugin",
+  "page": "qml/Main.qml",
+  "readme": "README.md",
+  "permissions": [
+    "sessions.manage"
+  ],
+  "agent": {
+    "document": "README.md",
+    "methods": {}
+  }
+}
