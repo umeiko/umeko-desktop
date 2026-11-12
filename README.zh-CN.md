@@ -25,9 +25,9 @@
 
 <!-- umeko-downloads:standard:start -->
 
-**下载 v0.7.2 · 点击下载**
+**下载 v0.7.3 · 点击下载**
 
-[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.2/Umeko-0.7.2-windows-x64-f8e5952.zip)
+[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.3/Umeko-0.7.3-windows-x64-61df71a.zip)
 
 <!-- umeko-downloads:standard:end -->
 
