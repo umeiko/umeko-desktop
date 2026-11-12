@@ -46,10 +46,20 @@ class ScheduledTasksTests(TestCase):
         self.database = Path(temp.name) / 'scheduled.sqlite3'
         self.store = ScheduledTasks(self.database)
 
-    def save(self, *, frequency='once', message='Draft the weekly report', enabled=True, task_id=None):
-        return self.store.save(name='Report', message=message, profile='reports',
+    def save(self, *, name='Report', frequency='once', message='Draft the weekly report', enabled=True, task_id=None):
+        return self.store.save(name=name, message=message, profile='reports',
                                schedule=Schedule(frequency, date(2026, 11, 13), time(9), 'UTC'),
                                enabled=enabled, now=self.due - 60, task_id=task_id)
+
+    def test_color_index_survives_rename_pause_and_reopen(self):
+        first = self.save(name='Zebra')
+        second = self.save(name='Apple')
+        before = {task['id']: task['color_index'] for task in self.store.tasks()}
+        self.assertEqual(before, {first: 0, second: 1})
+        self.save(name='Aardvark', enabled=False, task_id=first)
+        reopened = ScheduledTasks(self.database)
+        self.assertEqual([task['id'] for task in reopened.tasks()], [first, second])
+        self.assertEqual({task['id']: task['color_index'] for task in reopened.tasks()}, before)
 
     def test_concurrent_dispatch_claims_one_occurrence(self):
         task = self.save()

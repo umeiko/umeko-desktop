@@ -10,6 +10,9 @@ Rectangle {
     readonly property var c: sdk.colors
     readonly property bool readyForInteraction: sdk.active
     readonly property var frequencies: ["once", "daily", "weekly", "weekdays"]
+    readonly property var taskColors: c.dark
+        ? ["#82b4ff", "#56d3b6", "#f2ac63", "#c9a4fc", "#ed91b5", "#b5ce6f"]
+        : ["#245eb5", "#00796b", "#a54f00", "#7745a8", "#a73868", "#546c14"]
     property var tasks: []
     property var runs: []
     property var profiles: []
@@ -133,9 +136,18 @@ Rectangle {
                     required property var modelData
                     width: ListView.view.width; height: row.implicitHeight + 24
                     color: root.c.bg; border.color: root.c.line; radius: 8
+                    Rectangle {
+                        id: taskAccent
+                        objectName: "scheduledTaskAccent_" + modelData.id
+                        anchors.left: parent.left; anchors.leftMargin: 7
+                        anchors.top: parent.top; anchors.bottom: parent.bottom; anchors.margins: 10
+                        width: 4; radius: 2
+                        color: root.taskColors[modelData.color_index % root.taskColors.length]
+                    }
                     RowLayout {
                         id: row
                         anchors.fill: parent; anchors.margins: 12
+                        anchors.leftMargin: taskAccent.x + taskAccent.width + 9
                         ColumnLayout {
                             Layout.fillWidth: true; Layout.minimumWidth: 0
                             Label { Layout.fillWidth: true; Layout.minimumWidth: 0; text: modelData.name; textFormat: Text.PlainText; color: root.c.ink; font.bold: true; elide: Text.ElideRight }
@@ -147,12 +159,13 @@ Rectangle {
                             }
                         }
                         Button {
+                            Layout.preferredWidth: 64
                             text: modelData.enabled ? root.tr("暂停", "Pause") : root.tr("编辑", "Edit")
                             enabled: root.readyForInteraction && !root.pending
                             onClicked: modelData.enabled ? root.call("set_enabled", {task_id:modelData.id,enabled:false}) : root.edit(modelData)
                         }
-                        Button { visible: !!modelData.enabled; text: root.tr("编辑", "Edit"); enabled: root.readyForInteraction && !root.pending; onClicked: root.edit(modelData) }
-                        Button { objectName: "scheduledTaskHistory"; text: root.tr("运行记录", "Runs"); enabled: root.readyForInteraction && !root.pending; onClicked: root.history(modelData) }
+                        Button { Layout.preferredWidth: 64; visible: !!modelData.enabled; text: root.tr("编辑", "Edit"); enabled: root.readyForInteraction && !root.pending; onClicked: root.edit(modelData) }
+                        Button { Layout.preferredWidth: 88; objectName: "scheduledTaskHistory_" + modelData.id; text: root.tr("运行记录", "Runs"); enabled: root.readyForInteraction && !root.pending; onClicked: root.history(modelData) }
                     }
                 }
             }
