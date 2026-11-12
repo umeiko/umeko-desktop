@@ -1,10 +1,13 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time
 from pathlib import Path
+import sys
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from app.scheduled_tasks import Schedule, ScheduledTasks
+SCRIPTS = Path(__file__).resolve().parents[1] / 'umeko-plugins/scheduled-tasks/scripts'
+sys.path.insert(0, str(SCRIPTS))
+from scheduled_tasks import Schedule, ScheduledTasks
 
 
 def stamp(value):

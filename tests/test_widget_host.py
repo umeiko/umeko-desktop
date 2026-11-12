@@ -69,6 +69,37 @@ class WidgetHostTests(unittest.TestCase):
         self.app.processEvents()
         return identifier
 
+    def test_scheduled_tasks_page_can_only_open_its_own_sessions(self):
+        manager = self.manager
+        widget = 'scheduled-tasks'
+        manager._page = widget
+        manager.entries[widget] = {'builtin': True, 'permissions': ['sessions.manage']}
+        manager.workers[widget] = {'ready': True}
+        manager.entries['a']['permissions'].append('sessions.manage')
+        manager.b.store = SimpleNamespace(data={
+            'pluginSessionProfiles': {widget: {'demo': {'workspace': '/demo', 'model': 'demo',
+                'provider': 'internal', 'tools': ['read']}}},
+            'sessionMeta': {'owned': {'pluginSession': {'plugin': widget, 'namespace': widget}},
+                            'foreign': {'pluginSession': {'plugin': 'a', 'namespace': widget}}},
+        })
+        manager.b._sessions = [{'id': 'owned'}, {'id': 'foreign'}]
+        opened = []
+        manager.b.openSession = opened.append
+
+        def request(operation, args, *, page=True, target=widget):
+            identifier = self.host.request_for(target, {'operation': operation, 'arguments': args,
+                'session': manager._session}, page=page)
+            self.app.processEvents()
+            return manager.replies[identifier]
+
+        self.assertFalse(request('scheduledTasks.profiles', {}, page=False)['ok'])
+        self.assertFalse(request('scheduledTasks.profiles', {}, target='a')['ok'])
+        self.assertEqual(request('scheduledTasks.profiles', {})['result']['profiles'],
+                         [{'name': 'demo', 'workspace': '/demo', 'model': 'demo'}])
+        self.assertFalse(request('scheduledTasks.openSession', {'session_id': 'foreign'})['ok'])
+        self.assertTrue(request('scheduledTasks.openSession', {'session_id': 'owned'})['ok'])
+        self.assertEqual(opened, ['owned'])
+
     def test_task_records_require_the_active_builtin_qml_page(self):
         from app.task_records import TaskStore
 

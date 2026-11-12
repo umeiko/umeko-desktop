@@ -41,6 +41,8 @@ OPERATIONS = {
     **{name: ('tasks.read' if name in ('tasks.list', 'tasks.get', 'tasks.detail') else 'tasks.manage', None)
        for name in TASK_FIELDS},
     **{name: ('sessions.manage', None) for name in SESSION_OPERATIONS},
+    'scheduledTasks.profiles': ('sessions.manage', None),
+    'scheduledTasks.openSession': ('sessions.manage', None),
     'market.list': ('pi.read', None),
     'market.prepare': ('pi.read', None),
     'market.discard': ('pi.read', None),
@@ -296,6 +298,31 @@ class WidgetHost(QObject):
             if operation in TASK_FIELDS:
                 self._task_request(request)
                 return
+            if operation in ('scheduledTasks.profiles', 'scheduledTasks.openSession'):
+                if identifier != 'scheduled-tasks' or not self.m.entries[identifier].get('builtin') or not request['page'] or self.m._page != identifier:
+                    raise ValueError('Available only to the built-in Scheduled Tasks page')
+                if operation == 'scheduledTasks.profiles' and not args:
+                    profiles = self.b.store.data.get('pluginSessionProfiles', {}).get(identifier, {})
+                    if not isinstance(profiles, dict):
+                        raise ValueError('Scheduled Tasks profiles must be an object')
+                    rows = [{'name': name, 'workspace': profile['workspace'], 'model': profile['model']}
+                            for name, profile in sorted(profiles.items()) if isinstance(profile, dict)
+                            and all(isinstance(profile.get(k), str) for k in ('workspace', 'model'))]
+                    self._reply(request, {'ok': True, 'result': {'profiles': rows}})
+                    return
+                if operation == 'scheduledTasks.openSession' and set(args) == {'session_id'}:
+                    session_id = args['session_id']
+                    if not isinstance(session_id, str):
+                        raise ValueError('A session ID is required')
+                    owner = self.b.store.data.get('sessionMeta', {}).get(session_id, {}).get('pluginSession', {})
+                    if owner.get('plugin') != identifier or owner.get('namespace') != identifier:
+                        raise ValueError('This session does not belong to Scheduled Tasks')
+                    if not any(row.get('id') == session_id for row in self.b._sessions):
+                        raise ValueError('This session is no longer available')
+                    self._reply(request, {'ok': True, 'result': {}})
+                    self.b.openSession(session_id)
+                    return
+                raise ValueError('Invalid Scheduled Tasks arguments')
             if operation in SESSION_OPERATIONS:
                 if self._sessions is None: self._sessions = PluginSessions(self)
                 self._sessions.request(request)
