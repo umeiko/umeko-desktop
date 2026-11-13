@@ -395,7 +395,7 @@ Item {
                 // until it is complete; its rows load at once instead of
                 // across many frames.
                 let first = count - 1, extent = 0;
-                while (first > 0 && extent < height) {
+                while (first > 0 && extent < height * 1.5) {
                     extent += pane.messageModel.estimatedHeight(first) + spacing;
                     first--;
                 }
@@ -492,13 +492,21 @@ Item {
                     const tail = conversation.itemAtIndex(conversation.count - 1);
                     if (conversation.count && (!tail || !tail.bodyReady) && conversation.restoreAttempts < 200)
                         return;
-                    // Finish with a complete first screen: every row on it shown.
+                    // Finish with a complete first screen: every row on it shown,
+                    // and no part of it waiting for a row ListView has not
+                    // created yet (rows above slide in as real heights settle).
                     const top = conversation.contentY, bottom = top + conversation.height;
+                    let first = null;
                     for (const row of conversation.contentItem.children) {
-                        if (row.messageSlot === true && row.y + row.height > top && row.y < bottom
-                                && !row.shown && conversation.restoreAttempts < 200)
+                        if (row.messageSlot !== true || row.y + row.height <= top || row.y >= bottom)
+                            continue;
+                        if (!row.shown && conversation.restoreAttempts < 200)
                             return;
+                        if (!first || row.index < first.index)
+                            first = row;
                     }
+                    if (first && first.index > 0 && first.y > top + conversation.spacing + 1 && conversation.restoreAttempts < 200)
+                        return;
                 } else {
                     const index = Math.min(conversation.restoreIndex, conversation.count - 1);
                     pane.messageModel.requestRange(index, index + 3);
