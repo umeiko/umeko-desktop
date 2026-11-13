@@ -358,6 +358,14 @@ class PiControllerMixin:
             if record.file and (len(record.messages) > 256 or record.tail_characters > 1024 * 1024):
                 self._queue_transcript_index(record, event.get('leafId'))
             return
+        elif kind == "agent_run":
+            # Pi started a turn by itself, e.g. for a background subagent report.
+            # Show it like a sent prompt: Running, Stop, queued input, then Done.
+            if not record.busy:
+                record.action, record.failed, record.cancelled = 'prompt', False, False
+                record.pet_activity = 'thinking'
+                record.prompt_started = time.monotonic()
+                record.phase, record.tool_status = 'running', '正在生成'
         elif kind == "ready":
             record.ready = True
             self._subagents.process_ready(record)
