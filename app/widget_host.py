@@ -22,6 +22,7 @@ from PySide6.QtCore import QObject, Property, QTimer, Signal, Slot
 TASK_FIELDS = {
     'tasks.list': {'offset'},
     'tasks.get': {'taskId', 'offset'},
+    'tasks.routes': {'taskId', 'offset'},
     'tasks.detail': {'taskId', 'attemptId', 'offset', 'deliveriesOnly'},
     'tasks.create': {'objective', 'scope'},
     'tasks.link': {'taskId'},
@@ -38,7 +39,7 @@ OPERATIONS = {
     'systemPrompt.toggle': ('pi.manage', None),
     'systemPrompt.save': ('pi.manage', None),
     'systemPrompt.restore': ('pi.manage', None),
-    **{name: ('tasks.read' if name in ('tasks.list', 'tasks.get', 'tasks.detail') else 'tasks.manage', None)
+    **{name: ('tasks.read' if name in ('tasks.list', 'tasks.get', 'tasks.routes', 'tasks.detail') else 'tasks.manage', None)
        for name in TASK_FIELDS},
     **{name: ('sessions.manage', None) for name in SESSION_OPERATIONS},
     'scheduledTasks.profiles': ('sessions.manage', None),
@@ -507,7 +508,11 @@ class WidgetHost(QObject):
                 raise ValueError('Task record is missing')
             attempts = store.attempts(task_id, offset, 13)
             return {'task': task, 'attempts': attempts[:12], 'hasMore': len(attempts) > 12,
+                    'routes': store.routes(task_id=task_id, limit=5),
                     **self._task_link_state(store, record), 'canLink': ledger.canPrepare(task_id)}
+        if operation == 'tasks.routes':
+            rows = store.routes(task_id=task_id, offset=offset, limit=5)
+            return {'routes': rows[:4], 'hasMore': len(rows) > 4}
         if operation == 'tasks.chat':
             if record.prepared_task != task_id:
                 raise ValueError('Link the task to this chat first')

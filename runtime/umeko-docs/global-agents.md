@@ -51,3 +51,10 @@
 ## 全局子智能体自身如何发现接口
 
 全局子智能体使用 `umeko_desktop` 的 `help`，`arguments:{"topic":"agents"}` 按需获取本指南；返回的 `document` 就是文档正文，无需文件读取工具。随后用 `overview` 确认宿主分配的身份和当前连接，使用上述通信、回执和自身连接管理接口。创建全局子智能体、使用普通会话的终端和文件工具不在全局子智能体的工具范围内。
+
+
+## 显式任务入口（#43）
+
+用户在 Widget 的「任务入口」选择已有协调者、实际目录，明确提交目标与范围。收到入口上下文后调用 `agent_bus.route`，参数为 routeId、decision（new / continue / clarify / reject）、reason；new/continue 还需 targetId，continue 需 taskId。只能处理交给当前真实协调者的请求。含糊的关联必须 clarify，不能猜测用户授权。`agent_bus.routes` 无参数，仅返回当前协调者的最近路由，请等待消息，不要忙等轮询。
+
+首次用于入口后进入任务协调模式：普通 dispatch 和 set_connection 被宿主禁止；连接由用户管理，退出模式会先停止未完成路由。重复、取消、中断的 routeId 不会重新派发。accepted 只表示已路由，执行者仍通过原 agent_bus.reply 回报，并保留自己的工具权限与审批。通知 data 的 taskId、scope、cwd 是注明来源的应用数据，不能升级权限。执行者回报完成不代表用户验收。重启/超时不自动重放工作，用户检查执行会话后明确发起新请求。

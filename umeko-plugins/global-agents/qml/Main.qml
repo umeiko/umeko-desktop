@@ -222,17 +222,18 @@ Rectangle {
             SmallButton {objectName:"newGlobalAgentButton";visible:!root.selected;text:"＋ 创建";primary:true;onClicked:root.form("")}
             SmallButton {visible:!!root.selected;text:"设置";onClicked:root.form(root.selected)}
         }
-        RowLayout {
-            visible:!root.selected;spacing:8
+        Flow {
+            visible:!root.selected;spacing:8;Layout.fillWidth:true;Layout.preferredHeight:childrenRect.height
             SmallButton {objectName:"globalSubagentsTabButton";text:"子智能体  "+root.state.agents.length;primary:root.section==="agents";onClicked:root.section="agents"}
             SmallButton {objectName:"agentBusTabButton";text:"智能体总线";primary:root.section==="bridge";onClicked:root.section="bridge"}
             SmallButton {objectName:"agentBusRequestsTabButton";text:"请求";primary:root.section==="requests";onClicked:root.section="requests"}
+            SmallButton {objectName:"taskRoutingTabButton";text:"任务入口";primary:root.section==="tasks";onClicked:root.section="tasks"}
         }
         CompactCheckBox {objectName:"allowAutomaticGlobalCreation";visible:!root.selected && root.section==="agents";text:"允许自动被创建";checked:!!root.state.allowAutomaticCreation;onToggled:root.call("setAutomaticCreation",{enabled:checked})}
         LabelText {visible:!!root.error || !!root.state.error;text:root.error || root.state.error || "";color:root.c.danger;wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true}
         StackLayout {
             Layout.fillWidth:true;Layout.fillHeight:true
-            currentIndex:root.selected?3:root.section==="agents"?0:root.section==="bridge"?1:2
+            currentIndex:root.selected?3:root.section==="agents"?0:root.section==="bridge"?1:root.section==="tasks"?4:2
             Item {
                 ColumnLayout {anchors.centerIn:parent;spacing:12;visible:!root.state.agents.length
                     LabelText {text:"暂无全局子智能体";color:root.c.muted;Layout.alignment:Qt.AlignHCenter}
@@ -398,6 +399,7 @@ Rectangle {
                     SmallButton {objectName:"sendGlobalAgentButton";text:root.current.busy?"引导":"发送";primary:true;enabled:!!input.text.trim();onClicked:root.send()}
                 }
             }
+            TaskRouting {sdk:root.sdk;roster:root.state}
         }
     }
     Dialog {

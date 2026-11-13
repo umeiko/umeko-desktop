@@ -105,6 +105,8 @@
     "agent_bus.set_connection": {"target":"global-agents","args":[["sessionId","string"],["enabled","boolean"]]},
     "agent_bus.overview": {"target":"global-agents","read":true,"args":[]},
     "agent_bus.requests": {"target":"global-agents","read":true,"args":[]},
+    "agent_bus.routes": {"target":"global-agents","read":true,"args":[]},
+    "agent_bus.route": {"target":"global-agents","args":[["routeId","string"],["decision","string"],["reason","string"],["taskId","string",""],["targetId","string",""]]},
     "agent_bus.dispatch": {"target":"global-agents","args":[["targetId","string"],["text","string"]]},
     "agent_bus.reply": {"target":"global-agents","args":[["requestId","string"],["result","string"],["status","string","completed"]]}
   }

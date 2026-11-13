@@ -104,7 +104,7 @@ class TaskStore:
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version == 0:
                 db.executescript("BEGIN IMMEDIATE;\n" + SCHEMA + "\nPRAGMA user_version = 1;\nCOMMIT;")
-            elif version not in (1, 2):
+            elif version not in (1, 2, 3):
                 raise sqlite3.DatabaseError("Unsupported task record schema")
             if version < 2:
                 # Historical rows stay undated. Never infer observation time from migration.
@@ -112,6 +112,17 @@ class TaskStore:
                 db.execute("ALTER TABLE steps ADD COLUMN updated TEXT")
                 db.execute("ALTER TABLE files ADD COLUMN observed TEXT")
                 db.execute("PRAGMA user_version = 2")
+            if version < 3:
+                db.execute('''CREATE TABLE task_routes (
+                    id TEXT PRIMARY KEY, request_key TEXT NOT NULL UNIQUE,
+                    task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+                    coordinator TEXT NOT NULL, status TEXT NOT NULL, updated TEXT NOT NULL, data TEXT NOT NULL)''')
+                db.execute('CREATE INDEX task_route_history ON task_routes(task_id, updated DESC)')
+                db.execute('CREATE INDEX coordinator_routes ON task_routes(coordinator, status)')
+                db.execute("""CREATE INDEX active_task_routes ON task_routes(task_id,coordinator)
+                    WHERE status = 'routing' OR status = 'accepted'
+                    AND json_extract(data,'$.execution') IN ('queued','sending','running')""")
+                db.execute('PRAGMA user_version = 3')
 
     @contextmanager
     def connection(self):
@@ -131,7 +142,9 @@ class TaskStore:
         with self.connection() as db:
             return [dict(row) for row in db.execute("""
                 SELECT tasks.*, COALESCE(CASE WHEN attempts.accepted IS NOT NULL THEN 'accepted'
-                    ELSE attempts.state END, 'draft') AS state
+                    ELSE attempts.state END, CASE WHEN EXISTS (
+                    SELECT 1 FROM task_routes WHERE task_id = tasks.id AND status = 'accepted')
+                    THEN 'routed' ELSE 'draft' END) AS state
                 FROM tasks LEFT JOIN attempts ON attempts.id = (
                     SELECT id FROM attempts WHERE task_id = tasks.id ORDER BY id DESC LIMIT 1
                 ) ORDER BY tasks.updated DESC, tasks.id LIMIT ? OFFSET ?
@@ -148,6 +161,9 @@ class TaskStore:
                 "SELECT * FROM attempts WHERE task_id = ? ORDER BY id DESC LIMIT ? OFFSET ?", (task_id, limit, offset))]
 
     def running(self, task_id):
+        return self.chat_running(task_id) or bool(self.routes(task_id=task_id, active=True, limit=1))
+
+    def chat_running(self, task_id):
         with self.connection() as db:
             return db.execute("SELECT 1 FROM attempts WHERE task_id = ? AND state = 'running'", (task_id,)).fetchone() is not None
 
@@ -200,6 +216,67 @@ class TaskStore:
         with self.connection() as db:
             db.execute("UPDATE tasks SET updated = ? WHERE id IN (SELECT task_id FROM attempts WHERE state = 'running')", (now,))
             db.execute("UPDATE attempts SET state = 'pending', reason = ?, ended = ? WHERE state = 'running'", (reason, now))
+            for saved in db.execute("""SELECT data FROM task_routes WHERE status = 'routing' OR
+                    status = 'accepted' AND json_extract(data,'$.execution') IN ('queued','sending','running')""").fetchall():
+                row = json.loads(saved[0])
+                if row['status'] == 'routing':
+                    row.update(status='interrupted', reason=reason + '；未自动重新路由')
+                elif row['execution'] in ('queued', 'sending', 'running'):
+                    row.update(execution='interrupted', result=reason + '；请检查执行会话，未自动重发')
+                else:
+                    continue
+                self._save_route(db, row)
+
+    def route(self, identifier='', *, request_key=''):
+        with self.connection() as db:
+            row = db.execute('SELECT data FROM task_routes WHERE ' +
+                             ('request_key = ?' if request_key else 'id = ?'),
+                             (request_key or identifier,)).fetchone()
+            return json.loads(row[0]) if row else None
+
+    def routes(self, *, task_id='', coordinator='', active=False, offset=0, limit=50):
+        clauses, values = [], []
+        for name, value in (('task_id', task_id), ('coordinator', coordinator)):
+            if value:
+                clauses.append(name + ' = ?')
+                values.append(value)
+        if active:
+            clauses.append("(status = 'routing' OR status = 'accepted' AND json_extract(data,'$.execution') IN ('queued','sending','running'))")
+        where = ' WHERE ' + ' AND '.join(clauses) if clauses else ''
+        with self.connection() as db:
+            return [json.loads(row[0]) for row in db.execute(
+                'SELECT data FROM task_routes' + where + ' ORDER BY updated DESC,id LIMIT ? OFFSET ?',
+                (*values, limit, offset))]
+
+    @staticmethod
+    def _save_route(db, row):
+        row['updated'] = timestamp()
+        task_id = row.get('taskId') or None
+        if task_id and not db.execute('SELECT 1 FROM tasks WHERE id = ?', (task_id,)).fetchone():
+            task_id = None  # Retain the historical ID in JSON for durable deduplication.
+        db.execute('''INSERT INTO task_routes VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET task_id=excluded.task_id,status=excluded.status,
+            updated=excluded.updated,data=excluded.data''', (row['id'], row['requestKey'], task_id,
+            row['coordinator'], row['status'], row['updated'], json.dumps(row, ensure_ascii=False)))
+        if task_id:
+            db.execute('UPDATE tasks SET updated = ? WHERE id = ?', (row['updated'], task_id))
+
+    def save_route(self, row):
+        with self.connection() as db:
+            self._save_route(db, row)
+
+    def accept_route(self, row, task_id=''):
+        with self.connection() as db:
+            if not task_id:
+                task_id, now = uuid.uuid4().hex, timestamp()
+                db.execute('INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?)',
+                           (task_id, row['objective'], row['scope'], row['cwd'], now, now))
+            row.update(taskId=task_id, status='accepted', execution='queued')
+            self._save_route(db, row)
+
+    def revise_scope(self, task_id, scope):
+        with self.connection() as db:
+            db.execute('UPDATE tasks SET scope = ?,updated = ? WHERE id = ?', (scope, timestamp(), task_id))
 
     def begin(self, task_id, cwd, session_id, session_file, inputs):
         now = timestamp()
@@ -293,6 +370,8 @@ class TaskStore:
                 self._touch(db, attempt_id, now)
 
     def delete(self, task_id):
+        if self.routes(task_id=task_id, active=True, limit=1):
+            return False
         with self.connection() as db:
             return bool(db.execute("""
                 DELETE FROM tasks WHERE id = ? AND NOT EXISTS (
