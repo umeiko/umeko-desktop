@@ -2,7 +2,9 @@
 
 这一部分由内嵌 Pi 运行，配置针对 Umeko 当前加载的 Pi 实例。`run_pi_command` 用于原生 Pi 扩展命令；`umeko_desktop` 提供桌面 UI 对应入口。始终使用当前实例的这两个工具，而不是系统 PATH 里的另一份 `pi`；添加供应商见 [供应商文档](providers.md)。
 
-`status.get` 查看当前扩展列表、后台管理状态和 npm 配置。`extensions.scan` 重新扫描；`extensions.enable` 传扫描结果的 `id`、`enabled`；`extensions.install` 的 `source` 接受 UI 支持的 npm/Git/本地扩展来源，`project` 指定项目范围（默认 false）。`extensions.refresh` 应用并重载，使用中的任务结束后执行。
+`status.get` 查看当前扩展列表、后台管理状态和 npm 配置。`extensions.scan` 重新扫描；`extensions.enable` 传扫描结果的 `id`、`enabled`。`extensions.refresh` 应用并重载，使用中的任务结束后执行。
+
+安装扩展时，Agent 使用当前实例的 `run_pi_command`，例如 `{"command":"pi install npm:some-pi-package","scope":"project"}`；`scope` 可为 `project` 或 `global`，沿用原生安装权限和恢复模式限制。`extensions.install` 仅供用户确认后的 Widget 私有宿主入口使用，模型通过 `umeko_desktop` 直接调用会被拒绝；在 `arguments` 中填写确认标记也不会取得该权限。不要把 `widgets.call` 当作安装确认的替代入口。返回排队重载时，仍需等待实际完成回执。
 
 所有列出的扩展（包括 Umeko 内置扩展）都可调整启用范围。`extensions.activation` 传 `id` 和 `mode`：`global` 为全局启用，`session` 仅在当前聊天启用，`disabled` 仅在当前聊天停用。聊天覆盖不会改写 Pi 的全局或项目设置；内置扩展也会遵守原生 `extensions` 过滤规则。Pi 原生文件与命令工具的可见性可在插件管理中逐项调整。
 
