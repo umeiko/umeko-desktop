@@ -111,6 +111,8 @@ class GlobalAgents(QObject):
         self.outbox.clear(); self.save()
     def close(self): self.stop(); self.save_timer.stop(); self.chat_refresh.stop(); self.presentation.close()
     def changed(self, persist=True):
+        notify = getattr(self.m, 'scheduled_targets_changed', None)
+        if notify:notify()
         self._revision += 1
         if self.selected_conversation and not self.chat_refresh.isActive(): self.chat_refresh.start()
         if persist and not self.save_timer.isActive(): self.save_timer.start()

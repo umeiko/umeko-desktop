@@ -3,6 +3,7 @@ from collections import OrderedDict
 import re
 import time
 import weakref
+from PySide6.QtCore import QTimeZone
 
 
 class ScheduledTaskHost:
@@ -34,9 +35,16 @@ class ScheduledTaskHost:
                      for key, value in bus.agents.items() if bus.allowed(record, 'agent:' + key)]
         return rows
 
+    def metadata(self, record=None):
+        return {'targets': self.targets(record) if record else [],
+                'global_targets': [{'id': 'agent:' + key, 'name': row['name']} for key, row in self.m.global_agents.agents.items()],
+                'time_zone': bytes(QTimeZone.systemTimeZoneId()).decode() or 'UTC'}
+
     def capture(self, source):
         record = self.record(source)
-        return {**source, 'id': record.id, 'token': record.key, 'timerTargets': self.targets(record)}
+        info = self.metadata(record)
+        return {**source, 'id': record.id, 'token': record.key, 'timerTargets': info['targets'],
+                'timerGlobalTargets': info['global_targets'], 'timerTimeZone': info['time_zone']}
 
     @staticmethod
     def identity(record):
@@ -48,7 +56,7 @@ class ScheduledTaskHost:
         caller = self.record(request['session'])
         operation, args = request['operation'], request['arguments']
         if operation == 'scheduledTasks.targets' and not args:
-            return {'targets': self.targets(caller)}
+            return self.metadata(caller)
         if operation == 'scheduledTasks.status' and set(args) == {'run_ids'}:
             ids = args['run_ids']
             if not isinstance(ids, list) or len(ids) > 32 or any(not isinstance(key, str) for key in ids):

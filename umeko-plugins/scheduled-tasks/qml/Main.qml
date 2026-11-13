@@ -18,6 +18,13 @@ Rectangle {
     property var tasks: []
     property var runs: []
     property var targets: []
+    property string systemZone: ""
+    readonly property var targetOptions: {
+        const rows = targets.slice()
+        if (selected && selected.global && !rows.some(row => row.id === selected.target))
+            rows.push({id:selected.target, name:selected.target_missing ? tr("无", "None") : selected.target_name})
+        return rows
+    }
     property var selected: null
     property var selectedRun: null
     property string page: "list"
@@ -55,10 +62,11 @@ Rectangle {
         taskName.text = task ? task.name : ""
         message.text = task ? task.message : ""
         frequency.currentIndex = task ? Math.max(0, frequencies.indexOf(task.schedule.frequency)) : 0
-        dateField.text = task && task.schedule.frequency !== "interval" ? task.schedule.first_date : new Date().toISOString().slice(0, 10)
-        timeField.text = task && task.schedule.frequency !== "interval" ? task.schedule.local_time : new Date().toISOString().slice(11, 16)
-        zoneField.text = task ? task.schedule.zone : "UTC"
-        targetBox.currentIndex = task ? targets.findIndex(p => p.id === task.target) : 0
+        const now = new Date()
+        dateField.text = task && task.schedule.frequency !== "interval" ? task.schedule.first_date : Qt.formatDateTime(now, "yyyy-MM-dd")
+        timeField.text = task && task.schedule.frequency !== "interval" ? task.schedule.local_time : Qt.formatDateTime(now, "HH:mm")
+        zoneField.text = task ? task.schedule.zone : root.systemZone || "UTC"
+        targetBox.currentIndex = task ? targetOptions.findIndex(p => p.id === task.target) : 0
         intervalValue.text = task && task.schedule.frequency === "interval" ? String(task.schedule.interval_value) : "1"
         intervalUnit.currentIndex = task && task.schedule.frequency === "interval" ? units.indexOf(task.schedule.interval_unit) : 1
         enabledField.checked = task ? !!task.enabled : false
@@ -80,6 +88,7 @@ Rectangle {
             root.pending = ""
             if (!value.ok) { root.error = value.error; root.requestTargets(); return }
             if (root.operation === "list") {
+                if (value.result.time_zone) root.systemZone = value.result.time_zone
                 if (JSON.stringify(root.tasks) !== JSON.stringify(value.result.tasks)) root.tasks = value.result.tasks
             } else if (root.operation === "history") {
                 if (JSON.stringify(root.runs) !== JSON.stringify(value.result.runs)) root.runs = value.result.runs
@@ -96,9 +105,10 @@ Rectangle {
             root.hostRequest = ""
             if (!value.ok) { root.error = value.error; return }
             if (value.result.targets) {
-                const previous = root.targets[targetBox.currentIndex]
+                const previous = root.targetOptions[targetBox.currentIndex]
                 root.targets = value.result.targets
-                targetBox.currentIndex = previous ? root.targets.findIndex(p => p.id === previous.id) : root.selected ? root.targets.findIndex(p => p.id === root.selected.target) : 0
+                if (value.result.time_zone) root.systemZone = value.result.time_zone
+                targetBox.currentIndex = previous ? root.targetOptions.findIndex(p => p.id === previous.id) : root.selected ? root.targetOptions.findIndex(p => p.id === root.selected.target) : 0
             }
         }
     }
@@ -136,8 +146,8 @@ Rectangle {
                 objectName: "scheduledNewOrBack"
                 text: root.page === "list" ? root.tr("新建任务", "New task") : root.tr("返回", "Back")
                 primary: root.page === "list"; quiet: root.page !== "list"
-                enabled: root.readyForInteraction && !root.pending && (root.page !== "list" || root.tasks.length < 5)
-                hint: root.page === "list" && root.tasks.length >= 5 ? root.tr("本会话最多 5 个定时器，请先删除一个。", "Maximum 5 timers in this conversation. Delete one first.") : ""
+                enabled: root.readyForInteraction && !root.pending && !root.hostRequest && (root.page !== "list" || root.tasks.length < 5)
+                hint: root.page === "list" && root.tasks.length >= 5 ? root.tr("最多 5 个定时器（含全局），请先删除一个。", "Maximum 5 timers, including global timers. Delete one first.") : ""
                 onClicked: {
                     if (root.page === "list") root.edit(null)
                     else { root.error = ""; root.page = "list"; root.call("list") }
@@ -146,7 +156,7 @@ Rectangle {
         }
         ScheduleLabel {
             Layout.fillWidth: true; Layout.minimumWidth: 0; visible: root.page === "list"; color: root.c.muted
-            text: root.tr("本会话 ", "This conversation: ") + root.tasks.length + "/5 · " + root.tr("到点发送给选定 Agent，Umeko 需保持运行。", "Sends to the selected Agent. Keep Umeko running.")
+            text: root.tr("本会话（含全局） ", "This conversation (incl. global): ") + root.tasks.length + "/5 · " + root.tr("到点发送给选定 Agent，Umeko 需保持运行。", "Sends to the selected Agent. Keep Umeko running.")
         }
         Rectangle {
             Layout.fillWidth: true; Layout.minimumWidth: 0; implicitHeight: notice.implicitHeight + 20; radius: 8
@@ -180,15 +190,23 @@ Rectangle {
                                 width: 8; height: 20; radius: 4
                                 color: root.taskColors[modelData.color_index % root.taskColors.length]
                             }
+                            Umeko.Glyph {
+                                objectName: "scheduledTaskGlobal_" + modelData.id
+                                name: "globe"; visible: !!modelData.global
+                                width: Umeko.Theme.icon(16); height: width; color: root.c.accent
+                                Accessible.name: root.tr("全局计时器", "Global timer")
+                                HoverHandler { id: globalHover }
+                                Umeko.HoverTip { active: globalHover.hovered; text: root.tr("全局计时器", "Global timer") }
+                            }
                             ScheduleLabel { Layout.fillWidth: true; Layout.minimumWidth: 0; text: modelData.name; font.pixelSize: Umeko.Theme.font(13); font.weight: Font.DemiBold; wrapMode: Text.NoWrap; elide: Text.ElideRight }
                             Umeko.Toggle {
                                 objectName: "scheduledTaskToggle_" + modelData.id
-                                checked: !!modelData.enabled; enabled: root.readyForInteraction && !root.pending
+                                checked: !!modelData.enabled; enabled: root.readyForInteraction && !root.pending && !modelData.target_missing
                                 Accessible.name: modelData.name + " · " + root.tr("启用计划", "Enable schedule")
                                 onToggled: root.call("set_enabled", {task_id: modelData.id, enabled: checked})
                             }
                         }
-                        ScheduleLabel { Layout.fillWidth: true; Layout.minimumWidth: 0; text: root.frequencyLabel(modelData) + " · " + (modelData.enabled ? root.tr("下次运行 ", "Next run ") + modelData.next_label : root.tr("未启用", "Inactive")); color: root.c.muted }
+                        ScheduleLabel { objectName: "scheduledTaskNext_" + modelData.id; Layout.fillWidth: true; Layout.minimumWidth: 0; text: root.frequencyLabel(modelData) + " · " + (modelData.enabled ? root.tr("下次运行 ", "Next run ") + root.stamp(modelData.next_at) : root.tr("未启用", "Inactive")); color: root.c.muted }
                         ScheduleLabel {
                             objectName: "scheduledTaskModelSlot_" + modelData.id
                             Layout.fillWidth: true; Layout.minimumWidth: 0
@@ -199,7 +217,7 @@ Rectangle {
                         ScheduleLabel { Layout.fillWidth: true; Layout.minimumWidth: 0; text: modelData.message; maximumLineCount: 2; elide: Text.ElideRight; color: root.c.muted }
                         RowLayout {
                             Layout.fillWidth: true
-                            ScheduleLabel { Layout.fillWidth: true; Layout.minimumWidth: 0; text: modelData.target === "main" ? root.tr("本会话主 Agent", "This conversation’s main Agent") : modelData.target_name; color: root.c.muted; font.pixelSize: Umeko.Theme.font(10); wrapMode: Text.NoWrap; elide: Text.ElideMiddle }
+                            ScheduleLabel { objectName: "scheduledTaskTargetName_" + modelData.id; Layout.fillWidth: true; Layout.minimumWidth: 0; text: modelData.target_missing ? root.tr("无", "None") : modelData.target === "main" ? root.tr("本会话主 Agent", "This conversation’s main Agent") : modelData.target_name; color: root.c.muted; font.pixelSize: Umeko.Theme.font(10); wrapMode: Text.NoWrap; elide: Text.ElideMiddle }
                             Umeko.ActionButton { objectName: "scheduledTaskEdit_" + modelData.id; text: root.tr("编辑", "Edit"); quiet: true; glyph: "edit"; enabled: root.readyForInteraction && !root.pending; onClicked: root.edit(modelData) }
                             Umeko.ActionButton { objectName: "scheduledTaskHistory_" + modelData.id; text: root.tr("运行记录", "Runs"); quiet: true; enabled: root.readyForInteraction && !root.pending; onClicked: root.history(modelData) }
                         }
@@ -236,7 +254,7 @@ Rectangle {
                             }
                         }
                         ScheduleLabel { text: root.tr("触发对象", "Send to") }
-                        Umeko.Picker { id: targetBox; objectName: "scheduledTaskTarget"; Layout.fillWidth: true; Layout.minimumWidth: 0; model: root.targets.map(p => p.id === "main" ? root.tr("本会话主 Agent", "This conversation’s main Agent") : p.name); font.family: Umeko.Theme.fontFamily }
+                        Umeko.Picker { id: targetBox; objectName: "scheduledTaskTarget"; Layout.fillWidth: true; Layout.minimumWidth: 0; model: root.targetOptions.map(p => p.id === "main" ? root.tr("本会话主 Agent", "This conversation’s main Agent") : p.name); font.family: Umeko.Theme.fontFamily }
                         ScheduleLabel {
                             Layout.fillWidth: true; Layout.minimumWidth: 0; color: root.c.muted; font.pixelSize: Umeko.Theme.font(10)
                             text: root.tr("沿用目标的模型与权限；仅显示本会话已关联的全局智能体。", "Uses the target’s model and permissions. Only connected global Agents are listed.")
@@ -287,7 +305,7 @@ Rectangle {
                         onClicked: {
                             root.error = ""
                             root.call("save", {task_id: root.selected ? root.selected.id : null, name: taskName.text,
-                                message: message.text, target: root.targets[targetBox.currentIndex].id,
+                                message: message.text, target: root.targetOptions[targetBox.currentIndex].id,
                                 schedule: frequency.currentIndex === 0 ? {frequency: "once", first_date: dateField.text.trim(), local_time: timeField.text.trim(), zone: zoneField.text.trim()} : {frequency: "interval", interval_value: intervalValue.text.trim(), interval_unit: root.units[intervalUnit.currentIndex]},
                                 enabled: enabledField.checked})
                         }
@@ -302,7 +320,7 @@ Rectangle {
                     ScheduleLabel { Layout.fillWidth: true; Layout.minimumWidth: 0; text: root.tr("运行记录", "Run history"); color: root.c.muted }
                     Umeko.ActionButton {
                         objectName: "scheduledTaskRunNow"; text: root.tr("立即运行", "Run now"); primary: true
-                        enabled: root.readyForInteraction && root.page === "history" && !root.pending && !root.runs.some(r => r.state === "running")
+                        enabled: root.readyForInteraction && root.page === "history" && !root.pending && !root.selected.target_missing && !root.runs.some(r => r.state === "running")
                         onClicked: { root.error = ""; root.call("run", {task_id: root.selected.id}) }
                     }
                 }
