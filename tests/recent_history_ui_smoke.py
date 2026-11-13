@@ -160,5 +160,7 @@ try:
 finally:
     if 'gate' in globals():
         gate.set()
+    import shiboken6
+    shiboken6.delete(engine)
     backend.close()
 

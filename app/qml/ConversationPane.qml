@@ -650,7 +650,7 @@ Item {
             }
         }
         header: Item {
-            objectName: "earlierHistoryLoading"
+            objectName: pane.current ? "earlierHistoryLoading" : ""
             width: conversation.width
             visible: !!pane.messageModel && pane.messageModel.partialHistory
             height: visible ? 48 : 0
@@ -667,7 +667,8 @@ Item {
             height: turnStatus.visible ? turnStatus.implicitHeight + 20 : 0
             TaskStatus {
                 id: turnStatus
-                objectName: "turnStatus"
+                // Named only on the pane in use; a held pane shows the previous chat.
+                objectName: pane.current ? "turnStatus" : ""
                 x: 33
                 y: 8
                 status: pane.turnStatus
