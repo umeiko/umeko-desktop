@@ -21,6 +21,10 @@ ApplicationWindow {
     color: Theme.bg
     flags: Qt.Window | Qt.FramelessWindowHint
     property string page: "chat"
+    readonly property var settingsPage: settingsLoader.item
+    property bool settingsPreload: false
+    Timer { id: settingsPreloadTimer; interval: 800; onTriggered: window.settingsPreload = true }
+    onFrameSwapped: if (!settingsPreload && !settingsPreloadTimer.running) settingsPreloadTimer.start()
     property bool searchVisible: false
     property bool searchFocusPending: false
     property int searchHighlightRow: -1
@@ -94,7 +98,8 @@ ApplicationWindow {
         if (token !== sidebarToken) return
         pendingSidebarId = ""
         if (!ok) { window.notification = I18n.t("暂时无法打开所选聊天，请重试"); toastTimer.restart() }
-        chatCover.contentReady()
+        // A retained conversation was never covered; it appears directly.
+        if (chatCover.loading) chatCover.contentReady()
     }
     // Read off-thread and show lightweight row placeholders immediately.
     // Render-thread motion is independent of this GUI-thread handoff.
@@ -473,7 +478,7 @@ ApplicationWindow {
             Item {
                 id: welcome; width: Math.min(parent.width - 70, 620); height: welcomeMascot.height + 60
                 x: composer.x + (composer.width - width) / 2; anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: -119
-                visible: backend.messageCount === 0
+                visible: conversationHost.revealPending ? conversationHost.heldWelcome : backend.messageCount === 0
                 WelcomeMascot { id: welcomeMascot; anchors.horizontalCenter: parent.horizontalCenter; portraitIndex: backend.portrait }
                 Connections { target: backend; function onViewChanged() { welcomeMascot.reset() } }
                 Text { font.family: Theme.fontFamily; objectName: "welcomeGreeting"; anchors.horizontalCenter: parent.horizontalCenter; y: welcomeMascot.height + 21; width: parent.width; text: welcomeMascot.reactionText || welcomeMascot.rareGreeting || Character.greeting(I18n.t(backend.greeting), welcomeMascot.portraitIndex); color: Theme.yanami ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(14, visible); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; lineHeight: 1.35 }
@@ -485,6 +490,12 @@ ApplicationWindow {
                 property var panes: ({})
                 property var currentPane: null
                 property int retainedCount: 0
+                // The previous pane (or the welcome page) stays visible until the
+                // newly activated pane has positioned its first screen.
+                property var heldPane: null
+                property bool heldWelcome: false
+                property int revealFrames: 0
+                readonly property bool revealPending: !!currentPane && currentPane.concealed
                 x: chatWidth.conversationLeft
                 Binding on width {
                     value: chatPage.width - chatWidth.conversationLeft - chatWidth.conversationRight
@@ -492,9 +503,30 @@ ApplicationWindow {
                     restoreMode: Binding.RestoreNone
                 }
                 anchors.top: parent.top; anchors.topMargin: 20; anchors.bottom: composer.top; anchors.bottomMargin: 24
-                function deactivate() { if (currentPane) currentPane.deactivate() }
+                property bool welcomeShown: true
+                function deactivate() {
+                    welcomeShown = welcome.visible
+                    if (!currentPane) return
+                    // Keep the outgoing pane drawn without a gap, so its text
+                    // and code colours stay exactly as they were.
+                    if (!welcomeShown) currentPane.holding = true
+                    currentPane.deactivate()
+                }
+                function release() {
+                    if (heldPane) heldPane.holding = false
+                    heldPane = null
+                    heldWelcome = false
+                }
+                function reveal() {
+                    if (currentPane) {
+                        currentPane.view.forceLayout()
+                        currentPane.concealed = false
+                    }
+                    release()
+                }
                 function activate() {
                     const key = backend.conversationToken
+                    const previous = currentPane
                     let pane = panes[key]
                     if (!pane) {
                         pane = conversationComponent.createObject(conversationHost, {viewKey:key, messageModel:backend.messageModel})
@@ -502,12 +534,30 @@ ApplicationWindow {
                         panes[key] = pane
                         retainedCount = Object.keys(panes).length
                     }
+                    if (heldPane && heldPane !== previous) heldPane.holding = false
+                    heldPane = null
+                    if (previous && previous !== pane && previous.holding) heldPane = previous
+                    else if (previous) previous.holding = false
+                    pane.holding = false
+                    heldWelcome = welcomeShown && previous !== pane
                     currentPane = pane
+                    revealFrames = 0
+                    pane.concealed = previous !== pane
                     pane.activate()
+                }
+                FrameAnimation {
+                    running: conversationHost.revealPending
+                    onTriggered: {
+                        conversationHost.revealFrames++
+                        const view = conversationHost.currentPane.view
+                        if (conversationHost.revealFrames >= 2 && (!view.restoring || view.restoreAttempts >= 200))
+                            conversationHost.reveal()
+                    }
                 }
                 function evict(key) {
                     const pane = panes[key]
                     if (!pane) return
+                    if (heldPane === pane) release()
                     if (currentPane === pane) currentPane = null
                     delete panes[key]
                     retainedCount = Object.keys(panes).length
@@ -568,6 +618,7 @@ ApplicationWindow {
             ChatFileDrop { id: chatDrop; anchors.fill: parent; z: 70; enabled: !chatCover.visible; chatWindow: window }
             ChatLoadingOverlay {
                 id: chatCover; anchors.fill: parent; z: 50; view: conversation
+                contentHeld: conversationHost.revealPending
                 onRevealed: if (window.page === "chat") composer.focusInput()
             }
             Row { id: footerActions; x: composer.x + (composer.width - width) / 2; anchors.bottom: parent.bottom; anchors.bottomMargin: 13; spacing: 8
@@ -632,14 +683,23 @@ ApplicationWindow {
             Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 2; height: parent.height; color: parent.containsMouse || parent.pressed ? Theme.accent : "transparent"; opacity: 0.5 }
         }
 
-        SettingsPage {
-            id: settingsPage
-            objectName: "settingsPage"
+        // Settings are built after the first frame, in idle frame time. Opening
+        // them before that finishes completes the remaining work at once.
+        Loader {
+            id: settingsLoader
+            objectName: "settingsPageLoader"
             anchors.top: header.bottom; anchors.bottom: parent.bottom; width: parent.width
-            visible: window.page === "settings"
-            tab: window.settingsTab
-            onTabSelected: value => window.settingsTab = value
-            onBack: window.page = "chat"
+            active: window.settingsPreload || window.page === "settings"
+            asynchronous: window.page !== "settings"
+            sourceComponent: Component {
+                SettingsPage {
+                    objectName: "settingsPage"
+                    visible: window.page === "settings"
+                    tab: window.settingsTab
+                    onTabSelected: value => window.settingsTab = value
+                    onBack: window.page = "chat"
+                }
+            }
         }
     }
 

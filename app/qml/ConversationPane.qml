@@ -26,7 +26,12 @@ Item {
     property var turnStatus: ({})
     property alias view: conversation
     property alias selection: chatSelection
-    visible: current
+    // While a newly activated pane positions its rows it stays transparent
+    // and the previous pane remains on screen (holding) until the swap.
+    property bool holding: false
+    property bool concealed: false
+    visible: current || holding
+    opacity: concealed ? 0 : 1
     enabled: current
     function refreshState() {
         if (!current)
@@ -427,8 +432,14 @@ Item {
         }
         onContentHeightChanged: {
             scheduleRange();
-            if (pane.current && followTail && !restoring)
+            if (pane.current && followTail && !restoring) {
+                // Rows above the tail settle their heights in the background.
+                // Re-pin the tail in the same frame, so the latest message
+                // never draws one frame away from the bottom.
+                if (!anchoring && !pane.concealed)
+                    positionViewAtEnd();
                 tailTimer.restart();
+            }
         }
         onCountChanged: {
             scheduleRange();

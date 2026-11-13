@@ -188,6 +188,8 @@ class CharactersMixin:
         self._refresh_characters()
 
     def _refresh_characters(self):
+        # Every catalog change passes through here; bindings read the cached rows.
+        self._character_catalog_rows = {}
         self._character_record = next((row for row in self._character_packs() if row['id'] == self.store.data.get('character','yanami')), DEFAULT)
         configuration = merge_configuration(CONFIG_DEFAULTS, self._character_record.get('_configuration',{}))
         legacy = self._character_record.get('lines',{})
@@ -232,6 +234,12 @@ class CharactersMixin:
         return rows
 
     def _characterPacks(self, subagents=False):
+        cache = self.__dict__.setdefault('_character_catalog_rows', {})
+        if subagents not in cache:
+            cache[subagents] = self._read_character_catalog(subagents)
+        return copy.deepcopy(cache[subagents])
+
+    def _read_character_catalog(self, subagents):
         rows = []
         for item in self._character_packs(subagents):
             row = {key: item[key] for key in ('id', 'name', 'builtin')}

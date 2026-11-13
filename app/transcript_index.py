@@ -5,6 +5,7 @@ branch, and bounded display fragments. No live Qt objects enter the cache.
 """
 from __future__ import annotations
 
+import bisect
 import hashlib
 import io
 import json
@@ -292,14 +293,14 @@ class Snapshot:
             return dict(value) if value else {}
 
     def question(self, index):
-        with connect(self.database) as db:
-            value = db.execute('SELECT row,title FROM questions WHERE seq=?', (index + self.question_offset,)).fetchone()
-            return {'row':value['row'] - self.row_offset, 'title':value['title']} if value else {}
+        rows, titles = self.repository.questions(self.database, self.revision)
+        index += self.question_offset
+        return {'row':rows[index] - self.row_offset, 'title':titles[index]} if 0 <= index < len(rows) else {}
 
     def question_index(self, row):
-        with connect(self.database) as db:
-            value = db.execute('SELECT seq FROM questions WHERE row<=? ORDER BY row DESC LIMIT 1', (row + self.row_offset,)).fetchone()
-            return max(0, value[0] - self.question_offset) if value else 0
+        rows, _ = self.repository.questions(self.database, self.revision)
+        position = bisect.bisect_right(rows, row + self.row_offset) - 1
+        return max(0, position - self.question_offset) if position >= 0 else 0
 
     def contains(self, entry_id):
         with connect(self.database) as db:
@@ -378,6 +379,28 @@ class TranscriptRepository:
         self.directory.mkdir(parents=True, exist_ok=True)
         self.cache = WeightedLRU(cache_bytes)
         self._locks, self._lock = {}, threading.Lock()
+        self._questions = OrderedDict()
+
+    def questions(self, database, revision):
+        """Question rows and titles of one index revision, read in one query.
+
+        The question navigator asks for every visible title; one cached list
+        replaces a SQLite connection per delegate.
+        """
+        key = (database, revision)
+        with self._lock:
+            value = self._questions.get(key)
+            if value is not None:
+                self._questions.move_to_end(key)
+                return value
+        with connect(database) as db:
+            values = db.execute('SELECT row,title FROM questions ORDER BY seq').fetchall()
+        value = ([row['row'] for row in values], [row['title'] for row in values])
+        with self._lock:
+            self._questions[key] = value
+            while len(self._questions) > 8:
+                self._questions.popitem(last=False)
+        return value
 
     @staticmethod
     def large(file):
@@ -410,6 +433,9 @@ class TranscriptRepository:
             lock = self._locks.setdefault(key, threading.Lock())
         with lock:
             self.cache.discard(str(database))
+            with self._lock:
+                for key in [key for key in self._questions if key[0] == str(database)]:
+                    del self._questions[key]
             for suffix in ('', '-wal', '-shm'):
                 Path(str(database) + suffix).unlink(missing_ok=True)
 

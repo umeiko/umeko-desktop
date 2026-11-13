@@ -68,6 +68,16 @@ class CharacterTests(unittest.TestCase):
         self.assertEqual(len(notifications), 2)
         self.assertNotIn('test-character', {row['id'] for row in b.characterPacks})
 
+    def test_character_catalog_reads_files_once_until_it_changes(self):
+        b = self.backend
+        with patch.object(type(b), '_character_packs', wraps=b._character_packs) as read:
+            first = b.characterPacks
+            for _ in range(5):
+                self.assertEqual(b.characterPacks, first)
+            self.assertEqual(read.call_count, 1)
+        first[0]['name'] = 'changed by a caller'
+        self.assertNotEqual(b.characterPacks[0]['name'], 'changed by a caller')
+
     def test_import_persists_independent_assets_live_and_falls_back(self):
         b = self.backend
         self.assertEqual(b.characterStyle['id'],'yanami')

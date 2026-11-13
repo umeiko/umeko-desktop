@@ -243,6 +243,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._management_jobs = set()
         self._mcp_jobs = {}
         self._closing = False
+        self._transcript_warmup = None
         self._copy_request = 0
         self._selection_attachment = None
         self._selection_epoch = 0
@@ -2089,6 +2090,22 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         # UI index only. Native Pi JSONL is the sole transcript and tree store.
         self.store.save_sessions(self._sessions)
 
+    def _schedule_transcript_warmup(self):
+        if self._transcript_warmup is not None:
+            return
+        from . import transcript_warmup
+        self._transcript_warmup = 'scheduled'
+        QTimer.singleShot(transcript_warmup.WARM_DELAY_MS, self._start_transcript_warmup)
+
+    def _start_transcript_warmup(self):
+        from . import transcript_warmup
+        if self._closing:
+            return
+        files = transcript_warmup.recent_transcripts(self._sessions)
+        self._transcript_warmup = transcript_warmup.start(
+            self.transcripts, files, cancelled=lambda: self._closing,
+            paused=lambda: self._session_preview.reading)
+
     def loadNativeIndex(self):
         directory = self.store.directory / "pi/sessions"
         if not directory.is_dir():
@@ -2237,6 +2254,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 self.store.save()
                 self._save_session()
                 self.chatChanged.emit()
+            self._schedule_transcript_warmup()
         elif name == "check":
             self._kernel_busy = False
             if result["ok"]:
