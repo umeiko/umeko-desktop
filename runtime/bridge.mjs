@@ -56,7 +56,7 @@ const textOf = content => typeof content === "string" ? content : (content || []
 const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
 const compactionText = data => `已压缩：${data.before} → ${data.after} tokens`;
 let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe, closing = false;
-let trackingTask = false;
+let trackingTask = false, adoptedRun = false;
 
 function taskDelivery(source, id, items, failed = 0) {
   if (trackingTask) emit({ type: "task_delivery", source, id, items, failed });
@@ -200,6 +200,9 @@ async function bindSession(session) {
       if (runtime?.session === session) emit({type:"history_checkpoint", leafId:session.sessionManager.getLeafId()});
     });
     widgetMessages.observe(event);
+    // Pi can start a parent run without a desktop command, e.g. when a background
+    // subagent reports. Track it as a desktop action so busy/done stay truthful.
+    if (event.type === "agent_start") adoptAgentRun(session);
     if (event.type === "queue_update") {
       inputQueue.sync(event.steering, event.followUp);
     }
@@ -590,6 +593,11 @@ async function promptWithInterrupts(first) {
   });
 }
 
+function adoptAgentRun(session) {
+  if (executing || closing || runtime?.session !== session) return;
+  void execute({ type: "agent-run" });
+}
+
 async function execute(input) {
   if (input.type === "widget_catalog") {
     // A read-only side channel, including during a streaming turn. Never run
@@ -663,8 +671,16 @@ async function execute(input) {
     await runtime?.session.abort(); return;
   }
   if (input.type === "shutdown") { await shutdown(); return; }
+  if (executing && input.type === "prompt" && adoptedRun) {
+    // The desktop sent this before it saw agent_run; queue it like Enter does.
+    void inputQueue.submit({ type: "follow-up", text: input.text, images: input.images, messageId: input.messageId })
+      .catch(error => emit({ type: "queue_rejected", text: input.text || "", message: error.message }));
+    return;
+  }
   if (executing) { emit({ type: "error", message: "Pi 正在处理当前操作" }); return; }
   executing = true;
+  adoptedRun = input.type === "agent-run";
+  if (adoptedRun) emit({ type: "agent_run" });
   trackingTask = input.type === "prompt" && input.trackTask === true;
   try {
     if (validEffort(input.reasoningEffort)) reasoningEffort = input.reasoningEffort;
@@ -721,6 +737,7 @@ async function execute(input) {
     else if (input.type === "mcp-command") await runtime.session.prompt(input.text);
     else if (input.type === "export") emit({ type: "notice", message: "已导出到 " + runtime.session.exportToJsonl(input.path) });
     else if (input.type === "import") await runtime.importFromJsonl(input.path);
+    else if (input.type === "agent-run") while (!runtime.session.isIdle) await runtime.session.waitForIdle();
     do {
       await inputQueue.chain;
       if (inputQueue.hasInterrupts) await promptWithInterrupts(inputQueue.shiftInterrupt());
@@ -738,7 +755,9 @@ async function execute(input) {
     if (runtime && (inputQueue.items.length || inputQueue.hasInterrupts)) inputQueue.returnQueue();
     piCommands.clear();
     trackingTask = false;
-    executing = false; emit({ type: "done", action: input.type });
+    executing = false; adoptedRun = false; emit({ type: "done", action: input.type });
+    // A run Pi started while this action was finishing still needs tracking.
+    if (runtime && !closing && runtime.session.isStreaming) adoptAgentRun(runtime.session);
   }
 }
 
