@@ -62,6 +62,66 @@ class ScheduledTaskPluginTests(unittest.TestCase):
         self.context.request_session = original
         self.assertEqual(self.call('list', {})['tasks'][0]['id'], key)
 
+    def test_global_timer_shared_but_main_timer_private_and_source_preserved(self):
+        self.stop_scheduler()
+        target = 'agent:'+'a'*32
+        self.context.request_session['timerGlobalTargets'] = [{'id':target,'name':'Connected'}]
+        key = self.create(target=target)
+        private = self.create()
+        source = self.context.request_session
+        self.context.request_session = {**source, 'id':'two', 'token':'token-two', 'workspace':'/two',
+                                       'timerTargets':[{'id':'main','name':'Main'}]}
+        task, = self.call('list', {})['tasks']
+        self.assertEqual((task['id'], task['global'], task['target_missing'], task['target_name']), (key, True, False, 'Connected'))
+        self.plugin.handle('save', dict(task_id=key, name='Shared renamed', message='Keep origin', enabled=False,
+            target=target, schedule={'frequency':'interval','interval_value':1,'interval_unit':'hours'}))
+        updated, = self.call('list', {})['tasks']
+        self.assertEqual(updated['source']['id'], 'one')
+        self.assertEqual(updated['owner'], 'session:one')
+        self.call('enable', {'task_id':key})
+        with self.assertRaises(PluginError):self.call('delete', {'task_id':private})
+        self.plugin.on_event('scheduledTasks.targetsChanged', {'global_targets':[]})
+        self.context.request_session['timerGlobalTargets'] = []
+        missing, = self.call('list', {})['tasks']
+        self.assertEqual((missing['enabled'], missing['next_at'], missing['target_missing']), (0, None, True))
+        self.assertEqual(missing['target_name'], '无 / None')
+        for operation in ('enable','run'):
+            with self.subTest(operation=operation), self.assertRaises(PluginError):self.plugin.handle(operation, {'task_id':key})
+        self.call('delete', {'task_id':key})
+        self.assertEqual(self.call('list', {})['tasks'], [])
+
+    def test_rebinding_global_to_main_transfers_private_ownership_without_losing_history(self):
+        self.stop_scheduler()
+        key = self.create(target='agent:'+'a'*32)
+        run = self.plugin.store.claim_manual(key, self.plugin.now(), owner='session:one')
+        self.plugin.store.finish(run['id'], 'delivered', self.plugin.now())
+        source = self.context.request_session
+        self.context.request_session = {**source, 'id':'two','token':'token-two','workspace':'/two'}
+        self.plugin.handle('save', dict(task_id=key, name='Now private', message='Deliver here', target='main',
+            enabled=False, schedule={'frequency':'interval','interval_value':1,'interval_unit':'hours'}))
+        task, = self.call('list', {})['tasks']
+        self.assertFalse(task['global'])
+        self.assertEqual((task['owner'],task['source']['id']), ('session:two','two'))
+        self.assertEqual(self.call('history', {'task_id':key})['runs'][0]['snapshot']['target'], 'agent:'+'a'*32)
+        self.context.request_session = source
+        self.assertEqual(self.call('list', {})['tasks'], [])
+        with self.assertRaises(PluginError):self.call('history', {'task_id':key})
+
+    @unittest.skipUnless(hasattr(__import__('time'), 'tzset'), 'Process TZ requires tzset')
+    def test_next_label_uses_system_zone_instead_of_saved_schedule_zone(self):
+        import os, time
+        self.stop_scheduler()
+        self.plugin.handle('save', dict(name='Local display', message='Same instant', enabled=True,
+            schedule={'frequency':'once','first_date':'2030-01-01','local_time':'04:00','zone':'America/Los_Angeles'}))
+        try:
+            for zone, expected in (('Asia/Shanghai','2030-01-01 20:00:00'), ('America/New_York','2030-01-01 07:00:00')):
+                with patch.dict(os.environ, {'TZ':zone}):
+                    time.tzset()
+                    row, = self.call('list', {})['tasks']
+                    self.assertTrue(row['next_label'].startswith(expected), row['next_label'])
+                    self.assertEqual(row['schedule']['zone'], 'America/Los_Angeles')
+        finally:time.tzset()
+
     def test_connected_targets_only_and_all_short_intervals_rejected(self):
         self.create(target='agent:'+'a'*32)
         with self.assertRaisesRegex(PluginError, 'Agent Bus'):self.create(target='agent:'+'b'*32)

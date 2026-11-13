@@ -1,14 +1,21 @@
 """Persistent calendar and run history for the scheduled tasks Widget."""
 from __future__ import annotations
 
+from collections import Counter
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_HALF_UP
 import json
 import sqlite3
+import sys
+from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
+
+# Windows/standalone Python may have no system IANA database. Keep the pinned
+# fallback as an importable zip; avoid installation or extraction at startup.
+sys.path.append(str(Path(__file__).resolve().parents[1] / "vendor/tzdata-2026.6-py2.py3-none-any.whl"))
 
 
 @dataclass(frozen=True)
@@ -193,15 +200,14 @@ class ScheduledTasks:
                     if prior_schedule.frequency == 'once' and prior_schedule.next_after(now) is None:
                         task_id = previous['id']
                         break
-            if task_id is not None:self._task(db, task_id, owner)
-            elif db.execute('SELECT count(*) FROM schedules WHERE owner=?', (owner,)).fetchone()[0] >= 5:
-                raise ValueError('每个会话最多 5 个定时器（含停用项） / Maximum 5 timers per conversation, including disabled timers')
+            previous = self._task(db, task_id, owner) if task_id is not None else None
+            self._quota(db, owner, target, previous)
             task_id = task_id or uuid4().hex
             db.execute('''INSERT INTO schedules (id,name,message,profile,schedule,enabled,next_at,owner,source,target,model_oneshot)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET name=excluded.name, message=excluded.message,
                 profile=excluded.profile, schedule=excluded.schedule, enabled=excluded.enabled,
-                next_at=excluded.next_at, source=excluded.source, target=excluded.target,
+                next_at=excluded.next_at, owner=excluded.owner, source=excluded.source, target=excluded.target,
                 model_oneshot=excluded.model_oneshot''',
                 (task_id, name.strip(), message, profile, json.dumps(schedule.serialize()), enabled,
                  next_at, owner, json.dumps(source or {}), target, model_oneshot))
@@ -227,7 +233,7 @@ class ScheduledTasks:
         with closing(self._connect()) as db:
             # The insertion slot stays with the task when its name or schedule changes.
             rows = db.execute('SELECT *, rowid - 1 AS color_index FROM schedules' +
-                              (' WHERE owner=?' if owner is not None else '') + ' ORDER BY name, id',
+                              (" WHERE owner=? OR target LIKE 'agent:%'" if owner is not None else '') + ' ORDER BY name, id',
                               (owner,) if owner is not None else ()).fetchall()
         return [{**dict(row), 'schedule': json.loads(row['schedule']), 'source': json.loads(row['source'])} for row in rows]
 
@@ -304,9 +310,32 @@ class ScheduledTasks:
     @staticmethod
     def _task(db, task_id, owner=None):
         task = db.execute('SELECT * FROM schedules WHERE id=?', (task_id,)).fetchone()
-        if task is None or owner is not None and task['owner'] != owner:
+        if task is None or owner is not None and task['owner'] != owner and not task['target'].startswith('agent:'):
             raise KeyError(task_id)
         return task
+
+    @staticmethod
+    def _quota(db, owner, target, previous):
+        local, globals_count = Counter(), 0
+        for row in db.execute('SELECT owner, target FROM schedules'):
+            if row['target'].startswith('agent:'):globals_count += 1
+            else:local[row['owner']] += 1
+        owners = set(local) | {owner}
+        if previous:owners.add(previous['owner'])
+        for current in owners:
+            before = globals_count + local[current]
+            after = before + int(target.startswith('agent:') or current == owner)
+            if previous:after -= int(previous['target'].startswith('agent:') or previous['owner'] == current)
+            if after > 5 and after > before:
+                raise ValueError('每个会话最多 5 个定时器（含全局及停用项） / Maximum 5 timers per conversation, including global and disabled timers')
+
+    def reconcile_global_targets(self, targets):
+        """A missing global Agent pauses its timers; identity and history survive."""
+        with self._write() as db:
+            missing = [row['id'] for row in db.execute(
+                "SELECT id,target FROM schedules WHERE target LIKE 'agent:%' AND (enabled!=0 OR next_at IS NOT NULL OR model_oneshot!=0)")
+                if row['target'] not in targets]
+            db.executemany('UPDATE schedules SET enabled=0,next_at=NULL,model_oneshot=0 WHERE id=?', ((key,) for key in missing))
 
     @staticmethod
     def _active(db, task_id):

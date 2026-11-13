@@ -106,7 +106,7 @@ class DesktopPlugins(QObject):
     def enabled(self,identifier):
         if identifier not in self.entries:return False
         default = identifier not in ('task-records', 'system-prompt') and (not self.application(identifier)
-            or identifier in ('desktop-pet','global-agents') and self.entries[identifier].get('builtin',False))
+            or identifier in ('desktop-pet','global-agents','scheduled-tasks') and self.entries[identifier].get('builtin',False))
         return self.settings.get('enabled',{}).get(identifier,default)
     @Property(QObject,constant=True)
     def pet(self):return self._pet
@@ -208,6 +208,22 @@ class DesktopPlugins(QObject):
             data={**self.settings,'installed':{k:e for k,e in self.entries.items() if not e.get('builtin')}}
             temporary=self.registry.with_suffix('.tmp');temporary.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf-8');temporary.replace(self.registry);return True
         except OSError:self._status='插件设置保存失败';self.changed.emit();return False
+    def worker_session(self, identifier, source):
+        if identifier == 'scheduled-tasks' and self.entries[identifier].get('builtin'):
+            info = self._host_services.scheduled_service().metadata()
+            return {**source, 'timerGlobalTargets':info['global_targets'], 'timerTimeZone':info['time_zone']}
+        return source
+
+    def scheduled_targets_changed(self):
+        worker = self.workers.get('scheduled-tasks')
+        if not worker or not worker.get('ready'):return
+        info = self._host_services.scheduled_service().metadata()
+        signature = tuple((row['id'], row['name']) for row in info['global_targets'])
+        if signature == getattr(self, '_timer_targets_signature', None):return
+        self._timer_targets_signature = signature
+        self.send('scheduled-tasks', {'id':uuid.uuid4().hex, 'operation':'event',
+            'arguments':{'name':'scheduledTasks.targetsChanged', 'data':info}})
+
     def synchronize(self):
         if self.closed:return
         view=self.b._view
@@ -227,7 +243,7 @@ class DesktopPlugins(QObject):
         if value==self._session:return
         self._session=value;self.sessionChanged.emit()
         if switched:self.changed.emit()
-        for identifier in list(self.workers):self.send(identifier,{'id':uuid.uuid4().hex,'operation':'session','arguments':{'session':value}})
+        for identifier in list(self.workers):self.send(identifier,{'id':uuid.uuid4().hex,'operation':'session','arguments':{'session':self.worker_session(identifier,value)}})
         for identifier,e in self.entries.items():
             if self.enabled(identifier) and self.session_enabled(identifier) and (self.application(identifier) or not e.get('page')):self.start(identifier)
     @Slot(str,bool)
@@ -311,7 +327,7 @@ class DesktopPlugins(QObject):
         def initialize():
             e=self.entries[identifier];config=self.settings.get('config',{}).get(identifier,read(self.path(identifier)/e.get('config','config.json'),{}))
             state=self.root/'state'/identifier/('application' if application else hashlib.sha256(self.storage_key.encode()).hexdigest())
-            p.write(self.frame({'id':'initialize','operation':'initialize','arguments':{'path':str(self.path(identifier)),'stateDir':str(state),'config':config,'session':self._session,'hostCapabilities':self._host_services.capabilities,'runtimes':self._host_services.runtimes()}}))
+            p.write(self.frame({'id':'initialize','operation':'initialize','arguments':{'path':str(self.path(identifier)),'stateDir':str(state),'config':config,'session':self.worker_session(identifier,self._session),'hostCapabilities':self._host_services.capabilities,'runtimes':self._host_services.runtimes()}}))
         p.started.connect(initialize);p.readyReadStandardOutput.connect(lambda:self.receive(identifier,w));p.readyReadStandardError.connect(lambda:p.readAllStandardError())
         def failed(*_):
             if self.workers.get(identifier) is not w:return
@@ -441,6 +457,9 @@ class DesktopPlugins(QObject):
                     self.stop(identifier);self.pageChanged.emit();return
                 w['ready']=True;queue=w['queue'];w['queue']=[]
                 for item in queue:self.send(identifier,item)
+                if identifier == 'scheduled-tasks':
+                    self._timer_targets_signature = None
+                    self.scheduled_targets_changed()
                 self.pageChanged.emit();self.changed.emit()
             elif request in w['pending']:w['pending'].remove(request);self.response.emit(request,value)
     def host_event(self,identifier,event):
@@ -608,4 +627,15 @@ class DesktopPlugins(QObject):
         processes=[w["process"] for w in self.workers.values() if 'process' in w]
         for identifier in list(self.workers):self.stop(identifier)
         for process in processes:
-            if process.state()!=QProcess.NotRunning and not process.waitForFinished(300):process.kill();process.waitForFinished(100)
+            if process.state()==QProcess.NotRunning or process.waitForFinished(1500):continue
+            if os.name == 'nt':
+                # Killing only the venv launcher leaves the actual worker and
+                # its scheduler lock alive. Timers are unavailable after Qt's
+                # event loop stops, so reap the owned tree here before exit.
+                import subprocess
+                try:
+                    subprocess.run([str(Path(os.environ.get('SystemRoot','C:/Windows'))/'System32/taskkill.exe'),
+                        '/PID',str(process.processId()),'/T','/F'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+                        timeout=3,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+                except (OSError, subprocess.TimeoutExpired):pass
+            process.kill();process.waitForFinished(1000)

@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "name": "定时任务",
   "summary": "向本会话或已关联全局智能体定时发消息",
-  "description": "单次或周期触发，周期支持小数天、小时、分钟，最短15秒；每会话最多5个。",
+  "description": "默认开启；单次或周期触发，最短15秒。全局计时器跨会话共享，每会话最多5个（含全局）。",
   "author": "Umeko",
   "icon": "clock",
   "lifecycle": "application",
@@ -28,7 +28,7 @@
         }
       },
       "list": {
-        "description": "列出仅属于调用会话的定时器；含停用项，上限5个。",
+        "description": "列出调用会话的主 Agent 定时器和全部全局定时器；含停用项，共用5个名额。时间按系统本地时区显示。",
         "parameters": {
           "type": "object",
           "properties": {},
@@ -37,7 +37,7 @@
         }
       },
       "create": {
-        "description": "Create and arm a timer (enabled=true by default). One-shot countdowns start now. Reuses an expired, immediately enabled model-created one-shot in this conversation; never overwrites an armed/running or manually edited timer. Maximum 5 timers.",
+        "description": "Create and arm a timer (enabled=true by default). One-shot countdowns start now. Reuses an expired, immediately enabled model-created one-shot in this conversation; never overwrites an armed/running or manually edited timer. Maximum 5 timers. Global-Agent timers are shared across all conversations and count toward every conversation’s 5 slots; the original delivery source and Agent Bus permissions are retained.",
         "parameters": {
           "type": "object",
           "properties": {
@@ -120,7 +120,7 @@
         }
       },
       "enable": {
-        "description": "启用本会话的定时器；周期从本次启用重新计时。",
+        "description": "启用本会话或共享全局定时器；周期从本次启用重新计时。已删除全局目标须重新绑定。",
         "parameters": {
           "type": "object",
           "properties": {
@@ -136,7 +136,7 @@
         }
       },
       "disable": {
-        "description": "停用本会话的定时器，停止后续触发；已投递消息不撤回。",
+        "description": "停用本会话或共享全局定时器，停止后续触发；已投递消息不撤回。",
         "parameters": {
           "type": "object",
           "properties": {
@@ -152,7 +152,7 @@
         }
       },
       "delete": {
-        "description": "删除本会话的定时器以释放名额；已投递消息不撤回、运行记录保留。",
+        "description": "删除本会话或共享全局定时器以释放名额；已投递消息不撤回、运行记录保留。",
         "parameters": {
           "type": "object",
           "properties": {
@@ -168,7 +168,7 @@
         }
       },
       "history": {
-        "description": "查看本会话定时器的最近20次触发结果；已投递不代表Agent任务已完成。",
+        "description": "查看本会话或共享全局定时器的最近20次触发结果；已投递不代表Agent任务已完成。",
         "parameters": {
           "type": "object",
           "properties": {

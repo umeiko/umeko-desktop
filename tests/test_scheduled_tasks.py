@@ -171,6 +171,45 @@ class ScheduledTasksTests(TestCase):
         self.scoped('one')
         self.assertEqual(len(self.store.tasks(owner='one')), 5)
 
+    def test_global_visibility_quota_and_mutations_across_conversations(self):
+        owner = 'session:one'
+        task = self.store.save(name='Shared report', message='Report', owner=owner, source={'id':'one'},
+            target='agent:'+'a'*32, schedule=Schedule('interval', interval_value='1', anchor_at=self.due),
+            enabled=False, now=self.due)
+        self.assertEqual([row['id'] for row in self.store.tasks(owner='session:two')], [task])
+        for _ in range(4):self.scoped('session:two')
+        with self.assertRaisesRegex(ValueError, '5'):self.scoped('session:two')
+        # A global timer must fit every conversation, including an already full one.
+        with self.assertRaisesRegex(ValueError, '5'):
+            self.store.save(name='Another global', message='No room', owner=owner, target='agent:'+'b'*32,
+                schedule=Schedule('interval', anchor_at=self.due), enabled=False, now=self.due)
+        self.store.set_enabled(task, True, self.due, owner='session:two')
+        self.assertTrue(self.store.tasks(owner=owner)[0]['enabled'])
+        self.store.delete(task, owner='session:two')
+        self.assertEqual(self.store.tasks(owner=owner), [])
+        self.scoped('session:two')
+        self.assertEqual(len(self.store.tasks(owner='session:two')), 5)
+
+    def test_missing_global_target_pauses_without_losing_task_or_runs(self):
+        task = self.store.save(name='Old report', message='Keep', owner='one', target='agent:'+'a'*32,
+            schedule=Schedule('interval', interval_value='1', anchor_at=self.due), enabled=True, now=self.due)
+        run = self.store.claim_manual(task, self.due, owner='two')
+        self.store.finish(run['id'], 'delivered', self.due)
+        self.store.reconcile_global_targets([])
+        row, = self.store.tasks(owner='two')
+        self.assertEqual((row['id'], row['enabled'], row['next_at'], row['target']), (task, 0, None, 'agent:'+'a'*32))
+        self.assertEqual(len(self.store.history(task, owner='two')), 1)
+        reopened = ScheduledTasks(self.database)
+        self.assertEqual(reopened.tasks(owner='three'), [row])
+        self.assertEqual(reopened.claim_due(self.due+300, eligible_since=self.due), [])
+
+    def test_new_global_target_cannot_oversubscribe_another_full_conversation(self):
+        for _ in range(5):self.scoped('full')
+        with self.assertRaisesRegex(ValueError, '5'):
+            self.store.save(name='Global', message='Keep every view bounded', owner='empty', target='agent:'+'a'*32,
+                schedule=Schedule('interval', anchor_at=self.due), enabled=False, now=self.due)
+        self.assertEqual(self.store.tasks(owner='empty'), [])
+
     def test_draft_promotion_preserves_quota_and_saved_source_across_restart(self):
         draft = {'token': 'draft-token', 'id': '', 'workspace': '/project'}
         owner, source = self.store.bind_session(draft)
