@@ -18,6 +18,7 @@
 | `providers.network` | `id: string`, `mode: string`, `address: string=""` | provider | 否 |
 | `providers.certificate` | `id: string`, `caFile: string=""` | provider | 否 |
 | `models.mappings` | `models: json` | all | 否 |
+| `pluginSessions.setModel`（仅 python） | `plugin: string`, `profile: string`, `model: string`, `provider: string=""` | 无 | 否 |
 | `themes.import` | `path: string` | 无 | 否 |
 | `characters.import` | `path: string` | 无 | 否 |
 | `characters.select` | `id: string` | 无 | 否 |

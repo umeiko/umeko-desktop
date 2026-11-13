@@ -151,6 +151,34 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Property('QVariantList', notify=changed)
     def auxiliaryVisionModels(self):
         return self._auxiliaryVisionModels()
+
+    @Property('QVariantList', notify=changed)
+    def pluginSessionProfiles(self):
+        from .plugin_sessions import profile_rows
+        return profile_rows(self)
+
+    @Property('QVariantList', notify=changed)
+    def pluginSessionModels(self):
+        return [{'providerId': row['providerID'], 'model': row['id'], 'label': row['owned_by'] + ' / ' + row['id']}
+                for row in self.gateway.models()]
+
+    @Slot(str, str, str, str, result=bool)
+    def savePluginSessionModel(self, plugin, profile, model, provider):
+        from .plugin_sessions import set_profile_model
+        try:
+            set_profile_model(self, plugin, profile, model, provider)
+        except (ValueError, OSError, RuntimeError) as error:
+            self.toast.emit(str(error))
+            return False
+        self.changed.emit()
+        self.toast.emit('插件会话模型已更新，下一次输入时生效')
+        return True
+
+    def _settings_changed_externally(self, keys, invalid):
+        # Store.save() already merged the external values into memory.
+        self.toast.emit('settings.json 无法解析，已另存为 settings.external-invalid.json' if invalid and not keys
+                        else 'settings.json 在 Umeko 外被修改，已读入这些修改')
+        self.changed.emit()
     proxyKeysChanged = Signal()
     editorText = Signal(str)
 
@@ -159,6 +187,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.root = root
         self._app_about = AppAbout(self)
         self.store = Store()
+        self.store.external_change = self._settings_changed_externally
         self._init_dsh()
         from .login_session import LoginStartupSettings
         self._login_startup = LoginStartupSettings(self, background='--login-startup' in sys.argv)

@@ -136,6 +136,9 @@ Column {
         }
         onClicked: root.desktopOpen = true
     }
+    PluginSessionModels {
+        width: parent.width; visible: profiles.length > 0 && !root.piOpen && !root.pluginsOpen && !root.desktopOpen && !root.dshOpen
+    }
     Column {
         objectName: "dshSettingsPage"
         width: parent.width; visible: root.dshOpen; spacing: 14

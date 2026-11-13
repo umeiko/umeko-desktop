@@ -98,7 +98,7 @@ def main():
     profile, workspace = isolated_settings(base)
     os.environ['UMEKO_DATA_DIR'] = str(profile)
     gates = {name: threading.Event() for name in ('hold-first', 'cancel-me')}
-    received, advertised = [], []
+    received, advertised, upstream_models = [], [], []
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -111,6 +111,7 @@ def main():
             if isinstance(content, list):
                 content = ''.join(part.get('text', '') for part in content)
             received.append(content)
+            upstream_models.append(body.get('model'))
             advertised.append({tool['function']['name'] for tool in body.get('tools', [])})
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')
@@ -151,7 +152,8 @@ def main():
         backend = controller()
         configured = {'id': 'test-provider', 'name': 'Test provider',
             'api': 'openai', 'baseUrl': f'http://127.0.0.1:{upstream.server_port}/v1',
-            'key': 'offline-fixture-key', 'models': [{'upstream': 'test-model', 'alias': 'test-model'}]}
+            'key': 'offline-fixture-key', 'models': [{'upstream': 'test-model', 'alias': 'test-model'},
+                {'upstream': 'test-model-b', 'alias': 'test-model-b'}]}
         backend.store.data.update(providers=[configured],
             selectedProvider='test-provider', selectedModel='test-model')
         backend.store.data['pluginSessionProfiles'] = {'fixture-channel': {'tasks': {
@@ -221,6 +223,20 @@ def main():
         resumed_done = invoke('wait', one['handle'], resumed['runId'])
         assert resumed_done['status'] == 'completed' and 'reply:after-eviction' in json.dumps(resumed_done)
         assert record.id == one['sessionId'], 'Eviction created a replacement native chat'
+        # Switch the profile model through the desktop operation while Pi is running;
+        # the next input reaches the provider with the new model.
+        assert upstream_models[-1] == 'test-model', upstream_models
+        changed = backend._umeko_control.execute({'operation': 'pluginSessions.setModel',
+            'arguments': {'plugin': owner, 'profile': 'tasks', 'model': 'test-model-b'}})
+        assert changed['ok'], changed
+        switched = invoke('submit', one['handle'], 'request-switched', 'after-model-change')
+        switched_done = invoke('wait', one['handle'], switched['runId'])
+        assert switched_done['status'] == 'completed' and 'reply:after-model-change' in json.dumps(switched_done)
+        assert upstream_models[-1] == 'test-model-b', upstream_models
+        assert backend.store.data['pluginSessionProfiles'][owner]['tasks']['tools'] == ['read']
+        rejected = backend._umeko_control.execute({'operation': 'pluginSessions.setModel',
+            'arguments': {'plugin': owner, 'profile': 'tasks', 'model': 'test-model', 'tools': ['write']}})
+        assert not rejected['ok'], rejected
         cancelled = invoke('submit', one['handle'], 'request-cancel', 'cancel-me')
         pump_until(app, lambda: 'cancel-me' in received, 'Cancellation run never reached provider', 60)
         invoke('cancel', one['handle'], cancelled['runId'])
@@ -271,7 +287,8 @@ def main():
         assert restored['sessionId'] == one['sessionId'] and restored['created'] is False
         restored_two = invoke('acquire', 'channel-two', profile='tasks')
         assert restored_two['sessionId'] == two['sessionId'] and restored_two['created'] is False
-        print('PLUGIN_SESSIONS_OK: actual SDK worker, real Pi, distinct native sessions, separate queued runs, scoped replies, cancellation, read-only ceiling, eviction resume, both restart mappings, SDK approval allow and unhandled desktop denial', flush=True)
+        print('UPSTREAM_MODELS:', json.dumps(upstream_models), flush=True)
+        print('PLUGIN_SESSIONS_OK: actual SDK worker, real Pi, distinct native sessions, separate queued runs, scoped replies, cancellation, read-only ceiling, eviction resume, profile model switch at the next input, both restart mappings, SDK approval allow and unhandled desktop denial', flush=True)
     finally:
         for gate in gates.values():
             gate.set()
