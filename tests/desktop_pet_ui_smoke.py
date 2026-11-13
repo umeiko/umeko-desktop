@@ -146,6 +146,9 @@ def reminder_card_smoke():
     clock[0]+=timedelta(minutes=2);pet.reminders.check()
     card=window.findChild(QObject,'desktopPetReminderCard')
     wait(lambda:card.isVisible(),'Paused animation suppressed reminder card')
+    close_button=card.findChild(QObject,'desktopPetReminderClose')
+    close_point=close_button.mapToScene(close_button.boundingRect().center()).toPoint()
+    wait(lambda:window.mask().contains(close_point),'Reminder close button is outside the input region')
     assert not window.property('caption')
     pet.reaction.emit('不应补播的旧台词');assert not window.property('caption')
     for language in ('zh','en'):
@@ -214,6 +217,7 @@ try:
             assert not settings_loader.isVisible() and settings_loader.property('item') is None,'Inactive settings reserved a blank area'
             divider=find('desktopPluginSettingsDivider');heading=find('desktopPluginReadmeHeading')
             assert 0<=heading.y()-divider.y()-divider.height()<30,'Widget description was pushed down by an empty settings container'
+    pet.ui('selectAppearance',{'id':'yanami'})
     pet.ui('show',{})
     wait(lambda:main.findChild(QObject,'desktopPetWindow') is not None,'Pet window did not load')
     window=main.findChild(QObject,'desktopPetWindow')
@@ -222,9 +226,33 @@ try:
     animation=window.findChild(QObject,'desktopPetAnimation')
     wait(lambda:animation.property('ready'),'Animation did not decode')
     assert animation.property('frameCount')>1 and not animation.property('cache')
+    assert animation.property('source').toString().endswith('/yanami/idle.gif')
+    assert animation.property('frameCount')==32
+    first=animation.property('currentFrame')
+    wait(lambda:animation.property('currentFrame')!=first,'Yanami GIF is static')
+    wait(lambda:window.mask().boundingRect().height()>50,'Yanami input region did not load')
+    region=window.mask()
+    sprite=region.boundingRect()
+    assert region.contains(sprite.center()),'Yanami cannot receive input on the character'
+    assert not region.contains(QPoint(window.width()//2,50)),'Invisible area above Yanami accepts input'
+    assert not region.contains(QPoint(20,sprite.center().y())),'Invisible area left of Yanami accepts input'
+    assert not region.contains(QPoint(window.width()-20,sprite.center().y())),'Invisible area right of Yanami accepts input'
+    window.grabWindow().save(str(out/'yanami-idle.png'))
+    pet.ui('configure',{'paused':True})
+    for state in ('thinking','working','waiting','done','error'):
+        pet.motion.state=state;pet.changed.emit()
+        wait(lambda:animation.property('ready') and animation.property('source').toString().endswith('/yanami/'+state+'.gif'),'Yanami state did not decode: '+state)
+        assert animation.property('frameCount')==46,state
+        window.grabWindow().save(str(out/('yanami-'+state+'.png')))
+    pet.motion.state='idle';pet._rare_idle=True;pet.changed.emit()
+    wait(lambda:animation.property('ready') and animation.property('source').toString().endswith('/yanami/idle-rare.gif'),'Yanami rare idle did not decode')
+    assert animation.property('frameCount')==88
+    window.grabWindow().save(str(out/'yanami-idle-rare.png'))
+    pet._rare_idle=False;pet.changed.emit()
+    pet.ui('configure',{'paused':False})
+    pet.ui('selectAppearance',{'id':'whale-girl'})
+    wait(lambda:animation.property('ready') and '/whale-girl/idle.webp' in str(animation.property('source')),'Whale animation did not decode')
     reminder_card_smoke()
-    first=animation.property('currentFrame');QTest.qWait(180)
-    assert animation.property('currentFrame')!=first,'Animation is static'
     pet.ui('selectAppearance',{'id':'komari'})
     wait(lambda:pet.state['appearance']=='komari' and 'assets/komari/' in str(animation.property('source')),'Komari did not replace the active animation')
     wait(lambda:animation.property('ready') and animation.property('frameCount')>1,'Komari animation did not decode')

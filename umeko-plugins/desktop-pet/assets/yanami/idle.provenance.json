@@ -1,0 +1,14 @@
+{
+  "source": "User-supplied idle.gif",
+  "sourceSha256": "308944d84005507605672e1e9ba21f321ac27c21874ebca2b58948fc45dce9de",
+  "asset": "idle.gif",
+  "assetSha256": "35f6fcb98a3d9e6051f8dcf29dd403a4e77298e3e3e30b59f2ff5c49a87d2fb9",
+  "processing": [
+    "Resized frames to 320 × 320 pixels",
+    "Reduced frame count by about 18% with original loop duration preserved",
+    "Quantized each frame to 127 opaque colors plus transparency"
+  ],
+  "frameCount": 32,
+  "durationMs": 1800,
+  "loopCount": 0
+}

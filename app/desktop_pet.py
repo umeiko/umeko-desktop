@@ -15,6 +15,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QPoint, Property, QTimer, QUrl, Qt, Signal, Slot
 
+from .pet_input import PetInputMask
 from .pet_packs import BUILTIN_APPEARANCES, STATES, import_pack, read_pack
 from .pet_reminders import PetReminders
 
@@ -80,6 +81,7 @@ class DesktopPet(QObject):
         self._last_interaction = -10.0
         self._last_interaction_kind = ''
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='pet-import')
+        self._input_mask = PetInputMask(self)
         self._future = None
         self.directory = manager.root / 'state' / ID
         self._reminder_card = []
@@ -106,6 +108,7 @@ class DesktopPet(QObject):
             application.applicationStateChanged.connect(self._application_state_changed)
 
     def load_packs(self):
+        self._input_mask.clear()
         assets = self.b.root / 'umeko-plugins' / ID / 'assets'
         self._packs = {}
         for path, builtin_flag in [*((assets / name, True) for name in BUILTIN_APPEARANCES), *((p, False) for p in self.pack_directory.glob('*') if p.is_dir() and not p.name.startswith('.'))]:
@@ -124,6 +127,10 @@ class DesktopPet(QObject):
     @Property(bool, notify=changed)
     def visible(self):
         return self.running and self._config['visible'] and not self.closed
+
+    @Property(QObject, constant=True)
+    def inputMask(self):
+        return self._input_mask
 
     @Property('QVariantList', notify=changed)
     def appearances(self):
@@ -166,6 +173,7 @@ class DesktopPet(QObject):
         self.closed = True
         self.stop()
         self.reminders.close()
+        self._input_mask.close()
         self._executor.shutdown(wait=False, cancel_futures=True)
 
     def configure(self, patch, persist=True):

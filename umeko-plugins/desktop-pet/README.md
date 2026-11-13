@@ -23,7 +23,7 @@
 
 内置八奈见杏菜、小鞠知花、马剃天爱星和鲸鱼娘，可在动画形象下拉框或桌宠右键菜单切换，内置形象不可删除。选择独立于聊天主角色，升级和重启保留偏好。
 
-八奈见资源是 AI 绘制的原始姿势、眨眼关键帧与周期性二维变形组合；小鞠和天爱星资源是 AI 绘制的六状态动画关键帧，统一基线后编码为透明循环 WebP。提示词分别记录在 `assets/yanami/generation.json`、`assets/komari/generation.json` 与 `assets/tiara/generation.json`。
+八奈见的六种状态及稀有待机均使用用户提供的透明循环 GIF，统一为 320×320 画布和鞋底基线。减少帧数后保留各动作的原始循环时长。来源与处理记录见 `assets/yanami/delivery.provenance.json` 和 `assets/yanami/idle.provenance.json`。小鞠和天爱星使用统一基线的透明循环 WebP，提示词见各自的 `generation.json`。
 
 鲸鱼娘的六种透明动画复用社区 [dsh-whale-girl-pet](https://github.com/yanzwzz/dsh-whale-girl-pet)，保留 MIT 许可与贡献者署名。原始动画转为 360×360、10 fps 的循环 WebP，无需网络或额外视频组件；只有当前动作参与播放，隐藏后释放解码器。来源版本、校验与动作映射见 `assets/whale-girl/source.json`，许可见 `assets/whale-girl/LICENSE.txt`。开发者可用 `scripts/prepare-whale-pet.py --ffmpeg <ffmpeg路径>` 重新制作资源，应用和常规构建不会自动下载。
 

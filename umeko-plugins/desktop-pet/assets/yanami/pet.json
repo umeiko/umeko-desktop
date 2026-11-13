@@ -4,56 +4,62 @@
   "id": "yanami",
   "name": "八奈见杏菜",
   "states": {
-    "idle": "idle.webp",
-    "thinking": "thinking.webp",
-    "working": "working.webp",
-    "waiting": "waiting.webp",
-    "done": "done.webp",
-    "error": "error.webp"
+    "idle": "idle.gif",
+    "thinking": "thinking.gif",
+    "working": "working.gif",
+    "waiting": "waiting.gif",
+    "done": "done.gif",
+    "error": "error.gif"
   },
   "images": {
-    "idle.webp": {
+    "idle.gif": {
       "animated": true,
-      "width": 384,
-      "height": 576,
-      "frames": 115
+      "width": 320,
+      "height": 320,
+      "frames": 32,
+      "contentTop": 0.078125
     },
-    "thinking.webp": {
+    "thinking.gif": {
       "animated": true,
-      "width": 384,
-      "height": 576,
-      "frames": 115
+      "width": 320,
+      "height": 320,
+      "frames": 46,
+      "contentTop": 0.075
     },
-    "working.webp": {
+    "working.gif": {
       "animated": true,
-      "width": 384,
-      "height": 576,
-      "frames": 96
+      "width": 320,
+      "height": 320,
+      "frames": 46,
+      "contentTop": 0.078125
     },
-    "waiting.webp": {
+    "waiting.gif": {
       "animated": true,
-      "width": 384,
-      "height": 576,
-      "frames": 115
+      "width": 320,
+      "height": 320,
+      "frames": 46,
+      "contentTop": 0.078125
     },
-    "done.webp": {
+    "done.gif": {
       "animated": true,
-      "width": 384,
-      "height": 576,
-      "frames": 77
+      "width": 320,
+      "height": 320,
+      "frames": 46,
+      "contentTop": 0.0625
     },
-    "error.webp": {
+    "error.gif": {
       "animated": true,
-      "width": 384,
-      "height": 576,
-      "frames": 96
+      "width": 320,
+      "height": 320,
+      "frames": 46,
+      "contentTop": 0.078125
     },
-    "idle-rare.webp": {
+    "idle-rare.gif": {
       "animated": true,
-      "width": 384,
-      "height": 576,
-      "frames": 6,
-      "contentTop": 0.09027777777777778
+      "width": 320,
+      "height": 320,
+      "frames": 88,
+      "contentTop": 0.075
     }
   },
   "dialogue": {
@@ -70,7 +76,7 @@
     ]
   },
   "rareIdle": {
-    "image": "idle-rare.webp",
+    "image": "idle-rare.gif",
     "line": "真正重要的东西，就算用最笨的方法也要紧紧抓住——这话是你说的吧？那我现在就要做全世界最笨的人。",
     "title": "最笨的人"
   }

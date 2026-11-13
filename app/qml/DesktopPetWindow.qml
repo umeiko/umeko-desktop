@@ -19,6 +19,22 @@ Window {
     property real tilt: 0
     readonly property var reminderCard: pet.reminderCard || []
     property string reminderKeys: ""
+    readonly property url spriteSource: state.source
+    readonly property rect artRect: Qt.rect(art.x, art.y, art.width, art.height)
+    readonly property rect bubbleRect: bubble.visible ? Qt.rect(bubble.x, bubble.y, bubble.width, bubble.height) : Qt.rect(0, 0, 0, 0)
+    readonly property rect reminderRect: reminder.visible ? Qt.rect(reminder.x, reminder.y, reminder.width, reminder.height) : Qt.rect(0, 0, 0, 0)
+    function updateInputMask() {
+        if (visible) pet.inputMask.update(root, spriteSource, artRect, tilt, bubbleRect, reminderRect)
+    }
+    onSpriteSourceChanged: Qt.callLater(updateInputMask)
+    onArtRectChanged: Qt.callLater(updateInputMask)
+    onBubbleRectChanged: Qt.callLater(updateInputMask)
+    onReminderRectChanged: Qt.callLater(updateInputMask)
+    onTiltChanged: Qt.callLater(updateInputMask)
+    Connections {
+        target: root.pet.inputMask
+        function onChanged() { Qt.callLater(root.updateInputMask) }
+    }
     function syncReminderCard() {
         if(!speech || !reminderTimeout)return
         const keys=reminderCard.map(item=>item.id+":"+item.occurrence).join("|")
@@ -30,7 +46,10 @@ Window {
     function viewReminderCard(){const id=reminderCard.length===1?reminderCard[0].id:"";closeReminderCard();pet.openReminders(id,false)}
     function localTime(value){return value?new Date(value).toLocaleString(Qt.locale(),"yyyy-MM-dd HH:mm"):I18n.t("无提醒时间")}
     onReminderCardChanged:syncReminderCard()
-    Component.onCompleted:syncReminderCard()
+    Component.onCompleted: {
+        syncReminderCard()
+        updateInputMask()
+    }
     width: config.size + 32
     height: config.size * 1.5 + 72
     color: "transparent"
@@ -56,7 +75,7 @@ Window {
         x = Math.round(Math.max(area.x, Math.min(area.x+area.width-width,x)))
         y = Math.round(Math.max(area.y, Math.min(area.y+area.height-height,y)))
     }
-    onVisibleChanged: if (visible) { if (!placed) place(false); else constrain() }
+    onVisibleChanged: if (visible) { if (!placed) place(false); else constrain(); Qt.callLater(updateInputMask) }
     onWidthChanged: if (placed && visible) constrain()
     onHeightChanged: if (placed && visible) constrain()
     onClosing: close => { close.accepted = false; pet.ui("hide",{}) }
@@ -95,7 +114,7 @@ Window {
         Text { font.family: Theme.fontFamily;id:spoken;anchors.centerIn:parent;width:Math.min(implicitWidth,root.width-24);text:root.caption;textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.ink;font.pixelSize: Theme.font(11, visible)}
     }
     Rectangle {
-        objectName:"desktopPetReminderCard";z:4;anchors.horizontalCenter:parent.horizontalCenter
+        id:reminder;objectName:"desktopPetReminderCard";z:4;anchors.horizontalCenter:parent.horizontalCenter
         y:Math.max(4,art.y+art.height-(art.item?art.item.paintedHeight:art.height)*(1-(root.state.contentTop || 0))-height-8)
         width:root.width;height:reminderContents.implicitHeight+20;radius:12
         color:Theme.surface;border.color:Theme.line;visible:root.reminderCard.length>0

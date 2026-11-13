@@ -201,7 +201,7 @@ class PetTests(unittest.TestCase):
             normal = QImageReader(str(folder / pack['states']['idle']))
             reader = QImageReader(str(rare))
             self.assertEqual(reader.size(), normal.size(), identifier)
-            self.assertEqual(reader.imageCount(), 6, identifier)
+            self.assertEqual(reader.imageCount(), 88 if identifier == 'yanami' else 6, identifier)
             self.assertTrue(pack['images'][rare.name]['animated'], identifier)
             hashes = set()
             for _ in range(reader.imageCount()):

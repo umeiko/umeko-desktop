@@ -64,6 +64,11 @@ def main(identifiers=()):
         if identifiers and identifier not in identifiers:
             continue
         folder = ROOT / f"umeko-plugins/desktop-pet/assets/{identifier}"
+        path = folder / "pet.json"
+        value = json.loads(path.read_text())
+        # This generator refreshes the legacy WebP packs.
+        if not value["rareIdle"]["image"].endswith(".webp"):
+            continue
         with Image.open(HERE / asset["reference"]) as source:
             reference = source.convert("RGBA")
         canvas = reference.size
@@ -105,8 +110,6 @@ def main(identifiers=()):
                     raise ValueError("Lost transparency")
                 if bounds(rgba)[3] != baseline:
                     raise ValueError("Unstable foot baseline")
-        path = folder / "pet.json"
-        value = json.loads(path.read_text())
         value["rareIdle"] = {"image": target.name, "line": asset["line"],
                              "title": asset["title"]}
         value.setdefault("images", {}).pop("idle-rare.png", None)
