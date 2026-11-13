@@ -8,8 +8,14 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_HALF_UP
 import json
 import sqlite3
+import sys
+from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
+
+# Windows/standalone Python may have no system IANA database. Keep the pinned
+# fallback as an importable zip; avoid installation or extraction at startup.
+sys.path.append(str(Path(__file__).resolve().parents[1] / "vendor/tzdata-2026.6-py2.py3-none-any.whl"))
 
 
 @dataclass(frozen=True)
