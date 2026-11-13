@@ -5,6 +5,7 @@ import base64
 import copy
 import ctypes
 import json
+import logging
 import math
 import os
 import shutil
@@ -66,6 +67,41 @@ def keyring_protect(value, decrypt=False, account=""):
     return "keyring:" + account
 
 
+LOG = logging.getLogger("umeko.settings")
+_MISSING = object()
+
+
+def merge_external(base, ours, theirs):
+    """Three-way merge of settings: keep in-memory edits, take every field that
+    was edited outside the app since the last read or write (disk wins)."""
+    if not (isinstance(ours, dict) and isinstance(theirs, dict)):
+        return copy.deepcopy(theirs)
+    base = base if isinstance(base, dict) else {}
+    result = copy.deepcopy(ours)
+    for key in set(base) | set(theirs):
+        if key not in theirs:
+            result.pop(key, None)
+        elif base.get(key, _MISSING) != theirs[key]:
+            result[key] = merge_external(base.get(key), ours[key], theirs[key]) if key in ours else copy.deepcopy(theirs[key])
+    return result
+
+
+def _assign(container, key, value):
+    """Replace a value in place so live references (for example the proxy key
+    list) keep pointing at the current settings."""
+    current = container.get(key, _MISSING)
+    if isinstance(current, dict) and isinstance(value, dict):
+        for name in list(current):
+            if name not in value:
+                del current[name]
+        for name, item in value.items():
+            _assign(current, name, item)
+    elif isinstance(current, list) and isinstance(value, list):
+        current[:] = value
+    else:
+        container[key] = value
+
+
 DEFAULTS = {
     "projects": [], "activeProject": "", "removedProjects": [], "sessionMeta": {},
     "fontFamily": "",
@@ -98,9 +134,14 @@ class Store:
         self.data = copy.deepcopy(DEFAULTS)
         self._protected = {}
         self._serialized = None
+        # Text last read from or written to disk; save() compares against it to
+        # notice edits made by other programs while the app is running.
+        self._disk_text = None
+        self.external_change = None
         saved = {}
         if self.path.exists():
-            saved = json.loads(self.path.read_text(encoding="utf-8"))
+            self._disk_text = self.path.read_text(encoding="utf-8")
+            saved = json.loads(self._disk_text)
             self.data.update(copy.deepcopy(saved))
             # Preserve explicit legacy light/dark choices; new profiles use white.
             self.data["theme"] = saved.get("theme", ("dark" if saved["dark"] else "light") if "dark" in saved else DEFAULTS["theme"])
@@ -177,18 +218,87 @@ class Store:
         self._protected[name] = fingerprint, protected
         return protected
 
-    def save(self):
+    def _serialize(self):
         saved = copy.deepcopy(self.data)
         saved['password'] = self._protect_secret('password', saved.get('password', ''))
         for provider in saved['providers']:
             provider['key'] = self._protect_secret('provider:' + provider['id'], provider.get('key', ''))
+        return saved
+
+    def _absorb_external(self, saved):
+        """Merge edits another program wrote to settings.json since our last
+        read or write into memory. Returns the disk form to write, the changed
+        top-level keys and whether an unreadable external copy was set aside."""
+        try:
+            current = self.path.read_text(encoding='utf-8')
+        except FileNotFoundError:
+            return saved, [], False
+        if current == getattr(self, '_disk_text', None):
+            return saved, [], False
+        try:
+            theirs = json.loads(current)
+            if not isinstance(theirs, dict):
+                raise ValueError('settings must be a JSON object')
+        except ValueError as error:
+            copy_path = self.path.with_name('settings.external-invalid.json')
+            copy_path.write_text(current, encoding='utf-8')
+            LOG.warning('settings.json was changed outside Umeko but is not valid JSON (%s); kept a copy at %s', error, copy_path)
+            return saved, [], True
+        try:
+            base = json.loads(self._disk_text) if getattr(self, '_disk_text', None) else {}
+        except ValueError:
+            base = {}
+        merged = merge_external(base, saved, theirs)
+        changed = []
+        for key in sorted(set(merged) | set(saved)):
+            if merged.get(key, _MISSING) == saved.get(key, _MISSING):
+                continue
+            if key not in merged:
+                if key in DEFAULTS:
+                    merged[key] = copy.deepcopy(DEFAULTS[key])
+                    _assign(self.data, key, copy.deepcopy(DEFAULTS[key]))
+                else:
+                    self.data.pop(key, None)
+                changed.append(key)
+                continue
+            value = copy.deepcopy(merged[key])
+            try:
+                if key == 'password':
+                    value = protect(value, True) if isinstance(value, str) else ''
+                elif key == 'providers':
+                    if not isinstance(value, list) or not all(isinstance(row, dict) and isinstance(row.get('id'), str) for row in value):
+                        raise ValueError('providers must be a list of objects with an id')
+                    for row in value:
+                        row['key'] = protect(row.get('key', ''), True)
+            except (OSError, RuntimeError, ValueError, TypeError) as error:
+                LOG.warning('Ignored the external change to %s in settings.json: %s', key, error)
+                merged[key] = saved[key]
+                continue
+            if key == 'password':
+                self._remember_secret('password', value, merged[key])
+            elif key == 'providers':
+                for row, stored in zip(value, merged[key]):
+                    self._remember_secret('provider:' + row['id'], row['key'], stored.get('key', ''))
+            _assign(self.data, key, value)
+            changed.append(key)
+        if changed:
+            LOG.warning('settings.json was changed outside Umeko; merged the external values of: %s', ', '.join(changed))
+        else:
+            self._disk_text = current
+        return merged, changed, False
+
+    def save(self):
+        saved, changed, invalid = self._absorb_external(self._serialize())
         text = json.dumps(saved, ensure_ascii=False, indent=2)
-        if text == self._serialized and self.path.exists():
+        if not changed and not invalid and text == self._serialized and self.path.exists():
             return
         temp = self.path.with_suffix('.tmp')
         temp.write_text(text, encoding='utf-8')
         temp.replace(self.path)
         self._serialized = text
+        self._disk_text = text
+        if (changed or invalid) and callable(getattr(self, 'external_change', None)):
+            self.external_change(changed, invalid)
 
     def load_sessions(self):
         path = self.directory / "sessions.json"

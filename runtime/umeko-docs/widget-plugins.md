@@ -146,7 +146,7 @@ Agent 可调用插件公开方法传入结构化数据。插件通过 `context.p
 
 应用级插件可声明 `sessions.manage`，通过 `context.sessions` 管理自己的原生会话。它适合定时任务和外部任务队列：任务在独立会话中运行，与前台聊天和输入框互不影响。完整无页面示例位于导出 SDK 的 `examples/session-task-service`。
 
-用户先停止应用，再编辑当前或隔离应用 profile 的 `settings.json`，在**顶层**为插件添加 `pluginSessionProfiles` 命名配置（这项配置通过编辑文件完成）。例如：
+用户在当前或隔离应用 profile 的 `settings.json` **顶层**为插件添加 `pluginSessionProfiles` 命名配置（新建配置通过编辑文件完成）。应用运行时也可以编辑：Umeko 在下一次保存设置时读入文件中的外部修改，同一字段以文件中的值为准，并提示一次。例如：
 
 ```json
 {
@@ -166,6 +166,14 @@ Agent 可调用插件公开方法传入结构化数据。插件通过 `context.p
 ```
 
 `workspace` 必须是绝对路径。`model` 填已存在的**桌面模型别名**（上游模型名称在这里无效）；选填的 `provider` 必须是已配置的 Provider ID，宿主会核对该别名确实路由到这个 Provider。两个 Provider 的别名冲突时使用唯一别名。示例值都是占位符。插件的 `acquire` 按 `profile` 名称选择配置，工作目录、模型和工具都由配置决定。
+
+已有配置的模型和供应商可以在应用运行时修改，无需退出应用：用户在“设置 → Agent → 插件会话模型”中选择，或由 Agent 调用 `pluginSessions.setModel`（仅 Python 版）。先用 `settings.get` 读取 `pluginSessionProfiles`，用 `models.list` 查询可用的桌面模型别名：
+
+```json
+{"operation":"pluginSessions.setModel","arguments":{"plugin":"session-task-service","profile":"tasks","model":"test-model","provider":"Test provider"}}
+```
+
+`plugin` 与 `profile` 必须是已存在的配置；`model` 是已存在的桌面模型别名，`provider` 选填，规则与上面相同，省略时记录该别名实际路由到的 Provider ID。这个操作只写入 `model` 和 `provider`，工作区、工具、权限模式和审批设置保持用户批准时的值。已取得的会话在下一次输入时换用新模型；正在运行的回合按原模型完成。
 
 `tools` 为精确工具名列表，与桌面策略取交集；服务始终排除桌面管理工具 `umeko_desktop`、`pi` 和 `pi_commands`，保证配置无法通过管理操作被修改。其他核心工具与可选子 Agent 工具需要显式配置，并受桌面策略限制。子 Agent 运行时继承同一强制工具与权限上限，模型注册表只提供配置选定的模型。`permissionMode` 为 `ask` 或 `auto`，上限是桌面允许的权限。`allowApprovals` 默认 `false`，与工具配置相互独立；开启后插件可以注册审批处理器，逐个回应 confirm 类审批请求。
 

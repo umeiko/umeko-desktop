@@ -2,7 +2,7 @@
 
 这是无页面的应用常驻插件。启用后，它在后台线程取得独立的原生会话，提交配置里的 `content`，等待真实终态，并把最近结果写入 `context.state_dir/latest-task.json`。`status` 返回同一结果。任务在后台独立运行，前台聊天和输入框保持不变。
 
-先停止应用，再由用户编辑当前或隔离应用 profile 的 `settings.json`，在**顶层**添加 `pluginSessionProfiles` 来批准配置（这项配置通过编辑文件完成）。示例值需要替换为已存在的工作区、桌面模型别名和 Provider ID：
+由用户编辑当前或隔离应用 profile 的 `settings.json`，在**顶层**添加 `pluginSessionProfiles` 来批准配置（新建配置通过编辑文件完成；应用运行时编辑的内容会在下一次保存设置时读入）。已有配置的模型可以在“设置 → Agent → 插件会话模型”中随时更换。示例值需要替换为已存在的工作区、桌面模型别名和 Provider ID：
 
 ```json
 {

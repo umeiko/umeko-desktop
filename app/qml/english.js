@@ -1561,5 +1561,16 @@ var strings = {
   "导入 JSONL 会话": "Import JSONL conversation",
   "导入会话到 %1": "Import conversation into %1",
   "归档会话": "Archived conversations",
-  "知道了": "Got it"
+  "知道了": "Got it",
+  "插件会话模型": "Plugin session models",
+  "应用级插件取得的独立会话使用这里的模型。更换后在下一次输入时生效；工作区、工具和权限保持不变。": "Separate sessions that application plugins acquire use these models. A change applies from the next input; workspace, tools and permissions stay the same.",
+  "会话配置：%1": "Session profile: %1",
+  "未选择模型": "No model selected",
+  "插件会话模型已更新，下一次输入时生效": "Plugin session model updated; it applies from the next input",
+  "插件会话配置不存在，请先在 settings.json 中添加": "The plugin session profile does not exist; add it to settings.json first",
+  "请选择已配置的桌面模型别名": "Choose a configured desktop model alias",
+  "供应商 ID 不存在": "The Provider ID does not exist",
+  "该模型别名在多个供应商中重复，请使用唯一的模型别名": "This model alias exists in more than one provider; use a unique model alias",
+  "settings.json 在 Umeko 外被修改，已读入这些修改": "settings.json was changed outside Umeko; Umeko loaded those changes",
+  "settings.json 无法解析，已另存为 settings.external-invalid.json": "settings.json could not be read; Umeko saved a copy as settings.external-invalid.json"
 }

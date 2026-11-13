@@ -245,6 +245,39 @@ class PluginSessionTests(unittest.TestCase):
         pump_until(self.app, lambda: len(self.commands) == 2, 'Queued turn did not start')
         self.assertEqual(record._plugin_policy['allowedTools'], ['read'])
 
+    def test_desktop_operation_changes_only_the_profile_model_at_the_next_input(self):
+        self.b.store.data['providers'][0]['models'].append({'upstream': 'test-model-b', 'alias': 'test-model-b'})
+        owned = self.acquire()
+        handle = owned['handle']
+        record = self.b._pool.find(owned['sessionId'])
+        self.result('sessions.submit', {'handle': handle, 'requestId': 'first', 'content': 'first'})
+        self.assertEqual(record.model, 'test-model')
+        profile = self.b.store.data['pluginSessionProfiles']['fixture-channel']['tasks']
+        approved = dict(profile)
+        control = self.b._umeko_control
+
+        def change(**arguments):
+            return control.execute({'operation': 'pluginSessions.setModel',
+                'arguments': {'plugin': 'fixture-channel', 'profile': 'tasks', **arguments}})
+
+        result = change(model='test-model-b')
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(profile, {**approved, 'model': 'test-model-b', 'provider': 'test-provider'})
+        persisted = json.loads((self.b.store.directory / 'settings.json').read_text(encoding='utf-8'))
+        self.assertEqual(persisted['pluginSessionProfiles']['fixture-channel']['tasks'], profile)
+        self.assertEqual(record.model, 'test-model')  # The running turn keeps its model.
+        self.finish(record, 'first reply')
+        self.result('sessions.submit', {'handle': handle, 'requestId': 'second', 'content': 'second'})
+        self.assertEqual((record.model, record.provider), ('test-model-b', 'test-provider'))
+        for arguments in ({'model': 'test-model', 'tools': ['read', 'write']}, {'model': 'test-model', 'permissionMode': 'auto'},
+                          {'model': 'test-model', 'allowApprovals': False}, {'model': 'missing-model'},
+                          {'model': 'test-model', 'provider': 'missing-provider'}, {'profile': 'missing', 'model': 'test-model'},
+                          {'plugin': 'fixture-missing', 'model': 'test-model'}):
+            self.assertFalse(change(**arguments)['ok'], arguments)
+        self.assertEqual(profile, {**approved, 'model': 'test-model-b', 'provider': 'test-provider'})
+        self.assertEqual(set(self.b.store.data['pluginSessionProfiles']), {'fixture-channel', 'fixture-other'})
+        self.assertEqual(set(self.b.store.data['pluginSessionProfiles']['fixture-channel']), {'tasks'})
+
     def approval(self, record, identifier):
         event = {'type': 'ui_request', 'id': identifier, 'method': 'confirm',
             'title': 'Fixture permission', 'message': 'Allow offline fixture tool?'}
