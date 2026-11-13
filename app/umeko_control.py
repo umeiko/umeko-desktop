@@ -23,7 +23,9 @@ def redacted(value):
                 name in ('key', 'token', 'credentials', 'authorization') or name.endswith(('password', 'secret', 'apikey', 'accesstoken', 'refreshtoken', 'bearertoken')))
         output = {}
         for key, item in value.items():
-            if key == 'fields' and isinstance(item, list):
+            if key == 'requestHeaders' and isinstance(item, list):
+                output[key] = [{**row, 'value': '[redacted]'} for row in item if isinstance(row, dict)]
+            elif key == 'fields' and isinstance(item, list):
                 output[key] = [{name: ('[redacted]' if field.get('secret') and name == 'value' and datum else
                                       copy.deepcopy(datum) if name in ('key', 'type', 'secret') else redacted(datum))
                                 for name, datum in field.items()} if isinstance(field, dict) else redacted(field)

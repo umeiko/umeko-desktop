@@ -552,6 +552,14 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         return any(record.busy and (provider_id is None or record.provider == provider_id or provider_id in generation_accounts)
                    for record in self._pool.records.values())
 
+    @Property("QVariantList", notify=changed)
+    def requestHeaders(self):
+        from .request_headers import validate
+        try:
+            return validate(self.store.data.get('requestHeaders', []))
+        except ValueError:
+            return validate([])
+
     @Property("QVariantMap", notify=changed)
     def config(self):
         data = copy.deepcopy(self.store.data)

@@ -68,7 +68,7 @@ class ReasoningAutoControllerTests(unittest.TestCase):
             controller.close()
         self.app.processEvents()
 
-    def fetch(self, provider):
+    def fetch(self, provider, request_headers=None):
         self.catalog_calls.append(provider['id'])
         return copy.deepcopy(self.catalog)
 

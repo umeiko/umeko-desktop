@@ -9,6 +9,7 @@ Column {
     property bool toolsOpen: false
     property bool pluginsOpen: false
     property bool desktopOpen: false
+    property bool requestHeadersOpen: false
     property bool dshOpen: false
     property real availableHeight: 600
     signal navigated()
@@ -17,7 +18,8 @@ Column {
     onPiOpenChanged: { if (!piOpen) toolsOpen = false; else { pluginsOpen = false; desktopOpen = false; dshOpen = false; backend.piManagement.scan() }; navigated() }
     onToolsOpenChanged: navigated()
     onPluginsOpenChanged: navigated()
-    onDesktopOpenChanged: { if (desktopOpen) { piOpen = false; pluginsOpen = false; dshOpen = false }; navigated() }
+    onDesktopOpenChanged: { requestHeadersOpen = false; if (desktopOpen) { piOpen = false; pluginsOpen = false; dshOpen = false }; navigated() }
+    onRequestHeadersOpenChanged: navigated()
     onDshOpenChanged: { if (dshOpen) { piOpen = false; pluginsOpen = false; desktopOpen = false }; navigated() }
     onVisibleChanged: if (!visible) { piOpen = false; pluginsOpen = false; desktopOpen = false; dshOpen = false }
     Button {
@@ -152,7 +154,7 @@ Column {
         DshSettings { width: parent.width }
     }
     Column {
-        width: parent.width; visible: root.desktopOpen; spacing: 14
+        width: parent.width; visible: root.desktopOpen && !root.requestHeadersOpen; spacing: 14
         RowLayout {
             width: parent.width; spacing: 8
             ActionButton { objectName: "backFromUmekoDesktopButton"; text: "Agent"; glyph: "arrow-left"; quiet: true; onClicked: root.desktopOpen = false }
@@ -160,7 +162,18 @@ Column {
             Text { font.family: Theme.fontFamily; text: "Umeko Desktop"; color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.Medium }
             Item { Layout.fillWidth: true }
         }
-        DesktopSettings { width: parent.width }
+        DesktopSettings { width: parent.width; onRequestHeadersRequested: root.requestHeadersOpen = true }
+    }
+    Column {
+        objectName: "customRequestsPage"
+        width: parent.width; visible: root.desktopOpen && root.requestHeadersOpen; spacing: 14
+        RowLayout {
+            width: parent.width; spacing: 8
+            ActionButton { objectName: "backFromRequestHeaders"; text: "Umeko Desktop"; glyph: "arrow-left"; quiet: true; onClicked: root.requestHeadersOpen = false }
+            Glyph { name: "chevron-right"; width: Theme.icon(13); height: Theme.icon(13) }
+            Text { Layout.fillWidth: true; text: I18n.t("自定义请求"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14); font.weight: Font.Medium; elide: Text.ElideRight }
+        }
+        RequestHeadersSettings { width: parent.width }
     }
     Column {
         width: parent.width; visible: root.pluginsOpen; spacing: 14

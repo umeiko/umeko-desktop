@@ -52,7 +52,7 @@ class ReasoningDiscovery(QObject):
                 if kind == 'catalog':
                     keys = {(snapshot['id'], upstream) for upstream in snapshot['_reasoning_targets']}
                     with self.c.gateway.reasoning_activity.probe(keys):
-                        result = {'windows': fetch_model_windows(snapshot)}
+                        result = {'windows': fetch_model_windows(snapshot, copy.deepcopy(self.c.store.data.get('requestHeaders')))}
                 else:
                     result = self.c.gateway.detect_reasoning(alias, snapshot['id'],
                               advertised_levels=next((row.get('reasoningDetection', {}).get('levels')

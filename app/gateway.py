@@ -232,10 +232,8 @@ class Gateway:
             yield openai_response(result, model)
             return
         base = validate_base_url(p["baseUrl"])
-        headers = {"Content-Type": "application/json", "User-Agent": "Umeko-Desktop"}
         if p["api"] == "anthropic":
             url = base + ("/messages" if base.endswith("/v1") else "/v1/messages")
-            headers.update({"x-api-key": p["key"], "anthropic-version": "2023-06-01"})
             parameters = dict(parameters)
             if "reasoning_effort" in parameters:
                 parameters["output_config"] = {"effort": parameters.pop("reasoning_effort")}
@@ -259,18 +257,18 @@ class Gateway:
                 body["tools"] = [{"name": t["name"], "description": t.get("description", ""), "input_schema": t["parameters"]} for t in tools]
         elif p.get('wireApi') == 'responses':
             url = base + '/responses'
-            headers['Authorization'] = 'Bearer ' + p['key']
             body = {**responses_request(messages, tools, max_tokens, parameters), 'model': model}
             if "reasoning" in parameters:
                 body["reasoning"] = parameters["reasoning"]
         else:
             url = base + "/chat/completions"
-            headers["Authorization"] = "Bearer " + p["key"]
             body = {**parameters, "model": model, "messages": chat_completion_messages(messages), "max_tokens": max_tokens, "stream": True}
             if tools:
                 body["tools"] = [{"type": "function", "function": t} for t in tools]
+        from .request_headers import build, OmitHeaders
+        headers, omitted = build(self.store.data.get('requestHeaders'), p)
         request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
-        opener = urllib.request.build_opener(proxy_handler(p.get('proxy')), urllib.request.HTTPSHandler(context=tls_context(p.get('proxy'))), NoRedirect())
+        opener = urllib.request.build_opener(proxy_handler(p.get('proxy')), urllib.request.HTTPSHandler(context=tls_context(p.get('proxy'))), NoRedirect(), OmitHeaders(omitted))
         record = {'request': {'url': url, 'method': 'POST', 'headers': headers, 'body': body},
                   'response': {'status': None, 'headers': {}, 'body': ''}}
         trace.get().append(record)
@@ -287,7 +285,7 @@ class Gateway:
         except urllib.error.HTTPError as exc:
             record['response'].update(status=exc.code, headers=dict(exc.headers), body=exc.read().decode('utf-8', 'replace'))
             exc.close()
-            raise ValueError(format_http_error(exc.code, record['response']['body'], exc.headers, [p['key']])) from None
+            raise ValueError(format_http_error(exc.code, record['response']['body'], exc.headers, list(headers.values()))) from None
         except (urllib.error.URLError, TimeoutError) as exc:
             record['exception'] = traceback.format_exc()
             if isinstance(exc, TimeoutError) or isinstance(getattr(exc, 'reason', None), TimeoutError):
