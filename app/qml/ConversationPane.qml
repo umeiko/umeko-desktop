@@ -90,6 +90,8 @@ Item {
         property int urgentFirst: -1
         property int urgentLast: -2
         property bool forcing: false
+        property int prependAnchor: -1
+        property real prependOffset: 0
         readonly property real groupPixels: Math.max(320, height * groupScreens)
         onGroupPixelsChanged: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
         Component.onCompleted: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
@@ -105,6 +107,8 @@ Item {
             tailTimer.stop();
             restoreTimer.stop();
             restoring = false;
+            urgentFirst = -1;
+            urgentLast = -2;
             cancelFlick();
             followTail = false;
         }
@@ -386,6 +390,18 @@ Item {
             restoreOffset = pane.controller.scrollPosition;
             restoreIndex = pane.controller.scrollAnchor;
             restoreAttempts = 0;
+            if (followTail && count && pane.messageModel) {
+                // The first screen at the latest message is not visible
+                // until it is complete; its rows load at once instead of
+                // across many frames.
+                let first = count - 1, extent = 0;
+                while (first > 0 && extent < height) {
+                    extent += pane.messageModel.estimatedHeight(first) + spacing;
+                    first--;
+                }
+                urgentFirst = first;
+                urgentLast = count - 1;
+            }
             if (!count && !pane.controller.loading && !pane.controller.messageCount) {
                 restoreTimer.stop(); restoring = false; return;
             }
@@ -405,6 +421,10 @@ Item {
         onContentYChanged: {
             saveViewport();
             scheduleRange();
+            // A partial history continues once the reader scrolls past its top.
+            if (atYBeginning && !followTail && !restoring && pane.current && pane.messageModel
+                    && pane.messageModel.partialHistory && pane.controller.recentHistory)
+                pane.controller.recentHistory.loadEarlier();
         }
         function scheduleRange() {
             if (pane.current && !pagePrefetch.running)
@@ -537,6 +557,8 @@ Item {
                 }
                 if (conversation.restoreAttempts >= 2) {
                     stop();
+                    conversation.urgentFirst = -1;
+                    conversation.urgentLast = -2;
                     conversation.restoring = false;
                     conversation.saveViewport();
                     conversation.requestVisibleRange();
@@ -573,6 +595,63 @@ Item {
                 // A page arrival is not a navigation request. ListView keeps
                 // its anchor while asynchronous delegate heights settle.
                 conversation.scheduleRange();
+            }
+            // A partial history gains its earlier rows above the rows on
+            // screen. Row numbers move by count; the loaded range covers old
+            // and new numbers while ListView inserts, so no body unloads.
+            function onHistoryAboutToPrepend(count) {
+                chatSelection.clear();
+                // The first row on screen stays where it is; it moves up by
+                // the loading row, which the earlier rows replace. Rows
+                // above it then load as the reader scrolls to them.
+                const rows = conversation.visibleRows(conversation.slotMap().slots);
+                const item = rows.first >= 0 ? conversation.itemAtIndex(rows.first) : null;
+                const loading = conversation.headerItem ? conversation.headerItem.height : 0;
+                conversation.prependAnchor = item ? rows.first : -1;
+                conversation.prependOffset = item ? Math.max(0, item.y - conversation.contentY - loading) : 0;
+                if (conversation.activeLast >= 0) {
+                    conversation.activeLast += count;
+                    conversation.activeEnd += count;
+                }
+            }
+            function onHistoryPrepended(count) {
+                if (conversation.activeLast >= 0)
+                    conversation.activeFirst += count;
+                if (conversation.restoreIndex >= 0)
+                    conversation.restoreIndex += count;
+                const anchor = conversation.prependAnchor;
+                conversation.prependAnchor = -1;
+                if (anchor >= 0 && !conversation.followTail && !conversation.restoring) {
+                    conversation.anchoring = true;
+                    conversation.forceLayout();
+                    const item = conversation.itemAtIndex(anchor + count);
+                    if (item) {
+                        conversation.contentY = item.y - conversation.prependOffset;
+                    } else {
+                        conversation.positionViewAtIndex(anchor + count, ListView.Beginning);
+                        conversation.contentY -= conversation.prependOffset;
+                    }
+                    // Let ListView create the row just above the screen, so
+                    // scrolling up has a row to load and move into.
+                    conversation.contentY -= 1;
+                    conversation.forceLayout();
+                    conversation.contentY += 1;
+                    conversation.anchoring = false;
+                }
+                conversation.scheduleRange();
+            }
+        }
+        header: Item {
+            objectName: "earlierHistoryLoading"
+            width: conversation.width
+            visible: !!pane.messageModel && pane.messageModel.partialHistory
+            height: visible ? 48 : 0
+            Text {
+                anchors.centerIn: parent
+                text: I18n.t("正在加载更早的消息…")
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.font(11)
             }
         }
         footer: Item {
@@ -646,7 +725,9 @@ Item {
                         spacing: 9
                         AssistantAvatar {
                             objectName: pane.messagePrefix ? pane.messagePrefix + "AssistantAvatar_" + messageRow.index : "assistantAvatar_" + messageRow.index
-                            messageKey: pane.viewKey + "/" + messageRow.index
+                            // The row's own entry keeps its avatar when rows
+                            // are inserted above it.
+                            messageKey: pane.viewKey + "/" + ((modelData._entries || [])[0] || messageRow.index)
                             artwork: String(pane.portrait).length ? pane.portrait : Character.asset(["avatarSmile", "avatarWink", "avatarHappy"][variant], fallbackSource)
                         }
                         SelectableText {

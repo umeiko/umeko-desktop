@@ -1018,6 +1018,7 @@ var strings = {
   "正在安装…": "Installing…",
   "正在打开聊天": "Opening conversation",
   "正在打开聊天…": "Opening conversation…",
+  "正在加载更早的消息…": "Loading earlier messages…",
   "正在执行 ": "Executing ",
   "正在读取 Pi 能力…": "Loading Pi capabilities…",
   "正在读取扩展状态…": "Loading extension status…",

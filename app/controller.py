@@ -249,6 +249,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._selection_epoch = 0
         self.viewChanged.connect(self._invalidate_selection_attachment)
         self._session_preview = SessionPreview(self)
+        from .transcript_history import RecentHistory
+        self._recent_history = RecentHistory(self)
         from .conversation_search import ConversationSearch
         self._chat_search = ConversationSearch(self)
         self._session_files = SessionFiles(self)
@@ -357,6 +359,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         return self._session_preview
 
     @Property(QObject, constant=True)
+    def recentHistory(self):
+        return self._recent_history
+
+    @Property(QObject, constant=True)
     def chatSearch(self):
         return self._chat_search
 
@@ -388,6 +394,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             model=self.store.data["selectedModel"], provider=self.store.data["selectedProvider"], greeting=self._welcome_greetings.pop(), portrait=self._welcome_portraits.pop())
 
     def _activate(self, record):
+        if record is not self._view and hasattr(self, '_recent_history'):
+            self._recent_history.leaving(self._view)
         self._streaming_timer.stop()
         self.viewAboutToChange.emit()
         previous_approval = self._dangerous_allowed(self._view)
@@ -484,7 +492,9 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if index < 0:
             return
         self._view.scroll_index, self._view.scroll_y, self._view.follow_tail = index, position, follow
-        if self._view.id and self._view.file:
+        # Rows of a partial history are not rows of the complete index.
+        partial = self._view.transcript is not None and self._view.transcript.partial
+        if self._view.id and self._view.file and not (partial and not follow):
             meta = self.store.data['sessionMeta'].setdefault(self._view.id, {})
             viewport = {'row':index, 'offset':max(0, position), 'follow':follow}
             if meta.get('viewport') != viewport:
@@ -2345,6 +2355,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._viewport_save.stop()
         self._streaming_timer.stop()
         self._session_preview.cancel()
+        self._recent_history.close()
         self.conversationViewsClosing.emit()
         self._conversation_views.close()
         self._document_preview.close()

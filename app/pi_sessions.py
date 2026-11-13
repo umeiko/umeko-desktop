@@ -96,6 +96,8 @@ class SessionState:
     body_dirty: bool = True
     index_running: bool = False
     index_pending: object = None
+    history_pending: object = None
+    history_wanted: bool = False
     tail_characters: int = 0
     projection_dirty_from: int | None = None
     subagents: dict = field(default_factory=dict)

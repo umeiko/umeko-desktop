@@ -141,7 +141,11 @@ try:
         click('sidebarRow_2')
         wait_for(lambda: cover.property('shown'), 'Slow load never showed the cover')
         gate.set()
-        samples = watch_cover(0.8)
+        samples = []
+        for _ in range(25):
+            samples += watch_cover(0.2)
+            if backend.activeSession == '2' and not cover.isVisible():
+                break
         assert backend.activeSession == '2' and not cover.isVisible(), 'Covered load did not finish'
         assert {opacity for _, opacity, _ in samples} <= {0.0, 1.0}, samples
     click('sidebarRow_0')

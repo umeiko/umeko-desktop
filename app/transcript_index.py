@@ -30,6 +30,10 @@ GROUP_MESSAGES = 16
 GROUP_BYTES = 512 * 1024
 FRAGMENT_CHARS = 24000
 CACHE_BYTES = 64 * 1024 * 1024
+# A first visit shows about this many of the latest messages before the
+# whole transcript is indexed.
+RECENT_MESSAGES = 60
+RECENT_BYTES = 256 * 1024
 
 
 class Cancelled(Exception):
@@ -251,10 +255,16 @@ class Snapshot:
     row_metadata: tuple = ()
     row_offset: int = 0
     question_offset: int = 0
+    # A partial snapshot holds only the latest messages of origin, read from
+    # its end; the complete index replaces it once built.
+    partial: bool = False
+    origin: str = ''
+    # The partial snapshot whose rows this complete snapshot ends with.
+    extends: object = None
 
     def matches_source(self):
         try:
-            stat = Path(self.source).stat()
+            stat = Path(self.origin or self.source).stat()
             return stat.st_size == self.size and stat.st_mtime_ns == self.mtime_ns
         except OSError:
             return False
@@ -425,6 +435,102 @@ class TranscriptRepository:
             snapshot = replace(snapshot, focus_row=target)
         return snapshot
 
+    def current(self, file):
+        """True when the stored index already matches the file on disk."""
+        file = Path(file).resolve()
+        database = self.directory / (hashlib.sha256(str(file).encode()).hexdigest() + '.sqlite')
+        if not database.exists():
+            return False
+        try:
+            stat = file.stat()
+            with connect(database) as db:
+                meta = dict(db.execute('SELECT key,value FROM meta'))
+        except (OSError, sqlite3.Error):
+            return False
+        return (meta.get('schema') == str(SCHEMA) and meta.get('identity') == str(getattr(stat, 'st_ino', 0))
+                and meta.get('size') == str(stat.st_size) and meta.get('mtime') == str(stat.st_mtime_ns))
+
+    def open_recent(self, file, cancelled=lambda: False, messages=RECENT_MESSAGES, chunk=RECENT_BYTES):
+        """The latest messages of a transcript, read from its end.
+
+        The tail starts at a user message on the current branch, so its rows
+        are the same rows the complete index ends with. Returns None when the
+        tail would be the whole file.
+        """
+        file = Path(file).resolve()
+        key = hashlib.sha256(str(file).encode()).hexdigest()
+        stat = file.stat()
+        with file.open('rb') as source:
+            header = source.readline()
+            start, size = None, stat.st_size
+            chunk = min(size, chunk)
+            while start is None:
+                if cancelled():
+                    raise Cancelled()
+                if chunk >= size:
+                    return None
+                source.seek(size - chunk)
+                data = source.read(chunk)
+                first = data.find(b'\n') + 1
+                entries, at = {}, size - chunk + first
+                latest = None
+                for line in data[first:].splitlines(keepends=True):
+                    if line.endswith(b'\n'):
+                        try:
+                            entry = json.loads(line)
+                        except ValueError:
+                            entry = None
+                        if isinstance(entry, dict) and entry.get('id'):
+                            entries[entry['id']] = (at, entry)
+                            latest = entry['id']
+                    at += len(line)
+                counted, current, visited = 0, latest, set()
+                while current in entries and current not in visited:
+                    visited.add(current)
+                    offset, entry = entries[current]
+                    if entry.get('type') == 'message':
+                        counted += 1
+                        if counted >= messages and (entry.get('message') or {}).get('role') == 'user':
+                            start = offset
+                            break
+                    current = entry.get('parentId')
+                chunk = min(size, chunk * 4)
+            recent = self.directory / (key + '-recent.jsonl')
+            database = self.directory / (key + '-recent.sqlite')
+            with self._lock:
+                lock = self._locks.setdefault(key + '-recent', threading.Lock())
+            with lock:
+                source.seek(start)
+                with recent.open('wb') as target:
+                    target.write(header if header.endswith(b'\n') else header + b'\n')
+                    target.write(source.read(size - start))
+                for suffix in ('', '-wal', '-shm'):
+                    Path(str(database) + suffix).unlink(missing_ok=True)
+                snapshot = self._build(recent, database, None, cancelled)
+        from dataclasses import replace
+        snapshot = replace(snapshot, partial=True, origin=str(file), size=stat.st_size, mtime_ns=stat.st_mtime_ns)
+        if snapshot.count:
+            snapshot.page((snapshot.count - 1) // PAGE_ROWS)
+            snapshot = replace(snapshot, focus_row=snapshot.count - 1)
+        return snapshot
+
+    @staticmethod
+    def same_tail(recent, complete):
+        """True when the complete index ends with exactly the rows of recent."""
+        start = complete.count - recent.count
+        if start < 0:
+            return False
+        def rows(snapshot, first):
+            with connect(snapshot.database) as db:
+                return [(row['body'], row['logical'], row['continuation'], row['last']) for row in db.execute(
+                    'SELECT body,logical,continuation,last FROM display WHERE seq>=? ORDER BY seq', (first,))]
+        try:
+            ours, theirs = rows(recent, 0), rows(complete, start)
+        except sqlite3.Error:
+            return False
+        return len(ours) == len(theirs) and all(
+            json.loads(zlib.decompress(a[0])) == json.loads(zlib.decompress(b[0])) and a[1:] == b[1:] for a, b in zip(ours, theirs))
+
     def discard(self, file):
         """Remove only derived data after its original session is deleted."""
         key = hashlib.sha256(str(Path(file).resolve()).encode()).hexdigest()
@@ -436,8 +542,8 @@ class TranscriptRepository:
             with self._lock:
                 for key in [key for key in self._questions if key[0] == str(database)]:
                     del self._questions[key]
-            for suffix in ('', '-wal', '-shm'):
-                Path(str(database) + suffix).unlink(missing_ok=True)
+            for suffix in ('', '-wal', '-shm', '-recent.jsonl', '-recent.sqlite', '-recent.sqlite-wal', '-recent.sqlite-shm'):
+                Path(str(database).removesuffix('.sqlite') + suffix if suffix.startswith('-recent') else str(database) + suffix).unlink(missing_ok=True)
 
     def _build(self, file, database, target_leaf, cancelled):
         db = connect(database)
