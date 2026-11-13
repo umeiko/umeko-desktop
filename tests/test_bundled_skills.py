@@ -53,7 +53,7 @@ class BundledSkillTests(unittest.TestCase):
 
     def test_pinned_distribution_has_licenses_and_matches_its_integrity_manifest(self):
         source=ROOT/'bundled-skills';rows=json.loads((source/'sources.json').read_text())
-        self.assertEqual(len({row['name'] for row in rows}),9)
+        self.assertEqual(len({row['name'] for row in rows}),10)
         for row in rows:
             folder=source/row['name']
             self.assertTrue((folder/'SKILL.md').is_file())

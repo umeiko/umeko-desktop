@@ -356,5 +356,17 @@
       "scripts/update-contract.mjs": "b6eb5e18ebea770c0a0c2cf2ba45d122d85abe61e94b9a5426602a9f84910b31",
       "skill-release.json": "1ea25551e0359e547267d40e83812ffd1a7bdf7398826b65f2a2fcf1a11ba596"
     }
+  },
+  {
+    "name": "git-worktree",
+    "repository": "https://github.com/umeiko/umeko-desktop",
+    "commit": "76f68efbf7622f7382e0de4b6946a91ee096987c",
+    "path": "bundled-skills/git-worktree",
+    "adaptation": "Original Umeko Skill authored for #32 against the application baseline in commit; not imported from an upstream Skill. File hashes identify this authored distribution.",
+    "files": {
+      "LICENSE": "3c4461ff41c606b06d0114ead02d2d15fc1562e6cdb0e74eeb08925591e9b481",
+      "SKILL.md": "c87d75404a62831eb88b703610938eea9e42befb2ee9e7cc0afffc55b2d90c6c",
+      "agents/openai.yaml": "2a6796ea7209458cc93b8a35c061afad2766097d2bcd5a9fe70ab4392a3f6f15"
+    }
   }
 ]
