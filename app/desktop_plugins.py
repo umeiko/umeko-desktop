@@ -627,4 +627,15 @@ class DesktopPlugins(QObject):
         processes=[w["process"] for w in self.workers.values() if 'process' in w]
         for identifier in list(self.workers):self.stop(identifier)
         for process in processes:
-            if process.state()!=QProcess.NotRunning and not process.waitForFinished(300):process.kill();process.waitForFinished(100)
+            if process.state()==QProcess.NotRunning or process.waitForFinished(1500):continue
+            if os.name == 'nt':
+                # Killing only the venv launcher leaves the actual worker and
+                # its scheduler lock alive. Timers are unavailable after Qt's
+                # event loop stops, so reap the owned tree here before exit.
+                import subprocess
+                try:
+                    subprocess.run([str(Path(os.environ.get('SystemRoot','C:/Windows'))/'System32/taskkill.exe'),
+                        '/PID',str(process.processId()),'/T','/F'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+                        timeout=3,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+                except (OSError, subprocess.TimeoutExpired):pass
+            process.kill();process.waitForFinished(1000)

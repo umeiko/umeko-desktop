@@ -64,6 +64,16 @@ class DesktopPluginTests(unittest.TestCase):
             self.assertNotIn('scheduled-tasks', restored.workers)
         finally:restored.close()
 
+    def test_application_close_releases_default_scheduler_lock_before_returning(self):
+        from PySide6.QtCore import QLockFile
+        self.wait(lambda:self.manager.workers['scheduled-tasks']['ready'])
+        lock = QLockFile(str(self.manager.root / 'state/scheduled-tasks/application/scheduler.lock'))
+        lock.setStaleLockTime(0)
+        self.assertFalse(lock.tryLock(0))
+        self.manager.close()
+        self.assertTrue(lock.tryLock(0), 'Worker tree must release its lock before profile cleanup/restart')
+        lock.unlock()
+
     def test_optional_agent_prompt_is_literal_bounded_and_backward_compatible(self):
         with tempfile.TemporaryDirectory() as name:
             folder=Path(name)/'widget';shutil.copytree(ROOT/'umeko-plugins/file-tree',folder)
