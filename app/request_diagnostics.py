@@ -28,7 +28,9 @@ class RequestDiagnostics(QObject):
         record = {'id': str(uuid.uuid4()), 'at': datetime.now(timezone.utc).isoformat(),
                   'provider': provider.get('name', ''), 'request': request,
                   'response': response, 'error': describe_failure(error), 'http': http or []}
-        record = redact(record, [provider.get('key', '')] + secret_values(record))
+        # Custom fields may carry credentials under names such as X-Workspace.
+        header_values = [value for call in http or [] for value in call.get('request', {}).get('headers', {}).values()]
+        record = redact(record, [provider.get('key', '')] + secret_values(record) + header_values)
         failed_response = next((call.get('response', {}) for call in reversed(record['http'])
                                 if str(call.get('response', {}).get('status', '')).isdigit()
                                 and int(call['response']['status']) >= 400), record['response'])
