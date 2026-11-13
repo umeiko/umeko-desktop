@@ -1,10 +1,15 @@
 """Read cold transcripts off the UI thread; keep one reader and the latest request."""
 import copy
 import threading
+import time
 
 from PySide6.QtCore import QObject, Signal, Slot
 from .transcripts import preview
 from .pi_sessions import clean_extension_modes, clean_skill_modes, clean_blocked_tools, saved_viewport
+
+
+# About how long a click takes to show its conversation.
+OPENING_SECONDS = 0.8
 
 
 class SessionPreview(QObject):
@@ -18,6 +23,8 @@ class SessionPreview(QObject):
         self.pending = None
         self.prepared = None
         self.reading = False
+        # Background indexing yields to the conversation being opened.
+        self.busy_until = 0.0
         self.direct_token = 0
         self.completed.connect(self._completed)
 
@@ -27,9 +34,12 @@ class SessionPreview(QObject):
         self.pending = self.prepared = None
 
     @Slot(str, int)
-    def prepare(self, session_id, token):
+    def prepare(self, session_id, token, recent=True):
+        """Read a session for display. recent allows a long unindexed
+        transcript to appear from its latest messages first."""
         self.cancel()
         self.request = token
+        self.busy_until = time.monotonic() + OPENING_SECONDS
         saved = next((row for row in self.controller._sessions if row['id'] == session_id), None)
         if not saved:
             self.ready.emit(token, False)
@@ -37,11 +47,12 @@ class SessionPreview(QObject):
         saved = dict(saved)
         saved['_viewport'] = saved_viewport(self.controller.store.data['sessionMeta'].get(session_id, {}))
         cached = self.controller._pool.find(session_id)
-        if cached and cached.loaded and (cached.busy or not cached.transcript or cached.transcript.matches_source()):
+        partial = bool(cached and cached.transcript and cached.transcript.partial and not recent)
+        if cached and cached.loaded and not partial and (cached.busy or not cached.transcript or cached.transcript.matches_source()):
             self.prepared = {'token': token, 'saved': saved}
             self.ready.emit(token, True)
             return
-        self.pending = {'token': token, 'saved': saved}
+        self.pending = {'token': token, 'saved': saved, 'recent': recent}
         self._start()
 
     def _start(self):
@@ -58,7 +69,12 @@ class SessionPreview(QObject):
                     cached = self.controller._pool.find(saved['id'])
                     index, _, follow = (cached.scroll_index, cached.scroll_y, cached.follow_tail) if cached else saved['_viewport']
                     focus = index if not follow else -1
-                    result['snapshot'] = self.controller.transcripts.open(file, cancelled=lambda: self.request != job['token'] or self.controller._closing, focus=focus)
+                    repository = self.controller.transcripts
+                    cancelled = lambda: self.request != job['token'] or self.controller._closing
+                    snapshot = None
+                    if job['recent'] and focus < 0 and repository.large(file) and not repository.current(file):
+                        snapshot = repository.open_recent(file, cancelled=cancelled)
+                    result['snapshot'] = snapshot or repository.open(file, cancelled=cancelled, focus=focus)
                 else:
                     result['messages'], result['tree'] = preview(file) if file else (copy.deepcopy(saved.get('messages', [])), [])
             except Exception:
@@ -114,6 +130,9 @@ class SessionPreview(QObject):
             # Register before activation; trimming it while the old view is
             # still pinned could immediately evict this prepared selection.
             self.controller._pool.records[record.key] = record
+            record.history_pending, record.history_wanted = None, False
+            if record.transcript is not None and record.transcript.partial:
+                self.controller._recent_history.complete(record)
         self.cancel()
         if read_only:
             self.controller._activate(record)

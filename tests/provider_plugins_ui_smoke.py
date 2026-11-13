@@ -41,7 +41,11 @@ def item(name):
 def expose(name):
     target = item(name)
     assert target and target.isVisible(), name
-    flick = item("settingsScroll").property("contentItem")
+    # Settings are built on first use, so only scroll once the page exists.
+    scroll = item("settingsScroll")
+    if scroll is None:
+        return target
+    flick = scroll.property("contentItem")
     parent = target.parentItem()
     while parent and parent != flick: parent = parent.parentItem()
     if parent:

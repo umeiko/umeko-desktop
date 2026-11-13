@@ -84,6 +84,7 @@ smokes=(
   tests/login_startup_launch_smoke.py
   tests/sidebar_highlight_ui_smoke.py
   tests/chat_loading_ui_smoke.py
+  tests/recent_history_ui_smoke.py
   tests/scroll_paging_ui_smoke.py
   tests/task_state_ui_smoke.py
   tests/steering_status_ui_smoke.py
