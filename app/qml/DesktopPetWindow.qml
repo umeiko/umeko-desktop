@@ -207,7 +207,7 @@ Window {
         taskComposer.error = ""
         taskComposer.open()
     }
-    Popup {
+    PidPopup {
         id: taskComposer
         objectName: "desktopPetTaskComposer"
         parent: root.contentItem
@@ -215,6 +215,7 @@ Window {
         property string targetId: ""
         property string error: ""
         property bool sending: false
+        modal: false
         width: Math.min(Theme.control(360), root.screen.width - 24)
         height: Math.max(52, taskInput.implicitHeight + 12)
         padding: 0
@@ -223,12 +224,15 @@ Window {
         margins: -1
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        onAboutToShow: {
-            const area = root.bounds()
-            const left = root.x + (root.width - width) / 2
-            const top = root.y + art.y + art.height - (art.item ? art.item.paintedHeight : art.height) * (1 - (root.state.contentTop || 0)) - height - 8
-            x = Math.round(Math.max(area.x + 8, Math.min(area.x + area.width - width - 8, left)) - root.x)
-            y = Math.round(Math.max(area.y + 8, Math.min(area.y + area.height - height - 8, top)) - root.y)
+        Connections {
+            target: taskComposer
+            function onAboutToShow() {
+                const area = root.bounds()
+                const left = root.x + (root.width - taskComposer.width) / 2
+                const top = root.y + art.y + art.height - (art.item ? art.item.paintedHeight : art.height) * (1 - (root.state.contentTop || 0)) - taskComposer.height - 8
+                taskComposer.x = Math.round(Math.max(area.x + 8, Math.min(area.x + area.width - taskComposer.width - 8, left)) - root.x)
+                taskComposer.y = Math.round(Math.max(area.y + 8, Math.min(area.y + area.height - taskComposer.height - 8, top)) - root.y)
+            }
         }
         onOpened: taskInput.forceActiveFocus()
         function submit() {
@@ -247,13 +251,13 @@ Window {
             border.color: taskComposer.error ? Theme.danger : taskInput.activeFocus ? Theme.accent : Theme.line
         }
         contentItem: Item {
+            enabled: taskComposer.desiredOpen
             InputField {
                 id: taskInput
                 objectName: "desktopPetTaskInput"
                 anchors.fill: parent
                 leftPadding: 18
                 rightPadding: parent.height + 4
-                placeholderText: I18n.t("交给悬浮小助手…")
                 maximumLength: 16000
                 Accessible.name: I18n.t("给悬浮小助手派活")
                 Accessible.description: taskComposer.error

@@ -69,10 +69,13 @@ try:
     native_command = backend._command_pi
     backend._command_pi = command
 
-    def open_composer():
+    def open_composer(verify_motion=False):
         QTest.mouseDClick(window, Qt.LeftButton, Qt.NoModifier, point)
+        if verify_motion:
+            wait(lambda: 0 < composer.property('animationProgress') < 1, 'PID opening did not render intermediate frames')
         wait(lambda: composer.property('opened'), 'Double click did not open the composer')
         wait(lambda: field.property('activeFocus'), 'Text input did not receive focus')
+        wait(lambda: not composer.property('animating'), 'PID opening did not settle')
         native = evaluate(composer, 'contentItem.Window.window')
         assert native is not window, 'Task input is clipped to the pet input mask'
         wait(lambda: native.width() >= 350, 'Task popup was constrained to the tiny pet window: '
@@ -84,7 +87,8 @@ try:
         assert evaluate(composer, 'background.radius') == composer.property('height') / 2
         return native
 
-    native = open_composer()
+    native = open_composer(verify_motion=True)
+    assert field.property('placeholderText') == ''
     assert not send.property('enabled'), 'Empty input can be sent'
     first = window.findChild(QObject, 'desktopPetAnimation').property('currentFrame')
     wait(lambda: window.findChild(QObject, 'desktopPetAnimation').property('currentFrame') != first,
@@ -126,6 +130,7 @@ try:
     assert composer.property('visible') and field.property('text') == '失败时保留这段输入'
     assert native.grabWindow().save(str(out / 'composer-error.png'))
     QTest.keyClick(native, Qt.Key_Escape)
+    assert not composer.property('desiredOpen') and composer.property('visible'), 'Closing skipped the PID transition'
     wait(lambda: not composer.property('visible'), 'Escape did not dismiss')
     native = open_composer()
     assert field.property('text') == '失败时保留这段输入', 'Dismissal discarded the draft'
@@ -143,7 +148,7 @@ try:
     backend.setLanguage('en')
     native = open_composer()
     field.setProperty('text', '')
-    assert field.property('placeholderText') == 'Give your assistant a task…'
+    assert field.property('placeholderText') == ''
     assert native.grabWindow().save(str(out / 'composer-en.png'))
     QTest.keyClick(native, Qt.Key_Escape)
     backend.setTheme('dark')
@@ -205,7 +210,7 @@ try:
         'failedDraftPreserved': True, 'escapeAndOutsideClose': True, 'bindingLossCloses': True,
         'animationContinues': True, 'bilingual': True, 'nativePiRoundTrip': True,
         'concentricSendCircle': True, 'imeCommit': True, 'screenEdges': True,
-        'largeFont': True, 'warnings': relevant}, indent=2))
+        'largeFont': True, 'pidOpenAndClose': True, 'warnings': relevant}, indent=2))
     print('Pet task input UI passed')
 finally:
     backend.close()
