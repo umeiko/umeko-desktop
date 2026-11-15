@@ -68,6 +68,8 @@ class DesktopPet(QObject):
         super().__init__(manager)
         self.manager = manager
         self.assistant = None
+        self._task_schedule = None
+        self._project_entry = None
         self.b = manager.b
         self.motion = PetMotion()
         self.running = False
@@ -134,6 +136,20 @@ class DesktopPet(QObject):
     def inputMask(self):
         return self._input_mask
 
+    @Property(QObject, constant=True)
+    def projectEntry(self):
+        if self._project_entry is None:
+            from .pet_project import PetProject
+            self._project_entry = PetProject(self)
+        return self._project_entry
+
+    @Property(QObject, constant=True)
+    def taskSchedule(self):
+        if self._task_schedule is None:
+            from .pet_timer import PetTimer
+            self._task_schedule = PetTimer(self)
+        return self._task_schedule
+
     @Property('QVariantMap', notify=changed)
     def assistantStatus(self):
         return self.assistant.status() if self.assistant else {}
@@ -184,6 +200,8 @@ class DesktopPet(QObject):
         if self.assistant: self.assistant.reconcile()
 
     def close(self):
+        if self._project_entry: self._project_entry.close()
+        if self._task_schedule: self._task_schedule.close_service()
         self.closed = True
         self.stop()
         if self.assistant: self.assistant.close()
