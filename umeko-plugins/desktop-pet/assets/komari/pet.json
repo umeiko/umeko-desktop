@@ -4,56 +4,62 @@
   "id": "komari",
   "name": "小鞠知花",
   "states": {
-    "idle": "idle.webp",
-    "thinking": "thinking.webp",
-    "working": "working.webp",
-    "waiting": "waiting.webp",
-    "done": "done.webp",
-    "error": "error.webp"
+    "idle": "idle.gif",
+    "thinking": "thinking.gif",
+    "working": "working.gif",
+    "waiting": "waiting.gif",
+    "done": "done.gif",
+    "error": "error.gif"
   },
   "images": {
-    "idle.webp": {
+    "idle.gif": {
       "animated": true,
-      "width": 384,
-      "height": 576,
-      "frames": 6
+      "width": 512,
+      "height": 512,
+      "frames": 39,
+      "contentTop": 0.0703125
     },
-    "thinking.webp": {
+    "thinking.gif": {
       "animated": true,
-      "width": 384,
-      "height": 576,
-      "frames": 6
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "contentTop": 0.078125
     },
-    "working.webp": {
+    "working.gif": {
       "animated": true,
-      "width": 384,
-      "height": 576,
-      "frames": 6
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "contentTop": 0.07421875
     },
-    "waiting.webp": {
+    "waiting.gif": {
       "animated": true,
-      "width": 384,
-      "height": 576,
-      "frames": 6
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "contentTop": 0.07421875
     },
-    "done.webp": {
+    "done.gif": {
       "animated": true,
-      "width": 384,
-      "height": 576,
-      "frames": 6
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "contentTop": 0.07421875
     },
-    "error.webp": {
+    "error.gif": {
       "animated": true,
-      "width": 384,
-      "height": 576,
-      "frames": 6
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "contentTop": 0.078125
     },
-    "idle-rare.webp": {
+    "idle-rare.gif": {
       "animated": true,
-      "width": 384,
-      "height": 576,
-      "frames": 6,
-      "contentTop": 0.09722222222222222
+      "width": 512,
+      "height": 512,
+      "frames": 107,
+      "contentTop": 0.07421875
     }
   },
   "dialogue": {
@@ -70,7 +76,7 @@
     ]
   },
   "rareIdle": {
-    "image": "idle-rare.webp",
+    "image": "idle-rare.gif",
     "line": "那家伙就总是让我烦躁、让我感到不爽、让我很在意。但是那家伙，却表现得一点都不在乎。我、我就感觉很恼火。",
     "title": "说不清的在意"
   },

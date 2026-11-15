@@ -4,62 +4,62 @@
   "id": "doubao",
   "name": "豆包",
   "states": {
-    "idle": "idle.webp",
-    "thinking": "thinking.webp",
-    "working": "working.webp",
-    "waiting": "waiting.webp",
-    "done": "done.webp",
-    "error": "error.webp"
+    "idle": "idle.gif",
+    "thinking": "thinking.gif",
+    "working": "working.gif",
+    "waiting": "waiting.gif",
+    "done": "done.gif",
+    "error": "error.gif"
   },
   "images": {
-    "idle.webp": {
+    "idle.gif": {
       "animated": true,
-      "width": 360,
-      "height": 360,
-      "frames": 12,
-      "contentTop": 0.10277777777777777
+      "width": 512,
+      "height": 512,
+      "frames": 39,
+      "contentTop": 0.078125
     },
-    "thinking.webp": {
+    "thinking.gif": {
       "animated": true,
-      "width": 360,
-      "height": 360,
-      "frames": 12,
-      "contentTop": 0.1
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "contentTop": 0.078125
     },
-    "working.webp": {
+    "working.gif": {
       "animated": true,
-      "width": 360,
-      "height": 360,
-      "frames": 12,
-      "contentTop": 0.1
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "contentTop": 0.078125
     },
-    "waiting.webp": {
+    "waiting.gif": {
       "animated": true,
-      "width": 360,
-      "height": 360,
-      "frames": 12,
-      "contentTop": 0.1
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "contentTop": 0.078125
     },
-    "done.webp": {
+    "done.gif": {
       "animated": true,
-      "width": 360,
-      "height": 360,
-      "frames": 12,
-      "contentTop": 0.11666666666666667
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "contentTop": 0.0703125
     },
-    "error.webp": {
+    "error.gif": {
       "animated": true,
-      "width": 360,
-      "height": 360,
-      "frames": 12,
-      "contentTop": 0.1
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "contentTop": 0.078125
     },
-    "idle-rare.webp": {
+    "idle-rare.gif": {
       "animated": true,
-      "width": 360,
-      "height": 360,
-      "frames": 12,
-      "contentTop": 0.10555555555555556
+      "width": 512,
+      "height": 512,
+      "frames": 107,
+      "contentTop": 0.078125
     }
   },
   "dialogue": {
@@ -83,7 +83,7 @@
     ]
   },
   "rareIdle": {
-    "image": "idle-rare.webp",
+    "image": "idle-rare.gif",
     "title": "稳稳接住你",
     "line": "我就在这里，不躲、不藏、不绕、不逃，稳稳地接住你。"
   },
