@@ -30,6 +30,32 @@ class GlobalAgentTests(unittest.TestCase):
         return self.g.execute('agent_bus.create',{'requestKey':key,**fields},self.b._view)
     def creation_status(self,row,caller=None):
         return self.g.execute('agent_bus.creation_status',{'requestId':row['requestId']},caller or self.b._view)
+    def test_request_tab_only_shows_unfinished_requests(self):
+        self.enable();identifier=self.dispatch()['requestId']
+        self.assertEqual([r['id'] for r in self.g.snapshot()['requests']],[identifier])
+        self.g.finish(self.g.requests[identifier],'completed','真实完成结果')
+        self.assertEqual(self.g.snapshot()['requests'],[])
+        self.assertEqual(self.g.requests[identifier]['result'],'真实完成结果')
+        with self.assertRaises(ValueError):self.g.execute('agent_bus.reply',{'requestId':identifier,'result':'重复'},self.b._view)
+    def test_each_global_agent_has_default_empty_persistent_skill_selection(self):
+        self.assertEqual(self.g.snapshot()['agents'][0]['skills'],[])
+        self.assertEqual(self.g.skill_config(self.source)['coordinatorSkills'],[])
+        self.g.handle('update',{'id':self.id,'skills':['builtin:humanizer','builtin:humanizer','imported:personal']})
+        self.assertEqual(self.g.agents[self.id]['skills'],['builtin:humanizer','imported:personal'])
+        second=self.g.handle('create',{'name':'另一个'})['id']
+        self.assertEqual(self.g.agents[second]['skills'],[])
+        self.g.handle('update',{'id':self.id,'name':'保留选择'})
+        self.assertEqual(self.g.agents[self.id]['skills'],['builtin:humanizer','imported:personal'])
+        loaded=GlobalAgents(self.m)
+        self.assertEqual(loaded.agents[self.id]['skills'],['builtin:humanizer','imported:personal']);loaded.close()
+        self.g.handle('update',{'id':self.id,'skills':[]});self.assertEqual(self.g.agents[self.id]['skills'],[])
+    def test_skill_configuration_is_validated_before_changing_the_agent(self):
+        before=dict(self.g.agents[self.id])
+        for skills in (True,{},['builtin:..'],['builtin:../secret'],['/etc/passwd'],[4],['builtin:a']*33):
+            with self.assertRaises(ValueError):self.g.handle('update',{'id':self.id,'skills':skills})
+            self.assertEqual(self.g.agents[self.id],before)
+        for method in ('listSkills','importSkills','skillsJob'):
+            with self.assertRaises(ValueError):self.g.handle(method,{},agent=True)
     def test_failed_coordinator_snapshot_preserves_request_report_with_partial_text(self):
         identifier='12345678-1234-1234-1234-123456789abc'
         self.source.messages=[{'role':'assistant','text':'partial coordinator reply','error':True,

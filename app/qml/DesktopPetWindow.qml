@@ -17,7 +17,7 @@ Window {
     property real pressY: 0
     property real startX: 0
     property real startY: 0
-    property real tilt: 0
+    readonly property real tilt: 0
     readonly property var reminderCard: pet.reminderCard || []
     property string reminderKeys: ""
     readonly property url spriteSource: state.source
@@ -111,12 +111,6 @@ Window {
         running: root.visible && !root.config.paused && root.state.action === "idle" && !root.state.animated
         onTriggered: root.pet.idleCycle()
     }
-    SequentialAnimation {
-        id:wiggle
-        NumberAnimation {target:root;property:"tilt";to:-7;duration:85}
-        NumberAnimation {target:root;property:"tilt";to:6;duration:130}
-        NumberAnimation {target:root;property:"tilt";to:0;duration:200;easing.type:Easing.OutCubic}
-    }
     Rectangle {
         id:bubble; objectName:"desktopPetSpeechBubble"; anchors.horizontalCenter:parent.horizontalCenter
         // Respect both letterboxing and the transparent margin inside the art.
@@ -192,7 +186,7 @@ Window {
         onReleased:mouse => {
             if(mouse.button!==Qt.LeftButton)return
             if(root.dragged){root.constrain();root.pet.savePosition(root.x,root.y)}
-            else {root.pet.interact("tap");wiggle.restart()}
+            else root.pet.interact("tap")
         }
         onCanceled:if(root.dragged){root.constrain();root.pet.savePosition(root.x,root.y)}
     }

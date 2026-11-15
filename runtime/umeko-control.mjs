@@ -64,8 +64,9 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getPetAssistantBin
 }
 
 // Mandatory coordinator boundary, independent of user extension/tool filters.
-export function coordinatorToolGate(event, {petAssistant = false} = {}) {
+export function coordinatorToolGate(event, {petAssistant = false, skillReader = false} = {}) {
   if (petAssistant && event.toolName === SEND_TO_USER) return;
+  if (skillReader && event.toolName === 'read') return;
   if (event.toolName === UMEKO_TOOL && event.input?.operation === 'agent_bus.create')
     return { block: true, reason: 'Only ordinary session Agents may create global subagents. Global subagents cannot create other global subagents.' };
   if (event.toolName !== UMEKO_TOOL || !['agent_bus.overview','agent_bus.dispatch','agent_bus.requests','agent_bus.reply','agent_bus.connections','agent_bus.set_connection','help','models.list'].includes(event.input?.operation))

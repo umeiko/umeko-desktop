@@ -4,10 +4,10 @@ Only this built-in Widget has administrative access. Agent callers are bound to
 native SessionState objects; target/source IDs in model arguments are not identity.
 """
 from __future__ import annotations
-import copy, hashlib, json, secrets, time, uuid
+import copy, hashlib, json, secrets, time, uuid, re
 from itertools import islice
 from pathlib import Path
-from PySide6.QtCore import QObject, QTimer
+from PySide6.QtCore import QObject, QTimer, QUrl
 from .pi_sessions import SessionState
 from .chat_model import ChatModel
 from .conversation_state import ConversationState
@@ -28,6 +28,7 @@ class GlobalAgents(QObject):
         self.registry = self.root/'state.json'
         self.agents, self.bridges, self.requests, self.records, self.outbox = {}, {}, {}, {}, {}
         self.creation_requests = {}
+        self.skill_jobs = {}
         self.busy_since = {}
         self.allow_automatic_creation = False
         self.pet_assistant_id = ''
@@ -58,6 +59,7 @@ class GlobalAgents(QObject):
         self.timer = QTimer(self); self.timer.setInterval(500); self.timer.timeout.connect(self.tick)
         self.save_timer = QTimer(self); self.save_timer.setSingleShot(True); self.save_timer.setInterval(400); self.save_timer.timeout.connect(self.save)
         self.b._pool.event.connect(self.observe)
+        if hasattr(self.b, 'jobDone'): self.b.jobDone.connect(self._skill_finished)
         for name in ('chatChanged','viewChanged','changed'):
             signal=getattr(self.b,name,None)
             if signal: signal.connect(lambda:self.changed(persist=False))
@@ -136,6 +138,40 @@ class GlobalAgents(QObject):
         except OSError as error: self.error = str(error)
 
     def identifier(self, record): return 'agent:'+record.global_agent if record.global_agent else 'session:'+(record.id or record.key)
+    @staticmethod
+    def selected_skills(value):
+        if not isinstance(value,list) or len(value)>32: raise ValueError('最多启用 32 个 Skills')
+        if any(not isinstance(v,str) or not re.fullmatch(r'(builtin|imported):[^/\\\x00:]{1,160}',v) or v.split(':')[1] in ('.','..') for v in value):
+            raise ValueError('Skill 标识无效')
+        return list(dict.fromkeys(value))
+    def skill_config(self, record):
+        return {'coordinatorSkills':self.selected_skills(self.agents[record.global_agent].get('skills',[])),
+            'coordinatorSkillRoots':{'builtin':str(Path(__file__).resolve().parents[1]/'bundled-skills'),'imported':str(self.root/'agent/skills')}}
+    def _skill_finished(self, name, result):
+        if not name.startswith('global-agent-skills:'):return
+        identifier=name.split(':',1)[1]
+        if identifier not in self.skill_jobs:return
+        value=result['value'] if result['ok'] else {'ok':False,'error':str(result['value'])}
+        self.skill_jobs[identifier]={'status':'completed' if value.get('ok') else 'failed','result':value}
+    def start_skill_job(self, method, args):
+        if any(row['status']=='running' for row in self.skill_jobs.values()):raise ValueError('Skills 正在加载，请稍候')
+        from .pi_runtime import node_executable
+        source=Path(__file__).resolve().parents[1]
+        context={'node':node_executable(),'release':str(self.b._release),'cwd':str(self.root),'agentDir':str(self.root/'agent'),
+            'coordinatorSkillRoots':{'builtin':str(source/'bundled-skills'),'imported':str(self.root/'agent/skills')}}
+        payload={'operation':method,'context':context}
+        if method=='importSkills':
+            path=self.text(args,'source',4096);url=QUrl(path)
+            if url.scheme()=='file':
+                if not url.isLocalFile() or url.host() not in ('','localhost'):raise ValueError('请选择本地 Skill 文件夹或压缩包')
+                path=url.toLocalFile()
+            payload['source']=path
+        from .global_agent_skills_worker import execute
+        def run():return execute(payload)
+        while len(self.skill_jobs)>=16:self.skill_jobs.pop(next(iter(self.skill_jobs)))
+        identifier=uuid.uuid4().hex;self.skill_jobs[identifier]={'status':'running'}
+        self.b._job('global-agent-skills:'+identifier,run)
+        return {'jobId':identifier}
     def forget_sessions(self, identifiers, keys=()):
         addresses = {'session:'+identifier for identifier in identifiers} | {'session:'+key for key in keys}
         for address in addresses | set(identifiers) | {'draft:'+key for key in keys}: self.bridges.pop(address, None)
@@ -288,11 +324,11 @@ class GlobalAgents(QObject):
         agents=[]
         for identifier, row in self.agents.items():
             record=self.records.get(identifier)
-            agents.append({key:row.get(key,'') for key in ('id','name','character','model','instructions')} | {'autoName':bool(row.get('autoName')),'portrait':portraits.get(row['character'],portraits.get(fallback,'')),'replyPortrait':replies.get(row['character'],replies.get(fallback,'')),**self.activity(identifier),'status':record.tool_status if record else '','bridge':True})
+            agents.append({key:row.get(key,'') for key in ('id','name','character','model','instructions')} | {'skills':list(row.get('skills',[])),'autoName':bool(row.get('autoName')),'portrait':portraits.get(row['character'],portraits.get(fallback,'')),'replyPortrait':replies.get(row['character'],replies.get(fallback,'')),**self.activity(identifier),'status':record.tool_status if record else '','bridge':True})
         selected_row = self.records.get(selected)
         messages = ChatModel.project(self.messages(selected_row.messages if selected_row and selected_row.messages else self.agents.get(selected,{}).get('messages',[]))) if include_messages else []
         draft=next((self.creation_result(row) | {'sourceTitle':row['sourceTitle']} for row in self.creation_requests.values() if row['status']=='awaiting_approval'),{})
-        return {'agents':agents,'appearances':appearances,'defaultCharacter':fallback,'models':self.b.gateway.models(),'defaultModel':self.b.store.data.get('selectedModel',''), 'targets':self.overview()['targets'],'projects':self.project_rows(),'requests':[{**row,'text':row.get('text','')[:500],'result':row.get('result','')[:500]} for row in list(self.requests.values())[-64:]],'messages':messages,'revision':self._revision,'error':self.error,'approval':copy.deepcopy(selected_row.approval) if selected_row else {},'selectedId':selected,'currentTarget':self.identifier(self.b._view),'allowAutomaticCreation':self.allow_automatic_creation,'creationDraft':draft,'queue':[{key:row.get(key,'') for key in ('id','source','sourceTitle','text','created')} for row in self.pending_queue(selected)]}
+        return {'agents':agents,'appearances':appearances,'defaultCharacter':fallback,'models':self.b.gateway.models(),'defaultModel':self.b.store.data.get('selectedModel',''), 'targets':self.overview()['targets'],'projects':self.project_rows(),'requests':[{**row,'text':row.get('text','')[:500],'result':row.get('result','')[:500]} for row in list(self.requests.values())[-64:] if row['status'] not in TERMINAL],'messages':messages,'revision':self._revision,'error':self.error,'approval':copy.deepcopy(selected_row.approval) if selected_row else {},'selectedId':selected,'currentTarget':self.identifier(self.b._view),'allowAutomaticCreation':self.allow_automatic_creation,'creationDraft':draft,'queue':[{key:row.get(key,'') for key in ('id','source','sourceTitle','text','created')} for row in self.pending_queue(selected)]}
     def project_rows(self):
         return [{key:row.get(key,'') for key in ('id','name','path')} for row in self.b.store.data.get('projects',[]) if row.get('path')]
     def overview(self, caller=None):
@@ -345,6 +381,11 @@ class GlobalAgents(QObject):
     def handle(self, method, args, *, agent=False, session=None):
         if not self.active: raise ValueError('全局子智能体服务未启用')
         if agent: raise ValueError('管理仅允许 Widget 中的用户操作；代理使用 agent_bus.*')
+        if method in ('listSkills','importSkills'):return self.start_skill_job(method,args)
+        if method=='skillsJob':
+            identifier=self.text(args,'id',80)
+            if identifier not in self.skill_jobs:raise ValueError('Skill 请求已过期，请重新加载')
+            return self.skill_jobs[identifier]
         if method=='setAutomaticCreation':
             if type(args.get('enabled')) is not bool:raise ValueError('enabled must be boolean')
             self.allow_automatic_creation=args['enabled'];self.changed();self.save()
@@ -358,6 +399,7 @@ class GlobalAgents(QObject):
             else:
                 if not row.get('source','').startswith('session:'):raise ValueError('仅普通会话中的 Agent 可以申请创建全局子智能体')
                 values={key:args.get(key,row[key]) for key in ('name','character','model','instructions')}
+                values['skills']=args.get('skills',[])
                 row['agentId']=self.handle('create',values)['id'];row['status']='created';self.connect_creation_source(row)
             self.changed();self.save();self.notify_creation(row)
             return self.creation_result(row)
@@ -371,6 +413,7 @@ class GlobalAgents(QObject):
             if model not in {row['id'] for row in self.b.gateway.models()}: raise ValueError('请先配置可用模型')
             identifier=args.get('id') if method=='update' else uuid.uuid4().hex
             instructions=self.text(args,'instructions',8000,False)
+            skills=self.selected_skills(args.get('skills',self.agents.get(identifier,{}).get('skills',[])))
             if method=='update':
                 if identifier not in self.agents: raise ValueError('全局子智能体不存在')
                 if identifier in self.records and self.records[identifier].busy: raise ValueError('请先停止代理再修改设置')
@@ -380,7 +423,7 @@ class GlobalAgents(QObject):
                 if old: self.b._pool.records.pop(old.key,None)
             automatic=not name;number=0
             if automatic:name,number=self.automatic_name(character,identifier)
-            self.agents[identifier]={**self.agents.get(identifier,{}), **{'id':identifier,'name':name,'character':character,'model':model,'instructions':instructions,'autoName':automatic,'autoNameIndex':number}}
+            self.agents[identifier]={**self.agents.get(identifier,{}), **{'id':identifier,'name':name,'character':character,'model':model,'instructions':instructions,'skills':skills,'autoName':automatic,'autoNameIndex':number}}
             self.changed(); self.save(); return {'id':identifier}
         identifier=self.text(args,'id',80)
         if method in ('cancelRequest','prioritizeRequest') and identifier.startswith('message:'):

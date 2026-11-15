@@ -204,6 +204,7 @@ class PiControllerMixin:
                 if record.global_agent:
                     service=self._desktop_plugins.global_agents
                     payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(service.root/"sessions"/record.global_agent),
+                        **service.skill_config(record),
                         petAssistantBinding=service.m._pet.assistant.binding_for(record),
                         agent={**agent,"safeMode":True,"instructions":service.prompt(record)})
                 self._pool.start(record, node_executable(), bridge, payload)
