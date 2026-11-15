@@ -318,5 +318,7 @@
         "sha256": "0cacebc78b1628ea9e63b0fc5a50570cd5bb81c2f6d03008cf696a947e325241"
       }
     ]
-  }
+  },
+  "supersededBy": "delivery.provenance.json",
+  "status": "Historical source artwork record; shipped animation files now come from the user-provided GIF delivery."
 }

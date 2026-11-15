@@ -93,6 +93,8 @@ Window {
     }
     Timer { id:speech; interval:root.state.rareIdle ? 4200 : 2600; onTriggered:root.caption="" }
     Timer {id:reminderTimeout;interval:8000;onTriggered:root.closeReminderCard()}
+    // Owned by the window so hiding it cancels pending loop callbacks.
+    Timer { id:idleCycleCompletion; interval:0; onTriggered:root.pet.idleCycle() }
     // Compatibility for imported still images; built-in rare scenes are animated.
     Timer {
         interval: 4200; repeat: true
@@ -152,7 +154,7 @@ Window {
                         onSourceChanged: previousFrame = -1
                         onCurrentFrameChanged: {
                             if (previousFrame > currentFrame && root.visible && !root.config.paused)
-                                Qt.callLater(function() { root.pet.idleCycle() })
+                                idleCycleCompletion.restart()
                             previousFrame = currentFrame
                         }
                         readonly property bool ready:status===Image.Ready;source:root.state.source;fillMode:Image.PreserveAspectFit;verticalAlignment:Image.AlignBottom;cache:false;asynchronous:true;playing:root.visible && !root.config.paused;mipmap:false;onStatusChanged:if(status===Image.Error)root.caption=I18n.t("形象加载失败，请在桌宠设置中更换形象")}
@@ -184,45 +186,64 @@ Window {
         }
         onCanceled:if(root.dragged){root.constrain();root.pet.savePosition(root.x,root.y)}
     }
-    component PetMenu: Menu {
-        popupType:Popup.Window
-        onAboutToShow: {
-            // Windows popups have no native owner; a pin toggle can raise the pet above a reused menu.
-            const popupWindow=contentItem.Window.window
-            popupWindow.flags |= Qt.WindowStaysOnTopHint
-            popupWindow.raise()
+    component PetMenu: FloatingMenu {
+        id: petMenu
+        popupType: Popup.Window
+        constrainToWindow: false
+        delegate: ContextAction {
+            glyph: subMenu && subMenu.objectName === "desktopPetReminderMenu" ? "clock" : "pet"
+        }
+        Connections {
+            target: petMenu
+            function onAboutToShow() {
+                // Retain stacking after toggling the pet's always-on-top flag.
+                const popupWindow = petMenu.contentItem.Window.window
+                popupWindow.flags |= Qt.WindowStaysOnTopHint
+                popupWindow.raise()
+            }
         }
     }
+    component PetSeparator: MenuSeparator {
+        contentItem: Rectangle { implicitHeight: 1; color: Theme.line }
+    }
     PetMenu {
-        id:menu;objectName:"desktopPetContextMenu"
-        MenuItem {text:I18n.t("打开 Umeko");onTriggered:root.pet.restoreRequested()}
+        id: menu; objectName: "desktopPetContextMenu"
+        ContextAction { text: I18n.t("打开 Umeko"); glyph: "external-link"; onTriggered: root.pet.restoreRequested() }
         PetMenu {
-            objectName:"desktopPetReminderMenu";title:I18n.t("提醒与待办")+" ("+root.pet.reminderItems.length+")"
-            MenuItem {visible:root.pet.reminderItems.length===0;text:I18n.t("暂无待办");enabled:false}
+            objectName: "desktopPetReminderMenu"; title: I18n.t("提醒与待办") + " (" + root.pet.reminderItems.length + ")"
+            ContextAction { visible: root.pet.reminderItems.length === 0; text: I18n.t("暂无待办"); enabled: false }
             Repeater {
-                model:root.pet.reminderItems.slice(0,3)
-                MenuItem {
+                model: root.pet.reminderItems.slice(0, 3)
+                ContextAction {
                     required property var modelData
-                    text:modelData.title+" · "+root.localTime(modelData.dueAt)
-                    contentItem:Text { font.family: Theme.fontFamily;text:parent.text;textFormat:Text.PlainText;elide:Text.ElideRight;color:Theme.ink;font.pixelSize: Theme.font(11, visible);verticalAlignment:Text.AlignVCenter}
-                    implicitWidth:Math.min(360,Math.max(220,implicitContentWidth+leftPadding+rightPadding))
-                    onTriggered:root.pet.openReminders(modelData.id,false)
+                    text: modelData.title + " · " + root.localTime(modelData.dueAt)
+                    implicitWidth: Theme.control(300)
+                    onTriggered: root.pet.openReminders(modelData.id, false)
                 }
             }
-            MenuSeparator {}
-            MenuItem {objectName:"desktopPetReminderNewMenu";text:I18n.t("新增事项…");onTriggered:root.pet.openReminders("",true)}
-            MenuItem {objectName:"desktopPetReminderManageMenu";text:I18n.t("管理全部…");onTriggered:root.pet.openReminders("",false)}
+            PetSeparator {}
+            ContextAction { objectName: "desktopPetReminderNewMenu"; text: I18n.t("新增事项…"); glyph: "plus"; onTriggered: root.pet.openReminders("", true) }
+            ContextAction { objectName: "desktopPetReminderManageMenu"; text: I18n.t("管理全部…"); glyph: "sliders"; onTriggered: root.pet.openReminders("", false) }
         }
-        MenuItem {text:I18n.t("桌宠设置");onTriggered:root.pet.settingsRequested()}
-        MenuSeparator {}
+        ContextAction { text: I18n.t("桌宠设置"); glyph: "settings"; onTriggered: root.pet.settingsRequested() }
+        PetSeparator {}
         PetMenu {
-            title:I18n.t("动画形象")
-            Repeater {model:root.pet.appearances;MenuItem {required property var modelData;text:modelData.name;checkable:true;checked:root.config.appearance===modelData.id;onTriggered:root.pet.ui("selectAppearance",{id:modelData.id})}}
+            objectName: "desktopPetAppearanceMenu"; title: I18n.t("动画形象")
+            Repeater {
+                model: root.pet.appearances
+                ContextAction {
+                    required property var modelData
+                    objectName: "desktopPetAppearance_" + modelData.id
+                    text: modelData.name; glyph: "pet"
+                    checkable: true; checked: root.config.appearance === modelData.id
+                    onTriggered: root.pet.ui("selectAppearance", {id: modelData.id})
+                }
+            }
         }
-        MenuItem {text:I18n.t("暂停动作");checkable:true;checked:root.config.paused;onTriggered:root.pet.ui("configure",{paused:!root.config.paused})}
-        MenuItem {text:I18n.t("保持置顶");checkable:true;checked:root.config.alwaysOnTop;onTriggered:root.pet.ui("configure",{alwaysOnTop:!root.config.alwaysOnTop})}
-        MenuItem {text:I18n.t("重置位置");onTriggered:root.pet.ui("resetPosition",{})}
-        MenuSeparator {}
-        MenuItem {text:I18n.t("隐藏桌宠");onTriggered:root.pet.ui("hide",{})}
+        ContextAction { objectName: "desktopPetPauseAction"; text: I18n.t("暂停动作"); glyph: "stop"; checkable: true; checked: root.config.paused; onTriggered: root.pet.ui("configure", {paused: !root.config.paused}) }
+        ContextAction { objectName: "desktopPetPinAction"; text: I18n.t("保持置顶"); glyph: "pin"; checkable: true; checked: root.config.alwaysOnTop; onTriggered: root.pet.ui("configure", {alwaysOnTop: !root.config.alwaysOnTop}) }
+        ContextAction { text: I18n.t("重置位置"); glyph: "refresh"; onTriggered: root.pet.ui("resetPosition", {}) }
+        PetSeparator {}
+        ContextAction { text: I18n.t("隐藏桌宠"); glyph: "eye-off"; onTriggered: root.pet.ui("hide", {}) }
     }
 }

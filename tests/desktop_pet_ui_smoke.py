@@ -267,6 +267,17 @@ try:
         wait(lambda:animation.property('source').toString().endswith('/'+state+'.webp') and animation.property('ready'),'Whale state did not decode: '+state)
         assert animation.property('frameCount')>1
         window.grabWindow().save(str(out/('whale-'+state+'.png')))
+    pet.ui('selectAppearance',{'id':'tiara'})
+    for state in ('idle','thinking','working','waiting','done','error'):
+        pet.motion.state=state;pet.changed.emit()
+        wait(lambda:animation.property('ready') and animation.property('source').toString().endswith('/tiara/'+state+'.gif'),'Tiara state did not decode: '+state)
+        assert animation.property('frameCount')==(39 if state=='idle' else 56)
+        window.grabWindow().save(str(out/('tiara-'+state+'.png')))
+    pet.motion.state='idle';pet._rare_idle=True;pet.changed.emit()
+    wait(lambda:animation.property('ready') and animation.property('source').toString().endswith('/tiara/idle-rare.gif'),'Tiara rare idle did not decode')
+    assert animation.property('frameCount')==107
+    window.grabWindow().save(str(out/'tiara-idle-rare.png'))
+    pet._rare_idle=False;pet.changed.emit()
     pet.ui('selectAppearance',{'id':'doubao'})
     for state in ('idle','thinking','working','waiting','done','error'):
         pet.motion.state=state;pet.changed.emit()
@@ -306,6 +317,19 @@ try:
     wait(lambda:menu.property('opened'),'Context menu did not open')
     menu.close()
     wait(lambda:not menu.property('visible'),'Context menu did not close')
+    pet.ui('configure',{'size':96});QTest.qWait(100)
+    point=pointer.mapToScene(pointer.boundingRect().center()).toPoint()
+    for theme in ('white','dark','yanami'):
+        backend.setTheme(theme)
+        menu.open();wait(lambda:menu.property('opened'),'Themed menu did not open')
+        wait(lambda:menu.property('opacity')>.98,'Menu animation did not become visible')
+        assert menu.property('width')>window.width(),'Menu squeezed into the small pet window'
+        assert menu.property('height')>window.height(),'Menu clipped to the small pet window'
+        QTest.qWait(150)
+        menu_object(menu,'contentItem.Window.window').grabWindow().save(str(out/('menu-'+theme+'.png')))
+        menu.close();wait(lambda:not menu.property('visible'),'Menu did not close')
+    pet.ui('configure',{'size':192});QTest.qWait(100)
+    point=pointer.mapToScene(pointer.boundingRect().center()).toPoint()
     restored=[]
     pet.restoreRequested.connect(lambda:restored.append(True))
     for toggle in range(50):

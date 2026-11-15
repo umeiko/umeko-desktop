@@ -4,6 +4,8 @@ import QtQuick.Controls
 Menu {
     id: root
     property bool desiredOpen: false
+    // Desktop popups use a separate window and are bounded by the screen.
+    property bool constrainToWindow: true
     property bool positionFromAnchor: false
     property point requestedPosition: Qt.point(0, 0)
     readonly property Item windowOverlay: Overlay.overlay
@@ -18,8 +20,8 @@ Menu {
         return widest
     }
     implicitWidth: Math.ceil(Math.max(Theme.control(184), widestAction + leftPadding + rightPadding))
-    width: Math.min(implicitWidth, Overlay.overlay ? Math.max(0, Overlay.overlay.width - margins * 2) : implicitWidth)
-    height: Math.min(implicitHeight, Overlay.overlay ? Math.max(0, Overlay.overlay.height - margins * 2) : implicitHeight)
+    width: Math.min(implicitWidth, constrainToWindow && Overlay.overlay ? Math.max(0, Overlay.overlay.width - margins * 2) : implicitWidth)
+    height: Math.min(implicitHeight, constrainToWindow && Overlay.overlay ? Math.max(0, Overlay.overlay.height - margins * 2) : implicitHeight)
     function openAt(point) {
         requestedPosition = point
         positionFromAnchor = true
@@ -28,7 +30,7 @@ Menu {
         Qt.callLater(fitToWindow)
     }
     function fitToWindow() {
-        if (!visible || !parent || !Overlay.overlay) return
+        if (!constrainToWindow || !visible || !parent || !Overlay.overlay) return
         const point = parent.mapToItem(Overlay.overlay, positionFromAnchor ? requestedPosition.x : x, positionFromAnchor ? requestedPosition.y : y)
         const edge = margins
         const fitted = Overlay.overlay.mapToItem(parent,
