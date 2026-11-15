@@ -9,6 +9,8 @@ ColumnLayout {
     required property var sdk
     property var snapshot: ({config:{},appearances:[],state:{}})
     property string error:""
+    property string personaId:""
+    property bool personaDirty:false
     property var pending: ({})
     property var items: []
     property bool completedFilter: false
@@ -107,6 +109,10 @@ ColumnLayout {
             if(!value.ok){root.error=value.error || "";if(method==="createItem" || method==="updateItem")root.formError=root.error;return}
             const result=value.result || {}
             if(method==="status" || result.config){
+                if(method==="setPersona")root.personaDirty=false
+                if(!root.personaDirty || root.personaId!==(result.config || {}).appearance){
+                    personaField.text=result.persona || "";root.personaId=(result.config || {}).appearance || "";root.personaDirty=false
+                }
                 root.snapshot=result;root.error=""
                 const selection=result.reminderSelection || {}
                 if(selection.serial!==undefined && selection.serial!==root.selectionSerial){
@@ -214,6 +220,25 @@ ColumnLayout {
             enabled:root.sdk.active
             onActivated:root.call("selectAppearance",{id:currentValue})
         }
+    }
+    RowLayout {
+        Layout.fillWidth:true
+        Label {text:root.sdk.t("悬浮小助手");color:root.sdk.colors.ink;Layout.fillWidth:true}
+        Label {objectName:"desktopPetAssistantBinding";text:root.sdk.t((root.snapshot.assistant || {}).bound?"已绑定":"显示桌宠并启用全局子智能体后自动绑定");wrapMode:Text.Wrap;Layout.maximumWidth:300*root.sdk.scale;color:root.sdk.colors.muted;font.pixelSize:12*root.sdk.scale}
+    }
+    Label {Layout.fillWidth:true;visible:!!text;text:(root.snapshot.assistant || {}).error || "";wrapMode:Text.Wrap;color:root.sdk.colors.danger}
+    Label {text:root.sdk.t("人物设定");color:root.sdk.colors.ink;font.pixelSize:13*root.sdk.scale}
+    ScrollView {
+        Layout.fillWidth:true;Layout.preferredHeight:88*root.sdk.scale
+        TextArea {id:personaField;objectName:"desktopPetPersona";placeholderText:root.sdk.t("可选，影响性格和说话方式");wrapMode:TextEdit.Wrap;textFormat:Text.PlainText;selectByMouse:true;color:root.sdk.colors.ink
+            onTextChanged:if(activeFocus)root.personaDirty=true
+            background:Rectangle {radius:8;color:root.sdk.colors.surface;border.color:personaField.activeFocus?root.sdk.colors.accent:root.sdk.colors.line}
+        }
+    }
+    RowLayout {
+        PetButton {text:root.sdk.t("恢复形象设定");enabled:root.sdk.active;onClicked:root.call("setPersona",{id:root.cfg.appearance,reset:true})}
+        Item {Layout.fillWidth:true}
+        PetButton {objectName:"desktopPetPersonaSave";text:root.sdk.t("保存");enabled:root.sdk.active && root.personaDirty && personaField.text.length<=1000;onClicked:root.call("setPersona",{id:root.cfg.appearance,persona:personaField.text})}
     }
     Flow {
         Layout.fillWidth:true;spacing:8

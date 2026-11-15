@@ -20,7 +20,8 @@ class Pool(QObject):
 class Host(QObject):
     viewChanged=Signal();chatChanged=Signal();toast=Signal(str);documentRequested=Signal(str,str,str);widgetDocumentRequested=Signal(str,str,str,str);editorText=Signal(str)
     def __init__(self,directory):
-        super().__init__();self.root=ROOT;self.store=SimpleNamespace(directory=directory/'profile')
+        super().__init__();self.root=ROOT;self.store=SimpleNamespace(directory=directory/'profile', data={'selectedModel':'fixture-model'})
+        self.characterStyle={'id':'yanami'}
         self._view=SimpleNamespace(key='token-one',id='session-one',workspace=str(directory/'workspace'),title='Fixture',busy=False,global_agent='',failed=False,cancelled=False,messages=[{'role':'user','text':'fixture context'}])
         self._pool=Pool(self._view)
         Path(self._view.workspace).mkdir();self.sent=[];self.attached=[];self.revealed=[];self.skill_changes=[]

@@ -7,7 +7,7 @@ import { sessionSkillOptions, manageSkills } from "./skills.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
-import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension } from "./umeko-control.mjs";
+import { UMEKO_TOOL, SEND_TO_USER, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
@@ -19,6 +19,7 @@ import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI
 import { blockedToolNames, toolInventory } from "./tool-visibility.mjs";
 import { createGenerationExtension } from "./generation.mjs";
 import { createSystemPromptController } from "./system-prompt.mjs";
+import { createCoordinatorSkills } from "./coordinator-skills.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
@@ -46,7 +47,7 @@ const { allToolNames, createAllToolDefinitions } = await import(new URL("./core/
 const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, "background_job"];
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
-const umekoControl = createUmekoControl({ emit });
+const umekoControl = createUmekoControl({ emit, getPetAssistantBinding: () => config?.petAssistantBinding || '' });
 const auxiliaryVision = createAuxiliaryVision({getConfig:() => config, emit:event => {
   if (event.sessionId && event.sessionId !== runtime?.session.sessionManager.getSessionId()) return subagents.automaticTool(event.sessionId,event);
   emit(event);
@@ -271,7 +272,7 @@ function contextUsage(session) {
 function exposeNativeTools(session) {
   // Use Pi's registry, schemas and execution. Deferred/codemode tools remain reachable
   // through the native discovery tools; explicitly hidden tools stay hidden.
-  if (config?.globalCoordinator) { session.setActiveToolsByName([UMEKO_TOOL]); return; }
+  if (config?.globalCoordinator) { session.setActiveToolsByName([UMEKO_TOOL, ...(config.petAssistantBinding ? [SEND_TO_USER] : []), ...(config.coordinatorSkills?.length ? ['read'] : [])]); return; }
   const declared = session.getAllTools().filter(tool => ["direct", "model-only"].includes(tool.exposure));
   session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...declared.map(tool => tool.name)])]
     .filter(name => !config?.pluginSessionPolicy || config.pluginSessionPolicy.allowedTools.includes(name))
@@ -381,6 +382,7 @@ async function init(input) {
   selectedModel = modelRuntime.getModel("umeko", input.model);
   if (!selectedModel) throw new Error("请选择已配置的模型");
   const factory = async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
+    const coordinatorSkills = input.globalCoordinator ? createCoordinatorSkills(input) : null;
     // Load normal Pi settings/resources without importing auth.json or models.json.
     const nativeManager = await prepareNativeSettings(Pi, { cwd, agentDir, agent: input.agent });
     const settingsManager = await sessionResourceSettings(Pi, {...input,cwd,agentDir}, nativeManager);
@@ -404,13 +406,16 @@ async function init(input) {
     const services = await Pi.createAgentSessionServices({ cwd, agentDir, modelRuntime, settingsManager,
       resourceLoaderOptions: {
         extensionsOverride: promptController.extensionsOverride,
-        ...await sessionSkillOptions(Pi, {...input,cwd,agentDir}, nativeManager),
         ...(input.agent?.safeMode || input.globalCoordinator ? { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
           additionalExtensionPaths: builtins.map(name => "builtin:" + name) } : {}),
+        ...(coordinatorSkills ? coordinatorSkills.resourceOptions : await sessionSkillOptions(Pi, {...input,cwd,agentDir}, nativeManager)),
         ...(selectedExtensions ? {noExtensions:true,additionalExtensionPaths:selectedExtensions} : {}),
         appendSystemPrompt: [(input.globalCoordinator || toolSelection(input.piCapabilities,{name:PI_COMMAND_TOOL,source:"builtin:pi-commands"}) ? DESKTOP_PI_PROMPT+" " : "") + (input.globalCoordinator || toolSelection(input.piCapabilities,{name:UMEKO_TOOL,source:"builtin:umeko-control"}) ? UMEKO_PROMPT+" " : "") + "Reply in the user's language.", input.agent?.instructions || ""],
         extensionFactories: [
-          ...(input.globalCoordinator ? [{name:"global-coordinator-boundary",hidden:true,replaceable:false,factory:coordinatorExtension}] : []),
+          ...(input.globalCoordinator ? [
+            {name:"global-coordinator-boundary",hidden:true,replaceable:false,factory:pi => coordinatorExtension(pi, {petAssistant: Boolean(input.petAssistantBinding), skillReader: Boolean(input.coordinatorSkills?.length)})},
+            {name:"coordinator-skills",hidden:true,replaceable:false,factory:pi => coordinatorSkills.extension(pi)},
+          ] : []),
           ...(input.loopReview ? [{name:"loop-review",hidden:true,replaceable:false,factory:loopReview.extension}] : []),
           // Mandatory inline factory: resource filters cannot disable the gate.
           { name: "recent-images", hidden: true, replaceable: false, factory: createRecentImagesExtension({ getLimit: () => config.agent?.maxContextImages }) },

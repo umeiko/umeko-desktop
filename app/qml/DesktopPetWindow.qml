@@ -10,13 +10,14 @@ Window {
     readonly property var state: pet.state
     readonly property var config: pet.config
     property string caption: ""
+    property bool assistantCaption: false
     property bool placed: false
     property bool dragged: false
     property real pressX: 0
     property real pressY: 0
     property real startX: 0
     property real startY: 0
-    property real tilt: 0
+    readonly property real tilt: 0
     readonly property var reminderCard: pet.reminderCard || []
     property string reminderKeys: ""
     readonly property url spriteSource: state.source
@@ -81,7 +82,16 @@ Window {
     onClosing: close => { close.accepted = false; pet.ui("hide",{}) }
     Connections {
         target: root.pet
-        function onReaction(text) { if(root.reminderCard.length)return;root.caption=text; speech.restart() }
+        function onReaction(text) {
+            if(!text){root.caption="";root.assistantCaption=false;speech.stop();return}
+            if(root.reminderCard.length || root.assistantCaption && speech.running)return
+            root.assistantCaption=false;root.caption=text;speech.restart()
+        }
+        function onAssistantSpeech(text) {
+            if(!text){root.assistantCaption=false;root.caption="";speech.stop();return}
+            if(root.reminderCard.length)return
+            root.assistantCaption=true;root.caption=text.slice(0,1024);speech.restart()
+        }
         function onResetPositionRequested() { root.place(true) }
     }
     Connections {
@@ -91,7 +101,7 @@ Window {
         function onVirtualXChanged(){if(root.visible)root.constrain()}
         function onVirtualYChanged(){if(root.visible)root.constrain()}
     }
-    Timer { id:speech; interval:root.state.rareIdle ? 4200 : 2600; onTriggered:root.caption="" }
+    Timer { id:speech; interval:root.assistantCaption ? 8000 : root.state.rareIdle ? 4200 : 2600; onTriggered:{root.caption="";root.assistantCaption=false} }
     Timer {id:reminderTimeout;interval:8000;onTriggered:root.closeReminderCard()}
     // Owned by the window so hiding it cancels pending loop callbacks.
     Timer { id:idleCycleCompletion; interval:0; onTriggered:root.pet.idleCycle() }
@@ -101,19 +111,13 @@ Window {
         running: root.visible && !root.config.paused && root.state.action === "idle" && !root.state.animated
         onTriggered: root.pet.idleCycle()
     }
-    SequentialAnimation {
-        id:wiggle
-        NumberAnimation {target:root;property:"tilt";to:-7;duration:85}
-        NumberAnimation {target:root;property:"tilt";to:6;duration:130}
-        NumberAnimation {target:root;property:"tilt";to:0;duration:200;easing.type:Easing.OutCubic}
-    }
     Rectangle {
         id:bubble; objectName:"desktopPetSpeechBubble"; anchors.horizontalCenter:parent.horizontalCenter
         // Respect both letterboxing and the transparent margin inside the art.
         y:Math.max(4,art.y+art.height-(art.item?art.item.paintedHeight:art.height)*(1-(root.state.contentTop || 0))-height-8)
         width:Math.min(root.width,spoken.implicitWidth+24);height:spoken.implicitHeight+16;radius:12
         color:Theme.surface;border.color:Theme.line;visible:!!root.caption && !root.reminderCard.length
-        Text { font.family: Theme.fontFamily;id:spoken;anchors.centerIn:parent;width:Math.min(implicitWidth,root.width-24);text:root.caption;textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.ink;font.pixelSize: Theme.font(11, visible)}
+        Text { font.family: Theme.fontFamily;id:spoken;anchors.centerIn:parent;width:Math.min(implicitWidth,root.width-24);text:root.caption;textFormat:Text.PlainText;wrapMode:Text.Wrap;maximumLineCount:4;elide:Text.ElideRight;color:Theme.ink;font.pixelSize: Theme.font(11, visible)}
     }
     Rectangle {
         id:reminder;objectName:"desktopPetReminderCard";z:4;anchors.horizontalCenter:parent.horizontalCenter
@@ -182,7 +186,7 @@ Window {
         onReleased:mouse => {
             if(mouse.button!==Qt.LeftButton)return
             if(root.dragged){root.constrain();root.pet.savePosition(root.x,root.y)}
-            else {root.pet.interact("tap");wiggle.restart()}
+            else root.pet.interact("tap")
         }
         onCanceled:if(root.dragged){root.constrain();root.pet.savePosition(root.x,root.y)}
     }

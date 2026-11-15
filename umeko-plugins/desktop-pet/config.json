@@ -6,5 +6,6 @@
   "paused": false,
   "reminderNotificationsEnabled": true,
   "sampleIntervalMs": 1500,
-  "minimumStateMs": 3000
+  "minimumStateMs": 3000,
+  "personas": {}
 }
