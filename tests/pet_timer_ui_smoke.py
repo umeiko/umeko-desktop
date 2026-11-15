@@ -1,4 +1,4 @@
-"""Actual offscreen capsule -> Desktop form -> existing timer worker (local session fixtures)."""
+"""Actual offscreen capsule -> inline questions -> existing timer worker (local session fixtures)."""
 import json, os, sys, tempfile
 from pathlib import Path
 from unittest.mock import Mock
@@ -13,6 +13,8 @@ QSystemTrayIcon.show=lambda *args:None
 from main import create_application
 from app.pi_sessions import SessionState
 app,engine,b=create_application();main=engine.rootObjects()[0];m=b.desktopPlugins;pet=m.pet
+# Native project payload reads the app setting, not only the environment variable.
+b.store.data.setdefault('agent',{})['agentDir']=tmp.name+'/agent'
 out=ROOT/'build/pet-timer-ui';out.mkdir(parents=True,exist_ok=True)
 warnings=[];engine.warnings.connect(lambda rows:warnings.extend(r.toString() for r in rows))
 def wait(fn,message):
@@ -31,7 +33,9 @@ try:
     pet.ui('show',{});wait(lambda:pet.assistantStatus.get('bound'),'No binding')
     window=main.findChild(QObject,'desktopPetWindow');wait(lambda:window.mask().boundingRect().height()>50,'No silhouette')
     composer=window.findChild(QObject,'desktopPetTaskComposer');field=composer.findChild(QObject,'desktopPetTaskInput')
-    dialog=main.findChild(QObject,'petTimerDialog');assert dialog
+    prompt=window.findChild(QObject,'petTimerPrompt');assert prompt
+    assert main.findChild(QObject,'petTimerDialog') is None
+    restores=[];pet.restoreRequested.connect(lambda:restores.append(True))
     native_command=b._command_pi;b._command_pi=Mock(return_value=True)
     visible=b._view;visible.draft='主窗口草稿不变';original_binding=pet.assistantStatus['id']
     def command(text):
@@ -41,15 +45,18 @@ try:
         native=js(composer,'contentItem.Window.window')
         QTest.keyClick(native,Qt.Key_Return)
         wait(lambda:pet.taskSchedule.opened,'Timer form did not open')
-        wait(lambda:not composer.property('visible'),'Capsule did not close')
-        assert field.property('text')==text,'Command body was lost'
+        assert composer.property('visible'),'Capsule unexpectedly closed'
+        assert composer.property('timerDraft')==text,'Command body was lost'
+        assert not restores,'Timer navigated to Desktop'
         assert b._view is visible and visible.draft=='主窗口草稿不变'
         b._command_pi.assert_not_called()
     command('/定时任务 帮我检查构建')
     t=pet.taskSchedule
     assert not t.owner and not t.owners
-    js(dialog,'schedule.review()');assert '显式选择' in t.error
-    shot('01-no-owner.png')
+    assert t.state['question']['key']=='owner'
+    def promptshot(name):
+        QTest.qWait(150);assert js(prompt,'width')==360;assert js(prompt,'contentItem.Window.window').grabWindow().save(str(out/name))
+    promptshot('01-no-owner.png')
     # Existing ordinary persisted-session fixtures; no model or session creation API is called.
     for key,title in [('ordinary-a','通用工作会话'),('ordinary-b','项目构建检查')]:
         file=Path(tmp.name)/(key+'.jsonl')
@@ -58,20 +65,41 @@ try:
         b._pool.touch(r);b._sessions.append({'id':key,'file':str(file),'title':title,'workspace':''})
     (b.store.directory/'workspace').mkdir(exist_ok=True)
     t.refresh()
-    owner=dialog.findChild(QObject,'petTimerOwner')
-    js(owner,'activated(1)')
-    # activated uses currentValue, so explicitly selecting the real ComboBox first is required.
-    if t.owner!='ordinary-b':
-        owner.setProperty('currentIndex',1);js(owner,'activated(1)')
-    assert t.owner=='ordinary-b',t.owner
-    js(dialog,'schedule.review()');assert '名称' in t.error
-    shot('02-missing-fields.png')
-    for name,value in [('name','每日检查前的单次构建'),('target','main'),('first_date','2035-01-02'),('local_time','09:30'),('zone','Asia/Shanghai')]:t.setField(name,value)
-    js(dialog,'schedule.review()');assert t.preview,t.error
+    def answer(text):
+        field.setProperty('text',text)
+        js(composer,'submit()')
+        assert not t.error,t.error
+        assert not field.property('text')
+        assert not restores
+    picker=prompt.findChild(QObject,'petTimerChoices')
+    wait(lambda:js(picker,'count')==2,'Owner choices missing')
+    choice=js(picker,'itemAtIndex(1)')
+    point=js(choice,'mapToItem(null,width/2,height/2)')
+    QTest.mouseClick(js(prompt,'contentItem.Window.window'),Qt.LeftButton,Qt.NoModifier,point.toPoint())
+    wait(lambda:t.owner=='ordinary-b','Actual owner choice click failed')
+    assert composer.property('desiredOpen'),'Clicking question card dismissed capsule'
+    assert t.owner=='ordinary-b'
+    assert t.state['question']['key']=='name'
+    promptshot('02-missing-fields.png')
+    field.setProperty('text','尚未发出的任务名');js(field,'textEdited()')
+    QTest.keyClick(js(composer,'contentItem.Window.window'),Qt.Key_Escape)
+    wait(lambda:not t.opened,'Escape should dismiss wizard and retain draft')
+    assert composer.property('desiredOpen')
+    js(composer,'close()')
+    command('/定时任务 检查构建');t.answer('ordinary-b')
+    assert t.state['answer']=='尚未发出的任务名'
+    field.setProperty('text',t.state['answer'])
+    answer('构建检查')
+    assert t.state['question']['key']=='target','Already supplied instruction should be skipped'
+    answer('main');answer('once');answer('2035-01-02');answer('09:30')
+    assert t.preview,t.error
+    t.editStep('zone');answer('Asia/Shanghai')
     assert not t.request and not t.draft().get('outcome')
-    shot('03-confirm.png')
+    promptshot('03-confirm.png')
     responses={};m.response.connect(lambda key,value:responses.__setitem__(key,value))
-    js(dialog,'schedule.confirm(); schedule.confirm()')
+    confirm=prompt.findChild(QObject,'petTimerConfirm')
+    QTest.mouseClick(js(prompt,'contentItem.Window.window'),Qt.LeftButton,Qt.NoModifier,js(confirm,'mapToItem(null,width/2,height/2)').toPoint())
+    t.confirm() # repeat while pending must not duplicate
     wait(lambda:not t.request,'Worker save timed out')
     assert t.draft()['outcome'].startswith('已创建'),(t.error,t.state)
     source=m.bridge.snapshot(b._pool.find('ordinary-b'))
@@ -82,12 +110,12 @@ try:
     assert result['result']['tasks'][0]['message']=='帮我检查构建'
     assert pet.assistantStatus['id']==original_binding
     assert b._view is visible and visible.draft=='主窗口草稿不变'
-    shot('04-created.png')
-    t.close();command('/定时任务 新输入仍保留')
+    promptshot('04-created.png')
+    t.close();js(composer,'close()');command('/定时任务 新输入仍保留')
     t.selectOwner('ordinary-b');assert '新输入未替换' in t.notice
     assert t.draft()['message']=='帮我检查构建'
-    shot('05-restored-draft.png')
-    t.close()
+    promptshot('05-restored-draft.png')
+    t.close();js(composer,'close()')
     project_dir=Path(tmp.name)/'demo-project';project_dir.mkdir()
     project_record=b._pool.find('ordinary-b');project_record.workspace=str(project_dir)
     header=json.loads(Path(project_record.file).read_text());header['cwd']=str(project_dir)
@@ -188,7 +216,7 @@ try:
     assert 'not-sent.txt' not in transcript,'Existing target attachment was accidentally sent'
     assert project.submission.get('acknowledged')
     project.close()
-    relevant=[r for r in warnings if any(s in r for s in ('PetTimerDialog','DesktopPetWindow','ReferenceError','TypeError'))]
+    relevant=[r for r in warnings if any(s in r for s in ('PetTimerPrompt','DesktopPetWindow','ReferenceError','TypeError'))]
     assert not relevant,relevant
     (out/'result.json').write_text(json.dumps({'noImplicitOwner':True,'capsuleDraftPreserved':True,'requiredFields':True,'explicitConfirmation':True,'realWidgetCreatedExactlyOnce':True,'mainDraftAndBindingUnchanged':True,'oldDraftNotice':True,'nativeProjectPromptAndFollowUp':True,'projectDraftAndAttachmentsPreserved':True,'warnings':relevant},ensure_ascii=False,indent=2))
     print('Pet timer actual UI passed:',out)

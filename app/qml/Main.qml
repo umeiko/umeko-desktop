@@ -49,10 +49,6 @@ ApplicationWindow {
         active:backend.desktopPlugins.pet.visible
         sourceComponent:Component { DesktopPetWindow { pet:backend.desktopPlugins.pet } }
     }
-    Loader {
-        active: backend.desktopPlugins.pet.visible
-        sourceComponent: Component { PetTimerDialog { schedule: backend.desktopPlugins.pet.taskSchedule } }
-    }
     Connections {
         target:backend.desktopPlugins.pet
         function onRestoreRequested() { window.showNormal();window.raise();window.requestActivate() }

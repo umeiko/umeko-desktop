@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Property, Signal, Slot, QTimeZone, QTimer
+from .pet_timer_text import extract, calendar_date, clock_time
 from .pi_sessions import SessionState, clean_extension_modes, clean_skill_modes, clean_blocked_tools
 
 
@@ -24,6 +25,9 @@ class PetTimer(QObject):
         self.opened = False
         self.owner = self.binding_id = self.incoming = self.error = self.notice = self.request = ''
         self.preview = None
+        self.forced_step = ''
+        self.extracted = {}
+        self.extraction_notice = ''
         self.pending_owner = ''
         self.owners = []
         self.record = None
@@ -47,7 +51,7 @@ class PetTimer(QObject):
         self.Schedule = sys.modules[name].Schedule
 
     def empty(self):
-        return {'name':'','message':'','target':'','frequency':'once','first_date':'','local_time':'',
+        return {'name':'','message':'','target':'','frequency':'','first_date':'','local_time':'',
                 'zone':bytes(QTimeZone.systemTimeZoneId()).decode() or 'UTC','interval_value':'','interval_unit':'minutes'}
 
     def draft(self):
@@ -140,7 +144,90 @@ class PetTimer(QObject):
         except ValueError:targets=[]
         return {'opened':self.opened,'owners':self.owners,'owner':self.owner,'draft':copy.deepcopy(self.draft()),
                 'targets':targets,'error':self.error,'notice':self.notice,'review':self.preview or {},
-                'busy':bool(self.request),'outcome':self.draft().get('outcome','')}
+                'busy':bool(self.request),'outcome':self.draft().get('outcome',''),
+                'question':self.question(targets),
+                'answer':self.draft().get('pendingInput','') if self.draft().get('pendingStep')==self.question(targets)['key'] else ''}
+
+    def question(self, targets=None):
+        """One missing field at a time; no model request or Desktop navigation."""
+        draft=self.draft()
+        if self.request:return {'key':'busy','prompt':'正在创建…','choices':[]}
+        if draft.get('outcome'):return {'key':'outcome','prompt':draft['outcome'],'choices':[]}
+        labels={'owner':'在哪个会话中执行？','name':'这个任务叫什么？','message':'需要执行什么指令？',
+                'target':'由哪个智能体执行？','frequency':'什么时候执行？','first_date':'哪一天？（YYYY-MM-DD）',
+                'local_time':'几点执行？（HH:mm）','zone':'使用哪个时区？（IANA 名称）',
+                'interval_value':'每隔多少分钟执行？（至少 0.25 分钟）'}
+        fields=['name','message','target','frequency']
+        fields += ['first_date','local_time','zone'] if draft['frequency']=='once' else ['interval_value']
+        key=self.forced_step or ('owner' if not self.owner else next((k for k in fields if not draft[k].strip()),'review'))
+        choices=[]
+        if key=='owner':choices=self.owners
+        if key=='target':
+            try:choices=targets if targets is not None else self.targets()
+            except ValueError:choices=[]
+        if key=='frequency':choices=[{'id':'once','name':'单次执行'},{'id':'interval','name':'固定间隔'}]
+        return {'key':key,'prompt':labels.get(key,'确认后创建并启用'),'choices':choices}
+
+    @Slot(str)
+    def setAnswer(self, text):
+        if self.opened and self.owner and not self.request and not self.draft().get('outcome'):
+            self.draft()['pendingStep']=self.question()['key']
+            self.draft()['pendingInput']=text
+            self.save_timer.start()
+
+    @Slot(str,result='QVariantMap')
+    def answer(self, text):
+        if not self.opened or self.request:return {'ok':False}
+        value=text.strip()
+        if not value:return {'ok':False}
+        if value in ('/取消','/cancel'):
+            self.close();return {'ok':True,'closed':True}
+        try:
+            self.available()
+            key=self.question()['key']
+            if key in ('review','outcome','busy'):
+                raise ValueError('请使用确认、修改或关闭按钮，不会把此内容作为普通消息发送。')
+            if key in ('owner','target','frequency'):
+                choices=self.question()['choices']
+                if key=='frequency':
+                    parsed,notice=extract(value)
+                    if parsed.get('frequency') in ('once','interval'):
+                        if set(parsed) - {'frequency','first_date','local_time','interval_value','interval_unit','zone'}:
+                            raise ValueError('这条回答还包含指令或其他内容，未应用。请只填写执行频率；指令与限制请在“修改 → 执行指令”中补充。')
+                        for field in ('frequency','first_date','local_time','interval_value','interval_unit','zone'):
+                            if field in parsed:self.setField(field,parsed[field])
+                        value=parsed['frequency']
+                    elif notice:self.notice=notice
+                matches=[r for r in choices if value==r['id']] or [r for r in choices if value==r['name']]
+                if len(matches)!=1:raise ValueError('请选择下方唯一的可用选项')
+                match=matches[0]
+                if key=='owner':self.selectOwner(match['id'])
+                else:self.setField(key,match['id'])
+            else:
+                if key=='name' and len(value)>120:raise ValueError('名称最多 120 字')
+                if key=='message' and (len(value)>8000 or len(json.dumps(value))>12000):raise ValueError('指令超过现有接口长度限制')
+                if key=='first_date':value=calendar_date(value)
+                if key=='local_time':value=clock_time(value)
+                if key=='zone' and not QTimeZone(value.encode()).isValid():raise ValueError('请输入有效 IANA 时区，例如 Asia/Shanghai')
+                if key=='interval_value':
+                    minutes=float(value)
+                    if not 0.25<=minutes<=525600:raise ValueError('请输入 0.25 至 525600 分钟')
+                    self.setField('interval_unit','minutes')
+                self.setField(key,value)
+            if key!='owner':
+                self.draft().pop('pendingInput',None);self.draft().pop('pendingStep',None)
+                self.forced_step=''
+            if self.question()['key']=='review':self.review()
+            self.changed.emit()
+            return {'ok':True}
+        except (ValueError,TypeError,OverflowError) as error:
+            self.error=str(error);self.changed.emit();return {'ok':False,'error':self.error}
+
+    @Slot(str)
+    def editStep(self, key):
+        if self.request or self.draft().get('outcome'):return
+        if key not in self.FIELDS and key!='owner':return
+        self.forced_step=key;self.preview=None;self.error='';self.changed.emit()
 
     @Slot(str,str,result='QVariantMap')
     def openCommand(self,text,identifier):
@@ -149,12 +236,13 @@ class PetTimer(QObject):
         if not status.get('bound') or status.get('id')!=identifier:return {'ok':False,'error':'桌宠绑定已变化，请重新打开胶囊'}
         if self.request:
             self.notice='当前提交正在处理；新输入仍保留在胶囊，未加入本次创建。'
-            self.opened=True;self.pet.restoreRequested.emit();self.changed.emit();return {'ok':True}
+            self.opened=True;self.changed.emit();return {'ok':True}
         self.save_timer.stop()
         if self.owner and not self.save():return {'ok':False,'error':self.error}
-        self.owner='';self.binding_id=identifier;self.preview=None;self.error='';self.notice=''
+        self.owner='';self.binding_id=identifier;self.preview=None;self.error='';self.notice='';self.forced_step=''
         self.incoming=re.sub(r'^\s*/定时任务(?:\s|$)','',text,count=1)
-        self.opened=True;self.refresh();self.pet.restoreRequested.emit()
+        self.extracted,self.extraction_notice=extract(self.incoming)
+        self.opened=True;self.refresh()
         return {'ok':True}
 
     @Slot(str)
@@ -163,11 +251,15 @@ class PetTimer(QObject):
         if identifier not in {r['id'] for r in self.rows()}:self.error='请选择已有普通会话';self.changed.emit();return
         self.owner=identifier;self.preview=None;self.error='';self.notice=''
         draft=self.draft()
+        self.forced_step=draft.get('pendingStep','') if draft.get('pendingInput') and draft.get('pendingStep') in self.FIELDS else ''
         if self.incoming:
-            if draft['message']:
-                self.notice='已恢复该会话的定时草稿；新输入未替换旧指令，仍保留在胶囊中。'
-            elif not draft.get('outcome'):draft['message']=self.incoming
-        self.save_timer.start();self.changed.emit()
+            if any(draft[key].strip() for key in self.FIELDS - {'zone','interval_unit'}):
+                self.notice='已恢复该会话的定时草稿；新输入未替换已有内容，仍保留在胶囊中。'
+            elif not draft.get('outcome'):
+                draft.update(self.extracted);self.notice=self.extraction_notice
+        self.save_timer.start()
+        if self.question()['key']=='review':self.review()
+        else:self.changed.emit()
 
     @Slot(str,str)
     def setField(self,key,value):
@@ -200,7 +292,7 @@ class PetTimer(QObject):
             args,row,due=self.validate()
             plan=args['schedule']
             self.preview={'args':args,'source':{k:row.get(k,'') for k in ('id','file','workspace')},
-                          'owner':row.get('title','')+' · '+self.owner,'targetName':next(r['name'] for r in self.targets() if r['id']==args['target']),
+                          'owner':row.get('title','')+' · '+self.owner,'ownerName':row.get('title','') or self.owner,'targetName':next(r['name'] for r in self.targets() if r['id']==args['target']),
                           'scheduleText':('单次：'+plan['first_date']+' '+plan['local_time']+' · '+plan['zone'] if plan['frequency']=='once' else '每隔 '+str(plan['interval_value'])+' '+{'minutes':'分钟','hours':'小时','days':'天（24 小时）'}[plan['interval_unit']]),
                           'next':datetime.fromtimestamp(due).astimezone().isoformat(timespec='seconds')}
             self.error=''
@@ -256,9 +348,9 @@ class PetTimer(QObject):
     @Slot()
     def newDraft(self):
         if self.request or not self.draft().get('outcome','').startswith('已创建'):return
-        self.drafts[self.owner]=self.empty();self.preview=None;self.error='';self.notice='';self.save();self.changed.emit()
+        self.drafts[self.owner]=self.empty();self.forced_step='';self.preview=None;self.error='';self.notice='';self.save();self.changed.emit()
 
     @Slot()
     def acknowledgeNotCreated(self):
         if self.request or not self.draft().get('outcome','').startswith('创建结果待核对'):return
-        self.draft().pop('outcome',None);self.preview=None;self.error='请重新核对并确认；尚未重新提交。';self.save();self.changed.emit()
+        self.draft().pop('outcome',None);self.preview=None;self.notice='请重新核对并确认；尚未重新提交。';self.save();self.review()

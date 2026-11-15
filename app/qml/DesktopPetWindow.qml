@@ -217,6 +217,9 @@ Window {
         property bool sending: false
         property bool projectMode: false
         property string globalDraft: ""
+        property string timerDraft: ""
+        readonly property var timerState: root.pet.taskSchedule.state
+        readonly property bool timerMode: timerState.opened
         readonly property var projectState: root.pet.projectEntry.state
         modal: false
         width: Math.min(Theme.control(360), root.screen.width - 24)
@@ -237,7 +240,12 @@ Window {
                 taskComposer.y = Math.round(Math.max(area.y + 8, Math.min(area.y + area.height - taskComposer.height - 8, top)) - root.y)
             }
         }
-        onAboutToHide: { projectMenu.close(); root.pet.projectEntry.close(); taskInput.focus = false }
+        onAboutToHide: { projectMenu.close(); if (timerMode) { root.pet.taskSchedule.close(); taskInput.text = timerDraft }; root.pet.projectEntry.close(); taskInput.focus = false }
+        function focusTimerInput() {
+            const window = contentItem.Window.window
+            if (window) window.requestActivate()
+            taskInput.forceActiveFocus()
+        }
         function chooseProject(identifier) {
             const result = root.pet.projectEntry.select(identifier)
             if (!result.ok) { error = result.error; return }
@@ -270,9 +278,15 @@ Window {
             taskInput.forceActiveFocus()
         }
         function submit() {
-            if (sending || !taskInput.text.trim().length) return
+            if (!desiredOpen || sending || !taskInput.text.trim().length) return
             Qt.inputMethod.commit()
             if (taskInput.inputMethodComposing) return
+            if (timerMode) {
+                const answer = root.pet.taskSchedule.answer(taskInput.text)
+                if (answer.ok) taskInput.text = answer.closed ? timerDraft : root.pet.taskSchedule.state.answer
+                taskInput.forceActiveFocus()
+                return
+            }
             if (/^\/项目(?:\s|$)/.test(taskInput.text.trim())) {
                 if (!taskComposer.desiredOpen) return
                 projectChoices(taskInput.text)
@@ -281,7 +295,10 @@ Window {
             if (/^\/定时任务(?:\s|$)/.test(taskInput.text.trim())) {
                 if (!taskComposer.desiredOpen) return
                 const prepared = root.pet.taskSchedule.openCommand(taskInput.text, targetId)
-                if (prepared.ok) close()
+                if (prepared.ok) {
+                    if (projectMode && projectState.selected) root.pet.taskSchedule.selectOwner(projectState.selected)
+                    timerDraft = taskInput.text; taskInput.text = root.pet.taskSchedule.state.answer; taskInput.forceActiveFocus()
+                }
                 else { error = prepared.error; taskInput.forceActiveFocus() }
                 return
             }
@@ -303,18 +320,24 @@ Window {
                 id: taskInput
                 objectName: "desktopPetTaskInput"
                 anchors.fill: parent
-                leftPadding: taskComposer.projectMode ? projectTarget.width + 22 : 18
+                leftPadding: taskComposer.projectMode && !taskComposer.timerMode ? projectTarget.width + 22 : 18
                 rightPadding: parent.height + 4
                 maximumLength: 16000
                 Accessible.name: I18n.t("给悬浮小助手派活")
-                Accessible.description: taskComposer.error
-                onTextEdited: { taskComposer.error = ""; if (taskComposer.projectMode) root.pet.projectEntry.setBody(text) }
+                Accessible.description: taskComposer.timerMode ? taskComposer.timerState.question.prompt : taskComposer.error
+                placeholderText: taskComposer.timerMode ? "输入回答…" : ""
+                onTextEdited: { taskComposer.error = ""; if (taskComposer.timerMode) root.pet.taskSchedule.setAnswer(text); else if (taskComposer.projectMode) root.pet.projectEntry.setBody(text) }
                 onAccepted: if (!inputMethodComposing) taskComposer.submit()
+                Keys.onEscapePressed: event => {
+                    if (taskComposer.timerMode) { root.pet.taskSchedule.close(); text = taskComposer.timerDraft }
+                    else taskComposer.close()
+                    event.accepted = true
+                }
                 background: null
             }
             Button {
                 id: projectTarget; objectName: "desktopPetProjectTarget"
-                visible: taskComposer.projectMode
+                visible: taskComposer.projectMode && !taskComposer.timerMode
                 x: 10; anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(110, taskComposer.width * .32); height: parent.height - 18
                 padding: 6
@@ -367,6 +390,12 @@ Window {
                 }
                 onClicked: taskComposer.submit()
             }
+        }
+        PetTimerPrompt {
+            schedule: root.pet.taskSchedule
+            composer: taskComposer
+            onAnswered: { taskInput.text = root.pet.taskSchedule.state.answer; taskComposer.focusTimerInput() }
+            onDismissed: { taskInput.text = taskComposer.timerDraft; taskComposer.focusTimerInput() }
         }
         FloatingMenu {
             id: projectMenu; objectName: "desktopPetProjectMenu"
