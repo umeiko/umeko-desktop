@@ -23,7 +23,7 @@
 
 内置八奈见杏菜、小鞠知花、马剃天爱星和鲸鱼娘，可在动画形象下拉框或桌宠右键菜单切换，内置形象不可删除。选择独立于聊天主角色，升级和重启保留偏好。
 
-八奈见的六种状态及稀有待机均使用用户提供的透明循环 GIF，统一为 320×320 画布和鞋底基线。减少帧数后保留各动作的原始循环时长。来源与处理记录见 `assets/yanami/delivery.provenance.json` 和 `assets/yanami/idle.provenance.json`。小鞠使用统一基线的透明循环 WebP，提示词见 `assets/komari/generation.json`。
+八奈见的六种状态及稀有待机均使用用户提供的透明循环 GIF，统一为 320×320 画布和鞋底基线。减少帧数后保留各动作的原始循环时长。来源与处理记录见 `assets/yanami/delivery.provenance.json` 和 `assets/yanami/idle.provenance.json`。
 
 鲸鱼娘的六种透明动画复用社区 [dsh-whale-girl-pet](https://github.com/yanzwzz/dsh-whale-girl-pet)，保留 MIT 许可与贡献者署名。原始动画转为 360×360、10 fps 的循环 WebP，无需网络或额外视频组件；只有当前动作参与播放，隐藏后释放解码器。来源版本、校验与动作映射见 `assets/whale-girl/source.json`，许可见 `assets/whale-girl/LICENSE.txt`。开发者可用 `scripts/prepare-whale-pet.py --ffmpeg <ffmpeg路径>` 重新制作资源，应用和常规构建不会自动下载。
 
@@ -32,3 +32,7 @@
 豆包内置形象使用独立二维全身动画，包含六种任务状态及稀有待机彩蛋；完整生成记录与参考许可见 `art/desktop-pets/doubao-v1`，运行资源见 `assets/doubao`。
 
 马剃天爱星的六种任务状态与稀有待机使用用户交付的 512×512 透明循环 GIF，保留原始帧、时长和文件内容；来源说明与 SHA-256 见 `assets/tiara/delivery.provenance.json`。保留 `tiara` 形象 ID、原有互动台词和稀有待机规则。
+
+小鞠知花的六种任务状态与稀有待机使用用户交付的 512×512 透明循环 GIF，保留原始帧、时长和文件内容；来源说明与 SHA-256 见 `assets/komari/delivery.provenance.json`。保留 `komari` 形象 ID、现有互动台词和稀有待机规则。
+
+豆包的六种任务状态与稀有待机使用用户交付的 512×512 透明循环 GIF，保留原始帧、时长和文件内容；来源说明与 SHA-256 见 `assets/doubao/delivery.provenance.json`。保留 `doubao` 形象 ID、现有互动台词和稀有待机规则。

@@ -356,5 +356,7 @@
         "sha256": "af4fbed8aa633d24d3311d8cb7ba90ebbda14180826a6d9fd4f23fbd6675e1e2"
       }
     ]
-  }
+  },
+  "status": "Historical sprite-sheet generation record; superseded by the user-delivered GIF animations.",
+  "supersededBy": "delivery.provenance.json"
 }

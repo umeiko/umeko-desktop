@@ -258,6 +258,17 @@ try:
     wait(lambda:animation.property('ready') and animation.property('frameCount')>1,'Komari animation did not decode')
     first=animation.property('currentFrame')
     wait(lambda:animation.property('currentFrame')!=first,'Komari animation is static')
+    pet.ui('configure',{'paused':True})
+    for state in ('idle','thinking','working','waiting','done','error'):
+        pet.motion.state=state;pet.changed.emit()
+        wait(lambda:animation.property('ready') and animation.property('source').toString().endswith('/komari/'+state+'.gif'),'Komari state did not decode: '+state)
+        assert animation.property('frameCount')==(39 if state=='idle' else 56)
+        window.grabWindow().save(str(out/('komari-'+state+'.png')))
+    pet.motion.state='idle';pet._rare_idle=True;pet.changed.emit()
+    wait(lambda:animation.property('ready') and animation.property('source').toString().endswith('/komari/idle-rare.gif'),'Komari rare idle did not decode')
+    assert animation.property('frameCount')==107
+    window.grabWindow().save(str(out/'komari-idle-rare.png'))
+    pet._rare_idle=False;pet.changed.emit()
     pet.ui('selectAppearance',{'id':'whale-girl'})
     wait(lambda:animation.property('ready') and 'assets/whale-girl/' in str(animation.property('source')),'Whale did not replace Komari')
     assert '/whale-girl/idle.webp' in str(animation.property('source'))
@@ -281,12 +292,12 @@ try:
     pet.ui('selectAppearance',{'id':'doubao'})
     for state in ('idle','thinking','working','waiting','done','error'):
         pet.motion.state=state;pet.changed.emit()
-        wait(lambda:animation.property('ready') and '/doubao/'+state+'.webp' in str(animation.property('source')),'Doubao state did not decode: '+state)
-        assert animation.property('frameCount')==12
+        wait(lambda:animation.property('ready') and '/doubao/'+state+'.gif' in str(animation.property('source')),'Doubao state did not decode: '+state)
+        assert animation.property('frameCount')==(39 if state=='idle' else 56)
         window.grabWindow().save(str(out/('doubao-'+state+'.png')))
     pet._rare_idle=True;pet.changed.emit()
-    wait(lambda:animation.property('ready') and '/doubao/idle-rare.webp' in str(animation.property('source')),'Doubao rare idle did not decode')
-    assert animation.property('frameCount')==12
+    wait(lambda:animation.property('ready') and '/doubao/idle-rare.gif' in str(animation.property('source')),'Doubao rare idle did not decode')
+    assert animation.property('frameCount')==107
     window.grabWindow().save(str(out/'doubao-idle-rare.png'))
     pet._rare_idle=False;pet.changed.emit()
     pet.ui('configure',{'paused':False})
