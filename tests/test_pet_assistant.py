@@ -72,6 +72,53 @@ class PetAssistantTests(unittest.TestCase):
         self.assertIn('16', self.helper.error)
         self.assertEqual(len(self.bus.agents), 16)
 
+    def test_pet_task_targets_bound_agent_without_changing_visible_conversation(self):
+        record = self.bind()
+        self.bus.selected_conversation = 'another-agent'
+        visible = self.host._view
+        self.assertEqual(self.pet.sendTask('  检查当前任务  ', record.global_agent),
+                         {'ok': True, 'status': 'accepted'})
+        self.host._command_pi.assert_called_once_with('prompt', record, text='检查当前任务')
+        self.assertEqual(record.messages[0], {'role':'user', 'text':'检查当前任务'})
+        self.assertIs(self.host._view, visible)
+        self.assertEqual(self.bus.selected_conversation, 'another-agent')
+
+    def test_pet_task_uses_existing_busy_agent_queue(self):
+        record = self.bind(); record.busy = True; record.ready = True
+        self.assertEqual(self.pet.sendTask('继续检查', record.global_agent),
+                         {'ok':True, 'status':'queued'})
+        self.assertEqual(self.host._pool.writes[-1],
+                         (record.key, {'type':'steer', 'text':'继续检查'}))
+        self.host._command_pi.assert_not_called()
+
+    def test_pet_task_never_creates_or_retargets_an_unbound_agent(self):
+        self.assertEqual(self.pet.sendTask('检查', '')['status'], 'unavailable')
+        self.assertFalse(self.bus.agents)
+        record = self.bind()
+        self.assertEqual(self.pet.sendTask('检查', 'another-agent')['status'], 'binding_changed')
+        self.bus.agents.pop(record.global_agent)
+        self.assertFalse(self.pet.assistantStatus['bound'])
+        self.assertEqual(self.pet.sendTask('检查', record.global_agent)['status'], 'unavailable')
+        self.host._command_pi.assert_not_called()
+
+    def test_pet_task_rejects_empty_overlong_disabled_and_loading_input(self):
+        record = self.bind()
+        for text in ('', ' \n ', 'x'*16001):
+            self.assertEqual(self.pet.sendTask(text, record.global_agent)['status'], 'invalid_text')
+        record.busy = True; record.ready = False
+        result = self.pet.sendTask('保留草稿', record.global_agent)
+        self.assertFalse(result['ok']); self.assertIn('正在加载', result['error'])
+        self.manager.setEnabled('global-agents', False)
+        self.assertEqual(self.pet.sendTask('检查', record.global_agent)['status'], 'unavailable')
+        self.host._command_pi.assert_not_called()
+
+    def test_failed_pet_task_rolls_back_optimistic_messages(self):
+        record = self.bind(); record.messages = [{'role':'user', 'text':'原有历史'}]
+        self.host._command_pi.return_value = False
+        result = self.pet.sendTask('检查', record.global_agent)
+        self.assertFalse(result['ok']); self.assertIn('启动失败', result['error'])
+        self.assertEqual(record.messages, [{'role':'user', 'text':'原有历史'}])
+
     def test_persona_changes_invalidate_old_tool_binding_and_keep_user_preferences(self):
         record = self.bind(); old = self.helper.binding
         self.assertIn('八奈见', self.helper.prompt(record))
