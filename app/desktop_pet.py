@@ -134,6 +134,16 @@ class DesktopPet(QObject):
     def inputMask(self):
         return self._input_mask
 
+    @Property('QVariantMap', notify=changed)
+    def assistantStatus(self):
+        return self.assistant.status() if self.assistant else {}
+
+    @Slot(str, str, result='QVariantMap')
+    def sendTask(self, text, identifier):
+        if not self.assistant:
+            return {'ok': False, 'status': 'unavailable', 'error': '桌宠未绑定全局子智能体'}
+        return self.assistant.submit(text, identifier)
+
     @Property('QVariantList', notify=changed)
     def appearances(self):
         return [{'id': p['id'], 'name': p['name'], 'builtin': p['builtin']} for p in self._packs.values()]
