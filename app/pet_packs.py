@@ -62,6 +62,8 @@ def read_pack(folder, check=False):
         raise ValueError('形象 id 需要 1–48 位小写字母、数字或短横线，以字母开头')
     if not isinstance(value.get('name'), str) or not value['name'].strip() or len(value['name']) > 48:
         raise ValueError('形象名称需要 1–48 个字符')
+    if 'persona' in value and (not isinstance(value['persona'], str) or len(value['persona']) > 1000):
+        raise ValueError('可选 persona 人物设定必须是最多 1000 字符的文本')
     states = value.get('states')
     if not isinstance(states, dict) or 'idle' not in states or states.keys() - set(STATES):
         raise ValueError('states 必须包含 idle，其余可选状态为 thinking、working、waiting、done、error')

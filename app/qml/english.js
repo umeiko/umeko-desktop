@@ -1,5 +1,11 @@
 .pragma library
 var strings = {
+    "悬浮小助手": "Floating assistant",
+    "已绑定": "Bound",
+    "显示桌宠并启用全局子智能体后自动绑定": "Show the pet and enable Global Agents to bind automatically",
+    "人物设定": "Persona",
+    "可选，影响性格和说话方式": "Optional personality and speaking style",
+    "恢复形象设定": "Restore pack persona",
     "展开密钥后的请求头值无效或超过 4096 字符": "The expanded header value is invalid or exceeds 4096 characters",
     "发送": "Send",
     "自定义请求": "Custom requests",

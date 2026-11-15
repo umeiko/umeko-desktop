@@ -58,6 +58,8 @@ class DesktopPlugins(QObject):
         self._pet.imported.connect(self.pet_imported, Qt.QueuedConnection)
         from .global_agents import GlobalAgents
         self.global_agents=GlobalAgents(self)
+        from .pet_assistant import PetAssistant
+        self._pet.assistant = PetAssistant(self._pet)
         self.synchronize()
     @Property(QObject, notify=pageChanged)
     def agentConversation(self):

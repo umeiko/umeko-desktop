@@ -35,6 +35,9 @@ class PiControllerMixin:
             return
         status = {'state': 'stopped' if record.cancelled else 'failed' if failed or record.failed else 'finished',
             'elapsed': max(0, time.monotonic() - record.prompt_started)}
+        plugins = getattr(self, '_desktop_plugins', None)
+        helper = getattr(getattr(plugins, '_pet', None), 'assistant', None)
+        if helper: helper.completed(record, status)
         if record.id:
             self.store.data['sessionMeta'].setdefault(record.id, {})['lastTurn'] = status
             self.store.save()
@@ -201,6 +204,7 @@ class PiControllerMixin:
                 if record.global_agent:
                     service=self._desktop_plugins.global_agents
                     payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(service.root/"sessions"/record.global_agent),
+                        petAssistantBinding=service.m._pet.assistant.binding_for(record),
                         agent={**agent,"safeMode":True,"instructions":service.prompt(record)})
                 self._pool.start(record, node_executable(), bridge, payload)
         except (RuntimeError, OSError) as error:

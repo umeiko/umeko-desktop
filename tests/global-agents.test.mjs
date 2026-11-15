@@ -28,3 +28,32 @@ test('bus project search joins native Windows paths with saved project names',()
  const sensitive=context.bridgeTree([{path:'/Work',name:'Upper'}],[{id:'a',kind:'session',workspace:'/Work'},{id:'b',kind:'session',workspace:'/work'}],'',{});
  assert.equal(sensitive.filter(row=>row.kind==='project').length,2);
 });
+
+// Dedicated speech must remain separate from the public coordinator management API.
+test('only a host-bound pet assistant receives send_to_user and its hidden binding',async()=>{
+ const {createUmekoControl,SEND_TO_USER}=await import('../runtime/umeko-control.mjs');
+ const ordinary=[],tools=[],events=[];let binding='host-binding';
+ createUmekoControl({emit(){}}).extension({registerCommand(){},registerTool:tool=>ordinary.push(tool)});
+ assert.equal(ordinary.some(tool=>tool.name===SEND_TO_USER),false);
+ const control=createUmekoControl({emit:event=>events.push(event),getPetAssistantBinding:()=>binding});
+ control.extension({registerCommand(){},registerTool:tool=>tools.push(tool)});
+ const speech=tools.find(tool=>tool.name===SEND_TO_USER);
+ assert.ok(speech);assert.deepEqual(Object.keys(speech.parameters.properties),['text']);
+ assert.equal(coordinatorToolGate({toolName:SEND_TO_USER}).block,true);
+ assert.equal(coordinatorToolGate({toolName:SEND_TO_USER},{petAssistant:true}),undefined);
+ assert.equal(coordinatorToolGate({toolName:'umeko_desktop',input:{operation:'desktop_pet.send_to_user'}},{petAssistant:true}).block,true);
+ const rejected=await speech.execute('too-long',{text:'字'.repeat(81)});
+ assert.equal(rejected.isError,true);assert.equal(events.length,0);
+ const pending=speech.execute('valid',{text:'👩‍💻'.repeat(80)});
+ assert.equal(events.length,1);assert.equal(events[0].operation,'desktop_pet.send_to_user');
+ assert.equal(events[0].arguments.binding,binding);
+ control.response({id:events[0].id,result:{ok:true,status:'shown'}});
+ assert.equal((await pending).isError,false);
+ binding='new-binding';
+ const limited=speech.execute('limited',{text:'完成啦。'});
+ assert.equal(events[1].arguments.binding,'new-binding');
+ control.response({id:events[1].id,result:{ok:false,status:'rate_limited',retry_after:30}});
+ const result=await limited;assert.equal(result.isError,true);
+ assert.equal(JSON.parse(result.content[0].text).status,'rate_limited');
+ assert.equal(events.length,2,'The tool must not automatically retry rejected speech');
+});

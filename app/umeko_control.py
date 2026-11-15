@@ -227,6 +227,8 @@ class UmekoControl(QObject):
 
     def _execute(self, operation, args, caller, queue, job_id=None, *, _widget_install=False):
         b = self.b
+        if operation == 'desktop_pet.send_to_user':
+            return b.desktopPlugins.pet.assistant.send(caller, args)
         if operation.startswith('agent_bus.'):
             return b.desktopPlugins.global_agents.execute(operation,args,caller)
         if caller and getattr(caller,'global_agent','') and operation not in ('help','models.list'):
