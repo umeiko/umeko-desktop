@@ -9,6 +9,8 @@ SectionCard {
     objectName: "pluginSessionModels"
     readonly property var profiles: backend.pluginSessionProfiles
     readonly property var choices: backend.pluginSessionModels
+    readonly property real nameColumnWidth: Theme.control(160)
+    readonly property real effortColumnWidth: Theme.control(144)
     visible: profiles.length > 0
     ColumnLayout {
         width: parent.width; spacing: 14
@@ -25,12 +27,16 @@ SectionCard {
                 readonly property string savedEffort: modelData.reasoningEffort || ""
                 Layout.fillWidth: true; spacing: 12
                 ColumnLayout {
-                    Layout.fillWidth: true; spacing: 2
-                    Text { text: row.modelData.pluginName; color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(13, visible); elide: Text.ElideRight; Layout.fillWidth: true }
-                    Text { text: I18n.t("会话配置：%1").arg(row.modelData.profile); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible); elide: Text.ElideRight; Layout.fillWidth: true }
+                    Layout.minimumWidth: root.nameColumnWidth
+                    Layout.preferredWidth: root.nameColumnWidth
+                    Layout.maximumWidth: root.nameColumnWidth
+                    spacing: 2
+                    Text { objectName: "pluginSessionName_" + row.modelData.plugin + "_" + row.modelData.profile; text: row.modelData.pluginName; color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(13, visible); elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0 }
+                    Text { text: I18n.t("会话配置：%1").arg(row.modelData.profile); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible); elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0 }
                 }
                 ColumnLayout {
-                    Layout.preferredWidth: Math.min(Theme.control(280), root.width * 0.4)
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     spacing: 4
                     Text { text: I18n.t("模型"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible) }
                     Picker {
@@ -53,7 +59,9 @@ SectionCard {
                     }
                 }
                 ColumnLayout {
-                    Layout.preferredWidth: Theme.control(144)
+                    Layout.minimumWidth: root.effortColumnWidth
+                    Layout.preferredWidth: root.effortColumnWidth
+                    Layout.maximumWidth: root.effortColumnWidth
                     spacing: 4
                     Text { text: I18n.t("思考强度"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible) }
                     Picker {
@@ -61,13 +69,11 @@ SectionCard {
                         objectName: "pluginSessionReasoning_" + row.modelData.plugin + "_" + row.modelData.profile
                         Layout.fillWidth: true
                         enabled: picker.selectedIndex >= 0
-                        // Empty means leave unchanged in the save API, so inheritance is
-                        // offered only while the profile already inherits desktop settings.
-                        readonly property var values: (row.savedEffort ? [] : [""]).concat(["off"],
+                        readonly property var values: ["inherit", "off"].concat(
                             (picker.selectedIndex >= 0 ? root.choices[picker.selectedIndex].reasoningLevels || [] : [])
-                                .filter(level => level !== "off"))
-                        readonly property int selectedIndex: values.indexOf(row.savedEffort)
-                        model: values.map(level => level === "" ? I18n.t("沿用桌面")
+                                .filter(level => level !== "off" && level !== "inherit"))
+                        readonly property int selectedIndex: values.indexOf(row.savedEffort || "inherit")
+                        model: values.map(level => level === "inherit" ? I18n.t("沿用桌面")
                             : level === "off" ? I18n.t("关闭") : Reasoning.label(level))
                         displayText: currentIndex < 0 ? Reasoning.label(row.savedEffort) : currentText
                         Accessible.name: I18n.t("思考强度") + " " + row.modelData.pluginName + " " + row.modelData.profile

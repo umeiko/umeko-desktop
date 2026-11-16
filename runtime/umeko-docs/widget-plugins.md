@@ -182,6 +182,12 @@ Agent 可调用插件公开方法传入结构化数据。插件通过 `context.p
 {"operation":"pluginSessions.setModel","arguments":{"plugin":"example-service","profile":"tasks","model":"","provider":"","reasoningEffort":"medium"}}
 ```
 
+传入明确的操作值 `inherit` 可清除固定档位，删除配置中的 `reasoningEffort` 字段，恢复沿用桌面 `ui.reasoningEffort`。界面下拉框始终把“沿用桌面”放在第一项，选择后调用同一个 `inherit` 操作。空字符串仍表示保留当前配置。清除后的已有会话在下一次输入时使用桌面默认档位，当前回合继续按原设置完成；保存失败时恢复原来的配置字段。
+
+```json
+{"operation":"pluginSessions.setModel","arguments":{"plugin":"example-service","profile":"tasks","reasoningEffort":"inherit"}}
+```
+
 这个操作只修改模型路由和明确传入的思考档位，工作区、工具、权限模式和审批设置保持用户批准时的值。已取得的会话在下一次输入时使用新模型和档位；正在运行的回合按原设置完成。
 
 `tools` 为精确工具名列表，与桌面策略取交集；服务始终排除桌面管理工具 `umeko_desktop`、`pi` 和 `pi_commands`，保证配置无法通过管理操作被修改。其他核心工具与可选子 Agent 工具需要显式配置，并受桌面策略限制。子 Agent 运行时继承同一强制工具与权限上限，模型注册表只提供配置选定的模型。`permissionMode` 为 `ask` 或 `auto`，上限是桌面允许的权限。`allowApprovals` 默认 `false`，与工具配置相互独立；开启后插件可以注册审批处理器，逐个回应 confirm 类审批请求。

@@ -249,6 +249,32 @@ class PluginSessionTests(unittest.TestCase):
         finally:
             record.process = None
 
+    def test_busy_inherit_waits_for_next_queued_input_without_interrupting(self):
+        profile = self.reasoning_profile('medium')
+        self.b.store.data['ui']['reasoningEffort'] = 'high'
+        owned = self.acquire()
+        record = self.b._pool.find(owned['sessionId'])
+        first = self.result('sessions.submit', {'handle': owned['handle'],
+            'requestId': 'first', 'content': 'first'})
+        set_profile_model(self.b, 'fixture-channel', 'tasks', reasoningEffort='inherit')
+        self.assertNotIn('reasoningEffort', profile)
+        with patch.object(self.b._pool, 'write') as write, patch.object(self.b._pool, 'retire') as retire:
+            second = self.result('sessions.submit', {'handle': owned['handle'],
+                'requestId': 'second', 'content': 'second'})
+            self.assertEqual(second['disposition'], 'queued')
+            self.assertTrue(record.busy)
+            self.assertEqual(record.reasoning_effort, 'medium')
+            self.assertEqual(self.b.store.data['sessionMeta'][record.id]['reasoningEffort'], 'medium')
+            self.assertEqual(self.m._host_services._sessions.runs[first['runId']]['status'], 'running')
+            self.assertEqual([action for action, _, _ in self.commands], ['prompt'])
+            write.assert_not_called()
+            retire.assert_not_called()
+            self.finish(record, 'first reply')
+            pump_until(self.app, lambda: len(self.commands) == 2, 'Queued inherited effort did not apply')
+            self.assertEqual(record.reasoning_effort, 'high')
+            self.assertEqual(self.b.store.data['sessionMeta'][record.id]['reasoningEffort'], 'high')
+            self.assertEqual([action for action, _, _ in self.commands], ['prompt', 'prompt'])
+
     def test_profile_effort_validation_and_model_reconciliation(self):
         profile = self.reasoning_profile()
         record = self.b._pool.find(self.acquire()['sessionId'])

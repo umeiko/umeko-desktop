@@ -23,7 +23,7 @@ for name, directory in (("UMEKO_DATA_DIR", "data"), ("XDG_CONFIG_HOME", "config"
                         ("XDG_DATA_HOME", "data"), ("XDG_CACHE_HOME", "cache")):
     os.environ[name] = str(TEST_DIRECTORY / directory)
 
-from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, QPointF, Property, QUrl, Signal, Slot
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow
 import shiboken6
@@ -42,8 +42,7 @@ class ProfileBackend(QObject):
         super().__init__()
         self._language = language
         self._profiles = [{"plugin": "session-task-service", "profile": "tasks", "pluginName": "Session task service",
-                           "model": "test-model-a", "provider": "test-provider",
-                           "reasoningEffort": ""}]
+                           "model": "test-model-a", "provider": "test-provider"}]
         self.choices = [dict(row) for row in CHOICES]
         self.calls = []
         self.accept_save = True
@@ -78,7 +77,9 @@ class ProfileBackend(QObject):
             return False
         saved = self._profiles[0]
         saved.update(model=model, provider=provider)
-        if effort:
+        if effort == 'inherit':
+            saved.pop('reasoningEffort', None)
+        elif effort:
             saved['reasoningEffort'] = effort
         self.changed.emit()
         return True
@@ -163,7 +164,7 @@ class PluginSessionModelSettingTests(unittest.TestCase):
         ui = self.ui()
         picker = ui.reasoning_picker()
         self.assertEqual(picker.property("displayText"), "沿用桌面")
-        self.assertEqual(picker.property("values").toVariant(), ["", "off", "low", "high"])
+        self.assertEqual(picker.property("values").toVariant(), ["inherit", "off", "low", "high"])
         picker.setProperty("currentIndex", 3)
         picker.activated.emit(3)
         self.app.processEvents()
@@ -171,7 +172,7 @@ class PluginSessionModelSettingTests(unittest.TestCase):
         picker = ui.reasoning_picker()
         self.assertEqual(ui.backend.calls[-1], ("session-task-service", "tasks", "test-model-a", "test-provider", "high"))
         self.assertEqual(picker.property("displayText"), "High")
-        self.assertEqual(picker.property("values").toVariant(), ["off", "low", "high"])
+        self.assertEqual(picker.property("values").toVariant(), ["inherit", "off", "low", "high"])
         self.assertEqual(ui.warnings, [])
 
     def test_model_change_uses_its_levels_and_preserves_configured_effort(self):
@@ -185,7 +186,7 @@ class PluginSessionModelSettingTests(unittest.TestCase):
         self.app.processEvents()
         self.app.processEvents()
         effort = ui.reasoning_picker()
-        self.assertEqual(effort.property("values").toVariant(), ["off", "medium", "xhigh"])
+        self.assertEqual(effort.property("values").toVariant(), ["inherit", "off", "medium", "xhigh"])
         self.assertEqual(effort.property("displayText"), "High")
         self.assertEqual(ui.backend._profiles[0]['reasoningEffort'], 'high')
         self.assertEqual(ui.warnings, [])
@@ -209,7 +210,7 @@ class PluginSessionModelSettingTests(unittest.TestCase):
         self.app.processEvents()
         self.app.processEvents()
         picker = ui.reasoning_picker()
-        self.assertEqual(picker.property("values").toVariant(), ["off"])
+        self.assertEqual(picker.property("values").toVariant(), ["inherit", "off"])
         self.assertEqual(picker.property("displayText"), "关闭")
         self.assertEqual(ui.warnings, [])
 
@@ -222,6 +223,54 @@ class PluginSessionModelSettingTests(unittest.TestCase):
         self.app.processEvents()
         self.app.processEvents()
         self.assertEqual(picker.property("currentIndex"), 0)
+        self.assertEqual(ui.warnings, [])
+
+    def test_inherit_stays_first_and_clears_the_saved_effort(self):
+        ui = self.ui()
+        ui.backend._profiles[0]['reasoningEffort'] = 'high'
+        ui.backend.changed.emit()
+        self.app.processEvents()
+        picker = ui.reasoning_picker()
+        self.assertEqual(picker.property('values').toVariant()[0], 'inherit')
+        picker.setProperty('currentIndex', 0)
+        picker.activated.emit(0)
+        self.app.processEvents()
+        self.assertEqual(ui.backend.calls[-1][-1], 'inherit')
+        self.assertNotIn('reasoningEffort', ui.backend._profiles[0])
+        self.assertEqual(ui.reasoning_picker().property('currentIndex'), 0)
+        self.assertEqual(ui.reasoning_picker().property('displayText'), '沿用桌面')
+        self.assertEqual(ui.warnings, [])
+
+    def test_inherit_failure_restores_the_saved_effort(self):
+        ui = self.ui()
+        ui.backend._profiles[0]['reasoningEffort'] = 'high'
+        ui.backend.changed.emit()
+        self.app.processEvents()
+        ui.backend.accept_save = False
+        picker = ui.reasoning_picker()
+        picker.setProperty('currentIndex', 0)
+        picker.activated.emit(0)
+        self.app.processEvents()
+        self.assertEqual(picker.property('displayText'), 'High')
+        self.assertEqual(ui.backend._profiles[0]['reasoningEffort'], 'high')
+        self.assertEqual(ui.warnings, [])
+
+    def test_columns_align_for_different_names_and_long_names_are_elided(self):
+        ui = self.ui()
+        ui.backend._profiles[0]['pluginName'] = '交接会话'
+        ui.backend._profiles.append({'plugin': 'other', 'profile': 'bot',
+            'pluginName': '机器人会话与一个需要截断的很长名称' * 8,
+            'model': 'test-model-b', 'provider': 'test-provider', 'reasoningEffort': 'medium'})
+        ui.backend.changed.emit()
+        self.app.processEvents()
+        self.app.processEvents()
+        items = {item.objectName(): item for item in ui.items() if item.objectName()}
+        for prefix in ('pluginSessionModel_', 'pluginSessionReasoning_'):
+            first = items[prefix + 'session-task-service_tasks']
+            second = items[prefix + 'other_bot']
+            self.assertAlmostEqual(first.mapToScene(QPointF()).x(), second.mapToScene(QPointF()).x())
+            self.assertAlmostEqual(first.width(), second.width())
+        self.assertTrue(items['pluginSessionName_other_bot'].property('truncated'))
         self.assertEqual(ui.warnings, [])
 
     def test_english_labels(self):

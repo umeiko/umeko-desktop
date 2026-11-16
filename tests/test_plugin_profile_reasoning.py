@@ -104,6 +104,34 @@ class ProfileReasoningTests(unittest.TestCase):
         self.assertEqual(self.profile['reasoningEffort'], 'high')
         self.assertEqual(session_policy(self.backend, self.record)['reasoningEffort'], 'off')
 
+    def test_inherit_removes_medium_override_and_resolves_desktop_default(self):
+        self.store.data['providers'][0]['models'][0]['reasoningLevels'] = ['low', 'medium', 'high']
+        self.store.data['ui'] = {'reasoningEffort': 'high'}
+        self.set_effort('medium')
+        self.set_effort('')
+        self.assertEqual(self.profile['reasoningEffort'], 'medium')
+        original = copy.deepcopy(self.profile)
+        result = self.set_effort('inherit')
+        original.pop('reasoningEffort')
+        self.assertEqual(self.profile, original)
+        self.assertEqual(result['reasoningEffort'], '')
+        self.assertEqual(profile_rows(self.backend)[0]['reasoningEffort'], '')
+        self.assertEqual(session_policy(self.backend, self.record)['reasoningEffort'], 'high')
+        self.set_effort('')
+        self.assertNotIn('reasoningEffort', self.profile)
+
+    def test_inherit_save_failure_restores_override_or_absence(self):
+        for old_fields in ({}, {'reasoningEffort': 'medium'}):
+            for error in (OSError, RuntimeError):
+                with self.subTest(old_fields=old_fields, error=error):
+                    self.profile.pop('reasoningEffort', None)
+                    self.profile.update(old_fields)
+                    original = copy.deepcopy(self.profile)
+                    self.store.save.side_effect = [None, error('fixture save failed')]
+                    with self.assertRaises(error):
+                        self.set_effort('inherit')
+                    self.assertEqual(self.profile, original)
+
     def test_save_failure_rolls_back_model_provider_and_effort_including_absence(self):
         for old_fields in ({}, {'provider': 'provider-a', 'reasoningEffort': 'high'}):
             with self.subTest(old_fields=old_fields):

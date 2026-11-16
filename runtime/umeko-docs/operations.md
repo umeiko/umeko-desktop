@@ -127,7 +127,13 @@ Python 插件会话可用 `pluginSessions.setModel` 同时设置模型路由和�
 {"operation":"pluginSessions.setModel","arguments":{"plugin":"session-task-service","profile":"tasks","reasoningEffort":"medium"}}
 ```
 
-`reasoningEffort` 为空字符串或省略时保留当前配置；可填写 `off`、`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`、`ultra` 或模型直接支持的自定义档位。省略模型时保留模型，新模型省略供应商时使用实际路由。
+reasoningEffort 省略或空字符串时保留当前配置；inherit 删除配置字段并恢复沿用桌面默认档位，下一次输入生效。
+
+`inherit` 是清除档位的操作值，保存后配置中移除 `reasoningEffort` 字段。其他值可填写 `off`、`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`、`ultra` 或模型直接支持的自定义档位。省略模型时保留模型，新模型省略供应商时使用实际路由。
+
+```json
+{"operation":"pluginSessions.setModel","arguments":{"plugin":"session-task-service","profile":"tasks","reasoningEffort":"inherit"}}
+```
 
 插件会话优先使用 `pluginSessionProfiles.<plugin>.<profile>.reasoningEffort`，未配置时继承 `ui.reasoningEffort`，两者均未配置时使用 `off`。宿主在新会话或下一次输入时按模型支持的档位对齐，保存的配置值继续保留。详见 [Widget 插件](widget-plugins.md)。
 

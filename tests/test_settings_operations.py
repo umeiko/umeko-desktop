@@ -159,6 +159,20 @@ class SettingsOperationTests(unittest.TestCase):
         self.assertEqual((profile['model'], profile['provider'], profile['reasoningEffort']),
                          ('other-model', 'other-provider', 'high'))
 
+    def test_plugin_inherit_clears_persisted_override_and_empty_effort_preserves_it(self):
+        self.b.store.data['pluginSessionProfiles'] = {'sample': {'tasks': {
+            'model': 'test-model', 'provider': 'test-provider', 'reasoningEffort': 'medium'}}}
+        arguments = {'plugin': 'sample', 'profile': 'tasks'}
+        self.applied('pluginSessions.setModel', {**arguments, 'reasoningEffort': ''})
+        self.assertEqual(self.persisted()['pluginSessionProfiles']['sample']['tasks']['reasoningEffort'], 'medium')
+        self.applied('pluginSessions.setModel', {**arguments, 'reasoningEffort': 'inherit'})
+        expected = {'model': 'test-model', 'provider': 'test-provider'}
+        self.assertEqual(self.b.store.data['pluginSessionProfiles']['sample']['tasks'], expected)
+        self.assertEqual(self.persisted()['pluginSessionProfiles']['sample']['tasks'], expected)
+        self.assertEqual(self.b.pluginSessionProfiles[0]['reasoningEffort'], '')
+        self.write.assert_not_called()
+        self.restart.assert_not_called()
+
     def test_models_and_reasoning_are_registered_and_validate_before_mutation(self):
         listed = self.execute('operations.list')['operations']
         for operation in ('models.select', 'sessions.reasoning'):
