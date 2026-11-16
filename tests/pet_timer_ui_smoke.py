@@ -80,6 +80,15 @@ try:
     assert composer.property('desiredOpen'),'Clicking question card dismissed capsule'
     assert t.owner=='ordinary-b'
     assert t.state['question']['key']=='name'
+    prompt.requestActivate(); QTest.qWait(350)
+    assert composer.property('desiredOpen'), 'Question-window interaction closed capsule'
+    edits=prompt.findChild(QObject,'petTimerEdits')
+    js(edits,'open()'); QTest.qWait(350)
+    assert composer.property('desiredOpen'), 'Edit-menu interaction closed capsule'
+    js(edits,'close()'); js(composer,'focusTimerInput()'); QTest.qWait(350)
+    assert field.property('activeFocus') and composer.property('desiredOpen')
+    assert not js(prompt,'placement.blocked')
+    assert js(prompt,'y + height <= transientParent.y || y >= transientParent.y + transientParent.height')
     promptshot('02-missing-fields.png')
     field.setProperty('text','尚未发出的任务名');js(field,'textEdited()')
     QTest.keyClick(js(composer,'contentItem.Window.window'),Qt.Key_Escape)
@@ -145,6 +154,8 @@ try:
     QTest.keyClick(js(project_menu,'contentItem.Window.window'),Qt.Key_Down)
     QTest.keyClick(js(project_menu,'contentItem.Window.window'),Qt.Key_Return)
     wait(lambda:not project_menu.property('visible') and field.property('activeFocus'),'Menu selection did not restore input focus')
+    QTest.qWait(350)
+    assert composer.property('desiredOpen') and js(composer,'contentItem.Window.window.active')
     assert project.selected=='ordinary-b' and composer.property('projectMode')
     field.setProperty('text','帮我检查构建');js(field,'textEdited()')
     assert project.body=='帮我检查构建'
@@ -216,6 +227,16 @@ try:
     assert 'not-sent.txt' not in transcript,'Existing target attachment was accidentally sent'
     assert project.submission.get('acknowledged')
     project.close()
+    # Pre-existing blocked geometry must close safely after command routing,
+    # not synchronously overwrite a new command with the previous timer draft.
+    prompt.setProperty('height', 2000)
+    js(window,'openTaskComposer()')
+    wait(lambda:composer.property('opened'),'Blocked-case input did not open')
+    field.setProperty('text','/定时任务 保留新的阻塞测试指令')
+    js(composer,'submit()')
+    wait(lambda:not composer.property('visible'),'Blocked question surface remained open')
+    assert field.property('text')=='/定时任务 保留新的阻塞测试指令'
+    assert not t.opened and not restores
     relevant=[r for r in warnings if any(s in r for s in ('PetTimerPrompt','DesktopPetWindow','ReferenceError','TypeError'))]
     assert not relevant,relevant
     (out/'result.json').write_text(json.dumps({'noImplicitOwner':True,'capsuleDraftPreserved':True,'requiredFields':True,'explicitConfirmation':True,'realWidgetCreatedExactlyOnce':True,'mainDraftAndBindingUnchanged':True,'oldDraftNotice':True,'nativeProjectPromptAndFollowUp':True,'projectDraftAndAttachmentsPreserved':True,'warnings':relevant},ensure_ascii=False,indent=2))

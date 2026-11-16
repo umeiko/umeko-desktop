@@ -15,6 +15,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 from dataclasses import replace
+from types import SimpleNamespace
 
 from PySide6.QtCore import QObject, Property, QProcess, QProcessEnvironment, QTimer, QUrl, Signal, Slot, QBuffer, QIODevice, QMimeData
 from PySide6.QtGui import QGuiApplication, QDesktopServices, QFont, QFontDatabase, QImageReader, QWindow
@@ -159,19 +160,40 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Property('QVariantList', notify=changed)
     def pluginSessionModels(self):
-        return [{'providerId': row['providerID'], 'model': row['id'], 'label': row['owned_by'] + ' / ' + row['id']}
+        return [{'providerId': row['providerID'], 'model': row['id'], 'label': row['owned_by'] + ' / ' + row['id'],
+                 'reasoningLevels': self._reasoning_levels(SimpleNamespace(model=row['id'], provider=row['providerID']))}
                 for row in self.gateway.models()]
 
     @Slot(str, str, str, str, result=bool)
-    def savePluginSessionModel(self, plugin, profile, model, provider):
+    @Slot(str, str, str, str, str, result=bool)
+    def savePluginSessionModel(self, plugin, profile, model='', provider='', reasoningEffort=''):
         from .plugin_sessions import set_profile_model
         try:
-            set_profile_model(self, plugin, profile, model, provider)
+            set_profile_model(self, plugin, profile, model, provider, reasoningEffort)
         except (ValueError, OSError, RuntimeError) as error:
             self.toast.emit(str(error))
             return False
         self.changed.emit()
         self.toast.emit('插件会话模型已更新，下一次输入时生效')
+        return True
+
+    @Slot(str, result=bool)
+    def setDefaultReasoningEffort(self, value):
+        """Set the effort inherited by new desktop sessions."""
+        if value != 'off' and value not in self._reasoning_levels():
+            self.toast.emit('请选择当前桌面模型支持的思考档位')
+            return False
+        ui = self.store.data['ui']
+        previous = dict(ui)
+        ui['reasoningEffort'] = value
+        try:
+            self.store.save()
+        except (OSError, RuntimeError) as error:
+            ui.clear()
+            ui.update(previous)
+            self.toast.emit(str(error))
+            return False
+        self.changed.emit()
         return True
 
     def _settings_changed_externally(self, keys, invalid):
@@ -243,11 +265,14 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._management_jobs = set()
         self._mcp_jobs = {}
         self._closing = False
+        self._transcript_warmup = None
         self._copy_request = 0
         self._selection_attachment = None
         self._selection_epoch = 0
         self.viewChanged.connect(self._invalidate_selection_attachment)
         self._session_preview = SessionPreview(self)
+        from .transcript_history import RecentHistory
+        self._recent_history = RecentHistory(self)
         from .conversation_search import ConversationSearch
         self._chat_search = ConversationSearch(self)
         self._session_files = SessionFiles(self)
@@ -356,6 +381,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         return self._session_preview
 
     @Property(QObject, constant=True)
+    def recentHistory(self):
+        return self._recent_history
+
+    @Property(QObject, constant=True)
     def chatSearch(self):
         return self._chat_search
 
@@ -387,6 +416,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             model=self.store.data["selectedModel"], provider=self.store.data["selectedProvider"], greeting=self._welcome_greetings.pop(), portrait=self._welcome_portraits.pop())
 
     def _activate(self, record):
+        if record is not self._view and hasattr(self, '_recent_history'):
+            self._recent_history.leaving(self._view)
         self._streaming_timer.stop()
         self.viewAboutToChange.emit()
         previous_approval = self._dangerous_allowed(self._view)
@@ -483,7 +514,9 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if index < 0:
             return
         self._view.scroll_index, self._view.scroll_y, self._view.follow_tail = index, position, follow
-        if self._view.id and self._view.file:
+        # Rows of a partial history are not rows of the complete index.
+        partial = self._view.transcript is not None and self._view.transcript.partial
+        if self._view.id and self._view.file and not (partial and not follow):
             meta = self.store.data['sessionMeta'].setdefault(self._view.id, {})
             viewport = {'row':index, 'offset':max(0, position), 'follow':follow}
             if meta.get('viewport') != viewport:
@@ -1603,11 +1636,21 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 values[key] = int(values[key])
             if len(values["instructions"]) > 16000:
                 raise ValueError("自定义指令不能超过 16000 字符")
+            images = values.get('maxContextImages', self.store.data['agent'].get('maxContextImages', 3))
+            if type(images) is not int or images < 1:
+                raise ValueError('maxContextImages 必须是正整数')
             values["agentDir"] = str(Path(values.get("agentDir") or Path.home() / ".pi/agent").expanduser().resolve())
             for key in ("skillPaths", "extensionPaths"):
                 values[key] = [str(Path(p.strip()).expanduser().resolve()) for p in values.get(key, []) if p.strip()]
+            previous = dict(self.store.data['agent'])
             self.store.data["agent"].update({k: values[k] for k in ("maxTokens", "instructions", "autoCompaction", "agentDir", "skillPaths", "extensionPaths")})
-            self.store.save()
+            self.store.data['agent']['maxContextImages'] = images
+            try:
+                self.store.save()
+            except (OSError, RuntimeError):
+                self.store.data['agent'].clear()
+                self.store.data['agent'].update(previous)
+                raise
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("Pi 设置已保存，下次加载生效")
@@ -2097,6 +2140,22 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         # UI index only. Native Pi JSONL is the sole transcript and tree store.
         self.store.save_sessions(self._sessions)
 
+    def _schedule_transcript_warmup(self):
+        if self._transcript_warmup is not None:
+            return
+        from . import transcript_warmup
+        self._transcript_warmup = 'scheduled'
+        QTimer.singleShot(transcript_warmup.WARM_DELAY_MS, self._start_transcript_warmup)
+
+    def _start_transcript_warmup(self):
+        from . import transcript_warmup
+        if self._closing:
+            return
+        files = transcript_warmup.recent_transcripts(self._sessions)
+        self._transcript_warmup = transcript_warmup.start(
+            self.transcripts, files, cancelled=lambda: self._closing,
+            paused=lambda: self._session_preview.reading)
+
     def loadNativeIndex(self):
         directory = self.store.directory / "pi/sessions"
         if not directory.is_dir():
@@ -2245,6 +2304,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 self.store.save()
                 self._save_session()
                 self.chatChanged.emit()
+            self._schedule_transcript_warmup()
         elif name == "check":
             self._kernel_busy = False
             if result["ok"]:
@@ -2335,6 +2395,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._viewport_save.stop()
         self._streaming_timer.stop()
         self._session_preview.cancel()
+        self._recent_history.close()
         self.conversationViewsClosing.emit()
         self._conversation_views.close()
         self._document_preview.close()

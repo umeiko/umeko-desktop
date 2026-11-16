@@ -226,7 +226,16 @@ class SyntaxHighlighter(QObject):
     def get_enabled(self): return self._enabled
 
     def set_enabled(self, value):
-        if value != self._enabled: self._enabled = value; self._schedule()
+        if value == self._enabled: return
+        self._enabled = value
+        # A retained conversation hides and shows its code blocks on every
+        # switch. Finished colours stay attached while hidden and are shown
+        # again at once; any text edit still clears them via _schedule().
+        if not value and self.native.valid:
+            self.timer.stop(); self.changed.emit(); return
+        if value and self.native.valid and self.native.document() is self._doc:
+            self._status = "highlighted"; self.changed.emit(); return
+        self._schedule()
 
     enabled = Property(bool, get_enabled, set_enabled, notify=changed)
 

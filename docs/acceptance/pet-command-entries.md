@@ -1,6 +1,6 @@
 # 桌宠命令入口：维护者主线上的独立功能补丁
 
-基线：`b383e03`（包含 #156）；分支：`feat/153-pet-timer-entry`。
+基线：`783057c`（包含已合并 #166、#157）；分支：`feat/153-pet-timer-entry`。
 关联 #151、#153；不是两个 Issue 的完整实现，不使用 `Closes`。
 
 ## 已实现
@@ -25,7 +25,7 @@
 
 ## 验证
 
-- `prepare_runtime.py`：独立 bridge 与当前源码匹配，依赖与原安装共享；没有共享旧 bridge。
+- 独立复制 Pi 1.3.0 运行时，执行 `verify_runtime` 同步当前源码适配器并通过自检；不修改或共享旧 bridge。
 - Python：141 项通过。`test_pet_timer`、`test_pet_project`、`test_pet_assistant`、`test_desktop_pet`、`test_pet_reminders`、`test_scheduled_task_host`、`test_scheduled_tasks`、`test_scheduled_task_plugin`。
 - Node：`node --test tests/global-agents.test.mjs`，6 项通过。
 - 未修改的 `desktop_pet_task_ui_smoke.py`：双击、绑定、普通发送、IME、取消、焦点、屏幕边缘、字体缩放、PID 与真实本地 Pi 工具链往返通过（模型服务为本地 fixture）。
@@ -44,6 +44,15 @@
 - `每天 9 点检查构建` 识别 09:00 和正文，但当前创建 API 不支持日历循环，因此明确告知并要求用户选择新计划，不转换成每隔 24 小时。相对日期暂不猜测，原地追问明确日期。
 - 冲突字段留空重新确认，未标注尾句保留在指令中；旧草稿不被新提取内容覆盖。不支持的复合时长保留原文并追问，不截断为不同的有效计划。
 - 原生鼠标点击选项/确认、Escape 退出、未提交回答恢复、跨窗口输入焦点均已在 Linux offscreen 测试。原生项目测试使用独立 `agentDir`，不依赖用户家目录。
-- `08-question-layout-preview.png` 与 `09-confirm-layout-preview.png` 是实际 Qt 组件的单渲染面布局预览：测试中改用 Popup.Item 并摆放于同一画布，不是原生桌面多窗口截图，不作为原生定位验证。
+- `08-question-layout-preview.png` 与 `09-confirm-layout-preview.png` 是生产窗口类型的实际 Qt 离屏抓图，按窗口实际全局坐标合成于中性背景；未修改 Popup/Tool 类型。不是 Windows 实机截图。
 
 - 带 UTC 偏移、Z、AM/PM、时区后缀、范围或选择修饰的时间不会消费合法前缀，会原文保留并要求明确填写。频率步骤中的额外正文/限制不会被忽略，该回答整体拒绝且保留输入，提示单独补充执行指令。
+
+
+## 与已合并 #166 / #157 整合（2026-11-16）
+
+- 合入 main `783057c`，保留维护者已接收的非模态 Tool 输入栏、全局坐标拖动、普通气泡隐藏、重要通知避让、IME commit/reset/query 更新，以及蓝边/蓝箭头/Desktop 入口。
+- 定时问答卡改为同族非模态 Tool 窗口：原 Popup.Window 在实际 Qt 测试中截走输入栏 Escape，因此不是仅机械解决冲突。卡片、修改菜单、项目菜单纳入 150ms 失焦检查范围；选择后重新激活输入窗口。退出问答保留未提交回答与原命令。
+- 辅助卡片/菜单按当前屏幕可用区域翻转，并避开输入栏和重要通知；空间不足时关闭输入栏但保留草稿，不覆盖通知。更换默认助手绑定时清除旧项目模式。
+- 本次验证：141 项 Python 测试通过（84 pet、22 desktop_pet、35 scheduled）；6 项 global-agents Node 测试通过。Qt/Pi `pet_timer_ui_smoke`、`desktop_pet_task_ui_smoke`、`desktop_pet_drag_ui_smoke`、`desktop_pet_ui_smoke` 均通过；额外覆盖问答卡/修改菜单/项目选择后停留 350ms、Escape 与草稿恢复。截图由本次隔离 Qt 运行重新生成。
+- 仍需维护者在 Windows 验证真实中文输入法候选窗、切换外部应用、DPI/多屏；Linux offscreen 只验证 Qt 逻辑和窗口抓图，不声称完成 Windows 验收。

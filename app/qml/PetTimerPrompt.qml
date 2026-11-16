@@ -3,11 +3,12 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 // A transient single-question card. No history, transcript or Desktop navigation.
-Popup {
+Window {
     id: root
     objectName: "petTimerPrompt"
     required property var schedule
     required property var composer
+    readonly property bool focusWithin: visible && (active || (edits.visible && edits.contentItem.Window.window && edits.contentItem.Window.window.active))
     readonly property var state: schedule.state
     readonly property var question: state.question
     readonly property bool reviewing: question.key === "review" && Object.keys(state.review).length > 0
@@ -15,24 +16,27 @@ Popup {
     signal dismissed()
     function selectChoice(value) { const result=schedule.answer(value); if(result.ok) answered() }
     function modifyStep(value) { schedule.editStep(value); answered() }
-    parent: composer.contentItem
-    popupType: Popup.Window
+    transientParent: composer.parent.Window.window
+    flags: transientParent.flags
+    color: "transparent"
     visible: state.opened && composer.desiredOpen
-    modal: false
-    focus: false
-    closePolicy: Popup.NoAutoClose
-    margins: -1
-    implicitWidth: composer.width
-    width: implicitWidth
-    padding: 12
-    implicitHeight: body.implicitHeight + padding * 2
-    height: implicitHeight
+    property int padding: 12
+    width: composer.width
+    height: body.implicitHeight + padding * 2
     // Stay next to the capsule, flipping below at the top edge.
-    x: 0
-    y: composer.parent.Window.window.y + composer.y - height - 6 >= Screen.virtualY ? -height - 6 : composer.height + 6
-    background: Rectangle { radius: 14; color: Theme.surface; border.color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, .25) }
-    contentItem: ColumnLayout {
+    x: transientParent.x
+    readonly property var placement: composer.auxiliaryPlacement(height, false)
+    y: placement.y
+    function closeIfBlocked() {
+        Qt.callLater(function() { if (visible && placement.blocked) composer.close() })
+    }
+    onPlacementChanged: closeIfBlocked()
+    onVisibleChanged: if (visible) closeIfBlocked()
+    onClosing: event => { event.accepted = false; schedule.close(); dismissed() }
+    Rectangle { anchors.fill: parent; radius: 14; color: Theme.surface; border.color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, .25) }
+    ColumnLayout {
         id: body
+        x: root.padding; y: root.padding; width: root.width - root.padding * 2
         spacing: 7
         Keys.onEscapePressed: event => { root.schedule.close(); root.dismissed(); event.accepted = true }
         RowLayout {
@@ -103,7 +107,7 @@ Popup {
                 text: "修改"; visible: !!root.state.owner && !root.state.outcome; enabled: !root.state.busy
                 onClicked: edits.open()
                 Menu {
-                    id: edits
+                    id: edits; objectName: "petTimerEdits"
                     Repeater {
                         model: [{key:"owner",name:"归属会话"},{key:"name",name:"名称"},{key:"message",name:"执行指令"},{key:"target",name:"执行对象"},{key:"frequency",name:"单次 / 间隔"},{key:"first_date",name:"日期"},{key:"local_time",name:"时间"},{key:"zone",name:"时区"},{key:"interval_value",name:"间隔分钟数"}]
                         MenuItem { required property var modelData; visible: !(["first_date","local_time","zone"].indexOf(modelData.key)>=0 && root.state.draft.frequency !== "once") && !(modelData.key === "interval_value" && root.state.draft.frequency !== "interval"); height: visible ? implicitHeight : 0; text: modelData.name; onTriggered: root.modifyStep(modelData.key) }
