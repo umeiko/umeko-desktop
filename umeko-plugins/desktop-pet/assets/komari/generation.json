@@ -8,7 +8,7 @@
     "app/icons/characters/komari/welcome.png",
     "app/icons/subagents/chika-komari.png"
   ],
-  "referenceStyle": "umeko-plugins/desktop-pet/assets/yanami/idle.webp",
+  "referenceStyle": "art/desktop-pets/rare-idle-v1/reference/yanami-idle.png",
   "grid": {
     "columns": 3,
     "rows": 2,
@@ -24,7 +24,7 @@
       "references": [
         "app/icons/characters/komari/welcome.png",
         "app/icons/subagents/chika-komari.png",
-        "umeko-plugins/desktop-pet/assets/yanami/idle.webp"
+        "art/desktop-pets/rare-idle-v1/reference/yanami-idle.png"
       ]
     },
     {
@@ -356,5 +356,7 @@
         "sha256": "af4fbed8aa633d24d3311d8cb7ba90ebbda14180826a6d9fd4f23fbd6675e1e2"
       }
     ]
-  }
+  },
+  "status": "Historical sprite-sheet generation record; superseded by the user-delivered GIF animations.",
+  "supersededBy": "delivery.provenance.json"
 }

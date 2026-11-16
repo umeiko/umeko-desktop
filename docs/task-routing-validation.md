@@ -58,3 +58,12 @@ Local follow-up: 134 targeted Python tests and 12 Node tests passed. A real Qt e
 ## Integration with upstream `700e48c`
 
 The merge preserves task routing's execution updates on bus delivery and upstream's shared conversation refresh and transcript loading. The integration passed 150 targeted Python tests, 46 Node tests, the Widget SDK build and the source-matched Pi runtime self-test. Both language runs of `tests/task_routing_ui_smoke.py` and `tests/global_agents_ui_smoke.py` passed with a local model fixture. The Qt teardown warning about six incubating items appeared in all three runs. The refreshed screenshots above are from the two routing runs. Windows and installation package checks were not run locally.
+
+## Integration with main b383e03
+
+The merge retains upstream's per-agent Skill configuration, desktop-pet assistant, and Task Records distribution policy alongside this PR's explicit routing. Task Records remains excluded from standard Widget discovery and packages. The source smoke test explicitly registers its manifest, as upstream's Task Records test does, to validate shared history. Task intake and dispatch were exercised before that registration. Shared history screenshots show this source-only opt-in.
+
+- Passed 79 targeted Python tests, 10 Node tests, the Widget SDK build, and verification of the Pi 1.3.0 runtime against the merged source.
+- Passed the Chinese and English Qt/Pi smoke runs with isolated demo profiles and a local model fixture. Both runs emitted the existing Qt teardown warning about six incubating items.
+- Captures from this merge: [Chinese intake](screenshots/issue43/b383e03-task-entry-zh.jpg), [English intake](screenshots/issue43/b383e03-task-entry-en.jpg), [Chinese shared history](screenshots/issue43/b383e03-shared-task-route-zh.jpg), and [English shared history](screenshots/issue43/b383e03-shared-task-route-en.jpg).
+- Windows native interaction and installation were not tested locally.

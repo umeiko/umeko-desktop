@@ -186,6 +186,21 @@ class PiTests(unittest.TestCase):
         self.assertTrue(any(e.get('name') == 'umeko_desktop' and e.get('state') == 'done' for e in events))
         self.assertTrue(any(e.get('text') == 'Desktop applied' for e in events))
 
+    def test_pet_assistant_has_a_private_speech_tool_with_real_desktop_round_trip(self):
+        requests = []
+        self.desktop_control = lambda event: requests.append(event) or {'ok':True,'status':'shown'}
+        def response(_model, messages, tools, _tokens):
+            self.assertEqual({tool['name'] for tool in tools}, {'umeko_desktop','send_to_user'})
+            if messages[-1]['role'] == 'tool': return Completion('已通知用户。')
+            return Completion(tool_calls=[{'id':'pet-speech','name':'send_to_user','arguments':{'text':'任务完成啦。'}}])
+        self.response_fn = response
+        events = self.command({**self.payload,'type':'prompt','text':'给用户一句简报','globalCoordinator':True,
+                               'petAssistantBinding':'host-private-binding','agent':{'safeMode':True}})
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0]['operation'], 'desktop_pet.send_to_user')
+        self.assertEqual(requests[0]['arguments'], {'text':'任务完成啦。','binding':'host-private-binding'})
+        self.assertTrue(any(e.get('name') == 'send_to_user' and e.get('state') == 'done' for e in events))
+
     def test_widget_push_reaches_running_native_agent_without_polling(self):
         started,release=threading.Event(),threading.Event()
         def response(_model,messages,*_):

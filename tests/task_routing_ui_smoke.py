@@ -169,6 +169,10 @@ try:
     wait(lambda:len(variant(router.property('history')))==3 and any(row['status']=='clarify' for row in variant(router.property('history'))),'Route history or clarification missing')
     QTest.qWait(300)
     assert window.grabWindow().save(str(out/('task-entry-'+os.environ.get('UMEKO_TEST_LANGUAGE','zh')+'.png')))
+    # Match the upstream source-only fixture for the withheld Task Records Widget.
+    assert 'task-records' not in b.desktopPlugins.entries
+    manifest = ROOT / 'umeko-plugins/task-records/manifest.json'
+    b.desktopPlugins.entries['task-records'] = {**json.loads(manifest.read_text(encoding='utf-8')), 'builtin': True}
     b.desktopPlugins.setEnabled('task-records', True)
     assert b.desktopPlugins.openPage('task-records')
     wait(lambda:find('taskRecordsWidget') is not None,'Shared task Widget missing')

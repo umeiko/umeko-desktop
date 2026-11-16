@@ -49,12 +49,14 @@ smokes=(
   tests/pi_capabilities_ui_smoke.py
   tests/global_agents_ui_smoke.py
   tests/desktop_plugins_ui_smoke.py
+  tests/scheduled_tasks_ui_smoke.py
   tests/pi_management_ui_smoke.py
   tests/subagent_collection_ui_smoke.py
   tests/thinking_stream_ui_smoke.py
   tests/skill_manager_host_ui_smoke.py
   tests/video_ui_smoke.py
   tests/desktop_pet_ui_smoke.py
+  tests/desktop_pet_task_ui_smoke.py
   tests/subagent_pane_ui_smoke.py
   tests/multimodal_ui_smoke.py
   tests/auxiliary_vision_ui_smoke.py
@@ -86,12 +88,14 @@ smokes=(
   tests/scroll_paging_ui_smoke.py
   tests/task_state_ui_smoke.py
   tests/steering_status_ui_smoke.py
+  tests/subagent_report_status_ui_smoke.py
   tests/conversation_search_ui_smoke.py
   tests/sidebar_menu_position_ui_smoke.py
   tests/pi_manager_initial_tools_ui_smoke.py
   tests/slash_commands_ui_smoke.py
   tests/large_markdown_ui_smoke.py
   tests/history_window_ui_smoke.py
+  tests/selection_attachment_ui_smoke.py
   tests/request_details_ui_smoke.py
   tests/skill_manager_ui_smoke.py
   tests/provider_login_cancel_ui_smoke.py

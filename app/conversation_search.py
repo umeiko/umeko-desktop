@@ -247,6 +247,16 @@ class ConversationSearch(QAbstractListModel):
         if target < 0: self.controller.toast.emit('原消息已不可用，请刷新搜索')
         self.jumpReady.emit(target, hit['entryId'])
 
+    def retire(self):
+        """Stop a cache writer without waiting on the GUI thread."""
+        self._pump.stop()
+        worker, self._worker = self._worker, None
+        if worker:
+            worker.blockSignals(True)
+            worker.kill()
+            worker.finished.connect(worker.deleteLater)
+        return worker
+
     def close(self):
         self._pump.stop()
         if self._worker:

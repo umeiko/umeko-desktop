@@ -5,8 +5,8 @@
   "name": "桌面小宠物",
   "version": "1.0.0",
   "icon": "pet",
-  "summary": "桌宠陪伴、提醒与待办",
-  "description": "官方内置桌宠。后台观察任务并管理本机提醒与待办，默认不显示。支持拖动、点击互动、右键菜单与自定义动画形象。",
+  "summary": "桌宠陪伴、悬浮小助手、提醒与待办",
+  "description": "官方内置桌宠。显示桌宠且启用全局子智能体时自动绑定悬浮小助手，以当前形象人设简短报告长任务结果。支持提醒、待办、互动与导入形象。",
   "author": "Umeko",
   "lifecycle": "application",
   "entrypoint": "scripts/plugin.py:create_plugin",
@@ -90,6 +90,10 @@
               "type": "integer",
               "minimum": 3000,
               "maximum": 30000
+            },
+            "personas": {
+              "type": "object",
+              "additionalProperties": true
             }
           },
           "additionalProperties": false
@@ -147,7 +151,16 @@
         "description": "列出本机待办和一次性提醒，返回宿主当前时间；不需要模型轮询计时",
         "parameters": {
           "type": "object",
-          "properties": {"status": {"type": "string", "enum": ["open", "completed", "all"]}},
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "open",
+                "completed",
+                "all"
+              ]
+            }
+          },
           "additionalProperties": false
         }
       },
@@ -155,8 +168,16 @@
         "description": "按 id 查看一条本机事项及宿主当前时间",
         "parameters": {
           "type": "object",
-          "properties": {"id": {"type": "string", "maxLength": 36}},
-          "required": ["id"], "additionalProperties": false
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 36
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
         }
       },
       "createItem": {
@@ -164,11 +185,24 @@
         "parameters": {
           "type": "object",
           "properties": {
-            "title": {"type": "string", "maxLength": 200},
-            "notes": {"type": "string", "maxLength": 2000},
-            "dueAt": {"type": "string", "maxLength": 64, "description": "带时区的 ISO 8601 时间；普通待办省略此字段"}
+            "title": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "notes": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "dueAt": {
+              "type": "string",
+              "maxLength": 64,
+              "description": "带时区的 ISO 8601 时间；普通待办省略此字段"
+            }
           },
-          "required": ["title"], "additionalProperties": false
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
         }
       },
       "updateItem": {
@@ -176,27 +210,63 @@
         "parameters": {
           "type": "object",
           "properties": {
-            "id": {"type": "string", "maxLength": 36},
-            "title": {"type": "string", "maxLength": 200},
-            "notes": {"type": "string", "maxLength": 2000},
-            "dueAt": {"type": "string", "maxLength": 64},
-            "clearDueAt": {"type": "boolean", "description": "true 清除提醒；不能与非空 dueAt 同时设置"}
+            "id": {
+              "type": "string",
+              "maxLength": 36
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "notes": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "dueAt": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "clearDueAt": {
+              "type": "boolean",
+              "description": "true 清除提醒；不能与非空 dueAt 同时设置"
+            }
           },
-          "required": ["id"], "additionalProperties": false
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
         }
       },
       "completeItem": {
         "description": "完成事项并取消未触发的提醒；已完成时返回原事项",
         "parameters": {
-          "type": "object", "properties": {"id": {"type": "string", "maxLength": 36}},
-          "required": ["id"], "additionalProperties": false
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 36
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
         }
       },
       "deleteItem": {
         "description": "删除本机事项并使旧提醒失效；不存在的 id 返回错误",
         "parameters": {
-          "type": "object", "properties": {"id": {"type": "string", "maxLength": 36}},
-          "required": ["id"], "additionalProperties": false
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 36
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
         }
       },
       "interact": {
@@ -213,6 +283,29 @@
               ]
             }
           },
+          "additionalProperties": false
+        }
+      },
+      "setPersona": {
+        "description": "设置某个形象的人物设定；reset 为 true 恢复包内默认设定。空设定允许清除额外人设。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 48
+            },
+            "persona": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "reset": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id"
+          ],
           "additionalProperties": false
         }
       }

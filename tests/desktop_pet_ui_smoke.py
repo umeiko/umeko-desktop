@@ -146,6 +146,9 @@ def reminder_card_smoke():
     clock[0]+=timedelta(minutes=2);pet.reminders.check()
     card=window.findChild(QObject,'desktopPetReminderCard')
     wait(lambda:card.isVisible(),'Paused animation suppressed reminder card')
+    close_button=card.findChild(QObject,'desktopPetReminderClose')
+    close_point=close_button.mapToScene(close_button.boundingRect().center()).toPoint()
+    wait(lambda:window.mask().contains(close_point),'Reminder close button is outside the input region')
     assert not window.property('caption')
     pet.reaction.emit('不应补播的旧台词');assert not window.property('caption')
     for language in ('zh','en'):
@@ -214,6 +217,7 @@ try:
             assert not settings_loader.isVisible() and settings_loader.property('item') is None,'Inactive settings reserved a blank area'
             divider=find('desktopPluginSettingsDivider');heading=find('desktopPluginReadmeHeading')
             assert 0<=heading.y()-divider.y()-divider.height()<30,'Widget description was pushed down by an empty settings container'
+    pet.ui('selectAppearance',{'id':'yanami'})
     pet.ui('show',{})
     wait(lambda:main.findChild(QObject,'desktopPetWindow') is not None,'Pet window did not load')
     window=main.findChild(QObject,'desktopPetWindow')
@@ -222,14 +226,49 @@ try:
     animation=window.findChild(QObject,'desktopPetAnimation')
     wait(lambda:animation.property('ready'),'Animation did not decode')
     assert animation.property('frameCount')>1 and not animation.property('cache')
+    assert animation.property('source').toString().endswith('/yanami/idle.gif')
+    assert animation.property('frameCount')==32
+    first=animation.property('currentFrame')
+    wait(lambda:animation.property('currentFrame')!=first,'Yanami GIF is static')
+    wait(lambda:window.mask().boundingRect().height()>50,'Yanami input region did not load')
+    region=window.mask()
+    sprite=region.boundingRect()
+    assert region.contains(sprite.center()),'Yanami cannot receive input on the character'
+    assert not region.contains(QPoint(window.width()//2,50)),'Invisible area above Yanami accepts input'
+    assert not region.contains(QPoint(20,sprite.center().y())),'Invisible area left of Yanami accepts input'
+    assert not region.contains(QPoint(window.width()-20,sprite.center().y())),'Invisible area right of Yanami accepts input'
+    window.grabWindow().save(str(out/'yanami-idle.png'))
+    pet.ui('configure',{'paused':True})
+    for state in ('thinking','working','waiting','done','error'):
+        pet.motion.state=state;pet.changed.emit()
+        wait(lambda:animation.property('ready') and animation.property('source').toString().endswith('/yanami/'+state+'.gif'),'Yanami state did not decode: '+state)
+        assert animation.property('frameCount')==46,state
+        window.grabWindow().save(str(out/('yanami-'+state+'.png')))
+    pet.motion.state='idle';pet._rare_idle=True;pet.changed.emit()
+    wait(lambda:animation.property('ready') and animation.property('source').toString().endswith('/yanami/idle-rare.gif'),'Yanami rare idle did not decode')
+    assert animation.property('frameCount')==88
+    window.grabWindow().save(str(out/'yanami-idle-rare.png'))
+    pet._rare_idle=False;pet.changed.emit()
+    pet.ui('configure',{'paused':False})
+    pet.ui('selectAppearance',{'id':'whale-girl'})
+    wait(lambda:animation.property('ready') and '/whale-girl/idle.webp' in str(animation.property('source')),'Whale animation did not decode')
     reminder_card_smoke()
-    first=animation.property('currentFrame');QTest.qWait(180)
-    assert animation.property('currentFrame')!=first,'Animation is static'
     pet.ui('selectAppearance',{'id':'komari'})
     wait(lambda:pet.state['appearance']=='komari' and 'assets/komari/' in str(animation.property('source')),'Komari did not replace the active animation')
     wait(lambda:animation.property('ready') and animation.property('frameCount')>1,'Komari animation did not decode')
     first=animation.property('currentFrame')
     wait(lambda:animation.property('currentFrame')!=first,'Komari animation is static')
+    pet.ui('configure',{'paused':True})
+    for state in ('idle','thinking','working','waiting','done','error'):
+        pet.motion.state=state;pet.changed.emit()
+        wait(lambda:animation.property('ready') and animation.property('source').toString().endswith('/komari/'+state+'.gif'),'Komari state did not decode: '+state)
+        assert animation.property('frameCount')==(39 if state=='idle' else 56)
+        window.grabWindow().save(str(out/('komari-'+state+'.png')))
+    pet.motion.state='idle';pet._rare_idle=True;pet.changed.emit()
+    wait(lambda:animation.property('ready') and animation.property('source').toString().endswith('/komari/idle-rare.gif'),'Komari rare idle did not decode')
+    assert animation.property('frameCount')==107
+    window.grabWindow().save(str(out/'komari-idle-rare.png'))
+    pet._rare_idle=False;pet.changed.emit()
     pet.ui('selectAppearance',{'id':'whale-girl'})
     wait(lambda:animation.property('ready') and 'assets/whale-girl/' in str(animation.property('source')),'Whale did not replace Komari')
     assert '/whale-girl/idle.webp' in str(animation.property('source'))
@@ -239,15 +278,26 @@ try:
         wait(lambda:animation.property('source').toString().endswith('/'+state+'.webp') and animation.property('ready'),'Whale state did not decode: '+state)
         assert animation.property('frameCount')>1
         window.grabWindow().save(str(out/('whale-'+state+'.png')))
+    pet.ui('selectAppearance',{'id':'tiara'})
+    for state in ('idle','thinking','working','waiting','done','error'):
+        pet.motion.state=state;pet.changed.emit()
+        wait(lambda:animation.property('ready') and animation.property('source').toString().endswith('/tiara/'+state+'.gif'),'Tiara state did not decode: '+state)
+        assert animation.property('frameCount')==(39 if state=='idle' else 56)
+        window.grabWindow().save(str(out/('tiara-'+state+'.png')))
+    pet.motion.state='idle';pet._rare_idle=True;pet.changed.emit()
+    wait(lambda:animation.property('ready') and animation.property('source').toString().endswith('/tiara/idle-rare.gif'),'Tiara rare idle did not decode')
+    assert animation.property('frameCount')==107
+    window.grabWindow().save(str(out/'tiara-idle-rare.png'))
+    pet._rare_idle=False;pet.changed.emit()
     pet.ui('selectAppearance',{'id':'doubao'})
     for state in ('idle','thinking','working','waiting','done','error'):
         pet.motion.state=state;pet.changed.emit()
-        wait(lambda:animation.property('ready') and '/doubao/'+state+'.webp' in str(animation.property('source')),'Doubao state did not decode: '+state)
-        assert animation.property('frameCount')==12
+        wait(lambda:animation.property('ready') and '/doubao/'+state+'.gif' in str(animation.property('source')),'Doubao state did not decode: '+state)
+        assert animation.property('frameCount')==(39 if state=='idle' else 56)
         window.grabWindow().save(str(out/('doubao-'+state+'.png')))
     pet._rare_idle=True;pet.changed.emit()
-    wait(lambda:animation.property('ready') and '/doubao/idle-rare.webp' in str(animation.property('source')),'Doubao rare idle did not decode')
-    assert animation.property('frameCount')==12
+    wait(lambda:animation.property('ready') and '/doubao/idle-rare.gif' in str(animation.property('source')),'Doubao rare idle did not decode')
+    assert animation.property('frameCount')==107
     window.grabWindow().save(str(out/'doubao-idle-rare.png'))
     pet._rare_idle=False;pet.changed.emit()
     pet.ui('configure',{'paused':False})
@@ -278,6 +328,19 @@ try:
     wait(lambda:menu.property('opened'),'Context menu did not open')
     menu.close()
     wait(lambda:not menu.property('visible'),'Context menu did not close')
+    pet.ui('configure',{'size':96});QTest.qWait(100)
+    point=pointer.mapToScene(pointer.boundingRect().center()).toPoint()
+    for theme in ('white','dark','yanami'):
+        backend.setTheme(theme)
+        menu.open();wait(lambda:menu.property('opened'),'Themed menu did not open')
+        wait(lambda:menu.property('opacity')>.98,'Menu animation did not become visible')
+        assert menu.property('width')>window.width(),'Menu squeezed into the small pet window'
+        assert menu.property('height')>window.height(),'Menu clipped to the small pet window'
+        QTest.qWait(150)
+        menu_object(menu,'contentItem.Window.window').grabWindow().save(str(out/('menu-'+theme+'.png')))
+        menu.close();wait(lambda:not menu.property('visible'),'Menu did not close')
+    pet.ui('configure',{'size':192});QTest.qWait(100)
+    point=pointer.mapToScene(pointer.boundingRect().center()).toPoint()
     restored=[]
     pet.restoreRequested.connect(lambda:restored.append(True))
     for toggle in range(50):

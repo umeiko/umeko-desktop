@@ -66,6 +66,53 @@ def session_policy(backend, record):
         'allowApprovals': profile.get('allowApprovals') is True}
 
 
+def profile_rows(backend):
+    """Existing plugin session profiles with the model route each one uses."""
+    profiles = backend.store.data.get('pluginSessionProfiles', {})
+    entries = getattr(getattr(backend, '_desktop_plugins', None), 'entries', {})
+    rows = []
+    for plugin, named in sorted(profiles.items() if isinstance(profiles, dict) else []):
+        for profile, value in sorted(named.items() if isinstance(named, dict) else []):
+            if isinstance(value, dict):
+                rows.append({'plugin': plugin, 'profile': profile,
+                    'pluginName': str(entries.get(plugin, {}).get('name') or plugin),
+                    'model': value.get('model') if isinstance(value.get('model'), str) else '',
+                    'provider': value.get('provider') if isinstance(value.get('provider'), str) else ''})
+    return rows
+
+
+def set_profile_model(backend, plugin, profile, model, provider=''):
+    """Change the model route of an existing profile and nothing else.
+
+    Workspace, tools, permission mode and approvals stay as the user approved
+    them. Sessions pick up the new route at their next input boundary.
+    """
+    backend.store.save()  # Read in pending external edits before changing the profile.
+    profiles = backend.store.data.get('pluginSessionProfiles', {})
+    named = profiles.get(plugin) if isinstance(profiles, dict) and isinstance(plugin, str) else None
+    target = named.get(profile) if isinstance(named, dict) and isinstance(profile, str) else None
+    if not isinstance(target, dict):
+        raise ValueError('插件会话配置不存在，请先在 settings.json 中添加')
+    if not isinstance(model, str) or not model or not any(row.get('id') == model for row in backend.gateway.models()):
+        raise ValueError('请选择已配置的桌面模型别名')
+    if not isinstance(provider, str) or provider and backend.gateway.provider(provider) is None:
+        raise ValueError('供应商 ID 不存在')
+    resolved, _ = backend.gateway.resolve(model, provider or None)
+    routed, _ = backend.gateway.resolve(model)
+    if resolved['id'] != routed['id']:
+        raise ValueError('该模型别名在多个供应商中重复，请使用唯一的模型别名')
+    previous = {key: target[key] for key in ('model', 'provider') if key in target}
+    target.update(model=model, provider=resolved['id'])
+    try:
+        backend.store.save()
+    except (OSError, RuntimeError):
+        for key in ('model', 'provider'):
+            target.pop(key, None)
+        target.update(previous)
+        raise
+    return {'plugin': plugin, 'profile': profile, 'model': model, 'provider': resolved['id']}
+
+
 def apply_session_policy(backend, record):
     policy = session_policy(backend, record)
     if policy:

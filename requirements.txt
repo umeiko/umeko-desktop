@@ -3,3 +3,4 @@ pypinyin==0.55.0
 Pygments==2.19.2
 keyring==25.7.0; sys_platform != 'win32'
 dbus-next==0.2.3; sys_platform == 'linux'
+tzdata==2026.6

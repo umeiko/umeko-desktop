@@ -44,6 +44,7 @@ FocusScope {
         "section:project_context": ["工作区指令", "Workspace instructions"], "section:skills": ["技能目录", "Skill catalog"],
         "skill:catalog": ["技能简介", "Skill summary"],
         "umeko:desktop-pi": ["Pi 操作说明", "Pi usage"], "umeko:desktop-control": ["桌面能力说明", "Desktop capabilities"],
+        "widget:prompt": ["提示词", "Prompt"],
         "umeko:language": ["回复语言", "Reply language"], "umeko:instructions": ["自定义指令", "Custom instructions"]
     })
     function label(node) {
@@ -98,7 +99,7 @@ FocusScope {
             }))
             if (folder && expanded && node.children.length === 0)
                 rows.push({id: node.id + ":empty", hint: true, depth: depth + 1, label: node.labelKey === "group:widgets"
-                    ? t("当前没有 Widget 写入系统提示词，Widget 说明由模型在需要时通过工具读取", "No Widget adds text to the system prompt; the model reads Widget docs through tools when needed")
+                    ? t("当前启用的 Widget 没有声明提示词", "No active Widget declares a prompt")
                     : t("此来源当前没有内容", "Nothing from this source")})
             else if (folder && expanded) rows = rows.concat(flatten(node.children, depth + 1))
         }

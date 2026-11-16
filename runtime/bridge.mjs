@@ -7,7 +7,7 @@ import { sessionSkillOptions, manageSkills } from "./skills.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
-import { UMEKO_TOOL, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension } from "./umeko-control.mjs";
+import { UMEKO_TOOL, SEND_TO_USER, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
@@ -19,6 +19,7 @@ import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI
 import { blockedToolNames, toolInventory } from "./tool-visibility.mjs";
 import { createGenerationExtension } from "./generation.mjs";
 import { createSystemPromptController } from "./system-prompt.mjs";
+import { createCoordinatorSkills } from "./coordinator-skills.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
@@ -46,7 +47,7 @@ const { allToolNames, createAllToolDefinitions } = await import(new URL("./core/
 const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, "background_job"];
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
-const umekoControl = createUmekoControl({ emit });
+const umekoControl = createUmekoControl({ emit, getPetAssistantBinding: () => config?.petAssistantBinding || '' });
 const auxiliaryVision = createAuxiliaryVision({getConfig:() => config, emit:event => {
   if (event.sessionId && event.sessionId !== runtime?.session.sessionManager.getSessionId()) return subagents.automaticTool(event.sessionId,event);
   emit(event);
@@ -56,7 +57,7 @@ const textOf = content => typeof content === "string" ? content : (content || []
 const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
 const compactionText = data => `已压缩：${data.before} → ${data.after} tokens`;
 let runtime, config, modelRuntime, selectedModel, executing = false, unsubscribe, closing = false;
-let trackingTask = false;
+let trackingTask = false, adoptedRun = false;
 
 function taskDelivery(source, id, items, failed = 0) {
   if (trackingTask) emit({ type: "task_delivery", source, id, items, failed });
@@ -200,6 +201,9 @@ async function bindSession(session) {
       if (runtime?.session === session) emit({type:"history_checkpoint", leafId:session.sessionManager.getLeafId()});
     });
     widgetMessages.observe(event);
+    // Pi can start a parent run without a desktop command, e.g. when a background
+    // subagent reports. Track it as a desktop action so busy/done stay truthful.
+    if (event.type === "agent_start") adoptAgentRun(session);
     if (event.type === "queue_update") {
       inputQueue.sync(event.steering, event.followUp);
     }
@@ -268,7 +272,7 @@ function contextUsage(session) {
 function exposeNativeTools(session) {
   // Use Pi's registry, schemas and execution. Deferred/codemode tools remain reachable
   // through the native discovery tools; explicitly hidden tools stay hidden.
-  if (config?.globalCoordinator) { session.setActiveToolsByName([UMEKO_TOOL]); return; }
+  if (config?.globalCoordinator) { session.setActiveToolsByName([UMEKO_TOOL, ...(config.petAssistantBinding ? [SEND_TO_USER] : []), ...(config.coordinatorSkills?.length ? ['read'] : [])]); return; }
   const declared = session.getAllTools().filter(tool => ["direct", "model-only"].includes(tool.exposure));
   session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...declared.map(tool => tool.name)])]
     .filter(name => !config?.pluginSessionPolicy || config.pluginSessionPolicy.allowedTools.includes(name))
@@ -378,6 +382,7 @@ async function init(input) {
   selectedModel = modelRuntime.getModel("umeko", input.model);
   if (!selectedModel) throw new Error("请选择已配置的模型");
   const factory = async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
+    const coordinatorSkills = input.globalCoordinator ? createCoordinatorSkills(input) : null;
     // Load normal Pi settings/resources without importing auth.json or models.json.
     const nativeManager = await prepareNativeSettings(Pi, { cwd, agentDir, agent: input.agent });
     const settingsManager = await sessionResourceSettings(Pi, {...input,cwd,agentDir}, nativeManager);
@@ -391,7 +396,7 @@ async function init(input) {
     }, { projectTrusted: !input.agent?.safeMode });
     const promptController = await createSystemPromptController({ cwd, agentDir,
       stateDir: input.systemPromptStateDir || join(input.agentDir, "umeko-system-prompts"),
-      enabled: input.systemPromptEnabled === true,
+      enabled: config.systemPromptEnabled === true, widgetPrompts: config.widgetPrompts || [],
       appendSources: [
         { id: "desktop-pi", name: "Pi 操作说明", text: input.globalCoordinator || toolSelection(input.piCapabilities,{name:PI_COMMAND_TOOL,source:"builtin:pi-commands"}) ? DESKTOP_PI_PROMPT+" " : "" },
         { id: "desktop-control", name: "桌面能力说明", text: input.globalCoordinator || toolSelection(input.piCapabilities,{name:UMEKO_TOOL,source:"builtin:umeko-control"}) ? UMEKO_PROMPT+" " : "" },
@@ -401,13 +406,16 @@ async function init(input) {
     const services = await Pi.createAgentSessionServices({ cwd, agentDir, modelRuntime, settingsManager,
       resourceLoaderOptions: {
         extensionsOverride: promptController.extensionsOverride,
-        ...await sessionSkillOptions(Pi, {...input,cwd,agentDir}, nativeManager),
         ...(input.agent?.safeMode || input.globalCoordinator ? { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
           additionalExtensionPaths: builtins.map(name => "builtin:" + name) } : {}),
+        ...(coordinatorSkills ? coordinatorSkills.resourceOptions : await sessionSkillOptions(Pi, {...input,cwd,agentDir}, nativeManager)),
         ...(selectedExtensions ? {noExtensions:true,additionalExtensionPaths:selectedExtensions} : {}),
         appendSystemPrompt: [(input.globalCoordinator || toolSelection(input.piCapabilities,{name:PI_COMMAND_TOOL,source:"builtin:pi-commands"}) ? DESKTOP_PI_PROMPT+" " : "") + (input.globalCoordinator || toolSelection(input.piCapabilities,{name:UMEKO_TOOL,source:"builtin:umeko-control"}) ? UMEKO_PROMPT+" " : "") + "Reply in the user's language.", input.agent?.instructions || ""],
         extensionFactories: [
-          ...(input.globalCoordinator ? [{name:"global-coordinator-boundary",hidden:true,replaceable:false,factory:coordinatorExtension}] : []),
+          ...(input.globalCoordinator ? [
+            {name:"global-coordinator-boundary",hidden:true,replaceable:false,factory:pi => coordinatorExtension(pi, {petAssistant: Boolean(input.petAssistantBinding), skillReader: Boolean(input.coordinatorSkills?.length)})},
+            {name:"coordinator-skills",hidden:true,replaceable:false,factory:pi => coordinatorSkills.extension(pi)},
+          ] : []),
           ...(input.loopReview ? [{name:"loop-review",hidden:true,replaceable:false,factory:loopReview.extension}] : []),
           // Mandatory inline factory: resource filters cannot disable the gate.
           { name: "recent-images", hidden: true, replaceable: false, factory: createRecentImagesExtension({ getLimit: () => config.agent?.maxContextImages }) },
@@ -590,6 +598,11 @@ async function promptWithInterrupts(first) {
   });
 }
 
+function adoptAgentRun(session) {
+  if (executing || closing || runtime?.session !== session) return;
+  void execute({ type: "agent-run" });
+}
+
 async function execute(input) {
   if (input.type === "widget_catalog") {
     // A read-only side channel, including during a streaming turn. Never run
@@ -663,8 +676,16 @@ async function execute(input) {
     await runtime?.session.abort(); return;
   }
   if (input.type === "shutdown") { await shutdown(); return; }
+  if (executing && input.type === "prompt" && adoptedRun) {
+    // The desktop sent this before it saw agent_run; queue it like Enter does.
+    void inputQueue.submit({ type: "follow-up", text: input.text, images: input.images, messageId: input.messageId })
+      .catch(error => emit({ type: "queue_rejected", text: input.text || "", message: error.message }));
+    return;
+  }
   if (executing) { emit({ type: "error", message: "Pi 正在处理当前操作" }); return; }
   executing = true;
+  adoptedRun = input.type === "agent-run";
+  if (adoptedRun) emit({ type: "agent_run" });
   trackingTask = input.type === "prompt" && input.trackTask === true;
   try {
     if (validEffort(input.reasoningEffort)) reasoningEffort = input.reasoningEffort;
@@ -674,7 +695,9 @@ async function execute(input) {
     }
     else if (input.targetFile && resolve(input.targetFile) !== resolve(runtime.session.sessionManager.getSessionFile() || ".")) await runtime.switchSession(input.targetFile);
     if (typeof input.systemPromptEnabled === "boolean") config.systemPromptEnabled = input.systemPromptEnabled;
+    if (Array.isArray(input.widgetPrompts)) config.widgetPrompts = input.widgetPrompts;
     const promptController = promptControllers.get(runtime.session);
+    if (config.widgetPrompts) promptController?.setWidgetPrompts(config.widgetPrompts);
     promptController?.setEnabled(config.systemPromptEnabled === true);
     if (input.model && runtime.session.model?.id !== input.model) {
       selectedModel = modelRuntime.getModel("umeko", input.model);
@@ -719,6 +742,7 @@ async function execute(input) {
     else if (input.type === "mcp-command") await runtime.session.prompt(input.text);
     else if (input.type === "export") emit({ type: "notice", message: "已导出到 " + runtime.session.exportToJsonl(input.path) });
     else if (input.type === "import") await runtime.importFromJsonl(input.path);
+    else if (input.type === "agent-run") while (!runtime.session.isIdle) await runtime.session.waitForIdle();
     do {
       await inputQueue.chain;
       if (inputQueue.hasInterrupts) await promptWithInterrupts(inputQueue.shiftInterrupt());
@@ -736,7 +760,9 @@ async function execute(input) {
     if (runtime && (inputQueue.items.length || inputQueue.hasInterrupts)) inputQueue.returnQueue();
     piCommands.clear();
     trackingTask = false;
-    executing = false; emit({ type: "done", action: input.type });
+    executing = false; adoptedRun = false; emit({ type: "done", action: input.type });
+    // A run Pi started while this action was finishing still needs tracking.
+    if (runtime && !closing && runtime.session.isStreaming) adoptAgentRun(runtime.session);
   }
 }
 

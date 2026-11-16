@@ -23,7 +23,9 @@ def redacted(value):
                 name in ('key', 'token', 'credentials', 'authorization') or name.endswith(('password', 'secret', 'apikey', 'accesstoken', 'refreshtoken', 'bearertoken')))
         output = {}
         for key, item in value.items():
-            if key == 'fields' and isinstance(item, list):
+            if key == 'requestHeaders' and isinstance(item, list):
+                output[key] = [{**row, 'value': '[redacted]'} for row in item if isinstance(row, dict)]
+            elif key == 'fields' and isinstance(item, list):
                 output[key] = [{name: ('[redacted]' if field.get('secret') and name == 'value' and datum else
                                       copy.deepcopy(datum) if name in ('key', 'type', 'secret') else redacted(datum))
                                 for name, datum in field.items()} if isinstance(field, dict) else redacted(field)
@@ -225,6 +227,8 @@ class UmekoControl(QObject):
 
     def _execute(self, operation, args, caller, queue, job_id=None, *, _widget_install=False):
         b = self.b
+        if operation == 'desktop_pet.send_to_user':
+            return b.desktopPlugins.pet.assistant.send(caller, args)
         if operation.startswith('agent_bus.'):
             return b.desktopPlugins.global_agents.execute(operation,args,caller)
         if caller and getattr(caller,'global_agent','') and operation not in ('help','models.list'):

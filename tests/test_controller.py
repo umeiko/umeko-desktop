@@ -8,11 +8,17 @@ from unittest.mock import patch
 
 from app.controller import Controller
 from app.storage import Store
+from tests.test_session_files import wait
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class KernelUpdateTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtCore import QCoreApplication
+        cls.app = QCoreApplication.instance() or QCoreApplication([])
+
     def test_live_partial_failure_keeps_error_report_independent_from_prose(self):
         from app.chat_model import ChatModel
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": temp}):
@@ -60,6 +66,7 @@ class KernelUpdateTests(unittest.TestCase):
                 controller._view.id = 'other'
                 controller._sessions = [{'id': 'history', 'file': str(native)}]
                 controller.deleteSession('history')
+                wait(lambda: not controller.sessionFiles.busy)
                 self.assertFalse(native.exists())
                 self.assertFalse(archive.exists())
                 self.assertTrue((unrelated / 'keep.png').exists())
@@ -78,17 +85,21 @@ class KernelUpdateTests(unittest.TestCase):
                 else:
                     controller._sessions = [{'id': 'linked', 'file': str(linked_native)}]
                     controller.deleteSession('linked')
+                    wait(lambda: not controller.sessionFiles.busy)
                     self.assertTrue((external / 'keep.png').exists())
             finally:
                 controller.close()
 
-    def test_project_entry_is_blank_and_management_preserves_native_files(self):
+    def test_project_archive_preserves_history_and_delete_erases_only_managed_history(self):
         from PySide6.QtCore import QUrl
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"UMEKO_DATA_DIR": str(Path(temp) / "data")}):
             workspace = Path(temp) / "existing-project"
             workspace.mkdir()
-            native = workspace / "fixture.jsonl"
-            native.write_text("native fixture remains untouched", encoding="utf-8")
+            source = workspace / "source.txt"
+            source.write_text("project files remain untouched", encoding="utf-8")
+            native = Path(temp) / "data/pi/sessions/fixture.jsonl"
+            native.parent.mkdir(parents=True)
+            native.write_text("native history", encoding="utf-8")
             controller = Controller(ROOT)
             try:
                 project = controller._ensure_project(workspace, reopen=True)
@@ -111,15 +122,19 @@ class KernelUpdateTests(unittest.TestCase):
                 self.assertFalse(any(r["kind"] == "session" for r in controller.projectRows))
                 controller.toggleArchived()
                 self.assertTrue(next(r for r in controller.projectRows if r["kind"] == "session")["pinned"])
+                self.assertEqual(native.read_text(), "native history")
                 controller.removeProject(project["id"])
+                wait(lambda: not controller.sessionFiles.busy)
+                self.assertFalse(controller.sessionFiles.failure)
                 self.assertEqual(controller.projectRows, [])
-                self.assertEqual(native.read_text(), "native fixture remains untouched")
+                self.assertFalse(native.exists())
+                self.assertEqual(source.read_text(), "project files remain untouched")
                 self.assertIsNone(controller._ensure_project(workspace))
                 controller.dropProjects(json.dumps([QUrl.fromLocalFile(str(workspace)).toString()]))
                 self.assertEqual(controller.config["activeProject"], project["id"])
                 self.assertEqual(len(controller.store.data["projects"]), 1)
                 saved = Store(controller.store.directory)
-                self.assertTrue(saved.data["sessionMeta"]["history"]["archived"])
+                self.assertNotIn("history", saved.data["sessionMeta"])
             finally:
                 controller.close()
 

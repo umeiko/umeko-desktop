@@ -277,6 +277,23 @@ class Subagents(QObject):
         self.changed.emit()
         self.contextChanged.emit()
 
+    def forget(self, records):
+        keys = {record.key for record in records}
+        if self.owner and self.owner.key in keys:
+            self.closeView()  # Invalidates any in-flight child-history result.
+        for cache in (self._drafts, self._attachments, self._queues):
+            for key in list(cache):
+                if key[0] in keys: cache.pop(key)
+        for key in keys:
+            self._projection_cache.pop(key, None)
+            self._deferred.pop(key, None)
+        for identifier, value in list(self._pending.items()):
+            if value['key'][0] in keys: self._pending.pop(identifier)
+        # At most three detached child previews; drop plaintext on deletion.
+        self._history_cache.clear()
+        self.changed.emit()
+        self.queueChanged.emit()
+
     def _command(self, record, command):
         switching = record.busy and record.action in ("open", "new", "reload", "fork", "navigate", "subagent-open")
         if record.process and record.ready and not switching:

@@ -9,12 +9,14 @@ import subprocess
 import sys
 import threading
 import time
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from app.pi_runtime import RELEASE_NAME, PINNED_VERSION
+from app.builtin_widgets import WITHHELD_BUILTIN_WIDGETS
 from app.project_info import VERSION, git_output
 from scripts.ci_process import run_logged
 
@@ -131,6 +133,13 @@ def main():
         executable = output / ("Umeko/Umeko.exe" if sys.platform == "win32" else "Umeko/Umeko")
         resources = output / "Umeko/_internal"
     if not executable.is_file(): raise RuntimeError("Packaged executable is missing")
+    for identifier in WITHHELD_BUILTIN_WIDGETS:
+        if (resources/'umeko-plugins'/identifier).exists():
+            raise RuntimeError('Withheld Widget was bundled: ' + identifier)
+    with zipfile.ZipFile(resources/'desktop-plugin-resources/umeko-plugin-sdk.zip') as sdk:
+        if any(name.startswith('examples/'+identifier+'/') for name in sdk.namelist()
+               for identifier in WITHHELD_BUILTIN_WIDGETS):
+            raise RuntimeError('Withheld Widget leaked into SDK examples')
     skill_source = resources / 'bundled-skills/sources.json'
     skills = json.loads(skill_source.read_text(encoding='utf-8'))
     if len(skills) != 9 or any(not (skill_source.parent / row['name'] / 'SKILL.md').is_file() for row in skills):
