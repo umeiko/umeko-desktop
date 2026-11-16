@@ -56,6 +56,7 @@ smokes=(
   tests/skill_manager_host_ui_smoke.py
   tests/video_ui_smoke.py
   tests/desktop_pet_ui_smoke.py
+  tests/desktop_pet_task_ui_smoke.py
   tests/subagent_pane_ui_smoke.py
   tests/multimodal_ui_smoke.py
   tests/auxiliary_vision_ui_smoke.py

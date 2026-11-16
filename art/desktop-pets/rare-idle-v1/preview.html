@@ -8,14 +8,15 @@
 <header><div><a href="../../characters/tiara-v2/preview.html#rare">主页彩蛋插画</a><h1>桌宠彩蛋 · 全身动画</h1></div><button onclick="document.body.classList.toggle('dark')">切换明暗背景</button></header>
 <p>左侧普通待机，右侧彩蛋动作。两侧采用相同画布与脚底基线。实际应用仍以每轮待机 0.5% 的概率触发。</p>
 <main class="grid" id="pets"></main>
-<p>6 帧 / 4.2 秒。主页继续用半身插画；桌宠使用独立的全身动画。</p>
+<p>彩蛋时长 4.2 秒。主页使用独立的半身插画。</p>
 <script>
 const names={yanami:'八奈见杏菜',komari:'小鞠知花',tiara:'马剃天爱星','whale-girl':'鲸鱼娘'};
 fetch('generation.json').then(r=>r.json()).then(value=>{
  for(const asset of value.assets){
   const card=document.createElement('article'),title=document.createElement('h2');title.textContent=names[asset.id];card.append(title);
   const pair=document.createElement('div');pair.className='pair';
-  for(const [file,label] of [['idle.webp','普通待机'],['idle-rare.webp','彩蛋动作']]){
+  const extension=asset.id==='yanami'?'gif':'webp';
+  for(const [file,label] of [['idle.'+extension,'普通待机'],['idle-rare.'+extension,'彩蛋动作']]){
    const col=document.createElement('div'),art=document.createElement('div'),image=new Image(),caption=document.createElement('small');art.className='art';
    image.src='../../../umeko-plugins/desktop-pet/assets/'+asset.id+'/'+file;image.alt=names[asset.id]+' · '+label;art.append(image);caption.textContent=label;col.append(art,caption);pair.append(col);
   }

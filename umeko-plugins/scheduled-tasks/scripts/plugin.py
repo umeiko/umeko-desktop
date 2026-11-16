@@ -6,7 +6,7 @@ from queue import Empty, Queue
 import sqlite3
 from threading import Thread
 from time import time
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfoNotFoundError
 
 from PySide6.QtCore import QLockFile
 from umeko_plugin_sdk import Plugin, PluginError
@@ -28,11 +28,22 @@ class ScheduledTasksPlugin(Plugin):
         self.active, self.pending = {}, {}
         self.started_at = self.last_scan = self.now()
         self.store.recover(self.started_at)
+        self.global_targets = None
+        self._targets(session=context.session)
         self.thread = Thread(target=self._run, name='scheduled-tasks', daemon=True)
         self.thread.start()
 
     @staticmethod
     def now():return int(time())
+
+    def _targets(self, *, session=None, targets=None):
+        if targets is None:
+            if session is None or 'timerGlobalTargets' not in session:return
+            targets = session['timerGlobalTargets']
+        current = {row['id']: row['name'] for row in targets}
+        if self.global_targets is None or current.keys() != self.global_targets.keys():
+            self.store.reconcile_global_targets(current)
+        self.global_targets = current
 
     def handle(self, method, args):
         try:return self._handle(method, args)
@@ -42,18 +53,20 @@ class ScheduledTasksPlugin(Plugin):
     def _handle(self, method, args):
         session = self.context.request_session or self.context.session
         owner, source = self.store.bind_session(session)
+        self._targets(session=session)
         targets = session.get('timerTargets', [])
+        global_targets = self.global_targets if self.global_targets is not None else {row['id']:row['name'] for row in targets if row['id'].startswith('agent:')}
         allowed = {row['id'] for row in targets}
         if method == 'targets':return {'targets': targets}
         if method == 'list':
             tasks = self.store.tasks(owner=owner)
             for task in tasks:
-                zone, due = task['schedule'].get('zone', 'UTC'), task['next_at']
-                task['next_label'] = (datetime.fromtimestamp(due, ZoneInfo(zone)).strftime('%Y-%m-%d %H:%M:%S')
-                                      + ' ' + zone) if due is not None else ''
-                task['target_name'] = next((row['name'] for row in targets if row['id'] == task['target']),
-                                           '目标已断开 / Target disconnected')
-            return {'tasks': tasks, 'limit': 5}
+                due = task['next_at']
+                task['next_label'] = datetime.fromtimestamp(due).astimezone().strftime('%Y-%m-%d %H:%M:%S %Z') if due is not None else ''
+                task['global'] = task['target'].startswith('agent:')
+                task['target_missing'] = task['global'] and task['target'] not in global_targets
+                task['target_name'] = global_targets.get(task['target'], '无 / None') if task['global'] else next((row['name'] for row in targets if row['id'] == task['target']), '')
+            return {'tasks': tasks, 'limit': 5, 'time_zone': session.get('timerTimeZone', '')}
         task_id = args.get('task_id')
         if method == 'history':return {'runs': self.store.history(task_id, limit=20, owner=owner)}
         if method in ('create', 'save'):
@@ -65,13 +78,18 @@ class ScheduledTasksPlugin(Plugin):
                 raise ValueError('Name, message and target must be text')
             if len(name) > 120 or len(message) > 8000 or len(json.dumps(message)) > 12000:
                 raise ValueError('Name or message is too long')
-            if target not in allowed:raise ValueError('目标未与本会话建立 Agent Bus / Target is not connected')
             if args['schedule'].get('frequency') not in ('once', 'interval'):
                 raise ValueError('Only once and interval timers can be created')
             now = self.now()
             schedule = Schedule.from_dict(args['schedule'], now=now)
             enabled = args.get('enabled', True)
             if type(enabled) is not bool:raise ValueError('Enabled must be true or false')
+            previous = next((row for row in self.store.tasks(owner=owner) if row['id'] == task_id), None) if task_id else None
+            shared = previous and previous['target'].startswith('agent:') and previous['target'] == target
+            if target not in allowed and not (shared and (target in global_targets or not enabled)):
+                raise ValueError('目标未与本会话建立 Agent Bus / Target is not connected')
+            if shared:
+                owner, source = previous['owner'], previous['source']
             return {'task_id': self.store.save(task_id=task_id, name=name, message=message,
                 schedule=schedule, enabled=enabled, now=now, owner=owner, source=source, target=target,
                 model_oneshot=method == 'create' and schedule.frequency == 'once' and enabled)}
@@ -81,13 +99,16 @@ class ScheduledTasksPlugin(Plugin):
             if enabled:
                 task = next((row for row in self.store.tasks(owner=owner) if row['id'] == task_id), None)
                 if not task:raise ValueError('Timer does not belong to this conversation')
-                if task['target'] not in allowed:raise ValueError('Target is no longer connected')
+                if task['target'] not in allowed and not (task['target'].startswith('agent:') and task['target'] in global_targets):raise ValueError('Target is no longer connected')
             self.store.set_enabled(task_id, enabled, self.now(), owner=owner)
             return {'task_id': task_id, 'enabled': enabled}
         if method == 'delete':
             self.store.delete(task_id, owner=owner)
             return {'task_id': task_id, 'deleted': True}
         if method == 'run':
+            task = next((row for row in self.store.tasks(owner=owner) if row['id'] == task_id), None)
+            if task and task['target'].startswith('agent:') and task['target'] not in global_targets:
+                raise ValueError('目标已删除，请先重新绑定 / Target was deleted; select another Agent first')
             run = self.store.claim_manual(task_id, self.now(), owner=owner)
             self.commands.put(('start', run))
             return {'run_id': run['id']}
@@ -97,6 +118,9 @@ class ScheduledTasksPlugin(Plugin):
         if name == 'host.response':self.commands.put(('host', data))
         elif name == 'session.changed' and data.get('token'):
             self.store.bind_session(data)
+            self._targets(session=data)
+        elif name == 'scheduledTasks.targetsChanged':
+            self._targets(targets=data['global_targets'])
 
     def _run(self):
         while not self.context.cancelled.is_set():

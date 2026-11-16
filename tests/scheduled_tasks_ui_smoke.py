@@ -104,8 +104,7 @@ with tempfile.TemporaryDirectory(prefix='umeko-scheduled-demo-') as temp:
     unconnected = bus.handle('create', {'name': '演示 · 未关联助手', 'model': 'umeko-default'})['id']
     bus.handle('setBridge', {'id': 'session:' + foreground.key, 'agentId': connected, 'enabled': True})
     try:
-        assert not manager.enabled('scheduled-tasks')
-        manager.setEnabled('scheduled-tasks', True)
+        assert manager.enabled('scheduled-tasks')
         menu = find('desktopPluginSessionMenu')
         assert menu is not None
         click('desktopPluginMenuButton')
@@ -158,8 +157,11 @@ with tempfile.TemporaryDirectory(prefix='umeko-scheduled-demo-') as temp:
             until(lambda: panel.property('page') == 'history' and not panel.property('pending'), 'History did not open')
 
         def complete_runs(count):
-            until(lambda: len(values('runs')) == count and all(r['state'] == 'delivered' for r in values('runs')),
-                  f'Expected {count} delivered runs: ' + str(values('runs')), attempts=1000)
+            try:
+                until(lambda: len(values('runs')) == count and all(r['state'] == 'delivered' for r in values('runs')),
+                      f'Expected {count} delivered runs', attempts=1000)
+            except AssertionError as error:
+                raise AssertionError(f'{error}: {values("runs")}; {panel.property("error")}') from error
             return values('runs')
 
         due = datetime.now(timezone.utc) + timedelta(seconds=24)
@@ -235,7 +237,8 @@ with tempfile.TemporaryDirectory(prefix='umeko-scheduled-demo-') as temp:
         from app.pi_sessions import SessionState
         other = SessionState(id='other-demo', workspace=str(workspace), model='umeko-default', provider='internal')
         backend._pool.touch(other)
-        assert agent('list', caller=other)['result']['tasks'] == []
+        assert all(task['global'] for task in agent('list', caller=other)['result']['tasks'])
+        assert len(agent('list', caller=other)['result']['tasks']) == 1
         assert not agent('delete', {'task_id':extra[0]}, caller=other)['ok']
         for key in extra:assert agent('delete', {'task_id':key})['ok']
 
@@ -293,6 +296,69 @@ with tempfile.TemporaryDirectory(prefix='umeko-scheduled-demo-') as temp:
         assert find('scheduledTaskModelSlot_' + slot).property('visible')
         screenshot('reusable-agent-slot')
         assert agent('delete', {'task_id':slot})['ok']
+        # #147: local-time labels, shared cards and target deletion while the
+        # Widget page is closed, using the actual host/worker event route.
+        from PySide6.QtCore import QTimeZone
+        import sqlite3
+        system_zone = bytes(QTimeZone.systemTimeZoneId()).decode()
+        click('scheduledNewOrBack')
+        until(lambda: not panel.property('hostRequest'), 'Local editor metadata missing')
+        assert find('scheduledTaskZone').property('text') == system_zone
+        click('scheduledNewOrBack')
+        until(lambda: not panel.property('pending'), 'List not ready')
+        removed = bus.handle('create', {'name':'演示 · 可删除目标', 'model':'umeko-default'})['id']
+        bus.handle('setBridge', {'id':'session:' + foreground.id, 'agentId':removed, 'enabled':True})
+        result = agent('create', {'name':'【演示】共享本地时间', 'message':'Retain this history after deleting the target',
+            'target':'agent:' + removed, 'schedule':{'frequency':'once','first_date':'2030-01-01',
+                'local_time':'04:00:00','zone':'America/Los_Angeles'}})
+        assert result['ok'], result
+        shared_id = result['result']['task_id']
+        until(lambda: any(t['id']==shared_id for t in values('tasks')), 'Shared timer did not appear')
+        shared = next(t for t in values('tasks') if t['id']==shared_id)
+        assert shared['global'] and not shared['target_missing']
+        assert find('scheduledTaskGlobal_' + shared_id).isVisible()
+        expected = datetime.fromtimestamp(shared['next_at']).strftime('%Y-%m-%d %H:%M:%S')
+        assert expected in find('scheduledTaskNext_' + shared_id).property('text')
+        if system_zone == 'Asia/Shanghai':assert expected == '2030-01-01 20:00:00'
+        open_history(shared)
+        click('scheduledTaskRunNow')
+        retained_runs = complete_runs(1)
+        manager.closePage()
+        bus.handle('delete', {'id':removed})
+        database = manager.root / 'state/scheduled-tasks/application/schedules.sqlite3'
+        def orphan_paused():
+            with sqlite3.connect(database) as db:
+                return db.execute('SELECT enabled,next_at FROM schedules WHERE id=?', (shared_id,)).fetchone() == (0,None)
+        until(orphan_paused, 'Deleting target with the page closed did not pause its timer')
+        backend.newSession()
+        assert manager.openPage('scheduled-tasks')
+        until(lambda: find('scheduledTasksWidget') is not None, 'Shared timer page missing in a new conversation')
+        panel = find('scheduledTasksWidget')
+        until(lambda: not panel.property('pending') and len(values('tasks'))==2, 'New conversation did not list global timers')
+        assert {t['id'] for t in values('tasks')} == {linked['id'],shared_id}
+        assert all(t['global'] for t in values('tasks'))
+        orphan = next(t for t in values('tasks') if t['id']==shared_id)
+        assert orphan['target_missing'] and not orphan['enabled'] and orphan['next_at'] is None
+        assert find('scheduledTaskTargetName_' + shared_id).property('text').endswith('无' if language=='zh' else 'None')
+        screenshot('shared-global-orphan')
+        open_history(orphan)
+        assert values('runs') == retained_runs
+        assert not find('scheduledTaskRunNow').property('enabled')
+        click('scheduledNewOrBack')
+        until(lambda: not panel.property('pending'), 'Shared list did not return')
+        click('scheduledTaskEdit_' + shared_id)
+        until(lambda: not panel.property('hostRequest'), 'Orphan editor metadata missing')
+        assert find('scheduledTaskTarget').property('currentIndex') >= 0
+        assert not find('scheduledTaskEnabled').property('checked')
+        click('scheduledTaskSave')
+        until(lambda: panel.property('page')=='list' and not panel.property('pending'), 'Orphan disabled edit failed')
+        assert agent('delete', {'task_id':shared_id}, caller=backend._view)['ok']
+        backend.openSession(foreground.id)
+        assert manager.openPage('scheduled-tasks')
+        until(lambda: find('scheduledTasksWidget') is not None and find('scheduledTasksWidget').property('readyForInteraction')
+              and find('scheduledTasksWidget').property('tasks') is not None, 'Original timer page missing')
+        panel = find('scheduledTasksWidget')
+        until(lambda: not panel.property('pending') and values('tasks') is not None and len(values('tasks'))==3, 'Original private timers missing')
         click('scheduledTaskEdit_' + inactive['id'])
         backend.setFontScale(2.0)
         window.setWidth(window.minimumWidth())
@@ -312,7 +378,7 @@ with tempfile.TemporaryDirectory(prefix='umeko-scheduled-demo-') as temp:
         assert not [w for w in warnings if 'scheduled-tasks/qml' in w], warnings
         manager.closePage()
         assert manager.workers['scheduled-tasks']['ready']
-        print(f'{language}: real main/AgentBus delivery; decimal 15s repeat across foreground switch; disconnected target rejected; Widget Agent CRUD/quota/owner boundaries; colors and 200% bounds; drafts/attachments preserved')
+        print(f'{language}: real main/AgentBus delivery; decimal 15s repeat across foreground switch; disconnected target rejected; Widget Agent CRUD/quota/owner boundaries; local time/global cards/orphan history/default enablement; colors and 200% bounds; drafts/attachments preserved')
     finally:
         backend.close()
         app.processEvents()

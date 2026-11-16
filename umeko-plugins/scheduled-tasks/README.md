@@ -1,13 +1,17 @@
 # 定时任务 / Scheduled Tasks
 
-从右下角的小钟表 Widget 入口启用「定时任务」。新建一条预写消息，选择触发对象和时间。每个会话最多保留 **5 个定时器，停用项也计入**；删除后释放名额。关闭面板不停止计划，退出 Umeko 后停止调度。
+「定时任务」Widget **默认开启**，可从右下角的小钟表入口打开，也可在设置中关闭；已保存的关闭选择会保留。新建一条预写消息，选择触发对象和时间。每个会话最多保留 **5 个定时器，包含全部全局定时器和停用项**；删除后释放名额。关闭面板不停止计划，退出 Umeko 后停止调度。
 
-Enable Scheduled Tasks from the clock Widget entry. Write a message, choose its destination and schedule. Each conversation can retain **5 timers, including disabled timers**. Deleting a timer frees a slot. Closing the panel keeps timers active; exiting Umeko stops scheduling.
+Scheduled Tasks is **enabled by default**. Open it from the clock Widget entry or disable it in settings; an existing explicit opt-out is respected. Each conversation can retain **5 timers, including all global timers and disabled timers**. Deleting a timer frees a slot. Closing the panel keeps timers active; exiting Umeko stops scheduling.
 
 ## 两种触发方式 / Two schedule types
 
-- **单次定时 / One time**：指定日期、时间和时区，只触发一次。时区使用 `Asia/Shanghai`、`UTC` 等 IANA 名称。
+- **单次定时 / One time**：指定日期、时间和时区，只触发一次。新建时默认使用系统日期、时间和时区。时区使用 `Asia/Shanghai`、`UTC` 等 IANA 名称。
 - **周期触发 / Repeat**：输入数值，单位只有**天、小时、分钟**，均支持小数。实际间隔不能小于 **15 秒**。例如 `0.25 分钟 = 15 秒`、`0.5 小时 = 30 分钟`、`1.5 天 = 36 小时`。
+
+列表中的下一次触发和运行记录按**系统本地时区**显示；编辑已有计划仍保留原定时的时区，不改变触发时刻。
+
+Next-trigger and run-history timestamps use the **system local time zone**. New calendar timers default to local date, time and zone. Existing schedules retain their configured zone and trigger instant.
 
 周期首次触发在启用后的一个完整间隔之后。重新启用从当时重新计时；编辑保存也重新开始计时。周期按经过的真实时间计算，不随夏令时改变。单次时间落在夏令时缺口时按偏移差向后移动，重复小时只取较早一次。
 
@@ -20,7 +24,11 @@ The scheduler checks once per second. Missed occurrences are not replayed in a b
 ## 触发对象 / Destinations
 
 - **本会话主 Agent / This conversation’s main Agent**：沿用原聊天的模型、上下文和权限，走现有 Widget 消息通道，不发送输入框中的草稿或附件，也不切换前台聊天。
-- **已关联全局智能体 / Connected global Agent**：只列出已通过 Agent Bus 与当前会话建立连接的全局智能体，通过现有 `agent_bus.dispatch` 投递。触发时再次检查关联；解除关联、删除对象或停用服务后会记录真实错误，不自动重建连接。
+- **已关联全局智能体 / Connected global Agent**：新建时只列出已通过 Agent Bus 与当前会话建立连接的全局智能体，通过现有 `agent_bus.dispatch` 投递。保存后成为带地球图标的**全局定时器**，在所有会话中可见、可管理，并占用每个会话的一个名额。原会话的投递身份和 Agent Bus 权限保持不变，触发时再次检查关联；解除关联或停用服务后会记录真实错误，不自动重建连接。
+
+删除全局智能体会自动停用绑定它的全局定时器，触发对象显示「无」。任务内容、运行历史和名额保留；可重新绑定对象后启用，或删除计时器释放名额。新增全局定时器不能让任何已有会话超过 5 个名额。
+
+Timers targeting a connected global Agent become **global timers**, marked with a globe and manageable from every conversation. They count toward every conversation’s quota. Delivery keeps the original conversation identity and rechecks its existing Agent Bus permissions. Deleting the target pauses its timers and displays **None**, retaining their contents, history and slots. Rebind before enabling, or delete to free slots. A new global timer must fit every existing conversation’s quota.
 
 不用另建会话配置或填写供应商密钥。当前主聊天的定时消息支持 Pi 后端。停用、删除定时器仅阻止后续触发，已经投递的消息不会撤回，既有记录仍保留。删除会话或改变它的工作目录会让原计划的投递失败，避免发到另一个项目。
 
@@ -67,8 +75,8 @@ An immediately enabled, model-created one-shot is a reusable slot. After it expi
 | 方法 | 作用 |
 | --- | --- |
 | `targets` | 列出本会话允许的触发对象：`main` 或已关联的 `agent:<id>` |
-| `list` | 本会话的全部定时器，含停用项 |
-| `create` | 新建，默认启用；每会话最多 5 个 |
+| `list` | 本会话主 Agent 定时器与全部全局定时器，含停用项 |
+| `create` | 新建，默认启用；每会话最多 5 个，含全局项 |
 | `enable` / `disable` | 用 `task_id` 启用或停用 |
 | `delete` | 用 `task_id` 删除，释放名额 |
 | `history` | 用 `task_id` 查看最近 20 次触发记录 |
@@ -94,6 +102,6 @@ An immediately enabled, model-created one-shot is a reusable slot. After it expi
 
 周期单位为 `days`、`hours`、`minutes`。单次使用 `{"frequency":"once","first_date":"2026-12-01","local_time":"09:30:00","zone":"Asia/Shanghai"}`。全局对象的 `target` 必须从 `targets` 返回值中选择。
 
-所有操作都绑定**真实调用会话**，不接受自填 owner/session ID；切换前台不会改变归属，也不能列出或删除其他会话的定时器。草稿得到正式会话 ID 后保留原定时器和 5 个名额限制。没有持久会话 ID 的草稿在应用重启后不可恢复投递。
+所有操作都绑定**真实调用会话**，不接受自填 owner/session ID；切换前台不会改变投递归属。本会话主 Agent 的定时器仅本会话可见、可管理；全局定时器在所有会话中共享。编辑同一全局目标会保留原投递会话，改为本会话主 Agent 时则归当前调用会话。草稿得到正式会话 ID 后保留原定时器和 5 个名额限制。没有持久会话 ID 的草稿在应用重启后不可恢复投递。
 
-Operations use the real calling conversation, not a model-supplied owner/session ID. Foreground changes do not change ownership. Other conversations cannot list or delete its timers. Draft promotion retains the same timers and quota. An unsaved draft without a persistent native session ID cannot receive timers after an application restart.
+Operations use the real calling conversation, not a model-supplied owner/session ID. Main-Agent timers remain private to that conversation; global timers are shared. Editing the same global target retains the original delivery source. Changing a global timer to Main Agent makes it private to the current caller. Draft promotion retains the same timers and quota. An unsaved draft without a persistent native session ID cannot receive timers after an application restart.

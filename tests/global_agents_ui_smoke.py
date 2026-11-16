@@ -153,7 +153,7 @@ try:
     click('agentBusRequestsTabButton');click('globalSubagentsHelpButton')
     wait(lambda:find('globalSubagentsHelpPopup').property('opened'),'Request help did not open')
     assert find('globalSubagentsHelpTitle').property('text')=='请求'
-    assert '返回结果' in find('globalSubagentsHelpText').property('text')
+    assert '仅显示尚未结束' in find('globalSubagentsHelpText').property('text')
     assert '不会撤销' in find('globalSubagentsHelpText').property('text')
     window.grabWindow().save(str(out/'requests-help.png'))
     assert identifier in g.bridges.get('tree-client-one',[])
@@ -245,6 +245,25 @@ try:
     kazuhiko_row=g.agents[kazuhiko['id']]
     # Automatic creation above may already have picked this character.
     assert kazuhiko_row['character']=='kazuhiko' and re.fullmatch(r'温水和彦(?:-[1-9]\d*)?',kazuhiko_row['name'])
+    # The global settings run an independent asynchronous catalog job. Choices
+    # remain default-empty until the user saves, then reach the real Pi prompt.
+    from PySide6.QtCore import Q_ARG
+    assert not kazuhiko_row['skills']
+    assert QMetaObject.invokeMethod(page,'form',Q_ARG('QVariant',kazuhiko['id']))
+    wait(lambda:find('globalAgentSkillsButton').isVisible(),'Skill settings missing')
+    click('globalAgentSkillsButton')
+    wait(lambda:not page.property('skillWorking'),'Skill catalog did not finish')
+    assert not page.property('skillError'),page.property('skillError')
+    find('globalAgentSkillSearch').setProperty('text','humanizer')
+    wait(lambda:find('globalSkill_builtin:humanizer') is not None,'Bundled Skill missing')
+    click('globalSkill_builtin:humanizer');click('doneGlobalAgentSkills');click('confirmCreateGlobalAgent')
+    wait(lambda:g.agents[kazuhiko['id']]['skills']==['builtin:humanizer'],'Skill selection did not save')
+    skill_record=g.ensure(kazuhiko['id']);g.handle('send',{'id':kazuhiko['id'],'text':'你好'})
+    wait(lambda:not skill_record.busy,'Skill-enabled coordinator did not finish')
+    assert not skill_record.failed
+    assert 'humanizer' in str(fixture.calls[-1][0])
+    assert 'read' in {tool.get('name',tool.get('function',{}).get('name')) for tool in fixture.calls[-1][1]}
+    assert not g.agents[identifier]['skills'],'One global changed another global’s Skills'
     for remaining in list(g.agents):g.handle('delete',{'id':remaining})
     page.setProperty('selected','');page.setProperty('section','agents')
     wait(lambda:find('createFirstGlobalAgentButton').isVisible() and not find('globalAgentsList').isVisible(),'Deleting the final agent did not restore the empty state')

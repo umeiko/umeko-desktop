@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.impl
 import QtQuick.Layouts
+import QtQuick.Dialogs as NativeDialogs
 Rectangle {
     id: root
     objectName: "globalAgentsPage"
@@ -22,6 +23,17 @@ Rectangle {
     property string proposalSource: ""
     property string dismissedProposalId: ""
     property bool formSubmitting: false
+    property var chosenSkills: []
+    property var skillCatalog: []
+    property string skillJob: ""
+    property bool skillPolling: false
+    property bool skillStarting: false
+    property string skillError: ""
+    readonly property bool skillWorking: skillStarting || !!skillJob
+    function loadSkills(method,args) {if(skillWorking)return;skillError="";skillStarting=!!call(method || "listSkills",args || {})}
+    function toggleSkill(id,enabled) {let next=chosenSkills.filter(value=>value!==id);if(enabled)next.push(id);chosenSkills=next}
+    function skillDescription(row) {return (row.descriptions || {})[sdk.language] || row.description || ""}
+    Timer {interval:120;repeat:true;running:root.sdk.active && !!root.skillJob;onTriggered:if(!root.skillPolling)root.skillPolling=!!root.call("skillsJob",{id:root.skillJob})}
     property var collapsedProjects: ({})
     property string busSessionId: ""
     readonly property var busSession: state.targets.find(row=>row.id===busSessionId) || ({})
@@ -42,7 +54,7 @@ Rectangle {
     Timer {interval:1000;repeat:true;running:root.sdk.active;onTriggered:root.clock=Date.now()}
     readonly property var current: state.agents.find(row => row.id===selected) || ({})
     readonly property string helpTitle: selected?"与子智能体对话":section==="bridge"?"Agent Bus（智能体总线）":section==="requests"?"请求":"全局子智能体"
-    readonly property string helpText: selected?"连接的会话可双向发送任务和回复。总线消息按到达顺序排队，聊天上方可删除待处理消息或移到队首，优先处理不打断当前任务。输入框可手动 steering；停止会取消其未完成请求。历史保留最近一个完整压缩区间和本轮对话。点击上下文圈环查看用量或压缩，通过右侧问题目录跳转。":section==="bridge"?"展开项目并点击会话，进入二级列表。勾选对应的全局子智能体，建立与该会话的一条双向链路；双方均可发送任务并接收回复。关闭会取消这条链路上的未完成请求。":section==="requests"?"记录通过智能体总线分派的任务，查看投递状态、执行进度和返回结果。已投递不代表已完成；取消未完成的请求不会撤销已执行的操作。":"创建拥有独立上下文的子智能体，向已授权的对话分派任务。开启‘允许自动被创建’后，模型请求直接创建；关闭时需要你在预填表单中确认。模型未指定形象时随机分配，创建成功后自动连接来源对话。"
+    readonly property string helpText: selected?"连接的会话可双向发送任务和回复。总线消息按到达顺序排队，聊天上方可删除待处理消息或移到队首，优先处理不打断当前任务。输入框可手动 steering；停止会取消其未完成请求。历史保留最近一个完整压缩区间和本轮对话。点击上下文圈环查看用量或压缩，通过右侧问题目录跳转。":section==="bridge"?"展开项目并点击会话，进入二级列表。勾选对应的全局子智能体，建立与该会话的一条双向链路；双方均可发送任务并接收回复。关闭会取消这条链路上的未完成请求。":section==="requests"?"仅显示尚未结束的请求，完成后自动移出。取消不会撤销已执行的操作。":"创建拥有独立上下文的子智能体，向已授权的对话分派任务。开启‘允许自动被创建’后，模型请求直接创建；关闭时需要你在预填表单中确认。模型未指定形象时随机分配，创建成功后自动连接来源对话。"
     color: c.surface
     function bridgeTree(projects, targets, query, collapsed) {
         // Pi returns native paths; saved projects may use forward slashes.
@@ -109,6 +121,7 @@ Rectangle {
         const row=state.agents.find(value=>value.id===editing) || ({})
         nameInput.text=row.autoName?"":row.name || ""
         instructions.text=row.instructions || ""
+        chosenSkills=(row.skills || []).slice()
         chosenCharacter=state.appearances.some(value=>value.id===row.character)?row.character:(state.defaultCharacter || "")
         let index=state.models.findIndex(value=>value.id===(row.model || state.defaultModel))
         modelPicker.currentIndex=Math.max(0,index)
@@ -130,7 +143,7 @@ Rectangle {
         if(formSubmitting)return
         const model=state.models[modelPicker.currentIndex]
         if(!model){formError.text="请先在设置中添加模型供应商";return}
-        formSubmitting=!!call(editing?"update":proposalId?"confirmCreation":"create",{id:editing,requestId:proposalId,name:nameInput.text,character:chosenCharacter,model:model.id,instructions:instructions.text})
+        formSubmitting=!!call(editing?"update":proposalId?"confirmCreation":"create",{id:editing,requestId:proposalId,name:nameInput.text,character:chosenCharacter,model:model.id,instructions:instructions.text,skills:chosenSkills})
     }
     function send() {
         const text=input.text.trim();if(!text || !selected)return
@@ -145,6 +158,18 @@ Rectangle {
             const method=root.pending[id];const next=Object.assign({},root.pending);delete next[id];root.pending=next
             if(["create","update","confirmCreation"].includes(method))root.formSubmitting=false
             if(method==="snapshot")root.polling=false
+            if(method==="listSkills" || method==="importSkills")root.skillStarting=false
+            if(method==="skillsJob")root.skillPolling=false
+            if(["listSkills","importSkills","skillsJob"].includes(method)) {
+                if(!value.ok){root.skillJob="";root.skillError=value.error || "Skills 加载失败";return}
+                const result=value.result || ({})
+                if(method!=="skillsJob"){root.skillJob=result.jobId || "";return}
+                if(result.status==="running")return
+                root.skillJob=""
+                if(result.status!=="completed" || !result.result || !result.result.ok){root.skillError=(result.result || {}).error || "Skills 加载失败";return}
+                root.skillCatalog=result.result.skills || []
+                return
+            }
             if(!value.ok){root.error=value.error || "操作失败";if(createDialog.opened)formError.text=root.error;return}
             root.error=""
             if(method==="snapshot") {
@@ -334,7 +359,7 @@ Rectangle {
                         LabelText {id:requestText;text:(modelData.result || modelData.text || "").slice(0,500);wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale}
                     }
                 }
-                LabelText {anchors.centerIn:parent;visible:!root.state.requests.length;text:"暂无请求";color:root.c.muted}
+                LabelText {anchors.centerIn:parent;visible:!root.state.requests.length;text:"暂无进行中的请求";color:root.c.muted}
             }
             ColumnLayout {
                 spacing:12
@@ -425,11 +450,12 @@ Rectangle {
     Dialog {
         id:createDialog;objectName:"createGlobalAgentDialog"
         anchors.centerIn:parent;width:Math.min(460,root.width-28);modal:true;closePolicy:Popup.CloseOnEscape
+        height:Math.min(root.height-28,formBody.implicitHeight+formHeader.implicitHeight+formFooter.implicitHeight+2*padding+28)
         padding:20;background:Rectangle {radius:18;color:root.c.surface;border.color:root.c.line}
         onClosed:{root.abandonCreation();Qt.callLater(root.showCreationDraft)}
         contentItem:ColumnLayout {
             spacing:14
-            RowLayout {Layout.fillWidth:true
+            RowLayout {id:formHeader;Layout.fillWidth:true
                 LabelText {text:root.editing?"子智能体设置":"创建全局子智能体";font.pixelSize:18*root.sdk.scale;font.weight:Font.DemiBold;Layout.fillWidth:true}
                 ToolButton {
                     id:closeForm;objectName:"cancelGlobalCreation";Layout.preferredWidth:28;Layout.preferredHeight:28
@@ -438,6 +464,11 @@ Rectangle {
                     onClicked:createDialog.close()
                 }
             }
+            ScrollView {
+                id:formScroll;objectName:"globalAgentFormScroll";Layout.fillWidth:true;Layout.fillHeight:true;Layout.minimumHeight:0
+                clip:true;ScrollBar.horizontal.policy:ScrollBar.AlwaysOff
+                ColumnLayout {
+                    id:formBody;width:formScroll.availableWidth;spacing:14
             LabelText {objectName:"globalCreationSource";visible:!!root.proposalId;text:root.proposalSource?"来自 "+root.proposalSource:"";color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
             Field {id:nameInput;objectName:"globalAgentName";Layout.fillWidth:true;placeholderText:"名称（可选，留空使用人物名）";maximumLength:60}
             LabelText {text:"形象";font.pixelSize:12*root.sdk.scale;color:root.c.muted}
@@ -466,13 +497,19 @@ Rectangle {
                 indicator:Text {text:"⌄";color:root.c.muted;x:parent.width-24;y:parent.height/2-height/2}
                 background:Rectangle {radius:10;color:root.c.bg;border.color:modelPicker.activeFocus?root.c.accent:root.c.line}
             }
+            RowLayout {Layout.fillWidth:true
+                LabelText {text:"Skills";color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
+                SmallButton {objectName:"globalAgentSkillsButton";text:root.chosenSkills.length?"已启用 "+root.chosenSkills.length:"未启用";onClicked:{skillsDialog.open();root.loadSkills()}}
+            }
             Rectangle {Layout.fillWidth:true;implicitHeight:100;radius:10;color:root.c.bg;border.color:root.c.line
                 ScrollView {anchors.fill:parent;anchors.margins:8;clip:true
                     TextArea {id:instructions;objectName:"globalAgentInstructions";placeholderText:"职责与偏好（可选）";color:root.c.ink;placeholderTextColor:root.c.muted;wrapMode:TextArea.Wrap;font.pixelSize:13*root.sdk.scale;background:null}
                 }
             }
             LabelText {id:formError;visible:!!text;color:root.c.danger;wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true}
-            RowLayout {Layout.fillWidth:true;spacing:8
+                }
+            }
+            RowLayout {id:formFooter;Layout.fillWidth:true;spacing:8
                 SmallButton {visible:!!root.editing;text:"删除";dangerous:true;onClicked:{root.deleteId=root.editing;deleteDialog.open()}}
                 Item {Layout.fillWidth:true}
                 SmallButton {text:"取消";onClicked:createDialog.close()}
@@ -480,6 +517,57 @@ Rectangle {
             }
         }
     }
+    Dialog {
+        id:skillsDialog;objectName:"globalAgentSkillsDialog";anchors.centerIn:parent
+        width:Math.min(460,root.width-28);height:Math.min(520,root.height-28);modal:true;padding:20
+        background:Rectangle {radius:18;color:root.c.surface;border.color:root.c.line}
+        contentItem:ColumnLayout {spacing:14
+            RowLayout {Layout.fillWidth:true;spacing:8
+                LabelText {text:"Skills";font.pixelSize:18*root.sdk.scale;font.weight:Font.DemiBold;Layout.fillWidth:true}
+                SmallButton {objectName:"importGlobalAgentSkill";text:"导入";enabled:!root.skillWorking;onClicked:skillImportMenu.popup()}
+            }
+            LabelText {text:"仅对这个子智能体启用";color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
+            Field {id:skillSearch;objectName:"globalAgentSkillSearch";Layout.fillWidth:true;placeholderText:"搜索 Skills"}
+            ListView {
+                objectName:"globalAgentSkillsList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:4
+                model:root.skillCatalog.filter(row=>(row.name+" "+root.skillDescription(row)).toLowerCase().includes(skillSearch.text.toLowerCase()))
+                delegate:Rectangle {
+                    required property var modelData
+                    width:ListView.view.width;height:78*root.sdk.scale;radius:10;color:skillHover.hovered?root.c.hover:root.c.bg
+                    HoverHandler {id:skillHover}
+                    ColumnLayout {anchors.fill:parent;anchors.margins:10;spacing:4
+                        RowLayout {Layout.fillWidth:true
+                            CompactCheckBox {objectName:"globalSkill_"+modelData.id;text:modelData.name;checked:root.chosenSkills.includes(modelData.id);enabled:modelData.valid;Layout.fillWidth:true;onToggled:root.toggleSkill(modelData.id,checked)}
+                            LabelText {text:modelData.source==="builtin"?"内置":"已导入";color:root.c.muted;font.pixelSize:11*root.sdk.scale}
+                        }
+                        LabelText {text:root.skillDescription(modelData);color:root.c.muted;Layout.fillWidth:true;font.pixelSize:11*root.sdk.scale;maximumLineCount:2;wrapMode:Text.Wrap}
+                    }
+                }
+                LabelText {anchors.centerIn:parent;visible:!parent.count;text:root.skillWorking?"正在加载…":"暂无 Skills";color:root.c.muted}
+            }
+            LabelText {objectName:"globalAgentSkillError";visible:!!root.skillError;text:root.skillError;color:root.c.danger;Layout.fillWidth:true;wrapMode:Text.Wrap;elide:Text.ElideNone;font.pixelSize:12*root.sdk.scale}
+            RowLayout {Layout.fillWidth:true
+                SmallButton {text:"全部关闭";enabled:root.chosenSkills.length>0;onClicked:root.chosenSkills=[]}
+                Item {Layout.fillWidth:true}
+                SmallButton {objectName:"doneGlobalAgentSkills";text:"完成";primary:true;onClicked:skillsDialog.close()}
+            }
+        }
+    }
+    Menu {
+        id:skillImportMenu
+        padding:6
+        background:Rectangle {radius:12;color:root.c.surface;border.color:root.c.line}
+        delegate:MenuItem {
+            id:importItem
+            implicitHeight:36;leftPadding:12;rightPadding:12
+            contentItem:Text {text:importItem.text;color:root.c.ink;font.pixelSize:13*root.sdk.scale;verticalAlignment:Text.AlignVCenter}
+            background:Rectangle {radius:8;color:importItem.highlighted?root.c.hover:"transparent"}
+        }
+        MenuItem {text:"从文件夹导入…";onTriggered:skillFolderPicker.open()}
+        MenuItem {text:"从压缩包导入…";onTriggered:skillFilePicker.open()}
+    }
+    NativeDialogs.FolderDialog {id:skillFolderPicker;title:"导入 Skill 文件夹";onAccepted:root.loadSkills("importSkills",{source:selectedFolder.toString()})}
+    NativeDialogs.FileDialog {id:skillFilePicker;title:"导入 Skill 压缩包";nameFilters:["Skills (*.zip *.skill)"];onAccepted:root.loadSkills("importSkills",{source:selectedFile.toString()})}
     Dialog {
         id:deleteDialog;anchors.centerIn:parent;width:Math.min(380,root.width-28);modal:true;padding:20
         background:Rectangle {radius:16;color:root.c.surface;border.color:root.c.line}

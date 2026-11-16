@@ -60,8 +60,8 @@ try:
         'change-review', 'skill-manager', 'widget-market', 'system-prompt',
         'scheduled-tasks',
     }
-    assert not backend.desktopPlugins.enabled('scheduled-tasks')
-    assert 'scheduled-tasks' not in backend.desktopPlugins.workers
+    assert backend.desktopPlugins.enabled('scheduled-tasks')
+    assert 'scheduled-tasks' in backend.desktopPlugins.workers
     assert not backend.desktopPlugins.enabled('system-prompt')
     assert find('desktopPluginInstalledList').property('count')==len(backend.desktopPlugins.rows)
     search=find('desktopPluginSearch');search.setProperty('text','版本管理');QTest.qWait(50);assert find('desktopPluginInstalledList').property('count')==1
@@ -72,7 +72,7 @@ try:
     check_launcher_boundary()
     click('desktopPluginMenuButton')
     wait(lambda:find('desktopPluginSessionMenu').property('desiredOpen') and not find('desktopPluginSessionMenu').property('animating'),'Plugin menu did not open')
-    assert find('desktopPluginQuickList').property('count')==6
+    assert find('desktopPluginQuickList').property('count')==7
     assert not manager.enabled('task-records')
     window.grabWindow().save(str(out/'quick-menu.png'))
     click('desktopPluginMenuButton')
@@ -86,7 +86,7 @@ try:
     manager.setSessionEnabled('git-viewer',False)
     click('desktopPluginMenuButton')
     wait(lambda:not find('desktopPluginSessionMenu').property('animating'),'Filtered menu did not settle')
-    assert find('desktopPluginQuickList').property('count')==5
+    assert find('desktopPluginQuickList').property('count')==6
     click('openDesktopPlugin_file-tree')
     wait(lambda:find('fileTreeEntries') is not None and find('fileTreeEntries').property('count')>=3,'Tree did not load')
     assert window.property('page')=='chat';assert find('webPane').property('mode')=='plugin'
@@ -175,7 +175,7 @@ try:
     source_worker=manager.workers['file-tree'];source_page=find('fileTreePluginPage')
     click('fileTreeRow_renamed.md',Qt.RightButton);click('fileManagerPreview')
     wait(lambda:find('webPane').property('mode')=='document','File did not open in document preview')
-    assert manager.page.get('id')=='file-tree' and set(manager.workers)=={'desktop-pet','global-agents','file-tree'}
+    assert manager.page.get('id')=='file-tree' and set(manager.workers)=={'desktop-pet','global-agents','scheduled-tasks','file-tree'}
     assert manager.workers['file-tree'] is source_worker
     click('backDocumentPreviewButton')
     wait(lambda:find('webPane').property('mode')=='plugin' and find('fileTreeEntries') is not None,'Preview Back did not return to its Widget')
@@ -217,8 +217,9 @@ try:
     wait(lambda:find('gitDiffText') is not None and 'hello' in find('gitDiffText').property('text'),'Git diff did not open')
     window.grabWindow().save(str(out/'git-diff.png'))
     window.setProperty('page','settings');QTest.qWait(200);assert not manager.page;assert not find('webPane').property('opened')
-    window.setProperty('page','chat');assert manager.openPage('file-tree');QTest.qWait(200);backend.newSession();QTest.qWait(250);assert not manager.page and set(manager.workers)=={'desktop-pet','global-agents'}
+    window.setProperty('page','chat');assert manager.openPage('file-tree');QTest.qWait(200);backend.newSession();QTest.qWait(250);assert not manager.page and set(manager.workers)=={'desktop-pet','global-agents','scheduled-tasks'}
     manager.setSessionEnabled('file-tree',False);manager.setSessionEnabled('git-viewer',False);manager.setEnabled('global-agents',False);manager.setSessionEnabled('pi-manager',False);manager.setSessionEnabled('skill-manager',False);manager.setSessionEnabled('widget-market',False);manager.setSessionEnabled('task-records',False)
+    manager.setEnabled('scheduled-tasks',False)
     click('desktopPluginMenuButton')
     wait(lambda:find('desktopPluginSessionMenu').property('desiredOpen') and not find('desktopPluginSessionMenu').property('animating'),'Empty plugin menu did not open')
     assert find('desktopPluginQuickList').property('count')==0

@@ -10,6 +10,27 @@ from umeko_provider_sdk.network import validate_ca_file
 
 
 class PreferencesMixin:
+    @Slot(str, result=bool)
+    def saveRequestHeaders(self, raw):
+        from .request_headers import validate
+        old = self.store.data.get('requestHeaders')
+        try:
+            value = validate(json.loads(raw))
+            if value == old:
+                return True
+            self.store.data['requestHeaders'] = value
+            self.store.save()
+        except (ValueError, OSError, RuntimeError) as error:
+            if old is None:
+                self.store.data.pop('requestHeaders', None)
+            else:
+                self.store.data['requestHeaders'] = old
+            self.toast.emit(str(error))
+            return False
+        self.changed.emit()
+        self.toast.emit('请求头已保存，将用于后续模型请求')
+        return True
+
     @Slot(int, result=bool)
     def setSessionCacheSize(self, size):
         if type(size) is not int or not 0 <= size <= 2147483647:
