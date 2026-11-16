@@ -13,14 +13,15 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 from app.gateway import Gateway
+from app.model_reasoning import reasoning_levels
 from app.pi_sessions import SessionState
-from app.plugin_sessions import (apply_session_policy, profile_reasoning_levels,
-    profile_rows, session_policy, set_profile_model)
+from app.plugin_sessions import (apply_session_policy, profile_rows, session_policy,
+    set_profile_model)
 
 
 class ProfileReasoningTests(unittest.TestCase):
     def setUp(self):
-        base = Path('C:/UmekoTests/issue160/profile-reasoning')
+        base = Path(tempfile.gettempdir()) / 'umeko-profile-reasoning'
         base.mkdir(parents=True, exist_ok=True)
         self.temp = tempfile.TemporaryDirectory(dir=base)
         self.addCleanup(self.temp.cleanup)
@@ -42,18 +43,19 @@ class ProfileReasoningTests(unittest.TestCase):
         self.record = SessionState(id='owned')
 
     def set_effort(self, value, **kwargs):
-        return set_profile_model(self.backend, 'fixture', 'tasks', reasoning_effort=value, **kwargs)
+        return set_profile_model(self.backend, 'fixture', 'tasks', reasoningEffort=value, **kwargs)
 
     def test_levels_use_real_model_configuration_and_rows_keep_legacy_absence(self):
-        self.assertEqual(profile_reasoning_levels(self.backend, 'a'), ['low', 'high'])
-        self.assertEqual(profile_reasoning_levels(self.backend, 'unknown'), [])
+        models = self.store.data['providers'][0]['models']
+        self.assertEqual(reasoning_levels(models[0]), ['low', 'high'])
+        self.assertEqual(reasoning_levels(models[3]), [])
         row = profile_rows(self.backend)[0]
-        self.assertEqual((row['reasoningEffort'], row['reasoningLevels']), ('', ['low', 'high']))
+        self.assertEqual(row['reasoningEffort'], '')
         self.assertNotIn('reasoningEffort', self.profile)
 
     def test_explicit_effort_is_strict_and_off_is_always_valid(self):
         original = copy.deepcopy(self.profile)
-        for invalid in ('ultra', 'HIGH', ' high ', None, 1, []):
+        for invalid in ('invalid', 'HIGH', ' high ', None, 1, []):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 self.set_effort(invalid)
             self.assertEqual(self.profile, original)
@@ -61,16 +63,22 @@ class ProfileReasoningTests(unittest.TestCase):
         self.assertEqual(self.profile['reasoningEffort'], 'high')
         result = self.set_effort('off', model='plain')
         self.assertEqual(result['reasoningEffort'], 'off')
-        with self.assertRaises(ValueError):
-            self.set_effort('high')
+        self.set_effort('high')
+        self.assertEqual(self.profile['reasoningEffort'], 'high')
+        self.assertEqual(session_policy(self.backend, self.record)['reasoningEffort'], 'off')
 
-    def test_policy_rejects_invalid_persisted_effort_and_unsupported_models(self):
-        for model, effort in [('a', ''), ('a', None), ('a', 'ultra'), ('plain', 'low'), ('unknown', 'low')]:
+    def test_policy_rejects_invalid_persisted_effort_and_reconciles_unsupported_models(self):
+        for model, effort in [('a', ''), ('a', None), ('a', 'invalid')]:
             self.profile.update(model=model, reasoningEffort=effort)
             with self.subTest(model=model, effort=effort), self.assertRaises(ValueError):
                 session_policy(self.backend, self.record)
         self.profile['reasoningEffort'] = 'off'
         self.assertEqual(session_policy(self.backend, self.record)['reasoningEffort'], 'off')
+        for model in ('plain', 'unknown'):
+            self.profile.update(model=model, reasoningEffort='low')
+            with self.subTest(model=model):
+                self.assertEqual(session_policy(self.backend, self.record)['reasoningEffort'], 'off')
+                self.assertEqual(self.profile['reasoningEffort'], 'low')
 
     def test_only_effort_changes_and_empty_values_preserve_fields(self):
         self.profile['provider'] = 'provider-a'
@@ -80,16 +88,21 @@ class ProfileReasoningTests(unittest.TestCase):
         self.set_effort('', model='', provider='')
         self.assertEqual(self.profile, {**original, 'reasoningEffort': 'high'})
 
-    def test_model_change_reconciles_old_effort_but_rejects_invalid_explicit_effort(self):
+    def test_model_change_preserves_intent_and_policy_reconciles_at_execution(self):
         self.profile['reasoningEffort'] = 'high'
         self.set_effort('', model='b')
-        self.assertEqual(self.profile['reasoningEffort'], 'medium')
+        self.assertEqual(self.profile['reasoningEffort'], 'high')
+        self.assertEqual(session_policy(self.backend, self.record)['reasoningEffort'], 'medium')
         previous = copy.deepcopy(self.profile)
         with self.assertRaises(ValueError):
-            self.set_effort('high', model='plain')
+            self.set_effort('invalid', model='plain')
         self.assertEqual(self.profile, previous)
         self.set_effort('', model='plain')
-        self.assertEqual(self.profile['reasoningEffort'], 'off')
+        self.assertEqual(self.profile['reasoningEffort'], 'high')
+        self.assertEqual(session_policy(self.backend, self.record)['reasoningEffort'], 'off')
+        self.set_effort('high', model='plain')
+        self.assertEqual(self.profile['reasoningEffort'], 'high')
+        self.assertEqual(session_policy(self.backend, self.record)['reasoningEffort'], 'off')
 
     def test_save_failure_rolls_back_model_provider_and_effort_including_absence(self):
         for old_fields in ({}, {'provider': 'provider-a', 'reasoningEffort': 'high'}):
@@ -112,16 +125,22 @@ class ProfileReasoningTests(unittest.TestCase):
             self.set_effort('low', model='a')
         self.assertEqual(self.profile, original)
 
-    def test_new_session_applies_explicit_effort_and_absent_field_keeps_old_behavior(self):
+    def test_new_session_applies_explicit_effort_and_absent_field_inherits_desktop(self):
         self.record.reasoning_effort = 'low'
+        self.store.data['ui'] = {'reasoningEffort': 'low'}
         policy = apply_session_policy(self.backend, self.record)
-        self.assertNotIn('reasoningEffort', policy)
+        self.assertEqual(policy['reasoningEffort'], 'low')
         self.assertEqual(self.record.reasoning_effort, 'low')
+        self.assertEqual(self.store.data['sessionMeta']['owned']['reasoningEffort'], 'low')
         self.backend._pool.write.assert_not_called()
+        self.store.data['ui'].pop('reasoningEffort')
+        self.assertEqual(apply_session_policy(self.backend, self.record)['reasoningEffort'], 'off')
+        self.assertEqual(self.record.reasoning_effort, 'off')
         self.profile['reasoningEffort'] = 'high'
         apply_session_policy(self.backend, self.record)
         self.assertEqual(self.record.reasoning_effort, 'high')
-        self.backend._pool.write.assert_called_once_with(self.record, {'type': 'reasoning_effort', 'value': 'high'})
+        self.assertEqual(self.store.data['sessionMeta']['owned']['reasoningEffort'], 'high')
+        self.backend._pool.write.assert_not_called()
 
     def test_idle_effort_change_writes_without_retiring_process(self):
         self.profile['reasoningEffort'] = 'low'

@@ -15,6 +15,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 from dataclasses import replace
+from types import SimpleNamespace
 
 from PySide6.QtCore import QObject, Property, QProcess, QProcessEnvironment, QTimer, QUrl, Signal, Slot, QBuffer, QIODevice, QMimeData
 from PySide6.QtGui import QGuiApplication, QDesktopServices, QFont, QFontDatabase, QImageReader, QWindow
@@ -159,17 +160,16 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Property('QVariantList', notify=changed)
     def pluginSessionModels(self):
-        from .plugin_sessions import profile_reasoning_levels
         return [{'providerId': row['providerID'], 'model': row['id'], 'label': row['owned_by'] + ' / ' + row['id'],
-                 'reasoningLevels': profile_reasoning_levels(self, row['id'], row['providerID'])}
+                 'reasoningLevels': self._reasoning_levels(SimpleNamespace(model=row['id'], provider=row['providerID']))}
                 for row in self.gateway.models()]
 
     @Slot(str, str, str, str, result=bool)
     @Slot(str, str, str, str, str, result=bool)
-    def savePluginSessionModel(self, plugin, profile, model='', provider='', reasoning_effort=''):
+    def savePluginSessionModel(self, plugin, profile, model='', provider='', reasoningEffort=''):
         from .plugin_sessions import set_profile_model
         try:
-            set_profile_model(self, plugin, profile, model, provider, reasoning_effort)
+            set_profile_model(self, plugin, profile, model, provider, reasoningEffort)
         except (ValueError, OSError, RuntimeError) as error:
             self.toast.emit(str(error))
             return False

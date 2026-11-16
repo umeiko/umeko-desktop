@@ -148,12 +148,16 @@ class SettingsOperationTests(unittest.TestCase):
             'api': 'openai', 'baseUrl': 'http://127.0.0.1:1/v1', 'key': 'offline-fixture',
             'models': [{'upstream': 'other-model', 'alias': 'other-model',
                         'reasoningLevels': [], 'reasoningLevelsAuto': False}]})
+        choices = {row['model']: row for row in self.b.pluginSessionModels}
+        self.assertEqual(choices['test-model']['reasoningLevels'], ['low', 'high'])
+        self.assertEqual(choices['other-model']['reasoningLevels'], [])
+        self.assertEqual(choices['other-model']['providerId'], 'other-provider')
         self.b.store.data['pluginSessionProfiles'] = {'sample': {'tasks': {
             'model': 'test-model', 'provider': 'test-provider', 'reasoningEffort': 'high'}}}
         self.applied('pluginSessions.setModel', {'plugin': 'sample', 'profile': 'tasks', 'model': 'other-model'})
         profile = self.b.store.data['pluginSessionProfiles']['sample']['tasks']
         self.assertEqual((profile['model'], profile['provider'], profile['reasoningEffort']),
-                         ('other-model', 'other-provider', 'off'))
+                         ('other-model', 'other-provider', 'high'))
 
     def test_models_and_reasoning_are_registered_and_validate_before_mutation(self):
         listed = self.execute('operations.list')['operations']

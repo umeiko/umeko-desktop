@@ -64,7 +64,8 @@ SectionCard {
                         // Empty means leave unchanged in the save API, so inheritance is
                         // offered only while the profile already inherits desktop settings.
                         readonly property var values: (row.savedEffort ? [] : [""]).concat(["off"],
-                            (row.modelData.reasoningLevels || []).filter(level => level !== "off"))
+                            (picker.selectedIndex >= 0 ? root.choices[picker.selectedIndex].reasoningLevels || [] : [])
+                                .filter(level => level !== "off"))
                         readonly property int selectedIndex: values.indexOf(row.savedEffort)
                         model: values.map(level => level === "" ? I18n.t("沿用桌面")
                             : level === "off" ? I18n.t("关闭") : Reasoning.label(level))

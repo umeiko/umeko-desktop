@@ -43,7 +43,7 @@ class ProfileBackend(QObject):
         self._language = language
         self._profiles = [{"plugin": "session-task-service", "profile": "tasks", "pluginName": "Session task service",
                            "model": "test-model-a", "provider": "test-provider",
-                           "reasoningEffort": "", "reasoningLevels": ["low", "high"]}]
+                           "reasoningEffort": ""}]
         self.choices = [dict(row) for row in CHOICES]
         self.calls = []
         self.accept_save = True
@@ -76,13 +76,10 @@ class ProfileBackend(QObject):
         self.calls.append((plugin, profile, model, provider, effort))
         if not self.accept_save:
             return False
-        choice = next(row for row in self.choices if row["model"] == model and row["providerId"] == provider)
         saved = self._profiles[0]
-        selected_effort = effort or saved.get("reasoningEffort", "")
-        if selected_effort and selected_effort not in ["off", *choice["reasoningLevels"]]:
-            selected_effort = choice["reasoningLevels"][0] if choice["reasoningLevels"] else "off"
-        saved.update(model=model, provider=provider, reasoningEffort=selected_effort,
-                     reasoningLevels=choice["reasoningLevels"])
+        saved.update(model=model, provider=provider)
+        if effort:
+            saved['reasoningEffort'] = effort
         self.changed.emit()
         return True
 
@@ -177,7 +174,7 @@ class PluginSessionModelSettingTests(unittest.TestCase):
         self.assertEqual(picker.property("values").toVariant(), ["off", "low", "high"])
         self.assertEqual(ui.warnings, [])
 
-    def test_model_change_uses_its_levels_and_backend_reconciled_effort(self):
+    def test_model_change_uses_its_levels_and_preserves_configured_effort(self):
         ui = self.ui()
         ui.backend._profiles[0]["reasoningEffort"] = "high"
         ui.backend.changed.emit()
@@ -189,7 +186,8 @@ class PluginSessionModelSettingTests(unittest.TestCase):
         self.app.processEvents()
         effort = ui.reasoning_picker()
         self.assertEqual(effort.property("values").toVariant(), ["off", "medium", "xhigh"])
-        self.assertEqual(effort.property("displayText"), "Medium")
+        self.assertEqual(effort.property("displayText"), "High")
+        self.assertEqual(ui.backend._profiles[0]['reasoningEffort'], 'high')
         self.assertEqual(ui.warnings, [])
 
     def test_rejected_effort_save_restores_saved_effort(self):
@@ -205,7 +203,8 @@ class PluginSessionModelSettingTests(unittest.TestCase):
 
     def test_off_is_available_when_model_has_no_reasoning_levels(self):
         ui = self.ui()
-        ui.backend._profiles[0].update(reasoningEffort="off", reasoningLevels=[])
+        ui.backend._profiles[0].update(reasoningEffort="off")
+        ui.backend.choices[0]['reasoningLevels'] = []
         ui.backend.changed.emit()
         self.app.processEvents()
         self.app.processEvents()

@@ -17,7 +17,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from .pi_sessions import SessionState
-from .model_reasoning import reasoning_levels, reconcile_effort
+from .model_reasoning import _ORDER, reasoning_levels, reconcile_effort
 
 
 OPERATIONS = frozenset(('sessions.acquire', 'sessions.submit', 'sessions.subscribe',
@@ -27,17 +27,14 @@ APPROVAL_GRACE_MS = 5000
 APPROVAL_TIMEOUT_MS = 120000
 
 
-def profile_reasoning_levels(backend, model, provider=''):
-    """Return the selected route's configured levels; off is always separate."""
-    resolved, _ = backend.gateway.resolve(model, provider or None)
-    configured = next(row for row in resolved['models'] if row['alias'] == model)
-    return reasoning_levels(configured)
-
-
-def _validated_effort(value, levels):
-    if not isinstance(value, str) or value != 'off' and value not in levels:
-        raise ValueError('思考档位必须是 off 或所选模型支持的档位')
-    return value
+def _profile_effort(backend, profile, model, provider):
+    configured = next((p for p in backend.store.data['providers'] if p['id'] == provider), {})
+    entry = next((m for m in configured.get('models', []) if m['alias'] == model), {})
+    levels = reasoning_levels(entry)
+    value = profile.get('reasoningEffort', backend.store.data.get('ui', {}).get('reasoningEffort', 'off'))
+    if 'reasoningEffort' in profile and value not in ['off', *_ORDER, *levels]:
+        raise ValueError('The profile reasoningEffort must be off or a valid reasoning level')
+    return reconcile_effort(value, levels)
 
 
 def session_policy(backend, record):
@@ -75,13 +72,10 @@ def session_policy(backend, record):
     # Neither a plugin nor a later queued turn may weaken the desktop mode.
     if backend.store.data['agent'].get('toolPermissionMode') == 'ask':
         mode = 'ask'
-    policy = {'workspace': workspace, 'model': model, 'provider': resolved['id'],
+    return {'workspace': workspace, 'model': model, 'provider': resolved['id'],
+        'reasoningEffort': _profile_effort(backend, profile, model, resolved['id']),
         'allowedTools': list(dict.fromkeys(tools)), 'mode': mode,
         'allowApprovals': profile.get('allowApprovals') is True}
-    if 'reasoningEffort' in profile:
-        policy['reasoningEffort'] = _validated_effort(profile['reasoningEffort'],
-            profile_reasoning_levels(backend, model, resolved['id']))
-    return policy
 
 
 def profile_rows(backend):
@@ -92,21 +86,16 @@ def profile_rows(backend):
     for plugin, named in sorted(profiles.items() if isinstance(profiles, dict) else []):
         for profile, value in sorted(named.items() if isinstance(named, dict) else []):
             if isinstance(value, dict):
-                model = value.get('model') if isinstance(value.get('model'), str) else ''
-                provider = value.get('provider') if isinstance(value.get('provider'), str) else ''
-                try:
-                    levels = profile_reasoning_levels(backend, model, provider)
-                except ValueError:
-                    levels = []
                 rows.append({'plugin': plugin, 'profile': profile,
                     'pluginName': str(entries.get(plugin, {}).get('name') or plugin),
-                    'model': model, 'provider': provider,
-                    'reasoningEffort': value.get('reasoningEffort', ''), 'reasoningLevels': levels})
+                    'model': value.get('model') if isinstance(value.get('model'), str) else '',
+                    'provider': value.get('provider') if isinstance(value.get('provider'), str) else '',
+                    'reasoningEffort': value.get('reasoningEffort', '')})
     return rows
 
 
-def set_profile_model(backend, plugin, profile, model='', provider='', reasoning_effort=''):
-    """Change an existing profile's model route and optional reasoning effort.
+def set_profile_model(backend, plugin, profile, model='', provider='', reasoningEffort=''):
+    """Change the model route or reasoning effort of an existing profile.
 
     Workspace, tools, permission mode and approvals stay as the user approved
     them. Sessions pick up the new route at their next input boundary.
@@ -117,36 +106,36 @@ def set_profile_model(backend, plugin, profile, model='', provider='', reasoning
     target = named.get(profile) if isinstance(named, dict) and isinstance(profile, str) else None
     if not isinstance(target, dict):
         raise ValueError('插件会话配置不存在，请先在 settings.json 中添加')
-    if not isinstance(model, str) or not isinstance(provider, str) or not isinstance(reasoning_effort, str):
-        raise ValueError('模型、供应商和思考档位必须是字符串')
-    if not model:
-        model = target.get('model', '')
-        provider = provider or target.get('provider', '')
-    if not isinstance(model, str) or not model or not any(row.get('id') == model for row in backend.gateway.models()):
+    if not isinstance(model, str):
+        raise ValueError('请选择已配置的桌面模型别名')
+    alias = model or target.get('model')
+    if not alias or not any(row.get('id') == alias for row in backend.gateway.models()):
         raise ValueError('请选择已配置的桌面模型别名')
     if not isinstance(provider, str) or provider and backend.gateway.provider(provider) is None:
         raise ValueError('供应商 ID 不存在')
-    resolved, _ = backend.gateway.resolve(model, provider or None)
-    routed, _ = backend.gateway.resolve(model)
+    route = provider or (target.get('provider') if not model else None)
+    resolved, _ = backend.gateway.resolve(alias, route or None)
+    routed, _ = backend.gateway.resolve(alias)
     if resolved['id'] != routed['id']:
         raise ValueError('该模型别名在多个供应商中重复，请使用唯一的模型别名')
-    levels = profile_reasoning_levels(backend, model, resolved['id'])
-    changes = {}
-    if reasoning_effort:
-        changes['reasoningEffort'] = _validated_effort(reasoning_effort, levels)
-    elif 'reasoningEffort' in target and (target.get('model'), target.get('provider', '')) != (model, resolved['id']):
-        changes['reasoningEffort'] = reconcile_effort(target['reasoningEffort'], levels)
-    previous = {key: target[key] for key in ('model', 'provider', 'reasoningEffort') if key in target}
-    target.update(model=model, provider=resolved['id'])
-    target.update(changes)
+    if not isinstance(reasoningEffort, str):
+        raise ValueError('The profile reasoningEffort must be off or a valid reasoning level')
+    if reasoningEffort:
+        _profile_effort(backend, {'reasoningEffort': reasoningEffort}, alias, resolved['id'])
+    keys = ('model', 'provider', 'reasoningEffort')
+    previous = {key: target[key] for key in keys if key in target}
+    if model or provider:
+        target.update(model=alias, provider=resolved['id'])
+    if reasoningEffort:
+        target['reasoningEffort'] = reasoningEffort
     try:
         backend.store.save()
     except (OSError, RuntimeError):
-        for key in ('model', 'provider', 'reasoningEffort'):
+        for key in keys:
             target.pop(key, None)
         target.update(previous)
         raise
-    return {'plugin': plugin, 'profile': profile, 'model': model, 'provider': resolved['id'],
+    return {'plugin': plugin, 'profile': profile, 'model': alias, 'provider': resolved['id'],
         'reasoningEffort': target.get('reasoningEffort', '')}
 
 
@@ -156,14 +145,18 @@ def apply_session_policy(backend, record):
         previous = getattr(record, '_plugin_policy', None)
         if record.busy:
             return policy  # Apply a changed ceiling at the next input boundary.
-        previous_route = {key: value for key, value in previous.items() if key != 'reasoningEffort'} if previous else None
-        route = {key: value for key, value in policy.items() if key != 'reasoningEffort'}
-        if record.process and previous_route != route and not record.subagents_active:
+        route_changed = previous is None or any(previous.get(key) != value
+            for key, value in policy.items() if key != 'reasoningEffort')
+        if record.process and route_changed and not record.subagents_active:
             backend._pool.retire(record)
         record.workspace, record.model, record.provider = policy['workspace'], policy['model'], policy['provider']
-        if 'reasoningEffort' in policy and record.reasoning_effort != policy['reasoningEffort']:
-            record.reasoning_effort = policy['reasoningEffort']
-            backend._pool.write(record, {'type': 'reasoning_effort', 'value': record.reasoning_effort})
+        effort = policy['reasoningEffort']
+        changed = record.reasoning_effort != effort
+        record.reasoning_effort = effort
+        if record.id:
+            backend.store.data['sessionMeta'].setdefault(record.id, {})['reasoningEffort'] = effort
+        if record.process and changed:
+            backend._pool.write(record, {'type': 'reasoning_effort', 'value': effort})
         record._plugin_policy = policy
     return policy
 

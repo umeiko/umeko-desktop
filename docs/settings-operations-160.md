@@ -2,6 +2,8 @@
 
 Python 版把设置页中的日常配置接到统一桌面操作上。Agent 可以读取当前设置，再修改明确列出的字段；界面和 Agent 共用现有设置控制器。插件会话的模型与思考强度可在运行中调整，权限配置继续由用户批准。
 
+插件会话思考档位的后端由 [#163](https://github.com/umeiko/umeko-desktop/pull/163) 提供。本次改动在该接口上增加设置页思考下拉框和其余设置操作，沿用其配置继承、保存回滚和输入边界更新方式。
+
 先调用 `operations.list` 获取当前应用提供的操作，再调用 `settings.get` 读取配置。操作使用 `{"operation":"操作名","arguments":{...}}` 格式。下表按已有能力、本次新增或扩展、保留用户确认或内部状态列出设置，包含设置页以外持久保存的相关偏好。
 
 配置中的模型示例统一使用 `test-model`，供应商示例使用 `Test provider`；使用时填写本机已经配置的桌面模型别名与供应商 ID。
@@ -45,7 +47,7 @@ Python 版把设置页中的日常配置接到统一桌面操作上。Agent 可�
 
 | 设置 | 操作与参数 | 保存位置与应用时机 | 复用的源码入口 |
 | --- | --- | --- | --- |
-| 插件会话的模型、供应商和思考强度 | 扩展 `pluginSessions.setModel {plugin,profile,model="",provider="",reasoningEffort=""}`；省略模型或 effort 时保留现值；新模型省略供应商时使用实际路由。支持单独修改 effort；取值为 off 或目标模型实际支持的级别 | `settings.json` 顶层 pluginSessionProfiles；下次输入采用新配置，当前回合继续原设置。更换模型时将已有 effort 调整到新模型支持的值；尚未配置 effort 时沿用原有逻辑 | [set_profile_model/apply_session_policy](../app/plugin_sessions.py) |
+| 插件会话模型、供应商和思考强度的界面 | 设置下拉框调用 #163 已有的 `pluginSessions.setModel {plugin,profile,model="",provider="",reasoningEffort=""}`；省略模型或 effort 时保留现值；新模型省略供应商时使用实际路由。下拉选项取自模型实际档位并包含 off | `settings.json` 顶层 pluginSessionProfiles；配置 effort 优先于桌面 ui.reasoningEffort，均未配置时 off。通用档位和模型自定义档位按 #163 规则接受，配置值保留，执行时对齐；当前回合结束后在下一次输入采用 | [set_profile_model/apply_session_policy](../app/plugin_sessions.py)、[PluginSessionModels](../app/qml/PluginSessionModels.qml) |
 | 新桌面会话的默认思考强度 | `agent.defaultReasoning {value}` | `settings.json` 的 ui.reasoningEffort；新桌面会话采用，已有会话保留各自设置 | [Controller](../app/controller.py)、[UmekoControl](../app/umeko_control.py) |
 | 当前/指定会话的模型与供应商 | 登记已有 `models.select {provider,model,sessionId=""}`；统一参数校验 | 当前选择和目标会话模型记录；目标会话下一次请求采用。空 sessionId 使用调用会话或当前桌面会话 | [UmekoControl.execute](../app/umeko_control.py)、[Controller.selectModel](../app/controller.py) |
 | 当前/指定会话的思考强度 | 登记已有 `sessions.reasoning {value,sessionId=""}`；取值为 off 或实际支持的级别 | 目标会话的 reasoningEffort；下一次请求采用。空 sessionId 按调用会话或当前桌面会话选择目标 | [UmekoControl.execute](../app/umeko_control.py) |
@@ -77,7 +79,7 @@ Python 版把设置页中的日常配置接到统一桌面操作上。Agent 可�
 {"operation":"pluginSessions.setModel","arguments":{"plugin":"session-task-service","profile":"tasks","reasoningEffort":"medium"}}
 ```
 
-两个示例都要求目标模型实际支持 `medium`。使用 `off` 可以关闭思考；其他级别以所选模型的实际列表为准。
+两个示例都将配置档位设为 `medium`。宿主按模型能力对齐实际使用值；选择 `off` 可关闭思考，模型自定义档位使用其支持的原始名称。
 
 ## 保留用户确认或内部状态
 
