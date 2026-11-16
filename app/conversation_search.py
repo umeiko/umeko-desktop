@@ -226,11 +226,11 @@ class ConversationSearch(QAbstractListModel):
             self.controller.toast.emit('原消息已不可用，请刷新搜索'); self.jumpReady.emit(-1, ''); return
         self._jump = hit
         record = self.controller._pool.find(hit['sessionId'])
-        if record and record.loaded:
+        if record and record.loaded and not (record.transcript and record.transcript.partial):
             self._finish_jump()
         else:
             self._jump_token -= 1
-            self.controller.sessionPreview.prepare(hit['sessionId'], self._jump_token)
+            self.controller.sessionPreview.prepare(hit['sessionId'], self._jump_token, recent=False)
 
     def _prepared(self, token, ok):
         if token != self._jump_token or not self._jump: return

@@ -22,6 +22,7 @@ QSystemTrayIcon.show = lambda *args: None
 from main import create_application
 
 app, engine, backend = create_application()
+backend.store.data.setdefault('agent', {})['agentDir'] = str(Path(temporary.name) / 'agent')
 main = engine.rootObjects()[0]
 warnings = []
 engine.warnings.connect(lambda values: warnings.extend(value.toString() for value in values))
@@ -78,6 +79,9 @@ try:
         wait(lambda: not composer.property('animating'), 'PID opening did not settle')
         native = evaluate(composer, 'contentItem.Window.window')
         assert native is not window, 'Task input is clipped to the pet input mask'
+        wait(lambda: QGuiApplication.focusWindow() is native, 'Native focus absent')
+        assert QGuiApplication.focusObject() is field
+        assert bool(QGuiApplication.inputMethod().queryFocusObject(Qt.ImEnabled, None))
         wait(lambda: native.width() >= 350, 'Task popup was constrained to the tiny pet window: '
              + str((native.metaObject().className(), native.width(), native.height(),
                     composer.property('width'), evaluate(composer, 'contentItem.width'))))
@@ -158,6 +162,22 @@ try:
     wait(lambda: not composer.property('visible'), 'Committed Chinese task was not sent')
     command.assert_called_once_with('prompt', record, text='中文任务')
 
+    command.reset_mock()
+    native = open_composer()
+    field.setProperty('text', '取消候选时保留正文')
+    QGuiApplication.sendEvent(native, QInputMethodEvent('候选', []))
+    wait(lambda: field.property('inputMethodComposing'), 'Preedit absent')
+    QTest.keyClick(native, Qt.Key_Escape)
+    assert composer.property('desiredOpen'), 'IME Escape closed the capsule'
+    assert not command.called, 'IME Escape dispatched a task'
+    # Offscreen has no OS input context. Simulate the platform cancellation
+    # response; reset() alone cannot clear an artificially injected preedit.
+    QGuiApplication.sendEvent(native, QInputMethodEvent('', []))
+    wait(lambda: not field.property('inputMethodComposing'), 'Cancellation response not applied')
+    assert field.property('text') == '取消候选时保留正文'
+    QTest.keyClick(native, Qt.Key_Escape)
+    wait(lambda: not composer.property('visible'), 'Second Escape did not close')
+
     command.reset_mock(); command.return_value = False
     native = open_composer()
     field.setProperty('text', '失败时保留这段输入')
@@ -171,7 +191,9 @@ try:
     native = open_composer()
     assert field.property('text') == '失败时保留这段输入', 'Dismissal discarded the draft'
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
-    wait(lambda: not composer.property('visible'), 'Outside click did not dismiss')
+    assert composer.property('desiredOpen'), 'Clicking pet dismissed input'
+    main.show(); main.requestActivate()
+    wait(lambda: not composer.property('visible'), 'Switching outside pet/input did not dismiss')
 
     native = open_composer()
     backend.desktopPlugins.setEnabled('global-agents', False)
@@ -210,8 +232,8 @@ try:
     QTest.keyClick(native, Qt.Key_Escape)
     backend.store.data['ui']['fontScale'] = 1.; backend.appearanceChanged.emit()
 
-    # Top-edge notifications take priority even when the capsule cannot fit.
-    # Exercise both a notification arriving during input and opening over one.
+    # The tool window keeps drafts open below top-edge notifications. Verify
+    # this both when a notice arrives and when opening over an existing one.
     command.reset_mock()
     original_size = pet.config['size']
     pet.ui('configure', {'size': 96})
@@ -232,20 +254,22 @@ try:
             QTest.qWait(20)
             assert composer.property('visible')
             pet.assistantSpeech.emit(notice)
-            # No fade frame may obscure the notification after the signal.
-            assert composer.property('notificationBlocked')
-            assert composer.property('opacity') == 0
-            assert not evaluate(composer, 'contentItem.enabled')
-            wait(lambda: not composer.property('visible'), 'Top-edge input did not close')
+            QTest.qWait(50)
+            assert not composer.property('notificationBlocked')
+            assert composer.property('desiredOpen') and composer.property('visible')
+            assert field.property('activeFocus'), 'Notification stole input focus'
+            assert evaluate(composer, 'contentItem.enabled')
+            assert native.y() >= window.y() + bubble.y() + bubble.height() + 7, 'Top-edge input covered the notice'
             assert bubble.property('visible') and window.property('caption') == notice
             assert field.property('text') == draft and not command.called
             assert window.grabWindow().save(str(out / f'notification-top-{edge}-{scale}.png'))
+            QTest.keyClick(native, Qt.Key_Escape)
+            wait(lambda: not composer.property('visible'), 'Escape did not close input over a notice')
             evaluate(window, 'openTaskComposer()')
-            QTest.qWait(50)
-            assert not composer.property('visible'), 'Reopening obscured the notification'
+            wait(lambda: composer.property('opened'), 'Input did not reopen below the notice')
+            assert native.y() >= window.y() + bubble.y() + bubble.height() + 7
             assert field.property('text') == draft
             pet.assistantSpeech.emit('')
-            native = open_composer()
             assert field.property('text') == draft, 'Top-edge fallback lost the draft'
             QTest.keyClick(native, Qt.Key_Escape)
             wait(lambda: not composer.property('visible'), 'Reopened input did not close')
@@ -301,7 +325,7 @@ try:
         'nativePopupFocus': True, 'enterAndButtonSend': True, 'unchangedVisibleConversation': True,
         'failedDraftPreserved': True, 'escapeAndOutsideClose': True, 'bindingLossCloses': True,
         'animationContinues': True, 'bilingual': True, 'nativePiRoundTrip': True,
-        'concentricSendCircle': True, 'imeCommit': True, 'screenEdges': True,
+        'concentricSendCircle': True, 'syntheticImeCommit': True, 'osImeManuallyVerified': False, 'screenEdges': True,
         'largeFont': True, 'pidOpenAndClose': True, 'keyboardFocus': True,
         'notificationCoexistence': True, 'topEdgeNotificationPriority': True, 'desktopActionPreservesDraft': True, 'warnings': relevant}, indent=2))
     print('Pet task input UI passed')
