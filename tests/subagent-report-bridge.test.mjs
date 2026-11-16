@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const release = join(root, "runtime/releases/coding-1.3.0");
+const release = join(root, "runtime/releases/coding-1.5.2");
 const CHILD_HINT = "notify_parent";
 
 // A background subagent reports after its parent finished the turn, and Pi

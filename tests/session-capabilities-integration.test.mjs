@@ -6,7 +6,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync} from
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-const bridge=fileURLToPath(new URL('../runtime/releases/coding-1.3.0/bridge.mjs',import.meta.url));
+const bridge=fileURLToPath(new URL('../runtime/releases/coding-1.5.2/bridge.mjs',import.meta.url));
 const core=['bash','edit','find','grep','ls','powershell','read','write'];
 test('real Pi presets control imports, tool registration, nested calls and restored chat loadouts',{timeout:120000},async()=>{
   const root=mkdtempSync(join(tmpdir(),'umeko-capabilities-')),cwd=join(root,'work'),agentDir=join(root,'agent'),sessions=join(root,'sessions');

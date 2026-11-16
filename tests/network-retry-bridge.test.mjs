@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const release = join(root, "runtime/releases/coding-1.3.0");
+const release = join(root, "runtime/releases/coding-1.5.2");
 
 async function fixture(t, { compaction = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "umeko-retry-")), agentDir = join(dir, "agent");

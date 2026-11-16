@@ -210,7 +210,7 @@ class ConversationSearch(QAbstractListModel):
                     live.append({'entryId': row['_searchId'], 'text': row['text'], 'role': row['role'], 'timestamp': row.get('timestamp'), 'sourceIndex': i})
                 session['live'] = live
             sources.append(session)
-        rg = controller.root / 'runtime/releases/coding-1.3.0/bin' / ('rg.exe' if os.name == 'nt' else 'rg')
+        rg = controller.root / 'runtime/releases/coding-1.5.2/bin' / ('rg.exe' if os.name == 'nt' else 'rg')
         if not rg.is_file():
             self._busy, self._error = False, '未找到内置 ripgrep，请修复客户端安装'
             self.changed.emit(); return

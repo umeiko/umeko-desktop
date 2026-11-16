@@ -40,8 +40,8 @@ try {
 $releaseParent = Join-Path $buildDestination 'Umeko/_internal/runtime/releases'
 New-Item -ItemType Directory -Path $releaseParent -Force | Out-Null
 # Node loads its own runtime files; copy them byte-for-byte after Qt packaging.
-Copy-Item -LiteralPath 'runtime/releases/coding-1.3.0' -Destination $releaseParent -Recurse -Force
-$generatedRuntimeCache = Join-Path $releaseParent 'coding-1.3.0/node_modules/.cache'
+Copy-Item -LiteralPath 'runtime/releases/coding-1.5.2' -Destination $releaseParent -Recurse -Force
+$generatedRuntimeCache = Join-Path $releaseParent 'coding-1.5.2/node_modules/.cache'
 if (Test-Path -LiteralPath $generatedRuntimeCache) { Remove-Item -LiteralPath $generatedRuntimeCache -Recurse -Force }
 Copy-Item -LiteralPath 'runtime/node' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Recurse -Force
 Copy-Item -LiteralPath 'runtime/preview-network.mjs' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Force

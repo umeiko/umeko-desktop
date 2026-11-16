@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { prepareDocumentation, availableModels } from '../runtime/releases/coding-1.3.0/umeko-documents.mjs';
-import { configureUmekoDocs, umekoHelp, UMEKO_PROMPT } from '../runtime/releases/coding-1.3.0/umeko-control.mjs';
+import { prepareDocumentation, availableModels } from '../runtime/releases/coding-1.5.2/umeko-documents.mjs';
+import { configureUmekoDocs, umekoHelp, UMEKO_PROMPT } from '../runtime/releases/coding-1.5.2/umeko-control.mjs';
 
 test('delegation guide contains current wrapped model names without changing the prompt', () => {
   const root = mkdtempSync(join(tmpdir(), 'umeko-docs-test-'));
