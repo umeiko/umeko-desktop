@@ -98,7 +98,8 @@ def set_profile_model(backend, plugin, profile, model='', provider='', reasoning
     """Change the model route or reasoning effort of an existing profile.
 
     Workspace, tools, permission mode and approvals stay as the user approved
-    them. Sessions pick up the new route at their next input boundary.
+    them. Sessions pick up the new route at their next input boundary. The
+    special effort value ``inherit`` removes the profile's explicit override.
     """
     backend.store.save()  # Read in pending external edits before changing the profile.
     profiles = backend.store.data.get('pluginSessionProfiles', {})
@@ -120,13 +121,15 @@ def set_profile_model(backend, plugin, profile, model='', provider='', reasoning
         raise ValueError('该模型别名在多个供应商中重复，请使用唯一的模型别名')
     if not isinstance(reasoningEffort, str):
         raise ValueError('The profile reasoningEffort must be off or a valid reasoning level')
-    if reasoningEffort:
+    if reasoningEffort and reasoningEffort != 'inherit':
         _profile_effort(backend, {'reasoningEffort': reasoningEffort}, alias, resolved['id'])
     keys = ('model', 'provider', 'reasoningEffort')
     previous = {key: target[key] for key in keys if key in target}
     if model or provider:
         target.update(model=alias, provider=resolved['id'])
-    if reasoningEffort:
+    if reasoningEffort == 'inherit':
+        target.pop('reasoningEffort', None)
+    elif reasoningEffort:
         target['reasoningEffort'] = reasoningEffort
     try:
         backend.store.save()
