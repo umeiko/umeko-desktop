@@ -207,7 +207,7 @@ Window {
         if (taskComposer.targetId !== root.assistant.id) taskInput.clear()
         taskComposer.targetId = root.assistant.id
         taskComposer.error = ""
-        taskComposer.open()
+        if (!taskWindow.placement.blocked) taskComposer.open()
     }
     // A non-modal tool window does not grab/rewrite pet mouse events.
     Window {
@@ -219,21 +219,28 @@ Window {
         visible: taskComposer.visible
         width: taskComposer.width
         height: taskComposer.height
-        x: {
+        readonly property var placement: {
             const area = root.bounds()
             const left = root.x + (root.width - width) / 2
-            return Math.round(Math.max(area.x + 8, Math.min(area.x + area.width - width - 8, left)))
-        }
-        y: {
-            const area = root.bounds()
             const notice = reminder.visible ? reminder : bubble.visible && root.assistantCaption ? bubble : null
             const top = notice ? root.y + notice.y - height - 8
                 : root.y + art.y + art.height - (art.item ? art.item.paintedHeight : art.height) * (1 - (root.state.contentTop || 0)) - height - 8
-            // Keep important notifications visible. Near the top edge, place
-            // the input below the notification rather than covering it.
-            const preferred = notice && top < area.y + 8 ? root.y + notice.y + notice.height + 8 : top
-            return Math.round(Math.max(area.y + 8, Math.min(area.y + area.height - height - 8, preferred)))
+            const minimum = area.y + 8
+            const maximum = area.y + area.height - height - 8
+            const below = notice ? root.y + notice.y + notice.height + 8 : top
+            const aboveFits = top >= minimum && top <= maximum
+            const belowFits = below >= minimum && below <= maximum
+            // Prefer above the notice; use below near the top edge. Only
+            // hide the capsule if neither placement can leave it readable.
+            const preferred = notice && !aboveFits && belowFits ? below : top
+            return {
+                x: Math.round(Math.max(area.x + 8, Math.min(area.x + area.width - width - 8, left))),
+                y: Math.round(Math.max(minimum, Math.min(maximum, preferred))),
+                blocked: !!notice && !aboveFits && !belowFits
+            }
         }
+        x: placement.x
+        y: placement.y
         onClosing: event => { event.accepted = false; taskComposer.close() }
         // Defer focus checks so pet-to-input transitions and IME composition
         // do not dismiss the draft. No global mouse grab is used.
@@ -252,6 +259,11 @@ Window {
             property string targetId: ""
             property string error: ""
             property bool sending: false
+            readonly property bool notificationBlocked: taskWindow.placement.blocked
+            readonly property color inputBlue: Theme.dark ? "#83b7ff" : "#2463c4"
+            readonly property bool controlFocused: taskInput.activeFocus || taskSend.activeFocus || taskDesktop.activeFocus
+            opacity: notificationBlocked ? 0 : animationProgress
+            onNotificationBlockedChanged: if (notificationBlocked && visible) close()
             modal: false
             width: Math.min(Theme.control(360), root.screen.width - 24)
             height: Math.max(52, taskInput.implicitHeight + 12)
@@ -280,16 +292,17 @@ Window {
             background: Rectangle {
                 radius: height / 2
                 color: Theme.surface
-                border.color: taskComposer.error ? Theme.danger : taskInput.activeFocus ? Theme.accent : Theme.line
+                border.width: taskComposer.controlFocused ? 2 : 1
+                border.color: taskComposer.error ? Theme.danger : Qt.alpha(taskComposer.inputBlue, taskComposer.controlFocused ? 1 : 0.45)
             }
             contentItem: Item {
-                enabled: taskComposer.desiredOpen
+                enabled: taskComposer.desiredOpen && !taskComposer.notificationBlocked
                 InputField {
                     id: taskInput
                     objectName: "desktopPetTaskInput"
                     anchors.fill: parent
                     leftPadding: 18
-                    rightPadding: parent.height + 4
+                    rightPadding: parent.height + taskDesktop.width + 8
                     maximumLength: 16000
                     Accessible.name: I18n.t("给悬浮小助手派活")
                     Accessible.description: taskComposer.error
@@ -302,6 +315,32 @@ Window {
                     background: null
                 }
                 Button {
+                    id: taskDesktop
+                    objectName: "desktopPetTaskDesktop"
+                    width: parent.height - 16
+                    height: width
+                    anchors.right: taskSend.left
+                    anchors.rightMargin: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    padding: 0
+                    hoverEnabled: true
+                    Accessible.name: I18n.t("打开 Umeko")
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 700
+                    ToolTip.text: Accessible.name
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    background: Rectangle {
+                        radius: width / 2
+                        color: taskDesktop.down ? Theme.line : taskDesktop.hovered ? Theme.hover : "transparent"
+                        border.width: taskDesktop.activeFocus ? 2 : 0
+                        border.color: taskComposer.inputBlue
+                    }
+                    contentItem: Item {
+                        Glyph { anchors.centerIn: parent; name: "external-link"; color: Theme.muted; width: Theme.icon(16); height: width }
+                    }
+                    onClicked: { taskComposer.close(); root.pet.restoreRequested() }
+                }
+                Button {
                     id: taskSend
                     objectName: "desktopPetTaskSend"
                     // Both circles share the right end cap's exact center.
@@ -312,15 +351,19 @@ Window {
                     padding: 0
                     hoverEnabled: true
                     enabled: taskInput.text.trim().length > 0 && !taskComposer.sending
-                    opacity: enabled ? 1 : 0.4
                     Accessible.name: I18n.t("发送")
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 700
+                    ToolTip.text: Accessible.name
                     HoverHandler { cursorShape: taskSend.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     background: Rectangle {
                         radius: width / 2
-                        color: taskSend.down ? Qt.darker(Theme.button, 1.1) : taskSend.hovered ? Qt.lighter(Theme.button, 1.1) : Theme.button
+                        color: Qt.alpha(taskComposer.inputBlue, taskSend.down ? 0.22 : taskSend.hovered ? 0.15 : 0.08)
+                        border.width: taskSend.activeFocus ? 2 : 0
+                        border.color: taskComposer.inputBlue
                     }
                     contentItem: Item {
-                        Glyph { anchors.centerIn: parent; name: "arrow-up"; color: Theme.buttonText; width: Theme.icon(18); height: width }
+                        Glyph { anchors.centerIn: parent; name: "arrow-up"; color: Qt.alpha(taskComposer.inputBlue, taskSend.enabled ? 1 : 0.38); width: Theme.icon(18); height: width }
                     }
                     onClicked: taskComposer.submit()
                 }
