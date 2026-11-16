@@ -123,7 +123,7 @@ Window {
         // Respect both letterboxing and the transparent margin inside the art.
         y:Math.max(4,art.y+art.height-(art.item?art.item.paintedHeight:art.height)*(1-(root.state.contentTop || 0))-height-8)
         width:Math.min(root.width,spoken.implicitWidth+24);height:spoken.implicitHeight+16;radius:12
-        color:Theme.surface;border.color:Theme.line;visible:!!root.caption && !root.reminderCard.length
+        color:Theme.surface;border.color:Theme.line;visible:!!root.caption && !root.reminderCard.length && (root.assistantCaption || !taskComposer.visible)
         Text { font.family: Theme.fontFamily;id:spoken;anchors.centerIn:parent;width:Math.min(implicitWidth,root.width-24);text:root.caption;textFormat:Text.PlainText;wrapMode:Text.Wrap;maximumLineCount:4;elide:Text.ElideRight;color:Theme.ink;font.pixelSize: Theme.font(11, visible)}
     }
     Rectangle {
@@ -180,15 +180,17 @@ Window {
         onEntered:root.pet.interact("hover")
         onPressed:mouse => {
             root.dragged=false
-            root.pressX=mouse.x;root.pressY=mouse.y;root.startX=root.x;root.startY=root.y
+            const cursor = root.pet.cursorPosition()
+            root.pressX=cursor.x;root.pressY=cursor.y;root.startX=root.x;root.startY=root.y
             if(mouse.button===Qt.RightButton)menu.popup()
         }
         onPositionChanged:mouse => {
             if(!(pressedButtons & Qt.LeftButton))return
-            const dx=mouse.x-root.pressX,dy=mouse.y-root.pressY
+            const cursor = root.pet.cursorPosition()
+            const dx=cursor.x-root.pressX,dy=cursor.y-root.pressY
             if(!root.dragged && Math.abs(dx)+Math.abs(dy)<7)return
             if(!root.dragged){root.dragged=true;root.pet.interact("drag")}
-            root.x+=dx;root.y+=dy
+            root.x=root.startX+dx;root.y=root.startY+dy
         }
         onReleased:mouse => {
             if(mouse.button!==Qt.LeftButton)return
@@ -207,101 +209,136 @@ Window {
         taskComposer.error = ""
         taskComposer.open()
     }
-    PidPopup {
-        id: taskComposer
-        objectName: "desktopPetTaskComposer"
-        parent: root.contentItem
-        popupType: Popup.Window
-        property string targetId: ""
-        property string error: ""
-        property bool sending: false
-        modal: false
-        width: Math.min(Theme.control(360), root.screen.width - 24)
-        height: Math.max(52, taskInput.implicitHeight + 12)
-        padding: 0
-        // Native popups may extend beyond the small, masked pet window.
-        // Fit to the work area ourselves instead of shrinking to its parent.
-        margins: -1
-        focus: true
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        Connections {
-            target: taskComposer
-            function onAboutToShow() {
-                const area = root.bounds()
-                const left = root.x + (root.width - taskComposer.width) / 2
-                const top = root.y + art.y + art.height - (art.item ? art.item.paintedHeight : art.height) * (1 - (root.state.contentTop || 0)) - taskComposer.height - 8
-                taskComposer.x = Math.round(Math.max(area.x + 8, Math.min(area.x + area.width - taskComposer.width - 8, left)) - root.x)
-                taskComposer.y = Math.round(Math.max(area.y + 8, Math.min(area.y + area.height - taskComposer.height - 8, top)) - root.y)
+    // A non-modal tool window does not grab/rewrite pet mouse events.
+    Window {
+        id: taskWindow
+        objectName: "desktopPetTaskWindow"
+        transientParent: root
+        color: "transparent"
+        flags: Qt.Tool | Qt.FramelessWindowHint | (root.config.alwaysOnTop ? Qt.WindowStaysOnTopHint : 0)
+        visible: taskComposer.visible
+        width: taskComposer.width
+        height: taskComposer.height
+        x: {
+            const area = root.bounds()
+            const left = root.x + (root.width - width) / 2
+            return Math.round(Math.max(area.x + 8, Math.min(area.x + area.width - width - 8, left)))
+        }
+        y: {
+            const area = root.bounds()
+            const notice = reminder.visible ? reminder : bubble.visible && root.assistantCaption ? bubble : null
+            const top = notice ? root.y + notice.y - height - 8
+                : root.y + art.y + art.height - (art.item ? art.item.paintedHeight : art.height) * (1 - (root.state.contentTop || 0)) - height - 8
+            // Keep important notifications visible. Near the top edge, place
+            // the input below the notification rather than covering it.
+            const preferred = notice && top < area.y + 8 ? root.y + notice.y + notice.height + 8 : top
+            return Math.round(Math.max(area.y + 8, Math.min(area.y + area.height - height - 8, preferred)))
+        }
+        onClosing: event => { event.accepted = false; taskComposer.close() }
+        // Defer focus checks so pet-to-input transitions and IME composition
+        // do not dismiss the draft. No global mouse grab is used.
+        Timer {
+            interval: 150; repeat: true; running: taskComposer.opened
+            onTriggered: {
+                if (!taskWindow.active && !root.active && !taskInput.inputMethodComposing)
+                    taskComposer.close()
             }
         }
-        onOpened: taskInput.forceActiveFocus()
-        function submit() {
-            if (sending || !taskInput.text.trim().length) return
-            Qt.inputMethod.commit()
-            if (taskInput.inputMethodComposing) return
-            sending = true
-            const result = root.pet.sendTask(taskInput.text, targetId)
-            sending = false
-            if (result.ok) { taskInput.clear(); close() }
-            else { error = I18n.t(result.error); taskInput.forceActiveFocus() }
-        }
-        background: Rectangle {
-            radius: height / 2
-            color: Theme.surface
-            border.color: taskComposer.error ? Theme.danger : taskInput.activeFocus ? Theme.accent : Theme.line
-        }
-        contentItem: Item {
-            enabled: taskComposer.desiredOpen
-            InputField {
-                id: taskInput
-                objectName: "desktopPetTaskInput"
-                anchors.fill: parent
-                leftPadding: 18
-                rightPadding: parent.height + 4
-                maximumLength: 16000
-                Accessible.name: I18n.t("给悬浮小助手派活")
-                Accessible.description: taskComposer.error
-                onTextEdited: taskComposer.error = ""
-                onAccepted: if (!inputMethodComposing) taskComposer.submit()
-                background: null
+        PidPopup {
+            id: taskComposer
+            objectName: "desktopPetTaskComposer"
+            parent: taskWindow.contentItem
+            popupType: Popup.Item
+            property string targetId: ""
+            property string error: ""
+            property bool sending: false
+            modal: false
+            width: Math.min(Theme.control(360), root.screen.width - 24)
+            height: Math.max(52, taskInput.implicitHeight + 12)
+            padding: 0
+            // Native popups may extend beyond the small, masked pet window.
+            // Fit to the work area ourselves instead of shrinking to its parent.
+            margins: -1
+            focus: true
+            closePolicy: taskInput.inputMethodComposing ? Popup.NoAutoClose : Popup.CloseOnEscape
+            onAboutToHide: Qt.inputMethod.reset()
+            onOpened: {
+                taskWindow.requestActivate()
+                taskInput.forceActiveFocus(Qt.PopupFocusReason)
+                Qt.inputMethod.update(Qt.ImQueryAll)
             }
-            Button {
-                id: taskSend
-                objectName: "desktopPetTaskSend"
-                // Both circles share the right end cap's exact center.
-                width: parent.height - 16
-                height: width
-                x: parent.width - parent.height / 2 - width / 2
-                y: (parent.height - height) / 2
-                padding: 0
-                hoverEnabled: true
-                enabled: taskInput.text.trim().length > 0 && !taskComposer.sending
-                opacity: enabled ? 1 : 0.4
-                Accessible.name: I18n.t("发送")
-                HoverHandler { cursorShape: taskSend.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
-                background: Rectangle {
-                    radius: width / 2
-                    color: taskSend.down ? Qt.darker(Theme.button, 1.1) : taskSend.hovered ? Qt.lighter(Theme.button, 1.1) : Theme.button
+            function submit() {
+                if (sending || !taskInput.text.trim().length) return
+                Qt.inputMethod.commit()
+                if (taskInput.inputMethodComposing) return
+                sending = true
+                const result = root.pet.sendTask(taskInput.text, targetId)
+                sending = false
+                if (result.ok) { taskInput.clear(); close() }
+                else { error = I18n.t(result.error); taskInput.forceActiveFocus() }
+            }
+            background: Rectangle {
+                radius: height / 2
+                color: Theme.surface
+                border.color: taskComposer.error ? Theme.danger : taskInput.activeFocus ? Theme.accent : Theme.line
+            }
+            contentItem: Item {
+                enabled: taskComposer.desiredOpen
+                InputField {
+                    id: taskInput
+                    objectName: "desktopPetTaskInput"
+                    anchors.fill: parent
+                    leftPadding: 18
+                    rightPadding: parent.height + 4
+                    maximumLength: 16000
+                    Accessible.name: I18n.t("给悬浮小助手派活")
+                    Accessible.description: taskComposer.error
+                    onTextEdited: taskComposer.error = ""
+                    Keys.onEscapePressed: event => {
+                        if (inputMethodComposing) { Qt.inputMethod.reset(); event.accepted = true }
+                        else event.accepted = false
+                    }
+                    onAccepted: if (!inputMethodComposing) taskComposer.submit()
+                    background: null
                 }
-                contentItem: Item {
-                    Glyph { anchors.centerIn: parent; name: "arrow-up"; color: Theme.buttonText; width: Theme.icon(18); height: width }
+                Button {
+                    id: taskSend
+                    objectName: "desktopPetTaskSend"
+                    // Both circles share the right end cap's exact center.
+                    width: parent.height - 16
+                    height: width
+                    x: parent.width - parent.height / 2 - width / 2
+                    y: (parent.height - height) / 2
+                    padding: 0
+                    hoverEnabled: true
+                    enabled: taskInput.text.trim().length > 0 && !taskComposer.sending
+                    opacity: enabled ? 1 : 0.4
+                    Accessible.name: I18n.t("发送")
+                    HoverHandler { cursorShape: taskSend.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                    background: Rectangle {
+                        radius: width / 2
+                        color: taskSend.down ? Qt.darker(Theme.button, 1.1) : taskSend.hovered ? Qt.lighter(Theme.button, 1.1) : Theme.button
+                    }
+                    contentItem: Item {
+                        Glyph { anchors.centerIn: parent; name: "arrow-up"; color: Theme.buttonText; width: Theme.icon(18); height: width }
+                    }
+                    onClicked: taskComposer.submit()
                 }
-                onClicked: taskComposer.submit()
             }
-        }
-        ToolTip {
-            parent: taskComposer.contentItem
-            x: 0
-            y: -height - 8
-            width: Math.min(implicitWidth, taskComposer.width)
-            visible: taskComposer.opened && taskComposer.error.length > 0
-            text: taskComposer.error
-            padding: 10
-            background: Rectangle { radius: 10; color: Theme.surface; border.color: Theme.danger }
-            contentItem: Text {
-                text: taskComposer.error; textFormat: Text.PlainText
-                font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible)
-                color: Theme.ink; wrapMode: Text.Wrap
+            ToolTip {
+                parent: taskComposer.contentItem
+                x: 0
+                y: -height - 8
+                width: Math.min(implicitWidth, taskComposer.width)
+                visible: taskComposer.opened && taskComposer.error.length > 0
+                text: taskComposer.error
+                padding: 10
+                background: Rectangle { radius: 10; color: Theme.surface; border.color: Theme.danger }
+                contentItem: Text {
+                    text: taskComposer.error; textFormat: Text.PlainText
+                    font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible)
+                    color: Theme.ink; wrapMode: Text.Wrap
+                }
             }
         }
     }

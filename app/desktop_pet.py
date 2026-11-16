@@ -471,6 +471,14 @@ class DesktopPet(QObject):
             self.load_packs()
             self.changed.emit()
 
+    @Slot(result='QVariantMap')
+    def cursorPosition(self):
+        # Use screen coordinates: native popup forwarding can remap local
+        # mouse events while the pet itself is moving.
+        from PySide6.QtGui import QCursor
+        point = QCursor.pos()
+        return {'x': point.x(), 'y': point.y()}
+
     @Slot(int, int)
     def savePosition(self, x, y):
         if self.closed:
