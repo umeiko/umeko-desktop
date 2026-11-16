@@ -10,6 +10,7 @@ import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from ".
 import { UMEKO_TOOL, SEND_TO_USER, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
+import { attachSessionAffinity } from "./session-affinity.mjs";
 import { createInputQueue } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
@@ -342,6 +343,7 @@ async function restoreSubagentSession(child, context, customTools) {
     modelRuntime,model,settingsManager:policy,resourceLoader:loader,thinkingLevel:context?.thinkingLevel || "off",
     customTools,excludeTools:["subagent","get_subagent_result","steer_subagent",...blockedToolNames(config.blockedTools)],
     tools:context?.tools || (readonly ? ["read","grep","find","ls"] : undefined)});
+  attachSessionAffinity(session);
   auxiliaryVision.guardSession(session);
   await session.bindExtensions({uiContext:childPermissionUI(ui),mode:"rpc",abortHandler:()=>session.abort(),
     shutdownHandler:()=>session.abort(),onError:error=>emit({type:"notice",message:error.message})});
@@ -443,6 +445,7 @@ async function init(input) {
     // generation/compaction overrides stay in memory on the session itself.
     services.settingsManager = settings;
     const result = await Pi.createAgentSessionFromServices({ services, sessionManager, sessionStartEvent, model: selectedModel, excludeTools: input.globalCoordinator ? undefined : [...new Set([...blockedToolNames(input.blockedTools),...excludedSessionTools(input.piCapabilities)])] });
+    attachSessionAffinity(result.session);
     await promptController.attach(result.session, services.resourceLoader);
     promptControllers.set(result.session, promptController);
     auxiliaryVision.guardSession(result.session);

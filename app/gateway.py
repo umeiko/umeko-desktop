@@ -196,6 +196,7 @@ class Gateway:
             raise ValueError("当前模型未启用视觉，请在模型配置中勾选“视觉”或切换支持图片的模型")
         tools = tools or []
         parameters = dict(parameters or {})
+        session_affinity = parameters.pop("_umeko_session_affinity", None)
         private_intent = "_umeko_reasoning_effort" in parameters
         probe_override = "_umeko_reasoning_format" in parameters
         format_override = parameters.pop("_umeko_reasoning_format", None)
@@ -266,7 +267,7 @@ class Gateway:
             if tools:
                 body["tools"] = [{"type": "function", "function": t} for t in tools]
         from .request_headers import build, OmitHeaders
-        headers, omitted = build(self.store.data.get('requestHeaders'), p)
+        headers, omitted = build(self.store.data.get('requestHeaders'), p, session_affinity=session_affinity)
         request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
         opener = urllib.request.build_opener(proxy_handler(p.get('proxy')), urllib.request.HTTPSHandler(context=tls_context(p.get('proxy'))), NoRedirect(), OmitHeaders(omitted))
         record = {'request': {'url': url, 'method': 'POST', 'headers': headers, 'body': body},
@@ -417,6 +418,12 @@ class LocalServer:
                     tools = body.get("tools", [])
                     tools = [{"name": t["name"], "description": t.get("description", ""), "parameters": t["input_schema"]} for t in tools] if anth else [t["function"] for t in tools]
                     parameters = {k: body[k] for k in ("temperature", "top_p", "top_k", "stop", "tool_choice", "parallel_tool_calls", "reasoning_effort", "enable_thinking", "chat_template_kwargs", "thinking", "reasoning") if k in body}
+                    if owner.private:
+                        affinity = self.headers.get("x-session-affinity")
+                        if affinity is not None:
+                            if not re.fullmatch(r"[0-9a-f]{32}", affinity):
+                                raise ValueError("Invalid private session affinity")
+                            parameters["_umeko_session_affinity"] = affinity
                     if owner.private and "_umeko_reasoning_effort" in body:
                         effort = body["_umeko_reasoning_effort"]
                         if not isinstance(effort, str) or not effort:

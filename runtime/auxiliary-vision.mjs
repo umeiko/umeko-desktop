@@ -3,6 +3,7 @@ import { Type } from 'typebox';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
+import { sessionAffinityHeaders } from './session-affinity.mjs';
 
 export const ANALYZE_IMAGE = 'analyze_image';
 export const AUTO_VISION_ENTRY = 'umeko-auto-vision';
@@ -60,7 +61,7 @@ export function createAuxiliaryVision({getConfig, emit = () => {}, fetchImpl = g
     };
   }
 
-  async function analyze(images, question, signal) {
+  async function analyze(images, question, signal, sessionId) {
     if (signal?.aborted) throw signal.reason || new Error('Image analysis cancelled');
     const config = getConfig(), target = {...options()};
     if (!target.model || !target.providerId) throw new Error('No auxiliary vision model is configured');
@@ -79,7 +80,7 @@ export function createAuxiliaryVision({getConfig, emit = () => {}, fetchImpl = g
       return {...value, cached:true};
     }
     const response = await fetchImpl(new URL('v1/chat/completions', config.gateway), {
-      method:'POST', headers:{Authorization:'Bearer '+config.token,'Content-Type':'application/json'},
+      method:'POST', headers:{Authorization:'Bearer '+config.token,'Content-Type':'application/json',...sessionAffinityHeaders(sessionId)},
       signal:AbortSignal.any([...(signal ? [signal] : []),AbortSignal.timeout(timeoutMs)]),
       body:JSON.stringify({model:target.model,_umeko_provider:target.providerId,stream:true,max_tokens:4096,
         messages:[{role:'system',content:SYSTEM},{role:'user',content:[{type:'text',text:question},
@@ -143,7 +144,7 @@ export function createAuxiliaryVision({getConfig, emit = () => {}, fetchImpl = g
           const data = {version:1, startedAt, target:{model:target.model,modelName:target.modelName || target.model,providerId:target.providerId,providerName:target.providerName || target.providerId,label:target.modelName || target.model}, imageKeys:missing.map(image=>image.key),
             references:missing.map(image=>({source,index:image.index,key:image.key})), tool};
           try {
-            const result = await analyze(missing.map(image=>image.block),task,ctx.signal);
+            const result = await analyze(missing.map(image=>image.block),task,ctx.signal,ctx.sessionManager?.getSessionId?.());
             tool.state = 'done'; tool.result = result.text;
             if (result.cached) args.cached = true;
             pi.appendEntry(AUTO_VISION_ENTRY,data);
@@ -191,7 +192,7 @@ export function createAuxiliaryVision({getConfig, emit = () => {}, fetchImpl = g
           if (data.length > MAX_IMAGE_BYTES) throw new Error('Image exceeds 8 MiB');
           images.push({type:'image',data:data.toString('base64'),mimeType});
         }
-        const result=await analyze(images,params.question,signal);
+        const result=await analyze(images,params.question,signal,ctx.sessionManager?.getSessionId?.());
         return {content:[{type:'text',text:result.text}],details:{model:result.model,modelName:result.label,providerId:result.providerId,providerName:result.provider,cached:!!result.cached}};
       }});
   }

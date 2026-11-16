@@ -9,6 +9,7 @@ import { SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
 import { backgroundJobsExtension } from "./background-jobs.mjs";
 import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI } from "./tool-permissions.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
+import { attachSessionAffinity } from "./session-affinity.mjs";
 
 const permissionHost = () => globalThis[Symbol.for("umeko:tool-permission-host")];
 
@@ -43,6 +44,7 @@ export class DefaultResourceLoader extends NativeResourceLoader {
 // the narrow handoff between its SDK facade and the desktop extension.
 export async function createAgentSession(options) {
   const result = await nativeCreateAgentSession({...options, excludeTools: [...(options?.excludeTools || []), ...(globalThis[Symbol.for("umeko:tool-visibility-host")]?.getBlockedTools() || [])]});
+  attachSessionAffinity(result.session);
   globalThis[Symbol.for("umeko:auxiliary-vision")]?.guardSession(result.session);
   // The community package binds children with {}. Relay supported confirmations
   // through the desktop while leaving genuinely headless contexts headless.

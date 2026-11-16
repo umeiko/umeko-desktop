@@ -44,12 +44,14 @@ def validate(value):
     return rows
 
 
-def build(value, provider):
+def build(value, provider, *, session_affinity=None):
     rows = validate(value if value is not None else [])
     protocol = 'anthropic' if provider.get('api') == 'anthropic' else 'openai'
     rows = [row for row in rows if SCOPES.get(row['id'], protocol) == protocol]
     headers = {row['name']: row['value'].replace('{{apiKey}}', provider.get('key', ''))
-               for row in rows if row['enabled']}
+               for row in rows if row['enabled'] and row['name'].lower() != 'x-session-affinity'}
+    if protocol == 'openai' and session_affinity:
+        headers['x-session-affinity'] = session_affinity
     if any(len(text) > 4096 or any(ord(c) < 32 or ord(c) == 127 or ord(c) > 255 for c in text) for text in headers.values()):
         raise ValueError('展开密钥后的请求头值无效或超过 4096 字符')
     # Prevent urllib/undici from silently restoring disabled or renamed defaults.
