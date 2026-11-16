@@ -11,6 +11,7 @@ sys.path.insert(0,str(ROOT))
 temp=tempfile.TemporaryDirectory(prefix='umeko-pet-ui-')
 os.environ.update(UMEKO_DATA_DIR=str(Path(temp.name)/'profile'),PI_CODING_AGENT_DIR=str(Path(temp.name)/'agent'),UMEKO_LANGUAGE='zh',QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software')
 from PySide6.QtCore import QObject, QPoint, QPointF, Qt, QMetaObject, Q_ARG
+from PySide6.QtGui import QCursor
 from PySide6.QtQml import QQmlEngine, QQmlExpression
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QSystemTrayIcon
@@ -319,7 +320,9 @@ try:
         assert 0<=picture_top-bottom<=24,'Speech bubble detached from the painted pet'
     window.grabWindow().save(str(out/'whale-speech.png'))
     original=(window.x(),window.y())
+    QCursor.setPos(window.mapToGlobal(point))
     QTest.mousePress(window,Qt.LeftButton,Qt.NoModifier,point)
+    QCursor.setPos(window.mapToGlobal(point+QPoint(-25,-15)))
     QTest.mouseMove(window,point+QPoint(-25,-15),30)
     QTest.mouseRelease(window,Qt.LeftButton,Qt.NoModifier,point)
     assert (window.x(),window.y())!=original,'Drag did not move window'
