@@ -9,7 +9,7 @@ import { SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
 import { backgroundJobsExtension } from "./background-jobs.mjs";
 import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI } from "./tool-permissions.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
-import { attachSessionAffinity } from "./session-affinity.mjs";
+import { attachSessionAffinity } from "./provider-policy.mjs";
 
 const permissionHost = () => globalThis[Symbol.for("umeko:tool-permission-host")];
 

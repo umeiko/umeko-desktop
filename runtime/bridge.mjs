@@ -1,7 +1,7 @@
 import { excludedSessionTools, toolSelection, collectToolCatalog } from "./session-capabilities.mjs";
 // JSONL presentation adapter for the complete, unmodified Pi Coding Agent SDK.
 // Tools, loop, skill expansion, extension hooks and session trees belong to Pi.
-import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-policy.mjs";
+import { installProviderPolicy, setGateway, setMcpNetwork, attachSessionAffinity } from "./provider-policy.mjs";
 import { prepareNativeSettings, sessionResourceSettings, sessionExtensionPaths, manageResources, builtins, extensionName, SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
 import { sessionSkillOptions, manageSkills } from "./skills.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
@@ -10,7 +10,6 @@ import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from ".
 import { UMEKO_TOOL, SEND_TO_USER, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
-import { attachSessionAffinity } from "./session-affinity.mjs";
 import { createInputQueue } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";

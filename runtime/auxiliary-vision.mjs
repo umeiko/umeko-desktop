@@ -3,7 +3,7 @@ import { Type } from 'typebox';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
-import { sessionAffinityHeaders } from './session-affinity.mjs';
+import { sessionAffinityHeaders } from './provider-policy.mjs';
 
 export const ANALYZE_IMAGE = 'analyze_image';
 export const AUTO_VISION_ENTRY = 'umeko-auto-vision';

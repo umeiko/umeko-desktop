@@ -131,7 +131,6 @@ def verify_runtime(release: Path, bridge_source: Path):
         copy_runtime_file(bridge_source.parent / name, release / name)
     copy_runtime_file(bridge_source.parent / 'update-cleanup.mjs', release / 'update-cleanup.mjs')
     copy_runtime_file(bridge_source.parent / 'generation.mjs', release / 'generation.mjs')
-    copy_runtime_file(bridge_source.parent / 'session-affinity.mjs', release / 'session-affinity.mjs')
     copy_runtime_file(bridge_source.parent / 'system-prompt.mjs', release / 'system-prompt.mjs')
     copy_runtime_file(bridge_source.parent / 'skills.mjs', release / 'skills.mjs')
     copy_runtime_file(bridge_source.parent / 'coordinator-skills.mjs', release / 'coordinator-skills.mjs')
