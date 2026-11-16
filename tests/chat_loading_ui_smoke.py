@@ -1,10 +1,11 @@
-"""Immediate cover, responsive cold reads, latest-click wins, and cancellation."""
+"""Delayed cover without fade, responsive cold reads, latest-click wins, warm switches, lazy settings and cancellation."""
 import json
 import os
 from pathlib import Path
 import sys
 import tempfile
 import threading
+import time
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +32,15 @@ def find(name):
         stack.extend(item.childItems())
     raise AssertionError(name)
 
+def find_object(name):
+    stack = [window.contentItem()]
+    while stack:
+        item = stack.pop()
+        if item.objectName() == name:
+            return item
+        stack.extend(item.childItems())
+    return None
+
 def click(name):
     item = find(name)
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier,
@@ -47,7 +57,7 @@ gate = threading.Event()
 try:
     # No model/network is needed to present a native transcript.
     backend._sessions = []
-    for i in range(5):
+    for i in range(6):
         path = Path(os.environ['UMEKO_DATA_DIR']) / f'{i}.jsonl'
         path.write_text(json.dumps({'type': 'message', 'id': f'm{i}', 'message': {
             'role': 'user', 'content': [{'type': 'text', 'text': f'Conversation {i}'}]
@@ -69,11 +79,22 @@ try:
     timer.setInterval(10)
     timer.timeout.connect(lambda: ticks.append(1))
     timer.start()
+    def watch_cover(seconds):
+        # Every sampled state: drawn cover is fully opaque (no fade frames).
+        samples, end = [], time.monotonic() + seconds
+        while time.monotonic() < end:
+            QTest.qWait(5)
+            samples.append((cover.property('shown'), round(cover.opacity(), 3), window.property('sidebarSwitching')))
+        return samples
+
     with patch.object(backend.transcripts, 'open', side_effect=slow_read):
         click('sidebarRow_1')
-        assert cover.isVisible() and cover.opacity() == 1, 'Old chat was not covered immediately'
+        # The old chat stays on screen for the first moments of a slow load,
+        # with input held by the still transparent cover.
+        assert cover.isVisible() and not cover.property('shown') and cover.opacity() == 0, 'Cover drew before its delay'
         assert backend.activeSession == '0'
         wait_for(lambda: bool(reads), 'Background read never started')
+        wait_for(lambda: cover.property('shown') and cover.opacity() == 1, 'Slow load never showed the cover')
         wait_for(lambda: cover.property('artworkLoaded'), 'Approved image did not load')
         before = len(ticks)
         QTest.qWait(140)
@@ -96,10 +117,45 @@ try:
         # Index handoff reveals lightweight local placeholders immediately.
         wait_for(lambda: not cover.isVisible(), 'Cover remained after completion')
 
-    # Cached switching and leaving for settings both retire pending work.
+    # Cached switching never draws the cover at all.
     click('sidebarRow_0')
-    assert not cover.isVisible(), 'Retained view should not flash a full-screen loading cover'
+    samples = watch_cover(0.4)
+    assert not any(shown for shown, _, _ in samples), 'Retained view flashed the loading cover'
     wait_for(lambda: backend.activeSession == '0' and not cover.isVisible(), 'Warm switch stayed covered')
+    # A first open that finishes within the delay never draws the cover. The
+    # delay is widened here so the check does not depend on machine speed.
+    cover.setProperty('showDelay', 5000)
+    click('sidebarRow_5')
+    samples = watch_cover(1.5)
+    cover.setProperty('showDelay', 150)
+    assert backend.activeSession == '5' and not cover.isVisible(), 'Fast first open did not finish'
+    assert not any(shown for shown, _, _ in samples), 'Fast first open drew the cover'
+    host = find('conversationHost')
+    assert not host.property('revealPending') and host.property('heldPane') is None
+    click('sidebarRow_0')
+    wait_for(lambda: backend.activeSession == '0' and not cover.isVisible(), 'Return to retained view failed')
+    # A drawn cover leaves in one step: no partially transparent frames.
+    gate.clear()
+    reads.clear()
+    with patch.object(backend.transcripts, 'open', side_effect=slow_read):
+        click('sidebarRow_2')
+        wait_for(lambda: cover.property('shown'), 'Slow load never showed the cover')
+        gate.set()
+        samples = []
+        for _ in range(25):
+            samples += watch_cover(0.2)
+            if backend.activeSession == '2' and not cover.isVisible():
+                break
+        assert backend.activeSession == '2' and not cover.isVisible(), 'Covered load did not finish'
+        assert {opacity for _, opacity, _ in samples} <= {0.0, 1.0}, samples
+    click('sidebarRow_0')
+    wait_for(lambda: backend.activeSession == '0' and not cover.isVisible(), 'Return to retained view failed')
+    # Settings are built after the first frame and are ready before first use.
+    wait_for(lambda: find_object('settingsPage') is not None, 'Settings were not preloaded')
+    assert not find_object('settingsPage').isVisible()
+    window.setProperty('page', 'settings')
+    assert find_object('settingsPage').isVisible()
+    window.setProperty('page', 'chat')
     gate.clear()
     reads.clear()
     with patch.object(backend.transcripts, 'open', side_effect=slow_read):
@@ -116,7 +172,7 @@ try:
         wait_for(lambda: not window.property('sidebarSwitching') and not cover.isVisible(), 'Failed read stayed covered')
         assert backend.activeSession == '0'
     assert not warnings, '\n'.join(warnings)
-    print('CHAT_LOADING_UI_OK: immediate cover, live event loop, latest-only read, local placeholders, warm-cache fast path, cancel and failure recovery')
+    print('CHAT_LOADING_UI_OK: delayed opaque cover, live event loop, latest-only read, local placeholders, uncovered warm and fast switches, preloaded settings, cancel and failure recovery')
 finally:
     gate.set()
     backend.close()
