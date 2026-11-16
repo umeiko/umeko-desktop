@@ -1618,9 +1618,6 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             agent["toolPermissionMode"] = previous
             return self.toast.emit("工具执行权限保存失败：" + str(exc))
         self.changed.emit()
-        self._broadcast_tool_permission_mode(mode)
-
-    def _broadcast_tool_permission_mode(self, mode):
         payload = {"type": "tool_permission_mode", "mode": mode,
                    "language": self.language, "dataDir": str(self.store.directory)}
         for record in self._pool.records.values():
@@ -1642,23 +1639,18 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             images = values.get('maxContextImages', self.store.data['agent'].get('maxContextImages', 3))
             if type(images) is not int or images < 1:
                 raise ValueError('maxContextImages 必须是正整数')
-            mode = values.get('toolPermissionMode', self.store.data['agent'].get('toolPermissionMode', 'auto'))
-            if mode not in ('ask', 'auto'):
-                raise ValueError('工具执行权限模式无效')
             values["agentDir"] = str(Path(values.get("agentDir") or Path.home() / ".pi/agent").expanduser().resolve())
             for key in ("skillPaths", "extensionPaths"):
                 values[key] = [str(Path(p.strip()).expanduser().resolve()) for p in values.get(key, []) if p.strip()]
             previous = dict(self.store.data['agent'])
             self.store.data["agent"].update({k: values[k] for k in ("maxTokens", "instructions", "autoCompaction", "agentDir", "skillPaths", "extensionPaths")})
-            self.store.data['agent'].update(maxContextImages=images, toolPermissionMode=mode)
+            self.store.data['agent']['maxContextImages'] = images
             try:
                 self.store.save()
             except (OSError, RuntimeError):
                 self.store.data['agent'].clear()
                 self.store.data['agent'].update(previous)
                 raise
-            if mode != previous.get('toolPermissionMode', 'auto'):
-                self._broadcast_tool_permission_mode(mode)
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("Pi 设置已保存，下次加载生效")

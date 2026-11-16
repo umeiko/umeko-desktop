@@ -276,7 +276,7 @@ class UmekoControl(QObject):
             settings = b.config
             settings.pop('sessionMeta', None)
             return {'config': redacted(settings), 'activeSession': b.activeSession, 'callerSession': caller.id if caller else '',
-                    'loginStartup': redacted(b.loginStartup.state)}
+                    'loginStartup': redacted(getattr(getattr(b, 'loginStartup', None), 'state', {}))}
         if operation == 'providers.list': return {'providers': redacted(b.config['providers']), 'presets': b.commonProviders}
         if operation == 'models.list':
             return {'models': [dict(model='umeko/'+row['id'], id=row['id'], provider='umeko', displayProvider=row.get('owned_by', 'Umeko'), contextWindow=row['contextWindow'], vision='image' in row['input'])
@@ -385,12 +385,11 @@ class UmekoControl(QObject):
         if operation == 'extensions.activation' and args['mode'] not in ('global','session','disabled'): raise ValueError('Invalid extension activation mode')
         if operation == 'agent.save':
             patch = values[0]
-            allowed = {'maxTokens', 'instructions', 'autoCompaction', 'agentDir', 'skillPaths', 'extensionPaths', 'maxContextImages', 'toolPermissionMode'}
+            allowed = {'maxTokens', 'instructions', 'autoCompaction', 'agentDir', 'skillPaths', 'extensionPaths', 'maxContextImages'}
             if set(patch) - allowed: raise ValueError('Unknown Agent setting')
             if 'maxTokens' in patch and (type(patch['maxTokens']) is not int or not 256 <= patch['maxTokens'] <= 32768): raise ValueError('maxTokens must be an integer from 256 to 32768')
             if 'autoCompaction' in patch and type(patch['autoCompaction']) is not bool: raise ValueError('autoCompaction must be boolean')
             if 'maxContextImages' in patch and (type(patch['maxContextImages']) is not int or patch['maxContextImages'] < 1): raise ValueError('maxContextImages must be a positive integer')
-            if 'toolPermissionMode' in patch and patch['toolPermissionMode'] not in ('ask', 'auto'): raise ValueError('toolPermissionMode must be ask or auto')
             for key in ('instructions', 'agentDir'):
                 if key in patch and not isinstance(patch[key], str): raise ValueError(key + ' must be a string')
             if len(patch.get('instructions', '')) > 16000: raise ValueError('instructions exceeds 16000 characters')
@@ -407,8 +406,9 @@ class UmekoControl(QObject):
         for index, field in enumerate(fields):
             if field[0] == 'path' and spec['target'] != 'dsh': values[index] = QUrl.fromLocalFile(str(Path(values[index]).expanduser().resolve())).toString()
             if field[1] == 'json': values[index] = json.dumps(values[index], ensure_ascii=False)
-        target = {'backend': b, 'plugins': b.providerPlugins, 'management': b.piManagement, 'about': b.appAbout,
-                  'dsh': b.dshRuntime, 'startup': b.loginStartup, 'documents': b.documentPreview}[spec['target']]
+        target = b if spec['target'] == 'backend' else getattr(b, {
+            'plugins': 'providerPlugins', 'management': 'piManagement', 'about': 'appAbout',
+            'dsh': 'dshRuntime', 'startup': 'loginStartup', 'documents': 'documentPreview'}[spec['target']])
         messages = []
         capture = lambda message: messages.append(message)
         before = {p['id'] for p in b.config['providers']}

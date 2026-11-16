@@ -54,7 +54,6 @@ Python 版把设置页中的日常配置接到统一桌面操作上。Agent 可�
 | 空闲会话缓存数 | `sessions.cache {size}`；整数 0–2147483647，默认 3 | `settings.json` 的 ui.sessionCacheSize；保存后立即调整空闲缓存。设为 0 时仍保留当前空闲会话；运行中与等待审批的会话继续保留 | [PreferencesMixin.setSessionCacheSize](../app/preferences.py) |
 | 内置模型请求头 | `network.requestHeaders {headers:[{id,name,value,enabled},...]}`；最多 32 项 | `settings.json` 的 requestHeaders；后续内置模型请求采用。`{{apiKey}}` 发送时替换；插件与 dsh 使用各自配置 | [PreferencesMixin.saveRequestHeaders](../app/preferences.py)、[request_headers.validate](../app/request_headers.py) |
 | 上下文图片上限 | 扩展 `agent.save {config:{maxContextImages}}`；正整数，默认 3 | `settings.json` 的 agent.maxContextImages；保存后按 Pi 重载边界生效。请求中的用户附件和工具图片共同计数；超限时按现有规则移出最旧图片 | [Controller.saveAgent](../app/controller.py)、[ControllerRuntime](../app/controller_runtime.py) |
-| 全局工具执行权限 | 扩展 `agent.save {config:{toolPermissionMode:"ask"或"auto"}}` | `settings.json` 的 agent.toolPermissionMode；通过现有进程通道热更新，当前任务继续运行 | [Controller.setToolPermissionMode](../app/controller.py) |
 | dsh 运行时路径 | `dsh.path {path}`；本机路径，空字符串恢复自动查找 | `settings.json` 的 dsh.dshPath；保存后运行时进入待检查状态，按页面提示检查 | [DshRuntime.setPath](../app/dsh_runtime.py) |
 | dsh 模型配置来源 | `dsh.useOwnConfig {enabled}`；布尔值 | `settings.json` 的 dsh.useOwnConfig；新 dsh 会话开始时固定来源 | [DshRuntime.setUseOwnConfig](../app/dsh_runtime.py)、[DshBackend](../app/dsh_backend.py) |
 | 登录启动应用/代理 | `desktop.startup {umeko,proxy}`；两个布尔值 | 系统当前用户启动项；下次登录执行所选功能。源码运行时按现有控制器报告不可用 | [LoginStartupSettings.setEnabled](../app/login_session.py)、[LoginStartup.set_enabled](../app/login_startup.py) |
@@ -91,6 +90,7 @@ Python 版把设置页中的日常配置接到统一桌面操作上。Agent 可�
 
 | 设置或状态 | 保存位置 | 保留的操作边界与应用时机 | 依据 |
 | --- | --- | --- | --- |
+| 全局工具执行权限 toolPermissionMode | `settings.json` 的 agent | 用户在界面选择 ask/auto，沿用现有热更新；Agent 保存其他字段时保留该模式 | [ToolPermissionTests](../tests/test_tool_permissions.py) 的模块原注释 `Permission preferences and UI-only updates, without services or model calls.` 及 `test_agent_api_cannot_change_mode_but_other_settings_preserve_it`；[Controller.setToolPermissionMode](../app/controller.py) |
 | 插件会话 profile 的 workspace/tools/permissionMode/allowApprovals | `settings.json` 顶层 pluginSessionProfiles | 用户创建和批准配置；模型连接与思考强度操作只修改各自字段。workspace 必须为存在的绝对目录，已绑定会话换工作区需新外部键；tools 为精确工具名，permissionMode 为 ask/auto，allowApprovals 显式 true 才开放单次审批处理 | [session_policy/set_profile_model](../app/plugin_sessions.py)、[Widget 插件文档](../runtime/umeko-docs/widget-plugins.md) |
 | 插件会话工具与权限上限 | 同上，启动和输入边界计算策略 | 管理工具 umeko_desktop、pi、pi_commands 始终排除；桌面 ask 强制约束插件会话。每次排队输入重新应用用户批准的上限，子 Agent 继承同一限制 | [session_policy/apply_session_policy/PluginSessions._next](../app/plugin_sessions.py)、[ControllerRuntime](../app/controller_runtime.py) |
 | 会话危险操作授权 dangerousAllowed | `settings.json` 的 sessionMeta | 用户在具体高风险 confirm 对话中授予；dsh、全局 Agent、归档及插件会话使用各自受限流程 | [Controller.canGrantDangerousApproval/grantDangerousApproval](../app/controller.py) |

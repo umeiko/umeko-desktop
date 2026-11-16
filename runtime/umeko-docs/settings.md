@@ -31,7 +31,7 @@ Agent 可通过 `desktop.startup {"umeko":true,"proxy":false}` 设置这两个�
 {"operation":"agent.save","arguments":{"config":{"maxTokens":16384,"autoCompaction":true}}}
 ```
 
-可配置字段：`maxTokens`（256–32768，本次回答上限）、`instructions`（最多 16000 字符的自定义指令）、`autoCompaction`（布尔）、`agentDir`（Pi 用户资源目录）、`skillPaths`、`extensionPaths`（额外路径数组）、`maxContextImages`（正整数，默认 3）和 `toolPermissionMode`（`ask` 或 `auto`）。路径使用本机路径，建议绝对路径。资源和上下文配置保存后重载相关 Pi 会话，忙碌会话在任务结束后应用；工具权限通过已有进程通道热更新，任务继续执行。原始聊天文件保持完整；长历史在界面上的分区显示与模型上下文各自独立。
+可配置字段：`maxTokens`（256–32768，本次回答上限）、`instructions`（最多 16000 字符的自定义指令）、`autoCompaction`（布尔）、`agentDir`（Pi 用户资源目录）、`skillPaths`、`extensionPaths`（额外路径数组）和 `maxContextImages`（正整数，默认 3）。路径使用本机路径，建议绝对路径。资源和上下文配置保存后重载相关 Pi 会话，忙碌会话在任务结束后应用。全局工具权限 `toolPermissionMode` 继续由用户在界面选择，保存后通过已有进程通道热更新。原始聊天文件保持完整；长历史在界面上的分区显示与模型上下文各自独立。
 
 `agent.recovery` 的 `enabled` 打开/关闭恢复模式；恢复模式禁用用户扩展和资源，仍保留 Umeko 内置工具。`agent.refresh` 重新扫描并应用资源。`agent.restoreFactory` 先备份，再恢复内核；只有用户要求恢复时才调用。
 

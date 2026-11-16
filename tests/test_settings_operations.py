@@ -297,7 +297,7 @@ class SettingsOperationTests(unittest.TestCase):
                           {'fileType': 1, 'mode': 'source'}, {'fileType': 'html', 'mode': False}):
             self.rejected('documents.previewMode', arguments)
 
-    def test_agent_partial_settings_preserve_existing_values_and_broadcast_permission(self):
+    def test_agent_partial_settings_preserve_existing_values_and_permission_boundary(self):
         agent = self.b.store.data['agent']
         previous = copy.deepcopy(agent)
         self.applied('agent.save', {'config': {'maxContextImages': 5}})
@@ -306,14 +306,11 @@ class SettingsOperationTests(unittest.TestCase):
         self.applied('agent.save', {'config': {'autoCompaction': not previous['autoCompaction']}})
         self.assertEqual(agent['maxContextImages'], 5)
         self.assertEqual(agent['autoCompaction'], not previous['autoCompaction'])
-        record = self.other_record('live-permission')
-        record.process = object()
-        self.applied('agent.save', {'config': {'toolPermissionMode': 'ask'}})
-        self.assertEqual(agent['toolPermissionMode'], 'ask')
-        self.write.assert_any_call(record, {'type': 'tool_permission_mode', 'mode': 'ask',
-            'language': self.b.language, 'dataDir': str(self.b.store.directory)})
+        self.rejected('agent.save', {'config': {'toolPermissionMode': 'ask'}})
+        self.assertEqual(agent['toolPermissionMode'], previous['toolPermissionMode'])
+        self.write.assert_not_called()
         persisted = self.persisted()['agent']
-        self.assertEqual((persisted['maxContextImages'], persisted['toolPermissionMode']), (5, 'ask'))
+        self.assertEqual((persisted['maxContextImages'], persisted['toolPermissionMode']), (5, previous['toolPermissionMode']))
         for config in ({'maxContextImages': 0}, {'maxContextImages': True}, {'maxContextImages': '3'},
                        {'toolPermissionMode': 'invalid'}, {'toolPermissionMode': 1},
                        {'autoCompaction': 'yes'}, {'unknown': True}):
@@ -322,7 +319,7 @@ class SettingsOperationTests(unittest.TestCase):
     def test_agent_save_failure_rolls_back_and_does_not_broadcast_or_restart(self):
         previous = copy.deepcopy(self.b.store.data['agent'])
         with patch.object(self.b.store, 'save', side_effect=OSError('fixture save failed')):
-            self.rejected('agent.save', {'config': {'maxContextImages': 7, 'toolPermissionMode': 'ask'}})
+            self.rejected('agent.save', {'config': {'maxContextImages': 7}})
         self.assertEqual(self.b.store.data['agent'], previous)
         self.write.assert_not_called()
         self.restart.assert_not_called()
