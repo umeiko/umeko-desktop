@@ -7,6 +7,9 @@ Column {
     id: root
     objectName: "aboutPage"
     readonly property var about: backend.appAbout
+    // Progress shares the release notifier. Keep Markdown input stable: Qt's
+    // normalized text differs from its source and reassigning it resets reading state.
+    readonly property string releaseNotes: about.release.notes || ""
     readonly property bool transferring: about.download.state === "downloading" || about.download.state === "verifying"
     function bytes(value) {
         const n = Math.max(0, Number(value || 0))
@@ -87,11 +90,11 @@ Column {
 
             Text { font.family: Theme.fontFamily; Layout.fillWidth: true; visible: !!root.about.installation.message; text: I18n.t(root.about.installation.message); color: root.about.installation.state === "error" ? Theme.danger : Theme.muted; font.pixelSize: Theme.font(12, visible); wrapMode: Text.Wrap; textFormat: Text.PlainText }
             InlineScrollView {
-                visible: (root.about.release.notes || "") !== ""
+                visible: root.releaseNotes !== ""
                 Layout.fillWidth: true; Layout.preferredHeight: 160; clip: true
                 TextArea {
                     objectName: "appReleaseNotes"
-                    text: Markdown.forQt(root.about.release.notes || "")
+                    text: Markdown.forQt(root.releaseNotes)
                     textFormat: TextEdit.MarkdownText
                     readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap
                     color: Theme.ink; palette.link: Theme.accent

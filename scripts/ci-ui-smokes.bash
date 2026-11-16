@@ -103,6 +103,7 @@ smokes=(
   tests/provider_login_cancel_ui_smoke.py
   tests/pid_thread_ui_smoke.py
   tests/input_method_ui_smoke.py
+  tests/update_notes_ui_smoke.py
 )
 
 mkdir -p build
