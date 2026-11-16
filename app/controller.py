@@ -15,6 +15,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 from dataclasses import replace
+from types import SimpleNamespace
 
 from PySide6.QtCore import QObject, Property, QProcess, QProcessEnvironment, QTimer, QUrl, Signal, Slot, QBuffer, QIODevice, QMimeData
 from PySide6.QtGui import QGuiApplication, QDesktopServices, QFont, QFontDatabase, QImageReader, QWindow
@@ -159,7 +160,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Property('QVariantList', notify=changed)
     def pluginSessionModels(self):
-        return [{'providerId': row['providerID'], 'model': row['id'], 'label': row['owned_by'] + ' / ' + row['id']}
+        return [{'providerId': row['providerID'], 'model': row['id'], 'label': row['owned_by'] + ' / ' + row['id'],
+                 'reasoningLevels': self._reasoning_levels(SimpleNamespace(model=row['id'], provider=row['providerID']))}
                 for row in self.gateway.models()]
 
     @Slot(str, str, str, str, result=bool)
@@ -173,6 +175,25 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             return False
         self.changed.emit()
         self.toast.emit('插件会话模型已更新，下一次输入时生效')
+        return True
+
+    @Slot(str, result=bool)
+    def setDefaultReasoningEffort(self, value):
+        """Set the effort inherited by new desktop sessions."""
+        if value != 'off' and value not in self._reasoning_levels():
+            self.toast.emit('请选择当前桌面模型支持的思考档位')
+            return False
+        ui = self.store.data['ui']
+        previous = dict(ui)
+        ui['reasoningEffort'] = value
+        try:
+            self.store.save()
+        except (OSError, RuntimeError) as error:
+            ui.clear()
+            ui.update(previous)
+            self.toast.emit(str(error))
+            return False
+        self.changed.emit()
         return True
 
     def _settings_changed_externally(self, keys, invalid):
@@ -1615,11 +1636,21 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 values[key] = int(values[key])
             if len(values["instructions"]) > 16000:
                 raise ValueError("自定义指令不能超过 16000 字符")
+            images = values.get('maxContextImages', self.store.data['agent'].get('maxContextImages', 3))
+            if type(images) is not int or images < 1:
+                raise ValueError('maxContextImages 必须是正整数')
             values["agentDir"] = str(Path(values.get("agentDir") or Path.home() / ".pi/agent").expanduser().resolve())
             for key in ("skillPaths", "extensionPaths"):
                 values[key] = [str(Path(p.strip()).expanduser().resolve()) for p in values.get(key, []) if p.strip()]
+            previous = dict(self.store.data['agent'])
             self.store.data["agent"].update({k: values[k] for k in ("maxTokens", "instructions", "autoCompaction", "agentDir", "skillPaths", "extensionPaths")})
-            self.store.save()
+            self.store.data['agent']['maxContextImages'] = images
+            try:
+                self.store.save()
+            except (OSError, RuntimeError):
+                self.store.data['agent'].clear()
+                self.store.data['agent'].update(previous)
+                raise
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("Pi 设置已保存，下次加载生效")

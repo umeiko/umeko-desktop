@@ -170,7 +170,7 @@ Agent 可调用插件公开方法传入结构化数据。插件通过 `context.p
 
 `reasoningEffort` 是可选的思考档位。配置值优先；未配置时继承 `ui.reasoningEffort`，两者均未配置时使用 `off`。通用值为 `off`、`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`、`ultra`，也可填写所选模型直接支持的自定义档位；其他值会报错。宿主按所选模型支持的档位对齐：`off` 或模型直接支持的值保持不变；其他通用值选择最接近的受支持通用档位，距离相同时选择较低档位；没有可匹配档位时使用 `off`。因此，配置的档位不一定是模型最终使用的档位。配置列表每行也返回 `reasoningEffort`；未配置时返回空字符串，表示继承桌面默认。
 
-已有配置可在应用运行时修改，无需退出应用：用户在“设置 → Agent → 插件会话模型”中选择模型，或由 Agent 调用 `pluginSessions.setModel`（仅 Python 版）修改模型、供应商或思考档位。先用 `settings.get` 读取 `pluginSessionProfiles`，用 `models.list` 查询可用的桌面模型别名：
+已有配置可在应用运行时修改，无需退出应用：用户在“设置 → Agent → 插件会话模型”中选择模型和思考强度，或由 Agent 调用 `pluginSessions.setModel`（仅 Python 版）修改模型、供应商或思考档位。思考下拉框随所选模型列出实际支持的档位，并提供 `off`；未配置时显示“沿用桌面”。切换模型后保留配置档位，宿主在下一次输入时对齐实际使用值。先用 `settings.get` 读取 `pluginSessionProfiles`，用 `models.list` 查询可用的桌面模型别名：
 
 ```json
 {"operation":"pluginSessions.setModel","arguments":{"plugin":"session-task-service","profile":"tasks","model":"test-model","provider":"Test provider","reasoningEffort":"high"}}
@@ -180,6 +180,12 @@ Agent 可调用插件公开方法传入结构化数据。插件通过 `context.p
 
 ```json
 {"operation":"pluginSessions.setModel","arguments":{"plugin":"example-service","profile":"tasks","model":"","provider":"","reasoningEffort":"medium"}}
+```
+
+传入明确的操作值 `inherit` 可清除固定档位，删除配置中的 `reasoningEffort` 字段，恢复沿用桌面 `ui.reasoningEffort`。界面下拉框始终把“沿用桌面”放在第一项，选择后调用同一个 `inherit` 操作。空字符串仍表示保留当前配置。清除后的已有会话在下一次输入时使用桌面默认档位，当前回合继续按原设置完成；保存失败时恢复原来的配置字段。
+
+```json
+{"operation":"pluginSessions.setModel","arguments":{"plugin":"example-service","profile":"tasks","reasoningEffort":"inherit"}}
 ```
 
 这个操作只修改模型路由和明确传入的思考档位，工作区、工具、权限模式和审批设置保持用户批准时的值。已取得的会话在下一次输入时使用新模型和档位；正在运行的回合按原设置完成。

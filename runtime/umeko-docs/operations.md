@@ -19,6 +19,9 @@
 | `providers.certificate` | `id: string`, `caFile: string=""` | provider | 否 |
 | `models.mappings` | `models: json` | all | 否 |
 | `pluginSessions.setModel`（仅 python） | `plugin: string`, `profile: string`, `model: string=""`, `provider: string=""`, `reasoningEffort: string=""` | 无 | 否 |
+| `models.select`（仅 python） | `provider: string`, `model: string`, `sessionId: string=""` | target | 否 |
+| `sessions.reasoning`（仅 python） | `value: string`, `sessionId: string=""` | target | 否 |
+| `agent.defaultReasoning`（仅 python） | `value: string` | 无 | 否 |
 | `themes.import` | `path: string` | 无 | 否 |
 | `characters.import` | `path: string` | 无 | 否 |
 | `characters.select` | `id: string` | 无 | 否 |
@@ -29,6 +32,15 @@
 | `appearance.language` | `language: string` | 无 | 否 |
 | `appearance.fontScale` | `scale: number` | 无 | 否 |
 | `appearance.fontFamily`（仅 python） | `family: string` | 无 | 否 |
+| `appearance.lineSpacing`（仅 python） | `spacing: string` | 无 | 否 |
+| `sessions.cache`（仅 python） | `size: integer` | 无 | 否 |
+| `sessions.backend`（仅 python） | `value: string` | view | 否 |
+| `sessions.dshModel`（仅 python） | `value: string` | view | 否 |
+| `dsh.path`（仅 python） | `path: string` | 无 | 否 |
+| `dsh.useOwnConfig`（仅 python） | `enabled: boolean` | 无 | 否 |
+| `desktop.startup`（仅 python） | `umeko: boolean`, `proxy: boolean` | 无 | 否 |
+| `network.requestHeaders`（仅 python） | `headers: json` | 无 | 否 |
+| `documents.previewMode`（仅 python） | `fileType: string`, `mode: string` | 无 | 否 |
 | `appearance.sidebar` | `width: integer`, `collapsed: boolean=false` | 无 | 否 |
 | `desktop.configure`（仅 python） | `config: json` | 无 | 否 |
 | `projects.add` | `paths: json` | 无 | 否 |
@@ -107,14 +119,26 @@
 | `agent_bus.dispatch` | `targetId: string`, `text: string` | 无 | 否 |
 | `agent_bus.reply` | `requestId: string`, `result: string`, `status: string="completed"` | 无 | 否 |
 
-Widget 只读查询：`widgets.list`、`widgets.docs`、`widgets.messages`、`widgets.result`、`widgets.resource`。
+等待空闲范围 `target` 表示指定的 `sessionId`，省略时使用调用会话。
 
-`pluginSessions.setModel` 修改已有插件会话配置的模型路由和思考档位。`reasoningEffort` 为空字符串或省略时不修改档位；通用值为 `off`、`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`、`ultra`。`model` 和 `provider` 均留空时可只修改档位：
+Python 插件会话可用 `pluginSessions.setModel` 同时设置模型路由和思考强度，也可只更新思考强度：
 
 ```json
-{"operation":"pluginSessions.setModel","arguments":{"plugin":"example-service","profile":"tasks","reasoningEffort":"high"}}
+{"operation":"pluginSessions.setModel","arguments":{"plugin":"session-task-service","profile":"tasks","reasoningEffort":"medium"}}
 ```
 
-配置中的 `pluginSessionProfiles.<plugin>.<profile>.reasoningEffort` 优先于 `ui.reasoningEffort`；未配置时继承后者，两者均未配置时使用 `off`。实际使用时按所选模型支持的档位对齐，详见 [插件独立会话](widget-plugins.md#应用服务管理独立会话)。
+reasoningEffort 省略或空字符串时保留当前配置；inherit 删除配置字段并恢复沿用桌面默认档位，下一次输入生效。
+
+`inherit` 是清除档位的操作值，保存后配置中移除 `reasoningEffort` 字段。其他值可填写 `off`、`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`、`ultra` 或模型直接支持的自定义档位。省略模型时保留模型，新模型省略供应商时使用实际路由。
+
+```json
+{"operation":"pluginSessions.setModel","arguments":{"plugin":"session-task-service","profile":"tasks","reasoningEffort":"inherit"}}
+```
+
+插件会话优先使用 `pluginSessionProfiles.<plugin>.<profile>.reasoningEffort`，未配置时继承 `ui.reasoningEffort`，两者均未配置时使用 `off`。宿主在新会话或下一次输入时按模型支持的档位对齐，保存的配置值继续保留。详见 [Widget 插件](widget-plugins.md)。
+
+`agent.defaultReasoning` 设置新桌面会话的默认档位；`sessions.reasoning` 设置当前或指定会话的档位。`agent.save` 的 `config` 支持 `autoCompaction`、`maxContextImages` 等局部设置。全局工具权限沿用用户界面确认。完整设置、参数范围与生效时机见 [设置说明](settings.md)。
+
+Widget 只读查询：`widgets.list`、`widgets.docs`、`widgets.messages`、`widgets.result`、`widgets.resource`。
 
 `plugins.*` 管理 Provider 插件；`widgets.*` 管理桌面 Widget。`help` 的 `arguments.topic` 可为 `plugins`、`provider`、`widget` 或 `agents`。
