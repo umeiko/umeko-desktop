@@ -19,6 +19,7 @@ os.environ.setdefault('QT_QUICK_BACKEND', 'software')
 
 from PySide6.QtCore import QCoreApplication, QTimer
 from app.controller import Controller
+from app.plugin_sessions import apply_session_policy, session_policy, set_profile_model
 
 
 def pump_until(app, predicate, label, seconds=12):
@@ -174,6 +175,117 @@ class PluginSessionTests(unittest.TestCase):
         persisted = json.loads((self.b.store.directory / 'settings.json').read_text(encoding='utf-8'))
         self.assertTrue(persisted.get('pluginSessions'))
         self.assertIn('pluginSession', persisted['sessionMeta'][one['sessionId']])
+
+    def reasoning_profile(self, effort='medium'):
+        model = self.b.store.data['providers'][0]['models'][0]
+        model.update(reasoningLevels=['low', 'medium', 'high'], reasoningLevelsAuto=False,
+            reasoningFormat='chat-template', reasoningFormatAuto=False)
+        profile = self.b.store.data['pluginSessionProfiles']['fixture-channel']['tasks']
+        profile['reasoningEffort'] = effort
+        return profile
+
+    def test_new_session_applies_profile_effort_before_native_creation(self):
+        self.reasoning_profile()
+        original = self.command
+        observed = []
+        def command(action, record=None, **payload):
+            observed.append(record.reasoning_effort)
+            return original(action, record, **payload)
+        self.command_patch.stop()
+        self.command_patch = patch.object(self.b, '_command_pi', side_effect=command)
+        self.command_patch.start()
+        record = self.b._pool.find(self.acquire()['sessionId'])
+        self.assertEqual(observed, ['medium'])
+        self.assertEqual(record.reasoning_effort, 'medium')
+        self.assertEqual(self.b.store.data['sessionMeta'][record.id]['reasoningEffort'], 'medium')
+
+    def test_missing_profile_effort_inherits_desktop_then_off(self):
+        profile = self.reasoning_profile()
+        profile.pop('reasoningEffort')
+        self.b.store.data['ui']['reasoningEffort'] = 'medium'
+        record = self.b._pool.find(self.acquire()['sessionId'])
+        self.assertEqual(record.reasoning_effort, 'medium')
+        self.b.store.data['ui'].pop('reasoningEffort')
+        self.assertEqual(session_policy(self.b, record)['reasoningEffort'], 'off')
+
+    def test_reloaded_session_applies_current_effort(self):
+        profile = self.reasoning_profile('high')
+        owned = self.acquire()
+        old = self.b._pool.find(owned['sessionId'])
+        self.b._pool.records.pop(old.key)
+        profile['reasoningEffort'] = 'medium'
+        self.assertFalse(self.acquire()['created'])
+        record = self.b._pool.find(owned['sessionId'])
+        self.assertIsNot(record, old)
+        self.assertEqual(record.reasoning_effort, 'medium')
+        self.assertFalse(record.process)
+
+    def test_busy_effort_change_waits_for_next_queued_input(self):
+        profile = self.reasoning_profile('high')
+        owned = self.acquire()
+        record = self.b._pool.find(owned['sessionId'])
+        self.result('sessions.submit', {'handle': owned['handle'], 'requestId': 'first', 'content': 'first'})
+        profile['reasoningEffort'] = 'medium'
+        self.result('sessions.submit', {'handle': owned['handle'], 'requestId': 'second', 'content': 'second'})
+        self.assertEqual(record.reasoning_effort, 'high')
+        self.assertEqual(self.b.store.data['sessionMeta'][record.id]['reasoningEffort'], 'high')
+        self.finish(record, 'first reply')
+        pump_until(self.app, lambda: len(self.commands) == 2, 'Queued reasoning change did not apply')
+        self.assertEqual(record.reasoning_effort, 'medium')
+
+    def test_idle_effort_change_updates_live_pi_without_retiring_it(self):
+        profile = self.reasoning_profile('high')
+        record = self.b._pool.find(self.acquire()['sessionId'])
+        process = SimpleNamespace(write=lambda value: None)
+        record.process = process
+        profile['reasoningEffort'] = 'medium'
+        try:
+            with patch.object(self.b._pool, 'write') as write, patch.object(self.b._pool, 'retire') as retire:
+                apply_session_policy(self.b, record)
+                write.assert_called_once_with(record, {'type': 'reasoning_effort', 'value': 'medium'})
+                retire.assert_not_called()
+            self.assertIs(record.process, process)
+            self.assertEqual(self.b.store.data['sessionMeta'][record.id]['reasoningEffort'], 'medium')
+        finally:
+            record.process = None
+
+    def test_profile_effort_validation_and_model_reconciliation(self):
+        profile = self.reasoning_profile()
+        record = self.b._pool.find(self.acquire()['sessionId'])
+        self.b.store.data['providers'][0]['models'][0]['reasoningLevels'] = ['low', 'high']
+        self.assertEqual(session_policy(self.b, record)['reasoningEffort'], 'low')
+        for value in ('invalid', '', None, 1, [], {}):
+            with self.subTest(value=value):
+                profile['reasoningEffort'] = value
+                with self.assertRaisesRegex(ValueError, 'reasoningEffort'):
+                    session_policy(self.b, record)
+
+    def test_operation_changes_only_effort_and_rejects_invalid_values(self):
+        profile = self.reasoning_profile('high')
+        original = dict(profile)
+        result = self.b._umeko_control.execute({'operation': 'pluginSessions.setModel',
+            'arguments': {'plugin': 'fixture-channel', 'profile': 'tasks', 'reasoningEffort': 'medium'}})
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(profile, {**original, 'reasoningEffort': 'medium'})
+        self.assertEqual(self.b.pluginSessionProfiles[0]['reasoningEffort'], 'medium')
+        for value in ('invalid', 'medium high', None, 1):
+            result = self.b._umeko_control.execute({'operation': 'pluginSessions.setModel',
+                'arguments': {'plugin': 'fixture-channel', 'profile': 'tasks', 'reasoningEffort': value}})
+            self.assertFalse(result['ok'], result)
+        set_profile_model(self.b, 'fixture-channel', 'tasks', reasoningEffort='')
+        self.assertEqual(profile['reasoningEffort'], 'medium')
+
+    def test_failed_save_rolls_back_model_provider_and_effort(self):
+        profile = self.reasoning_profile('high')
+        self.b.store.data['providers'][0]['models'].append({'upstream': 'test-model-b', 'alias': 'test-model-b'})
+        for absent in (False, True):
+            if absent:
+                profile.pop('reasoningEffort')
+            previous = dict(profile)
+            with patch.object(self.b.store, 'save', side_effect=[None, OSError('Fixture save failed')]):
+                with self.assertRaises(OSError):
+                    set_profile_model(self.b, 'fixture-channel', 'tasks', 'test-model-b', reasoningEffort='medium')
+            self.assertEqual(profile, previous)
 
     def test_application_permission_profile_and_foreign_handle_boundaries(self):
         handle = self.acquire()['handle']
