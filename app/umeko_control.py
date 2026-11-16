@@ -74,6 +74,10 @@ class UmekoControl(QObject):
     def _blocked(self, spec, args, caller):
         records = list(self.b._pool.records.values())
         mode = spec.get('idle')
+        if mode == 'target':
+            record = self.b._pool.find(args['sessionId']) if args.get('sessionId') else caller or self.b._view
+            return bool(record and record.busy)
+        if spec.get('target') == 'dsh' and self.b.dshRuntime.busy: return True
         if spec.get('target') == 'management' and (self.b.piManagement.busy or self.b.kernelBusy): return True
         if spec.get('method') == 'checkKernel' and (self.b._view.busy or self.b.kernelBusy): return True
         if mode == 'all' and (any(r.busy for r in records) or self.b.piManagement.busy or self.b.kernelBusy): return True
@@ -271,7 +275,8 @@ class UmekoControl(QObject):
         if operation == 'settings.get':
             settings = b.config
             settings.pop('sessionMeta', None)
-            return {'config': redacted(settings), 'activeSession': b.activeSession, 'callerSession': caller.id if caller else ''}
+            return {'config': redacted(settings), 'activeSession': b.activeSession, 'callerSession': caller.id if caller else '',
+                    'loginStartup': redacted(b.loginStartup.state)}
         if operation == 'providers.list': return {'providers': redacted(b.config['providers']), 'presets': b.commonProviders}
         if operation == 'models.list':
             return {'models': [dict(model='umeko/'+row['id'], id=row['id'], provider='umeko', displayProvider=row.get('owned_by', 'Umeko'), contextWindow=row['contextWindow'], vision='image' in row['input'])
@@ -320,26 +325,6 @@ class UmekoControl(QObject):
             if args.get('id') and args['id'] not in visible_jobs: raise ValueError('Job ID does not exist in this session')
             return {'jobs': redacted([{'id': key, **{k: v for k, v in job.items() if k in ('operation', 'status', 'result')}}
                                      for key, job in visible_jobs.items() if not args.get('id') or key == args['id']])}
-        if operation in ('models.select', 'sessions.reasoning'):
-            target = b._pool.find(args.get('sessionId', '')) if args.get('sessionId') else caller or b._view
-            if not target: raise ValueError('Session is no longer loaded')
-            if operation == 'models.select':
-                if target.busy and queue: return self._queue(operation, {**args, 'sessionId': target.id}, caller)
-                if target.busy: raise ValueError('Session is still busy')
-                b.gateway.resolve(args['model'], args['provider'])
-                target.provider, target.model = args['provider'], args['model']
-                b._reconcile_reasoning(target)
-                target.context_usage = {}
-                if target is b._view:
-                    b.store.data.update(selectedProvider=target.provider, selectedModel=target.model)
-            else:
-                if args.get('value') != 'off' and args.get('value') not in b._reasoning_levels(target): raise ValueError('Reasoning must be off or one of the configured model levels')
-                target.reasoning_effort = args['value']
-                if target.id: b.store.data['sessionMeta'].setdefault(target.id, {})['reasoningEffort'] = args['value']
-                if target is b._view: b.store.data['ui']['reasoningEffort'] = args['value']
-                b._write_pi({'type': 'reasoning_effort', 'value': args['value']}, target)
-            b.store.save(); b.changed.emit(); b.reasoningChanged.emit(); b.contextUsageChanged.emit()
-            return {'status': 'applied', 'sessionId': target.id}
         spec = self.operations.get(operation)
         if spec is None: raise ValueError('Unknown Umeko operation; read the documentation or use operations.list')
         fields = spec['args']
@@ -354,6 +339,26 @@ class UmekoControl(QObject):
                      'json': isinstance(value, dict if name in ('config', 'fields') else list)}[kind]
             if not valid: raise ValueError(name + ' must be ' + kind)
             values.append(value)
+        if operation in ('models.select', 'sessions.reasoning'):
+            target = b._pool.find(args.get('sessionId', '')) if args.get('sessionId') else caller or b._view
+            if not target: raise ValueError('Session is no longer loaded')
+            if target.busy and queue: return self._queue(operation, {**args, 'sessionId': target.id}, caller)
+            if target.busy: raise ValueError('Session is still busy')
+            if operation == 'models.select':
+                b.gateway.resolve(args['model'], args['provider'])
+                target.provider, target.model = args['provider'], args['model']
+                b._reconcile_reasoning(target)
+                target.context_usage = {}
+                if target is b._view:
+                    b.store.data.update(selectedProvider=target.provider, selectedModel=target.model)
+            else:
+                if args.get('value') != 'off' and args.get('value') not in b._reasoning_levels(target): raise ValueError('Reasoning must be off or one of the configured model levels')
+                target.reasoning_effort = args['value']
+                if target.id: b.store.data['sessionMeta'].setdefault(target.id, {})['reasoningEffort'] = args['value']
+                if target is b._view: b.store.data['ui']['reasoningEffort'] = args['value']
+                b._write_pi({'type': 'reasoning_effort', 'value': args['value']}, target)
+            b.store.save(); b.changed.emit(); b.reasoningChanged.emit(); b.contextUsageChanged.emit()
+            return {'status': 'applied', 'sessionId': target.id}
         exists = spec.get('exists')
         if spec['target'] == 'plugins' and exists == 'provider': b.providerPlugins._record(args.get('id'))
         if operation in ('plugins.addAccount', 'plugins.uninstall'):
@@ -361,7 +366,12 @@ class UmekoControl(QObject):
         source = {'provider': b.config['providers'], 'project': b.store.data['projects'], 'session': self._sessions()}.get(exists)
         if source is not None and not any(item['id'] == args.get('id') for item in source): raise ValueError(exists + ' ID does not exist')
         if operation == 'appearance.language' and args['language'] not in ('zh', 'en'): raise ValueError('language must be zh or en')
-        if operation == 'appearance.fontScale' and not .5 <= args['scale'] <= 2: raise ValueError('scale must be 0.5-2')
+        if operation == 'appearance.fontScale' and not .3 <= args['scale'] <= 2: raise ValueError('scale must be 0.3-2')
+        if operation == 'appearance.lineSpacing' and args['spacing'] not in ('compact', 'standard', 'relaxed'): raise ValueError('Invalid line spacing')
+        if operation == 'sessions.cache' and not 0 <= args['size'] <= 2147483647: raise ValueError('size must be an integer from 0 to 2147483647')
+        if operation == 'sessions.backend' and args['value'] not in ('pi', 'dsh'): raise ValueError('value must be pi or dsh')
+        if operation == 'desktop.startup' and not b.loginStartup.state.get('available'): raise ValueError(b.loginStartup.state.get('reason') or 'Login startup settings are unavailable')
+        if operation == 'documents.previewMode' and (args['fileType'] not in ('markdown', 'html') or args['mode'] not in ('source', 'rendered')): raise ValueError('Invalid document preview mode')
         if operation == 'desktop.configure':
             from .desktop_preferences import validate_patch
             validate_patch(values[0])
@@ -375,10 +385,12 @@ class UmekoControl(QObject):
         if operation == 'extensions.activation' and args['mode'] not in ('global','session','disabled'): raise ValueError('Invalid extension activation mode')
         if operation == 'agent.save':
             patch = values[0]
-            allowed = {'maxTokens', 'instructions', 'autoCompaction', 'agentDir', 'skillPaths', 'extensionPaths'}
+            allowed = {'maxTokens', 'instructions', 'autoCompaction', 'agentDir', 'skillPaths', 'extensionPaths', 'maxContextImages', 'toolPermissionMode'}
             if set(patch) - allowed: raise ValueError('Unknown Agent setting')
             if 'maxTokens' in patch and (type(patch['maxTokens']) is not int or not 256 <= patch['maxTokens'] <= 32768): raise ValueError('maxTokens must be an integer from 256 to 32768')
             if 'autoCompaction' in patch and type(patch['autoCompaction']) is not bool: raise ValueError('autoCompaction must be boolean')
+            if 'maxContextImages' in patch and (type(patch['maxContextImages']) is not int or patch['maxContextImages'] < 1): raise ValueError('maxContextImages must be a positive integer')
+            if 'toolPermissionMode' in patch and patch['toolPermissionMode'] not in ('ask', 'auto'): raise ValueError('toolPermissionMode must be ask or auto')
             for key in ('instructions', 'agentDir'):
                 if key in patch and not isinstance(patch[key], str): raise ValueError(key + ' must be a string')
             if len(patch.get('instructions', '')) > 16000: raise ValueError('instructions exceeds 16000 characters')
@@ -393,9 +405,10 @@ class UmekoControl(QObject):
         if operation == 'projects.add':
             values[0] = [QUrl.fromLocalFile(str(Path(path).expanduser().resolve())).toString() for path in values[0]]
         for index, field in enumerate(fields):
-            if field[0] == 'path': values[index] = QUrl.fromLocalFile(str(Path(values[index]).expanduser().resolve())).toString()
+            if field[0] == 'path' and spec['target'] != 'dsh': values[index] = QUrl.fromLocalFile(str(Path(values[index]).expanduser().resolve())).toString()
             if field[1] == 'json': values[index] = json.dumps(values[index], ensure_ascii=False)
-        target = {'backend': b, 'plugins': b.providerPlugins, 'management': b.piManagement, 'about': b.appAbout}[spec['target']]
+        target = {'backend': b, 'plugins': b.providerPlugins, 'management': b.piManagement, 'about': b.appAbout,
+                  'dsh': b.dshRuntime, 'startup': b.loginStartup, 'documents': b.documentPreview}[spec['target']]
         messages = []
         capture = lambda message: messages.append(message)
         before = {p['id'] for p in b.config['providers']}
@@ -405,6 +418,7 @@ class UmekoControl(QObject):
         b.toast.connect(capture)
         try:
             result = getattr(target, spec['method'])(*values)
+            if operation == 'desktop.startup': result = b.loginStartup.state
         except Exception as error:
             if job_id is not None: self._finish(job_id, {'ok': False, 'error': str(error)})
             raise

@@ -159,19 +159,41 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Property('QVariantList', notify=changed)
     def pluginSessionModels(self):
-        return [{'providerId': row['providerID'], 'model': row['id'], 'label': row['owned_by'] + ' / ' + row['id']}
+        from .plugin_sessions import profile_reasoning_levels
+        return [{'providerId': row['providerID'], 'model': row['id'], 'label': row['owned_by'] + ' / ' + row['id'],
+                 'reasoningLevels': profile_reasoning_levels(self, row['id'], row['providerID'])}
                 for row in self.gateway.models()]
 
     @Slot(str, str, str, str, result=bool)
-    def savePluginSessionModel(self, plugin, profile, model, provider):
+    @Slot(str, str, str, str, str, result=bool)
+    def savePluginSessionModel(self, plugin, profile, model='', provider='', reasoning_effort=''):
         from .plugin_sessions import set_profile_model
         try:
-            set_profile_model(self, plugin, profile, model, provider)
+            set_profile_model(self, plugin, profile, model, provider, reasoning_effort)
         except (ValueError, OSError, RuntimeError) as error:
             self.toast.emit(str(error))
             return False
         self.changed.emit()
         self.toast.emit('插件会话模型已更新，下一次输入时生效')
+        return True
+
+    @Slot(str, result=bool)
+    def setDefaultReasoningEffort(self, value):
+        """Set the effort inherited by new desktop sessions."""
+        if value != 'off' and value not in self._reasoning_levels():
+            self.toast.emit('请选择当前桌面模型支持的思考档位')
+            return False
+        ui = self.store.data['ui']
+        previous = dict(ui)
+        ui['reasoningEffort'] = value
+        try:
+            self.store.save()
+        except (OSError, RuntimeError) as error:
+            ui.clear()
+            ui.update(previous)
+            self.toast.emit(str(error))
+            return False
+        self.changed.emit()
         return True
 
     def _settings_changed_externally(self, keys, invalid):
@@ -1596,6 +1618,9 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             agent["toolPermissionMode"] = previous
             return self.toast.emit("工具执行权限保存失败：" + str(exc))
         self.changed.emit()
+        self._broadcast_tool_permission_mode(mode)
+
+    def _broadcast_tool_permission_mode(self, mode):
         payload = {"type": "tool_permission_mode", "mode": mode,
                    "language": self.language, "dataDir": str(self.store.directory)}
         for record in self._pool.records.values():
@@ -1614,11 +1639,26 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 values[key] = int(values[key])
             if len(values["instructions"]) > 16000:
                 raise ValueError("自定义指令不能超过 16000 字符")
+            images = values.get('maxContextImages', self.store.data['agent'].get('maxContextImages', 3))
+            if type(images) is not int or images < 1:
+                raise ValueError('maxContextImages 必须是正整数')
+            mode = values.get('toolPermissionMode', self.store.data['agent'].get('toolPermissionMode', 'auto'))
+            if mode not in ('ask', 'auto'):
+                raise ValueError('工具执行权限模式无效')
             values["agentDir"] = str(Path(values.get("agentDir") or Path.home() / ".pi/agent").expanduser().resolve())
             for key in ("skillPaths", "extensionPaths"):
                 values[key] = [str(Path(p.strip()).expanduser().resolve()) for p in values.get(key, []) if p.strip()]
+            previous = dict(self.store.data['agent'])
             self.store.data["agent"].update({k: values[k] for k in ("maxTokens", "instructions", "autoCompaction", "agentDir", "skillPaths", "extensionPaths")})
-            self.store.save()
+            self.store.data['agent'].update(maxContextImages=images, toolPermissionMode=mode)
+            try:
+                self.store.save()
+            except (OSError, RuntimeError):
+                self.store.data['agent'].clear()
+                self.store.data['agent'].update(previous)
+                raise
+            if mode != previous.get('toolPermissionMode', 'auto'):
+                self._broadcast_tool_permission_mode(mode)
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("Pi 设置已保存，下次加载生效")

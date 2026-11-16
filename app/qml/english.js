@@ -1597,6 +1597,7 @@ var strings = {
   "归档会话": "Archived conversations",
   "知道了": "Got it",
   "插件会话模型": "Plugin session models",
+  "沿用桌面": "Use desktop setting",
   "应用级插件取得的独立会话使用这里的模型。更换后在下一次输入时生效；工作区、工具和权限保持不变。": "Separate sessions that application plugins acquire use these models. A change applies from the next input; workspace, tools and permissions stay the same.",
   "会话配置：%1": "Session profile: %1",
   "未选择模型": "No model selected",

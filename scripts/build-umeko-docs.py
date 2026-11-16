@@ -20,7 +20,13 @@ def generate():
             args.append(f'`{field[0]}: {field[1]}{default}`')
         label = f'`{name}`' + ('（仅 ' + ', '.join(spec['editions']) + '）' if spec.get('editions') else '')
         lines.append('| ' + ' | '.join((label, ', '.join(args) or '无', spec.get('idle', '无'), '是' if spec.get('async') else '否')) + ' |')
-    lines.extend(['', 'Widget 只读查询：`widgets.list`、`widgets.docs`、`widgets.messages`、`widgets.result`、`widgets.resource`。',
+    lines.extend(['', '等待空闲范围 `target` 表示指定的 `sessionId`，省略时使用调用会话。',
+                  '', 'Python 插件会话可用 `pluginSessions.setModel` 同时设置模型路由和思考强度，也可只更新思考强度：',
+                  '', '```json',
+                  '{"operation":"pluginSessions.setModel","arguments":{"plugin":"session-task-service","profile":"tasks","reasoningEffort":"medium"}}',
+                  '```', '', '`medium` 需出现在该配置模型的实际档位中；`off` 始终可用。省略模型或档位时保留现值，新模型省略供应商时使用实际路由。新会话使用配置档位，已有会话在下一次输入时应用。详见 [Widget 插件](widget-plugins.md)。',
+                  '', '`agent.defaultReasoning` 设置新桌面会话的默认档位；`sessions.reasoning` 设置当前或指定会话的档位。`agent.save` 的 `config` 支持 `autoCompaction`、`maxContextImages` 和 `toolPermissionMode` 等局部设置。完整设置、参数范围与生效时机见 [设置说明](settings.md)。',
+                  '', 'Widget 只读查询：`widgets.list`、`widgets.docs`、`widgets.messages`、`widgets.result`、`widgets.resource`。',
                   '', '`plugins.*` 管理 Provider 插件；`widgets.*` 管理桌面 Widget。`help` 的 `arguments.topic` 可为 `plugins`、`provider`、`widget` 或 `agents`。'])
     return '\n'.join(lines) + '\n'
 

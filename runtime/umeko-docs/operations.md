@@ -18,7 +18,10 @@
 | `providers.network` | `id: string`, `mode: string`, `address: string=""` | provider | 否 |
 | `providers.certificate` | `id: string`, `caFile: string=""` | provider | 否 |
 | `models.mappings` | `models: json` | all | 否 |
-| `pluginSessions.setModel`（仅 python） | `plugin: string`, `profile: string`, `model: string`, `provider: string=""` | 无 | 否 |
+| `pluginSessions.setModel`（仅 python） | `plugin: string`, `profile: string`, `model: string=""`, `provider: string=""`, `reasoningEffort: string=""` | 无 | 否 |
+| `models.select`（仅 python） | `provider: string`, `model: string`, `sessionId: string=""` | target | 否 |
+| `sessions.reasoning`（仅 python） | `value: string`, `sessionId: string=""` | target | 否 |
+| `agent.defaultReasoning`（仅 python） | `value: string` | 无 | 否 |
 | `themes.import` | `path: string` | 无 | 否 |
 | `characters.import` | `path: string` | 无 | 否 |
 | `characters.select` | `id: string` | 无 | 否 |
@@ -29,6 +32,15 @@
 | `appearance.language` | `language: string` | 无 | 否 |
 | `appearance.fontScale` | `scale: number` | 无 | 否 |
 | `appearance.fontFamily`（仅 python） | `family: string` | 无 | 否 |
+| `appearance.lineSpacing`（仅 python） | `spacing: string` | 无 | 否 |
+| `sessions.cache`（仅 python） | `size: integer` | 无 | 否 |
+| `sessions.backend`（仅 python） | `value: string` | view | 否 |
+| `sessions.dshModel`（仅 python） | `value: string` | view | 否 |
+| `dsh.path`（仅 python） | `path: string` | 无 | 否 |
+| `dsh.useOwnConfig`（仅 python） | `enabled: boolean` | 无 | 否 |
+| `desktop.startup`（仅 python） | `umeko: boolean`, `proxy: boolean` | 无 | 否 |
+| `network.requestHeaders`（仅 python） | `headers: json` | 无 | 否 |
+| `documents.previewMode`（仅 python） | `fileType: string`, `mode: string` | 无 | 否 |
 | `appearance.sidebar` | `width: integer`, `collapsed: boolean=false` | 无 | 否 |
 | `desktop.configure`（仅 python） | `config: json` | 无 | 否 |
 | `projects.add` | `paths: json` | 无 | 否 |
@@ -106,6 +118,18 @@
 | `agent_bus.requests` | 无 | 无 | 否 |
 | `agent_bus.dispatch` | `targetId: string`, `text: string` | 无 | 否 |
 | `agent_bus.reply` | `requestId: string`, `result: string`, `status: string="completed"` | 无 | 否 |
+
+等待空闲范围 `target` 表示指定的 `sessionId`，省略时使用调用会话。
+
+Python 插件会话可用 `pluginSessions.setModel` 同时设置模型路由和思考强度，也可只更新思考强度：
+
+```json
+{"operation":"pluginSessions.setModel","arguments":{"plugin":"session-task-service","profile":"tasks","reasoningEffort":"medium"}}
+```
+
+`medium` 需出现在该配置模型的实际档位中；`off` 始终可用。省略模型或档位时保留现值，新模型省略供应商时使用实际路由。新会话使用配置档位，已有会话在下一次输入时应用。详见 [Widget 插件](widget-plugins.md)。
+
+`agent.defaultReasoning` 设置新桌面会话的默认档位；`sessions.reasoning` 设置当前或指定会话的档位。`agent.save` 的 `config` 支持 `autoCompaction`、`maxContextImages` 和 `toolPermissionMode` 等局部设置。完整设置、参数范围与生效时机见 [设置说明](settings.md)。
 
 Widget 只读查询：`widgets.list`、`widgets.docs`、`widgets.messages`、`widgets.result`、`widgets.resource`。
 

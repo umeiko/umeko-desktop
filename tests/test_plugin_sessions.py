@@ -278,6 +278,31 @@ class PluginSessionTests(unittest.TestCase):
         self.assertEqual(set(self.b.store.data['pluginSessionProfiles']), {'fixture-channel', 'fixture-other'})
         self.assertEqual(set(self.b.store.data['pluginSessionProfiles']['fixture-channel']), {'tasks'})
 
+    def test_profile_reasoning_applies_on_acquire_and_queued_next_input(self):
+        from app.plugin_sessions import set_profile_model
+        self.b.store.data['providers'][0]['models'][0].update(
+            reasoningLevels=['low', 'high'], reasoningLevelsAuto=False)
+        profile = self.b.store.data['pluginSessionProfiles']['fixture-channel']['tasks']
+        profile['reasoningEffort'] = 'low'
+        with patch.object(self.b._pool, 'write') as write:
+            owned = self.acquire()
+            record = self.b._pool.find(owned['sessionId'])
+            self.assertEqual(record.reasoning_effort, 'low')
+            write.assert_called_once_with(record, {'type': 'reasoning_effort', 'value': 'low'})
+            write.reset_mock()
+            handle = owned['handle']
+            self.result('sessions.submit', {'handle': handle, 'requestId': 'first', 'content': 'first'})
+            set_profile_model(self.b, 'fixture-channel', 'tasks', reasoning_effort='high')
+            queued = self.result('sessions.submit', {'handle': handle, 'requestId': 'second', 'content': 'second'})
+            self.assertEqual(queued['disposition'], 'queued')
+            self.assertEqual(record.reasoning_effort, 'low')
+            write.assert_not_called()
+            self.finish(record, 'first reply')
+            pump_until(self.app, lambda: len(self.commands) == 2, 'Queued reasoning update did not start')
+            self.assertEqual(record.reasoning_effort, 'high')
+            write.assert_called_once_with(record, {'type': 'reasoning_effort', 'value': 'high'})
+            self.finish(record, 'second reply')
+
     def approval(self, record, identifier):
         event = {'type': 'ui_request', 'id': identifier, 'method': 'confirm',
             'title': 'Fixture permission', 'message': 'Allow offline fixture tool?'}

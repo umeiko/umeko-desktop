@@ -167,13 +167,21 @@ Agent 可调用插件公开方法传入结构化数据。插件通过 `context.p
 
 `workspace` 必须是绝对路径。`model` 填已存在的**桌面模型别名**（上游模型名称在这里无效）；选填的 `provider` 必须是已配置的 Provider ID，宿主会核对该别名确实路由到这个 Provider。两个 Provider 的别名冲突时使用唯一别名。示例值都是占位符。插件的 `acquire` 按 `profile` 名称选择配置，工作目录、模型和工具都由配置决定。
 
-已有配置的模型和供应商可以在应用运行时修改，无需退出应用：用户在“设置 → Agent → 插件会话模型”中选择，或由 Agent 调用 `pluginSessions.setModel`（仅 Python 版）。先用 `settings.get` 读取 `pluginSessionProfiles`，用 `models.list` 查询可用的桌面模型别名：
+已有配置的模型、供应商和思考强度可以在应用运行时修改，无需退出应用：用户在“设置 → Agent → 插件会话模型”中选择，或由 Agent 调用 `pluginSessions.setModel`（仅 Python 版）。先用 `settings.get` 读取 `pluginSessionProfiles`，用 `models.list` 查询可用的桌面模型别名，并从模型配置确认其实际支持的思考强度。下面的 `medium` 示例要求所选模型实际支持该值：
 
 ```json
-{"operation":"pluginSessions.setModel","arguments":{"plugin":"session-task-service","profile":"tasks","model":"test-model","provider":"Test provider"}}
+{"operation":"pluginSessions.setModel","arguments":{"plugin":"session-task-service","profile":"tasks","model":"test-model","provider":"Test provider","reasoningEffort":"medium"}}
 ```
 
-`plugin` 与 `profile` 必须是已存在的配置；`model` 是已存在的桌面模型别名，`provider` 选填，规则与上面相同，省略时记录该别名实际路由到的 Provider ID。这个操作只写入 `model` 和 `provider`，工作区、工具、权限模式和审批设置保持用户批准时的值。已取得的会话在下一次输入时换用新模型；正在运行的回合按原模型完成。
+`plugin` 与 `profile` 必须是已存在的配置。`model`、`provider`、`reasoningEffort` 默认为空字符串。省略模型和思考强度时保留各自当前值；提供新模型且省略供应商时使用该模型的实际路由。只调整思考强度时保留现有模型与供应商。更换模型后，宿主把已有思考强度调整到新模型支持的值。`reasoningEffort` 接受 `off` 或所选模型实际支持的级别；尚未配置时沿用原有选择逻辑。已取得的会话在下一次输入时采用新设置；正在运行的回合按原设置完成。
+
+也可以只调整思考强度，保留模型和供应商：
+
+```json
+{"operation":"pluginSessions.setModel","arguments":{"plugin":"session-task-service","profile":"tasks","reasoningEffort":"medium"}}
+```
+
+这个操作只调整模型连接与思考强度。工作区、工具列表、权限模式和审批设置继续使用用户批准的值。初次配置仍按上面的 `settings.json` 示例创建。
 
 `tools` 为精确工具名列表，与桌面策略取交集；服务始终排除桌面管理工具 `umeko_desktop`、`pi` 和 `pi_commands`，保证配置无法通过管理操作被修改。其他核心工具与可选子 Agent 工具需要显式配置，并受桌面策略限制。子 Agent 运行时继承同一强制工具与权限上限，模型注册表只提供配置选定的模型。`permissionMode` 为 `ask` 或 `auto`，上限是桌面允许的权限。`allowApprovals` 默认 `false`，与工具配置相互独立；开启后插件可以注册审批处理器，逐个回应 confirm 类审批请求。
 
