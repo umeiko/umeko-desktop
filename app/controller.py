@@ -163,10 +163,11 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 for row in self.gateway.models()]
 
     @Slot(str, str, str, str, result=bool)
-    def savePluginSessionModel(self, plugin, profile, model, provider):
+    @Slot(str, str, str, str, str, result=bool)
+    def savePluginSessionModel(self, plugin, profile, model='', provider='', reasoningEffort=''):
         from .plugin_sessions import set_profile_model
         try:
-            set_profile_model(self, plugin, profile, model, provider)
+            set_profile_model(self, plugin, profile, model, provider, reasoningEffort)
         except (ValueError, OSError, RuntimeError) as error:
             self.toast.emit(str(error))
             return False

@@ -18,7 +18,7 @@
 | `providers.network` | `id: string`, `mode: string`, `address: string=""` | provider | 否 |
 | `providers.certificate` | `id: string`, `caFile: string=""` | provider | 否 |
 | `models.mappings` | `models: json` | all | 否 |
-| `pluginSessions.setModel`（仅 python） | `plugin: string`, `profile: string`, `model: string`, `provider: string=""` | 无 | 否 |
+| `pluginSessions.setModel`（仅 python） | `plugin: string`, `profile: string`, `model: string=""`, `provider: string=""`, `reasoningEffort: string=""` | 无 | 否 |
 | `themes.import` | `path: string` | 无 | 否 |
 | `characters.import` | `path: string` | 无 | 否 |
 | `characters.select` | `id: string` | 无 | 否 |
@@ -108,5 +108,13 @@
 | `agent_bus.reply` | `requestId: string`, `result: string`, `status: string="completed"` | 无 | 否 |
 
 Widget 只读查询：`widgets.list`、`widgets.docs`、`widgets.messages`、`widgets.result`、`widgets.resource`。
+
+`pluginSessions.setModel` 修改已有插件会话配置的模型路由和思考档位。`reasoningEffort` 为空字符串或省略时不修改档位；通用值为 `off`、`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`、`ultra`。`model` 和 `provider` 均留空时可只修改档位：
+
+```json
+{"operation":"pluginSessions.setModel","arguments":{"plugin":"example-service","profile":"tasks","reasoningEffort":"high"}}
+```
+
+配置中的 `pluginSessionProfiles.<plugin>.<profile>.reasoningEffort` 优先于 `ui.reasoningEffort`；未配置时继承后者，两者均未配置时使用 `off`。实际使用时按所选模型支持的档位对齐，详见 [插件独立会话](widget-plugins.md#应用服务管理独立会话)。
 
 `plugins.*` 管理 Provider 插件；`widgets.*` 管理桌面 Widget。`help` 的 `arguments.topic` 可为 `plugins`、`provider`、`widget` 或 `agents`。
