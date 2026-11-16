@@ -2,6 +2,7 @@
 import json
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -171,10 +172,13 @@ class RecentHistoryTests(unittest.TestCase):
         self.assertEqual(model.questionCount, 0)
         last = recent.count - 1
         model.requestRange(last - 2, last)
-        for _ in range(500):
+        # Rows are prepared on a worker thread. A fixed number of event-loop
+        # passes can finish before a busy machine schedules that thread, so
+        # wait for the row with a generous deadline instead.
+        end = time.monotonic() + 30
+        while not model.isReady(last) and time.monotonic() < end:
             QCoreApplication.processEvents()
-            if model.isReady(last):
-                break
+            time.sleep(0.005)
         self.assertTrue(model.isReady(last))
         before = model.message(last)
         model.recordHeight(last, 321.0)

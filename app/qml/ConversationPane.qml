@@ -304,12 +304,25 @@ Item {
             }
             return {upper: upper, lower: lower, above: above, below: below};
         }
-        function finishGroup(row) {
+        function finishGroup(row, step) {
             // The reader reached a group that is still loading in the
             // background: complete its remaining bodies now (Loader finishes
             // an asynchronous load synchronously when asynchronous turns off).
             if (row < 0 || !pane.messageModel)
                 return;
+            if (!itemAtIndex(row)) {
+                // A row whose edge meets the screen edge exactly may not be
+                // created yet: ListView fills its cache buffer later, and
+                // while it waits the scroll stays blocked at this edge. Move
+                // one pixel toward the row and back, without a frame in
+                // between, so the row exists and its group can load now.
+                anchoring = true;
+                contentY += step;
+                forceLayout();
+                contentY -= step;
+                forceLayout();
+                anchoring = false;
+            }
             const group = pane.messageModel.groupOf(row);
             forcing = true;
             urgentFirst = pane.messageModel.groupFirst(group);
@@ -356,7 +369,7 @@ Item {
             const clamp = () => Math.max(Math.min(contentY, limits.upper), Math.min(target, Math.max(contentY, limits.lower - height)));
             let allowed = clamp();
             if (Math.abs(allowed - target) > 0.5) {
-                finishGroup(delta < 0 ? limits.above : limits.below);
+                finishGroup(delta < 0 ? limits.above : limits.below, delta < 0 ? -1 : 1);
                 // Showing the group may have kept the anchor by moving contentY.
                 target = Math.max(originY, Math.min(Math.max(originY, originY + contentHeight - height), contentY + delta));
                 limits = shownLimits();
