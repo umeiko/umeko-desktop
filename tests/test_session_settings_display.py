@@ -147,7 +147,7 @@ ApplicationWindow {
         self.assertEqual(self.find('reasoningSelectedLabel').property('text'),
                          {'low': 'Low', 'high': 'High', 'max': 'Max', 'off': 'Close'}[record.reasoning_effort])
         for value in ('ask', 'auto'):
-            self.assertEqual(self.find('toolPermission_' + value).property('primary'), value == permission)
+            self.assertEqual(self.find('toolPermission_' + value).property('checked'), value == permission)
         usage = self.find('contextUsageIndicator')
         self.assertTrue(usage.property('known'))
         self.assertAlmostEqual(usage.property('fraction'), record.context_usage['percent'] / 100)
