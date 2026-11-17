@@ -8,7 +8,7 @@ $buildBundlePrefix = (Join-Path $buildDestination 'Umeko').TrimEnd('\') + '\'
 foreach ($buildProcess in @(Get-Process Umeko -ErrorAction SilentlyContinue)) {
     if (-not $buildProcess.Path -or $buildProcess.Path.StartsWith($buildBundlePrefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Close the app running from the target bundle before building. No output was changed.' }
 }
-& '.venv/Scripts/python.exe' -m pip install pyinstaller==6.19.0 cmake==3.31.6
+& '.venv/Scripts/python.exe' -m pip install pyinstaller==6.19.0 cmake==3.31.6 Pillow==13.0.0
 if ($LASTEXITCODE -ne 0) { throw 'Build dependency installation failed' }
 & '.venv/Scripts/python.exe' scripts/build-notifications.py
 if ($LASTEXITCODE -ne 0) { throw 'Native notification adapter build failed' }
@@ -48,4 +48,6 @@ Copy-Item -LiteralPath 'runtime/preview-network.mjs' -Destination (Join-Path $bu
 Copy-Item -LiteralPath 'runtime/dsh-acp-bridge.mjs' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Force
 Copy-Item -LiteralPath 'runtime/dsh-permissions.mjs' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Force
 Copy-Item -LiteralPath 'README.md' -Destination (Join-Path $buildDestination 'Umeko/README.md') -Force
+& '.venv/Scripts/python.exe' scripts/package_payload.py --resources (Join-Path $buildDestination 'Umeko/_internal') --report build/payload-optimization.json
+if ($LASTEXITCODE -ne 0) { throw 'Resource optimization failed' }
 Write-Output ('Portable app: ' + (Join-Path $buildDestination 'Umeko/Umeko.exe'))

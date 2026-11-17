@@ -108,7 +108,7 @@ jobs:
       - name: Python unit tests
         run: |
           echo "Linux CPU cores: $(nproc)"
-          .venv/bin/python -m pip install unittest-parallel==1.8.6
+          .venv/bin/python -m pip install unittest-parallel==1.8.6 Pillow==13.0.0
           unit_tests() {
             .venv/bin/python scripts/ci-unit-tests.py --jobs "$UNIT_TEST_JOBS"
           }
