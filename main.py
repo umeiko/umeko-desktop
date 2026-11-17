@@ -3,6 +3,10 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+if __name__ == '__main__' and '--update-process-helper' in sys.argv:
+    from app.update_windows import main as update_process_main
+    sys.exit(update_process_main(sys.argv[sys.argv.index('--update-process-helper') + 1:]))
+
 if __name__ == '__main__':
     from app.preview_launch import route_start
     if route_start(Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))):
