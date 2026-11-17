@@ -164,8 +164,10 @@ class ScheduledTasks:
         if not isinstance(token, str) or not token:
             raise ValueError('A real calling session is required')
         if not isinstance(identifier, str):raise ValueError('Invalid session identity')
-        owner = 'session:' + identifier if identifier else 'draft:' + token
+        agent = session.get('timerAgentId')
+        owner = 'agent:' + agent if agent else 'session:' + identifier if identifier else 'draft:' + token
         source = {key: session.get(key, '') for key in ('token', 'id', 'workspace')}
+        if agent:source['timerAgentId'] = agent
         with self._write() as db:
             previous = db.execute('SELECT owner FROM session_owners WHERE token=?', (token,)).fetchone()
             if previous:

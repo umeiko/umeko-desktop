@@ -10,12 +10,14 @@ def obsolete_patches(releases, tag):
     current = re.fullmatch(pattern, tag)
     if not current or int(current[3]) == 0: return []
     series = (current[1], current[2])
+    # The owner retired 0.7.0 once a release newer than the 0.7.1 milestone exists.
+    minimum_patch = 0 if series == ("0", "7") and int(current[3]) > 1 else 1
     result = []
     for release in releases:
-        if release["tag_name"] in RETAINED_MILESTONES:
+        if release["tag_name"].removesuffix("-minimal") in RETAINED_MILESTONES:
             continue
         match = re.fullmatch(pattern, release["tag_name"])
-        if match and not release["draft"] and (match[1], match[2]) == series and 0 < int(match[3]) < int(current[3]):
+        if match and not release["draft"] and (match[1], match[2]) == series and minimum_patch <= int(match[3]) < int(current[3]):
             result.append(release)
     return result
 

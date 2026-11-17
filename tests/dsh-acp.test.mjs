@@ -223,7 +223,7 @@ test('child crash terminates the active prompt and clears busy state', async t =
 test('packaged runtime resolves SDK from its prepared release dependency tree', async t => {
   const home = await mkdtemp(join(tmpdir(), 'umeko-acp-packaged-'));
   t.after(() => rm(home, { recursive: true, force: true }));
-  const sdk = join(home, 'runtime', 'releases', 'coding-1.3.0', 'node_modules', '@agentclientprotocol', 'sdk');
+  const sdk = join(home, 'runtime', 'releases', 'coding-1.5.2', 'node_modules', '@agentclientprotocol', 'sdk');
   await mkdir(sdk, { recursive: true });
   await writeFile(join(sdk, 'package.json'), JSON.stringify({ name: '@agentclientprotocol/sdk', type: 'module', exports: './acp.js' }));
   await writeFile(join(sdk, 'acp.js'), 'export {};\n');

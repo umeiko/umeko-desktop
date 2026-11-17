@@ -11,7 +11,7 @@ from pathlib import Path
 from .filesystem_paths import filesystem_path, ordinary_path
 
 PACKAGE = "@earendil-works/pi-coding-agent"
-PINNED_VERSION = "1.3.0"
+PINNED_VERSION = "1.5.2"
 RELEASE_NAME = "coding-" + PINNED_VERSION
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 CATALOG = '''// Umeko provider policy. Native coding-agent implementation is unchanged.

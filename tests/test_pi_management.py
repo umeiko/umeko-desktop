@@ -17,7 +17,7 @@ from app.pi_sessions import clean_extension_modes
 from app.filesystem_paths import filesystem_path
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE = ROOT / "runtime/releases/coding-1.3.0"
+RELEASE = ROOT / "runtime/releases/coding-1.5.2"
 APP = QCoreApplication.instance() or QCoreApplication([])
 
 
@@ -77,7 +77,7 @@ class NativeExtensionTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, filesystem_path(base))
         directory = base / ("profile_" * 14) / ("nested_" * 14) / ("level_" * 10)
         self.assertGreater(len(str(directory)), 260)
-        release = filesystem_path(base / "root/runtime/releases/coding-1.3.0")
+        release = filesystem_path(base / "root/runtime/releases/coding-1.5.2")
         release.mkdir(parents=True)
         (release / "fixture.txt").write_text("factory files")
         agent = filesystem_path(directory / "original-agent")
@@ -270,7 +270,7 @@ class NativeExtensionTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             native = subprocess.run([node_executable(), str(RELEASE / "node_modules" / PACKAGE / "dist/cli.js"), "--version"], capture_output=True, text=True, timeout=15)
             self.assertEqual(native.returncode, 0, native.stderr)
-            self.assertIn("1.3.0", native.stdout)
+            self.assertIn("1.5.2", native.stdout)
             with patch("app.pi_terminal.shutil.which", side_effect=lambda name: "/usr/bin/xterm" if name == "xterm" else None), patch("app.pi_terminal.node_executable", return_value="/usr/bin/node"):
                 linux = prepare_terminal(RELEASE, base, agent, cwd, base / "sessions", platform="linux")
             self.assertEqual(linux[:2], ["/usr/bin/xterm", "-e"])

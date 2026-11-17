@@ -57,6 +57,7 @@ smokes=(
   tests/video_ui_smoke.py
   tests/desktop_pet_ui_smoke.py
   tests/desktop_pet_task_ui_smoke.py
+  tests/desktop_pet_drag_ui_smoke.py
   tests/subagent_pane_ui_smoke.py
   tests/multimodal_ui_smoke.py
   tests/auxiliary_vision_ui_smoke.py
@@ -77,6 +78,7 @@ smokes=(
   tests/preview_resize_ui_smoke.py
   tests/api_proxy_layout_ui_smoke.py
   tests/large_chat_ui_smoke.py
+  tests/question_navigator_ui_smoke.py
   tests/scroll_oscillation_ui_smoke.py
   tests/grouped_loading_ui_smoke.py
   tests/provider_error_ui_smoke.py
@@ -85,6 +87,7 @@ smokes=(
   tests/login_startup_launch_smoke.py
   tests/sidebar_highlight_ui_smoke.py
   tests/chat_loading_ui_smoke.py
+  tests/recent_history_ui_smoke.py
   tests/scroll_paging_ui_smoke.py
   tests/task_state_ui_smoke.py
   tests/steering_status_ui_smoke.py
@@ -101,6 +104,7 @@ smokes=(
   tests/provider_login_cancel_ui_smoke.py
   tests/pid_thread_ui_smoke.py
   tests/input_method_ui_smoke.py
+  tests/update_notes_ui_smoke.py
 )
 
 mkdir -p build

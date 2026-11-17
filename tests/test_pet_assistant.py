@@ -78,8 +78,8 @@ class PetAssistantTests(unittest.TestCase):
         visible = self.host._view
         self.assertEqual(self.pet.sendTask('  检查当前任务  ', record.global_agent),
                          {'ok': True, 'status': 'accepted'})
-        self.host._command_pi.assert_called_once_with('prompt', record, text='检查当前任务')
-        self.assertEqual(record.messages[0], {'role':'user', 'text':'检查当前任务'})
+        self.host._command_pi.assert_called_once_with('prompt', record, text='(input from pet)\n检查当前任务')
+        self.assertEqual(record.messages[0], {'role':'user', 'text':'(input from pet)\n检查当前任务'})
         self.assertIs(self.host._view, visible)
         self.assertEqual(self.bus.selected_conversation, 'another-agent')
 
@@ -88,7 +88,7 @@ class PetAssistantTests(unittest.TestCase):
         self.assertEqual(self.pet.sendTask('继续检查', record.global_agent),
                          {'ok':True, 'status':'queued'})
         self.assertEqual(self.host._pool.writes[-1],
-                         (record.key, {'type':'steer', 'text':'继续检查'}))
+                         (record.key, {'type':'steer', 'text':'(input from pet)\n继续检查'}))
         self.host._command_pi.assert_not_called()
 
     def test_pet_task_never_creates_or_retargets_an_unbound_agent(self):
@@ -148,21 +148,98 @@ class PetAssistantTests(unittest.TestCase):
         data['persona'] = ['invalid'];(folder/'pet.json').write_text(json.dumps(data))
         with self.assertRaisesRegex(ValueError,'persona'): read_pack(folder)
 
-    def test_speech_limits_are_shared_across_rebinds_and_enforce_identity(self):
+    def test_speech_has_no_frequency_quota_and_still_enforces_identity(self):
         record = self.bind()
         self.assertTrue(self.speak(record)['ok'])
-        for _ in range(100): self.assertEqual(self.speak(record)['status'], 'rate_limited')
-        self.assertEqual([s for s in self.speech if s], ['任务完成啦。'])
+        self.assertTrue(self.speak(record, '第二条')['ok'])
+        for _ in range(100): self.assertTrue(self.speak(record)['ok'])
+        self.assertEqual(len(self.spoken_text()),102)
         self.pet.configure({'appearance':'komari'})
-        self.assertEqual(self.speak(record)['status'], 'rate_limited')
-        self.now += 30; self.assertTrue(self.speak(record, '第二条')['ok'])
-        self.now += 29.999; self.assertEqual(self.speak(record)['status'], 'rate_limited')
-        self.now += .001; self.assertTrue(self.speak(record, '第三条')['ok'])
+        self.assertTrue(self.speak(record, '第三条')['ok'])
         other = SessionState(global_agent=record.global_agent)
         self.assertEqual(self.speak(other)['status'], 'unavailable')
         self.assertEqual(self.speak(self.host._view)['status'], 'unavailable')
         self.pet.configure({'visible':False})
         self.assertEqual(self.speak(record)['status'], 'unavailable')
+
+    def test_pet_source_marker_keeps_input_limit_and_leaves_normal_chat_unchanged(self):
+        record=self.bind();text='字'*16000
+        self.assertTrue(self.pet.sendTask(text,record.global_agent)['ok'])
+        self.assertEqual(self.host._command_pi.call_args.kwargs['text'],'(input from pet)\n'+text)
+        self.bus.handle('send',{'id':record.global_agent,'text':'普通聊天'})
+        self.assertEqual(self.host._command_pi.call_args.kwargs['text'],'普通聊天')
+
+    def test_reading_duration_tracks_text_and_visible_graphemes(self):
+        record=self.bind()
+        for text,duration in [('Done.',1800),('One two three.',1978),('字'*30,5200),('字'*80,12200),('👩‍💻'*80,12200)]:
+            self.assertEqual(self.pet.speechDuration(text),duration,text)
+            self.assertEqual(self.speak(record,text)['reading_ms'],duration)
+
+    def test_pet_timer_capture_and_delivery_are_bound_to_itself_after_restart(self):
+        record = self.bind()
+        host = self.manager._host_services.scheduled_service()
+        source = host.capture(self.manager.bridge.snapshot(record))
+        target = 'agent:' + record.global_agent
+        self.assertEqual([row['id'] for row in source['timerTargets']], [target])
+        self.assertEqual(source['timerOwnerTarget'], target)
+        self.assertTrue(self.helper.allows_timer(record, 'widgets.docs', {'id':'scheduled-tasks'}))
+        self.assertFalse(self.helper.allows_timer(record, 'widgets.call', {'id':'desktop-pet'}))
+        request = {'widget':'scheduled-tasks','operation':'scheduledTasks.trigger','page':False,
+                   'session':source,'arguments':{'run_id':'d'*32,'target':target,'text':'喝水时间到了'}}
+        result = host.request(request)
+        self.assertEqual(result['state'], 'queued')
+        self.assertEqual(result['source']['timerAgentId'], record.global_agent)
+        self.host._command_pi.assert_called_once()
+        args, kwargs = self.host._command_pi.call_args
+        self.assertIs(args[1], record)
+        self.assertEqual(kwargs['notification']['message'], '喝水时间到了')
+        self.assertFalse(self.bus.requests, 'Self wake must not use a self-dispatch bus request')
+        old_key = record.key
+        self.host._pool.records.pop(old_key)
+        record.key = 'restarted-token'
+        self.host._pool.records[record.key] = record
+        self.assertIs(host.record(source), record)
+        request['arguments'] = {'run_id':'e'*32,'target':'main','text':'不可改投前台'}
+        with self.assertRaises(ValueError):host.request(request)
+        self.pet.configure({'visible':False})
+        with self.assertRaises(ValueError):host.capture(source)
+
+    def test_reminder_tool_shared_crud_and_due_delivery_preserve_unread(self):
+        from datetime import datetime,timedelta,timezone
+        record=self.bind();binding=self.helper.reminder_binding_for(record)
+        def call(action,**values):return self.helper.reminder(record,{'binding':binding,'action':action,**values})
+        created=call('create',title='喝水',dueAt=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat(),repeat='daily',timeZone='UTC')['item']
+        self.assertEqual(created['agentId'],record.global_agent)
+        self.assertEqual(call('list')['items'][0]['id'],created['id'])
+        self.assertEqual(call('update',id=created['id'],notes='一杯温水')['item']['notes'],'一杯温水')
+        self.assertEqual(call('get',id=created['id'])['item']['repeat'],'daily')
+        self.assertEqual(self.helper.reminder(self.host._view,{'binding':binding,'action':'list'})['status'],'unavailable')
+        self.assertEqual(self.helper.reminder(record,{'binding':'stale','action':'list'})['status'],'binding_changed')
+        self.pet.reminders.clock=lambda:datetime.now(timezone.utc)+timedelta(hours=2)
+        self.pet.reminders.check();self.helper.flush_reminders()
+        self.assertEqual(len(self.pet.reminders.pending_notifications()),1)
+        self.assertEqual(len(self.pet.reminders.unread_alerts()),1)
+        self.host._command_pi.assert_called_once()
+        self.assertIs(self.host._command_pi.call_args.kwargs['record'],record)
+        self.assertIn('reminders',self.host._command_pi.call_args.kwargs['notification']['data'])
+        notification=self.host._command_pi.call_args.kwargs['notification']
+        self.assertRegex(notification['id'],r'^[a-f0-9]{32}$')
+        self.helper.flush_reminders();self.host._command_pi.assert_called_once()
+        self.helper.observe_reminders(record,{'type':'widget_delivery','id':notification['id'],'status':'queued'})
+        self.assertEqual(len(self.pet.reminders.pending_notifications()),1)
+        self.helper.observe_reminders(self.host._view,{'type':'widget_delivery','id':notification['id'],'status':'delivered'})
+        self.assertEqual(len(self.pet.reminders.pending_notifications()),1)
+        self.helper.observe_reminders(record,{'type':'widget_delivery','id':notification['id'],'status':'failed','error':'fixture failure'})
+        self.helper.flush_reminders();self.host._command_pi.assert_called_once()
+        self.now+=31;self.helper.flush_reminders();self.assertEqual(self.host._command_pi.call_count,2)
+        self.helper.observe_reminders(record,{'type':'widget_delivery','id':notification['id'],'status':'delivered'})
+        self.assertEqual(self.pet.reminders.pending_notifications(),[])
+        self.assertEqual(len(self.pet.reminders.unread_alerts()),1)
+        call('complete',id=created['id']);self.assertEqual(len(self.pet.reminders.unread_alerts()),1)
+        self.assertFalse(call('complete',id=created['id'],completed=False)['item']['completed'])
+        self.assertEqual(len(self.pet.reminders.unread_alerts()),1)
+        self.pet.openReminders(created['id'],False);self.assertEqual(self.pet.reminders.unread_alerts(),[])
+        call('delete',id=created['id']);self.assertEqual(call('list')['items'],[])
 
     def test_visible_character_limit_and_reminder_priority(self):
         record = self.bind()

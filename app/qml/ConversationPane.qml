@@ -26,7 +26,12 @@ Item {
     property var turnStatus: ({})
     property alias view: conversation
     property alias selection: chatSelection
-    visible: current
+    // While a newly activated pane positions its rows it stays transparent
+    // and the previous pane remains on screen (holding) until the swap.
+    property bool holding: false
+    property bool concealed: false
+    visible: current || holding
+    opacity: concealed ? 0 : 1
     enabled: current
     function refreshState() {
         if (!current)
@@ -85,6 +90,8 @@ Item {
         property int urgentFirst: -1
         property int urgentLast: -2
         property bool forcing: false
+        property int prependAnchor: -1
+        property real prependOffset: 0
         readonly property real groupPixels: Math.max(320, height * groupScreens)
         onGroupPixelsChanged: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
         Component.onCompleted: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
@@ -96,10 +103,15 @@ Item {
             else if (!followTail && count)
                 restoreViewport();
         }
+        // User scrolling and explicit jumps supersede a navigator selection.
+        signal browsingStarted()
         function beginBrowsing() {
+            browsingStarted();
             tailTimer.stop();
             restoreTimer.stop();
             restoring = false;
+            urgentFirst = -1;
+            urgentLast = -2;
             cancelFlick();
             followTail = false;
         }
@@ -295,12 +307,25 @@ Item {
             }
             return {upper: upper, lower: lower, above: above, below: below};
         }
-        function finishGroup(row) {
+        function finishGroup(row, step) {
             // The reader reached a group that is still loading in the
             // background: complete its remaining bodies now (Loader finishes
             // an asynchronous load synchronously when asynchronous turns off).
             if (row < 0 || !pane.messageModel)
                 return;
+            if (!itemAtIndex(row)) {
+                // A row whose edge meets the screen edge exactly may not be
+                // created yet: ListView fills its cache buffer later, and
+                // while it waits the scroll stays blocked at this edge. Move
+                // one pixel toward the row and back, without a frame in
+                // between, so the row exists and its group can load now.
+                anchoring = true;
+                contentY += step;
+                forceLayout();
+                contentY -= step;
+                forceLayout();
+                anchoring = false;
+            }
             const group = pane.messageModel.groupOf(row);
             forcing = true;
             urgentFirst = pane.messageModel.groupFirst(group);
@@ -347,7 +372,7 @@ Item {
             const clamp = () => Math.max(Math.min(contentY, limits.upper), Math.min(target, Math.max(contentY, limits.lower - height)));
             let allowed = clamp();
             if (Math.abs(allowed - target) > 0.5) {
-                finishGroup(delta < 0 ? limits.above : limits.below);
+                finishGroup(delta < 0 ? limits.above : limits.below, delta < 0 ? -1 : 1);
                 // Showing the group may have kept the anchor by moving contentY.
                 target = Math.max(originY, Math.min(Math.max(originY, originY + contentHeight - height), contentY + delta));
                 limits = shownLimits();
@@ -381,6 +406,18 @@ Item {
             restoreOffset = pane.controller.scrollPosition;
             restoreIndex = pane.controller.scrollAnchor;
             restoreAttempts = 0;
+            if (followTail && count && pane.messageModel) {
+                // The first screen at the latest message is not visible
+                // until it is complete; its rows load at once instead of
+                // across many frames.
+                let first = count - 1, extent = 0;
+                while (first > 0 && extent < height * 1.5) {
+                    extent += pane.messageModel.estimatedHeight(first) + spacing;
+                    first--;
+                }
+                urgentFirst = first;
+                urgentLast = count - 1;
+            }
             if (!count && !pane.controller.loading && !pane.controller.messageCount) {
                 restoreTimer.stop(); restoring = false; return;
             }
@@ -400,6 +437,10 @@ Item {
         onContentYChanged: {
             saveViewport();
             scheduleRange();
+            // A partial history continues once the reader scrolls past its top.
+            if (atYBeginning && !followTail && !restoring && pane.current && pane.messageModel
+                    && pane.messageModel.partialHistory && pane.controller.recentHistory)
+                pane.controller.recentHistory.loadEarlier();
         }
         function scheduleRange() {
             if (pane.current && !pagePrefetch.running)
@@ -427,8 +468,14 @@ Item {
         }
         onContentHeightChanged: {
             scheduleRange();
-            if (pane.current && followTail && !restoring)
+            if (pane.current && followTail && !restoring) {
+                // Rows above the tail settle their heights in the background.
+                // Re-pin the tail in the same frame, so the latest message
+                // never draws one frame away from the bottom.
+                if (!anchoring && !pane.concealed)
+                    positionViewAtEnd();
                 tailTimer.restart();
+            }
         }
         onCountChanged: {
             scheduleRange();
@@ -461,13 +508,21 @@ Item {
                     const tail = conversation.itemAtIndex(conversation.count - 1);
                     if (conversation.count && (!tail || !tail.bodyReady) && conversation.restoreAttempts < 200)
                         return;
-                    // Finish with a complete first screen: every row on it shown.
+                    // Finish with a complete first screen: every row on it shown,
+                    // and no part of it waiting for a row ListView has not
+                    // created yet (rows above slide in as real heights settle).
                     const top = conversation.contentY, bottom = top + conversation.height;
+                    let first = null;
                     for (const row of conversation.contentItem.children) {
-                        if (row.messageSlot === true && row.y + row.height > top && row.y < bottom
-                                && !row.shown && conversation.restoreAttempts < 200)
+                        if (row.messageSlot !== true || row.y + row.height <= top || row.y >= bottom)
+                            continue;
+                        if (!row.shown && conversation.restoreAttempts < 200)
                             return;
+                        if (!first || row.index < first.index)
+                            first = row;
                     }
+                    if (first && first.index > 0 && first.y > top + conversation.spacing + 1 && conversation.restoreAttempts < 200)
+                        return;
                 } else {
                     const index = Math.min(conversation.restoreIndex, conversation.count - 1);
                     pane.messageModel.requestRange(index, index + 3);
@@ -526,6 +581,8 @@ Item {
                 }
                 if (conversation.restoreAttempts >= 2) {
                     stop();
+                    conversation.urgentFirst = -1;
+                    conversation.urgentLast = -2;
                     conversation.restoring = false;
                     conversation.saveViewport();
                     conversation.requestVisibleRange();
@@ -563,13 +620,71 @@ Item {
                 // its anchor while asynchronous delegate heights settle.
                 conversation.scheduleRange();
             }
+            // A partial history gains its earlier rows above the rows on
+            // screen. Row numbers move by count; the loaded range covers old
+            // and new numbers while ListView inserts, so no body unloads.
+            function onHistoryAboutToPrepend(count) {
+                chatSelection.clear();
+                // The first row on screen stays where it is; it moves up by
+                // the loading row, which the earlier rows replace. Rows
+                // above it then load as the reader scrolls to them.
+                const rows = conversation.visibleRows(conversation.slotMap().slots);
+                const item = rows.first >= 0 ? conversation.itemAtIndex(rows.first) : null;
+                const loading = conversation.headerItem ? conversation.headerItem.height : 0;
+                conversation.prependAnchor = item ? rows.first : -1;
+                conversation.prependOffset = item ? Math.max(0, item.y - conversation.contentY - loading) : 0;
+                if (conversation.activeLast >= 0) {
+                    conversation.activeLast += count;
+                    conversation.activeEnd += count;
+                }
+            }
+            function onHistoryPrepended(count) {
+                if (conversation.activeLast >= 0)
+                    conversation.activeFirst += count;
+                if (conversation.restoreIndex >= 0)
+                    conversation.restoreIndex += count;
+                const anchor = conversation.prependAnchor;
+                conversation.prependAnchor = -1;
+                if (anchor >= 0 && !conversation.followTail && !conversation.restoring) {
+                    conversation.anchoring = true;
+                    conversation.forceLayout();
+                    const item = conversation.itemAtIndex(anchor + count);
+                    if (item) {
+                        conversation.contentY = item.y - conversation.prependOffset;
+                    } else {
+                        conversation.positionViewAtIndex(anchor + count, ListView.Beginning);
+                        conversation.contentY -= conversation.prependOffset;
+                    }
+                    // Let ListView create the row just above the screen, so
+                    // scrolling up has a row to load and move into.
+                    conversation.contentY -= 1;
+                    conversation.forceLayout();
+                    conversation.contentY += 1;
+                    conversation.anchoring = false;
+                }
+                conversation.scheduleRange();
+            }
+        }
+        header: Item {
+            objectName: pane.current ? "earlierHistoryLoading" : ""
+            width: conversation.width
+            visible: !!pane.messageModel && pane.messageModel.partialHistory
+            height: visible ? 48 : 0
+            Text {
+                anchors.centerIn: parent
+                text: I18n.t("正在加载更早的消息…")
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.font(11)
+            }
         }
         footer: Item {
             width: conversation.width
             height: turnStatus.visible ? turnStatus.implicitHeight + 20 : 0
             TaskStatus {
                 id: turnStatus
-                objectName: "turnStatus"
+                // Named only on the pane in use; a held pane shows the previous chat.
+                objectName: pane.current ? "turnStatus" : ""
                 x: 33
                 y: 8
                 status: pane.turnStatus
@@ -635,7 +750,9 @@ Item {
                         spacing: 9
                         AssistantAvatar {
                             objectName: pane.messagePrefix ? pane.messagePrefix + "AssistantAvatar_" + messageRow.index : "assistantAvatar_" + messageRow.index
-                            messageKey: pane.viewKey + "/" + messageRow.index
+                            // The row's own entry keeps its avatar when rows
+                            // are inserted above it.
+                            messageKey: pane.viewKey + "/" + ((modelData._entries || [])[0] || messageRow.index)
                             artwork: String(pane.portrait).length ? pane.portrait : Character.asset(["avatarSmile", "avatarWink", "avatarHappy"][variant], fallbackSource)
                         }
                         SelectableText {

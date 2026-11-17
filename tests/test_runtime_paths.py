@@ -60,7 +60,7 @@ class RuntimePathTests(unittest.TestCase):
         modules = filesystem_path(source) / "node_modules"
         package = modules / PACKAGE
         package.mkdir(parents=True)
-        (package / "package.json").write_text(json.dumps({"version":"1.3.0"}))
+        (package / "package.json").write_text(json.dumps({"version":"1.5.2"}))
         ai = modules / "@earendil-works/pi-ai/dist"
         (ai / "providers").mkdir(parents=True)
         (ai / "providers/all.js").write_text("original catalog")
@@ -70,7 +70,7 @@ class RuntimePathTests(unittest.TestCase):
         payload.write_text("original dependency data")
         project_runtime(source, target)
         self.assertEqual((filesystem_path(target) / "node_modules" / PACKAGE / "nested/dependency/resource.txt").read_text(), "original dependency data")
-        self.assertEqual(json.loads((filesystem_path(target) / "manifest.json").read_text())["version"], "1.3.0")
+        self.assertEqual(json.loads((filesystem_path(target) / "manifest.json").read_text())["version"], "1.5.2")
 
     def test_verification_keeps_node_argv_ordinary(self):
         release, source = self.deep / "release", self.deep / "bridge"

@@ -163,6 +163,7 @@ with ExitStack() as mocks:
         # Give the real composer a fixed host: Main's unrelated PID sidebar
         # motion must not supply incidental geometry notifications to this test.
         composer_window = QQuickView()
+        composer_window.engine().setImportPathList(engine.importPathList())
         composer_window.engine().rootContext().setContextProperty("backend", backend)
         composer_window.setResizeMode(QQuickView.SizeRootObjectToView)
         host_url = QUrl.fromLocalFile(str(ROOT / "tests/fixtures/input-method.qml"))
@@ -258,6 +259,7 @@ Item {
         # Load the real Widget QML without starting a plugin worker.
         sdk = EditorSdk()
         widget = QQuickView()
+        widget.engine().setImportPathList(engine.importPathList())
         widget.engine().rootContext().setContextProperty("backend", backend)
         widget.setResizeMode(QQuickView.SizeRootObjectToView)
         widget.setInitialProperties({"sdk": sdk})

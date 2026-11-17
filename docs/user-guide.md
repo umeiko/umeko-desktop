@@ -10,7 +10,7 @@ A Qt Quick / QML desktop shell for the full [Pi Coding Agent](https://github.com
 - Windows, macOS, or a Linux desktop with the required Qt platform libraries.
 - An accessible login Keychain on macOS, or an unlocked Secret Service keyring / KWallet in the current Linux desktop D-Bus session. Windows uses DPAPI.
 
-Pi is pinned to `@earendil-works/pi-coding-agent@1.3.0`. No public model supplier or external MCP server is preconfigured.
+Pi is pinned to `@earendil-works/pi-coding-agent@1.5.2`. No public model supplier or external MCP server is preconfigured.
 
 ## Run from source
 

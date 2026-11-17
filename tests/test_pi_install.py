@@ -14,7 +14,7 @@ from app.pi_management import resource_command
 from app.pi_runtime import PACKAGE
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE = ROOT / "runtime/releases/coding-1.3.0"
+RELEASE = ROOT / "runtime/releases/coding-1.5.2"
 
 
 class PiInstallTests(unittest.TestCase):

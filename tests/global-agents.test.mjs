@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {setImmediate as nextTurn} from 'node:timers/promises';
 import {coordinatorToolGate,coordinatorExtension} from '../runtime/umeko-control.mjs';
 import {createCoordinatorSkills,coordinatorSkillCatalog,coordinatorSkillPaths} from '../runtime/coordinator-skills.mjs';
 import {mkdtempSync,mkdirSync,writeFileSync,rmSync,symlinkSync} from 'node:fs';
@@ -52,6 +53,26 @@ test('the mandatory extension installs a pre-execution gate',()=>{
  const hooks=[];coordinatorExtension({on:(name,fn)=>hooks.push([name,fn])});assert.equal(hooks.length,1);assert.equal(hooks[0][0],'tool_call');assert.equal(hooks[0][1]({toolName:'bash'}).block,true);
 });
 
+test('native tools are opt-in per coordinator and cannot enable management or private tools',async()=>{
+ const {coordinatorNativeTools}=await import('../runtime/umeko-control.mjs');
+ const {CORE_TOOLS}=await import('../runtime/session-capabilities.mjs');
+ assert.deepEqual(coordinatorNativeTools(['read','read','bash','subagent','send_to_user',null]),['read','bash']);
+ for(const name of CORE_TOOLS) {
+  assert.equal(coordinatorToolGate({toolName:name})?.block,true);
+  assert.equal(coordinatorToolGate({toolName:name},{nativeTools:[name]}),undefined);
+ }
+ const options={nativeTools:[...CORE_TOOLS,'subagent','send_to_user','reminder','run_pi_command']};
+ for(const toolName of ['subagent','codemode','tool_search','run_pi_command','send_to_user','reminder'])
+  assert.equal(coordinatorToolGate({toolName},options)?.block,true);
+ assert.equal(coordinatorToolGate({toolName:'umeko_desktop',input:{operation:'agent_bus.create'}},options)?.block,true);
+ const registered=[];
+ createCoordinatorSkills({globalCoordinator:true,coordinatorTools:['read']}).extension({registerTool:t=>registered.push(t)});
+ assert.equal(registered.length,0,'An enabled native reader must retain Pi file/image behavior');
+ const restricted=[];
+ createCoordinatorSkills({globalCoordinator:true,coordinatorTools:['write']}).extension({registerTool:t=>restricted.push(t)});
+ assert.deepEqual(restricted.map(t=>t.name),['read'],'Other tools do not broaden the Skill reader');
+});
+
 test('bus project search joins native Windows paths with saved project names',()=>{
  const qml=readFileSync(new URL('../umeko-plugins/global-agents/qml/Main.qml',import.meta.url),'utf8');
  const code=qml.slice(qml.indexOf('function bridgeTree('),qml.indexOf('function toggleProject('));
@@ -75,7 +96,7 @@ test('only a host-bound pet assistant receives send_to_user and its hidden bindi
  const ordinary=[],tools=[],events=[];let binding='host-binding';
  createUmekoControl({emit(){}}).extension({registerCommand(){},registerTool:tool=>ordinary.push(tool)});
  assert.equal(ordinary.some(tool=>tool.name===SEND_TO_USER),false);
- const control=createUmekoControl({emit:event=>events.push(event),getPetAssistantBinding:()=>binding});
+ const control=createUmekoControl({emit:event=>events.push(event),getPetAssistantBinding:()=>binding,waitForSpeech:async()=>{}});
  control.extension({registerCommand(){},registerTool:tool=>tools.push(tool)});
  const speech=tools.find(tool=>tool.name===SEND_TO_USER);
  assert.ok(speech);assert.deepEqual(Object.keys(speech.parameters.properties),['text']);
@@ -84,16 +105,83 @@ test('only a host-bound pet assistant receives send_to_user and its hidden bindi
  assert.equal(coordinatorToolGate({toolName:'umeko_desktop',input:{operation:'desktop_pet.send_to_user'}},{petAssistant:true}).block,true);
  const rejected=await speech.execute('too-long',{text:'字'.repeat(81)});
  assert.equal(rejected.isError,true);assert.equal(events.length,0);
- const pending=speech.execute('valid',{text:'👩‍💻'.repeat(80)});
+ const pending=speech.execute('valid',{text:'👩‍💻'.repeat(80)});await nextTurn();
  assert.equal(events.length,1);assert.equal(events[0].operation,'desktop_pet.send_to_user');
  assert.equal(events[0].arguments.binding,binding);
  control.response({id:events[0].id,result:{ok:true,status:'shown'}});
  assert.equal((await pending).isError,false);
  binding='new-binding';
- const limited=speech.execute('limited',{text:'完成啦。'});
+ const limited=speech.execute('limited',{text:'完成啦。'});await nextTurn();
  assert.equal(events[1].arguments.binding,'new-binding');
  control.response({id:events[1].id,result:{ok:false,status:'rate_limited',retry_after:30}});
  const result=await limited;assert.equal(result.isError,true);
  assert.equal(JSON.parse(result.content[0].text).status,'rate_limited');
  assert.equal(events.length,2,'The tool must not automatically retry rejected speech');
 });
+
+test('pet speech waits for reading, serializes parallel segments and cancels queued speech',async()=>{
+ const {createUmekoControl}=await import('../runtime/umeko-control.mjs');
+ const events=[],tools=[],waits=[],durations=[];
+ const control=createUmekoControl({emit:event=>events.push(event),getPetAssistantBinding:()=> 'bound',
+  waitForSpeech:async ms=>{durations.push(ms);await new Promise(resolve=>waits.push(resolve));}});
+ control.extension({registerCommand(){},registerTool:tool=>tools.push(tool)});
+ const speech=tools.find(tool=>tool.name==='send_to_user'),abort=new AbortController();
+ let returned=false;
+ const first=speech.execute('first',{text:'第一段'}).then(result=>{returned=true;return result;});
+ const second=speech.execute('second',{text:'第二段'});
+ const cancelled=speech.execute('cancelled',{text:'不应该显示'},abort.signal);
+ await nextTurn();assert.equal(events.length,1);
+ control.response({id:events[0].id,result:{ok:true,status:'shown',reading_ms:5200}});
+ await nextTurn();assert.deepEqual(durations,[5200]);assert.equal(returned,false);assert.equal(events.length,1);
+ abort.abort();await assert.rejects(cancelled,{name:'AbortError'});
+ waits.shift()();await first;await nextTurn();assert.equal(events.length,2);assert.equal(events[1].arguments.text,'第二段');
+ control.response({id:events[1].id,result:{ok:true,status:'shown',reading_ms:1800}});
+ await nextTurn();assert.deepEqual(durations,[5200,1800]);waits.shift()();await second;await nextTurn();
+ assert.equal(events.length,2);control.clear();
+});
+
+test('closing the bridge interrupts a real reading pause and allows a fresh connection',async()=>{
+ const {createUmekoControl}=await import('../runtime/umeko-control.mjs');
+ const events=[],tools=[];
+ const control=createUmekoControl({emit:event=>events.push(event),getPetAssistantBinding:()=> 'bound'});
+ control.extension({registerCommand(){},registerTool:tool=>tools.push(tool)});
+ const speech=tools.find(tool=>tool.name==='send_to_user');
+ const first=speech.execute('first',{text:'等待读完'});await nextTurn();
+ control.response({id:events[0].id,result:{ok:true,status:'shown',reading_ms:12200}});
+ await nextTurn();control.clear();await assert.rejects(first,{name:'AbortError'});
+ const second=speech.execute('new',{text:'新的连接'});await nextTurn();assert.equal(events.length,2);
+ control.response({id:events[1].id,result:{ok:false,status:'unavailable'}});assert.equal((await second).isError,true);
+ control.clear();
+});
+
+ test('only the bound pet may use the scheduled-tasks Widget interface',()=>{
+   for(const operation of ['widgets.docs','widgets.call']) {
+     const event={toolName:'umeko_desktop',input:{operation,arguments:{id:'scheduled-tasks'}}};
+     assert.equal(coordinatorToolGate(event,{petAssistant:true}),undefined);
+     assert.equal(coordinatorToolGate(event)?.block,true);
+     event.input.arguments.id='desktop-pet';
+     assert.equal(coordinatorToolGate(event,{petAssistant:true})?.block,true);
+   }
+   assert.equal(coordinatorToolGate({toolName:'umeko_desktop',input:{operation:'widgets.result'}},{petAssistant:true}),undefined);
+ });
+
+ test('reminder tool is assigned only to the associated coordinator and preserves host identity',async()=>{
+   const {createUmekoControl,REMINDER}=await import('../runtime/umeko-control.mjs');
+   const tools=[],events=[];const control=createUmekoControl({emit:event=>events.push(event),getPetReminderBinding:()=> 'host-reminder-binding'});
+   control.extension({registerCommand(){},registerTool:tool=>tools.push(tool)});
+   const tool=tools.find(tool=>tool.name===REMINDER);assert.ok(tool);
+   assert.equal(tool.parameters.properties.binding,undefined);
+   assert.equal(coordinatorToolGate({toolName:REMINDER},{reminderAssistant:true}),undefined);
+   assert.equal(coordinatorToolGate({toolName:REMINDER},{petAssistant:true})?.block,true);
+   const request=tool.execute('create',{action:'create',title:'喝水',repeat:'daily',dueAt:'2030-01-01T09:00:00+08:00',timeZone:'Asia/Shanghai'});
+   assert.equal(events[0].operation,'desktop_pet.reminder');
+   assert.equal(events[0].arguments.binding,'host-reminder-binding');
+   control.response({id:events[0].id,result:{ok:true,item:{title:'喝水'}}});
+   assert.equal((await request).isError,false);
+   assert.equal(tool.parameters.properties.completed.type,'boolean');
+   const restore=tool.execute('restore',{action:'complete',id:'item-id',completed:false});
+   assert.equal(events[1].arguments.completed,false);
+   assert.equal(events[1].arguments.binding,'host-reminder-binding');
+   control.response({id:events[1].id,result:{ok:true,item:{completed:false}}});
+   assert.equal((await restore).isError,false);
+ });

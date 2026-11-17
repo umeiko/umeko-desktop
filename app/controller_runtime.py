@@ -206,6 +206,7 @@ class PiControllerMixin:
                     payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(service.root/"sessions"/record.global_agent),
                         **service.skill_config(record),
                         petAssistantBinding=service.m._pet.assistant.binding_for(record),
+                        petReminderBinding=service.m._pet.assistant.reminder_binding_for(record),
                         agent={**agent,"safeMode":True,"instructions":service.prompt(record)})
                 self._pool.start(record, node_executable(), bridge, payload)
         except (RuntimeError, OSError) as error:
