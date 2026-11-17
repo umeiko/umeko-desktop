@@ -174,13 +174,13 @@ class ToolPermissionTests(unittest.TestCase):
         manager.controller = backend
         value = {"agentDir": str(self.directory / "factory-agent"),
                  "release": str(kernels / "factory-fixture"), "backup": "fixture-backup"}
-        with patch("app.pi_management.installed_version", return_value="1.3.0"):
+        with patch("app.pi_management.installed_version", return_value="1.5.2"):
             manager._apply_factory(value)
         self.assertEqual(Store(backend.store.directory).data["agent"]["toolPermissionMode"], "ask")
         self.assertEqual(backend.store.data["agent"]["instructions"], "")
         self.assertTrue(backend.store.data["agent"]["safeMode"])
         self.assertEqual(json.loads(pointer.read_text(encoding="utf-8")),
-                         {"version": "1.3.0", "directory": "factory-fixture"})
+                         {"version": "1.5.2", "directory": "factory-fixture"})
         backend._restart_pi.assert_called_once_with()
 
 

@@ -22,12 +22,20 @@ class ScheduledTaskHost:
             record = self.b._pool.find(identifier)
             if record is None:
                 record = self.m.global_agents.record('session:' + identifier)
-        if record is None or record.global_agent or record.workspace != source.get('workspace'):
+        pet_id = source.get('timerAgentId')
+        if record is None and pet_id:
+            bus = self.m.global_agents
+            if pet_id != bus.pet_assistant_id:raise ValueError('Pet timer binding changed')
+            record = bus.ensure(pet_id)
+        helper = getattr(getattr(self.m, '_pet', None), 'assistant', None)
+        if record is None or (record.global_agent and (not helper or not helper.owns(record))) or record.workspace != source.get('workspace'):
             raise ValueError('原会话已不存在或工作目录已改变 / Original conversation is unavailable or changed')
         if identifier and record.id != identifier:raise ValueError('Conversation identity changed')
         return record
 
     def targets(self, record):
+        if record.global_agent:
+            return [{'id': 'agent:' + record.global_agent, 'name': '悬浮小助手'}]
         rows = [{'id': 'main', 'name': '主 Agent / Main Agent'}]
         bus = self.m.global_agents
         if bus.active:
@@ -43,12 +51,13 @@ class ScheduledTaskHost:
     def capture(self, source):
         record = self.record(source)
         info = self.metadata(record)
-        return {**source, 'id': record.id, 'token': record.key, 'timerTargets': info['targets'],
+        extra = {'timerAgentId': record.global_agent, 'timerOwnerTarget': 'agent:' + record.global_agent} if record.global_agent else {}
+        return {**source, **extra, 'id': record.id, 'token': record.key, 'timerTargets': info['targets'],
                 'timerGlobalTargets': info['global_targets'], 'timerTimeZone': info['time_zone']}
 
     @staticmethod
     def identity(record):
-        return 'session:' + record.id if record.id else 'draft:' + record.key
+        return 'agent:' + record.global_agent if record.global_agent else 'session:' + record.id if record.id else 'draft:' + record.key
 
     def request(self, request):
         if request['widget'] != 'scheduled-tasks' or not self.m.entries[request['widget']].get('builtin'):
@@ -98,10 +107,10 @@ class ScheduledTaskHost:
                 self.jobs.pop(old)
             job = {'record': weakref.ref(caller), 'target_record': weakref.ref(caller), 'owner': self.identity(caller), 'target': target, 'text': text,
                    'state': 'queued', 'created': time.monotonic()}
-            if target == 'main':
+            if target == 'main' or caller.global_agent:
                 from .dsh_backend import is_dsh
                 if is_dsh(caller):raise ValueError('定时触发暂仅支持 Pi 会话 / Timer delivery currently requires Pi')
-                if not caller.busy and sum(record.busy and not record.global_agent for record in self.b._pool.records.values()) >= 8:
+                if not caller.busy and (sum(record.busy for record in self.m.global_agents.records.values()) >= 4 if caller.global_agent else sum(record.busy and not record.global_agent for record in self.b._pool.records.values()) >= 8):
                     raise ValueError('原生会话并发已满 / Native session capacity is full')
                 notification = {'id': key, 'requestId': '', 'widgetId': 'scheduled-tasks', 'name': '定时任务 / Scheduled Tasks',
                                 'message': text, 'wake': True, 'data': {'timerRunId': key}}
@@ -116,12 +125,12 @@ class ScheduledTaskHost:
                 if target_record:job['target_record'] = weakref.ref(target_record)
             self.jobs[key] = job
             return {'state': 'queued', 'source': {key: getattr(caller, field) for key, field in
-                    (('token', 'key'), ('id', 'id'), ('workspace', 'workspace'))}}
+                    (('token', 'key'), ('id', 'id'), ('workspace', 'workspace'))} | ({'timerAgentId': caller.global_agent} if caller.global_agent else {})}
         if operation == 'scheduledTasks.openTarget' and set(args) == {'target'}:
             if not request['page'] or self.m._page != 'scheduled-tasks':raise ValueError('Open targets from the timer page')
             target = args['target']
             if target not in {row['id'] for row in self.targets(caller)}:raise ValueError('Target is no longer connected')
-            if target == 'main':
+            if target == 'main' or caller.global_agent:
                 if caller.id:self.b.openSession(caller.id)
                 else:self.m.closePage()
             else:

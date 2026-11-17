@@ -24,6 +24,14 @@ Rectangle {
     property string dismissedProposalId: ""
     property bool formSubmitting: false
     property var chosenSkills: []
+    property var chosenTools: []
+    readonly property var nativeToolCatalog: [
+        {id:"read",description:"读取文件和图片"}, {id:"bash",description:"执行终端命令"},
+        {id:"powershell",description:"执行 PowerShell 命令"}, {id:"edit",description:"编辑已有文件"},
+        {id:"write",description:"创建或覆盖文件"}, {id:"grep",description:"搜索文件内容"},
+        {id:"find",description:"查找文件"}, {id:"ls",description:"列出目录"}
+    ]
+    function toggleTool(id,enabled) {let next=chosenTools.filter(value=>value!==id);if(enabled)next.push(id);chosenTools=next}
     property var skillCatalog: []
     property string skillJob: ""
     property bool skillPolling: false
@@ -122,6 +130,7 @@ Rectangle {
         nameInput.text=row.autoName?"":row.name || ""
         instructions.text=row.instructions || ""
         chosenSkills=(row.skills || []).slice()
+        chosenTools=(row.tools || []).slice()
         chosenCharacter=state.appearances.some(value=>value.id===row.character)?row.character:(state.defaultCharacter || "")
         let index=state.models.findIndex(value=>value.id===(row.model || state.defaultModel))
         modelPicker.currentIndex=Math.max(0,index)
@@ -143,7 +152,7 @@ Rectangle {
         if(formSubmitting)return
         const model=state.models[modelPicker.currentIndex]
         if(!model){formError.text="请先在设置中添加模型供应商";return}
-        formSubmitting=!!call(editing?"update":proposalId?"confirmCreation":"create",{id:editing,requestId:proposalId,name:nameInput.text,character:chosenCharacter,model:model.id,instructions:instructions.text,skills:chosenSkills})
+        formSubmitting=!!call(editing?"update":proposalId?"confirmCreation":"create",{id:editing,requestId:proposalId,name:nameInput.text,character:chosenCharacter,model:model.id,instructions:instructions.text,skills:chosenSkills,tools:chosenTools})
     }
     function send() {
         const text=input.text.trim();if(!text || !selected)return
@@ -216,11 +225,7 @@ Rectangle {
         id:check
         implicitHeight:28*root.sdk.scale;spacing:8*root.sdk.scale;padding:0
         contentItem:Text {text:check.text;color:root.c.ink;font.pixelSize:12*root.sdk.scale;leftPadding:24*root.sdk.scale;verticalAlignment:Text.AlignVCenter}
-        indicator:Rectangle {
-            x:2*root.sdk.scale;anchors.verticalCenter:parent.verticalCenter;width:16*root.sdk.scale;height:width;radius:3
-            color:check.checked?root.c.accent:root.c.surface;border.color:check.checked || check.activeFocus?root.c.accent:root.c.muted
-            TreeIcon {anchors.fill:parent;anchors.margins:1;iconName:"check";color:"white";visible:check.checked}
-        }
+
     }
     ColumnLayout {
         anchors.fill:parent;anchors.margins:18;spacing:14
@@ -501,6 +506,10 @@ Rectangle {
                 LabelText {text:"Skills";color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
                 SmallButton {objectName:"globalAgentSkillsButton";text:root.chosenSkills.length?"已启用 "+root.chosenSkills.length:"未启用";onClicked:{skillsDialog.open();root.loadSkills()}}
             }
+            RowLayout {Layout.fillWidth:true
+                LabelText {text:"可用工具";color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
+                SmallButton {objectName:"globalAgentToolsButton";text:root.chosenTools.length?"已启用 "+root.chosenTools.length:"默认";onClicked:toolsDialog.open()}
+            }
             Rectangle {Layout.fillWidth:true;implicitHeight:100;radius:10;color:root.c.bg;border.color:root.c.line
                 ScrollView {anchors.fill:parent;anchors.margins:8;clip:true
                     TextArea {id:instructions;objectName:"globalAgentInstructions";placeholderText:"职责与偏好（可选）";color:root.c.ink;placeholderTextColor:root.c.muted;wrapMode:TextArea.Wrap;font.pixelSize:13*root.sdk.scale;background:null}
@@ -550,6 +559,37 @@ Rectangle {
                 SmallButton {text:"全部关闭";enabled:root.chosenSkills.length>0;onClicked:root.chosenSkills=[]}
                 Item {Layout.fillWidth:true}
                 SmallButton {objectName:"doneGlobalAgentSkills";text:"完成";primary:true;onClicked:skillsDialog.close()}
+            }
+        }
+    }
+    Dialog {
+        id:toolsDialog;objectName:"globalAgentToolsDialog";anchors.centerIn:parent
+        width:Math.min(460,root.width-28);height:Math.min(550,root.height-28);modal:true;padding:20
+        background:Rectangle {radius:18;color:root.c.surface;border.color:root.c.line}
+        contentItem:ColumnLayout {spacing:14
+            RowLayout {Layout.fillWidth:true
+                LabelText {text:"可用工具";font.pixelSize:18*root.sdk.scale;font.weight:Font.DemiBold;Layout.fillWidth:true}
+                SmallButton {objectName:"selectAllGlobalAgentTools";text:"全选";enabled:root.chosenTools.length<root.nativeToolCatalog.length;onClicked:root.chosenTools=root.nativeToolCatalog.map(tool=>tool.id)}
+            }
+            LabelText {text:"为当前子智能体启用 Pi 原生工具。沿用现有工具权限设置。";color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true;wrapMode:Text.Wrap;elide:Text.ElideNone}
+            ListView {
+                objectName:"globalAgentToolsList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:5
+                model:root.nativeToolCatalog
+                delegate:Rectangle {
+                    required property var modelData
+                    width:ListView.view.width;height:66*root.sdk.scale;radius:10;color:toolHover.hovered?root.c.hover:root.c.bg
+                    HoverHandler {id:toolHover}
+                    ColumnLayout {anchors.fill:parent;anchors.margins:10;spacing:4
+                        CompactCheckBox {objectName:"globalTool_"+modelData.id;text:modelData.id;checked:root.chosenTools.includes(modelData.id);Layout.fillWidth:true;onToggled:root.toggleTool(modelData.id,checked)}
+                        LabelText {text:modelData.description;color:root.c.muted;Layout.fillWidth:true;font.pixelSize:11*root.sdk.scale}
+                    }
+                }
+                ScrollBar.vertical:ScrollBar {}
+            }
+            RowLayout {Layout.fillWidth:true
+                SmallButton {objectName:"resetGlobalAgentTools";text:"恢复默认";enabled:root.chosenTools.length>0;onClicked:root.chosenTools=[]}
+                Item {Layout.fillWidth:true}
+                SmallButton {objectName:"doneGlobalAgentTools";text:"完成";primary:true;onClicked:toolsDialog.close()}
             }
         }
     }

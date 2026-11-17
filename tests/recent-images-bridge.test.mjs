@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const release = join(root, "runtime/releases/coding-1.3.0");
+const release = join(root, "runtime/releases/coding-1.5.2");
 const png = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAACXBIWXMAAA9hAAAPYQGoP6dpAAAAKElEQVRIie3NMQEAAAjDMMC/ZzDBvlRA01vZJvwHAAAAAAAAAAAAbx2jxAE/0VKtIwAAAABJRU5ErkJggg==";
 
 test("real bridge completes 25 mixed images, reopens an archived image, and preserves history", { timeout: 120000 }, async t => {

@@ -53,8 +53,17 @@ ApplicationWindow {
         active:backend.desktopPlugins.pet.visible
         sourceComponent:Component { DesktopPetWindow { pet:backend.desktopPlugins.pet } }
     }
+    Loader {
+        id:petReminderWindowLoader;objectName:"desktopPetReminderWindowLoader"
+        active:false
+        sourceComponent:Component { DesktopPetReminderWindow { pet:backend.desktopPlugins.pet } }
+    }
     Connections {
         target:backend.desktopPlugins.pet
+        function onRemindersRequested() {
+            if(petReminderWindowLoader.item)petReminderWindowLoader.item.present()
+            else petReminderWindowLoader.active=true
+        }
         function onRestoreRequested() { window.showNormal();window.raise();window.requestActivate() }
         function onSettingsRequested() {
             window.showNormal();window.raise();window.requestActivate()
@@ -454,9 +463,9 @@ ApplicationWindow {
                 Text { font.family: Theme.fontFamily; text: window.page === "chat" ? (window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle) : [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于"), I18n.t("Umeko 插件管理")][window.settingsTab]; color: Theme.ink; font.pixelSize: Theme.font(11, visible); width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
             }
             Row { id: windowControls; anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 18; spacing: 2
-                ActionButton { glyph: "minus"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最小化"); onClicked: window.showMinimized() }
-                ActionButton { glyph: "maximize"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最大化"); onClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
-                ActionButton { objectName: "closeToTrayButton"; glyph: "x"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("收起到托盘"); onClicked: window.close() }
+                WindowControlButton { objectName:"minimizeWindowButton";operation:"minimize"; hint: I18n.t("最小化"); onClicked: window.showMinimized() }
+                WindowControlButton { objectName:"maximizeWindowButton";operation:"maximize";maximized:window.visibility===Window.Maximized; hint: I18n.t("最大化"); onClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
+                WindowControlButton { objectName:"closeToTrayButton";operation:"close"; hint: I18n.t("收起到托盘"); onClicked: window.close() }
             }
             SubagentIndicator { id: subagentIndicator; anchors.right: windowControls.left; anchors.rightMargin: 13; anchors.verticalCenter: windowControls.verticalCenter; visible: window.page === "chat" && backend.subagents.activeCount > 0 }
         }

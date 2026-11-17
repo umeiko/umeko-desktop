@@ -14,6 +14,7 @@ COMMON = [
     'tests.test_terminal_widget',
     'tests.test_skill_import',
     'tests.test_update',
+    'tests.test_update_windows',
     'tests.test_update_cleanup',
     'tests.test_preview_source',
     # Keep the module entrypoint: load_tests isolates its Qt application.
@@ -81,6 +82,10 @@ NODE_HOST = [
     ('update-engine', 'cleanup retains recent or active temporary download jobs and reclaims abandoned ones'),
 ]
 NODE_WINDOWS = [
+    ('update-engine', 'Windows parent handle remains unsignaled after exit code is set; timeout leaves installation untouched'),
+    ('update-engine', 'Windows installer holds the live parent handle until termination before replacing files'),
+    ('update-engine', 'Windows rename diagnostics identify an external executable holding the installation working directory'),
+    ('update-engine', 'Windows locked-folder diagnostics localize unknown owners and preserve the error code'),
     ('tool-permissions-integration', 'actual native powershell tool is intercepted before its harmless write'),
     ('subagent-queue', 'child queue edits/removal, immediate tool and model interruption, FIFO continuation, promotion, isolation and stop recovery'),
 ]

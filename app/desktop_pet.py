@@ -8,12 +8,13 @@ from __future__ import annotations
 import copy
 import json
 import random
+import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QPoint, Property, QTimer, QUrl, Qt, Signal, Slot
+from PySide6.QtCore import QObject, QPoint, Property, QTimer, QUrl, Qt, Signal, Slot, QTextBoundaryFinder
 
 from .pet_input import PetInputMask
 from .pet_packs import BUILTIN_APPEARANCES, STATES, import_pack, read_pack
@@ -59,6 +60,7 @@ class DesktopPet(QObject):
     assistantSpeech = Signal(str)
     restoreRequested = Signal()
     settingsRequested = Signal()
+    remindersRequested = Signal()
     resetPositionRequested = Signal()
     imported = Signal(str, object)
     reminderCardChanged = Signal()
@@ -92,7 +94,8 @@ class DesktopPet(QObject):
         self._reminder_selection = {'id': '', 'create': False, 'serial': 0}
         self.reminders = PetReminders(self.directory, self,
                                       visible=lambda: self.visible,
-                                      notifications=lambda: self._config['reminderNotificationsEnabled'])
+                                      notifications=lambda: self._config['reminderNotificationsEnabled'],
+                                      assistant=lambda: self.manager.global_agents.pet_assistant_id)
         self.reminders.changed.connect(self._reminders_changed)
         self.reminders.due.connect(self._present_reminders)
         self.pack_directory = self.directory / 'appearances'
@@ -159,6 +162,16 @@ class DesktopPet(QObject):
         if not self.assistant:
             return {'ok': False, 'status': 'unavailable', 'error': '桌宠未绑定全局子智能体'}
         return self.assistant.submit(text, identifier)
+
+    @Slot(str, result=int)
+    def speechDuration(self, text):
+        finder=QTextBoundaryFinder(QTextBoundaryFinder.Grapheme,text);graphemes=0
+        while finder.toNextBoundary()!=-1:graphemes+=1
+        latin=len(re.findall(r'[A-Za-z0-9]',text));words=len(re.findall(r'[A-Za-z0-9]+',text))
+        spaces=sum(char.isspace() for char in text)
+        minor=sum(char in ',，;；' for char in text);major=sum(char in '.!?。！？' for char in text)
+        other=max(0,graphemes-latin-spaces-minor-major)
+        return max(1800,min(14000,1000+latin*18+words*160+other*140+minor*180+major*300))
 
     @Property('QVariantList', notify=changed)
     def appearances(self):
@@ -238,6 +251,7 @@ class DesktopPet(QObject):
         self._config = value
         if not self.visible or not value['reminderNotificationsEnabled']:
             self.dismissReminders()
+        self._reminders_changed()
         self.timer.setInterval(value['sampleIntervalMs'])
         self.changed.emit()
         self.manager.changed.emit()
@@ -311,15 +325,9 @@ class DesktopPet(QObject):
         return dict(self._reminder_selection)
 
     def _reminders_changed(self):
-        try:
-            current = {item['id']: item for item in self.reminders.handle('listItems', {})['items']}
-        except (ValueError, OSError):
-            current = {}
-        card = [current[item['id']] for item in self._reminder_card
-                if item['id'] in current and current[item['id']]['revision'] == item['revision']]
+        card=self.reminders.unread_alerts() if self.visible and self._config['reminderNotificationsEnabled'] else []
         if card != self._reminder_card:
-            self._reminder_card = card
-            self.reminderCardChanged.emit()
+            self._reminder_card=card;self.reminderCardChanged.emit()
         self.changed.emit()
 
     def _present_reminders(self, items):
@@ -337,10 +345,11 @@ class DesktopPet(QObject):
 
     @Slot(str, bool)
     def openReminders(self, identifier, create):
+        if not create:self.reminders.mark_viewed(identifier)
         self._reminder_selection = {'id': identifier, 'create': create,
                                     'serial': self._reminder_selection['serial'] + 1}
         self.changed.emit()
-        self.settingsRequested.emit()
+        self.remindersRequested.emit()
 
     @Slot()
     def dismissReminders(self):
@@ -405,6 +414,8 @@ class DesktopPet(QObject):
             return {'ok': False, 'error': str(error)}
 
     def handle(self, method, args):
+        if method=='resolveReminderTime':return self.reminders.resolve_local_time(args)
+        if method=='clearCompleted':return self.reminders.handle(method,args)
         specification=self.manager.entries[ID].get('agent',{}).get('methods',{}).get(method)
         if not specification or not isinstance(args,dict):
             raise ValueError('未知的桌宠方法或无效参数，请读取 widgets.docs')

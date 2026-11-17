@@ -1,5 +1,8 @@
 """Real process failures and cancellation must leave the updater usable."""
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +15,19 @@ from app.pi_runtime import node_executable
 APP = QCoreApplication.instance() or QCoreApplication([])
 
 class UpdateTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'nt', 'Windows process helper entrypoint')
+    def test_process_helper_entrypoint_does_not_start_qt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(__file__).resolve().parents[1]
+            result = subprocess.run([sys.executable, str(root/'main.py'), '--update-process-helper',
+                                     str(os.getpid()), temp],
+                                    input='{"command":"wait","timeout":0}\n', text=True,
+                                    capture_output=True, timeout=10,
+                                    creationflags=subprocess.CREATE_NO_WINDOW)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual([json.loads(line) for line in result.stdout.splitlines()],
+                             [{'state':'ready'}, {'state':'timeout'}])
+
     def setup_updater(self, root):
         host = QObject(); host.root = root
         updater = AppUpdater(host)

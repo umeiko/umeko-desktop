@@ -56,6 +56,27 @@ class GlobalAgentTests(unittest.TestCase):
             self.assertEqual(self.g.agents[self.id],before)
         for method in ('listSkills','importSkills','skillsJob'):
             with self.assertRaises(ValueError):self.g.handle(method,{},agent=True)
+    def test_native_tools_are_per_agent_persistent_and_explicit(self):
+        self.assertEqual(self.g.skill_config(self.source)['coordinatorTools'],[])
+        self.g.handle('update',{'id':self.id,'tools':['read','write','read']})
+        record=self.g.ensure(self.id)
+        self.assertEqual(self.g.skill_config(record)['coordinatorTools'],['read','write'])
+        other=self.g.handle('create',{'name':'保持默认'})['id']
+        self.assertEqual(self.g.agents[other]['tools'],[])
+        self.g.handle('update',{'id':self.id,'name':'保留工具'})
+        self.assertEqual(next(row for row in self.g.snapshot()['agents'] if row['id']==self.id)['tools'],['read','write'])
+        loaded=GlobalAgents(self.m)
+        self.assertEqual(loaded.agents[self.id]['tools'],['read','write']);loaded.close()
+        before=dict(self.g.agents[self.id])
+        for value in (True,{},['subagent'],['send_to_user'],['read']*9,[1]):
+            with self.assertRaises(ValueError):self.g.handle('update',{'id':self.id,'tools':value})
+            self.assertEqual(self.g.agents[self.id],before)
+        with self.assertRaises(ValueError):self.g.handle('update',{'id':self.id,'tools':['bash']},agent=True)
+        record=self.g.ensure(self.id);record.phase='prompting'
+        with self.assertRaises(ValueError):self.g.handle('update',{'id':self.id,'tools':[]})
+        record.phase='idle'
+        self.g.handle('update',{'id':self.id,'tools':[]})
+        self.assertEqual(self.g.skill_config(self.g.ensure(self.id))['coordinatorTools'],[])
     def test_failed_coordinator_snapshot_preserves_request_report_with_partial_text(self):
         identifier='12345678-1234-1234-1234-123456789abc'
         self.source.messages=[{'role':'assistant','text':'partial coordinator reply','error':True,

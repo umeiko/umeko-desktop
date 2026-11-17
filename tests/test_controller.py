@@ -363,7 +363,7 @@ class KernelUpdateTests(unittest.TestCase):
                 self.assertFalse((Path(temp) / "kernels/active.json").exists())
                 self.assertFalse(controller.kernelBusy)
                 self.assertIn("原有内核", controller.kernelStatus)
-                self.assertEqual(controller.kernelVersion, "1.3.0")
+                self.assertEqual(controller.kernelVersion, "1.5.2")
             finally:
                 controller.close()
 

@@ -25,7 +25,7 @@ test("discovery reads package metadata without executing disabled or untrusted e
     assert.equal(row.info.origin,"community");
     assert.equal(row.info.updateKind,"none","a local package is not assumed to be an npm installation");
     const core=extensions.find(row=>row.path==="builtin:mcp");
-    assert.equal(core.info.origin,"pi"); assert.equal(core.info.version,"1.3.0");
+    assert.equal(core.info.origin,"pi"); assert.equal(core.info.version,"1.5.2");
     assert.equal(core.info.updateKind,"npm");
     assert.equal(extensions.find(row=>row.path==="builtin:chatbox").info.updateKind,"desktop");
     if(builtins.includes("subagents")) {

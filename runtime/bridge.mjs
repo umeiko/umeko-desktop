@@ -7,7 +7,7 @@ import { sessionSkillOptions, manageSkills } from "./skills.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
-import { UMEKO_TOOL, SEND_TO_USER, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension } from "./umeko-control.mjs";
+import { UMEKO_TOOL, SEND_TO_USER, REMINDER, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension, coordinatorNativeTools } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
@@ -47,7 +47,7 @@ const { allToolNames, createAllToolDefinitions } = await import(new URL("./core/
 const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, "background_job"];
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
-const umekoControl = createUmekoControl({ emit, getPetAssistantBinding: () => config?.petAssistantBinding || '' });
+const umekoControl = createUmekoControl({ emit, getPetAssistantBinding: () => config?.petAssistantBinding || '', getPetReminderBinding: () => config?.petReminderBinding || '' });
 const auxiliaryVision = createAuxiliaryVision({getConfig:() => config, emit:event => {
   if (event.sessionId && event.sessionId !== runtime?.session.sessionManager.getSessionId()) return subagents.automaticTool(event.sessionId,event);
   emit(event);
@@ -272,7 +272,14 @@ function contextUsage(session) {
 function exposeNativeTools(session) {
   // Use Pi's registry, schemas and execution. Deferred/codemode tools remain reachable
   // through the native discovery tools; explicitly hidden tools stay hidden.
-  if (config?.globalCoordinator) { session.setActiveToolsByName([UMEKO_TOOL, ...(config.petAssistantBinding ? [SEND_TO_USER] : []), ...(config.coordinatorSkills?.length ? ['read'] : [])]); return; }
+  if (config?.globalCoordinator) {
+    const available = new Set(session.getAllTools().map(tool => tool.name));
+    session.setActiveToolsByName([...new Set([UMEKO_TOOL,
+      ...(config.petAssistantBinding ? [SEND_TO_USER] : []), ...(config.petReminderBinding ? [REMINDER] : []),
+      ...(config.coordinatorSkills?.length ? ['read'] : []), ...coordinatorNativeTools(config.coordinatorTools)])]
+      .filter(name => available.has(name)));
+    return;
+  }
   const declared = session.getAllTools().filter(tool => ["direct", "model-only"].includes(tool.exposure));
   session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...declared.map(tool => tool.name)])]
     .filter(name => !config?.pluginSessionPolicy || config.pluginSessionPolicy.allowedTools.includes(name))
@@ -413,7 +420,7 @@ async function init(input) {
         appendSystemPrompt: [(input.globalCoordinator || toolSelection(input.piCapabilities,{name:PI_COMMAND_TOOL,source:"builtin:pi-commands"}) ? DESKTOP_PI_PROMPT+" " : "") + (input.globalCoordinator || toolSelection(input.piCapabilities,{name:UMEKO_TOOL,source:"builtin:umeko-control"}) ? UMEKO_PROMPT+" " : "") + "Reply in the user's language.", input.agent?.instructions || ""],
         extensionFactories: [
           ...(input.globalCoordinator ? [
-            {name:"global-coordinator-boundary",hidden:true,replaceable:false,factory:pi => coordinatorExtension(pi, {petAssistant: Boolean(input.petAssistantBinding), skillReader: Boolean(input.coordinatorSkills?.length)})},
+            {name:"global-coordinator-boundary",hidden:true,replaceable:false,factory:pi => coordinatorExtension(pi, {petAssistant: Boolean(input.petAssistantBinding), reminderAssistant: Boolean(input.petReminderBinding), skillReader: Boolean(input.coordinatorSkills?.length), nativeTools: coordinatorNativeTools(input.coordinatorTools)})},
             {name:"coordinator-skills",hidden:true,replaceable:false,factory:pi => coordinatorSkills.extension(pi)},
           ] : []),
           ...(input.loopReview ? [{name:"loop-review",hidden:true,replaceable:false,factory:loopReview.extension}] : []),

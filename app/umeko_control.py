@@ -231,11 +231,13 @@ class UmekoControl(QObject):
 
     def _execute(self, operation, args, caller, queue, job_id=None, *, _widget_install=False):
         b = self.b
+        if operation == 'desktop_pet.reminder':
+            return b.desktopPlugins.pet.assistant.reminder(caller,args)
         if operation == 'desktop_pet.send_to_user':
             return b.desktopPlugins.pet.assistant.send(caller, args)
         if operation.startswith('agent_bus.'):
             return b.desktopPlugins.global_agents.execute(operation,args,caller)
-        if caller and getattr(caller,'global_agent','') and operation not in ('help','models.list'):
+        if caller and getattr(caller,'global_agent','') and operation not in ('help','models.list') and not b.desktopPlugins.pet.assistant.allows_timer(caller, operation, args):
             raise ValueError('全局协调子智能体只能使用 agent_bus.* 和 models.list；其他任务请委派给已开启桥的工作区代理')
         if operation == 'extensions.install' and not _widget_install:
             raise ValueError('Agent package installation must use run_pi_command and its native installation permission; confirmed Widget installs use the private host entry')

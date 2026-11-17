@@ -3,6 +3,10 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+if __name__ == '__main__' and '--update-process-helper' in sys.argv:
+    from app.update_windows import main as update_process_main
+    sys.exit(update_process_main(sys.argv[sys.argv.index('--update-process-helper') + 1:]))
+
 if __name__ == '__main__':
     from app.preview_launch import route_start
     if route_start(Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))):
@@ -43,6 +47,9 @@ def create_application():
     from app.webview import configure, configure_engine
     from app.desktop_preferences import startup_settings
     configure(root, enabled=startup_settings()['webDisplay'] == 'embedded')
+    from PySide6.QtQuickControls2 import QQuickStyle
+    QQuickStyle.setStyle("UmekoStyle")
+    QQuickStyle.setFallbackStyle("Basic")
     app = QApplication(sys.argv)
     from app.input_method import InputMethodUpdates
     app._input_method_updates = InputMethodUpdates(app)
@@ -59,6 +66,7 @@ def create_application():
         from app.update import UpdateInstaller
         installer = UpdateInstaller(root, sys.argv[sys.argv.index("--install-update") + 1])
         engine = QQmlApplicationEngine()
+        engine.addImportPath(str(root / "app/qml"))
         engine.rootContext().setContextProperty("installer", installer)
         engine.load(QUrl.fromLocalFile(str(root / "app/qml/Installer.qml")))
         if not engine.rootObjects(): raise RuntimeError("安装器界面加载失败")
@@ -82,6 +90,7 @@ def create_application():
     from app.terminal_view import register_terminal_types
     register_terminal_types()
     engine = QQmlApplicationEngine()
+    engine.addImportPath(str(root / "app/qml"))
     configure_engine(engine)
     engine.warnings.connect(lambda errors: diagnostic("\n".join(e.toString() for e in errors)))
     engine.rootContext().setContextProperty("backend", controller)

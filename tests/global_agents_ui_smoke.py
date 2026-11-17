@@ -69,6 +69,43 @@ try:
     wait(lambda:len(g.agents)==1,'Creation failed');identifier=next(iter(g.agents));assert g.agents[identifier]['character']==b.characterStyle['id']
     assert g.agents[identifier]['name']==next(row['name'] for row in b.characterPacks if row['id']==b.characterStyle['id'])
     wait(lambda:page.property('selected')==identifier,'Context not opened')
+    # Native tools are optional, scoped to this agent and saved by the form.
+    from PySide6.QtQml import QQmlExpression, QQmlEngine
+    def evaluate(object,script):
+        expression=QQmlExpression(QQmlEngine.contextForObject(object),object,script)
+        result=expression.evaluate()
+        assert not expression.hasError(),expression.error().toString()
+        return result
+    assert g.agents[identifier]['tools']==[]
+    evaluate(page,'form('+json.dumps(identifier)+')');QTest.qWait(150)
+    evaluate(find('globalAgentFormScroll'),'contentItem.contentY = Math.max(0,contentItem.contentHeight-contentItem.height)')
+    click('globalAgentToolsButton');wait(lambda:find('globalAgentToolsDialog').property('opened'),'Tool picker did not open')
+    click('globalTool_read');click('globalTool_write')
+    window.grabWindow().save(str(out/'native-tools.png'))
+    click('doneGlobalAgentTools');click('confirmCreateGlobalAgent')
+    wait(lambda:g.agents[identifier].get('tools')==['read','write'],'Tool selection not saved')
+    def shown_tools():
+        state=page.property('state');state=state.toVariant() if hasattr(state,'toVariant') else state
+        return next((row.get('tools',[]) for row in state['agents'] if row['id']==identifier),None)
+    wait(lambda:shown_tools()==['read','write'],'Tool selection snapshot stale')
+    assert g.skill_config(g.ensure(identifier))['coordinatorTools']==['read','write']
+    evaluate(page,'form('+json.dumps(identifier)+')');QTest.qWait(150)
+    evaluate(find('globalAgentFormScroll'),'contentItem.contentY = Math.max(0,contentItem.contentHeight-contentItem.height)')
+    click('globalAgentToolsButton');wait(lambda:find('globalAgentToolsDialog').property('opened'),'Tool picker did not reopen')
+    assert find('globalTool_read').property('checked') and find('globalTool_write').property('checked')
+    click('selectAllGlobalAgentTools')
+    all_tools=['read','bash','powershell','edit','write','grep','find','ls']
+    assert not find('selectAllGlobalAgentTools').isEnabled()
+    click('doneGlobalAgentTools');click('confirmCreateGlobalAgent')
+    wait(lambda:g.agents[identifier].get('tools')==all_tools,'Select all was not saved')
+    wait(lambda:shown_tools()==all_tools,'Select all snapshot stale')
+    assert g.skill_config(g.ensure(identifier))['coordinatorTools']==all_tools
+    evaluate(page,'form('+json.dumps(identifier)+')');QTest.qWait(150)
+    evaluate(find('globalAgentFormScroll'),'contentItem.contentY = Math.max(0,contentItem.contentHeight-contentItem.height)')
+    click('globalAgentToolsButton');wait(lambda:find('globalAgentToolsDialog').property('opened'),'Tool picker did not reopen after select all')
+    assert not find('selectAllGlobalAgentTools').isEnabled()
+    click('resetGlobalAgentTools');click('doneGlobalAgentTools');click('confirmCreateGlobalAgent')
+    wait(lambda:g.agents[identifier].get('tools')==[],'Reset did not restore default tools')
     # The target is a genuine, separate native Pi session, initially a draft.
     target=g.identifier(b._view);g.handle('setBridge',{'id':target,'agentId':identifier,'enabled':True})
     # Exercise the Widget's own host-dialog binding, then the real target gate.

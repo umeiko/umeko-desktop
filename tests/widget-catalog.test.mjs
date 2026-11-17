@@ -20,7 +20,7 @@ test('Widget catalogs reuse the streaming Pi without reloading history or ending
     res.end('data: '+JSON.stringify({id:'fixture',object:'chat.completion.chunk',created:1,model:'fixture',choices:[{index:0,delta:{role:'assistant',content:'done'},finish_reason:'stop'}]})+'\n\ndata: [DONE]\n\n');
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-  const child=spawn(process.execPath,[fileURLToPath(new URL('../runtime/releases/coding-1.3.0/bridge.mjs',import.meta.url))],{stdio:['pipe','pipe','pipe']});
+  const child=spawn(process.execPath,[fileURLToPath(new URL('../runtime/releases/coding-1.5.2/bridge.mjs',import.meta.url))],{stdio:['pipe','pipe','pipe']});
   const events=[];let buffer='',stderr='';child.stderr.on('data',data=>{stderr+=data});
   child.stdout.on('data',data=>{buffer+=data;let at;while((at=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,at);buffer=buffer.slice(at+1);try{events.push(JSON.parse(line))}catch{}}});
   const send=value=>child.stdin.write(JSON.stringify(value)+'\n');

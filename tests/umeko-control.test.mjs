@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { createUmekoControl, umekoHelp, UMEKO_PROMPT } from '../runtime/releases/coding-1.3.0/umeko-control.mjs';
+import { createUmekoControl, umekoHelp, UMEKO_PROMPT } from '../runtime/releases/coding-1.5.2/umeko-control.mjs';
 
 test('one desktop tool and a directory-only help keep management instructions on demand', async () => {
   const tools = [], commands = [], control = createUmekoControl({ emit() { throw new Error('help must be local'); } });

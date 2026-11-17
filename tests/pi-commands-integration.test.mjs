@@ -29,7 +29,7 @@ test('real embedded Pi tool installs into its own profile, reloads the same sess
  });
  await new Promise(done=>server.listen(0,'127.0.0.1',done));
  const events=[];let stderr='',buffer='';
- child=spawn(process.execPath,[join(root,'runtime/releases/coding-1.3.0/bridge.mjs')],{cwd,stdio:['pipe','pipe','pipe']});
+ child=spawn(process.execPath,[join(root,'runtime/releases/coding-1.5.2/bridge.mjs')],{cwd,stdio:['pipe','pipe','pipe']});
  child.stderr.on('data',data=>stderr+=data);
  child.stdout.on('data',data=>{buffer+=data;let i;while((i=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);if(line)events.push(JSON.parse(line));}});
  const send=input=>child.stdin.write(JSON.stringify(input)+'\n');

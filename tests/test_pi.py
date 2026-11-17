@@ -171,6 +171,28 @@ class PiTests(unittest.TestCase):
         self.assertEqual([e['operation'] for e in requests],['agent_bus.dispatch'])
         self.assertTrue(any('Coordinator boundary passed' in e.get('text','') for e in events))
 
+    def test_global_coordinator_executes_only_enabled_native_tools(self):
+        commands=iter([
+            ('write',{'path':'coordinator-native.txt','content':'native file access'}),
+            ('read',{'path':'coordinator-native.txt'}),
+            ('bash',{'command':'echo bypass > coordinator-denied.txt'}),
+        ])
+        def response(_model,messages,tools,_tokens):
+            self.assertEqual({tool['name'] for tool in tools},{'umeko_desktop','write','read'})
+            command=next(commands,None)
+            if command:
+                name,args=command
+                return Completion(tool_calls=[{'id':'native-'+name,'name':name,'arguments':args}])
+            return Completion('Native coordinator tools verified')
+        self.response_fn=response
+        events=self.command({**self.payload,'type':'prompt','text':'Native coordinator fixture',
+            'globalCoordinator':True,'coordinatorTools':['read','write'],
+            'agent':{'safeMode':True},'permissionMode':'auto'})
+        self.assertEqual((self.path/'coordinator-native.txt').read_text(),'native file access')
+        self.assertFalse((self.path/'coordinator-denied.txt').exists())
+        self.assertTrue(any('native file access' in e.get('result','') for e in events if e.get('name')=='read'))
+        self.assertTrue(any('Native coordinator tools verified' in e.get('text','') for e in events))
+
     def test_umeko_tool_round_trip_uses_desktop_protocol(self):
         requests = []
         def desktop(event):

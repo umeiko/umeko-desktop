@@ -55,10 +55,12 @@ try:
     assert not t.owner and not t.owners
     assert t.state['question']['key']=='owner'
     def promptshot(name):
-        QTest.qWait(150);assert js(prompt,'width')==360;assert js(prompt,'contentItem.Window.window').grabWindow().save(str(out/name))
+        QTest.qWait(150)
+        assert prompt.width() == composer.property('width'), 'Question card must align with the capsule'
+        assert js(prompt, 'contentItem.Window.window').grabWindow().save(str(out/name))
     promptshot('01-no-owner.png')
     # Existing ordinary persisted-session fixtures; no model or session creation API is called.
-    for key,title in [('ordinary-a','通用工作会话'),('ordinary-b','项目构建检查')]:
+    for key,title in [('ordinary-a','通用会话 [演示 / Demo]'),('ordinary-b','Build check [演示 / Demo]')]:
         file=Path(tmp.name)/(key+'.jsonl')
         file.write_text(json.dumps({'type':'session','version':3,'id':key,'timestamp':'2026-11-15T00:00:00Z','cwd':str(b.store.directory/'workspace')})+'\n')
         r=SessionState(id=key,file=str(file),title=title,workspace='')
@@ -130,7 +132,7 @@ try:
     header=json.loads(Path(project_record.file).read_text());header['cwd']=str(project_dir)
     Path(project_record.file).write_text(json.dumps(header)+'\n')
     next(r for r in b._sessions if r['id']=='ordinary-b')['workspace']=str(project_dir)
-    b.store.data['projects']=[{'id':'demo-project','name':'构建项目','path':str(project_dir)}]
+    b.store.data['projects']=[{'id':'demo-project','name':'构建项目 [演示 / Demo]','path':str(project_dir)}]
     QTest.mouseDClick(window,Qt.LeftButton,Qt.NoModifier,window.mask().boundingRect().center())
     wait(lambda:composer.property('opened'),'Project capsule did not open')
     field.setProperty('text','/项目')
@@ -186,7 +188,7 @@ try:
     assert target.property('text')==project.state['label']
     assert js(target,'background.color.a')==0,'Project target must not use a native grey button background'
     assert js(target,'width')<=110
-    assert js(field,'leftPadding')>js(target,'x+width'),'Target overlaps editable text'
+    assert js(field, 'x + leftPadding') > js(target, 'x + width'),'Target overlaps editable text'
     js(target,'clicked()')
     wait(lambda:project_menu.property('opened'),'Inline target no longer opens the project picker')
     QTest.keyClick(js(project_menu,'contentItem.Window.window'),Qt.Key_Escape)

@@ -78,7 +78,7 @@ test('real Pi uses automatic observations, calls the desktop tool and bypasses i
   server.listen(0,'127.0.0.1');await once(server,'listening');
   let child,lines,stderr='';
   function start() {
-    child=spawn(process.execPath,[join(root,'runtime/releases/coding-1.3.0/bridge.mjs')],{cwd:dir,stdio:['pipe','pipe','pipe'],windowsHide:true});
+    child=spawn(process.execPath,[join(root,'runtime/releases/coding-1.5.2/bridge.mjs')],{cwd:dir,stdio:['pipe','pipe','pipe'],windowsHide:true});
     child.stderr.on('data',chunk=>stderr+=chunk);
     lines=createInterface({input:child.stdout})[Symbol.asyncIterator]();
   }

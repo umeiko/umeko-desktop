@@ -7,7 +7,7 @@ import {createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {projectSession,search} from '../runtime/conversation-search.mjs';
 
-const rg=resolve('runtime/releases/coding-1.3.0/bin/rg'+(process.platform==='win32'?'.exe':''));
+const rg=resolve('runtime/releases/coding-1.5.2/bin/rg'+(process.platform==='win32'?'.exe':''));
 const message=(id,parent,role,text,timestamp=1700000000000)=>({type:'message',id,parentId:parent,message:{role,content:[{type:'text',text}],timestamp}});
 async function fixture(t,entries){
   const directory=await fs.mkdtemp(join(tmpdir(),'umeko-search-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));

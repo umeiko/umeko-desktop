@@ -9,12 +9,14 @@ def release(tag, identifier=1, **changes):
 class ReleaseRetentionTests(unittest.TestCase):
     def test_retains_071_milestone_during_later_full_releases(self):
         rows = [release("v0.7.0", 1), release("v0.7.1", 2),
-                release("v0.7.2", 3), release("v0.7.3", 4)]
+                release("v0.7.2", 3), release("v0.7.3", 4), release("v0.7.1-minimal", 5),
+                release("v0.7.5", 6), {**release("v0.7.0", 7), "draft": True}]
         calls = []
-        self.assertEqual(obsolete_patches(rows, "v0.7.2"), [])
+        self.assertEqual([r["tag_name"] for r in obsolete_patches(rows, "v0.7.2")], ["v0.7.0"])
         self.assertEqual(prune_releases("umeiko/umeko-desktop", "v0.7.3",
-                                       lambda _: rows, lambda *args: calls.append(args)), ["v0.7.2"])
-        self.assertEqual(calls, [("api", "--method", "DELETE", "repos/umeiko/umeko-desktop/releases/3")])
+                                       lambda _: rows, lambda *args: calls.append(args)), ["v0.7.0", "v0.7.2"])
+        self.assertEqual(calls, [("api", "--method", "DELETE", "repos/umeiko/umeko-desktop/releases/1"),
+                                 ("api", "--method", "DELETE", "repos/umeiko/umeko-desktop/releases/3")])
 
     def test_new_dmg_releases_have_nineteen_assets(self):
         old = release("v0.3.1", 2)
