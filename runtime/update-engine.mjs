@@ -12,6 +12,8 @@ import {createGunzip, createInflateRaw, crc32} from 'node:zlib';
 import {Readable, Transform} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import {fileURLToPath} from 'node:url';
+import {spawn} from 'node:child_process';
+import {createInterface} from 'node:readline';
 import {cleanupStartup} from './update-cleanup.mjs';
 
 const MAX_ARCHIVE = 2 * 1024 ** 3, MAX_EXPANDED = 8 * 1024 ** 3;
@@ -576,18 +578,103 @@ export async function prepare(job, jobFile) {
   status('prepared','独立安装器已准备就绪',1,{jobFile,helperExe});
 }
 
-async function renameRetry(source, target) {
+// Capture the Windows process handle before announcing readiness to the parent.
+// The worker keeps that same handle through waiting and directory replacement.
+export async function windowsProcessGuard(job, jobFile) {
+  const executable = job.helperExe || 'py';
+  const args = job.helperExe ? ['--update-process-helper'] :
+    ['-3', fileURLToPath(new URL('../app/update_windows.py', import.meta.url))];
+  const child = spawn(executable, [...args, String(job.parentPid), job.installDir],
+    {windowsHide:true, cwd:path.dirname(jobFile), stdio:['pipe','pipe','pipe']});
+  const closed = new Promise(resolve => child.once('close',resolve));
+  let pending, stopped = false, timer, closing;
+  const lines = createInterface({input:child.stdout});
+  const failure = error => {
+    stopped = true;
+    if (pending) {const reject = pending.reject; pending = undefined; clearTimeout(timer); reject(error);}
+  };
+  child.on('error', failure);
+  child.stdin.on('error', failure);
+  // Native diagnostics go through the structured protocol, never raw paths.
+  child.stderr.resume();
+  child.on('exit', () => failure(Error('Windows process helper stopped unexpectedly')));
+  lines.on('line', line => {
+    try {
+      const value = JSON.parse(line);
+      if (value.state === 'error') {failure(Error(value.message)); return;}
+      if (pending) {const resolve = pending.resolve; pending = undefined; clearTimeout(timer); resolve(value);}
+    } catch (error) {failure(error);}
+  });
+  const response = timeout => new Promise((resolve,reject) => {
+    if (stopped) {reject(Error('Windows process helper is unavailable')); return;}
+    pending = {resolve,reject};
+    timer = setTimeout(() => failure(Error('Windows process helper did not respond')), timeout);
+  });
+  const request = (command, timeout = 30000) => {
+    const result = response(timeout + 1000);
+    child.stdin.write(JSON.stringify({command,timeout})+'\n');
+    return result;
+  };
+  const close = () => closing ??= (async () => {
+    clearTimeout(timer); lines.close(); child.stdin.end();
+    if (child.pid && child.exitCode === null && child.signalCode === null) child.kill();
+    await closed;
+  })();
+  try {
+    if ((await response(30000)).state !== 'ready') throw Error('Windows process helper was not ready');
+  } catch (error) {await close(); throw error;}
+  return {
+    async wait(timeout) {
+      const result = await request('wait', timeout);
+      if (!['exited','timeout'].includes(result.state)) throw Error('Invalid Windows process wait result');
+      return result.state === 'exited';
+    },
+    async blockers() {
+      const result = await request('blockers');
+      if (result.state !== 'blockers' || !Array.isArray(result.names)) throw Error('Invalid Windows process query result');
+      return [...new Set(result.names.filter(name => typeof name === 'string').map(name => path.win32.basename(name)))];
+    },
+    close,
+  };
+}
+
+export async function renameRetry(source, target, {guard, language} = {}) {
   for (let attempt = 0; ; attempt++) {
     try {await fsp.rename(source,target); return;}
-    catch (error) {if (attempt >= 30 || !['EPERM','EACCES','EBUSY'].includes(error.code)) throw error; await sleep(200);}
+    catch (error) {
+      if (!['EPERM','EACCES','EBUSY'].includes(error.code)) throw error;
+      if (attempt >= 30) {
+        if (guard) {
+          const names = await guard.blockers().catch(() => []);
+          error.message = language === 'en' ? (names.length ?
+            `The installation folder is being used by: ${names.join(', ')}. Close them and try again.` :
+            'The installation folder is being used by another program. Restart your computer before updating again.') : (names.length ?
+            `安装目录正被这些程序使用：${names.join('、')}。请关闭它们后重试。` :
+            '安装目录正被其他程序使用，请重启电脑后再更新。');
+        }
+        throw error;
+      }
+      await sleep(200);
+    }
   }
 }
-export async function install(job, jobFile) {
+export async function install(job, jobFile, options = {}) {
+  const guard = options.guard || (process.platform === 'win32' ? await windowsProcessGuard(job,jobFile) : undefined);
+  try {await installWithGuard(job,jobFile,guard);}
+  finally {await guard?.close();}
+}
+async function installWithGuard(job, jobFile, guard) {
   // The UI creates this marker only after it has loaded successfully. The parent
   // quits only after seeing it, so a failed helper launch never closes the app.
   status('waiting','正在等待主程序与所有 agent 退出…');
   const until = Date.now() + 120000;
-  while (true) {
+  if (guard) {
+    if (await exists(jobFile+'.cancel')) throw Error('安装已取消，未修改现有版本。');
+    if (!await guard.wait(Math.max(0,until-Date.now()))) throw Error(job.language === 'en' ?
+      'The previous version has not fully exited. Restart your computer before updating again.' :
+      '旧版本进程没有完全退出，请重启电脑后再更新。');
+    if (await exists(jobFile+'.cancel')) throw Error('安装已取消，未修改现有版本。');
+  } else while (true) {
     if (await exists(jobFile+'.cancel')) throw Error('安装已取消，未修改现有版本。');
     try {process.kill(job.parentPid,0);} catch (error) {if (error.code === 'ESRCH') break; throw error;}
     if (Date.now() > until) throw Error('主程序尚未退出，未修改安装文件。请关闭其他窗口后重试。');
@@ -598,6 +685,7 @@ export async function install(job, jobFile) {
   const lock = path.join(path.dirname(installDir),'.'+path.basename(installDir)+'.update-lock');
   await fsp.mkdir(lock); // one installer per destination
   let stage, backup, outcome, moved = false, activated = false;
+  const renameOptions = {guard,language:job.language};
   try {
     stage = await fsp.mkdtemp(path.join(path.dirname(installDir),'.umeko-stage-'));
     await writeJSON(jobFile,{...job,stage});
@@ -621,14 +709,14 @@ export async function install(job, jobFile) {
     }
     backup = installDir + '.previous-' + randomUUID();
     status('installing','正在安装新版本…',0.9);
-    await renameRetry(installDir,backup); moved = true;
-    try {await renameRetry(payload,installDir); activated = true;}
-    catch (error) {await renameRetry(backup,installDir); moved = false; throw error;}
+    await renameRetry(installDir,backup,renameOptions); moved = true;
+    try {await renameRetry(payload,installDir,renameOptions); activated = true;}
+    catch (error) {await renameRetry(backup,installDir,renameOptions); moved = false; throw error;}
     await writeJSON(jobFile + '.result',{backup,stage,installDir,version:job.version});
     outcome = {backup};
   } catch (error) {
     if (moved && !activated && !await exists(installDir)) {
-      try {await renameRetry(backup,installDir);} catch (restore) {throw Error(`${error.message}；自动恢复失败，旧版本保存在 ${backup}：${restore.message}`);}
+      try {await renameRetry(backup,installDir,renameOptions);} catch (restore) {throw Error(`${error.message}；自动恢复失败，旧版本保存在 ${backup}：${restore.message}`);}
     }
     throw error;
   } finally {if (stage) await fsp.rm(stage,{recursive:true,force:true}).catch(()=>{}); await fsp.rmdir(lock).catch(()=>{});}
