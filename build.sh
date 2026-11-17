@@ -10,7 +10,7 @@ output = (root / sys.argv[1]).resolve()
 if output == root or not output.is_relative_to(root):
     raise SystemExit('Build output must stay inside this workspace')
 PY
-.venv/bin/python -m pip install pyinstaller==6.19.0 cmake==3.31.6
+.venv/bin/python -m pip install pyinstaller==6.19.0 cmake==3.31.6 Pillow==13.0.0
 .venv/bin/python scripts/build-notifications.py
 .venv/bin/python scripts/webview_package.py --frontend build/webview-support
 if [[ "$(uname -s)" == Linux ]]; then .venv/bin/python scripts/build-input-method.py; fi
@@ -43,6 +43,9 @@ fi
 .venv/bin/python - "$output" "$bundle_output" <<'PY'
 from pathlib import Path
 import shutil, sys
+sys.path.insert(0, str(Path.cwd() / 'scripts'))
+from package_payload import optimize_payload
+import json
 from app.pi_runtime import RELEASE_NAME
 root = Path.cwd().resolve()
 output = (root / sys.argv[1]).resolve()
@@ -59,6 +62,8 @@ for target in targets:
         shutil.copy2(root / 'runtime/preview-network.mjs', target / 'runtime/preview-network.mjs')
         shutil.copy2(root / 'runtime/dsh-acp-bridge.mjs', target / 'runtime/dsh-acp-bridge.mjs')
         shutil.copy2(root / 'runtime/dsh-permissions.mjs', target / 'runtime/dsh-permissions.mjs')
+        report = optimize_payload(target)
+        (root / 'build' / ('payload-' + target.name + '.json')).write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 shutil.copy2(root / 'README.md', bundle / 'Umeko/README.md')
 if bundle != output:
     if (output / 'Umeko').exists(): shutil.rmtree(output / 'Umeko')

@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from app.project_info import VERSION
 from macos_dmg import create_dmg
+from package_size import write_report, markdown
 
 
 def main():
@@ -47,10 +48,12 @@ def main():
     archive.with_name(archive.name + ".sha256").write_text(checksum + "  " + archive.name + "\n", encoding="utf-8")
     disk_image = {"diskImage": create_dmg(ROOT / "dist/Umeko.app", Path(str(base) + ".dmg"), "Umeko")} if sys.platform == "darwin" else {}
     (output / "build.json").write_text(json.dumps({**report, "platform": args.platform, "archive": archive.name, "sha256": checksum, **disk_image}, indent=2), encoding="utf-8")
+    size_report = write_report(archive, ROOT / 'build/ci-smoke/package-size.json')
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as handle:
             handle.write(f"### {args.platform}\n\nGUI and Pi verification passed.\n\n- Package: `{archive.name}`\n- SHA-256: `{checksum}`\n")
+            handle.write(markdown(size_report))
     print(archive)
 
 
