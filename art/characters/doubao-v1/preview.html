@@ -18,10 +18,13 @@ for(const [slot,label] of Object.entries(labels)){
  image.src='../../../app/icons/characters/doubao/'+file+'.png';image.alt=label;caption.textContent=label;
  figure.append(image,caption);document.querySelector('#art').append(figure);
 }
+const petBase='../../../umeko-plugins/desktop-pet/assets/doubao/';
+fetch(petBase+'pet.json').then(r=>r.json()).then(pet=>{
 for(const [state,label] of Object.entries({idle:'待机',thinking:'思考',working:'工作',waiting:'等待',done:'完成',error:'出错','idle-rare':'稀有待机'})){
  const figure=document.createElement('figure'),image=document.createElement('img'),caption=document.createElement('figcaption');
- image.src='../../../umeko-plugins/desktop-pet/assets/doubao/'+state+'.webp';image.alt=label;caption.textContent=label;
+ image.src=petBase+(state==='idle-rare'?pet.rareIdle.image:pet.states[state]);image.alt=label;caption.textContent=label;
  figure.append(image,caption);document.querySelector('#pets').append(figure);
 }
+});
 </script>
 </html>

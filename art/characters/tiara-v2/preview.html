@@ -14,13 +14,16 @@
 <h2>桌面小宠物 · 六种动画</h2><section class="grid pets" id="pets"></section>
 <p>美术由内置 image_gen 生成。完整提示词、原始透明图和打包脚本保存在本目录及 art/desktop-pets/tiara-v2。动画按现有桌宠机制播放，隐藏时释放解码器。</p>
 <script>
+const petBase='../../../umeko-plugins/desktop-pet/assets/tiara/';
+const petManifest=fetch(petBase+'pet.json').then(r=>r.json());
 function card(target,src,label){const a=document.createElement('article'),i=new Image(),p=document.createElement('p');i.src=src;i.alt=label;p.textContent=label;a.append(i,p);target.append(a)}
 for(const [id,label] of [['avatarSmile','慌张'],['reply','疲乏'],['catch','手忙脚乱']])card(document.querySelector('#kazuhiko'),'../../../app/icons/characters/kazuhiko/'+id+'.png?v=2',label);
 fetch('../../rare-scenes/v5/generation.json').then(r=>r.json()).then(v=>{for(const s of v.assets)card(document.querySelector('#rare'),'../../rare-scenes/v5/'+s.file,s.title+' · '+s.line)});
 const base='../../../app/icons/characters/tiara/';
-for(const [src,label] of [['reference/avatar-before.png','原版眉形'],[base+'avatarSmile.png','修正眉形'],['reference/idle-before.webp','原版桌宠'],['../../../umeko-plugins/desktop-pet/assets/tiara/idle.webp','修正桌宠']])card(document.querySelector('#comparison'),src,label);
+petManifest.then(pet=>card(document.querySelector('#comparison'),petBase+pet.states.idle,'修正桌宠'));
+for(const [src,label] of [['reference/avatar-before.png','原版眉形'],[base+'avatarSmile.png','修正眉形'],['reference/idle-before.webp','原版桌宠']])card(document.querySelector('#comparison'),src,label);
 for(const [id,label] of [['welcome','欢迎'],['avatarSmile','微笑'],['avatarWink','眨眼'],['avatarHappy','开心'],['reply','回复完成'],['loading','加载 / 思考'],['catch','接文件'],['push','展开'],['pull','收起']])card(document.querySelector('#main'),base+id+'.png',label);
 for(const width of [24,40,64,96]){const i=new Image();i.src=base+'avatarSmile.png';i.style.width=width+'px';i.alt=width+'px 头像';document.querySelector('#sizes').append(i)}
-for(const [id,label] of [['idle','待机'],['thinking','思考'],['working','工作'],['waiting','等待确认'],['done','完成'],['error','遇到问题']])card(document.querySelector('#pets'),'../../../umeko-plugins/desktop-pet/assets/tiara/'+id+'.webp',label);
+petManifest.then(pet=>{for(const [id,label] of [['idle','待机'],['thinking','思考'],['working','工作'],['waiting','等待确认'],['done','完成'],['error','遇到问题']])card(document.querySelector('#pets'),petBase+pet.states[id],label)});
 </script>
 </html>

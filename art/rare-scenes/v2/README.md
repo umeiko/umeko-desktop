@@ -1,7 +1,5 @@
-# 天爱星 · 第八卷场景修订
+# 天爱星 · 第八卷场景修订记录
 
-用户提供小说第八卷插画作为姿态、衣着与神情参考，改用双手交叠、脸红浅笑、白色衬衫的造型。随后按用户意见拉长裙摆到鞋底的腿部比例，选用 tiara-long-legs.png。
+此处是早期全身概念图与腿部比例修订的生成记录，已由 [v5 半身插画](../v5/README.md) 替代。保留用户提供的第八卷参考图、完整提示词及修订记录；旧版输出通过 `generation.json` 中固定到 Git 提交的链接查阅，校验值见 [archived-assets.json](../../archived-assets.json)。
 
-最终中文台词由用户指定：“早一点喜欢上我会比较好哦？”。
-
-内置 image_gen 的完整提示词、原图与修订记录见 generation.json、prompt.txt 和 reference。运行 art/rare-scenes/v1/build.py 会优先采用本修订的天爱星图像。
+当前主页插画运行 `python3 art/rare-scenes/v5/build.py` 构建；兼容 v1 入口也会转到 v5，不再选择此处的旧稿。
