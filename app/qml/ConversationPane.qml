@@ -103,7 +103,10 @@ Item {
             else if (!followTail && count)
                 restoreViewport();
         }
+        // User scrolling and explicit jumps supersede a navigator selection.
+        signal browsingStarted()
         function beginBrowsing() {
+            browsingStarted();
             tailTimer.stop();
             restoreTimer.stop();
             restoring = false;

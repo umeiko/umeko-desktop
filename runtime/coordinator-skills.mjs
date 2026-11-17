@@ -4,6 +4,7 @@ import { existsSync, lstatSync, realpathSync, readFileSync, opendirSync, openSyn
 import { dirname, join, resolve, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Type } from 'typebox';
+import { coordinatorNativeTools } from './umeko-control.mjs';
 
 export const validSkillId = id => typeof id === 'string' && /^(builtin|imported):[^/\\\0:]{1,160}$/.test(id)
   && !['.', '..'].includes(id.slice(id.indexOf(':') + 1));
@@ -35,9 +36,11 @@ export function createCoordinatorSkills(input) {
     resourceOptions: { noSkills: true, additionalSkillPaths: paths,
       skillsOverride: result => ({ ...result, skills: result.skills.filter(skill => paths.includes(skill.filePath)) }) },
     extension(pi) {
+      // An explicitly enabled native reader has Pi's normal file/image support.
+      if (coordinatorNativeTools(input.coordinatorTools).includes('read')) return;
       // Override Pi's broad reader even if all selected folders disappeared.
       pi.registerTool({ name: 'read', label: '读取 Skill', exposure: 'direct',
-        description: 'Read text files inside this global coordinator\'s explicitly enabled Skill directories. Workspace files and other Skills are unavailable. Delegate execution to a connected workspace session.',
+        description: 'Read text files inside this global coordinator\'s explicitly enabled Skill directories. Other files require enabling the native read tool in the agent settings.',
         parameters: Type.Object({path: Type.String({minLength:1,maxLength:4096}), offset: Type.Optional(Type.Integer({minimum:1})), limit: Type.Optional(Type.Integer({minimum:1,maximum:500}))}),
         execute: async (_id, args) => {
           let fd;

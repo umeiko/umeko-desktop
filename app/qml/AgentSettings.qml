@@ -16,13 +16,14 @@ Column {
                 Layout.fillWidth: true; spacing: 8
                 Repeater {
                     model: [{mode:"ask",label:I18n.t("每次询问")},{mode:"auto",label:I18n.t("全自动")}]
-                    ActionButton {
+                    RadioButton {
                         required property var modelData
                         objectName: "toolPermission_" + modelData.mode
                         text: modelData.label
-                        primary: backend.config.agent.toolPermissionMode === modelData.mode
+                        font.family:Theme.fontFamily;font.pixelSize:Theme.font(12,true)
+                        checked: backend.config.agent.toolPermissionMode === modelData.mode
                         Accessible.role: Accessible.RadioButton
-                        Accessible.checked: primary
+                        Accessible.checked: checked
                         onClicked: backend.setToolPermissionMode(modelData.mode)
                     }
                 }

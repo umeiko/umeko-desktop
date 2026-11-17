@@ -37,6 +37,32 @@ class ScheduledTaskPluginTests(unittest.TestCase):
         return self.call('create', dict(name='Check progress', message='Summarize current progress', enabled=False,
             schedule={'frequency': 'interval', 'interval_value': 0.25, 'interval_unit': 'minutes'}, **extra))['task_id']
 
+    def test_pet_scope_only_lists_and_changes_its_own_global_timers(self):
+        self.stop_scheduler()
+        other = self.create(target='agent:'+'a'*32)
+        private = self.create()
+        target = 'agent:'+'b'*32
+        globals_ = [{'id':'agent:'+'a'*32,'name':'Other'},{'id':target,'name':'Pet'}]
+        self.context.request_session = {'id':'','token':'pet-token','workspace':'/pet',
+            'timerAgentId':'b'*32,'timerOwnerTarget':target,
+            'timerTargets':[{'id':target,'name':'Pet'}],'timerGlobalTargets':globals_}
+        own = self.create()
+        task, = self.call('list', {})['tasks']
+        self.assertEqual((task['id'],task['target'],task['owner']), (own,target,target))
+        for key in (other,private):
+            for operation in ('enable','disable','delete','history'):
+                with self.subTest(key=key,operation=operation),self.assertRaises(PluginError):
+                    self.call(operation, {'task_id':key})
+        with self.assertRaises(PluginError):self.create(target='main')
+        self.call('enable', {'task_id':own})
+        self.context.request_session.update(token='pet-restarted',id='native-promoted')
+        task, = self.call('list', {})['tasks']
+        self.assertEqual(task['source']['timerAgentId'],'b'*32)
+        self.assertEqual(task['owner'],target)
+        self.call('disable', {'task_id':own})
+        self.call('delete', {'task_id':own})
+        self.assertEqual(self.call('list', {})['tasks'],[])
+
     def test_agent_create_list_enable_disable_delete_and_quota(self):
         keys = [self.create() for _ in range(5)]
         with self.assertRaisesRegex(PluginError, '5'):self.create()

@@ -57,9 +57,14 @@ class ScheduledTasksPlugin(Plugin):
         targets = session.get('timerTargets', [])
         global_targets = self.global_targets if self.global_targets is not None else {row['id']:row['name'] for row in targets if row['id'].startswith('agent:')}
         allowed = {row['id'] for row in targets}
+        scope = session.get('timerOwnerTarget', '')
+        scoped_tasks = [row for row in self.store.tasks(owner=owner) if not scope or row['target'] == scope]
+        task_id = args.get('task_id')
+        if scope and task_id and not any(row['id'] == task_id for row in scoped_tasks):
+            raise ValueError('悬浮小助手只能管理自己的全局计时器 / Pet assistant can only manage its own global timers')
         if method == 'targets':return {'targets': targets}
         if method == 'list':
-            tasks = self.store.tasks(owner=owner)
+            tasks = scoped_tasks
             for task in tasks:
                 due = task['next_at']
                 task['next_label'] = datetime.fromtimestamp(due).astimezone().strftime('%Y-%m-%d %H:%M:%S %Z') if due is not None else ''
@@ -73,7 +78,7 @@ class ScheduledTasksPlugin(Plugin):
             if set(args) - {'task_id', 'name', 'message', 'schedule', 'enabled', 'target'}:
                 raise ValueError('Unknown timer fields')
             if method == 'create' and task_id is not None:raise ValueError('Create cannot overwrite a timer')
-            name, message, target = args['name'], args['message'], args.get('target', 'main')
+            name, message, target = args['name'], args['message'], args.get('target', scope or 'main')
             if not all(isinstance(value, str) for value in (name, message, target)):
                 raise ValueError('Name, message and target must be text')
             if len(name) > 120 or len(message) > 8000 or len(json.dumps(message)) > 12000:
@@ -88,6 +93,8 @@ class ScheduledTasksPlugin(Plugin):
             shared = previous and previous['target'].startswith('agent:') and previous['target'] == target
             if target not in allowed and not (shared and (target in global_targets or not enabled)):
                 raise ValueError('目标未与本会话建立 Agent Bus / Target is not connected')
+            if scope and target != scope:
+                raise ValueError('悬浮小助手只能为自己设置计时器 / Pet timer target must be itself')
             if shared:
                 owner, source = previous['owner'], previous['source']
             return {'task_id': self.store.save(task_id=task_id, name=name, message=message,

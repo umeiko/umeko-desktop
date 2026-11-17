@@ -197,6 +197,19 @@
               "type": "string",
               "maxLength": 64,
               "description": "带时区的 ISO 8601 时间；普通待办省略此字段"
+            },
+            "repeat": {
+              "type": "string",
+              "enum": [
+                "once",
+                "daily"
+              ],
+              "description": "一次或按 IANA timeZone 中的当地时间每日提醒；完成每日事项会停止循环"
+            },
+            "timeZone": {
+              "type": "string",
+              "maxLength": 128,
+              "description": "每日提醒的 IANA 时区，例如 Asia/Shanghai；省略时使用系统时区"
             }
           },
           "required": [
@@ -229,6 +242,19 @@
             "clearDueAt": {
               "type": "boolean",
               "description": "true 清除提醒；不能与非空 dueAt 同时设置"
+            },
+            "repeat": {
+              "type": "string",
+              "enum": [
+                "once",
+                "daily"
+              ],
+              "description": "一次或按 IANA timeZone 中的当地时间每日提醒；完成每日事项会停止循环"
+            },
+            "timeZone": {
+              "type": "string",
+              "maxLength": 128,
+              "description": "每日提醒的 IANA 时区，例如 Asia/Shanghai；省略时使用系统时区"
             }
           },
           "required": [
@@ -238,13 +264,17 @@
         }
       },
       "completeItem": {
-        "description": "完成事项并取消未触发的提醒；已完成时返回原事项",
+        "description": "设置事项完成状态；默认完成，completed=false 恢复未完成。逾期恢复仅显示红色，不重播通知。",
         "parameters": {
           "type": "object",
           "properties": {
             "id": {
               "type": "string",
               "maxLength": 36
+            },
+            "completed": {
+              "type": "boolean",
+              "description": "默认 true；false 取消完成，恢复原提醒计划"
             }
           },
           "required": [

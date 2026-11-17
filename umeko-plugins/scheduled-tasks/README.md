@@ -105,3 +105,8 @@ An immediately enabled, model-created one-shot is a reusable slot. After it expi
 所有操作都绑定**真实调用会话**，不接受自填 owner/session ID；切换前台不会改变投递归属。本会话主 Agent 的定时器仅本会话可见、可管理；全局定时器在所有会话中共享。编辑同一全局目标会保留原投递会话，改为本会话主 Agent 时则归当前调用会话。草稿得到正式会话 ID 后保留原定时器和 5 个名额限制。没有持久会话 ID 的草稿在应用重启后不可恢复投递。
 
 Operations use the real calling conversation, not a model-supplied owner/session ID. Main-Agent timers remain private to that conversation; global timers are shared. Editing the same global target retains the original delivery source. Changing a global timer to Main Agent makes it private to the current caller. Draft promotion retains the same timers and quota. An unsaved draft without a persistent native session ID cannot receive timers after an application restart.
+
+
+## Bound desktop pet assistant
+
+The host-bound floating assistant may use this Widget to schedule its own global wake-ups without a workspace bridge. Its target defaults to itself; list, history and changes are restricted to timers targeting that same assistant. Delivery wakes its own persistent Pi conversation directly, retaining the normal shared five-timer quota. This exception does not grant other global coordinators Widget access or permit the pet to manage another Agent’s timers.

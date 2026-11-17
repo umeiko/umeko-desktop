@@ -85,10 +85,11 @@ try:
         wait(lambda: native.width() >= 350, 'Task popup was constrained to the tiny pet window: '
              + str((native.metaObject().className(), native.width(), native.height(),
                     composer.property('width'), evaluate(composer, 'contentItem.width'))))
-        assert abs(send.x() + send.width() / 2 - (native.width() - native.height() / 2)) < .5
-        assert abs(send.y() + send.height() / 2 - native.height() / 2) < .5
-        assert send.width() == send.height()
-        assert evaluate(composer, 'background.radius') == composer.property('height') / 2
+        assert native.width()/native.height()>7, 'Composer is no longer a slim input strip'
+        assert 0 < field.x() < field.x()+field.width() < send.x() < send.x()+send.width() < native.width(), 'Input or send button is clipped'
+        assert abs(send.y()+send.height()/2-native.height()/2)<.5
+        assert send.width()==send.height(), 'Send key must remain circular'
+        assert abs(send.x()+send.width()/2-(native.width()-native.height()/2))<.5, 'Send key is not concentric with the capsule end'
         return native
 
     native = open_composer(verify_motion=True)
@@ -99,6 +100,9 @@ try:
          'Opening task input stopped the animation')
     field.setProperty('text', '检查项目状态')
     assert native.grabWindow().save(str(out / 'composer-zh.png'))
+    send.setProperty('down',True);QTest.qWait(30)
+    assert native.grabWindow().save(str(out / 'composer-metal-pressed.png'))
+    send.setProperty('down',False)
     # Capture actual Qt windows at their native coordinates, including the
     # transparent pet window. This is a composite, not a desktop screenshot.
     from PySide6.QtGui import QImage, QPainter, QColor
@@ -114,11 +118,9 @@ try:
         painter.end()
         assert canvas.save(str(out / name))
 
-    assert evaluate(composer, 'background.border.width') == 2
     capture_pair('composer-focused-with-pet.png')
     evaluate(field, 'focus = false')
     QTest.qWait(50)
-    assert evaluate(composer, 'background.border.width') == 1
     assert native.grabWindow().save(str(out / 'composer-unfocused.png'))
     evaluate(field, 'forceActiveFocus()')
     QTest.keyClick(native, Qt.Key_Tab)
@@ -138,7 +140,7 @@ try:
     QTest.keyClick(native, Qt.Key_Return)
     wait(lambda: not composer.property('visible'), 'Enter did not close the successful input')
     assert field.property('text') == ''
-    command.assert_called_once_with('prompt', record, text='检查项目状态')
+    command.assert_called_once_with('prompt', record, text='(input from pet)\n检查项目状态')
     assert backend._view is before_view and bus.selected_conversation == selected
 
     command.reset_mock()
@@ -147,7 +149,7 @@ try:
     click_point = send.mapToScene(QPointF(send.width() / 2, send.height() / 2)).toPoint()
     QTest.mouseClick(native, Qt.LeftButton, Qt.NoModifier, click_point)
     wait(lambda: not composer.property('visible'), 'Send button did not submit')
-    command.assert_called_once_with('prompt', record, text='发送按钮验证')
+    command.assert_called_once_with('prompt', record, text='(input from pet)\n发送按钮验证')
 
     command.reset_mock()
     native = open_composer()
@@ -160,7 +162,7 @@ try:
     wait(lambda: not field.property('inputMethodComposing'), 'IME commit did not finish')
     QTest.keyClick(native, Qt.Key_Return)
     wait(lambda: not composer.property('visible'), 'Committed Chinese task was not sent')
-    command.assert_called_once_with('prompt', record, text='中文任务')
+    command.assert_called_once_with('prompt', record, text='(input from pet)\n中文任务')
 
     command.reset_mock()
     native = open_composer()
@@ -325,7 +327,7 @@ try:
         'nativePopupFocus': True, 'enterAndButtonSend': True, 'unchangedVisibleConversation': True,
         'failedDraftPreserved': True, 'escapeAndOutsideClose': True, 'bindingLossCloses': True,
         'animationContinues': True, 'bilingual': True, 'nativePiRoundTrip': True,
-        'concentricSendCircle': True, 'syntheticImeCommit': True, 'osImeManuallyVerified': False, 'screenEdges': True,
+        'slimComposerGeometry': True, 'syntheticImeCommit': True, 'osImeManuallyVerified': False, 'screenEdges': True,
         'largeFont': True, 'pidOpenAndClose': True, 'keyboardFocus': True,
         'notificationCoexistence': True, 'topEdgeNotificationPriority': True, 'desktopActionPreservesDraft': True, 'warnings': relevant}, indent=2))
     print('Pet task input UI passed')

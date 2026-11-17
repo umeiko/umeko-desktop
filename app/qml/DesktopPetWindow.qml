@@ -38,10 +38,9 @@ Window {
         function onChanged() { Qt.callLater(root.updateInputMask) }
     }
     function syncReminderCard() {
-        if(!speech || !reminderTimeout)return
+        if(!speech)return
         const keys=reminderCard.map(item=>item.id+":"+item.occurrence).join("|")
-        if(keys && keys!==reminderKeys){caption="";speech.stop();reminderTimeout.restart()}
-        if(!keys)reminderTimeout.stop()
+        if(keys && keys!==reminderKeys){caption="";speech.stop()}
         reminderKeys=keys
     }
     function closeReminderCard(){caption="";speech.stop();pet.dismissReminders()}
@@ -108,8 +107,7 @@ Window {
         function onVirtualXChanged(){if(root.visible)root.constrain()}
         function onVirtualYChanged(){if(root.visible)root.constrain()}
     }
-    Timer { id:speech; interval:root.assistantCaption ? 8000 : root.state.rareIdle ? 4200 : 2600; onTriggered:{root.caption="";root.assistantCaption=false} }
-    Timer {id:reminderTimeout;interval:8000;onTriggered:root.closeReminderCard()}
+    Timer { id:speech; objectName:"desktopPetSpeechTimer"; interval:root.assistantCaption ? root.pet.speechDuration(root.caption) : root.state.rareIdle ? 4200 : 2600; onTriggered:{root.caption="";root.assistantCaption=false} }
     // Owned by the window so hiding it cancels pending loop callbacks.
     Timer { id:idleCycleCompletion; interval:0; onTriggered:root.pet.idleCycle() }
     // Compatibility for imported still images; built-in rare scenes are animated.
@@ -138,11 +136,17 @@ Window {
             Text { font.family: Theme.fontFamily;Layout.fillWidth:true;visible:root.reminderCard.length===1;text:root.reminderCard.length?root.localTime(root.reminderCard[0].dueAt):"";textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize: Theme.font(10, visible)}
             Flow {
                 Layout.fillWidth:true;spacing:4
-                Button {objectName:"desktopPetReminderComplete";visible:root.reminderCard.length===1;text:I18n.t("完成");font.pixelSize: Theme.font(10, visible);onClicked:if(root.reminderCard.length===1){const item=root.reminderCard[0];root.pet.completeReminder(item.id,item.revision)}}
-                Button {objectName:"desktopPetReminderView";text:I18n.t(root.reminderCard.length===1?"查看":"查看待办");font.pixelSize: Theme.font(10, visible);onClicked:root.viewReminderCard()}
-                Button {objectName:"desktopPetReminderClose";text:I18n.t("关闭");font.pixelSize: Theme.font(10, visible);onClicked:root.closeReminderCard()}
+                ReminderButton {objectName:"desktopPetReminderView";text:I18n.t(root.reminderCard.length===1?"查看":"查看待办");font.pixelSize: Theme.font(10, visible);onClicked:root.viewReminderCard()}
             }
         }
+    }
+    Rectangle {
+        objectName:"desktopPetReminderUnreadDot";z:6
+        width:10*Theme.fontScale;height:width;radius:width/2;color:Theme.danger
+        visible:root.reminderCard.length>0
+        x:Math.min(root.width-width-2,reminder.x+reminder.width-width-2);y:Math.max(2,reminder.y-3)
+        border.width:2;border.color:Theme.surface
+        TapHandler {onTapped:root.viewReminderCard()}
     }
     Loader {
         id:art;objectName:"desktopPetAnimationLoader"
@@ -265,8 +269,8 @@ Window {
             opacity: notificationBlocked ? 0 : animationProgress
             onNotificationBlockedChanged: if (notificationBlocked && visible) close()
             modal: false
-            width: Math.min(Theme.control(360), root.screen.width - 24)
-            height: Math.max(52, taskInput.implicitHeight + 12)
+            width: Math.min(Theme.control(400), root.bounds().width - 16)
+            height: Theme.control(40)
             padding: 0
             // Native popups may extend beyond the small, masked pet window.
             // Fit to the work area ourselves instead of shrinking to its parent.
@@ -289,83 +293,79 @@ Window {
                 if (result.ok) { taskInput.clear(); close() }
                 else { error = I18n.t(result.error); taskInput.forceActiveFocus() }
             }
-            background: Rectangle {
-                radius: height / 2
-                color: Theme.surface
-                border.width: taskComposer.controlFocused ? 2 : 1
-                border.color: taskComposer.error ? Theme.danger : Qt.alpha(taskComposer.inputBlue, taskComposer.controlFocused ? 1 : 0.45)
+            component ComposerButton: Button {
+                id:key
+                property bool primary:false
+                property string glyph:""
+                implicitWidth:Theme.control(primary?30:26)
+                implicitHeight:implicitWidth
+                padding:0;hoverEnabled:true
+                Accessible.name:text
+                ToolTip.visible:hovered;ToolTip.delay:700;ToolTip.text:Accessible.name
+                HoverHandler {cursorShape:key.enabled?Qt.PointingHandCursor:Qt.ArrowCursor}
+                background:Item {
+                    MachinedButtonFace {anchors.fill:parent;visible:key.primary;pressed:key.down;focused:key.visualFocus;active:key.enabled}
+                    Rectangle {
+                        visible:!key.primary;y:key.down?1:0;width:parent.width;height:parent.height-1;radius:width/2
+                        border.color:key.visualFocus?taskComposer.inputBlue:Theme.dark?"#232a33":"#b1b8c0"
+                        gradient:Gradient {
+                            GradientStop {position:0;color:key.down?Theme.dark?"#2e3640":"#ccd2d9":Theme.dark?"#555e69":"#fafcfd"}
+                            GradientStop {position:1;color:Theme.dark?"#343e49":"#d1d8df"}
+                        }
+                        Rectangle {anchors.fill:parent;anchors.margins:1;radius:width/2;color:"transparent";border.color:Theme.dark?"#30ffffff":"#c0ffffff"}
+                    }
+                }
+                contentItem:Item {
+                    // A light lower cut edge, a dark upper recess and blue ink.
+                    Glyph {anchors.centerIn:parent;anchors.verticalCenterOffset:(key.down?1:0)+0.8;name:key.glyph;width:Theme.icon(key.primary?16:13);height:width;color:Theme.dark?"#c5d3df":"#ffffff";opacity:key.enabled?0.95:0.5}
+                    Glyph {anchors.centerIn:parent;anchors.verticalCenterOffset:(key.down?1:0)-0.4;name:key.glyph;width:Theme.icon(key.primary?16:13);height:width;color:"#465767";opacity:key.enabled?0.8:0.35}
+                    Glyph {anchors.centerIn:parent;anchors.verticalCenterOffset:key.down?1:0;name:key.glyph;width:Theme.icon(key.primary?16:13);height:width;color:key.primary?(key.enabled?"#355d80":"#84929e"):Theme.dark?"#d2d9df":"#6e7e8d"}
+                }
             }
-            contentItem: Item {
-                enabled: taskComposer.desiredOpen && !taskComposer.notificationBlocked
+            background:Rectangle {
+                objectName:"desktopPetTaskSurface"
+                radius:height/2;border.width:1
+                border.color:taskComposer.error?Theme.danger:Theme.dark?"#202329":"#aab1ba"
+                gradient:Gradient {GradientStop {position:0;color:Theme.dark?"#4b5058":"#f5f6f8"} GradientStop {position:1;color:Theme.dark?"#363a41":"#dce0e5"}}
+                Rectangle {anchors.fill:parent;anchors.margins:1;radius:height/2;color:"transparent";border.color:Theme.dark?"#18ffffff":"#c0ffffff"}
+            }
+            contentItem:Item {
+                enabled:taskComposer.desiredOpen && !taskComposer.notificationBlocked
                 InputField {
-                    id: taskInput
-                    objectName: "desktopPetTaskInput"
-                    anchors.fill: parent
-                    leftPadding: 18
-                    rightPadding: parent.height + taskDesktop.width + 8
-                    maximumLength: 16000
-                    Accessible.name: I18n.t("给悬浮小助手派活")
-                    Accessible.description: taskComposer.error
-                    onTextEdited: taskComposer.error = ""
-                    Keys.onEscapePressed: event => {
-                        if (inputMethodComposing) { Qt.inputMethod.reset(); event.accepted = true }
-                        else event.accepted = false
+                    id:taskInput;objectName:"desktopPetTaskInput"
+                    anchors.left:parent.left;anchors.right:taskDesktop.left
+                    anchors.leftMargin:6*Theme.fontScale;anchors.rightMargin:5*Theme.fontScale;anchors.verticalCenter:parent.verticalCenter
+                    height:Theme.control(28);implicitHeight:height
+                    leftPadding:9*Theme.fontScale;rightPadding:8*Theme.fontScale;topPadding:0;bottomPadding:0
+                    font.pixelSize:Theme.font(13,true);verticalAlignment:TextInput.AlignVCenter
+                    maximumLength:16000
+                    Accessible.name:I18n.t("给悬浮小助手派活")
+                    Accessible.description:taskComposer.error
+                    onTextEdited:taskComposer.error=""
+                    Keys.onEscapePressed:event=>{
+                        if(inputMethodComposing){Qt.inputMethod.reset();event.accepted=true}
+                        else event.accepted=false
                     }
-                    onAccepted: if (!inputMethodComposing) taskComposer.submit()
-                    background: null
+                    onAccepted:if(!inputMethodComposing)taskComposer.submit()
+                    background:Rectangle {
+                        radius:height/2;color:Theme.dark?"#25292f":"#fdfefe"
+                        border.color:taskComposer.error?Theme.danger:taskInput.activeFocus?Qt.alpha(taskComposer.inputBlue,0.75):Theme.dark?"#181b20":"#a8afb7"
+                        Rectangle {x:8;y:1;width:parent.width-16;height:2;radius:1;gradient:Gradient {GradientStop {position:0;color:Theme.dark?"#40000000":"#20000000"} GradientStop {position:1;color:"transparent"}}}
+                        Rectangle {x:5;y:parent.height-1;width:parent.width-10;height:1;color:Theme.dark?"#20ffffff":"#e0ffffff"}
+                    }
                 }
-                Button {
-                    id: taskDesktop
-                    objectName: "desktopPetTaskDesktop"
-                    width: parent.height - 16
-                    height: width
-                    anchors.right: taskSend.left
-                    anchors.rightMargin: 4
-                    anchors.verticalCenter: parent.verticalCenter
-                    padding: 0
-                    hoverEnabled: true
-                    Accessible.name: I18n.t("打开 Umeko")
-                    ToolTip.visible: hovered
-                    ToolTip.delay: 700
-                    ToolTip.text: Accessible.name
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    background: Rectangle {
-                        radius: width / 2
-                        color: taskDesktop.down ? Theme.line : taskDesktop.hovered ? Theme.hover : "transparent"
-                        border.width: taskDesktop.activeFocus ? 2 : 0
-                        border.color: taskComposer.inputBlue
-                    }
-                    contentItem: Item {
-                        Glyph { anchors.centerIn: parent; name: "external-link"; color: Theme.muted; width: Theme.icon(16); height: width }
-                    }
-                    onClicked: { taskComposer.close(); root.pet.restoreRequested() }
+                ComposerButton {
+                    id:taskDesktop;objectName:"desktopPetTaskDesktop"
+                    anchors.right:taskSend.left;anchors.rightMargin:5*Theme.fontScale;anchors.verticalCenter:parent.verticalCenter
+                    glyph:"external-link";Accessible.name:I18n.t("打开 Umeko")
+                    onClicked:{taskComposer.close();root.pet.restoreRequested()}
                 }
-                Button {
-                    id: taskSend
-                    objectName: "desktopPetTaskSend"
-                    // Both circles share the right end cap's exact center.
-                    width: parent.height - 16
-                    height: width
-                    x: parent.width - parent.height / 2 - width / 2
-                    y: (parent.height - height) / 2
-                    padding: 0
-                    hoverEnabled: true
-                    enabled: taskInput.text.trim().length > 0 && !taskComposer.sending
-                    Accessible.name: I18n.t("发送")
-                    ToolTip.visible: hovered
-                    ToolTip.delay: 700
-                    ToolTip.text: Accessible.name
-                    HoverHandler { cursorShape: taskSend.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
-                    background: Rectangle {
-                        radius: width / 2
-                        color: Qt.alpha(taskComposer.inputBlue, taskSend.down ? 0.22 : taskSend.hovered ? 0.15 : 0.08)
-                        border.width: taskSend.activeFocus ? 2 : 0
-                        border.color: taskComposer.inputBlue
-                    }
-                    contentItem: Item {
-                        Glyph { anchors.centerIn: parent; name: "arrow-up"; color: Qt.alpha(taskComposer.inputBlue, taskSend.enabled ? 1 : 0.38); width: Theme.icon(18); height: width }
-                    }
-                    onClicked: taskComposer.submit()
+                ComposerButton {
+                    id:taskSend;objectName:"desktopPetTaskSend"
+                    anchors.right:parent.right;anchors.rightMargin:Theme.control(5);anchors.verticalCenter:parent.verticalCenter
+                    primary:true;glyph:"arrow-up";text:I18n.t("发送")
+                    enabled:taskInput.text.trim().length>0 && !taskComposer.sending
+                    onClicked:taskComposer.submit()
                 }
             }
             ToolTip {

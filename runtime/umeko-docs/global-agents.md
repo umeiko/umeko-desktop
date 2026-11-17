@@ -58,7 +58,7 @@
 
 只有当前绑定的助手额外获得 `send_to_user(text)`，用于从桌宠气泡说一句极简简报；其他全局子智能体仍只使用原有工具。人物设定随所选桌宠形象更新。收到 `taskBriefings` 时依据真实来源与终态合并简短报告；`additionalCompleted` 只表示合并省略详情的完成数量，不得编造这些任务的结果。
 
-每条最多 80 个可见字符，优先 10–30 字；30 秒冷却且每分钟最多 2 条，遇到限流、隐藏或绑定失效就停止，不要拆分和重试。隐藏桌宠或停用任一服务停止主动通知；助手自身不会触发长任务通知循环。
+每段最多 80 个可见字符，优先 10–30 字；不设固定每秒配额，较长内容可多次调用分段发送。工具按每段中英文、长度和标点异步等待读取后返回，并行调用依次显示；遇到隐藏或绑定失效就停止。隐藏桌宠或停用任一服务停止主动通知；助手自身不会触发长任务通知循环。
 
 
 ## Skills 与请求列表
@@ -68,3 +68,27 @@
 启用 Skills 仅提供专用指导和该 Skill 目录内的文本读取，不扩大执行权限；需要操作工作区时仍通过智能体总线委派给已连接的会话。模型不能修改这些勾选设置。
 
 “请求”标签页只显示未结束的请求，完成、失败或取消后自动移出；对应对话及结果消息照常保留。
+
+
+悬浮小助手可读取 `widgets.docs`（`id: scheduled-tasks`），并通过 `widgets.call` 使用已启用的定时任务 Widget，为自己创建与管理全局计时器；通过 `widgets.result` 查看调用结果。默认目标就是它自己，仅能查看和修改目标为自己的全局计时器，不能改投其他智能体或前台会话。计时器保存稳定的助手身份，重启后仍可唤醒原助手；隐藏桌宠、停用绑定服务或删除助手时不会向别处投递。普通会话的计时器、共享配额及 Agent Bus 权限保持原有行为。
+
+
+### 悬浮助手的 reminder()
+
+当前桌宠关联的全局子智能体另有专属 `reminder()` 工具，与桌宠提醒管理窗口共享数据，支持 action=list/get/create/update/complete/delete。创建和修改使用 title、notes、dueAt、repeat（once 或 daily）和 IANA timeZone；每日提醒按当地日历时间重复，完成停止后续循环；action=complete 配合 completed=false 可取消完成，恢复原计划，逾期不补播。工具仅访问关联自身的事项；list 默认 50 项、最多 100，使用 offset 分页。
+
+宿主把到期事件通过 data.reminders 投递到对应全局对话。这些是提醒数据，不是执行备注的授权；不要自动完成、删除或改写。用户头顶的红点与气泡持续到用户点击查看，模型处理消息不会清除未读标记。该工具不扩大其他全局智能体权限，也不允许模型替用户标记已查看。
+
+## Per-agent native tools
+
+In a global agent's settings, open **Available tools** to opt into Pi's native
+`read`, `bash`, `powershell`, `edit`, `write`, `grep`, `find`, and `ls` tools.
+The selection is saved per agent; other agents and ordinary chats keep their own
+settings. Save the agent form to apply changes. Stop a running turn before editing.
+New agents default to no additional native tools. Existing desktop management,
+explicitly selected Skills and host-bound pet/reminder tools remain available.
+Without native `read`, the Skill reader remains limited to selected Skill folders.
+Enabling native `read` gives Pi its normal file/image reader. File and command
+operations still use Umeko's existing permission checks.
+
+悬浮宠物输入以 `(input from pet)` 标记，助手对此及任务简报、提醒、计时器等宿主通知优先用 `send_to_user` 回复，不重复普通聊天输出。用户直接在全局智能体聊天框提问时仍可正常展开回答。

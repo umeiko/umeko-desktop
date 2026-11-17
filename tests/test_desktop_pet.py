@@ -416,26 +416,20 @@ class PetTests(unittest.TestCase):
         self.assertEqual(self.pet.reminderCard, [])
         self.assertFalse(self.pet.handle('getItem', {'id':first['id']})['item']['completed'])
 
-    def test_reminder_card_filters_mutations_and_rejects_stale_complete_button(self):
-        now = datetime(2026, 11, 2, 8, tzinfo=timezone.utc)
-        self.pet.reminders.clock = lambda: now
+    def test_reminder_card_retains_unread_until_view_and_rejects_stale_completion(self):
+        now=datetime(2026,11,2,8,tzinfo=timezone.utc)
+        self.pet.reminders.clock=lambda:now
         self.pet.configure({'visible':True})
-        first = self.pet.handle('createItem', {'title':'original', 'dueAt':now.isoformat()})['item']
-        self.assertEqual(len(self.pet.reminderCard), 1)
-        edited = self.pet.handle('updateItem', {'id':first['id'], 'title':'edited'})['item']
-        self.assertEqual(self.pet.reminderCard, [])
-        self.pet.completeReminder(first['id'], first['revision'])
-        self.assertFalse(self.pet.handle('getItem', {'id':first['id']})['item']['completed'])
-        self.assertEqual(self.pet.reminderCard, [])
-        second = self.pet.handle('createItem', {'title':'complete', 'dueAt':now.isoformat()})['item']
-        self.pet.completeReminder(second['id'], second['revision'])
-        self.assertTrue(self.pet.handle('getItem', {'id':second['id']})['item']['completed'])
-        self.assertEqual(self.pet.reminderCard, [])
-        third = self.pet.handle('createItem', {'title':'delete', 'dueAt':now.isoformat()})['item']
-        self.assertEqual(self.pet.reminderCard[0]['id'], third['id'])
-        self.pet.handle('deleteItem', {'id':third['id']})
-        self.assertEqual(self.pet.reminderCard, [])
-        self.assertEqual([row['id'] for row in self.pet.reminderItems], [edited['id']])
+        item=self.pet.handle('createItem',{'title':'original','dueAt':now.isoformat()})['item']
+        self.pet.handle('updateItem',{'id':item['id'],'title':'edited'})
+        self.assertEqual(len(self.pet.reminderCard),1)
+        self.pet.completeReminder(item['id'],item['revision'])
+        self.assertFalse(self.pet.handle('getItem',{'id':item['id']})['item']['completed'])
+        self.pet.configure({'visible':False});self.assertEqual(self.pet.reminderCard,[])
+        self.pet.configure({'visible':True});self.assertEqual(len(self.pet.reminderCard),1)
+        self.pet.openReminders(item['id'],False)
+        self.assertEqual(self.pet.reminderCard,[])
+        self.assertEqual(self.pet.reminders.unread_alerts(),[])
 
     def test_reminder_selection_and_current_card_close_on_visibility_or_preference(self):
         now = datetime(2026, 11, 2, 8, tzinfo=timezone.utc)
@@ -460,7 +454,9 @@ class PetTests(unittest.TestCase):
         self.pet.configure({'reminderNotificationsEnabled':False})
         self.assertEqual(self.pet.reminderCard, [])
         self.pet.configure({'reminderNotificationsEnabled':True})
-        self.assertEqual(self.pet.reminderCard, [])
+        self.assertEqual(len(self.pet.reminderCard),1)
+        self.pet.openReminders(next_item['id'],False)
+        self.assertEqual(self.pet.reminderCard,[])
 
     def test_reminder_lifecycle_stop_and_reenable_recovers_overdue_card(self):
         now = [datetime(2026, 11, 2, 8, tzinfo=timezone.utc)]

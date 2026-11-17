@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "UmekoStyle" as Soft
 
 MenuItem {
     id: control
@@ -20,13 +21,12 @@ MenuItem {
         spacing: 8
         Glyph { name: control.glyph; color: control.destructive ? Theme.danger : Theme.ink; visible: !!control.glyph; Layout.preferredWidth: control.glyph ? Theme.icon(14) : 0; Layout.preferredHeight: Theme.icon(14) }
         Text { font.family: Theme.fontFamily; id: label; objectName: control.objectName + "Label"; text: control.text; textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: control.destructive ? Theme.danger : Theme.ink; font.pixelSize: Theme.font(12, visible); verticalAlignment: Text.AlignVCenter }
-        Glyph {
-            objectName: control.objectName + "Indicator"
-            visible: control.checkable || !!control.subMenu
-            name: control.subMenu ? "chevron-right" : "check"
-            opacity: control.subMenu || control.checked ? 1 : 0
-            color: Theme.ink
-            Layout.preferredWidth: Theme.icon(14); Layout.preferredHeight: Theme.icon(14)
+        Item {
+            objectName:control.objectName+"Indicator"
+            visible:control.checkable || !!control.subMenu
+            Layout.preferredWidth:Theme.icon(16);Layout.preferredHeight:Theme.icon(16)
+            Glyph {anchors.fill:parent;name:"chevron-right";color:Theme.ink;visible:!!control.subMenu}
+            Soft.SelectionIndicator {anchors.centerIn:parent;visible:control.checkable && !control.subMenu;uiScale:Theme.fontScale;checkState:control.checked?Qt.Checked:Qt.Unchecked}
         }
     }
     background: Rectangle { radius: 6; color: control.down ? Theme.accentBg : control.highlighted || control.hovered ? Theme.hover : "transparent"; Behavior on color { ColorAnimation { duration: 90 } } }

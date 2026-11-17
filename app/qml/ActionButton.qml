@@ -7,6 +7,8 @@ Button {
     property bool quiet: false
     property bool destructive: false
     property string hint: ""
+    property color textColor:primary?Theme.buttonText:destructive?Theme.danger:Theme.ink
+    property color glyphColor:primary?Theme.buttonText:destructive?Theme.danger:interactionHovered?Theme.accent:Theme.muted
     property var selectionController: null
     property int interactionPriority: 10
     readonly property bool interactionHovered: selectionController ? selectionController.hoveredTarget === control : hovered
@@ -31,9 +33,9 @@ Button {
             id: contents
             anchors.centerIn: parent
             spacing: 8
-            Glyph { name: control.glyph; color: control.primary ? Theme.buttonText : control.destructive ? Theme.danger : control.interactionHovered ? Theme.accent : Theme.muted; visible: name !== ""; width: Theme.icon(17); height: Theme.icon(17); anchors.verticalCenter: parent.verticalCenter }
+            Glyph { name: control.glyph; color: control.glyphColor; visible: name !== ""; width: Theme.icon(17); height: Theme.icon(17); anchors.verticalCenter: parent.verticalCenter }
             Text { font.family: Theme.fontFamily; textFormat: Text.PlainText; text: control.text; visible: text.length > 0; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: Theme.font(12, visible, control.selectionController)
-                color: control.primary ? Theme.buttonText : control.destructive ? Theme.danger : Theme.ink }
+                color: control.textColor }
         }
     }
     HoverTip { active: control.interactionHovered && !control.down; text: control.hint }

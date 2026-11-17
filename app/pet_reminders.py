@@ -14,16 +14,18 @@ import os
 import re
 import tempfile
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta, time as wall_time
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QObject, QTimer, Signal, QTimeZone
 
 
 _TIME = re.compile(r'^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:[Zz]|[+-]\d{2}:\d{2})$')
-_FIELDS = {'id', 'title', 'notes', 'dueAt', 'completed', 'createdAt', 'updatedAt',
+_LEGACY_FIELDS = {'id', 'title', 'notes', 'dueAt', 'completed', 'createdAt', 'updatedAt',
            'revision', 'occurrence', 'firedOccurrence', 'processedAt', 'notificationOutcome'}
-_OUTCOMES = {'claimed', 'suppressed_hidden', 'suppressed_preference', 'presentation_requested'}
+_FIELDS = _LEGACY_FIELDS | {'repeat', 'timeZone', 'dailyTime', 'agentId'}
+_OUTCOMES = {'claimed', 'suppressed_hidden', 'suppressed_preference', 'presentation_requested', 'restored_overdue'}
 
 
 def _utc(value):
@@ -66,6 +68,42 @@ def _id(value):
     return value
 
 
+def _zone(value):
+    if not isinstance(value,str) or len(value)>128:raise ValueError('Invalid IANA time zone')
+    try:return ZoneInfo(value)
+    except (ValueError,ZoneInfoNotFoundError) as error:raise ValueError('Invalid IANA time zone') from error
+
+
+def _normalize_repeat(item, patch):
+    if item['dueAt'] is None:item['repeat']='once'
+    if item['repeat']=='once':item.update(timeZone='',dailyTime='');return
+    if item['dueAt'] is None:raise ValueError('Daily reminder requires dueAt')
+    item['timeZone']=item['timeZone'] or bytes(QTimeZone.systemTimeZoneId()).decode() or 'UTC'
+    zone=_zone(item['timeZone'])
+    if not item['dailyTime'] or any(key in patch for key in ('dueAt','timeZone')):
+        item['dailyTime']=_utc(item['dueAt']).astimezone(zone).strftime('%H:%M:%S')
+
+
+def _next_daily(item, now):
+    zone=_zone(item['timeZone']);previous=_utc(item['dueAt']).astimezone(zone)
+    day=max(previous.date()+timedelta(days=1),now.astimezone(zone).date())
+    hour=wall_time.fromisoformat(item['dailyTime'])
+    for _ in range(4):
+        nominal=datetime.combine(day,hour)
+        for minute in range(181):
+            wall=nominal+timedelta(minutes=minute)
+            candidates=[]
+            for fold in (0,1):
+                candidate=wall.replace(tzinfo=zone,fold=fold).astimezone(timezone.utc)
+                if candidate.astimezone(zone).replace(tzinfo=None)==wall:candidates.append(candidate)
+            if candidates:
+                future=[value for value in candidates if value>now]
+                if future:return min(future)
+                break
+        day+=timedelta(days=1)
+    raise ValueError('Cannot find next daily reminder time')
+
+
 class _QtHandle:
     def __init__(self, parent, milliseconds, callback):
         self.timer = QTimer(parent)
@@ -83,7 +121,7 @@ class PetReminders(QObject):
     due = Signal(object)
 
     def __init__(self, directory, parent=None, clock=None, timer=None,
-                 visible=lambda: False, notifications=lambda: True):
+                 visible=lambda: False, notifications=lambda: True, assistant=lambda: ''):
         super().__init__(parent)
         self.directory = Path(directory)
         self.path = self.directory / 'reminders.json'
@@ -91,6 +129,9 @@ class PetReminders(QObject):
         self.timer = timer
         self.visible = visible
         self.notifications = notifications
+        self.assistant = assistant
+        self._notifications = []
+        self._alerts = []
         self.running = False
         self.closed = False
         self.error = ''
@@ -99,6 +140,7 @@ class PetReminders(QObject):
         self._paused = False
         self._generation = 0
         self._handle = None
+        self._checking=False
         self._load()
 
     def _now(self):
@@ -109,7 +151,7 @@ class PetReminders(QObject):
 
     def time_info(self):
         now = self._now()
-        return {'now': _stamp(now), 'localNow': now.astimezone().isoformat()}
+        return {'now': _stamp(now), 'localNow': now.astimezone().isoformat(),'timeZone':bytes(QTimeZone.systemTimeZoneId()).decode() or 'UTC'}
 
     def _load(self):
         try:
@@ -120,11 +162,29 @@ class PetReminders(QObject):
             self._load_error(exc)
             return
         try:
+            if len(raw.encode('utf-8')) > 8*1024*1024:raise ValueError('Reminders file exceeds 8 MiB')
             value = json.loads(raw)
-            if (not isinstance(value, dict) or set(value) != {'schemaVersion', 'items'}
-                    or type(value['schemaVersion']) is not int or value['schemaVersion'] != 1
-                    or not isinstance(value['items'], list)):
+            if not isinstance(value, dict) or type(value.get('schemaVersion')) is not int or value['schemaVersion'] not in (1,2):
                 raise ValueError('Unsupported reminders file schema')
+            version = value['schemaVersion']
+            if set(value) not in ([{'schemaVersion','items'}] if version == 1 else [{'schemaVersion','items','notifications'},{'schemaVersion','items','notifications','alerts'}]) or not isinstance(value['items'],list) or len(value['items'])>10000:
+                raise ValueError('Invalid reminders file')
+            if version == 1:
+                for item in value['items']:
+                    if not isinstance(item,dict) or set(item) != _LEGACY_FIELDS:raise ValueError('Invalid legacy reminder fields')
+                    item.update(repeat='once',timeZone='',dailyTime='',agentId='')
+            alerts=value.get('alerts',[])
+            if not isinstance(alerts,list) or len(alerts)>10000:raise ValueError('Invalid unread reminders')
+            for item in alerts:self._validate_stored(item)
+            notifications = value.get('notifications',[])
+            if not isinstance(notifications,list) or len(notifications)>10000:raise ValueError('Invalid notification outbox')
+            for event in notifications:
+                if not isinstance(event,dict) or set(event) != {'id','reminderId','occurrence','revision','agentId','title','notes','dueAt','repeat'}:raise ValueError('Invalid reminder notification')
+                _id(event['id']);_id(event['reminderId']);_utc(event['dueAt'])
+                if type(event['occurrence']) is not int or event['occurrence']<1 or type(event['revision']) is not int or event['revision']<1:raise ValueError('Invalid notification occurrence')
+                if not isinstance(event['agentId'],str) or event['agentId'] and not re.fullmatch('[a-f0-9]{32}',event['agentId']):raise ValueError('Invalid reminder Agent')
+                _text(event['title'],'title',200,True);_text(event['notes'],'notes',500)
+                if event['repeat'] not in ('once','daily'):raise ValueError('Invalid reminder repeat')
             seen = set()
             for item in value['items']:
                 self._validate_stored(item)
@@ -132,6 +192,8 @@ class PetReminders(QObject):
                     raise ValueError('Duplicate reminder id')
                 seen.add(item['id'])
             self._items = value['items']
+            self._notifications = notifications
+            self._alerts = alerts
         except (ValueError, TypeError, KeyError, OverflowError) as exc:
             self._load_error(exc)
 
@@ -143,6 +205,13 @@ class PetReminders(QObject):
     def _validate_stored(item):
         if not isinstance(item, dict) or set(item) != _FIELDS:
             raise ValueError('Invalid reminder fields')
+        if item['repeat'] not in ('once','daily') or not isinstance(item['agentId'],str) or item['agentId'] and not re.fullmatch('[a-f0-9]{32}',item['agentId']):
+            raise ValueError('Invalid reminder recurrence or Agent')
+        if item['repeat']=='daily':
+            _zone(item['timeZone'])
+            if not item['dueAt'] or not isinstance(item['dailyTime'],str) or not re.fullmatch(r'\d{2}:\d{2}:\d{2}',item['dailyTime']):raise ValueError('Daily reminder requires time')
+            wall_time.fromisoformat(item['dailyTime'])
+        elif item['timeZone'] or item['dailyTime']:raise ValueError('Unexpected daily reminder fields')
         _id(item['id'])
         if _text(item['title'], 'title', 200, True) != item['title']:
             raise ValueError('Invalid stored title')
@@ -169,7 +238,7 @@ class PetReminders(QObject):
               or _stamp(_utc(item['processedAt'])) != item['processedAt']):
             raise ValueError('Invalid processed reminder fields')
 
-    def _write(self, items):
+    def _write(self, items, notifications=None, alerts=None):
         """Replace one complete snapshot, leaving the old file intact on failure."""
         self.directory.mkdir(parents=True, exist_ok=True)
         temporary = None
@@ -177,8 +246,10 @@ class PetReminders(QObject):
             with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=self.directory,
                                              prefix='.reminders-', suffix='.tmp', delete=False) as stream:
                 temporary = stream.name
-                json.dump({'schemaVersion': 1, 'items': items}, stream, ensure_ascii=False, indent=2)
-                stream.write('\n')
+                document={'schemaVersion':2,'items':items,'notifications':self._notifications if notifications is None else notifications,'alerts':self._alerts if alerts is None else alerts}
+                raw=json.dumps(document,ensure_ascii=False,indent=2)+'\n'
+                if any(len(document[key])>10000 for key in ('items','notifications','alerts')) or len(raw.encode('utf-8'))>8*1024*1024:raise OSError('Reminder storage limit exceeded')
+                stream.write(raw)
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temporary, self.path)
@@ -189,14 +260,17 @@ class PetReminders(QObject):
                 except FileNotFoundError:
                     pass
 
-    def _commit(self, items):
+    def _commit(self, items, notifications=None, alerts=None):
         try:
-            self._write(items)
+            if notifications is None and alerts is None:self._write(items)
+            else:self._write(items,notifications,alerts)
         except OSError as exc:
             self.error = 'Cannot save reminders.json: ' + str(exc)
             self.changed.emit()
             raise ValueError(self.error) from exc
         self._items = items
+        if notifications is not None:self._notifications = notifications
+        if alerts is not None:self._alerts = alerts
         self.error = ''
         self._paused = False
         self.changed.emit()
@@ -227,10 +301,23 @@ class PetReminders(QObject):
                 and item['firedOccurrence'] != item['occurrence'])
 
     def check(self):
+        if self._checking:return
+        self._checking=True
+        try:self._check()
+        finally:self._checking=False
+
+    def _check(self):
         if not self.running or self.closed or self._invalid or self._paused:
             return
         self._cancel()
         now = self._now()
+        recovered=copy.deepcopy(self._items);changed=False
+        for item in recovered:
+            if item['repeat']=='daily' and not item['completed'] and item['firedOccurrence']==item['occurrence']:
+                item['dueAt']=_stamp(_next_daily(item,now));item['occurrence']+=1;changed=True
+        if changed:
+            try:self._commit(recovered)
+            except ValueError:self._paused=True;return
         due = [item for item in self._ordered(now) if self._pending(item) and _utc(item['dueAt']) <= now]
         if due:
             enabled = bool(self.notifications())
@@ -238,13 +325,25 @@ class PetReminders(QObject):
             outcome = ('claimed' if show else 'suppressed_preference' if not enabled
                        else 'suppressed_hidden')
             items = copy.deepcopy(self._items)
+            notifications = copy.deepcopy(self._notifications)
+            alerts=copy.deepcopy(self._alerts)
             identifiers = {item['id'] for item in due}
             for item in items:
                 if item['id'] in identifiers:
+                    if not item['agentId']:item['agentId']=self.assistant()
+                    event={'id':str(uuid.uuid5(uuid.NAMESPACE_URL,'umeko-reminder:'+item['id']+':'+str(item['occurrence']))),
+                           'reminderId':item['id'],'occurrence':item['occurrence'],'revision':item['revision'],
+                           'agentId':item['agentId'],'title':item['title'],'notes':item['notes'][:500],
+                           'dueAt':item['dueAt'],'repeat':item['repeat']}
+                    # Keep one pending occurrence per reminder after long sleeps/offline periods.
+                    notifications=[row for row in notifications if row['reminderId']!=item['id']]
+                    notifications.append(event)
                     item.update(firedOccurrence=item['occurrence'], processedAt=_stamp(now),
                                 notificationOutcome=outcome)
+                    alerts=[row for row in alerts if row['id']!=item['id']]
+                    alerts.append(copy.deepcopy(item))
             try:
-                self._commit(items)
+                self._commit(items, notifications, alerts)
                 if show and self.running:
                     # A separate durable claim survives an interruption before
                     # the semantic presentation request is committed/emitted.
@@ -265,6 +364,12 @@ class PetReminders(QObject):
                                          if row['id'] in snapshots and row == snapshots[row['id']]]
                             if requested:
                                 self.due.emit(requested)
+                advanced=copy.deepcopy(self._items)
+                changed=False
+                for item in advanced:
+                    if item['id'] in identifiers and item['repeat']=='daily' and not item['completed'] and item['firedOccurrence']==item['occurrence']:
+                        item['dueAt']=_stamp(_next_daily(item,now));item['occurrence']+=1;changed=True
+                if changed:self._commit(advanced)
             except ValueError:
                 self._paused = True
                 self._cancel()
@@ -283,6 +388,22 @@ class PetReminders(QObject):
             self._handle = (self.timer.call_later(milliseconds, timeout) if self.timer is not None
                             else _QtHandle(self, milliseconds, timeout))
 
+    def unread_alerts(self):
+        return copy.deepcopy(self._alerts)
+
+    def mark_viewed(self, identifier=''):
+        alerts=[item for item in self._alerts if identifier and item['id']!=identifier]
+        if len(alerts)!=len(self._alerts):self._commit(self._items,alerts=alerts)
+
+    def pending_notifications(self, limit=16, agent=''):
+        from itertools import islice
+        return copy.deepcopy(list(islice((row for row in self._notifications
+            if not agent or row['agentId'] in ('',agent)),limit)))
+
+    def acknowledge_notifications(self, identifiers):
+        remaining=[row for row in self._notifications if row['id'] not in identifiers]
+        if len(remaining)!=len(self._notifications):self._commit(self._items,remaining)
+
     def _ordered(self, now):
         def key(item):
             due = _utc(item['dueAt']) if item['dueAt'] else None
@@ -290,9 +411,26 @@ class PetReminders(QObject):
             return group, due or datetime.max.replace(tzinfo=timezone.utc), _utc(item['createdAt']), item['id']
         return sorted(self._items, key=key)
 
+    def resolve_local_time(self, args):
+        if set(args)!={'date','time','timeZone'}:raise ValueError('Expected date, time and timeZone')
+        zone=_zone(args['timeZone'])
+        if not isinstance(args['date'],str) or not isinstance(args['time'],str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}',args['date']) or not re.fullmatch(r'\d{2}:\d{2}',args['time']):return {'candidates':[]}
+        try:wall=datetime.fromisoformat(args['date']+'T'+args['time'])
+        except ValueError:return {'candidates':[]}
+        candidates={}
+        for fold in (0,1):
+            local=wall.replace(tzinfo=zone,fold=fold);instant=local.astimezone(timezone.utc)
+            if instant.astimezone(zone).replace(tzinfo=None)!=wall:continue
+            offset=int(local.utcoffset().total_seconds()/60)
+            candidates[int(instant.timestamp()*1000)]={'epoch':int(instant.timestamp()*1000),'label':'UTC'+('+' if offset>=0 else '-')+f'{abs(offset)//60:02}:{abs(offset)%60:02}'}
+        return {'candidates':[candidates[key] for key in sorted(candidates)]}
+
     @staticmethod
     def _view(item, now):
         result = copy.deepcopy(item)
+        if item['dueAt']:
+            local=_utc(item['dueAt']).astimezone(_zone(item['timeZone'])) if item['repeat']=='daily' else _utc(item['dueAt']).astimezone()
+            result.update(localDate=local.strftime('%Y-%m-%d'),localTime=local.strftime('%H:%M'))
         result['overdue'] = not item['completed'] and item['dueAt'] is not None and _utc(item['dueAt']) <= now
         return result
 
@@ -302,13 +440,13 @@ class PetReminders(QObject):
         future = [_utc(item['dueAt']) for item in self._items if self._pending(item)]
         return {'openCount': len(open_items),
                 'overdueCount': sum(item['dueAt'] is not None and _utc(item['dueAt']) <= now for item in open_items),
-                'nextDueAt': _stamp(min(future)) if future else None, 'error': self.error}
+                'nextDueAt': _stamp(min(future)) if future else None, 'unreadCount':len(self._alerts), 'error': self.error}
 
     def handle(self, method, args):
         schemas = {'listItems': ({'status'}, set()), 'getItem': ({'id'}, {'id'}),
-                   'createItem': ({'title', 'notes', 'dueAt'}, {'title'}),
-                   'updateItem': ({'id', 'title', 'notes', 'dueAt', 'clearDueAt'}, {'id'}),
-                   'completeItem': ({'id'}, {'id'}), 'deleteItem': ({'id'}, {'id'})}
+                   'createItem': ({'title', 'notes', 'dueAt','repeat','timeZone'}, {'title'}),
+                   'updateItem': ({'id', 'title', 'notes', 'dueAt', 'clearDueAt','repeat','timeZone'}, {'id'}),
+                   'completeItem': ({'id','completed'}, {'id'}), 'deleteItem': ({'id'}, {'id'}), 'clearCompleted': (set(),set())}
         if not isinstance(method, str) or method not in schemas:
             raise ValueError('Unknown reminder method')
         allowed, required = schemas[method]
@@ -319,6 +457,11 @@ class PetReminders(QObject):
         if self._invalid:
             raise ValueError(self.error)
         now = self._now()
+        if method == 'clearCompleted':
+            removed={item['id'] for item in self._items if item['completed']}
+            if removed:self._commit([item for item in self._items if item['id'] not in removed],
+                                    [row for row in self._notifications if row['reminderId'] not in removed])
+            return {'deletedCount':len(removed)}
         if method == 'listItems':
             status = args.get('status', 'open')
             if not isinstance(status, str) or status not in ('open', 'completed', 'all'):
@@ -343,12 +486,19 @@ class PetReminders(QObject):
             patch['notes'] = _text(args['notes'], 'notes', 2000)
         if 'dueAt' in args:
             patch['dueAt'] = None if args['dueAt'] is None else _stamp(_utc(args['dueAt']))
+        for field in ('repeat','timeZone'):
+            if field in args:patch[field]=args[field]
+        if 'repeat' in patch and patch['repeat'] not in ('once','daily'):raise ValueError('repeat must be once or daily')
+        if 'timeZone' in patch:_zone(patch['timeZone'])
         items = copy.deepcopy(self._items)
         if method == 'createItem':
+            if patch.get('repeat')=='daily' and not patch.get('dueAt'):raise ValueError('Daily reminder requires dueAt')
             item = {'id': str(uuid.uuid4()), 'title': patch['title'], 'notes': patch.get('notes', ''),
                     'dueAt': patch.get('dueAt'), 'completed': False, 'createdAt': _stamp(now),
                     'updatedAt': _stamp(now), 'revision': 1, 'occurrence': int(patch.get('dueAt') is not None),
-                    'firedOccurrence': None, 'processedAt': None, 'notificationOutcome': None}
+                    'firedOccurrence': None, 'processedAt': None, 'notificationOutcome': None,
+                    'repeat':patch.get('repeat','once'),'timeZone':patch.get('timeZone',''),'dailyTime':'','agentId':self.assistant()}
+            _normalize_repeat(item,patch)
             items.append(item)
         else:
             identifier = _id(args['id'])
@@ -358,18 +508,31 @@ class PetReminders(QObject):
             if method == 'getItem':
                 return {'item': self._view(item, now), **self.time_info()}
             if method == 'completeItem':
-                patch['completed'] = True
+                completed=args.get('completed',True)
+                if type(completed) is not bool:raise ValueError('completed must be a boolean')
+                patch['completed'] = completed
+                # Restoring an overdue item shows it in red without replaying
+                # missed notifications. Future occurrences retain their schedule.
+                if not completed and item['completed'] and item['dueAt'] and _utc(item['dueAt'])<=now and item['firedOccurrence']!=item['occurrence']:
+                    patch.update(firedOccurrence=item['occurrence'],processedAt=_stamp(now),notificationOutcome='restored_overdue')
             if method == 'deleteItem':
                 items.remove(item)
             elif all(item[key] == value for key, value in patch.items()):
                 return {'item': self._view(item, now)}
             else:
-                if 'dueAt' in patch and patch['dueAt'] != item['dueAt']:
+                updated={**item,**patch};_normalize_repeat(updated,patch)
+                patch.update({key:updated[key] for key in ('repeat','timeZone','dailyTime')})
+                if any(key in patch and patch[key]!=item[key] for key in ('dueAt','repeat','timeZone','dailyTime')):
+                    # A new schedule starts a fresh reminder, including for a
+                    # completed item. Content-only edits preserve completion.
+                    if updated['dueAt'] is not None:
+                        patch['completed'] = False
                     item.update(occurrence=item['occurrence'] + 1, firedOccurrence=None,
                                 processedAt=None, notificationOutcome=None)
                 item.update(patch)
                 item.update(revision=item['revision'] + 1, updatedAt=_stamp(now))
-        self._commit(items)
+        notifications=[row for row in self._notifications if row['reminderId']!=item['id']]
+        self._commit(items,notifications)
         self.check()
         if method == 'deleteItem':
             return {'deletedId': item['id']}
