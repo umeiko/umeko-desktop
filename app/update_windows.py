@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
+from contextlib import ExitStack
 import json
 import ntpath
 import os
@@ -218,14 +219,55 @@ class WindowsAPI:
         return sorted(names.values(), key=str.casefold)
 
 
-def _emit(value):
-    print(json.dumps(value, ensure_ascii=True), flush=True)
+def _open_inherited_stream(standard_handle: int, mode: str):
+    """Own a duplicate of a pipe inherited by a windowed Python executable.
+
+    PyInstaller windowed programs have no Python stdio objects, even when their
+    launcher supplies pipe handles. Never attach a console or take ownership of
+    the original handle: the CRT descriptor and returned stream own only a copy.
+    """
+    import msvcrt
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetStdHandle.argtypes = [wintypes.DWORD]
+    kernel32.GetStdHandle.restype = wintypes.HANDLE
+    kernel32.GetCurrentProcess.argtypes = []
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.DuplicateHandle.argtypes = [wintypes.HANDLE, wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.HANDLE), wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.DuplicateHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    original = kernel32.GetStdHandle(standard_handle)
+    if not original or original == ctypes.c_void_p(-1).value:
+        raise OSError("Inherited updater protocol pipe is unavailable")
+    process = kernel32.GetCurrentProcess()
+    duplicate = wintypes.HANDLE()
+    if not kernel32.DuplicateHandle(process, original, process, ctypes.byref(duplicate), 0, False, 2):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        descriptor = msvcrt.open_osfhandle(duplicate.value, os.O_BINARY | (os.O_RDONLY if mode == "r" else os.O_WRONLY))
+    except BaseException:
+        kernel32.CloseHandle(duplicate)
+        raise
+    try:
+        return os.fdopen(descriptor, mode, encoding="utf-8", newline="\n")
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _emit(value, output):
+    print(json.dumps(value, ensure_ascii=True), file=output, flush=True)
 
 
 def main(argv=None) -> int:
     api = None
     parent_handle = None
+    streams = ExitStack()
+    output = sys.stdout
     try:
+        if output is None:
+            output = streams.enter_context(_open_inherited_stream(-11, "w"))
         arguments = sys.argv[1:] if argv is None else argv
         if len(arguments) != 2:
             raise ValueError("Expected parent PID and installation directory")
@@ -237,25 +279,30 @@ def main(argv=None) -> int:
             raise ValueError("Installation directory must be absolute")
         api = WindowsAPI()
         parent_handle = api.open_parent(pid)
-        _emit({"state": "ready"})
-        for line in sys.stdin:
+        input_stream = sys.stdin
+        if input_stream is None:
+            input_stream = streams.enter_context(_open_inherited_stream(-10, "r"))
+        _emit({"state": "ready"}, output)
+        for line in input_stream:
             command = json.loads(line)
             if command.get("command") == "wait":
                 timeout = command.get("timeout", 120000)
                 if isinstance(timeout, bool) or not isinstance(timeout, int) or not 0 <= timeout < 0xFFFFFFFF:
                     raise ValueError("Invalid wait timeout")
-                _emit({"state": api.wait(parent_handle, timeout)})
+                _emit({"state": api.wait(parent_handle, timeout)}, output)
             elif command.get("command") == "blockers":
-                _emit({"state": "blockers", "names": api.blockers(install_directory)})
+                _emit({"state": "blockers", "names": api.blockers(install_directory)}, output)
             else:
                 raise ValueError("Unknown Windows helper command")
         return 0
     except Exception as error:
-        _emit({"state": "error", "message": str(error)})
+        if output is not None:
+            _emit({"state": "error", "message": str(error)}, output)
         return 1
     finally:
         if api is not None:
             api.close(parent_handle)
+        streams.close()
 
 
 if __name__ == "__main__":

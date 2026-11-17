@@ -215,6 +215,35 @@ class NativeProcessTests(unittest.TestCase):
             self._stop_child(child)
             child.stdin.close()
 
+    def test_pythonw_with_none_stdio_uses_real_inherited_protocol_pipes(self):
+        candidates = [Path(sys.executable).with_name("pythonw.exe")]
+        base_executable = getattr(sys, "_base_executable", None)
+        if base_executable:
+            candidates.append(Path(base_executable).with_name("pythonw.exe"))
+        executable = next((path for path in candidates if path.is_file()), None)
+        if executable is None:
+            self.skipTest("pythonw.exe is unavailable; no real windowed-runtime evidence")
+        repository = str(Path(__file__).resolve().parents[1])
+        script = (
+            f"import sys; sys.path.insert(0, {repository!r}); "
+            "from app import update_windows; "
+            "sys.stdin = sys.stdout = sys.stderr = None; "
+            f"raise SystemExit(update_windows.main([{str(os.getpid())!r}, {self.workspace.name!r}]))"
+        )
+        child = subprocess.Popen(
+            [str(executable), "-c", script], cwd=self.workspace.name,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        self.addCleanup(self._stop_child, child)
+        for stream in (child.stdin, child.stdout, child.stderr):
+            self.addCleanup(stream.close)
+        output, errors = child.communicate('{"command":"wait","timeout":0}\n', timeout=15)
+        self.assertEqual(child.returncode, 0, errors)
+        self.assertEqual([json.loads(line) for line in output.splitlines()], [
+            {"state": "ready"}, {"state": "timeout"},
+        ])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
