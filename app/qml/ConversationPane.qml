@@ -90,6 +90,7 @@ Item {
         property int urgentFirst: -1
         property int urgentLast: -2
         property bool forcing: false
+        property real pendingScroll: 0
         property int prependAnchor: -1
         property real prependOffset: 0
         readonly property real groupPixels: Math.max(320, height * groupScreens)
@@ -122,6 +123,9 @@ Item {
         }
         function releaseGroups() {
             // Navigation positions by row; every row it instantiates may load.
+            pendingScroll = 0;
+            urgentFirst = -1;
+            urgentLast = -2;
             reach = height * 0.25;
             activeFirst = 0;
             activeLast = -1;
@@ -216,7 +220,10 @@ Item {
                 if (!item || item.shown || !item.bodyLoaded)
                     continue;
                 const group = model.groupOf(row);
-                if (group === tail) {
+                // A concealed restore can commit its visible bodies as they
+                // finish. Waiting for the rest of their groups spends a render
+                // frame on each asynchronous incubation before revealing the pane.
+                if (group === tail || (restoring && row >= urgentFirst && row <= urgentLast)) {
                     ready.push(item);
                     continue;
                 }
@@ -311,7 +318,7 @@ Item {
             // The reader reached a group that is still loading in the
             // background: complete its remaining bodies now (Loader finishes
             // an asynchronous load synchronously when asynchronous turns off).
-            if (row < 0 || !pane.messageModel)
+            if (row < 0 || !pane.messageModel || !pane.messageModel.isReady(row))
                 return;
             if (!itemAtIndex(row)) {
                 // A row whose edge meets the screen edge exactly may not be
@@ -361,6 +368,18 @@ Item {
         }
         function scrollBy(delta) {
             beginBrowsing();
+            if (pendingScroll * delta > 0)
+                delta += pendingScroll;
+            pendingScroll = 0;
+            moveWithinReadyRows(delta, false);
+        }
+        function finishPendingScroll() {
+            const delta = pendingScroll;
+            pendingScroll = 0;
+            if (delta && pane.current && !restoring)
+                moveWithinReadyRows(delta, true);
+        }
+        function moveWithinReadyRows(delta, finish) {
             const top = originY;
             const bottom = Math.max(top, originY + contentHeight - height);
             let target = Math.max(top, Math.min(bottom, contentY + delta));
@@ -371,6 +390,14 @@ Item {
             let limits = shownLimits();
             const clamp = () => Math.max(Math.min(contentY, limits.upper), Math.min(target, Math.max(contentY, limits.lower - height)));
             let allowed = clamp();
+            if (Math.abs(allowed - target) > 0.5 && !finish) {
+                // Move immediately within the ready range. Complete the next
+                // group after the wheel event, carrying its remaining distance.
+                pendingScroll = target - allowed;
+                contentY = allowed;
+                Qt.callLater(finishPendingScroll);
+                return;
+            }
             if (Math.abs(allowed - target) > 0.5) {
                 finishGroup(delta < 0 ? limits.above : limits.below, delta < 0 ? -1 : 1);
                 // Showing the group may have kept the anchor by moving contentY.
@@ -422,6 +449,17 @@ Item {
                 restoreTimer.stop(); restoring = false; return;
             }
             restoreTimer.restart();
+        }
+        function prioritizeAnchor(index) {
+            let last = index;
+            let extent = pane.messageModel.estimatedHeight(index);
+            const needed = height + Math.max(0, restoreOffset);
+            while (last + 1 < count && extent < needed) {
+                last++;
+                extent += pane.messageModel.estimatedHeight(last) + spacing;
+            }
+            urgentFirst = index;
+            urgentLast = last;
         }
         acceptedButtons: Qt.NoButton
         visible: count > 0
@@ -525,56 +563,42 @@ Item {
                         return;
                 } else {
                     const index = Math.min(conversation.restoreIndex, conversation.count - 1);
-                    pane.messageModel.requestRange(index, index + 3);
-                    if (conversation.restoreAttempts === 1) {
+                    if (index < 0 && conversation.restoreAttempts < 200)
+                        return;
+                    if (index >= 0 && conversation.urgentFirst < 0) {
+                        conversation.prioritizeAnchor(index);
+                        pane.messageModel.requestRange(conversation.urgentFirst, conversation.urgentLast);
                         conversation.positionViewAtIndex(index, ListView.Beginning);
                         conversation.forceLayout();
-                        return;
                     }
-                    if (!pane.messageModel.isReady(index) && conversation.restoreAttempts < 200)
-                        return;
+                    conversation.settleGroups();
                     const item = conversation.itemAtIndex(index);
                     if ((!item || !item.bodyReady) && conversation.restoreAttempts < 200)
                         return;
-                    // Nearby rows are loaded asynchronously too. In particular,
-                    // a short target near the tail can be clamped against a
-                    // following placeholder before its real height is known.
-                    for (let row = index + 1; row < Math.min(conversation.count, index + 4); row++) {
-                        const nearby = conversation.itemAtIndex(row);
-                        if ((!pane.messageModel.isReady(row) || (nearby && !nearby.bodyReady))
-                                && conversation.restoreAttempts < 200)
-                            return;
-                    }
-                    const bottom = conversation.contentY + conversation.height;
-                    const last = Math.min(index + 3, conversation.count - 1);
-                    for (const row of conversation.contentItem.children) {
-                        if (row.messageSlot !== true || row.index < index || row.index > last ||
-                                row.y + row.height <= conversation.contentY || row.y >= bottom)
-                            continue;
-                        if (!row.bodyReady) {
-                            if (conversation.restoreAttempts < 200)
-                                return;
-                        } else {
-                            // Loader.Ready precedes deferred TextEdit/Column
-                            // polish; consume their actual sizes before clamping.
-                            conversation.polishBody(row);
-                        }
-                    }
-                    conversation.forceLayout();
                     if (item) {
+                        const offset = Math.min(conversation.restoreOffset, item.height - 1);
                         conversation.positionViewAtIndex(index, ListView.Beginning);
                         if (!conversation.atYEnd)
-                            conversation.contentY += Math.min(conversation.restoreOffset, item.height - 1);
+                            conversation.contentY += offset;
                     }
                     conversation.forceLayout();
                     if (conversation.restoreAttempts < 200) {
-                        const bottom = conversation.contentY + conversation.height;
-                        const last = Math.min(index + 3, conversation.count - 1);
-                        // A pending visible neighbour can still change the end
-                        // clamp after the target body itself has become ready.
-                        for (const row of conversation.contentItem.children) {
-                            if (row.messageSlot === true && row.index >= index && row.index <= last &&
-                                    row.y + row.height > conversation.contentY && row.y < bottom && !row.bodyReady)
+                        const slots = conversation.slotMap().slots;
+                        const rows = conversation.visibleRows(slots);
+                        if (rows.first < 0)
+                            return;
+                        // Estimates can underfill the screen, or the end clamp
+                        // can expose rows above the anchor. Only prioritize the
+                        // rows that actually intersect the viewport.
+                        const first = Math.min(index, rows.first);
+                        const last = Math.max(index, rows.last);
+                        if (first < conversation.urgentFirst || last > conversation.urgentLast) {
+                            conversation.urgentFirst = Math.min(first, conversation.urgentFirst);
+                            conversation.urgentLast = Math.max(last, conversation.urgentLast);
+                            pane.messageModel.requestRange(conversation.urgentFirst, conversation.urgentLast);
+                        }
+                        for (let row = rows.first; row <= rows.last; row++) {
+                            if (!slots[row] || !slots[row].shown)
                                 return;
                         }
                     }

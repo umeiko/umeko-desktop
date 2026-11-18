@@ -10,6 +10,7 @@ Item {
     height: 157 + footer.height - 33 + (backend.attachments.length ? Theme.control(48) : 0) + queueOffset
     signal openModels()
     signal chooseFiles()
+    signal messageSent()
     property bool slashDismissed: false
     readonly property bool slashVisible: prompt.activeFocus && !prompt.inputMethodComposing && /^\//.test(prompt.text) && !slashDismissed
     function chooseSlash(entry) {
@@ -28,8 +29,9 @@ Item {
             if (backend.slashCommands.execute(prompt.text)) setText("")
             return
         }
-        if (steering) backend.steer(prompt.text)
-        else if (prompt.text.trim().length || backend.attachments.length) backend.send(prompt.text)
+        if (!steering && !prompt.text.trim().length && !backend.attachments.length) return
+        const accepted = steering ? backend.steer(prompt.text) : backend.send(prompt.text)
+        if (accepted) messageSent()
     }
     function handleEnter(event) {
         if (prompt.inputMethodComposing) { event.accepted = false; return }
