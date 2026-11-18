@@ -85,6 +85,7 @@ Item {
         property real restoreOffset: -1
         property int restoreIndex: -1
         property int restoreAttempts: 0
+        property bool explicitJump: false
         // Grouped loading. ChatModel splits rows into groups of about
         // groupScreens viewport heights. Rows of the on-screen groups and of
         // keepGroups groups on each side get bodies; farther groups release
@@ -119,7 +120,7 @@ Item {
                 pane.messageModel.setLayout(layoutKey);
             if (!pane.current)
                 pane.layoutDirty = true;
-            else if (!followTail && count)
+            else if (!followTail && count && !explicitJump)
                 restoreViewport();
         }
         // User scrolling and explicit jumps supersede a navigator selection.
@@ -129,6 +130,7 @@ Item {
             tailTimer.stop();
             restoreTimer.stop();
             restoring = false;
+            explicitJump = false;
             urgentFirst = -1;
             urgentLast = -2;
             cancelFlick();
@@ -372,6 +374,7 @@ Item {
             restoreIndex = row;
             restoreOffset = 0;
             restoreAttempts = 0;
+            explicitJump = true;
             restoreTimer.restart();
         }
         function jumpToLatest() {
@@ -525,6 +528,7 @@ Item {
             urgentFirst = -1;
             urgentLast = -2;
             restoring = false;
+            explicitJump = false;
             if (followTail)
                 pinTail();
             saveViewport();
@@ -738,8 +742,18 @@ Item {
                 // Replacing a live transcript with its indexed snapshot is a
                 // structural reset. Preserve its reading anchor; ordinary page
                 // arrivals below only refresh viewport demand.
-                if (pane.current) conversation.restoreViewport();
-                else pane.layoutDirty = true;
+                if (!pane.current) {
+                    pane.layoutDirty = true;
+                } else if (conversation.explicitJump) {
+                    // A Pi-to-index replacement can arrive just after the
+                    // reader selected a question. Keep that request rather
+                    // than reopening at the position before the click.
+                    conversation.releaseGroups();
+                    conversation.restoreAttempts = 0;
+                    restoreTimer.start();
+                } else {
+                    conversation.restoreViewport();
+                }
             }
             function onViewportChanged() {
                 // A page arrival is not a navigation request. ListView keeps
