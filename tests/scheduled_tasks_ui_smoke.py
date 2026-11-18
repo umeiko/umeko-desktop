@@ -72,9 +72,9 @@ with tempfile.TemporaryDirectory(prefix='umeko-scheduled-demo-') as temp:
         return window.findChild(QObject, name)
 
     def click(name):
-        item = find(name)
-        assert item is not None and item.property('enabled'), name
-        item.clicked.emit()
+        # The Widget refreshes the task list and history on a timer.
+        until(lambda: (item := find(name)) is not None and item.property('enabled'), name)
+        find(name).clicked.emit()
 
     def screenshot(kind):
         QTest.qWait(200)
