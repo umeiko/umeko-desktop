@@ -42,10 +42,38 @@ ApplicationWindow {
     Timer { interval: 16; repeat: true; running: window.searchVisible && window.searchFocusPending
         onTriggered: if (!sidebarWidthMotion.moving) { searchPane.focusSearch(); window.searchFocusPending = false } }
     Connections { target: backend.chatSearch
+        id: searchJumps
+        property var pendingJump: null
+        // A newly selected host attaches its ListView on a frame boundary.
+        // Wait for that attachment and initial layout before navigating away
+        // from the bottom; a callLater can still run while its count is zero.
+        property var jumpWaiter: FrameAnimation {
+            running: searchJumps.pendingJump !== null
+            onTriggered: searchJumps.finishJump()
+        }
+        function finishJump() {
+            const pending = pendingJump
+            if (!pending) return
+            if (backend.conversationToken !== pending.key
+                    || backend.messageModel.openGeneration !== pending.generation) {
+                pendingJump = null
+                return
+            }
+            const pane = conversationHost.currentPane
+            if (!pane || pane.viewKey !== pending.key || !pane.renderReady
+                    || pane.concealed || pane.view.restoring
+                    || conversationHost.pendingGeneration >= 0)
+                return
+            pendingJump = null
+            pane.view.jumpToMessage(pending.row)
+            window.searchHighlightRow = pending.row
+            searchHighlightTimer.restart()
+        }
         function onJumpReady(row, entryId) {
             window.page = "chat"; window.searchVisible = false
             chatCover.cancel()
-            if (row >= 0) Qt.callLater(() => { conversation.jumpToMessage(row); window.searchHighlightRow = row; searchHighlightTimer.restart() })
+            pendingJump = row >= 0 ? {row: row, key: backend.conversationToken,
+                                      generation: backend.messageModel.openGeneration} : null
         }
     }
     Loader {
@@ -79,6 +107,7 @@ ApplicationWindow {
     property string pendingSidebarKind: ""
     property string pendingSidebarTitle: ""
     property int sidebarToken: 0
+    property bool sidebarStarted: false
     property bool sidebarPrepared: false
     readonly property bool sidebarSwitching: pendingSidebarId.length > 0
     function cancelSidebarSelection() {
@@ -89,18 +118,12 @@ ApplicationWindow {
         if (row.selected && !sidebarSwitching && (row.kind === "session" || !backend.activeSession)) { window.page = "chat"; return }
         backend.sessionPreview.cancel(); sidebarToken++
         pendingSidebarKind = row.kind; pendingSidebarTitle = row.title; pendingSidebarId = row.id
-        sidebarPrepared = false
+        sidebarStarted = false; sidebarPrepared = false
         window.page = "chat"
         // Warm panes already contain their controls and text layouts.
         const cached = backend.cachedConversationToken(row.id)
         if (cached && conversationHost.panes[cached]) chatCover.cancel()
         else chatCover.begin()
-        if (row.kind === "project") {
-            sidebarPrepared = true
-            commitSidebarSelection()
-        } else {
-            backend.sessionPreview.prepare(row.id, sidebarToken)
-        }
     }
     function commitSidebarSelection() {
         if (!sidebarSwitching || !sidebarPrepared) return
@@ -120,6 +143,20 @@ ApplicationWindow {
             if (token !== window.sidebarToken || !window.sidebarSwitching) return
             if (ok) { window.sidebarPrepared = true; window.commitSidebarSelection() }
             else { window.pendingSidebarId = ""; chatCover.contentReady() }
+        }
+    }
+    FrameAnimation {
+        // Multiple input events can arrive in one frame. Only the current
+        // choice starts an open; hover and mouse-down already warm its data.
+        running: window.sidebarSwitching && !window.sidebarStarted
+        onTriggered: {
+            window.sidebarStarted = true
+            if (window.pendingSidebarKind === "project") {
+                window.sidebarPrepared = true
+                window.commitSidebarSelection()
+            } else {
+                backend.sessionPreview.prepare(window.pendingSidebarId, window.sidebarToken)
+            }
         }
     }
     Timer {
@@ -610,7 +647,10 @@ ApplicationWindow {
                     pane.release()
                     pane.destroy()
                 }
-                Component.onCompleted: stage()
+                Component.onCompleted: {
+                    backend.enableFirstFrameStaging()
+                    stage()
+                }
                 Connections { target: backend
                     function onViewAboutToChange() { conversationHost.deactivate() }
                     function onViewChanged() { conversationHost.stage() }

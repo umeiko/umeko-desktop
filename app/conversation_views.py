@@ -9,7 +9,7 @@ from .chat_presentation import HistoryPresentation
 class ConversationViews(QObject):
     evicted = Signal(str)
 
-    def __init__(self, parent=None, capacity=24, byte_limit=32 * 1024 * 1024):
+    def __init__(self, parent=None, capacity=3, byte_limit=32 * 1024 * 1024):
         super().__init__(parent)
         self.capacity = capacity
         self.byte_limit = byte_limit
@@ -24,7 +24,7 @@ class ConversationViews(QObject):
         self._budget_update.setInterval(100)
         self._budget_update.timeout.connect(self._trim_current)
 
-    def select(self, key, generation=0):
+    def select(self, key, generation=0, staged=False):
         previous = self.models.get(self.current)
         if previous is not None and self.current != key:
             previous.suspend(True)
@@ -41,7 +41,7 @@ class ConversationViews(QObject):
             model.dataChanged.connect(self._schedule_trim)
         self.models.move_to_end(key)
         if generation:
-            model.begin_open(generation, cold=cold)
+            model.begin_open(generation, cold=cold and staged)
         model.suspend(False)
         self.trim()
         return model

@@ -247,9 +247,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._pool.touch(self._view, current=True)
         self._pool.event.connect(self._handle_pi_event)
         from .conversation_views import ConversationViews
-        self._conversation_views = ConversationViews(self)
+        self._conversation_views = ConversationViews(self, capacity=24)
         self._conversation_views.evicted.connect(self.conversationEvicted)
         self._view_open_generation = 0
+        self._stage_first_frame = False
         self._chat_model = self._conversation_views.select(self._view.key)
         self._streaming_timer = QTimer(self)
         self._streaming_timer.setSingleShot(True)
@@ -424,7 +425,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._view = record
         record.scroll_index, record.scroll_y, record.follow_tail = -1, 0.0, True
         self._view_open_generation += 1
-        model = self._conversation_views.select(record.key, self._view_open_generation)
+        model = self._conversation_views.select(record.key, self._view_open_generation, staged=self._stage_first_frame)
         if model is not self._chat_model:
             self._chat_model = model
             self.messageModelChanged.emit()
@@ -534,6 +535,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Slot(result=float)
     def conversationCacheBytes(self):
         return self._conversation_views.retained_bytes()
+
+    @Slot()
+    def enableFirstFrameStaging(self):
+        self._stage_first_frame = True
 
     def _mark_read(self, record):
         if record.id and self._chat_visible:
@@ -2103,7 +2108,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             return self._open_dsh(session)
         record = self._pool.find(session_id)
         stale = record and record.transcript and not record.busy and not record.transcript.matches_source()
-        if (record and (not record.loaded or stale)) or (record is None and session.get('file')):
+        if (record and (not record.loaded or stale)) or (record is None and session.get('file') and self.transcripts.large(session['file'])):
             self._session_preview.open_direct(session_id)
             return
         if record is None:
