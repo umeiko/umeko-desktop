@@ -26,15 +26,18 @@ class RecentHistory(QObject):
         super().__init__(controller)
         self.controller = controller
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='transcript-history')
-        self.building = set()
+        self.building = {}
         self.finished.connect(self._finished)
 
     def complete(self, record):
         """Build the complete index for record's partial snapshot."""
         recent = record.transcript
-        if recent is None or not recent.partial or recent.origin in self.building or self.controller._closing:
+        if recent is None or not recent.partial or self.controller._closing or record is not self.controller._view:
             return
-        self.building.add(recent.origin)
+        generation = self.controller._view_open_generation
+        if recent.origin in self.building:
+            return
+        self.building[recent.origin] = generation
         session_id, repository = record.id, self.controller.transcripts
         preview = self.controller._session_preview
 
@@ -45,7 +48,7 @@ class RecentHistory(QObject):
             return self.controller._closing
 
         def build():
-            result = {'id': session_id, 'recent': recent}
+            result = {'id': session_id, 'recent': recent, 'generation': generation}
             try:
                 snapshot = repository.open(recent.origin, cancelled=cancelled)
                 result['snapshot'] = snapshot
@@ -56,37 +59,36 @@ class RecentHistory(QObject):
                 self.finished.emit(result)
             except RuntimeError:
                 pass  # The application closed while the index was being built.
-        QTimer.singleShot(BUILD_DELAY_MS, self, lambda: None if self.controller._closing else self.pool.submit(build))
+        def start():
+            if generation == self.controller._view_open_generation and not self.controller._closing:
+                self.pool.submit(build)
+            else:
+                self._finished({'id': session_id, 'recent': recent, 'generation': generation, 'error': True})
+        QTimer.singleShot(BUILD_DELAY_MS, self, start)
 
     @Slot(object)
     def _finished(self, result):
         recent = result['recent']
-        self.building.discard(recent.origin)
+        self.building.pop(recent.origin, None)
         if self.controller._closing:
             return
-        record = self.controller._pool.find(result['id'])
-        if record is None or record.transcript is None or not record.transcript.partial:
-            return  # Another read already replaced the partial snapshot.
-        if record.transcript is not recent:
-            self.complete(record)  # A newer partial read of the same file.
+        record = self.controller._view
+        if record.id != result['id'] or record.transcript is None or not record.transcript.partial:
+            return
+        if result['generation'] != self.controller._view_open_generation or record.transcript is not recent:
+            self.complete(record)
             return
         if result.get('error') or not result['snapshot'].matches_source():
             if recent.matches_source():
                 self.complete(record)
             return
         record.history_pending = result
-        current = record is self.controller._view
-        if not current or record.history_wanted or (result['same'] and record.follow_tail):
-            self.apply(record)
-
-    def leaving(self, record):
-        """Complete a history that waited while its conversation was on screen."""
-        if record.history_pending is not None:
+        if record.history_wanted or (result['same'] and record.follow_tail):
             self.apply(record)
 
     def apply(self, record):
         result, record.history_pending = record.history_pending, None
-        if result is None:
+        if result is None or result['generation'] != self.controller._view_open_generation:
             return
         recent, snapshot = result['recent'], result['snapshot']
         if result['same']:

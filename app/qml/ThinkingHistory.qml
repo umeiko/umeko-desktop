@@ -6,6 +6,7 @@ Column {
     id: root
     property string text: ""
     property var expansionState: ({expanded:false})
+    signal foldChanged()
     property bool expanded: expansionState.expanded
     onExpansionStateChanged: expanded = expansionState.expanded
     property var selectionController: null
@@ -23,7 +24,7 @@ Column {
         ChatHitArea {
             id: hover; objectName: "toggleThinking_" + root.messageIndex + "_" + root.blockOffset
             anchors.fill: parent; selectionController: root.selectionController
-            onClicked: { root.expanded = !root.expanded; root.expansionState.expanded = root.expanded }
+            onClicked: { root.expanded = !root.expanded; root.expansionState.expanded = root.expanded; root.foldChanged() }
         }
         Accessible.role: Accessible.Button; Accessible.name: I18n.t("思考过程"); Accessible.description: root.expanded ? I18n.t("已展开") : I18n.t("已折叠")
     }

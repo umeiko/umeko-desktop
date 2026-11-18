@@ -1,6 +1,9 @@
 """Stable message rows: streaming updates never reset the conversation list."""
 import copy
+import json
 import re
+import sys
+from dataclasses import replace
 from bisect import bisect_left, bisect_right
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
@@ -15,6 +18,7 @@ MAX_CACHED_ROWS = 16
 ROW_SPACING = 27
 # Upper bound on the rows one viewport request may keep prepared.
 MAX_GROUP_ROWS = 512
+OPEN_ROWS = 20
 
 
 class ChatModel(QAbstractListModel):
@@ -41,6 +45,8 @@ class ChatModel(QAbstractListModel):
         from .chat_presentation import HistoryPresentation
         self._presentation = presentation or HistoryPresentation()
         self._metadata, self._heights = OrderedDict(), OrderedDict()
+        self._height_keys = {}
+        self._content_heights = OrderedDict()
         self._layout = ''
         self._closed = False
         self._owns_reader = reader is None
@@ -53,12 +59,83 @@ class ChatModel(QAbstractListModel):
         self._group_height = 0.0
         self._group_starts, self._group_next, self._group_open = [], 0, None
         self._live_hints = []
+        self._open_generation = 0
+        self._open_staging = False
+        self._open_full_snapshot = None
+        self._open_earlier_rows, self._open_full_starts = [], []
+        self._inflight_snapshot = None
         self.pageReady.connect(self._page_ready)
 
     def suspend(self, value):
+        if value and not self._suspended:
+            # A -> B -> A must not make A's old worker current again. Keep the
+            # job occupied until its completion, but reject its result by epoch.
+            self._generation += 1
+            self._pending.clear()
         self._suspended = value
         if not value:
             self._pump()
+
+    def begin_open(self, generation, cold=True):
+        """Opt in to a twenty-display-row first frame for this attachment."""
+        if self._open_staging:
+            # An interrupted cold attachment can be cached before its first
+            # frame. Retain that complete data when the same model is reopened.
+            self.finishOpen(self._open_generation)
+        self._open_generation = int(generation)
+        self._generation += 1
+        self._pending.clear()
+        self._open_staging = bool(cold)
+        self._open_full_snapshot = self.snapshot if cold else None
+        self._open_earlier_rows, self._open_full_starts = [], []
+        self.sourceChanged.emit()
+
+    @Property(int, notify=sourceChanged)
+    def openGeneration(self):
+        return self._open_generation
+
+    def _snapshot_suffix(self, snapshot, count):
+        if snapshot is None or count >= snapshot.count:
+            return snapshot
+        cut = snapshot.count - max(0, count)
+        return replace(snapshot, count=snapshot.count - cut,
+                       row_offset=snapshot.row_offset + cut,
+                       row_metadata=snapshot.row_metadata[cut:],
+                       question_count=0, focus_row=max(-1, snapshot.count - cut - 1))
+
+    @Slot(int)
+    def finishOpen(self, generation):
+        """Expose the already-read prefix only after the first frame is drawn."""
+        if self._closed or not self._open_staging or generation != self._open_generation:
+            return
+        snapshot = self._open_full_snapshot
+        shift = (snapshot.count if snapshot else 0) - self.base_count + len(self._open_earlier_rows)
+        self._open_staging = False
+        if shift > 0:
+            self.historyAboutToPrepend.emit(shift)
+            self.beginInsertRows(QModelIndex(), 0, shift - 1)
+            self._generation += 1
+            self._pending.clear()
+            move = lambda values: OrderedDict((row + shift, value) for row, value in values.items())
+            self._prepared, self._heights, self._metadata = move(self._prepared), move(self._heights), move(self._metadata)
+            self._failed = {row + shift for row in self._failed}
+            self._wanted = [row + shift for row in self._wanted]
+            self.rows = self._open_earlier_rows + self.rows
+            self._live_hints = [None] * len(self._open_earlier_rows) + self._live_hints
+            self._source_starts = self._open_full_starts or self._source_starts
+            self.snapshot = snapshot
+            self._height_keys = {row: self._height_key(row) for row in self._heights}
+            self._reset_groups()
+            self._refresh_questions()
+            self.endInsertRows()
+        self._open_earlier_rows, self._open_full_starts = [], []
+        self._open_full_snapshot = None
+        self.sourceChanged.emit()
+        self.questionsChanged.emit()
+        if shift > 0:
+            self.historyPrepended.emit(shift)
+        if self.snapshot:
+            self._set_wanted(self._wanted)
 
     @Property(bool, notify=sourceChanged)
     def paged(self):
@@ -75,12 +152,13 @@ class ChatModel(QAbstractListModel):
     @Property(int, notify=questionsChanged)
     def questionCount(self):
         # The question list of a partial history appears with its complete index.
-        if self.snapshot and self.snapshot.partial:
+        if self._open_staging or self.snapshot and self.snapshot.partial:
             return 0
         return (self.snapshot.question_count if self.snapshot else 0) + len(self._questions)
 
     @Slot(int, result='QVariantMap')
     def question(self, index):
+        self.finishOpen(self._open_generation)
         base = self.snapshot.question_count if self.snapshot else 0
         if index < base:
             return self.snapshot.question(index)
@@ -95,7 +173,11 @@ class ChatModel(QAbstractListModel):
         return base + selected if selected >= 0 else max(0, base - 1)
 
     def set_snapshot(self, snapshot):
-        if self.snapshot is snapshot:
+        if self.snapshot is snapshot or self._open_staging and self._open_full_snapshot is snapshot:
+            return
+        if self._open_staging and self._open_full_snapshot is not None and snapshot is not None and snapshot.extends is self._open_full_snapshot:
+            self._open_full_snapshot = snapshot
+            self._prepend(self._snapshot_suffix(snapshot, max(0, OPEN_ROWS - len(self.rows))))
             return
         if snapshot is not None and self.snapshot is not None and snapshot.extends is self.snapshot:
             self._prepend(snapshot)
@@ -110,7 +192,12 @@ class ChatModel(QAbstractListModel):
         self._wanted = []
         self._metadata.clear()
         self._heights.clear()
+        self._height_keys.clear()
+        if self._open_staging:
+            self._open_full_snapshot = snapshot
+            snapshot = self._snapshot_suffix(snapshot, OPEN_ROWS)
         self.snapshot = snapshot
+        self._open_earlier_rows, self._open_full_starts = [], []
         self.rows, self._questions, self._source_starts = [], [], []
         self._live_hints = []
         self._reset_groups()
@@ -130,9 +217,13 @@ class ChatModel(QAbstractListModel):
         """
         shift = snapshot.count - self.snapshot.count
         if shift <= 0:
+            self._generation += 1
+            self._pending.clear()
             self.snapshot = snapshot
+            self._height_keys = {row: self._height_key(row) for row in self._heights}
             self.sourceChanged.emit()
             self.questionsChanged.emit()
+            self._set_wanted(self._wanted)
             return
         self.historyAboutToPrepend.emit(shift)
         self.beginInsertRows(QModelIndex(), 0, shift - 1)
@@ -145,6 +236,7 @@ class ChatModel(QAbstractListModel):
         self._wanted = [row + shift for row in self._wanted]
         self._questions = [{**value, 'row': value['row'] + shift} for value in self._questions]
         self.snapshot = snapshot
+        self._height_keys = {row: self._height_key(row) for row in self._heights}
         self._reset_groups()
         self.endInsertRows()
         self.sourceChanged.emit()
@@ -152,6 +244,50 @@ class ChatModel(QAbstractListModel):
         self.historyPrepended.emit(shift)
         if self._wanted:
             self._set_wanted(self._wanted)
+
+    def reconcile_snapshot(self, snapshot, stable_prefix):
+        """Apply an indexed tail refresh whose unchanged prefix the reader proved.
+
+        stable_prefix is a display-row count, never a native-message count.
+        The controller owns that proof; this method does no transcript reads.
+        Live unindexed rows require the ordinary replacement/update path.
+        """
+        if self.snapshot is None or snapshot is None or self.rows or self._open_staging:
+            self.set_snapshot(snapshot)
+            return False
+        if snapshot is self.snapshot:
+            return True
+        old_count, new_count = self.base_count, snapshot.count
+        stable_prefix = max(0, min(int(stable_prefix), old_count, new_count))
+        self.snapshot.repository.cache.pin(())
+        self._generation += 1
+        self._pending.clear()
+        self._failed.clear()
+        for values in (self._prepared, self._metadata, self._heights, self._height_keys):
+            for row in list(values):
+                if row >= stable_prefix:
+                    values.pop(row, None)
+        self._wanted = [row for row in self._wanted if row < new_count]
+        self.viewportAboutToChange.emit()
+        if new_count > old_count:
+            self.beginInsertRows(QModelIndex(), old_count, new_count - 1)
+        elif new_count < old_count:
+            self.beginRemoveRows(QModelIndex(), new_count, old_count - 1)
+        self.snapshot = snapshot
+        self._height_keys = {row: self._height_key(row) for row in self._heights}
+        self._invalidate_groups(stable_prefix)
+        if new_count > old_count:
+            self.endInsertRows()
+        elif new_count < old_count:
+            self.endRemoveRows()
+        last = min(old_count, new_count) - 1
+        if stable_prefix <= last:
+            self.dataChanged.emit(self.index(stable_prefix), self.index(last), [self.MessageRole])
+        self.sourceChanged.emit()
+        self.questionsChanged.emit()
+        self.viewportChanged.emit()
+        self._set_wanted(self._wanted)
+        return True
 
     @Slot(int, int)
     def requestRange(self, first, last):
@@ -243,6 +379,7 @@ class ChatModel(QAbstractListModel):
             members = range(self.groupFirst(group), self.groupLast(group) + 1)
             pages = [p for p in self._wanted if p in members and p not in self._failed and p not in self._prepared]
         snapshot, generation = self.snapshot, self._generation
+        self._inflight_snapshot = snapshot
         self._job = generation, page
         self._pending.update(pages)
         def read():
@@ -255,7 +392,7 @@ class ChatModel(QAbstractListModel):
                 rows.update(snapshot.page(number))
             wanted = {row for p in pages for row in range(p * RENDER_ROWS, (p + 1) * RENDER_ROWS)}
             rows = {row:value for row,value in rows.items() if row in wanted}
-            return self._presentation.prepare(rows, cancelled)
+            return {} if cancelled() else self._presentation.prepare(rows, cancelled)
         future = self._reader.submit(read)
         def complete(job):
             try:
@@ -275,7 +412,9 @@ class ChatModel(QAbstractListModel):
     def _page_ready(self, value):
         generation, pages, error, prepared = value
         self._job = None
-        self._pending.difference_update(pages)
+        self._inflight_snapshot = None
+        if generation == self._generation:
+            self._pending.difference_update(pages)
         if self._closed or generation != self._generation or not self.snapshot:
             self._pump()
             return
@@ -320,15 +459,57 @@ class ChatModel(QAbstractListModel):
         if not 0 <= row < self.rowCount() or not 0 < height < 10000000:
             return
         self._heights[row] = height
+        self._height_keys[row] = self._height_key(row)
+        key = self._content_height_key(row)
+        if key is not None:
+            self._content_heights[key] = height
+            self._content_heights.move_to_end(key)
+            if len(self._content_heights) > 2048:
+                self._content_heights.popitem(last=False)
         self._heights.move_to_end(row)
         while len(self._heights) > 2048:
-            self._heights.popitem(last=False)
+            expired, _ = self._heights.popitem(last=False)
+            self._height_keys.pop(expired, None)
+
+    def _height_key(self, row):
+        if self.snapshot and row < self.base_count:
+            return ('indexed', *self.snapshot.key(row))
+        index = row - self.base_count
+        if 0 <= index < len(self.rows):
+            message = self.rows[index]
+            # update replaces the row object exactly when its content changes.
+            # Entry IDs identify the message; object identity distinguishes its
+            # successive immutable display revisions without another digest.
+            return ('live', tuple(message.get('_entries', ())), id(message))
+        return None
+
+    def _content_height_key(self, row):
+        message = self._prepared.get(row) if row < self.base_count else (
+            self.rows[row - self.base_count] if row < self.rowCount() else None)
+        if not message:
+            return None
+        entry_key = (tuple(message.get('_entries', ())), message.get('_logical', ''),
+                     message.get('entryId', ''), message.get('timestamp', ''))
+        # In-memory only. Use the content that determines the body, excluding
+        # cached conversion products and never persist or emit this hash.
+        body = {key: value for key, value in message.items() if key != '_rendered'}
+        body['activity'] = [{key: value for key, value in step.items() if key != '_rendered'}
+                            for step in body.get('activity', ())]
+        return entry_key, hash(json.dumps(body, sort_keys=True, ensure_ascii=False)), self._layout
 
     @Slot(str)
     def setLayout(self, key):
         if key != self._layout:
             self._layout = key
             self._heights.clear()
+            self._height_keys.clear()
+            self._content_heights.clear()
+
+    @Slot(int)
+    def invalidateHeight(self, row):
+        self._heights.pop(row, None)
+        self._height_keys.pop(row, None)
+        self._content_heights.pop(self._content_height_key(row), None)
 
     def _reset_groups(self):
         self._group_starts, self._group_next, self._group_open = [], 0, None
@@ -412,7 +593,14 @@ class ChatModel(QAbstractListModel):
     @Slot(int, result=float)
     def estimatedHeight(self, row):
         if row in self._heights:
-            return self._heights[row]
+            if row not in self._height_keys or self._height_keys[row] == self._height_key(row):
+                return self._heights[row]
+            self._heights.pop(row, None)
+            self._height_keys.pop(row, None)
+        if self._content_heights:
+            height = self._content_heights.get(self._content_height_key(row))
+            if height is not None:
+                return height
         if self.snapshot and 0 <= row < self.base_count:
             return float(self.snapshot.metadata(row).get('hint', 100))
         if 0 <= row - self.base_count < len(self.rows):
@@ -464,7 +652,7 @@ class ChatModel(QAbstractListModel):
     def update(self, messages, dirty_from=None):
         source = messages
         first = start = 0
-        if dirty_from is not None and self._source is source and self._source_starts and len(source) >= self._source_count:
+        if not self._open_staging and dirty_from is not None and self._source is source and self._source_starts and len(source) >= self._source_count:
             # An appended terminal transition belongs to the event's first row,
             # even if ordinary conversation now separates those transitions.
             events = {value.get('compaction', {}).get('eventId') for value in source[dirty_from:]
@@ -485,6 +673,9 @@ class ChatModel(QAbstractListModel):
                     piece = {**piece, '_chunked':True, 'continuation':bool(row.get('continuation')) or part > 0, 'segmentLast':part == len(pieces) - 1}
                 messages.append(piece)
                 starts.append(native)
+        if self._open_staging:
+            self._update_open_tail(messages, starts, source)
+            return
         del self._source_starts[first:]
         self._source_starts.extend(start + value for value in starts)
         self._source, self._source_count = source, len(source)
@@ -496,6 +687,10 @@ class ChatModel(QAbstractListModel):
             if self.rows[row] != value:
                 questions_dirty |= self.rows[row].get('role') == 'user' or value.get('role') == 'user'
                 self.rows[row] = copy.deepcopy(value)
+                # The identity is unchanged, but its content no longer has the
+                # previously measured layout (streaming/tool completion/edit).
+                self._heights.pop(self.base_count + row, None)
+                self._height_keys.pop(self.base_count + row, None)
                 # Only an edited row's own group and later groups regroup.
                 hint = float(estimated_height(self.rows[row]))
                 if hint != self._live_hints[row]:
@@ -511,22 +706,62 @@ class ChatModel(QAbstractListModel):
             self.beginRemoveRows(QModelIndex(), self.base_count + total, self.base_count + len(self.rows) - 1)
             for row in range(self.base_count + total, self.base_count + len(self.rows)):
                 self._heights.pop(row, None)
+                self._height_keys.pop(row, None)
             del self.rows[total:]
             del self._live_hints[total:]
             self._invalidate_groups(self.base_count + total)
             self.endRemoveRows()
         if questions_dirty:
-            questions = []
-            for row, message in enumerate(self.rows):
-                if message.get('role') != 'user' or message.get('continuation'):
-                    continue
-                title = message.get('text', '').strip() or '、'.join(a.get('name', '') for a in message.get('attachments', [])) or '…'
-                questions.append({'row': self.base_count + row, 'title': re.sub(r'\s+', ' ', title[:500])})
-            if questions != self._questions:
-                self._questions = questions
-                self.questionsChanged.emit()
+            self._refresh_questions()
+
+    def _refresh_questions(self):
+        questions = []
+        for row, message in enumerate(self.rows):
+            if message.get('role') != 'user' or message.get('continuation'):
+                continue
+            title = message.get('text', '').strip() or '、'.join(a.get('name', '') for a in message.get('attachments', [])) or '…'
+            questions.append({'row': self.base_count + row, 'title': re.sub(r'\s+', ' ', title[:500])})
+        if questions != self._questions:
+            self._questions = questions
+            self.questionsChanged.emit()
+
+    def _update_open_tail(self, messages, starts, source):
+        """Keep first-frame exposure bounded without reading indexed bodies."""
+        cut = max(0, len(messages) - OPEN_ROWS)
+        snapshot = self._snapshot_suffix(self._open_full_snapshot, max(0, OPEN_ROWS - len(messages)))
+        base = snapshot.count if snapshot else 0
+        old_base = self.base_count
+        # Until the first rendered frame, Pi may attach its already-read live
+        # suffix. These resets remain bounded to the twenty exposed rows.
+        self.beginResetModel()
+        self._generation += 1
+        self._pending.clear()
+        delta = base - old_base
+        move = lambda values: OrderedDict((row + delta, value) for row, value in values.items()
+                                          if 0 <= row + delta < base)
+        self._prepared, self._metadata = move(self._prepared), move(self._metadata)
+        self._heights = move(self._heights)
+        self._failed = {row + delta for row in self._failed if 0 <= row + delta < base}
+        self._wanted = [row + delta for row in self._wanted if 0 <= row + delta < base]
+        self.snapshot = snapshot
+        self._open_earlier_rows = copy.deepcopy(messages[:cut])
+        self.rows = copy.deepcopy(messages[cut:])
+        self._height_keys = {row: self._height_key(row) for row in self._heights}
+        self._open_full_starts = starts
+        self._source_starts = starts[cut:]
+        self._source, self._source_count = source, len(source)
+        self._live_hints = [None] * len(self.rows)
+        self._reset_groups()
+        self.endResetModel()
+        self._refresh_questions()
+        self.sourceChanged.emit()
+        if self.snapshot:
+            if not self._wanted and self.base_count:
+                self._wanted = [self.base_count - 1]
+            self._set_wanted(self._wanted)
 
     def row_for_entry(self, entry_id):
+        self.finishOpen(self._open_generation)
         if self.snapshot:
             from .transcript_index import connect
             with connect(self.snapshot.database) as db:
@@ -542,6 +777,35 @@ class ChatModel(QAbstractListModel):
             if entry_id in message.get('_entries', []) or entry_id == message.get('entryId'):
                 return self.base_count + row
         return -1
+
+    @Slot(result='qlonglong')
+    def retainedBytes(self):
+        """Model-owned Python data; shared caches and QML images are separate."""
+        seen = set()
+        def weight(value):
+            identity = id(value)
+            if identity in seen:
+                return 0
+            seen.add(identity)
+            size = sys.getsizeof(value)
+            if isinstance(value, dict):
+                size += sum(weight(key) + weight(item) for key, item in value.items())
+            elif isinstance(value, (list, tuple, set, frozenset)):
+                size += sum(weight(item) for item in value)
+            return size
+        values = (self.rows, self._questions, self._source, self._source_starts,
+                  self._open_earlier_rows, self._open_full_starts, self._live_hints,
+                  self._wanted, self._pending, self._failed, self._prepared,
+                  self._metadata, self._heights, self._height_keys, self._content_heights, self._group_starts, self._layout)
+        size = weight(values)
+        for snapshot in (self.snapshot, self._open_full_snapshot, self._inflight_snapshot):
+            if snapshot is None:
+                continue
+            if id(snapshot) not in seen:
+                seen.add(id(snapshot))
+                size += sys.getsizeof(snapshot)
+                size += sum(weight(value) for key, value in vars(snapshot).items() if key != 'repository')
+        return size
 
     @staticmethod
     def recent_compaction_interval(messages):

@@ -183,6 +183,7 @@ class SessionFiles(QObject):
                 if record.id in ids or not record.id and not value['errors']:
                     b._conversation_views.discard(record.key)
                     b._pool._clear_body(record)
+                    b._conversation_views.discard(record.key)
                     record.messages, record.history, record.tree = [], [], []
                     record.attachments, record.queue, record.subagents = [], [], {}
                     record.draft, record.transcript = '', None

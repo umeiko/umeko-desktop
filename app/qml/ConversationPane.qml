@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Window
 
 Item {
     id: pane
@@ -44,13 +45,24 @@ Item {
     function activate() {
         current = true;
         refreshState();
-        if (!initialized || layoutDirty || conversation.restoring) {
+        if (openAtBottom) {
+            initialized = true;
+            layoutDirty = false;
+            conversation.startBottom();
+        } else if (!initialized || layoutDirty || conversation.restoring) {
             initialized = true;
             layoutDirty = false;
             conversation.restoreViewport();
         } else {
             conversation.requestVisibleRange();
         }
+    }
+    property bool openAtBottom: false
+    property bool renderReady: true
+    readonly property int renderGeneration: openAtBottom && messageModel ? messageModel.openGeneration : 0
+    function finishOpening(generation) {
+        if (current && !released && generation === renderGeneration)
+            messageModel.finishOpen(generation);
     }
     function deactivate() {
         conversation.saveViewport();
@@ -92,12 +104,18 @@ Item {
         property bool forcing: false
         property int prependAnchor: -1
         property real prependOffset: 0
+        readonly property real bottomY: Math.max(originY, originY + contentHeight - height)
+        readonly property bool nearBottom: bottomY - contentY <= 3
         readonly property real groupPixels: Math.max(320, height * groupScreens)
         onGroupPixelsChanged: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
         Component.onCompleted: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
-        readonly property string layoutKey: width + "/" + Theme.fontScale + "/" + Theme.proseLineHeight + "/" + window.font.family
+        readonly property string layoutKey: [
+            width, Theme.fontFamily, Theme.fontScale, Theme.proseLineHeight,
+            Screen.devicePixelRatio, Theme.dark, window.font.family, window.font.pixelSize
+        ].join("/")
         onLayoutKeyChanged: {
-            pane.messageModel.setLayout(layoutKey);
+            if (pane.messageModel)
+                pane.messageModel.setLayout(layoutKey);
             if (!pane.current)
                 pane.layoutDirty = true;
             else if (!followTail && count)
@@ -114,6 +132,13 @@ Item {
             urgentLast = -2;
             cancelFlick();
             followTail = false;
+        }
+        function pinTail() {
+            if (!count || anchoring)
+                return;
+            anchoring = true;
+            positionViewAtEnd();
+            anchoring = false;
         }
         function polishBody(item) {
             for (const child of item.children)
@@ -386,9 +411,13 @@ Item {
             } else {
                 blockedScrolls = 0;
             }
+            anchoring = true;
             contentY = target;
-            if (atYEnd && !chatSelection.dragging)
+            anchoring = false;
+            if (nearBottom && !chatSelection.dragging) {
                 followTail = true;
+                pinTail();
+            }
         }
         function saveViewport() {
             if (restoring || !pane.current)
@@ -424,6 +453,59 @@ Item {
             }
             restoreTimer.restart();
         }
+        function startBottom() {
+            // Keep a retained pane's laid-out rows. Move to its up-to-date
+            // tail after the composer and hint bars established the viewport.
+            restoreTimer.stop();
+            restoring = true;
+            followTail = true;
+            restoreIndex = -1;
+            restoreOffset = 0;
+            restoreAttempts = 0;
+            if (!count) {
+                restoring = false;
+                return;
+            }
+            const first = Math.max(0, count - 20);
+            urgentFirst = first;
+            urgentLast = count - 1;
+            activeFirst = Math.min(first, activeFirst);
+            activeLast = count - 1;
+            activeEnd = count - 1;
+            pane.messageModel.requestRange(first, urgentLast);
+            pinTail();
+            forceLayout();
+            if (firstScreenReady())
+                finishPosition();
+            else
+                restoreTimer.start();
+        }
+        function firstScreenReady() {
+            const tail = itemAtIndex(count - 1);
+            if (count && (!tail || !tail.bodyReady))
+                return false;
+            const top = contentY, bottom = contentY + height;
+            let first = null;
+            for (const row of contentItem.children) {
+                if (row.messageSlot !== true || row.y + row.height <= top || row.y >= bottom)
+                    continue;
+                if (!row.shown)
+                    return false;
+                if (!first || row.index < first.index)
+                    first = row;
+            }
+            return !first || first.index === 0 || first.y <= top + spacing + 1;
+        }
+        function finishPosition() {
+            restoreTimer.stop();
+            urgentFirst = -1;
+            urgentLast = -2;
+            restoring = false;
+            if (followTail)
+                pinTail();
+            saveViewport();
+            scheduleRange();
+        }
         function prioritizeAnchor(index) {
             let last = index;
             let extent = pane.messageModel.estimatedHeight(index);
@@ -440,11 +522,44 @@ Item {
         anchors.fill: parent
         clip: true
         spacing: 27
-        model: pane.messageModel
+        model: pane.renderReady ? pane.messageModel : null
         cacheBuffer: Math.max(0, reach)
         currentIndex: -1
-        // A hidden attached ScrollBar still writes contentY when its
-        // size changes. Variable-height rows must have one scroll owner.
+        activeFocusOnTab: true
+        Keys.onPressed: event => {
+            if (event.key === Qt.Key_PageUp || event.key === Qt.Key_Home) {
+                scrollBy(event.key === Qt.Key_Home ? -contentHeight : -height);
+                event.accepted = true;
+            } else if (event.key === Qt.Key_PageDown || event.key === Qt.Key_End) {
+                if (event.key === Qt.Key_End) jumpToLatest();
+                else scrollBy(height);
+                event.accepted = true;
+            }
+        }
+        // Keep the control detached so programmatic size changes cannot write
+        // back to the ListView while a loaded row replaces its estimate.
+        ScrollBar {
+            objectName: pane.current ? "conversationScrollBar" : ""
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            orientation: Qt.Vertical
+            size: Math.min(1, conversation.height / Math.max(1, conversation.contentHeight))
+            position: conversation.visibleArea.yPosition
+            active: pressed || hovered || conversation.moving
+            visible: size < 1 && pane.current
+            onPressedChanged: if (pressed) {
+                conversation.forceActiveFocus()
+                conversation.beginBrowsing()
+            }
+            onPositionChanged: {
+                if (pressed && !conversation.anchoring) {
+                    const target = conversation.originY + position * conversation.contentHeight;
+                    if (Math.abs(target - conversation.contentY) > 1)
+                        conversation.scrollBy(target - conversation.contentY);
+                }
+            }
+        }
         onFollowTailChanged: saveViewport()
         onContentYChanged: {
             saveViewport();
@@ -484,12 +599,17 @@ Item {
                 // Rows above the tail settle their heights in the background.
                 // Re-pin the tail in the same frame, so the latest message
                 // never draws one frame away from the bottom.
-                if (!anchoring && !pane.concealed)
-                    positionViewAtEnd();
+                if (!pane.concealed)
+                    pinTail();
                 tailTimer.restart();
             }
         }
         onCountChanged: {
+            scheduleRange();
+            if (pane.current && followTail && !restoring)
+                tailTimer.restart();
+        }
+        onHeightChanged: {
             scheduleRange();
             if (pane.current && followTail && !restoring)
                 tailTimer.restart();
@@ -500,7 +620,7 @@ Item {
             interval: 0
             onTriggered: {
                 if (pane.current && conversation.followTail && !conversation.restoring)
-                    conversation.positionViewAtEnd();
+                    conversation.pinTail();
             }
         }
         Timer {
@@ -515,25 +635,10 @@ Item {
                 conversation.forceLayout();
                 conversation.restoreAttempts++;
                 if (conversation.followTail || conversation.restoreIndex < 0) {
-                    conversation.positionViewAtEnd();
-                    pane.messageModel.requestRange(Math.max(0, conversation.count - 4), conversation.count - 1);
-                    const tail = conversation.itemAtIndex(conversation.count - 1);
-                    if (conversation.count && (!tail || !tail.bodyReady) && conversation.restoreAttempts < 200)
-                        return;
-                    // Finish with a complete first screen: every row on it shown,
-                    // and no part of it waiting for a row ListView has not
-                    // created yet (rows above slide in as real heights settle).
-                    const top = conversation.contentY, bottom = top + conversation.height;
-                    let first = null;
-                    for (const row of conversation.contentItem.children) {
-                        if (row.messageSlot !== true || row.y + row.height <= top || row.y >= bottom)
-                            continue;
-                        if (!row.shown && conversation.restoreAttempts < 200)
-                            return;
-                        if (!first || row.index < first.index)
-                            first = row;
-                    }
-                    if (first && first.index > 0 && first.y > top + conversation.spacing + 1 && conversation.restoreAttempts < 200)
+                    conversation.pinTail();
+                    if (!pane.openAtBottom || conversation.urgentLast < 0)
+                        pane.messageModel.requestRange(Math.max(0, conversation.count - 4), conversation.count - 1);
+                    if (!conversation.firstScreenReady() && conversation.restoreAttempts < 200)
                         return;
                 } else {
                     const index = Math.min(conversation.restoreIndex, conversation.count - 1);
@@ -578,12 +683,7 @@ Item {
                     }
                 }
                 if (conversation.restoreAttempts >= 2) {
-                    stop();
-                    conversation.urgentFirst = -1;
-                    conversation.urgentLast = -2;
-                    conversation.restoring = false;
-                    conversation.saveViewport();
-                    conversation.requestVisibleRange();
+                    conversation.finishPosition();
                 }
             }
         }
@@ -630,7 +730,7 @@ Item {
                 const item = rows.first >= 0 ? conversation.itemAtIndex(rows.first) : null;
                 const loading = conversation.headerItem ? conversation.headerItem.height : 0;
                 conversation.prependAnchor = item ? rows.first : -1;
-                conversation.prependOffset = item ? Math.max(0, item.y - conversation.contentY - loading) : 0;
+                conversation.prependOffset = item ? item.y - conversation.contentY - loading : 0;
                 if (conversation.activeLast >= 0) {
                     conversation.activeLast += count;
                     conversation.activeEnd += count;
@@ -660,6 +760,8 @@ Item {
                     conversation.contentY += 1;
                     conversation.anchoring = false;
                 }
+                if (conversation.followTail && !conversation.restoring)
+                    conversation.pinTail();
                 conversation.scheduleRange();
             }
         }
@@ -701,6 +803,22 @@ Item {
             // Until then the body lays out invisibly at the estimated height.
             property bool shown: false
             property bool laidOut: false
+            property real measuredHeight: 0
+            function applyHeight(value, expanded) {
+                if (!(value > 0) || pane.released)
+                    return;
+                if (shown && y < conversation.contentY && !conversation.followTail
+                        && Math.abs(value - measuredHeight) > 0.5)
+                    conversation.keepAnchor(() => { measuredHeight = value; });
+                else
+                    measuredHeight = value;
+                // Expanded blocks are still expanded while their pane is
+                // retained. A rebuilt delegate starts collapsed.
+                if (expanded)
+                    pane.messageModel.invalidateHeight(index);
+                else
+                    pane.messageModel.recordHeight(index, value);
+            }
             readonly property bool bodyLoaded: (laidOut && bodyLoader.item !== null && bodyLoader.status === Loader.Ready) || !!modelData._loadError
             readonly property bool bodyReady: shown && bodyLoader.item !== null && bodyLoader.status === Loader.Ready
             // Rows appended after a range that reached the last row (streaming)
@@ -711,7 +829,7 @@ Item {
             onBodyLoadedChanged: if (!bodyLoaded)
                 shown = false
             width: conversation.width - 16
-            height: bodyReady ? bodyLoader.item.implicitHeight : Math.max(64, modelData._estimatedHeight || pane.messageModel.estimatedHeight(index))
+            height: bodyReady && measuredHeight > 0 ? measuredHeight : Math.max(64, modelData._estimatedHeight || pane.messageModel.estimatedHeight(index))
             Loader {
                 id: bodyLoader
                 width: parent.width
@@ -730,7 +848,7 @@ Item {
                     // wheel event that reaches a prefetched group can then
                     // show it without polishing every body in one callback.
                     conversation.polishBody(item);
-                    pane.messageModel.recordHeight(rowShell.index, item.implicitHeight);
+                    rowShell.applyHeight(item.implicitHeight, item.expandedLayout);
                     rowShell.laidOut = true;
                     if (!conversation.forcing)
                         conversation.settleGroups();
@@ -749,8 +867,11 @@ Item {
                     readonly property bool hovered: chatSelection.hovering && hoverPoint.x >= 0 && hoverPoint.x <= width && hoverPoint.y >= 0 && hoverPoint.y <= height
                     width: conversation.width - 16
                     spacing: 10
+                    readonly property bool expandedLayout: activityHistory.layoutExpanded || compactionEvent.expanded
+                    onExpandedLayoutChanged: if (bodyLoader.status === Loader.Ready)
+                        rowShell.applyHeight(implicitHeight, expandedLayout)
                     onImplicitHeightChanged: if (bodyLoader.status === Loader.Ready)
-                        pane.messageModel.recordHeight(index, implicitHeight)
+                        rowShell.applyHeight(implicitHeight, expandedLayout)
                     Row {
                         visible: !modelData._loading && !messageRow.statusNotice && !modelData.continuation && modelData.role !== "user"
                         spacing: 9
@@ -795,6 +916,7 @@ Item {
                             width: parent.width - x * 2
                             spacing: 10
                             ActivityHistory {
+                                id: activityHistory
                                 width: parent.width
                                 activity: modelData.activity || []
                                 selectionController: chatSelection
@@ -1028,5 +1150,12 @@ Item {
         enabled: pane.current && !pane.blocked
         retainedView: true
         sessionActive: pane.current
+        renderGeneration: pane.renderGeneration
+        onDecodedImageBytesChanged: if (pane.openAtBottom && !pane.released) imageBudget.restart()
+    }
+    Timer {
+        id: imageBudget
+        interval: 0
+        onTriggered: if (!pane.released) pane.controller.recordConversationImages(pane.viewKey, chatSelection.decodedImageBytes)
     }
 }

@@ -179,6 +179,7 @@ class SyntaxHighlighter(QObject):
         self._quick = self._doc = None
         self._language, self._dark, self._enabled = "", False, True
         self._generation, self._attempts, self._status = 0, 0, "plain"
+        self._activation_epoch, self._render_generation = 0, 0
         self.native = SpanHighlighter(self)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True); self.timer.setInterval(180)
@@ -228,6 +229,11 @@ class SyntaxHighlighter(QObject):
     def set_enabled(self, value):
         if value == self._enabled: return
         self._enabled = value
+        # Even a hide/show cycle which preserves finished colours must retire
+        # pending work. A -> B -> A is a new activation, not the old request.
+        self._activation_epoch += 1
+        self._generation += 1
+        self.timer.stop()
         # A retained conversation hides and shows its code blocks on every
         # switch. Finished colours stay attached while hidden and are shown
         # again at once; any text edit still clears them via _schedule().
@@ -238,6 +244,24 @@ class SyntaxHighlighter(QObject):
         self._schedule()
 
     enabled = Property(bool, get_enabled, set_enabled, notify=changed)
+
+    def get_render_generation(self): return self._render_generation
+
+    def set_render_generation(self, value):
+        if value == self._render_generation: return
+        self._render_generation = value
+        self._activation_epoch += 1
+        self._generation += 1
+        self.timer.stop()
+        if self.native.valid and self.native.document() is self._doc:
+            self.changed.emit()
+        else:
+            self._schedule()
+
+    renderGeneration = Property(int, get_render_generation, set_render_generation, notify=changed)
+
+    def _ticket(self):
+        return self._generation, self._activation_epoch, self._render_generation
 
     def get_dark(self): return self._dark
 
@@ -253,17 +277,17 @@ class SyntaxHighlighter(QObject):
     def _prepare(self):
         if not self._enabled or self._doc is None: return
         if self._doc.characterCount() > MAX_CHARS + 1 or self._language not in LANGUAGES:
-            self.accept(self._generation, Tokens({})); return
+            self.accept(self._ticket(), Tokens({})); return
         text = self._doc.toPlainText()
         if not eligible(text, self._language):
-            self.accept(self._generation, Tokens({})); return
-        if not service().request(self, self._generation, text, self._language):
+            self.accept(self._ticket(), Tokens({})); return
+        if not service().request(self, self._ticket(), text, self._language):
             self._attempts += 1
             if self._attempts < 4: self.timer.start(400)
-            else: self.accept(self._generation, Tokens({}))
+            else: self.accept(self._ticket(), Tokens({}))
 
     def accept(self, generation, result):
-        if generation != self._generation or not self._enabled or self._doc is None: return
+        if generation != self._ticket() or not self._enabled or self._doc is None: return
         if not result.count:
             self.native.setDocument(None)
             self._status = "plain"

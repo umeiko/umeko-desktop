@@ -79,8 +79,6 @@ ApplicationWindow {
     property string pendingSidebarKind: ""
     property string pendingSidebarTitle: ""
     property int sidebarToken: 0
-    property int sidebarFrames: 0
-    property bool sidebarStarted: false
     property bool sidebarPrepared: false
     readonly property bool sidebarSwitching: pendingSidebarId.length > 0
     function cancelSidebarSelection() {
@@ -91,12 +89,18 @@ ApplicationWindow {
         if (row.selected && !sidebarSwitching && (row.kind === "session" || !backend.activeSession)) { window.page = "chat"; return }
         backend.sessionPreview.cancel(); sidebarToken++
         pendingSidebarKind = row.kind; pendingSidebarTitle = row.title; pendingSidebarId = row.id
-        sidebarFrames = 0; sidebarStarted = false; sidebarPrepared = false
+        sidebarPrepared = false
         window.page = "chat"
         // Warm panes already contain their controls and text layouts.
         const cached = backend.cachedConversationToken(row.id)
         if (cached && conversationHost.panes[cached]) chatCover.cancel()
         else chatCover.begin()
+        if (row.kind === "project") {
+            sidebarPrepared = true
+            commitSidebarSelection()
+        } else {
+            backend.sessionPreview.prepare(row.id, sidebarToken)
+        }
     }
     function commitSidebarSelection() {
         if (!sidebarSwitching || !sidebarPrepared) return
@@ -110,27 +114,19 @@ ApplicationWindow {
         // A retained conversation was never covered; it appears directly.
         if (chatCover.loading) chatCover.contentReady()
     }
-    // Read off-thread and show lightweight row placeholders immediately.
-    // Render-thread motion is independent of this GUI-thread handoff.
-    FrameAnimation {
-        running: window.sidebarSwitching && !window.sidebarStarted
-        onTriggered: {
-            window.sidebarFrames++
-            if (window.sidebarFrames < 1) return
-            window.sidebarStarted = true
-            if (window.pendingSidebarKind === "project") window.sidebarPrepared = true
-            else backend.sessionPreview.prepare(window.pendingSidebarId, window.sidebarToken)
-        }
-    }
     Connections {
         target: backend.sessionPreview
         function onReady(token, ok) {
             if (token !== window.sidebarToken || !window.sidebarSwitching) return
-            if (ok) window.sidebarPrepared = true
+            if (ok) { window.sidebarPrepared = true; window.commitSidebarSelection() }
             else { window.pendingSidebarId = ""; chatCover.contentReady() }
         }
     }
-    Timer { interval: 16; repeat: true; running: window.sidebarSwitching; onTriggered: window.commitSidebarSelection() }
+    Timer {
+        interval: 900
+        running: true
+        onTriggered: backend.sessionPreview.prefetchRecent()
+    }
     property real webPreferredWidth: 0
     readonly property real webMinimumWidth: 320
     readonly property real chatMinimumWidth: 640
@@ -340,6 +336,8 @@ ApplicationWindow {
                     width: sessionList.width; height: sessionList.rowHeight(modelData)
                     Rectangle { anchors.fill: parent; radius: 7; color: projectDrop.containsDrag && projectDrop.sessionDrop && projectDrop.targetProjectId === modelData.id ? Theme.accentBg : rowMouse.containsMouse && !(window.sidebarSwitching ? window.pendingSidebarId === modelData.id : modelData.selected) ? Theme.hover : "transparent" }
                     MouseArea { id: rowMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; acceptedButtons: Qt.LeftButton | Qt.RightButton; enabled: modelData.kind !== "label"
+                        onEntered: if (modelData.kind === "session") backend.sessionPreview.prefetch(modelData.id)
+                        onPressed: mouse => { if (mouse.button === Qt.LeftButton && modelData.kind === "session") backend.sessionPreview.prefetch(modelData.id) }
                         onClicked: mouse => { if (mouse.button === Qt.RightButton) { sidebarMenus.openFor(modelData, mapToItem(sidebarMenus, mouse.x, mouse.y)); return } window.selectSidebar(modelData) }
                     }
                     Glyph { visible: modelData.kind === "project"; name: "folder"; x: 15; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(16); height: Theme.icon(16) }
@@ -503,7 +501,11 @@ ApplicationWindow {
                 // newly activated pane has positioned its first screen.
                 property var heldPane: null
                 property bool heldWelcome: false
-                property int revealFrames: 0
+                property int pendingGeneration: -1
+                property string pendingKey: ""
+                property int fillGeneration: -1
+                property string fillKey: ""
+                property int fillFrames: 0
                 readonly property bool revealPending: !!currentPane && currentPane.concealed
                 x: chatWidth.conversationLeft
                 Binding on width {
@@ -514,6 +516,8 @@ ApplicationWindow {
                 anchors.top: parent.top; anchors.topMargin: 20; anchors.bottom: composer.top; anchors.bottomMargin: 24
                 property bool welcomeShown: true
                 function deactivate() {
+                    pendingGeneration = -1
+                    fillGeneration = -1
                     welcomeShown = welcome.visible
                     if (!currentPane) return
                     // Keep the outgoing pane drawn without a gap, so its text
@@ -529,16 +533,22 @@ ApplicationWindow {
                 function reveal() {
                     if (currentPane) {
                         currentPane.view.forceLayout()
+                        currentPane.view.pinTail()
                         currentPane.concealed = false
+                        fillKey = currentPane.viewKey
+                        fillGeneration = currentPane.renderGeneration
+                        fillFrames = 0
                     }
                     release()
                 }
-                function activate() {
+                function stage() {
                     const key = backend.conversationToken
                     const previous = currentPane
                     let pane = panes[key]
                     if (!pane) {
-                        pane = conversationComponent.createObject(conversationHost, {viewKey:key, messageModel:backend.messageModel})
+                        pane = conversationComponent.createObject(conversationHost, {
+                            viewKey:key, messageModel:backend.messageModel, renderReady:false
+                        })
                         if (!pane) return
                         panes[key] = pane
                         retainedCount = Object.keys(panes).length
@@ -550,17 +560,44 @@ ApplicationWindow {
                     pane.holding = false
                     heldWelcome = welcomeShown && previous !== pane
                     currentPane = pane
-                    revealFrames = 0
-                    pane.concealed = previous !== pane
+                    pane.concealed = true
+                    pane.current = true
+                    pane.view.restoring = true
+                    // Attachment, queue and status controls set the viewport
+                    // height before a new ListView receives its row model.
+                    pendingKey = key
+                    pendingGeneration = pane.renderGeneration
+                }
+                function activate(key, generation) {
+                    if (backend.conversationToken !== key || backend.messageModel.openGeneration !== generation)
+                        return
+                    const pane = panes[key]
+                    if (!pane || pane !== currentPane)
+                        return
+                    pane.renderReady = true
                     pane.activate()
+                    if (!pane.view.restoring)
+                        reveal()
                 }
                 FrameAnimation {
-                    running: conversationHost.revealPending
+                    running: conversationHost.pendingGeneration >= 0 || conversationHost.revealPending || conversationHost.fillGeneration >= 0
                     onTriggered: {
-                        conversationHost.revealFrames++
-                        const view = conversationHost.currentPane.view
-                        if (conversationHost.revealFrames >= 2 && (!view.restoring || view.restoreAttempts >= 200))
+                        const host = conversationHost
+                        if (host.pendingGeneration >= 0) {
+                            const generation = host.pendingGeneration
+                            host.pendingGeneration = -1
+                            host.activate(host.pendingKey, generation)
+                        } else if (host.revealPending && !host.currentPane.view.restoring) {
                             conversationHost.reveal()
+                        } else if (host.fillGeneration >= 0 && ++host.fillFrames >= 2) {
+                            const generation = host.fillGeneration
+                            const key = host.fillKey
+                            host.fillGeneration = -1
+                            const pane = host.panes[key]
+                            if (pane && pane === host.currentPane && key === backend.conversationToken
+                                    && generation === backend.messageModel.openGeneration)
+                                pane.finishOpening(generation)
+                        }
                     }
                 }
                 function evict(key) {
@@ -573,10 +610,10 @@ ApplicationWindow {
                     pane.release()
                     pane.destroy()
                 }
-                Component.onCompleted: activate()
+                Component.onCompleted: stage()
                 Connections { target: backend
                     function onViewAboutToChange() { conversationHost.deactivate() }
-                    function onViewChanged() { conversationHost.activate() }
+                    function onViewChanged() { conversationHost.stage() }
                     function onConversationEvicted(key) { conversationHost.evict(key) }
                     function onConversationViewsClosing() {
                         for (const key of Object.keys(conversationHost.panes)) conversationHost.evict(key)
@@ -584,7 +621,7 @@ ApplicationWindow {
                 }
                 Component {
                     id: conversationComponent
-                    ConversationPane { anchors.fill: parent; window: appWindow; requestInspector: sharedRequestInspector; blocked: chatCover.visible }
+                    ConversationPane { anchors.fill: parent; openAtBottom: true; window: appWindow; requestInspector: sharedRequestInspector; blocked: chatCover.visible }
                 }
             }
 

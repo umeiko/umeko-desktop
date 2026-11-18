@@ -9,6 +9,10 @@ Item {
     property var dataSource: backend
     property bool retainedView: false
     property bool sessionActive: true
+    property int renderGeneration: 0
+    property double decodedImageBytes: 0
+    // Images report deltas, so loading/eviction never walks the visual tree.
+    function adjustDecodedImageBytes(delta) { decodedImageBytes = Math.max(0, decodedImageBytes + delta) }
     function openLinkMenu(source, info, x, y) {
         sharedLinkMenu.link = info
         const point = source.mapToItem(root, x, y)

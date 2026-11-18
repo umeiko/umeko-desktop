@@ -6,6 +6,11 @@ Column {
     property var selectionController: null
     property int messageIndex: -1
     property var expansionStates: ({})
+    property bool layoutExpanded: false
+    function updateLayoutState() {
+        layoutExpanded = Object.values(expansionStates).some(
+            state => state.expanded || Object.values(state.details).some(Boolean))
+    }
     function expansionState(key) {
         if (!expansionStates[key]) expansionStates[key] = {expanded:false, details:({})}
         return expansionStates[key]
@@ -35,12 +40,14 @@ Column {
                 width: parent.width; visible: step.entry.kind === "thinking"
                 text: step.entry.kind === "thinking" ? step.entry.text || "" : ""
                 expansionState: step.fold
+                onFoldChanged: root.updateLayoutState()
                 selectionController: root.selectionController; messageIndex: root.messageIndex; blockOffset: step.entry.blockOffset
             }
             ToolHistory {
                 width: parent.width; visible: step.entry.kind === "tools"
                 tools: step.entry.kind === "tools" ? step.entry.tools || [] : []
                 expansionState: step.fold
+                onFoldChanged: root.updateLayoutState()
                 selectionController: root.selectionController; messageIndex: root.messageIndex; blockOffset: step.entry.blockOffset
             }
             ChatboxMedia {
