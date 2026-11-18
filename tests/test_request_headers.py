@@ -122,7 +122,7 @@ class RequestHeaderTests(unittest.TestCase):
     def test_echoed_custom_header_values_are_redacted(self):
         self.store.data['requestHeaders'] = self.policy(); self.fail = True
         with self.assertRaises(ValueError) as caught: self.call()
-        report = next((Path(self.temp.name)/'request-errors').glob('*.json')).read_text(encoding='utf-8')
+        report = next((Path(self.temp.name)/'request-errors').glob('*.json')).read_text()
         for secret in ('opaque-header-secret','fixture-key'):
             self.assertNotIn(secret,report); self.assertNotIn(secret,str(caught.exception))
 
