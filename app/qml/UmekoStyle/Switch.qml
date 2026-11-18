@@ -4,7 +4,7 @@ import QtQuick.Templates as T
 T.Switch {
     id:control
     readonly property real uiScale: typeof backend!=="undefined" ? Math.max(1,backend.fontScale) : 1
-    readonly property bool darkSurface: typeof backend!=="undefined" ? (backend.themeStyle.base || backend.config.theme)==="dark" : palette.window.hslLightness<0.45
+    readonly property bool darkSurface: SurfaceStyle.appContext ? SurfaceStyle.dark : palette.window.hslLightness<0.45
     implicitWidth:Math.max(implicitBackgroundWidth+leftInset+rightInset,implicitContentWidth+leftPadding+rightPadding,implicitIndicatorWidth+leftPadding+rightPadding)
     implicitHeight:Math.max(implicitBackgroundHeight+topInset+bottomInset,implicitContentHeight+topPadding+bottomPadding,implicitIndicatorHeight+topPadding+bottomPadding)
     padding:4*uiScale;spacing:10*uiScale

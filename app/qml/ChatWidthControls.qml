@@ -7,7 +7,7 @@ Item {
     objectName: "chatWidthControls"
     property bool expandedLeft: false
     property bool expandedRight: false
-    readonly property bool hintsEnabled: backend.config.desktop.chatWidthHints
+    readonly property bool hintsEnabled: backend.desktopSettings.chatWidthHints
     readonly property var hostWindow: root.Window.window
     readonly property bool canReveal: hintsEnabled && enabled && visible && expandable && !!hostWindow && hostWindow.active
     property point pointerPosition: Qt.point(-1, -1)

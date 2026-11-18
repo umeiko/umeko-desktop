@@ -73,6 +73,16 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     changed = Signal()
     appearanceChanged = Signal()
     characterCatalogChanged = Signal()
+    desktopSettingsChanged = Signal()
+    auxiliaryVisionSettingsChanged = Signal()
+
+    @Property('QVariantMap', notify=desktopSettingsChanged)
+    def desktopSettings(self):
+        return dict(self.store.data['desktop'])
+
+    @Property('QVariantMap', notify=auxiliaryVisionSettingsChanged)
+    def auxiliaryVisionSettings(self):
+        return dict(self.store.data['auxiliaryVision'])
 
     @Property('QVariantList', notify=characterCatalogChanged)
     def characterPacks(self):
@@ -102,7 +112,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def lineSpacing(self):
         return self.store.data['ui']['lineSpacing']
 
-    @Property(bool, notify=changed)
+    @Property(bool, notify=desktopSettingsChanged)
     def webviewAvailable(self):
         from .webview import configuration
         return configuration(self.store.data.get('desktop'))['available']
@@ -130,7 +140,6 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     toast = Signal(str)
     requestDetailsRequested = Signal(str)
     webRequested = Signal(str, str)
-    desktopSettingsChanged = Signal()
     documentRequested = Signal(str, str, str)
     widgetDocumentRequested = Signal(str, str, str, str)
     taskFinished = Signal(str, str, bool, bool)
@@ -210,6 +219,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._app_about = AppAbout(self)
         self.store = Store()
         self.store.external_change = self._settings_changed_externally
+        # Provider changes and externally merged settings still refresh these
+        # small views. A local switch only emits its own section's notification.
+        self.changed.connect(self.desktopSettingsChanged)
+        self.changed.connect(self.auxiliaryVisionSettingsChanged)
         self._init_dsh()
         from .login_session import LoginStartupSettings
         self._login_startup = LoginStartupSettings(self, background='--login-startup' in sys.argv)
@@ -595,7 +608,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Property("QVariantMap", notify=changed)
     def config(self):
-        data = copy.deepcopy(self.store.data)
+        # Per-session metadata belongs to the backend. Copying and converting
+        # it for every QML binding makes settings clicks scale with all history.
+        data = copy.deepcopy({key: value for key, value in self.store.data.items()
+                              if key != 'sessionMeta'})
         data["hasPassword"] = bool(data.pop("password"))
         data.pop("employeeId", None)
         if isinstance(self.adapter, UnconfiguredAdapter):

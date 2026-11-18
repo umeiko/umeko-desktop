@@ -1,6 +1,8 @@
 """Real QML + Pi + loopback providers; no real accounts or user configuration."""
 import json
+import cProfile
 import os
+import pstats
 import sys
 import tempfile
 import threading
@@ -60,7 +62,14 @@ try:
             assert time.monotonic()<deadline,'Timed out waiting for auxiliary vision UI'
             QTimer.singleShot(10,loop.quit);loop.exec()
     def click(item):
-        window.grabWindow();QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,item.mapToScene(item.boundingRect().center()).toPoint())
+        window.grabWindow()
+        profile=cProfile.Profile();profile.enable()
+        QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,item.mapToScene(item.boundingRect().center()).toPoint())
+        profile.disable()
+        if item.objectName() in ('auxiliaryVisionAutomatic','auxiliaryVisionTool'):
+            config_reads=sum(value[1] for (file,line,function),value in pstats.Stats(profile).stats.items()
+                             if Path(file).name=='controller.py' and Path(file).parent.name=='app' and function=='config')
+            assert config_reads==0,('A vision switch refreshed the whole QML configuration',item.objectName(),config_reads)
     window.setProperty('settingsTab',0);window.setProperty('page','settings')
     wait(lambda:find('multimodalSettingsEntry').isVisible())
     wait(lambda:find('multimodalSettingsEntry').mapToScene(find('multimodalSettingsEntry').boundingRect().topRight()).x() <= window.width())
