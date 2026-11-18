@@ -397,7 +397,7 @@ class PiControllerMixin:
                     self.chatChanged.emit()
             self._subagents.process_ready(record)
             return
-        if record.prewarming and kind in ('warm_error', 'exit'):
+        if kind in ('warm_error', 'exit') and getattr(record, 'prewarming', False):
             command = record.warm_command
             self._pool.retire(record)
             if not command:

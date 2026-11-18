@@ -474,7 +474,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.reasoningChanged.emit()
         self.retryChanged.emit()
 
-        if record.file and not record.process and not is_dsh(record):
+        # Reopening a crashed cached kernel uses the existing recovery command.
+        if record.crashed and not self._pool.protected(record):
+            self._command_pi('inspect', record=record)
+        elif record.file and not record.process and not is_dsh(record):
             self._pi_warmup.start()
 
     def _refresh_sidebar(self):
