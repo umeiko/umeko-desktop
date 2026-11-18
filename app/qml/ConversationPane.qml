@@ -90,7 +90,6 @@ Item {
         property int urgentFirst: -1
         property int urgentLast: -2
         property bool forcing: false
-        property real pendingScroll: 0
         property int prependAnchor: -1
         property real prependOffset: 0
         readonly property real groupPixels: Math.max(320, height * groupScreens)
@@ -123,7 +122,6 @@ Item {
         }
         function releaseGroups() {
             // Navigation positions by row; every row it instantiates may load.
-            pendingScroll = 0;
             urgentFirst = -1;
             urgentLast = -2;
             reach = height * 0.25;
@@ -247,10 +245,6 @@ Item {
             }
             if (!ready.length)
                 return;
-            // Loader.Ready precedes deferred TextEdit/Column polish; show the
-            // final sizes, not intermediate ones.
-            for (const item of ready)
-                polishBody(item);
             keepAnchor(() => {
                 for (const item of ready)
                     item.shown = true;
@@ -318,7 +312,7 @@ Item {
             // The reader reached a group that is still loading in the
             // background: complete its remaining bodies now (Loader finishes
             // an asynchronous load synchronously when asynchronous turns off).
-            if (row < 0 || !pane.messageModel || !pane.messageModel.isReady(row))
+            if (row < 0 || !pane.messageModel)
                 return;
             if (!itemAtIndex(row)) {
                 // A row whose edge meets the screen edge exactly may not be
@@ -330,7 +324,6 @@ Item {
                 contentY += step;
                 forceLayout();
                 contentY -= step;
-                forceLayout();
                 anchoring = false;
             }
             const group = pane.messageModel.groupOf(row);
@@ -368,18 +361,6 @@ Item {
         }
         function scrollBy(delta) {
             beginBrowsing();
-            if (pendingScroll * delta > 0)
-                delta += pendingScroll;
-            pendingScroll = 0;
-            moveWithinReadyRows(delta, false);
-        }
-        function finishPendingScroll() {
-            const delta = pendingScroll;
-            pendingScroll = 0;
-            if (delta && pane.current && !restoring)
-                moveWithinReadyRows(delta, true);
-        }
-        function moveWithinReadyRows(delta, finish) {
             const top = originY;
             const bottom = Math.max(top, originY + contentHeight - height);
             let target = Math.max(top, Math.min(bottom, contentY + delta));
@@ -390,14 +371,6 @@ Item {
             let limits = shownLimits();
             const clamp = () => Math.max(Math.min(contentY, limits.upper), Math.min(target, Math.max(contentY, limits.lower - height)));
             let allowed = clamp();
-            if (Math.abs(allowed - target) > 0.5 && !finish) {
-                // Move immediately within the ready range. Complete the next
-                // group after the wheel event, carrying its remaining distance.
-                pendingScroll = target - allowed;
-                contentY = allowed;
-                Qt.callLater(finishPendingScroll);
-                return;
-            }
             if (Math.abs(allowed - target) > 0.5) {
                 finishGroup(delta < 0 ? limits.above : limits.below, delta < 0 ? -1 : 1);
                 // Showing the group may have kept the anchor by moving contentY.
@@ -726,7 +699,8 @@ Item {
             // shown: the row's group has finished loading (see settleGroups).
             // Until then the body lays out invisibly at the estimated height.
             property bool shown: false
-            readonly property bool bodyLoaded: (bodyLoader.item !== null && bodyLoader.status === Loader.Ready) || !!modelData._loadError
+            property bool laidOut: false
+            readonly property bool bodyLoaded: (laidOut && bodyLoader.item !== null && bodyLoader.status === Loader.Ready) || !!modelData._loadError
             readonly property bool bodyReady: shown && bodyLoader.item !== null && bodyLoader.status === Loader.Ready
             // Rows appended after a range that reached the last row (streaming)
             // belong to the open tail group and load at once.
@@ -748,8 +722,15 @@ Item {
                 active: !pane.released && !rowShell.modelData._loading && rowShell.wanted
                 opacity: rowShell.shown ? 1 : 0
                 enabled: rowShell.shown
+                onStatusChanged: if (status !== Loader.Ready)
+                    rowShell.laidOut = false
                 onLoaded: {
+                    // Lay out each body while its group is being loaded. A
+                    // wheel event that reaches a prefetched group can then
+                    // show it without polishing every body in one callback.
+                    conversation.polishBody(item);
                     pane.messageModel.recordHeight(rowShell.index, item.implicitHeight);
+                    rowShell.laidOut = true;
                     if (!conversation.forcing)
                         conversation.settleGroups();
                     conversation.scheduleRange();
