@@ -4,7 +4,7 @@ import copy
 import threading
 import time
 
-from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from .transcripts import preview
 from .pi_sessions import clean_extension_modes, clean_skill_modes, clean_blocked_tools
 
@@ -34,6 +34,9 @@ class SessionPreview(QObject):
         self.warm = OrderedDict()
         self.speculative = OrderedDict()
         self.last_prefetch = OrderedDict()
+        self.prefetch_timer = QTimer(self)
+        self.prefetch_timer.setSingleShot(True)
+        self.prefetch_timer.timeout.connect(self._start)
         self.completed.connect(self._completed)
 
     @Slot()
@@ -103,6 +106,10 @@ class SessionPreview(QObject):
         if self.pending:
             job, self.pending = self.pending, None
         elif self.speculative:
+            remaining = self.busy_until - time.monotonic()
+            if remaining > 0:
+                self.prefetch_timer.start(max(1, int(remaining * 1000)))
+                return
             _, saved = self.speculative.popitem(last=False)
             job = {'token': None, 'saved': saved, 'recent': True, 'epoch': self.epoch}
         else:

@@ -99,6 +99,7 @@ Item {
         property real reach: height * 0.25
         property bool anchoring: false
         property int blockedScrolls: 0
+        property int blockedRow: -1
         property int urgentFirst: -1
         property int urgentLast: -2
         property bool forcing: false
@@ -377,6 +378,10 @@ Item {
             beginBrowsing();
             chatSelection.clear();
             releaseGroups();
+            if (pane.openAtBottom) {
+                startBottom();
+                return;
+            }
             followTail = true;
             restoring = true;
             restoreIndex = -1;
@@ -404,12 +409,17 @@ Item {
                 limits = shownLimits();
                 allowed = clamp();
             }
+            const edge = delta < 0 ? limits.above : limits.below;
+            if (blockedRow !== edge || Math.abs(allowed - contentY) > 0.5)
+                blockedScrolls = 0;
             if (Math.abs(allowed - target) > 0.5 && blockedScrolls < 30) {
+                blockedRow = edge;
                 target = allowed;
                 blockedScrolls++;
                 scheduleRange();
             } else {
                 blockedScrolls = 0;
+                blockedRow = -1;
             }
             anchoring = true;
             contentY = target;
@@ -425,6 +435,8 @@ Item {
             let index = indexAt(1, contentY + 1);
             if (index < 0)
                 index = indexAt(1, contentY + spacing + 2);
+            if (index < 0)
+                index = visibleRows(slotMap().slots).first;
             const item = index >= 0 ? itemAtIndex(index) : null;
             pane.controller.saveViewport(index, item ? contentY - item.y : 0, followTail);
         }
@@ -472,13 +484,25 @@ Item {
             activeFirst = Math.min(first, activeFirst);
             activeLast = count - 1;
             activeEnd = count - 1;
-            pane.messageModel.requestRange(first, urgentLast);
             pinTail();
             forceLayout();
+            requestFirstScreen();
             if (firstScreenReady())
                 finishPosition();
             else
                 restoreTimer.start();
+        }
+        function requestFirstScreen() {
+            // The logical first frame contains the latest twenty rows. The
+            // viewport decides which of those bodies need preparing first.
+            const rows = visibleRows(slotMap().slots);
+            const priority = [];
+            const first = rows.first >= 0 ? Math.max(urgentFirst, rows.first) : count - 1;
+            for (let row = count - 1; row >= Math.max(0, first); row--)
+                priority.push(row);
+            if (!priority.length && count)
+                priority.push(count - 1);
+            pane.messageModel.requestViewport(priority, []);
         }
         function firstScreenReady() {
             const tail = itemAtIndex(count - 1);
@@ -636,7 +660,9 @@ Item {
                 conversation.restoreAttempts++;
                 if (conversation.followTail || conversation.restoreIndex < 0) {
                     conversation.pinTail();
-                    if (!pane.openAtBottom || conversation.urgentLast < 0)
+                    if (pane.openAtBottom && conversation.urgentLast >= 0)
+                        conversation.requestFirstScreen();
+                    else
                         pane.messageModel.requestRange(Math.max(0, conversation.count - 4), conversation.count - 1);
                     if (!conversation.firstScreenReady() && conversation.restoreAttempts < 200)
                         return;
@@ -702,6 +728,8 @@ Item {
             target: pane.messageModel
             function onModelAboutToBeReset() {
                 if (!pane.current) return;
+                if (!conversation.followTail)
+                    conversation.saveViewport();
                 conversation.restoring = true;
                 tailTimer.stop();
                 restoreTimer.stop();
