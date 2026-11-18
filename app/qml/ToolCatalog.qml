@@ -32,7 +32,7 @@ SectionCard {
     }
     Component.onCompleted: { ready = true; if (visible) { syncResources(); backend.loadCapabilities() } }
     onVisibleChanged: if (ready && visible) { syncResources(); backend.loadCapabilities() }
-    Connections { target: backend; function onChanged() { root.syncResources() } }
+    Connections { target: backend; function onAgentResourcesChanged() { root.syncResources() } }
     onSectionChanged: { expandedName = ""; search.clear(); toolList.positionViewAtBeginning() }
     Timer { interval: 1500; repeat: true; running: root.visible; onTriggered: backend.pollCapabilities() }
     RowLayout {

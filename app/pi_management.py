@@ -179,6 +179,7 @@ class PiManagement(QObject):
             record.pi_capabilities,record.blocked_tools,record.resources,metadata=previous
             if record.id:c.store.data['sessionMeta'][record.id]=metadata
             raise ValueError('工具配置保存失败：'+str(error)) from error
+        c.agentResourcesChanged.emit()
         QTimer.singleShot(0,self,lambda:c._command_pi('inspect',record) if c._view is record and not record.busy and record.model else None)
         return {'profile':self.capability_profile()}
     @Property(bool, notify=changed)
@@ -458,6 +459,7 @@ class PiManagement(QObject):
         self._backup = value["backup"]
         self._extensions = []
         c._view.resources = {"tools": [], "skills": [], "extensions": [], "diagnostics": []}
+        c.agentResourcesChanged.emit()
         c._kernel_status = "已恢复出厂内核（恢复模式）"
 
     def _finished(self, name, result):

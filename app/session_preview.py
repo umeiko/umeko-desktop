@@ -30,6 +30,7 @@ class SessionPreview(QObject):
 
     @Slot()
     def cancel(self):
+        self.controller._cancel_pi_warmup()
         self.request = 0
         self.pending = self.prepared = None
 

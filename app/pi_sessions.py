@@ -76,6 +76,9 @@ class SessionState:
     process: QProcess | None = None
     buffer: bytes = b""
     ready: bool = False
+    prewarming: bool = False
+    speculative: bool = False
+    warm_command: dict | None = None
     failed: bool = False
     cancelled: bool = False
     stale: bool = False
@@ -196,7 +199,7 @@ class PiSessionPool(QObject):
         process.finished.connect(lambda *_: self._finished(record, process))
         process.errorOccurred.connect(lambda error: self._error(record, process, error))
         process.start()
-        self.touch(record)
+        self.touch(record, dirty=False)
 
     def _read(self, record, process):
         if record.process is not process or self.closing:
@@ -236,6 +239,7 @@ class PiSessionPool(QObject):
         process = record.process
         record.crashed = False
         record.ready, record.stale = False, False
+        record.prewarming, record.speculative, record.warm_command = False, False, None
         if not process:
             return
         self._cancel_catalogs(record)
