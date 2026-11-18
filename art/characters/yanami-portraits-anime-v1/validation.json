@@ -1,0 +1,24 @@
+{
+  "assets": "All 12 PNGs match across editions; each C++ WebP decodes to identical RGBA pixels. Original watermark bytes preserved.",
+  "build": "Native UmekoCpp build passed with final 05-r5 assets.",
+  "uiTests": {
+    "passed": 5,
+    "failed": 0,
+    "cases": [
+      "initTestCase",
+      "welcomeAndEggs",
+      "composerModifierEnterKeepsDraftAndPlainEnterSends",
+      "widgetPageIncubationFinishesWithoutRenderFrames",
+      "cleanupTestCase"
+    ],
+    "note": "Focused offscreen tests passed before the final image-only revision; final revision was checked by RGBA decode and a native window preview."
+  },
+  "visualReview": "Native isolated preview displayed final 05-r5. User explicitly accepted the set.",
+  "acceptance": {
+    "message": "可以了，提交吧",
+    "recordedAt": "2026-11-17T14:52:29.833957+00:00",
+    "scope": "Twelve main-character Yanami empty-chat portraits including 01-r2, 05-r5 and 11-r3",
+    "commitAndPushAuthorized": true,
+    "releaseRequested": false
+  }
+}

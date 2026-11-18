@@ -11,7 +11,7 @@ from pathlib import Path
 from .filesystem_paths import filesystem_path, ordinary_path
 
 PACKAGE = "@earendil-works/pi-coding-agent"
-PINNED_VERSION = "1.3.0"
+PINNED_VERSION = "1.5.2"
 RELEASE_NAME = "coding-" + PINNED_VERSION
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 CATALOG = '''// Umeko provider policy. Native coding-agent implementation is unchanged.
@@ -133,6 +133,7 @@ def verify_runtime(release: Path, bridge_source: Path):
     copy_runtime_file(bridge_source.parent / 'generation.mjs', release / 'generation.mjs')
     copy_runtime_file(bridge_source.parent / 'system-prompt.mjs', release / 'system-prompt.mjs')
     copy_runtime_file(bridge_source.parent / 'skills.mjs', release / 'skills.mjs')
+    copy_runtime_file(bridge_source.parent / 'coordinator-skills.mjs', release / 'coordinator-skills.mjs')
     copy_runtime_file(bridge_source.parent / 'markdown-preview.mjs', release / 'markdown-preview.mjs')
     shutil.copytree(bridge_source.parent/'umeko-docs', release/'umeko-docs', dirs_exist_ok=True, copy_function=copy_runtime_file)
     environment = node_environment(dict(os.environ, PI_OFFLINE="1"))

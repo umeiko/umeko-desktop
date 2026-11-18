@@ -1,0 +1,71 @@
+{
+  "source": "User delivery: 豆包_桌宠动画_20261115",
+  "deliveredAt": "2026-11-15",
+  "processing": "Copied original GIF files without re-encoding",
+  "sourceNote": "豆包桌宠动画 · 七状态\n\n七段动作沿用原状态设计，角色、红围巾和深色衣裤以本次定稿为准。\n七段均由 MiniMax H3 独立生成绿幕动态，再抠成512×512透明无限循环GIF。\nGIF采用共享色表、透明背景和清除上一帧的处置方式；全部原生帧正序保留。\n按要求设置约时长：idle1.8s / thinking2.4s / working2.0s / waiting2.6s / done2.0s / error2.5s / idle-rare4.2s。\nGIF帧间隔以10毫秒为单位分配，绿幕原片保留原生24fps时长；原片放在“绿幕原片”。\n未自动打开播放器。\n\nSHA256:\nafa85c26ef82c9022a9458713cb303082002c2095a4fe2e174fa4aa2fc87f911  idle.gif\n0943e5d5d3b3714bee5d54aad0c49e189880f31718099e41e0364c4eb2ed2da0  thinking.gif\n920d7b21468c47ddad6f501607ef022d97c63b41db2f9a8d02603bbfc4c66fc1  working.gif\nbda5d8104ed5efd2a5b0c79093bb7ce870a4581750c44997ba1d64d5cd606e16  waiting.gif\n75ef939e08e416c770970860c05aedf8f8bf1e53e1d3e7b6ce46e29b12a7f317  done.gif\n7c6dd43d3ea6dff77b90a74e84d075fb123bcbb6e309b40b6cffa87f7e2e4959  error.gif\n6b1bc697e1d345c1d9ddf22a0f11f7f1c274a9e16552287890f7bf6787941879  idle-rare.gif\n",
+  "animations": {
+    "idle.gif": {
+      "animated": true,
+      "width": 512,
+      "height": 512,
+      "frames": 39,
+      "contentTop": 0.078125,
+      "durationMs": 1800,
+      "sha256": "afa85c26ef82c9022a9458713cb303082002c2095a4fe2e174fa4aa2fc87f911"
+    },
+    "thinking.gif": {
+      "animated": true,
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "contentTop": 0.078125,
+      "durationMs": 2400,
+      "sha256": "0943e5d5d3b3714bee5d54aad0c49e189880f31718099e41e0364c4eb2ed2da0"
+    },
+    "working.gif": {
+      "animated": true,
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "contentTop": 0.078125,
+      "durationMs": 2000,
+      "sha256": "920d7b21468c47ddad6f501607ef022d97c63b41db2f9a8d02603bbfc4c66fc1"
+    },
+    "waiting.gif": {
+      "animated": true,
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "contentTop": 0.078125,
+      "durationMs": 2600,
+      "sha256": "bda5d8104ed5efd2a5b0c79093bb7ce870a4581750c44997ba1d64d5cd606e16"
+    },
+    "done.gif": {
+      "animated": true,
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "contentTop": 0.0703125,
+      "durationMs": 2000,
+      "sha256": "75ef939e08e416c770970860c05aedf8f8bf1e53e1d3e7b6ce46e29b12a7f317"
+    },
+    "error.gif": {
+      "animated": true,
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "contentTop": 0.078125,
+      "durationMs": 2500,
+      "sha256": "7c6dd43d3ea6dff77b90a74e84d075fb123bcbb6e309b40b6cffa87f7e2e4959"
+    },
+    "idle-rare.gif": {
+      "animated": true,
+      "width": 512,
+      "height": 512,
+      "frames": 107,
+      "contentTop": 0.078125,
+      "durationMs": 4200,
+      "sha256": "6b1bc697e1d345c1d9ddf22a0f11f7f1c274a9e16552287890f7bf6787941879"
+    }
+  }
+}

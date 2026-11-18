@@ -459,7 +459,7 @@ def main():
               'observations_per_cell': args.observations, 'profile_phases': args.profile_phases,
               'environment': {'platform': sys.platform, 'python': sys.version.split()[0],
                               'qt_platform': 'offscreen', 'renderer': 'software',
-                              'node': Path(node_executable()).name, 'pi': '1.3.0', 'window': [1300, 1000]},
+                              'node': Path(node_executable()).name, 'pi': '1.5.2', 'window': [1300, 1000]},
               'method': 'Real Controller.openSession and Main.qml software frames. Switch matrix is read-only with no inspect per switch. Sequence/memory initialize each saved native Pi once, then browse without inspect per switch.',
               'limits': ['Offscreen rendering does not measure frame-to-display latency.',
                          'First-open is application-cold per unique fixture, not OS disk-cache cold.',

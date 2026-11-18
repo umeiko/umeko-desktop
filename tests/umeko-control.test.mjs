@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { createUmekoControl, umekoHelp, UMEKO_PROMPT } from '../runtime/releases/coding-1.3.0/umeko-control.mjs';
+import { createUmekoControl, umekoHelp, UMEKO_PROMPT } from '../runtime/releases/coding-1.5.2/umeko-control.mjs';
 
 test('one desktop tool and a directory-only help keep management instructions on demand', async () => {
   const tools = [], commands = [], control = createUmekoControl({ emit() { throw new Error('help must be local'); } });
@@ -13,6 +13,7 @@ test('one desktop tool and a directory-only help keep management instructions on
   assert.ok(existsSync(help.entry)); assert.ok(existsSync(help.docsRoot));
   assert.equal(Object.hasOwn(help, 'commands'), false);
   assert.match(UMEKO_PROMPT, /Pi provider configuration does not apply/);
+  assert.match(UMEKO_PROMPT, /umeko-desk.*临时文件.*\.\/\.umeko/);
   for (const text of [UMEKO_PROMPT, tools[0].description]) {
     assert.doesNotMatch(text, /agent_bus|global.subagent|coordinator|requestKey/i);
     assert.match(text, /widgets\.docs/);

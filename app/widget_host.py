@@ -41,6 +41,9 @@ OPERATIONS = {
     **{name: ('tasks.read' if name in ('tasks.list', 'tasks.get', 'tasks.detail') else 'tasks.manage', None)
        for name in TASK_FIELDS},
     **{name: ('sessions.manage', None) for name in SESSION_OPERATIONS},
+    'scheduledTasks.profiles': ('sessions.manage', None),
+    'scheduledTasks.openSession': ('sessions.manage', None),
+    **{name: ('sessions.manage', None) for name in ('scheduledTasks.targets', 'scheduledTasks.trigger', 'scheduledTasks.status', 'scheduledTasks.openTarget')},
     'market.list': ('pi.read', None),
     'market.prepare': ('pi.read', None),
     'market.discard': ('pi.read', None),
@@ -142,6 +145,12 @@ class WidgetHost(QObject):
         from .pi_runtime import node_executable
         return {'node': {'executable': node_executable()}}
 
+    def scheduled_service(self):
+        if not hasattr(self, '_scheduled_tasks'):
+            from .scheduled_task_host import ScheduledTaskHost
+            self._scheduled_tasks = ScheduledTaskHost(self)
+        return self._scheduled_tasks
+
     @Property('QVariantMap', notify=changed)
     def pendingApproval(self):
         return self._approval
@@ -233,6 +242,10 @@ class WidgetHost(QObject):
             if not self.m.application(identifier):
                 raise ValueError('Session service requires an application lifecycle Widget')
             return identifier
+        if request['operation'] in ('scheduledTasks.trigger', 'scheduledTasks.status') and identifier == 'scheduled-tasks' and self.m.entries[identifier].get('builtin') and self.m.application(identifier):
+            # This built-in service revalidates the captured persistent source
+            # and Agent Bus relation, independently of the displayed chat.
+            return identifier
         session = request['session']
         current = self.m._session
         if not isinstance(session, dict) or not session.get('token') or session.get('token') != current.get('token') or session.get('workspace') != current.get('workspace'):
@@ -296,6 +309,35 @@ class WidgetHost(QObject):
             if operation in TASK_FIELDS:
                 self._task_request(request)
                 return
+            if operation in ('scheduledTasks.targets', 'scheduledTasks.trigger', 'scheduledTasks.status', 'scheduledTasks.openTarget'):
+                result = self.scheduled_service().request(request)
+                self._reply(request, {'ok': True, 'result': result})
+                return
+            if operation in ('scheduledTasks.profiles', 'scheduledTasks.openSession'):
+                if identifier != 'scheduled-tasks' or not self.m.entries[identifier].get('builtin') or not request['page'] or self.m._page != identifier:
+                    raise ValueError('Available only to the built-in Scheduled Tasks page')
+                if operation == 'scheduledTasks.profiles' and not args:
+                    profiles = self.b.store.data.get('pluginSessionProfiles', {}).get(identifier, {})
+                    if not isinstance(profiles, dict):
+                        raise ValueError('Scheduled Tasks profiles must be an object')
+                    rows = [{'name': name, 'workspace': profile['workspace'], 'model': profile['model']}
+                            for name, profile in sorted(profiles.items()) if isinstance(profile, dict)
+                            and all(isinstance(profile.get(k), str) for k in ('workspace', 'model'))]
+                    self._reply(request, {'ok': True, 'result': {'profiles': rows}})
+                    return
+                if operation == 'scheduledTasks.openSession' and set(args) == {'session_id'}:
+                    session_id = args['session_id']
+                    if not isinstance(session_id, str):
+                        raise ValueError('A session ID is required')
+                    owner = self.b.store.data.get('sessionMeta', {}).get(session_id, {}).get('pluginSession', {})
+                    if owner.get('plugin') != identifier or owner.get('namespace') != identifier:
+                        raise ValueError('This session does not belong to Scheduled Tasks')
+                    if not any(row.get('id') == session_id for row in self.b._sessions):
+                        raise ValueError('This session is no longer available')
+                    self._reply(request, {'ok': True, 'result': {}})
+                    self.b.openSession(session_id)
+                    return
+                raise ValueError('Invalid Scheduled Tasks arguments')
             if operation in SESSION_OPERATIONS:
                 if self._sessions is None: self._sessions = PluginSessions(self)
                 self._sessions.request(request)

@@ -78,6 +78,14 @@ class SkillImportTests(unittest.TestCase):
         self.assertIn(b"Imported body", (self.destination / "alpha/SKILL.md").read_bytes())
         self.assertEqual((self.destination / "alpha/assets/说明.txt").read_bytes(), b"local asset")
 
+    def test_coordinator_import_preserves_another_widgets_pending_preview(self):
+        preview=self.preview(self.folder('alpha'))
+        other=self.root/'global-agents/agent/skills'
+        imported=skill_import.import_local(self.folder('beta'),other,[],metadata,plan_store={})
+        self.assertEqual(imported['imported'],['beta'])
+        self.assertIn(preview['planId'],skill_import._plans)
+        self.assertEqual(skill_import.commit_import(preview,{},self.destination)['imported'],['alpha'])
+
     def test_multi_skill_folder_and_latest_preview_releases_old_plan(self):
         parent = self.root / "collection"
         self.folder("alpha", parent=parent)

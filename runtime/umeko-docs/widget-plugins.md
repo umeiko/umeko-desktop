@@ -46,6 +46,8 @@ python -m umeko_plugin_sdk pack my-widget my-widget.zip
 
 Widget 清单可选 `icon`：填写 `"terminal"`、`"folder"`、`"branch"`、`"code"`、`"pet"` 等内置名称，或 `{"path":"assets/icon.svg"}` 使用包内图标。插件管理的“内置图标”可以预览并复制清单配置；SDK 的 `umeko_plugin_sdk/icons.json` 列出全部 21 个选项。未填写时使用通用插件图标。自带图标最多 512 KiB，支持 SVG/PNG/WebP/JPEG。
 
+清单可选 `agent.prompt`：简短的静态提示词（UTF-8，最多 8 KiB）。缺省、空串或全空白不注入，旧包保持现状；不会自动注入简介或完整文档。仅在 Widget 全局启用且在发起请求的聊天中激活时注入；应用级 Widget 在全局启用时注入，页面是否打开不影响它。配置变化在下一次请求生效，来源可在「系统提示词 → Widgets → Widget 名称 → 提示词」中查看和管理。文本是字面值，不做模板、文件或环境变量展开。开发时只放必要的触发与用法提示，完整说明仍放在 `agent.document`。
+
 ## Agent 如何发现、管理和调用 Widget
 
 先调用 `help`，参数 `{"topic":"widget"}`，获取本指南和已激活的 Widget；或调用 `widgets.list`，参数 `{"activeOnly":true}`。列表包含简介、激活/打开状态、文档路径和公开方法名。再调用 `widgets.docs`，参数 `{"id":"目标 ID"}`，获取完整文档与参数 schema。
@@ -144,7 +146,7 @@ Agent 可调用插件公开方法传入结构化数据。插件通过 `context.p
 
 应用级插件可声明 `sessions.manage`，通过 `context.sessions` 管理自己的原生会话。它适合定时任务和外部任务队列：任务在独立会话中运行，与前台聊天和输入框互不影响。完整无页面示例位于导出 SDK 的 `examples/session-task-service`。
 
-用户先停止应用，再编辑当前或隔离应用 profile 的 `settings.json`，在**顶层**为插件添加 `pluginSessionProfiles` 命名配置（这项配置通过编辑文件完成）。例如：
+用户在当前或隔离应用 profile 的 `settings.json` **顶层**为插件添加 `pluginSessionProfiles` 命名配置（新建配置通过编辑文件完成）。应用运行时也可以编辑：Umeko 在下一次保存设置时读入文件中的外部修改，同一字段以文件中的值为准，并提示一次。例如：
 
 ```json
 {
@@ -154,6 +156,7 @@ Agent 可调用插件公开方法传入结构化数据。插件通过 `context.p
         "workspace": "/path/to/workspace",
         "model": "test-model",
         "provider": "Test provider",
+        "reasoningEffort": "high",
         "tools": [],
         "permissionMode": "ask",
         "allowApprovals": false
@@ -164,6 +167,28 @@ Agent 可调用插件公开方法传入结构化数据。插件通过 `context.p
 ```
 
 `workspace` 必须是绝对路径。`model` 填已存在的**桌面模型别名**（上游模型名称在这里无效）；选填的 `provider` 必须是已配置的 Provider ID，宿主会核对该别名确实路由到这个 Provider。两个 Provider 的别名冲突时使用唯一别名。示例值都是占位符。插件的 `acquire` 按 `profile` 名称选择配置，工作目录、模型和工具都由配置决定。
+
+`reasoningEffort` 是可选的思考档位。配置值优先；未配置时继承 `ui.reasoningEffort`，两者均未配置时使用 `off`。通用值为 `off`、`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`、`ultra`，也可填写所选模型直接支持的自定义档位；其他值会报错。宿主按所选模型支持的档位对齐：`off` 或模型直接支持的值保持不变；其他通用值选择最接近的受支持通用档位，距离相同时选择较低档位；没有可匹配档位时使用 `off`。因此，配置的档位不一定是模型最终使用的档位。配置列表每行也返回 `reasoningEffort`；未配置时返回空字符串，表示继承桌面默认。
+
+已有配置可在应用运行时修改，无需退出应用：用户在“设置 → Agent → 插件会话模型”中选择模型和思考强度，或由 Agent 调用 `pluginSessions.setModel`（仅 Python 版）修改模型、供应商或思考档位。思考下拉框随所选模型列出实际支持的档位，并提供 `off`；未配置时显示“沿用桌面”。切换模型后保留配置档位，宿主在下一次输入时对齐实际使用值。先用 `settings.get` 读取 `pluginSessionProfiles`，用 `models.list` 查询可用的桌面模型别名：
+
+```json
+{"operation":"pluginSessions.setModel","arguments":{"plugin":"session-task-service","profile":"tasks","model":"test-model","provider":"Test provider","reasoningEffort":"high"}}
+```
+
+`plugin` 与 `profile` 必须是已存在的配置；提供 `model` 时，它必须是已存在的桌面模型别名，`provider` 选填，规则与上面相同，省略时记录该别名实际路由到的 Provider ID。可选 `reasoningEffort` 默认为空字符串，表示不修改已有档位；传入非空值时按上述档位规则处理。`model` 和 `provider` 均省略或传空字符串时保留模型路由，例如只修改思考档位：
+
+```json
+{"operation":"pluginSessions.setModel","arguments":{"plugin":"example-service","profile":"tasks","model":"","provider":"","reasoningEffort":"medium"}}
+```
+
+传入明确的操作值 `inherit` 可清除固定档位，删除配置中的 `reasoningEffort` 字段，恢复沿用桌面 `ui.reasoningEffort`。界面下拉框始终把“沿用桌面”放在第一项，选择后调用同一个 `inherit` 操作。空字符串仍表示保留当前配置。清除后的已有会话在下一次输入时使用桌面默认档位，当前回合继续按原设置完成；保存失败时恢复原来的配置字段。
+
+```json
+{"operation":"pluginSessions.setModel","arguments":{"plugin":"example-service","profile":"tasks","reasoningEffort":"inherit"}}
+```
+
+这个操作只修改模型路由和明确传入的思考档位，工作区、工具、权限模式和审批设置保持用户批准时的值。已取得的会话在下一次输入时使用新模型和档位；正在运行的回合按原设置完成。
 
 `tools` 为精确工具名列表，与桌面策略取交集；服务始终排除桌面管理工具 `umeko_desktop`、`pi` 和 `pi_commands`，保证配置无法通过管理操作被修改。其他核心工具与可选子 Agent 工具需要显式配置，并受桌面策略限制。子 Agent 运行时继承同一强制工具与权限上限，模型注册表只提供配置选定的模型。`permissionMode` 为 `ask` 或 `auto`，上限是桌面允许的权限。`allowApprovals` 默认 `false`，与工具配置相互独立；开启后插件可以注册审批处理器，逐个回应 confirm 类审批请求。
 

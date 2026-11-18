@@ -2,7 +2,9 @@
 
 ## Organize by project {#organize-by-project}
 
-A project in the sidebar points to a real working directory and can contain independent conversations. Drop a folder to add or reopen it. Right-click projects or conversations to rename, pin or archive them. Removing a project from the sidebar only takes it off the list; its files stay where they are.
+A project in the sidebar points to a real working directory and can contain independent conversations. Drop a folder to add or reopen it. Right-click projects or conversations to rename, pin or archive them. Archive moves a project or chat into the archive, where it can be restored. Delete permanently removes chat history, attachment copies, child-agent records and caches after confirmation. Deleting a project includes all its chats, including archived ones; the working directory and source files remain. Stop any running tasks first.
+
+Drop a Pi `.jsonl` file on a project or one of its chat rows to import it there. Dropping on empty sidebar space imports an ungrouped chat. Import validates the format, version and branch references before publishing a copy with a new session ID. Invalid files produce an explanation dialog. The original file remains unchanged. Chats hidden by older project-removal behavior are available in the archive.
 
 Drag the sidebar edge to resize it, or use **Ctrl+B** to collapse and restore it. Switching chats shows a loading tip before native history arrives. Drafts, attachments and reading positions are retained separately.
 

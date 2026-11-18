@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 1,
+  "issue": "https://github.com/umeiko/umeko-desktop/issues/170",
+  "repository": "umeiko/umeko-desktop",
+  "revision": "0d190d437f97782374f5060dc3bb67b35ab412c9",
+  "files": [
+    {
+      "path": "art/characters/tiara-v1/avatarHappy.png",
+      "reason": "superseded",
+      "bytes": 1281491,
+      "sha256": "9924996930cbf6fb4b35331ff945c275de48feadacb9d9b739c5b0087822d152",
+      "gitBlob": "c7a0299fd977c4b89d7d5e670503c4715959c0d9"
+    },
+    {
+      "path": "art/characters/tiara-v1/avatarSmile.png",
+      "reason": "superseded",
+      "bytes": 1345008,
+      "sha256": "24dfa9a5feaf5c4ff5e682a7e491bbb1d4c01d28bc1af8226dfe6bc2a9691eca",
+      "gitBlob": "cb01c960abee4e9db4fc60e35cf4547064bc618a"
+    },
+    {
+      "path": "art/characters/tiara-v1/avatarWink.png",
+      "reason": "superseded",
+      "bytes": 1269490,
+      "sha256": "79e1b269e9c6af03cfebc6ecf31d62fc8b8a5bffe1c1af6b36959f5baf1bde79",
+      "gitBlob": "5412a78206741444aae34fd82d767941e66c31bf"
+    },
+    {
+      "path": "art/characters/tiara-v1/catch.png",
+      "reason": "superseded",
+      "bytes": 1272198,
+      "sha256": "014c48de6be0c5dfe18ca9d52848853ce36ffbff0f13ba4f92332818187ebf6a",
+      "gitBlob": "ba0d19f7497416b6a536624cd21144da19e7d891"
+    },
+    {
+      "path": "art/characters/tiara-v1/loading.png",
+      "reason": "superseded",
+      "bytes": 1262956,
+      "sha256": "4efa455bb35364c8ede301df3be1d94b32f31696479c76e47c4aab8792002373",
+      "gitBlob": "1496a3ad4f711d15289862478205520a7d47edd8"
+    },
+    {
+      "path": "art/characters/tiara-v1/pull.png",
+      "reason": "superseded",
+      "bytes": 1256059,
+      "sha256": "b58cdcdd8a059832ff25688a47503ec936a2a23520b579938913d43b23b1feb3",
+      "gitBlob": "ccace6aeb713c3a9a8e866cd0c31b4ea745edadd"
+    },
+    {
+      "path": "art/characters/tiara-v1/push.png",
+      "reason": "superseded",
+      "bytes": 1398864,
+      "sha256": "e8a9cb011509e126170fd19da5aeeb017aca42d17bb4fdf2460837c1b6d971c0",
+      "gitBlob": "dfac71abf824a308f72d19e9e2e1199c0f41f765"
+    },
+    {
+      "path": "art/characters/tiara-v1/reply.png",
+      "reason": "superseded",
+      "bytes": 1287769,
+      "sha256": "5ea9be2c9bf926287c651204215d447bdd557941828e77f4e831dcc4a739bbe1",
+      "gitBlob": "a21d3147b9aeb6636430ca2b5aa74d9c2d5bcef3"
+    },
+    {
+      "path": "art/characters/tiara-v1/welcome.png",
+      "reason": "superseded",
+      "bytes": 1239978,
+      "sha256": "766e309d204a75a28636dbf297de91e5dcbd6c133c38311342ed6dc906f11305",
+      "gitBlob": "f81da99b2e5e736eae7cad3351d2dbadcaf3f053"
+    },
+    {
+      "path": "art/characters/kazuhiko-v1/avatarSmile.png",
+      "reason": "superseded",
+      "bytes": 1110728,
+      "sha256": "989bfb23f5e0e2ecf1e62666fe261c136c888853b7dbfff7b15a9fee69949ca4",
+      "gitBlob": "fa7f254c5dbb3c5f2f74335d61b3680471f55fc6"
+    },
+    {
+      "path": "art/characters/kazuhiko-v1/catch.png",
+      "reason": "superseded",
+      "bytes": 1271415,
+      "sha256": "6c7a25005b3cd1625403580e643876bce8df770fc660ca6b7e9cbac43f2e06b0",
+      "gitBlob": "4b3391a6916e672e570c246d648e3daef0f8a13b"
+    },
+    {
+      "path": "art/characters/kazuhiko-v1/reply.png",
+      "reason": "superseded",
+      "bytes": 1253727,
+      "sha256": "cea3c6e39bbd4a7b44ade2132662fed1e69aa7e87273dc915625e16944a38bf9",
+      "gitBlob": "ffb7a5c8a9f8ede184bc4beb89422f5d546415a8"
+    },
+    {
+      "path": "art/rare-scenes/v1/kaju.png",
+      "reason": "superseded",
+      "bytes": 1454286,
+      "sha256": "898b55a11c48f34c312651739956b2a5e5c3f86d3ad32be57b56790693690578",
+      "gitBlob": "fe28a3ddc63da6b86f0f3eba2fbbd500b8db2211"
+    },
+    {
+      "path": "art/rare-scenes/v1/komari.png",
+      "reason": "superseded",
+      "bytes": 1445585,
+      "sha256": "65a1f1780a6e402bdf55413007f45c08d3febf934870d0391623ec8c752dec8f",
+      "gitBlob": "55fd96c6eaa472dc9f543affbd8ab383ecff2e9d"
+    },
+    {
+      "path": "art/rare-scenes/v1/tiara.png",
+      "reason": "superseded",
+      "bytes": 1446495,
+      "sha256": "ac272e2c1e8e65a075d1c3274bd90040136c85a41d974480f9f9df3b947ab504",
+      "gitBlob": "8b2e61bf9844951a140d85fd1edc3eede5fdd44a"
+    },
+    {
+      "path": "art/rare-scenes/v1/whale-girl.png",
+      "reason": "superseded",
+      "bytes": 1922214,
+      "sha256": "8efed0516156deb16fb4ab98f32ce03505b3d752f1db352b47103745d0b438b9",
+      "gitBlob": "95ec4b6beddaf15e83dd8460c9d73cc7c931feef"
+    },
+    {
+      "path": "art/rare-scenes/v1/yanami.png",
+      "reason": "superseded",
+      "bytes": 1689772,
+      "sha256": "dd6e3ea82006ff44dbe18bf608714dd0a8a197aaf9da222a84719e93b2e23112",
+      "gitBlob": "832f09146ba7d4173c0ac9e7bf9dde33339f3e95"
+    },
+    {
+      "path": "art/rare-scenes/v2/tiara-long-legs.png",
+      "reason": "superseded",
+      "bytes": 963932,
+      "sha256": "fba456cbc67938021f7d8a9e5b287319bd70d6629589c9ceb6ba75f8cf69e46b",
+      "gitBlob": "021f448025199c6a2f11b5140ef44417874d471b"
+    },
+    {
+      "path": "art/rare-scenes/v2/tiara.png",
+      "reason": "superseded",
+      "bytes": 1096260,
+      "sha256": "7a3026bdc56fe2961daf575d546af2d37268789423903a789e8c0d26185e8283",
+      "gitBlob": "f68b9d3fcfd85bb9816b300ae79229de9478b733"
+    },
+    {
+      "path": "art/rare-scenes/v3/kaju.png",
+      "reason": "superseded",
+      "bytes": 887695,
+      "sha256": "f94ddd63ff33b934683b53eb87002e0f344818d1da09cb5a6a876df261d700e3",
+      "gitBlob": "091157a78e7adfac609d147db1d40e42bd791a28"
+    },
+    {
+      "path": "art/rare-scenes/v3/komari.png",
+      "reason": "superseded",
+      "bytes": 874187,
+      "sha256": "86d0d83072112a0427af266a15fae7ba257a02443c1e4f34e42d83e017b9aaab",
+      "gitBlob": "800c18a4670ab8abaf8c2355c617e3599b994848"
+    },
+    {
+      "path": "art/rare-scenes/v3/tiara.png",
+      "reason": "superseded",
+      "bytes": 708187,
+      "sha256": "f624844090b68872edc5215227185c0fd9b36f5a223e850f330add5ff41a3c4f",
+      "gitBlob": "4c1ab5f614773a48a03e2fdbc34c2583322862cb"
+    },
+    {
+      "path": "art/rare-scenes/v3/whale-girl.png",
+      "reason": "superseded",
+      "bytes": 1512437,
+      "sha256": "9d6f08a129954debccc2b7f692734f6cec48659a10b68e2f16c7f8d409a35cff",
+      "gitBlob": "2c3d4dfae1077a3996181d0585f2defff2057e50"
+    },
+    {
+      "path": "art/rare-scenes/v3/yanami.png",
+      "reason": "superseded",
+      "bytes": 805453,
+      "sha256": "afe89ce3d94f100f7a3ca23ea2e97663f35ab267a6256a127f9d4e5a5750ca55",
+      "gitBlob": "4c08ee1e21ef4ff9a63f1ab86abfafb485ced070"
+    },
+    {
+      "path": "art/rare-scenes/v4/kaju.png",
+      "reason": "superseded",
+      "bytes": 883375,
+      "sha256": "a0c26f9436708d33ea3f3f6b46a924369b3468609a7829661fca176ef57d5f71",
+      "gitBlob": "c5221eb5acc2d469fe338ccff4a8eaf12ca1f282"
+    },
+    {
+      "path": "art/rare-scenes/v4/komari.png",
+      "reason": "superseded",
+      "bytes": 876650,
+      "sha256": "087db3f9b9f4016bd2b549d4097b24c7d4aa0399b96653f38517f59ee47d212c",
+      "gitBlob": "bd028a6d7a5aa2fabf2d2fa51456a202b5cb2296"
+    },
+    {
+      "path": "art/rare-scenes/v4/whale-girl.png",
+      "reason": "superseded",
+      "bytes": 1485462,
+      "sha256": "378205e457c8f890211e003b1a2a24b59c5b16565c4c758762e66775d8ce1a70",
+      "gitBlob": "b795b56b87e860f0938ea9414e70e0f690aef54e"
+    },
+    {
+      "path": "art/rare-scenes/v4/yanami.png",
+      "reason": "superseded",
+      "bytes": 799795,
+      "sha256": "e928e43d43f07a985ca488164fdbe0948cd3b1db55129b489c46d138f338b1cd",
+      "gitBlob": "7f5f04ac3cc5754fb074fc0855ae467e7c96a150"
+    },
+    {
+      "path": "art/rare-scenes/v7/kaju.png",
+      "reason": "duplicate",
+      "bytes": 1658732,
+      "sha256": "6ae369d3602270b8b76e599d663c9179b1e75636799d2a6c944778f756c955b8",
+      "gitBlob": "d2436e7fb5bba2d11c56490d300bba644e0b2c1b",
+      "replacement": "art/rare-scenes/v5/kaju-hands-fixed.png"
+    },
+    {
+      "path": "art/rare-scenes/v7/tiara.png",
+      "reason": "duplicate",
+      "bytes": 1356384,
+      "sha256": "2f1205668b98a3418324112ba72077bee4c2b4ad814d5bc51c88dd32901ed0aa",
+      "gitBlob": "7d9af45ebd1b3233afd0f890fd6cb2132c585177",
+      "replacement": "art/rare-scenes/v5/tiara-hands-fixed.png"
+    },
+    {
+      "path": "art/rare-scenes/v5/tiara-before-edge-cleanup.png",
+      "reason": "superseded",
+      "bytes": 1478895,
+      "sha256": "67d460d1281dc0fbbcdc7678db08578110ac778fe47bcc3d09015fd6feb0f328",
+      "gitBlob": "70341c9ad9eafc592f114547d034aee34cb682d0"
+    },
+    {
+      "path": "art/rare-scenes/v5/tiara.png",
+      "reason": "superseded",
+      "bytes": 1394578,
+      "sha256": "97c50d3a0a8b99b3d18a4da6116cad291b18ccc0da0727027384b2846abf0414",
+      "gitBlob": "9709322e33e8d5b4856f23146d3982b00bd0595d"
+    },
+    {
+      "path": "art/rare-scenes/v5/tiara-refined.png",
+      "reason": "duplicate",
+      "bytes": 1360215,
+      "sha256": "d5bd2099c7ca899191b44da8bcfed579b13bcb01d9c138e277a3fcd2690921eb",
+      "gitBlob": "34b89b33fc71d9d684055896bb183d56ecdd0189",
+      "replacement": "art/rare-scenes/v6/tiara.png"
+    },
+    {
+      "path": "art/rare-scenes/v5/kaju.png",
+      "reason": "superseded",
+      "bytes": 1671286,
+      "sha256": "4b254166598b9d4b2317829b58648a066e76e551d24304736932e97a59e8d6e7",
+      "gitBlob": "00aba89a8ffc6c2f6cd0306fc66c4d45cbb1ba02"
+    },
+    {
+      "path": "art/rare-scenes/v6/reference/tiara-before-face-refinement.png",
+      "reason": "superseded",
+      "bytes": 1710885,
+      "sha256": "67398d6bdc8542376255cad16241de17c36086c93d70760f76b2ea0a5334ca70",
+      "gitBlob": "937d7392553d4eec163f24e2e9ac3bf76d42fef2"
+    },
+    {
+      "path": "art/characters/doubao-v1/source/reply.png",
+      "reason": "superseded",
+      "bytes": 1575060,
+      "sha256": "597eafc5cde9d1eed4eba5615d49086dc003d95e95acbff5baa589d23c565ccd",
+      "gitBlob": "5120fb6ea89f36f9f6acd8311aee8e496083617c"
+    },
+    {
+      "path": "art/characters/whale-girl-v1/reference/current-main-rare.png",
+      "reason": "duplicate",
+      "bytes": 2027020,
+      "sha256": "69536c590ef1fda660916a55a7b421a4b5b333495940f992606096d50918e19e",
+      "gitBlob": "5dd39ec60df3b21576168ca7db82a705aa078116",
+      "replacement": "art/rare-scenes/v5/whale-girl.png"
+    },
+    {
+      "path": "art/rare-scenes/v4/reference/yanami-expression-user.png",
+      "reason": "duplicate",
+      "bytes": 270463,
+      "sha256": "d00c023e2afab1908fc87b7485e623125159ecf294f722c320be5a26d7261815",
+      "gitBlob": "b95f3d63617921b9862aac3e7abaa17b1821888e",
+      "replacement": "art/rare-scenes/v5/reference/yanami-expression-user.png"
+    },
+    {
+      "path": "art/subagent-avatars/v1/preview.png",
+      "reason": "preview-export",
+      "bytes": 92942,
+      "sha256": "a6e2d3ea9f11c91aa568fa1f0363d326143308422fae57be6ce001a554193c7a",
+      "gitBlob": "e6763153ccc70fba2205f5c4efd32ff44dac4f7c"
+    }
+  ]
+}

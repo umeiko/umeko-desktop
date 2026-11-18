@@ -299,3 +299,12 @@ class TaskStore:
                     SELECT 1 FROM attempts WHERE task_id = ? AND state = 'running'
                 )
             """, (task_id, task_id)).rowcount)
+
+    def erase_sessions(self, identifiers):
+        """Remove private attempts and their dependent steps/files with a chat."""
+        with self.connection() as db:
+            for identifier in identifiers:
+                tasks = [row[0] for row in db.execute('SELECT DISTINCT task_id FROM attempts WHERE session_id = ?', (identifier,))]
+                db.execute('DELETE FROM attempts WHERE session_id = ?', (identifier,))
+                for task in tasks:
+                    db.execute('DELETE FROM tasks WHERE id = ? AND NOT EXISTS (SELECT 1 FROM attempts WHERE task_id = ?)', (task, task))

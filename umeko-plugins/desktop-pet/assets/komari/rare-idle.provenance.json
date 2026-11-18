@@ -60,5 +60,7 @@
     ]
   ],
   "sha256": "dd37ec6182355cc5687e828bfffb56da743aaadc4696e340d178e65345269676",
-  "bytes": 281144
+  "bytes": 281144,
+  "status": "Historical sprite-sheet generation record; superseded by the user-delivered GIF animations.",
+  "supersededBy": "delivery.provenance.json"
 }

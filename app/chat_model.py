@@ -24,6 +24,8 @@ class ChatModel(QAbstractListModel):
     pageReady = Signal(object)
     viewportAboutToChange = Signal()
     viewportChanged = Signal()
+    historyAboutToPrepend = Signal(int)
+    historyPrepended = Signal(int)
 
     def __init__(self, parent=None, *, reader=None, presentation=None):
         super().__init__(parent)
@@ -62,12 +64,19 @@ class ChatModel(QAbstractListModel):
     def paged(self):
         return self.snapshot is not None
 
+    @Property(bool, notify=sourceChanged)
+    def partialHistory(self):
+        return bool(self.snapshot is not None and self.snapshot.partial)
+
     @property
     def base_count(self):
         return self.snapshot.count if self.snapshot else 0
 
     @Property(int, notify=questionsChanged)
     def questionCount(self):
+        # The question list of a partial history appears with its complete index.
+        if self.snapshot and self.snapshot.partial:
+            return 0
         return (self.snapshot.question_count if self.snapshot else 0) + len(self._questions)
 
     @Slot(int, result='QVariantMap')
@@ -87,6 +96,9 @@ class ChatModel(QAbstractListModel):
 
     def set_snapshot(self, snapshot):
         if self.snapshot is snapshot:
+            return
+        if snapshot is not None and self.snapshot is not None and snapshot.extends is self.snapshot:
+            self._prepend(snapshot)
             return
         self.beginResetModel()
         if self.snapshot:
@@ -109,6 +121,37 @@ class ChatModel(QAbstractListModel):
         self.endResetModel()
         self.sourceChanged.emit()
         self.questionsChanged.emit()
+
+    def _prepend(self, snapshot):
+        """Complete a partial history by inserting its earlier rows above.
+
+        The complete snapshot ends with the partial snapshot's rows, so rows
+        already prepared or measured keep their content under new numbers.
+        """
+        shift = snapshot.count - self.snapshot.count
+        if shift <= 0:
+            self.snapshot = snapshot
+            self.sourceChanged.emit()
+            self.questionsChanged.emit()
+            return
+        self.historyAboutToPrepend.emit(shift)
+        self.beginInsertRows(QModelIndex(), 0, shift - 1)
+        self.snapshot.repository.cache.pin(())
+        self._generation += 1
+        move = lambda values: OrderedDict((row + shift, value) for row, value in values.items())
+        self._prepared, self._heights, self._metadata = move(self._prepared), move(self._heights), move(self._metadata)
+        self._failed = {row + shift for row in self._failed}
+        self._pending.clear()
+        self._wanted = [row + shift for row in self._wanted]
+        self._questions = [{**value, 'row': value['row'] + shift} for value in self._questions]
+        self.snapshot = snapshot
+        self._reset_groups()
+        self.endInsertRows()
+        self.sourceChanged.emit()
+        self.questionsChanged.emit()
+        self.historyPrepended.emit(shift)
+        if self._wanted:
+            self._set_wanted(self._wanted)
 
     @Slot(int, int)
     def requestRange(self, first, last):
@@ -493,11 +536,28 @@ class ChatModel(QAbstractListModel):
                 row = db.execute('''SELECT d.seq FROM native n JOIN display d
                     ON n.pos BETWEEN d.first_native AND d.last_native WHERE n.id=? ORDER BY d.seq LIMIT 1''', (entry_id,)).fetchone()
                 if row is not None:
-                    return row[0]
+                    local = row[0] - self.snapshot.row_offset
+                    return local if 0 <= local < self.snapshot.count else -1
         for row, message in enumerate(self.rows):
             if entry_id in message.get('_entries', []) or entry_id == message.get('entryId'):
                 return self.base_count + row
         return -1
+
+    @staticmethod
+    def recent_compaction_interval(messages):
+        boundaries, seen = [], set()
+        for index in range(len(messages) - 1, -1, -1):
+            row = messages[index]
+            event = row.get('compaction', {})
+            identifier = event.get('eventId')
+            if row.get('customType') == 'umeko-compaction' and event.get('state', 'success') == 'success' and identifier and identifier not in seen:
+                boundaries.append(index); seen.add(identifier)
+                if len(boundaries) == 2:
+                    first = index
+                    while first and messages[first-1].get('compaction', {}).get('eventId') == identifier:
+                        first -= 1
+                    return messages[first:]
+        return messages
 
     @staticmethod
     def project(messages, with_starts=False, max_group=None):

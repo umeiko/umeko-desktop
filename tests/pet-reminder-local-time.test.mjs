@@ -1,40 +1,53 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import vm from 'node:vm';
 
-const qml = readFileSync(new URL('../umeko-plugins/desktop-pet/qml/Settings.qml', import.meta.url), 'utf8');
+const qml = readFileSync(new URL('../app/qml/DesktopPetReminders.qml', import.meta.url), 'utf8');
 const start = qml.indexOf('function resolveLocalTime(){');
 const end = qml.indexOf('function saveItem(){', start);
 assert.ok(start >= 0 && end > start, 'Locate the real QML local-time resolver');
 const resolver = qml.slice(start, end).trim();
 
-// An independent US/Pacific fixture: the 2026 transitions occur at these UTC
-// instants. Its getters expose local wall time without changing the host zone.
+// The reminder editor now asks the host's IANA-zone resolver. Exercise that
+// real boundary, while keeping the expected UTC instants independent below.
+const root = fileURLToPath(new URL('../', import.meta.url));
+const python = process.env.UMEKO_TEST_PYTHON || fileURLToPath(new URL(
+  process.platform === 'win32' ? '../.venv/Scripts/python.exe' : '../.venv/bin/python', import.meta.url));
+const hostResolver = `
+import json, sys, tempfile
+from PySide6.QtCore import QCoreApplication
+from app.pet_reminders import PetReminders
+app = QCoreApplication([])
+with tempfile.TemporaryDirectory() as directory:
+    service = PetReminders(directory)
+    print(json.dumps(service.resolve_local_time(json.load(sys.stdin))))
+`;
 const NativeDate = Date;
-const spring = NativeDate.parse('2026-03-08T10:00:00Z');
-const fall = NativeDate.parse('2026-11-01T09:00:00Z');
-class PacificDate {
-  constructor(epoch) { this.epoch = new NativeDate(epoch).getTime(); }
-  static UTC(...parts) { return NativeDate.UTC(...parts); }
-  getTimezoneOffset() { return this.epoch >= spring && this.epoch < fall ? 420 : 480; }
-  wall() { return new NativeDate(this.epoch - this.getTimezoneOffset() * 60000); }
-  getFullYear() { return this.wall().getUTCFullYear(); }
-  getMonth() { return this.wall().getUTCMonth(); }
-  getDate() { return this.wall().getUTCDate(); }
-  getHours() { return this.wall().getUTCHours(); }
-  getMinutes() { return this.wall().getUTCMinutes(); }
-}
 
-function resolve(date, time) {
+function resolve(date, time, originalZone = '') {
   const sandbox = {
-    Date: PacificDate,
+    originalZone,
+    snapshot: { timeZone: 'America/Los_Angeles' },
+    pet: { ui(method, args) {
+      assert.equal(method, 'resolveReminderTime');
+      assert.deepEqual(JSON.parse(JSON.stringify(args)), {
+        date, time, timeZone: originalZone || 'America/Los_Angeles',
+      });
+      const result = spawnSync(python, ['-c', hostResolver], {
+        cwd: root, input: JSON.stringify(args), encoding: 'utf8', timeout: 5000,
+      });
+      assert.equal(result.status, 0, result.stderr || String(result.error));
+      return { ok: true, result: JSON.parse(result.stdout) };
+    } },
     dateField: { text: date },
     timeField: { text: time },
     offsetPicker: { currentIndex: 99 },
     localCandidates: [],
   };
-  vm.runInNewContext(`(${resolver})()`, sandbox, { timeout: 1000 });
+  vm.runInNewContext(`(${resolver})()`, sandbox, { timeout: 6000 });
   return {
     candidates: Array.from(sandbox.localCandidates, row => ({ epoch: row.epoch, label: row.label })),
     selected: sandbox.offsetPicker.currentIndex,
@@ -64,4 +77,14 @@ test('QML selects the sole UTC candidate for an ordinary local time', () => {
 
 test('QML rejects an invalid calendar date instead of normalizing it', () => {
   assert.deepEqual(resolve('2026-02-30', '12:34'), { candidates: [], selected: -1 });
+});
+
+test('editing preserves the reminder zone even when the current host zone differs', () => {
+  assert.deepEqual(resolve('2026-11-01', '01:30', 'America/New_York'), {
+    candidates: [
+      { epoch: NativeDate.parse('2026-11-01T05:30:00Z'), label: 'UTC-04:00' },
+      { epoch: NativeDate.parse('2026-11-01T06:30:00Z'), label: 'UTC-05:00' },
+    ],
+    selected: -1,
+  });
 });

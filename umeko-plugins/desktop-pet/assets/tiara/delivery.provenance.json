@@ -1,0 +1,70 @@
+{
+  "source": "User-provided desktop delivery 马剃天爱星_桌宠动画_20261113",
+  "processing": "Copied original delivered GIF bytes unchanged; no re-encoding or frame synthesis.",
+  "sourceNotes": "马剃天爱星桌宠动画 · 七状态\n\n七段动作沿用原状态设计，角色、衣服和记录板以本次定稿为准。\n七段均由 MiniMax H3 独立生成绿幕动态，再抠成512×512透明无限循环GIF。\nGIF采用共享色表、透明背景和清除上一帧的处置方式；全部原生帧正序保留。\n按要求设置约时长：idle1.8s / thinking2.4s / working2.0s / waiting2.6s / done2.0s / error2.5s / idle-rare4.2s。\nGIF帧间隔以10毫秒为单位分配，绿幕原片保留原生24fps时长；原片放在“绿幕原片”。\n未自动打开播放器。\n\nSHA256:\nea2327846ec19f73a7b636bca2aeceb94b5a726f23c85f3817d8ae9fbf696e4d  idle.gif\nb7499d2c7550f45d67af15de838a8d2f6ddece761046d6f9c8952a428fa0ab7c  thinking.gif\n034b46573aa61775da34485f37cd99de793853d8bdb40c0c60eb35cc3dd04cb2  working.gif\nb0fa00f766b247e7ea6f3e9d9e58ecb48e5c739bdf006c1ca7176ec2507ca9c6  waiting.gif\n787830c9483b706cd1694d519411d9f8b65563a3c92e976d108ffdcb80c6a862  done.gif\ne102ede14a290325e3fb8c30776fd27cb3ce154c311633eadc022adc39ff3c8c  error.gif\n499ef55f709d49814a45db665d71f133f0b1527153f5739ff73476fe2b33763e  idle-rare.gif\n",
+  "files": {
+    "done.gif": {
+      "sha256": "787830c9483b706cd1694d519411d9f8b65563a3c92e976d108ffdcb80c6a862",
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "durationMs": 2000,
+      "loop": 0,
+      "transparent": true
+    },
+    "error.gif": {
+      "sha256": "e102ede14a290325e3fb8c30776fd27cb3ce154c311633eadc022adc39ff3c8c",
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "durationMs": 2500,
+      "loop": 0,
+      "transparent": true
+    },
+    "idle-rare.gif": {
+      "sha256": "499ef55f709d49814a45db665d71f133f0b1527153f5739ff73476fe2b33763e",
+      "width": 512,
+      "height": 512,
+      "frames": 107,
+      "durationMs": 4200,
+      "loop": 0,
+      "transparent": true
+    },
+    "idle.gif": {
+      "sha256": "ea2327846ec19f73a7b636bca2aeceb94b5a726f23c85f3817d8ae9fbf696e4d",
+      "width": 512,
+      "height": 512,
+      "frames": 39,
+      "durationMs": 1800,
+      "loop": 0,
+      "transparent": true
+    },
+    "thinking.gif": {
+      "sha256": "b7499d2c7550f45d67af15de838a8d2f6ddece761046d6f9c8952a428fa0ab7c",
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "durationMs": 2400,
+      "loop": 0,
+      "transparent": true
+    },
+    "waiting.gif": {
+      "sha256": "b0fa00f766b247e7ea6f3e9d9e58ecb48e5c739bdf006c1ca7176ec2507ca9c6",
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "durationMs": 2600,
+      "loop": 0,
+      "transparent": true
+    },
+    "working.gif": {
+      "sha256": "034b46573aa61775da34485f37cd99de793853d8bdb40c0c60eb35cc3dd04cb2",
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "durationMs": 2000,
+      "loop": 0,
+      "transparent": true
+    }
+  }
+}

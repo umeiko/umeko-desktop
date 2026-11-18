@@ -1,0 +1,47 @@
+{
+  "source": "生成桌面宠物动画_20261113.tar.gz",
+  "sourceSha256": "d93224782bf25e72904bec0555fab15dad27c43194c7271f7aafb67a5256d6a2",
+  "assets": [
+    {
+      "file": "thinking.gif",
+      "sha256": "930d5d9e6b6d8aa5d0c90c8f84a5a8139578be7185e506c47b926c7328d8a9ca",
+      "durationMs": 2400,
+      "sourceSha256": "f3ea729a7c6007700d81b45ee65bfd91894b41db7b2f4e3e149ea80c8d1143c3"
+    },
+    {
+      "file": "working.gif",
+      "sha256": "6c8f808219b5c76267cba6fb5228a9526bca38e1651bf65694027630d1f53b04",
+      "durationMs": 2000,
+      "sourceSha256": "54e2ce80616dba87a301ac645520d72db3c9643814f300589651696d31e97b80"
+    },
+    {
+      "file": "waiting.gif",
+      "sha256": "f6b9646c3381c02ba18a58dd34f7512ac9949f95b7ca135b73b92b5c4b52c7d1",
+      "durationMs": 2600,
+      "sourceSha256": "5a5cab717aec2ee57f4c360f7e3b47db7d371edce62b7e0bd1ad0682962017fc"
+    },
+    {
+      "file": "done.gif",
+      "sha256": "d451dcbae37c02aae750220051853e6bcbf5f368eb7028d679d97195d1cd9f3f",
+      "durationMs": 2000,
+      "sourceSha256": "ba3ab3c4f3534ee7ea339350d2010d94e8197bb88e40af012233a94b5ed18449"
+    },
+    {
+      "file": "error.gif",
+      "sha256": "64d72a2e2d8b786c1c430c774e6302f9611c9d9ec584897deebf97ee1fd66789",
+      "durationMs": 2500,
+      "sourceSha256": "556ba36e34bbaf46abbe6334b18338b28bffad0b45d6e0de1074e578051e64cc"
+    },
+    {
+      "file": "idle-rare.gif",
+      "sha256": "253662558c5bc18cb43a17339c860f2822398fe69b25b6cf45e036119ef7d1e7",
+      "durationMs": 4200,
+      "sourceSha256": "3475c20326013c9563c6b0a13402587fa91bb09876de4c62ba8658f5999ca196"
+    }
+  ],
+  "processing": [
+    "Resized frames to 320 × 320 pixels",
+    "Reduced frame count by about 18% with original loop duration preserved",
+    "Quantized each frame to 127 opaque colors plus transparency"
+  ]
+}

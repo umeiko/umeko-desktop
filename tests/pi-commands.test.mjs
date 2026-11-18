@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { commandWords, addMcpFromInput, createPiCommandController } from '../runtime/releases/coding-1.3.0/pi-commands.mjs';
+import { commandWords, addMcpFromInput, createPiCommandController } from '../runtime/releases/coding-1.5.2/pi-commands.mjs';
 
 test('Pi command tokenizer preserves quoted literals and never evaluates a shell', () => {
   assert.deepEqual(commandWords('pi mcp add test --env "KEY=${TOKEN}" -- node "a file.mjs"'), ['pi','mcp','add','test','--env','KEY=${TOKEN}','--','node','a file.mjs']);

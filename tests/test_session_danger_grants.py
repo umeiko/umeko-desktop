@@ -31,6 +31,7 @@ class SessionDangerGrantTests(unittest.TestCase):
         backend._sessions = [{"id": "chat-a", "title": "A", "file": "", "workspace": ""}]
         backend._management_jobs = set()
         backend._conversation_views = SimpleNamespace(discard=Mock())
+        backend._session_files = SimpleNamespace(busy=False, pending=set(), deleteSession=Mock())
         backend._closing = False
         backend._clear_current = Mock()
         backend.newSession = Mock()
@@ -127,12 +128,9 @@ class SessionDangerGrantTests(unittest.TestCase):
         self.backend.archiveProject("project", True)
         self.assertNotIn("dangerousAllowed", Store(self.path).data["sessionMeta"]["chat-a"])
 
-    def test_delete_clears_session_metadata_without_touching_real_files(self):
-        self.grant()
-        with patch("app.controller.shutil.rmtree") as remove:
-            self.backend.deleteSession("chat-a")
-        remove.assert_not_called()
-        self.assertNotIn("chat-a", Store(self.path).data["sessionMeta"])
+    def test_delete_uses_managed_session_lifecycle(self):
+        self.backend.deleteSession("chat-a")
+        self.backend._session_files.deleteSession.assert_called_once_with("chat-a")
 
     def test_native_branch_event_clears_owning_chat_only(self):
         self.grant()

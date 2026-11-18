@@ -251,6 +251,7 @@ def run_trace(source_root=ROOT, output=None, exhaustive=False):
         # Isolated host ensures unrelated Main PID motion cannot accidentally
         # hide a missing publication in the fixed-transform focus regression.
         host = QQuickView()
+        host.engine().setImportPathList(engine.importPathList())
         host.setObjectName("fixedComposerWindow")
         host.engine().rootContext().setContextProperty("backend", backend)
         host.setResizeMode(QQuickView.SizeRootObjectToView)
@@ -288,6 +289,7 @@ anchors.bottom: parent.bottom; anchors.bottomMargin: 20 } }''' % qml_dir).encode
 
         sdk = EditorSdk()
         widget = QQuickView()
+        widget.engine().setImportPathList(engine.importPathList())
         widget.setObjectName("widgetWindow")
         widget.engine().rootContext().setContextProperty("backend", backend)
         widget.setResizeMode(QQuickView.SizeRootObjectToView)

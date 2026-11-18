@@ -343,9 +343,7 @@ FocusScope {
                             visible:entry.skill;Layout.preferredWidth:20*root.sdk.scale;Layout.preferredHeight:22*root.sdk.scale
                             padding:0;spacing:0;checked:entry.skill && !!entry.modelData.skill.enabled
                             enabled:entry.skill && entry.modelData.skill.canToggle!==false && !root.working && !root.sessionBusy
-                            indicator:Rectangle {width:15*root.sdk.scale;height:15*root.sdk.scale;x:(skillEnabled.width-width)/2;y:(skillEnabled.height-height)/2;radius:3*root.sdk.scale;color:skillEnabled.checked ? root.sdk.colors.accent : "transparent";border.color:skillEnabled.enabled ? skillEnabled.checked ? root.sdk.colors.accent : root.sdk.colors.muted : root.sdk.colors.line
-                                Umeko.Glyph {anchors.centerIn:parent;name:"check";visible:skillEnabled.checked;color:root.sdk.colors.surface;width:13*root.sdk.scale;height:13*root.sdk.scale}
-                            }
+
                             contentItem:Item {}
                             onClicked:{const next=checked;checked=Qt.binding(()=>entry.skill && !!entry.modelData.skill.enabled);root.setEnabled(entry.modelData.skill,next)}
                             Accessible.name:entry.skill ? root.t("启用 ","Enable ")+entry.modelData.skill.name : ""

@@ -26,6 +26,7 @@ from PySide6.QtCore import QCoreApplication, QEvent, QMimeData, QObject, QPointF
 from PySide6.QtGui import QDesktopServices, QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickItem
+from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtTest import QTest
 import shiboken6
 
@@ -58,6 +59,7 @@ class Window:
         else:
             self.backend = Controller(ROOT)
             self.engine = QQmlApplicationEngine()
+            self.engine.addImportPath(str(ROOT / "app/qml"))
             configure_engine(self.engine)
             self.engine.rootContext().setContextProperty("backend", self.backend)
             self.engine.load(QUrl.fromLocalFile(str(ROOT / "app/qml/Main.qml")))
@@ -290,7 +292,7 @@ def main():
                 active.close()
                 active = None
                 report.update(ok=True, fakeOnly=True, actualCreateApplication=True, actualMainQml=True,
-                              controlsStyle="Basic", fakeCliCatalogCalls=len(calls), externalProcesses=0,
+                              controlsStyle=QQuickStyle.name(), fakeCliCatalogCalls=len(calls), externalProcesses=0,
                               secretsBackend="private-memory-fixture" if memory_secrets else "Windows-DPAPI",
                               modelCalls=0, qmlWarnings=0,
                               temporaryBytesBeforeCleanup=sum(p.stat().st_size for p in work.rglob("*") if p.is_file()))

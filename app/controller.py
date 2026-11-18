@@ -15,6 +15,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 from dataclasses import replace
+from types import SimpleNamespace
 
 from PySide6.QtCore import QObject, Property, QProcess, QProcessEnvironment, QTimer, QUrl, Signal, Slot, QBuffer, QIODevice, QMimeData
 from PySide6.QtGui import QGuiApplication, QDesktopServices, QFont, QFontDatabase, QImageReader, QWindow
@@ -42,6 +43,7 @@ from .message_attachments import split_attachments
 from .app_about import AppAbout
 from .themes import BASES, LIMIT as THEME_LIMIT, theme_library, read_theme
 from .session_preview import SessionPreview
+from .session_files import SessionFiles
 from .document_preview import DocumentPreview
 from .preferences import PreferencesMixin
 from .common_providers import CommonProvidersMixin
@@ -150,6 +152,55 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Property('QVariantList', notify=changed)
     def auxiliaryVisionModels(self):
         return self._auxiliaryVisionModels()
+
+    @Property('QVariantList', notify=changed)
+    def pluginSessionProfiles(self):
+        from .plugin_sessions import profile_rows
+        return profile_rows(self)
+
+    @Property('QVariantList', notify=changed)
+    def pluginSessionModels(self):
+        return [{'providerId': row['providerID'], 'model': row['id'], 'label': row['owned_by'] + ' / ' + row['id'],
+                 'reasoningLevels': self._reasoning_levels(SimpleNamespace(model=row['id'], provider=row['providerID']))}
+                for row in self.gateway.models()]
+
+    @Slot(str, str, str, str, result=bool)
+    @Slot(str, str, str, str, str, result=bool)
+    def savePluginSessionModel(self, plugin, profile, model='', provider='', reasoningEffort=''):
+        from .plugin_sessions import set_profile_model
+        try:
+            set_profile_model(self, plugin, profile, model, provider, reasoningEffort)
+        except (ValueError, OSError, RuntimeError) as error:
+            self.toast.emit(str(error))
+            return False
+        self.changed.emit()
+        self.toast.emit('插件会话模型已更新，下一次输入时生效')
+        return True
+
+    @Slot(str, result=bool)
+    def setDefaultReasoningEffort(self, value):
+        """Set the effort inherited by new desktop sessions."""
+        if value != 'off' and value not in self._reasoning_levels():
+            self.toast.emit('请选择当前桌面模型支持的思考档位')
+            return False
+        ui = self.store.data['ui']
+        previous = dict(ui)
+        ui['reasoningEffort'] = value
+        try:
+            self.store.save()
+        except (OSError, RuntimeError) as error:
+            ui.clear()
+            ui.update(previous)
+            self.toast.emit(str(error))
+            return False
+        self.changed.emit()
+        return True
+
+    def _settings_changed_externally(self, keys, invalid):
+        # Store.save() already merged the external values into memory.
+        self.toast.emit('settings.json 无法解析，已另存为 settings.external-invalid.json' if invalid and not keys
+                        else 'settings.json 在 Umeko 外被修改，已读入这些修改')
+        self.changed.emit()
     proxyKeysChanged = Signal()
     editorText = Signal(str)
 
@@ -158,6 +209,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.root = root
         self._app_about = AppAbout(self)
         self.store = Store()
+        self.store.external_change = self._settings_changed_externally
         self._init_dsh()
         from .login_session import LoginStartupSettings
         self._login_startup = LoginStartupSettings(self, background='--login-startup' in sys.argv)
@@ -213,10 +265,17 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._management_jobs = set()
         self._mcp_jobs = {}
         self._closing = False
+        self._transcript_warmup = None
         self._copy_request = 0
+        self._selection_attachment = None
+        self._selection_epoch = 0
+        self.viewChanged.connect(self._invalidate_selection_attachment)
         self._session_preview = SessionPreview(self)
+        from .transcript_history import RecentHistory
+        self._recent_history = RecentHistory(self)
         from .conversation_search import ConversationSearch
         self._chat_search = ConversationSearch(self)
+        self._session_files = SessionFiles(self)
         self._document_preview = DocumentPreview(self, store=self.store)
         self._subagents = Subagents(self)
         self._view.id = ""
@@ -322,6 +381,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         return self._session_preview
 
     @Property(QObject, constant=True)
+    def recentHistory(self):
+        return self._recent_history
+
+    @Property(QObject, constant=True)
     def chatSearch(self):
         return self._chat_search
 
@@ -353,6 +416,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             model=self.store.data["selectedModel"], provider=self.store.data["selectedProvider"], greeting=self._welcome_greetings.pop(), portrait=self._welcome_portraits.pop())
 
     def _activate(self, record):
+        if record is not self._view and hasattr(self, '_recent_history'):
+            self._recent_history.leaving(self._view)
         self._streaming_timer.stop()
         self.viewAboutToChange.emit()
         previous_approval = self._dangerous_allowed(self._view)
@@ -451,7 +516,9 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if index < 0:
             return
         self._view.scroll_index, self._view.scroll_y, self._view.follow_tail = index, position, follow
-        if self._view.id and self._view.file:
+        # Rows of a partial history are not rows of the complete index.
+        partial = self._view.transcript is not None and self._view.transcript.partial
+        if self._view.id and self._view.file and not (partial and not follow):
             meta = self.store.data['sessionMeta'].setdefault(self._view.id, {})
             viewport = {'row':index, 'offset':max(0, position), 'follow':follow}
             if meta.get('viewport') != viewport:
@@ -520,6 +587,14 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         return any(record.busy and (provider_id is None or record.provider == provider_id or
                    (record.pending_selection and record.pending_selection[0] == provider_id) or provider_id in generation_accounts)
                    for record in self._pool.records.values())
+
+    @Property("QVariantList", notify=changed)
+    def requestHeaders(self):
+        from .request_headers import validate
+        try:
+            return validate(self.store.data.get('requestHeaders', []))
+        except ValueError:
+            return validate([])
 
     @Property("QVariantMap", notify=changed)
     def config(self):
@@ -610,6 +685,65 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         snapshot, overlay = model.snapshot, list(model.rows)
         script = (self.root / 'app/qml/markdown.js').read_text(encoding='utf-8')
         self._copy_chat(lambda: selected_text(script, snapshot, overlay, selection['anchor'], selection['cursor'], selection.get('expanded', {})))
+
+    def _invalidate_selection_attachment(self):
+        self._selection_epoch += 1
+
+    @Property(bool, notify=attachmentsChanged)
+    def selectionAttachmentBusy(self):
+        return self._selection_attachment is not None
+
+    @Slot(str)
+    def attachChatSelection(self, raw):
+        if self._selection_attachment is not None:
+            return
+        if len(self._view.attachments) >= 20:
+            self.toast.emit("一次最多添加 20 个附件")
+            return
+        if self._view.busy and self._view.phase != "running":
+            self.toast.emit("Pi 加载完成后可添加附件")
+            return
+        try:
+            selection = json.loads(raw)
+            for point in (selection['anchor'], selection['cursor']):
+                if not all(isinstance(point[key], int) for key in ('row', 'block', 'offset')):
+                    return
+        except (ValueError, KeyError, TypeError):
+            return
+        from .chat_copy import selected_text
+        from .selection_attachment import write_selection
+        model = self._chat_model
+        snapshot, overlay = model.snapshot, copy.deepcopy(model.rows)
+        context = (self._view, self._selection_epoch, model, model._generation, snapshot, overlay)
+        self._selection_attachment = context
+        self.attachmentsChanged.emit()
+        workspace = self._view.workspace or self.store.data['workspace']
+        script_path = self.root / 'app/qml/markdown.js'
+        def prepare():
+            text = selected_text(script_path.read_text(encoding='utf-8'), snapshot, overlay,
+                                 selection['anchor'], selection['cursor'], selection.get('expanded', {}))
+            return write_selection(workspace, text)
+        self._job('attach-chat-selection', prepare)
+
+    def _selection_attachment_ready(self, result):
+        context, self._selection_attachment = self._selection_attachment, None
+        item = result['value'] if result['ok'] else None
+        if context is None:
+            return
+        record, epoch, model, generation, snapshot, overlay = context
+        valid = (record is self._view and epoch == self._selection_epoch
+                 and model is self._chat_model and generation == model._generation
+                 and snapshot is model.snapshot and overlay == model.rows)
+        if item and valid and len(record.attachments) < 20 and (not record.busy or record.phase == 'running'):
+            item['id'] = uuid.uuid4().hex
+            record.attachments.append(item)
+        elif item:
+            self._job('discard-selection-attachment', lambda: Path(item['path']).unlink(missing_ok=True))
+            if valid:
+                self.toast.emit('一次最多添加 20 个附件' if len(record.attachments) >= 20 else 'Pi 加载完成后可添加附件')
+        elif not result['ok'] and valid:
+            self.toast.emit('无法附加所选内容：' + result['value'])
+        self.attachmentsChanged.emit()
 
     def _copy_chat(self, job):
         self._copy_request += 1
@@ -764,15 +898,19 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         metadata = self.store.data["sessionMeta"]
         visible_sessions = []
         by_workspace = {}
+        projects_by_key = {os.path.normcase(p['path']): p for p in self.store.data['projects']}
         for session in self._sessions:
             workspace = session.get("workspace", "")
             if workspace:
                 key = self._project_workspace_key(workspace)
-                if hashlib.sha256(key.encode()).hexdigest()[:16] in self.store.data["removedProjects"]:
-                    continue
+            else:
+                key = ''
             meta = metadata.get(session["id"], {})
-            if bool(meta.get("archived")) == self._show_archived:
-                item = {**session, "pinned": bool(meta.get("pinned")), "archived": bool(meta.get("archived"))}
+            project = projects_by_key.get(key, {})
+            removed = bool(key and hashlib.sha256(key.encode()).hexdigest()[:16] in self.store.data['removedProjects'])
+            archived = bool(meta.get('archived') or project.get('archived') or removed)
+            if archived == self._show_archived:
+                item = {**session, "pinned": bool(meta.get("pinned")), "archived": archived, 'projectId': project.get('id', '')}
                 visible_sessions.append(item)
                 if workspace:
                     by_workspace.setdefault(key, []).append(item)
@@ -780,8 +918,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         for children in by_workspace.values():
             children.sort(key=lambda s: not s["pinned"])
         for project in sorted(self.store.data["projects"], key=lambda p: not p.get("pinned", False)):
+            if project.get('archived') and not self._show_archived:
+                continue
             children = by_workspace.get(os.path.normcase(project["path"]), [])
-            if self._show_archived and not children:
+            if self._show_archived and not children and not project.get('archived'):
                 continue
             collapsed = project["id"] in self._collapsed_projects
             rows.append({**project, "kind": "project", "title": project["name"], "collapsed": collapsed, "pinned": bool(project.get("pinned")),
@@ -789,11 +929,11 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             for session in children:
                 grouped.add(session["id"])
                 if not collapsed:
-                    rows.append({"id": session["id"], "title": session["title"], "kind": "session", "pinned": session["pinned"], "archived": session["archived"], "selected": self._view.id == session["id"], **self._session_flags(session["id"])})
+                    rows.append({"id": session["id"], "title": session["title"], "kind": "session", "projectId": project['id'], "pinned": session["pinned"], "archived": session["archived"], "selected": self._view.id == session["id"], **self._session_flags(session["id"])})
         ungrouped = [s for s in visible_sessions if s["id"] not in grouped]
         if ungrouped:
             rows.append({"id": "ungrouped", "kind": "label", "title": "其他会话", "selected": False})
-            rows.extend({"id": s["id"], "title": s["title"], "kind": "session", "pinned": s["pinned"], "archived": s["archived"], "selected": self._view.id == s["id"], **self._session_flags(s["id"])} for s in ungrouped)
+            rows.extend({"id": s["id"], "title": s["title"], "kind": "session", "projectId": s.get('projectId', ''), "pinned": s["pinned"], "archived": s["archived"], "selected": self._view.id == s["id"], **self._session_flags(s["id"])} for s in ungrouped)
         return rows
 
     @Property(bool, notify=chatChanged)
@@ -820,9 +960,15 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Slot(str, bool)
     def archiveSession(self, session_id, archived):
-        if not any(s["id"] == session_id for s in self._sessions):
+        if session_id in self._session_files.pending:
+            return
+        session = next((s for s in self._sessions if s['id'] == session_id), None)
+        if not session:
             return
         self.store.data["sessionMeta"].setdefault(session_id, {})["archived"] = archived
+        if not archived and session.get('workspace'):
+            project = self._ensure_project(session['workspace'], reopen=True)
+            project['archived'] = False
         if archived:
             self._clear_dangerous_approval(session_id)
         if archived and self._view.id == session_id:
@@ -836,14 +982,16 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Slot(str, bool)
     def archiveProject(self, project_id, archived):
         project = next((p for p in self.store.data["projects"] if p["id"] == project_id), None)
-        if not project:
+        if not project or self._session_files.busy:
             return
+        project['archived'] = archived
         ids = [s["id"] for s in self._sessions if s.get("workspace") and os.path.normcase(str(Path(s["workspace"]).resolve())) == os.path.normcase(project["path"])]
         for session_id in ids:
             self.store.data["sessionMeta"].setdefault(session_id, {})["archived"] = archived
             if archived:
                 self._clear_dangerous_approval(session_id)
-        if archived and self._view.id in ids:
+        if archived and (self._view.id in ids or self._project_workspace_key(self._view.workspace) == self._project_workspace_key(project['path'])):
+            self.store.data.update(activeProject='', workspace='')
             self._clear_current()
         if archived:
             for record in tuple(self._pool.records.values()):
@@ -852,19 +1000,13 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.store.save()
         self.chatChanged.emit()
 
+    @Property(QObject, constant=True)
+    def sessionFiles(self):
+        return self._session_files
+
     @Slot(str)
     def removeProject(self, project_id):
-        if not any(p["id"] == project_id for p in self.store.data["projects"]):
-            return
-        self.store.data["projects"] = [p for p in self.store.data["projects"] if p["id"] != project_id]
-        if project_id not in self.store.data["removedProjects"]:
-            self.store.data["removedProjects"].append(project_id)
-        if self.store.data["activeProject"] == project_id:
-            self.store.data.update(activeProject="", workspace="")
-            self._clear_current()
-        self.store.save()
-        self.changed.emit()
-        self.chatChanged.emit()
+        self._session_files.deleteProject(project_id)
 
     @Slot(str)
     def revealProject(self, project_id):
@@ -953,19 +1095,23 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self.setWorkspace(QUrl.fromLocalFile(project["path"]).toString())
 
     @Slot(str)
-    def dropProjects(self, raw):
+    @Slot(str, str)
+    def dropProjects(self, raw, project_id=''):
         try:
-            paths = [Path(QUrl(url).toLocalFile()) for url in json.loads(raw) if QUrl(url).isLocalFile()]
-            folders = [path for path in paths if path.is_dir()]
-            for path in folders:
-                self._ensure_project(path, reopen=True)
-            if folders:
-                self.store.save()
-                self.setWorkspace(QUrl.fromLocalFile(str(folders[0])).toString())
+            urls = json.loads(raw)
+        except (ValueError, TypeError):
+            return
+        files = []
+        for value in urls:
+            url = QUrl(value)
+            if not url.isLocalFile():
+                files.append(value)
+            elif Path(url.toLocalFile()).is_dir():
+                self.setWorkspace(value)
             else:
-                self.toast.emit("把文件夹拖到这里即可打开项目")
-        except (ValueError, OSError):
-            self.toast.emit("无法打开拖入的目录")
+                files.append(value)
+        if files:
+            self._session_files.importFiles(json.dumps(files), project_id)
 
     @Slot(str, result=bool)
     def addAttachments(self, raw):
@@ -1493,11 +1639,21 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 values[key] = int(values[key])
             if len(values["instructions"]) > 16000:
                 raise ValueError("自定义指令不能超过 16000 字符")
+            images = values.get('maxContextImages', self.store.data['agent'].get('maxContextImages', 3))
+            if type(images) is not int or images < 1:
+                raise ValueError('maxContextImages 必须是正整数')
             values["agentDir"] = str(Path(values.get("agentDir") or Path.home() / ".pi/agent").expanduser().resolve())
             for key in ("skillPaths", "extensionPaths"):
                 values[key] = [str(Path(p.strip()).expanduser().resolve()) for p in values.get(key, []) if p.strip()]
+            previous = dict(self.store.data['agent'])
             self.store.data["agent"].update({k: values[k] for k in ("maxTokens", "instructions", "autoCompaction", "agentDir", "skillPaths", "extensionPaths")})
-            self.store.save()
+            self.store.data['agent']['maxContextImages'] = images
+            try:
+                self.store.save()
+            except (OSError, RuntimeError):
+                self.store.data['agent'].clear()
+                self.store.data['agent'].update(previous)
+                raise
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("Pi 设置已保存，下次加载生效")
@@ -1956,6 +2112,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Slot(str)
     def openSession(self, session_id):
+        if session_id in self._session_files.pending or session_id in self._session_files.deleted:
+            return
         session = next((s for s in self._sessions if s["id"] == session_id), None)
         if not session:
             return
@@ -1990,36 +2148,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Slot(str)
     def deleteSession(self, session_id):
-        record = self._pool.find(session_id)
-        if (record and self._pool.protected(record)) or session_id in self._management_jobs:
-            return self.toast.emit("此会话正在运行，请先停止该会话")
-        session = next((s for s in self._sessions if s["id"] == session_id), {})
-        if session.get('backend') == 'dsh':
-            self._dsh_history.path(session_id).unlink(missing_ok=True)
-        file = Path(session["file"]) if session.get("file") else None
-        if file:
-            base = (self.store.directory / "pi/sessions").resolve()
-            if not file.resolve().is_relative_to(base):
-                return self.toast.emit("只能删除 Umeko 会话目录中的文件")
-        if record:
-            self._conversation_views.discard(record.key)
-            self._pool._clear_body(record)
-        if file:
-            file.unlink(missing_ok=True)
-            images = file.with_name(file.name + '.images')
-            linked = images.is_symlink() or getattr(images, 'is_junction', lambda: False)()
-            if not linked and images.is_dir() and images.resolve().is_relative_to(base):
-                shutil.rmtree(images)
-            self._job('discard-chat-index', lambda: self.transcripts.discard(file))
-        if record:
-            self._pool.records.pop(record.key, None)
-        self._sessions = [s for s in self._sessions if s["id"] != session_id]
-        self.store.data["sessionMeta"].pop(session_id, None)
-        self.store.save()
-        self.store.save_sessions(self._sessions)
-        if self._view.id == session_id:
-            self.newSession()
-        self.chatChanged.emit()
+        self._session_files.deleteSession(session_id)
 
     @Slot()
     def forkSession(self):
@@ -2040,6 +2169,22 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             return self._save_dsh(self._view)
         # UI index only. Native Pi JSONL is the sole transcript and tree store.
         self.store.save_sessions(self._sessions)
+
+    def _schedule_transcript_warmup(self):
+        if self._transcript_warmup is not None:
+            return
+        from . import transcript_warmup
+        self._transcript_warmup = 'scheduled'
+        QTimer.singleShot(transcript_warmup.WARM_DELAY_MS, self._start_transcript_warmup)
+
+    def _start_transcript_warmup(self):
+        from . import transcript_warmup
+        if self._closing:
+            return
+        files = transcript_warmup.recent_transcripts(self._sessions)
+        self._transcript_warmup = transcript_warmup.start(
+            self.transcripts, files, cancelled=lambda: self._closing,
+            paused=lambda: self._session_preview.reading)
 
     def loadNativeIndex(self):
         directory = self.store.directory / "pi/sessions"
@@ -2098,10 +2243,17 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def _on_job_done(self, name, result):
         if self._closing:
             return
+        if name == 'session-files':
+            self._session_files.complete(result)
+            return
         if name.startswith('dsh-open:'):
             return self._dsh_opened(name.split(':', 1)[1], result)
         if name.startswith("task-details:"):
             self._desktop_plugins.hostServices.task_result(name.split(":", 1)[1], result)
+            return
+        if name == 'attach-chat-selection':
+            return self._selection_attachment_ready(result)
+        if name == 'discard-selection-attachment':
             return
         if name.startswith('copy-chat:'):
             if int(name.split(':', 1)[1]) != self._copy_request:
@@ -2177,14 +2329,12 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             self.chatChanged.emit()
         elif name == "index":
             if result["ok"]:
-                native = result["value"]
+                native = [row for row in result["value"] if row["id"] not in self._session_files.deleted and row["id"] not in self._session_files.pending]
                 self._merge_native_sessions(native)
-                for session in native:
-                    if session.get("workspace"):
-                        self._ensure_project(session["workspace"])
                 self.store.save()
                 self._save_session()
                 self.chatChanged.emit()
+            self._schedule_transcript_warmup()
         elif name == "check":
             self._kernel_busy = False
             if result["ok"]:
@@ -2275,6 +2425,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._viewport_save.stop()
         self._streaming_timer.stop()
         self._session_preview.cancel()
+        self._recent_history.close()
         self.conversationViewsClosing.emit()
         self._conversation_views.close()
         self._document_preview.close()

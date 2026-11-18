@@ -21,6 +21,10 @@ ApplicationWindow {
     color: Theme.bg
     flags: Qt.Window | Qt.FramelessWindowHint
     property string page: "chat"
+    readonly property var settingsPage: settingsLoader.item
+    property bool settingsPreload: false
+    Timer { id: settingsPreloadTimer; interval: 800; onTriggered: window.settingsPreload = true }
+    onFrameSwapped: if (!settingsPreload && !settingsPreloadTimer.running) settingsPreloadTimer.start()
     property bool searchVisible: false
     property bool searchFocusPending: false
     property int searchHighlightRow: -1
@@ -49,8 +53,17 @@ ApplicationWindow {
         active:backend.desktopPlugins.pet.visible
         sourceComponent:Component { DesktopPetWindow { pet:backend.desktopPlugins.pet } }
     }
+    Loader {
+        id:petReminderWindowLoader;objectName:"desktopPetReminderWindowLoader"
+        active:false
+        sourceComponent:Component { DesktopPetReminderWindow { pet:backend.desktopPlugins.pet } }
+    }
     Connections {
         target:backend.desktopPlugins.pet
+        function onRemindersRequested() {
+            if(petReminderWindowLoader.item)petReminderWindowLoader.item.present()
+            else petReminderWindowLoader.active=true
+        }
         function onRestoreRequested() { window.showNormal();window.raise();window.requestActivate() }
         function onSettingsRequested() {
             window.showNormal();window.raise();window.requestActivate()
@@ -94,7 +107,8 @@ ApplicationWindow {
         if (token !== sidebarToken) return
         pendingSidebarId = ""
         if (!ok) { window.notification = I18n.t("暂时无法打开所选聊天，请重试"); toastTimer.restart() }
-        chatCover.contentReady()
+        // A retained conversation was never covered; it appears directly.
+        if (chatCover.loading) chatCover.contentReady()
     }
     // Read off-thread and show lightweight row placeholders immediately.
     // Render-thread motion is independent of this GUI-thread handoff.
@@ -244,13 +258,29 @@ ApplicationWindow {
             enabled: (!window.sidebarCollapsed || window.searchVisible) && !sidebarWidthMotion.moving
             TitleBarDrag { objectName: "sidebarTitleDrag"; width: parent.width; height: 20; enabled: !chatSelection.dragging; targetWindow: window }
             Item { anchors.fill: parent; visible: !window.searchVisible
-            ActionButton {
-                objectName: "searchChatsButton"
-                x: 16; y: 24; width: parent.width - 32; height: Theme.control(42)
-                text: I18n.t("搜索会话"); glyph: "search"; hint: I18n.t("搜索") + " Ctrl+K"
-                onClicked: window.openConversationSearch()
-                Text { font.family: Theme.fontFamily; anchors.right: parent.right; anchors.rightMargin: 13; anchors.verticalCenter: parent.verticalCenter; visible: Theme.fontScale <= 1.25; text: "Ctrl K"; color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
-                contentItem: Item { Row { x: 13; width: parent.width - (Theme.fontScale <= 1.25 ? 65 : 26); spacing: 9; anchors.verticalCenter: parent.verticalCenter; Glyph { name: "search"; width: Theme.icon(18); height: Theme.icon(18) } Text { font.family: Theme.fontFamily; width: Math.max(0, parent.width - Theme.icon(18) - 9); elide: Text.ElideRight; text: I18n.t("搜索会话"); font.pixelSize: Theme.font(12, visible); color: Theme.ink; anchors.verticalCenter: parent.verticalCenter } } }
+            Row {
+                id: sidebarActions
+                x: 16; y: 24; width: parent.width - 32; height: Theme.control(42); spacing: 8
+                ActionButton {
+                    objectName: "newChatButton"
+                    width: parent.width - parent.height - parent.spacing; height: parent.height
+                    text: I18n.t("新建会话"); glyph: "plus"; hint: text
+                    onClicked: window.startChat()
+                    contentItem: Item {
+                        Row {
+                            x: 13; width: parent.width - 26; spacing: 9; anchors.verticalCenter: parent.verticalCenter
+                            Glyph { name: "plus"; width: Theme.icon(18); height: Theme.icon(18); anchors.verticalCenter: parent.verticalCenter }
+                            Text { font.family: Theme.fontFamily; width: Math.max(0, parent.width - Theme.icon(18) - 9); elide: Text.ElideRight; text: I18n.t("新建会话"); font.pixelSize: Theme.font(12, visible); color: Theme.ink; anchors.verticalCenter: parent.verticalCenter }
+                        }
+                    }
+                }
+                ActionButton {
+                    objectName: "searchChatsButton"
+                    width: height; height: parent.height
+                    glyph: "search"; hint: I18n.t("搜索") + " Ctrl+K"
+                    Accessible.name: I18n.t("搜索会话")
+                    onClicked: window.openConversationSearch()
+                }
             }
             Text { font.family: Theme.fontFamily; id: recentLabel; x: 29; y: 52 + Theme.control(42); text: backend.showArchived ? I18n.t("已归档") : I18n.t("项目"); font.pixelSize: Theme.font(10, visible); color: Theme.muted; font.letterSpacing: 1 }
             ActionButton { objectName: "archivedViewButton"; anchors.right: parent.right; anchors.rightMargin: 28 + Theme.control(26); y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "archive"; quiet: true; hint: backend.showArchived ? I18n.t("返回项目") : I18n.t("查看归档会话"); onClicked: backend.toggleArchived() }
@@ -308,7 +338,7 @@ ApplicationWindow {
                     required property var modelData
                     objectName: "sidebarRow_" + modelData.id
                     width: sessionList.width; height: sessionList.rowHeight(modelData)
-                    Rectangle { anchors.fill: parent; radius: 7; color: rowMouse.containsMouse && !(window.sidebarSwitching ? window.pendingSidebarId === modelData.id : modelData.selected) ? Theme.hover : "transparent" }
+                    Rectangle { anchors.fill: parent; radius: 7; color: projectDrop.containsDrag && projectDrop.sessionDrop && projectDrop.targetProjectId === modelData.id ? Theme.accentBg : rowMouse.containsMouse && !(window.sidebarSwitching ? window.pendingSidebarId === modelData.id : modelData.selected) ? Theme.hover : "transparent" }
                     MouseArea { id: rowMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; acceptedButtons: Qt.LeftButton | Qt.RightButton; enabled: modelData.kind !== "label"
                         onClicked: mouse => { if (mouse.button === Qt.RightButton) { sidebarMenus.openFor(modelData, mapToItem(sidebarMenus, mouse.x, mouse.y)); return } window.selectSidebar(modelData) }
                     }
@@ -322,14 +352,12 @@ ApplicationWindow {
                     ActionButton { objectName: "toggleProject_" + modelData.id; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: Theme.control(28); quiet: true; glyph: modelData.collapsed ? "chevron-right" : "chevron-down"; visible: modelData.kind === "project"; onClicked: backend.toggleProject(modelData.id) }
                 }
             }
-            DropArea {
-                id: projectDrop; objectName: "projectDropArea"; anchors.fill: parent; z: 20
-                onEntered: drag => { drag.accepted = drag.urls.length > 0 }
-                onDropped: drop => { backend.dropProjects(JSON.stringify(drop.urls.map(url => url.toString()))); drop.acceptProposedAction(); window.page = "chat" }
+            SidebarSessionDrop {
+                id: projectDrop; anchors.fill: parent; z: 20; listView: sessionList
             }
             Rectangle {
-                anchors.fill: parent; anchors.margins: 7; radius: 10; z: 21; visible: projectDrop.containsDrag; color: Theme.accentBg; border.color: Theme.accent
-                Column { anchors.centerIn: parent; spacing: 12; Glyph { name: "folder"; width: Theme.icon(26); height: Theme.icon(26); anchors.horizontalCenter: parent.horizontalCenter } Text { font.family: Theme.fontFamily; text: I18n.t("打开项目文件夹"); color: Theme.accent; font.pixelSize: Theme.font(12, visible) } }
+                anchors.fill: parent; anchors.margins: 7; radius: 10; z: 21; visible: projectDrop.containsDrag; color: projectDrop.sessionDrop ? "transparent" : Theme.accentBg; border.color: Theme.accent
+                Column { anchors.horizontalCenter: parent.horizontalCenter; y: projectDrop.sessionDrop ? 12 : parent.height / 2 - height / 2; spacing: 12; Glyph { name: projectDrop.sessionDrop ? "chat" : "folder"; width: Theme.icon(26); height: Theme.icon(26); anchors.horizontalCenter: parent.horizontalCenter } Text { font.family: Theme.fontFamily; text: projectDrop.sessionDrop ? (projectDrop.targetProjectTitle ? I18n.t("导入会话到 %1").replace("%1", projectDrop.targetProjectTitle) : I18n.t("导入 JSONL 会话")) : I18n.t("打开项目文件夹"); color: Theme.accent; font.pixelSize: Theme.font(12, visible) } }
             }
             Item {
                 id: apiStatus; objectName: "apiProxySidebarStatus"; visible: backend.serverRunning
@@ -435,9 +463,9 @@ ApplicationWindow {
                 Text { font.family: Theme.fontFamily; text: window.page === "chat" ? (window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle) : [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于"), I18n.t("Umeko 插件管理")][window.settingsTab]; color: Theme.ink; font.pixelSize: Theme.font(11, visible); width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
             }
             Row { id: windowControls; anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 18; spacing: 2
-                ActionButton { glyph: "minus"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最小化"); onClicked: window.showMinimized() }
-                ActionButton { glyph: "maximize"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("最大化"); onClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
-                ActionButton { objectName: "closeToTrayButton"; glyph: "x"; width: Theme.control(32); height: Theme.control(30); quiet: true; hint: I18n.t("收起到托盘"); onClicked: window.close() }
+                WindowControlButton { objectName:"minimizeWindowButton";operation:"minimize"; hint: I18n.t("最小化"); onClicked: window.showMinimized() }
+                WindowControlButton { objectName:"maximizeWindowButton";operation:"maximize";maximized:window.visibility===Window.Maximized; hint: I18n.t("最大化"); onClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
+                WindowControlButton { objectName:"closeToTrayButton";operation:"close"; hint: I18n.t("收起到托盘"); onClicked: window.close() }
             }
             SubagentIndicator { id: subagentIndicator; anchors.right: windowControls.left; anchors.rightMargin: 13; anchors.verticalCenter: windowControls.verticalCenter; visible: window.page === "chat" && backend.subagents.activeCount > 0 }
         }
@@ -454,12 +482,12 @@ ApplicationWindow {
                 Repeater { model: [{x:0.17,y:0.16,size:12},{x:0.82,y:0.30,size:17},{x:0.27,y:0.65,size:9},{x:0.73,y:0.73,size:11}]
                     Glyph { required property var modelData; x: parent.width * modelData.x; y: parent.height * modelData.y; width: modelData.size; height: modelData.size; name: "spark"; opacity: 0.28 }
                 }
-                CharacterArt { objectName: "yanamiWatermark"; anchors.fill: parent; fallbackSource: "../icons/portraits/02.png"; artwork: Character.asset("background", fallbackSource); fillMode: Image.PreserveAspectCrop; horizontalAlignment: Image.AlignHCenter; verticalAlignment: Image.AlignVCenter; mipmap: true; opacity: 0.055 }
+                CharacterArt { objectName: "yanamiWatermark"; anchors.fill: parent; fallbackSource: "../icons/yanami-chat-watermark.png"; artwork: Character.asset("background", fallbackSource); fillMode: Image.PreserveAspectCrop; horizontalAlignment: Image.AlignHCenter; verticalAlignment: Image.AlignVCenter; mipmap: true; opacity: 0.055 }
             }
             Item {
                 id: welcome; width: Math.min(parent.width - 70, 620); height: welcomeMascot.height + 60
                 x: composer.x + (composer.width - width) / 2; anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: -119
-                visible: backend.messageCount === 0
+                visible: conversationHost.revealPending ? conversationHost.heldWelcome : backend.messageCount === 0
                 WelcomeMascot { id: welcomeMascot; anchors.horizontalCenter: parent.horizontalCenter; portraitIndex: backend.portrait }
                 Connections { target: backend; function onViewChanged() { welcomeMascot.reset() } }
                 Text { font.family: Theme.fontFamily; objectName: "welcomeGreeting"; anchors.horizontalCenter: parent.horizontalCenter; y: welcomeMascot.height + 21; width: parent.width; text: welcomeMascot.reactionText || welcomeMascot.rareGreeting || Character.greeting(I18n.t(backend.greeting), welcomeMascot.portraitIndex); color: Theme.yanami ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(14, visible); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; lineHeight: 1.35 }
@@ -471,6 +499,12 @@ ApplicationWindow {
                 property var panes: ({})
                 property var currentPane: null
                 property int retainedCount: 0
+                // The previous pane (or the welcome page) stays visible until the
+                // newly activated pane has positioned its first screen.
+                property var heldPane: null
+                property bool heldWelcome: false
+                property int revealFrames: 0
+                readonly property bool revealPending: !!currentPane && currentPane.concealed
                 x: chatWidth.conversationLeft
                 Binding on width {
                     value: chatPage.width - chatWidth.conversationLeft - chatWidth.conversationRight
@@ -478,9 +512,30 @@ ApplicationWindow {
                     restoreMode: Binding.RestoreNone
                 }
                 anchors.top: parent.top; anchors.topMargin: 20; anchors.bottom: composer.top; anchors.bottomMargin: 24
-                function deactivate() { if (currentPane) currentPane.deactivate() }
+                property bool welcomeShown: true
+                function deactivate() {
+                    welcomeShown = welcome.visible
+                    if (!currentPane) return
+                    // Keep the outgoing pane drawn without a gap, so its text
+                    // and code colours stay exactly as they were.
+                    if (!welcomeShown) currentPane.holding = true
+                    currentPane.deactivate()
+                }
+                function release() {
+                    if (heldPane) heldPane.holding = false
+                    heldPane = null
+                    heldWelcome = false
+                }
+                function reveal() {
+                    if (currentPane) {
+                        currentPane.view.forceLayout()
+                        currentPane.concealed = false
+                    }
+                    release()
+                }
                 function activate() {
                     const key = backend.conversationToken
+                    const previous = currentPane
                     let pane = panes[key]
                     if (!pane) {
                         pane = conversationComponent.createObject(conversationHost, {viewKey:key, messageModel:backend.messageModel})
@@ -488,12 +543,30 @@ ApplicationWindow {
                         panes[key] = pane
                         retainedCount = Object.keys(panes).length
                     }
+                    if (heldPane && heldPane !== previous) heldPane.holding = false
+                    heldPane = null
+                    if (previous && previous !== pane && previous.holding) heldPane = previous
+                    else if (previous) previous.holding = false
+                    pane.holding = false
+                    heldWelcome = welcomeShown && previous !== pane
                     currentPane = pane
+                    revealFrames = 0
+                    pane.concealed = previous !== pane
                     pane.activate()
+                }
+                FrameAnimation {
+                    running: conversationHost.revealPending
+                    onTriggered: {
+                        conversationHost.revealFrames++
+                        const view = conversationHost.currentPane.view
+                        if (conversationHost.revealFrames >= 2 && (!view.restoring || view.restoreAttempts >= 200))
+                            conversationHost.reveal()
+                    }
                 }
                 function evict(key) {
                     const pane = panes[key]
                     if (!pane) return
+                    if (heldPane === pane) release()
                     if (currentPane === pane) currentPane = null
                     delete panes[key]
                     retainedCount = Object.keys(panes).length
@@ -554,6 +627,7 @@ ApplicationWindow {
             ChatFileDrop { id: chatDrop; anchors.fill: parent; z: 70; enabled: !chatCover.visible; chatWindow: window }
             ChatLoadingOverlay {
                 id: chatCover; anchors.fill: parent; z: 50; view: conversation
+                contentHeld: conversationHost.revealPending
                 onRevealed: if (window.page === "chat") composer.focusInput()
             }
             Row { id: footerActions; x: composer.x + (composer.width - width) / 2; anchors.bottom: parent.bottom; anchors.bottomMargin: 13; spacing: 8
@@ -618,14 +692,23 @@ ApplicationWindow {
             Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 2; height: parent.height; color: parent.containsMouse || parent.pressed ? Theme.accent : "transparent"; opacity: 0.5 }
         }
 
-        SettingsPage {
-            id: settingsPage
-            objectName: "settingsPage"
+        // Settings are built after the first frame, in idle frame time. Opening
+        // them before that finishes completes the remaining work at once.
+        Loader {
+            id: settingsLoader
+            objectName: "settingsPageLoader"
             anchors.top: header.bottom; anchors.bottom: parent.bottom; width: parent.width
-            visible: window.page === "settings"
-            tab: window.settingsTab
-            onTabSelected: value => window.settingsTab = value
-            onBack: window.page = "chat"
+            active: window.settingsPreload || window.page === "settings"
+            asynchronous: window.page !== "settings"
+            sourceComponent: Component {
+                SettingsPage {
+                    objectName: "settingsPage"
+                    visible: window.page === "settings"
+                    tab: window.settingsTab
+                    onTabSelected: value => window.settingsTab = value
+                    onBack: window.page = "chat"
+                }
+            }
         }
     }
 

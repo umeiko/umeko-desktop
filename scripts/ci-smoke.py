@@ -9,12 +9,14 @@ import subprocess
 import sys
 import threading
 import time
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from app.pi_runtime import RELEASE_NAME, PINNED_VERSION
+from app.builtin_widgets import WITHHELD_BUILTIN_WIDGETS
 from app.project_info import VERSION, git_output
 from scripts.ci_process import run_logged
 
@@ -60,8 +62,14 @@ def verify_windows_preview(executable, environment, report_dir):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     diagnostic = report_dir / 'web-preview.log'
     diagnostic.unlink(missing_ok=True)
+    finish_file = report_dir / 'web-preview-finish'
+    finish_file.unlink(missing_ok=True)
+    screenshot = report_dir / 'web-preview.png'
+    screenshot.unlink(missing_ok=True)
     env = dict(environment, QT_QPA_PLATFORM='windows', UMEKO_DIAGNOSTICS=str(diagnostic),
-               UMEKO_DATA_DIR=str(report_dir / 'preview-profile'), UMEKO_WEB_PREVIEW_URL=f'http://127.0.0.1:{server.server_port}/')
+               UMEKO_DATA_DIR=str(report_dir / 'preview-profile'), UMEKO_WEB_PREVIEW_URL=f'http://127.0.0.1:{server.server_port}/',
+               WEBVIEW2_USER_DATA_FOLDER=str((report_dir / 'preview-profile/webview2').resolve()),
+               UMEKO_SMOKE_FINISH_FILE=str(finish_file.resolve()))
     isolated_profile(report_dir / 'preview-profile')
     user32 = ctypes.windll.user32
     callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -70,7 +78,7 @@ def verify_windows_preview(executable, environment, report_dir):
     user32.IsWindowVisible.argtypes = [wintypes.HWND]
     user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
     seen = []
-    with subprocess.Popen([str(executable), '--demo', '--smoke'], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
+    with subprocess.Popen([str(executable), '--demo', '--smoke', '--snapshot', str(screenshot.resolve())], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
         @callback
         def child(handle, unused):
             name = ctypes.create_unicode_buffer(200)
@@ -88,6 +96,12 @@ def verify_windows_preview(executable, environment, report_dir):
             deadline = time.monotonic() + 20
             while process.poll() is None and time.monotonic() < deadline:
                 user32.EnumWindows(window, 0)
+                # Native WebView2 startup can outlast the application's old 5.5 s
+                # demo timer. Finish only after JavaScript's rendered-frame
+                # callback AND a visible native browser child are observed.
+                # Keep the existing 20 s deadline and all failure checks.
+                if ready.is_set() and seen and not finish_file.exists():
+                    finish_file.write_text('ready\n', encoding='utf-8')
                 time.sleep(0.05)
             if process.poll() is None:
                 process.kill()
@@ -99,6 +113,8 @@ def verify_windows_preview(executable, environment, report_dir):
                 raise RuntimeError('Frozen Windows browser failed: '
                     + f'returncode={process.returncode}, ready={ready.is_set()}, visibleChromeChild={bool(seen)}\n'
                     + log + '\nstderr:\n' + stderr.decode('utf-8', errors='replace'))
+            if not screenshot.is_file() or screenshot.read_bytes()[:8] != b'\x89PNG\r\n\x1a\n':
+                raise RuntimeError('Frozen Windows browser did not capture its verified preview')
         finally:
             server.shutdown()
 
@@ -117,6 +133,13 @@ def main():
         executable = output / ("Umeko/Umeko.exe" if sys.platform == "win32" else "Umeko/Umeko")
         resources = output / "Umeko/_internal"
     if not executable.is_file(): raise RuntimeError("Packaged executable is missing")
+    for identifier in WITHHELD_BUILTIN_WIDGETS:
+        if (resources/'umeko-plugins'/identifier).exists():
+            raise RuntimeError('Withheld Widget was bundled: ' + identifier)
+    with zipfile.ZipFile(resources/'desktop-plugin-resources/umeko-plugin-sdk.zip') as sdk:
+        if any(name.startswith('examples/'+identifier+'/') for name in sdk.namelist()
+               for identifier in WITHHELD_BUILTIN_WIDGETS):
+            raise RuntimeError('Withheld Widget leaked into SDK examples')
     skill_source = resources / 'bundled-skills/sources.json'
     skills = json.loads(skill_source.read_text(encoding='utf-8'))
     if len(skills) != 9 or any(not (skill_source.parent / row['name'] / 'SKILL.md').is_file() for row in skills):

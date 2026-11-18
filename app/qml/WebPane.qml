@@ -70,10 +70,10 @@ Rectangle {
         id: heading
         visible: pane.mode !== "subagent"
         width: parent.width; height: Theme.control(pane.mode === "plugin" ? 35 : 44)
-        WidgetIcon {visible:pane.mode==="plugin";plugin:backend.desktopPlugins.page;x:16;anchors.verticalCenter:parent.verticalCenter;width:Theme.icon(15);height:width}
+        WidgetIcon {objectName:"webPaneWidgetIcon";visible:pane.mode==="plugin";plugin:backend.desktopPlugins.page;x:16;anchors.verticalCenter:parent.verticalCenter;width:Theme.icon(15);height:width}
         ActionButton { objectName:"backDocumentPreviewButton";visible:pane.mode==="document";x:8;anchors.verticalCenter:parent.verticalCenter;width:Theme.control(70);height:Theme.control(30);quiet:true;glyph:"arrow-left";text:I18n.t("返回");hint:I18n.t(pane.previewWidget ? "返回 Widget" : "收起预览");onClicked:pane.returnFromDocument() }
         Glyph {visible:pane.mode!=="plugin";x:pane.mode==="document"?Theme.control(88):16;anchors.verticalCenter:parent.verticalCenter;name:pane.mode==="web"?"globe":backend.documentPreview.state.kind==="code"?"code":"file";width:Theme.icon(15);height:width}
-        Text { font.family: Theme.fontFamily; x: pane.mode==="document"?Theme.control(112):40; width: Math.max(0, parent.width - x - 48); anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: pane.mode === "web" && surface.item && surface.item.title ? surface.item.title : pane.mode === "plugin" ? I18n.widgetText(backend.desktopPlugins.page, backend.desktopPlugins.page.title || "") : pane.pageTitle || pane.pageUrl; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: Theme.font(11, visible) }
+        Text { objectName:"webPaneTitle";font.family: Theme.fontFamily; x: pane.mode==="document"?Theme.control(112):16+Theme.icon(15)+9; width: Math.max(0, parent.width - x - Theme.control(28) - 20); anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: pane.mode === "web" && surface.item && surface.item.title ? surface.item.title : pane.mode === "plugin" ? I18n.widgetText(backend.desktopPlugins.page, backend.desktopPlugins.page.title || "") : pane.pageTitle || pane.pageUrl; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: Theme.font(11, visible) }
         ActionButton { objectName: "closeWebPaneButton"; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: width; quiet: true; glyph: "x"; hint: I18n.t("关闭预览"); onClicked: pane.dismiss() }
     }
     Row {

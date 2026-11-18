@@ -41,14 +41,28 @@ export async function createSystemPromptController(options) {
   return controller;
 }
 
+function normalizeWidgetPrompts(sources) {
+  if (!Array.isArray(sources) || sources.length > 64) throw new Error('Invalid Widget prompt sources');
+  const seen = new Set();
+  return sources.flatMap((source) => {
+    if (!source || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(source.id) || seen.has(source.id)
+      || typeof source.text !== 'string' || Buffer.byteLength(source.text, 'utf8') > 8192) {
+      throw new Error('Invalid Widget prompt source');
+    }
+    seen.add(source.id);
+    return source.text.trim() ? [{ id: source.id, name: String(source.name || source.id).slice(0, 8000), text: source.text }] : [];
+  });
+}
+
 class SystemPromptController {
-  constructor({ cwd, agentDir, stateDir, enabled = false, onChange, appendSources = [] }) {
+  constructor({ cwd, agentDir, stateDir, enabled = false, onChange, appendSources = [], widgetPrompts = [] }) {
     this.cwd = canonical(cwd);
     this.agentDir = agentDir;
     this.stateDir = stateDir;
     this.enabled = Boolean(enabled);
     this.onChange = onChange;
     this.appendSources = appendSources;
+    this.widgetPrompts = normalizeWidgetPrompts(widgetPrompts);
     this.state = { version: 1, workspace: this.cwd, edits: {}, toggles: {} };
     this.records = [];
     this.dynamic = false;
@@ -83,6 +97,24 @@ class SystemPromptController {
   setMetadata({ appendSources } = {}) {
     if (appendSources) this.appendSources = appendSources;
     return this.refresh();
+  }
+
+  setWidgetPrompts(sources) {
+    const next = normalizeWidgetPrompts(sources);
+    if (JSON.stringify(next) === JSON.stringify(this.widgetPrompts)) return;
+    this.widgetPrompts = next;
+    this.updateWidgetPrompt();
+  }
+
+  updateWidgetPrompt() {
+    if (!this.session) return;
+    // Pi's native prompt builder reads the same loader on reload/tool changes.
+    // Update only the append section: keep tools, pending loadouts and history intact.
+    this.session._baseSystemPromptOptions.appendSystemPrompt = this.loader.getAppendSystemPrompt().join('\n\n');
+    this.runBase = undefined;
+    this.modelPrompt = undefined;
+    this.records = [];
+    this.dynamic = false;
   }
 
   wrapExtension(extension) {
@@ -132,6 +164,19 @@ class SystemPromptController {
     if (this.session) return this.refresh();
     this.session = session;
     this.loader = resourceLoader;
+    const getAppend = resourceLoader.getAppendSystemPrompt.bind(resourceLoader);
+    let previous, prompts, combined;
+    resourceLoader.getAppendSystemPrompt = () => {
+      const base = getAppend();
+      if (!this.widgetPrompts.length) return base;
+      if (base !== previous || prompts !== this.widgetPrompts) {
+        previous = base;
+        prompts = this.widgetPrompts;
+        combined = [...base, ...prompts.map((source) => source.text)];
+      }
+      return combined;
+    };
+    if (this.widgetPrompts.length) this.updateWidgetPrompt();
     this.extensionsOverride(resourceLoader.getExtensions());
     const controller = this;
     const runner = session._extensionRunner;
@@ -255,7 +300,7 @@ class SystemPromptController {
         for (const source of paths) {
           let content;
           try { content = readFileSync(source.path, 'utf8').replace(/^\uFEFF/, ''); } catch { continue; }
-          const index = values.findIndex((value, ordinal) => !claimed.has(ordinal) && value === content);
+          const index = values.findIndex((value, ordinal) => ordinal < values.length - this.widgetPrompts.length && !claimed.has(ordinal) && value === content);
           if (index >= 0) { files.set(index, source.path); claimed.add(index); }
         }
       }
@@ -265,6 +310,14 @@ class SystemPromptController {
       const separator = ordinal > 0 ? '\n\n' : '';
       if (value.length === 0) {
         if (separator) parts.push({ type: 'literal', text: separator });
+        return;
+      }
+      const widget = loaded === values && this.widgetPrompts.length
+        ? this.widgetPrompts[ordinal - (values.length - this.widgetPrompts.length)] : undefined;
+      if (widget) {
+        const parent = this.sourceDirectory('widgets', `widget:${widget.id}`, widget.name);
+        parts.push(wrap(this.leaf(parent, 'prompt', '提示词', value,
+          { contributionKind: 'widget-prompt', labelKey: 'widget:prompt' }), separator));
         return;
       }
       const file = loaded === values ? files.get(ordinal) : undefined;
