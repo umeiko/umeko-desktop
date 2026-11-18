@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from PySide6.QtCore import QProcess
 
-from .pi_runtime import node_executable
+from .pi_runtime import bridge_entry, node_executable
 from .webview import configuration as webview_configuration
 from .transcripts import tool_view, compaction_view, compaction_status
 from .message_attachments import attachment_prompt, split_attachments
@@ -173,7 +173,7 @@ class PiControllerMixin:
                 self._pool.write(record, payload)
                 self._pool.touch(record)
             else:
-                bridge = self._release / "bridge.mjs"
+                bridge = bridge_entry(self._release)
                 if not bridge.is_file():
                     raise RuntimeError("Pi 内核未安装")
                 default_cwd = self.store.directory / "workspace"
