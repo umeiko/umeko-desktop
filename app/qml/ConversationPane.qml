@@ -324,6 +324,7 @@ Item {
                 contentY += step;
                 forceLayout();
                 contentY -= step;
+                forceLayout();
                 anchoring = false;
             }
             const group = pane.messageModel.groupOf(row);
