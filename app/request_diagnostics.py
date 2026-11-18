@@ -52,10 +52,12 @@ class RequestDiagnostics(QObject):
                 if language == 'en':
                     action = f'changed {name} to auto' if detail['action'] == 'auto' else f'omitted {name}'
                     unit = 'day' if days == 1 else 'days'
-                    lines.append(f'Previous rejection: {action} (recorded {days} {unit} ago)')
+                    age = 'recorded today' if days == 0 else f'recorded {days} {unit} ago'
+                    lines.append(f'Previous rejection: {action} ({age})')
                 else:
                     action = f'将 {name} 改为 auto' if detail['action'] == 'auto' else f'省略 {name}'
-                    lines.append(f'已按此前的拒绝记录{action}（{days} 天前记录）')
+                    age = '今天记录' if days == 0 else f'{days} 天前记录'
+                    lines.append(f'已按此前的拒绝记录{action}（{age}）')
             if not lines:
                 lines.append('Request succeeded after retry' if language == 'en' else '请求已重试成功')
             return {'compatibilityNotice': '；'.join(lines), 'compatibilityReportId': record['id']}
