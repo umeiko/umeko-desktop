@@ -13,6 +13,7 @@ await build({
   format: 'esm',
   platform: 'node',
   target: 'node22.19',
+  define: { UMEKO_BUNDLED_BRIDGE: 'true' },
   banner: { js: 'import { createRequire as createBundleRequire } from "node:module"; const require = createBundleRequire(import.meta.url);' },
   external: [
     '@silvia-odwyer/photon-node', 'jiti', 'bufferutil', 'utf-8-validate', 'kerberos', 'supports-color',
