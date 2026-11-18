@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy, hashlib, json, os, re, sys, uuid
 from pathlib import Path
 from PySide6.QtCore import QObject, Property, Signal, Slot, QProcess, QProcessEnvironment, QTimer, QUrl, Qt
+from .builtin_widgets import WITHHELD_BUILTIN_WIDGETS
 
 LIMIT=2*1024*1024
 
@@ -33,6 +34,7 @@ class DesktopPlugins(QObject):
             if re.fullmatch('[a-z0-9][a-z0-9-]{0,63}',identifier) and re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?',record.get('version','')):
                 self.entries[identifier]={**record,'builtin':False}
         for folder in (backend.root/'umeko-plugins').glob('*'):
+            if folder.name in WITHHELD_BUILTIN_WIDGETS:continue
             m=read(folder/'manifest.json',{}) or {}
             if m.get('kind')=='umeko-plugin' and m.get('apiVersion')==1 and m.get('id')==folder.name:self.entries[folder.name]={**m,'builtin':True}
         self._review_loops={};self._review_requests={}
@@ -56,7 +58,23 @@ class DesktopPlugins(QObject):
         self._pet.imported.connect(self.pet_imported, Qt.QueuedConnection)
         from .global_agents import GlobalAgents
         self.global_agents=GlobalAgents(self)
+        from .pet_assistant import PetAssistant
+        self._pet.assistant = PetAssistant(self._pet)
         self.synchronize()
+    @Property(QObject, notify=pageChanged)
+    def agentConversation(self):
+        return self.global_agents.presentation if self._page == 'global-agents' else None
+
+    @Slot(str, result=QObject)
+    def selectConversation(self, identifier):
+        if self._page != 'global-agents' or not self.enabled('global-agents'):
+            return None
+        try:
+            return self.global_agents.select_conversation(identifier)
+        except (ValueError, OSError) as error:
+            self.b.toast.emit(str(error))
+            return None
+
     def _task_records_changed(self):
         if self._page == 'task-records':
             self.event.emit('tasks.changed', {})
@@ -88,8 +106,9 @@ class DesktopPlugins(QObject):
         return self.b.root/'umeko-plugins'/identifier if e.get('builtin') else self.root/'packages'/identifier/e['version']
     def application(self,identifier):return self.entries.get(identifier,{}).get('lifecycle','session')=='application'
     def enabled(self,identifier):
+        if identifier not in self.entries:return False
         default = identifier not in ('task-records', 'system-prompt') and (not self.application(identifier)
-            or identifier in ('desktop-pet','global-agents') and self.entries[identifier].get('builtin',False))
+            or identifier in ('desktop-pet','global-agents','scheduled-tasks') and self.entries[identifier].get('builtin',False))
         return self.settings.get('enabled',{}).get(identifier,default)
     @Property(QObject,constant=True)
     def pet(self):return self._pet
@@ -113,6 +132,23 @@ class DesktopPlugins(QObject):
         for key in (record.id,'draft:'+record.key):
             if key and key in sessions:return identifier in sessions[key]
         return self.entries[identifier].get('builtin',False)
+    def prompt_sources(self, record):
+        """Cached declarations only; resolve the requesting chat, never the visible page."""
+        sessions = self.settings.get('sessions', {})
+        selected = next((sessions[key] for key in (record.id, 'draft:' + record.key)
+                         if key and key in sessions), None)
+        sources = []
+        for identifier, entry in sorted(self.entries.items()):
+            agent = entry.get('agent', {})
+            text = agent.get('prompt', '') if isinstance(agent, dict) else ''
+            if not isinstance(text, str) or not text.strip() or len(text.encode('utf-8')) > 8192:
+                continue
+            if not self.enabled(identifier):continue
+            if not self.application(identifier) and (record.global_agent or
+                not (identifier in selected if selected is not None else entry.get('builtin', False))):continue
+            sources.append({'id': identifier, 'name': entry.get('name', identifier), 'text': text})
+        return sources
+
     def system_prompt_enabled(self, record):
         identifier = 'system-prompt'
         if identifier not in self.entries or not self.enabled(identifier):return False
@@ -174,6 +210,22 @@ class DesktopPlugins(QObject):
             data={**self.settings,'installed':{k:e for k,e in self.entries.items() if not e.get('builtin')}}
             temporary=self.registry.with_suffix('.tmp');temporary.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf-8');temporary.replace(self.registry);return True
         except OSError:self._status='插件设置保存失败';self.changed.emit();return False
+    def worker_session(self, identifier, source):
+        if identifier == 'scheduled-tasks' and self.entries[identifier].get('builtin'):
+            info = self._host_services.scheduled_service().metadata()
+            return {**source, 'timerGlobalTargets':info['global_targets'], 'timerTimeZone':info['time_zone']}
+        return source
+
+    def scheduled_targets_changed(self):
+        worker = self.workers.get('scheduled-tasks')
+        if not worker or not worker.get('ready'):return
+        info = self._host_services.scheduled_service().metadata()
+        signature = tuple((row['id'], row['name']) for row in info['global_targets'])
+        if signature == getattr(self, '_timer_targets_signature', None):return
+        self._timer_targets_signature = signature
+        self.send('scheduled-tasks', {'id':uuid.uuid4().hex, 'operation':'event',
+            'arguments':{'name':'scheduledTasks.targetsChanged', 'data':info}})
+
     def synchronize(self):
         if self.closed:return
         view=self.b._view
@@ -193,7 +245,7 @@ class DesktopPlugins(QObject):
         if value==self._session:return
         self._session=value;self.sessionChanged.emit()
         if switched:self.changed.emit()
-        for identifier in list(self.workers):self.send(identifier,{'id':uuid.uuid4().hex,'operation':'session','arguments':{'session':value}})
+        for identifier in list(self.workers):self.send(identifier,{'id':uuid.uuid4().hex,'operation':'session','arguments':{'session':self.worker_session(identifier,value)}})
         for identifier,e in self.entries.items():
             if self.enabled(identifier) and self.session_enabled(identifier) and (self.application(identifier) or not e.get('page')):self.start(identifier)
     @Slot(str,bool)
@@ -277,7 +329,7 @@ class DesktopPlugins(QObject):
         def initialize():
             e=self.entries[identifier];config=self.settings.get('config',{}).get(identifier,read(self.path(identifier)/e.get('config','config.json'),{}))
             state=self.root/'state'/identifier/('application' if application else hashlib.sha256(self.storage_key.encode()).hexdigest())
-            p.write(self.frame({'id':'initialize','operation':'initialize','arguments':{'path':str(self.path(identifier)),'stateDir':str(state),'config':config,'session':self._session,'hostCapabilities':self._host_services.capabilities,'runtimes':self._host_services.runtimes()}}))
+            p.write(self.frame({'id':'initialize','operation':'initialize','arguments':{'path':str(self.path(identifier)),'stateDir':str(state),'config':config,'session':self.worker_session(identifier,self._session),'hostCapabilities':self._host_services.capabilities,'runtimes':self._host_services.runtimes()}}))
         p.started.connect(initialize);p.readyReadStandardOutput.connect(lambda:self.receive(identifier,w));p.readyReadStandardError.connect(lambda:p.readAllStandardError())
         def failed(*_):
             if self.workers.get(identifier) is not w:return
@@ -360,6 +412,12 @@ class DesktopPlugins(QObject):
             QTimer.singleShot(timeout_ms,self,service_timeout)
             return request
         snapshot={**(session or self._session),'language':getattr(self.b,'language','zh')}
+        if identifier == 'scheduled-tasks' and self.entries[identifier].get('builtin'):
+            try:snapshot = self._host_services.scheduled_service().capture(snapshot)
+            except ValueError as error:
+                w['pending'].discard(request)
+                QTimer.singleShot(0,self,lambda message=str(error): self.response.emit(request,{'ok':False,'error':message}))
+                return request
         self.send(identifier,{'id':request,'operation':'agentCall' if agent else 'call','arguments':{'method':method,'arguments':args,'session':snapshot}})
         def timeout():
             if self.workers.get(identifier) is w and request in w['pending']:
@@ -401,6 +459,9 @@ class DesktopPlugins(QObject):
                     self.stop(identifier);self.pageChanged.emit();return
                 w['ready']=True;queue=w['queue'];w['queue']=[]
                 for item in queue:self.send(identifier,item)
+                if identifier == 'scheduled-tasks':
+                    self._timer_targets_signature = None
+                    self.scheduled_targets_changed()
                 self.pageChanged.emit();self.changed.emit()
             elif request in w['pending']:w['pending'].remove(request);self.response.emit(request,value)
     def host_event(self,identifier,event):
@@ -568,4 +629,15 @@ class DesktopPlugins(QObject):
         processes=[w["process"] for w in self.workers.values() if 'process' in w]
         for identifier in list(self.workers):self.stop(identifier)
         for process in processes:
-            if process.state()!=QProcess.NotRunning and not process.waitForFinished(300):process.kill();process.waitForFinished(100)
+            if process.state()==QProcess.NotRunning or process.waitForFinished(1500):continue
+            if os.name == 'nt':
+                # Killing only the venv launcher leaves the actual worker and
+                # its scheduler lock alive. Timers are unavailable after Qt's
+                # event loop stops, so reap the owned tree here before exit.
+                import subprocess
+                try:
+                    subprocess.run([str(Path(os.environ.get('SystemRoot','C:/Windows'))/'System32/taskkill.exe'),
+                        '/PID',str(process.processId()),'/T','/F'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+                        timeout=3,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+                except (OSError, subprocess.TimeoutExpired):pass
+            process.kill();process.waitForFinished(1000)

@@ -95,6 +95,8 @@ def validate(folder):
     if not isinstance(agent,dict) or not isinstance(agent.get('document'),str):raise PluginError('Widget 插件必须提供 agent.document 完整使用文档')
     document=file(agent['document'])
     if not document.name.lower().endswith('.md') or document.stat().st_size>65536 or not document.read_text(encoding='utf-8-sig').strip():raise PluginError('Agent 使用文档必须是非空 Markdown，最多 64 KiB')
+    if 'prompt' in agent and (not isinstance(agent['prompt'],str) or len(agent['prompt'].encode('utf-8'))>8192):
+        raise PluginError('agent.prompt 必须是文本，最多 8 KiB；不需要注入时可省略')
     methods=agent.get('methods',{})
     if not isinstance(methods,dict) or len(methods)>64:raise PluginError('Widget 公开方法清单无效')
     for name,spec in methods.items():

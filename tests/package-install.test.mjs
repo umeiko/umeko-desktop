@@ -108,7 +108,7 @@ function tar(entries) {
 
 
 test('real npm download/cache fallback finishes with a fully offline native Pi install', {timeout:30000},async t=>{
-  const {root,input}=await fixture(t);input.proxy='';input.caFile='';input.source='npm:@fixture/offline@1.0.0';input.release=path.resolve('runtime/releases/coding-1.3.0');
+  const {root,input}=await fixture(t);input.proxy='';input.caFile='';input.source='npm:@fixture/offline@1.0.0';input.release=path.resolve('runtime/releases/coding-1.5.2');
   const manifest={name:'@fixture/offline',version:'1.0.0',pi:{extensions:['index.js']}};
   const bytes=tar([{name:'package/package.json',raw:JSON.stringify(manifest)},{name:'package/index.js',raw:'throw Error("no imports during install")'}]);
   let onlineRequests=0,offlineRequests=0,offline=false,port;

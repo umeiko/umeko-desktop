@@ -20,7 +20,8 @@ class Pool(QObject):
 class Host(QObject):
     viewChanged=Signal();chatChanged=Signal();toast=Signal(str);documentRequested=Signal(str,str,str);widgetDocumentRequested=Signal(str,str,str,str);editorText=Signal(str)
     def __init__(self,directory):
-        super().__init__();self.root=ROOT;self.store=SimpleNamespace(directory=directory/'profile')
+        super().__init__();self.root=ROOT;self.store=SimpleNamespace(directory=directory/'profile', data={'selectedModel':'fixture-model'})
+        self.characterStyle={'id':'yanami'}
         self._view=SimpleNamespace(key='token-one',id='session-one',workspace=str(directory/'workspace'),title='Fixture',busy=False,global_agent='',failed=False,cancelled=False,messages=[{'role':'user','text':'fixture context'}])
         self._pool=Pool(self._view)
         Path(self._view.workspace).mkdir();self.sent=[];self.attached=[];self.revealed=[];self.skill_changes=[]
@@ -49,28 +50,133 @@ class DesktopPluginTests(unittest.TestCase):
         key=self.manager.call(method,json.dumps(args or {}));self.assertTrue(key)
         self.wait(lambda:key in self.responses);return self.responses[key]
 
-    def test_task_records_require_opt_in_and_preserve_explicit_choices(self):
+    def test_scheduled_tasks_defaults_on_and_respects_explicit_opt_out(self):
+        self.assertTrue(self.manager.enabled('scheduled-tasks'))
+        self.assertTrue(self.manager.session_enabled('scheduled-tasks'))
+        self.manager.setEnabled('scheduled-tasks', False)
+        self.manager.synchronize()
+        self.assertFalse(self.manager.enabled('scheduled-tasks'))
+        self.assertNotIn('scheduled-tasks', self.manager.workers)
+        self.assertFalse(json.loads(self.manager.registry.read_text())['enabled']['scheduled-tasks'])
+        self.manager.close()
+        restored = DesktopPlugins(self.host)
+        try:
+            self.assertFalse(restored.enabled('scheduled-tasks'))
+            self.assertNotIn('scheduled-tasks', restored.workers)
+        finally:restored.close()
+
+    def test_application_close_releases_default_scheduler_lock_before_returning(self):
+        from PySide6.QtCore import QLockFile
+        self.wait(lambda:self.manager.workers['scheduled-tasks']['ready'])
+        lock = QLockFile(str(self.manager.root / 'state/scheduled-tasks/application/scheduler.lock'))
+        lock.setStaleLockTime(0)
+        self.assertFalse(lock.tryLock(0))
+        self.manager.close()
+        self.assertTrue(lock.tryLock(0), 'Worker tree must release its lock before profile cleanup/restart')
+        lock.unlock()
+
+    def test_optional_agent_prompt_is_literal_bounded_and_backward_compatible(self):
+        with tempfile.TemporaryDirectory() as name:
+            folder=Path(name)/'widget';shutil.copytree(ROOT/'umeko-plugins/file-tree',folder)
+            file=folder/'manifest.json';original=json.loads(file.read_text(encoding='utf-8'))
+            self.assertNotIn('prompt',validate(folder)[0]['agent'])
+            for prompt in ('', '  \n', 'Use widgets.docs before calling this Widget.', '中'*2730):
+                manifest={**original,'agent':{**original['agent'],'prompt':prompt}}
+                file.write_text(json.dumps(manifest),encoding='utf-8')
+                self.assertEqual(validate(folder)[0]['agent']['prompt'],prompt)
+            for prompt in (None, False, 1, [], {}, '中'*2731, 'x'*8193):
+                file.write_text(json.dumps({**original,'agent':{**original['agent'],'prompt':prompt}}),encoding='utf-8')
+                with self.subTest(prompt_type=type(prompt).__name__),self.assertRaisesRegex(PluginError,'agent.prompt'):
+                    validate(folder)
+
+    def test_prompt_sources_follow_callers_and_do_not_start_workers(self):
+        manager=self.manager
+        owner=self.host._view
+        manager.entries.update({
+            'prompt-a':{'id':'prompt-a','name':'A','builtin':False,'agent':{'prompt':'A instructions'}},
+            'prompt-b':{'id':'prompt-b','name':'B','builtin':False,'agent':{'prompt':'B instructions'}},
+            'prompt-service':{'id':'prompt-service','name':'Service','lifecycle':'application','agent':{'prompt':'Service instructions'}},
+            'empty':{'id':'empty','builtin':True,'agent':{'prompt':'  '}},
+        })
+        other=SimpleNamespace(id='other',key='other-key',global_agent='')
+        manager.settings={'sessions':{owner.id:['prompt-a'],other.id:['prompt-b']},'enabled':{'prompt-service':True,'scheduled-tasks':False}}
+        with patch.object(manager,'start',side_effect=AssertionError('Prompt discovery must not start a worker')):
+            self.assertEqual([s['id'] for s in manager.prompt_sources(owner)],['prompt-a','prompt-service'])
+            self.assertEqual([s['id'] for s in manager.prompt_sources(other)],['prompt-b','prompt-service'])
+            manager.settings['enabled']['prompt-a']=False
+            self.assertEqual([s['id'] for s in manager.prompt_sources(owner)],['prompt-service'])
+            manager.settings['enabled']['prompt-service']=False
+            self.assertEqual(manager.prompt_sources(owner),[])
+            manager.settings['enabled']['prompt-a']=True
+            manager.settings['sessions'][owner.id]=[]
+            self.assertEqual(manager.prompt_sources(owner),[])
+            del manager.settings['sessions'][owner.id]
+            manager.settings['sessions']['draft:'+owner.key]=['prompt-a']
+            self.assertEqual(manager.prompt_sources(owner)[0]['text'],'A instructions')
+            owner.global_agent='global-agent'
+            self.assertEqual(manager.prompt_sources(owner),[])
+
+    def test_scheduled_task_guidance_follows_widget_enablement(self):
         manager = self.manager
-        self.assertFalse(manager.enabled('task-records'))
-        self.assertFalse(manager.openPage('task-records'))
-        self.assertNotIn('task-records', manager.workers)
-        self.assertNotIn('task-records', {row['id'] for row in manager.sessionPlugins})
-        manager.setEnabled('task-records', True)
-        self.assertIn('task-records', {row['id'] for row in manager.sessionPlugins})
+        record = self.host._view
+        self.assertIn('scheduled-tasks', {row['id'] for row in manager.prompt_sources(record)})
+        with patch.object(manager, 'start', side_effect=AssertionError('Prompt lookup must not start a worker')):
+            sources = manager.prompt_sources(record)
+            prompt = next(row['text'] for row in sources if row['id'] == 'scheduled-tasks')
+            self.assertIn('wake-up', prompt)
+            self.assertIn('widgets.docs', prompt)
+            self.assertIn('widgets.call', prompt)
+            record.global_agent = 'connected-agent'
+            self.assertEqual(manager.prompt_sources(record), sources)
+            manager.settings.setdefault('enabled', {})['scheduled-tasks'] = False
+            self.assertNotIn('scheduled-tasks', {row['id'] for row in manager.prompt_sources(record)})
+
+    def test_withheld_task_records_stay_hidden_with_saved_opt_in_and_preserve_data(self):
+        self.manager.close()
+        registry = self.manager.registry
+        registry.parent.mkdir(parents=True, exist_ok=True)
+        preferences = {'enabled': {'task-records': True}, 'sessions': {'session-one': ['task-records']}}
+        registry.write_text(json.dumps(preferences), encoding='utf-8')
+        history = self.host.store.directory / 'task-records' / 'records.db'
+        history.parent.mkdir(parents=True, exist_ok=True)
+        history.write_bytes(b'Existing user records, do not migrate or delete')
+        original = history.read_bytes()
+        restored = DesktopPlugins(self.host)
+        try:
+            self.assertNotIn('task-records', restored.entries)
+            self.assertNotIn('task-records', {row['id'] for row in restored.rows})
+            self.assertFalse(restored.enabled('task-records'))
+            self.assertFalse(restored.openPage('task-records'))
+            restored.setEnabled('task-records', True)
+            self.assertNotIn('task-records', restored.workers)
+            self.assertNotIn('task-records', {row['id'] for row in restored.sessionPlugins})
+            self.assertEqual(json.loads(registry.read_text(encoding='utf-8')), preferences)
+            self.assertEqual(history.read_bytes(), original)
+        finally:
+            restored.close()
+
+    def test_system_prompt_requires_opt_in_and_preserves_explicit_choices(self):
+        manager = self.manager
+        self.assertFalse(manager.enabled('system-prompt'))
+        manager.setEnabled('system-prompt', True)
+        self.assertIn('system-prompt', {row['id'] for row in manager.sessionPlugins})
         manager.close()
         restored = DesktopPlugins(self.host)
         try:
-            self.assertTrue(restored.enabled('task-records'))
-            restored.setEnabled('task-records', False)
+            self.assertTrue(restored.enabled('system-prompt'))
+            restored.setEnabled('system-prompt', False)
         finally:
             restored.close()
         restored = DesktopPlugins(self.host)
         try:
-            self.assertFalse(restored.enabled('task-records'))
+            self.assertFalse(restored.enabled('system-prompt'))
         finally:
             restored.close()
 
     def test_disabling_task_records_clears_preparation_without_stopping_live_work(self):
+        # Retained source can still be exercised explicitly; product discovery
+        # must not register this withheld Widget.
+        self.manager.entries['task-records'] = {**json.loads((ROOT/'umeko-plugins/task-records/manifest.json').read_text(encoding='utf-8')), 'builtin': True}
         from unittest.mock import Mock
         owner = self.host._view
         owner.prepared_task = 'goal-one'
@@ -214,14 +320,14 @@ def create_plugin(context):return Fixture(context)
 
     def test_official_tree_is_lazy_bounded_and_closes_worker(self):
         directory=Path(self.host._view.workspace);(directory/'a.py').write_text('print(1)');(directory/'nested').mkdir();(directory/'nested/x.txt').write_text('hello')
-        self.assertEqual({row['id'] for row in self.manager.sessionPlugins},{'file-tree','git-viewer','global-agents','pi-manager','skill-manager','widget-market'})
+        self.assertEqual({row['id'] for row in self.manager.sessionPlugins},{'file-tree','git-viewer','global-agents','pi-manager','scheduled-tasks','skill-manager','widget-market'})
         self.assertNotIn('pi-manager',self.manager.workers)
         self.assertTrue(self.manager.openPage('file-tree'));result=self.call('list',{'path':'.'})
         self.assertTrue(result['ok']);entries=result['result']['entries'];self.assertEqual(entries[0]['name'],'nested')
         self.assertNotIn('x.txt',str(entries))
         self.assertNotIn('messages',self.manager.session)
         self.assertFalse(self.call('list',{'path':'..'})['ok'])
-        self.manager.closePage();self.assertEqual(set(self.manager.workers),{'desktop-pet','global-agents'});self.app.processEvents()
+        self.manager.closePage();self.assertEqual(set(self.manager.workers),{'desktop-pet','global-agents','scheduled-tasks'});self.app.processEvents()
 
     def test_widget_icons_have_a_shared_catalog_and_validate_custom_assets(self):
         rows={row['id']:row for row in self.manager.rows}
@@ -231,7 +337,8 @@ def create_plugin(context):return Fixture(context)
         self.assertEqual(rows['desktop-pet']['iconGlyph'],'pet')
         self.assertEqual(rows['pi-manager']['iconGlyph'],'pi-widget')
         self.assertEqual(rows['pi-manager']['iconSource'],'')
-        self.assertEqual(len(self.manager.iconCatalog),23)
+        self.assertEqual(rows['scheduled-tasks']['iconGlyph'],'clock')
+        self.assertEqual(len(self.manager.iconCatalog),24)
         for icon in self.manager.iconCatalog:self.assertTrue((ROOT/'app/icons'/(icon['glyph']+'.svg')).is_file())
         self.fixture();folder=self.path/'session-demo-1.0.0';manifest=json.loads((folder/'manifest.json').read_text())
         manifest['icon']='does-not-exist';(folder/'manifest.json').write_text(json.dumps(manifest))
@@ -490,7 +597,7 @@ def create_plugin(context):return Fixture(context)
         self.assertEqual(self.host.sent,[('session-one','from-plugin',True)])
         self.assertTrue(marker.exists())
         self.manager.call('late','{}');self.host._view.key='token-two';self.host._view.id='session-two';self.host.viewChanged.emit()
-        self.assertFalse(self.manager.page);self.assertEqual(set(self.manager.workers),{'desktop-pet','global-agents'})
+        self.assertFalse(self.manager.page);self.assertEqual(set(self.manager.workers),{'desktop-pet','global-agents','scheduled-tasks'})
         deadline=time.monotonic()+1
         while time.monotonic()<deadline:self.app.processEvents();time.sleep(.01)
         self.assertEqual(len(self.host.sent),1)
@@ -618,6 +725,8 @@ def create_plugin(context):return Fixture(context)
         self.manager.setEnabled('git-viewer',False)
         self.assertEqual(self.manager.recentPlugin['id'],'global-agents')
         self.manager.setEnabled('global-agents',False)
+        self.assertEqual(self.manager.recentPlugin['id'],'scheduled-tasks')
+        self.manager.setEnabled('scheduled-tasks',False)
         self.assertEqual(self.manager.recentPlugin,{})
         self.manager.setSessionEnabled('file-tree',True)
         persisted=DesktopPlugins(self.host)

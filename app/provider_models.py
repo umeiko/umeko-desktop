@@ -18,17 +18,18 @@ class ModelWindows(dict):
         self.reasoning = {}
 
 
-def fetch_model_windows(provider):
+def fetch_model_windows(provider, request_headers=None):
     base = validate_base_url(provider["baseUrl"])
-    headers = {"Accept": "application/json", "User-Agent": "Umeko-Desktop"}
     if provider["api"] == "anthropic":
         url = base + ("/models" if base.endswith("/v1") else "/v1/models")
-        headers.update({"x-api-key": provider["key"], "anthropic-version": "2023-06-01"})
     else:
         url = base + "/models"
-        headers["Authorization"] = "Bearer " + provider["key"]
+    from .request_headers import build, OmitHeaders
+    headers, omitted = build(request_headers, provider)
+    headers.setdefault('Accept', 'application/json')
+    secrets = [provider['key'], *headers.values()]
     opener = urllib.request.build_opener(proxy_handler(provider.get("proxy")),
-                                        urllib.request.HTTPSHandler(context=tls_context(provider.get("proxy"))), NoRedirect())
+                                        urllib.request.HTTPSHandler(context=tls_context(provider.get("proxy"))), NoRedirect(), OmitHeaders(omitted))
     windows = ModelWindows()
     # Anthropic and compatible services may paginate their model catalog.
     for _ in range(100):
@@ -39,10 +40,10 @@ def fetch_model_windows(provider):
                 try:
                     raise_api_error(payload)
                 except ValueError as exc:
-                    raise ValueError(safe_text(str(exc), [provider['key']])) from None
+                    raise ValueError(safe_text(str(exc), secrets)) from None
         except urllib.error.HTTPError as exc:
             try:
-                message = format_http_error(exc.code, exc.read(), exc.headers, [provider['key']])
+                message = format_http_error(exc.code, exc.read(), exc.headers, secrets)
             finally:
                 exc.close()
             raise ValueError(message) from None

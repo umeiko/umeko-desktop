@@ -3,6 +3,14 @@ import QtQuick.Controls
 
 Item {
     id: pane
+    property var controller: backend
+    property string viewName: "conversation"
+    property string messagePrefix: ""
+    property string assistantName: "umeko"
+    property url portrait: ""
+    property url replyPortrait: ""
+    property int roleSlot: -1
+    property int highlightRow: window ? window.searchHighlightRow : -1
     required property var window
     required property var messageModel
     required property string viewKey
@@ -18,15 +26,20 @@ Item {
     property var turnStatus: ({})
     property alias view: conversation
     property alias selection: chatSelection
-    visible: current
+    // While a newly activated pane positions its rows it stays transparent
+    // and the previous pane remains on screen (holding) until the swap.
+    property bool holding: false
+    property bool concealed: false
+    visible: current || holding
+    opacity: concealed ? 0 : 1
     enabled: current
     function refreshState() {
         if (!current)
             return;
-        busy = backend.busy;
-        running = backend.running;
-        toolStatus = backend.toolStatus;
-        turnStatus = backend.turnStatus;
+        busy = pane.controller.busy;
+        running = pane.controller.running;
+        toolStatus = pane.controller.toolStatus;
+        turnStatus = pane.controller.turnStatus;
     }
     function activate() {
         current = true;
@@ -54,7 +67,7 @@ Item {
     }
     ListView {
         id: conversation
-        objectName: pane.current ? "conversation" : "cachedConversation_" + pane.viewKey
+        objectName: pane.current ? pane.viewName : "cachedConversation_" + pane.viewKey
         property bool followTail: true
         property bool restoring: false
         property real restoreOffset: -1
@@ -77,6 +90,8 @@ Item {
         property int urgentFirst: -1
         property int urgentLast: -2
         property bool forcing: false
+        property int prependAnchor: -1
+        property real prependOffset: 0
         readonly property real groupPixels: Math.max(320, height * groupScreens)
         onGroupPixelsChanged: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
         Component.onCompleted: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
@@ -88,10 +103,15 @@ Item {
             else if (!followTail && count)
                 restoreViewport();
         }
+        // User scrolling and explicit jumps supersede a navigator selection.
+        signal browsingStarted()
         function beginBrowsing() {
+            browsingStarted();
             tailTimer.stop();
             restoreTimer.stop();
             restoring = false;
+            urgentFirst = -1;
+            urgentLast = -2;
             cancelFlick();
             followTail = false;
         }
@@ -287,12 +307,25 @@ Item {
             }
             return {upper: upper, lower: lower, above: above, below: below};
         }
-        function finishGroup(row) {
+        function finishGroup(row, step) {
             // The reader reached a group that is still loading in the
             // background: complete its remaining bodies now (Loader finishes
             // an asynchronous load synchronously when asynchronous turns off).
             if (row < 0 || !pane.messageModel)
                 return;
+            if (!itemAtIndex(row)) {
+                // A row whose edge meets the screen edge exactly may not be
+                // created yet: ListView fills its cache buffer later, and
+                // while it waits the scroll stays blocked at this edge. Move
+                // one pixel toward the row and back, without a frame in
+                // between, so the row exists and its group can load now.
+                anchoring = true;
+                contentY += step;
+                forceLayout();
+                contentY -= step;
+                forceLayout();
+                anchoring = false;
+            }
             const group = pane.messageModel.groupOf(row);
             forcing = true;
             urgentFirst = pane.messageModel.groupFirst(group);
@@ -339,7 +372,7 @@ Item {
             const clamp = () => Math.max(Math.min(contentY, limits.upper), Math.min(target, Math.max(contentY, limits.lower - height)));
             let allowed = clamp();
             if (Math.abs(allowed - target) > 0.5) {
-                finishGroup(delta < 0 ? limits.above : limits.below);
+                finishGroup(delta < 0 ? limits.above : limits.below, delta < 0 ? -1 : 1);
                 // Showing the group may have kept the anchor by moving contentY.
                 target = Math.max(originY, Math.min(Math.max(originY, originY + contentHeight - height), contentY + delta));
                 limits = shownLimits();
@@ -363,16 +396,31 @@ Item {
             if (index < 0)
                 index = indexAt(1, contentY + spacing + 2);
             const item = index >= 0 ? itemAtIndex(index) : null;
-            backend.saveViewport(index, item ? contentY - item.y : 0, followTail);
+            pane.controller.saveViewport(index, item ? contentY - item.y : 0, followTail);
         }
         function restoreViewport() {
             releaseGroups();
             restoring = true;
             tailTimer.stop();
-            followTail = backend.followTail;
-            restoreOffset = backend.scrollPosition;
-            restoreIndex = backend.scrollAnchor;
+            followTail = pane.controller.followTail;
+            restoreOffset = pane.controller.scrollPosition;
+            restoreIndex = pane.controller.scrollAnchor;
             restoreAttempts = 0;
+            if (followTail && count && pane.messageModel) {
+                // The first screen at the latest message is not visible
+                // until it is complete; its rows load at once instead of
+                // across many frames.
+                let first = count - 1, extent = 0;
+                while (first > 0 && extent < height * 1.5) {
+                    extent += pane.messageModel.estimatedHeight(first) + spacing;
+                    first--;
+                }
+                urgentFirst = first;
+                urgentLast = count - 1;
+            }
+            if (!count && !pane.controller.loading && !pane.controller.messageCount) {
+                restoreTimer.stop(); restoring = false; return;
+            }
             restoreTimer.restart();
         }
         acceptedButtons: Qt.NoButton
@@ -389,6 +437,10 @@ Item {
         onContentYChanged: {
             saveViewport();
             scheduleRange();
+            // A partial history continues once the reader scrolls past its top.
+            if (atYBeginning && !followTail && !restoring && pane.current && pane.messageModel
+                    && pane.messageModel.partialHistory && pane.controller.recentHistory)
+                pane.controller.recentHistory.loadEarlier();
         }
         function scheduleRange() {
             if (pane.current && !pagePrefetch.running)
@@ -416,8 +468,14 @@ Item {
         }
         onContentHeightChanged: {
             scheduleRange();
-            if (pane.current && followTail && !restoring)
+            if (pane.current && followTail && !restoring) {
+                // Rows above the tail settle their heights in the background.
+                // Re-pin the tail in the same frame, so the latest message
+                // never draws one frame away from the bottom.
+                if (!anchoring && !pane.concealed)
+                    positionViewAtEnd();
                 tailTimer.restart();
+            }
         }
         onCountChanged: {
             scheduleRange();
@@ -450,13 +508,21 @@ Item {
                     const tail = conversation.itemAtIndex(conversation.count - 1);
                     if (conversation.count && (!tail || !tail.bodyReady) && conversation.restoreAttempts < 200)
                         return;
-                    // Finish with a complete first screen: every row on it shown.
+                    // Finish with a complete first screen: every row on it shown,
+                    // and no part of it waiting for a row ListView has not
+                    // created yet (rows above slide in as real heights settle).
                     const top = conversation.contentY, bottom = top + conversation.height;
+                    let first = null;
                     for (const row of conversation.contentItem.children) {
-                        if (row.messageSlot === true && row.y + row.height > top && row.y < bottom
-                                && !row.shown && conversation.restoreAttempts < 200)
+                        if (row.messageSlot !== true || row.y + row.height <= top || row.y >= bottom)
+                            continue;
+                        if (!row.shown && conversation.restoreAttempts < 200)
                             return;
+                        if (!first || row.index < first.index)
+                            first = row;
                     }
+                    if (first && first.index > 0 && first.y > top + conversation.spacing + 1 && conversation.restoreAttempts < 200)
+                        return;
                 } else {
                     const index = Math.min(conversation.restoreIndex, conversation.count - 1);
                     pane.messageModel.requestRange(index, index + 3);
@@ -515,6 +581,8 @@ Item {
                 }
                 if (conversation.restoreAttempts >= 2) {
                     stop();
+                    conversation.urgentFirst = -1;
+                    conversation.urgentLast = -2;
                     conversation.restoring = false;
                     conversation.saveViewport();
                     conversation.requestVisibleRange();
@@ -522,7 +590,7 @@ Item {
             }
         }
         Connections {
-            target: backend
+            target: pane.controller
             function onTranscriptChanged() {
                 if (pane.current && conversation.followTail && !conversation.restoring)
                     tailTimer.restart();
@@ -536,7 +604,6 @@ Item {
             target: pane.messageModel
             function onModelAboutToBeReset() {
                 if (!pane.current) return;
-                conversation.saveViewport();
                 conversation.restoring = true;
                 tailTimer.stop();
                 restoreTimer.stop();
@@ -553,13 +620,71 @@ Item {
                 // its anchor while asynchronous delegate heights settle.
                 conversation.scheduleRange();
             }
+            // A partial history gains its earlier rows above the rows on
+            // screen. Row numbers move by count; the loaded range covers old
+            // and new numbers while ListView inserts, so no body unloads.
+            function onHistoryAboutToPrepend(count) {
+                chatSelection.clear();
+                // The first row on screen stays where it is; it moves up by
+                // the loading row, which the earlier rows replace. Rows
+                // above it then load as the reader scrolls to them.
+                const rows = conversation.visibleRows(conversation.slotMap().slots);
+                const item = rows.first >= 0 ? conversation.itemAtIndex(rows.first) : null;
+                const loading = conversation.headerItem ? conversation.headerItem.height : 0;
+                conversation.prependAnchor = item ? rows.first : -1;
+                conversation.prependOffset = item ? Math.max(0, item.y - conversation.contentY - loading) : 0;
+                if (conversation.activeLast >= 0) {
+                    conversation.activeLast += count;
+                    conversation.activeEnd += count;
+                }
+            }
+            function onHistoryPrepended(count) {
+                if (conversation.activeLast >= 0)
+                    conversation.activeFirst += count;
+                if (conversation.restoreIndex >= 0)
+                    conversation.restoreIndex += count;
+                const anchor = conversation.prependAnchor;
+                conversation.prependAnchor = -1;
+                if (anchor >= 0 && !conversation.followTail && !conversation.restoring) {
+                    conversation.anchoring = true;
+                    conversation.forceLayout();
+                    const item = conversation.itemAtIndex(anchor + count);
+                    if (item) {
+                        conversation.contentY = item.y - conversation.prependOffset;
+                    } else {
+                        conversation.positionViewAtIndex(anchor + count, ListView.Beginning);
+                        conversation.contentY -= conversation.prependOffset;
+                    }
+                    // Let ListView create the row just above the screen, so
+                    // scrolling up has a row to load and move into.
+                    conversation.contentY -= 1;
+                    conversation.forceLayout();
+                    conversation.contentY += 1;
+                    conversation.anchoring = false;
+                }
+                conversation.scheduleRange();
+            }
+        }
+        header: Item {
+            objectName: pane.current ? "earlierHistoryLoading" : ""
+            width: conversation.width
+            visible: !!pane.messageModel && pane.messageModel.partialHistory
+            height: visible ? 48 : 0
+            Text {
+                anchors.centerIn: parent
+                text: I18n.t("正在加载更早的消息…")
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.font(11)
+            }
         }
         footer: Item {
             width: conversation.width
             height: turnStatus.visible ? turnStatus.implicitHeight + 20 : 0
             TaskStatus {
                 id: turnStatus
-                objectName: "turnStatus"
+                // Named only on the pane in use; a held pane shows the previous chat.
+                objectName: pane.current ? "turnStatus" : ""
                 x: 33
                 y: 8
                 status: pane.turnStatus
@@ -607,6 +732,7 @@ Item {
                 }
                 sourceComponent: Column {
                     id: messageRow
+                    objectName: pane.messagePrefix === "widget" ? "widgetChatMessage_" + index : "chatMessage_" + index
                     readonly property var replyMascot: closingMascot
                     property var modelData: rowShell.modelData
                     property int index: rowShell.index
@@ -623,14 +749,17 @@ Item {
                         visible: !modelData._loading && !messageRow.statusNotice && !modelData.continuation && modelData.role !== "user"
                         spacing: 9
                         AssistantAvatar {
-                            objectName: "assistantAvatar_" + messageRow.index
-                            messageKey: pane.viewKey + "/" + messageRow.index
+                            objectName: pane.messagePrefix ? pane.messagePrefix + "AssistantAvatar_" + messageRow.index : "assistantAvatar_" + messageRow.index
+                            // The row's own entry keeps its avatar when rows
+                            // are inserted above it.
+                            messageKey: pane.viewKey + "/" + ((modelData._entries || [])[0] || messageRow.index)
+                            artwork: String(pane.portrait).length ? pane.portrait : Character.asset(["avatarSmile", "avatarWink", "avatarHappy"][variant], fallbackSource)
                         }
                         SelectableText {
                             selectionController: chatSelection
                             messageIndex: messageRow.index
                             blockIndex: -100000
-                            text: "umeko"
+                            text: pane.assistantName
                             anchors.verticalCenter: parent.verticalCenter
                             color: Theme.ink
                             font.pixelSize: Theme.font(11, visible, chatSelection)
@@ -640,7 +769,7 @@ Item {
                     Rectangle {
                         objectName: "messageBubble_" + messageRow.index
                         border.width: 1
-                        border.color: window.searchHighlightRow === messageRow.index ? Theme.accent : "transparent"
+                        border.color: pane.highlightRow === messageRow.index ? Theme.accent : "transparent"
                         Behavior on border.color {
                             ColorAnimation {
                                 duration: 180
@@ -688,14 +817,14 @@ Item {
                         }
                     }
                     ActionButton {
-                        objectName: "requestDetails_" + messageRow.index
+                        objectName: (pane.messagePrefix ? pane.messagePrefix + "RequestDetails_" : "requestDetails_") + messageRow.index
                         selectionController: chatSelection
                         visible: !modelData._loading && !messageRow.statusNotice && !!modelData.error && (modelData.diagnosticId || "").length > 0
                         x: 33
                         text: I18n.t("查看请求与返回")
                         glyph: "code"
                         quiet: true
-                        onClicked: requestInspector.show(modelData.diagnosticId)
+                        onClicked: backend.showRequestDetails(modelData.diagnosticId)
                     }
                     Text {
                         objectName: "dshInterruptionNotice_" + messageRow.index
@@ -807,7 +936,7 @@ Item {
                         width: parent.width - 33
                         visible: !modelData._loading && !messageRow.statusNotice && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
                         continuable: messageRow.index === conversation.count - 1 && !pane.busy
-                        onContinued: backend.send(I18n.t("继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。"))
+                        onContinued: pane.controller.send(I18n.t("继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。"))
                     }
                     Item {
                         objectName: "messageActions_" + messageRow.index
@@ -838,7 +967,7 @@ Item {
                                 }
                             }
                             ActionButton {
-                                objectName: "copyMessage_" + messageRow.index
+                                objectName: pane.messagePrefix ? pane.messagePrefix + "CopyMessage_" + messageRow.index : "copyMessage_" + messageRow.index
                                 selectionController: chatSelection
                                 glyph: "copy"
                                 width: Theme.control(22)
@@ -846,16 +975,20 @@ Item {
                                 quiet: true
                                 enabled: parent.parent.opacity > 0
                                 hint: I18n.t("复制消息")
-                                onClicked: backend.copyDisplayMessage(messageRow.index)
+                                onClicked: pane.controller.copyDisplayMessage(messageRow.index)
                             }
                         }
                     }
                     ReplyMascot {
                         id: closingMascot
-                        objectName: "replyEndMascot_" + messageRow.index
+                        portraitSource: String(pane.replyPortrait).length ? pane.replyPortrait : String(pane.portrait).length ? pane.portrait : Character.asset("reply", "../icons/yanami-pixel.png")
+                        interactionLabel: pane.roleSlot >= 0 ? pane.assistantName + (Character.personalityEnabled ? I18n.t("：点击互动，连续点击或长按有彩蛋") : "") : pane.messagePrefix ? pane.assistantName : Character.id === "yanami" ? I18n.t("八奈见：点击互动，连续点击或长按有彩蛋") : Character.style.name
+                        tapLines: pane.roleSlot >= 0 ? Character.roleLine(pane.roleSlot, "tap", []) : pane.messagePrefix === "widget" ? [] : Character.scene("reply.tap", [])
+                        celebrationLine: pane.roleSlot >= 0 ? Character.roleLine(pane.roleSlot, "celebration", "") : pane.messagePrefix === "widget" ? "" : Character.scene("reply.celebration", "")
+                        objectName: pane.messagePrefix === "subagent" ? "subagentReplyMascot_" + messageRow.index : "replyEndMascot_" + messageRow.index
                         selectionController: chatSelection
                         width: Character.id === "doubao" ? Theme.icon(72) : 56
-                        visible: backend.sessionBackend !== "dsh" && !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
+                        visible: pane.controller.sessionBackend !== "dsh" && !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
                         x: 33
                     }
                 }
@@ -885,6 +1018,7 @@ Item {
         id: chatSelection
         anchors.fill: conversation
         view: conversation
+        dataSource: pane.controller
         enabled: pane.current && !pane.blocked
         retainedView: true
         sessionActive: pane.current

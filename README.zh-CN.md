@@ -25,9 +25,12 @@
 
 <!-- umeko-downloads:standard:start -->
 
-**下载 v0.7.1 · 点击下载**
+**下载 v0.7.6 · 点击下载**
 
-[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.1/Umeko-0.7.1-windows-x64-82f0e80.zip)
+[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.6/Umeko-0.7.6-windows-x64-3888ef4.zip)
+[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.6/Umeko-0.7.6-macos-arm64-3888ef4.dmg)
+[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.6/Umeko-0.7.6-macos-x64-3888ef4.dmg)
+[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.6/Umeko-0.7.6-linux-x64-3888ef4.tar.gz)
 
 <!-- umeko-downloads:standard:end -->
 

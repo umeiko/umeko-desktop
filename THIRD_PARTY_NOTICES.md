@@ -16,11 +16,11 @@ The terminal widget also uses the unmodified Microsoft Codicons font noted above
 
 ## Bundled search tools
 
-Release bundles include fd 10.3.0 (MIT or Apache-2.0, https://github.com/sharkdp/fd/tree/v10.3.0) and ripgrep 14.1.1 (MIT or Unlicense, https://github.com/BurntSushi/ripgrep/tree/14.1.1) so Pi's find/grep tools work without a first-run download. Their upstream license files accompany the binaries under `runtime/releases/coding-1.3.0/bin`. Archive SHA-256 values are pinned in `scripts/search-tools.json`.
+Release bundles include fd 10.3.0 (MIT or Apache-2.0, https://github.com/sharkdp/fd/tree/v10.3.0) and ripgrep 14.1.1 (MIT or Unlicense, https://github.com/BurntSushi/ripgrep/tree/14.1.1) so Pi's find/grep tools work without a first-run download. Their upstream license files accompany the binaries under `runtime/releases/coding-1.5.2/bin`. Archive SHA-256 values are pinned in `scripts/search-tools.json`.
 
 Qt / PySide6 is provided under its upstream LGPLv3 / GPLv3 / commercial terms. The application dynamically loads the unmodified Qt libraries. Their notices and license files are included in the installed PySide6 distribution. Source and licensing: https://www.qt.io/licensing/ and https://code.qt.io/pyside/pyside-setup.git/ .
 
-Pi Coding Agent and its dependencies are from https://github.com/earendil-works/pi (version 1.3.0). The complete upstream coding agent, tools, resource loader and session implementation are retained unmodified. The Pi AI built-in provider catalog and generated model list are replaced with empty catalogs; the application registers its explicit loopback gateway. Upstream protocol SDKs and their individual licenses remain in the runtime node_modules directory.
+Pi Coding Agent and its dependencies are from https://github.com/earendil-works/pi (version 1.5.2). The complete upstream coding agent, tools, resource loader and session implementation are retained unmodified. The Pi AI built-in provider catalog and generated model list are replaced with empty catalogs; the application registers its explicit loopback gateway. Upstream protocol SDKs and their individual licenses remain in the runtime node_modules directory.
 
 Copyright (c) 2025 Mario Zechner
 
@@ -103,6 +103,7 @@ Six community animation assets from [yanzwzz/dsh-whale-girl-pet](https://github.
 Public OpenAI Skills (Apache-2.0), Hermes Skills (MIT), and Archify (Apache-2.0 with its retained third-party notices) are distributed in `bundled-skills/`. Each folder retains its own license; `bundled-skills/sources.json` records immutable upstream commits, adaptations and file hashes. All of them come from the public upstream repositories recorded there. Optional Python/CLI/browser dependencies are not bundled or implicitly installed.
 
 Composer pinyin matching uses pypinyin 0.55.0 (MIT); see `licenses/pypinyin-MIT.txt`.
+Scheduled Tasks bundles tzdata 2026.6 (Apache-2.0) for IANA time zones when system data is unavailable. See `licenses/tzdata-NOTICE.txt` and `licenses/tzdata-APACHE.txt`.
 
 ## DeepSeek Harness backend mark
 

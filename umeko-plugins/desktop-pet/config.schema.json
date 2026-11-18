@@ -31,6 +31,14 @@
       "type": "integer",
       "minimum": 3000,
       "maximum": 30000
+    },
+    "personas": {
+      "type": "object",
+      "maxProperties": 128,
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 1000
+      }
     }
   },
   "additionalProperties": false

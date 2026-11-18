@@ -28,13 +28,13 @@ Item {
         id: sessionMenu; objectName: "sessionContextMenu"
         ContextAction { objectName: "contextFork"; text: I18n.t("分支会话"); glyph: "chat-fork"; enabled: !root.target.busy; onTriggered: backend.forkSessionById(root.target.id) }
         ContextAction { objectName: "contextPinSession"; text: root.target.pinned ? I18n.t("取消置顶") : I18n.t("置顶"); glyph: "pin"; onTriggered: backend.togglePinned("session", root.target.id) }
-        ContextAction { objectName: "contextArchiveSession"; text: root.target.archived ? I18n.t("取消归档") : I18n.t("归档"); glyph: "archive"; onTriggered: backend.archiveSession(root.target.id, !root.target.archived) }
+        ContextAction { objectName: "contextArchiveSession"; text: root.target.archived ? I18n.t("取消归档") : I18n.t("归档"); glyph: "archive"; enabled: !backend.sessionFiles.busy; onTriggered: backend.archiveSession(root.target.id, !root.target.archived) }
         ContextAction { objectName: "contextRenameSession"; text: I18n.t("重命名"); glyph: "edit"; enabled: !root.target.busy; onTriggered: root.rename() }
         MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.line } }
         ContextAction { objectName: "contextCopyId"; text: I18n.t("复制 Session ID"); glyph: "copy"; onTriggered: backend.copy(root.target.id) }
         ContextAction { objectName: "contextExportSession"; text: I18n.t("导出会话"); glyph: "download"; enabled: !root.target.busy; onTriggered: { root.exportId = root.target.id; exportDialog.open() } }
         MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.line } }
-        ContextAction { objectName: "contextDeleteSession"; text: I18n.t("删除"); glyph: "trash"; destructive: true; enabled: !root.target.busy; onTriggered: deletePopup.open() }
+        ContextAction { objectName: "contextDeleteSession"; text: I18n.t("删除"); glyph: "trash"; destructive: true; enabled: !root.target.busy && !backend.sessionFiles.busy; onTriggered: deletePopup.open() }
     }
     RowMenu {
         id: projectMenu; objectName: "projectContextMenu"
@@ -42,9 +42,9 @@ Item {
         ContextAction { objectName: "contextRenameProject"; text: I18n.t("重命名"); glyph: "edit"; onTriggered: root.rename() }
         MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.line } }
         ContextAction { objectName: "contextRevealProject"; text: I18n.t("在资源管理器中打开"); glyph: "folder"; onTriggered: backend.revealProject(root.target.id) }
-        ContextAction { objectName: "contextArchiveProject"; text: backend.showArchived ? I18n.t("恢复项目会话") : I18n.t("归档项目会话"); glyph: "archive"; onTriggered: backend.archiveProject(root.target.id, !backend.showArchived) }
+        ContextAction { objectName: "contextArchiveProject"; text: backend.showArchived ? I18n.t("恢复项目会话") : I18n.t("归档项目会话"); glyph: "archive"; enabled: !backend.sessionFiles.busy; onTriggered: backend.archiveProject(root.target.id, !backend.showArchived) }
         MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.line } }
-        ContextAction { objectName: "contextRemoveProject"; text: I18n.t("移除项目"); glyph: "x"; destructive: true; onTriggered: backend.removeProject(root.target.id) }
+        ContextAction { objectName: "contextRemoveProject"; text: I18n.t("删除项目"); glyph: "trash"; destructive: true; enabled: !backend.sessionFiles.busy; onTriggered: { deleteProjectPopup.summary = backend.sessionFiles.projectSummary(root.target.id); deleteProjectPopup.open() } }
     }
     Popup {
         id: renamePopup; objectName: "renamePopup"; parent: Overlay.overlay
@@ -64,17 +64,37 @@ Item {
     }
     Popup {
         id: deletePopup; objectName: "deleteSessionPopup"; parent: Overlay.overlay
-        width: 380; height: 152; padding: 22; modal: true; focus: true
+        width: Math.min(440, parent.width - 40); height: Math.min(parent.height - 40, deleteSessionContent.implicitHeight + 44); padding: 22; modal: true; focus: true
         x: (parent.width-width)/2; y: (parent.height-height)/2
         background: Rectangle { radius: 12; color: Theme.surface; border.color: Theme.line }
-        ColumnLayout { anchors.fill: parent; spacing: 18
-            Text { font.family: Theme.fontFamily; text: I18n.t("删除这条会话？"); color: Theme.ink; font.pixelSize: Theme.font(15, visible) }
+        ColumnLayout { id: deleteSessionContent; anchors.fill: parent; spacing: 18
+            Text { font.family: Theme.fontFamily; text: I18n.t("永久删除这条会话？"); color: Theme.ink; font.pixelSize: Theme.font(15, visible) }
+            Text { Layout.fillWidth: true; text: I18n.t("会话历史、附件副本、子智能体记录和缓存将被删除，无法撤销。"); wrapMode: Text.Wrap; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible) }
             RowLayout { Layout.fillWidth: true; Item { Layout.fillWidth: true }
                 ActionButton { text: I18n.t("取消"); quiet: true; onClicked: deletePopup.close() }
                 ActionButton { objectName: "confirmDeleteSessionButton"; text: I18n.t("删除"); destructive: true; onClicked: { backend.deleteSession(root.target.id); deletePopup.close() } }
             }
         }
     }
+    Popup {
+        id: deleteProjectPopup; objectName: "deleteProjectPopup"; parent: Overlay.overlay
+        property var summary: ({})
+        width: Math.min(460, parent.width - 40); height: Math.min(parent.height - 40, deleteProjectContent.implicitHeight + 44); padding: 22; modal: true; focus: true
+        x: (parent.width-width)/2; y: (parent.height-height)/2
+        background: Rectangle { radius: 12; color: Theme.surface; border.color: Theme.line }
+        ColumnLayout { id: deleteProjectContent; anchors.fill: parent; spacing: 16
+            Text { text: I18n.t("删除项目及其会话？"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(16, visible); font.weight: Font.Medium }
+            Text { Layout.fillWidth: true; text: root.target.title || ""; elide: Text.ElideRight; color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(13, visible) }
+            Text { Layout.fillWidth: true; text: I18n.t("将永久删除项目下的全部会话（含归档），以及会话历史、附件副本、子智能体记录和缓存。项目文件夹和源文件会保留。此操作无法撤销。"); wrapMode: Text.Wrap; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible) }
+            Text { Layout.fillWidth: true; visible: deleteProjectPopup.summary.busy === true; text: I18n.t("项目仍有任务运行，请先停止任务。"); wrapMode: Text.Wrap; color: Theme.danger; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible) }
+            Item { Layout.fillHeight: true }
+            RowLayout { Layout.fillWidth: true; Item { Layout.fillWidth: true }
+                ActionButton { text: I18n.t("取消"); quiet: true; onClicked: deleteProjectPopup.close() }
+                ActionButton { objectName: "confirmDeleteProjectButton"; text: I18n.t("永久删除"); destructive: true; enabled: !deleteProjectPopup.summary.busy && !backend.sessionFiles.busy; onClicked: { backend.removeProject(root.target.id); deleteProjectPopup.close() } }
+            }
+        }
+    }
+    SessionFilesNotice {}
     FileDialog {
         id: exportDialog; title: I18n.t("导出 Pi 会话"); fileMode: FileDialog.SaveFile
         nameFilters: [I18n.t("Pi 会话 (*.jsonl)")]; defaultSuffix: "jsonl"

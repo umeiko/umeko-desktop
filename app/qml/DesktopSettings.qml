@@ -6,12 +6,30 @@ Column {
     id: root
     objectName: "umekoDesktopSettings"
     spacing: 16
+    signal requestHeadersRequested()
     property bool startupSettingsReady: false
     Component.onCompleted: {
         startupSettingsReady = true
         if (visible) backend.loginStartup.refresh()
     }
     onVisibleChanged: if (startupSettingsReady && visible) backend.loginStartup.refresh()
+    Button {
+        id: customRequestsEntry
+        objectName: "openRequestHeaders"
+        width: parent.width
+        implicitHeight: Math.max(Theme.control(64), customRequestsRow.implicitHeight + 32)
+        padding: 20; hoverEnabled: true
+        Accessible.name: I18n.t("自定义请求")
+        HoverHandler { cursorShape: Qt.PointingHandCursor }
+        background: Rectangle { radius: 12; color: customRequestsEntry.hovered ? Theme.hover : Theme.surface; border.color: customRequestsEntry.activeFocus ? Theme.accent : Theme.line }
+        contentItem: RowLayout {
+            id: customRequestsRow; spacing: 12
+            Glyph { name: "sliders"; color: Theme.muted; Layout.preferredWidth: Theme.icon(20); Layout.preferredHeight: Theme.icon(20) }
+            Text { Layout.fillWidth: true; text: I18n.t("自定义请求"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14); elide: Text.ElideRight }
+            Glyph { name: "chevron-right"; color: Theme.muted; Layout.preferredWidth: Theme.icon(16); Layout.preferredHeight: Theme.icon(16) }
+        }
+        onClicked: root.requestHeadersRequested()
+    }
     SectionCard {
         width: parent.width
         ColumnLayout {

@@ -98,7 +98,7 @@ def main():
     profile, workspace = isolated_settings(base)
     os.environ['UMEKO_DATA_DIR'] = str(profile)
     gates = {name: threading.Event() for name in ('hold-first', 'cancel-me')}
-    received, advertised = [], []
+    received, advertised, upstream_models, reasoning = [], [], [], []
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -111,6 +111,8 @@ def main():
             if isinstance(content, list):
                 content = ''.join(part.get('text', '') for part in content)
             received.append(content)
+            upstream_models.append(body.get('model'))
+            reasoning.append(body.get('chat_template_kwargs'))
             advertised.append({tool['function']['name'] for tool in body.get('tools', [])})
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')
@@ -151,12 +153,15 @@ def main():
         backend = controller()
         configured = {'id': 'test-provider', 'name': 'Test provider',
             'api': 'openai', 'baseUrl': f'http://127.0.0.1:{upstream.server_port}/v1',
-            'key': 'offline-fixture-key', 'models': [{'upstream': 'test-model', 'alias': 'test-model'}]}
+            'key': 'offline-fixture-key', 'models': [
+                {'upstream': alias, 'alias': alias, 'reasoningLevels': ['low', 'medium', 'high'],
+                 'reasoningLevelsAuto': False, 'reasoningFormat': 'chat-template', 'reasoningFormatAuto': False}
+                for alias in ('test-model', 'test-model-b')]}
         backend.store.data.update(providers=[configured],
             selectedProvider='test-provider', selectedModel='test-model')
         backend.store.data['pluginSessionProfiles'] = {'fixture-channel': {'tasks': {
             'workspace': str(workspace), 'provider': 'test-provider', 'model': 'test-model',
-            'tools': ['read'], 'permissionMode': 'ask'}}}
+            'tools': ['read'], 'permissionMode': 'ask', 'reasoningEffort': 'medium'}}}
         manager = backend.desktopPlugins
         owner = install_channel(manager)
         replies = {}
@@ -189,11 +194,17 @@ def main():
         ids = {one['sessionId'], two['sessionId']}
         assert ids.issubset({row['id'] for row in backend.sessions})
         record = backend._pool.find(one['sessionId'])
+        assert record.reasoning_effort == 'medium'
         assert (record.workspace, record.model, record.provider) == (str(workspace), 'test-model', 'test-provider')
         invoke('subscribe', one['handle'])
         invoke('subscribe', two['handle'])
         first = invoke('submit', one['handle'], 'request-one', 'hold-first')
         pump_until(app, lambda: 'hold-first' in received, 'Real Pi never called local provider', 60)
+        assert reasoning[-1] == {'enable_thinking': True, 'reasoning_effort': 'medium'}, reasoning
+        changed = backend._umeko_control.execute({'operation': 'pluginSessions.setModel',
+            'arguments': {'plugin': owner, 'profile': 'tasks', 'reasoningEffort': 'high'}})
+        assert changed['ok'], changed
+        assert record.reasoning_effort == 'medium'
         queued = invoke('submit', one['handle'], 'request-two', 'queued-second')
         separate = invoke('submit', two['handle'], 'request-other', 'independent')
         assert (first['disposition'], queued['disposition']) == ('started', 'queued')
@@ -203,6 +214,7 @@ def main():
         gates['hold-first'].set()
         first_done = invoke('wait', one['handle'], first['runId'])
         second_done = invoke('wait', one['handle'], queued['runId'])
+        assert reasoning[received.index('queued-second')] == {'enable_thinking': True, 'reasoning_effort': 'high'}, reasoning
         for result, text in ((first_done, 'reply:hold-first'), (second_done, 'reply:queued-second')):
             assert result['status'] == 'completed' and text in json.dumps(result), result
         events = call('events', {})
@@ -221,6 +233,20 @@ def main():
         resumed_done = invoke('wait', one['handle'], resumed['runId'])
         assert resumed_done['status'] == 'completed' and 'reply:after-eviction' in json.dumps(resumed_done)
         assert record.id == one['sessionId'], 'Eviction created a replacement native chat'
+        # Switch the profile model through the desktop operation while Pi is running;
+        # the next input reaches the provider with the new model.
+        assert upstream_models[-1] == 'test-model', upstream_models
+        changed = backend._umeko_control.execute({'operation': 'pluginSessions.setModel',
+            'arguments': {'plugin': owner, 'profile': 'tasks', 'model': 'test-model-b'}})
+        assert changed['ok'], changed
+        switched = invoke('submit', one['handle'], 'request-switched', 'after-model-change')
+        switched_done = invoke('wait', one['handle'], switched['runId'])
+        assert switched_done['status'] == 'completed' and 'reply:after-model-change' in json.dumps(switched_done)
+        assert upstream_models[-1] == 'test-model-b', upstream_models
+        assert backend.store.data['pluginSessionProfiles'][owner]['tasks']['tools'] == ['read']
+        rejected = backend._umeko_control.execute({'operation': 'pluginSessions.setModel',
+            'arguments': {'plugin': owner, 'profile': 'tasks', 'model': 'test-model', 'tools': ['write']}})
+        assert not rejected['ok'], rejected
         cancelled = invoke('submit', one['handle'], 'request-cancel', 'cancel-me')
         pump_until(app, lambda: 'cancel-me' in received, 'Cancellation run never reached provider', 60)
         invoke('cancel', one['handle'], cancelled['runId'])
@@ -269,9 +295,11 @@ def main():
         manager.start(owner)
         restored = invoke('acquire', 'channel-one', profile='tasks')
         assert restored['sessionId'] == one['sessionId'] and restored['created'] is False
+        assert backend._pool.find(restored['sessionId']).reasoning_effort == 'high'
         restored_two = invoke('acquire', 'channel-two', profile='tasks')
         assert restored_two['sessionId'] == two['sessionId'] and restored_two['created'] is False
-        print('PLUGIN_SESSIONS_OK: actual SDK worker, real Pi, distinct native sessions, separate queued runs, scoped replies, cancellation, read-only ceiling, eviction resume, both restart mappings, SDK approval allow and unhandled desktop denial', flush=True)
+        print('UPSTREAM_MODELS:', json.dumps(upstream_models), flush=True)
+        print('PLUGIN_SESSIONS_OK: actual SDK worker, real Pi, distinct native sessions, separate queued runs, scoped replies, cancellation, read-only ceiling, eviction resume, profile model switch at the next input, both restart mappings, SDK approval allow and unhandled desktop denial', flush=True)
     finally:
         for gate in gates.values():
             gate.set()

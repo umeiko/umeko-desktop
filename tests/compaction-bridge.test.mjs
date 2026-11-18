@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const release = join(root,"runtime/releases/coding-1.3.0");
+const release = join(root,"runtime/releases/coding-1.5.2");
 const profile = process.env.UMEKO_COMPACTION_TEST_ROOT || "C:/UmekoTests/pr3-direction-20261029";
 
 async function fixture(t, {autoCompaction=false, hook="", legacy=false, summaryError=false}={}) {

@@ -89,7 +89,7 @@ class _Transport:
     a duplicate still permits shutdown while that response's file is being read.
     DNS is resolved by the OS, then cancellation is checked before connecting.
     """
-    def __init__(self, settings, cancelled, timeout=TIMEOUT, *, memory=None, scope=()):
+    def __init__(self, settings, cancelled, timeout=TIMEOUT, *, omitted=(), memory=None, scope=()):
         self.cancelled = cancelled
         self.timeout = timeout
         self.memory, self.scope = memory, scope
@@ -116,8 +116,9 @@ class _Transport:
             def https_open(self, request):
                 return self.do_open(HTTPS, request, context=self._context)
 
+        from .request_headers import OmitHeaders
         self.opener = urllib.request.build_opener(proxy_handler(settings),
-            HTTPHandler(), HTTPSHandler(context=tls_context(settings)), _NoRedirect())
+            HTTPHandler(), HTTPSHandler(context=tls_context(settings)), _NoRedirect(), OmitHeaders(omitted))
         self.watcher = threading.Thread(target=self._watch, daemon=True)
 
     def check(self):
@@ -285,7 +286,7 @@ def _video_progress(value, on_progress, transport):
     return job_id, status
 
 
-def _delete_video(provider, url, headers):
+def _delete_video(provider, url, headers, omitted=()):
     """Cancellation cleanup has its own bounded lifetime and no caller stop event.
 
     A daemon also bounds OS DNS waits, which socket shutdown cannot interrupt.
@@ -294,7 +295,7 @@ def _delete_video(provider, url, headers):
     stop = threading.Event()
     def delete():
         try:
-            with _Transport(provider.get('proxy'), stop, timeout=2) as cleanup:
+            with _Transport(provider.get('proxy'), stop, timeout=2, omitted=omitted) as cleanup:
                 cleanup.request(url, headers, [], method='DELETE')
         except Exception:
             pass
@@ -304,8 +305,8 @@ def _delete_video(provider, url, headers):
     stop.set()
 
 
-def _openai_video(provider, base, payload, transport, records, on_progress, poll_interval):
-    headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + provider['key'],
+def _openai_video(provider, base, payload, transport, records, on_progress, poll_interval, headers=None, omitted=()):
+    headers = headers if headers is not None else {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + provider['key'],
                'User-Agent': 'Umeko-Desktop'}
     job_id = None
     try:
@@ -334,7 +335,7 @@ def _openai_video(provider, base, payload, transport, records, on_progress, poll
     except Exception:
         if transport.cancelled.is_set():
             if job_id:
-                _delete_video(provider, base + '/videos/' + urllib.parse.quote(job_id, safe=''), headers)
+                _delete_video(provider, base + '/videos/' + urllib.parse.quote(job_id, safe=''), headers, omitted)
             raise GenerationCancelled('生成已取消') from None
         raise
 
@@ -424,14 +425,16 @@ def generate(gateway, body, on_progress=None, *, poll_interval=2.0):
                     for setting, parameter in (('format', 'response_format'), ('speed', 'speed')):
                         if setting not in body and setting not in saved:
                             automatic.add(parameter)
-                with _Transport(provider.get('proxy'), cancelled,
+                from .request_headers import build
+                request_headers, omitted = build(gateway.store.data.get('requestHeaders'), provider)
+                with _Transport(provider.get('proxy'), cancelled, omitted=omitted,
                                 memory=getattr(gateway, 'compatibility', None),
                                 scope=(provider['id'], provider['baseUrl'], model)) as transport:
                     if kind == 'video':
-                        items = _openai_video(provider, base, payload, transport, records, on_progress, poll_interval)
+                        items = _openai_video(provider, base, payload, transport, records, on_progress, poll_interval, request_headers, omitted)
                     else:
                         raw, headers = transport.request(base + ('/images/generations' if kind == 'image' else '/audio/speech'),
-                            {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + provider['key'], 'User-Agent': 'Umeko-Desktop'},
+                            request_headers,
                             records, json.dumps(payload).encode(), automatic=automatic)
                     if kind == 'speech':
                         items = [_media(raw, kind, options.get('format', 'mp3'), headers.get_content_type())]
@@ -472,5 +475,6 @@ def generate(gateway, body, on_progress=None, *, poll_interval=2.0):
             raise GenerationCancelled('生成已取消') from None
         failure = gateway.diagnostics.failure(provider, request, records[-1]['response'] if records else {}, exc, records)
         if isinstance(exc, VideoJobFailed):
-            failure.args = (safe_text(str(exc), [provider.get('key', '')]) + ' ' + str(failure),)
+            secrets = [provider.get('key', '')] + [value for call in records for value in call.get('request', {}).get('headers', {}).values()]
+            failure.args = (safe_text(str(exc), secrets) + ' ' + str(failure),)
         raise failure from None

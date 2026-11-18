@@ -244,6 +244,7 @@ def compatible_open(opener, request, *, timeout=20, memory=None, scope=(), autom
             if names and isinstance(body, dict):
                 changed = {name for name in names if _adapt(body, name)}
                 if changed:
+                    record['parameterRetry'] = sorted(changed)
                     error.close()
                     if memory:
                         memory.remember(scope, changed)

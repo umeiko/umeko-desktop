@@ -5,6 +5,7 @@ branch, and bounded display fragments. No live Qt objects enter the cache.
 """
 from __future__ import annotations
 
+import bisect
 import hashlib
 import io
 import json
@@ -29,6 +30,10 @@ GROUP_MESSAGES = 16
 GROUP_BYTES = 512 * 1024
 FRAGMENT_CHARS = 24000
 CACHE_BYTES = 64 * 1024 * 1024
+# A first visit shows about this many of the latest messages before the
+# whole transcript is indexed.
+RECENT_MESSAGES = 60
+RECENT_BYTES = 256 * 1024
 
 
 class Cancelled(Exception):
@@ -248,16 +253,24 @@ class Snapshot:
     active_compactions: frozenset = frozenset()
     focus_row: int = -1
     row_metadata: tuple = ()
+    row_offset: int = 0
+    question_offset: int = 0
+    # A partial snapshot holds only the latest messages of origin, read from
+    # its end; the complete index replaces it once built.
+    partial: bool = False
+    origin: str = ''
+    # The partial snapshot whose rows this complete snapshot ends with.
+    extends: object = None
 
     def matches_source(self):
         try:
-            stat = Path(self.source).stat()
+            stat = Path(self.origin or self.source).stat()
             return stat.st_size == self.size and stat.st_mtime_ns == self.mtime_ns
         except OSError:
             return False
 
     def key(self, row):
-        return self.database, self.revision, row
+        return self.database, self.revision, row + self.row_offset
 
     def cached(self, row):
         return compaction_status(self.repository.cache.get(self.key(row)), self.active_compactions)
@@ -270,11 +283,11 @@ class Snapshot:
             if int(db.execute("SELECT value FROM meta WHERE key='revision'").fetchone()[0]) != self.revision:
                 raise StaleIndex('Transcript index has been refreshed')
             result = {}
-            for row in db.execute('SELECT seq,body,logical,continuation,last FROM display WHERE seq>=? AND seq<?', (page * PAGE_ROWS, (page + 1) * PAGE_ROWS)):
+            for row in db.execute('SELECT seq,body,logical,continuation,last FROM display WHERE seq>=? AND seq<?', (self.row_offset + page * PAGE_ROWS, min(self.row_offset + self.count, self.row_offset + (page + 1) * PAGE_ROWS))):
                 value = json.loads(zlib.decompress(row['body']))
                 value.update(_logical=row['logical'], continuation=bool(row['continuation']), segmentLast=bool(row['last']))
-                self.repository.cache.put(self.key(row['seq']), value)
-                result[row['seq']] = compaction_status(value, self.active_compactions)
+                self.repository.cache.put(self.key(row['seq'] - self.row_offset), value)
+                result[row['seq'] - self.row_offset] = compaction_status(value, self.active_compactions)
         return result
 
     def row(self, row):
@@ -286,18 +299,18 @@ class Snapshot:
             role, hint, continuation = self.row_metadata[row]
             return {'role':role, 'hint':hint, 'continuation':continuation}
         with connect(self.database) as db:
-            value = db.execute('SELECT role,hint,continuation FROM display WHERE seq=?', (row,)).fetchone()
+            value = db.execute('SELECT role,hint,continuation FROM display WHERE seq=?', (row + self.row_offset,)).fetchone()
             return dict(value) if value else {}
 
     def question(self, index):
-        with connect(self.database) as db:
-            value = db.execute('SELECT row,title FROM questions WHERE seq=?', (index,)).fetchone()
-            return dict(value) if value else {}
+        rows, titles = self.repository.questions(self.database, self.revision)
+        index += self.question_offset
+        return {'row':rows[index] - self.row_offset, 'title':titles[index]} if 0 <= index < len(rows) else {}
 
     def question_index(self, row):
-        with connect(self.database) as db:
-            value = db.execute('SELECT seq FROM questions WHERE row<=? ORDER BY row DESC LIMIT 1', (row,)).fetchone()
-            return value[0] if value else 0
+        rows, _ = self.repository.questions(self.database, self.revision)
+        position = bisect.bisect_right(rows, row + self.row_offset) - 1
+        return max(0, position - self.question_offset) if position >= 0 else 0
 
     def contains(self, entry_id):
         with connect(self.database) as db:
@@ -312,13 +325,42 @@ class Snapshot:
                 result.update(row[0] for row in db.execute('SELECT id FROM native WHERE id IN (' + ','.join('?' for _ in values) + ')', values))
         return result
 
+    def recent_compaction_interval(self):
+        """A view onto the last completed interval and its live successor."""
+        from dataclasses import replace
+        boundaries, seen = [], set()
+        with connect(self.database) as db:
+            receipts = db.execute("""SELECT d.seq,d.body FROM display d JOIN native n ON n.pos=d.first_native
+                JOIN entries e ON e.id=n.id WHERE e.tool LIKE 'umeko-compaction:%' ORDER BY d.seq DESC""")
+            for item in receipts:
+                event = json.loads(zlib.decompress(item['body'])).get('compaction', {})
+                identifier = event.get('eventId')
+                if event.get('state', 'success') == 'success' and identifier and identifier not in seen:
+                    boundaries.append(item['seq']); seen.add(identifier)
+                    if len(boundaries) == 2:
+                        break
+            if len(boundaries) < 2:
+                return self
+            start = boundaries[-1]
+            questions = db.execute('SELECT COUNT(*) FROM questions WHERE row<?', (start,)).fetchone()[0]
+        # Derived bodies from older intervals no longer occupy the shared LRU.
+        cache = self.repository.cache
+        with cache.lock:
+            for key in list(cache.items):
+                if key[0] == self.database and key[2] < start:
+                    cache.weight -= cache.items.pop(key)[1]
+                    cache.pinned.discard(key)
+        return replace(self, count=self.count-start, row_offset=start, question_offset=questions,
+                       question_count=self.question_count-questions, row_metadata=self.row_metadata[start:],
+                       focus_row=max(0, self.count-start-1))
+
     def copy_text(self, row):
         with connect(self.database) as db, Path(self.source).open('rb') as source:
             db.execute('BEGIN')
             if int(db.execute("SELECT value FROM meta WHERE key='revision'").fetchone()[0]) != self.revision:
                 raise StaleIndex('聊天内容已更新，请重新复制')
             bounds = db.execute('''SELECT MIN(first_native),MAX(last_native) FROM display
-                WHERE logical=(SELECT logical FROM display WHERE seq=?)''', (row,)).fetchone()
+                WHERE logical=(SELECT logical FROM display WHERE seq=?)''', (row + self.row_offset,)).fetchone()
             if bounds[0] is None:
                 return ''
             entries = db.execute('SELECT e.offset,e.length FROM native n JOIN entries e ON e.id=n.id WHERE n.pos>=? AND n.pos<=? ORDER BY n.pos', tuple(bounds))
@@ -347,6 +389,28 @@ class TranscriptRepository:
         self.directory.mkdir(parents=True, exist_ok=True)
         self.cache = WeightedLRU(cache_bytes)
         self._locks, self._lock = {}, threading.Lock()
+        self._questions = OrderedDict()
+
+    def questions(self, database, revision):
+        """Question rows and titles of one index revision, read in one query.
+
+        The question navigator asks for every visible title; one cached list
+        replaces a SQLite connection per delegate.
+        """
+        key = (database, revision)
+        with self._lock:
+            value = self._questions.get(key)
+            if value is not None:
+                self._questions.move_to_end(key)
+                return value
+        with connect(database) as db:
+            values = db.execute('SELECT row,title FROM questions ORDER BY seq').fetchall()
+        value = ([row['row'] for row in values], [row['title'] for row in values])
+        with self._lock:
+            self._questions[key] = value
+            while len(self._questions) > 8:
+                self._questions.popitem(last=False)
+        return value
 
     @staticmethod
     def large(file):
@@ -371,6 +435,102 @@ class TranscriptRepository:
             snapshot = replace(snapshot, focus_row=target)
         return snapshot
 
+    def current(self, file):
+        """True when the stored index already matches the file on disk."""
+        file = Path(file).resolve()
+        database = self.directory / (hashlib.sha256(str(file).encode()).hexdigest() + '.sqlite')
+        if not database.exists():
+            return False
+        try:
+            stat = file.stat()
+            with connect(database) as db:
+                meta = dict(db.execute('SELECT key,value FROM meta'))
+        except (OSError, sqlite3.Error):
+            return False
+        return (meta.get('schema') == str(SCHEMA) and meta.get('identity') == str(getattr(stat, 'st_ino', 0))
+                and meta.get('size') == str(stat.st_size) and meta.get('mtime') == str(stat.st_mtime_ns))
+
+    def open_recent(self, file, cancelled=lambda: False, messages=RECENT_MESSAGES, chunk=RECENT_BYTES):
+        """The latest messages of a transcript, read from its end.
+
+        The tail starts at a user message on the current branch, so its rows
+        are the same rows the complete index ends with. Returns None when the
+        tail would be the whole file.
+        """
+        file = Path(file).resolve()
+        key = hashlib.sha256(str(file).encode()).hexdigest()
+        stat = file.stat()
+        with file.open('rb') as source:
+            header = source.readline()
+            start, size = None, stat.st_size
+            chunk = min(size, chunk)
+            while start is None:
+                if cancelled():
+                    raise Cancelled()
+                if chunk >= size:
+                    return None
+                source.seek(size - chunk)
+                data = source.read(chunk)
+                first = data.find(b'\n') + 1
+                entries, at = {}, size - chunk + first
+                latest = None
+                for line in data[first:].splitlines(keepends=True):
+                    if line.endswith(b'\n'):
+                        try:
+                            entry = json.loads(line)
+                        except ValueError:
+                            entry = None
+                        if isinstance(entry, dict) and entry.get('id'):
+                            entries[entry['id']] = (at, entry)
+                            latest = entry['id']
+                    at += len(line)
+                counted, current, visited = 0, latest, set()
+                while current in entries and current not in visited:
+                    visited.add(current)
+                    offset, entry = entries[current]
+                    if entry.get('type') == 'message':
+                        counted += 1
+                        if counted >= messages and (entry.get('message') or {}).get('role') == 'user':
+                            start = offset
+                            break
+                    current = entry.get('parentId')
+                chunk = min(size, chunk * 4)
+            recent = self.directory / (key + '-recent.jsonl')
+            database = self.directory / (key + '-recent.sqlite')
+            with self._lock:
+                lock = self._locks.setdefault(key + '-recent', threading.Lock())
+            with lock:
+                source.seek(start)
+                with recent.open('wb') as target:
+                    target.write(header if header.endswith(b'\n') else header + b'\n')
+                    target.write(source.read(size - start))
+                for suffix in ('', '-wal', '-shm'):
+                    Path(str(database) + suffix).unlink(missing_ok=True)
+                snapshot = self._build(recent, database, None, cancelled)
+        from dataclasses import replace
+        snapshot = replace(snapshot, partial=True, origin=str(file), size=stat.st_size, mtime_ns=stat.st_mtime_ns)
+        if snapshot.count:
+            snapshot.page((snapshot.count - 1) // PAGE_ROWS)
+            snapshot = replace(snapshot, focus_row=snapshot.count - 1)
+        return snapshot
+
+    @staticmethod
+    def same_tail(recent, complete):
+        """True when the complete index ends with exactly the rows of recent."""
+        start = complete.count - recent.count
+        if start < 0:
+            return False
+        def rows(snapshot, first):
+            with connect(snapshot.database) as db:
+                return [(row['body'], row['logical'], row['continuation'], row['last']) for row in db.execute(
+                    'SELECT body,logical,continuation,last FROM display WHERE seq>=? ORDER BY seq', (first,))]
+        try:
+            ours, theirs = rows(recent, 0), rows(complete, start)
+        except sqlite3.Error:
+            return False
+        return len(ours) == len(theirs) and all(
+            json.loads(zlib.decompress(a[0])) == json.loads(zlib.decompress(b[0])) and a[1:] == b[1:] for a, b in zip(ours, theirs))
+
     def discard(self, file):
         """Remove only derived data after its original session is deleted."""
         key = hashlib.sha256(str(Path(file).resolve()).encode()).hexdigest()
@@ -379,8 +539,11 @@ class TranscriptRepository:
             lock = self._locks.setdefault(key, threading.Lock())
         with lock:
             self.cache.discard(str(database))
-            for suffix in ('', '-wal', '-shm'):
-                Path(str(database) + suffix).unlink(missing_ok=True)
+            with self._lock:
+                for key in [key for key in self._questions if key[0] == str(database)]:
+                    del self._questions[key]
+            for suffix in ('', '-wal', '-shm', '-recent.jsonl', '-recent.sqlite', '-recent.sqlite-wal', '-recent.sqlite-shm'):
+                Path(str(database).removesuffix('.sqlite') + suffix if suffix.startswith('-recent') else str(database) + suffix).unlink(missing_ok=True)
 
     def _build(self, file, database, target_leaf, cancelled):
         db = connect(database)

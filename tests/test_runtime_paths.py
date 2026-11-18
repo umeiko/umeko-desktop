@@ -60,7 +60,7 @@ class RuntimePathTests(unittest.TestCase):
         modules = filesystem_path(source) / "node_modules"
         package = modules / PACKAGE
         package.mkdir(parents=True)
-        (package / "package.json").write_text(json.dumps({"version":"1.3.0"}))
+        (package / "package.json").write_text(json.dumps({"version":"1.5.2"}))
         ai = modules / "@earendil-works/pi-ai/dist"
         (ai / "providers").mkdir(parents=True)
         (ai / "providers/all.js").write_text("original catalog")
@@ -70,7 +70,7 @@ class RuntimePathTests(unittest.TestCase):
         payload.write_text("original dependency data")
         project_runtime(source, target)
         self.assertEqual((filesystem_path(target) / "node_modules" / PACKAGE / "nested/dependency/resource.txt").read_text(), "original dependency data")
-        self.assertEqual(json.loads((filesystem_path(target) / "manifest.json").read_text())["version"], "1.3.0")
+        self.assertEqual(json.loads((filesystem_path(target) / "manifest.json").read_text())["version"], "1.5.2")
 
     def test_verification_keeps_node_argv_ordinary(self):
         release, source = self.deep / "release", self.deep / "bridge"
@@ -84,6 +84,7 @@ class RuntimePathTests(unittest.TestCase):
             (source_io / name).write_text("fixture")
         (source_io / "session-capabilities.mjs").write_text("fixture")
         (source_io / "skills.mjs").write_text("fixture")
+        (source_io / "coordinator-skills.mjs").write_text("fixture")
         (source_io / "generation.mjs").write_text("fixture")
         (source_io / "http-retry-boundary.mjs").write_text("fixture")
         (source_io / "system-prompt.mjs").write_text("fixture")
@@ -97,6 +98,7 @@ class RuntimePathTests(unittest.TestCase):
         self.assertEqual((release_io / "umeko-docs/guide.md").read_text(), "deep docs")
         self.assertEqual((release_io / "tool-visibility.mjs").read_text(), "fixture")
         self.assertEqual((release_io / "session-capabilities.mjs").read_text(), "fixture")
+        self.assertEqual((release_io / "coordinator-skills.mjs").read_text(), "fixture")
         self.assertEqual((release_io / "markdown-preview.mjs").read_text(), "fixture")
         self.assertEqual((release_io / "generation.mjs").read_text(), "fixture")
         self.assertEqual((release_io / "system-prompt.mjs").read_text(), "fixture")

@@ -192,7 +192,7 @@ class Gateway:
             configured = next((item for item in provider["models"] if item["upstream"] == model), {})
             levels = reasoning_levels(configured)
         supported = ["off"] + [item for item in levels if item not in (effort, "off")]
-        message = safe_text(str(error), [provider.get("key", "")])
+        message = safe_text(str(error), self.diagnostics._secrets(provider, {"http": records}))
         return RequestFailure(f'{message}\n当前可选推理档位：{", ".join(supported)}。请调整档位后重新发送。', retryable=False)
 
     def _events(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None):
@@ -250,10 +250,8 @@ class Gateway:
             yield openai_response(result, model)
             return
         base = validate_base_url(p["baseUrl"])
-        headers = {"Content-Type": "application/json", "User-Agent": "Umeko-Desktop"}
         if p["api"] == "anthropic":
             url = base + ("/messages" if base.endswith("/v1") else "/v1/messages")
-            headers.update({"x-api-key": p["key"], "anthropic-version": "2023-06-01"})
             parameters = dict(parameters)
             if "reasoning_effort" in parameters:
                 parameters["output_config"] = {"effort": parameters.pop("reasoning_effort")}
@@ -277,13 +275,11 @@ class Gateway:
                 body["tools"] = [{"name": t["name"], "description": t.get("description", ""), "input_schema": t["parameters"]} for t in tools]
         elif p.get('wireApi') == 'responses':
             url = base + '/responses'
-            headers['Authorization'] = 'Bearer ' + p['key']
             body = {**responses_request(messages, tools, max_tokens, parameters), 'model': model}
             if "reasoning" in parameters:
                 body["reasoning"] = parameters["reasoning"]
         else:
             url = base + "/chat/completions"
-            headers["Authorization"] = "Bearer " + p["key"]
             body = {**parameters, "model": model, "messages": chat_completion_messages(messages), "stream": parameters.get('stream', True)}
             if 'max_completion_tokens' not in body:
                 body.setdefault('max_tokens', max_tokens)
@@ -300,8 +296,11 @@ class Gateway:
             if 'tools' not in user_parameters:
                 automatic.update(f'tools.{index}.strict' for index, tool in enumerate(tools)
                                  if 'strict' not in tool)
+        from .request_headers import build, OmitHeaders
+        headers, omitted = build(self.store.data.get('requestHeaders'), p)
+        secrets = [p['key'], *headers.values()]
         request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
-        opener = urllib.request.build_opener(proxy_handler(p.get('proxy')), urllib.request.HTTPSHandler(context=tls_context(p.get('proxy'))), NoRedirect())
+        opener = urllib.request.build_opener(proxy_handler(p.get('proxy')), urllib.request.HTTPSHandler(context=tls_context(p.get('proxy'))), NoRedirect(), OmitHeaders(omitted))
         try:
             with compatible_open(opener, request, timeout=90, memory=self.compatibility,
                                  scope=(p['id'], base, model), automatic=automatic,
@@ -326,13 +325,13 @@ class Gateway:
                 yield from anthropic_events_to_openai(events) if p["api"] == "anthropic" else responses_events(events) if p.get('wireApi') == 'responses' else events if probe_override else normalize_openai_events(events)
         except urllib.error.HTTPError as exc:
             try:
-                raise ValueError(format_http_error(exc.code, exc.read(), exc.headers, [p['key']])) from None
+                raise ValueError(format_http_error(exc.code, exc.read(), exc.headers, secrets)) from None
             finally:
                 exc.close()
         except (urllib.error.URLError, TimeoutError) as exc:
             if isinstance(exc, TimeoutError) or isinstance(getattr(exc, 'reason', None), TimeoutError):
                 raise ValueError('供应商请求超时，请检查网络或超时设置') from None
-            raise ValueError('无法连接供应商：' + safe_text(str(exc), [p['key']])) from None
+            raise ValueError('无法连接供应商：' + safe_text(str(exc), secrets)) from None
 
     @staticmethod
     def to_anthropic_message(m):

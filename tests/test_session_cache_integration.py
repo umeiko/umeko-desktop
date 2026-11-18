@@ -18,6 +18,7 @@ from PySide6.QtTest import QSignalSpy
 from app.controller import Controller
 from app.pi_sessions import SessionState
 from app.storage import Store
+from tests.test_session_files import wait
 
 
 class ControllerCacheTests(unittest.TestCase):
@@ -93,14 +94,15 @@ class ControllerCacheTests(unittest.TestCase):
             c.openSession(cold.id)
             command.assert_not_called()
 
-    def test_delete_without_transcript_retires_kernel_and_preserves_unsaved_body(self):
+    def test_delete_without_transcript_retires_kernel_and_erases_unsaved_body(self):
         c = self.controller
         record = self.session('no-file', process=CachedKernel(c._pool))
         with patch.object(c._pool, 'retire', wraps=c._pool.retire) as retire:
             c.deleteSession(record.id)
             retire.assert_called_once_with(record)
+        wait(lambda: not c.sessionFiles.busy)
         self.assertIsNone(record.process)
-        self.assertEqual(record.messages[-1]['text'], 'Completed reply')
+        self.assertEqual(record.messages, [])
         self.assertIsNone(c._pool.find(record.id))
         self.assertFalse(any(row['id'] == record.id for row in c._sessions))
 
@@ -132,10 +134,9 @@ class ControllerCacheTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('fixture transcript', encoding='utf-8')
         record = self.session('saved', file=str(path), process=CachedKernel(c._pool))
-        with patch.object(c, '_job') as job:
-            c.deleteSession(record.id)
-            job.assert_called_once()
-            self.assertEqual(job.call_args.args[0], 'discard-chat-index')
+        c.deleteSession(record.id)
+        wait(lambda: not c.sessionFiles.busy)
+        self.assertFalse(c.sessionFiles.failure, c.sessionFiles.failure)
         self.assertIsNone(record.process)
         self.assertFalse(record.loaded)
         self.assertEqual(record.messages, [])

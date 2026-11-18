@@ -103,9 +103,7 @@ Rectangle {
     }
     component SessionSwitch: Switch {
         id:toggle
-        implicitWidth:40*root.sdk.scale;implicitHeight:28*root.sdk.scale;padding:0;spacing:0
-        indicator:Rectangle {width:34*root.sdk.scale;height:19*root.sdk.scale;x:3*root.sdk.scale;y:(toggle.height-height)/2;radius:height/2;color:toggle.checked ? root.sdk.colors.accent : root.sdk.colors.line
-            Rectangle {width:15*root.sdk.scale;height:15*root.sdk.scale;radius:height/2;x:toggle.checked ? parent.width-width-2*root.sdk.scale : 2*root.sdk.scale;y:2*root.sdk.scale;color:root.sdk.colors.surface;Behavior on x {NumberAnimation {duration:100}}}}
+        implicitWidth:48*root.sdk.scale;implicitHeight:28*root.sdk.scale;padding:0;spacing:0
         contentItem:Item {}
         HoverHandler {cursorShape:parent.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor}
     }

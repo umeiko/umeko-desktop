@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from app.chat_model import ChatModel
 from app.pi_sessions import PiSessionPool, SessionState
+from app import transcript_index
 from app.transcript_index import TranscriptRepository, WeightedLRU, FRAGMENT_CHARS, StaleIndex, Cancelled
 from app.transcripts import preview
 
@@ -108,6 +109,22 @@ class TranscriptIndexTests(unittest.TestCase):
         self.assertEqual(second.native_count, 3)
         self.assertEqual(second.question_count, 2)
         self.assertEqual(second.question(1), {'row':2,'title':'next question'})
+
+    def test_question_titles_load_once_per_revision(self):
+        self.write([self.message('u1',None,'user','first'), self.message('a1','u1','assistant','one'),
+                    self.message('u2','a1','user','second'), self.message('a2','u2','assistant','two')])
+        snapshot = self.repo.open(self.file)
+        with patch('app.transcript_index.connect', wraps=transcript_index.connect) as opened:
+            titles = [snapshot.question(i)['title'] for i in range(snapshot.question_count)]
+            positions = [snapshot.question_index(row) for row in range(snapshot.count)]
+        self.assertEqual(titles, ['first', 'second'])
+        self.assertEqual(positions, [0, 0, 1, 1])
+        self.assertEqual(opened.call_count, 1)
+        with self.file.open('a', encoding='utf-8') as stream:
+            stream.write(json.dumps(self.message('u3','a2','user','third')) + '\n')
+        newer = self.repo.open(self.file)
+        self.assertEqual(newer.question(2), {'row':4, 'title':'third'})
+        self.assertEqual(snapshot.question(1)['title'], 'second')
 
     def test_replaced_and_same_size_modified_files_never_reuse_old_rows(self):
         self.write([self.message('u',None,'user','first')])

@@ -26,6 +26,13 @@ class RequestDiagnostics(QObject):
         self.latest = {}
 
     @staticmethod
+    def _secrets(provider, record):
+        # Custom names can carry credentials as well as standard auth headers.
+        header_values = [value for call in record.get('http', [])
+                         for value in call.get('request', {}).get('headers', {}).values()]
+        return [provider.get('key', '')] + secret_values(record) + header_values
+
+    @staticmethod
     def _details(record):
         result = []
         for call in record.get('http', []):
@@ -49,6 +56,8 @@ class RequestDiagnostics(QObject):
                 else:
                     action = f'将 {name} 改为 auto' if detail['action'] == 'auto' else f'省略 {name}'
                     lines.append(f'已按此前的拒绝记录{action}（{days} 天前记录）')
+            if not lines:
+                lines.append('Request succeeded after retry' if language == 'en' else '请求已重试成功')
             return {'compatibilityNotice': '；'.join(lines), 'compatibilityReportId': record['id']}
 
     def _persist(self, record):
@@ -58,7 +67,8 @@ class RequestDiagnostics(QObject):
             path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
             path.chmod(0o600)
             details = self._details(record)
-            if details and record.get('providerId'):
+            retried = 'error' not in record and any(call.get('parameterRetry') for call in record.get('http', []))
+            if (details or retried) and record.get('providerId'):
                 self.latest[record['providerId']] = {'id': record['id'], 'details': details}
             elif record.get('providerId'):
                 self.latest.pop(record['providerId'], None)
@@ -71,7 +81,7 @@ class RequestDiagnostics(QObject):
 
     def compatibility(self, provider, request, http):
         """Keep a successful cached adjustment accessible through request details."""
-        if not self._details({'http': http}):
+        if not (self._details({'http': http}) or any(call.get('parameterRetry') for call in http)):
             with self.lock:
                 cleared = self.latest.pop(provider.get('id', ''), None)
             if cleared:
@@ -80,7 +90,7 @@ class RequestDiagnostics(QObject):
         record = {'id': str(uuid.uuid4()), 'at': datetime.now(timezone.utc).isoformat(),
                   'providerId': provider.get('id', ''), 'provider': provider.get('name', ''),
                   'request': request, 'response': http[-1].get('response', {}) if http else {}, 'http': http}
-        record = redact(record, [provider.get('key', '')] + secret_values(record))
+        record = redact(record, self._secrets(provider, record))
         self._persist(record)
         return record['id']
 
@@ -88,7 +98,8 @@ class RequestDiagnostics(QObject):
         record = {'id': str(uuid.uuid4()), 'at': datetime.now(timezone.utc).isoformat(),
                   'providerId': provider.get('id', ''), 'provider': provider.get('name', ''), 'request': request,
                   'response': response, 'error': describe_failure(error), 'http': http or []}
-        record = redact(record, [provider.get('key', '')] + secret_values(record))
+        secrets = self._secrets(provider, record)
+        record = redact(record, secrets)
         failed_response = record['http'][-1].get('response', record['response']) if record['http'] else record['response']
         status = failed_response.get('status')
         code = certificate_failure(error)
@@ -102,7 +113,7 @@ class RequestDiagnostics(QObject):
             message = '供应商请求超时，请检查网络或超时设置'
         else:
             message = '供应商请求失败：' + safe_text(str(error), [provider.get('key', '')])
-        record['summary'] = safe_text(message, [provider.get('key', '')])
+        record['summary'] = safe_text(message, secrets)
         self._persist(record)
         managed = bool(record['http'] and record['http'][-1].get('httpRetryManaged'))
         failure = RequestFailure(f'{record["summary"]} [Umeko:{record["id"]}]',

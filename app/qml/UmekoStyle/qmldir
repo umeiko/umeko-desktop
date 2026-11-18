@@ -1,0 +1,7 @@
+module UmekoStyle
+Switch 2.15 Switch.qml
+CheckBox 2.15 CheckBox.qml
+RadioButton 2.15 RadioButton.qml
+singleton SurfaceStyle 2.15 SurfaceStyle.qml
+SelectionIndicator 2.15 SelectionIndicator.qml
+import QtQuick.Controls.Basic auto

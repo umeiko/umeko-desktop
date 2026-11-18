@@ -1,27 +1,29 @@
 """Official application-lifetime Widget: activity companion and local reminders.
 
-No model calls, token listeners or transcript scans. Only the current animation
-is decoded by QML; hiding the window unloads its decoder.
+Animation sampling never scans transcripts or invokes a model. Long-task briefs
+use the separately bounded, application-owned global assistant.
 """
 from __future__ import annotations
 
 import copy
 import json
 import random
+import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QPoint, Property, QTimer, QUrl, Qt, Signal, Slot
+from PySide6.QtCore import QObject, QPoint, Property, QTimer, QUrl, Qt, Signal, Slot, QTextBoundaryFinder
 
+from .pet_input import PetInputMask
 from .pet_packs import BUILTIN_APPEARANCES, STATES, import_pack, read_pack
 from .pet_reminders import PetReminders
 
 ID = 'desktop-pet'
 DEFAULTS = {'visible': False, 'appearance': 'yanami', 'size': 192, 'alwaysOnTop': True,
             'paused': False, 'sampleIntervalMs': 1500, 'minimumStateMs': 3000,
-            'reminderNotificationsEnabled': True}
+            'reminderNotificationsEnabled': True, 'personas': {}}
 
 
 class PetMotion:
@@ -55,8 +57,10 @@ class PetMotion:
 class DesktopPet(QObject):
     changed = Signal()
     reaction = Signal(str)
+    assistantSpeech = Signal(str)
     restoreRequested = Signal()
     settingsRequested = Signal()
+    remindersRequested = Signal()
     resetPositionRequested = Signal()
     imported = Signal(str, object)
     reminderCardChanged = Signal()
@@ -65,6 +69,7 @@ class DesktopPet(QObject):
     def __init__(self, manager):
         super().__init__(manager)
         self.manager = manager
+        self.assistant = None
         self.b = manager.b
         self.motion = PetMotion()
         self.running = False
@@ -80,13 +85,15 @@ class DesktopPet(QObject):
         self._last_interaction = -10.0
         self._last_interaction_kind = ''
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='pet-import')
+        self._input_mask = PetInputMask(self)
         self._future = None
         self.directory = manager.root / 'state' / ID
         self._reminder_card = []
         self._reminder_selection = {'id': '', 'create': False, 'serial': 0}
         self.reminders = PetReminders(self.directory, self,
                                       visible=lambda: self.visible,
-                                      notifications=lambda: self._config['reminderNotificationsEnabled'])
+                                      notifications=lambda: self._config['reminderNotificationsEnabled'],
+                                      assistant=lambda: self.manager.global_agents.pet_assistant_id)
         self.reminders.changed.connect(self._reminders_changed)
         self.reminders.due.connect(self._present_reminders)
         self.pack_directory = self.directory / 'appearances'
@@ -106,6 +113,7 @@ class DesktopPet(QObject):
             application.applicationStateChanged.connect(self._application_state_changed)
 
     def load_packs(self):
+        self._input_mask.clear()
         assets = self.b.root / 'umeko-plugins' / ID / 'assets'
         self._packs = {}
         for path, builtin_flag in [*((assets / name, True) for name in BUILTIN_APPEARANCES), *((p, False) for p in self.pack_directory.glob('*') if p.is_dir() and not p.name.startswith('.'))]:
@@ -124,6 +132,30 @@ class DesktopPet(QObject):
     @Property(bool, notify=changed)
     def visible(self):
         return self.running and self._config['visible'] and not self.closed
+
+    @Property(QObject, constant=True)
+    def inputMask(self):
+        return self._input_mask
+
+    @Property('QVariantMap', notify=changed)
+    def assistantStatus(self):
+        return self.assistant.status() if self.assistant else {}
+
+    @Slot(str, str, result='QVariantMap')
+    def sendTask(self, text, identifier):
+        if not self.assistant:
+            return {'ok': False, 'status': 'unavailable', 'error': '桌宠未绑定全局子智能体'}
+        return self.assistant.submit(text, identifier)
+
+    @Slot(str, result=int)
+    def speechDuration(self, text):
+        finder=QTextBoundaryFinder(QTextBoundaryFinder.Grapheme,text);graphemes=0
+        while finder.toNextBoundary()!=-1:graphemes+=1
+        latin=len(re.findall(r'[A-Za-z0-9]',text));words=len(re.findall(r'[A-Za-z0-9]+',text))
+        spaces=sum(char.isspace() for char in text)
+        minor=sum(char in ',，;；' for char in text);major=sum(char in '.!?。！？' for char in text)
+        other=max(0,graphemes-latin-spaces-minor-major)
+        return max(1800,min(14000,1000+latin*18+words*160+other*140+minor*180+major*300))
 
     @Property('QVariantList', notify=changed)
     def appearances(self):
@@ -152,6 +184,7 @@ class DesktopPet(QObject):
         self.timer.start(self._config['sampleIntervalMs'])
         self.sample()
         self.changed.emit()
+        if self.assistant: self.assistant.reconcile()
 
     def stop(self):
         self.running = False
@@ -161,11 +194,14 @@ class DesktopPet(QObject):
         self.dismissReminders()
         self.timer.stop()
         self.changed.emit()
+        if self.assistant: self.assistant.reconcile()
 
     def close(self):
         self.closed = True
         self.stop()
+        if self.assistant: self.assistant.close()
         self.reminders.close()
+        self._input_mask.close()
         self._executor.shutdown(wait=False, cancel_futures=True)
 
     def configure(self, patch, persist=True):
@@ -180,6 +216,10 @@ class DesktopPet(QObject):
                 raise ValueError(f'{name} 必须是 {low}–{high} 的整数')
         if not isinstance(value['appearance'], str) or value['appearance'] not in self._packs:
             raise ValueError('形象不存在，请先导入并通过 appearances 查询可用 id')
+        if (not isinstance(value['personas'], dict) or len(value['personas']) > 128
+                or any(not isinstance(k, str) or len(k) > 48 or not isinstance(v, str) or len(v) > 1000
+                       for k, v in value['personas'].items())):
+            raise ValueError('人物设定最多 1000 字符，每个形象单独保存')
         if persist:
             old = copy.deepcopy(self.manager.settings)
             self.manager.settings.setdefault('config', {})[ID] = value
@@ -193,9 +233,11 @@ class DesktopPet(QObject):
         self._config = value
         if not self.visible or not value['reminderNotificationsEnabled']:
             self.dismissReminders()
+        self._reminders_changed()
         self.timer.setInterval(value['sampleIntervalMs'])
         self.changed.emit()
         self.manager.changed.emit()
+        if self.assistant: self.assistant.reconcile()
         return self.status()
 
     def sample(self):
@@ -244,6 +286,8 @@ class DesktopPet(QObject):
 
     def status(self):
         return {'config': self.config, 'state': self.state, 'appearances': self.appearances, 'visible': self.visible,
+                'persona': self._config['personas'].get(self._config['appearance'], self._packs.get(self._config['appearance'], {}).get('persona', '')),
+                'assistant': self.assistant.status() if self.assistant else {},
                 'reminders': self.reminders.summary(), 'reminderSelection': self.reminderSelection,
                 **self.reminders.time_info()}
 
@@ -263,15 +307,9 @@ class DesktopPet(QObject):
         return dict(self._reminder_selection)
 
     def _reminders_changed(self):
-        try:
-            current = {item['id']: item for item in self.reminders.handle('listItems', {})['items']}
-        except (ValueError, OSError):
-            current = {}
-        card = [current[item['id']] for item in self._reminder_card
-                if item['id'] in current and current[item['id']]['revision'] == item['revision']]
+        card=self.reminders.unread_alerts() if self.visible and self._config['reminderNotificationsEnabled'] else []
         if card != self._reminder_card:
-            self._reminder_card = card
-            self.reminderCardChanged.emit()
+            self._reminder_card=card;self.reminderCardChanged.emit()
         self.changed.emit()
 
     def _present_reminders(self, items):
@@ -289,10 +327,11 @@ class DesktopPet(QObject):
 
     @Slot(str, bool)
     def openReminders(self, identifier, create):
+        if not create:self.reminders.mark_viewed(identifier)
         self._reminder_selection = {'id': identifier, 'create': create,
                                     'serial': self._reminder_selection['serial'] + 1}
         self.changed.emit()
-        self.settingsRequested.emit()
+        self.remindersRequested.emit()
 
     @Slot()
     def dismissReminders(self):
@@ -357,6 +396,8 @@ class DesktopPet(QObject):
             return {'ok': False, 'error': str(error)}
 
     def handle(self, method, args):
+        if method=='resolveReminderTime':return self.reminders.resolve_local_time(args)
+        if method=='clearCompleted':return self.reminders.handle(method,args)
         specification=self.manager.entries[ID].get('agent',{}).get('methods',{}).get(method)
         if not specification or not isinstance(args,dict):
             raise ValueError('未知的桌宠方法或无效参数，请读取 widgets.docs')
@@ -373,6 +414,14 @@ class DesktopPet(QObject):
             return self.status() if method == 'status' else {'appearances': self.appearances}
         if method == 'configure':
             return self.configure(args)
+        if method == 'setPersona':
+            identifier = args.get('id')
+            if identifier not in self._packs: raise ValueError('形象不存在')
+            if 'reset' in args and type(args['reset']) is not bool: raise ValueError('reset 必须是布尔值')
+            personas = dict(self._config['personas'])
+            if args.get('reset'): personas.pop(identifier, None)
+            else: personas[identifier] = args.get('persona', '').strip()
+            return self.configure({'personas': personas})
         if method == 'show':
             return self.configure({'visible': True})
         if method == 'hide':
@@ -388,8 +437,11 @@ class DesktopPet(QObject):
             identifier = args.get('id')
             if self.importing or identifier not in self._packs or self._packs[identifier]['builtin']:
                 raise ValueError('不能删除内置形象，或形象正在导入')
-            if self._config['appearance'] == identifier:
-                self.configure({'appearance': 'yanami'})
+            patch = {}
+            if identifier in self._config['personas']:
+                patch['personas'] = {k:v for k,v in self._config['personas'].items() if k != identifier}
+            if self._config['appearance'] == identifier: patch['appearance'] = 'yanami'
+            if patch: self.configure(patch)
             import shutil
             shutil.rmtree(self._packs[identifier]['directory'])
             self.load_packs()
@@ -429,6 +481,14 @@ class DesktopPet(QObject):
             self.last_error = '' if result['ok'] else result['error']
             self.load_packs()
             self.changed.emit()
+
+    @Slot(result='QVariantMap')
+    def cursorPosition(self):
+        # Use screen coordinates: native popup forwarding can remap local
+        # mouse events while the pet itself is moving.
+        from PySide6.QtGui import QCursor
+        point = QCursor.pos()
+        return {'x': point.x(), 'y': point.y()}
 
     @Slot(int, int)
     def savePosition(self, x, y):
