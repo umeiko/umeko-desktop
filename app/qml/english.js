@@ -1,5 +1,6 @@
 .pragma library
 var strings = {
+    "本轮结束后使用": "Applies after this turn",
     "已按此前的拒绝记录将 {parameter} 改为 auto（{age}）": "Changed {parameter} to auto based on a rejection {age}",
     "已按此前的拒绝记录省略 {parameter}（{age}）": "Omitted {parameter} based on a rejection {age}",
     "今天记录": "recorded today",
