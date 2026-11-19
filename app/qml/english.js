@@ -1,5 +1,11 @@
 .pragma library
 var strings = {
+    "本轮结束后使用": "Applies after this turn",
+    "已按此前的拒绝记录将 {parameter} 改为 auto（{age}）": "Changed {parameter} to auto based on a rejection {age}",
+    "已按此前的拒绝记录省略 {parameter}（{age}）": "Omitted {parameter} based on a rejection {age}",
+    "今天记录": "recorded today",
+    "1 天前记录": "recorded 1 day ago",
+    "{days} 天前记录": "recorded {days} days ago",
     "可用工具":"Available tools",
     "为当前子智能体启用 Pi 原生工具。沿用现有工具权限设置。":"Enable native Pi tools for this agent. Existing tool permissions apply.",
     "读取文件和图片":"Read files and images",
@@ -407,6 +413,10 @@ var strings = {
   "人，同一家供应商。可以放多个账号。别名，别忘。": "Human, same provider. Several accounts allowed. Aliases, remember.",
   "人，想换条路。点“分支”。旧记录，留着。": "Human, try another way. Click Branch. Old records stay.",
 "正在停止": "Stopping",
+"正在停止（已请求）": "Stopping · requested",
+"正在清理进程": "Cleaning up processes",
+"停止清理失败": "Stop cleanup failed",
+"停止清理超时": "Stop cleanup timed out",
 "未读": "Unread",
 "失败": "Failed",
   "提醒与待办": "Reminders and to-dos",

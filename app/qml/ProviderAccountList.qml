@@ -42,6 +42,26 @@ ColumnLayout {
                     }
                 }
             }
+            Button {
+                objectName: "providerCompatibility_" + modelData.id
+                visible: !!modelData.compatibilityNotice
+                enabled: !!modelData.compatibilityReportId
+                Layout.fillWidth: true
+                implicitHeight: compatibilityLabel.implicitHeight + 4
+                padding: 0; hoverEnabled: true
+                text: I18n.t(modelData.compatibilityNotice || "")
+                background: null
+                contentItem: Text {
+                    id: compatibilityLabel
+                    text: parent.text; textFormat: Text.PlainText
+                    color: parent.hovered ? Theme.accent : Theme.muted
+                    font.family: Theme.fontFamily; font.pixelSize: Theme.font(10, visible)
+                    elide: Text.ElideRight
+                }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                HoverTip { active: parent.hovered; text: parent.text }
+                onClicked: backend.showRequestDetails(modelData.compatibilityReportId)
+            }
         }
     }
 }

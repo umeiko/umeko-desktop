@@ -76,9 +76,9 @@ Column {
             HelpButton { help: I18n.t("鼠标移到聊天区域两侧时显示展开或收起提示。关闭后保留当前布局。"); Layout.alignment: Qt.AlignVCenter }
             Toggle {
                 objectName: "desktopChatWidthHints"
-                checked: backend.config.desktop.chatWidthHints
+                checked: backend.desktopSettings.chatWidthHints
                 Accessible.name: I18n.t("聊天区域左右展开提示")
-                onClicked: { const value = checked; checked = Qt.binding(function() { return backend.config.desktop.chatWidthHints }); backend.saveDesktopSettings(JSON.stringify({chatWidthHints:value})) }
+                onClicked: { const value = checked; checked = Qt.binding(function() { return backend.desktopSettings.chatWidthHints }); backend.saveDesktopSettings(JSON.stringify({chatWidthHints:value})) }
             }
         }
     }
@@ -93,9 +93,9 @@ Column {
                 HelpButton { help: I18n.t("模型提交网页或文档后自动打开预览。关闭后，内容仍会显示在聊天中，点击时再打开。"); Layout.alignment: Qt.AlignVCenter }
                 Toggle {
                     objectName: "desktopAutoOpenSubmissions"
-                    checked: backend.config.desktop.autoOpenSubmissions
+                    checked: backend.desktopSettings.autoOpenSubmissions
                     Accessible.name: I18n.t("提交后自动打开预览")
-                    onClicked: { const value = checked; checked = Qt.binding(function() { return backend.config.desktop.autoOpenSubmissions }); backend.saveDesktopSettings(JSON.stringify({autoOpenSubmissions:value})) }
+                    onClicked: { const value = checked; checked = Qt.binding(function() { return backend.desktopSettings.autoOpenSubmissions }); backend.saveDesktopSettings(JSON.stringify({autoOpenSubmissions:value})) }
                 }
             }
             ColumnLayout {
@@ -110,10 +110,10 @@ Column {
                     objectName: "desktopWebDisplay"
                     Layout.fillWidth: true
                     model: [I18n.t("内置网页预览"), I18n.t("系统默认浏览器")]
-                    function syncSelection() { currentIndex = backend.config.desktop.webDisplay === "external" ? 1 : 0 }
+                    function syncSelection() { currentIndex = backend.desktopSettings.webDisplay === "external" ? 1 : 0 }
                     onModelChanged: Qt.callLater(syncSelection)
                     Component.onCompleted: syncSelection()
-                    Connections { target: backend; function onChanged() { browserChoice.syncSelection() } }
+                    Connections { target: backend; function onDesktopSettingsChanged() { browserChoice.syncSelection() } }
                     font.family: Theme.fontFamily; font.pixelSize: Theme.font(13)
                     palette.text: Theme.ink; palette.buttonText: Theme.ink; palette.base: Theme.surface
                     palette.window: Theme.surface; palette.highlight: Theme.accentBg; palette.highlightedText: Theme.ink

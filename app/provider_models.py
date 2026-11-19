@@ -5,9 +5,10 @@ import urllib.request
 
 from .gateway import NoRedirect, validate_base_url
 from .model_context import provider_context_window
-from .provider_errors import format_http_error
+from .provider_errors import format_http_error, safe_text
 from .reasoning_detection import metadata_levels
-from umeko_provider_sdk.network import proxy_handler, tls_context
+from umeko_provider_sdk.compatibility import compatible_open, raise_api_error
+from umeko_provider_sdk.network import proxy_handler, tls_context, trace
 
 
 class ModelWindows(dict):
@@ -26,17 +27,23 @@ def fetch_model_windows(provider, request_headers=None):
     from .request_headers import build, OmitHeaders
     headers, omitted = build(request_headers, provider)
     headers.setdefault('Accept', 'application/json')
+    secrets = [provider['key'], *headers.values()]
     opener = urllib.request.build_opener(proxy_handler(provider.get("proxy")),
                                         urllib.request.HTTPSHandler(context=tls_context(provider.get("proxy"))), NoRedirect(), OmitHeaders(omitted))
     windows = ModelWindows()
     # Anthropic and compatible services may paginate their model catalog.
     for _ in range(100):
         try:
-            with opener.open(urllib.request.Request(url, headers=headers), timeout=15) as response:
+            with compatible_open(opener, urllib.request.Request(url, headers=headers),
+                                 timeout=15, records=trace.get()) as response:
                 payload = json.load(response)
+                try:
+                    raise_api_error(payload)
+                except ValueError as exc:
+                    raise ValueError(safe_text(str(exc), secrets)) from None
         except urllib.error.HTTPError as exc:
             try:
-                message = format_http_error(exc.code, exc.read(), exc.headers, list(headers.values()))
+                message = format_http_error(exc.code, exc.read(), exc.headers, secrets)
             finally:
                 exc.close()
             raise ValueError(message) from None

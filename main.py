@@ -3,6 +3,10 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+if __name__ == '__main__' and sys.argv[1:2] == ['--umeko-bash-job']:
+    from app.bash_job_windows import main as bash_job_main
+    os._exit(bash_job_main())
+
 if __name__ == '__main__' and '--update-process-helper' in sys.argv:
     from app.update_windows import main as update_process_main
     sys.exit(update_process_main(sys.argv[sys.argv.index('--update-process-helper') + 1:]))

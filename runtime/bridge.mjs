@@ -1,11 +1,12 @@
 import { excludedSessionTools, toolSelection, collectToolCatalog } from "./session-capabilities.mjs";
-// JSONL presentation adapter for the complete, unmodified Pi Coding Agent SDK.
+// JSONL presentation adapter for the Pi Coding Agent SDK.
 // Tools, loop, skill expansion, extension hooks and session trees belong to Pi.
 import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-policy.mjs";
 import { prepareNativeSettings, sessionResourceSettings, sessionExtensionPaths, manageResources, builtins, extensionName, SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
 import { sessionSkillOptions, manageSkills } from "./skills.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
+import { bindHttpRetryBoundary } from "./http-retry-boundary.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
 import { UMEKO_TOOL, SEND_TO_USER, REMINDER, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension, coordinatorNativeTools } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
@@ -21,6 +22,7 @@ import { createGenerationExtension } from "./generation.mjs";
 import { createSystemPromptController } from "./system-prompt.mjs";
 import { createCoordinatorSkills } from "./coordinator-skills.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
 import { join, resolve, dirname, basename, delimiter } from "node:path";
@@ -47,12 +49,92 @@ const { allToolNames, createAllToolDefinitions } = await import(new URL("./core/
 const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, "background_job"];
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
+const bashHost = process.env.UMEKO_BASH_JOB_HOST;
+const bashHostScript = process.env.UMEKO_BASH_JOB_SCRIPT;
+const bashJobs = new Set();
+const blockedSessions = new WeakSet();
+let stopWork, currentRun;
+const bashCleanupDeadlineMs = 1_500;
+const stopDeadlineMs = 2_400;
+
+function runOwnedBash({shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env, toolCallId}) {
+  const session = runtime?.session;
+  const sessionId = env.PI_SESSION_ID || session?.sessionManager.getSessionId();
+  if (signal?.aborted || (session && blockedSessions.has(session) && sessionId === session.sessionManager.getSessionId()))
+    throw new Error("aborted");
+  if (!bashHost) throw new Error("Windows Bash process host is unavailable");
+  const child = spawn(bashHost, [...(bashHostScript ? [bashHostScript] : []), "--umeko-bash-job"], {
+    cwd, env: {...env, PYINSTALLER_RESET_ENVIRONMENT: "1"}, stdio: ["pipe", "pipe", "ignore"], windowsHide: true,
+  });
+  const lines = createInterface({input: child.stdout});
+  const owner = sessionId === session?.sessionManager.getSessionId() ? currentRun : undefined;
+  const job = {sessionId, runId: owner?.id, toolCallId, pid: null, ppid: null, stop};
+  let reason, timeoutTimer, cleanupTimer, settled = false, complete;
+  job.result = new Promise(resolve => { complete = resolve; });
+  bashJobs.add(job);
+
+  function finish(result) {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeoutTimer);
+    clearTimeout(cleanupTimer);
+    signal?.removeEventListener("abort", onAbort);
+    child.stdin.end();
+    lines.close();
+    child.stdout.destroy();
+    bashJobs.delete(job);
+    const {sessionId, runId, toolCallId, pid, ppid} = job;
+    emit({type:"bash_cleanup",sessionId,runId,toolCallId,pid,ppid,reason:reason || "exit",
+      state:result.cleanup,remaining:result.remaining});
+    if (owner && result.cleanup !== "done") owner.cleanupFailures.push(result);
+    complete(result);
+  }
+
+  function stop(cause) {
+    if (settled || reason) return;
+    reason = cause;
+    child.stdin.end("stop\n");
+    cleanupTimer = setTimeout(() => {
+      // The host's last job handle closes even if its protocol is stuck.
+      child.kill();
+      finish({cleanup:"timed_out",remaining:null});
+    }, bashCleanupDeadlineMs);
+  }
+
+  const onAbort = () => stop("aborted");
+  child.stdin.on("error", () => {});
+  child.once("error", () => finish({cleanup:"failed",remaining:null}));
+  child.once("close", () => finish({cleanup:"failed",remaining:null}));
+  lines.on("line", line => {
+    let result;
+    try { result = JSON.parse(line); } catch { return; }
+    if (Number.isInteger(result.pid)) { job.pid = result.pid; job.ppid = result.ppid; }
+    if (typeof result.output === "string" && !reason) onData(Buffer.from(result.output, "base64"));
+    if (result.cleanup) finish(result);
+  });
+  child.stdin.write(JSON.stringify({args:[shellConfig.shell,...shellConfig.args,command],cwd}) + "\n");
+  if (timeoutMs !== undefined) timeoutTimer = setTimeout(() => stop("timeout"), timeoutMs);
+  signal?.addEventListener("abort", onAbort, {once:true});
+  if (signal?.aborted) onAbort();
+  return job.result.then(result => {
+    if (result.cleanup !== "done") {
+      const remaining = result.remaining?.join(", ") || "unconfirmed";
+      throw new Error(`Bash ${reason || "exit"}: process cleanup ${result.cleanup} (PIDs: ${remaining})`);
+    }
+    if (reason === "aborted") throw new Error("aborted");
+    if (reason === "timeout") throw new Error(`timeout:${timeout}`);
+    if (Object.hasOwn(result, "error")) throw new Error(`Unable to start Windows Bash (${result.error ?? "unknown error"})`);
+    return {exitCode:result.exitCode};
+  });
+}
+
+if (process.platform === "win32") globalThis[Symbol.for("umeko:bash-job")] = runOwnedBash;
 const umekoControl = createUmekoControl({ emit, getPetAssistantBinding: () => config?.petAssistantBinding || '', getPetReminderBinding: () => config?.petReminderBinding || '' });
 const auxiliaryVision = createAuxiliaryVision({getConfig:() => config, emit:event => {
   if (event.sessionId && event.sessionId !== runtime?.session.sessionManager.getSessionId()) return subagents.automaticTool(event.sessionId,event);
   emit(event);
 }});
-const subagents = createSubagentExtension({ emit, restoreSession: restoreSubagentSession });
+const subagents = createSubagentExtension({ emit, restoreSession: restoreSubagentSession, getParentRun: () => currentRun });
 const textOf = content => typeof content === "string" ? content : (content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
 const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
 const compactionText = data => `已压缩：${data.before} → ${data.after} tokens`;
@@ -138,6 +220,14 @@ globalThis[Symbol.for("umeko:skill-policy-host")] = { enabled: () => config?.ski
 
 async function bindSession(session) {
   unsubscribe?.();
+  const originalSendCustomMessage = session.sendCustomMessage;
+  session.sendCustomMessage = (...args) => blockedSessions.has(session) ? Promise.resolve() : originalSendCustomMessage.apply(session,args);
+  const originalBeforeToolCall = session.agent.beforeToolCall;
+  session.agent.beforeToolCall = async (...args) => {
+    if (blockedSessions.has(session)) return {block:true,reason:"This run was stopped"};
+    const result = await originalBeforeToolCall?.apply(session.agent,args);
+    return blockedSessions.has(session) ? {block:true,reason:"This run was stopped"} : result;
+  };
   let activeCompaction;
   const publishCompaction = data => {
     const entryId = session.sessionManager.appendCustomEntry("umeko-compaction", data);
@@ -174,15 +264,23 @@ async function bindSession(session) {
   };
   const originalPayload = session.agent.onPayload;
   const configurePayload = async (payload, model) => {
+    const optional = ['stream', 'tool_choice', 'parallel_tool_calls', 'response_format', 'stream_options',
+      'temperature', 'top_p', 'seed', 'n', 'user'];
+    const generated = new Map(optional.filter(name => Object.hasOwn(payload, name))
+      .map(name => [name, JSON.stringify(payload[name])]));
     const result = await originalPayload?.(payload, model) ?? payload;
     const configured = { ...result };
+    configured._umeko_auto_parameters = [...generated]
+      .filter(([name, value]) => JSON.stringify(result[name]) === value).map(([name]) => name);
     configured._umeko_reasoning_effort = reasoningEffort;
     delete configured.reasoning_effort;
     if (reasoningEffort !== "off") configured.reasoning_effort = reasoningEffort;
     return configured;
   };
   session.agent.onPayload = configurePayload;
+  const httpRetryBoundary = bindHttpRetryBoundary(session);
   const unbind = session.subscribe(event => {
+    httpRetryBoundary.observe(event);
     if (event.type === "message_end" && ["user", "assistant"].includes(event.message.role)) {
       // Pi persists after notifying listeners. Read the new leaf in the next
       // microtask, after that append, without rebuilding its complete branch.
@@ -220,13 +318,14 @@ async function bindSession(session) {
     }
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") emit({ type: "delta", text: event.assistantMessageEvent.delta });
     if (event.type === "message_update" && event.assistantMessageEvent.type === "thinking_delta") emit({ type: "thinking_delta", text: event.assistantMessageEvent.delta });
-    if (event.type.startsWith("tool_execution_") && event.toolName !== "subagent") emit({ type: "tool", name: event.toolName, id: event.toolCallId,
+    if (event.type.startsWith("tool_execution_") && event.toolName !== "subagent" &&
+        !(event.type === "tool_execution_start" && blockedSessions.has(session))) emit({ type: "tool", name: event.toolName, id: event.toolCallId,
       args: event.toolName === ANALYZE_IMAGE ? {...event.args,model:auxiliaryVision.label(),provider:auxiliaryVision.provider()} : event.args, result: event.type === "tool_execution_end" ? textOf(event.result?.content).slice(0,8192) : undefined,
       media: event.type === "tool_execution_end" ? chatboxItems(event.toolName, {...event.result, isError: event.isError}) : undefined,
       video: event.toolName === "video_gen" ? event.partialResult?.details?.video : undefined,
       taskStep: trackingTask && event.type === "tool_execution_update" ? false : undefined,
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
-    const willRetry = event.type === "message_end" && session.retryAttempt < NETWORK_RETRY.maxRetries &&
+    const willRetry = event.type === "message_end" && session.autoRetryEnabled && session.retryAttempt < NETWORK_RETRY.maxRetries &&
       isRetryableAssistantError(event.message) && !isContextOverflow(event.message, session.model?.contextWindow || 128000);
     if (event.type === "message_end" && !willRetry) emit({ type: "message", role: event.message.role,
       text: textOf(event.message.content), thinking: thinkingOf(event.message.content), stopReason: event.message.stopReason || "", error: event.message.stopReason === "aborted" ? "" : event.message.errorMessage || "", timestamp:event.message.timestamp });
@@ -245,8 +344,11 @@ async function bindSession(session) {
     if (["entry_appended", "message_end", "compaction_end", "agent_end"].includes(event.type)) publishContext();
   });
   unsubscribe = () => {
+    session.sendCustomMessage = originalSendCustomMessage;
+    session.agent.beforeToolCall = originalBeforeToolCall;
     compactionFailures.delete(session);
     clearTimeout(retryTimer);
+    httpRetryBoundary.close();
     unbind();
     if (session.agent.onPayload === configurePayload) session.agent.onPayload = originalPayload;
   };
@@ -591,6 +693,14 @@ async function capabilities() {
 
 async function promptWithInterrupts(first) {
   await inputQueue.run(first,async next=>{
+    if (next.model && runtime.session.model?.id !== next.model) {
+      selectedModel = modelRuntime.getModel("umeko", next.model);
+      if (!selectedModel) throw new Error("模型未配置");
+      await runtime.session.setModel(selectedModel);
+      exposeNativeTools(runtime.session);
+    }
+    if (validEffort(next.reasoningEffort)) reasoningEffort = next.reasoningEffort;
+    emit({type:"active_model",model:runtime.session.model.id});
     const generation = commandCancellation;
     await runtime.session.prompt(next.text, { images: next.images || [] });
     for (let continuation = 0; continuation < 4 && !closing && generation === commandCancellation && !inputQueue.hasInterrupts; continuation++) {
@@ -606,11 +716,55 @@ async function promptWithInterrupts(first) {
 }
 
 function adoptAgentRun(session) {
-  if (executing || closing || runtime?.session !== session) return;
+  if (executing || closing || runtime?.session !== session || blockedSessions.has(session)) return;
   void execute({ type: "agent-run" });
 }
 
+function stopRun() {
+  if (stopWork) return stopWork;
+  const session = runtime?.session;
+  if (session) blockedSessions.add(session);
+  if (currentRun) currentRun.cancelled = true;
+  commandCancellation++;
+  piCommands.clear();
+  clearDialogs();
+  loopReview.clear();
+  umekoControl.clear();
+  if (session) inputQueue.cancel();
+  const sessionId = session?.sessionManager.getSessionId();
+  const jobs = [...bashJobs].filter(job => job.sessionId === sessionId && job.runId === currentRun?.id);
+  const priorFailures = currentRun?.cleanupFailures.slice() || [];
+  for (const job of jobs) job.stop("aborted");
+  emit({type:"stop_state",state:"cleaning"});
+
+  let timer;
+  const aborted = Promise.resolve().then(() => session?.abort()).then(() => true, () => false);
+  const outcomes = Promise.all([aborted, ...jobs.map(job => job.result)]);
+  const deadline = new Promise(resolve => { timer = setTimeout(() => resolve(null),stopDeadlineMs); });
+  stopWork = Promise.race([outcomes,deadline]).then(result => {
+    clearTimeout(timer);
+    const [idle, ...completed] = result || [];
+    const cleanups = [...priorFailures, ...completed];
+    const state = !result || cleanups.some(item => item.cleanup === "timed_out") ? "timed_out"
+      : !idle || cleanups.some(item => item.cleanup !== "done") ? "failed" : "done";
+    const unconfirmed = !result || cleanups.some(item => item.remaining === null);
+    const remaining = cleanups.flatMap(item => item.remaining || []);
+    const payload = {type:"stop_state",state,remaining,unconfirmed};
+    if (!idle) {
+      // Keep the cancelled session sealed. A fresh bridge can resume the saved
+      // transcript when the user submits a new prompt.
+      process.stdout.write(JSON.stringify(payload) + "\n", () => process.exit(2));
+    } else emit(payload);
+  });
+  return stopWork;
+}
+
 async function execute(input) {
+  if (input.type === "widget-notify" && (stopWork || (runtime?.session && blockedSessions.has(runtime.session)))) {
+    emit({type:"widget_delivery",id:input.notification?.id,status:"cancelled",error:"This run was stopped"});
+    if (!executing && input.notification?.wake !== false) emit({type:"done",action:input.type});
+    return;
+  }
   if (input.type === "widget_catalog") {
     // A read-only side channel, including during a streaming turn. Never run
     // state(), reload(), prompt() or emit done for a management-page read.
@@ -647,6 +801,10 @@ async function execute(input) {
     return;
   }
   if (["follow-up", "steer", "promote-queue", "edit-queue", "delete-queue", "steer-queued"].includes(input.type)) {
+    if (stopWork || (runtime?.session && blockedSessions.has(runtime.session))) {
+      emit({type:"queue_rejected",text:input.text || "",message:"当前任务已停止，请重新发送这条消息"});
+      return;
+    }
     void inputQueue.submit(input).catch(error=>emit({type:"queue_rejected",text:input.text || "",message:error.message}));
     return;
   }
@@ -676,21 +834,21 @@ async function execute(input) {
     return;
   }
   if (input.type === "abort") {
-    commandCancellation++;
-    piCommands.clear();
-    clearDialogs();
-    if (runtime) inputQueue.cancel();
-    await runtime?.session.abort(); return;
+    await stopRun();
+    if (!executing) stopWork = undefined;
+    return;
   }
   if (input.type === "shutdown") { await shutdown(); return; }
   if (executing && input.type === "prompt" && adoptedRun) {
     // The desktop sent this before it saw agent_run; queue it like Enter does.
-    void inputQueue.submit({ type: "follow-up", text: input.text, images: input.images, messageId: input.messageId })
+    void inputQueue.submit({ ...input, type: "follow-up" })
       .catch(error => emit({ type: "queue_rejected", text: input.text || "", message: error.message }));
     return;
   }
   if (executing) { emit({ type: "error", message: "Pi 正在处理当前操作" }); return; }
   executing = true;
+  const run = {id:crypto.randomUUID(),cancelled:false,cleanupFailures:[]};
+  currentRun = run;
   adoptedRun = input.type === "agent-run";
   if (adoptedRun) emit({ type: "agent_run" });
   trackingTask = input.type === "prompt" && input.trackTask === true;
@@ -701,6 +859,8 @@ async function execute(input) {
       await init(input);
     }
     else if (input.targetFile && resolve(input.targetFile) !== resolve(runtime.session.sessionManager.getSessionFile() || ".")) await runtime.switchSession(input.targetFile);
+    if (run.cancelled) return;
+    if (input.type === "prompt" || input.type === "mcp-command") blockedSessions.delete(runtime.session);
     if (typeof input.systemPromptEnabled === "boolean") config.systemPromptEnabled = input.systemPromptEnabled;
     if (Array.isArray(input.widgetPrompts)) config.widgetPrompts = input.widgetPrompts;
     const promptController = promptControllers.get(runtime.session);
@@ -750,12 +910,15 @@ async function execute(input) {
     else if (input.type === "export") emit({ type: "notice", message: "已导出到 " + runtime.session.exportToJsonl(input.path) });
     else if (input.type === "import") await runtime.importFromJsonl(input.path);
     else if (input.type === "agent-run") while (!runtime.session.isIdle) await runtime.session.waitForIdle();
-    do {
+    while (!run.cancelled) {
       await inputQueue.chain;
+      if (run.cancelled) break;
       if (inputQueue.hasInterrupts) await promptWithInterrupts(inputQueue.shiftInterrupt());
+      if (run.cancelled) break;
       await state();
       await inputQueue.chain;
-    } while (inputQueue.hasInterrupts);
+      if (!inputQueue.hasInterrupts) break;
+    }
   } catch (error) {
     if (input.type === "compact") compactionFailures.get(runtime?.session)?.(error);
     emit({ type: "error", message: error.message });
@@ -763,7 +926,8 @@ async function execute(input) {
   finally {
     // A failed/aborted model request can leave Pi's native pending queues intact.
     // Return them to the editor rather than displaying unserviceable queue chips.
-    await inputQueue.chain;
+    if (!run.cancelled) await inputQueue.chain;
+    if (stopWork) { await stopWork; stopWork = undefined; }
     if (runtime && (inputQueue.items.length || inputQueue.hasInterrupts)) inputQueue.returnQueue();
     piCommands.clear();
     trackingTask = false;
