@@ -124,7 +124,7 @@ Item {
         readonly property real bottomY: Math.max(originY, originY + contentHeight - height)
         readonly property bool nearBottom: bottomY - contentY <= 3
         readonly property real groupPixels: Math.max(320, height * groupScreens)
-        readonly property int wheelMargin: scrollDirection ? Math.ceil(Math.min(groupPixels, Math.max(height, aheadPixels))) : 0
+        readonly property int wheelMargin: scrollDirection ? Math.ceil(Math.min(groupPixels * 2, Math.max(height, aheadPixels))) : 0
         onGroupPixelsChanged: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
         Component.onCompleted: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
         readonly property string layoutKey: [
@@ -250,6 +250,21 @@ Item {
             if (!pane.messageModel || !count || (!pane.current && pane.initialized))
                 return;
             const model = pane.messageModel, map = slotMap(), slots = map.slots;
+            const direction = Math.sign(pendingWheelPixels);
+            const ready = [];
+            if (direction && !restoring && !followTail) {
+                // Advance as soon as the next contiguous bodies are measured.
+                // More distant bodies in the group can catch up on later frames.
+                const viewport = visibleRows(slots);
+                let row = direction < 0 ? viewport.first : viewport.last;
+                while (slots[row] && slots[row].bodyLoaded) {
+                    if (!slots[row].shown)
+                        ready.push(slots[row]);
+                    row += direction;
+                }
+                showMeasuredRows(ready);
+                return;
+            }
             const top = above || followTail || restoring ? -1 : visibleRows(slots).first;
             // While the view follows the latest message, the last group keeps
             // receiving rows as the reply streams, so on a slow machine it is
@@ -258,7 +273,7 @@ Item {
             // one by one as they load; the view is positioned at the end, so
             // nothing the reader is looking at moves.
             const tail = followTail ? model.groupOf(count - 1) : -1;
-            const checked = {}, ready = [];
+            const checked = {};
             for (const key in slots) {
                 const item = slots[key], row = item.index;
                 if (item.shown || !item.bodyLoaded || checked[row])
@@ -294,6 +309,9 @@ Item {
                 if (complete)
                     ready.push(...rows);
             }
+            showMeasuredRows(ready);
+        }
+        function showMeasuredRows(ready) {
             if (!ready.length)
                 return;
             keepAnchor(() => {
@@ -301,6 +319,27 @@ Item {
                     item.shown = true;
             });
             scheduleRange();
+        }
+        function settleExposedRows() {
+            // Removing the earlier-history header exposes an extra strip of
+            // the old page. Finish its intersecting bodies before presenting it.
+            const slots = slotMap().slots, rows = visibleRows(slots), ready = [];
+            if (rows.first < 0)
+                return;
+            forcing = true;
+            for (let index = rows.first; index <= rows.last; index++) {
+                const row = slots[index];
+                if (!row || row.shown)
+                    continue;
+                if (row.bodyIncubating)
+                    row.finishIncubation();
+                if (row.layoutWork.length)
+                    row.prepareLayout(Infinity);
+                if (row.bodyLoaded)
+                    ready.push(row);
+            }
+            forcing = false;
+            showMeasuredRows(ready);
         }
         function updateGroups() {
             if (!pane.current || !count || !pane.messageModel)
@@ -411,7 +450,8 @@ Item {
                 return distance + ((after && scrollDirection < 0) || (!after && scrollDirection > 0) ? count : 0);
             }
             waiting.sort((a, b) => priority(a) - priority(b));
-            const deadline = Date.now() + 6;
+            // Leave room in each frame for scene updates and input handling.
+            const deadline = Date.now() + (pendingWheelPixels ? 10 : 6);
             let ready = 0;
             for (const row of waiting) {
                 // Qt gives offscreen incubation spare time. When the reader
@@ -493,8 +533,13 @@ Item {
             scrollDirection = Math.sign(delta);
             lastWheelTime = now;
             aheadPixels = Math.max(aheadPixels, Math.abs(delta));
+            const waiting = pendingWheelPixels !== 0;
             const distance = Math.min(groupPixels * 2, Math.abs(pendingWheelPixels) + Math.abs(delta));
             pendingWheelPixels = scrollDirection * distance;
+            // A small step can use the ready rows immediately. Further steps
+            // behind a pending boundary wait for the per-frame layout budget.
+            if (!waiting && Math.abs(delta) <= height)
+                advanceScroll(delta, true);
             scrollIdle.restart();
             scheduleRange();
         }
@@ -973,6 +1018,8 @@ Item {
                     conversation.contentY -= 1;
                     conversation.forceLayout();
                     conversation.contentY += 1;
+                    if (pane.openAtBottom)
+                        conversation.settleExposedRows();
                     conversation.anchoring = false;
                 }
                 if (conversation.followTail && !conversation.restoring)
@@ -1119,7 +1166,7 @@ Item {
                     readonly property bool hovered: chatSelection.hovering && hoverPoint.x >= 0 && hoverPoint.x <= width && hoverPoint.y >= 0 && hoverPoint.y <= height
                     width: conversation.width - 16
                     spacing: 10
-                    readonly property bool expandedLayout: activityHistory.layoutExpanded || compactionEvent.expanded
+                    readonly property bool expandedLayout: activityHistory.layoutExpanded || !!(compactionLoader.item && compactionLoader.item.expanded)
                     onExpandedLayoutChanged: if (rowShell.laidOut)
                         rowShell.applyHeight(implicitHeight, expandedLayout)
                     onImplicitHeightChanged: if (rowShell.laidOut)
@@ -1156,7 +1203,8 @@ Item {
                         }
                         visible: !modelData._loading && !messageRow.statusNotice
                         readonly property bool userMessage: modelData.role === "user"
-                        width: userMessage ? (modelData.text.length > 512 ? messageRow.width * 0.82 : Math.min(messageRow.width * 0.82, Math.max(64, userBody.implicitWidth + 28))) : parent.width - 33
+                        readonly property real userBodyWidth: userBody.item ? userBody.item.implicitWidth : 0
+                        width: userMessage ? (modelData.text.length > 512 ? messageRow.width * 0.82 : Math.min(messageRow.width * 0.82, Math.max(64, userBodyWidth + 28))) : parent.width - 33
                         x: userMessage ? parent.width - width : 33
                         height: replyColumn.implicitHeight + (userMessage ? 22 : modelData.error ? 28 : 4)
                         radius: userMessage ? 13 : 8
@@ -1174,14 +1222,17 @@ Item {
                                 selectionController: chatSelection
                                 messageIndex: messageRow.index
                             }
-                            UserMessageBody {
+                            Loader {
                                 id: userBody
                                 width: parent.width
-                                visible: modelData.role === "user"
-                                text: modelData.role === "user" ? modelData.text : ""
-                                attachments: modelData.attachments || []
-                                selectionController: chatSelection
-                                messageIndex: messageRow.index
+                                active: modelData.role === "user"
+                                visible: active
+                                sourceComponent: UserMessageBody {
+                                    text: modelData.text
+                                    attachments: modelData.attachments || []
+                                    selectionController: chatSelection
+                                    messageIndex: messageRow.index
+                                }
                             }
                             MessageBody {
                                 id: reply
@@ -1196,15 +1247,18 @@ Item {
                             }
                         }
                     }
-                    ActionButton {
-                        objectName: (pane.messagePrefix ? pane.messagePrefix + "RequestDetails_" : "requestDetails_") + messageRow.index
-                        selectionController: chatSelection
-                        visible: !modelData._loading && !messageRow.statusNotice && !!modelData.error && (modelData.diagnosticId || "").length > 0
+                    Loader {
+                        active: !modelData._loading && !messageRow.statusNotice && !!modelData.error && (modelData.diagnosticId || "").length > 0
+                        visible: active
                         x: 33
-                        text: I18n.t("查看请求与返回")
-                        glyph: "code"
-                        quiet: true
-                        onClicked: backend.showRequestDetails(modelData.diagnosticId)
+                        sourceComponent: ActionButton {
+                            objectName: (pane.messagePrefix ? pane.messagePrefix + "RequestDetails_" : "requestDetails_") + messageRow.index
+                            selectionController: chatSelection
+                            text: I18n.t("查看请求与返回")
+                            glyph: "code"
+                            quiet: true
+                            onClicked: backend.showRequestDetails(modelData.diagnosticId)
+                        }
                     }
                     Text {
                         objectName: "dshInterruptionNotice_" + messageRow.index
@@ -1221,102 +1275,109 @@ Item {
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.font(12, visible, chatSelection)
                     }
-                    Column {
-                        id: compactionEvent
-                        objectName: "compactionEvent_" + messageRow.index
+                    Loader {
+                        id: compactionLoader
+                        active: !modelData._loading && messageRow.compactionNotice
+                        visible: active
                         x: 33
                         width: parent.width - 33
-                        visible: !modelData._loading && messageRow.compactionNotice
-                        readonly property var record: modelData.compaction || ({})
-                        readonly property string eventState: record.state || "success"
-                        readonly property string heading: eventState === "running" ? I18n.t("正在压缩上下文") : eventState === "failure" ? I18n.t("上下文压缩失败") : I18n.t("上下文已压缩")
-                        property bool expanded: false
-                        spacing: 6
-                        onExpandedChanged: if (!expanded)
-                            chatSelection.hideDetails(messageRow.index, 0, 1)
-                        Item {
-                            width: Math.min(parent.width, compactionHeading.implicitWidth)
-                            height: Theme.control(24)
-                            Row {
-                                id: compactionHeading
-                                height: parent.height
-                                spacing: 7
-                                ActivitySpinner {
-                                    visible: compactionEvent.eventState === "running"
-                                    width: Theme.icon(12)
-                                    height: Theme.icon(12)
-                                    anchors.verticalCenter: parent.verticalCenter
+                        sourceComponent: Column {
+                            id: compactionEvent
+                            objectName: "compactionEvent_" + messageRow.index
+                            readonly property var record: modelData.compaction || ({})
+                            readonly property string eventState: record.state || "success"
+                            readonly property string heading: eventState === "running" ? I18n.t("正在压缩上下文") : eventState === "failure" ? I18n.t("上下文压缩失败") : I18n.t("上下文已压缩")
+                            property bool expanded: false
+                            spacing: 6
+                            onExpandedChanged: if (!expanded)
+                                chatSelection.hideDetails(messageRow.index, 0, 1)
+                            Item {
+                                width: Math.min(parent.width, compactionHeading.implicitWidth)
+                                height: Theme.control(24)
+                                Row {
+                                    id: compactionHeading
+                                    height: parent.height
+                                    spacing: 7
+                                    ActivitySpinner {
+                                        visible: compactionEvent.eventState === "running"
+                                        width: Theme.icon(12)
+                                        height: Theme.icon(12)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Text {
+                                        font.family: Theme.fontFamily
+                                        text: compactionEvent.heading
+                                        color: compactionHover.interactionHovered ? Theme.ink : Theme.muted
+                                        font.pixelSize: Theme.font(12, visible, chatSelection)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Glyph {
+                                        name: compactionEvent.expanded ? "chevron-down" : "chevron-right"
+                                        width: Theme.icon(12)
+                                        height: Theme.icon(12)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
                                 }
-                                Text {
-                                    font.family: Theme.fontFamily
-                                    text: compactionEvent.heading
-                                    color: compactionHover.interactionHovered ? Theme.ink : Theme.muted
-                                    font.pixelSize: Theme.font(12, visible, chatSelection)
-                                    anchors.verticalCenter: parent.verticalCenter
+                                ChatHitArea {
+                                    id: compactionHover
+                                    objectName: "compactionEventToggle_" + messageRow.index
+                                    anchors.fill: parent
+                                    selectionController: chatSelection
+                                    onClicked: compactionEvent.expanded = !compactionEvent.expanded
                                 }
-                                Glyph {
-                                    name: compactionEvent.expanded ? "chevron-down" : "chevron-right"
-                                    width: Theme.icon(12)
-                                    height: Theme.icon(12)
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: compactionEvent.heading
+                                Accessible.description: compactionEvent.expanded ? I18n.t("已展开") : I18n.t("已折叠")
                             }
-                            ChatHitArea {
-                                id: compactionHover
-                                objectName: "compactionEventToggle_" + messageRow.index
-                                anchors.fill: parent
-                                selectionController: chatSelection
-                                onClicked: compactionEvent.expanded = !compactionEvent.expanded
-                            }
-                            Accessible.role: Accessible.Button
-                            Accessible.name: compactionEvent.heading
-                            Accessible.description: compactionEvent.expanded ? I18n.t("已展开") : I18n.t("已折叠")
-                        }
-                        Item {
-                            visible: compactionEvent.expanded
-                            width: parent.width
-                            height: compactionDetails.implicitHeight
-                            Rectangle {
-                                width: 1
-                                height: parent.height
-                                color: Theme.line
-                                x: 6
-                            }
-                            SelectableText {
-                                id: compactionDetails
-                                objectName: "compactionEventDetails_" + messageRow.index
-                                x: 23
-                                width: parent.width - x
-                                text: {
-                                    const detail = compactionEvent.record, lines = [];
-                                    if (typeof detail.before === "number")
-                                        lines.push(I18n.t("压缩前：") + detail.before + " tokens");
-                                    if (typeof detail.after === "number")
-                                        lines.push(I18n.t("压缩后：") + detail.after + " tokens");
-                                    if (detail.summary)
-                                        lines.push("\n" + I18n.t("压缩摘要") + "\n" + detail.summary);
-                                    if (detail.error)
-                                        lines.push("\n" + I18n.t(detail.error));
-                                    return lines.join("\n");
+                            Item {
+                                visible: compactionEvent.expanded
+                                width: parent.width
+                                height: compactionDetails.implicitHeight
+                                Rectangle {
+                                    width: 1
+                                    height: parent.height
+                                    color: Theme.line
+                                    x: 6
                                 }
-                                color: Theme.muted
-                                font.pixelSize: Theme.font(13, visible, chatSelection)
-                                wrapMode: TextEdit.Wrap
-                                textFormat: TextEdit.PlainText
-                                selectionController: chatSelection
-                                messageIndex: messageRow.index
-                                blockIndex: 0
-                                conditionalSelection: true
+                                SelectableText {
+                                    id: compactionDetails
+                                    objectName: "compactionEventDetails_" + messageRow.index
+                                    x: 23
+                                    width: parent.width - x
+                                    text: {
+                                        const detail = compactionEvent.record, lines = [];
+                                        if (typeof detail.before === "number")
+                                            lines.push(I18n.t("压缩前：") + detail.before + " tokens");
+                                        if (typeof detail.after === "number")
+                                            lines.push(I18n.t("压缩后：") + detail.after + " tokens");
+                                        if (detail.summary)
+                                            lines.push("\n" + I18n.t("压缩摘要") + "\n" + detail.summary);
+                                        if (detail.error)
+                                            lines.push("\n" + I18n.t(detail.error));
+                                        return lines.join("\n");
+                                    }
+                                    color: Theme.muted
+                                    font.pixelSize: Theme.font(13, visible, chatSelection)
+                                    wrapMode: TextEdit.Wrap
+                                    textFormat: TextEdit.PlainText
+                                    selectionController: chatSelection
+                                    messageIndex: messageRow.index
+                                    blockIndex: 0
+                                    conditionalSelection: true
+                                }
                             }
                         }
                     }
-                    OutputLimitNotice {
+                    Loader {
                         objectName: "outputLimitNotice_" + messageRow.index
+                        active: !modelData._loading && !messageRow.statusNotice && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
+                        visible: active
                         x: 33
                         width: parent.width - 33
-                        visible: !modelData._loading && !messageRow.statusNotice && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
-                        continuable: messageRow.index === conversation.count - 1 && !pane.busy
-                        onContinued: pane.controller.send(I18n.t("继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。"))
+                        sourceComponent: OutputLimitNotice {
+                            continuable: messageRow.index === conversation.count - 1 && !pane.busy
+                            onContinued: pane.controller.send(I18n.t("继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。"))
+                        }
                     }
                     Item {
                         objectName: "messageActions_" + messageRow.index

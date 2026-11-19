@@ -684,6 +684,7 @@ ApplicationWindow {
                     if (at >= 0) paneOrder.splice(at, 1)
                     retainedCount = Object.keys(panes).length
                     pane.release()
+                    if (pane.messageModel) pane.messageModel.trimRetainedHistory()
                     pane.destroy()
                 }
                 Component.onCompleted: {
