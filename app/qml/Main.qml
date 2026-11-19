@@ -10,6 +10,8 @@ ApplicationWindow {
     readonly property var appWindow: window
     readonly property var sharedRequestInspector: requestInspector
     readonly property var conversation: conversationHost.currentPane ? conversationHost.currentPane.view : emptyConversation
+    readonly property bool chatWheelScrolling: !!conversationHost.currentPane && conversation.scrollDirection !== 0
+    onChatWheelScrollingChanged: backend.sessionPreview.setWheelScrolling(chatWheelScrolling)
     readonly property var chatSelection: conversationHost.currentPane ? conversationHost.currentPane.selection : emptySelection
     ListView { id: emptyConversation; visible: false; property bool followTail: true; property bool restoring: false }
     ChatSelection { id: emptySelection; visible: false; view: emptyConversation }

@@ -35,19 +35,26 @@ def recent_transcripts(sessions, limit=WARM_SESSIONS):
 
 def warm(repository, files, cancelled, paused=lambda: False):
     """Index each file in turn; a user's own read goes first."""
+    def interrupted():
+        return cancelled() or paused()
+
     built = []
     for file in files:
-        while paused() and not cancelled():
-            time.sleep(0.05)
-        if cancelled():
+        while True:
+            while paused() and not cancelled():
+                time.sleep(0.05)
+            if cancelled():
+                return built
+            try:
+                repository.open(file, cancelled=interrupted)
+                built.append(file)
+            except Cancelled:
+                # Retry outside the transaction, so a viewport read can
+                # take the same transcript's index lock during the pause.
+                continue
+            except Exception:
+                pass  # A transcript being rewritten is indexed on its next visit.
             break
-        try:
-            repository.open(file, cancelled=cancelled)
-            built.append(file)
-        except Cancelled:
-            break
-        except Exception:
-            continue  # A transcript being rewritten is indexed on its next visit.
     return built
 
 

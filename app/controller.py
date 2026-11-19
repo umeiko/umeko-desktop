@@ -2234,7 +2234,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         files = transcript_warmup.recent_transcripts(self._sessions)
         self._transcript_warmup = transcript_warmup.start(
             self.transcripts, files, cancelled=lambda: self._closing,
-            paused=lambda: self._session_preview.reading)
+            paused=lambda: self._session_preview.reading or self._session_preview.wheel_scrolling)
 
     def loadNativeIndex(self):
         directory = self.store.directory / "pi/sessions"
