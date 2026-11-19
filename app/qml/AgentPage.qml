@@ -187,7 +187,13 @@ Column {
         DesktopPluginsPage { id:pluginManager; width: parent.width; height: Math.max(360, root.availableHeight - 64) }
     }
     Column {
+        id: piSettingsBody
         width: parent.width; visible: root.piOpen && !root.toolsOpen; spacing: 18
+        // The settings page is preloaded. Only marshal the catalog when the
+        // visible Pi page is actually searching it.
+        readonly property bool searching: visible && search.text.trim().length > 0
+        readonly property string resourceSearchText: searching ? JSON.stringify(backend.agentResources) : ""
+        readonly property string extensionSearchText: searching ? JSON.stringify(backend.piManagement.extensions) : ""
         RowLayout { width: parent.width; spacing: 8
             ActionButton { objectName: "backToAgentButton"; text: "Agent"; glyph: "arrow-left"; quiet: true; onClicked: root.piOpen = false }
             Glyph { name: "chevron-right"; width: Theme.icon(13); height: Theme.icon(13) }
@@ -204,9 +210,9 @@ Column {
         }
         SettingsFold {
             objectName: "piFold_extensions"; width: parent.width; title: I18n.t("扩展与工具"); query: search.text
-            searchTerms: I18n.t("安装 Skills MCP 服务器 builtin extensions 工具 资源 ") + JSON.stringify(backend.piManagement.extensions) + JSON.stringify(backend.agentResources)
+            searchTerms: I18n.t("安装 Skills MCP 服务器 builtin extensions 工具 资源 ") + piSettingsBody.extensionSearchText + piSettingsBody.resourceSearchText
             SettingsFold { objectName: "piFold_mcp"; width: parent.width; title: I18n.t("MCP 服务器"); nested: true; query: search.text; searchTerms: I18n.t("builtin:mcp 全局 项目 配置服务器 JSON"); McpSettings { width: parent.width } }
-            SettingsFold { objectName: "piFold_tools"; width: parent.width; title: I18n.t("工具与资源"); nested: true; query: search.text; searchTerms: I18n.t("原生 工具 Skills 提示模板 命令 资源 ") + JSON.stringify(backend.agentResources)
+            SettingsFold { objectName: "piFold_tools"; width: parent.width; title: I18n.t("工具与资源"); nested: true; query: search.text; searchTerms: I18n.t("原生 工具 Skills 提示模板 命令 资源 ") + piSettingsBody.resourceSearchText
                 SectionCard { width: parent.width; ActionButton { objectName: "openToolCatalogButton"; text: I18n.t("查看工具与资源"); glyph: "layers"; enabled: !backend.piManagement.busy && !backend.kernelBusy; onClicked: root.toolsOpen = true } }
             }
         }
