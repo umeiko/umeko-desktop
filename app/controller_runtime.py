@@ -2,6 +2,7 @@
 from .pi_capabilities import merge_resources,from_legacy
 import copy
 import logging
+import os
 import re
 import time
 import uuid
@@ -100,20 +101,25 @@ class PiControllerMixin:
     def _merge_native_sessions(self, native):
         native = [row for row in native if row["id"] not in self._session_files.deleted and row["id"] not in self._session_files.pending]
         existing = {session["id"]: session for session in self._sessions}
+        known_projects = {os.path.normcase(project['path']) for project in self.store.data['projects']}
         for session in native:
             session_id = session['id']
             previous = existing.get(session_id)
             previous_workspace = previous.get('workspace') if previous is not None else None
-            if self._ungrouped_import(session_id, session.get('workspace'), previous_workspace):
+            workspace = session.get('workspace')
+            if self._ungrouped_import(session_id, workspace, previous_workspace):
                 session = {**session, 'workspace': ''}
+            elif workspace:
+                key = self._project_workspace_key(workspace)
+                if key not in known_projects:
+                    self._ensure_project(workspace)
+                    known_projects.add(key)
             if previous is not None:
                 previous.update(session)
             else:
                 row = dict(session)
                 self._sessions.append(row)
                 existing[session_id] = row
-            if session.get("workspace"):
-                self._ensure_project(session["workspace"])
 
     def _ungrouped_import(self, session_id, workspace, previous_workspace):
         metadata = self.store.data['sessionMeta']
@@ -169,6 +175,81 @@ class PiControllerMixin:
         else:
             row.update(values)
 
+    def _cancel_pi_warmup(self):
+        self._pi_warmup.stop()
+
+    def _warm_active_pi(self):
+        record = self._view
+        if (self._closing or self._kernel_busy or record.process or not record.file
+                or self._pool.protected(record) or record.global_agent
+                or record.id in self._session_files.pending
+                or record.id in self._session_files.deleted):
+            return
+        meta = self.store.data['sessionMeta'].get(record.id, {})
+        if meta.get('pluginSession') or self.desktopPlugins.checkpoint_locked(record.workspace):
+            return
+        if self._pool.retiring:
+            self._pi_warmup.start()
+            return
+        payload = self._pi_command_payload(record, 'warm')
+        record.prewarming, record.speculative = True, True
+        try:
+            self._start_pi(record, payload)
+        except (OSError, RuntimeError):
+            # The next explicit command can still take the ordinary cold path.
+            self._pool.retire(record)
+
+    def _pi_command_payload(self, record, action, **values):
+        return {"type": action, "model": record.model or self.store.data["selectedModel"],
+                "reasoningEffort": record.reasoning_effort, **values,
+                "systemPromptEnabled": self._desktop_plugins.system_prompt_enabled(record),
+                "widgetPrompts": self._desktop_plugins.prompt_sources(record)}
+
+    def _start_pi(self, record, payload, plugin_policy=None):
+        bridge = self._release / "bridge.mjs"
+        if not bridge.is_file():
+            raise RuntimeError("Pi 内核未安装")
+        default_cwd = self.store.default_workspace
+        default_cwd.mkdir(exist_ok=True)
+        agent = self.store.data["agent"]
+        from .generation import generation_config
+        action = payload["type"]
+        payload.update(gateway=f"http://127.0.0.1:{self.private_server.port}/", token=self.private_token,
+            workspace=record.workspace, defaultCwd=str(default_cwd),
+            agentDir=agent.get("agentDir") or str(Path.home() / ".pi/agent"),
+            sessionDir=str(self.store.directory / "pi/sessions"), sessionFile=record.file,
+            piCapabilities=from_legacy(record.pi_capabilities,record.blocked_tools), sessionExtensions={path: mode == "session" for path, mode in record.extension_modes.items()},
+            sessionSkills=record.skill_modes,
+            skillsEnabled=self._desktop_plugins.skills_enabled(record),
+            blockedTools=record.blocked_tools,
+            docsDir=str(self.store.directory / "agent-docs"),
+            legacyHistory=record.history if not record.file else [], models=self.gateway.models(), agent=agent,
+            auxiliaryVision=self._auxiliary_vision(),
+            permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,
+            dangerousAllowed=action not in ("warm", "fork", "navigate", "new") and self._dangerous_allowed(record),
+            dataDir=str(self.store.directory),
+            systemPromptStateDir=str(self.store.directory / 'system-prompts'),
+            generation=generation_config(self.store.data),
+            mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
+        if plugin_policy:
+            payload.update(pluginSessionPolicy=plugin_policy,
+                permissionMode=plugin_policy['mode'], dangerousAllowed=False,
+                models=[model for model in payload['models'] if model['id'] == plugin_policy['model']])
+        if record.global_agent:
+            service=self._desktop_plugins.global_agents
+            payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(service.root/"sessions"/record.global_agent),
+                **service.skill_config(record),
+                petAssistantBinding=service.m._pet.assistant.binding_for(record),
+                petReminderBinding=service.m._pet.assistant.reminder_binding_for(record),
+                agent={**agent,"safeMode":True,"instructions":service.prompt(record)})
+        self._pool.start(record, node_executable(), bridge, payload)
+
+    def _write_first_warm_command(self, record, payload):
+        action = payload['type']
+        self._pool.write(record, {"type": "dangerous_approval", "allowed":
+            action not in ("fork", "navigate", "new") and self._dangerous_allowed(record)})
+        self._pool.write(record, payload)
+
     def _command_pi(self, action, record=None, **values):
         if (record or self._view).id in self._session_files.pending:
             self.toast.emit('会话数据正在删除，请稍后再试')
@@ -190,7 +271,7 @@ class PiControllerMixin:
             return False
         if record.process and record.process.state() == QProcess.NotRunning:
             self._pool.retire(record)
-        if record.stale or (record.process and not record.ready):
+        if record.stale or (record.process and not (record.ready or record.prewarming)):
             if record.subagents_active:
                 return False
             self._pool.retire(record)
@@ -199,54 +280,24 @@ class PiControllerMixin:
         record.stop_token = record.stop_state = record.stop_detail = ''
         record.pet_activity = 'thinking'
         record.prompt_started = time.monotonic() if action in ('prompt','widget-notify') else None
-        record.phase = "loading" if not record.process else "running" if action in ("prompt", "compact", "widget-notify") else "working"
+        record.phase = "loading" if not record.ready else "running" if action in ("prompt", "compact", "widget-notify") else "working"
         if getattr(self, '_reasoning_discovery', None):
             self._reasoning_discovery.update_activity()
         record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在压缩上下文" if action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
-        payload = {"type": action, "model": record.model or self.store.data["selectedModel"], "reasoningEffort": record.reasoning_effort, **values}
-        payload['systemPromptEnabled'] = self._desktop_plugins.system_prompt_enabled(record)
-        payload['widgetPrompts'] = self._desktop_plugins.prompt_sources(record)
+        payload = self._pi_command_payload(record, action, **values)
         try:
             if record.process:
-                self._pool.write(record, payload)
-                self._pool.touch(record)
+                if record.prewarming:
+                    record.warm_command = payload
+                    record.speculative = False
+                elif record.speculative:
+                    record.speculative = False
+                    self._write_first_warm_command(record, payload)
+                else:
+                    self._pool.write(record, payload)
+                self._pool.touch(record, dirty=False)
             else:
-                bridge = self._release / "bridge.mjs"
-                if not bridge.is_file():
-                    raise RuntimeError("Pi 内核未安装")
-                default_cwd = self.store.default_workspace
-                default_cwd.mkdir(exist_ok=True)
-                agent = self.store.data["agent"]
-                from .generation import generation_config
-                payload.update(gateway=f"http://127.0.0.1:{self.private_server.port}/", token=self.private_token,
-                    workspace=record.workspace, defaultCwd=str(default_cwd),
-                    agentDir=agent.get("agentDir") or str(Path.home() / ".pi/agent"),
-                    sessionDir=str(self.store.directory / "pi/sessions"), sessionFile=record.file,
-                    piCapabilities=from_legacy(record.pi_capabilities,record.blocked_tools), sessionExtensions={path: mode == "session" for path, mode in record.extension_modes.items()},
-                    sessionSkills=record.skill_modes,
-                    skillsEnabled=self._desktop_plugins.skills_enabled(record),
-                    blockedTools=record.blocked_tools,
-                    docsDir=str(self.store.directory / "agent-docs"),
-                    legacyHistory=record.history, models=self.gateway.models(), agent=agent,
-                    auxiliaryVision=self._auxiliary_vision(),
-                    permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,
-                    dangerousAllowed=False if action in ("fork", "navigate", "new") else self._dangerous_allowed(record),
-                    dataDir=str(self.store.directory),
-                    systemPromptStateDir=str(self.store.directory / 'system-prompts'),
-                    generation=generation_config(self.store.data),
-                    mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
-                if plugin_policy:
-                    payload.update(pluginSessionPolicy=plugin_policy,
-                        permissionMode=plugin_policy['mode'], dangerousAllowed=False,
-                        models=[model for model in payload['models'] if model['id'] == plugin_policy['model']])
-                if record.global_agent:
-                    service=self._desktop_plugins.global_agents
-                    payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(service.root/"sessions"/record.global_agent),
-                        **service.skill_config(record),
-                        petAssistantBinding=service.m._pet.assistant.binding_for(record),
-                        petReminderBinding=service.m._pet.assistant.reminder_binding_for(record),
-                        agent={**agent,"safeMode":True,"instructions":service.prompt(record)})
-                self._pool.start(record, node_executable(), bridge, payload)
+                self._start_pi(record, payload, plugin_policy)
         except (RuntimeError, OSError) as error:
             record.phase, record.failed = "idle", True
             self._finish_turn(record, failed=True)
@@ -368,10 +419,35 @@ class PiControllerMixin:
                 self._stream_projection = False
             self.transcriptChanged.emit()
 
+    def _update_pi_resources(self, record, resources):
+        resources = merge_resources(record.resources, resources, record.pi_capabilities)
+        if resources != record.resources:
+            record.resources = resources
+            record.body_dirty = True
+            if record is self._view:
+                self.agentResourcesChanged.emit()
+
     def _handle_pi_event(self, record, event):
         if self._closing:
             return
         kind, visible = event.get("type"), record is self._view
+        if kind == 'ready' and event.get('warm'):
+            record.ready, record.prewarming = True, False
+            command, record.warm_command = record.warm_command, None
+            if command:
+                record.phase = 'running' if record.action in ('prompt', 'compact', 'widget-notify') else 'working'
+                record.tool_status = '正在压缩上下文' if record.action == 'compact' else '正在生成' if record.phase == 'running' else '正在处理'
+                self._write_first_warm_command(record, command)
+                if visible:
+                    self.chatChanged.emit()
+            self._subagents.process_ready(record)
+            return
+        if kind in ('warm_error', 'exit') and getattr(record, 'prewarming', False):
+            command = record.warm_command
+            self._pool.retire(record)
+            if not command:
+                return
+            kind = 'exit'
         if kind == 'system_prompt':return  # The built-in page host owns this reply.
         if kind=='widget_delivery':return  # WidgetChannel observes the same pool event.
         if kind == 'bash_cleanup':
@@ -592,9 +668,7 @@ class PiControllerMixin:
             else:
                 self.toast.emit(record.title + " · 等待你的确认")
         elif kind == "resources":
-            record.resources = merge_resources(record.resources,event["resources"],record.pi_capabilities)
-            if visible:
-                self.changed.emit()
+            self._update_pi_resources(record, event["resources"])
             return
         elif kind == "context_usage":
             record.context_usage = event.get("usage") or {}
@@ -627,11 +701,12 @@ class PiControllerMixin:
                 record.messages = [compaction_status(message, active) for message in event["messages"]]
                 record.history, record.tree = [], event["tree"]
                 record.transcript, record.loaded = None, True
-            record.resources = merge_resources(record.resources,event["resources"],record.pi_capabilities)
+            self._update_pi_resources(record, event["resources"])
             self._subagents.sync(record)
             record.context_usage = event.get("contextUsage") or {}
             if visible:
                 self.contextUsageChanged.emit()
+            projects_before = len(self.store.data["projects"])
             if not record.global_agent: self._merge_native_sessions(event["sessions"])
             # A stale list captured by another process must not overwrite a live view.
             for live in self._pool.records.values():
@@ -639,7 +714,7 @@ class PiControllerMixin:
                     self._index_record(live)
             self.store.save()
             self._save_session()
-            if visible:
+            if len(self.store.data["projects"]) != projects_before:
                 self.changed.emit()
             transcript = True
         elif kind in ("done", "exit"):
