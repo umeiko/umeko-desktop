@@ -45,10 +45,12 @@ class AuxiliaryVisionMixin:
             if value['model'] and not any((m['providerId'], m['model']) == (value['providerId'], value['model'])
                                          for m in self.auxiliaryVisionModels):
                 raise ValueError('请选择已配置且支持图片的辅助模型')
+            if value == previous:
+                return True
             self.store.data['auxiliaryVision'] = value
             self.store.save()
             self._restart_pi()
-            self.changed.emit()
+            self.auxiliaryVisionSettingsChanged.emit()
             return True
         except (ValueError, TypeError, OSError, RuntimeError) as error:
             self.store.data['auxiliaryVision'] = previous

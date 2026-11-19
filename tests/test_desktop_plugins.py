@@ -65,6 +65,19 @@ class DesktopPluginTests(unittest.TestCase):
             self.assertNotIn('scheduled-tasks', restored.workers)
         finally:restored.close()
 
+    def test_prompt_page_gets_native_revision_without_access_to_chat_messages(self):
+        self.manager._page = 'system-prompt'
+        self.host._view.search_leaf = 'native-revision-one'
+        self.manager.synchronize()
+        self.assertEqual(self.manager.session['leafId'], 'native-revision-one')
+        self.assertNotIn('messages', self.manager.session)
+        revisions = []
+        self.manager.sessionChanged.connect(lambda: revisions.append(self.manager.session['leafId']))
+        self.host._view.search_leaf = 'native-revision-two'
+        self.manager.synchronize()
+        self.manager.synchronize()
+        self.assertEqual(revisions, ['native-revision-two'])
+
     def test_application_close_releases_default_scheduler_lock_before_returning(self):
         from PySide6.QtCore import QLockFile
         self.wait(lambda:self.manager.workers['scheduled-tasks']['ready'])

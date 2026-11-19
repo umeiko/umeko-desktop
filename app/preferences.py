@@ -98,13 +98,14 @@ class PreferencesMixin:
         except (ValueError, OSError, RuntimeError) as error:
             self.store.data['desktop'] = old
             self.toast.emit(str(error)); return False
-        self.documentPreview.refreshWebPolicy()
-        pool = getattr(self, '_pool', None)
-        if pool:
-            for record in tuple(pool.records.values()):
-                if record.process:
-                    pool.write(record, {'type':'desktop_settings', 'webview':configuration(value)})
-        self.changed.emit()
+        if any(value[key] != old[key] for key in ('autoOpenSubmissions', 'webDisplay')):
+            self.documentPreview.refreshWebPolicy()
+            pool = getattr(self, '_pool', None)
+            if pool:
+                policy = configuration(value)
+                for record in tuple(pool.records.values()):
+                    if record.process:
+                        pool.write(record, {'type':'desktop_settings', 'webview':policy})
         self.desktopSettingsChanged.emit()
         if value['webDisplay'] == 'embedded' and configuration().get('disabled'):
             self.toast.emit('重启 Umeko 后可使用内置网页预览')

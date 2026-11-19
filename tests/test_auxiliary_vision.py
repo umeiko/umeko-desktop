@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 from PySide6.QtCore import QCoreApplication
+from PySide6.QtTest import QSignalSpy
 from app.controller import Controller
 from app.auxiliary_vision import normalize
 
@@ -41,3 +42,25 @@ class AuxiliaryVisionTests(unittest.TestCase):
         with self.assertRaises(ValueError):normalize({'unrecognized':True})
     def test_missing_configuration_follows_original_path(self):
         self.assertFalse(self.b._can_analyze_attachments('text','p'))
+
+    def test_switch_save_is_scoped_and_noop_does_not_invalidate_pi(self):
+        changed = QSignalSpy(self.b.changed)
+        vision = QSignalSpy(self.b.auxiliaryVisionSettingsChanged)
+        with patch.object(self.b, '_restart_pi') as restart:
+            self.assertTrue(self.b.saveAuxiliaryVision('{"autoAnalyze":false}'))
+            self.assertFalse(self.b.auxiliaryVisionSettings['autoAnalyze'])
+            self.assertEqual(changed.count(), 0)
+            self.assertEqual(vision.count(), 1)
+            restart.assert_called_once()
+            self.assertTrue(self.b.saveAuxiliaryVision('{"autoAnalyze":false}'))
+            self.assertEqual(vision.count(), 1)
+            restart.assert_called_once()
+
+    def test_failed_save_preserves_switch_and_running_kernel(self):
+        before = self.b.auxiliaryVisionSettings
+        vision = QSignalSpy(self.b.auxiliaryVisionSettingsChanged)
+        with patch.object(self.b.store, 'save', side_effect=OSError('fixture write failure')), patch.object(self.b, '_restart_pi') as restart:
+            self.assertFalse(self.b.saveAuxiliaryVision('{"autoAnalyze":false}'))
+            self.assertEqual(self.b.auxiliaryVisionSettings, before)
+            self.assertEqual(vision.count(), 0)
+            restart.assert_not_called()
