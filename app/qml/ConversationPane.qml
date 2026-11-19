@@ -820,7 +820,7 @@ Item {
                 if (conversation.pendingWheelPixels && !conversation.restoring) {
                     // Keep an overlapping strip of the previous screen in
                     // each frame of a large wheel gesture.
-                    const step = Math.max(1, conversation.height * 0.6);
+                    const step = Math.max(1, conversation.height * 0.58);
                     const pending = conversation.pendingWheelPixels;
                     conversation.advanceScroll(Math.sign(pending) * Math.min(Math.abs(pending), step), true);
                 }
