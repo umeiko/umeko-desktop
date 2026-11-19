@@ -34,6 +34,8 @@ class SessionPreview(QObject):
         self.warm = OrderedDict()
         self.speculative = OrderedDict()
         self.last_prefetch = OrderedDict()
+        self.wheel_scrolling = False
+        self.speculation_epoch = 0
         self.prefetch_timer = QTimer(self)
         self.prefetch_timer.setSingleShot(True)
         self.prefetch_timer.timeout.connect(self._start)
@@ -72,6 +74,18 @@ class SessionPreview(QObject):
         for row in self.controller._sessions[:PREFETCH_SESSIONS]:
             self.prefetch(row['id'])
 
+    @Slot(bool)
+    def setWheelScrolling(self, active):
+        if self.wheel_scrolling == active:
+            return
+        self.wheel_scrolling = active
+        if active:
+            # Let the viewport's history reader and layout finish during
+            # the gesture before reading unrelated transcripts.
+            self.speculation_epoch += 1
+        else:
+            self.prefetch_timer.start(0)
+
     @Slot(str, int)
     def prepare(self, session_id, token, recent=True):
         """Read a session for display. recent allows a long unindexed
@@ -106,13 +120,14 @@ class SessionPreview(QObject):
             return
         if self.pending:
             job, self.pending = self.pending, None
-        elif self.speculative:
+        elif self.speculative and not self.wheel_scrolling:
             remaining = self.busy_until - time.monotonic()
             if remaining > 0:
                 self.prefetch_timer.start(max(1, int(remaining * 1000)))
                 return
             _, saved = self.speculative.popitem(last=False)
-            job = {'token': None, 'saved': saved, 'recent': True, 'epoch': self.epoch}
+            job = {'token': None, 'saved': saved, 'recent': True, 'epoch': self.epoch,
+                   'speculation_epoch': self.speculation_epoch}
         else:
             return
         self.reading = True
@@ -123,7 +138,9 @@ class SessionPreview(QObject):
                 file = saved.get('file')
                 if file:
                     repository = self.controller.transcripts
-                    cancelled = lambda: self.epoch != job['epoch'] or self.controller._closing
+                    def cancelled():
+                        return (self.epoch != job['epoch'] or self.controller._closing
+                                or (job['token'] is None and job['speculation_epoch'] != self.speculation_epoch))
                     snapshot = None
                     if job['recent'] and repository.large(file) and not repository.current(file):
                         snapshot = repository.open_recent(file, cancelled=cancelled, messages=RECENT_MESSAGES)
@@ -151,6 +168,9 @@ class SessionPreview(QObject):
                 self.warm.move_to_end(key)
                 if len(self.warm) > PREFETCH_SESSIONS:
                     self.warm.popitem(last=False)
+            elif result['speculation_epoch'] != self.speculation_epoch and len(self.speculative) < PREFETCH_SESSIONS:
+                saved = result['saved']
+                self.speculative.setdefault(saved['id'], saved)
         elif result['epoch'] == self.epoch and result['token'] == self.request:
             # A slow foreground read can outlast the quiet period established
             # at the click. Give its newly attached view the same idle window

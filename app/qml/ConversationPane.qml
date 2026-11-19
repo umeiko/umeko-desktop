@@ -75,6 +75,7 @@ Item {
     function deactivate() {
         conversation.saveViewport();
         current = false;
+        conversation.resetScrollDemand();
         tailTimer.stop();
         restoreTimer.stop();
         pagePrefetch.stop();
@@ -113,6 +114,8 @@ Item {
         property double lastWheelTime: 0
         property real aheadPixels: 0
         property int scrollDirection: 0
+        property bool layoutPending: false
+        property int probedBoundary: -1
         property int urgentFirst: -1
         property int urgentLast: -2
         property bool forcing: false
@@ -121,6 +124,7 @@ Item {
         readonly property real bottomY: Math.max(originY, originY + contentHeight - height)
         readonly property bool nearBottom: bottomY - contentY <= 3
         readonly property real groupPixels: Math.max(320, height * groupScreens)
+        readonly property int wheelMargin: scrollDirection ? Math.ceil(Math.min(groupPixels * 2, Math.max(height, aheadPixels))) : 0
         onGroupPixelsChanged: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
         Component.onCompleted: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
         readonly property string layoutKey: [
@@ -246,6 +250,21 @@ Item {
             if (!pane.messageModel || !count || (!pane.current && pane.initialized))
                 return;
             const model = pane.messageModel, map = slotMap(), slots = map.slots;
+            const direction = Math.sign(pendingWheelPixels);
+            const ready = [];
+            if (direction && !restoring && !followTail) {
+                // Advance as soon as the next contiguous bodies are measured.
+                // More distant bodies in the group can catch up on later frames.
+                const viewport = visibleRows(slots);
+                let row = direction < 0 ? viewport.first : viewport.last;
+                while (slots[row] && slots[row].bodyLoaded) {
+                    if (!slots[row].shown)
+                        ready.push(slots[row]);
+                    row += direction;
+                }
+                showMeasuredRows(ready);
+                return;
+            }
             const top = above || followTail || restoring ? -1 : visibleRows(slots).first;
             // While the view follows the latest message, the last group keeps
             // receiving rows as the reply streams, so on a slow machine it is
@@ -254,7 +273,7 @@ Item {
             // one by one as they load; the view is positioned at the end, so
             // nothing the reader is looking at moves.
             const tail = followTail ? model.groupOf(count - 1) : -1;
-            const checked = {}, ready = [];
+            const checked = {};
             for (const key in slots) {
                 const item = slots[key], row = item.index;
                 if (item.shown || !item.bodyLoaded || checked[row])
@@ -290,6 +309,9 @@ Item {
                 if (complete)
                     ready.push(...rows);
             }
+            showMeasuredRows(ready);
+        }
+        function showMeasuredRows(ready) {
             if (!ready.length)
                 return;
             keepAnchor(() => {
@@ -297,6 +319,27 @@ Item {
                     item.shown = true;
             });
             scheduleRange();
+        }
+        function settleExposedRows() {
+            // Removing the earlier-history header exposes an extra strip of
+            // the old page. Finish its intersecting bodies before presenting it.
+            const slots = slotMap().slots, rows = visibleRows(slots), ready = [];
+            if (rows.first < 0)
+                return;
+            forcing = true;
+            for (let index = rows.first; index <= rows.last; index++) {
+                const row = slots[index];
+                if (!row || row.shown)
+                    continue;
+                if (row.bodyIncubating)
+                    row.finishIncubation();
+                if (row.layoutWork.length)
+                    row.prepareLayout(Infinity);
+                if (row.bodyLoaded)
+                    ready.push(row);
+            }
+            forcing = false;
+            showMeasuredRows(ready);
         }
         function updateGroups() {
             if (!pane.current || !count || !pane.messageModel)
@@ -366,7 +409,18 @@ Item {
             // reaches its edge (a Loader finishes when asynchronous turns off).
             if (row < 0 || !pane.messageModel)
                 return;
-            if (!itemAtIndex(row)) {
+            ensureBoundaryShell(row, step);
+            const group = pane.messageModel.groupOf(row);
+            forcing = true;
+            urgentFirst = pane.messageModel.groupFirst(group);
+            urgentLast = pane.messageModel.groupLast(group);
+            urgentLast = -2;
+            urgentFirst = -1;
+            forcing = false;
+            settleGroups(true);
+        }
+        function ensureBoundaryShell(row, step) {
+            if (row >= 0 && !itemAtIndex(row)) {
                 // A row whose edge meets the screen edge exactly may not be
                 // created yet: ListView fills its cache buffer later. Cross
                 // the inter-row spacing and return in the same animation
@@ -379,14 +433,42 @@ Item {
                 forceLayout();
                 anchoring = false;
             }
-            const group = pane.messageModel.groupOf(row);
-            forcing = true;
-            urgentFirst = pane.messageModel.groupFirst(group);
-            urgentLast = pane.messageModel.groupLast(group);
-            urgentLast = -2;
-            urgentFirst = -1;
-            forcing = false;
-            settleGroups(true);
+        }
+        function layoutNearViewport() {
+            const map = slotMap(), rows = visibleRows(map.slots);
+            const waiting = Object.values(map.slots).filter(row => row.layoutWork.length > 0
+                || (pendingWheelPixels !== 0 && row.bodyIncubating));
+            if (rows.first < 0)
+                return waiting.length > 0;
+            // Complete visible rows and then the rows the next wheel step will
+            // reach. Keep a distance order on the other side for reversals.
+            function priority(row) {
+                if (row.index >= rows.first && row.index <= rows.last)
+                    return 0;
+                const after = row.index > rows.last;
+                const distance = after ? row.index - rows.last : rows.first - row.index;
+                return distance + ((after && scrollDirection < 0) || (!after && scrollDirection > 0) ? count : 0);
+            }
+            waiting.sort((a, b) => priority(a) - priority(b));
+            // Leave room in each frame for scene updates and input handling.
+            const deadline = Date.now() + (pendingWheelPixels ? 10 : 6);
+            let ready = 0;
+            for (const row of waiting) {
+                // Qt gives offscreen incubation spare time. When the reader
+                // is scrolling continuously, lend the first waiting body a
+                // frame slot even if the incubator has not finished it yet.
+                if (row.bodyIncubating)
+                    row.finishIncubation();
+                if (row.layoutWork.length && row.prepareLayout(deadline))
+                    ready++;
+                if (Date.now() >= deadline)
+                    break;
+            }
+            // Preserve the stationary viewport. Entire measured groups above
+            // it can remain at their estimates until a wheel step needs them.
+            if (ready)
+                settleGroups(pendingWheelPixels < 0);
+            return waiting.length > ready;
         }
         function jumpToMessage(row) {
             const partial = pane.messageModel.partialHistory && pane.controller.recentHistory;
@@ -433,24 +515,39 @@ Item {
             applyScroll(delta, true);
         }
         function applyScroll(delta, wheel) {
+            if (!delta)
+                return;
             if (pane.firstFrameRows)
                 pane.finishOpening(pane.renderGeneration);
-            beginBrowsing();
-            const rapid = pane.openAtBottom && wheel && Math.abs(delta) >= height;
-            const now = Date.now();
-            if (!rapid || now - lastWheelTime > 100 || (scrollDirection && scrollDirection * delta < 0))
+            if (!pane.openAtBottom || !wheel) {
                 resetScrollDemand();
-            if (rapid) {
-                scrollDirection = Math.sign(delta);
-                lastWheelTime = now;
-                aheadPixels = Math.max(aheadPixels, Math.abs(delta));
-                const distance = Math.min(groupPixels * 2, Math.abs(pendingWheelPixels) + Math.abs(delta));
-                pendingWheelPixels = scrollDirection * distance;
-                scrollIdle.restart();
-                advanceScroll(pendingWheelPixels, true);
-            } else {
+                beginBrowsing();
                 advanceScroll(delta, false);
+                return;
             }
+            const starting = !scrollDirection || restoring || followTail;
+            if (starting)
+                beginBrowsing();
+            const now = Date.now();
+            if (now - lastWheelTime > scrollIdle.interval || scrollDirection * delta < 0)
+                resetScrollDemand();
+            scrollDirection = Math.sign(delta);
+            lastWheelTime = now;
+            aheadPixels = Math.max(aheadPixels, Math.abs(delta));
+            const waiting = pendingWheelPixels !== 0;
+            const distance = Math.min(groupPixels * 2, Math.abs(pendingWheelPixels) + Math.abs(delta));
+            pendingWheelPixels = scrollDirection * distance;
+            // A small step can use the ready rows immediately. Further steps
+            // behind a pending boundary wait for the per-frame layout budget.
+            if (!waiting && Math.abs(delta) <= height) {
+                // Entering browse mode activates the directional display
+                // margin. Read its new row positions before moving into it.
+                if (starting)
+                    forceLayout();
+                advanceScroll(delta, true);
+            }
+            scrollIdle.restart();
+            scheduleRange();
         }
         function resetScrollDemand() {
             scrollIdle.stop();
@@ -458,6 +555,7 @@ Item {
             aheadPixels = 0;
             scrollDirection = 0;
             pendingWheelPixels = 0;
+            probedBoundary = -1;
         }
         function advanceScroll(distance, deferred) {
             let target = Math.max(originY, Math.min(bottomY, contentY + distance));
@@ -470,31 +568,36 @@ Item {
                 allowed = clamp();
             };
             const direction = Math.sign(distance);
-            const finishBoundary = () => finishGroup(direction < 0 ? limits.above : limits.below, direction);
             if (Math.abs(allowed - target) > 0.5) {
+                const boundary = direction < 0 ? limits.above : limits.below;
                 if (deferred) {
-                    settleGroups(distance < 0);
-                    refresh();
-                    // When Qt delays creating the first slot beyond the
-                    // prepared range, a clamped wheel step cannot reach it.
-                    // Finish that boundary before drawing any movement.
-                    if (Math.abs(allowed - contentY) <= 0.5 && Math.abs(allowed - target) > 0.5) {
-                        finishBoundary();
+                    // At the exact cache edge Qt can postpone creating the next
+                    // shell. Nudge it once, leaving the body to the layout budget.
+                    if (Math.abs(allowed - contentY) <= 0.5 && boundary >= 0 && boundary !== probedBoundary
+                            && !itemAtIndex(boundary)) {
+                        probedBoundary = boundary;
+                        ensureBoundaryShell(boundary, direction);
                         refresh();
                     }
                 } else {
-                    finishBoundary();
+                    finishGroup(boundary, direction);
                     refresh();
                 }
             }
-            if (deferred)
-                pendingWheelPixels = Math.abs(target - allowed) > 0.5 ? target - allowed : 0;
-            anchoring = true;
-            contentY = allowed;
-            anchoring = false;
-            scheduleRange();
-            loadEarlierAtTop();
-            if (nearBottom && !chatSelection.dragging) {
+            if (deferred) {
+                const moved = allowed - contentY;
+                pendingWheelPixels = (direction < 0 ? allowed <= originY : allowed >= bottomY)
+                    || Math.abs(pendingWheelPixels - moved) < 0.5 ? 0 : pendingWheelPixels - moved;
+            }
+            if (Math.abs(allowed - contentY) >= 0.01) {
+                anchoring = true;
+                contentY = allowed;
+                anchoring = false;
+                scheduleRange();
+            }
+            if (direction < 0)
+                loadEarlierAtTop();
+            if (direction > 0 && nearBottom && !chatSelection.dragging) {
                 followTail = true;
                 pinTail();
             }
@@ -595,6 +698,19 @@ Item {
             }
             return !first || first.index === 0 || first.y <= top + spacing + 1;
         }
+        function checkLoadedTail(generation) {
+            // A body completing between timer ticks can already cover the
+            // first screen. Keep its opening token until the check runs.
+            if (generation !== pane.renderGeneration || !pane.current || !pane.concealed
+                    || !restoring || !followTail || firstScreenPositioned || !count)
+                return;
+            forceLayout();
+            pinTail();
+            if (firstScreenReady())
+                finishPosition();
+            else
+                requestFirstScreen();
+        }
         function finishPosition() {
             restoreTimer.stop();
             if (followTail && pane.firstFrameRows) {
@@ -632,7 +748,11 @@ Item {
         clip: true
         spacing: 27
         model: pane.renderReady ? pane.messageModel : null
-        cacheBuffer: Math.max(0, reach)
+        // Create the nearby shells before reaching their estimated positions.
+        // Rich message bodies still incubate and measure separately.
+        displayMarginBeginning: scrollDirection < 0 ? wheelMargin : 0
+        displayMarginEnd: scrollDirection > 0 ? wheelMargin : 0
+        cacheBuffer: Math.max(0, reach - wheelMargin)
         currentIndex: -1
         activeFocusOnTab: true
         Keys.onPressed: event => {
@@ -677,8 +797,15 @@ Item {
         }
         onAtYBeginningChanged: loadEarlierAtTop()
         function loadEarlierAtTop() {
-            if (atYBeginning && !anchoring && !followTail && !restoring && pane.current && pane.messageModel
-                    && pane.messageModel.partialHistory && pane.controller.recentHistory)
+            if (anchoring || followTail || restoring || !pane.current || !pane.messageModel
+                    || !pane.messageModel.partialHistory || !pane.controller.recentHistory)
+                return;
+            // A wheel queue may reach the first message before ListView
+            // reaches the beginning of its header. Request earlier history
+            // as that first row enters the area being laid out.
+            const first = itemAtIndex(0);
+            if (atYBeginning || (scrollDirection < 0 && first && first.y <= contentY + height
+                    && first.y + first.height >= contentY - height))
                 pane.controller.recentHistory.loadEarlier();
         }
         function scheduleRange() {
@@ -688,23 +815,39 @@ Item {
         function requestVisibleRange() {
             if (!pane.current || !count || (pane.firstFrameRows && !explicitJump))
                 return;
-            forceLayout();
+            if (!wheelFrame.running)
+                forceLayout();
             // indexAt() returns -1 in spacing and outside instantiated delegates;
             // updateGroups() inspects the intersecting slots so a gap cannot
             // starve rows.
             if (visibleRows(slotMap().slots).first < 0)
                 scheduleRange();
-            else {
+            else
                 updateGroups();
-                if (pendingWheelPixels && !restoring)
-                    advanceScroll(pendingWheelPixels, true);
+        }
+        FrameAnimation {
+            id: wheelFrame
+            running: pane.current && (conversation.layoutPending || conversation.pendingWheelPixels !== 0)
+            onTriggered: {
+                if (conversation.layoutPending || conversation.pendingWheelPixels)
+                    conversation.layoutPending = conversation.layoutNearViewport();
+                if (conversation.pendingWheelPixels && !conversation.restoring) {
+                    // Keep an overlapping strip of the previous screen in
+                    // each frame of a large wheel gesture.
+                    const step = Math.max(1, conversation.height * 0.58);
+                    const pending = conversation.pendingWheelPixels;
+                    conversation.advanceScroll(Math.sign(pending) * Math.min(Math.abs(pending), step), true);
+                }
             }
         }
         Timer {
             id: scrollIdle
             interval: 100
             onTriggered: {
-                conversation.resetScrollDemand();
+                if (conversation.pendingWheelPixels)
+                    start();
+                else
+                    conversation.resetScrollDemand();
                 conversation.scheduleRange();
             }
         }
@@ -809,7 +952,7 @@ Item {
                         }
                     }
                 }
-                if (conversation.restoreAttempts >= 2) {
+                if (conversation.restoreAttempts >= 2 || (pane.openAtBottom && conversation.followTail)) {
                     conversation.finishPosition();
                 }
             }
@@ -862,14 +1005,15 @@ Item {
             // and new numbers while ListView inserts, so no body unloads.
             function onHistoryAboutToPrepend(count) {
                 chatSelection.clear();
-                // The first row on screen stays where it is; it moves up by
-                // the loading row, which the earlier rows replace. Rows
-                // above it then load as the reader scrolls to them.
+                // Keep the first row on screen in place, accounting for only
+                // the visible part of the loading header when it disappears.
                 const rows = conversation.visibleRows(conversation.slotMap().slots);
                 const item = rows.first >= 0 ? conversation.itemAtIndex(rows.first) : null;
-                const loading = conversation.headerItem ? conversation.headerItem.height : 0;
+                const header = conversation.headerItem, top = conversation.contentY;
+                const loading = header ? Math.max(0, Math.min(header.y + header.height, top + conversation.height)
+                    - Math.max(header.y, top)) : 0;
                 conversation.prependAnchor = item ? rows.first : -1;
-                conversation.prependOffset = item ? item.y - conversation.contentY - loading : 0;
+                conversation.prependOffset = item ? item.y - top - loading : 0;
                 if (conversation.activeLast >= 0) {
                     conversation.activeLast += count;
                     conversation.activeEnd += count;
@@ -902,6 +1046,8 @@ Item {
                     conversation.contentY -= 1;
                     conversation.forceLayout();
                     conversation.contentY += 1;
+                    if (pane.openAtBottom)
+                        conversation.settleExposedRows();
                     conversation.anchoring = false;
                 }
                 if (conversation.followTail && !conversation.restoring)
@@ -948,6 +1094,37 @@ Item {
             property bool shown: false
             property bool laidOut: false
             property real measuredHeight: 0
+            property var layoutWork: []
+            property bool finishingIncubation: false
+            readonly property bool bodyIncubating: bodyLoader.status === Loader.Loading
+            function finishIncubation() {
+                finishingIncubation = true;
+                finishingIncubation = false;
+            }
+            function prepareLayout(deadline) {
+                // The queue belongs to the delegate and dies with it. Visit
+                // children before their parent, like polishBody(), but yield
+                // even when a single message has many components.
+                while (layoutWork.length && Date.now() < deadline) {
+                    const job = layoutWork.pop();
+                    const node = job.item;
+                    if (!node)
+                        continue;
+                    if (job.childrenDone) {
+                        node.ensurePolished();
+                    } else {
+                        layoutWork.push({item: node, childrenDone: true});
+                        for (let i = node.children.length - 1; i >= 0; i--)
+                            if (node.children[i].visible)
+                                layoutWork.push({item: node.children[i], childrenDone: false});
+                    }
+                }
+                if (layoutWork.length || !bodyLoader.item)
+                    return false;
+                applyHeight(bodyLoader.item.implicitHeight, bodyLoader.item.expandedLayout);
+                laidOut = true;
+                return true;
+            }
             function applyHeight(value, expanded) {
                 if (!(value > 0) || pane.released)
                     return;
@@ -980,29 +1157,36 @@ Item {
                 // The latest row loads at once while the view follows it: its
                 // placeholder is as tall as the expected reply, so loading it
                 // in the background on a slow machine leaves the screen blank.
-                asynchronous: (rowShell.index < conversation.urgentFirst || rowShell.index > conversation.urgentLast)
+                asynchronous: !rowShell.finishingIncubation
+                    && (rowShell.index < conversation.urgentFirst || rowShell.index > conversation.urgentLast)
                     && !(conversation.followTail && rowShell.index === conversation.count - 1)
                 active: !pane.released && !rowShell.modelData._loading && rowShell.wanted
                     && (!pane.firstFrameRows || rowShell.index >= conversation.count - pane.firstFrameRows)
                 opacity: rowShell.shown ? 1 : 0
                 enabled: rowShell.shown
-                onStatusChanged: if (status !== Loader.Ready)
-                    rowShell.laidOut = false
+                onStatusChanged: if (status !== Loader.Ready) {
+                    rowShell.laidOut = false;
+                    rowShell.layoutWork = [];
+                }
                 onLoaded: {
-                    // Lay out each body while its group is being loaded. A
-                    // wheel event that reaches a prefetched group can then
-                    // show it without polishing every body in one callback.
-                    conversation.polishBody(item);
-                    rowShell.applyHeight(item.implicitHeight, item.expandedLayout);
-                    rowShell.laidOut = true;
-                    if (!conversation.forcing)
-                        conversation.settleGroups();
+                    if (pane.openAtBottom && !conversation.followTail && !conversation.restoring && !conversation.forcing) {
+                        rowShell.layoutWork = [{item: item, childrenDone: false}];
+                        conversation.layoutPending = true;
+                    } else {
+                        conversation.polishBody(item);
+                        rowShell.applyHeight(item.implicitHeight, item.expandedLayout);
+                        rowShell.laidOut = true;
+                        if (!conversation.forcing)
+                            conversation.settleGroups();
+                    }
+                    if (pane.openAtBottom && pane.concealed && conversation.followTail && conversation.restoring)
+                        Qt.callLater(conversation.checkLoadedTail, pane.renderGeneration);
                     conversation.scheduleRange();
                 }
                 sourceComponent: Column {
                     id: messageRow
                     objectName: pane.messagePrefix === "widget" ? "widgetChatMessage_" + index : "chatMessage_" + index
-                    readonly property var replyMascot: closingMascot
+                    readonly property var replyMascot: closingMascot.item
                     property var modelData: rowShell.modelData
                     property int index: rowShell.index
                     readonly property bool compactionNotice: modelData.customType === "umeko-compaction"
@@ -1012,10 +1196,10 @@ Item {
                     readonly property bool hovered: chatSelection.hovering && hoverPoint.x >= 0 && hoverPoint.x <= width && hoverPoint.y >= 0 && hoverPoint.y <= height
                     width: conversation.width - 16
                     spacing: 10
-                    readonly property bool expandedLayout: activityHistory.layoutExpanded || compactionEvent.expanded
-                    onExpandedLayoutChanged: if (bodyLoader.status === Loader.Ready)
+                    readonly property bool expandedLayout: activityHistory.layoutExpanded || !!(compactionLoader.item && compactionLoader.item.expanded)
+                    onExpandedLayoutChanged: if (rowShell.laidOut)
                         rowShell.applyHeight(implicitHeight, expandedLayout)
-                    onImplicitHeightChanged: if (bodyLoader.status === Loader.Ready)
+                    onImplicitHeightChanged: if (rowShell.laidOut)
                         rowShell.applyHeight(implicitHeight, expandedLayout)
                     Row {
                         visible: !modelData._loading && !messageRow.statusNotice && !modelData.continuation && modelData.role !== "user"
@@ -1049,7 +1233,8 @@ Item {
                         }
                         visible: !modelData._loading && !messageRow.statusNotice
                         readonly property bool userMessage: modelData.role === "user"
-                        width: userMessage ? (modelData.text.length > 512 ? messageRow.width * 0.82 : Math.min(messageRow.width * 0.82, Math.max(64, userBody.implicitWidth + 28))) : parent.width - 33
+                        readonly property real userBodyWidth: userBody.item ? userBody.item.implicitWidth : 0
+                        width: userMessage ? (modelData.text.length > 512 ? messageRow.width * 0.82 : Math.min(messageRow.width * 0.82, Math.max(64, userBodyWidth + 28))) : parent.width - 33
                         x: userMessage ? parent.width - width : 33
                         height: replyColumn.implicitHeight + (userMessage ? 22 : modelData.error ? 28 : 4)
                         radius: userMessage ? 13 : 8
@@ -1067,14 +1252,17 @@ Item {
                                 selectionController: chatSelection
                                 messageIndex: messageRow.index
                             }
-                            UserMessageBody {
+                            Loader {
                                 id: userBody
                                 width: parent.width
-                                visible: modelData.role === "user"
-                                text: modelData.role === "user" ? modelData.text : ""
-                                attachments: modelData.attachments || []
-                                selectionController: chatSelection
-                                messageIndex: messageRow.index
+                                active: modelData.role === "user"
+                                visible: active
+                                sourceComponent: UserMessageBody {
+                                    text: modelData.text
+                                    attachments: modelData.attachments || []
+                                    selectionController: chatSelection
+                                    messageIndex: messageRow.index
+                                }
                             }
                             MessageBody {
                                 id: reply
@@ -1089,15 +1277,18 @@ Item {
                             }
                         }
                     }
-                    ActionButton {
-                        objectName: (pane.messagePrefix ? pane.messagePrefix + "RequestDetails_" : "requestDetails_") + messageRow.index
-                        selectionController: chatSelection
-                        visible: !modelData._loading && !messageRow.statusNotice && !!modelData.error && (modelData.diagnosticId || "").length > 0
+                    Loader {
+                        active: !modelData._loading && !messageRow.statusNotice && !!modelData.error && (modelData.diagnosticId || "").length > 0
+                        visible: active
                         x: 33
-                        text: I18n.t("查看请求与返回")
-                        glyph: "code"
-                        quiet: true
-                        onClicked: backend.showRequestDetails(modelData.diagnosticId)
+                        sourceComponent: ActionButton {
+                            objectName: (pane.messagePrefix ? pane.messagePrefix + "RequestDetails_" : "requestDetails_") + messageRow.index
+                            selectionController: chatSelection
+                            text: I18n.t("查看请求与返回")
+                            glyph: "code"
+                            quiet: true
+                            onClicked: backend.showRequestDetails(modelData.diagnosticId)
+                        }
                     }
                     Text {
                         objectName: "dshInterruptionNotice_" + messageRow.index
@@ -1114,102 +1305,109 @@ Item {
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.font(12, visible, chatSelection)
                     }
-                    Column {
-                        id: compactionEvent
-                        objectName: "compactionEvent_" + messageRow.index
+                    Loader {
+                        id: compactionLoader
+                        active: !modelData._loading && messageRow.compactionNotice
+                        visible: active
                         x: 33
                         width: parent.width - 33
-                        visible: !modelData._loading && messageRow.compactionNotice
-                        readonly property var record: modelData.compaction || ({})
-                        readonly property string eventState: record.state || "success"
-                        readonly property string heading: eventState === "running" ? I18n.t("正在压缩上下文") : eventState === "failure" ? I18n.t("上下文压缩失败") : I18n.t("上下文已压缩")
-                        property bool expanded: false
-                        spacing: 6
-                        onExpandedChanged: if (!expanded)
-                            chatSelection.hideDetails(messageRow.index, 0, 1)
-                        Item {
-                            width: Math.min(parent.width, compactionHeading.implicitWidth)
-                            height: Theme.control(24)
-                            Row {
-                                id: compactionHeading
-                                height: parent.height
-                                spacing: 7
-                                ActivitySpinner {
-                                    visible: compactionEvent.eventState === "running"
-                                    width: Theme.icon(12)
-                                    height: Theme.icon(12)
-                                    anchors.verticalCenter: parent.verticalCenter
+                        sourceComponent: Column {
+                            id: compactionEvent
+                            objectName: "compactionEvent_" + messageRow.index
+                            readonly property var record: modelData.compaction || ({})
+                            readonly property string eventState: record.state || "success"
+                            readonly property string heading: eventState === "running" ? I18n.t("正在压缩上下文") : eventState === "failure" ? I18n.t("上下文压缩失败") : I18n.t("上下文已压缩")
+                            property bool expanded: false
+                            spacing: 6
+                            onExpandedChanged: if (!expanded)
+                                chatSelection.hideDetails(messageRow.index, 0, 1)
+                            Item {
+                                width: Math.min(parent.width, compactionHeading.implicitWidth)
+                                height: Theme.control(24)
+                                Row {
+                                    id: compactionHeading
+                                    height: parent.height
+                                    spacing: 7
+                                    ActivitySpinner {
+                                        visible: compactionEvent.eventState === "running"
+                                        width: Theme.icon(12)
+                                        height: Theme.icon(12)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Text {
+                                        font.family: Theme.fontFamily
+                                        text: compactionEvent.heading
+                                        color: compactionHover.interactionHovered ? Theme.ink : Theme.muted
+                                        font.pixelSize: Theme.font(12, visible, chatSelection)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Glyph {
+                                        name: compactionEvent.expanded ? "chevron-down" : "chevron-right"
+                                        width: Theme.icon(12)
+                                        height: Theme.icon(12)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
                                 }
-                                Text {
-                                    font.family: Theme.fontFamily
-                                    text: compactionEvent.heading
-                                    color: compactionHover.interactionHovered ? Theme.ink : Theme.muted
-                                    font.pixelSize: Theme.font(12, visible, chatSelection)
-                                    anchors.verticalCenter: parent.verticalCenter
+                                ChatHitArea {
+                                    id: compactionHover
+                                    objectName: "compactionEventToggle_" + messageRow.index
+                                    anchors.fill: parent
+                                    selectionController: chatSelection
+                                    onClicked: compactionEvent.expanded = !compactionEvent.expanded
                                 }
-                                Glyph {
-                                    name: compactionEvent.expanded ? "chevron-down" : "chevron-right"
-                                    width: Theme.icon(12)
-                                    height: Theme.icon(12)
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: compactionEvent.heading
+                                Accessible.description: compactionEvent.expanded ? I18n.t("已展开") : I18n.t("已折叠")
                             }
-                            ChatHitArea {
-                                id: compactionHover
-                                objectName: "compactionEventToggle_" + messageRow.index
-                                anchors.fill: parent
-                                selectionController: chatSelection
-                                onClicked: compactionEvent.expanded = !compactionEvent.expanded
-                            }
-                            Accessible.role: Accessible.Button
-                            Accessible.name: compactionEvent.heading
-                            Accessible.description: compactionEvent.expanded ? I18n.t("已展开") : I18n.t("已折叠")
-                        }
-                        Item {
-                            visible: compactionEvent.expanded
-                            width: parent.width
-                            height: compactionDetails.implicitHeight
-                            Rectangle {
-                                width: 1
-                                height: parent.height
-                                color: Theme.line
-                                x: 6
-                            }
-                            SelectableText {
-                                id: compactionDetails
-                                objectName: "compactionEventDetails_" + messageRow.index
-                                x: 23
-                                width: parent.width - x
-                                text: {
-                                    const detail = compactionEvent.record, lines = [];
-                                    if (typeof detail.before === "number")
-                                        lines.push(I18n.t("压缩前：") + detail.before + " tokens");
-                                    if (typeof detail.after === "number")
-                                        lines.push(I18n.t("压缩后：") + detail.after + " tokens");
-                                    if (detail.summary)
-                                        lines.push("\n" + I18n.t("压缩摘要") + "\n" + detail.summary);
-                                    if (detail.error)
-                                        lines.push("\n" + I18n.t(detail.error));
-                                    return lines.join("\n");
+                            Item {
+                                visible: compactionEvent.expanded
+                                width: parent.width
+                                height: compactionDetails.implicitHeight
+                                Rectangle {
+                                    width: 1
+                                    height: parent.height
+                                    color: Theme.line
+                                    x: 6
                                 }
-                                color: Theme.muted
-                                font.pixelSize: Theme.font(13, visible, chatSelection)
-                                wrapMode: TextEdit.Wrap
-                                textFormat: TextEdit.PlainText
-                                selectionController: chatSelection
-                                messageIndex: messageRow.index
-                                blockIndex: 0
-                                conditionalSelection: true
+                                SelectableText {
+                                    id: compactionDetails
+                                    objectName: "compactionEventDetails_" + messageRow.index
+                                    x: 23
+                                    width: parent.width - x
+                                    text: {
+                                        const detail = compactionEvent.record, lines = [];
+                                        if (typeof detail.before === "number")
+                                            lines.push(I18n.t("压缩前：") + detail.before + " tokens");
+                                        if (typeof detail.after === "number")
+                                            lines.push(I18n.t("压缩后：") + detail.after + " tokens");
+                                        if (detail.summary)
+                                            lines.push("\n" + I18n.t("压缩摘要") + "\n" + detail.summary);
+                                        if (detail.error)
+                                            lines.push("\n" + I18n.t(detail.error));
+                                        return lines.join("\n");
+                                    }
+                                    color: Theme.muted
+                                    font.pixelSize: Theme.font(13, visible, chatSelection)
+                                    wrapMode: TextEdit.Wrap
+                                    textFormat: TextEdit.PlainText
+                                    selectionController: chatSelection
+                                    messageIndex: messageRow.index
+                                    blockIndex: 0
+                                    conditionalSelection: true
+                                }
                             }
                         }
                     }
-                    OutputLimitNotice {
+                    Loader {
                         objectName: "outputLimitNotice_" + messageRow.index
+                        active: !modelData._loading && !messageRow.statusNotice && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
+                        visible: active
                         x: 33
                         width: parent.width - 33
-                        visible: !modelData._loading && !messageRow.statusNotice && modelData.segmentLast !== false && modelData.role === "assistant" && modelData.stopReason === "length"
-                        continuable: messageRow.index === conversation.count - 1 && !pane.busy
-                        onContinued: pane.controller.send(I18n.t("继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。"))
+                        sourceComponent: OutputLimitNotice {
+                            continuable: messageRow.index === conversation.count - 1 && !pane.busy
+                            onContinued: pane.controller.send(I18n.t("继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。"))
+                        }
                     }
                     Item {
                         objectName: "messageActions_" + messageRow.index
@@ -1252,36 +1450,57 @@ Item {
                             }
                         }
                     }
-                    ReplyMascot {
+                    Loader {
                         id: closingMascot
-                        portraitSource: String(pane.replyPortrait).length ? pane.replyPortrait : String(pane.portrait).length ? pane.portrait : Character.asset("reply", "../icons/yanami-pixel.png")
-                        interactionLabel: pane.roleSlot >= 0 ? pane.assistantName + (Character.personalityEnabled ? I18n.t("：点击互动，连续点击或长按有彩蛋") : "") : pane.messagePrefix ? pane.assistantName : Character.id === "yanami" ? I18n.t("八奈见：点击互动，连续点击或长按有彩蛋") : Character.style.name
-                        tapLines: pane.roleSlot >= 0 ? Character.roleLine(pane.roleSlot, "tap", []) : pane.messagePrefix === "widget" ? [] : Character.scene("reply.tap", [])
-                        celebrationLine: pane.roleSlot >= 0 ? Character.roleLine(pane.roleSlot, "celebration", "") : pane.messagePrefix === "widget" ? "" : Character.scene("reply.celebration", "")
-                        objectName: pane.messagePrefix === "subagent" ? "subagentReplyMascot_" + messageRow.index : "replyEndMascot_" + messageRow.index
-                        selectionController: chatSelection
+                        readonly property string mascotName: pane.messagePrefix === "subagent" ? "subagentReplyMascot_" + messageRow.index : "replyEndMascot_" + messageRow.index
+                        readonly property bool eligible: pane.controller.sessionBackend !== "dsh" && !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
+                        property bool created: false
+                        objectName: active ? "" : mascotName
                         width: Character.id === "doubao" ? Theme.icon(72) : 56
-                        visible: pane.controller.sessionBackend !== "dsh" && !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
+                        active: eligible || created
+                        visible: eligible
                         x: 33
+                        onLoaded: created = true
+                        sourceComponent: ReplyMascot {
+                            objectName: closingMascot.mascotName
+                            portraitSource: String(pane.replyPortrait).length ? pane.replyPortrait : String(pane.portrait).length ? pane.portrait : Character.asset("reply", "../icons/yanami-pixel.png")
+                            interactionLabel: pane.roleSlot >= 0 ? pane.assistantName + (Character.personalityEnabled ? I18n.t("：点击互动，连续点击或长按有彩蛋") : "") : pane.messagePrefix ? pane.assistantName : Character.id === "yanami" ? I18n.t("八奈见：点击互动，连续点击或长按有彩蛋") : Character.style.name
+                            tapLines: pane.roleSlot >= 0 ? Character.roleLine(pane.roleSlot, "tap", []) : pane.messagePrefix === "widget" ? [] : Character.scene("reply.tap", [])
+                            celebrationLine: pane.roleSlot >= 0 ? Character.roleLine(pane.roleSlot, "celebration", "") : pane.messagePrefix === "widget" ? "" : Character.scene("reply.celebration", "")
+                            selectionController: chatSelection
+                            captionMaxWidth: Math.max(1, messageRow.width - closingMascot.x - width - 8)
+                        }
                     }
                 }
             }
             Item {
                 anchors.fill: parent
                 visible: !rowShell.bodyReady && rowShell.wanted
-                ActivitySpinner {
-                    objectName: "historyLoading_" + rowShell.index
+                Loader {
+                    id: loadingIndicator
+                    readonly property string spinnerName: "historyLoading_" + rowShell.index
+                    objectName: active ? "" : spinnerName
+                    active: parent.visible && !rowShell.modelData._loadError
+                        && rowShell.y + rowShell.height > conversation.contentY
+                        && rowShell.y < conversation.contentY + conversation.height
+                    visible: active
                     x: 33
                     y: 16
-                    running: pane.current && parent.visible && !rowShell.modelData._loadError
+                    sourceComponent: ActivitySpinner {
+                        objectName: loadingIndicator.spinnerName
+                        running: pane.current
+                    }
                 }
-                ActionButton {
+                Loader {
+                    active: parent.visible && !!rowShell.modelData._loadError
+                    visible: active
                     x: 33
                     y: 16
-                    visible: !!rowShell.modelData._loadError
-                    text: I18n.t("重新加载消息")
-                    glyph: "refresh-cw"
-                    onClicked: pane.messageModel.retryPage(rowShell.index)
+                    sourceComponent: ActionButton {
+                        text: I18n.t("重新加载消息")
+                        glyph: "refresh-cw"
+                        onClicked: pane.messageModel.retryPage(rowShell.index)
+                    }
                 }
             }
         }
