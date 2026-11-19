@@ -47,6 +47,7 @@ from .session_files import SessionFiles
 from .document_preview import DocumentPreview
 from .preferences import PreferencesMixin
 from .common_providers import CommonProvidersMixin
+from .image_providers import ImageProvidersMixin, PRESETS as IMAGE_PROVIDER_PRESETS, CUSTOM_PRESET as CUSTOM_IMAGE_PROVIDER
 from .chatbox import media_view
 from .subagents import Subagents
 from .characters import CharactersMixin
@@ -69,13 +70,21 @@ GREETINGS = (
 )
 
 
-class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, PreferencesMixin, DshControllerMixin, PiControllerMixin, QObject):
+class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, PreferencesMixin, DshControllerMixin, PiControllerMixin, QObject):
     changed = Signal()
     agentResourcesChanged = Signal()
     appearanceChanged = Signal()
     characterCatalogChanged = Signal()
     desktopSettingsChanged = Signal()
     auxiliaryVisionSettingsChanged = Signal()
+
+    @Property('QVariantList', constant=True)
+    def imageProviderPresets(self):
+        return copy.deepcopy([*IMAGE_PROVIDER_PRESETS, CUSTOM_IMAGE_PROVIDER])
+
+    @Property('QVariantList', notify=changed)
+    def imageProviders(self):
+        return self._image_provider_rows()
 
     @Property('QVariantMap', notify=desktopSettingsChanged)
     def desktopSettings(self):
@@ -2037,6 +2046,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Slot(str)
     def removeProvider(self, provider_id):
         provider = self.gateway.provider(provider_id)
+        if provider and provider['api'] == 'image':
+            return self.removeImageProvider(provider_id)
         if provider and provider["api"] == "plugin":
             return self._provider_plugins.remove(provider_id)
         if self._models_busy(provider_id):
@@ -2236,7 +2247,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         files = transcript_warmup.recent_transcripts(self._sessions)
         self._transcript_warmup = transcript_warmup.start(
             self.transcripts, files, cancelled=lambda: self._closing,
-            paused=lambda: self._session_preview.reading)
+            paused=lambda: self._session_preview.reading or self._session_preview.wheel_scrolling)
 
     def loadNativeIndex(self):
         directory = self.store.directory / "pi/sessions"

@@ -54,6 +54,7 @@ class PreferencesMixin:
     @Slot(str, result=bool)
     def saveMultimodalSettings(self, raw):
         from .multimodal_settings import normalize, validate
+        from .generation import capabilities
         old = self.store.data['multimodal']
         try:
             if self._models_busy():
@@ -65,11 +66,13 @@ class PreferencesMixin:
                     row['model'] = ''
                     continue
                 provider = self.gateway.provider(row['providerId'])
-                if not provider or (provider['api'] != 'openai' and
-                                    kind not in provider.get('generationCapabilities', [])):
+                if not provider or kind not in capabilities(provider):
                     raise ValueError('请选择支持该生成功能的供应商')
                 if not row['model']:
                     raise ValueError('请输入模型 ID')
+                if provider.get('api') == 'image':
+                    from .image_providers import parameters
+                    parameters(provider, row['model'], row)
                 if kind == 'speech' and not row['voice']:
                     raise ValueError('请输入供应商支持的音色 ID')
             if value == old:

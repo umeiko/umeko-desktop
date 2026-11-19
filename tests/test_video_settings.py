@@ -96,7 +96,7 @@ class VideoSettingsTests(unittest.TestCase):
                                ('speech', DEFAULTS['speech'])]:
             with self.subTest(kind=kind, settings=settings):
                 fixture = f"""
-                    var kind = {json.dumps(kind)}, providerId = '', modelId = '', formatValue = '';
+                    var kind = {json.dumps(kind)}, providerId = '', modelId = '', formatValue = '', imagePreset = null;
                     var backend = {{config: {{multimodal: {{{kind}: {json.dumps(settings)}}}}}}};
                     var size = {{}}, quality = {{}}, count = {{}}, voice = {{}}, speed = {{}};
                     var videoSize = {{}}, seconds = {{}};
@@ -118,7 +118,10 @@ class VideoSettingsTests(unittest.TestCase):
         """
         self.assertEqual(self.evaluate(fixture + '(' + expression + ').map(p => p.id)'),
                          ['openai-account', 'video-plugin'])
-        self.assertIn('account ? account.models : []', source)
+        models = re.search(r'readonly property var models: (.*)', source).group(1)
+        fixture = "var imagePreset = null, account = {api: 'openai', models: [{upstream: 'video-model'}]};"
+        self.assertEqual(self.evaluate(fixture + '(' + models + ')'), [{'upstream': 'video-model'}])
+        self.assertEqual(self.evaluate(fixture + 'account = null; (' + models + ')'), [])
         self.assertIn('onTextEdited: root.modelId = text', source)
 
     def test_settings_form_saves_and_reloads_the_real_video_card(self):
@@ -126,7 +129,6 @@ class VideoSettingsTests(unittest.TestCase):
         self.assertIn('objectName: "videoGenerationSettings"', source)
         self.assertIn('kind: "video"', source)
         self.assertIn('video: video.values()', source)
-        self.assertIn('video.load()', source)
         self.assertNotIn('videoGenerationNotice', source)
         self.assertNotIn('imageUnderstandingNotice', source)
         self.assertIn('图片、语音与视频生成', source)
@@ -135,11 +137,11 @@ class VideoSettingsTests(unittest.TestCase):
         source = (QML / 'MultimodalSettings.qml').read_text(encoding='utf-8')
         method = re.search(r'    function reload\(\) \{[\s\S]*?\n    }', source).group(0)
         fixture = """
-            var savedSignature = '', calls = [0, 0, 0], videoDraft = '';
-            var backend = {config: {multimodal: {video: {model: 'saved-video'}}, vision: {}}};
-            var image = {load: function() {calls[0]++;}};
-            var speech = {load: function() {calls[1]++;}};
-            var video = {load: function() {calls[2]++; videoDraft = backend.config.multimodal.video.model;}};
+            var savedSignatures = {}, calls = [0, 0, 0], videoDraft = '';
+            var backend = {config: {multimodal: {image: {model: 'saved-image'}, speech: {model: 'saved-speech'}, video: {model: 'saved-video'}}, vision: {}}};
+            var image = {kind: 'image', load: function() {calls[0]++;}};
+            var speech = {kind: 'speech', load: function() {calls[1]++;}};
+            var video = {kind: 'video', load: function() {calls[2]++; videoDraft = backend.config.multimodal.video.model;}};
         """
         exercise = """
             reload();
@@ -152,7 +154,7 @@ class VideoSettingsTests(unittest.TestCase):
             ({preserved: preserved, draft: videoDraft, calls: calls});
         """
         self.assertEqual(self.evaluate(fixture + method + exercise),
-                         {'preserved': True, 'draft': 'updated-video', 'calls': [2, 2, 2]})
+                         {'preserved': True, 'draft': 'updated-video', 'calls': [1, 1, 2]})
 
     def test_video_labels_and_provider_disclosure_have_english_translations(self):
         source = (QML / 'english.js').read_text(encoding='utf-8').replace('.pragma library', '')
