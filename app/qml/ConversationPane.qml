@@ -368,14 +368,14 @@ Item {
                 return;
             if (!itemAtIndex(row)) {
                 // A row whose edge meets the screen edge exactly may not be
-                // created yet: ListView fills its cache buffer later, and
-                // while it waits the scroll stays blocked at this edge. Move
-                // one pixel toward the row and back, without a frame in
-                // between, so the row exists and its group can load now.
+                // created yet: ListView fills its cache buffer later. Cross
+                // the inter-row spacing and return in the same animation
+                // tick, so Qt instantiates the shell before it is visible.
                 anchoring = true;
-                contentY += step;
+                const previous = contentY;
+                contentY += step * (spacing + 1);
                 forceLayout();
-                contentY -= step;
+                contentY = previous;
                 forceLayout();
                 anchoring = false;
             }
@@ -464,14 +464,28 @@ Item {
             let limits = shownLimits();
             const clamp = () => Math.max(Math.min(contentY, limits.upper), Math.min(target, Math.max(contentY, limits.lower - height)));
             let allowed = clamp();
-            if (Math.abs(allowed - target) > 0.5) {
-                if (deferred)
-                    settleGroups(distance < 0);
-                else
-                    finishGroup(distance < 0 ? limits.above : limits.below, distance < 0 ? -1 : 1);
+            const refresh = () => {
                 target = Math.max(originY, Math.min(bottomY, contentY + distance));
                 limits = shownLimits();
                 allowed = clamp();
+            };
+            const direction = Math.sign(distance);
+            const finishBoundary = () => finishGroup(direction < 0 ? limits.above : limits.below, direction);
+            if (Math.abs(allowed - target) > 0.5) {
+                if (deferred) {
+                    settleGroups(distance < 0);
+                    refresh();
+                    // When Qt delays creating the first slot beyond the
+                    // prepared range, a clamped wheel step cannot reach it.
+                    // Finish that boundary before drawing any movement.
+                    if (Math.abs(allowed - contentY) <= 0.5 && Math.abs(allowed - target) > 0.5) {
+                        finishBoundary();
+                        refresh();
+                    }
+                } else {
+                    finishBoundary();
+                    refresh();
+                }
             }
             if (deferred)
                 pendingWheelPixels = Math.abs(target - allowed) > 0.5 ? target - allowed : 0;
