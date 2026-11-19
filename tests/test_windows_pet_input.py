@@ -29,12 +29,13 @@ def run_native():
                       QT_QPA_PLATFORM='windows', QT_QUICK_BACKEND='software',
                       UMEKO_LANGUAGE='zh')
     sys.path.insert(0, str(ROOT))
-    from PySide6.QtCore import QObject, Qt
+    from PySide6.QtCore import QObject, QPointF, QRectF, Qt
     from PySide6.QtGui import QGuiApplication, QInputMethodEvent
     from PySide6.QtQml import QQmlEngine, QQmlExpression
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QSystemTrayIcon
     QSystemTrayIcon.show = lambda *args: None
+    from app.windows_ime import CompositionForm, CandidateForm
     from main import create_application
     import shiboken6
 
@@ -46,6 +47,10 @@ def run_native():
     imm.ImmGetContext.restype = wintypes.HANDLE
     imm.ImmReleaseContext.argtypes = [wintypes.HWND, wintypes.HANDLE]
     imm.ImmReleaseContext.restype = wintypes.BOOL
+    imm.ImmGetCompositionWindow.argtypes = [wintypes.HANDLE, ctypes.POINTER(CompositionForm)]
+    imm.ImmGetCompositionWindow.restype = wintypes.BOOL
+    imm.ImmGetCandidateWindow.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(CandidateForm)]
+    imm.ImmGetCandidateWindow.restype = wintypes.BOOL
     out = ROOT / 'build/native-pet-input'
     out.mkdir(parents=True, exist_ok=True)
     evidence = {'osImeVerified': False, 'compositionMechanism': 'synthetic QInputMethodEvent',
@@ -112,6 +117,37 @@ def run_native():
             assert imm.ImmReleaseContext(hwnd, context), 'IMM context release failed'
             evidence['snapshots'].append({'cycle': cycle, 'foregroundMatchesCapsule': True,
                                            'qtEditorFocused': True, 'immContextPresent': True})
+            def check_position(label):
+                # Independent visual-tree ground truth, not the cached input
+                # method transform or a manually invoked IMM publisher.
+                def matches():
+                    local = field.property('cursorRectangle')
+                    origin = field.mapToScene(QPointF(local.x(), local.y()))
+                    dpr = native.devicePixelRatio()
+                    rect = QRectF(origin.x() * dpr, origin.y() * dpr,
+                                  local.width() * dpr, local.height() * dpr).toRect()
+                    x, y, width, height = rect.x(), rect.y(), rect.width(), rect.height()
+                    context = imm.ImmGetContext(hwnd)
+                    assert context, 'Capsule lost IMM context during geometry readback'
+                    try:
+                        composition, candidate = CompositionForm(), CandidateForm()
+                        reads = [bool(imm.ImmGetCompositionWindow(context, ctypes.byref(composition))),
+                                 bool(imm.ImmGetCandidateWindow(context, 0, ctypes.byref(candidate)))]
+                        actual = [composition.style, composition.point.x, composition.point.y,
+                                  candidate.style, candidate.point.x, candidate.point.y,
+                                  candidate.area.left, candidate.area.top,
+                                  candidate.area.right, candidate.area.bottom]
+                    finally:
+                        assert imm.ImmReleaseContext(hwnd, context), 'Geometry IMM release failed'
+                    expected = [0x20, x, y, 0x80, x, y + height, x, y, x + width, y + height]
+                    evidence['lastGeometry'] = dict(phase=label, cycle=cycle, dpr=dpr,
+                                                   expected=expected, actual=actual, readback=reads)
+                    return all(reads) and actual == expected
+                evidence['phase'] = label
+                wait(matches, 'Capsule IMM geometry mismatch: ' + label)
+                evidence.setdefault('geometrySnapshots', []).append(dict(evidence['lastGeometry']))
+
+            check_position('geometry-opened')
             def snapshot(label):
                 evidence['phase'] = label
                 evidence.setdefault('editorEvents', []).append({
@@ -155,6 +191,17 @@ def run_native():
             wait(lambda: not field.property('inputMethodComposing'), 'Synthetic commit not delivered')
             snapshot('commit-delivered-without-key')
             assert field.property('text') == '中文合成测试', repr(field.property('text'))
+            check_position('geometry-committed')
+            committed_y = evidence['lastGeometry']['expected'][2]
+            QTest.keyClick(native, Qt.Key_Return, Qt.ShiftModifier)
+            assert command.call_count == count, 'Shift+Enter dispatched a task'
+            check_position('geometry-newline')
+            assert evidence['lastGeometry']['expected'][2] > committed_y, 'Newline did not move caret down'
+            # Restore the original exact send fixture through normal editor
+            # changes; geometry must follow without invoking the publisher.
+            field.setProperty('text', '中文合成测试')
+            field.setProperty('cursorPosition', len('中文合成测试'))
+            check_position('geometry-restored')
             assert native.grabWindow().save(str(out / f'capsule-{cycle}.png'))
             QTest.keyClick(native, Qt.Key_Return)
             wait(lambda: not composer.property('visible'), 'Explicit Enter did not close capsule')
