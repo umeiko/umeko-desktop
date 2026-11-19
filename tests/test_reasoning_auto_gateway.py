@@ -161,13 +161,13 @@ class ReasoningGatewayTests(unittest.TestCase):
         self.complete({"_umeko_reasoning_effort": "off"})
         self.assertEqual(self.calls[-1][1]["chat_template_kwargs"], {"enable_thinking": False})
 
-    def test_local_server_passes_documented_fields_and_restricts_private_intent(self):
+    def test_local_server_preserves_configured_fields_and_restricts_private_intent(self):
         for private in (False, True):
             server = LocalServer(self.gateway, 0, "fixture", private=private)
             try:
                 body = {"model": "friendly", "messages": MESSAGES, "enable_thinking": False,
                         "chat_template_kwargs": {"enable_thinking": False}, "thinking": {"type": "disabled"},
-                        "reasoning": {"enabled": False}, "unexpected_key": "must not pass",
+                        "reasoning": {"enabled": False}, "unexpected_key": "configured extension",
                         "_umeko_reasoning_effort": "high", "_umeko_reasoning_format": "qwen"}
                 request = urllib.request.Request(f"http://127.0.0.1:{server.port}/v1/chat/completions",
                                                  data=json.dumps(body).encode(),
@@ -175,11 +175,12 @@ class ReasoningGatewayTests(unittest.TestCase):
                 with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=5) as response:
                     response.read()
                 forwarded = self.calls[-1][1]
-                self.assertNotIn("unexpected_key", forwarded)
+                self.assertEqual(forwarded['unexpected_key'], body['unexpected_key'])
                 self.assertFalse(any(key.startswith("_umeko_") for key in forwarded))
                 if private:
                     self.assertEqual(forwarded["reasoning_effort"], "high")
-                    self.assertNotIn("enable_thinking", forwarded)
+                    for key in ("enable_thinking", "chat_template_kwargs", "thinking", "reasoning"):
+                        self.assertEqual(forwarded[key], body[key])
                 else:
                     for key in ("enable_thinking", "chat_template_kwargs", "thinking", "reasoning"):
                         self.assertEqual(forwarded[key], body[key])
@@ -293,7 +294,7 @@ class ReasoningGatewayTests(unittest.TestCase):
         self.complete({"_umeko_reasoning_effort": "off"})
         self.assertNotIn("enable_thinking", self.calls[-1][1])
 
-    def test_http_and_sse_effort_rejections_notify_once_without_retry(self):
+    def test_http_and_sse_other_format_rejections_notify_once(self):
         for mode in ("reject-http", "reject-sse"):
             with self.subTest(mode=mode):
                 self.mode = mode
@@ -303,6 +304,8 @@ class ReasoningGatewayTests(unittest.TestCase):
                     self.complete({"_umeko_reasoning_effort": "max"})
                 self.assertFalse(error.exception.retryable)
                 self.assertIn("off, low, high", str(error.exception))
+                # The service names a nested field; this request sends the
+                # top-level format. Keep that field and report the rejection.
                 self.assertEqual(len(self.calls), before + 1)
                 self.assertEqual(len(self.rejections), notifications + 1)
                 self.assertEqual(self.rejections[-1], ("fixture", "actual", "max", ["low", "high"]))
