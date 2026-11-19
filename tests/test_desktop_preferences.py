@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 from PySide6.QtCore import QCoreApplication
+from PySide6.QtTest import QSignalSpy
 from app.desktop_preferences import DEFAULTS, normalize, startup_settings, validate_patch
 from app.storage import Store
 from app.controller import Controller
@@ -14,6 +15,62 @@ APP = QCoreApplication.instance() or QCoreApplication([])
 
 
 class DesktopPreferencesTests(unittest.TestCase):
+    def test_width_hint_change_notifies_chat_without_refreshing_all_settings_or_pi(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {'UMEKO_DATA_DIR':temp}):
+            controller = Controller(ROOT)
+            try:
+                all_settings = QSignalSpy(controller.changed)
+                desktop = QSignalSpy(controller.desktopSettingsChanged)
+                with patch.object(controller._pool, 'write') as write, patch.object(controller.documentPreview, 'refreshWebPolicy') as preview:
+                    self.assertTrue(controller.saveDesktopSettings('{"chatWidthHints":false}'))
+                    self.assertFalse(controller.desktopSettings['chatWidthHints'])
+                    self.assertFalse(Store(Path(temp)).data['desktop']['chatWidthHints'])
+                    self.assertEqual(all_settings.count(), 0)
+                    self.assertEqual(desktop.count(), 1)
+                    write.assert_not_called()
+                    preview.assert_not_called()
+                    self.assertTrue(controller.saveDesktopSettings('{"chatWidthHints":false}'))
+                    self.assertEqual(desktop.count(), 1)
+            finally:
+                controller.close()
+
+    def test_external_desktop_edits_refresh_scoped_bindings(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {'UMEKO_DATA_DIR':temp}):
+            controller = Controller(ROOT)
+            try:
+                desktop = QSignalSpy(controller.desktopSettingsChanged)
+                vision = QSignalSpy(controller.auxiliaryVisionSettingsChanged)
+                data = json.loads(controller.store.path.read_text())
+                data['desktop']['chatWidthHints'] = False
+                data['auxiliaryVision']['autoAnalyze'] = False
+                controller.store.path.write_text(json.dumps(data))
+                controller.store.save()
+                self.assertFalse(controller.desktopSettings['chatWidthHints'])
+                self.assertFalse(controller.auxiliaryVisionSettings['autoAnalyze'])
+                self.assertEqual(desktop.count(), 1)
+                self.assertEqual(vision.count(), 1)
+            finally:
+                controller.close()
+
+    def test_qml_config_does_not_copy_internal_session_metadata(self):
+        class BackendOnlyHistory(dict):
+            def __deepcopy__(self, memo):
+                raise AssertionError('Session metadata must stay out of the QML view')
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {'UMEKO_DATA_DIR':temp}):
+            controller = Controller(ROOT)
+            try:
+                original = controller.store.data['sessionMeta']
+                controller.store.data['sessionMeta'] = BackendOnlyHistory(original)
+                config = controller.config
+                self.assertNotIn('sessionMeta', config)
+                self.assertEqual(config['desktop'], controller.desktopSettings)
+                config['desktop']['chatWidthHints'] = False
+                self.assertTrue(controller.store.data['desktop']['chatWidthHints'])
+                controller.store.data['sessionMeta'] = original
+            finally:
+                controller.store.data['sessionMeta'] = original
+                controller.close()
+
     def test_defaults_normalization_and_pre_application_read(self):
         self.assertEqual(normalize(None), DEFAULTS)
         self.assertEqual(normalize({'autoOpenSubmissions':1,'webDisplay':[],'chatWidthHints':0}), DEFAULTS)
