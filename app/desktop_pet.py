@@ -70,6 +70,8 @@ class DesktopPet(QObject):
         super().__init__(manager)
         self.manager = manager
         self.assistant = None
+        from .pet_agent_entry import PetAgentEntry
+        self._agent_entry = PetAgentEntry(self)
         self.b = manager.b
         self.motion = PetMotion()
         self.running = False
@@ -140,6 +142,10 @@ class DesktopPet(QObject):
     @Property('QVariantMap', notify=changed)
     def assistantStatus(self):
         return self.assistant.status() if self.assistant else {}
+
+    @Property(QObject, constant=True)
+    def agentEntry(self):
+        return self._agent_entry
 
     @Slot(str, str, result='QVariantMap')
     def sendTask(self, text, identifier):

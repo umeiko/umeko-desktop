@@ -159,7 +159,20 @@ Rectangle {
         const text=input.text.trim();if(!text || !selected)return
         call("send",{id:selected,text:text})
     }
-    Component.onCompleted: refresh()
+    function followHostNavigation() {
+        const request = sdk.agentNavigation || ({})
+        if (request.id && request.serial !== navigationSerial) {
+            navigationSerial = request.serial
+            openAgent(request.id)
+        }
+    }
+    property int navigationSerial: 0
+    Component.onCompleted: { refresh(); followHostNavigation() }
+    Connections {
+        target: root.sdk
+        ignoreUnknownSignals: true
+        function onAgentNavigationChanged() { root.followHostNavigation() }
+    }
     Timer {interval:650;repeat:true;running:root.sdk.active;onTriggered:root.refresh()}
     Connections {
         target:root.sdk
