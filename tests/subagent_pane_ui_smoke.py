@@ -15,6 +15,7 @@ os.environ["UMEKO_DATA_DIR"] = tempfile.mkdtemp(prefix="umeko-subagent-pane-ui-"
 from PySide6.QtCore import Qt, QPoint, QPointF, QObject, QMetaObject, Q_ARG, Q_RETURN_ARG
 from PySide6.QtQml import QJSValue
 from PySide6.QtTest import QTest
+from chat_input_keys import check_newline_and_ime
 from main import create_application
 
 app, engine, backend = create_application()
@@ -139,9 +140,11 @@ try:
     assert find("subagentConversation").property("count") == 2
     assert backend.messageCount == 2
     with patch.object(backend, "_command_pi", return_value=True) as command:
+        check_newline_and_ime(window, find("subagentPromptInput"))
+        assert not command.called
         find("subagentPromptInput").setProperty("text", "只检查这一项，不要修改其他文件。")
         QTest.qWait(30)
-        click("sendSubagentButton")
+        QTest.keyClick(window, Qt.Key_Return)
         wait(lambda: command.called, "Steering input did not submit")
         assert command.call_args.args[0] == "subagent-open"
         payload = command.call_args.kwargs["command"]
