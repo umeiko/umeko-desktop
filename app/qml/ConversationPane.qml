@@ -691,6 +691,19 @@ Item {
             }
             return !first || first.index === 0 || first.y <= top + spacing + 1;
         }
+        function checkLoadedTail(generation) {
+            // A body completing between timer ticks can already cover the
+            // first screen. Keep its opening token until the check runs.
+            if (generation !== pane.renderGeneration || !pane.current || !pane.concealed
+                    || !restoring || !followTail || firstScreenPositioned || !count)
+                return;
+            forceLayout();
+            pinTail();
+            if (firstScreenReady())
+                finishPosition();
+            else
+                requestFirstScreen();
+        }
         function finishPosition() {
             restoreTimer.stop();
             if (followTail && pane.firstFrameRows) {
@@ -925,7 +938,7 @@ Item {
                         }
                     }
                 }
-                if (conversation.restoreAttempts >= 2) {
+                if (conversation.restoreAttempts >= 2 || (pane.openAtBottom && conversation.followTail)) {
                     conversation.finishPosition();
                 }
             }
@@ -1151,6 +1164,8 @@ Item {
                         if (!conversation.forcing)
                             conversation.settleGroups();
                     }
+                    if (pane.openAtBottom && pane.concealed && conversation.followTail && conversation.restoring)
+                        Qt.callLater(conversation.checkLoadedTail, pane.renderGeneration);
                     conversation.scheduleRange();
                 }
                 sourceComponent: Column {
