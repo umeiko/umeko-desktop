@@ -69,6 +69,13 @@ class ChatModel(QAbstractListModel):
             # job occupied until its completion, but reject its result by epoch.
             self._generation += 1
             self._pending.clear()
+            # A reopened conversation starts at the end. Keep its hot tail
+            # and measured heights, and release prepared bodies from browsing.
+            first = max(0, self.base_count - MAX_PREPARED_ROWS)
+            for row in list(self._prepared):
+                if row < first:
+                    del self._prepared[row]
+            self._metadata.clear()
         self._suspended = value
         if not value:
             self._pump()

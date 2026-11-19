@@ -75,6 +75,7 @@ Item {
     function deactivate() {
         conversation.saveViewport();
         current = false;
+        conversation.resetScrollDemand();
         tailTimer.stop();
         restoreTimer.stop();
         pagePrefetch.stop();
@@ -113,6 +114,8 @@ Item {
         property double lastWheelTime: 0
         property real aheadPixels: 0
         property int scrollDirection: 0
+        property bool layoutPending: false
+        property int probedBoundary: -1
         property int urgentFirst: -1
         property int urgentLast: -2
         property bool forcing: false
@@ -366,7 +369,18 @@ Item {
             // reaches its edge (a Loader finishes when asynchronous turns off).
             if (row < 0 || !pane.messageModel)
                 return;
-            if (!itemAtIndex(row)) {
+            ensureBoundaryShell(row, step);
+            const group = pane.messageModel.groupOf(row);
+            forcing = true;
+            urgentFirst = pane.messageModel.groupFirst(group);
+            urgentLast = pane.messageModel.groupLast(group);
+            urgentLast = -2;
+            urgentFirst = -1;
+            forcing = false;
+            settleGroups(true);
+        }
+        function ensureBoundaryShell(row, step) {
+            if (row >= 0 && !itemAtIndex(row)) {
                 // A row whose edge meets the screen edge exactly may not be
                 // created yet: ListView fills its cache buffer later. Cross
                 // the inter-row spacing and return in the same animation
@@ -379,14 +393,38 @@ Item {
                 forceLayout();
                 anchoring = false;
             }
-            const group = pane.messageModel.groupOf(row);
-            forcing = true;
-            urgentFirst = pane.messageModel.groupFirst(group);
-            urgentLast = pane.messageModel.groupLast(group);
-            urgentLast = -2;
-            urgentFirst = -1;
-            forcing = false;
-            settleGroups(true);
+        }
+        function layoutNearViewport() {
+            const map = slotMap(), rows = visibleRows(map.slots);
+            const waiting = Object.values(map.slots).filter(row => row.layoutWork.length > 0);
+            if (rows.first < 0)
+                return waiting.length > 0;
+            // Complete visible rows and then the rows the next wheel step will
+            // reach. Keep a distance order on the other side for reversals.
+            function priority(row) {
+                if (row.index >= rows.first && row.index <= rows.last)
+                    return 0;
+                const after = row.index > rows.last;
+                const distance = after ? row.index - rows.last : rows.first - row.index;
+                return distance + ((after && scrollDirection < 0) || (!after && scrollDirection > 0) ? count : 0);
+            }
+            waiting.sort((a, b) => priority(a) - priority(b));
+            const deadline = Date.now() + 4;
+            const ready = [];
+            for (const row of waiting) {
+                if (row.prepareLayout(deadline))
+                    ready.push(row);
+                if (Date.now() >= deadline)
+                    break;
+            }
+            if (ready.length) {
+                keepAnchor(() => {
+                    for (const row of ready)
+                        row.shown = true;
+                });
+                scheduleRange();
+            }
+            return waiting.length > ready.length;
         }
         function jumpToMessage(row) {
             const partial = pane.messageModel.partialHistory && pane.controller.recentHistory;
@@ -433,24 +471,28 @@ Item {
             applyScroll(delta, true);
         }
         function applyScroll(delta, wheel) {
+            if (!delta)
+                return;
             if (pane.firstFrameRows)
                 pane.finishOpening(pane.renderGeneration);
-            beginBrowsing();
-            const rapid = pane.openAtBottom && wheel && Math.abs(delta) >= height;
-            const now = Date.now();
-            if (!rapid || now - lastWheelTime > 100 || (scrollDirection && scrollDirection * delta < 0))
+            if (!pane.openAtBottom || !wheel) {
                 resetScrollDemand();
-            if (rapid) {
-                scrollDirection = Math.sign(delta);
-                lastWheelTime = now;
-                aheadPixels = Math.max(aheadPixels, Math.abs(delta));
-                const distance = Math.min(groupPixels * 2, Math.abs(pendingWheelPixels) + Math.abs(delta));
-                pendingWheelPixels = scrollDirection * distance;
-                scrollIdle.restart();
-                advanceScroll(pendingWheelPixels, true);
-            } else {
+                beginBrowsing();
                 advanceScroll(delta, false);
+                return;
             }
+            if (!scrollDirection || restoring || followTail)
+                beginBrowsing();
+            const now = Date.now();
+            if (now - lastWheelTime > scrollIdle.interval || scrollDirection * delta < 0)
+                resetScrollDemand();
+            scrollDirection = Math.sign(delta);
+            lastWheelTime = now;
+            aheadPixels = Math.max(aheadPixels, Math.abs(delta));
+            const distance = Math.min(groupPixels * 2, Math.abs(pendingWheelPixels) + Math.abs(delta));
+            pendingWheelPixels = scrollDirection * distance;
+            scrollIdle.restart();
+            scheduleRange();
         }
         function resetScrollDemand() {
             scrollIdle.stop();
@@ -458,6 +500,7 @@ Item {
             aheadPixels = 0;
             scrollDirection = 0;
             pendingWheelPixels = 0;
+            probedBoundary = -1;
         }
         function advanceScroll(distance, deferred) {
             let target = Math.max(originY, Math.min(bottomY, contentY + distance));
@@ -470,25 +513,29 @@ Item {
                 allowed = clamp();
             };
             const direction = Math.sign(distance);
-            const finishBoundary = () => finishGroup(direction < 0 ? limits.above : limits.below, direction);
             if (Math.abs(allowed - target) > 0.5) {
+                const boundary = direction < 0 ? limits.above : limits.below;
                 if (deferred) {
-                    settleGroups(distance < 0);
-                    refresh();
-                    // When Qt delays creating the first slot beyond the
-                    // prepared range, a clamped wheel step cannot reach it.
-                    // Finish that boundary before drawing any movement.
-                    if (Math.abs(allowed - contentY) <= 0.5 && Math.abs(allowed - target) > 0.5) {
-                        finishBoundary();
+                    // At the exact cache edge Qt can postpone creating the next
+                    // shell. Nudge it once, leaving the body to the layout budget.
+                    if (Math.abs(allowed - contentY) <= 0.5 && boundary >= 0 && boundary !== probedBoundary
+                            && !itemAtIndex(boundary)) {
+                        probedBoundary = boundary;
+                        ensureBoundaryShell(boundary, direction);
                         refresh();
                     }
                 } else {
-                    finishBoundary();
+                    finishGroup(boundary, direction);
                     refresh();
                 }
             }
-            if (deferred)
-                pendingWheelPixels = Math.abs(target - allowed) > 0.5 ? target - allowed : 0;
+            if (deferred) {
+                const moved = allowed - contentY;
+                pendingWheelPixels = (direction < 0 ? allowed <= originY : allowed >= bottomY)
+                    || Math.abs(pendingWheelPixels - moved) < 0.5 ? 0 : pendingWheelPixels - moved;
+            }
+            if (Math.abs(allowed - contentY) < 0.01)
+                return;
             anchoring = true;
             contentY = allowed;
             anchoring = false;
@@ -688,23 +735,39 @@ Item {
         function requestVisibleRange() {
             if (!pane.current || !count || (pane.firstFrameRows && !explicitJump))
                 return;
-            forceLayout();
+            if (!wheelFrame.running)
+                forceLayout();
             // indexAt() returns -1 in spacing and outside instantiated delegates;
             // updateGroups() inspects the intersecting slots so a gap cannot
             // starve rows.
             if (visibleRows(slotMap().slots).first < 0)
                 scheduleRange();
-            else {
+            else
                 updateGroups();
-                if (pendingWheelPixels && !restoring)
-                    advanceScroll(pendingWheelPixels, true);
+        }
+        FrameAnimation {
+            id: wheelFrame
+            running: pane.current && (conversation.layoutPending || conversation.pendingWheelPixels !== 0)
+            onTriggered: {
+                if (conversation.layoutPending)
+                    conversation.layoutPending = conversation.layoutNearViewport();
+                if (conversation.pendingWheelPixels && !conversation.restoring) {
+                    // Spread large input across successive display frames,
+                    // keeping the requested distance and letting prefetch lead.
+                    const step = Math.max(conversation.height, conversation.aheadPixels / 2);
+                    const pending = conversation.pendingWheelPixels;
+                    conversation.advanceScroll(Math.sign(pending) * Math.min(Math.abs(pending), step), true);
+                }
             }
         }
         Timer {
             id: scrollIdle
             interval: 100
             onTriggered: {
-                conversation.resetScrollDemand();
+                if (conversation.pendingWheelPixels)
+                    start();
+                else
+                    conversation.resetScrollDemand();
                 conversation.scheduleRange();
             }
         }
@@ -948,6 +1011,31 @@ Item {
             property bool shown: false
             property bool laidOut: false
             property real measuredHeight: 0
+            property var layoutWork: []
+            function prepareLayout(deadline) {
+                // The queue belongs to the delegate and dies with it. Visit
+                // children before their parent, like polishBody(), but yield
+                // even when a single message has many components.
+                while (layoutWork.length && Date.now() < deadline) {
+                    const job = layoutWork.pop();
+                    const node = job.item;
+                    if (!node)
+                        continue;
+                    if (job.childrenDone) {
+                        node.ensurePolished();
+                    } else {
+                        layoutWork.push({item: node, childrenDone: true});
+                        for (let i = node.children.length - 1; i >= 0; i--)
+                            if (node.children[i].visible)
+                                layoutWork.push({item: node.children[i], childrenDone: false});
+                    }
+                }
+                if (layoutWork.length || !bodyLoader.item)
+                    return false;
+                applyHeight(bodyLoader.item.implicitHeight, bodyLoader.item.expandedLayout);
+                laidOut = true;
+                return true;
+            }
             function applyHeight(value, expanded) {
                 if (!(value > 0) || pane.released)
                     return;
@@ -986,17 +1074,21 @@ Item {
                     && (!pane.firstFrameRows || rowShell.index >= conversation.count - pane.firstFrameRows)
                 opacity: rowShell.shown ? 1 : 0
                 enabled: rowShell.shown
-                onStatusChanged: if (status !== Loader.Ready)
-                    rowShell.laidOut = false
+                onStatusChanged: if (status !== Loader.Ready) {
+                    rowShell.laidOut = false;
+                    rowShell.layoutWork = [];
+                }
                 onLoaded: {
-                    // Lay out each body while its group is being loaded. A
-                    // wheel event that reaches a prefetched group can then
-                    // show it without polishing every body in one callback.
-                    conversation.polishBody(item);
-                    rowShell.applyHeight(item.implicitHeight, item.expandedLayout);
-                    rowShell.laidOut = true;
-                    if (!conversation.forcing)
-                        conversation.settleGroups();
+                    if (pane.openAtBottom && !conversation.followTail && !conversation.restoring && !conversation.forcing) {
+                        rowShell.layoutWork = [{item: item, childrenDone: false}];
+                        conversation.layoutPending = true;
+                    } else {
+                        conversation.polishBody(item);
+                        rowShell.applyHeight(item.implicitHeight, item.expandedLayout);
+                        rowShell.laidOut = true;
+                        if (!conversation.forcing)
+                            conversation.settleGroups();
+                    }
                     conversation.scheduleRange();
                 }
                 sourceComponent: Column {
@@ -1013,9 +1105,9 @@ Item {
                     width: conversation.width - 16
                     spacing: 10
                     readonly property bool expandedLayout: activityHistory.layoutExpanded || compactionEvent.expanded
-                    onExpandedLayoutChanged: if (bodyLoader.status === Loader.Ready)
+                    onExpandedLayoutChanged: if (rowShell.laidOut)
                         rowShell.applyHeight(implicitHeight, expandedLayout)
-                    onImplicitHeightChanged: if (bodyLoader.status === Loader.Ready)
+                    onImplicitHeightChanged: if (rowShell.laidOut)
                         rowShell.applyHeight(implicitHeight, expandedLayout)
                     Row {
                         visible: !modelData._loading && !messageRow.statusNotice && !modelData.continuation && modelData.role !== "user"

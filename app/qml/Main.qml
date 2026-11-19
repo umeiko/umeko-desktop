@@ -124,6 +124,17 @@ ApplicationWindow {
         const cached = backend.cachedConversationToken(row.id)
         if (cached && conversationHost.panes[cached]) chatCover.cancel()
         else chatCover.begin()
+        Qt.callLater(window.prepareSidebarSelection)
+    }
+    function prepareSidebarSelection() {
+        if (!sidebarSwitching || sidebarStarted) return
+        sidebarStarted = true
+        if (pendingSidebarKind === "project") {
+            sidebarPrepared = true
+            commitSidebarSelection()
+        } else {
+            backend.sessionPreview.prepare(pendingSidebarId, sidebarToken)
+        }
     }
     function commitSidebarSelection() {
         if (!sidebarSwitching || !sidebarPrepared) return
@@ -141,22 +152,13 @@ ApplicationWindow {
         target: backend.sessionPreview
         function onReady(token, ok) {
             if (token !== window.sidebarToken || !window.sidebarSwitching) return
-            if (ok) { window.sidebarPrepared = true; window.commitSidebarSelection() }
-            else { window.pendingSidebarId = ""; chatCover.contentReady() }
-        }
-    }
-    FrameAnimation {
-        // Multiple input events can arrive in one frame. Only the current
-        // choice starts an open; hover and mouse-down already warm its data.
-        running: window.sidebarSwitching && !window.sidebarStarted
-        onTriggered: {
-            window.sidebarStarted = true
-            if (window.pendingSidebarKind === "project") {
+            if (ok) {
                 window.sidebarPrepared = true
-                window.commitSidebarSelection()
-            } else {
-                backend.sessionPreview.prepare(window.pendingSidebarId, window.sidebarToken)
+                // Let the prepared result finish notifying its listeners
+                // before activation changes the current conversation.
+                Qt.callLater(window.commitSidebarSelection)
             }
+            else { window.pendingSidebarId = ""; chatCover.contentReady() }
         }
     }
     Timer {
@@ -539,6 +541,7 @@ ApplicationWindow {
                 id: conversationHost
                 objectName: "conversationHost"
                 property var panes: ({})
+                property var paneOrder: []
                 property var currentPane: null
                 property int retainedCount: 0
                 property string parkedTailKey: ""
@@ -603,6 +606,9 @@ ApplicationWindow {
                         fillGeneration = currentPane.renderGeneration
                     }
                     release()
+                    // Keep recent native controls for quick reversals. The
+                    // longer-lived cache owns the models and measured heights.
+                    for (const key of paneOrder.slice(0, -3)) evict(key)
                 }
                 function stage() {
                     const key = backend.conversationToken
@@ -617,6 +623,9 @@ ApplicationWindow {
                         panes[key] = pane
                         retainedCount = Object.keys(panes).length
                     }
+                    const at = paneOrder.indexOf(key)
+                    if (at >= 0) paneOrder.splice(at, 1)
+                    paneOrder.push(key)
                     if (heldPane && heldPane !== previous && heldPane !== pane) park(heldPane)
                     heldPane = null
                     if (previous && previous !== pane && previous.holding) heldPane = previous
@@ -671,6 +680,8 @@ ApplicationWindow {
                     if (parkedTailKey === key) parkedTailKey = ""
                     if (currentPane === pane) currentPane = null
                     delete panes[key]
+                    const at = paneOrder.indexOf(key)
+                    if (at >= 0) paneOrder.splice(at, 1)
                     retainedCount = Object.keys(panes).length
                     pane.release()
                     pane.destroy()
