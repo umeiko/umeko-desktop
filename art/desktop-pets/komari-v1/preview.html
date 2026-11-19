@@ -10,6 +10,9 @@
 <p>AI 美术：内置 image_gen。原始状态图、完整提示词及打包脚本保存在本目录。每段 384 × 576，6 个生成关键帧，4.2 秒循环。正式资源共约 1.6 MiB。</p>
 <script>
 const states=[['idle','待机','安静抱着书'],['thinking','思考','翻开书，认真想一想'],['working','工作','拿笔记录和检查'],['waiting','等待确认','有点害羞地等你'],['done','完成','放心地竖起拇指'],['error','出错','遇到一点小困难']];
-for(const [id,name,detail] of states){const article=document.createElement('article');const image=new Image();image.src='../../../umeko-plugins/desktop-pet/assets/komari/'+id+'.webp';image.alt=name;article.append(image);const heading=document.createElement('h2');heading.textContent=name;article.append(heading);const note=document.createElement('small');note.textContent=detail;article.append(note);document.querySelector('main').append(article)}
+const petBase='../../../umeko-plugins/desktop-pet/assets/komari/';
+fetch(petBase+'pet.json').then(r=>r.json()).then(pet=>{
+for(const [id,name,detail] of states){const article=document.createElement('article');const image=new Image();image.src=petBase+pet.states[id];image.alt=name;article.append(image);const heading=document.createElement('h2');heading.textContent=name;article.append(heading);const note=document.createElement('small');note.textContent=detail;article.append(note);document.querySelector('main').append(article)}
+});
 </script>
 </html>

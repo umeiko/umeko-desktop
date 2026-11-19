@@ -278,7 +278,7 @@ Window {
             onNotificationBlockedChanged: if (notificationBlocked && visible) close()
             modal: false
             width: Math.min(Theme.control(400), root.bounds().width - 16)
-            height: Theme.control(40)
+            height: taskScroll.height + Theme.control(12)
             padding: 0
             // Native popups may extend beyond the small, masked pet window.
             // Fit to the work area ourselves instead of shrinking to its parent.
@@ -417,36 +417,47 @@ Window {
             }
             contentItem:Item {
                 enabled:taskComposer.desiredOpen && !taskComposer.notificationBlocked
-                InputField {
-                    id:taskInput;objectName:"desktopPetTaskInput"
+                ScrollView {
+                    id: taskScroll
                     anchors.left:parent.left;anchors.right:taskDesktop.left
                     anchors.leftMargin:6*Theme.fontScale;anchors.rightMargin:5*Theme.fontScale;anchors.verticalCenter:parent.verticalCenter
-                    height:Theme.control(28);implicitHeight:height
-                    leftPadding: projectTarget.visible ? projectTarget.width + 14 * Theme.fontScale : 9 * Theme.fontScale
-                    rightPadding: 8 * Theme.fontScale
-                    topPadding: 0
-                    bottomPadding: 0
-                    font.pixelSize:Theme.font(13,true);verticalAlignment:TextInput.AlignVCenter
-                    maximumLength:16000
-                    Accessible.name:I18n.t("给悬浮小助手派活")
-                    Accessible.description: taskComposer.timerMode ? taskComposer.timerState.question.prompt : taskComposer.error
-                    placeholderText: taskComposer.timerMode ? "输入回答…" : ""
-                    onTextEdited: {
-                        taskComposer.error = ""
-                        if (taskComposer.timerMode) root.pet.taskSchedule.setAnswer(text)
-                        else if (taskComposer.projectMode) root.pet.projectEntry.setBody(text)
+                    readonly property real singleLineHeight: Theme.control(28)
+                    readonly property real verticalInset: Math.max(0, (singleLineHeight - taskFont.height) / 2)
+                    height: taskInput.lineCount <= 1 ? singleLineHeight
+                        : Math.min(taskInput.contentHeight + 2 * verticalInset, Theme.control(104))
+                    clip: true
+                    contentWidth: availableWidth
+                    FontMetrics { id: taskFont; font: taskInput.font }
+                    ChatInput {
+                        id: taskInput; objectName: "desktopPetTaskInput"
+                        leftPadding: projectTarget.visible ? projectTarget.width + 14 * Theme.fontScale : 9 * Theme.fontScale
+                        rightPadding: 8 * Theme.fontScale
+                        topPadding: taskScroll.verticalInset; bottomPadding: taskScroll.verticalInset
+                        font.family: Theme.fontFamily; font.pixelSize: Theme.font(13, true)
+                        color: Theme.ink; wrapMode: TextArea.Wrap; selectByMouse: true
+                        background: null
+                        Accessible.name: I18n.t("给悬浮小助手派活")
+                        Accessible.description: taskComposer.timerMode ? taskComposer.timerState.question.prompt : taskComposer.error
+                        placeholderText: taskComposer.timerMode ? "输入回答…" : ""
+                        onTextChanged: taskComposer.error = ""
+                        onTextEdited: {
+                            if (taskComposer.timerMode) root.pet.taskSchedule.setAnswer(text)
+                            else if (taskComposer.projectMode) root.pet.projectEntry.setBody(text)
+                        }
+                        KeyNavigation.priority: KeyNavigation.BeforeItem
+                        KeyNavigation.tab: taskDesktop
+                        Keys.onEscapePressed: event => {
+                            if (inputMethodComposing) { Qt.inputMethod.reset(); event.accepted = true }
+                            else if (taskComposer.timerMode) {
+                                root.pet.taskSchedule.close()
+                                text = taskComposer.timerDraft
+                                event.accepted = true
+                            } else event.accepted = false
+                        }
+                        onSubmitted: taskComposer.submit()
                     }
-                    Keys.onEscapePressed: event => {
-                        if (inputMethodComposing) { Qt.inputMethod.reset(); event.accepted = true }
-                        else if (taskComposer.timerMode) {
-                            root.pet.taskSchedule.close()
-                            text = taskComposer.timerDraft
-                            event.accepted = true
-                        } else event.accepted = false
-                    }
-                    onAccepted:if(!inputMethodComposing)taskComposer.submit()
                     background:Rectangle {
-                        radius:height/2;color:Theme.dark?"#25292f":"#fdfefe"
+                        radius:Math.min(height/2,Theme.control(14));color:Theme.dark?"#25292f":"#fdfefe"
                         border.color:taskComposer.error?Theme.danger:taskInput.activeFocus?Qt.alpha(taskComposer.inputBlue,0.75):Theme.dark?"#181b20":"#a8afb7"
                         Rectangle {x:8;y:1;width:parent.width-16;height:2;radius:1;gradient:Gradient {GradientStop {position:0;color:Theme.dark?"#40000000":"#20000000"} GradientStop {position:1;color:"transparent"}}}
                         Rectangle {x:5;y:parent.height-1;width:parent.width-10;height:1;color:Theme.dark?"#20ffffff":"#e0ffffff"}
@@ -455,10 +466,10 @@ Window {
                 Button {
                     id: projectTarget; objectName: "desktopPetProjectTarget"
                     visible: taskComposer.projectMode && !taskComposer.timerMode
-                    x: taskInput.x + 6 * Theme.fontScale
-                    anchors.verticalCenter: taskInput.verticalCenter
+                    x: taskScroll.x + 6 * Theme.fontScale
+                    anchors.verticalCenter: taskScroll.verticalCenter
                     width: Math.min(Theme.control(110), taskInput.width * .4)
-                    height: taskInput.height - Theme.control(6)
+                    height: Theme.control(22)
                     padding: 6
                     hoverEnabled: true
                     text: taskComposer.projectState.label

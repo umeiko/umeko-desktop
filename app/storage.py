@@ -120,6 +120,10 @@ DEFAULTS = {
 
 
 class Store:
+    @property
+    def default_workspace(self):
+        return self.directory / 'workspace'
+
     def __init__(self, directory: Path | None = None):
         self.directory = directory
         custom = os.environ.get("UMEKO_DATA_DIR")

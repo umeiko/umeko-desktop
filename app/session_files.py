@@ -90,7 +90,7 @@ class SessionFiles(QObject):
         self._start({'operation': 'import', 'sources': sources,
             'profile': str(self.b.store.directory),
             'sessionDir': str(self.b.store.directory/'pi/sessions'),
-            'cwd': workspace or str(self.b.store.directory/'workspace')}, {'workspace': workspace, 'project': project_id})
+            'cwd': workspace or str(self.b.store.default_workspace)}, {'workspace': workspace, 'project': project_id})
 
     @Slot(str)
     def deleteSession(self, identifier):
@@ -126,7 +126,14 @@ class SessionFiles(QObject):
         for record in records: b._pool.retire(record)
         writers = tuple(b._dsh_history.pending)
         payload = {'operation': 'delete', 'profile': str(b.store.directory), 'sessions': sessions}
-        if project: payload['workspace'] = project['path']
+        if project:
+            payload['workspace'] = project['path']
+            default_workspace = str(b.store.default_workspace)
+            if key == self._workspace(default_workspace):
+                excluded = {sid for sid, meta in b.store.data['sessionMeta'].items() if meta.get('ungroupedImport')}
+                excluded.update(row['id'] for row in b._sessions
+                                if b._ungrouped_import(row['id'], default_workspace, row.get('workspace')))
+                payload['excludedSessionIds'] = sorted(excluded)
         self._job = (payload, {'project': project_id, 'records': records})
         started = time.monotonic()
         def drained():
@@ -168,6 +175,8 @@ class SessionFiles(QObject):
                 project = next((p for p in b.store.data['projects'] if p['id'] == context['project']), None)
                 if project and project.get('archived'):
                     b.store.data['sessionMeta'][session['id']] = {'archived': True}
+                if not context['project']:
+                    b.store.data['sessionMeta'].setdefault(session['id'], {})['ungroupedImport'] = True
             if value['sessions']:
                 b.store.save()
                 b.store.save_sessions(b._sessions)
@@ -183,6 +192,7 @@ class SessionFiles(QObject):
                 if record.id in ids or not record.id and not value['errors']:
                     b._conversation_views.discard(record.key)
                     b._pool._clear_body(record)
+                    b._conversation_views.discard(record.key)
                     record.messages, record.history, record.tree = [], [], []
                     record.attachments, record.queue, record.subagents = [], [], {}
                     record.draft, record.transcript = '', None

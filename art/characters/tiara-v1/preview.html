@@ -11,10 +11,12 @@
 <h2>桌面小宠物 · 六种动画</h2><section class="grid pets" id="pets"></section>
 <p>美术由内置 image_gen 生成。完整提示词、原始透明图和打包脚本保存在本目录及 art/desktop-pets/tiara-v1。动画按现有桌宠机制播放，隐藏时释放解码器。</p>
 <script>
+const petBase='../../../umeko-plugins/desktop-pet/assets/tiara/';
+const petManifest=fetch(petBase+'pet.json').then(r=>r.json());
 function card(target,src,label){const a=document.createElement('article'),i=new Image(),p=document.createElement('p');i.src=src;i.alt=label;p.textContent=label;a.append(i,p);target.append(a)}
 const base='../../../app/icons/characters/tiara/';
 for(const [id,label] of [['welcome','欢迎'],['avatarSmile','微笑'],['avatarWink','眨眼'],['avatarHappy','开心'],['reply','回复完成'],['loading','加载 / 思考'],['catch','接文件'],['push','展开'],['pull','收起']])card(document.querySelector('#main'),base+id+'.png',label);
 for(const width of [24,40,64,96]){const i=new Image();i.src=base+'avatarSmile.png';i.style.width=width+'px';i.alt=width+'px 头像';document.querySelector('#sizes').append(i)}
-for(const [id,label] of [['idle','待机'],['thinking','思考'],['working','工作'],['waiting','等待确认'],['done','完成'],['error','遇到问题']])card(document.querySelector('#pets'),'../../../umeko-plugins/desktop-pet/assets/tiara/'+id+'.webp',label);
+petManifest.then(pet=>{for(const [id,label] of [['idle','待机'],['thinking','思考'],['working','工作'],['waiting','等待确认'],['done','完成'],['error','遇到问题']])card(document.querySelector('#pets'),petBase+pet.states[id],label)});
 </script>
 </html>

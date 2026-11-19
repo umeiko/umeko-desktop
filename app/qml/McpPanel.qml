@@ -12,6 +12,7 @@ ColumnLayout {
     property string loadedContext: ""
     readonly property string contextKey: JSON.stringify([backend.config.agent.agentDir, backend.config.workspace])
     readonly property bool dirty: globalDraft !== globalSaved || projectDraft !== projectSaved || editor.text !== (scope === "global" ? globalSaved : projectSaved)
+    readonly property var servers: visible ? (backend.agentResources.mcp || []) : []
     spacing: 14
     function load() {
         globalDraft = backend.readMcp("global")
@@ -48,7 +49,7 @@ ColumnLayout {
         }
     }
     Repeater {
-        model: backend.agentResources.mcp || []
+        model: root.servers
         ColumnLayout {
             required property var modelData
             Layout.fillWidth: true; spacing: 7
@@ -65,5 +66,5 @@ ColumnLayout {
             }
         }
     }
-    Text { font.family: Theme.fontFamily; visible: !(backend.agentResources.mcp || []).length; text: I18n.t("暂无 MCP 服务器"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
+    Text { font.family: Theme.fontFamily; visible: !root.servers.length; text: I18n.t("暂无 MCP 服务器"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
 }

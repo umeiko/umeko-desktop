@@ -15,7 +15,7 @@
   "integration_status": "Python desktop subagent roster, history cards and side conversation; four reusable slots",
   "prompts": "prompts.json",
   "preview": "preview.html",
-  "preview_screenshot": "preview.png",
+  "preview_screenshot": "https://github.com/umeiko/umeko-desktop/blob/0d190d437f97782374f5060dc3bb67b35ab412c9/art/subagent-avatars/v1/preview.png",
   "verification": {
     "alpha_and_dimensions": "passed",
     "all_four_corners_transparent": "passed",

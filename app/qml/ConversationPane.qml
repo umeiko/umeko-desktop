@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Window
 
 Item {
     id: pane
@@ -44,12 +45,31 @@ Item {
     function activate() {
         current = true;
         refreshState();
-        if (!initialized || layoutDirty || conversation.restoring) {
+        if (openAtBottom) {
+            initialized = true;
+            layoutDirty = false;
+            conversation.startBottom();
+        } else if (!initialized || layoutDirty || conversation.restoring) {
             initialized = true;
             layoutDirty = false;
             conversation.restoreViewport();
         } else {
             conversation.requestVisibleRange();
+        }
+    }
+    property bool openAtBottom: false
+    property bool renderReady: true
+    readonly property int renderGeneration: openAtBottom && messageModel ? messageModel.openGeneration : 0
+    readonly property int firstFrameRows: openAtBottom && messageModel ? messageModel.firstFrameRows : 0
+    function finishOpening(generation) {
+        if (current && !released && generation === renderGeneration) {
+            messageModel.finishOpen(generation);
+            if (conversation.firstScreenPositioned) {
+                conversation.finishPosition();
+                conversation.requestVisibleRange();
+            } else {
+                conversation.scheduleRange();
+            }
         }
     }
     function deactivate() {
@@ -70,15 +90,18 @@ Item {
         objectName: pane.current ? pane.viewName : "cachedConversation_" + pane.viewKey
         property bool followTail: true
         property bool restoring: false
+        property bool firstScreenPositioned: false
         property real restoreOffset: -1
         property int restoreIndex: -1
         property int restoreAttempts: 0
+        property bool explicitJump: false
+        property bool jumpingOutsidePartial: false
         // Grouped loading. ChatModel splits rows into groups of about
         // groupScreens viewport heights. Rows of the on-screen groups and of
         // keepGroups groups on each side get bodies; farther groups release
         // theirs together. A group is shown only after all of its loaded rows
         // are laid out, its height change is absorbed by keepAnchor() in one
-        // step, and scrolling never moves into rows that are not shown yet.
+        // step, so scrolling can advance through already prepared rows.
         property real groupScreens: 2.5
         property int keepGroups: 1
         property int activeFirst: 0
@@ -86,21 +109,30 @@ Item {
         property int activeEnd: 0
         property real reach: height * 0.25
         property bool anchoring: false
-        property int blockedScrolls: 0
+        property real pendingWheelPixels: 0
+        property double lastWheelTime: 0
+        property real aheadPixels: 0
+        property int scrollDirection: 0
         property int urgentFirst: -1
         property int urgentLast: -2
         property bool forcing: false
         property int prependAnchor: -1
         property real prependOffset: 0
+        readonly property real bottomY: Math.max(originY, originY + contentHeight - height)
+        readonly property bool nearBottom: bottomY - contentY <= 3
         readonly property real groupPixels: Math.max(320, height * groupScreens)
         onGroupPixelsChanged: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
         Component.onCompleted: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
-        readonly property string layoutKey: width + "/" + Theme.fontScale + "/" + Theme.proseLineHeight + "/" + window.font.family
+        readonly property string layoutKey: [
+            width, Theme.fontFamily, Theme.fontScale, Theme.proseLineHeight,
+            Screen.devicePixelRatio, Theme.dark, window.font.family, window.font.pixelSize
+        ].join("/")
         onLayoutKeyChanged: {
-            pane.messageModel.setLayout(layoutKey);
+            if (pane.messageModel)
+                pane.messageModel.setLayout(layoutKey);
             if (!pane.current)
                 pane.layoutDirty = true;
-            else if (!followTail && count)
+            else if (!followTail && count && !explicitJump)
                 restoreViewport();
         }
         // User scrolling and explicit jumps supersede a navigator selection.
@@ -110,18 +142,31 @@ Item {
             tailTimer.stop();
             restoreTimer.stop();
             restoring = false;
+            firstScreenPositioned = false;
+            explicitJump = false;
+            jumpingOutsidePartial = false;
             urgentFirst = -1;
             urgentLast = -2;
             cancelFlick();
             followTail = false;
         }
+        function pinTail() {
+            if (!count || anchoring)
+                return;
+            anchoring = true;
+            positionViewAtEnd();
+            anchoring = false;
+        }
         function polishBody(item) {
             for (const child of item.children)
-                polishBody(child);
+                if (child.visible)
+                    polishBody(child);
             item.ensurePolished();
         }
         function releaseGroups() {
             // Navigation positions by row; every row it instantiates may load.
+            urgentFirst = -1;
+            urgentLast = -2;
             reach = height * 0.25;
             activeFirst = 0;
             activeLast = -1;
@@ -165,7 +210,8 @@ Item {
             const top = contentY;
             let anchor = null;
             for (const item of contentItem.children) {
-                if (item.messageSlot === true && item.shown && item.y + item.height > top && item.y < top + height
+                if (item.messageSlot === true && (item.shown || pane.openAtBottom)
+                        && item.y + item.height > top && item.y < top + height
                         && (!anchor || item.index < anchor.index))
                     anchor = item;
             }
@@ -189,11 +235,9 @@ Item {
             anchoring = false;
         }
         function settleGroups(above) {
-            // Show a group when every instantiated row in it has loaded. Rows
-            // beyond the instantiated range are off screen and join later.
-            // A group wholly above the screen changes the rows' heights above
-            // the reader, so it waits, laid out, until scrolling reaches it
-            // (above = true) and is then inserted with one position correction.
+            // A group wholly above the viewport can lay out without changing
+            // the displayed heights. Apply its measured heights together
+            // when scrolling reaches it and keep the visible row anchored.
             // A cached view that was shown and is now hidden keeps its groups
             // as they are: keepAnchor() does not correct a hidden view, so a
             // group above the reader that finished loading in the background
@@ -211,28 +255,36 @@ Item {
             // nothing the reader is looking at moves.
             const tail = followTail ? model.groupOf(count - 1) : -1;
             const checked = {}, ready = [];
-            for (let row = map.first; map.first >= 0 && row <= map.last; row++) {
-                const item = slots[row];
-                if (!item || item.shown || !item.bodyLoaded)
+            for (const key in slots) {
+                const item = slots[key], row = item.index;
+                if (item.shown || !item.bodyLoaded || checked[row])
                     continue;
                 const group = model.groupOf(row);
-                if (group === tail) {
+                // A concealed restore can commit its visible bodies as they
+                // finish. Waiting for the rest of their groups spends a render
+                // frame on each asynchronous incubation before revealing the pane.
+                if (group === tail || (restoring && row >= urgentFirst && row <= urgentLast)) {
                     ready.push(item);
                     continue;
                 }
-                if (checked[group])
-                    continue;
-                checked[group] = true;
-                const first = Math.max(map.first, model.groupFirst(group));
-                const last = Math.min(map.last, model.groupLast(group));
+                const groupFirst = model.groupFirst(group), groupLast = model.groupLast(group);
+                let first = row, last = row;
+                // ListView can retain a detached current item far from the
+                // viewport. Gaps between instantiated runs cannot hold up
+                // the bodies beside the reader.
+                while (first > groupFirst && slots[first - 1])
+                    first--;
+                while (last < groupLast && slots[last + 1])
+                    last++;
                 if (last < top)
                     continue;
                 const rows = [];
                 let complete = true;
-                for (let other = first; other <= last && complete; other++) {
+                for (let other = first; other <= last; other++) {
                     const slot = slots[other];
-                    complete = !!slot && slot.bodyLoaded;
-                    if (complete && !slot.shown)
+                    checked[other] = true;
+                    complete = complete && slot.bodyLoaded;
+                    if (!slot.shown)
                         rows.push(slot);
                 }
                 if (complete)
@@ -240,10 +292,6 @@ Item {
             }
             if (!ready.length)
                 return;
-            // Loader.Ready precedes deferred TextEdit/Column polish; show the
-            // final sizes, not intermediate ones.
-            for (const item of ready)
-                polishBody(item);
             keepAnchor(() => {
                 for (const item of ready)
                     item.shown = true;
@@ -264,8 +312,14 @@ Item {
             const keep = screenShown ? keepGroups : 0;
             const groups = model.groupCount();
             const g0 = model.groupOf(rows.first), g1 = model.groupOf(rows.last);
-            const first = model.groupFirst(Math.max(0, g0 - keep));
-            const last = model.groupLast(Math.min(groups - 1, g1 + keep));
+            // A fast wheel gesture can cross a viewport and an entire
+            // neighbouring group in one event. Prepare ahead on that side
+            // while retaining the usual range behind the reader.
+            const ahead = Math.min(3, Math.ceil((aheadPixels + height) / groupPixels));
+            const before = screenShown && scrollDirection < 0 ? Math.max(keep, ahead) : keep;
+            const after = screenShown && scrollDirection > 0 ? Math.max(keep, ahead) : keep;
+            const first = model.groupFirst(Math.max(0, g0 - before));
+            const last = model.groupLast(Math.min(groups - 1, g1 + after));
             if (first !== activeFirst || last !== activeLast)
                 keepAnchor(() => {
                     activeEnd = count - 1;
@@ -280,8 +334,8 @@ Item {
                 reach = Math.ceil(Math.min(40000, Math.max(above, below) + height * 0.25) / 256) * 256;
             }
             if (model.paged)
-                model.requestGroups(rows.first, rows.last, keep);
-            settleGroups();
+                model.requestScrollGroups(rows.first, rows.last, before, after, scrollDirection);
+            settleGroups(scrollDirection < 0 && aheadPixels > 0);
         }
         function shownLimits() {
             // contentY may move within [upper, lower - height] without
@@ -289,7 +343,7 @@ Item {
             // above/below: the first row that is not shown on each side.
             const map = slotMap(), slots = map.slots, rows = visibleRows(slots);
             if (rows.first < 0)
-                return {upper: -Infinity, lower: Infinity, above: -1, below: -1};
+                return {upper: contentY, lower: contentY + height, above: -1, below: -1};
             let upper = contentY, lower = contentY + height, above = rows.first, below = rows.last;
             if (slots[rows.first].shown) {
                 let row = rows.first;
@@ -308,21 +362,20 @@ Item {
             return {upper: upper, lower: lower, above: above, below: below};
         }
         function finishGroup(row, step) {
-            // The reader reached a group that is still loading in the
-            // background: complete its remaining bodies now (Loader finishes
-            // an asynchronous load synchronously when asynchronous turns off).
+            // Complete the prepared group's remaining bodies when scrolling
+            // reaches its edge (a Loader finishes when asynchronous turns off).
             if (row < 0 || !pane.messageModel)
                 return;
             if (!itemAtIndex(row)) {
                 // A row whose edge meets the screen edge exactly may not be
-                // created yet: ListView fills its cache buffer later, and
-                // while it waits the scroll stays blocked at this edge. Move
-                // one pixel toward the row and back, without a frame in
-                // between, so the row exists and its group can load now.
+                // created yet: ListView fills its cache buffer later. Cross
+                // the inter-row spacing and return in the same animation
+                // tick, so Qt instantiates the shell before it is visible.
                 anchoring = true;
-                contentY += step;
+                const previous = contentY;
+                contentY += step * (spacing + 1);
                 forceLayout();
-                contentY -= step;
+                contentY = previous;
                 forceLayout();
                 anchoring = false;
             }
@@ -336,8 +389,13 @@ Item {
             settleGroups(true);
         }
         function jumpToMessage(row) {
-            if (row < 0 || row >= count)
+            const partial = pane.messageModel.partialHistory && pane.controller.recentHistory;
+            if (row < 0 || (row >= count && !partial))
                 return;
+            // An explicit question or keyboard navigation can precede the
+            // deferred fill and must use the complete model's row numbers.
+            pane.finishOpening(pane.renderGeneration);
+            resetScrollDemand();
             beginBrowsing();
             chatSelection.clear();
             releaseGroups();
@@ -345,12 +403,21 @@ Item {
             restoreIndex = row;
             restoreOffset = 0;
             restoreAttempts = 0;
+            explicitJump = true;
+            jumpingOutsidePartial = row >= count;
+            if (partial)
+                pane.controller.recentHistory.loadEarlier();
             restoreTimer.restart();
         }
         function jumpToLatest() {
+            resetScrollDemand();
             beginBrowsing();
             chatSelection.clear();
             releaseGroups();
+            if (pane.openAtBottom) {
+                startBottom();
+                return;
+            }
             followTail = true;
             restoring = true;
             restoreIndex = -1;
@@ -360,34 +427,77 @@ Item {
             restoreTimer.restart();
         }
         function scrollBy(delta) {
+            applyScroll(delta, false);
+        }
+        function scrollWheel(delta) {
+            applyScroll(delta, true);
+        }
+        function applyScroll(delta, wheel) {
+            if (pane.firstFrameRows)
+                pane.finishOpening(pane.renderGeneration);
             beginBrowsing();
-            const top = originY;
-            const bottom = Math.max(top, originY + contentHeight - height);
-            let target = Math.max(top, Math.min(bottom, contentY + delta));
-            // Never scroll into rows that are not shown yet. A group still
-            // loading is finished first; one whose data has not arrived makes
-            // the view wait at its edge. The counter only lets a row that
-            // never becomes ready stop blocking input.
+            const rapid = pane.openAtBottom && wheel && Math.abs(delta) >= height;
+            const now = Date.now();
+            if (!rapid || now - lastWheelTime > 100 || (scrollDirection && scrollDirection * delta < 0))
+                resetScrollDemand();
+            if (rapid) {
+                scrollDirection = Math.sign(delta);
+                lastWheelTime = now;
+                aheadPixels = Math.max(aheadPixels, Math.abs(delta));
+                const distance = Math.min(groupPixels * 2, Math.abs(pendingWheelPixels) + Math.abs(delta));
+                pendingWheelPixels = scrollDirection * distance;
+                scrollIdle.restart();
+                advanceScroll(pendingWheelPixels, true);
+            } else {
+                advanceScroll(delta, false);
+            }
+        }
+        function resetScrollDemand() {
+            scrollIdle.stop();
+            lastWheelTime = 0;
+            aheadPixels = 0;
+            scrollDirection = 0;
+            pendingWheelPixels = 0;
+        }
+        function advanceScroll(distance, deferred) {
+            let target = Math.max(originY, Math.min(bottomY, contentY + distance));
             let limits = shownLimits();
             const clamp = () => Math.max(Math.min(contentY, limits.upper), Math.min(target, Math.max(contentY, limits.lower - height)));
             let allowed = clamp();
-            if (Math.abs(allowed - target) > 0.5) {
-                finishGroup(delta < 0 ? limits.above : limits.below, delta < 0 ? -1 : 1);
-                // Showing the group may have kept the anchor by moving contentY.
-                target = Math.max(originY, Math.min(Math.max(originY, originY + contentHeight - height), contentY + delta));
+            const refresh = () => {
+                target = Math.max(originY, Math.min(bottomY, contentY + distance));
                 limits = shownLimits();
                 allowed = clamp();
+            };
+            const direction = Math.sign(distance);
+            const finishBoundary = () => finishGroup(direction < 0 ? limits.above : limits.below, direction);
+            if (Math.abs(allowed - target) > 0.5) {
+                if (deferred) {
+                    settleGroups(distance < 0);
+                    refresh();
+                    // When Qt delays creating the first slot beyond the
+                    // prepared range, a clamped wheel step cannot reach it.
+                    // Finish that boundary before drawing any movement.
+                    if (Math.abs(allowed - contentY) <= 0.5 && Math.abs(allowed - target) > 0.5) {
+                        finishBoundary();
+                        refresh();
+                    }
+                } else {
+                    finishBoundary();
+                    refresh();
+                }
             }
-            if (Math.abs(allowed - target) > 0.5 && blockedScrolls < 30) {
-                target = allowed;
-                blockedScrolls++;
-                scheduleRange();
-            } else {
-                blockedScrolls = 0;
-            }
-            contentY = target;
-            if (atYEnd && !chatSelection.dragging)
+            if (deferred)
+                pendingWheelPixels = Math.abs(target - allowed) > 0.5 ? target - allowed : 0;
+            anchoring = true;
+            contentY = allowed;
+            anchoring = false;
+            scheduleRange();
+            loadEarlierAtTop();
+            if (nearBottom && !chatSelection.dragging) {
                 followTail = true;
+                pinTail();
+            }
         }
         function saveViewport() {
             if (restoring || !pane.current)
@@ -395,6 +505,8 @@ Item {
             let index = indexAt(1, contentY + 1);
             if (index < 0)
                 index = indexAt(1, contentY + spacing + 2);
+            if (index < 0)
+                index = visibleRows(slotMap().slots).first;
             const item = index >= 0 ? itemAtIndex(index) : null;
             pane.controller.saveViewport(index, item ? contentY - item.y : 0, followTail);
         }
@@ -423,22 +535,149 @@ Item {
             }
             restoreTimer.restart();
         }
+        function startBottom() {
+            // Keep a retained pane's laid-out rows. Move to its up-to-date
+            // tail after the composer and hint bars established the viewport.
+            resetScrollDemand();
+            restoreTimer.stop();
+            firstScreenPositioned = false;
+            restoring = true;
+            followTail = true;
+            restoreIndex = -1;
+            restoreOffset = 0;
+            restoreAttempts = 0;
+            if (!count) {
+                restoring = false;
+                return;
+            }
+            const first = Math.max(0, count - Math.max(20, pane.firstFrameRows));
+            urgentFirst = first;
+            urgentLast = count - 1;
+            activeFirst = first;
+            activeLast = count - 1;
+            activeEnd = count - 1;
+            pinTail();
+            forceLayout();
+            requestFirstScreen();
+            if (firstScreenReady())
+                finishPosition();
+            else
+                restoreTimer.start();
+        }
+        function requestFirstScreen() {
+            // The logical first frame contains the latest twenty rows. The
+            // viewport decides which of those bodies need preparing first.
+            const rows = visibleRows(slotMap().slots);
+            const priority = [];
+            const stagingFloor = Math.max(0, count - pane.firstFrameRows);
+            const first = rows.first >= 0 ? Math.max(pane.firstFrameRows ? stagingFloor : 0, rows.first) : count - 1;
+            urgentFirst = Math.min(urgentFirst, first);
+            activeFirst = Math.min(activeFirst, first);
+            for (let row = count - 1; row >= Math.max(0, first); row--)
+                priority.push(row);
+            if (!priority.length && count)
+                priority.push(count - 1);
+            pane.messageModel.requestViewport(priority, []);
+        }
+        function firstScreenReady() {
+            const tail = itemAtIndex(count - 1);
+            if (count && (!tail || !tail.bodyReady))
+                return false;
+            const top = contentY, bottom = contentY + height;
+            let first = null;
+            for (const row of contentItem.children) {
+                if (row.messageSlot !== true || row.y + row.height <= top || row.y >= bottom)
+                    continue;
+                if (!row.shown)
+                    return false;
+                if (!first || row.index < first.index)
+                    first = row;
+            }
+            return !first || first.index === 0 || first.y <= top + spacing + 1;
+        }
+        function finishPosition() {
+            restoreTimer.stop();
+            if (followTail && pane.firstFrameRows) {
+                // Let the host paint the positioned suffix for a frame. The
+                // opening still owns navigation until older bodies can load.
+                firstScreenPositioned = true;
+                pinTail();
+                return;
+            }
+            firstScreenPositioned = false;
+            urgentFirst = -1;
+            urgentLast = -2;
+            restoring = false;
+            explicitJump = false;
+            jumpingOutsidePartial = false;
+            if (followTail)
+                pinTail();
+            saveViewport();
+            scheduleRange();
+        }
+        function prioritizeAnchor(index) {
+            let last = index;
+            let extent = pane.messageModel.estimatedHeight(index);
+            const needed = height + Math.max(0, restoreOffset);
+            while (last + 1 < count && extent < needed) {
+                last++;
+                extent += pane.messageModel.estimatedHeight(last) + spacing;
+            }
+            urgentFirst = index;
+            urgentLast = last;
+        }
         acceptedButtons: Qt.NoButton
         visible: count > 0
         anchors.fill: parent
         clip: true
         spacing: 27
-        model: pane.messageModel
+        model: pane.renderReady ? pane.messageModel : null
         cacheBuffer: Math.max(0, reach)
         currentIndex: -1
-        // A hidden attached ScrollBar still writes contentY when its
-        // size changes. Variable-height rows must have one scroll owner.
+        activeFocusOnTab: true
+        Keys.onPressed: event => {
+            if (event.key === Qt.Key_PageUp || event.key === Qt.Key_Home) {
+                scrollBy(event.key === Qt.Key_Home ? -contentHeight : -height);
+                event.accepted = true;
+            } else if (event.key === Qt.Key_PageDown || event.key === Qt.Key_End) {
+                if (event.key === Qt.Key_End) jumpToLatest();
+                else scrollBy(height);
+                event.accepted = true;
+            }
+        }
+        // Keep the control detached so programmatic size changes cannot write
+        // back to the ListView while a loaded row replaces its estimate.
+        ScrollBar {
+            objectName: pane.current ? "conversationScrollBar" : ""
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            orientation: Qt.Vertical
+            size: Math.min(1, conversation.height / Math.max(1, conversation.contentHeight))
+            position: conversation.visibleArea.yPosition
+            active: pressed || hovered || conversation.moving
+            visible: size < 1 && pane.current
+            onPressedChanged: if (pressed) {
+                conversation.forceActiveFocus()
+                conversation.beginBrowsing()
+            }
+            onPositionChanged: {
+                if (pressed && !conversation.anchoring) {
+                    const target = conversation.originY + position * conversation.contentHeight;
+                    if (Math.abs(target - conversation.contentY) > 1)
+                        conversation.scrollBy(target - conversation.contentY);
+                }
+            }
+        }
         onFollowTailChanged: saveViewport()
         onContentYChanged: {
             saveViewport();
             scheduleRange();
-            // A partial history continues once the reader scrolls past its top.
-            if (atYBeginning && !followTail && !restoring && pane.current && pane.messageModel
+            loadEarlierAtTop();
+        }
+        onAtYBeginningChanged: loadEarlierAtTop()
+        function loadEarlierAtTop() {
+            if (atYBeginning && !anchoring && !followTail && !restoring && pane.current && pane.messageModel
                     && pane.messageModel.partialHistory && pane.controller.recentHistory)
                 pane.controller.recentHistory.loadEarlier();
         }
@@ -447,7 +686,7 @@ Item {
                 pagePrefetch.start();
         }
         function requestVisibleRange() {
-            if (!pane.current || !count)
+            if (!pane.current || !count || (pane.firstFrameRows && !explicitJump))
                 return;
             forceLayout();
             // indexAt() returns -1 in spacing and outside instantiated delegates;
@@ -455,8 +694,19 @@ Item {
             // starve rows.
             if (visibleRows(slotMap().slots).first < 0)
                 scheduleRange();
-            else
+            else {
                 updateGroups();
+                if (pendingWheelPixels && !restoring)
+                    advanceScroll(pendingWheelPixels, true);
+            }
+        }
+        Timer {
+            id: scrollIdle
+            interval: 100
+            onTriggered: {
+                conversation.resetScrollDemand();
+                conversation.scheduleRange();
+            }
         }
         Timer {
             id: pagePrefetch
@@ -472,12 +722,17 @@ Item {
                 // Rows above the tail settle their heights in the background.
                 // Re-pin the tail in the same frame, so the latest message
                 // never draws one frame away from the bottom.
-                if (!anchoring && !pane.concealed)
-                    positionViewAtEnd();
+                if (!pane.concealed)
+                    pinTail();
                 tailTimer.restart();
             }
         }
         onCountChanged: {
+            scheduleRange();
+            if (pane.current && followTail && !restoring)
+                tailTimer.restart();
+        }
+        onHeightChanged: {
             scheduleRange();
             if (pane.current && followTail && !restoring)
                 tailTimer.restart();
@@ -488,7 +743,7 @@ Item {
             interval: 0
             onTriggered: {
                 if (pane.current && conversation.followTail && !conversation.restoring)
-                    conversation.positionViewAtEnd();
+                    conversation.pinTail();
             }
         }
         Timer {
@@ -503,89 +758,59 @@ Item {
                 conversation.forceLayout();
                 conversation.restoreAttempts++;
                 if (conversation.followTail || conversation.restoreIndex < 0) {
-                    conversation.positionViewAtEnd();
-                    pane.messageModel.requestRange(Math.max(0, conversation.count - 4), conversation.count - 1);
-                    const tail = conversation.itemAtIndex(conversation.count - 1);
-                    if (conversation.count && (!tail || !tail.bodyReady) && conversation.restoreAttempts < 200)
-                        return;
-                    // Finish with a complete first screen: every row on it shown,
-                    // and no part of it waiting for a row ListView has not
-                    // created yet (rows above slide in as real heights settle).
-                    const top = conversation.contentY, bottom = top + conversation.height;
-                    let first = null;
-                    for (const row of conversation.contentItem.children) {
-                        if (row.messageSlot !== true || row.y + row.height <= top || row.y >= bottom)
-                            continue;
-                        if (!row.shown && conversation.restoreAttempts < 200)
-                            return;
-                        if (!first || row.index < first.index)
-                            first = row;
-                    }
-                    if (first && first.index > 0 && first.y > top + conversation.spacing + 1 && conversation.restoreAttempts < 200)
+                    conversation.pinTail();
+                    if (pane.openAtBottom && conversation.urgentLast >= 0)
+                        conversation.requestFirstScreen();
+                    else
+                        pane.messageModel.requestRange(Math.max(0, conversation.count - 4), conversation.count - 1);
+                    if (!conversation.firstScreenReady() && conversation.restoreAttempts < 200)
                         return;
                 } else {
+                    if (conversation.jumpingOutsidePartial && pane.messageModel.partialHistory)
+                        return;
                     const index = Math.min(conversation.restoreIndex, conversation.count - 1);
-                    pane.messageModel.requestRange(index, index + 3);
-                    if (conversation.restoreAttempts === 1) {
+                    if (index < 0 && conversation.restoreAttempts < 200)
+                        return;
+                    if (index >= 0 && conversation.urgentFirst < 0) {
+                        conversation.prioritizeAnchor(index);
+                        pane.messageModel.requestRange(conversation.urgentFirst, conversation.urgentLast);
                         conversation.positionViewAtIndex(index, ListView.Beginning);
                         conversation.forceLayout();
-                        return;
                     }
-                    if (!pane.messageModel.isReady(index) && conversation.restoreAttempts < 200)
-                        return;
+                    conversation.settleGroups();
                     const item = conversation.itemAtIndex(index);
                     if ((!item || !item.bodyReady) && conversation.restoreAttempts < 200)
                         return;
-                    // Nearby rows are loaded asynchronously too. In particular,
-                    // a short target near the tail can be clamped against a
-                    // following placeholder before its real height is known.
-                    for (let row = index + 1; row < Math.min(conversation.count, index + 4); row++) {
-                        const nearby = conversation.itemAtIndex(row);
-                        if ((!pane.messageModel.isReady(row) || (nearby && !nearby.bodyReady))
-                                && conversation.restoreAttempts < 200)
-                            return;
-                    }
-                    const bottom = conversation.contentY + conversation.height;
-                    const last = Math.min(index + 3, conversation.count - 1);
-                    for (const row of conversation.contentItem.children) {
-                        if (row.messageSlot !== true || row.index < index || row.index > last ||
-                                row.y + row.height <= conversation.contentY || row.y >= bottom)
-                            continue;
-                        if (!row.bodyReady) {
-                            if (conversation.restoreAttempts < 200)
-                                return;
-                        } else {
-                            // Loader.Ready precedes deferred TextEdit/Column
-                            // polish; consume their actual sizes before clamping.
-                            conversation.polishBody(row);
-                        }
-                    }
-                    conversation.forceLayout();
                     if (item) {
+                        const offset = Math.min(conversation.restoreOffset, item.height - 1);
                         conversation.positionViewAtIndex(index, ListView.Beginning);
                         if (!conversation.atYEnd)
-                            conversation.contentY += Math.min(conversation.restoreOffset, item.height - 1);
+                            conversation.contentY += offset;
                     }
                     conversation.forceLayout();
                     if (conversation.restoreAttempts < 200) {
-                        const bottom = conversation.contentY + conversation.height;
-                        const last = Math.min(index + 3, conversation.count - 1);
-                        // A pending visible neighbour can still change the end
-                        // clamp after the target body itself has become ready.
-                        for (const row of conversation.contentItem.children) {
-                            if (row.messageSlot === true && row.index >= index && row.index <= last &&
-                                    row.y + row.height > conversation.contentY && row.y < bottom && !row.bodyReady)
+                        const slots = conversation.slotMap().slots;
+                        const rows = conversation.visibleRows(slots);
+                        if (rows.first < 0)
+                            return;
+                        // Estimates can underfill the screen, or the end clamp
+                        // can expose rows above the anchor. Only prioritize the
+                        // rows that actually intersect the viewport.
+                        const first = Math.min(index, rows.first);
+                        const last = Math.max(index, rows.last);
+                        if (first < conversation.urgentFirst || last > conversation.urgentLast) {
+                            conversation.urgentFirst = Math.min(first, conversation.urgentFirst);
+                            conversation.urgentLast = Math.max(last, conversation.urgentLast);
+                            pane.messageModel.requestRange(conversation.urgentFirst, conversation.urgentLast);
+                        }
+                        for (let row = rows.first; row <= rows.last; row++) {
+                            if (!slots[row] || !slots[row].shown)
                                 return;
                         }
                     }
                 }
                 if (conversation.restoreAttempts >= 2) {
-                    stop();
-                    conversation.urgentFirst = -1;
-                    conversation.urgentLast = -2;
-                    conversation.restoring = false;
-                    conversation.saveViewport();
-                    conversation.requestVisibleRange();
+                    conversation.finishPosition();
                 }
             }
         }
@@ -604,6 +829,8 @@ Item {
             target: pane.messageModel
             function onModelAboutToBeReset() {
                 if (!pane.current) return;
+                if (!conversation.followTail)
+                    conversation.saveViewport();
                 conversation.restoring = true;
                 tailTimer.stop();
                 restoreTimer.stop();
@@ -612,8 +839,18 @@ Item {
                 // Replacing a live transcript with its indexed snapshot is a
                 // structural reset. Preserve its reading anchor; ordinary page
                 // arrivals below only refresh viewport demand.
-                if (pane.current) conversation.restoreViewport();
-                else pane.layoutDirty = true;
+                if (!pane.current) {
+                    pane.layoutDirty = true;
+                } else if (conversation.explicitJump) {
+                    // A Pi-to-index replacement can arrive just after the
+                    // reader selected a question. Keep that request rather
+                    // than reopening at the position before the click.
+                    conversation.releaseGroups();
+                    conversation.restoreAttempts = 0;
+                    restoreTimer.start();
+                } else {
+                    conversation.restoreViewport();
+                }
             }
             function onViewportChanged() {
                 // A page arrival is not a navigation request. ListView keeps
@@ -632,7 +869,7 @@ Item {
                 const item = rows.first >= 0 ? conversation.itemAtIndex(rows.first) : null;
                 const loading = conversation.headerItem ? conversation.headerItem.height : 0;
                 conversation.prependAnchor = item ? rows.first : -1;
-                conversation.prependOffset = item ? Math.max(0, item.y - conversation.contentY - loading) : 0;
+                conversation.prependOffset = item ? item.y - conversation.contentY - loading : 0;
                 if (conversation.activeLast >= 0) {
                     conversation.activeLast += count;
                     conversation.activeEnd += count;
@@ -641,8 +878,13 @@ Item {
             function onHistoryPrepended(count) {
                 if (conversation.activeLast >= 0)
                     conversation.activeFirst += count;
-                if (conversation.restoreIndex >= 0)
+                if (conversation.restoreIndex >= 0 && !conversation.jumpingOutsidePartial)
                     conversation.restoreIndex += count;
+                if (conversation.explicitJump) {
+                    conversation.urgentFirst = -1;
+                    conversation.urgentLast = -2;
+                    conversation.restoreAttempts = 0;
+                }
                 const anchor = conversation.prependAnchor;
                 conversation.prependAnchor = -1;
                 if (anchor >= 0 && !conversation.followTail && !conversation.restoring) {
@@ -662,6 +904,8 @@ Item {
                     conversation.contentY += 1;
                     conversation.anchoring = false;
                 }
+                if (conversation.followTail && !conversation.restoring)
+                    conversation.pinTail();
                 conversation.scheduleRange();
             }
         }
@@ -702,7 +946,24 @@ Item {
             // shown: the row's group has finished loading (see settleGroups).
             // Until then the body lays out invisibly at the estimated height.
             property bool shown: false
-            readonly property bool bodyLoaded: (bodyLoader.item !== null && bodyLoader.status === Loader.Ready) || !!modelData._loadError
+            property bool laidOut: false
+            property real measuredHeight: 0
+            function applyHeight(value, expanded) {
+                if (!(value > 0) || pane.released)
+                    return;
+                if (shown && y < conversation.contentY && !conversation.followTail
+                        && Math.abs(value - measuredHeight) > 0.5)
+                    conversation.keepAnchor(() => { measuredHeight = value; });
+                else
+                    measuredHeight = value;
+                // Expanded blocks are still expanded while their pane is
+                // retained. A rebuilt delegate starts collapsed.
+                if (expanded)
+                    pane.messageModel.invalidateHeight(index);
+                else
+                    pane.messageModel.recordHeight(index, value);
+            }
+            readonly property bool bodyLoaded: (laidOut && bodyLoader.item !== null && bodyLoader.status === Loader.Ready) || !!modelData._loadError
             readonly property bool bodyReady: shown && bodyLoader.item !== null && bodyLoader.status === Loader.Ready
             // Rows appended after a range that reached the last row (streaming)
             // belong to the open tail group and load at once.
@@ -712,7 +973,7 @@ Item {
             onBodyLoadedChanged: if (!bodyLoaded)
                 shown = false
             width: conversation.width - 16
-            height: bodyReady ? bodyLoader.item.implicitHeight : Math.max(64, modelData._estimatedHeight || pane.messageModel.estimatedHeight(index))
+            height: bodyReady && measuredHeight > 0 ? measuredHeight : Math.max(64, modelData._estimatedHeight || pane.messageModel.estimatedHeight(index))
             Loader {
                 id: bodyLoader
                 width: parent.width
@@ -722,10 +983,18 @@ Item {
                 asynchronous: (rowShell.index < conversation.urgentFirst || rowShell.index > conversation.urgentLast)
                     && !(conversation.followTail && rowShell.index === conversation.count - 1)
                 active: !pane.released && !rowShell.modelData._loading && rowShell.wanted
+                    && (!pane.firstFrameRows || rowShell.index >= conversation.count - pane.firstFrameRows)
                 opacity: rowShell.shown ? 1 : 0
                 enabled: rowShell.shown
+                onStatusChanged: if (status !== Loader.Ready)
+                    rowShell.laidOut = false
                 onLoaded: {
-                    pane.messageModel.recordHeight(rowShell.index, item.implicitHeight);
+                    // Lay out each body while its group is being loaded. A
+                    // wheel event that reaches a prefetched group can then
+                    // show it without polishing every body in one callback.
+                    conversation.polishBody(item);
+                    rowShell.applyHeight(item.implicitHeight, item.expandedLayout);
+                    rowShell.laidOut = true;
                     if (!conversation.forcing)
                         conversation.settleGroups();
                     conversation.scheduleRange();
@@ -743,8 +1012,11 @@ Item {
                     readonly property bool hovered: chatSelection.hovering && hoverPoint.x >= 0 && hoverPoint.x <= width && hoverPoint.y >= 0 && hoverPoint.y <= height
                     width: conversation.width - 16
                     spacing: 10
+                    readonly property bool expandedLayout: activityHistory.layoutExpanded || compactionEvent.expanded
+                    onExpandedLayoutChanged: if (bodyLoader.status === Loader.Ready)
+                        rowShell.applyHeight(implicitHeight, expandedLayout)
                     onImplicitHeightChanged: if (bodyLoader.status === Loader.Ready)
-                        pane.messageModel.recordHeight(index, implicitHeight)
+                        rowShell.applyHeight(implicitHeight, expandedLayout)
                     Row {
                         visible: !modelData._loading && !messageRow.statusNotice && !modelData.continuation && modelData.role !== "user"
                         spacing: 9
@@ -789,6 +1061,7 @@ Item {
                             width: parent.width - x * 2
                             spacing: 10
                             ActivityHistory {
+                                id: activityHistory
                                 width: parent.width
                                 activity: modelData.activity || []
                                 selectionController: chatSelection
@@ -1022,5 +1295,12 @@ Item {
         enabled: pane.current && !pane.blocked
         retainedView: true
         sessionActive: pane.current
+        renderGeneration: pane.renderGeneration
+        onDecodedImageBytesChanged: if (pane.openAtBottom && !pane.released) imageBudget.restart()
+    }
+    Timer {
+        id: imageBudget
+        interval: 0
+        onTriggered: if (!pane.released) pane.controller.recordConversationImages(pane.viewKey, chatSelection.decodedImageBytes)
     }
 }

@@ -25,7 +25,7 @@ from .integration import load_adapter, UnconfiguredAdapter
 from .pi_runtime import PACKAGE, RELEASE_NAME, CREATE_NO_WINDOW, installed_version, node_executable, npm_command, project_runtime, verify_runtime
 from .npm_config import npm_environment
 from .storage import Store
-from .pi_sessions import PiSessionPool, SessionState, clean_extension_modes, clean_skill_modes, clean_blocked_tools, saved_viewport
+from .pi_sessions import PiSessionPool, SessionState, clean_extension_modes, clean_skill_modes, clean_blocked_tools
 from .controller_runtime import PiControllerMixin
 from .dsh_backend import DshControllerMixin, is_dsh
 from .transcripts import preview
@@ -71,8 +71,19 @@ GREETINGS = (
 
 class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, PreferencesMixin, DshControllerMixin, PiControllerMixin, QObject):
     changed = Signal()
+    agentResourcesChanged = Signal()
     appearanceChanged = Signal()
     characterCatalogChanged = Signal()
+    desktopSettingsChanged = Signal()
+    auxiliaryVisionSettingsChanged = Signal()
+
+    @Property('QVariantMap', notify=desktopSettingsChanged)
+    def desktopSettings(self):
+        return dict(self.store.data['desktop'])
+
+    @Property('QVariantMap', notify=auxiliaryVisionSettingsChanged)
+    def auxiliaryVisionSettings(self):
+        return dict(self.store.data['auxiliaryVision'])
 
     @Property('QVariantList', notify=characterCatalogChanged)
     def characterPacks(self):
@@ -102,7 +113,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def lineSpacing(self):
         return self.store.data['ui']['lineSpacing']
 
-    @Property(bool, notify=changed)
+    @Property(bool, notify=desktopSettingsChanged)
     def webviewAvailable(self):
         from .webview import configuration
         return configuration(self.store.data.get('desktop'))['available']
@@ -130,7 +141,6 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     toast = Signal(str)
     requestDetailsRequested = Signal(str)
     webRequested = Signal(str, str)
-    desktopSettingsChanged = Signal()
     documentRequested = Signal(str, str, str)
     widgetDocumentRequested = Signal(str, str, str, str)
     taskFinished = Signal(str, str, bool, bool)
@@ -210,6 +220,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._app_about = AppAbout(self)
         self.store = Store()
         self.store.external_change = self._settings_changed_externally
+        # Provider changes and externally merged settings still refresh these
+        # small views. A local switch only emits its own section's notification.
+        self.changed.connect(self.desktopSettingsChanged)
+        self.changed.connect(self.auxiliaryVisionSettingsChanged)
         self._init_dsh()
         from .login_session import LoginStartupSettings
         self._login_startup = LoginStartupSettings(self, background='--login-startup' in sys.argv)
@@ -235,6 +249,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.adapter = load_adapter(self.store.directory)
         self._provider_plugins = ProviderPlugins(self)
         self.gateway = Gateway(self.store, self.adapter, self._provider_plugins)
+        self.gateway.diagnostics.changed.connect(self.changed.emit)
         self.private_token = secrets.token_urlsafe(40)
         self.private_server = LocalServer(self.gateway, 0, self.private_token, private=True)
         self.public_server = None
@@ -247,14 +262,19 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._pool.touch(self._view, current=True)
         self._pool.event.connect(self._handle_pi_event)
         from .conversation_views import ConversationViews
-        self._conversation_views = ConversationViews(self)
+        self._conversation_views = ConversationViews(self, capacity=24)
         self._conversation_views.evicted.connect(self.conversationEvicted)
-        self._pool.bodyDiscarded.connect(self._conversation_views.discard)
+        self._view_open_generation = 0
+        self._stage_first_frame = False
         self._chat_model = self._conversation_views.select(self._view.key)
         self._streaming_timer = QTimer(self)
         self._streaming_timer.setSingleShot(True)
-        self._streaming_timer.setInterval(24)
+        self._streaming_timer.setInterval(50)
         self._streaming_timer.timeout.connect(self._publish_stream)
+        self._pi_warmup = QTimer(self)
+        self._pi_warmup.setSingleShot(True)
+        self._pi_warmup.setInterval(350)
+        self._pi_warmup.timeout.connect(self._warm_active_pi)
         self._last_sidebar_rows = None
         self._project_workspace_keys = {}
         self._stream_projection = False
@@ -416,14 +436,18 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             model=self.store.data["selectedModel"], provider=self.store.data["selectedProvider"], greeting=self._welcome_greetings.pop(), portrait=self._welcome_portraits.pop())
 
     def _activate(self, record):
-        if record is not self._view and hasattr(self, '_recent_history'):
-            self._recent_history.leaving(self._view)
+        self._session_preview.cancel()
+        previous = self._view
+        if previous is not record and previous.speculative and not self._pool.protected(previous):
+            self._pool.retire(previous)
         self._streaming_timer.stop()
         self.viewAboutToChange.emit()
         previous_approval = self._dangerous_allowed(self._view)
         previous_configuration = {key: self.store.data.get(key) for key in ("workspace", "activeProject", "selectedProvider", "selectedModel")}
         self._view = record
-        model = self._conversation_views.select(record.key)
+        record.scroll_index, record.scroll_y, record.follow_tail = -1, 0.0, True
+        self._view_open_generation += 1
+        model = self._conversation_views.select(record.key, self._view_open_generation, staged=self._stage_first_frame)
         if model is not self._chat_model:
             self._chat_model = model
             self.messageModelChanged.emit()
@@ -439,14 +463,16 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         available = [(p["id"], m["alias"]) for p in self.store.data["providers"]
                      if p["api"] != "internal" or getattr(self.gateway.adapter, "ready", True)
                      for m in p["models"]]
-        historical = (record.provider, record.model)
+        historical = record.pending_selection or (record.provider, record.model)
         current = (self.store.data["selectedProvider"], self.store.data["selectedModel"])
         selected = historical if historical in available else current if current in available else next(iter(available), ("", ""))
         if not record.busy and historical != selected:
             record.provider, record.model = selected
             record.context_usage = {}
-        if (record.provider, record.model) in available:
-            self.store.data.update(selectedModel=record.model, selectedProvider=record.provider)
+        if record.pending_selection and record.pending_selection != selected:
+            record.pending_selection = selected if selected != (record.provider, record.model) else None
+        if selected in available:
+            self.store.data.update(selectedProvider=selected[0], selectedModel=selected[1])
         self._reconcile_reasoning(record)
         self._reasoning_discovery.sync_active()
         self._mark_read(record)
@@ -456,18 +482,22 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if previous_approval != self._dangerous_allowed(record) or any(self.store.data.get(key) != value for key, value in previous_configuration.items()):
             self.changed.emit()
         self.chatChanged.emit()
-        self.viewChanged.emit()
         self.attachmentsChanged.emit()
         self.approvalChanged.emit()
         self.editorText.emit(record.draft)
         self.contextUsageChanged.emit()
         self.reasoningChanged.emit()
         self.retryChanged.emit()
+        self.viewChanged.emit()
+        self.agentResourcesChanged.emit()
+        if record.transcript is not None and record.transcript.partial:
+            self._recent_history.complete(record)
 
-        # A dead retained kernel is resumed through the same command path as
-        # ordinary Pi startup. Never-started history browsing remains lazy.
-        if record.crashed and not record.busy and not record.subagents_active and not record.approval:
+        # Reopening a crashed cached kernel uses the existing recovery command.
+        if record.crashed and not self._pool.protected(record):
             self._command_pi('inspect', record=record)
+        elif record.file and not record.process and not is_dsh(record):
+            self._pi_warmup.start()
 
     def _refresh_sidebar(self):
         rows = self._project_rows()
@@ -484,7 +514,14 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         active = frozenset({self._view.compaction_event_id}) if self._view.process and self._view.compaction_running else frozenset()
         if self._view.transcript and self._view.transcript.active_compactions != active:
             self._view.transcript = replace(self._view.transcript, active_compactions=active)
-        self._chat_model.set_snapshot(self._view.transcript)
+        old_snapshot, snapshot = self._chat_model.snapshot, self._view.transcript
+        if not (snapshot is not None and old_snapshot is not None
+                and snapshot.database == old_snapshot.database
+                and snapshot.prefix_revision == old_snapshot.revision
+                and snapshot.active_compactions == old_snapshot.active_compactions
+                and snapshot.prefix_rows
+                and self._chat_model.reconcile_snapshot(snapshot, snapshot.prefix_rows)):
+            self._chat_model.set_snapshot(snapshot)
         dirty = self._view.projection_dirty_from
         if dirty is None and self._stream_projection:
             dirty = max(0, len(self._view.messages) - 1)
@@ -513,15 +550,21 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def saveViewport(self, index, position, follow):
         if index < 0:
             return
+        # Only the active view needs this anchor for geometry changes and
+        # access to earlier history. Opening a session always starts at the end.
         self._view.scroll_index, self._view.scroll_y, self._view.follow_tail = index, position, follow
-        # Rows of a partial history are not rows of the complete index.
-        partial = self._view.transcript is not None and self._view.transcript.partial
-        if self._view.id and self._view.file and not (partial and not follow):
-            meta = self.store.data['sessionMeta'].setdefault(self._view.id, {})
-            viewport = {'row':index, 'offset':max(0, position), 'follow':follow}
-            if meta.get('viewport') != viewport:
-                meta['viewport'] = viewport
-                self._viewport_save.start()
+
+    @Slot(str, float)
+    def recordConversationImages(self, key, size):
+        self._conversation_views.set_images(key, max(0, int(size)))
+
+    @Slot(result=float)
+    def conversationCacheBytes(self):
+        return self._conversation_views.retained_bytes()
+
+    @Slot()
+    def enableFirstFrameStaging(self):
+        self._stage_first_frame = True
 
     def _mark_read(self, record):
         if record.id and self._chat_visible:
@@ -582,7 +625,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     def _models_busy(self, provider_id=None):
         generation_accounts = {row.get('providerId') for row in self.store.data.get('multimodal', {}).values()}
-        return any(record.busy and (provider_id is None or record.provider == provider_id or provider_id in generation_accounts)
+        return any(record.busy and (provider_id is None or record.provider == provider_id or
+                   (record.pending_selection and record.pending_selection[0] == provider_id) or provider_id in generation_accounts)
                    for record in self._pool.records.values())
 
     @Property("QVariantList", notify=changed)
@@ -595,7 +639,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Property("QVariantMap", notify=changed)
     def config(self):
-        data = copy.deepcopy(self.store.data)
+        # Per-session metadata belongs to the backend. Copying and converting
+        # it for every QML binding makes settings clicks scale with all history.
+        data = copy.deepcopy({key: value for key, value in self.store.data.items()
+                              if key != 'sessionMeta'})
         data["hasPassword"] = bool(data.pop("password"))
         data.pop("employeeId", None)
         if isinstance(self.adapter, UnconfiguredAdapter):
@@ -605,6 +652,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         data["server"].pop("keys", None)
         for provider in data["providers"]:
             provider["hasKey"] = bool(provider.pop("key", ""))
+            provider.update(self.gateway.diagnostics.latest_compatibility(provider['id'], data.get('language', 'zh')))
             for model in provider["models"]:
                 model.update(normalize_model(model))
         return data
@@ -1341,6 +1389,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Slot(str, str, result=bool)
     def redetectModelReasoning(self, provider, alias):
         row = self._reasoning_discovery.model(provider, alias)
+        if row:
+            self.gateway.compatibility.clear_provider(provider)
         return self._reasoning_discovery.refresh(provider, only=row['upstream']) if row else False
 
     @Slot(result=bool)
@@ -1572,7 +1622,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             return self.toast.emit("会话授权保存失败")
         self._sync_dangerous_approval(record)
 
-    @Property("QVariantMap", notify=changed)
+    @Property("QVariantMap", notify=agentResourcesChanged)
     def agentResources(self):
         return self._view.resources
 
@@ -1739,13 +1789,13 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Slot()
     def pollCapabilities(self):
-        if self._view.process and not self._view.busy:
+        if self._view.process and self._view.ready and not self._view.busy:
             self._write_pi({"type": "resources"})
 
     @Slot()
     def loadCapabilities(self):
         if not self._view.busy:
-            if self._view.process:
+            if self._view.process and self._view.ready:
                 self.pollCapabilities()
             else:
                 self._command_pi("inspect")
@@ -1868,18 +1918,45 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Slot(str, str)
     def selectModel(self, provider, model):
-        if self._view.busy:
+        if self._view.busy and is_dsh(self._view):
             return self.toast.emit("请等待当前任务结束后切换模型")
         self.gateway.resolve(model, provider)
-        if (model, provider) != (self._view.model, self._view.provider):
-            self._view.context_usage = {}
+        record = self._view
         self.store.data.update(selectedProvider=provider, selectedModel=model)
-        self._view.model, self._view.provider = model, provider
-        self._reconcile_reasoning(self._view)
-        if is_dsh(self._view): self._switch_dsh_config()
+        if record.busy:
+            record.pending_selection = (provider, model) if (provider, model) != (record.provider, record.model) else None
+        else:
+            if (model, provider) != (record.model, record.provider):
+                record.context_usage = {}
+            record.model, record.provider = model, provider
+            record.pending_selection = None
+            self._reconcile_reasoning(record)
+            if is_dsh(record): self._switch_dsh_config()
         self.store.save()
         self.changed.emit()
+        self.chatChanged.emit()
         self.contextUsageChanged.emit()
+
+    @Property(bool, notify=chatChanged)
+    def modelSelectionPending(self):
+        return self._view.busy and self._view.pending_selection is not None
+
+    def _apply_pending_selection(self, record):
+        """Commit this session's next choice at the completed request boundary."""
+        if record.pending_selection is None:
+            return
+        record.provider, record.model = record.pending_selection
+        record.pending_selection = None
+        record.context_usage = {}
+        self._reconcile_reasoning(record)
+        if record.id:
+            self._index_record(record)
+            self.store.save_sessions(self._sessions)
+        if record is self._view:
+            self.store.data.update(selectedProvider=record.provider, selectedModel=record.model)
+            self.store.save()
+            self.changed.emit()
+            self.contextUsageChanged.emit()
 
     def _validate_model_mappings(self, rows, previous_models, taken, *, plugin=False):
         """Share the mapping editor's alias rules with the provider editor."""
@@ -1936,6 +2013,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 self.store.data["selectedModel"] = current if current in [m["alias"] for m in models] else models[0]["alias"]
             self._provider_plugins.repair_selection(provider_id)
             self.store.save()
+            self.gateway.compatibility.clear_provider(provider_id)
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("供应商配置已保存")
@@ -1951,6 +2029,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if not provider or provider["api"] not in ("openai", "anthropic"):
             return self.toast.emit("请在账号页刷新插件模型 / Refresh plugin models on the account page")
         self.toast.emit("正在获取供应商模型信息 / Fetching provider model information")
+        self.gateway.compatibility.clear_provider(provider_id)
         self._reasoning_discovery.refresh(provider_id)
 
     @Slot(str)
@@ -1986,9 +2065,13 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 if p["api"] == "plugin" and {m["upstream"] for m in models} != {m["upstream"] for m in p["models"]}:
                     raise ValueError("插件的模型 ID 请在账号页通过刷新获取")
                 p["models"] = models
+            changed_providers = [p['id'] for p in providers
+                                 if p['models'] != self.gateway.provider(p['id'])['models']]
             self.store.data["providers"] = providers
             self._provider_plugins.repair_selection()
             self.store.save()
+            for provider_id in changed_providers:
+                self.gateway.compatibility.clear_provider(provider_id)
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("模型映射已保存")
@@ -2097,7 +2180,6 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if record is None:
             record = self._new_view(session.get("workspace", ""))
             record.id, record.file, record.title = session_id, session.get("file", ""), session["title"]
-            record.scroll_index, record.scroll_y, record.follow_tail = saved_viewport(self.store.data['sessionMeta'].get(session_id, {}))
             record.extension_modes = clean_extension_modes(self.store.data["sessionMeta"].get(session_id, {}).get("extensionModes"))
             record.skill_modes = clean_skill_modes(self.store.data["sessionMeta"].get(session_id, {}).get("skillModes"))
             record.blocked_tools = clean_blocked_tools(self.store.data["sessionMeta"].get(session_id, {}).get("blockedTools"))
@@ -2113,8 +2195,6 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 except OSError:
                     self.toast.emit("原生会话文件暂时无法读取")
         self._activate(record)
-        # Browsing history is read-only. Start Pi lazily for the next command or
-        # explicit tool inventory, rather than re-projecting history on every visit.
 
     @Slot(str)
     def deleteSession(self, session_id):
@@ -2389,6 +2469,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if self._closing:
             return
         self._closing = True
+        self._cancel_pi_warmup()
         self._reasoning_discovery.close()
         self._desktop_plugins.close()
         self._appearance_save.stop()

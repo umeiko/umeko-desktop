@@ -94,26 +94,14 @@ Rectangle {
             }
         }
         ScrollView { x: 14; y: 11 + (root.attachments.length ? Theme.control(45) : 0); width: parent.width-28; height: parent.height-58-(root.attachments.length ? Theme.control(45) : 0)
-            TextArea { font.family: Theme.fontFamily;
+            ChatInput { font.family: Theme.fontFamily;
                 id: prompt; objectName: "subagentPromptInput"
                 text: root.contextState.draft || ""; selectByMouse: true; wrapMode: TextArea.Wrap
                 color: Theme.ink; placeholderTextColor: Theme.muted; font.pixelSize: Theme.font(12, visible)
                 placeholderText: root.running ? I18n.t("向这个子代理发送指引…") : I18n.t("发送消息，从当前上下文继续…")
                 background: null; padding: 0
                 onTextChanged: backend.subagents.setDraft(text)
-                function enter(event) {
-                    if (inputMethodComposing) { event.accepted = false; return }
-                    if (event.modifiers & Qt.AltModifier) {
-                        const position = selectionStart
-                        remove(position,selectionEnd); insert(position,"\n"); cursorPosition = position+1
-                        event.accepted = true; return
-                    }
-                    if (event.modifiers & Qt.ShiftModifier) { event.accepted = false; return }
-                    if (!root.contextState.loading && !root.contextState.pending) composer.send(false)
-                    event.accepted = true
-                }
-                Keys.onReturnPressed: event => enter(event)
-                Keys.onEnterPressed: event => enter(event)
+                onSubmitted: if (!root.contextState.loading && !root.contextState.pending) composer.send(false)
             }
         }
         Row {

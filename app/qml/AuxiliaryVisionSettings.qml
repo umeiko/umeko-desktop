@@ -8,9 +8,10 @@ Column {
     property bool expanded: false
     signal openRequested()
     signal backRequested()
-    readonly property var config: backend.config.auxiliaryVision
+    readonly property var config: backend.auxiliaryVisionSettings
     readonly property var choices: [{providerId:"", model:"", label:I18n.t("不使用辅助视觉")}].concat(backend.auxiliaryVisionModels)
     readonly property int selectedIndex: Math.max(0, choices.findIndex(row => row.providerId === config.providerId && row.model === config.model))
+    onSelectedIndexChanged: Qt.callLater(() => models.sync())
     spacing: 18
 
     ItemDelegate {

@@ -1,0 +1,281 @@
+{
+  "createdAt": "2026-11-17T13:39:26.109390+00:00",
+  "status": "user-accepted",
+  "scope": "12 standard empty-chat portraits for built-in main character yanami",
+  "generator": "built-in image_gen.imagegen",
+  "model": "not exposed by tool",
+  "styleReference": {
+    "page": "https://makeine-anime.com/character/",
+    "files": [
+      {
+        "url": "https://makeine-anime.com/assets/img/character/img_main02.png",
+        "sha256": "bd3fefbbd62525730ceacac7e319d9fa4342362881a71135753de0cb57df9412"
+      },
+      {
+        "url": "https://makeine-anime.com/assets/img/character/img_face02.png",
+        "sha256": "71da622178e00461783fdbe2689d0eb0c7c6e22278b3b75b5dfe31ef6485f79b"
+      }
+    ]
+  },
+  "assets": [
+    {
+      "id": "01",
+      "expression": "开口笑",
+      "image": "app/icons/portraits/01.png",
+      "sha256": "e443ac868be76de42132d7175e0de1269f6347160d905375c46b04766399ca90",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "transparent": true,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "prompt": "prompts/01.txt",
+      "generatedOriginal": "/home/umeko/.codex/generated_images/01a1d55a-e983-7ff2-a5cc-c5d7426c140f/exec-892cadde-bb09-45b5-8c94-d1bd9ed25fd0.png",
+      "previousGeneratedOriginal": "/home/umeko/.codex/generated_images/01a1d55a-e983-7ff2-a5cc-c5d7426c140f/exec-fe4ea753-5918-4d6f-bfea-ac4f8f068b1d.png",
+      "revision": "r2",
+      "revisionReason": "User requested a cuter, less exaggerated expression; reduced mouth opening and softened face contour."
+    },
+    {
+      "id": "02",
+      "expression": "双 V 眨眼",
+      "image": "app/icons/portraits/02.png",
+      "sha256": "5b6aa039f8c2bbf7a181dc679c22459b49f0adc652033f919da2480d62349acc",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "transparent": true,
+      "cornerAlpha": [
+        0,
+        0,
+        1,
+        0
+      ],
+      "prompt": "prompts/02.txt",
+      "generatedOriginal": "/home/umeko/.codex/generated_images/01a1d55a-e983-7ff2-a5cc-c5d7426c140f/exec-6b230339-e912-48a5-ae8b-4ec13cd9a51b.png"
+    },
+    {
+      "id": "03",
+      "expression": "鼓脸",
+      "image": "app/icons/portraits/03.png",
+      "sha256": "4fe59b27fbe0d7486bc252868244604c98b99ce4f692d7f11c78df2f5857b459",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "transparent": true,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "prompt": "prompts/03.txt",
+      "generatedOriginal": "/home/umeko/.codex/generated_images/01a1d55a-e983-7ff2-a5cc-c5d7426c140f/exec-ad663bb8-ce6d-46fb-b3d8-190a8c14d8f5.png"
+    },
+    {
+      "id": "04",
+      "expression": "侧脸得意",
+      "image": "app/icons/portraits/04.png",
+      "sha256": "2cd2464425c425ea4bf1481cb8b9b3e7f77bd58fad274a7ab75de8f54c2bbd77",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "transparent": true,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "prompt": "prompts/04.txt",
+      "generatedOriginal": "/home/umeko/.codex/generated_images/01a1d55a-e983-7ff2-a5cc-c5d7426c140f/exec-53640c89-dbbe-4263-8c07-45b96e619f3f.png"
+    },
+    {
+      "id": "05",
+      "expression": "单手比画框的得意笑",
+      "image": "app/icons/portraits/05.png",
+      "sha256": "2ce4fd2ae0916912e3a97fef7f2b5cec17cd1360ed25c7572a49bddbb25e4c83",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "transparent": true,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        253
+      ],
+      "prompt": "prompts/05.txt",
+      "generatedOriginal": "/home/umeko/.codex/generated_images/01a1d55a-e983-7ff2-a5cc-c5d7426c140f/exec-65c1f684-79a8-4816-8c9a-b3783e167c66.png",
+      "previousGeneratedOriginal": "/home/umeko/.codex/generated_images/01a1d55a-e983-7ff2-a5cc-c5d7426c140f/exec-3cf51350-c2b3-4f23-89d3-8e872940c64c.png",
+      "revision": "r5",
+      "revisionReason": "User requested removal of the upper-left raised hand and sleeve. Lower-right L gesture and episode-12 smug expression retained.",
+      "expressionReference": {
+        "page": "https://makeine-anime.com/story/?id=ep12",
+        "url": "https://makeine-anime.com/story/SYS/CONTENTS/story_3694_photo_1727168313208737312",
+        "sha256": "418c08afc06f9a4fcaff0b186d3327b173e11afb7d8f032cc86884700f433070",
+        "local": "references/ep12-face-framing-smile.jpg"
+      }
+    },
+    {
+      "id": "06",
+      "expression": "困倦",
+      "image": "app/icons/portraits/06.png",
+      "sha256": "e8eb2e011c8e938f65d90edd46677d38b4ee0d4ce376fa98beb507336688a2b1",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "transparent": true,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "prompt": "prompts/06.txt",
+      "generatedOriginal": "/home/umeko/.codex/generated_images/01a1d55a-e983-7ff2-a5cc-c5d7426c140f/exec-a3e5266a-26ae-4295-92f0-563301ec3723.png"
+    },
+    {
+      "id": "07",
+      "expression": "自信笑",
+      "image": "app/icons/portraits/07.png",
+      "sha256": "c9d95b7ed61b242f25478363f1152d034592851d28575ce62ad1eeaf40bd0d63",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "transparent": true,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "prompt": "prompts/07.txt",
+      "generatedOriginal": "/home/umeko/.codex/generated_images/01a1d55a-e983-7ff2-a5cc-c5d7426c140f/exec-e27bbdaa-3714-4b7d-9350-ecc9f5c7ad0c.png"
+    },
+    {
+      "id": "08",
+      "expression": "微笑",
+      "image": "app/icons/portraits/08.png",
+      "sha256": "4e1b2ed687c65197cb5510043524afd4b8482e4277409a279663fdc795f3d9a5",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "transparent": true,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "prompt": "prompts/08.txt",
+      "generatedOriginal": "/home/umeko/.codex/generated_images/01a1d55a-e983-7ff2-a5cc-c5d7426c140f/exec-ad35935c-7e7b-49db-935a-3e212d86416c.png"
+    },
+    {
+      "id": "09",
+      "expression": "惊讶",
+      "image": "app/icons/portraits/09.png",
+      "sha256": "d4c5c03f419387430d41c24f600dd7054804e7fe73d916b14df3a00fae318e18",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "transparent": true,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "prompt": "prompts/09.txt",
+      "generatedOriginal": "/home/umeko/.codex/generated_images/01a1d55a-e983-7ff2-a5cc-c5d7426c140f/exec-a4919f38-6886-423b-803a-4111375b257c.png"
+    },
+    {
+      "id": "10",
+      "expression": "思考",
+      "image": "app/icons/portraits/10.png",
+      "sha256": "d380e15c1b43ca021abb39053910fb5ad983d549824cd8f5a54f406f5cd0bc27",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "transparent": true,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "prompt": "prompts/10.txt",
+      "generatedOriginal": "/home/umeko/.codex/generated_images/01a1d55a-e983-7ff2-a5cc-c5d7426c140f/exec-448c620d-922f-4910-8cb9-d2fc4736b879.png"
+    },
+    {
+      "id": "11",
+      "expression": "鼓脸吃东西",
+      "image": "app/icons/portraits/11.png",
+      "sha256": "5f1767371a455e1306fa1d066248735499b4dfd938b9a5269230d24d0241fb13",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "transparent": true,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "prompt": "prompts/11.txt",
+      "generatedOriginal": "/home/umeko/.codex/generated_images/01a1d55a-e983-7ff2-a5cc-c5d7426c140f/exec-fd6ab73a-698e-42c3-b954-6ff99763edc7.png",
+      "revision": "Hand and chopsticks removed at the user’s explicit request; full-cheek eating expression retained."
+    },
+    {
+      "id": "12",
+      "expression": "眨眼点赞",
+      "image": "app/icons/portraits/12.png",
+      "sha256": "b3a307e79dc1fbc621bff81ad41173920fc0dc73e6a68bfeff3085b97c840569",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "transparent": true,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "prompt": "prompts/12.txt",
+      "generatedOriginal": "/home/umeko/.codex/generated_images/01a1d55a-e983-7ff2-a5cc-c5d7426c140f/exec-07a3a2fc-2d1d-4220-abf1-86b8a2252edc.png"
+    }
+  ],
+  "watermark": {
+    "image": "app/icons/yanami-chat-watermark.png",
+    "sha256": "5b65cc677d4850cca49696106289b5d25f45133670f5e36d8018a1daf1756256",
+    "note": "Original 02.png pixels retained under a dedicated watermark filename."
+  },
+  "desktopPetsChanged": false,
+  "messageAvatarsChanged": false,
+  "rareScenesChanged": false,
+  "animationOrInteractionChanges": false,
+  "published": false,
+  "updatedAt": "2026-11-17T14:52:29.833957+00:00",
+  "acceptance": {
+    "message": "可以了，提交吧",
+    "recordedAt": "2026-11-17T14:52:29.833957+00:00",
+    "scope": "Twelve main-character Yanami empty-chat portraits including 01-r2, 05-r5 and 11-r3",
+    "commitAndPushAuthorized": true,
+    "releaseRequested": false
+  }
+}

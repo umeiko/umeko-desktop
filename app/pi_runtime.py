@@ -102,6 +102,32 @@ def patch_retry_diagnostics(release: Path):
         path.write_text(text.replace(original, replacement), encoding="utf-8")
 
 
+def patch_bash_job(release: Path):
+    # Keep the built-in tool's source, policy, output handling, and shell
+    # settings. The hook also covers Pi's direct Bash execution API.
+    path = release / "node_modules/@earendil-works/pi-coding-agent/dist/core/tools/bash.js"
+    if not path.is_file():
+        return  # The compatibility check below reports a missing SDK.
+    text = path.read_text(encoding="utf-8")
+    hook = 'const host = globalThis[Symbol.for("umeko:bash-job")];'
+    if hook in text:
+        return
+    replacements = {
+        "exec: async (command, cwd, { onData, signal, timeout, env }) => {":
+            "exec: async (command, cwd, { onData, signal, timeout, env, toolCallId }) => {",
+        'const commandFromStdin = shellConfig.commandTransport === "stdin";':
+            f'{hook}\n            if (shellName === "bash" && host) {{\n'
+            '                return host({ shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env: env ?? getShellEnv(), toolCallId });\n'
+            '            }\n            const commandFromStdin = shellConfig.commandTransport === "stdin";',
+        "env: spawnContext.env,": "env: spawnContext.env,\n                        toolCallId: _toolCallId,",
+    }
+    for original, replacement in replacements.items():
+        if text.count(original) != 1:
+            raise RuntimeError("Pi Bash 接口已变化，需要更新进程清理适配")
+        text = text.replace(original, replacement)
+    path.write_text(text, encoding="utf-8")
+
+
 def copy_runtime_file(source, destination):
     """Leave prepared adapters untouched; publish changed files atomically."""
     source, destination = Path(source), Path(destination)
@@ -127,10 +153,12 @@ def verify_runtime(release: Path, bridge_source: Path):
     if manifest.get("package") != PACKAGE or manifest.get("projection") != 2:
         raise RuntimeError("旧 Agent Core 内核不能用于完整 Pi Coding Agent")
     patch_retry_diagnostics(release)
+    patch_bash_job(release)
     for name in ("tool-visibility.mjs", "session-capabilities.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         copy_runtime_file(bridge_source.parent / name, release / name)
     copy_runtime_file(bridge_source.parent / 'update-cleanup.mjs', release / 'update-cleanup.mjs')
     copy_runtime_file(bridge_source.parent / 'generation.mjs', release / 'generation.mjs')
+    copy_runtime_file(bridge_source.parent / 'http-retry-boundary.mjs', release / 'http-retry-boundary.mjs')
     copy_runtime_file(bridge_source.parent / 'system-prompt.mjs', release / 'system-prompt.mjs')
     copy_runtime_file(bridge_source.parent / 'skills.mjs', release / 'skills.mjs')
     copy_runtime_file(bridge_source.parent / 'coordinator-skills.mjs', release / 'coordinator-skills.mjs')

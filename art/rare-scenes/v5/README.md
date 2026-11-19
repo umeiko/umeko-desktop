@@ -6,6 +6,6 @@
 
 对白使用用户指定的中文措辞，绘制时不把文字写入图片。小鞠的原文语境可对应小说第六卷 203–204 页的阅读笔记，天爱星由用户指定第八卷插画；八奈见和佳树的台词未标注卷页。鲸鱼娘为用户指定的原创台词。
 
-完整提示词、输入参考、内置 image_gen 原始输出位置见 generation.json；每张提示词也单独保存在同名 .prompt.txt。旧版本保留作修订记录。
+完整提示词、输入参考、内置 image_gen 原始输出位置见 generation.json；每张提示词也单独保存在同名 .prompt.txt。旧版输出从当前检出移除，修订记录中的链接固定到清理前的 Git 提交；完全相同的副本改为引用本地唯一原稿。清单与校验值见 [archived-assets.json](../../archived-assets.json)。
 
 运行 `python3 art/rare-scenes/v5/build.py` 只更新主页插画与目录；桌宠彩蛋须运行 `python3 art/desktop-pets/rare-idle-v1/build.py` 单独打包。两者只缩放和编码，不修改画面或透明度，沿用 0.005 概率及既有抽取/缓存策略。

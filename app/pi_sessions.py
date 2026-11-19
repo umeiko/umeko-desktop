@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
 from .npm_config import npm_overrides
@@ -48,6 +50,7 @@ class SessionState:
     workspace: str = ""
     model: str = ""
     provider: str = ""
+    pending_selection: tuple[str, str] | None = None
     title: str = "新会话"
     messages: list = field(default_factory=list)
     history: list = field(default_factory=list)
@@ -76,8 +79,15 @@ class SessionState:
     process: QProcess | None = None
     buffer: bytes = b""
     ready: bool = False
+    prewarming: bool = False
+    speculative: bool = False
+    warm_command: dict | None = None
     failed: bool = False
     cancelled: bool = False
+    stop_state: str = ""
+    stop_detail: str = ""
+    stop_token: str = ""
+    prompt_after_stop: tuple[str, bool] | None = None
     stale: bool = False
     crashed: bool = False
     operation: bool = False
@@ -187,6 +197,10 @@ class PiSessionPool(QObject):
                 if existing.lower() == key: environment.remove(existing)
             environment.insert(key, value)
         environment.insert("PATH", os.path.dirname(program) + os.pathsep + environment.value("PATH"))
+        if os.name == "nt":
+            environment.insert("UMEKO_BASH_JOB_HOST", sys.executable)
+            if not getattr(sys, "frozen", False):
+                environment.insert("UMEKO_BASH_JOB_SCRIPT", str(Path(__file__).resolve().parents[1] / "main.py"))
         process.setProcessEnvironment(environment)
         process.setProgram(program)
         process.setArguments([str(bridge)])
@@ -196,7 +210,7 @@ class PiSessionPool(QObject):
         process.finished.connect(lambda *_: self._finished(record, process))
         process.errorOccurred.connect(lambda error: self._error(record, process, error))
         process.start()
-        self.touch(record)
+        self.touch(record, dirty=False)
 
     def _read(self, record, process):
         if record.process is not process or self.closing:
@@ -236,6 +250,7 @@ class PiSessionPool(QObject):
         process = record.process
         record.crashed = False
         record.ready, record.stale = False, False
+        record.prewarming, record.speculative, record.warm_command = False, False, None
         if not process:
             return
         self._cancel_catalogs(record)

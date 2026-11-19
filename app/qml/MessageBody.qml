@@ -55,7 +55,9 @@ Column {
                     SyntaxHighlighter {
                         id: codeColors
                         objectName: "syntax_" + root.messageIndex + "_" + (root.blockOffset + index)
-                        document: codeText.textDocument; language: modelData.language || ""; dark: Theme.dark; enabled: codeText.visible
+                        document: codeText.textDocument; language: modelData.language || ""; dark: Theme.dark
+                        enabled: codeText.visible && (!root.selectionController || root.selectionController.sessionActive)
+                        renderGeneration: root.selectionController ? root.selectionController.renderGeneration : 0
                     }
                 }
             }

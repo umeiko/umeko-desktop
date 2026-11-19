@@ -42,10 +42,38 @@ ApplicationWindow {
     Timer { interval: 16; repeat: true; running: window.searchVisible && window.searchFocusPending
         onTriggered: if (!sidebarWidthMotion.moving) { searchPane.focusSearch(); window.searchFocusPending = false } }
     Connections { target: backend.chatSearch
+        id: searchJumps
+        property var pendingJump: null
+        // A newly selected host attaches its ListView on a frame boundary.
+        // Wait for that attachment and initial layout before navigating away
+        // from the bottom; a callLater can still run while its count is zero.
+        property var jumpWaiter: FrameAnimation {
+            running: searchJumps.pendingJump !== null
+            onTriggered: searchJumps.finishJump()
+        }
+        function finishJump() {
+            const pending = pendingJump
+            if (!pending) return
+            if (backend.conversationToken !== pending.key
+                    || backend.messageModel.openGeneration !== pending.generation) {
+                pendingJump = null
+                return
+            }
+            const pane = conversationHost.currentPane
+            if (!pane || pane.viewKey !== pending.key || !pane.renderReady
+                    || pane.concealed || pane.view.restoring
+                    || conversationHost.pendingGeneration >= 0)
+                return
+            pendingJump = null
+            pane.view.jumpToMessage(pending.row)
+            window.searchHighlightRow = pending.row
+            searchHighlightTimer.restart()
+        }
         function onJumpReady(row, entryId) {
             window.page = "chat"; window.searchVisible = false
             chatCover.cancel()
-            if (row >= 0) Qt.callLater(() => { conversation.jumpToMessage(row); window.searchHighlightRow = row; searchHighlightTimer.restart() })
+            pendingJump = row >= 0 ? {row: row, key: backend.conversationToken,
+                                      generation: backend.messageModel.openGeneration} : null
         }
     }
     Loader {
@@ -79,7 +107,6 @@ ApplicationWindow {
     property string pendingSidebarKind: ""
     property string pendingSidebarTitle: ""
     property int sidebarToken: 0
-    property int sidebarFrames: 0
     property bool sidebarStarted: false
     property bool sidebarPrepared: false
     readonly property bool sidebarSwitching: pendingSidebarId.length > 0
@@ -91,7 +118,7 @@ ApplicationWindow {
         if (row.selected && !sidebarSwitching && (row.kind === "session" || !backend.activeSession)) { window.page = "chat"; return }
         backend.sessionPreview.cancel(); sidebarToken++
         pendingSidebarKind = row.kind; pendingSidebarTitle = row.title; pendingSidebarId = row.id
-        sidebarFrames = 0; sidebarStarted = false; sidebarPrepared = false
+        sidebarStarted = false; sidebarPrepared = false
         window.page = "chat"
         // Warm panes already contain their controls and text layouts.
         const cached = backend.cachedConversationToken(row.id)
@@ -110,27 +137,40 @@ ApplicationWindow {
         // A retained conversation was never covered; it appears directly.
         if (chatCover.loading) chatCover.contentReady()
     }
-    // Read off-thread and show lightweight row placeholders immediately.
-    // Render-thread motion is independent of this GUI-thread handoff.
-    FrameAnimation {
-        running: window.sidebarSwitching && !window.sidebarStarted
-        onTriggered: {
-            window.sidebarFrames++
-            if (window.sidebarFrames < 1) return
-            window.sidebarStarted = true
-            if (window.pendingSidebarKind === "project") window.sidebarPrepared = true
-            else backend.sessionPreview.prepare(window.pendingSidebarId, window.sidebarToken)
-        }
-    }
     Connections {
         target: backend.sessionPreview
         function onReady(token, ok) {
             if (token !== window.sidebarToken || !window.sidebarSwitching) return
-            if (ok) window.sidebarPrepared = true
+            if (ok) { window.sidebarPrepared = true; window.commitSidebarSelection() }
             else { window.pendingSidebarId = ""; chatCover.contentReady() }
         }
     }
-    Timer { interval: 16; repeat: true; running: window.sidebarSwitching; onTriggered: window.commitSidebarSelection() }
+    FrameAnimation {
+        // Multiple input events can arrive in one frame. Only the current
+        // choice starts an open; hover and mouse-down already warm its data.
+        running: window.sidebarSwitching && !window.sidebarStarted
+        onTriggered: {
+            window.sidebarStarted = true
+            if (window.pendingSidebarKind === "project") {
+                window.sidebarPrepared = true
+                window.commitSidebarSelection()
+            } else {
+                backend.sessionPreview.prepare(window.pendingSidebarId, window.sidebarToken)
+            }
+        }
+    }
+    Timer {
+        id: recentTranscriptPrefetch
+        interval: 900
+        onTriggered: backend.sessionPreview.prefetchRecent()
+    }
+    Connections {
+        target: backend
+        function onJobDone(name, result) {
+            if (name === "index" && result.ok)
+                recentTranscriptPrefetch.restart()
+        }
+    }
     property real webPreferredWidth: 0
     readonly property real webMinimumWidth: 320
     readonly property real chatMinimumWidth: 640
@@ -217,8 +257,8 @@ ApplicationWindow {
     Shortcut { sequence: "Escape"; enabled: !composer.slashVisible && backend.pendingApproval.id === undefined && backend.desktopPlugins.hostServices.pendingApproval.id === undefined && !imageViewer.visible; onActivated: { if (window.searchVisible) window.closeConversationSearch(false); else if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
     Connections { target: backend; function onToast(message) { window.notification = message; toastTimer.restart() }
         function onViewChanged() { window.avatarChatKey = String(Math.random()); if (backend.desktopPlugins.page.id !== "global-agents") webPane.dismiss() }
-        function onWebRequested(url, title) { if (backend.config.desktop.webDisplay === "external") backend.openWebPreview(url,title); else {window.page = "chat"; webPane.submit(url, title)} }
-        function onDesktopSettingsChanged() { if (backend.config.desktop.webDisplay === "external" && (webPane.mode === "web" || webPane.mode === "document" && backend.documentPreview.state.fileType === "html")) webPane.dismiss() }
+        function onWebRequested(url, title) { if (backend.desktopSettings.webDisplay === "external") backend.openWebPreview(url,title); else {window.page = "chat"; webPane.submit(url, title)} }
+        function onDesktopSettingsChanged() { if (backend.desktopSettings.webDisplay === "external" && (webPane.mode === "web" || webPane.mode === "document" && backend.documentPreview.state.fileType === "html")) webPane.dismiss() }
         function onDocumentRequested(path, title, kind) { window.previewChatDocument({path:path, title:title, kind:kind}) }
         function onWidgetDocumentRequested(path, title, kind, widget) { window.previewChatDocument({path:path, title:title, kind:kind}, widget) } }
     Connections { target: backend; function onLayoutChanged() { window.sidebarPreferredWidth = backend.sidebarWidth; window.sidebarCollapsed = backend.sidebarCollapsed } }
@@ -340,6 +380,8 @@ ApplicationWindow {
                     width: sessionList.width; height: sessionList.rowHeight(modelData)
                     Rectangle { anchors.fill: parent; radius: 7; color: projectDrop.containsDrag && projectDrop.sessionDrop && projectDrop.targetProjectId === modelData.id ? Theme.accentBg : rowMouse.containsMouse && !(window.sidebarSwitching ? window.pendingSidebarId === modelData.id : modelData.selected) ? Theme.hover : "transparent" }
                     MouseArea { id: rowMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; acceptedButtons: Qt.LeftButton | Qt.RightButton; enabled: modelData.kind !== "label"
+                        onEntered: if (modelData.kind === "session") backend.sessionPreview.prefetch(modelData.id)
+                        onPressed: mouse => { if (mouse.button === Qt.LeftButton && modelData.kind === "session") backend.sessionPreview.prefetch(modelData.id) }
                         onClicked: mouse => { if (mouse.button === Qt.RightButton) { sidebarMenus.openFor(modelData, mapToItem(sidebarMenus, mouse.x, mouse.y)); return } window.selectSidebar(modelData) }
                     }
                     Glyph { visible: modelData.kind === "project"; name: "folder"; x: 15; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(16); height: Theme.icon(16) }
@@ -482,7 +524,7 @@ ApplicationWindow {
                 Repeater { model: [{x:0.17,y:0.16,size:12},{x:0.82,y:0.30,size:17},{x:0.27,y:0.65,size:9},{x:0.73,y:0.73,size:11}]
                     Glyph { required property var modelData; x: parent.width * modelData.x; y: parent.height * modelData.y; width: modelData.size; height: modelData.size; name: "spark"; opacity: 0.28 }
                 }
-                CharacterArt { objectName: "yanamiWatermark"; anchors.fill: parent; fallbackSource: "../icons/portraits/02.png"; artwork: Character.asset("background", fallbackSource); fillMode: Image.PreserveAspectCrop; horizontalAlignment: Image.AlignHCenter; verticalAlignment: Image.AlignVCenter; mipmap: true; opacity: 0.055 }
+                CharacterArt { objectName: "yanamiWatermark"; anchors.fill: parent; fallbackSource: "../icons/yanami-chat-watermark.png"; artwork: Character.asset("background", fallbackSource); fillMode: Image.PreserveAspectCrop; horizontalAlignment: Image.AlignHCenter; verticalAlignment: Image.AlignVCenter; mipmap: true; opacity: 0.055 }
             }
             Item {
                 id: welcome; width: Math.min(parent.width - 70, 620); height: welcomeMascot.height + 60
@@ -499,11 +541,15 @@ ApplicationWindow {
                 property var panes: ({})
                 property var currentPane: null
                 property int retainedCount: 0
+                property string parkedTailKey: ""
                 // The previous pane (or the welcome page) stays visible until the
                 // newly activated pane has positioned its first screen.
                 property var heldPane: null
                 property bool heldWelcome: false
-                property int revealFrames: 0
+                property int pendingGeneration: -1
+                property string pendingKey: ""
+                property int fillGeneration: -1
+                property string fillKey: ""
                 readonly property bool revealPending: !!currentPane && currentPane.concealed
                 x: chatWidth.conversationLeft
                 Binding on width {
@@ -514,6 +560,8 @@ ApplicationWindow {
                 anchors.top: parent.top; anchors.topMargin: 20; anchors.bottom: composer.top; anchors.bottomMargin: 24
                 property bool welcomeShown: true
                 function deactivate() {
+                    pendingGeneration = -1
+                    fillGeneration = -1
                     welcomeShown = welcome.visible
                     if (!currentPane) return
                     // Keep the outgoing pane drawn without a gap, so its text
@@ -521,62 +569,119 @@ ApplicationWindow {
                     if (!welcomeShown) currentPane.holding = true
                     currentPane.deactivate()
                 }
+                function releaseBodies(pane) {
+                    pane.renderReady = false
+                    pane.view.releaseGroups()
+                }
+                function park(pane) {
+                    pane.holding = false
+                    if (pane.current) return
+                    if (!pane.view.followTail || !pane.renderReady) {
+                        releaseBodies(pane)
+                        return
+                    }
+                    // Preserve the last tail for a quick return. More idle
+                    // views retain their models and measured layouts, while
+                    // Qt releases the native text nodes and textures.
+                    const previous = panes[parkedTailKey]
+                    if (previous && previous !== pane && !previous.current)
+                        releaseBodies(previous)
+                    parkedTailKey = pane.viewKey
+                }
                 function release() {
-                    if (heldPane) heldPane.holding = false
+                    if (heldPane) park(heldPane)
                     heldPane = null
                     heldWelcome = false
                 }
                 function reveal() {
                     if (currentPane) {
                         currentPane.view.forceLayout()
+                        if (currentPane.view.followTail)
+                            currentPane.view.pinTail()
                         currentPane.concealed = false
+                        fillKey = currentPane.viewKey
+                        fillGeneration = currentPane.renderGeneration
                     }
                     release()
                 }
-                function activate() {
+                function stage() {
                     const key = backend.conversationToken
+                    if (key === parkedTailKey) parkedTailKey = ""
                     const previous = currentPane
                     let pane = panes[key]
                     if (!pane) {
-                        pane = conversationComponent.createObject(conversationHost, {viewKey:key, messageModel:backend.messageModel})
+                        pane = conversationComponent.createObject(conversationHost, {
+                            viewKey:key, messageModel:backend.messageModel, renderReady:false
+                        })
                         if (!pane) return
                         panes[key] = pane
                         retainedCount = Object.keys(panes).length
                     }
-                    if (heldPane && heldPane !== previous) heldPane.holding = false
+                    if (heldPane && heldPane !== previous && heldPane !== pane) park(heldPane)
                     heldPane = null
                     if (previous && previous !== pane && previous.holding) heldPane = previous
-                    else if (previous) previous.holding = false
+                    else if (previous && previous !== pane) park(previous)
                     pane.holding = false
                     heldWelcome = welcomeShown && previous !== pane
                     currentPane = pane
-                    revealFrames = 0
-                    pane.concealed = previous !== pane
+                    pane.concealed = true
+                    pane.current = true
+                    pane.view.restoring = true
+                    // Attachment, queue and status controls set the viewport
+                    // height before a new ListView receives its row model.
+                    pendingKey = key
+                    pendingGeneration = pane.renderGeneration
+                }
+                function activate(key, generation) {
+                    if (backend.conversationToken !== key || backend.messageModel.openGeneration !== generation)
+                        return
+                    const pane = panes[key]
+                    if (!pane || pane !== currentPane)
+                        return
+                    pane.renderReady = true
                     pane.activate()
+                    if (!pane.view.restoring || pane.view.firstScreenPositioned)
+                        reveal()
                 }
                 FrameAnimation {
-                    running: conversationHost.revealPending
+                    running: conversationHost.pendingGeneration >= 0 || conversationHost.revealPending || conversationHost.fillGeneration >= 0
                     onTriggered: {
-                        conversationHost.revealFrames++
-                        const view = conversationHost.currentPane.view
-                        if (conversationHost.revealFrames >= 2 && (!view.restoring || view.restoreAttempts >= 200))
+                        const host = conversationHost
+                        if (host.pendingGeneration >= 0) {
+                            const generation = host.pendingGeneration
+                            host.pendingGeneration = -1
+                            host.activate(host.pendingKey, generation)
+                        } else if (host.revealPending && (!host.currentPane.view.restoring || host.currentPane.view.firstScreenPositioned)) {
                             conversationHost.reveal()
+                        } else if (host.fillGeneration >= 0) {
+                            const generation = host.fillGeneration
+                            const key = host.fillKey
+                            host.fillGeneration = -1
+                            const pane = host.panes[key]
+                            if (pane && pane === host.currentPane && key === backend.conversationToken
+                                    && generation === backend.messageModel.openGeneration)
+                                pane.finishOpening(generation)
+                        }
                     }
                 }
                 function evict(key) {
                     const pane = panes[key]
                     if (!pane) return
                     if (heldPane === pane) release()
+                    if (parkedTailKey === key) parkedTailKey = ""
                     if (currentPane === pane) currentPane = null
                     delete panes[key]
                     retainedCount = Object.keys(panes).length
                     pane.release()
                     pane.destroy()
                 }
-                Component.onCompleted: activate()
+                Component.onCompleted: {
+                    backend.enableFirstFrameStaging()
+                    stage()
+                }
                 Connections { target: backend
                     function onViewAboutToChange() { conversationHost.deactivate() }
-                    function onViewChanged() { conversationHost.activate() }
+                    function onViewChanged() { conversationHost.stage() }
                     function onConversationEvicted(key) { conversationHost.evict(key) }
                     function onConversationViewsClosing() {
                         for (const key of Object.keys(conversationHost.panes)) conversationHost.evict(key)
@@ -584,7 +689,7 @@ ApplicationWindow {
                 }
                 Component {
                     id: conversationComponent
-                    ConversationPane { anchors.fill: parent; window: appWindow; requestInspector: sharedRequestInspector; blocked: chatCover.visible }
+                    ConversationPane { anchors.fill: parent; openAtBottom: true; window: appWindow; requestInspector: sharedRequestInspector; blocked: chatCover.visible }
                 }
             }
 
@@ -621,6 +726,7 @@ ApplicationWindow {
                 width: parent.width - chatWidth.composerLeft - chatWidth.composerRight
                 onOpenModels: modelPopup.toggle()
                 onChooseFiles: attachmentDialog.open()
+                onMessageSent: if (!conversation.followTail) conversation.jumpToLatest()
             }
             NetworkRetry { id: retryStatus; anchors.left: composer.left; anchors.top: composer.bottom; anchors.topMargin: 6; width: composer.width }
             ChatWidthControls { id: chatWidth; anchors.fill: parent; z: 25; enabled: !chatCover.visible && !imageViewer.visible }

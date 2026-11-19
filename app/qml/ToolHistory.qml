@@ -6,6 +6,7 @@ Column {
     id: root
     property var tools: []
     property var expansionState: ({expanded:false, details:({})})
+    signal foldChanged()
     property bool expanded: expansionState.expanded
     onExpansionStateChanged: expanded = expansionState.expanded
     property var selectionController: null
@@ -96,7 +97,7 @@ Column {
         ChatHitArea {
             id: headerMouse; objectName: "toggleTools_" + root.messageIndex + "_" + root.blockOffset
             anchors.fill: parent; selectionController: root.selectionController
-            onClicked: { root.expanded = !root.expanded; root.expansionState.expanded = root.expanded }
+            onClicked: { root.expanded = !root.expanded; root.expansionState.expanded = root.expanded; root.foldChanged() }
         }
         Accessible.role: Accessible.Button; Accessible.name: root.summary; Accessible.description: root.expanded ? I18n.t("已展开") : I18n.t("已折叠")
     }
@@ -110,7 +111,7 @@ Column {
             readonly property bool opensPreview: root.opensPreview(tool)
             function activate() {
                 if (opensPreview) { root.openFile(tool.path); return }
-                details = !details; root.expansionState.details[tool.id] = details
+                details = !details; root.expansionState.details[tool.id] = details; root.foldChanged()
             }
             Connections { target: root; function onExpansionStateChanged() { toolRow.details = !!root.expansionState.details[toolRow.tool.id] } }
             width: root.width; spacing: 4
