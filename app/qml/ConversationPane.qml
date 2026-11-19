@@ -805,9 +805,9 @@ Item {
                 if (conversation.layoutPending || conversation.pendingWheelPixels)
                     conversation.layoutPending = conversation.layoutNearViewport();
                 if (conversation.pendingWheelPixels && !conversation.restoring) {
-                    // Apply at most one wheel step per display frame. Further
-                    // movement waits for the next measured rows.
-                    const step = Math.max(conversation.height, conversation.aheadPixels);
+                    // Keep an overlapping strip of the previous screen in
+                    // each frame of a large wheel gesture.
+                    const step = Math.max(1, conversation.height * 0.75);
                     const pending = conversation.pendingWheelPixels;
                     conversation.advanceScroll(Math.sign(pending) * Math.min(Math.abs(pending), step), true);
                 }
@@ -1156,7 +1156,7 @@ Item {
                 sourceComponent: Column {
                     id: messageRow
                     objectName: pane.messagePrefix === "widget" ? "widgetChatMessage_" + index : "chatMessage_" + index
-                    readonly property var replyMascot: closingMascot
+                    readonly property var replyMascot: closingMascot.item
                     property var modelData: rowShell.modelData
                     property int index: rowShell.index
                     readonly property bool compactionNotice: modelData.customType === "umeko-compaction"
@@ -1420,36 +1420,49 @@ Item {
                             }
                         }
                     }
-                    ReplyMascot {
+                    Loader {
                         id: closingMascot
-                        portraitSource: String(pane.replyPortrait).length ? pane.replyPortrait : String(pane.portrait).length ? pane.portrait : Character.asset("reply", "../icons/yanami-pixel.png")
-                        interactionLabel: pane.roleSlot >= 0 ? pane.assistantName + (Character.personalityEnabled ? I18n.t("：点击互动，连续点击或长按有彩蛋") : "") : pane.messagePrefix ? pane.assistantName : Character.id === "yanami" ? I18n.t("八奈见：点击互动，连续点击或长按有彩蛋") : Character.style.name
-                        tapLines: pane.roleSlot >= 0 ? Character.roleLine(pane.roleSlot, "tap", []) : pane.messagePrefix === "widget" ? [] : Character.scene("reply.tap", [])
-                        celebrationLine: pane.roleSlot >= 0 ? Character.roleLine(pane.roleSlot, "celebration", "") : pane.messagePrefix === "widget" ? "" : Character.scene("reply.celebration", "")
-                        objectName: pane.messagePrefix === "subagent" ? "subagentReplyMascot_" + messageRow.index : "replyEndMascot_" + messageRow.index
-                        selectionController: chatSelection
+                        readonly property string mascotName: pane.messagePrefix === "subagent" ? "subagentReplyMascot_" + messageRow.index : "replyEndMascot_" + messageRow.index
+                        objectName: active ? "" : mascotName
                         width: Character.id === "doubao" ? Theme.icon(72) : 56
-                        visible: pane.controller.sessionBackend !== "dsh" && !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
+                        active: pane.controller.sessionBackend !== "dsh" && !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
+                        visible: active
                         x: 33
+                        sourceComponent: ReplyMascot {
+                            objectName: closingMascot.mascotName
+                            portraitSource: String(pane.replyPortrait).length ? pane.replyPortrait : String(pane.portrait).length ? pane.portrait : Character.asset("reply", "../icons/yanami-pixel.png")
+                            interactionLabel: pane.roleSlot >= 0 ? pane.assistantName + (Character.personalityEnabled ? I18n.t("：点击互动，连续点击或长按有彩蛋") : "") : pane.messagePrefix ? pane.assistantName : Character.id === "yanami" ? I18n.t("八奈见：点击互动，连续点击或长按有彩蛋") : Character.style.name
+                            tapLines: pane.roleSlot >= 0 ? Character.roleLine(pane.roleSlot, "tap", []) : pane.messagePrefix === "widget" ? [] : Character.scene("reply.tap", [])
+                            celebrationLine: pane.roleSlot >= 0 ? Character.roleLine(pane.roleSlot, "celebration", "") : pane.messagePrefix === "widget" ? "" : Character.scene("reply.celebration", "")
+                            selectionController: chatSelection
+                            captionMaxWidth: Math.max(1, messageRow.width - closingMascot.x - width - 8)
+                        }
                     }
                 }
             }
             Item {
                 anchors.fill: parent
                 visible: !rowShell.bodyReady && rowShell.wanted
-                ActivitySpinner {
+                Loader {
                     objectName: "historyLoading_" + rowShell.index
+                    active: parent.visible && !rowShell.modelData._loadError
+                        && rowShell.y + rowShell.height > conversation.contentY
+                        && rowShell.y < conversation.contentY + conversation.height
+                    visible: active
                     x: 33
                     y: 16
-                    running: pane.current && parent.visible && !rowShell.modelData._loadError
+                    sourceComponent: ActivitySpinner { running: pane.current }
                 }
-                ActionButton {
+                Loader {
+                    active: parent.visible && !!rowShell.modelData._loadError
+                    visible: active
                     x: 33
                     y: 16
-                    visible: !!rowShell.modelData._loadError
-                    text: I18n.t("重新加载消息")
-                    glyph: "refresh-cw"
-                    onClicked: pane.messageModel.retryPage(rowShell.index)
+                    sourceComponent: ActionButton {
+                        text: I18n.t("重新加载消息")
+                        glyph: "refresh-cw"
+                        onClicked: pane.messageModel.retryPage(rowShell.index)
+                    }
                 }
             }
         }
