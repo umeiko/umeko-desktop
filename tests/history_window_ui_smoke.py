@@ -1,4 +1,4 @@
-"""Only prepare the saved viewport and its neighbors; supersede distant requests."""
+"""Only prepare the tail viewport and its neighbors; supersede distant requests."""
 import json
 import os
 import sys
@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 os.environ.setdefault('QT_QUICK_BACKEND', 'software')
-from PySide6.QtCore import QMetaObject, Q_ARG, Qt, QTimer, QPointF
+from PySide6.QtCore import QMetaObject, Q_ARG, Qt, QTimer
 from PySide6.QtTest import QTest
 from app.transcript_index import Snapshot, PAGE_ROWS
 from app.storage import Store
@@ -56,7 +56,8 @@ with tempfile.TemporaryDirectory(prefix='umeko-history-window-') as temporary:
     disk_pages = []
     page = Snapshot.page
     def read(snapshot, number):
-        disk_pages.append(number)
+        if threading.current_thread().name.startswith('chat-pages'):
+            disk_pages.append((snapshot.count - 1) // PAGE_ROWS - number)
         return page(snapshot, number)
 
     ticks = []
@@ -68,16 +69,18 @@ with tempfile.TemporaryDirectory(prefix='umeko-history-window-') as temporary:
             backend.openSession('fixture')
             wait(lambda: backend.activeSession=='fixture')
             view = find('conversation')
-            wait(lambda: not view.property('restoring') and backend.messageModel.isReady(1200))
+            wait(lambda: not view.property('restoring') and view.property('atYEnd')
+                 and not backend.messageModel.partialHistory
+                 and backend.messageModel.isReady(backend.messageModel.rowCount()-2))
             opened = time.monotonic()-started
             QTest.qWait(100)
-            assert set(disk_pages) <= {49,50,51}, disk_pages
+            assert disk_pages and set(disk_pages) <= {0,1,2}, disk_pages
             assert len(backend._chat_model._prepared) <= 16
-            assert backend._view.scroll_index==1200, backend._view.scroll_index
-            reply = backend.messageModel.message(1201)
+            assert backend._view.follow_tail
+            reply = backend.messageModel.message(backend.messageModel.rowCount()-1)
             assert any('<table' in str(step.get('_rendered')) for step in reply.get('activity', [])) or '<table' in str(reply.get('_rendered'))
-            anchor = find('messageBubble_1200').mapToItem(view,QPointF()).y()
-            assert abs(anchor)<2, anchor
+            tail = find('messageBubble_'+str(backend.messageModel.rowCount()-1))
+            assert tail and tail.isVisible()
             initial_pages = sorted(set(disk_pages))
 
             # Pause one obsolete range to make the spinner and priority ordering
@@ -113,18 +116,21 @@ with tempfile.TemporaryDirectory(prefix='umeko-history-window-') as temporary:
             wait(lambda:not view.property('restoring'))
             assert source.read_bytes()==original
 
-            # Recreate the session record as on a fresh launch, keeping only the
-            # persisted viewport and transcript index.
+            # Recreate the session record as on a fresh launch with a saved
+            # historical position. The chat must open at the latest row.
             backend.saveViewport(2000,0,False);backend.store.save()
             assert Store(backend.store.directory).data['sessionMeta']['fixture']['viewport']['row']==2000
             previous = backend._view
             backend.newSession();backend._pool.records.pop(previous.key,None)
             disk_pages.clear();started=time.monotonic()
             backend.openSession('fixture')
-            wait(lambda:backend.activeSession=='fixture' and backend.messageModel.isReady(2000) and not view.property('restoring'))
+            wait(lambda:backend.activeSession=='fixture')
+            view = find('conversation')
+            wait(lambda:not view.property('restoring') and view.property('atYEnd')
+                 and backend.messageModel.isReady(backend.messageModel.rowCount()-1))
             reopened = time.monotonic()-started
             assert backend._view.transcript.parsed_entries==0
-            assert set(disk_pages)<={82,83,84},disk_pages
+            assert set(disk_pages)<={0,1,2},disk_pages
             assert len(backend._chat_model._prepared)<=16
             timer.stop()
             output=ROOT/'artifacts/history-window';output.mkdir(parents=True,exist_ok=True)
@@ -134,7 +140,7 @@ with tempfile.TemporaryDirectory(prefix='umeko-history-window-') as temporary:
                 'coldOpenSeconds':round(opened,3),'restoredOpenSeconds':round(reopened,3),
                 'maxGuiTimerGapMs':round(max(b-a for a,b in zip(ticks,ticks[1:]))*1000,1)}
             (output/'metrics.json').write_text(json.dumps(metrics,indent=2),encoding='utf-8')
-            print('HISTORY_WINDOW_UI_OK: saved-position load, bounded render window, background rich Markdown, loading spinner, obsolete ranges skipped, cold-record restoration; '+json.dumps(metrics))
+            print('HISTORY_WINDOW_UI_OK: bottom on open and reopen, bounded render window, background rich Markdown, loading spinner, obsolete ranges skipped; '+json.dumps(metrics))
     finally:
         backend.close()
         import shiboken6

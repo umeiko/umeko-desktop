@@ -151,6 +151,10 @@ class SessionPreview(QObject):
                 if len(self.warm) > PREFETCH_SESSIONS:
                     self.warm.popitem(last=False)
         elif result['epoch'] == self.epoch and result['token'] == self.request:
+            # A slow foreground read can outlast the quiet period established
+            # at the click. Give its newly attached view the same idle window
+            # before speculative transcript reads resume.
+            self.busy_until = time.monotonic() + OPENING_SECONDS
             if result.get('error'):
                 self.controller.toast.emit('聊天记录暂时无法读取，请稍后重试')
             else:
@@ -168,6 +172,7 @@ class SessionPreview(QObject):
         saved = next((row for row in self.controller._sessions if row['id'] == result['saved']['id']), None)
         if not saved:
             return False
+        self.busy_until = time.monotonic() + OPENING_SECONDS
         record = self.controller._pool.find(saved['id'])
         if not record or not record.loaded or 'snapshot' in result or 'messages' in result:
             fresh = record is None

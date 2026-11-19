@@ -567,7 +567,7 @@ ApplicationWindow {
                     // Keep the conversation shell and model in the LRU. A
                     // hidden ListView can otherwise retain native text nodes
                     // and textures on top of the measured layout cache.
-                    if (!pane.current) {
+                    if (!pane.current && !pane.view.followTail) {
                         pane.renderReady = false
                         pane.view.releaseGroups()
                     }
@@ -580,7 +580,8 @@ ApplicationWindow {
                 function reveal() {
                     if (currentPane) {
                         currentPane.view.forceLayout()
-                        currentPane.view.pinTail()
+                        if (currentPane.view.followTail)
+                            currentPane.view.pinTail()
                         currentPane.concealed = false
                         fillKey = currentPane.viewKey
                         fillGeneration = currentPane.renderGeneration

@@ -1,4 +1,4 @@
-"""Real QML: retained control identity, bounded paging, LRU and anchor restore."""
+"""Real QML: retained view identity, bounded paging, LRU and bottom on reopen."""
 import json,os,sys,tempfile,time
 from pathlib import Path
 from unittest.mock import patch
@@ -6,7 +6,7 @@ ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 base=Path(tempfile.mkdtemp(prefix='umeko-viewport-cache-'))
 os.environ['UMEKO_DATA_DIR']=str(base/'profile')
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen');os.environ.setdefault('QT_QUICK_BACKEND','software')
-from PySide6.QtCore import QMetaObject,Q_ARG,Qt,QPointF
+from PySide6.QtCore import QMetaObject,Q_ARG,Qt
 from PySide6.QtTest import QTest
 import shiboken6
 from main import create_application
@@ -42,6 +42,7 @@ def bounded(model):
  # on each side), never the whole history.
  return len(model._prepared)<=max(16,len(model._wanted)) and len(model._wanted)<=model.rowCount()//2
 try:
+ c._conversation_views.capacity=3
  c._sessions=[]
  for name in 'abcd':
   file=base/(name+'.jsonl')
@@ -55,17 +56,16 @@ try:
  wait(lambda:not a.property('restoring'),'jump')
  wait(lambda:any(item.objectName()=='messageBubble_40' for item in items(a)),'target body')
  QTest.qWait(160)
- anchor=find('messageBubble_40');y=anchor.mapToItem(a,QPointF()).y()
- identity=shiboken6.getCppPointer(anchor)[0];model=c.messageModel
+ assert not a.property('atYEnd'),'Jump did not leave the bottom'
+ model=c.messageModel
  b,_=open_session('b');open_session('c')
  with patch.object(c.store,'save',wraps=c.store.save) as save:
   warm,elapsed=open_session('a')
   save.assert_not_called()
  assert warm is a,'Warm switch recreated the ListView'
  assert c.messageModel is model,'Warm switch reset the model'
- current=next(item for item in items(a) if item.objectName()=='messageBubble_40')
- assert shiboken6.getCppPointer(current)[0]==identity,'Warm switch recreated a cached body'
- assert abs(current.mapToItem(a,QPointF()).y()-y)<2,'Warm anchor moved'
+ assert a.property('atYEnd'),'Warm switch did not show the latest message'
+ assert any(item.objectName()=='messageBubble_159' and item.isVisible() for item in items(a))
  assert len(c._conversation_views.models)==3
  assert bounded(c.messageModel),(len(c.messageModel._prepared),len(c.messageModel._wanted))
  for row in (4,80,152):

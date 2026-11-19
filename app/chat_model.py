@@ -3,7 +3,6 @@ import copy
 import json
 import re
 import sys
-from dataclasses import replace
 from bisect import bisect_left, bisect_right
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
@@ -60,9 +59,7 @@ class ChatModel(QAbstractListModel):
         self._group_starts, self._group_next, self._group_open = [], 0, None
         self._live_hints = []
         self._open_generation = 0
-        self._open_staging = False
-        self._open_full_snapshot = None
-        self._open_earlier_rows, self._open_full_starts = [], []
+        self._first_frame = False
         self._inflight_snapshot = None
         self.pageReady.connect(self._page_ready)
 
@@ -77,65 +74,28 @@ class ChatModel(QAbstractListModel):
             self._pump()
 
     def begin_open(self, generation, cold=True):
-        """Opt in to a twenty-display-row first frame for this attachment."""
-        if self._open_staging:
-            # An interrupted cold attachment can be cached before its first
-            # frame. Retain that complete data when the same model is reopened.
-            self.finishOpen(self._open_generation)
+        """Identify the current attachment without changing public row numbers."""
         self._open_generation = int(generation)
         self._generation += 1
         self._pending.clear()
-        self._open_staging = bool(cold)
-        self._open_full_snapshot = self.snapshot if cold else None
-        self._open_earlier_rows, self._open_full_starts = [], []
+        self._first_frame = bool(cold)
         self.sourceChanged.emit()
 
     @Property(int, notify=sourceChanged)
     def openGeneration(self):
         return self._open_generation
 
-    def _snapshot_suffix(self, snapshot, count):
-        if snapshot is None or count >= snapshot.count:
-            return snapshot
-        cut = snapshot.count - max(0, count)
-        return replace(snapshot, count=snapshot.count - cut,
-                       row_offset=snapshot.row_offset + cut,
-                       row_metadata=snapshot.row_metadata[cut:],
-                       question_count=0, focus_row=max(-1, snapshot.count - cut - 1))
+    @Property(int, notify=sourceChanged)
+    def firstFrameRows(self):
+        return OPEN_ROWS if self._first_frame else 0
 
     @Slot(int)
     def finishOpen(self, generation):
-        """Expose the already-read prefix only after the first frame is drawn."""
-        if self._closed or not self._open_staging or generation != self._open_generation:
+        """Allow older delegates after the first frame of the current view."""
+        if self._closed or not self._first_frame or generation != self._open_generation:
             return
-        snapshot = self._open_full_snapshot
-        shift = (snapshot.count if snapshot else 0) - self.base_count + len(self._open_earlier_rows)
-        self._open_staging = False
-        if shift > 0:
-            self.historyAboutToPrepend.emit(shift)
-            self.beginInsertRows(QModelIndex(), 0, shift - 1)
-            self._generation += 1
-            self._pending.clear()
-            move = lambda values: OrderedDict((row + shift, value) for row, value in values.items())
-            self._prepared, self._heights, self._metadata = move(self._prepared), move(self._heights), move(self._metadata)
-            self._failed = {row + shift for row in self._failed}
-            self._wanted = [row + shift for row in self._wanted]
-            self.rows = self._open_earlier_rows + self.rows
-            self._live_hints = [None] * len(self._open_earlier_rows) + self._live_hints
-            self._source_starts = self._open_full_starts or self._source_starts
-            self.snapshot = snapshot
-            self._height_keys = {row: self._height_key(row) for row in self._heights}
-            self._reset_groups()
-            self._refresh_questions()
-            self.endInsertRows()
-        self._open_earlier_rows, self._open_full_starts = [], []
-        self._open_full_snapshot = None
+        self._first_frame = False
         self.sourceChanged.emit()
-        self.questionsChanged.emit()
-        if shift > 0:
-            self.historyPrepended.emit(shift)
-        if self.snapshot:
-            self._set_wanted(self._wanted)
 
     @Property(bool, notify=sourceChanged)
     def paged(self):
@@ -152,13 +112,12 @@ class ChatModel(QAbstractListModel):
     @Property(int, notify=questionsChanged)
     def questionCount(self):
         # The question list of a partial history appears with its complete index.
-        if self._open_staging or self.snapshot and self.snapshot.partial:
+        if self.snapshot and self.snapshot.partial:
             return 0
         return (self.snapshot.question_count if self.snapshot else 0) + len(self._questions)
 
     @Slot(int, result='QVariantMap')
     def question(self, index):
-        self.finishOpen(self._open_generation)
         base = self.snapshot.question_count if self.snapshot else 0
         if index < base:
             return self.snapshot.question(index)
@@ -173,11 +132,7 @@ class ChatModel(QAbstractListModel):
         return base + selected if selected >= 0 else max(0, base - 1)
 
     def set_snapshot(self, snapshot):
-        if self.snapshot is snapshot or self._open_staging and self._open_full_snapshot is snapshot:
-            return
-        if self._open_staging and self._open_full_snapshot is not None and snapshot is not None and snapshot.extends is self._open_full_snapshot:
-            self._open_full_snapshot = snapshot
-            self._prepend(self._snapshot_suffix(snapshot, max(0, OPEN_ROWS - len(self.rows))))
+        if self.snapshot is snapshot:
             return
         if snapshot is not None and self.snapshot is not None and snapshot.extends is self.snapshot:
             self._prepend(snapshot)
@@ -193,11 +148,7 @@ class ChatModel(QAbstractListModel):
         self._metadata.clear()
         self._heights.clear()
         self._height_keys.clear()
-        if self._open_staging:
-            self._open_full_snapshot = snapshot
-            snapshot = self._snapshot_suffix(snapshot, OPEN_ROWS)
         self.snapshot = snapshot
-        self._open_earlier_rows, self._open_full_starts = [], []
         self.rows, self._questions, self._source_starts = [], [], []
         self._live_hints = []
         self._reset_groups()
@@ -252,7 +203,7 @@ class ChatModel(QAbstractListModel):
         The controller owns that proof; this method does no transcript reads.
         Live unindexed rows require the ordinary replacement/update path.
         """
-        if self.snapshot is None or snapshot is None or self.rows or self._open_staging:
+        if self.snapshot is None or snapshot is None or self.rows:
             self.set_snapshot(snapshot)
             return False
         if snapshot is self.snapshot:
@@ -308,6 +259,10 @@ class ChatModel(QAbstractListModel):
     @Slot(int, int, int)
     def requestGroups(self, first, last, keep):
         """Prepare the groups of the on-screen rows first, then keep groups on each side."""
+        self.requestScrollGroups(first, last, keep, keep, 0)
+
+    @Slot(int, int, int, int, int)
+    def requestScrollGroups(self, first, last, before, after, direction):
         if not self.snapshot or self._closed:
             return
         if self._group_height <= 0:
@@ -320,10 +275,11 @@ class ChatModel(QAbstractListModel):
         rows = list(range(first, last + 1))
         rows += [row for row in range(self.groupFirst(g0), self.groupLast(g1) + 1) if not first <= row <= last]
         count = len(self._partition())
-        for step in range(1, max(0, keep) + 1):
-            for group in (g1 + step, g0 - step):
-                if 0 <= group < count:
-                    rows += range(self.groupFirst(group), self.groupLast(group) + 1)
+        for step in range(1, max(0, before, after) + 1):
+            sides = ((g0 - step, before), (g1 + step, after)) if direction < 0 else ((g1 + step, after), (g0 - step, before))
+            for group, keep in sides:
+                if step <= keep and 0 <= group < count:
+                    rows.extend(range(self.groupFirst(group), self.groupLast(group) + 1))
         rows = [row for row in dict.fromkeys(rows) if row < self.base_count]
         self._set_wanted(rows[:MAX_GROUP_ROWS])
 
@@ -652,7 +608,7 @@ class ChatModel(QAbstractListModel):
     def update(self, messages, dirty_from=None):
         source = messages
         first = start = 0
-        if not self._open_staging and dirty_from is not None and self._source is source and self._source_starts and len(source) >= self._source_count:
+        if dirty_from is not None and self._source is source and self._source_starts and len(source) >= self._source_count:
             # An appended terminal transition belongs to the event's first row,
             # even if ordinary conversation now separates those transitions.
             events = {value.get('compaction', {}).get('eventId') for value in source[dirty_from:]
@@ -673,9 +629,6 @@ class ChatModel(QAbstractListModel):
                     piece = {**piece, '_chunked':True, 'continuation':bool(row.get('continuation')) or part > 0, 'segmentLast':part == len(pieces) - 1}
                 messages.append(piece)
                 starts.append(native)
-        if self._open_staging:
-            self._update_open_tail(messages, starts, source)
-            return
         del self._source_starts[first:]
         self._source_starts.extend(start + value for value in starts)
         self._source, self._source_count = source, len(source)
@@ -725,43 +678,7 @@ class ChatModel(QAbstractListModel):
             self._questions = questions
             self.questionsChanged.emit()
 
-    def _update_open_tail(self, messages, starts, source):
-        """Keep first-frame exposure bounded without reading indexed bodies."""
-        cut = max(0, len(messages) - OPEN_ROWS)
-        snapshot = self._snapshot_suffix(self._open_full_snapshot, max(0, OPEN_ROWS - len(messages)))
-        base = snapshot.count if snapshot else 0
-        old_base = self.base_count
-        # Until the first rendered frame, Pi may attach its already-read live
-        # suffix. These resets remain bounded to the twenty exposed rows.
-        self.beginResetModel()
-        self._generation += 1
-        self._pending.clear()
-        delta = base - old_base
-        move = lambda values: OrderedDict((row + delta, value) for row, value in values.items()
-                                          if 0 <= row + delta < base)
-        self._prepared, self._metadata = move(self._prepared), move(self._metadata)
-        self._heights = move(self._heights)
-        self._failed = {row + delta for row in self._failed if 0 <= row + delta < base}
-        self._wanted = [row + delta for row in self._wanted if 0 <= row + delta < base]
-        self.snapshot = snapshot
-        self._open_earlier_rows = copy.deepcopy(messages[:cut])
-        self.rows = copy.deepcopy(messages[cut:])
-        self._height_keys = {row: self._height_key(row) for row in self._heights}
-        self._open_full_starts = starts
-        self._source_starts = starts[cut:]
-        self._source, self._source_count = source, len(source)
-        self._live_hints = [None] * len(self.rows)
-        self._reset_groups()
-        self.endResetModel()
-        self._refresh_questions()
-        self.sourceChanged.emit()
-        if self.snapshot:
-            if not self._wanted and self.base_count:
-                self._wanted = [self.base_count - 1]
-            self._set_wanted(self._wanted)
-
     def row_for_entry(self, entry_id):
-        self.finishOpen(self._open_generation)
         if self.snapshot:
             from .transcript_index import connect
             with connect(self.snapshot.database) as db:
@@ -794,11 +711,11 @@ class ChatModel(QAbstractListModel):
                 size += sum(weight(item) for item in value)
             return size
         values = (self.rows, self._questions, self._source, self._source_starts,
-                  self._open_earlier_rows, self._open_full_starts, self._live_hints,
+                  self._live_hints,
                   self._wanted, self._pending, self._failed, self._prepared,
                   self._metadata, self._heights, self._height_keys, self._content_heights, self._group_starts, self._layout)
         size = weight(values)
-        for snapshot in (self.snapshot, self._open_full_snapshot, self._inflight_snapshot):
+        for snapshot in (self.snapshot, self._inflight_snapshot):
             if snapshot is None:
                 continue
             if id(snapshot) not in seen:

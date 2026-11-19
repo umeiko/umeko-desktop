@@ -60,9 +60,12 @@ Item {
     property bool openAtBottom: false
     property bool renderReady: true
     readonly property int renderGeneration: openAtBottom && messageModel ? messageModel.openGeneration : 0
+    readonly property int firstFrameRows: openAtBottom && messageModel ? messageModel.firstFrameRows : 0
     function finishOpening(generation) {
-        if (current && !released && generation === renderGeneration)
+        if (current && !released && generation === renderGeneration) {
             messageModel.finishOpen(generation);
+            conversation.scheduleRange();
+        }
     }
     function deactivate() {
         conversation.saveViewport();
@@ -99,9 +102,10 @@ Item {
         property int activeEnd: 0
         property real reach: height * 0.25
         property bool anchoring: false
-        property int blockedScrolls: 0
         property real pendingWheelPixels: 0
         property double lastWheelTime: 0
+        property real aheadPixels: 0
+        property int scrollDirection: 0
         property int urgentFirst: -1
         property int urgentLast: -2
         property bool forcing: false
@@ -146,7 +150,8 @@ Item {
         }
         function polishBody(item) {
             for (const child of item.children)
-                polishBody(child);
+                if (child.visible)
+                    polishBody(child);
             item.ensurePolished();
         }
         function releaseGroups() {
@@ -293,8 +298,14 @@ Item {
             const keep = screenShown ? keepGroups : 0;
             const groups = model.groupCount();
             const g0 = model.groupOf(rows.first), g1 = model.groupOf(rows.last);
-            const first = model.groupFirst(Math.max(0, g0 - keep));
-            const last = model.groupLast(Math.min(groups - 1, g1 + keep));
+            // A fast wheel gesture can cross a viewport and an entire
+            // neighbouring group in one event. Prepare ahead on that side
+            // while retaining the usual range behind the reader.
+            const ahead = Math.min(3, Math.ceil((aheadPixels + height) / groupPixels));
+            const before = screenShown && scrollDirection < 0 ? Math.max(keep, ahead) : keep;
+            const after = screenShown && scrollDirection > 0 ? Math.max(keep, ahead) : keep;
+            const first = model.groupFirst(Math.max(0, g0 - before));
+            const last = model.groupLast(Math.min(groups - 1, g1 + after));
             if (first !== activeFirst || last !== activeLast)
                 keepAnchor(() => {
                     activeEnd = count - 1;
@@ -309,8 +320,8 @@ Item {
                 reach = Math.ceil(Math.min(40000, Math.max(above, below) + height * 0.25) / 256) * 256;
             }
             if (model.paged)
-                model.requestGroups(rows.first, rows.last, keep);
-            settleGroups();
+                model.requestScrollGroups(rows.first, rows.last, before, after, scrollDirection);
+            settleGroups(scrollDirection < 0 && aheadPixels > 0);
         }
         function shownLimits() {
             // contentY may move within [upper, lower - height] without
@@ -318,7 +329,7 @@ Item {
             // above/below: the first row that is not shown on each side.
             const map = slotMap(), slots = map.slots, rows = visibleRows(slots);
             if (rows.first < 0)
-                return {upper: -Infinity, lower: Infinity, above: -1, below: -1};
+                return {upper: contentY, lower: contentY + height, above: -1, below: -1};
             let upper = contentY, lower = contentY + height, above = rows.first, below = rows.last;
             if (slots[rows.first].shown) {
                 let row = rows.first;
@@ -366,7 +377,10 @@ Item {
         function jumpToMessage(row) {
             if (row < 0 || row >= count)
                 return;
-            pendingWheelPixels = 0;
+            // An explicit question or keyboard navigation can precede the
+            // deferred fill and must use the complete model's row numbers.
+            pane.finishOpening(pane.renderGeneration);
+            resetScrollDemand();
             beginBrowsing();
             chatSelection.clear();
             releaseGroups();
@@ -378,6 +392,7 @@ Item {
             restoreTimer.restart();
         }
         function jumpToLatest() {
+            resetScrollDemand();
             beginBrowsing();
             chatSelection.clear();
             releaseGroups();
@@ -400,40 +415,50 @@ Item {
             applyScroll(delta, true);
         }
         function applyScroll(delta, wheel) {
+            if (pane.firstFrameRows)
+                pane.finishOpening(pane.renderGeneration);
             beginBrowsing();
             const rapid = pane.openAtBottom && wheel && Math.abs(delta) >= height;
             const now = Date.now();
-            // If readiness split a large wheel step, use its remainder on
-            // the next event in the same burst. A pause or reversal drops it.
-            const carry = rapid && now - lastWheelTime < 100 && pendingWheelPixels * delta > 0 ? pendingWheelPixels : 0;
-            lastWheelTime = rapid ? now : 0;
+            if (!rapid || now - lastWheelTime > 100 || (scrollDirection && scrollDirection * delta < 0))
+                resetScrollDemand();
+            if (rapid) {
+                scrollDirection = Math.sign(delta);
+                lastWheelTime = now;
+                aheadPixels = Math.max(aheadPixels, Math.abs(delta));
+                const distance = Math.min(groupPixels * 2, Math.abs(pendingWheelPixels) + Math.abs(delta));
+                pendingWheelPixels = scrollDirection * distance;
+                scrollIdle.restart();
+                advanceScroll(pendingWheelPixels, true);
+            } else {
+                advanceScroll(delta, false);
+            }
+        }
+        function resetScrollDemand() {
+            scrollIdle.stop();
+            lastWheelTime = 0;
+            aheadPixels = 0;
+            scrollDirection = 0;
             pendingWheelPixels = 0;
-            const distance = delta + carry;
-            const top = originY;
-            const bottom = Math.max(top, originY + contentHeight - height);
-            let target = Math.max(top, Math.min(bottom, contentY + distance));
-            // Advance through the prepared range so a stream of large wheel
-            // deltas keeps showing messages while another group is loaded.
+        }
+        function advanceScroll(distance, deferred) {
+            let target = Math.max(originY, Math.min(bottomY, contentY + distance));
             let limits = shownLimits();
             const clamp = () => Math.max(Math.min(contentY, limits.upper), Math.min(target, Math.max(contentY, limits.lower - height)));
             let allowed = clamp();
             if (Math.abs(allowed - target) > 0.5) {
-                finishGroup(delta < 0 ? limits.above : limits.below, delta < 0 ? -1 : 1);
-                // Showing the group may have moved contentY to keep the anchor.
+                if (deferred)
+                    settleGroups(distance < 0);
+                else
+                    finishGroup(distance < 0 ? limits.above : limits.below, distance < 0 ? -1 : 1);
                 target = Math.max(originY, Math.min(bottomY, contentY + distance));
                 limits = shownLimits();
                 allowed = clamp();
             }
-            if (Math.abs(allowed - target) > 0.5 && blockedScrolls < 30) {
-                if (rapid)
-                    pendingWheelPixels = Math.sign(delta) * Math.min(Math.abs(delta), Math.abs(target - allowed));
-                target = allowed;
-                blockedScrolls++;
-            } else {
-                blockedScrolls = 0;
-            }
+            if (deferred)
+                pendingWheelPixels = Math.abs(target - allowed) > 0.5 ? target - allowed : 0;
             anchoring = true;
-            contentY = target;
+            contentY = allowed;
             anchoring = false;
             scheduleRange();
             loadEarlierAtTop();
@@ -481,7 +506,7 @@ Item {
         function startBottom() {
             // Keep a retained pane's laid-out rows. Move to its up-to-date
             // tail after the composer and hint bars established the viewport.
-            pendingWheelPixels = 0;
+            resetScrollDemand();
             restoreTimer.stop();
             restoring = true;
             followTail = true;
@@ -492,10 +517,10 @@ Item {
                 restoring = false;
                 return;
             }
-            const first = Math.max(0, count - 20);
+            const first = Math.max(0, count - Math.max(20, pane.firstFrameRows));
             urgentFirst = first;
             urgentLast = count - 1;
-            activeFirst = Math.min(first, activeFirst);
+            activeFirst = first;
             activeLast = count - 1;
             activeEnd = count - 1;
             pinTail();
@@ -511,7 +536,10 @@ Item {
             // viewport decides which of those bodies need preparing first.
             const rows = visibleRows(slotMap().slots);
             const priority = [];
-            const first = rows.first >= 0 ? Math.max(urgentFirst, rows.first) : count - 1;
+            const stagingFloor = Math.max(0, count - pane.firstFrameRows);
+            const first = rows.first >= 0 ? Math.max(pane.firstFrameRows ? stagingFloor : 0, rows.first) : count - 1;
+            urgentFirst = Math.min(urgentFirst, first);
+            activeFirst = Math.min(activeFirst, first);
             for (let row = count - 1; row >= Math.max(0, first); row--)
                 priority.push(row);
             if (!priority.length && count)
@@ -616,7 +644,7 @@ Item {
                 pagePrefetch.start();
         }
         function requestVisibleRange() {
-            if (!pane.current || !count)
+            if (!pane.current || !count || (pane.firstFrameRows && !explicitJump))
                 return;
             forceLayout();
             // indexAt() returns -1 in spacing and outside instantiated delegates;
@@ -624,8 +652,19 @@ Item {
             // starve rows.
             if (visibleRows(slotMap().slots).first < 0)
                 scheduleRange();
-            else
+            else {
                 updateGroups();
+                if (pendingWheelPixels && !restoring)
+                    advanceScroll(pendingWheelPixels, true);
+            }
+        }
+        Timer {
+            id: scrollIdle
+            interval: 100
+            onTriggered: {
+                conversation.resetScrollDemand();
+                conversation.scheduleRange();
+            }
         }
         Timer {
             id: pagePrefetch
@@ -895,6 +934,7 @@ Item {
                 asynchronous: (rowShell.index < conversation.urgentFirst || rowShell.index > conversation.urgentLast)
                     && !(conversation.followTail && rowShell.index === conversation.count - 1)
                 active: !pane.released && !rowShell.modelData._loading && rowShell.wanted
+                    && (!pane.firstFrameRows || rowShell.index >= conversation.count - pane.firstFrameRows)
                 opacity: rowShell.shown ? 1 : 0
                 enabled: rowShell.shown
                 onStatusChanged: if (status !== Loader.Ready)
