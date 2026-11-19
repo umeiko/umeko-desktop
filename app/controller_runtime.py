@@ -101,16 +101,36 @@ class PiControllerMixin:
         native = [row for row in native if row["id"] not in self._session_files.deleted and row["id"] not in self._session_files.pending]
         existing = {session["id"]: session for session in self._sessions}
         for session in native:
-            if session.get('workspace') and Path(session['workspace']).resolve() == (self.store.directory/'workspace').resolve():
+            session_id = session['id']
+            previous = existing.get(session_id)
+            previous_workspace = previous.get('workspace') if previous is not None else None
+            if self._ungrouped_import(session_id, session.get('workspace'), previous_workspace):
                 session = {**session, 'workspace': ''}
-            if session["id"] in existing:
-                existing[session["id"]].update(session)
+            if previous is not None:
+                previous.update(session)
             else:
                 row = dict(session)
                 self._sessions.append(row)
-                existing[session["id"]] = row
+                existing[session_id] = row
             if session.get("workspace"):
                 self._ensure_project(session["workspace"])
+
+    def _ungrouped_import(self, session_id, workspace, previous_workspace):
+        metadata = self.store.data['sessionMeta']
+        if metadata.get(session_id, {}).get('ungroupedImport'):
+            return True
+        if previous_workspace != '' or not workspace:
+            return False
+        try:
+            version = uuid.UUID(session_id).version
+        except ValueError:
+            return False
+        # Legacy JSONL imports used UUIDv4 and a blank sidebar workspace with the
+        # profile workspace as their execution directory. Native Pi IDs are UUIDv7.
+        if version != 4 or self._project_workspace_key(workspace) != self._project_workspace_key(str(self.store.default_workspace)):
+            return False
+        metadata.setdefault(session_id, {})['ungroupedImport'] = True
+        return True
 
     def _record_info(self, record, info):
         if record.global_agent:
@@ -125,7 +145,11 @@ class PiControllerMixin:
         self.store.data["sessionMeta"][record.id]["piCapabilities"] = record.pi_capabilities
         record.file = info.get("file") or record.file
         record.title = info.get("title") or record.title
-        record.workspace = info.get("workspace") or record.workspace
+        workspace = info.get('workspace')
+        if self._ungrouped_import(record.id, workspace, record.workspace):
+            record.workspace = ''
+        elif workspace:
+            record.workspace = workspace
         if old_id and old_id != record.id:
             self._sessions = [session for session in self._sessions if session["id"] != old_id]
             metadata = self.store.data["sessionMeta"].pop(old_id, {})
@@ -190,7 +214,7 @@ class PiControllerMixin:
                 bridge = self._release / "bridge.mjs"
                 if not bridge.is_file():
                     raise RuntimeError("Pi 内核未安装")
-                default_cwd = self.store.directory / "workspace"
+                default_cwd = self.store.default_workspace
                 default_cwd.mkdir(exist_ok=True)
                 agent = self.store.data["agent"]
                 from .generation import generation_config

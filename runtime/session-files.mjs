@@ -197,6 +197,7 @@ export async function execute(input) {
   }
   if (input.operation === 'delete') {
     const deleted = [], errors = [];
+    const excluded = new Set(input.excludedSessionIds || []);
     const sessions = [...input.sessions];
     if (input.workspace) {
       const directory = join(await fs.realpath(input.profile), 'pi/sessions');
@@ -213,7 +214,7 @@ export async function execute(input) {
           const buffer = Buffer.alloc(65536), { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
           const first = buffer.subarray(0, bytesRead).toString('utf8').split('\n')[0];
           let header; try { header = JSON.parse(first); } catch { continue; }
-          if (header?.type === 'session' && text(header.cwd) && await canonical(header.cwd) === workspace)
+          if (header?.type === 'session' && !excluded.has(header.id) && text(header.cwd) && await canonical(header.cwd) === workspace)
             sessions.push({ id: header.id, file, workspace: input.workspace, title: '会话记录' });
         } finally { await handle.close(); }
       }
