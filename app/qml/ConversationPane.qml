@@ -64,7 +64,12 @@ Item {
     function finishOpening(generation) {
         if (current && !released && generation === renderGeneration) {
             messageModel.finishOpen(generation);
-            conversation.scheduleRange();
+            if (conversation.firstScreenPositioned) {
+                conversation.finishPosition();
+                conversation.requestVisibleRange();
+            } else {
+                conversation.scheduleRange();
+            }
         }
     }
     function deactivate() {
@@ -85,10 +90,12 @@ Item {
         objectName: pane.current ? pane.viewName : "cachedConversation_" + pane.viewKey
         property bool followTail: true
         property bool restoring: false
+        property bool firstScreenPositioned: false
         property real restoreOffset: -1
         property int restoreIndex: -1
         property int restoreAttempts: 0
         property bool explicitJump: false
+        property bool jumpingOutsidePartial: false
         // Grouped loading. ChatModel splits rows into groups of about
         // groupScreens viewport heights. Rows of the on-screen groups and of
         // keepGroups groups on each side get bodies; farther groups release
@@ -135,7 +142,9 @@ Item {
             tailTimer.stop();
             restoreTimer.stop();
             restoring = false;
+            firstScreenPositioned = false;
             explicitJump = false;
+            jumpingOutsidePartial = false;
             urgentFirst = -1;
             urgentLast = -2;
             cancelFlick();
@@ -246,9 +255,9 @@ Item {
             // nothing the reader is looking at moves.
             const tail = followTail ? model.groupOf(count - 1) : -1;
             const checked = {}, ready = [];
-            for (let row = map.first; map.first >= 0 && row <= map.last; row++) {
-                const item = slots[row];
-                if (!item || item.shown || !item.bodyLoaded)
+            for (const key in slots) {
+                const item = slots[key], row = item.index;
+                if (item.shown || !item.bodyLoaded || checked[row])
                     continue;
                 const group = model.groupOf(row);
                 // A concealed restore can commit its visible bodies as they
@@ -258,19 +267,24 @@ Item {
                     ready.push(item);
                     continue;
                 }
-                if (checked[group])
-                    continue;
-                checked[group] = true;
-                const first = Math.max(map.first, model.groupFirst(group));
-                const last = Math.min(map.last, model.groupLast(group));
+                const groupFirst = model.groupFirst(group), groupLast = model.groupLast(group);
+                let first = row, last = row;
+                // ListView can retain a detached current item far from the
+                // viewport. Gaps between instantiated runs cannot hold up
+                // the bodies beside the reader.
+                while (first > groupFirst && slots[first - 1])
+                    first--;
+                while (last < groupLast && slots[last + 1])
+                    last++;
                 if (last < top)
                     continue;
                 const rows = [];
                 let complete = true;
-                for (let other = first; other <= last && complete; other++) {
+                for (let other = first; other <= last; other++) {
                     const slot = slots[other];
-                    complete = !!slot && slot.bodyLoaded;
-                    if (complete && !slot.shown)
+                    checked[other] = true;
+                    complete = complete && slot.bodyLoaded;
+                    if (!slot.shown)
                         rows.push(slot);
                 }
                 if (complete)
@@ -375,7 +389,8 @@ Item {
             settleGroups(true);
         }
         function jumpToMessage(row) {
-            if (row < 0 || row >= count)
+            const partial = pane.messageModel.partialHistory && pane.controller.recentHistory;
+            if (row < 0 || (row >= count && !partial))
                 return;
             // An explicit question or keyboard navigation can precede the
             // deferred fill and must use the complete model's row numbers.
@@ -389,6 +404,9 @@ Item {
             restoreOffset = 0;
             restoreAttempts = 0;
             explicitJump = true;
+            jumpingOutsidePartial = row >= count;
+            if (partial)
+                pane.controller.recentHistory.loadEarlier();
             restoreTimer.restart();
         }
         function jumpToLatest() {
@@ -508,6 +526,7 @@ Item {
             // tail after the composer and hint bars established the viewport.
             resetScrollDemand();
             restoreTimer.stop();
+            firstScreenPositioned = false;
             restoring = true;
             followTail = true;
             restoreIndex = -1;
@@ -564,10 +583,19 @@ Item {
         }
         function finishPosition() {
             restoreTimer.stop();
+            if (followTail && pane.firstFrameRows) {
+                // Let the host paint the positioned suffix for a frame. The
+                // opening still owns navigation until older bodies can load.
+                firstScreenPositioned = true;
+                pinTail();
+                return;
+            }
+            firstScreenPositioned = false;
             urgentFirst = -1;
             urgentLast = -2;
             restoring = false;
             explicitJump = false;
+            jumpingOutsidePartial = false;
             if (followTail)
                 pinTail();
             saveViewport();
@@ -724,6 +752,8 @@ Item {
                     if (!conversation.firstScreenReady() && conversation.restoreAttempts < 200)
                         return;
                 } else {
+                    if (conversation.jumpingOutsidePartial && pane.messageModel.partialHistory)
+                        return;
                     const index = Math.min(conversation.restoreIndex, conversation.count - 1);
                     if (index < 0 && conversation.restoreAttempts < 200)
                         return;
@@ -834,8 +864,13 @@ Item {
             function onHistoryPrepended(count) {
                 if (conversation.activeLast >= 0)
                     conversation.activeFirst += count;
-                if (conversation.restoreIndex >= 0)
+                if (conversation.restoreIndex >= 0 && !conversation.jumpingOutsidePartial)
                     conversation.restoreIndex += count;
+                if (conversation.explicitJump) {
+                    conversation.urgentFirst = -1;
+                    conversation.urgentLast = -2;
+                    conversation.restoreAttempts = 0;
+                }
                 const anchor = conversation.prependAnchor;
                 conversation.prependAnchor = -1;
                 if (anchor >= 0 && !conversation.followTail && !conversation.restoring) {

@@ -118,7 +118,9 @@ with tempfile.TemporaryDirectory(prefix='umeko-history-window-') as temporary:
 
             # Recreate the session record as on a fresh launch with a saved
             # historical position. The chat must open at the latest row.
-            backend.saveViewport(2000,0,False);backend.store.save()
+            backend.store.data['sessionMeta']['fixture']['viewport'] = {
+                'row': 2000, 'offset': 0, 'follow': False}
+            backend.store.save()
             assert Store(backend.store.directory).data['sessionMeta']['fixture']['viewport']['row']==2000
             previous = backend._view
             backend.newSession();backend._pool.records.pop(previous.key,None)

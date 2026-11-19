@@ -194,10 +194,14 @@ class SyntaxHighlighter(QObject):
 
     def _schedule(self, *change):
         if change and change[1:] == (0, 0): return  # Formatting is not a text edit.
+        if not shiboken6.isValid(self.native):
+            return
         self._generation += 1; self._attempts = 0
         self.native.valid = False
         self._status = "pending" if self._enabled else "plain"
         self.changed.emit()
+        if not shiboken6.isValid(self.native):
+            return
         if self._enabled: self.timer.start()
         else: self.timer.stop(); self.native.setDocument(None)
 

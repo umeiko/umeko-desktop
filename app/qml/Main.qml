@@ -160,9 +160,16 @@ ApplicationWindow {
         }
     }
     Timer {
+        id: recentTranscriptPrefetch
         interval: 900
-        running: true
         onTriggered: backend.sessionPreview.prefetchRecent()
+    }
+    Connections {
+        target: backend
+        function onJobDone(name, result) {
+            if (name === "index" && result.ok)
+                recentTranscriptPrefetch.restart()
+        }
     }
     property real webPreferredWidth: 0
     readonly property real webMinimumWidth: 320
@@ -542,7 +549,6 @@ ApplicationWindow {
                 property string pendingKey: ""
                 property int fillGeneration: -1
                 property string fillKey: ""
-                property int fillFrames: 0
                 readonly property bool revealPending: !!currentPane && currentPane.concealed
                 x: chatWidth.conversationLeft
                 Binding on width {
@@ -585,7 +591,6 @@ ApplicationWindow {
                         currentPane.concealed = false
                         fillKey = currentPane.viewKey
                         fillGeneration = currentPane.renderGeneration
-                        fillFrames = 0
                     }
                     release()
                 }
@@ -624,7 +629,7 @@ ApplicationWindow {
                         return
                     pane.renderReady = true
                     pane.activate()
-                    if (!pane.view.restoring)
+                    if (!pane.view.restoring || pane.view.firstScreenPositioned)
                         reveal()
                 }
                 FrameAnimation {
@@ -635,9 +640,9 @@ ApplicationWindow {
                             const generation = host.pendingGeneration
                             host.pendingGeneration = -1
                             host.activate(host.pendingKey, generation)
-                        } else if (host.revealPending && !host.currentPane.view.restoring) {
+                        } else if (host.revealPending && (!host.currentPane.view.restoring || host.currentPane.view.firstScreenPositioned)) {
                             conversationHost.reveal()
-                        } else if (host.fillGeneration >= 0 && ++host.fillFrames >= 2) {
+                        } else if (host.fillGeneration >= 0) {
                             const generation = host.fillGeneration
                             const key = host.fillKey
                             host.fillGeneration = -1
