@@ -46,6 +46,7 @@ class ChatModel(QAbstractListModel):
         self._metadata, self._heights = OrderedDict(), OrderedDict()
         self._height_keys = {}
         self._content_heights = OrderedDict()
+        self._indexed_content_keys = OrderedDict()
         self._layout = ''
         self._closed = False
         self._owns_reader = reader is None
@@ -76,6 +77,7 @@ class ChatModel(QAbstractListModel):
                 if row < first:
                     del self._prepared[row]
             self._metadata.clear()
+            self._indexed_content_keys.clear()
         self._suspended = value
         if not value:
             self._pump()
@@ -447,10 +449,18 @@ class ChatModel(QAbstractListModel):
         return None
 
     def _content_height_key(self, row):
-        message = self._prepared.get(row) if row < self.base_count else (
-            self.rows[row - self.base_count] if row < self.rowCount() else None)
+        if not 0 <= row < self.rowCount():
+            return None
+        indexed = row < self.base_count
+        message = self._prepared.get(row) if indexed else self.rows[row - self.base_count]
         if not message:
             return None
+        if indexed:
+            revision_key = self.snapshot.key(row), self.snapshot.active_compactions
+            value = self._indexed_content_keys.get(revision_key)
+            if value is not None:
+                self._indexed_content_keys.move_to_end(revision_key)
+                return (*value, self._layout)
         entry_key = (tuple(message.get('_entries', ())), message.get('_logical', ''),
                      message.get('entryId', ''), message.get('timestamp', ''))
         # In-memory only. Use the content that determines the body, excluding
@@ -458,7 +468,14 @@ class ChatModel(QAbstractListModel):
         body = {key: value for key, value in message.items() if key != '_rendered'}
         body['activity'] = [{key: value for key, value in step.items() if key != '_rendered'}
                             for step in body.get('activity', ())]
-        return entry_key, hash(json.dumps(body, sort_keys=True, ensure_ascii=False)), self._layout
+        content_key = entry_key, hash(json.dumps(body, sort_keys=True, ensure_ascii=False))
+        if indexed:
+            # An indexed revision is immutable. Scroll geometry can look up
+            # the same body many times before or after it enters the viewport.
+            self._indexed_content_keys[revision_key] = content_key
+            if len(self._indexed_content_keys) > 2048:
+                self._indexed_content_keys.popitem(last=False)
+        return (*content_key, self._layout)
 
     @Slot(str)
     def setLayout(self, key):
@@ -720,7 +737,8 @@ class ChatModel(QAbstractListModel):
         values = (self.rows, self._questions, self._source, self._source_starts,
                   self._live_hints,
                   self._wanted, self._pending, self._failed, self._prepared,
-                  self._metadata, self._heights, self._height_keys, self._content_heights, self._group_starts, self._layout)
+                  self._metadata, self._heights, self._height_keys, self._content_heights,
+                  self._indexed_content_keys, self._group_starts, self._layout)
         size = weight(values)
         for snapshot in (self.snapshot, self._inflight_snapshot):
             if snapshot is None:

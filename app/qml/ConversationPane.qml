@@ -124,6 +124,7 @@ Item {
         readonly property real bottomY: Math.max(originY, originY + contentHeight - height)
         readonly property bool nearBottom: bottomY - contentY <= 3
         readonly property real groupPixels: Math.max(320, height * groupScreens)
+        readonly property int wheelMargin: scrollDirection ? Math.ceil(Math.min(groupPixels, Math.max(height, aheadPixels))) : 0
         onGroupPixelsChanged: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
         Component.onCompleted: if (pane.messageModel) pane.messageModel.setGroupHeight(groupPixels)
         readonly property string layoutKey: [
@@ -396,7 +397,8 @@ Item {
         }
         function layoutNearViewport() {
             const map = slotMap(), rows = visibleRows(map.slots);
-            const waiting = Object.values(map.slots).filter(row => row.layoutWork.length > 0);
+            const waiting = Object.values(map.slots).filter(row => row.layoutWork.length > 0
+                || (pendingWheelPixels !== 0 && row.bodyIncubating));
             if (rows.first < 0)
                 return waiting.length > 0;
             // Complete visible rows and then the rows the next wheel step will
@@ -409,22 +411,24 @@ Item {
                 return distance + ((after && scrollDirection < 0) || (!after && scrollDirection > 0) ? count : 0);
             }
             waiting.sort((a, b) => priority(a) - priority(b));
-            const deadline = Date.now() + 4;
-            const ready = [];
+            const deadline = Date.now() + 6;
+            let ready = 0;
             for (const row of waiting) {
-                if (row.prepareLayout(deadline))
-                    ready.push(row);
+                // Qt gives offscreen incubation spare time. When the reader
+                // is scrolling continuously, lend the first waiting body a
+                // frame slot even if the incubator has not finished it yet.
+                if (row.bodyIncubating)
+                    row.finishIncubation();
+                if (row.layoutWork.length && row.prepareLayout(deadline))
+                    ready++;
                 if (Date.now() >= deadline)
                     break;
             }
-            if (ready.length) {
-                keepAnchor(() => {
-                    for (const row of ready)
-                        row.shown = true;
-                });
-                scheduleRange();
-            }
-            return waiting.length > ready.length;
+            // Preserve the stationary viewport. Entire measured groups above
+            // it can remain at their estimates until a wheel step needs them.
+            if (ready)
+                settleGroups(pendingWheelPixels < 0);
+            return waiting.length > ready;
         }
         function jumpToMessage(row) {
             const partial = pane.messageModel.partialHistory && pane.controller.recentHistory;
@@ -534,14 +538,14 @@ Item {
                 pendingWheelPixels = (direction < 0 ? allowed <= originY : allowed >= bottomY)
                     || Math.abs(pendingWheelPixels - moved) < 0.5 ? 0 : pendingWheelPixels - moved;
             }
-            if (Math.abs(allowed - contentY) < 0.01)
-                return;
-            anchoring = true;
-            contentY = allowed;
-            anchoring = false;
-            scheduleRange();
-            loadEarlierAtTop();
-            if (nearBottom && !chatSelection.dragging) {
+            if (Math.abs(allowed - contentY) >= 0.01) {
+                anchoring = true;
+                contentY = allowed;
+                anchoring = false;
+                scheduleRange();
+                loadEarlierAtTop();
+            }
+            if (direction > 0 && nearBottom && !chatSelection.dragging) {
                 followTail = true;
                 pinTail();
             }
@@ -679,7 +683,11 @@ Item {
         clip: true
         spacing: 27
         model: pane.renderReady ? pane.messageModel : null
-        cacheBuffer: Math.max(0, reach)
+        // Create the nearby shells before reaching their estimated positions.
+        // Rich message bodies still incubate and measure separately.
+        displayMarginBeginning: scrollDirection < 0 ? wheelMargin : 0
+        displayMarginEnd: scrollDirection > 0 ? wheelMargin : 0
+        cacheBuffer: Math.max(0, reach - wheelMargin)
         currentIndex: -1
         activeFocusOnTab: true
         Keys.onPressed: event => {
@@ -749,12 +757,12 @@ Item {
             id: wheelFrame
             running: pane.current && (conversation.layoutPending || conversation.pendingWheelPixels !== 0)
             onTriggered: {
-                if (conversation.layoutPending)
+                if (conversation.layoutPending || conversation.pendingWheelPixels)
                     conversation.layoutPending = conversation.layoutNearViewport();
                 if (conversation.pendingWheelPixels && !conversation.restoring) {
-                    // Spread large input across successive display frames,
-                    // keeping the requested distance and letting prefetch lead.
-                    const step = Math.max(conversation.height, conversation.aheadPixels / 2);
+                    // Apply at most one wheel step per display frame. Further
+                    // movement waits for the next measured rows.
+                    const step = Math.max(conversation.height, conversation.aheadPixels);
                     const pending = conversation.pendingWheelPixels;
                     conversation.advanceScroll(Math.sign(pending) * Math.min(Math.abs(pending), step), true);
                 }
@@ -1012,6 +1020,12 @@ Item {
             property bool laidOut: false
             property real measuredHeight: 0
             property var layoutWork: []
+            property bool finishingIncubation: false
+            readonly property bool bodyIncubating: bodyLoader.status === Loader.Loading
+            function finishIncubation() {
+                finishingIncubation = true;
+                finishingIncubation = false;
+            }
             function prepareLayout(deadline) {
                 // The queue belongs to the delegate and dies with it. Visit
                 // children before their parent, like polishBody(), but yield
@@ -1068,7 +1082,8 @@ Item {
                 // The latest row loads at once while the view follows it: its
                 // placeholder is as tall as the expected reply, so loading it
                 // in the background on a slow machine leaves the screen blank.
-                asynchronous: (rowShell.index < conversation.urgentFirst || rowShell.index > conversation.urgentLast)
+                asynchronous: !rowShell.finishingIncubation
+                    && (rowShell.index < conversation.urgentFirst || rowShell.index > conversation.urgentLast)
                     && !(conversation.followTail && rowShell.index === conversation.count - 1)
                 active: !pane.released && !rowShell.modelData._loading && rowShell.wanted
                     && (!pane.firstFrameRows || rowShell.index >= conversation.count - pane.firstFrameRows)
