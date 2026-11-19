@@ -335,13 +335,17 @@ Window {
                     id: taskScroll
                     anchors.left:parent.left;anchors.right:taskDesktop.left
                     anchors.leftMargin:6*Theme.fontScale;anchors.rightMargin:5*Theme.fontScale;anchors.verticalCenter:parent.verticalCenter
-                    height: Math.max(Theme.control(28), Math.min(Theme.control(104), taskInput.contentHeight + Theme.control(10)))
+                    readonly property real singleLineHeight: Theme.control(28)
+                    readonly property real verticalInset: Math.max(0, (singleLineHeight - taskFont.height) / 2)
+                    height: taskInput.lineCount <= 1 ? singleLineHeight
+                        : Math.min(taskInput.contentHeight + 2 * verticalInset, Theme.control(104))
                     clip: true
                     contentWidth: availableWidth
+                    FontMetrics { id: taskFont; font: taskInput.font }
                     ChatInput {
                         id: taskInput; objectName: "desktopPetTaskInput"
                         leftPadding: 9*Theme.fontScale; rightPadding: 8*Theme.fontScale
-                        topPadding: Theme.control(5); bottomPadding: Theme.control(5)
+                        topPadding: taskScroll.verticalInset; bottomPadding: taskScroll.verticalInset
                         font.family: Theme.fontFamily; font.pixelSize: Theme.font(13, true)
                         color: Theme.ink; wrapMode: TextArea.Wrap; selectByMouse: true
                         background: null
