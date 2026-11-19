@@ -60,6 +60,7 @@ smokes=(
   tests/desktop_pet_drag_ui_smoke.py
   tests/subagent_pane_ui_smoke.py
   tests/multimodal_ui_smoke.py
+  tests/image_providers_ui_smoke.py
   tests/auxiliary_vision_ui_smoke.py
   tests/appearance_ui_smoke.py
   tests/characters_ui_smoke.py

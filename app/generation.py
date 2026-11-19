@@ -1,4 +1,4 @@
-"""Bounded OpenAI-compatible media generation using existing provider accounts.
+"""Bounded media generation using existing provider accounts and image presets.
 
 Successful binary/base64 bodies are deliberately excluded from HTTP diagnostics.
 Compatibility retries preserve user options and share provider rejection memory.
@@ -40,6 +40,8 @@ class VideoJobFailed(ProviderError):
 
 
 def capabilities(provider):
+    if provider.get('api') == 'image':
+        return ['image']
     if provider.get('api') == 'openai':
         return ['image', 'speech', 'video']
     return provider.get('generationCapabilities', []) if provider.get('api') == 'plugin' else []
@@ -55,11 +57,14 @@ def selection(data, kind):
     model = settings.get('model', '').strip()
     if not model:
         raise ValueError('请先配置生成模型 ID')
-    if provider.get('api') == 'openai' and not provider.get('key'):
+    if provider.get('api') in ('openai', 'image') and not provider.get('key'):
         raise ValueError('请先配置供应商 API Key')
-    if provider.get('api') == 'openai':
+    if provider.get('api') in ('openai', 'image'):
         from .gateway import validate_base_url
         validate_base_url(provider.get('baseUrl', ''))
+    if provider.get('api') == 'image':
+        from .image_providers import profile
+        profile(provider, model)
     if kind == 'speech' and not settings.get('voice', '').strip():
         raise ValueError('请先配置语音 voice')
     return provider, model, settings
@@ -72,6 +77,10 @@ def generation_config(data):
         try:
             provider, model, _ = selection(data, kind)
             result[kind] = {'provider': provider.get('name', ''), 'model': model}
+            if provider.get('api') == 'image':
+                from .image_providers import profile
+                preset = profile(provider, model)
+                result[kind].update(maxCount=preset['maxCount'], formats=list(preset['formats']))
         except (ValueError, TypeError, KeyError):
             result[kind] = None
     return result
@@ -408,11 +417,16 @@ def generate(gateway, body, on_progress=None, *, poll_interval=2.0):
                 from .gateway import validate_base_url
                 base = validate_base_url(provider['baseUrl'])
                 payload = {'model': model}
+                image_path = '/images/generations'
                 if kind == 'image':
-                    payload.update(prompt=text, n=options.get('count', 1))
-                    payload.update({k: options[k] for k in ('size', 'quality') if k in options})
-                    if options.get('format'):
-                        payload['output_format'] = options['format']
+                    if provider.get('api') == 'image':
+                        from .image_providers import request as image_request
+                        image_path, payload = image_request(provider, model, text, options)
+                    else:
+                        payload.update(prompt=text, n=options.get('count', 1))
+                        payload.update({k: options[k] for k in ('size', 'quality') if k in options})
+                        if options.get('format'):
+                            payload['output_format'] = options['format']
                 elif kind == 'speech':
                     payload.update(input=text, voice=options['voice'], response_format=options.get('format', 'mp3'), speed=options.get('speed', 1))
                 else:
@@ -433,14 +447,15 @@ def generate(gateway, body, on_progress=None, *, poll_interval=2.0):
                     if kind == 'video':
                         items = _openai_video(provider, base, payload, transport, records, on_progress, poll_interval, request_headers, omitted)
                     else:
-                        raw, headers = transport.request(base + ('/images/generations' if kind == 'image' else '/audio/speech'),
+                        raw, headers = transport.request(base + (image_path if kind == 'image' else '/audio/speech'),
                             request_headers,
                             records, json.dumps(payload).encode(), automatic=automatic)
                     if kind == 'speech':
                         items = [_media(raw, kind, options.get('format', 'mp3'), headers.get_content_type())]
                     elif kind == 'image':
                         result = json.loads(raw)
-                        values = result.get('data') if isinstance(result, dict) else None
+                        from .image_providers import response as image_response
+                        values = image_response(provider, result)
                         if not isinstance(values, list) or not 1 <= len(values) <= options.get('count', 1):
                             raise ValueError('供应商返回的图片列表无效')
                         items = []
