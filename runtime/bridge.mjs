@@ -580,7 +580,7 @@ async function init(input) {
   }
   runtime.setRebindSession(bindSession);
   await bindSession(runtime.session);
-  emit({ type: "ready", version, session: sessionInfo() });
+  if (input.type !== "warm") emit({ type: "ready", version, session: sessionInfo() });
 }
 
 function sessionInfo() {
@@ -846,6 +846,19 @@ async function execute(input) {
     return;
   }
   if (executing) { emit({ type: "error", message: "Pi 正在处理当前操作" }); return; }
+  if (input.type === "warm") {
+    if (runtime || closing) return;
+    executing = true;
+    try {
+      await init(input);
+      emit({ type: "ready", version, warm: true });
+    } catch (error) {
+      emit({ type: "warm_error", message: error.message });
+    } finally {
+      executing = false;
+    }
+    return;
+  }
   executing = true;
   const run = {id:crypto.randomUUID(),cancelled:false,cleanupFailures:[]};
   currentRun = run;

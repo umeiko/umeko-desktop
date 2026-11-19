@@ -12,6 +12,7 @@ os.environ['UMEKO_LANGUAGE']='zh'
 from PySide6.QtCore import Qt
 from PySide6.QtQml import QQmlExpression
 from PySide6.QtTest import QTest
+from chat_input_keys import check_newline_and_ime
 import shiboken6
 from app.storage import Store
 from main import create_application
@@ -54,6 +55,12 @@ def main():
             return js(menu,'matches.map(e=>e.title)')
         try:
             wait(lambda:prompt.isEnabled(),'Composer disabled')
+            with patch.object(b,'_send',return_value=True) as send:
+                check_newline_and_ime(window,prompt)
+                send.assert_not_called()
+                prompt.setProperty('text','正常发送')
+                QTest.keyClick(window,Qt.Key_Return)
+                send.assert_called_once_with('正常发送')
             assert '/compact' in query('/')
             assert abs(menu.width()-find('composer').width())<1,'Menu must keep the compact composer width'
             assert menu.height()>=180,'Menu kept the initial minimum height after composer layout'
@@ -103,6 +110,10 @@ def main():
             prompt.setProperty('text','/wd');QTest.qWait(30);assert menu.isVisible()
             query('/zzzz');QTest.keyClick(window,Qt.Key_Return)
             assert prompt.property('text')=='/zzzz' and not b._view.messages
+            query('/re');prompt.setProperty('cursorPosition',3)
+            assert menu.isVisible()
+            QTest.keyClick(window,Qt.Key_Return,Qt.ControlModifier)
+            assert prompt.property('text')=='/re\n' and not b._view.messages
             query('/re');QTest.keyClick(window,Qt.Key_Return)
             assert prompt.property('text').strip()=='/reload' and not menu.isVisible()
             with patch.object(b,'_command_pi',return_value=True) as command:

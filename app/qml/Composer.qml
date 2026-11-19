@@ -33,18 +33,6 @@ Item {
         const accepted = steering ? backend.steer(prompt.text) : backend.send(prompt.text)
         if (accepted) messageSent()
     }
-    function handleEnter(event) {
-        if (prompt.inputMethodComposing) { event.accepted = false; return }
-        if (event.modifiers & Qt.AltModifier) {
-            const position = prompt.selectionStart
-            prompt.remove(position, prompt.selectionEnd)
-            prompt.insert(position, "\n")
-            prompt.cursorPosition = position + 1
-            event.accepted = true
-        } else if (event.modifiers & Qt.ShiftModifier) event.accepted = false
-        else if (root.slashVisible) { slashMenu.chooseSelection(); event.accepted = true }
-        else { sendMessage(); event.accepted = true }
-    }
     Connections { target: backend; function onEditorText(text) { root.setText(text) } }
     Connections { target: backend; function onViewChanged() { root.slashDismissed = false } }
     onSlashVisibleChanged: if (slashVisible) backend.slashCommands.refresh()
@@ -84,7 +72,7 @@ Item {
         }
         ScrollView {
             x: 20; y: backend.attachments.length ? Theme.control(48) + 15 : 15; width: parent.width - 40; height: 82; clip: true
-            TextArea {
+            ChatInput {
                 id: prompt; objectName: "promptInput"
                 color: Theme.ink; placeholderTextColor: Theme.muted
                 placeholderText: backend.config.workspace ? I18n.t("在 ") + backend.workspaceName + I18n.t(" 项目下开展工作") : I18n.t("输入任务…")
@@ -105,8 +93,7 @@ Item {
                         }
                     }
                 }
-                Keys.onReturnPressed: event => root.handleEnter(event)
-                Keys.onEnterPressed: event => root.handleEnter(event)
+                onSubmitted: if (root.slashVisible) slashMenu.chooseSelection(); else root.sendMessage()
             }
         }
         Item {
@@ -123,7 +110,8 @@ Item {
             height: Theme.control(33) * (stacked ? 2 : 1) + (stacked ? gap : 0)
             // Advance widths match Row layout; glyph ink bounds vary by font/platform.
             TextMetrics { renderType: Text.QtRendering; id: permissionMetrics; text: permissionButton.fullText; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12) }
-            TextMetrics { renderType: Text.QtRendering; id: statusMetrics; text: statusText.text; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10) }
+            TextMetrics { renderType: Text.QtRendering; id: shortStatusMetrics; text: statusText.shortText; font: statusText.font }
+            TextMetrics { renderType: Text.QtRendering; id: fullStatusMetrics; text: statusText.fullText; font: statusText.font }
             TextMetrics { renderType: Text.QtRendering; id: taskMetrics; text: taskStatus.text; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10) }
             Row {
                 id: utilityRow; objectName: "composerUtilityControls"; spacing: footer.utilityGap
@@ -206,7 +194,23 @@ Item {
                 id: trailingRow; objectName: "composerSendControls"
                 anchors.right: parent.right; anchors.bottom: parent.bottom; spacing: 13
                 TaskStatus { id: taskStatus; objectName: "composerTaskStatus"; status: backend.turnStatus; compact: true; width: Theme.icon(13) + 6 + taskMetrics.advanceWidth; visible: state.length > 0 && footer.trailingBudget >= sendButton.width + width + 13; anchors.verticalCenter: parent.verticalCenter }
-                Text { id: statusText; font.family: Theme.fontFamily; objectName: "composerStatus"; visible: footer.trailingBudget >= sendButton.width + (taskStatus.visible ? taskStatus.width + 13 : 0) + statusMetrics.advanceWidth + 13; text: backend.compacting ? I18n.t(backend.toolStatus) : backend.loading ? I18n.t(backend.toolStatus || "正在加载 Pi") : backend.running ? (backend.sessionBackend === "dsh" ? I18n.t("Enter 加入队列") : I18n.t("Enter 加入队列 · Ctrl+S 优先")) : I18n.t("Enter 发送"); font.pixelSize: Theme.font(10); color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
+                Text {
+                    id: statusText; objectName: "composerStatus"
+                    readonly property string shortText: {
+                        if (backend.compacting) return I18n.t(backend.toolStatus)
+                        if (backend.loading) return I18n.t(backend.toolStatus || "正在加载 Pi")
+                        if (!backend.running) return I18n.t("Enter 发送")
+                        return backend.sessionBackend === "dsh" ? I18n.t("Enter 加入队列") : I18n.t("Enter 加入队列 · Ctrl+S 优先")
+                    }
+                    readonly property string fullText: backend.compacting || backend.loading ? shortText
+                        : shortText + " · " + I18n.t("Ctrl+Enter / Alt+Enter 换行")
+                    readonly property real availableWidth: footer.trailingBudget - sendButton.width
+                        - (taskStatus.visible ? taskStatus.width + trailingRow.spacing : 0) - trailingRow.spacing
+                    text: availableWidth >= fullStatusMetrics.advanceWidth ? fullText : shortText
+                    visible: availableWidth >= shortStatusMetrics.advanceWidth
+                    font.family: Theme.fontFamily; font.pixelSize: Theme.font(10)
+                    color: Theme.muted; anchors.verticalCenter: parent.verticalCenter
+                }
                 Rectangle {
                     id: sendButton; objectName: "sendButton"
                     readonly property bool stopAction: backend.running
@@ -222,7 +226,7 @@ Item {
                     Behavior on scale { NumberAnimation { duration: 100 } }
                     Glyph { objectName: "sendGlyph"; color: parent.disabled ? Theme.muted : Theme.buttonText; anchors.centerIn: parent; name: backend.running ? "stop" : prompt.text.trim().length > 0 && !backend.loading ? (Theme.dark ? "arrow-up" : "send") : "arrow-up"; width: Theme.icon(17); height: Theme.icon(17) }
                     MouseArea { id: sendArea; objectName: "sendArea"; anchors.fill: parent; enabled: !parent.disabled; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: { if (backend.running) backend.stop(); else root.sendMessage(false) } }
-                    HoverTip { active: sendArea.containsMouse; text: (backend.running ? I18n.t("停止当前会话任务") : I18n.t("发送消息")) + "\n" + statusText.text }
+                    HoverTip { active: sendArea.containsMouse; text: (backend.running ? I18n.t("停止当前会话任务") : I18n.t("发送消息")) + "\n" + statusText.fullText }
                 }
             }
         }

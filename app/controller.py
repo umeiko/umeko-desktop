@@ -71,6 +71,7 @@ GREETINGS = (
 
 class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, PreferencesMixin, DshControllerMixin, PiControllerMixin, QObject):
     changed = Signal()
+    agentResourcesChanged = Signal()
     appearanceChanged = Signal()
     characterCatalogChanged = Signal()
     desktopSettingsChanged = Signal()
@@ -270,6 +271,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._streaming_timer.setSingleShot(True)
         self._streaming_timer.setInterval(50)
         self._streaming_timer.timeout.connect(self._publish_stream)
+        self._pi_warmup = QTimer(self)
+        self._pi_warmup.setSingleShot(True)
+        self._pi_warmup.setInterval(350)
+        self._pi_warmup.timeout.connect(self._warm_active_pi)
         self._last_sidebar_rows = None
         self._project_workspace_keys = {}
         self._stream_projection = False
@@ -432,6 +437,9 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     def _activate(self, record):
         self._session_preview.cancel()
+        previous = self._view
+        if previous is not record and previous.speculative and not self._pool.protected(previous):
+            self._pool.retire(previous)
         self._streaming_timer.stop()
         self.viewAboutToChange.emit()
         previous_approval = self._dangerous_allowed(self._view)
@@ -481,13 +489,15 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.reasoningChanged.emit()
         self.retryChanged.emit()
         self.viewChanged.emit()
+        self.agentResourcesChanged.emit()
         if record.transcript is not None and record.transcript.partial:
             self._recent_history.complete(record)
 
-        # A dead retained kernel is resumed through the same command path as
-        # ordinary Pi startup. Never-started history browsing remains lazy.
-        if record.crashed and not record.busy and not record.subagents_active and not record.approval:
+        # Reopening a crashed cached kernel uses the existing recovery command.
+        if record.crashed and not self._pool.protected(record):
             self._command_pi('inspect', record=record)
+        elif record.file and not record.process and not is_dsh(record):
+            self._pi_warmup.start()
 
     def _refresh_sidebar(self):
         rows = self._project_rows()
@@ -1612,7 +1622,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             return self.toast.emit("会话授权保存失败")
         self._sync_dangerous_approval(record)
 
-    @Property("QVariantMap", notify=changed)
+    @Property("QVariantMap", notify=agentResourcesChanged)
     def agentResources(self):
         return self._view.resources
 
@@ -1779,13 +1789,13 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Slot()
     def pollCapabilities(self):
-        if self._view.process and not self._view.busy:
+        if self._view.process and self._view.ready and not self._view.busy:
             self._write_pi({"type": "resources"})
 
     @Slot()
     def loadCapabilities(self):
         if not self._view.busy:
-            if self._view.process:
+            if self._view.process and self._view.ready:
                 self.pollCapabilities()
             else:
                 self._command_pi("inspect")
@@ -2185,8 +2195,6 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 except OSError:
                     self.toast.emit("原生会话文件暂时无法读取")
         self._activate(record)
-        # Browsing history is read-only. Start Pi lazily for the next command or
-        # explicit tool inventory, rather than re-projecting history on every visit.
 
     @Slot(str)
     def deleteSession(self, session_id):
@@ -2461,6 +2469,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if self._closing:
             return
         self._closing = True
+        self._cancel_pi_warmup()
         self._reasoning_discovery.close()
         self._desktop_plugins.close()
         self._appearance_save.stop()
