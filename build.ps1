@@ -14,7 +14,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Build dependency installation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Native notification adapter build failed' }
 & '.venv/Scripts/python.exe' scripts/bundle_node.py
 if ($LASTEXITCODE -ne 0) { throw 'Bundled Node.js preparation failed' }
-& '.venv/Scripts/python.exe' prepare_runtime.py
+& '.venv/Scripts/python.exe' prepare_runtime.py --bundle-bridge
 if ($LASTEXITCODE -ne 0) { throw 'Pi compatibility validation failed' }
 & '.venv/Scripts/python.exe' scripts/fetch-search-tools.py
 if ($LASTEXITCODE -ne 0) { throw 'Pi search tool preparation failed' }

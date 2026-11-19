@@ -464,7 +464,15 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession } = 
     const loaded = loadPackage ? await loadPackage() : await (async () => {
       // Keep generated TypeScript cache out of the signed/read-only app bundle.
       const cache = join(process.env.PI_CODING_AGENT_DIR || join(homedir(),".pi","agent"),"cache","umeko-subagents");
+      // Share the packaged SDK and TypeBox with the dynamically loaded extension.
+      // Jiti would otherwise load a second copy of the SDK from node_modules.
+      const virtualModules = typeof UMEKO_BUNDLED_BRIDGE !== 'undefined' && UMEKO_BUNDLED_BRIDGE ? {
+        "@earendil-works/pi-coding-agent": await import("./subagent-sdk.mjs"),
+        "@earendil-works/pi-tui": await import("@earendil-works/pi-tui"),
+        "typebox": await import("typebox"),
+      } : undefined;
       const jiti = createJiti(import.meta.url, { moduleCache: false, tryNative: false, fsCache:cache,
+        virtualModules,
         alias: { "#src/settings": fileURLToPath(new URL("./subagent-settings.mjs", import.meta.url)), "@earendil-works/pi-coding-agent": fileURLToPath(new URL("./subagent-sdk.mjs", import.meta.url)) } });
       const root = new URL("../", import.meta.resolve("@gotgenes/pi-subagents"));
       const factory = await jiti.import(fileURLToPath(new URL("index.ts", root)), { default: true });

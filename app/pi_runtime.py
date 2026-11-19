@@ -13,6 +13,7 @@ from .filesystem_paths import filesystem_path, ordinary_path
 PACKAGE = "@earendil-works/pi-coding-agent"
 PINNED_VERSION = "1.5.2"
 RELEASE_NAME = "coding-" + PINNED_VERSION
+BRIDGE_BUNDLE = "bridge.bundle.mjs"
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 CATALOG = '''// Umeko provider policy. Native coding-agent implementation is unchanged.
 import { createModels } from "../models.js";
@@ -77,7 +78,14 @@ def project_runtime(source: Path, destination: Path):
     # Preserve the complete upstream SDK, native tools, resource loader and dependencies.
     # The source checkout can live under a long Windows workspace path. npm
     # installs nested SDK type declarations beyond MAX_PATH; preserve them too.
-    shutil.copytree(modules, destination / "node_modules")
+    def ignore_build_tools(path, names):
+        if Path(path) == modules:
+            return {"esbuild", "@esbuild"}.intersection(names)
+        if Path(path) == modules / ".bin":
+            return {"esbuild", "esbuild.cmd", "esbuild.ps1"}.intersection(names)
+        return ()
+
+    shutil.copytree(modules, destination / "node_modules", ignore=ignore_build_tools)
     ai = destination / "node_modules/@earendil-works/pi-ai/dist"
     if not (ai / "providers/all.js").is_file() or not (ai / "models.generated.js").is_file():
         raise RuntimeError("Pi provider 接口已变化，需要更新桥接适配")
@@ -149,3 +157,8 @@ def verify_runtime(release: Path, bridge_source: Path):
 
 def installed_version(release: Path):
     return json.loads((filesystem_path(release) / "manifest.json").read_text(encoding="utf-8"))["version"]
+
+
+def bridge_entry(release: Path):
+    bundle = release / BRIDGE_BUNDLE
+    return bundle if bundle.is_file() else release / "bridge.mjs"

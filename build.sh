@@ -15,7 +15,7 @@ PY
 .venv/bin/python scripts/webview_package.py --frontend build/webview-support
 if [[ "$(uname -s)" == Linux ]]; then .venv/bin/python scripts/build-input-method.py; fi
 .venv/bin/python scripts/bundle_node.py
-.venv/bin/python prepare_runtime.py
+.venv/bin/python prepare_runtime.py --bundle-bridge
 .venv/bin/python scripts/fetch-search-tools.py
 QT_QPA_PLATFORM=offscreen .venv/bin/python build_icons.py
 .venv/bin/python scripts/write-build-info.py
