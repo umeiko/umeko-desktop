@@ -1649,5 +1649,21 @@ var strings = {
   "给悬浮小助手派活": "Give your assistant a task",
   "桌宠未绑定全局子智能体": "The pet is not connected to a global subagent",
   "桌宠绑定已变化，请重新打开输入框": "The pet connection changed. Reopen the input box",
-  "请输入 1–16000 字符的任务": "Enter a task of 1–16000 characters"
+  "请输入 1–16000 字符的任务": "Enter a task of 1–16000 characters",
+  "图片供应商": "Image providers",
+  "火山方舟": "Volcengine Ark",
+  "火山方舟 · Seedream": "Volcengine Ark · Seedream",
+  "Qwen Image · 阿里云百炼": "Qwen Image · Alibaba Cloud",
+  "北京地域 API Key": "Beijing region API Key",
+  "保存并使用": "Save and use",
+  "请选择模型": "Select a model",
+  "图片供应商已保存": "Image provider saved",
+  "移除": "Remove",
+  "已配置": "Configured",
+  "阿里云百炼": "Alibaba Cloud Bailian",
+  "自定义（OpenAI 兼容）": "Custom (OpenAI compatible)",
+  "已添加的自定义供应商": "Custom providers",
+  "供应商名称": "Provider name",
+  "例如：我的生图服务": "e.g. My image service",
+  "填写供应商的生图模型 ID": "Enter the provider's image model ID"
 }

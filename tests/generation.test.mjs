@@ -46,6 +46,22 @@ test('only configured generation modalities register, and loadout controls apply
   assert.ok(excludedSessionTools(disabled).includes('image_gen'));
 });
 
+test('image provider capabilities reach the model tool schema without credentials',async t=>{
+  for (const [maxCount, formats] of [[1, ['png', 'jpeg']], [6, ['png']], [10, ['jpeg']], [10, ['png', 'jpeg', 'webp']]]) {
+    const f=await fixture(t,{generation:{image:{provider:'Configured image service',model:'configured-image',maxCount,formats}}});
+    const tool=f.tools.find(tool=>tool.name==='image_gen');
+    assert.equal(tool.parameters.properties.count.maximum,maxCount);
+    const schema=JSON.stringify(tool.parameters.properties.format);
+    assert.equal(schema.includes('png'),formats.includes('png'));
+    assert.equal(schema.includes('jpeg'),formats.includes('jpeg'));
+    assert.equal(schema.includes('webp'),formats.includes('webp'));
+    const result=await f.run('image_gen',{prompt:'A small plum',output_filename:'plum.png'});
+    assert.equal(f.confirmations.length,1);
+    assert.equal(chatboxItems('image_gen',result)[0].kind,'image');
+    assert.ok(!JSON.stringify(result).includes('fixture-private-token'));
+  }
+});
+
 for(const mode of ['auto','ask'])test(`${mode}: the registered permission gate confirms once before generation`,async t=>{
   const f=await fixture(t,{mode});
   const result=await f.run('image_gen',{prompt:'Draw a small plum',size:'1024x1024',count:1,output_filename:'plum.png'},{id:'parent/nested-call'});

@@ -43,6 +43,12 @@ Umeko 使用自己的供应商网关，桌面供应商通过下面的 `providers
 
 在 **设置 → 账号与供应商 → 多模态模型选项** 中，分别选择图片、语音、视频生成使用的现有供应商账号和模型。可以从模型目录选择，也可以手填上游原始模型 ID。生成沿用该账号的凭据、代理、CA 与错误处理。
 
+Python 版在“图片生成 → 供应商”中提供火山方舟、阿里云百炼和自定义 OpenAI 兼容服务。平台入口显示平台名称和 Logo；生图模型在图片生成卡片中单独选择。两家预设只需填写北京地域 API Key，并提供官方申请链接，保存后启用默认模型。已有密钥不会回填到输入框，留空保存时保留。图片账号与聊天模型分开，移除当前图片账号后只清空图片生成选择，语音、视频和聊天配置保留。
+
+火山方舟提供 Seedream 5.5、5.0 Pro、5.0 Flash、5.0 Lite、4.5 和 4.0。现代单图型号一次一张；Lite、4.5 和 4.0 使用原生组图参数，应用最多十张。4.5/4.0 仅 JPEG，其余支持 PNG/JPEG。尺寸档位随型号变化（例如 5.5 为 1K/1.5K/2K，Lite 为 2K/3K/4K）。百炼使用 DashScope 原生同步协议，提供 Qwen Image 3.0 Pro、3.0、2.1 Pro 和 2.1 Turbo，最多六张、PNG 输出。此处是已适配的目录，不代表平台全部模型或账号已开通权限。`size` 可填 `宽x高`，Qwen 请求会转换为原生尺寸格式；未填时由供应商决定。预设按型号校验数量、尺寸、比例和格式，不接受通用 `quality` 参数。模型目录参考[火山图片生成 API](https://ark.volcengine.com/region:cn-beijing/docs/image-generation-api)和[百炼 Qwen Image API](https://help.aliyun.com/zh/model-studio/qwen-image-generation-and-editing-api-reference)。
+
+自定义服务可添加多个独立账号，填写供应商名称、Base URL、API Key 和模型 ID。Base URL 填到服务的 API 根路径（例如 `https://example.com/v1`），应用追加 `/images/generations`，使用 Bearer 认证和 OpenAI Images 请求体，支持 URL 或 `b64_json` 返回结果。添加后可在同一弹窗中编辑、换 Key 或移除；不会进入聊天模型列表。API Key、代理和下载逻辑继续由桌面后台管理。
+
 同一个二级页中的图片理解设置见 [辅助视觉与 analyze_image](auxiliary-vision.md)。
 `settings.get` 返回当前 `config.multimodal`；用 `generation.configure` 的 `config` 参数保存生成配置，字段为 `image`、`speech` 和 `video`，结构与返回值一致。图片理解使用同页独立配置，详见辅助视觉文档。
 
