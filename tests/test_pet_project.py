@@ -107,3 +107,73 @@ class PetProjectTests(unittest.TestCase):
         self.p.select('b');self.h._command_pi.return_value=False
         old=list(self.b.messages);self.p.send()
         self.assertEqual(self.b.messages,old);self.assertTrue(self.p.submission);self.assertEqual(self.p.body,'帮我检查构建')
+
+
+class PetProjectPathTests(unittest.TestCase):
+    setUpClass=PetProjectTests.__dict__['setUpClass']
+    setUp=PetProjectTests.setUp
+    owner=PetProjectTests.owner
+    open=PetProjectTests.open
+    def alias(self):
+        original=Path(self.b.workspace)
+        alias=Path(self.tmp.name)/'project-alias'
+        alias.symlink_to(original,target_is_directory=True)
+        self.b.workspace=str(alias)
+        next(r for r in self.h._sessions if r['id']=='b')['workspace']=str(alias)
+        return alias,original
+
+    def test_parent_segment_is_selectable_without_rewriting_identity(self):
+        original=Path(self.b.workspace)
+        (original/'child').mkdir(exist_ok=True)
+        raw=str(original/'child')+'/..'
+        self.b.workspace=raw
+        next(r for r in self.h._sessions if r['id']=='b')['workspace']=raw
+        self.assertTrue(self.p.select('b')['ok'])
+        self.assertEqual(self.p.captured,{'id':'b','workspace':raw,'file':self.b.file})
+        self.p.send()
+        self.assertEqual(self.h._command_pi.call_args.kwargs['record'].workspace,raw)
+
+    def test_symlink_membership_preserves_raw_session_identity(self):
+        alias,_=self.alias()
+        self.assertTrue(self.p.select('b')['ok'])
+        self.assertEqual(self.p.captured['workspace'],str(alias))
+        self.assertTrue(self.p.valid())
+        self.assertEqual(self.b.workspace,str(alias))
+
+    def test_retarget_to_another_registered_project_refuses_send(self):
+        alias,_=self.alias()
+        self.assertTrue(self.p.select('b')['ok'])
+        other=Path(self.tmp.name)/'another-project';other.mkdir()
+        self.h.store.data['projects'].append({'id':'other','path':str(other)})
+        alias.unlink();alias.symlink_to(other,target_is_directory=True)
+        self.p.send()
+        self.h._command_pi.assert_not_called();self.h._write_pi.assert_not_called()
+        self.assertEqual(self.p.body,'帮我检查构建')
+
+    def test_archived_removed_and_unregistered_alias_targets_are_excluded(self):
+        self.alias()
+        project=self.h.store.data['projects'][0]
+        project['archived']=True
+        self.assertFalse(self.p.select('b')['ok'])
+        project['archived']=False
+        self.h.store.data['removedProjects']=[project['id']]
+        self.assertFalse(self.p.select('b')['ok'])
+        self.h.store.data['removedProjects']=[]
+        self.h.store.data['projects']=[]
+        self.assertFalse(self.p.select('b')['ok'])
+
+    def test_replaced_registration_and_duplicate_alias_refuse(self):
+        alias,original=self.alias()
+        self.assertTrue(self.p.select('b')['ok'])
+        self.h.store.data['projects'][0]['id']='replacement'
+        self.assertFalse(self.p.valid())
+        self.h.store.data['projects'].append({'id':'duplicate','path':str(alias)})
+        self.assertFalse(self.p.select('b')['ok'])
+
+    def test_removed_or_looping_alias_fails_closed(self):
+        alias,_=self.alias()
+        self.assertTrue(self.p.select('b')['ok'])
+        alias.unlink()
+        self.assertFalse(self.p.valid())
+        alias.symlink_to(alias)
+        self.assertFalse(self.p.valid())

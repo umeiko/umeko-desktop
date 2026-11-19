@@ -1,6 +1,7 @@
 """Explicit project input using the native record-bound prompt and follow-up paths."""
 import copy
 import json
+import os
 import re
 from pathlib import Path
 from PySide6.QtCore import QObject, Property, Signal, Slot
@@ -14,7 +15,7 @@ class PetProject(QObject):
         super().__init__(pet)
         self.pet=pet;self.b=pet.b
         self.opened=False;self.options=[];self.selected='';self.body='';self.error='';self.binding=''
-        self.captured=None;self.pending=False;self.incoming='';self.drafts={};self.label=''
+        self.captured=None;self.project_identity=None;self.pending=False;self.incoming='';self.drafts={};self.label=''
         self.path=pet.directory/'project-input.json'
         self.submission={}
         try:
@@ -23,9 +24,31 @@ class PetProject(QObject):
         except (OSError,ValueError):pass
         self.b._pool.event.connect(self.observe)
 
+    @staticmethod
+    def workspace_key(path):
+        # Match existing project membership, never rewrite stored session paths.
+        # Do not cache: a symlink can be retargeted while the picker is open.
+        if not path:return ''
+        try:
+            resolved=Path(path).expanduser().resolve(strict=True)
+            return os.path.normcase(str(resolved)) if resolved.is_dir() else ''
+        except (OSError,RuntimeError,ValueError):return ''
+
+    def project_for(self,row):
+        key=self.workspace_key(row.get('workspace',''))
+        if not key:return None
+        removed=self.b.store.data.get('removedProjects',[])
+        matches=[p for p in self.b.store.data.get('projects',[])
+                 if not p.get('archived') and p.get('id') not in removed
+                 and self.workspace_key(p.get('path',''))==key]
+        # Ambiguous registrations require explicit repair, not an arbitrary target.
+        if len(matches)!=1:return None
+        project=matches[0]
+        return (project.get('id',''),project['path'],key)
+
     def rows(self):
-        projects={p['path']:p for p in self.b.store.data.get('projects',[]) if not p.get('archived') and p.get('id') not in self.b.store.data.get('removedProjects',[])}
-        return [r for r in self.pet.taskSchedule.rows() if r.get('workspace') in projects and Path(r.get('file','')).is_file() and Path(r['workspace']).is_dir()]
+        return [r for r in self.pet.taskSchedule.rows()
+                if self.project_for(r) and Path(r.get('file','')).is_file()]
 
     @Property('QVariantMap',notify=changed)
     def state(self):
@@ -54,7 +77,7 @@ class PetProject(QObject):
     def leaveProject(self):
         # Deactivate the target, not its draft. A later default-mode command is
         # a transfer into that saved draft even if its ID was selected before.
-        self.selected='';self.captured=None;self.label='';self.body='';self.incoming=''
+        self.selected='';self.captured=None;self.project_identity=None;self.label='';self.body='';self.incoming=''
         self.changed.emit()
 
     @Slot(str,result='QVariantMap')
@@ -68,6 +91,7 @@ class PetProject(QObject):
             self.changed.emit();return {'ok':False,'error':self.error}
         body=self.incoming if self.incoming else ('' if identifier==self.selected and re.match(r'^\s*/项目(?:\s|$)',saved) else saved)
         self.selected=identifier;self.captured={k:row.get(k,'') for k in ('id','workspace','file')}
+        self.project_identity=self.project_for(row)
         self.label=row.get('title') or Path(row['workspace']).name
         self.body=body;self.drafts[identifier]=body;self.incoming='';self.error='';self.changed.emit()
         return {'ok':True,'text':body}
@@ -92,6 +116,7 @@ class PetProject(QObject):
         if not status.get('bound') or status.get('id')!=self.binding:return False
         row=next((r for r in self.rows() if r['id']==self.selected),None)
         if not row or {k:row.get(k,'') for k in ('id','workspace','file')}!=self.captured:return False
+        if not self.project_identity or self.project_for(row)!=self.project_identity:return False
         record=self.b._pool.find(self.selected)
         return record is None or (not record.global_agent and record.workspace==row['workspace'] and record.file==row['file'])
 
