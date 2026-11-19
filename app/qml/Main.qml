@@ -107,7 +107,6 @@ ApplicationWindow {
     property string pendingSidebarKind: ""
     property string pendingSidebarTitle: ""
     property int sidebarToken: 0
-    property bool sidebarStarted: false
     property bool sidebarPrepared: false
     readonly property bool sidebarSwitching: pendingSidebarId.length > 0
     function cancelSidebarSelection() {
@@ -118,21 +117,18 @@ ApplicationWindow {
         if (row.selected && !sidebarSwitching && (row.kind === "session" || !backend.activeSession)) { window.page = "chat"; return }
         backend.sessionPreview.cancel(); sidebarToken++
         pendingSidebarKind = row.kind; pendingSidebarTitle = row.title; pendingSidebarId = row.id
-        sidebarStarted = false; sidebarPrepared = false
+        sidebarPrepared = false
         window.page = "chat"
         // Warm panes already contain their controls and text layouts.
         const cached = backend.cachedConversationToken(row.id)
         if (cached && conversationHost.panes[cached]) chatCover.cancel()
         else chatCover.begin()
-        Qt.callLater(window.prepareSidebarSelection)
-    }
-    function prepareSidebarSelection() {
-        if (!sidebarSwitching || sidebarStarted) return
-        sidebarStarted = true
         if (pendingSidebarKind === "project") {
             sidebarPrepared = true
-            commitSidebarSelection()
+            Qt.callLater(window.commitSidebarSelection)
         } else {
+            // Start the background read on selection. Committing the view
+            // stays queued so later selections can supersede this one.
             backend.sessionPreview.prepare(pendingSidebarId, sidebarToken)
         }
     }
