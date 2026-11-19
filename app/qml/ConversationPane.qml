@@ -1423,11 +1423,14 @@ Item {
                     Loader {
                         id: closingMascot
                         readonly property string mascotName: pane.messagePrefix === "subagent" ? "subagentReplyMascot_" + messageRow.index : "replyEndMascot_" + messageRow.index
+                        readonly property bool eligible: pane.controller.sessionBackend !== "dsh" && !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
+                        property bool created: false
                         objectName: active ? "" : mascotName
                         width: Character.id === "doubao" ? Theme.icon(72) : 56
-                        active: pane.controller.sessionBackend !== "dsh" && !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
-                        visible: active
+                        active: eligible || created
+                        visible: eligible
                         x: 33
+                        onLoaded: created = true
                         sourceComponent: ReplyMascot {
                             objectName: closingMascot.mascotName
                             portraitSource: String(pane.replyPortrait).length ? pane.replyPortrait : String(pane.portrait).length ? pane.portrait : Character.asset("reply", "../icons/yanami-pixel.png")
