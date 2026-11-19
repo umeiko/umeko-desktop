@@ -100,7 +100,6 @@ Item {
         property real reach: height * 0.25
         property bool anchoring: false
         property int blockedScrolls: 0
-        property int blockedRow: -1
         property int urgentFirst: -1
         property int urgentLast: -2
         property bool forcing: false
@@ -195,7 +194,8 @@ Item {
             const top = contentY;
             let anchor = null;
             for (const item of contentItem.children) {
-                if (item.messageSlot === true && item.shown && item.y + item.height > top && item.y < top + height
+                if (item.messageSlot === true && (item.shown || pane.openAtBottom)
+                        && item.y + item.height > top && item.y < top + height
                         && (!anchor || item.index < anchor.index))
                     anchor = item;
             }
@@ -398,35 +398,34 @@ Item {
             const top = originY;
             const bottom = Math.max(top, originY + contentHeight - height);
             let target = Math.max(top, Math.min(bottom, contentY + delta));
-            // Never scroll into rows that are not shown yet. A group still
-            // loading is finished first; one whose data has not arrived makes
-            // the view wait at its edge. The counter only lets a row that
-            // never becomes ready stop blocking input.
-            let limits = shownLimits();
-            const clamp = () => Math.max(Math.min(contentY, limits.upper), Math.min(target, Math.max(contentY, limits.lower - height)));
-            let allowed = clamp();
-            if (Math.abs(allowed - target) > 0.5) {
-                finishGroup(delta < 0 ? limits.above : limits.below, delta < 0 ? -1 : 1);
-                // Showing the group may have kept the anchor by moving contentY.
-                target = Math.max(originY, Math.min(Math.max(originY, originY + contentHeight - height), contentY + delta));
-                limits = shownLimits();
-                allowed = clamp();
-            }
-            const edge = delta < 0 ? limits.above : limits.below;
-            if (blockedRow !== edge || Math.abs(allowed - contentY) > 0.5)
-                blockedScrolls = 0;
-            if (Math.abs(allowed - target) > 0.5 && blockedScrolls < 30) {
-                blockedRow = edge;
-                target = allowed;
-                blockedScrolls++;
-                scheduleRange();
+            // A page-sized move can cross several unloaded groups. Move over
+            // their estimated heights, then let the destination request its
+            // own rows. Small reading steps still keep filled rows in view.
+            if (!pane.openAtBottom || Math.abs(delta) < height) {
+                let limits = shownLimits();
+                const clamp = () => Math.max(Math.min(contentY, limits.upper), Math.min(target, Math.max(contentY, limits.lower - height)));
+                let allowed = clamp();
+                if (Math.abs(allowed - target) > 0.5) {
+                    finishGroup(delta < 0 ? limits.above : limits.below, delta < 0 ? -1 : 1);
+                    // Showing the group may have moved contentY to keep the anchor.
+                    target = Math.max(originY, Math.min(bottomY, contentY + delta));
+                    limits = shownLimits();
+                    allowed = clamp();
+                }
+                if (Math.abs(allowed - target) > 0.5 && blockedScrolls < 30) {
+                    target = allowed;
+                    blockedScrolls++;
+                } else {
+                    blockedScrolls = 0;
+                }
             } else {
                 blockedScrolls = 0;
-                blockedRow = -1;
             }
             anchoring = true;
             contentY = target;
             anchoring = false;
+            scheduleRange();
+            loadEarlierAtTop();
             if (nearBottom && !chatSelection.dragging) {
                 followTail = true;
                 pinTail();
@@ -592,8 +591,11 @@ Item {
         onContentYChanged: {
             saveViewport();
             scheduleRange();
-            // A partial history continues once the reader scrolls past its top.
-            if (atYBeginning && !followTail && !restoring && pane.current && pane.messageModel
+            loadEarlierAtTop();
+        }
+        onAtYBeginningChanged: loadEarlierAtTop()
+        function loadEarlierAtTop() {
+            if (atYBeginning && !anchoring && !followTail && !restoring && pane.current && pane.messageModel
                     && pane.messageModel.partialHistory && pane.controller.recentHistory)
                 pane.controller.recentHistory.loadEarlier();
         }
