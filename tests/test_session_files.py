@@ -115,6 +115,46 @@ class SessionFilesTests(unittest.TestCase):
         self.assertEqual(imported['workspace'],str(self.workspace));self.assertNotEqual(imported['id'],'original')
         self.assertTrue(Path(imported['file']).is_relative_to(self.profile/'pi/sessions'));self.assertTrue(source.exists())
 
+    def test_default_workspace_is_recovered_from_native_index(self):
+        default_workspace = self.profile / 'workspace'
+        project = self.b._ensure_project(default_workspace)
+        native = self.session('01900000-0000-7000-8000-000000000001', default_workspace)
+        native_rows = [dict(native)]
+        native['workspace'] = ''  # Cached by a version that cleared the sidebar workspace.
+        outside = self.session('outside')
+        ungrouped = {'id': 'no-workspace', 'title': 'No workspace', 'workspace': ''}
+        self.b._merge_native_sessions([*native_rows, dict(outside), ungrouped])
+        rows = {row['id']: row for row in self.b.projectRows}
+        self.assertEqual(rows[native['id']]['projectId'], project['id'])
+        self.assertEqual(rows[outside['id']]['projectId'], self.project['id'])
+        self.assertEqual(rows[ungrouped['id']]['projectId'], '')
+
+    def test_ungrouped_imports_survive_default_project_delete(self):
+        default_workspace = self.profile / 'workspace'
+        project = self.b._ensure_project(default_workspace)
+        source = self.root / 'import.jsonl'
+        source.write_text(history('original', self.workspace), encoding='utf-8')
+        raw = json.dumps([QUrl.fromLocalFile(str(source)).toString()])
+        self.files.importFiles(raw, '')
+        self.finished()
+        self.assertFalse(self.files.failure, self.files.failure)
+        imported = self.b._sessions[0]
+        self.assertTrue(self.b.store.data['sessionMeta'][imported['id']]['ungroupedImport'])
+        legacy = self.session('00000000-0000-4000-8000-000000000001', default_workspace)
+        legacy['workspace'] = ''
+        grouped = self.session('grouped', default_workspace)
+        native_rows = [{**row, 'workspace': str(default_workspace)} for row in (imported, legacy, grouped)]
+        self.b._merge_native_sessions(native_rows)
+        self.assertEqual(imported['workspace'], '')
+        self.assertEqual(legacy['workspace'], '')
+        self.assertEqual(grouped['workspace'], str(default_workspace))
+        self.b.removeProject(project['id'])
+        self.finished()
+        self.assertFalse(self.files.failure, self.files.failure)
+        self.assertFalse(Path(grouped['file']).exists())
+        self.assertTrue(Path(imported['file']).is_file())
+        self.assertTrue(Path(legacy['file']).is_file())
+
     def test_broken_drop_is_reported_without_adding_any_session(self):
         source=self.root/'broken.jsonl';source.write_text(history('original',self.workspace)+'{"type":')
         self.b.dropProjects(json.dumps([QUrl.fromLocalFile(str(source)).toString()]),self.project['id']);self.finished()
