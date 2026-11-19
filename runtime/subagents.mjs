@@ -153,9 +153,10 @@ export function subagentTool(previous, channel, event, record = {}, invocation =
   };
 }
 
-export function createSubagentExtension({ emit, loadPackage, restoreSession } = {}) {
+export function createSubagentExtension({ emit, loadPackage, restoreSession, getParentRun } = {}) {
   const calls = new AsyncLocalStorage();
   const rows = new Map();
+  const parentRuns = new Map();
   const sessions = new Map(), contexts = new Map(), restoring = new Map();
   const pendingSessions = new Set(), observed = new Set();
   const compacting = new Set(), loadingChildren = new Map(), restoredChildren = new Set();
@@ -413,11 +414,13 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession } = 
     clearInterval(timer); timer = undefined;
     for (const stop of unbind.splice(0)) stop();
     rows.clear();
+    parentRuns.clear();
   }
   function update(channel, event, snapshot, scope = calls.getStore()) {
     if (!event?.id) return;
     const previous = rows.get(event.id);
     if (scope) scope.agentId = event.id;
+    if (scope?.parentRun) parentRuns.set(event.id, scope.parentRun);
     const record = snapshot ?? (restoring.has(event.id) ? previous?.tool.subagent : getService?.()?.getRecord(event.id)) ?? {};
     if (channel === "resuming" && scope?.toolCallId) {
       api?.appendEntry("umeko-subagent-link", { version: 1, toolCallId: scope.toolCallId,
@@ -489,13 +492,17 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession } = 
       get(target, property) {
         // The desktop exposes delegation through natural language, not new commands.
         if (property === "registerCommand") return () => {};
+        if (property === "sendMessage") return (message, options) => {
+          if (options?.triggerTurn && parentRuns.get(message.details?.id)?.cancelled) return;
+          return target.sendMessage?.(message, options);
+        };
         if (property !== "registerTool") return target[property];
         return tool => {
           if (tool.name !== "subagent") return target.registerTool(tool);
           target.registerTool({ ...tool, execute: async (toolCallId, args, signal, onUpdate, ctx) => {
             const ownerEntryId = ctx.sessionManager?.getBranch().find(entry => entry.type === "message" &&
               Array.isArray(entry.message.content) && entry.message.content.some(block => block.type === "toolCall" && block.id === toolCallId))?.id;
-            const scope = { toolCallId, args, ownerEntryId };
+            const scope = { toolCallId, args, ownerEntryId, parentRun:getParentRun?.() };
             return calls.run(scope, async () => {
               try {
                 let result = await tool.execute(toolCallId, args, signal, progress => {

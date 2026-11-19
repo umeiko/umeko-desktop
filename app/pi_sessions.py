@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
 from .npm_config import npm_overrides
@@ -79,6 +81,10 @@ class SessionState:
     ready: bool = False
     failed: bool = False
     cancelled: bool = False
+    stop_state: str = ""
+    stop_detail: str = ""
+    stop_token: str = ""
+    prompt_after_stop: tuple[str, bool] | None = None
     stale: bool = False
     crashed: bool = False
     operation: bool = False
@@ -188,6 +194,10 @@ class PiSessionPool(QObject):
                 if existing.lower() == key: environment.remove(existing)
             environment.insert(key, value)
         environment.insert("PATH", os.path.dirname(program) + os.pathsep + environment.value("PATH"))
+        if os.name == "nt":
+            environment.insert("UMEKO_BASH_JOB_HOST", sys.executable)
+            if not getattr(sys, "frozen", False):
+                environment.insert("UMEKO_BASH_JOB_SCRIPT", str(Path(__file__).resolve().parents[1] / "main.py"))
         process.setProcessEnvironment(environment)
         process.setProgram(program)
         process.setArguments([str(bridge)])
