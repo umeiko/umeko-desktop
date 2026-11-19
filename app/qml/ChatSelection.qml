@@ -298,7 +298,7 @@ Item {
         }
         onWheel: event => {
             const delta = event.pixelDelta.y || event.angleDelta.y / 120 * 60
-            if (delta) { root.view.scrollBy(-delta); if (root.dragging) root.extend() }
+            if (delta) { root.view.scrollBy(-delta, !root.dragging); if (root.dragging) root.extend() }
             event.accepted = true
         }
     }

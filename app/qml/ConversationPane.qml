@@ -91,7 +91,7 @@ Item {
         // keepGroups groups on each side get bodies; farther groups release
         // theirs together. A group is shown only after all of its loaded rows
         // are laid out, its height change is absorbed by keepAnchor() in one
-        // step, and scrolling never moves into rows that are not shown yet.
+        // step, so scrolling can advance through already prepared rows.
         property real groupScreens: 2.5
         property int keepGroups: 1
         property int activeFirst: 0
@@ -100,6 +100,8 @@ Item {
         property real reach: height * 0.25
         property bool anchoring: false
         property int blockedScrolls: 0
+        property real pendingWheelPixels: 0
+        property double lastWheelTime: 0
         property int urgentFirst: -1
         property int urgentLast: -2
         property bool forcing: false
@@ -219,11 +221,9 @@ Item {
             anchoring = false;
         }
         function settleGroups(above) {
-            // Show a group when every instantiated row in it has loaded. Rows
-            // beyond the instantiated range are off screen and join later.
-            // A group wholly above the screen changes the rows' heights above
-            // the reader, so it waits, laid out, until scrolling reaches it
-            // (above = true) and is then inserted with one position correction.
+            // Commit ready neighbors in the active conversation before the
+            // wheel reaches them. keepAnchor absorbs height changes above the
+            // reader while those rows are still outside the viewport.
             // A cached view that was shown and is now hidden keeps its groups
             // as they are: keepAnchor() does not correct a hidden view, so a
             // group above the reader that finished loading in the background
@@ -232,7 +232,7 @@ Item {
             if (!pane.messageModel || !count || (!pane.current && pane.initialized))
                 return;
             const model = pane.messageModel, map = slotMap(), slots = map.slots;
-            const top = above || followTail || restoring ? -1 : visibleRows(slots).first;
+            const top = pane.openAtBottom || above || followTail || restoring ? -1 : visibleRows(slots).first;
             // While the view follows the latest message, the last group keeps
             // receiving rows as the reply streams, so on a slow machine it is
             // rarely complete: waiting for it would hide the streaming row and
@@ -337,9 +337,8 @@ Item {
             return {upper: upper, lower: lower, above: above, below: below};
         }
         function finishGroup(row, step) {
-            // The reader reached a group that is still loading in the
-            // background: complete its remaining bodies now (Loader finishes
-            // an asynchronous load synchronously when asynchronous turns off).
+            // Complete the prepared group's remaining bodies when scrolling
+            // reaches its edge (a Loader finishes when asynchronous turns off).
             if (row < 0 || !pane.messageModel)
                 return;
             if (!itemAtIndex(row)) {
@@ -367,6 +366,7 @@ Item {
         function jumpToMessage(row) {
             if (row < 0 || row >= count)
                 return;
+            pendingWheelPixels = 0;
             beginBrowsing();
             chatSelection.clear();
             releaseGroups();
@@ -393,31 +393,36 @@ Item {
             pane.messageModel.requestRange(Math.max(0, count - 4), count - 1);
             restoreTimer.restart();
         }
-        function scrollBy(delta) {
+        function scrollBy(delta, wheel = false) {
             beginBrowsing();
+            const rapid = pane.openAtBottom && wheel && Math.abs(delta) >= height;
+            const now = Date.now();
+            // If readiness split a large wheel step, use its remainder on
+            // the next event in the same burst. A pause or reversal drops it.
+            const carry = rapid && now - lastWheelTime < 100 && pendingWheelPixels * delta > 0 ? pendingWheelPixels : 0;
+            lastWheelTime = rapid ? now : 0;
+            pendingWheelPixels = 0;
+            const distance = delta + carry;
             const top = originY;
             const bottom = Math.max(top, originY + contentHeight - height);
-            let target = Math.max(top, Math.min(bottom, contentY + delta));
-            // A page-sized move can cross several unloaded groups. Move over
-            // their estimated heights, then let the destination request its
-            // own rows. Small reading steps still keep filled rows in view.
-            if (!pane.openAtBottom || Math.abs(delta) < height) {
-                let limits = shownLimits();
-                const clamp = () => Math.max(Math.min(contentY, limits.upper), Math.min(target, Math.max(contentY, limits.lower - height)));
-                let allowed = clamp();
-                if (Math.abs(allowed - target) > 0.5) {
-                    finishGroup(delta < 0 ? limits.above : limits.below, delta < 0 ? -1 : 1);
-                    // Showing the group may have moved contentY to keep the anchor.
-                    target = Math.max(originY, Math.min(bottomY, contentY + delta));
-                    limits = shownLimits();
-                    allowed = clamp();
-                }
-                if (Math.abs(allowed - target) > 0.5 && blockedScrolls < 30) {
-                    target = allowed;
-                    blockedScrolls++;
-                } else {
-                    blockedScrolls = 0;
-                }
+            let target = Math.max(top, Math.min(bottom, contentY + distance));
+            // Advance through the prepared range so a stream of large wheel
+            // deltas keeps showing messages while another group is loaded.
+            let limits = shownLimits();
+            const clamp = () => Math.max(Math.min(contentY, limits.upper), Math.min(target, Math.max(contentY, limits.lower - height)));
+            let allowed = clamp();
+            if (Math.abs(allowed - target) > 0.5) {
+                finishGroup(delta < 0 ? limits.above : limits.below, delta < 0 ? -1 : 1);
+                // Showing the group may have moved contentY to keep the anchor.
+                target = Math.max(originY, Math.min(bottomY, contentY + distance));
+                limits = shownLimits();
+                allowed = clamp();
+            }
+            if (Math.abs(allowed - target) > 0.5 && blockedScrolls < 30) {
+                if (rapid)
+                    pendingWheelPixels = Math.sign(delta) * Math.min(Math.abs(delta), Math.abs(target - allowed));
+                target = allowed;
+                blockedScrolls++;
             } else {
                 blockedScrolls = 0;
             }
@@ -470,6 +475,7 @@ Item {
         function startBottom() {
             // Keep a retained pane's laid-out rows. Move to its up-to-date
             // tail after the composer and hint bars established the viewport.
+            pendingWheelPixels = 0;
             restoreTimer.stop();
             restoring = true;
             followTail = true;

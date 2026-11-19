@@ -562,8 +562,18 @@ ApplicationWindow {
                     if (!welcomeShown) currentPane.holding = true
                     currentPane.deactivate()
                 }
+                function park(pane) {
+                    pane.holding = false
+                    // Keep the conversation shell and model in the LRU. A
+                    // hidden ListView can otherwise retain native text nodes
+                    // and textures on top of the measured layout cache.
+                    if (!pane.current) {
+                        pane.renderReady = false
+                        pane.view.releaseGroups()
+                    }
+                }
                 function release() {
-                    if (heldPane) heldPane.holding = false
+                    if (heldPane) park(heldPane)
                     heldPane = null
                     heldWelcome = false
                 }
@@ -590,10 +600,10 @@ ApplicationWindow {
                         panes[key] = pane
                         retainedCount = Object.keys(panes).length
                     }
-                    if (heldPane && heldPane !== previous) heldPane.holding = false
+                    if (heldPane && heldPane !== previous && heldPane !== pane) park(heldPane)
                     heldPane = null
                     if (previous && previous !== pane && previous.holding) heldPane = previous
-                    else if (previous) previous.holding = false
+                    else if (previous && previous !== pane) park(previous)
                     pane.holding = false
                     heldWelcome = welcomeShown && previous !== pane
                     currentPane = pane
