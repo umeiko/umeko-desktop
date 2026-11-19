@@ -413,7 +413,7 @@ var strings = {
   "人，同一家供应商。可以放多个账号。别名，别忘。": "Human, same provider. Several accounts allowed. Aliases, remember.",
   "人，想换条路。点“分支”。旧记录，留着。": "Human, try another way. Click Branch. Old records stay.",
 "正在停止": "Stopping",
-"已请求停止": "Stop requested",
+"已请求停止": "Stopping · requested",
 "正在清理进程": "Cleaning up processes",
 "停止清理失败": "Stop cleanup failed",
 "停止清理超时": "Stop cleanup timed out",

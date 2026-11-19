@@ -25,8 +25,7 @@ class PiControllerMixin:
         if record.busy and record.action in ('prompt', 'widget-notify') and record.prompt_started is not None:
             elapsed = max(0, time.monotonic() - record.prompt_started)
             state = getattr(record, 'stop_state', '')
-            live_state = state if state in ('stop_requested', 'stopping') else 'stopping' if record.cancelled else 'running'
-            return {'state': live_state, 'elapsed': elapsed,
+            return {'state': 'stopping' if record.cancelled else 'running', 'stopStage': state, 'elapsed': elapsed,
                 'startedAt': (time.time() - elapsed) * 1000}
         saved = self.store.data['sessionMeta'].get(record.id, {}).get('lastTurn')
         if saved:
