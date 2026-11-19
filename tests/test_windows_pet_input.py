@@ -112,17 +112,49 @@ def run_native():
             assert imm.ImmReleaseContext(hwnd, context), 'IMM context release failed'
             evidence['snapshots'].append({'cycle': cycle, 'foregroundMatchesCapsule': True,
                                            'qtEditorFocused': True, 'immContextPresent': True})
+            def snapshot(label):
+                evidence['phase'] = label
+                evidence.setdefault('editorEvents', []).append({
+                    'order': len(evidence.get('editorEvents', [])), 'cycle': cycle,
+                    'phase': label, 'text': field.property('text'),
+                    'cursor': field.property('cursorPosition'),
+                    'selectionStart': field.property('selectionStart'),
+                    'selectionEnd': field.property('selectionEnd'),
+                    'composing': field.property('inputMethodComposing'),
+                    'dispatchCount': command.call_count})
+
+            # Real Windows input context may consume an actual IME Enter. A
+            # QTest key bypasses that path and can insert a paragraph separator.
+            # Test its no-dispatch guard separately from exact synthetic commit.
             field.setProperty('text', '')
+            snapshot('guard-before-preedit')
             QGuiApplication.sendEvent(native, QInputMethodEvent('合成预编辑', []))
             wait(lambda: field.property('inputMethodComposing'), 'Synthetic preedit not delivered')
+            snapshot('guard-preedit-delivered')
             count = command.call_count
             QTest.keyClick(native, Qt.Key_Return)
+            snapshot('guard-after-qtest-enter')
             assert command.call_count == count, 'Preedit Enter dispatched a task'
+            assert composer.property('visible'), 'Preedit Enter closed the capsule'
+            assert field.property('inputMethodComposing'), 'QTest Enter unexpectedly ended synthetic preedit'
+            QGuiApplication.sendEvent(native, QInputMethodEvent('', []))
+            wait(lambda: not field.property('inputMethodComposing'), 'Synthetic cancellation not delivered')
+            snapshot('guard-after-synthetic-cancel')
+
+            # Fresh composition without an intervening key: exact committed text
+            # remains a strict assertion, not stripped/normalized or weakened.
+            field.setProperty('text', '')
+            field.setProperty('cursorPosition', 0)
+            snapshot('commit-clean-editor')
+            QGuiApplication.sendEvent(native, QInputMethodEvent('合成预编辑', []))
+            wait(lambda: field.property('inputMethodComposing'), 'Commit preedit not delivered')
+            snapshot('commit-preedit-delivered')
             event = QInputMethodEvent()
             event.setCommitString('中文合成测试')
             QGuiApplication.sendEvent(native, event)
             wait(lambda: not field.property('inputMethodComposing'), 'Synthetic commit not delivered')
-            assert field.property('text') == '中文合成测试'
+            snapshot('commit-delivered-without-key')
+            assert field.property('text') == '中文合成测试', repr(field.property('text'))
             assert native.grabWindow().save(str(out / f'capsule-{cycle}.png'))
             QTest.keyClick(native, Qt.Key_Return)
             wait(lambda: not composer.property('visible'), 'Explicit Enter did not close capsule')
