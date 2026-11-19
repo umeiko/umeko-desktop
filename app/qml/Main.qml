@@ -541,6 +541,7 @@ ApplicationWindow {
                 property var panes: ({})
                 property var currentPane: null
                 property int retainedCount: 0
+                property string parkedTailKey: ""
                 // The previous pane (or the welcome page) stays visible until the
                 // newly activated pane has positioned its first screen.
                 property var heldPane: null
@@ -568,15 +569,24 @@ ApplicationWindow {
                     if (!welcomeShown) currentPane.holding = true
                     currentPane.deactivate()
                 }
+                function releaseBodies(pane) {
+                    pane.renderReady = false
+                    pane.view.releaseGroups()
+                }
                 function park(pane) {
                     pane.holding = false
-                    // Keep the conversation shell and model in the LRU. A
-                    // hidden ListView can otherwise retain native text nodes
-                    // and textures on top of the measured layout cache.
-                    if (!pane.current && !pane.view.followTail) {
-                        pane.renderReady = false
-                        pane.view.releaseGroups()
+                    if (pane.current) return
+                    if (!pane.view.followTail || !pane.renderReady) {
+                        releaseBodies(pane)
+                        return
                     }
+                    // Preserve the last tail for a quick return. More idle
+                    // views retain their models and measured layouts, while
+                    // Qt releases the native text nodes and textures.
+                    const previous = panes[parkedTailKey]
+                    if (previous && previous !== pane && !previous.current)
+                        releaseBodies(previous)
+                    parkedTailKey = pane.viewKey
                 }
                 function release() {
                     if (heldPane) park(heldPane)
@@ -596,6 +606,7 @@ ApplicationWindow {
                 }
                 function stage() {
                     const key = backend.conversationToken
+                    if (key === parkedTailKey) parkedTailKey = ""
                     const previous = currentPane
                     let pane = panes[key]
                     if (!pane) {
@@ -657,6 +668,7 @@ ApplicationWindow {
                     const pane = panes[key]
                     if (!pane) return
                     if (heldPane === pane) release()
+                    if (parkedTailKey === key) parkedTailKey = ""
                     if (currentPane === pane) currentPane = null
                     delete panes[key]
                     retainedCount = Object.keys(panes).length
