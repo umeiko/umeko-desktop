@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.impl
 import QtQuick.Layouts
 import QtQuick.Dialogs as NativeDialogs
+import "../../../app/qml" as Umeko
 Rectangle {
     id: root
     objectName: "globalAgentsPage"
@@ -411,7 +412,15 @@ Rectangle {
                 Rectangle {
                     Layout.fillWidth:true;implicitHeight:Math.min(180,Math.max(88,input.contentHeight+24));radius:14;color:root.c.bg;border.color:input.activeFocus?root.c.accent:root.c.line
                     ScrollView {anchors.fill:parent;anchors.margins:10;clip:true
-                        TextArea {id:input;objectName:"globalAgentInput";placeholderText:root.current.busy?"补充或引导当前任务…":"输入任务…";color:root.c.ink;placeholderTextColor:root.c.muted;selectionColor:root.c.accent;selectedTextColor:"white";wrapMode:TextArea.Wrap;font.pixelSize:14*root.sdk.scale;background:null;Keys.onPressed:event=>{if((event.key===Qt.Key_Return || event.key===Qt.Key_Enter) && !input.inputMethodComposing && !(event.modifiers&Qt.ShiftModifier)){root.send();event.accepted=true}}}
+                        Umeko.ChatInput {
+                            id: input; objectName: "globalAgentInput"
+                            placeholderText: root.current.busy ? "补充或引导当前任务…" : "输入任务…"
+                            color: root.c.ink; placeholderTextColor: root.c.muted
+                            selectionColor: root.c.accent; selectedTextColor: "white"
+                            selectByMouse: true; wrapMode: TextArea.Wrap
+                            font.pixelSize: 14*root.sdk.scale; background: null
+                            onSubmitted: root.send()
+                        }
                     }
                 }
                 }
@@ -424,7 +433,7 @@ Rectangle {
                     }
                     SmallButton {visible:root.current.busy || root.state.requests.some(row=>!(["completed","failed","cancelled","interrupted"].includes(row.status)) && row.source==="agent:"+root.selected);text:"停止";dangerous:true;onClicked:root.call("stop",{id:root.selected})}
                     Item {Layout.fillWidth:true}
-                    LabelText {text:"Shift + Enter 换行";font.pixelSize:10*root.sdk.scale;color:root.c.muted}
+                    LabelText {text:Umeko.I18n.t("Ctrl+Enter / Alt+Enter / Shift+Enter 换行");font.pixelSize:10*root.sdk.scale;color:root.c.muted}
                     SmallButton {objectName:"sendGlobalAgentButton";text:root.current.busy?"引导":"发送";primary:true;enabled:!!input.text.trim();onClicked:root.send()}
                 }
             }

@@ -6,6 +6,7 @@ work=tempfile.TemporaryDirectory(prefix='umeko-global-ui-');base=Path(work.name)
 os.environ.update(UMEKO_DATA_DIR=str(base/'profile'),PI_CODING_AGENT_DIR=str(base/'agent'),UMEKO_LANGUAGE='zh',QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software')
 from PySide6.QtCore import QObject,Qt
 from PySide6.QtTest import QTest
+from chat_input_keys import check_newline_and_ime
 from app.storage import Store
 from app.integration import Completion
 from app.pi_runtime import verify_runtime, RELEASE_NAME
@@ -115,7 +116,11 @@ try:
     click('confirmGlobalAgentApproval')
     assert not coordinator.approval
     b.setToolPermissionMode('ask')
-    find('globalAgentInput').setProperty('text','coordinate '+target);click('sendGlobalAgentButton')
+    input_field=find('globalAgentInput')
+    call_count=len(fixture.calls)
+    check_newline_and_ime(window,input_field)
+    assert len(fixture.calls)==call_count
+    input_field.setProperty('text','coordinate '+target);QTest.keyClick(window,Qt.Key_Return)
     wait(lambda:fixture.pause_started.is_set(),'Native model did not reach pending interval')
     assert sum(row['role']=='user' and row['text']=='coordinate '+target for row in coordinator.messages)==1,'Native echo duplicated the user message before reply'
     wait(lambda:sum(row['role']=='user' for row in [g.presentation.displayMessage(i) for i in range(g.presentation.messageCount)])==1,'Pending user message missing from Widget')

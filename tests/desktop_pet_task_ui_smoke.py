@@ -17,6 +17,7 @@ from PySide6.QtGui import QGuiApplication, QInputMethodEvent
 from PySide6.QtQml import QQmlEngine, QQmlExpression
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QSystemTrayIcon
+from chat_input_keys import check_newline_and_ime
 from shiboken6 import isValid
 QSystemTrayIcon.show = lambda *args: None
 from main import create_application
@@ -86,7 +87,8 @@ try:
              + str((native.metaObject().className(), native.width(), native.height(),
                     composer.property('width'), evaluate(composer, 'contentItem.width'))))
         assert native.width()/native.height()>7, 'Composer is no longer a slim input strip'
-        assert 0 < field.x() < field.x()+field.width() < send.x() < send.x()+send.width() < native.width(), 'Input or send button is clipped'
+        field_left = field.mapToScene(QPointF()).x()
+        assert 0 < field_left < field_left+field.width() < send.x() < send.x()+send.width() < native.width(), 'Input or send button is clipped'
         assert abs(send.y()+send.height()/2-native.height()/2)<.5
         assert send.width()==send.height(), 'Send key must remain circular'
         assert abs(send.x()+send.width()/2-(native.width()-native.height()/2))<.5, 'Send key is not concentric with the capsule end'
@@ -95,6 +97,8 @@ try:
     native = open_composer(verify_motion=True)
     assert field.property('placeholderText') == ''
     assert not send.property('enabled'), 'Empty input can be sent'
+    check_newline_and_ime(native, field)
+    assert not command.called
     first = window.findChild(QObject, 'desktopPetAnimation').property('currentFrame')
     wait(lambda: window.findChild(QObject, 'desktopPetAnimation').property('currentFrame') != first,
          'Opening task input stopped the animation')
