@@ -525,7 +525,8 @@ Item {
                 advanceScroll(delta, false);
                 return;
             }
-            if (!scrollDirection || restoring || followTail)
+            const starting = !scrollDirection || restoring || followTail;
+            if (starting)
                 beginBrowsing();
             const now = Date.now();
             if (now - lastWheelTime > scrollIdle.interval || scrollDirection * delta < 0)
@@ -538,8 +539,13 @@ Item {
             pendingWheelPixels = scrollDirection * distance;
             // A small step can use the ready rows immediately. Further steps
             // behind a pending boundary wait for the per-frame layout budget.
-            if (!waiting && Math.abs(delta) <= height)
+            if (!waiting && Math.abs(delta) <= height) {
+                // Entering browse mode activates the directional display
+                // margin. Read its new row positions before moving into it.
+                if (starting)
+                    forceLayout();
                 advanceScroll(delta, true);
+            }
             scrollIdle.restart();
             scheduleRange();
         }
