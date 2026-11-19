@@ -1,11 +1,12 @@
 """Route native Pi events to their owning session, independently of the view."""
 from .pi_capabilities import merge_resources,from_legacy
 import copy
+import logging
 import re
 import time
 import uuid
 from pathlib import Path
-from PySide6.QtCore import QProcess
+from PySide6.QtCore import QProcess, QTimer
 
 from .pi_runtime import node_executable
 from .webview import configuration as webview_configuration
@@ -13,13 +14,19 @@ from .transcripts import tool_view, compaction_view, compaction_status
 from .message_attachments import attachment_prompt, split_attachments
 from .model_reasoning import reconcile_effort
 
+log = logging.getLogger(__name__)
+STOP_RECEIPT_DEADLINE_MS = 2750
+STOP_TERMINAL = {'done': 'stopped', 'failed': 'stop_failed', 'timed_out': 'stop_timed_out'}
+
 
 class PiControllerMixin:
     def _turn_status(self, record):
         """Execution is live only in this process; terminal UI metadata survives reopening."""
         if record.busy and record.action in ('prompt', 'widget-notify') and record.prompt_started is not None:
             elapsed = max(0, time.monotonic() - record.prompt_started)
-            return {'state': 'stopping' if record.cancelled else 'running', 'elapsed': elapsed,
+            state = getattr(record, 'stop_state', '')
+            live_state = state if state in ('stop_requested', 'stopping') else 'stopping' if record.cancelled else 'running'
+            return {'state': live_state, 'elapsed': elapsed,
                 'startedAt': (time.time() - elapsed) * 1000}
         saved = self.store.data['sessionMeta'].get(record.id, {}).get('lastTurn')
         if saved:
@@ -34,8 +41,12 @@ class PiControllerMixin:
     def _finish_turn(self, record, failed=False):
         if record.action not in ('prompt', 'widget-notify') or record.prompt_started is None:
             return
-        status = {'state': 'stopped' if record.cancelled else 'failed' if failed or record.failed else 'finished',
+        stop_state = getattr(record, 'stop_state', '')
+        state = stop_state if stop_state in STOP_TERMINAL.values() else 'stopped' if record.cancelled else 'failed' if failed or record.failed else 'finished'
+        status = {'state': state,
             'elapsed': max(0, time.monotonic() - record.prompt_started)}
+        if getattr(record, 'stop_detail', ''):
+            status['detail'] = record.stop_detail
         plugins = getattr(self, '_desktop_plugins', None)
         helper = getattr(getattr(plugins, '_pet', None), 'assistant', None)
         if helper: helper.completed(record, status)
@@ -141,6 +152,8 @@ class PiControllerMixin:
             return False
         record = record or self._view
         from .plugin_sessions import apply_session_policy
+        if action == 'widget-notify' and record.cancelled:
+            return False
         try:
             plugin_policy = apply_session_policy(self, record)
         except (OSError, ValueError) as error:
@@ -160,6 +173,7 @@ class PiControllerMixin:
             self._pool.retire(record)
         self._reconcile_reasoning(record)
         record.action, record.failed, record.cancelled = action, False, False
+        record.stop_token = record.stop_state = record.stop_detail = ''
         record.pet_activity = 'thinking'
         record.prompt_started = time.monotonic() if action in ('prompt','widget-notify') else None
         record.phase = "loading" if not record.process else "running" if action in ("prompt", "compact", "widget-notify") else "working"
@@ -240,6 +254,11 @@ class PiControllerMixin:
             return False
         if (not text and not record.attachments) or (record.busy and record.phase != "running"):
             return False
+        if record.busy and getattr(record, 'stop_token', ''):
+            if record.prompt_after_stop is not None:
+                return False
+            record.prompt_after_stop = (text, steering)
+            return True
         if not record.busy:
             self._apply_pending_selection(record)
         images = [{"type": "image", "data": item["data"], "mimeType": item["mime"]} for item in record.attachments if item["kind"] == "image"]
@@ -332,6 +351,27 @@ class PiControllerMixin:
         kind, visible = event.get("type"), record is self._view
         if kind == 'system_prompt':return  # The built-in page host owns this reply.
         if kind=='widget_delivery':return  # WidgetChannel observes the same pool event.
+        if kind == 'bash_cleanup':
+            log.info('Bash cleanup session=%s run=%s call=%s pid=%s ppid=%s reason=%s state=%s remaining=%s',
+                     *(event.get(key) for key in ('sessionId', 'runId', 'toolCallId', 'pid', 'ppid', 'reason', 'state', 'remaining')))
+            return
+        if kind == 'stop_state':
+            if not getattr(record, 'stop_token', ''):
+                return
+            state = event.get('state')
+            if state == 'cleaning':
+                record.stop_state = 'stopping'
+            elif state in STOP_TERMINAL:
+                record.stop_state = STOP_TERMINAL[state]
+                remaining = ', '.join(str(pid) for pid in event.get('remaining') or [])
+                if remaining:
+                    record.stop_detail = f'剩余进程 PID：{remaining}'
+                elif event.get('unconfirmed'):
+                    record.stop_detail = '未能确认剩余进程'
+                if visible and record.stop_detail:
+                    self.toast.emit(record.stop_detail)
+            self.chatChanged.emit()
+            return
         if getattr(record, "task_attempt", 0):
             self._task_records.observe(record, event)
         if kind == "task_delivery":
@@ -596,6 +636,9 @@ class PiControllerMixin:
             if visible:
                 self.retryChanged.emit()
             was_busy = record.busy
+            if getattr(record, 'stop_token', '') and record.stop_state not in STOP_TERMINAL.values():
+                record.stop_state = 'stop_failed'
+                record.stop_detail = '未能确认剩余进程'
             long_running = record.prompt_started is not None and time.monotonic() - record.prompt_started > 180
             if record.task_attempt:
                 self._task_records.end_turn(record, exited=kind == "exit")
@@ -605,6 +648,15 @@ class PiControllerMixin:
                 self._restore_queued(record, [row["text"] for row in record.queue])
                 record.queue = []
             record.phase, record.tool_status, record.approval = "idle", "", {}
+            if getattr(record, 'stop_token', ''):
+                record.stop_token = ''
+                pending, record.prompt_after_stop = record.prompt_after_stop, None
+                if pending is not None:
+                    def send_after_stop():
+                        text, steering = pending
+                        if record is not self._view or not self._send(text, steering):
+                            self._restore_queued(record, [text])
+                    QTimer.singleShot(0, send_after_stop)
             self._apply_pending_selection(record)
             if kind == "done":
                 self._subagents.process_ready(record)
@@ -650,11 +702,23 @@ class PiControllerMixin:
 
     def _stop(self):
         record = self._view
-        if record.phase == "running":
+        if record.phase == "running" and not record.cancelled:
             record.cancelled = True
+            token = uuid.uuid4().hex
+            record.stop_token, record.stop_state = token, 'stop_requested'
             record.network_retry = {}
             self.retryChanged.emit()
             self._pool.write(record, {"type": "abort"})
             record.approval = {}
             self.approvalChanged.emit()
             self.chatChanged.emit()
+
+            def finish_unresponsive_stop():
+                if self._closing or record.stop_token != token:
+                    return
+                if record.stop_state not in STOP_TERMINAL.values():
+                    self._handle_pi_event(record, {'type': 'stop_state', 'state': 'timed_out', 'unconfirmed': True})
+                self._pool.retire(record)
+                self._handle_pi_event(record, {'type': 'exit'})
+
+            QTimer.singleShot(STOP_RECEIPT_DEADLINE_MS, finish_unresponsive_stop)
