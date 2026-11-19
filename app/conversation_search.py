@@ -222,6 +222,8 @@ class ConversationSearch(QAbstractListModel):
     def open(self, row):
         hit = self.item(row)
         if hit.get('kind') != 'match': return
+        self._jump_token -= 1
+        self._jump = None
         if hit.get('file') and not Path(hit['file']).is_file():
             self.controller.toast.emit('原消息已不可用，请刷新搜索'); self.jumpReady.emit(-1, ''); return
         self._jump = hit
@@ -229,7 +231,6 @@ class ConversationSearch(QAbstractListModel):
         if record and record.loaded and not (record.transcript and record.transcript.partial):
             self._finish_jump()
         else:
-            self._jump_token -= 1
             self.controller.sessionPreview.prepare(hit['sessionId'], self._jump_token, recent=False)
 
     def _prepared(self, token, ok):
@@ -245,6 +246,7 @@ class ConversationSearch(QAbstractListModel):
         self.controller._activate(record)
         target = self.controller._chat_model.row_for_entry(hit['entryId'])
         if target < 0: self.controller.toast.emit('原消息已不可用，请刷新搜索')
+        else: self.controller._chat_model.requestRange(target, target)
         self.jumpReady.emit(target, hit['entryId'])
 
     def retire(self):

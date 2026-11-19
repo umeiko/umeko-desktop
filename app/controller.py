@@ -25,7 +25,7 @@ from .integration import load_adapter, UnconfiguredAdapter
 from .pi_runtime import PACKAGE, RELEASE_NAME, CREATE_NO_WINDOW, installed_version, node_executable, npm_command, project_runtime, verify_runtime
 from .npm_config import npm_environment
 from .storage import Store
-from .pi_sessions import PiSessionPool, SessionState, clean_extension_modes, clean_skill_modes, clean_blocked_tools, saved_viewport
+from .pi_sessions import PiSessionPool, SessionState, clean_extension_modes, clean_skill_modes, clean_blocked_tools
 from .controller_runtime import PiControllerMixin
 from .dsh_backend import DshControllerMixin, is_dsh
 from .transcripts import preview
@@ -262,13 +262,14 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._pool.touch(self._view, current=True)
         self._pool.event.connect(self._handle_pi_event)
         from .conversation_views import ConversationViews
-        self._conversation_views = ConversationViews(self)
+        self._conversation_views = ConversationViews(self, capacity=24)
         self._conversation_views.evicted.connect(self.conversationEvicted)
-        self._pool.bodyDiscarded.connect(self._conversation_views.discard)
+        self._view_open_generation = 0
+        self._stage_first_frame = False
         self._chat_model = self._conversation_views.select(self._view.key)
         self._streaming_timer = QTimer(self)
         self._streaming_timer.setSingleShot(True)
-        self._streaming_timer.setInterval(24)
+        self._streaming_timer.setInterval(50)
         self._streaming_timer.timeout.connect(self._publish_stream)
         self._pi_warmup = QTimer(self)
         self._pi_warmup.setSingleShot(True)
@@ -435,18 +436,18 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
             model=self.store.data["selectedModel"], provider=self.store.data["selectedProvider"], greeting=self._welcome_greetings.pop(), portrait=self._welcome_portraits.pop())
 
     def _activate(self, record):
-        self._cancel_pi_warmup()
+        self._session_preview.cancel()
         previous = self._view
         if previous is not record and previous.speculative and not self._pool.protected(previous):
             self._pool.retire(previous)
-        if record is not self._view and hasattr(self, '_recent_history'):
-            self._recent_history.leaving(self._view)
         self._streaming_timer.stop()
         self.viewAboutToChange.emit()
         previous_approval = self._dangerous_allowed(self._view)
         previous_configuration = {key: self.store.data.get(key) for key in ("workspace", "activeProject", "selectedProvider", "selectedModel")}
         self._view = record
-        model = self._conversation_views.select(record.key)
+        record.scroll_index, record.scroll_y, record.follow_tail = -1, 0.0, True
+        self._view_open_generation += 1
+        model = self._conversation_views.select(record.key, self._view_open_generation, staged=self._stage_first_frame)
         if model is not self._chat_model:
             self._chat_model = model
             self.messageModelChanged.emit()
@@ -481,14 +482,16 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if previous_approval != self._dangerous_allowed(record) or any(self.store.data.get(key) != value for key, value in previous_configuration.items()):
             self.changed.emit()
         self.chatChanged.emit()
-        self.viewChanged.emit()
-        self.agentResourcesChanged.emit()
         self.attachmentsChanged.emit()
         self.approvalChanged.emit()
         self.editorText.emit(record.draft)
         self.contextUsageChanged.emit()
         self.reasoningChanged.emit()
         self.retryChanged.emit()
+        self.viewChanged.emit()
+        self.agentResourcesChanged.emit()
+        if record.transcript is not None and record.transcript.partial:
+            self._recent_history.complete(record)
 
         # Reopening a crashed cached kernel uses the existing recovery command.
         if record.crashed and not self._pool.protected(record):
@@ -511,7 +514,14 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         active = frozenset({self._view.compaction_event_id}) if self._view.process and self._view.compaction_running else frozenset()
         if self._view.transcript and self._view.transcript.active_compactions != active:
             self._view.transcript = replace(self._view.transcript, active_compactions=active)
-        self._chat_model.set_snapshot(self._view.transcript)
+        old_snapshot, snapshot = self._chat_model.snapshot, self._view.transcript
+        if not (snapshot is not None and old_snapshot is not None
+                and snapshot.database == old_snapshot.database
+                and snapshot.prefix_revision == old_snapshot.revision
+                and snapshot.active_compactions == old_snapshot.active_compactions
+                and snapshot.prefix_rows
+                and self._chat_model.reconcile_snapshot(snapshot, snapshot.prefix_rows)):
+            self._chat_model.set_snapshot(snapshot)
         dirty = self._view.projection_dirty_from
         if dirty is None and self._stream_projection:
             dirty = max(0, len(self._view.messages) - 1)
@@ -540,15 +550,21 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def saveViewport(self, index, position, follow):
         if index < 0:
             return
+        # Only the active view needs this anchor for geometry changes and
+        # access to earlier history. Opening a session always starts at the end.
         self._view.scroll_index, self._view.scroll_y, self._view.follow_tail = index, position, follow
-        # Rows of a partial history are not rows of the complete index.
-        partial = self._view.transcript is not None and self._view.transcript.partial
-        if self._view.id and self._view.file and not (partial and not follow):
-            meta = self.store.data['sessionMeta'].setdefault(self._view.id, {})
-            viewport = {'row':index, 'offset':max(0, position), 'follow':follow}
-            if meta.get('viewport') != viewport:
-                meta['viewport'] = viewport
-                self._viewport_save.start()
+
+    @Slot(str, float)
+    def recordConversationImages(self, key, size):
+        self._conversation_views.set_images(key, max(0, int(size)))
+
+    @Slot(result=float)
+    def conversationCacheBytes(self):
+        return self._conversation_views.retained_bytes()
+
+    @Slot()
+    def enableFirstFrameStaging(self):
+        self._stage_first_frame = True
 
     def _mark_read(self, record):
         if record.id and self._chat_visible:
@@ -2164,7 +2180,6 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if record is None:
             record = self._new_view(session.get("workspace", ""))
             record.id, record.file, record.title = session_id, session.get("file", ""), session["title"]
-            record.scroll_index, record.scroll_y, record.follow_tail = saved_viewport(self.store.data['sessionMeta'].get(session_id, {}))
             record.extension_modes = clean_extension_modes(self.store.data["sessionMeta"].get(session_id, {}).get("extensionModes"))
             record.skill_modes = clean_skill_modes(self.store.data["sessionMeta"].get(session_id, {}).get("skillModes"))
             record.blocked_tools = clean_blocked_tools(self.store.data["sessionMeta"].get(session_id, {}).get("blockedTools"))

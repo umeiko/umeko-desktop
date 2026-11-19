@@ -9,6 +9,10 @@ Item {
     property var dataSource: backend
     property bool retainedView: false
     property bool sessionActive: true
+    property int renderGeneration: 0
+    property double decodedImageBytes: 0
+    // Images report deltas, so loading/eviction never walks the visual tree.
+    function adjustDecodedImageBytes(delta) { decodedImageBytes = Math.max(0, decodedImageBytes + delta) }
     function openLinkMenu(source, info, x, y) {
         sharedLinkMenu.link = info
         const point = source.mapToItem(root, x, y)
@@ -294,7 +298,13 @@ Item {
         }
         onWheel: event => {
             const delta = event.pixelDelta.y || event.angleDelta.y / 120 * 60
-            if (delta) { root.view.scrollBy(-delta); if (root.dragging) root.extend() }
+            if (delta) {
+                if (!root.dragging && typeof root.view.scrollWheel === "function")
+                    root.view.scrollWheel(-delta)
+                else
+                    root.view.scrollBy(-delta)
+                if (root.dragging) root.extend()
+            }
             event.accepted = true
         }
     }

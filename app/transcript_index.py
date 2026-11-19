@@ -261,6 +261,8 @@ class Snapshot:
     origin: str = ''
     # The partial snapshot whose rows this complete snapshot ends with.
     extends: object = None
+    prefix_revision: int = -1
+    prefix_rows: int = 0
 
     def matches_source(self):
         try:
@@ -688,15 +690,25 @@ class TranscriptRepository:
                         WHERE edit.omitted!='')) ORDER BY e.num''')
                 db.executemany('INSERT INTO native(pos,id) VALUES(?,?)', enumerate(row[0] for row in cursor))
                 rebuild = 0
+            stable_rows = db.execute('SELECT COUNT(*) FROM display WHERE last_native<?', (rebuild,)).fetchone()[0] if append else 0
+            # The index projects the last assistant group again even on a
+            # simple append. Preserve its delegates if the new rows match.
+            old_tail = db.execute('SELECT * FROM display WHERE seq>=? ORDER BY seq LIMIT 2', (stable_rows,)).fetchall() if append else ()
             db.execute('DELETE FROM display WHERE last_native>=?', (rebuild,))
             db.execute('DELETE FROM questions WHERE row >= (SELECT COUNT(*) FROM display)')
             self._project(db, file, cwd, rebuild, cancelled)
+            for old in old_tail:
+                new_row = db.execute('SELECT * FROM display WHERE seq=?', (stable_rows,)).fetchone()
+                if new_row is None or tuple(old) != tuple(new_row):
+                    break
+                stable_rows += 1
             count = db.execute('SELECT COUNT(*) FROM display').fetchone()[0]
             native_count = db.execute('SELECT COUNT(*) FROM native').fetchone()[0]
             question_count = db.execute('SELECT COUNT(*) FROM questions').fetchone()[0]
             values = {'schema': SCHEMA, 'identity': signature, 'offset': offset, 'size': stat.st_size, 'mtime': stat.st_mtime_ns,
                       'tail': tail, 'latest': latest, 'leaf': leaf, 'cwd': cwd, 'count': count, 'native_count': native_count,
-                      'question_count': question_count, 'revision': previous_revision + 1}
+                      'question_count': question_count, 'revision': previous_revision + 1,
+                      'prefix_revision': previous_revision if append else -1, 'prefix_rows': stable_rows}
             db.executemany('INSERT OR REPLACE INTO meta VALUES(?,?)', ((k, str(v)) for k, v in values.items()))
             db.commit()
             return self._snapshot(file, database, values, parsed)
@@ -709,7 +721,8 @@ class TranscriptRepository:
     def _snapshot(self, file, database, meta, parsed):
         with connect(database) as db:
             metadata = tuple((sys.intern(row[0]), row[1], bool(row[2])) for row in db.execute('SELECT role,hint,continuation FROM display ORDER BY seq'))
-        return Snapshot(self, str(file), str(database), int(meta['revision']), int(meta['count']), int(meta['native_count']), int(meta['question_count']), meta.get('leaf', ''), parsed, int(meta['size']), int(meta['mtime']), row_metadata=metadata)
+        return Snapshot(self, str(file), str(database), int(meta['revision']), int(meta['count']), int(meta['native_count']), int(meta['question_count']), meta.get('leaf', ''), parsed, int(meta['size']), int(meta['mtime']), row_metadata=metadata,
+                        prefix_revision=int(meta.get('prefix_revision', -1)), prefix_rows=int(meta.get('prefix_rows', 0)))
 
     def _project(self, db, file, cwd, start, cancelled):
         seq = db.execute('SELECT COUNT(*) FROM display').fetchone()[0]

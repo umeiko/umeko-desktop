@@ -35,7 +35,8 @@ Rectangle {
         running: root.waitingForContent
         onTriggered: {
             root.frames++
-            if (root.frames >= 2 && !root.contentHeld && (!root.view || !root.view.restoring)) {
+            if (root.frames >= 2 && !root.contentHeld
+                    && (!root.view || !root.view.restoring || root.view.firstScreenPositioned)) {
                 if (root.view) root.view.forceLayout()
                 // The finished conversation replaces the cover in one frame.
                 root.finish()
