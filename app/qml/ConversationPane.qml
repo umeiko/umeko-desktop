@@ -1444,14 +1444,19 @@ Item {
                 anchors.fill: parent
                 visible: !rowShell.bodyReady && rowShell.wanted
                 Loader {
-                    objectName: "historyLoading_" + rowShell.index
+                    id: loadingIndicator
+                    readonly property string spinnerName: "historyLoading_" + rowShell.index
+                    objectName: active ? "" : spinnerName
                     active: parent.visible && !rowShell.modelData._loadError
                         && rowShell.y + rowShell.height > conversation.contentY
                         && rowShell.y < conversation.contentY + conversation.height
                     visible: active
                     x: 33
                     y: 16
-                    sourceComponent: ActivitySpinner { running: pane.current }
+                    sourceComponent: ActivitySpinner {
+                        objectName: loadingIndicator.spinnerName
+                        running: pane.current
+                    }
                 }
                 Loader {
                     active: parent.visible && !!rowShell.modelData._loadError
