@@ -4,7 +4,8 @@ from pathlib import Path
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 temporary=tempfile.TemporaryDirectory(prefix='pet-agent-entry-');base=Path(temporary.name)
-os.environ.update(UMEKO_DATA_DIR=str(base/'profile'),PI_CODING_AGENT_DIR=str(base/'agent'),QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software',UMEKO_LANGUAGE='zh')
+language=os.environ.get('UMEKO_PET_ENTRY_LANGUAGE','zh')
+os.environ.update(UMEKO_DATA_DIR=str(base/'profile'),PI_CODING_AGENT_DIR=str(base/'agent'),QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software',UMEKO_LANGUAGE=language)
 from PySide6.QtCore import QObject,QPointF,Qt
 from PySide6.QtTest import QTest
 from PySide6.QtGui import QInputMethodEvent
@@ -16,7 +17,7 @@ from main import create_application
 app,engine,b=create_application();main=engine.rootObjects()[0];warnings=[]
 engine.warnings.connect(lambda errors:warnings.extend(e.toString() for e in errors))
 m=b.desktopPlugins;pet=m.pet;entry=pet.agentEntry;bus=m.global_agents
-out=ROOT/'build/pet-agent-entry';out.mkdir(parents=True,exist_ok=True)
+out=ROOT/'build/pet-agent-entry'/language;out.mkdir(parents=True,exist_ok=True)
 def wait(check,label):
     for _ in range(1200):
         QTest.qWait(20)
@@ -84,32 +85,32 @@ try:
     QTest.keyClick(window,Qt.Key_Escape)
     assert not entry.opened and entry.body=='检查本次构建，不连接任何新项目。'
     entry.open();QTest.qWait(40)
-    window.grabWindow().save(str(out/'cancel-restored-zh.png'))
+    window.grabWindow().save(str(out/f'cancel-restored-{language}.png'))
     click(window,'petAgentSubmit');assert entry.preview
-    assert window.grabWindow().save(str(out/'preview-zh.png'))
+    assert window.grabWindow().save(str(out/f'preview-{language}.png'))
     # Busy-at-confirm race must not append or interrupt, and must keep text.
     record.busy=True
     with patch.object(b,'_command_pi') as dispatch:
         click(window,'petAgentSubmit');dispatch.assert_not_called()
     record.busy=False
     assert entry.body=='检查本次构建，不连接任何新项目。' and not entry.attempted
-    assert window.grabWindow().save(str(out/'busy-preserved-zh.png'))
+    assert window.grabWindow().save(str(out/f'busy-preserved-{language}.png'))
     record.approval={'id':'synthetic-approval'}
     click(window,'petAgentSubmit')
     assert not entry.preview and record.approval=={'id':'synthetic-approval'}
-    window.grabWindow().save(str(out/'approval-preserved-zh.png'))
+    window.grabWindow().save(str(out/f'approval-preserved-{language}.png'))
     record.approval=None
     removed=bus.agents.pop(target_id)
     click(window,'petAgentSubmit')
     assert not entry.preview and entry.body
-    window.grabWindow().save(str(out/'removed-preserved-zh.png'))
+    window.grabWindow().save(str(out/f'removed-preserved-{language}.png'))
     bus.agents[target_id]=removed
     click(window,'petAgentSubmit')
     with patch.object(b,'_command_pi',return_value=False) as dispatch:
         click(window,'petAgentSubmit')
         assert dispatch.call_count==1 and entry.body and entry.attempted
         entry.confirm();assert dispatch.call_count==1
-    window.grabWindow().save(str(out/'failed-preserved-zh.png'))
+    window.grabWindow().save(str(out/f'failed-preserved-{language}.png'))
     entry.select(target_id) # Deliberate new selection, not an automatic retry.
     click(window,'petAgentSubmit');assert entry.preview
     click(window,'petAgentSubmit');assert entry.attempted
@@ -118,13 +119,13 @@ try:
     assert not speech,'non-default response leaked into companion speech'
     assert b._view is before and before.draft=='主窗口保留草稿' and before.attachments[0]['name']=='synthetic.txt'
     assert pet.assistantStatus['id']==default_id and bus.bridges==bridges
-    assert window.grabWindow().save(str(out/'submitted-zh.png'))
+    assert window.grabWindow().save(str(out/f'submitted-{language}.png'))
     click(window,'petAgentOpenDesktop')
     wait(lambda:bus.selected_conversation==target_id,'exact Global Agents conversation')
     assert m.page['id']=='global-agents'
     assert find(main,'globalAgentInput').property('text')=='目标原会话未发草稿'
     QTest.qWait(1200) # Let the existing drawer animation and message refresh settle.
-    main.grabWindow().save(str(out/'target-conversation-zh.png'))
+    main.grabWindow().save(str(out/f'target-conversation-{language}.png'))
     # Explicit close/reopen never replays the accepted task.
     entry.close();entry.open();assert entry.attempted and not entry.body
     relevant=[x for x in warnings if any(n in x for n in ('PetAgentEntry','ReferenceError','TypeError','binding loop'))]

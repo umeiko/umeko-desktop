@@ -128,6 +128,17 @@ class PreferencesTests(unittest.TestCase):
                 if text not in dictionary:missing.append((path.name,text))
         self.assertEqual(missing,[])
 
+    def test_pet_agent_dynamic_notices_have_english_entries(self):
+        root=Path(__file__).resolve().parents[1]
+        raw=(root/'app/qml/english.js').read_text(encoding='utf-8')
+        dictionary=json.loads(raw[raw.index('{'):])
+        source=ast.parse((root/'app/pet_agent_entry.py').read_text(encoding='utf-8'))
+        notices={node.value for node in ast.walk(source)
+                 if isinstance(node,ast.Constant) and isinstance(node.value,str)
+                 and re.search(r'[\u4e00-\u9fff]',node.value)}
+        self.assertTrue(notices)
+        self.assertEqual(sorted(notices-dictionary.keys()),[])
+
     def test_migration_keeps_source_and_remaps_only_managed_paths(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve(); old = root/'old'; new = root/'home/.umeko/desktop'
