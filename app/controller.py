@@ -74,6 +74,16 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     agentResourcesChanged = Signal()
     appearanceChanged = Signal()
     characterCatalogChanged = Signal()
+    desktopSettingsChanged = Signal()
+    auxiliaryVisionSettingsChanged = Signal()
+
+    @Property('QVariantMap', notify=desktopSettingsChanged)
+    def desktopSettings(self):
+        return dict(self.store.data['desktop'])
+
+    @Property('QVariantMap', notify=auxiliaryVisionSettingsChanged)
+    def auxiliaryVisionSettings(self):
+        return dict(self.store.data['auxiliaryVision'])
 
     @Property('QVariantList', notify=characterCatalogChanged)
     def characterPacks(self):
@@ -103,7 +113,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     def lineSpacing(self):
         return self.store.data['ui']['lineSpacing']
 
-    @Property(bool, notify=changed)
+    @Property(bool, notify=desktopSettingsChanged)
     def webviewAvailable(self):
         from .webview import configuration
         return configuration(self.store.data.get('desktop'))['available']
@@ -131,7 +141,6 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     toast = Signal(str)
     requestDetailsRequested = Signal(str)
     webRequested = Signal(str, str)
-    desktopSettingsChanged = Signal()
     documentRequested = Signal(str, str, str)
     widgetDocumentRequested = Signal(str, str, str, str)
     taskFinished = Signal(str, str, bool, bool)
@@ -211,6 +220,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self._app_about = AppAbout(self)
         self.store = Store()
         self.store.external_change = self._settings_changed_externally
+        # Provider changes and externally merged settings still refresh these
+        # small views. A local switch only emits its own section's notification.
+        self.changed.connect(self.desktopSettingsChanged)
+        self.changed.connect(self.auxiliaryVisionSettingsChanged)
         self._init_dsh()
         from .login_session import LoginStartupSettings
         self._login_startup = LoginStartupSettings(self, background='--login-startup' in sys.argv)
@@ -236,6 +249,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         self.adapter = load_adapter(self.store.directory)
         self._provider_plugins = ProviderPlugins(self)
         self.gateway = Gateway(self.store, self.adapter, self._provider_plugins)
+        self.gateway.diagnostics.changed.connect(self.changed.emit)
         self.private_token = secrets.token_urlsafe(40)
         self.private_server = LocalServer(self.gateway, 0, self.private_token, private=True)
         self.public_server = None
@@ -448,14 +462,16 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         available = [(p["id"], m["alias"]) for p in self.store.data["providers"]
                      if p["api"] != "internal" or getattr(self.gateway.adapter, "ready", True)
                      for m in p["models"]]
-        historical = (record.provider, record.model)
+        historical = record.pending_selection or (record.provider, record.model)
         current = (self.store.data["selectedProvider"], self.store.data["selectedModel"])
         selected = historical if historical in available else current if current in available else next(iter(available), ("", ""))
         if not record.busy and historical != selected:
             record.provider, record.model = selected
             record.context_usage = {}
-        if (record.provider, record.model) in available:
-            self.store.data.update(selectedModel=record.model, selectedProvider=record.provider)
+        if record.pending_selection and record.pending_selection != selected:
+            record.pending_selection = selected if selected != (record.provider, record.model) else None
+        if selected in available:
+            self.store.data.update(selectedProvider=selected[0], selectedModel=selected[1])
         self._reconcile_reasoning(record)
         self._reasoning_discovery.sync_active()
         self._mark_read(record)
@@ -593,7 +609,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     def _models_busy(self, provider_id=None):
         generation_accounts = {row.get('providerId') for row in self.store.data.get('multimodal', {}).values()}
-        return any(record.busy and (provider_id is None or record.provider == provider_id or provider_id in generation_accounts)
+        return any(record.busy and (provider_id is None or record.provider == provider_id or
+                   (record.pending_selection and record.pending_selection[0] == provider_id) or provider_id in generation_accounts)
                    for record in self._pool.records.values())
 
     @Property("QVariantList", notify=changed)
@@ -606,7 +623,10 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Property("QVariantMap", notify=changed)
     def config(self):
-        data = copy.deepcopy(self.store.data)
+        # Per-session metadata belongs to the backend. Copying and converting
+        # it for every QML binding makes settings clicks scale with all history.
+        data = copy.deepcopy({key: value for key, value in self.store.data.items()
+                              if key != 'sessionMeta'})
         data["hasPassword"] = bool(data.pop("password"))
         data.pop("employeeId", None)
         if isinstance(self.adapter, UnconfiguredAdapter):
@@ -616,6 +636,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         data["server"].pop("keys", None)
         for provider in data["providers"]:
             provider["hasKey"] = bool(provider.pop("key", ""))
+            provider.update(self.gateway.diagnostics.latest_compatibility(provider['id'], data.get('language', 'zh')))
             for model in provider["models"]:
                 model.update(normalize_model(model))
         return data
@@ -1352,6 +1373,8 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
     @Slot(str, str, result=bool)
     def redetectModelReasoning(self, provider, alias):
         row = self._reasoning_discovery.model(provider, alias)
+        if row:
+            self.gateway.compatibility.clear_provider(provider)
         return self._reasoning_discovery.refresh(provider, only=row['upstream']) if row else False
 
     @Slot(result=bool)
@@ -1879,18 +1902,45 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
 
     @Slot(str, str)
     def selectModel(self, provider, model):
-        if self._view.busy:
+        if self._view.busy and is_dsh(self._view):
             return self.toast.emit("请等待当前任务结束后切换模型")
         self.gateway.resolve(model, provider)
-        if (model, provider) != (self._view.model, self._view.provider):
-            self._view.context_usage = {}
+        record = self._view
         self.store.data.update(selectedProvider=provider, selectedModel=model)
-        self._view.model, self._view.provider = model, provider
-        self._reconcile_reasoning(self._view)
-        if is_dsh(self._view): self._switch_dsh_config()
+        if record.busy:
+            record.pending_selection = (provider, model) if (provider, model) != (record.provider, record.model) else None
+        else:
+            if (model, provider) != (record.model, record.provider):
+                record.context_usage = {}
+            record.model, record.provider = model, provider
+            record.pending_selection = None
+            self._reconcile_reasoning(record)
+            if is_dsh(record): self._switch_dsh_config()
         self.store.save()
         self.changed.emit()
+        self.chatChanged.emit()
         self.contextUsageChanged.emit()
+
+    @Property(bool, notify=chatChanged)
+    def modelSelectionPending(self):
+        return self._view.busy and self._view.pending_selection is not None
+
+    def _apply_pending_selection(self, record):
+        """Commit this session's next choice at the completed request boundary."""
+        if record.pending_selection is None:
+            return
+        record.provider, record.model = record.pending_selection
+        record.pending_selection = None
+        record.context_usage = {}
+        self._reconcile_reasoning(record)
+        if record.id:
+            self._index_record(record)
+            self.store.save_sessions(self._sessions)
+        if record is self._view:
+            self.store.data.update(selectedProvider=record.provider, selectedModel=record.model)
+            self.store.save()
+            self.changed.emit()
+            self.contextUsageChanged.emit()
 
     def _validate_model_mappings(self, rows, previous_models, taken, *, plugin=False):
         """Share the mapping editor's alias rules with the provider editor."""
@@ -1947,6 +1997,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 self.store.data["selectedModel"] = current if current in [m["alias"] for m in models] else models[0]["alias"]
             self._provider_plugins.repair_selection(provider_id)
             self.store.save()
+            self.gateway.compatibility.clear_provider(provider_id)
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("供应商配置已保存")
@@ -1962,6 +2013,7 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
         if not provider or provider["api"] not in ("openai", "anthropic"):
             return self.toast.emit("请在账号页刷新插件模型 / Refresh plugin models on the account page")
         self.toast.emit("正在获取供应商模型信息 / Fetching provider model information")
+        self.gateway.compatibility.clear_provider(provider_id)
         self._reasoning_discovery.refresh(provider_id)
 
     @Slot(str)
@@ -1997,9 +2049,13 @@ class Controller(AuxiliaryVisionMixin, CharactersMixin, CommonProvidersMixin, Pr
                 if p["api"] == "plugin" and {m["upstream"] for m in models} != {m["upstream"] for m in p["models"]}:
                     raise ValueError("插件的模型 ID 请在账号页通过刷新获取")
                 p["models"] = models
+            changed_providers = [p['id'] for p in providers
+                                 if p['models'] != self.gateway.provider(p['id'])['models']]
             self.store.data["providers"] = providers
             self._provider_plugins.repair_selection()
             self.store.save()
+            for provider_id in changed_providers:
+                self.gateway.compatibility.clear_provider(provider_id)
             self._restart_pi()
             self.changed.emit()
             self.toast.emit("模型映射已保存")

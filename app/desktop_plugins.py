@@ -241,7 +241,8 @@ class DesktopPlugins(QObject):
             if self.storage_key in sessions:sessions[key]=sessions.pop(self.storage_key);self.save()
             self.storage_key=key;switched=True
         messages=[{'role':m.get('role',''),'text':m.get('text','')[:2000]} for m in view.messages[-8:]]
-        value={'token':view.key,'id':view.id,'workspace':view.workspace,'title':view.title,'busy':view.busy,'messages':messages}
+        value={'token':view.key,'id':view.id,'workspace':view.workspace,'title':view.title,'busy':view.busy,'messages':messages,
+               'leafId':getattr(view,'search_leaf','')}
         if value==self._session:return
         self._session=value;self.sessionChanged.emit()
         if switched:self.changed.emit()

@@ -192,6 +192,14 @@ Item {
                     Glyph { objectName: "composerModelChevron"; name: "chevron-down"; width: Theme.icon(12); height: Theme.icon(12); anchors.verticalCenter: parent.verticalCenter }
                 } }
             }
+            Text {
+                id: modelSwitchHint; objectName: "modelSwitchHint"
+                visible: backend.modelSelectionPending === true
+                x: modelButton.x; y: modelButton.y - implicitHeight - 3
+                width: Math.max(0, footer.width - x - trailingRow.width - footer.gap)
+                text: I18n.t("本轮结束后使用"); textFormat: Text.PlainText; elide: Text.ElideRight
+                color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10, visible)
+            }
             Row {
                 id: trailingRow; objectName: "composerSendControls"
                 anchors.right: parent.right; anchors.bottom: parent.bottom; spacing: 13

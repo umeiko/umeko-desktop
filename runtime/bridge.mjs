@@ -6,6 +6,7 @@ import { prepareNativeSettings, sessionResourceSettings, sessionExtensionPaths, 
 import { sessionSkillOptions, manageSkills } from "./skills.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
+import { bindHttpRetryBoundary } from "./http-retry-boundary.mjs";
 import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
 import { UMEKO_TOOL, SEND_TO_USER, REMINDER, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension, coordinatorNativeTools } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
@@ -174,15 +175,23 @@ async function bindSession(session) {
   };
   const originalPayload = session.agent.onPayload;
   const configurePayload = async (payload, model) => {
+    const optional = ['stream', 'tool_choice', 'parallel_tool_calls', 'response_format', 'stream_options',
+      'temperature', 'top_p', 'seed', 'n', 'user'];
+    const generated = new Map(optional.filter(name => Object.hasOwn(payload, name))
+      .map(name => [name, JSON.stringify(payload[name])]));
     const result = await originalPayload?.(payload, model) ?? payload;
     const configured = { ...result };
+    configured._umeko_auto_parameters = [...generated]
+      .filter(([name, value]) => JSON.stringify(result[name]) === value).map(([name]) => name);
     configured._umeko_reasoning_effort = reasoningEffort;
     delete configured.reasoning_effort;
     if (reasoningEffort !== "off") configured.reasoning_effort = reasoningEffort;
     return configured;
   };
   session.agent.onPayload = configurePayload;
+  const httpRetryBoundary = bindHttpRetryBoundary(session);
   const unbind = session.subscribe(event => {
+    httpRetryBoundary.observe(event);
     if (event.type === "message_end" && ["user", "assistant"].includes(event.message.role)) {
       // Pi persists after notifying listeners. Read the new leaf in the next
       // microtask, after that append, without rebuilding its complete branch.
@@ -226,7 +235,7 @@ async function bindSession(session) {
       video: event.toolName === "video_gen" ? event.partialResult?.details?.video : undefined,
       taskStep: trackingTask && event.type === "tool_execution_update" ? false : undefined,
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
-    const willRetry = event.type === "message_end" && session.retryAttempt < NETWORK_RETRY.maxRetries &&
+    const willRetry = event.type === "message_end" && session.autoRetryEnabled && session.retryAttempt < NETWORK_RETRY.maxRetries &&
       isRetryableAssistantError(event.message) && !isContextOverflow(event.message, session.model?.contextWindow || 128000);
     if (event.type === "message_end" && !willRetry) emit({ type: "message", role: event.message.role,
       text: textOf(event.message.content), thinking: thinkingOf(event.message.content), stopReason: event.message.stopReason || "", error: event.message.stopReason === "aborted" ? "" : event.message.errorMessage || "", timestamp:event.message.timestamp });
@@ -247,6 +256,7 @@ async function bindSession(session) {
   unsubscribe = () => {
     compactionFailures.delete(session);
     clearTimeout(retryTimer);
+    httpRetryBoundary.close();
     unbind();
     if (session.agent.onPayload === configurePayload) session.agent.onPayload = originalPayload;
   };
@@ -591,6 +601,14 @@ async function capabilities() {
 
 async function promptWithInterrupts(first) {
   await inputQueue.run(first,async next=>{
+    if (next.model && runtime.session.model?.id !== next.model) {
+      selectedModel = modelRuntime.getModel("umeko", next.model);
+      if (!selectedModel) throw new Error("模型未配置");
+      await runtime.session.setModel(selectedModel);
+      exposeNativeTools(runtime.session);
+    }
+    if (validEffort(next.reasoningEffort)) reasoningEffort = next.reasoningEffort;
+    emit({type:"active_model",model:runtime.session.model.id});
     const generation = commandCancellation;
     await runtime.session.prompt(next.text, { images: next.images || [] });
     for (let continuation = 0; continuation < 4 && !closing && generation === commandCancellation && !inputQueue.hasInterrupts; continuation++) {
@@ -685,7 +703,7 @@ async function execute(input) {
   if (input.type === "shutdown") { await shutdown(); return; }
   if (executing && input.type === "prompt" && adoptedRun) {
     // The desktop sent this before it saw agent_run; queue it like Enter does.
-    void inputQueue.submit({ type: "follow-up", text: input.text, images: input.images, messageId: input.messageId })
+    void inputQueue.submit({ ...input, type: "follow-up" })
       .catch(error => emit({ type: "queue_rejected", text: input.text || "", message: error.message }));
     return;
   }

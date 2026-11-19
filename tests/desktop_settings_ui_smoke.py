@@ -1,6 +1,8 @@
 """Actual settings/navigation and browser dispatch, without opening a browser or loading WebView."""
 import json
+import cProfile
 import os
+import pstats
 import sys
 import tempfile
 import time
@@ -17,7 +19,9 @@ from app.storage import Store
 from app import webview
 from main import create_application
 
-store=Store();store.data['desktop']={'autoOpenSubmissions':False,'webDisplay':'external'};store.save()
+store=Store();store.data['desktop']={'autoOpenSubmissions':False,'webDisplay':'external'}
+store.data['sessionMeta']={f'history-{i}':{'draft':'Preserved draft '+str(i), 'viewport':{'index':i,'offset':24}} for i in range(1000)}
+store.save()
 app,engine,backend=create_application();window=engine.rootObjects()[0];window.resize(1200,900)
 warnings=[];engine.warnings.connect(lambda values:warnings.extend(v.toString() for v in values))
 output=ROOT/'build/desktop-settings-ui';output.mkdir(parents=True,exist_ok=True)
@@ -39,7 +43,15 @@ def wait(predicate,message):
 def click(name):
     wait(lambda:find(name) is not None and find(name).isVisible(),name+' did not appear')
     window.grabWindow();item=find(name)
-    QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,item.mapToScene(item.boundingRect().center()).toPoint());QTest.qWait(100)
+    profile=cProfile.Profile()
+    profile.enable()
+    QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,item.mapToScene(item.boundingRect().center()).toPoint())
+    profile.disable()
+    if name in ('desktopAutoOpenSubmissions','desktopChatWidthHints'):
+        config_reads=sum(value[1] for (file,line,function),value in pstats.Stats(profile).stats.items()
+                         if Path(file).name=='controller.py' and Path(file).parent.name=='app' and function=='config')
+        assert config_reads==0,('A desktop switch refreshed the whole QML configuration',name,config_reads)
+    QTest.qWait(100)
 
 def js(source):
     expression=QQmlExpression(engine.rootContext(),window,source);expression.evaluate()
@@ -108,6 +120,7 @@ try:
         wait(lambda:not backend.documentPreview.state.get('busy'),'Markdown did not finish loading')
         assert find('webSurfaceLoader').property('item') is None
     assert not warnings,'\n'.join(warnings)
+    assert Store(store.directory).data['sessionMeta']['history-999']['draft']=='Preserved draft 999'
     print('DESKTOP_SETTINGS_UI_OK: persisted policy, Agent navigation, bilingual scaled settings, manual/automatic browser routing, local HTML and no embedded WebView')
 finally:
     backend.close()
