@@ -588,8 +588,9 @@ Item {
                 contentY = allowed;
                 anchoring = false;
                 scheduleRange();
-                loadEarlierAtTop();
             }
+            if (direction < 0)
+                loadEarlierAtTop();
             if (direction > 0 && nearBottom && !chatSelection.dragging) {
                 followTail = true;
                 pinTail();
@@ -790,8 +791,15 @@ Item {
         }
         onAtYBeginningChanged: loadEarlierAtTop()
         function loadEarlierAtTop() {
-            if (atYBeginning && !anchoring && !followTail && !restoring && pane.current && pane.messageModel
-                    && pane.messageModel.partialHistory && pane.controller.recentHistory)
+            if (anchoring || followTail || restoring || !pane.current || !pane.messageModel
+                    || !pane.messageModel.partialHistory || !pane.controller.recentHistory)
+                return;
+            // A wheel queue may reach the first message before ListView
+            // reaches the beginning of its header. Request earlier history
+            // as that first row enters the area being laid out.
+            const first = itemAtIndex(0);
+            if (atYBeginning || (scrollDirection < 0 && first && first.y <= contentY + height
+                    && first.y + first.height >= contentY - height))
                 pane.controller.recentHistory.loadEarlier();
         }
         function scheduleRange() {
@@ -991,14 +999,15 @@ Item {
             // and new numbers while ListView inserts, so no body unloads.
             function onHistoryAboutToPrepend(count) {
                 chatSelection.clear();
-                // The first row on screen stays where it is; it moves up by
-                // the loading row, which the earlier rows replace. Rows
-                // above it then load as the reader scrolls to them.
+                // Keep the first row on screen in place, accounting for only
+                // the visible part of the loading header when it disappears.
                 const rows = conversation.visibleRows(conversation.slotMap().slots);
                 const item = rows.first >= 0 ? conversation.itemAtIndex(rows.first) : null;
-                const loading = conversation.headerItem ? conversation.headerItem.height : 0;
+                const header = conversation.headerItem, top = conversation.contentY;
+                const loading = header ? Math.max(0, Math.min(header.y + header.height, top + conversation.height)
+                    - Math.max(header.y, top)) : 0;
                 conversation.prependAnchor = item ? rows.first : -1;
-                conversation.prependOffset = item ? item.y - conversation.contentY - loading : 0;
+                conversation.prependOffset = item ? item.y - top - loading : 0;
                 if (conversation.activeLast >= 0) {
                     conversation.activeLast += count;
                     conversation.activeEnd += count;
