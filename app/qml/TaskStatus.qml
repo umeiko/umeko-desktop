@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 
 Item {
     id: root
@@ -9,7 +8,7 @@ Item {
     readonly property string state: status.state || ""
     readonly property bool live: state === "running" || state === "stopping"
     readonly property bool failed: state === "failed" || state === "stop_failed" || state === "stop_timed_out"
-    readonly property string stopLabel: ({stop_requested: "已请求停止", stopping: "正在清理进程"})[status.stopStage] || "正在停止"
+    readonly property string stopLabel: ({stop_requested: "正在停止（已请求）", stopping: "正在清理进程"})[status.stopStage] || "正在停止"
     readonly property string label: I18n.t(({running: "运行中", stopping: stopLabel, finished: "已完成", failed: "失败", stopped: "已停止", stop_failed: "停止清理失败", stop_timed_out: "停止清理超时", unread: "未读"})[state] || "")
     property double clock: Date.now()
     readonly property int seconds: Math.max(0, Math.floor(live && status.startedAt ? (clock - status.startedAt) / 1000 : status.elapsed || 0))
@@ -27,9 +26,6 @@ Item {
         Glyph { objectName: "taskStatusIcon"; visible: !root.live; name: root.state === "finished" ? "check" : root.failed ? "x" : root.state === "unread" ? "chat" : "stop"; width: Theme.icon(13); height: width; anchors.verticalCenter: parent.verticalCenter; color: root.tint }
         Text { font.family: Theme.fontFamily; objectName: "taskStatusText"; text: root.text; color: root.tint; font.pixelSize: Theme.font(root.compact ? 10 : 12, visible); font.weight: root.unread ? Font.DemiBold : Font.Normal }
     }
-    HoverHandler { id: detailHover }
-    ToolTip.visible: detailHover.hovered && !!status.detail
-    ToolTip.text: status.detail || ""
     Accessible.role: Accessible.StaticText
     Accessible.name: text + (status.detail ? " · " + status.detail : "")
 }

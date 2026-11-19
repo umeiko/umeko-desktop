@@ -635,7 +635,7 @@ class PiControllerMixin:
             if visible:
                 self.retryChanged.emit()
             was_busy = record.busy
-            if getattr(record, 'stop_token', '') and record.stop_state not in STOP_TERMINAL.values():
+            if kind == 'exit' and getattr(record, 'stop_token', '') and record.stop_state not in STOP_TERMINAL.values():
                 record.stop_state = 'stop_failed'
                 record.stop_detail = '未能确认剩余进程'
             long_running = record.prompt_started is not None and time.monotonic() - record.prompt_started > 180
