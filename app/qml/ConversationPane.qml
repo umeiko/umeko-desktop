@@ -221,9 +221,9 @@ Item {
             anchoring = false;
         }
         function settleGroups(above) {
-            // Commit ready neighbors in the active conversation before the
-            // wheel reaches them. keepAnchor absorbs height changes above the
-            // reader while those rows are still outside the viewport.
+            // A group wholly above the viewport can lay out without changing
+            // the displayed heights. Apply its measured heights together
+            // when scrolling reaches it and keep the visible row anchored.
             // A cached view that was shown and is now hidden keeps its groups
             // as they are: keepAnchor() does not correct a hidden view, so a
             // group above the reader that finished loading in the background
@@ -232,7 +232,7 @@ Item {
             if (!pane.messageModel || !count || (!pane.current && pane.initialized))
                 return;
             const model = pane.messageModel, map = slotMap(), slots = map.slots;
-            const top = pane.openAtBottom || above || followTail || restoring ? -1 : visibleRows(slots).first;
+            const top = above || followTail || restoring ? -1 : visibleRows(slots).first;
             // While the view follows the latest message, the last group keeps
             // receiving rows as the reply streams, so on a slow machine it is
             // rarely complete: waiting for it would hide the streaming row and
@@ -393,7 +393,13 @@ Item {
             pane.messageModel.requestRange(Math.max(0, count - 4), count - 1);
             restoreTimer.restart();
         }
-        function scrollBy(delta, wheel = false) {
+        function scrollBy(delta) {
+            applyScroll(delta, false);
+        }
+        function scrollWheel(delta) {
+            applyScroll(delta, true);
+        }
+        function applyScroll(delta, wheel) {
             beginBrowsing();
             const rapid = pane.openAtBottom && wheel && Math.abs(delta) >= height;
             const now = Date.now();
