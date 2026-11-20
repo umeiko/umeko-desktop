@@ -418,8 +418,10 @@ Window {
     component PetSeparator: MenuSeparator {
         contentItem: Rectangle { implicitHeight: 1; color: Theme.line }
     }
+    PetAgentEntryWindow { pet: root.pet; petWindow: root }
     PetMenu {
         id: menu; objectName: "desktopPetContextMenu"
+        ContextAction { objectName: "desktopPetAgentEntry"; text: I18n.t("发送给已有全局智能体…"); glyph: "chat"; onTriggered: root.pet.agentEntry.open() }
         ContextAction { text: I18n.t("打开 Umeko"); glyph: "external-link"; onTriggered: root.pet.restoreRequested() }
         PetMenu {
             objectName: "desktopPetReminderMenu"; title: I18n.t("提醒与待办") + " (" + root.pet.reminderItems.length + ")"

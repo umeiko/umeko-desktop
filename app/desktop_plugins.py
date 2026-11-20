@@ -27,6 +27,7 @@ class DesktopPlugins(QObject):
     hostResponse=Signal(str,str,"QVariantMap")
     def __init__(self, backend):
         super().__init__(backend)
+        self._agent_navigation = {}
         self.b=backend;self.root=backend.store.directory/'desktop-plugins';self.registry=self.root/'settings.json'
         self._icons=read(backend.root/'plugin-runtime/umeko_plugin_sdk/icons.json',[]) or []
         self.settings=read(self.registry,{}) or {};self.entries={}
@@ -186,7 +187,7 @@ class DesktopPlugins(QObject):
     def page(self):
         if not self._page:return {}
         e=self.entries[self._page];worker=self.workers.get(self._page)
-        return {'id':self._page,'title':e['name'],**self.icon_for(self._page),'url':QUrl.fromLocalFile(str(self.path(self._page)/e['page'])).toString(),'selection':self._selection,'config':self.settings.get('config',{}).get(self._page,read(self.path(self._page)/e.get('config','config.json'),{})),'error':self._error,'loading':not worker or not worker['ready']}
+        return {'id':self._page,'title':e['name'],**self.icon_for(self._page),'url':QUrl.fromLocalFile(str(self.path(self._page)/e['page'])).toString(),'selection':self._selection,'agentNavigation':dict(self._agent_navigation) if self._page=='global-agents' else {},'config':self.settings.get('config',{}).get(self._page,read(self.path(self._page)/e.get('config','config.json'),{})),'error':self._error,'loading':not worker or not worker['ready']}
     @Property(bool,notify=changed)
     def busy(self):return self._busy
     @Property(str,notify=changed)
@@ -307,7 +308,7 @@ class DesktopPlugins(QObject):
     @Slot()
     def closePage(self):
         if not self._page:return
-        old=self._page;self._page='';self._selection='';self._error=''
+        old=self._page;self._page='';self._selection='';self._error='';self._agent_navigation={}
         self.send(old,{'id':uuid.uuid4().hex,'operation':'event','arguments':{'name':'page.visibility','data':{'visible':False}}})
         if not self.application(old):self.stop(old)
         self.sessionChanged.emit();self.pageChanged.emit();self.dismissed.emit()

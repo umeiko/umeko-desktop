@@ -16,6 +16,7 @@ FocusScope {
         readonly property real scale: Theme.fontScale
         readonly property string language: I18n.language
         readonly property string revealPath: root.page.selection || ""
+        readonly property var agentNavigation: root.page.agentNavigation || ({})
         readonly property bool active: root.live
         readonly property var hostCapabilities: root.manager.hostServices.capabilities
         readonly property var conversation: root.manager.agentConversation
