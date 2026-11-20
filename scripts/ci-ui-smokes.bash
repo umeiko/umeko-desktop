@@ -91,6 +91,7 @@ smokes=(
   tests/recent_history_ui_smoke.py
   tests/scroll_paging_ui_smoke.py
   tests/task_state_ui_smoke.py
+  tests/composer_shortcut_hint_ui_smoke.py
   tests/steering_status_ui_smoke.py
   tests/subagent_report_status_ui_smoke.py
   tests/conversation_search_ui_smoke.py
