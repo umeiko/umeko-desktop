@@ -1,6 +1,6 @@
 """Target-bound discovery for existing pet entries; never executes commands.
 
-Only the two already implemented project/timer preparation paths are advertised.
+Only existing project, timer and local reminder paths are advertised.
 This is not the main composer's view-bound command/Widget/Skill dispatcher.
 """
 import copy
@@ -37,7 +37,9 @@ class PetCommands(QObject):
                      semantics='select-target', enabled=True, reason=''),
                 dict(id='timer', title='/定时任务', command='/定时任务',
                      semantics='prepare-operation', enabled=bool(timer_enabled),
-                     reason='' if timer_enabled else '请先启用内置定时任务 Widget')]
+                     reason='' if timer_enabled else '请先启用内置定时任务 Widget'),
+                dict(id='reminder', title='/提醒', command='/提醒',
+                     semantics='prepare-operation', enabled=True, reason='')]
         return [{**row, 'titlePinyin': lazy_pinyin(row['title'])} for row in rows]
 
     @Slot(str, result='QVariantMap')

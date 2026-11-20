@@ -335,7 +335,7 @@ Window {
                 const result = root.pet.commandMenu.choose(commandQuery.ticket, identifier)
                 commandMenu.close()
                 if (!result.ok) { error = I18n.t(result.error); return }
-                const body = taskInput.text.replace(/^\s*\/(?:项目|定时任务)?(?:\s|$)/, "")
+                const body = taskInput.text.replace(/^\s*\/(?:项目|定时任务|提醒)?(?:\s|$)/, "")
                 taskInput.text = result.command + " " + body
                 taskInput.cursorPosition = taskInput.length
                 if (projectMode) root.pet.projectEntry.setBody(taskInput.text)
@@ -444,6 +444,14 @@ Window {
                         timerDraft = taskInput.text; taskInput.text = root.pet.taskSchedule.state.answer; taskInput.forceActiveFocus()
                     }
                     else { error = prepared.error; taskInput.forceActiveFocus() }
+                    return
+                }
+                const reminderCommand = taskInput.text.match(/^\s*\/提醒(?:\s|$)/)
+                if (reminderCommand) {
+                    const result = root.pet.openReminderDraft(targetId, taskInput.text.slice(reminderCommand[0].length))
+                    if (!result.ok) { error = I18n.t(result.error); taskInput.forceActiveFocus(); return }
+                    if (projectMode) root.pet.projectEntry.setBody(taskInput.text)
+                    close()
                     return
                 }
                 sending = true

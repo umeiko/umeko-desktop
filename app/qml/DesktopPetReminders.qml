@@ -86,7 +86,18 @@ Item {
         if(selection.serial===selectionSerial)return
         selectionSerial=selection.serial
         endVisit()
-        if(selection.create)beginEdit(null)
+        if(selection.create) {
+            const draft=pet.takeReminderDraft(selection.serial)
+            if (draft.available && editing && root.Window.window && root.Window.window.visible) {
+                formError=I18n.t("已有提醒草稿，请先保存或返回；桌宠正文保留")
+                return
+            }
+            beginEdit(null)
+            if (draft.available) {
+                titleField.text=draft.title
+                notesField.text=draft.notes
+            }
+        }
         else {
             editing=false;completedFilter=false;editId="";formError="";refresh()
             const index=items.findIndex(item=>item.id===selection.id)

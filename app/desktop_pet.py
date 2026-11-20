@@ -93,6 +93,7 @@ class DesktopPet(QObject):
         self.directory = manager.root / 'state' / ID
         self._reminder_card = []
         self._reminder_selection = {'id': '', 'create': False, 'serial': 0}
+        self._reminder_draft = None
         self.reminders = PetReminders(self.directory, self,
                                       visible=lambda: self.visible,
                                       notifications=lambda: self._config['reminderNotificationsEnabled'],
@@ -351,8 +352,38 @@ class DesktopPet(QObject):
         if state == Qt.ApplicationActive and self.running:
             self.reminders.check()
 
+    @Slot(str, str, result='QVariantMap')
+    def openReminderDraft(self, binding, body):
+        """Open the existing local form. Do not write a reminder or send a prompt."""
+        status = self.assistantStatus
+        if not status.get('bound') or status.get('id') != binding:
+            return {'ok': False, 'error': '桌宠绑定已变化，请重新打开菜单'}
+        project = self.projectEntry
+        if project.selected and not project.valid():
+            return {'ok': False, 'error': '项目目标已失效，请重新选择；草稿保留'}
+        # Use the same UTF-16 units as the form for its title/notes limits.
+        length = len(body.encode('utf-16-le', errors='surrogatepass')) // 2
+        if length > 2000:
+            return {'ok': False, 'error': '提醒草稿最多 2000 个字符；原文保留'}
+        single_line = length <= 200 and len(body.splitlines()) <= 1 and '\n' not in body and '\r' not in body
+        self._reminder_selection = {'id': '', 'create': True,
+            'serial': self._reminder_selection['serial'] + 1}
+        self._reminder_draft = {'title': body if single_line else '', 'notes': '' if single_line else body}
+        self.changed.emit()
+        self.remindersRequested.emit()
+        return {'ok': True}
+
+    @Slot(int, result='QVariantMap')
+    def takeReminderDraft(self, serial):
+        # UI-only one-shot handoff. Never include unsaved text in public status.
+        if serial != self._reminder_selection['serial'] or self._reminder_draft is None:
+            return {'available': False}
+        draft, self._reminder_draft = self._reminder_draft, None
+        return {'available': True, **draft}
+
     @Slot(str, bool)
     def openReminders(self, identifier, create):
+        self._reminder_draft = None
         if not create:self.reminders.mark_viewed(identifier)
         self._reminder_selection = {'id': identifier, 'create': create,
                                     'serial': self._reminder_selection['serial'] + 1}

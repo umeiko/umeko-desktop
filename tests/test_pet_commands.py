@@ -25,7 +25,7 @@ class PetCommandsTests(unittest.TestCase):
         result = self.query()
         self.assertEqual(result['target'], {'kind': 'assistant', 'id': self.binding})
         self.assertEqual([r['semantics'] for r in result['entries']],
-                         ['select-target', 'prepare-operation'])
+                         ['select-target', 'prepare-operation', 'prepare-operation'])
         self.assertTrue(result['entries'][1]['titlePinyin'])
         self.assertEqual(self.menu.choose(result['ticket'], 'timer')['command'], '/定时任务')
         self.assertFalse(self.menu.choose(result['ticket'], 'timer')['ok'])
@@ -47,6 +47,30 @@ class PetCommandsTests(unittest.TestCase):
         self.b.workspace = 'changed'
         self.assertFalse(self.menu.choose(result['ticket'], 'project')['ok'])
         self.assertEqual(project.body, '保留项目草稿')
+        self.m.call_for.assert_not_called()
+
+    def test_reminder_preserves_project_and_keeps_draft_out_of_status(self):
+        project = self.pet.projectEntry
+        project.openCommand('/项目', self.binding)
+        self.assertTrue(project.select('b')['ok'])
+        project.setBody('/提醒 保留原文')
+        menu = self.query()
+        self.assertEqual(self.menu.choose(menu['ticket'], 'reminder')['command'], '/提醒')
+        previous = self.pet.reminderSelection
+        self.assertTrue(self.pet.openReminderDraft(self.binding, '私有提醒正文')['ok'])
+        current = self.pet.reminderSelection
+        self.assertEqual(current['serial'], previous['serial'] + 1)
+        self.assertNotIn('私有提醒正文', str(self.pet.status()))
+        self.assertFalse(self.pet.takeReminderDraft(previous['serial'])['available'])
+        self.assertEqual(self.pet.takeReminderDraft(current['serial']),
+                         {'available': True, 'title': '私有提醒正文', 'notes': ''})
+        self.assertFalse(self.pet.takeReminderDraft(current['serial'])['available'])
+        self.assertEqual(project.selected, 'b')
+        self.assertEqual(project.body, '/提醒 保留原文')
+        self.b.workspace = 'changed'
+        self.assertFalse(self.pet.openReminderDraft(self.binding, '不要打开')['ok'])
+        self.assertEqual(self.pet.reminderSelection, current)
+        self.h._command_pi.assert_not_called()
         self.m.call_for.assert_not_called()
 
     def test_disabled_after_query_is_rechecked(self):
@@ -96,7 +120,7 @@ class PetCommandTranslationTests(unittest.TestCase):
         labels = {node.value for node in ast.walk(backend)
                   if isinstance(node, ast.Constant) and isinstance(node.value, str)
                   and re.search(r'[\u4e00-\u9fff]', node.value)}
-        self.assertEqual(len(labels), 9)
+        self.assertEqual(len(labels), 10)
         source = (root / 'app/qml/english.js').read_text(encoding='utf-8')
         translations = json.loads(source[source.index('{'):])
         self.assertEqual(sorted(labels - translations.keys()), [])

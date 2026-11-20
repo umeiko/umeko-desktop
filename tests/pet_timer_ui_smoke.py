@@ -74,10 +74,26 @@ try:
         assert not field.property('text')
         assert not restores
     picker=prompt.findChild(QObject,'petTimerChoices')
-    wait(lambda:js(picker,'count')==2,'Owner choices missing')
-    choice=js(picker,'itemAtIndex(1)')
-    point=js(choice,'mapToItem(null,width/2,height/2)')
-    QTest.mouseClick(js(prompt,'contentItem.Window.window'),Qt.LeftButton,Qt.NoModifier,point.toPoint())
+    from PySide6.QtCore import QPointF
+    import shiboken6
+    owner_label = next(row['name'] for row in t.owners if row['id'] == 'ordinary-b')
+    def visible_owner_point():
+        if picker.property('count') != 2:
+            return None
+        content = picker.property('contentItem')
+        for item in content.childItems():
+            if (not shiboken6.isValid(item) or not item.isVisible()
+                    or item.property('text') != owner_label
+                    or item.width() <= 0 or item.height() <= 0):
+                continue
+            center = item.mapToItem(picker, QPointF(item.width() / 2, item.height() / 2))
+            if picker.contains(center):
+                return item.mapToScene(QPointF(item.width() / 2, item.height() / 2)).toPoint()
+        return None
+    wait(lambda: visible_owner_point() is not None, 'Visible owner delegate did not materialize')
+    point = visible_owner_point()
+    assert point is not None
+    QTest.mouseClick(picker.window(),Qt.LeftButton,Qt.NoModifier,point)
     wait(lambda:t.owner=='ordinary-b','Actual owner choice click failed')
     assert composer.property('desiredOpen'),'Clicking question card dismissed capsule'
     assert t.owner=='ordinary-b'
