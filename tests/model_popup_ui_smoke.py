@@ -127,7 +127,7 @@ try:
     record = backend._view
     record.id = 'composer-layout-fixture'
     backend.store.data['sessionMeta'][record.id] = {'dangerousAllowed':True}
-    saw_stacked = saw_hidden_hint = saw_elided_name = False
+    saw_stacked = saw_elided_name = False
 
     def rect(item):
         point = item.mapToScene(QPointF(0, 0))
@@ -173,9 +173,9 @@ try:
                     backend.changed.emit(); backend.chatChanged.emit(); QTest.qWait(100)
                     check_toolbar()
                     saw_stacked |= find('composerToolbar').property('stacked')
-                    saw_hidden_hint |= not find('composerStatus').isVisible()
+                    assert not find('composerStatus').isVisible(), 'Permanent shortcut hint returned'
                     saw_elided_name |= not find('composerProviderName').isVisible() or find('composerProviderName').property('truncated')
-    assert saw_stacked and saw_hidden_hint and saw_elided_name
+    assert saw_stacked and saw_elided_name
     # Serif and monospace bearings differ from their horizontal advance.
     for family in ('serif','monospace'):
         backend.setFontFamily(family)
