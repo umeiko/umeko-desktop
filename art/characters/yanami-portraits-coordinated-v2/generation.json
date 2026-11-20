@@ -1,0 +1,251 @@
+{
+  "generator": "built-in ImageGen",
+  "scope": "Built-in Yanami welcome portraits",
+  "assets": [
+    {
+      "id": "01",
+      "expression": "半眯眼微笑",
+      "sourceAsset": "校服版/半眯眼微笑.png",
+      "styleReference": "校服版/侧眼不安.png",
+      "generatedFile": "exec-4e48c3d4-568d-45f8-b7e0-ed1b2b64c9da.png",
+      "image": "app/icons/portraits/01.webp",
+      "width": 512,
+      "height": 512,
+      "background": "transparent",
+      "prompt": "Use case: lighting and restrained visual finishing of an existing Anna Yanami transparent PNG. Image 1 is the only edit target. Image 2 is another portrait in the set and is a reference ONLY for line weight, navy ink and general softness of the anime cel finish. Make a subtle edit to harmonize this set, at the fidelity of a paint-over. Do not redraw the face or alter the features, costume, pose, anatomy, perspective or character identity.\nSpecifically protect this expression and pose: Retain the exact contented uneven closed smile, relaxed half-lidded eyes, blush, original facial angle and two curled hair locks.\nLighting and palette for every portrait in the set: the same soft neutral daylight from the upper viewer-right, lightly warm natural ivory skin and muted blue-gray cel shadows, medium-deep desaturated denim/navy hair with restrained slate-blue highlights, white short-sleeved school blouse with clean neutral cool gray-blue fold shadows, muted blue and golden yellow ribbons. Gently reduce any strong warm or cool cast, harsh theatrical shadows, saturated hot spots and contrast differences. Preserve the interior blue eyes and their natural highlights. Keep existing shading shapes readable with clean cel shading, minimal gradients, and no white outline or glow.\nLinework: unify the existing strokes to fine, steady deep navy or dark blue-gray linework, with slightly stronger outer contours and visibly finer facial and fabric strokes, as in Image 2. Preserve the precise facial drawing and hand shapes. Keep the specific original hair silhouette and thin strands, the school clothing, pose, direction and emotion. Edit only lighting, shading palette and restrained outline weight.\nSet framing: actual square 1254x1254 RGBA PNG. Original bust at the same consistent display scale as the reference, hair/cowlick near 30–55px from the top and the chin around 68–72% of the canvas height, with a clean chest-area finish at the bottom. Make the whole illustration fit comfortably without stretching. Only gently reframe where necessary for common head scale, and keep hands and raised arms readable. Preserve transparent areas outside the subject and in all holes between fingers and hair. No scenery, gradients outside the figure, props, new subject, text, matte, borders, shadows outside the subject or fake checkerboard.",
+      "sha256": "ed0fc7595c4bd6a5ea0409e49706a942baf8ffcdfb02ced9f34f53182b138e95",
+      "sourceWidth": 1254,
+      "sourceHeight": 1254,
+      "sourceSha256": "a9ccb2ed7ee2f454b89387731fd9adb4b243aa38b99a1d7e9da5cdbc16d2ddbd",
+      "webpEncoding": {
+        "quality": 92,
+        "bytes": 65928,
+        "colorRms": 2.866
+      }
+    },
+    {
+      "id": "02",
+      "expression": "歪头双V",
+      "sourceAsset": "歪头双V.png",
+      "styleReference": "校服版/半眯眼微笑.png",
+      "generatedFile": "exec-65b0dada-7ad3-40e1-8a4c-3595bd381253.png",
+      "image": "app/icons/portraits/02.webp",
+      "width": 512,
+      "height": 512,
+      "background": "transparent",
+      "prompt": "Use case: lighting and restrained visual finishing of an existing Anna Yanami transparent PNG. Image 1 is the only edit target. Image 2 is another portrait in the set and is a reference ONLY for line weight, navy ink and general softness of the anime cel finish. Make a subtle edit to harmonize this set, at the fidelity of a paint-over. Do not redraw the face or alter the features, costume, pose, anatomy, perspective or character identity.\nSpecifically protect this expression and pose: Preserve the pronounced diagonal head tilt, conspicuous toothy grin without winking, both existing blue eyes, both V signs close to the face and their original fingers, and the position of the arms. Keep visible both hands. Upper-torso crop ending above most of the skirt if necessary to match the set's bust scale.\nLighting and palette for every portrait in the set: the same soft neutral daylight from the upper viewer-right, lightly warm natural ivory skin and muted blue-gray cel shadows, medium-deep desaturated denim/navy hair with restrained slate-blue highlights, white short-sleeved school blouse with clean neutral cool gray-blue fold shadows, muted blue and golden yellow ribbons. Gently reduce any strong warm or cool cast, harsh theatrical shadows, saturated hot spots and contrast differences. Preserve the interior blue eyes and their natural highlights. Keep existing shading shapes readable with clean cel shading, minimal gradients, and no white outline or glow.\nLinework: unify the existing strokes to fine, steady deep navy or dark blue-gray linework, with slightly stronger outer contours and visibly finer facial and fabric strokes, as in Image 2. Preserve the precise facial drawing and hand shapes. Keep the specific original hair silhouette and thin strands, the school clothing, pose, direction and emotion. Edit only lighting, shading palette and restrained outline weight.\nSet framing: actual square 1254x1254 RGBA PNG. Original bust at the same consistent display scale as the reference, hair/cowlick near 30–55px from the top and the chin around 68–72% of the canvas height, with a clean chest-area finish at the bottom. Make the whole illustration fit comfortably without stretching. Only gently reframe where necessary for common head scale, and keep hands and raised arms readable. Preserve transparent areas outside the subject and in all holes between fingers and hair. No scenery, gradients outside the figure, props, new subject, text, matte, borders, shadows outside the subject or fake checkerboard.",
+      "reframePrompt": "Use case: framing edit. Image 1 is the only edit target. Image 2 is a different portrait from the same set; look only at the size of the head on the square canvas. Zoom Image 1 slightly in, by roughly 22%, for head and upper-torso framing. Keep the covariant scale and proportions of everything, keeping the head tilt, smile, upper blue-black hair shape, eye placement, original palette and fine outlines exactly the same. Place the top loop about 35px from the top and let the bottom crop pass through the white school blouse at the lower chest, before the waist and before the skirt. The new view must retain both original V signs and all of the visible fingers with ample clear margins, with no art change beyond the recrop. Keep face and hands where they are relative to each other, no redesign, reposing or redrawing. Single character on a truly alpha-transparent 1254 by 1254 PNG canvas. Keep all open gaps in hair and between fingers transparent, with no new objects or shadows.",
+      "sha256": "9317e3239bd67cbc3d0a5f16b8ea42e783f3aaa3e2c57e9a8fc17b8fa0d0efde",
+      "sourceWidth": 1254,
+      "sourceHeight": 1254,
+      "sourceSha256": "1ff56b507d971b2b01e6dbd6774b467729f5cd13ca38722a810b6ac149ff7de0",
+      "webpEncoding": {
+        "quality": 92,
+        "bytes": 66562,
+        "colorRms": 3.2
+      }
+    },
+    {
+      "id": "03",
+      "expression": "海边皱眉",
+      "sourceAsset": "校服版/海边皱眉.png",
+      "styleReference": "校服版/半眯眼微笑.png",
+      "generatedFile": "exec-03ad4375-81cf-430e-9043-81c0d970e455.png",
+      "image": "app/icons/portraits/03.webp",
+      "width": 512,
+      "height": 512,
+      "background": "transparent",
+      "prompt": "Use case: lighting and restrained visual finishing of an existing Anna Yanami transparent PNG. Image 1 is the only edit target. Image 2 is another portrait in the set and is a reference ONLY for line weight, navy ink and general softness of the anime cel finish. Make a subtle edit to harmonize this set, at the fidelity of a paint-over. Do not redraw the face or alter the features, costume, pose, anatomy, perspective or character identity.\nSpecifically protect this expression and pose: Skeptical half-lidded gaze, inward furrow, tiny closed frown, original straight-on angle and cheek hatching. Preserve all visible hair loops.\nLighting and palette for every portrait in the set: the same soft neutral daylight from the upper viewer-right, lightly warm natural ivory skin and muted blue-gray cel shadows, medium-deep desaturated denim/navy hair with restrained slate-blue highlights, white short-sleeved school blouse with clean neutral cool gray-blue fold shadows, muted blue and golden yellow ribbons. Gently reduce any strong warm or cool cast, harsh theatrical shadows, saturated hot spots and contrast differences. Preserve the interior blue eyes and their natural highlights. Keep existing shading shapes readable with clean cel shading, minimal gradients, and no white outline or glow.\nLinework: unify the existing strokes to fine, steady deep navy or dark blue-gray linework, with slightly stronger outer contours and visibly finer facial and fabric strokes, as in Image 2. Preserve the precise facial drawing and hand shapes. Keep the specific original hair silhouette and thin strands, the school clothing, pose, direction and emotion. Edit only lighting, shading palette and restrained outline weight.\nSet framing: actual square 1254x1254 RGBA PNG. Original bust at the same consistent display scale as the reference, hair/cowlick near 30–55px from the top and the chin around 68–72% of the canvas height, with a clean chest-area finish at the bottom. Make the whole illustration fit comfortably without stretching. Only gently reframe where necessary for common head scale, and keep hands and raised arms readable. Preserve transparent areas outside the subject and in all holes between fingers and hair. No scenery, gradients outside the figure, props, new subject, text, matte, borders, shadows outside the subject or fake checkerboard.",
+      "sha256": "4f2925b96fc4259e9232de8cbcbee153d6ce7d87afdc6196ac390b6238754380",
+      "sourceWidth": 1254,
+      "sourceHeight": 1254,
+      "sourceSha256": "d6f054b74c29f038c8d445f0b438140a217bb23cf194699818c2ad74339e72f8",
+      "webpEncoding": {
+        "quality": 92,
+        "bytes": 69376,
+        "colorRms": 2.99
+      }
+    },
+    {
+      "id": "04",
+      "expression": "侧眼不安",
+      "sourceAsset": "校服版/侧眼不安.png",
+      "styleReference": "校服版/半眯眼微笑.png",
+      "generatedFile": "exec-8e6c0fd5-bdf0-4933-bb6b-ea18b7d47cbb.png",
+      "image": "app/icons/portraits/04.webp",
+      "width": 512,
+      "height": 512,
+      "background": "transparent",
+      "prompt": "Use case: lighting and restrained visual finishing of an existing Anna Yanami transparent PNG. Image 1 is the only edit target. Image 2 is another portrait in the set and is a reference ONLY for line weight, navy ink and general softness of the anime cel finish. Make a subtle edit to harmonize this set, at the fidelity of a paint-over. Do not redraw the face or alter the features, costume, pose, anatomy, perspective or character identity.\nSpecifically protect this expression and pose: Preserve the exact sideways gaze, little sweat bead, faint tense closed mouth and original diagonal head angle. Keep the school uniform and bust crop with no knees or other new anatomy.\nLighting and palette for every portrait in the set: the same soft neutral daylight from the upper viewer-right, lightly warm natural ivory skin and muted blue-gray cel shadows, medium-deep desaturated denim/navy hair with restrained slate-blue highlights, white short-sleeved school blouse with clean neutral cool gray-blue fold shadows, muted blue and golden yellow ribbons. Gently reduce any strong warm or cool cast, harsh theatrical shadows, saturated hot spots and contrast differences. Preserve the interior blue eyes and their natural highlights. Keep existing shading shapes readable with clean cel shading, minimal gradients, and no white outline or glow.\nLinework: unify the existing strokes to fine, steady deep navy or dark blue-gray linework, with slightly stronger outer contours and visibly finer facial and fabric strokes, as in Image 2. Preserve the precise facial drawing and hand shapes. Keep the specific original hair silhouette and thin strands, the school clothing, pose, direction and emotion. Edit only lighting, shading palette and restrained outline weight.\nSet framing: actual square 1254x1254 RGBA PNG. Original bust at the same consistent display scale as the reference, hair/cowlick near 30–55px from the top and the chin around 68–72% of the canvas height, with a clean chest-area finish at the bottom. Make the whole illustration fit comfortably without stretching. Only gently reframe where necessary for common head scale, and keep hands and raised arms readable. Preserve transparent areas outside the subject and in all holes between fingers and hair. No scenery, gradients outside the figure, props, new subject, text, matte, borders, shadows outside the subject or fake checkerboard.",
+      "sha256": "f6c78b47434f1a9047163a696e573d97ed436e0ff5cbbcd233719924009eeb48",
+      "sourceWidth": 1254,
+      "sourceHeight": 1254,
+      "sourceSha256": "452ce602ae915b2065b45abbfc7f00c4e7ffc488c7bbec490dc663fcf2824d97",
+      "webpEncoding": {
+        "quality": 92,
+        "bytes": 60584,
+        "colorRms": 2.771
+      }
+    },
+    {
+      "id": "05",
+      "expression": "扎头发",
+      "sourceAsset": "校服版/扎头发.png",
+      "styleReference": "校服版/半眯眼微笑.png",
+      "generatedFile": "exec-25e5180c-72e9-473b-b045-6271b205a54d.png",
+      "image": "app/icons/portraits/05.webp",
+      "width": 512,
+      "height": 512,
+      "background": "transparent",
+      "prompt": "Use case: lighting and restrained visual finishing of an existing Anna Yanami transparent PNG. Image 1 is the only edit target. Image 2 is another portrait in the set and is a reference ONLY for line weight, navy ink and general softness of the anime cel finish. Make a subtle edit to harmonize this set, at the fidelity of a paint-over. Do not redraw the face or alter the features, costume, pose, anatomy, perspective or character identity.\nSpecifically protect this expression and pose: Preserve both existing elevated arms, fingers above the crown, gathered blue hair, side locks, and the dark hair elastic held between her lips. No new elbow or finger positions. Keep the entire visible raised arm gesture, with the original cropped elbow if appropriate. Preserve transparent gaps within the pose.\nLighting and palette for every portrait in the set: the same soft neutral daylight from the upper viewer-right, lightly warm natural ivory skin and muted blue-gray cel shadows, medium-deep desaturated denim/navy hair with restrained slate-blue highlights, white short-sleeved school blouse with clean neutral cool gray-blue fold shadows, muted blue and golden yellow ribbons. Gently reduce any strong warm or cool cast, harsh theatrical shadows, saturated hot spots and contrast differences. Preserve the interior blue eyes and their natural highlights. Keep existing shading shapes readable with clean cel shading, minimal gradients, and no white outline or glow.\nLinework: unify the existing strokes to fine, steady deep navy or dark blue-gray linework, with slightly stronger outer contours and visibly finer facial and fabric strokes, as in Image 2. Preserve the precise facial drawing and hand shapes. Keep the specific original hair silhouette and thin strands, the school clothing, pose, direction and emotion. Edit only lighting, shading palette and restrained outline weight.\nSet framing: actual square 1254x1254 RGBA PNG. Original bust at the same consistent display scale as the reference, hair/cowlick near 30–55px from the top and the chin around 68–72% of the canvas height, with a clean chest-area finish at the bottom. Make the whole illustration fit comfortably without stretching. Only gently reframe where necessary for common head scale, and keep hands and raised arms readable. Preserve transparent areas outside the subject and in all holes between fingers and hair. No scenery, gradients outside the figure, props, new subject, text, matte, borders, shadows outside the subject or fake checkerboard.",
+      "sha256": "55fa8505374367ac40b2a38d69592483f7ff47217fd3dc256418f38bdf8746e4",
+      "sourceWidth": 1254,
+      "sourceHeight": 1254,
+      "sourceSha256": "ff0f765c2e1335f5917c3a8a493e60c43b67f61c6b11d89b90f4cdf07e6fa14d",
+      "webpEncoding": {
+        "quality": 92,
+        "bytes": 73000,
+        "colorRms": 2.752
+      }
+    },
+    {
+      "id": "06",
+      "expression": "双V微笑",
+      "sourceAsset": "双V微笑.png",
+      "styleReference": "校服版/半眯眼微笑.png",
+      "generatedFile": "exec-fbb252bb-efb3-445d-82d6-c5e798321d77.png",
+      "image": "app/icons/portraits/06.webp",
+      "width": 512,
+      "height": 512,
+      "background": "transparent",
+      "prompt": "Use case: lighting and restrained visual finishing of an existing Anna Yanami transparent PNG. Image 1 is the only edit target. Image 2 is another portrait in the set and is a reference ONLY for line weight, navy ink and general softness of the anime cel finish. Make a subtle edit to harmonize this set, at the fidelity of a paint-over. Do not redraw the face or alter the features, costume, pose, anatomy, perspective or character identity.\nSpecifically protect this expression and pose: Keep the exact closed-mouth smile, contrasting blue eyes, side-tilted head, V sign against cheek and raised V sign to the other side. Preserve existing fingertips and wrists rather than redrawing the pose.\nLighting and palette for every portrait in the set: the same soft neutral daylight from the upper viewer-right, lightly warm natural ivory skin and muted blue-gray cel shadows, medium-deep desaturated denim/navy hair with restrained slate-blue highlights, white short-sleeved school blouse with clean neutral cool gray-blue fold shadows, muted blue and golden yellow ribbons. Gently reduce any strong warm or cool cast, harsh theatrical shadows, saturated hot spots and contrast differences. Preserve the interior blue eyes and their natural highlights. Keep existing shading shapes readable with clean cel shading, minimal gradients, and no white outline or glow.\nLinework: unify the existing strokes to fine, steady deep navy or dark blue-gray linework, with slightly stronger outer contours and visibly finer facial and fabric strokes, as in Image 2. Preserve the precise facial drawing and hand shapes. Keep the specific original hair silhouette and thin strands, the school clothing, pose, direction and emotion. Edit only lighting, shading palette and restrained outline weight.\nSet framing: actual square 1254x1254 RGBA PNG. Original bust at the same consistent display scale as the reference, hair/cowlick near 30–55px from the top and the chin around 68–72% of the canvas height, with a clean chest-area finish at the bottom. Make the whole illustration fit comfortably without stretching. Only gently reframe where necessary for common head scale, and keep hands and raised arms readable. Preserve transparent areas outside the subject and in all holes between fingers and hair. No scenery, gradients outside the figure, props, new subject, text, matte, borders, shadows outside the subject or fake checkerboard.",
+      "sha256": "9b99a26b3273eadd6206ed50bce4f80f3a1736c4947859fdbd711ffc35c1b6a2",
+      "previousGeneratedFile": "exec-074a8909-8045-414e-a66c-daa33707ec96.png",
+      "edits": [
+        {
+          "description": "Matched the middle bow’s left lobe to its existing gold right lobe.",
+          "generatedFile": "exec-35f43c6e-64da-48b6-9c2c-ba8fd9938430.png",
+          "prompt": "Use case: precise local color correction on an existing transparent anime illustration. Exactly one tiny color change. In the cluster of three uniform bows, the TOP bow is blue, the MIDDLE bow has a blue lobe on viewer-left and already-golden knot and right lobe, and the BOTTOM bow is already golden. Recolor ONLY that blue viewer-left lobe of the middle bow to the same muted golden yellow as the middle bow's existing viewer-right lobe, including the small blue fold shading inside the lobe so the shading reads in the same gold palette. The target is immediately above the lowest gold bow and just to the right of the large hand on viewer-left, in the small region around x=665–752, y=1010–1124 on this 1254×1254 image. Keep the top bow fully blue, existing gold knot/right lobe and bottom bow as drawn. Retain the exact original bow geometry, seams, outline and shadow structure. Protect the existing face, hair, camera framing, both V signs and all finger positions, uniform, color balance, lines and every pixel and alpha value outside the requested local color fix to the fullest extent possible. Do not shift or redraw the image, add fibers, adjust lighting or crop. Output one true RGBA-transparent 1254×1254 PNG at the same framing."
+        },
+        {
+          "description": "Matched the bottom bow to the top blue bow.",
+          "generatedFile": "exec-fbb252bb-efb3-445d-82d6-c5e798321d77.png",
+          "prompt": "Use case: precise local color correction. Edit one thing in this 1254×1254 RGBA image of Anna Yanami: recolor the entire BOTTOM / THIRD bow of the cluster from gold to the same muted light denim blue as the existing TOP bow. The bottom bow sits at x≈665–897 and y≈1080–1232, below the middle bow; its center knot is around (785,1142), distinct from the middle knot at (765,1042). Recolor its two wings, knot and internal folds, keeping their exact existing shape, contours and shading values. Match the existing top bow's color family and contrast, with darker subtle blue shadows and restrained highlights.\nThe final order is TOP BLUE unchanged, MIDDLE FULL GOLDEN YELLOW unchanged, BOTTOM BLUE newly recolored. At their point of overlap keep the middle bow's left and right golden wings fully gold. Preserve every other part of the original, including the two V gestures, all fingers, face, expression, blue hair, dress fabric, linework, same lighting, composition and crop. Keep outside and between hairs/fingers true alpha transparency, with the exact same 1254×1254 square canvas and no background or new objects. Do not resize, shift, distort, repaint or alter pixels outside the bottom bow to the fullest extent possible."
+        }
+      ],
+      "sourceWidth": 1254,
+      "sourceHeight": 1254,
+      "sourceSha256": "de329fba01b991a4ebd98873523fdc408b25be584a2f5ccb5a1e2fa751819ff8",
+      "webpEncoding": {
+        "quality": 92,
+        "bytes": 73372,
+        "colorRms": 2.753
+      }
+    },
+    {
+      "id": "07",
+      "expression": "双V开口笑",
+      "sourceAsset": "双V开口笑.png",
+      "styleReference": "校服版/半眯眼微笑.png",
+      "generatedFile": "exec-0dade4bd-e1d1-4515-af5b-eb4b01a24829.png",
+      "image": "app/icons/portraits/07.webp",
+      "width": 512,
+      "height": 512,
+      "background": "transparent",
+      "prompt": "Use case: lighting and restrained visual finishing of an existing Anna Yanami transparent PNG. Image 1 is the only edit target. Image 2 is another portrait in the set and is a reference ONLY for line weight, navy ink and general softness of the anime cel finish. Make a subtle edit to harmonize this set, at the fidelity of a paint-over. Do not redraw the face or alter the features, costume, pose, anatomy, perspective or character identity.\nSpecifically protect this expression and pose: Keep the original open smile, eye direction, diagonally angled head and asymmetric hands, one V further left and one lower and closer to the school blouse. Preserve fingers and pose.\nLighting and palette for every portrait in the set: the same soft neutral daylight from the upper viewer-right, lightly warm natural ivory skin and muted blue-gray cel shadows, medium-deep desaturated denim/navy hair with restrained slate-blue highlights, white short-sleeved school blouse with clean neutral cool gray-blue fold shadows, muted blue and golden yellow ribbons. Gently reduce any strong warm or cool cast, harsh theatrical shadows, saturated hot spots and contrast differences. Preserve the interior blue eyes and their natural highlights. Keep existing shading shapes readable with clean cel shading, minimal gradients, and no white outline or glow.\nLinework: unify the existing strokes to fine, steady deep navy or dark blue-gray linework, with slightly stronger outer contours and visibly finer facial and fabric strokes, as in Image 2. Preserve the precise facial drawing and hand shapes. Keep the specific original hair silhouette and thin strands, the school clothing, pose, direction and emotion. Edit only lighting, shading palette and restrained outline weight.\nSet framing: actual square 1254x1254 RGBA PNG. Original bust at the same consistent display scale as the reference, hair/cowlick near 30–55px from the top and the chin around 68–72% of the canvas height, with a clean chest-area finish at the bottom. Make the whole illustration fit comfortably without stretching. Only gently reframe where necessary for common head scale, and keep hands and raised arms readable. Preserve transparent areas outside the subject and in all holes between fingers and hair. No scenery, gradients outside the figure, props, new subject, text, matte, borders, shadows outside the subject or fake checkerboard.",
+      "sha256": "abc4dfafd19abe7b6c2a0cd7f5d2268522e7828c9527bc993de45b369143fb01",
+      "sourceWidth": 1254,
+      "sourceHeight": 1254,
+      "sourceSha256": "269fa868f7dc0dadd8cd0745df4d6cccbb045c394f41146bd37fb072aa190bab",
+      "webpEncoding": {
+        "quality": 92,
+        "bytes": 71768,
+        "colorRms": 3.06
+      }
+    },
+    {
+      "id": "08",
+      "expression": "开怀笑",
+      "sourceAsset": "八奈见四表情-ImageGen重绘/01-左上-笑.png",
+      "styleReference": "统一版/01-半眯眼微笑.png",
+      "generatedFile": "exec-12f930fa-d464-4067-a09b-6716e72abb2f.png",
+      "image": "app/icons/portraits/08.webp",
+      "width": 512,
+      "height": 512,
+      "background": "transparent",
+      "prompt": "Use case: lighting and visual finishing of an existing Anna Yanami transparent school character portrait. Image 1 is the only edit target and shows the user's design-sheet expression drawn in anime linework. Image 2 is a portrait in the current set, for lighting, palette, line weight, and display scale reference only. Apply a carefully restrained paint-over to harmonize Image 1 with the current portrait set. \nProtect the existing identity, face, shape of features, gaze, facial shading geometry, form and precise hairstyle from Image 1. Keep the same tilted head, two happily closed eyes, blush, open laughing mouth and shoulder angle. Preserve the proportions, character construction, posture, and composition. Do not change the expression or add new elements or limbs.\nMatch image 2's lighting and color family: soft neutral daylight, lightly warm ivory skin with faint blue-gray shadows, medium-deep desaturated navy/denim blue hair with muted slate-blue glints, buttoned white short-sleeved pointed collar school blouse with cool subtle fold shadows, and muted blue and gold-yellow bows where in frame. To match the series, change the light-blue second ribbon in the target to muted golden yellow where visible, while keeping its same shape and existing first blue ribbon. Use fine steady deep navy and dark slate outlines, with a slightly stronger outer silhouette and finer internal lines, and a soft clean cel finish with restrained contrast. Do not add heavy gradients, shiny spots, glowing eyes, or white outlines. \nMatch the current 1254 × 1254 portrait set on a true alpha-transparent square PNG canvas. Center the original head and upper chest at roughly the same bust scale as image 2; a small safety margin above the cowlick and around side locks, and a natural clean chest-level finish on the bottom. Keep all hair gaps and original exterior transparent. No background fill, stickers, shadows outside the figure, graphic marks, checkerboard or text.",
+      "sha256": "3fb4eb8e0444ad79e8e39932b8ab225788816a78e830ccd572d2663018467426",
+      "sourceWidth": 1254,
+      "sourceHeight": 1254,
+      "sourceSha256": "2f0de09792bed4a629f6f5227cc04d79d80ecac499e673994af6351ef9dca6d0",
+      "webpEncoding": {
+        "quality": 92,
+        "bytes": 60798,
+        "colorRms": 2.786
+      }
+    },
+    {
+      "id": "09",
+      "expression": "冷静侧脸",
+      "sourceAsset": "八奈见四表情-ImageGen重绘/02-右上-侧脸.png",
+      "styleReference": "统一版/01-半眯眼微笑.png",
+      "generatedFile": "exec-e8d29556-9824-4a55-a8e1-e4d48610e152.png",
+      "image": "app/icons/portraits/09.webp",
+      "width": 512,
+      "height": 512,
+      "background": "transparent",
+      "prompt": "Use case: lighting and visual finishing of an existing Anna Yanami transparent school character portrait. Image 1 is the only edit target and shows the user's design-sheet expression drawn in anime linework. Image 2 is a portrait in the current set, for lighting, palette, line weight, and display scale reference only. Apply a carefully restrained paint-over to harmonize Image 1 with the current portrait set. \nProtect the existing identity, face, shape of features, gaze, facial shading geometry, form and precise hairstyle from Image 1. Keep the same three-quarter side view, nose bridge, eyes glancing toward viewer-left, small neutral mouth, thin loose strands and original shoulder angle. Preserve the proportions, character construction, posture, and composition. Do not change the expression or add new elements or limbs.\nMatch image 2's lighting and color family: soft neutral daylight, lightly warm ivory skin with faint blue-gray shadows, medium-deep desaturated navy/denim blue hair with muted slate-blue glints, buttoned white short-sleeved pointed collar school blouse with cool subtle fold shadows, and muted blue and gold-yellow bows where in frame. To match the series, change the light-blue second ribbon in the target to muted golden yellow where visible, while keeping its same shape and existing first blue ribbon. Use fine steady deep navy and dark slate outlines, with a slightly stronger outer silhouette and finer internal lines, and a soft clean cel finish with restrained contrast. Do not add heavy gradients, shiny spots, glowing eyes, or white outlines. \nMatch the current 1254 × 1254 portrait set on a true alpha-transparent square PNG canvas. Center the original head and upper chest at roughly the same bust scale as image 2; a small safety margin above the cowlick and around side locks, and a natural clean chest-level finish on the bottom. Keep all hair gaps and original exterior transparent. No background fill, stickers, shadows outside the figure, graphic marks, checkerboard or text.",
+      "sha256": "3973df272258b9c5bacba95468bca21139c8a00f2f633535ff21916482250d25",
+      "sourceWidth": 1254,
+      "sourceHeight": 1254,
+      "sourceSha256": "9b92877e66ba45dc8b05b3bdc85fd26980e049ab09f5fdf8143c8d984e137dd1",
+      "webpEncoding": {
+        "quality": 92,
+        "bytes": 55070,
+        "colorRms": 2.822
+      }
+    },
+    {
+      "id": "10",
+      "expression": "闭眼微笑",
+      "sourceAsset": "八奈见四表情-ImageGen重绘/03-左下-闭眼.png",
+      "styleReference": "统一版/01-半眯眼微笑.png",
+      "generatedFile": "exec-3c283e1d-6dca-4f28-b4ec-6b1e130e7b37.png",
+      "image": "app/icons/portraits/10.webp",
+      "width": 512,
+      "height": 512,
+      "background": "transparent",
+      "prompt": "Use case: lighting and visual finishing of an existing Anna Yanami transparent school character portrait. Image 1 is the only edit target and shows the user's design-sheet expression drawn in anime linework. Image 2 is a portrait in the current set, for lighting, palette, line weight, and display scale reference only. Apply a carefully restrained paint-over to harmonize Image 1 with the current portrait set. \nProtect the existing identity, face, shape of features, gaze, facial shading geometry, form and precise hairstyle from Image 1. Keep her exact lowered face, both eyelids closed, small quiet smile, blush, head inclination and shoulder turn. Preserve the proportions, character construction, posture, and composition. Do not change the expression or add new elements or limbs.\nMatch image 2's lighting and color family: soft neutral daylight, lightly warm ivory skin with faint blue-gray shadows, medium-deep desaturated navy/denim blue hair with muted slate-blue glints, buttoned white short-sleeved pointed collar school blouse with cool subtle fold shadows, and muted blue and gold-yellow bows where in frame. To match the series, change the light-blue second ribbon in the target to muted golden yellow where visible, while keeping its same shape and existing first blue ribbon. Use fine steady deep navy and dark slate outlines, with a slightly stronger outer silhouette and finer internal lines, and a soft clean cel finish with restrained contrast. Do not add heavy gradients, shiny spots, glowing eyes, or white outlines. \nMatch the current 1254 × 1254 portrait set on a true alpha-transparent square PNG canvas. Center the original head and upper chest at roughly the same bust scale as image 2; a small safety margin above the cowlick and around side locks, and a natural clean chest-level finish on the bottom. Keep all hair gaps and original exterior transparent. No background fill, stickers, shadows outside the figure, graphic marks, checkerboard or text.",
+      "sha256": "86b7cd8d2d1edfb748b1b83ee6ccec3920e40b0af145b904f0e9523f6ceaed30",
+      "sourceWidth": 1254,
+      "sourceHeight": 1254,
+      "sourceSha256": "a4c8aa603d94ccad2784403af61031cbd29dcba9464cca3fea1897d814f44141",
+      "webpEncoding": {
+        "quality": 92,
+        "bytes": 56836,
+        "colorRms": 2.687
+      }
+    },
+    {
+      "id": "11",
+      "expression": "惊讶",
+      "sourceAsset": "八奈见四表情-ImageGen重绘/04-右下-惊讶.png",
+      "styleReference": "统一版/01-半眯眼微笑.png",
+      "generatedFile": "exec-818a58f8-d3d7-4620-9d65-4d24f873e744.png",
+      "image": "app/icons/portraits/11.webp",
+      "width": 512,
+      "height": 512,
+      "background": "transparent",
+      "prompt": "Use case: lighting and visual finishing of an existing Anna Yanami transparent school character portrait. Image 1 is the only edit target and shows the user's design-sheet expression drawn in anime linework. Image 2 is a portrait in the current set, for lighting, palette, line weight, and display scale reference only. Apply a carefully restrained paint-over to harmonize Image 1 with the current portrait set. \nProtect the existing identity, face, shape of features, gaze, facial shading geometry, form and precise hairstyle from Image 1. Keep the exact wide-open eyes, small blue-gray irises, raised brows, flushed cheeks, small open oval mouth and shoulder tilt. Keep the expression recognizable and preserve the exact facial structure. Preserve the proportions, character construction, posture, and composition. Do not change the expression or add new elements or limbs.\nMatch image 2's lighting and color family: soft neutral daylight, lightly warm ivory skin with faint blue-gray shadows, medium-deep desaturated navy/denim blue hair with muted slate-blue glints, buttoned white short-sleeved pointed collar school blouse with cool subtle fold shadows, and muted blue and gold-yellow bows where in frame. To match the series, change the light-blue second ribbon in the target to muted golden yellow where visible, while keeping its same shape and existing first blue ribbon. Use fine steady deep navy and dark slate outlines, with a slightly stronger outer silhouette and finer internal lines, and a soft clean cel finish with restrained contrast. Do not add heavy gradients, shiny spots, glowing eyes, or white outlines. \nMatch the current 1254 × 1254 portrait set on a true alpha-transparent square PNG canvas. Center the original head and upper chest at roughly the same bust scale as image 2; a small safety margin above the cowlick and around side locks, and a natural clean chest-level finish on the bottom. Keep all hair gaps and original exterior transparent. No background fill, stickers, shadows outside the figure, graphic marks, checkerboard or text.",
+      "sha256": "15a728de63eb6979d039aced7d7c3af91cf0f4249a0df13c5ba24da5ed868cf1",
+      "sourceWidth": 1254,
+      "sourceHeight": 1254,
+      "sourceSha256": "6572abd7de3d3257e09bd1fb6fd0d156f21b0ebe664a311746e5cbe930e27333",
+      "webpEncoding": {
+        "quality": 92,
+        "bytes": 60072,
+        "colorRms": 2.658
+      }
+    }
+  ]
+}

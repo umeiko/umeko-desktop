@@ -263,6 +263,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self.private_server = LocalServer(self.gateway, 0, self.private_token, private=True)
         self.public_server = None
         self._sessions = self.store.load_sessions()
+        portrait_manifest = root / 'app/icons/portraits/manifest.json'
+        self._welcome_portrait_count = json.loads(
+            portrait_manifest.read_text(encoding='utf-8')
+        )['count']
         self._welcome_greetings, self._welcome_portraits = [], []
         self._pool = PiSessionPool(self, limit=self.store.data['ui']['sessionCacheSize'])
         self._view = self._new_view()
@@ -438,7 +442,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self._welcome_greetings = list(GREETINGS)
             secrets.SystemRandom().shuffle(self._welcome_greetings)
         if not self._welcome_portraits:
-            self._welcome_portraits = list(range(12))
+            self._welcome_portraits = list(range(self._welcome_portrait_count))
             secrets.SystemRandom().shuffle(self._welcome_portraits)
         return SessionState(workspace=self.store.data["workspace"] if workspace is None else workspace,
             reasoning_effort=reconcile_effort(self.store.data["ui"].get("reasoningEffort", "off"), self._reasoning_levels()),
