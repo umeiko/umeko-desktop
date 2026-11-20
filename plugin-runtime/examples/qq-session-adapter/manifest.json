@@ -1,0 +1,30 @@
+{
+  "kind": "umeko-plugin",
+  "apiVersion": 1,
+  "id": "qq-session-adapter",
+  "name": "QQ 离线协议适配示例",
+  "version": "0.1.0",
+  "summary": "离线验证 QQ 私聊与独立会话映射",
+  "description": "仅协议核心示例，不连接 QQ，不兼容整个 dsh 插件。",
+  "lifecycle": "application",
+  "entrypoint": "scripts/plugin.py:create_plugin",
+  "permissions": [
+    "sessions.manage"
+  ],
+  "readme": "README.md",
+  "config": "config.json",
+  "configSchema": "config.schema.json",
+  "agent": {
+    "document": "AGENT.md",
+    "methods": {
+      "status": {
+        "description": "读取离线示例状态，不提交会话或连接网络",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}
