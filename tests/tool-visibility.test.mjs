@@ -61,10 +61,40 @@ test('real Pi excludes native, Umeko and deferred tools across reload, nested ca
    const serialized=JSON.stringify(request.tools || []);
    for(const name of denied)assert.ok(!serialized.includes('"name":"'+name+'"'),name);
   }
+  // A legacy Pi-only deny must not be bypassed by the new desktop operation,
+  // including codemode and after rebuilding the native registry on reload.
+  const piDenied=start(['run_pi_command']);await piDenied.load();
+  for(const nested of [false,true,false]) {
+   if(!nested)await piDenied.command({type:'reload'});
+   const before=piDenied.events.length;
+   nextCall=nested ? {name:'codemode',args:{code:'return await tools.umeko_desktop({operation:"pi.run",arguments:{command:"/session"}});'}}
+    : {name:'umeko_desktop',args:{operation:'pi.run',arguments:{command:'/session'}}};
+   await piDenied.command({type:'prompt',text:'Check denied Pi alias'});
+   assert.ok(piDenied.events.slice(before).some(e=>e.type==='tool' && /disabled/.test(e.result || '')),
+    JSON.stringify(piDenied.events.slice(before)));
+  }
   // Same workspace and package, independent policy. No global settings edited.
   const b=start([]);const normal=await b.load();
   for(const name of denied) assert.equal(normal.resources.allTools.find(t=>t.name===name)?.visible,true,name);
   assert.ok(normal.resources.tools.includes('write'));
+  nextCall={name:'umeko_desktop',args:{operation:'pi.run',arguments:{command:'/session'}}};
+  const inspected=await b.command({type:'prompt',text:'Inspect current Pi through alias'});
+  const alias=b.events.find(e=>e.type==='tool'&&e.name==='umeko_desktop'&&e.state==='done');
+  assert.ok(alias,JSON.stringify(b.events.slice(-6)));
+  assert.equal(JSON.parse(alias.result).sessionId,inspected.session.id);
+  assert.equal(JSON.parse(alias.result).workspace,cwd);
+  nextCall={name:'run_pi_command',args:{command:'/session'}};
+  await b.command({type:'prompt',text:'Inspect through compatibility name'});
+  const legacy=b.events.find(e=>e.type==='tool'&&e.name==='run_pi_command'&&e.state==='done');
+  assert.equal(JSON.parse(legacy.result).sessionId,inspected.session.id);
+  nextCall={name:'umeko_desktop',args:{operation:'pi.run',arguments:{command:'/reload'}}};
+  const reloaded=await b.command({type:'prompt',text:'Queue reload through alias'});
+  assert.equal(reloaded.session.id,inspected.session.id);
+  assert.ok(b.events.some(e=>e.type==='tool'&&e.name==='umeko_desktop'&&e.state==='done'&&
+    JSON.parse(e.result).status==='queued'));
+  assert.ok(b.events.some(e=>e.type==='notice'&&/重新加载/.test(e.message || '')));
+
+
   // Loading the original transcript still excludes the tools, including /reload.
   const resumed=start(denied,state.session.file);const reopened=await resumed.load();
   assert.equal(reopened.session.id,state.session.id);

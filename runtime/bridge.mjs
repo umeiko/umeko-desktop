@@ -129,7 +129,9 @@ function runOwnedBash({shellConfig, command, cwd, onData, signal, timeout, timeo
 }
 
 if (process.platform === "win32") globalThis[Symbol.for("umeko:bash-job")] = runOwnedBash;
-const umekoControl = createUmekoControl({ emit, getPetAssistantBinding: () => config?.petAssistantBinding || '', getPetReminderBinding: () => config?.petReminderBinding || '' });
+const umekoControl = createUmekoControl({ emit,
+  runPiCommand: (id, args, signal, ctx) => piCommands.runTool(id, args, signal, ctx),
+  getPetAssistantBinding: () => config?.petAssistantBinding || '', getPetReminderBinding: () => config?.petReminderBinding || '' });
 const auxiliaryVision = createAuxiliaryVision({getConfig:() => config, emit:event => {
   if (event.sessionId && event.sessionId !== runtime?.session.sessionManager.getSessionId()) return subagents.automaticTool(event.sessionId,event);
   emit(event);
