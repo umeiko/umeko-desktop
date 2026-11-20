@@ -11,6 +11,7 @@ REASONS = {
     'target_changed': '目标或配置已变化，请重新选择；草稿已保留。',
     'already_submitted': '本次已尝试提交；请在目标会话核对，不会自动重发。',
     'busy': '目标正在执行或等待审批；本入口不插话，草稿已保留。',
+    'run_changed': '原运行已变化，未追加；草稿已保留，请重新预览。',
     'capacity': '全局智能体并发已满；草稿已保留。',
     'invalid_text': '请输入 1–16000 字符。',
     'uncertain': '提交结果待核对，请打开目标会话；不会自动重发。',
@@ -33,6 +34,9 @@ class PetAgentEntry(QObject):
         self.notice = ''
         self.preview = False
         self.attempted = False
+        self.preview_run = None
+        self.follow_up_pending = None
+        self.pet.manager.b._pool.event.connect(self.observe)
 
     @property
     def bus(self):
@@ -47,7 +51,8 @@ class PetAgentEntry(QObject):
                 'name': (row or {}).get('name', ''), 'body': self.body,
                 'workspace': record.workspace if record else '',
                 'model': record.model if record else '', 'notice': self.notice,
-                'preview': self.preview, 'attempted': self.attempted}
+                'preview': self.preview, 'attempted': self.attempted,
+                'followUp': self.preview_run is not None}
 
     @Slot()
     def open(self):
@@ -65,7 +70,7 @@ class PetAgentEntry(QObject):
                 if identifier == bus.pet_assistant_id:
                     continue
                 target = PetAgentTarget(bus, identifier)
-                reason = target._unavailable()
+                reason = target._unavailable(allow_follow_up=True)
                 self.options.append({'id': identifier, 'name': row.get('name') or identifier,
                                      'available': not reason, 'reason': REASONS.get(reason, '')})
         if not self.options:
@@ -74,11 +79,11 @@ class PetAgentEntry(QObject):
 
     @Slot(str)
     def select(self, identifier):
-        if not self.opened:
+        if not self.opened or self.follow_up_pending:
             return
         target = PetAgentTarget(self.bus, identifier)
-        if identifier == self.bus.pet_assistant_id or target._unavailable():
-            self.notice = REASONS.get(target._unavailable(), '请选择已有的其他全局智能体。')
+        if identifier == self.bus.pet_assistant_id or target._unavailable(allow_follow_up=True):
+            self.notice = REASONS.get(target._unavailable(allow_follow_up=True), '请选择已有的其他全局智能体。')
             self.changed.emit()
             return
         if self.draft_key is not None:
@@ -87,6 +92,7 @@ class PetAgentEntry(QObject):
         self.draft_key = (identifier, id(target.row))
         self.body = self.drafts.get(self.draft_key, '')
         self.preview = self.attempted = False
+        self.preview_run = None
         self.notice = ''
         self.changed.emit()
 
@@ -102,18 +108,28 @@ class PetAgentEntry(QObject):
     def prepare(self):
         if not self.opened or not self.target or self.attempted:
             return
-        reason = self.target._unavailable()
+        reason = self.target._unavailable(allow_follow_up=True)
         if not reason and (not self.body.strip() or len(self.body) > 16000):
             reason = 'invalid_text'
         self.notice = REASONS.get(reason, '')
         self.preview = not reason
+        self.preview_run = self.target.follow_up_identity() if self.preview else None
         self.changed.emit()
 
     @Slot()
     def confirm(self):
         if not self.opened or not self.preview or not self.target or self.attempted:
             return
-        result = self.target.submit(self.body)
+        run = self.preview_run
+        result = self.target.submit_follow_up(self.body, run) if run else self.target.submit(self.body)
+        self.preview_run = None
+        if result['ok'] and result['status'] == 'pending':
+            self.follow_up_pending = (self.target.record, run, result['messageId'], self.body)
+            self.preview = False
+            self.attempted = True
+            self.notice = '正在核对后续消息是否进入队列；暂时保留草稿。'
+            self.changed.emit()
+            return
         self.preview = False
         self.attempted = self.target.consumed
         if result['ok']:
@@ -122,6 +138,30 @@ class PetAgentEntry(QObject):
             self.notice = '已提交到所选会话，不代表完成。回复、审批与停止请在该会话处理。'
         else:
             self.notice = REASONS.get(result['status'], '未提交；草稿已保留。')
+        self.changed.emit()
+
+    def observe(self, record, event):
+        pending = self.follow_up_pending
+        if not pending or record is not pending[0]:
+            return
+        _, run, message_id, body = pending
+        kind = event.get('type')
+        if kind == 'pet_follow_up_receipt':
+            if event.get('runId') != run[1] or event.get('messageId') != message_id:
+                return
+            queued = (event.get('status') == 'queued' and record.process is run[0]
+                      and self.target._unavailable(allow_follow_up=True) == 'already_submitted'
+                      and record.pet_follow_up_run == run[1])
+        elif kind in ('done', 'exit'):
+            queued = False
+        else:
+            return
+        self.follow_up_pending = None
+        if queued and self.body == body:
+            self.body = self.drafts[self.draft_key] = ''
+            self.notice = '后续消息已进入所选会话队列，不代表开始或完成。'
+        else:
+            self.notice = REASONS['uncertain']
         self.changed.emit()
 
     @Slot(result=bool)

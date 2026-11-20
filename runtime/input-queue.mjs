@@ -39,10 +39,11 @@ export function createInputQueue({getSession,isRunning,onQueue=()=>{},onEdited=(
     if (pending.length) onReturned(pending);
   }
   function cancel() { epoch++; returnQueue(); }
-  function submit(input) {
+  function submit(input, stillCurrent = () => true) {
     const token=epoch;
     const work=chain.then(async()=>{
       if (token!==epoch) throw new Error("当前任务已停止，请重新发送这条消息");
+      if (!stillCurrent()) throw new Error("当前运行已变化，未添加后续消息");
       const session=getSession();
       if (!session) throw new Error("Pi 尚未就绪");
       if (["steer","promote-queue","steer-queued"].includes(input.type)) {

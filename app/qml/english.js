@@ -1,5 +1,11 @@
 .pragma library
 var strings = {
+    "仅向已有、已初始化的目标发送。可向已确认的运行追加，不打断任务；回复、审批与停止保留在 Desktop 原会话。": "Send to an existing, initialized agent. Follow up on the confirmed run without interrupting it. Replies, approvals and Stop stay in its Desktop conversation.",
+    "追加到当前运行之后，不打断现有任务；确认后仅尝试一次。": "Queue after the current run without interrupting it. Confirmation attempts this only once.",
+    "确认追加": "Confirm follow-up",
+    "原运行已变化，未追加；草稿已保留，请重新预览。": "The original run changed. Nothing was queued; preview the preserved draft again.",
+    "正在核对后续消息是否进入队列；暂时保留草稿。": "Checking whether the follow-up was queued. The draft is kept for now.",
+    "后续消息已进入所选会话队列，不代表开始或完成。": "The follow-up was queued in the selected conversation. It has not started or completed.",
     "仅向已有、已初始化且闲置的目标发送。不创建智能体或连接，不打断任务。回复、审批与停止保留在 Desktop 原会话。": "Send only to an existing, initialized, idle agent. No new agents or connections; no interruptions. Replies, approvals and Stop stay in its Desktop conversation.",
     "全局智能体并发已满；草稿已保留。": "Global agents are at capacity. Your draft is saved.",
     "全局智能体服务不可用；请在 Desktop 检查配置。": "Global agents are unavailable. Check the settings in Desktop.",

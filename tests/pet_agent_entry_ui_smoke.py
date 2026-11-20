@@ -1,5 +1,6 @@
 """Synthetic real Qt/Pi explicit target handoff; no external model or credentials."""
 import os,sys,tempfile,json,copy
+from threading import Event
 from pathlib import Path
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
@@ -34,11 +35,19 @@ def click(window,name):
     i=find(window,name);assert i.isEnabled(),name
     QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,i.mapToScene(i.boundingRect().center()).toPoint())
     QTest.qWait(30)
+first_release = Event()
 try:
     from app.integration import Completion
     class Fixture:
         ready=True
-        def complete(self,model,messages,tools,max_tokens):return Completion('目标独立回执：检查完成。')
+        block_next = False
+        entered = Event()
+        def complete(self,model,messages,tools,max_tokens):
+            if self.block_next:
+                self.block_next = False
+                self.entered.set()
+                assert first_release.wait(12), 'Fixture run gate timed out'
+            return Completion('目标独立回执：检查完成。')
     b.store.data.update(selectedProvider='internal',selectedModel='pet-fixture',providers=[{'id':'internal','name':'Local fixture','api':'internal','baseUrl':'','key':'','models':[{'upstream':'pet-fixture','alias':'pet-fixture'}]}])
     b.adapter=b.gateway.adapter=Fixture()
     pet.ui('show',{});wait(lambda:main.findChild(QObject,'desktopPetWindow') is not None,'pet load')
@@ -126,12 +135,32 @@ try:
     assert find(main,'globalAgentInput').property('text')=='目标原会话未发草稿'
     QTest.qWait(1200) # Let the existing drawer animation and message refresh settle.
     main.grabWindow().save(str(out/f'target-conversation-{language}.png'))
+    # Existing native run sets bridge-issued identity; fixture holds its network
+    # response until the exact queue receipt arrives, without an actual service.
+    b.gateway.adapter.block_next = True
+    assert b._command_pi('prompt', record=record, text='原任务保持运行')
+    wait(lambda:b.gateway.adapter.entered.is_set() and record.pet_follow_up_run,
+         'first request did not enter the native target run')
+    entry.select(target_id)
+    field.setProperty('text','原任务结束后追加检查')
+    click(window,'petAgentSubmit')
+    assert entry.preview and entry.state['followUp']
+    assert window.grabWindow().save(str(out/f'follow-up-preview-{language}.png'))
+    click(window,'petAgentSubmit')
+    wait(lambda:'后续消息已进入' in entry.notice, 'exact queue receipt not obtained')
+    assert record.busy and not record.cancelled and record.queue[0]['mode']=='followUp'
+    assert window.grabWindow().save(str(out/f'follow-up-queued-{language}.png'))
+    first_release.set()
+    wait(lambda:not record.busy and any('原任务结束后追加检查' in row.get('text','')
+        for row in record.messages), 'queued input did not reach its own target')
+    assert before.draft=='主窗口保留草稿' and bus.bridges==bridges
     # Explicit close/reopen never replays the accepted task.
     entry.close();entry.open();assert entry.attempted and not entry.body
     relevant=[x for x in warnings if any(n in x for n in ('PetAgentEntry','ReferenceError','TypeError','binding loop'))]
     assert not relevant,relevant
-    print('PET_AGENT_ENTRY_UI_OK: explicit preview, busy rejection, real Pi target reply, original conversation navigation, companion/main isolation')
+    print('PET_AGENT_ENTRY_UI_OK: explicit preview, busy rejection, real Pi target reply and exact busy follow-up, original conversation navigation, companion/main isolation')
 finally:
+    first_release.set()
     b.close()
     import shiboken6
     shiboken6.delete(engine);app.processEvents();temporary.cleanup()

@@ -28,7 +28,7 @@ Window {
         anchors.fill: parent; anchors.margins: 16; spacing: 10
         Label {
             Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.muted
-            text: I18n.t("仅向已有、已初始化且闲置的目标发送。不创建智能体或连接，不打断任务。回复、审批与停止保留在 Desktop 原会话。")
+            text: I18n.t("仅向已有、已初始化的目标发送。可向已确认的运行追加，不打断任务；回复、审批与停止保留在 Desktop 原会话。")
         }
         RowLayout {
             Layout.fillWidth: true
@@ -71,7 +71,9 @@ Window {
         Label {
             objectName: "petAgentNotice"
             Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.ink
-            text: root.state.preview ? I18n.t("请核对以上目标、模型、目录与全文。确认后仅尝试提交一次；不代表执行完成。") : I18n.t(root.state.notice)
+            text: root.state.preview ? (root.state.followUp
+                ? I18n.t("追加到当前运行之后，不打断现有任务；确认后仅尝试一次。")
+                : I18n.t("请核对以上目标、模型、目录与全文。确认后仅尝试提交一次；不代表执行完成。")) : I18n.t(root.state.notice)
         }
         RowLayout {
             Layout.fillWidth: true
@@ -80,7 +82,7 @@ Window {
             Button { text: I18n.t("关闭并保留草稿"); onClicked: root.entry.close() }
             Button {
                 objectName: "petAgentSubmit"
-                text: root.state.preview ? I18n.t("确认发送") : I18n.t("预览发送")
+                text: root.state.preview ? I18n.t(root.state.followUp ? "确认追加" : "确认发送") : I18n.t("预览发送")
                 enabled: !!root.state.selected && !root.state.attempted && !body.inputMethodComposing
                 onClicked: root.state.preview ? root.entry.confirm() : root.entry.prepare()
             }

@@ -6,6 +6,7 @@ is created during selection. Responses remain in the target's normal conversatio
 from __future__ import annotations
 
 import copy
+from uuid import uuid4
 
 
 class PetAgentTarget:
@@ -28,7 +29,7 @@ class PetAgentTarget:
         return ((record.key, record.id, record.file, record.workspace,
                  record.global_agent, record.model, record.provider) if record else None)
 
-    def _unavailable(self):
+    def _unavailable(self, *, allow_follow_up=False):
         bus = self.bus
         if bus.m.closed or not bus.active or not bus.m.enabled('global-agents'):
             return 'unavailable'
@@ -41,12 +42,41 @@ class PetAgentTarget:
             return 'target_changed'
         if self.consumed:
             return 'already_submitted'
-        if (self.record.busy or self.record.subagents_active or self.record.approval
+        if (self.record.subagents_active or self.record.approval
                 or getattr(bus.b, 'kernelBusy', False)):
             return 'busy'
+        if self.record.busy:
+            return '' if allow_follow_up and self.follow_up_identity() else 'busy'
         if sum(record.busy for record in bus.records.values()) >= 4:
             return 'capacity'
         return ''
+
+    def follow_up_identity(self):
+        record = self.record
+        if (record and record.id and record.file and record.ready and record.process
+                and record.phase == 'running' and record.action in ('prompt', 'widget-notify')
+                and not (record.operation or record.cancelled or record.stop_state)
+                and record.pet_follow_up_run):
+            return (record.process, record.pet_follow_up_run)
+        return None
+
+    def submit_follow_up(self, text, run):
+        status = self._unavailable(allow_follow_up=True)
+        if not status and (not run or self.follow_up_identity() != run):
+            status = 'run_changed'
+        if not status and (not isinstance(text, str) or not text.strip() or len(text) > 16000):
+            status = 'invalid_text'
+        if status:
+            return {'ok': False, 'status': status}
+        request = uuid4().hex
+        self.consumed = True
+        try:
+            self.bus.b._pool.write(self.record, {
+                'type': 'follow-up', 'petRunId': run[1], 'messageId': request,
+                'text': '(input from pet)\n' + text.strip(), 'images': []})
+        except (OSError, RuntimeError, ValueError):
+            return {'ok': False, 'status': 'uncertain'}
+        return {'ok': True, 'status': 'pending', 'messageId': request}
 
     def submit(self, text):
         """Submit once to captured idle target, or retain the exact caller draft.

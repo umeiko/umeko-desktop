@@ -91,3 +91,61 @@ class PetAgentEntryTests(target_fixtures.PetAgentTargetTests):
         self.host._command_pi.assert_not_called()
         self.assertFalse(self.default.messages)
         self.assertEqual(self.entry.body,'保留原目标正文')
+
+    def running_preview(self, run='run-1'):
+        self.record.id = 'existing-session'
+        self.record.file = 'existing.jsonl'
+        self.record.ready = True
+        self.record.process = object()
+        self.record.phase = 'running'
+        self.record.action = 'prompt'
+        self.record.pet_follow_up_run = run
+        self.entry.select(self.identifier)
+        self.entry.setBody('  追加正文\n ')
+        self.entry.prepare()
+        self.assertTrue(self.entry.state['followUp'])
+
+    def test_bound_follow_up_waits_for_exact_receipt_and_never_steers(self):
+        self.running_preview()
+        self.entry.confirm()
+        self.entry.confirm()
+        [(key, event)] = self.host._pool.writes
+        self.assertEqual(key, self.record.key)
+        self.assertEqual((event['type'], event['petRunId']), ('follow-up', 'run-1'))
+        self.assertEqual(self.entry.body, '  追加正文\n ')
+        self.host._command_pi.assert_not_called()
+        receipt = {'type': 'pet_follow_up_receipt', 'messageId': event['messageId'],
+                   'runId': event['petRunId'], 'status': 'queued'}
+        self.host._pool.event.emit(self.default, receipt)
+        self.host._pool.event.emit(self.record, {**receipt, 'messageId': 'wrong'})
+        self.host._pool.event.emit(self.record, {**receipt, 'runId': 'other'})
+        self.assertEqual(self.entry.body, '  追加正文\n ')
+        self.host._pool.event.emit(self.record, receipt)
+        self.assertEqual(self.entry.body, '')
+        self.assertIn('不代表开始或完成', self.entry.notice)
+        self.assertEqual(self.host._view.draft, '主窗口草稿')
+        self.assertEqual(self.record.draft, '目标原会话未发草稿')
+        self.assertFalse(self.bus.bridges)
+
+    def test_run_change_does_not_fallback_to_new_run_or_idle_prompt(self):
+        self.running_preview()
+        self.record.pet_follow_up_run = 'run-2'
+        self.entry.confirm()
+        self.assertEqual(self.entry.body, '  追加正文\n ')
+        self.assertFalse(self.host._pool.writes)
+        self.entry.prepare()
+        self.record.phase = 'idle'
+        self.entry.confirm()
+        self.assertFalse(self.host._pool.writes)
+        self.host._command_pi.assert_not_called()
+
+    def test_exit_or_uncertain_retains_draft_and_ignores_late_success(self):
+        self.running_preview()
+        self.entry.confirm()
+        event = self.host._pool.writes[-1][1]
+        self.host._pool.event.emit(self.record, {'type': 'exit'})
+        self.host._pool.event.emit(self.record, {'type': 'pet_follow_up_receipt',
+            'messageId': event['messageId'], 'runId': event['petRunId'], 'status': 'queued'})
+        self.entry.confirm()
+        self.assertEqual(len(self.host._pool.writes), 1)
+        self.assertEqual(self.entry.body, '  追加正文\n ')
