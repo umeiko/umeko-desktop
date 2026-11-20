@@ -253,6 +253,7 @@ Window {
             onTriggered: {
                 if (!taskWindow.active && !root.active && !timerPrompt.focusWithin
                         && !(projectMenu.visible && projectMenu.contentItem.Window.window.active)
+                        && !(commandMenu.visible && commandMenu.contentItem.Window.window.active)
                         && !taskInput.inputMethodComposing)
                     taskComposer.close()
             }
@@ -268,12 +269,28 @@ Window {
             property bool projectMode: false
             property string globalDraft: ""
             property string timerDraft: ""
+            property var commandQuery: ({entries: []})
+            function showCommands() {
+                commandQuery = root.pet.commandMenu.query(targetId)
+                if (!commandQuery.ok) { error = I18n.t(commandQuery.error); return }
+                commandMenu.open()
+            }
+            function chooseCommand(identifier) {
+                const result = root.pet.commandMenu.choose(commandQuery.ticket, identifier)
+                commandMenu.close()
+                if (!result.ok) { error = I18n.t(result.error); return }
+                const body = taskInput.text.replace(/^\s*\/(?:项目|定时任务)?(?:\s|$)/, "")
+                taskInput.text = result.command + " " + body
+                taskInput.cursorPosition = taskInput.length
+                if (projectMode) root.pet.projectEntry.setBody(taskInput.text)
+                focusTimerInput()
+            }
             readonly property var timerState: root.pet.taskSchedule.state
             readonly property bool timerMode: timerState.opened
             readonly property var projectState: root.pet.projectEntry.state
             readonly property bool notificationBlocked: taskWindow.placement.blocked
             readonly property color inputBlue: Theme.dark ? "#83b7ff" : "#2463c4"
-            readonly property bool controlFocused: taskInput.activeFocus || taskSend.activeFocus || taskDesktop.activeFocus || projectTarget.activeFocus
+            readonly property bool controlFocused: taskInput.activeFocus || taskSend.activeFocus || taskDesktop.activeFocus || projectTarget.activeFocus || taskCommands.activeFocus
             opacity: notificationBlocked ? 0 : animationProgress
             onNotificationBlockedChanged: if (notificationBlocked && visible) close()
             modal: false
@@ -287,6 +304,7 @@ Window {
             closePolicy: taskInput.inputMethodComposing || timerMode ? Popup.NoAutoClose : Popup.CloseOnEscape
             onAboutToHide: {
                 Qt.inputMethod.reset()
+                commandMenu.close()
                 projectMenu.close()
                 if (timerMode) { root.pet.taskSchedule.close(); taskInput.text = timerDraft }
                 root.pet.projectEntry.close()
@@ -419,7 +437,7 @@ Window {
                 enabled:taskComposer.desiredOpen && !taskComposer.notificationBlocked
                 ScrollView {
                     id: taskScroll
-                    anchors.left:parent.left;anchors.right:taskDesktop.left
+                    anchors.left:parent.left;anchors.right:taskCommands.left
                     anchors.leftMargin:6*Theme.fontScale;anchors.rightMargin:5*Theme.fontScale;anchors.verticalCenter:parent.verticalCenter
                     readonly property real singleLineHeight: Theme.control(28)
                     readonly property real verticalInset: Math.max(0, (singleLineHeight - taskFont.height) / 2)
@@ -497,6 +515,15 @@ Window {
                     onClicked: taskComposer.projectChoices("/项目")
                     ToolTip.visible: hovered; ToolTip.text: taskComposer.projectState.label + "\n" + taskComposer.projectState.detail
                 }
+                Button {
+                    id: taskCommands; objectName: "desktopPetCommands"
+                    anchors.right: taskDesktop.left; anchors.rightMargin: Theme.control(4)
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Theme.control(24); height: Theme.control(24)
+                    text: "/"; enabled: !taskComposer.timerMode && !taskInput.inputMethodComposing
+                    Accessible.name: I18n.t("选择桌宠入口（仅准备，不执行）")
+                    onClicked: taskComposer.showCommands()
+                }
                 ComposerButton {
                     id:taskDesktop;objectName:"desktopPetTaskDesktop"
                     anchors.right:taskSend.left;anchors.rightMargin:5*Theme.fontScale;anchors.verticalCenter:parent.verticalCenter
@@ -517,6 +544,28 @@ Window {
                 composer: taskComposer
                 onAnswered: { taskInput.text = root.pet.taskSchedule.state.answer; taskComposer.focusTimerInput() }
                 onDismissed: { taskInput.text = taskComposer.timerDraft; taskComposer.focusTimerInput() }
+            }
+            FloatingMenu {
+                id: commandMenu; objectName: "desktopPetCommandMenu"
+                parent: taskComposer.contentItem
+                popupType: Popup.Window; constrainToWindow: false
+                width: Math.min(340, root.screen.width - 24)
+                height: Math.min(implicitHeight, 320, root.screen.height - 32)
+                readonly property var placement: taskComposer.auxiliaryPlacement(height, true)
+                x: 0; y: placement.y - taskWindow.y
+                onVisibleChanged: if (visible && placement.blocked) close()
+                onClosed: if (taskComposer.desiredOpen) taskComposer.focusTimerInput()
+                ContextAction { objectName: "desktopPetCommandHeader"; text: I18n.t("选择入口，只填入命令，不执行"); enabled: false }
+                Repeater {
+                    model: taskComposer.commandQuery.entries || []
+                    ContextAction {
+                        required property var modelData
+                        objectName: "desktopPetCommand_" + modelData.id
+                        text: I18n.t(modelData.title) + (modelData.enabled ? "" : " · " + I18n.t(modelData.reason))
+                        enabled: modelData.enabled
+                        onTriggered: taskComposer.chooseCommand(modelData.id)
+                    }
+                }
             }
             FloatingMenu {
                 id: projectMenu; objectName: "desktopPetProjectMenu"

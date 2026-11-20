@@ -72,6 +72,7 @@ class DesktopPet(QObject):
         self.assistant = None
         self._task_schedule = None
         self._project_entry = None
+        self._command_menu = None
         self.b = manager.b
         self.motion = PetMotion()
         self.running = False
@@ -138,6 +139,13 @@ class DesktopPet(QObject):
     @Property(QObject, constant=True)
     def inputMask(self):
         return self._input_mask
+
+    @Property(QObject, constant=True)
+    def commandMenu(self):
+        if self._command_menu is None:
+            from .pet_commands import PetCommands
+            self._command_menu = PetCommands(self)
+        return self._command_menu
 
     @Property(QObject, constant=True)
     def projectEntry(self):
