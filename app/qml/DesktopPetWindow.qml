@@ -14,6 +14,22 @@ Window {
     property bool assistantCaption: false
     property bool placed: false
     property bool dragged: false
+    property bool hoverArmed: false
+    readonly property bool canPreview: visible && hoverArmed && pointer.containsMouse
+        && !pointer.pressed && assistant.bound && !menu.visible
+        && !taskComposer.visible && !reminderCard.length && !(assistantCaption && caption)
+    function closeHoverPreview() {
+        hoverArmed = false
+        hoverDelay.stop()
+        hoverPreview.visible = false
+    }
+    onCanPreviewChanged: {
+        if (canPreview) hoverDelay.restart()
+        else {
+            hoverDelay.stop()
+            hoverPreview.visible = false
+        }
+    }
     property real pressX: 0
     property real pressY: 0
     property real startX: 0
@@ -78,7 +94,7 @@ Window {
     }
     onVisibleChanged: {
         if (visible) { if (!placed) place(false); else constrain(); Qt.callLater(updateInputMask) }
-        else if (taskComposer) taskComposer.close()
+        else { closeHoverPreview(); if (taskComposer) taskComposer.close() }
     }
     onAssistantChanged: {
         if (taskComposer && (!assistant.bound || taskComposer.targetId !== assistant.id)) taskComposer.close()
@@ -121,7 +137,7 @@ Window {
         // Respect both letterboxing and the transparent margin inside the art.
         y:Math.max(4,art.y+art.height-(art.item?art.item.paintedHeight:art.height)*(1-(root.state.contentTop || 0))-height-8)
         width:Math.min(root.width,spoken.implicitWidth+24);height:spoken.implicitHeight+16;radius:12
-        color:Theme.surface;border.color:Theme.line;visible:!!root.caption && !root.reminderCard.length && (root.assistantCaption || !taskComposer.visible)
+        color:Theme.surface;border.color:Theme.line;visible:!!root.caption && !root.reminderCard.length && (root.assistantCaption || (!taskComposer.visible && !hoverPreview.visible))
         Text { font.family: Theme.fontFamily;id:spoken;anchors.centerIn:parent;width:Math.min(implicitWidth,root.width-24);text:root.caption;textFormat:Text.PlainText;wrapMode:Text.Wrap;maximumLineCount:4;elide:Text.ElideRight;color:Theme.ink;font.pixelSize: Theme.font(11, visible)}
     }
     Rectangle {
@@ -178,11 +194,47 @@ Window {
             }
         }
     }
+    // Passive overlay in the already open pet window: never activates a window,
+    // enters the editor, or adds a clickable region to the native input mask.
+    Timer {
+        id: hoverDelay
+        interval: 420
+        onTriggered: if (root.canPreview) hoverPreview.visible = true
+    }
+    Rectangle {
+        id: hoverPreview
+        objectName: "desktopPetHoverPreview"
+        z: 3
+        visible: false
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(root.width - 8, previewText.implicitWidth + 16)
+        height: previewText.implicitHeight + 12
+        y: Math.max(4, art.y + art.height - (art.item ? art.item.paintedHeight : art.height)
+                    * (1 - (root.state.contentTop || 0)) - height - 8)
+        radius: 10
+        color: Theme.surface
+        border.color: Theme.line
+        Text {
+            id: previewText
+            objectName: "desktopPetHoverPreviewLabel"
+            anchors.centerIn: parent
+            width: parent.width - 16
+            text: I18n.t("双击桌宠打开聊天")
+            textFormat: Text.PlainText
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.font(11, visible)
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            color: Theme.ink
+        }
+    }
     MouseArea {
         id:pointer;objectName:"desktopPetPointer";anchors.fill:art
         acceptedButtons:Qt.LeftButton | Qt.RightButton;hoverEnabled:true;cursorShape:pressed?Qt.ClosedHandCursor:Qt.PointingHandCursor
-        onEntered:root.pet.interact("hover")
+        onEntered: { root.pet.interact("hover"); root.hoverArmed = !pointer.pressed && !menu.visible }
+        onExited: root.closeHoverPreview()
         onPressed:mouse => {
+            root.closeHoverPreview()
             root.dragged=false
             const cursor = root.pet.cursorPosition()
             root.pressX=cursor.x;root.pressY=cursor.y;root.startX=root.x;root.startY=root.y
@@ -204,9 +256,13 @@ Window {
         onDoubleClicked: mouse => {
             if (mouse.button === Qt.LeftButton && !root.dragged) root.openTaskComposer()
         }
-        onCanceled:if(root.dragged){root.constrain();root.pet.savePosition(root.x,root.y)}
+        onCanceled: {
+            root.closeHoverPreview()
+            if(root.dragged){root.constrain();root.pet.savePosition(root.x,root.y)}
+        }
     }
     function openTaskComposer() {
+        root.closeHoverPreview()
         if (!root.assistant.bound) return
         if (taskComposer.targetId !== root.assistant.id) { taskInput.clear(); taskComposer.projectMode = false }
         taskComposer.targetId = root.assistant.id

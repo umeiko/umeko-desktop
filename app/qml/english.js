@@ -1658,6 +1658,7 @@ var strings = {
   "settings.json 在 Umeko 外被修改，已读入这些修改": "settings.json was changed outside Umeko; Umeko loaded those changes",
   "settings.json 无法解析，已另存为 settings.external-invalid.json": "settings.json could not be read; Umeko saved a copy as settings.external-invalid.json",
   "给悬浮小助手派活": "Give your assistant a task",
+  "双击桌宠打开聊天": "Double-click the pet to chat",
   "桌宠未绑定全局子智能体": "The pet is not connected to a global subagent",
   "桌宠绑定已变化，请重新打开输入框": "The pet connection changed. Reopen the input box",
   "请输入 1–16000 字符的任务": "Enter a task of 1–16000 characters"
