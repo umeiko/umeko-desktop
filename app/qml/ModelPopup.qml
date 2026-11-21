@@ -106,7 +106,7 @@ AnchoredPidPopup {
                 title: I18n.t("模型组")
                 matches: backend.sessionBackend === "pi" && backend.modelGroupReady === true &&
                          (title + " 模型组 Model group").toLowerCase().includes(modelSearch.text.trim().toLowerCase())
-                selected: backend.modelGroupSelected
+                selected: backend.modelGroupSelected === true
                 onChosen: { root.close(); backend.selectModelGroup() }
             }
         }
