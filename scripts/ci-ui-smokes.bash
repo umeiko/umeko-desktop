@@ -107,6 +107,7 @@ smokes=(
   tests/pid_thread_ui_smoke.py
   tests/input_method_ui_smoke.py
   tests/update_notes_ui_smoke.py
+  tests/umeko_control_ui_smoke.py
 )
 
 mkdir -p build
