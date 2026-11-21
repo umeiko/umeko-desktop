@@ -256,6 +256,14 @@ jobs:
         shell: bash
         run: .venv/Scripts/python.exe -m unittest tests.test_windows_ime_position -v
 
+      - name: Windows pet capsule activation and synthetic input
+        if: runner.os == 'Windows'
+        timeout-minutes: 3
+        env:
+          UMEKO_NATIVE_PET_INPUT_TEST: '1'
+        shell: bash
+        run: .venv/Scripts/python.exe -m unittest tests.test_windows_pet_input -v
+
       - name: Build Windows
         if: runner.os == 'Windows'
         shell: pwsh
@@ -313,6 +321,8 @@ jobs:
             build/ci-smoke/*.json
             build/Umeko/warn-Umeko.txt
             build/test-logs/*.log
+            build/native-pet-input/*.json
+            build/native-pet-input/*.png
             artifacts/screenshots/*.png
           if-no-files-found: ignore
           retention-days: 7
