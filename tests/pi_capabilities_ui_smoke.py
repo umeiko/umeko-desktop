@@ -31,15 +31,22 @@ def wait(check,label):
     output=ROOT/'build/pi-capabilities-ui';output.mkdir(parents=True,exist_ok=True);window.grabWindow().save(str(output/'failure.png'))
     raise AssertionError(label+' '+repr({'notice':page.property('notice') if page else None,'working':page.property('working') if page else None,'sessionBusy':page.property('sessionBusy') if page else None,'recordId':backend._view.id,'widgetSessionKey':page.property('sessionKey') if page else None,'widgetProfile':profile(),'profile':backend._view.pi_capabilities,'phase':backend._view.phase,'approval':backend.desktopPlugins._host_services.pendingApproval})+'\n'+'\n'.join(warnings))
 def click(name):
-    wait(lambda:find(name) is not None and find(name).isEnabled() and ready(),name);window.grabWindow()
-    # Runtime inspection can replace list delegates during this settling wait.
-    QTest.qWait(120);wait(lambda:ready() and find(name) is not None and find(name).isEnabled(),name+' did not settle')
+    # Resource inspection may replace delegate objects while events are pumped.
+    # Resolve by stable objectName after each wait, never retain a delegate.
+    def available():
+        item=find(name)
+        return item is not None and item.isEnabled() and ready()
+    wait(available,name);window.grabWindow()
+    QTest.qWait(120);wait(available,name+' did not settle')
     item=find(name)
     assert item.isEnabled(),(name,'disabled',find('piManagerWidget').property('sessionBusy'))
-    spy=QSignalSpy(item,item.metaObject().method(item.metaObject().indexOfSignal('clicked()')))
     point=item.mapToScene(item.boundingRect().center()).toPoint()
     app.sendEvent(window,QEnterEvent(point,point,window.mapToGlobal(point)))
     QTest.mouseMove(window,point);QTest.qWait(30)
+    wait(available,name+' changed before click')
+    item=find(name)
+    point=item.mapToScene(item.boundingRect().center()).toPoint()
+    spy=QSignalSpy(item,item.metaObject().method(item.metaObject().indexOfSignal('clicked()')))
     QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,point);QTest.qWait(80)
     assert spy.count()==1,(name,'click was not delivered')
 def ready():return find('piManagerWidget') is not None and not find('piManagerWidget').property('working') and not backend._view.busy and not backend.kernelBusy

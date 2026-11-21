@@ -331,11 +331,48 @@ ApplicationWindow {
                 spacing: 2; clip: true; model: backend.projectRows
                 readonly property int selectedRow: model.findIndex(row => window.sidebarSwitching ? row.id === window.pendingSidebarId && row.kind === window.pendingSidebarKind : row.selected && (row.kind === "session" || row.kind === "project" && !backend.activeSession))
                 function rowHeight(row) { return row.kind === "project" ? 38 : 34 }
+                property var savedViewport: null
+                function saveViewport() {
+                    // QVariantList replacement resets ListView's contentY.
+                    // Capture before replacement, not from that transient zero.
+                    if (savedViewport || !model.length) return
+                    let index = indexAt(1, contentY + 1)
+                    if (index < 0) index = indexAt(1, contentY + spacing + 2)
+                    const item = index >= 0 ? itemAtIndex(index) : null
+                    if (item) {
+                        const row = model[index]
+                        savedViewport = {id: row.id, kind: row.kind, offset: contentY - item.y, y: contentY - originY}
+                    }
+                }
+                function restoreViewport() {
+                    const saved = savedViewport
+                    savedViewport = null
+                    if (!saved) return
+                    forceLayout()
+                    const index = model.findIndex(row => row.id === saved.id && row.kind === saved.kind)
+                    let target = originY + saved.y
+                    if (index >= 0) {
+                        positionViewAtIndex(index, ListView.Beginning)
+                        forceLayout()
+                        const item = itemAtIndex(index)
+                        if (item) target = item.y + saved.offset
+                    }
+                    contentY = Math.max(originY, Math.min(target, originY + Math.max(0, contentHeight - height)))
+                }
+                Connections {
+                    target: backend
+                    function onSidebarAboutToChange() { sessionList.saveViewport() }
+                }
                 function syncSelection() {
                     currentIndex = selectedRow
+                    restoreViewport()
                     sidebarHighlight.updateTarget()
                 }
-                onModelChanged: Qt.callLater(syncSelection)
+                // Restore before the next click can hit a reset viewport.
+                onModelChanged: {
+                    restoreViewport()
+                    Qt.callLater(syncSelection)
+                }
                 onSelectedRowChanged: Qt.callLater(syncSelection)
                 highlightFollowsCurrentItem: false
                 // A model reset briefly clears currentItem and selects row zero.
@@ -351,6 +388,8 @@ ApplicationWindow {
                         if (index < 0 || index >= rows.length) return
                         let top = sessionList.originY
                         for (let i = 0; i < index; ++i) top += sessionList.rowHeight(rows[i]) + sessionList.spacing
+                        const item = sessionList.itemAtIndex(index)
+                        if (item) top = item.y
                         const rowHeight = sessionList.rowHeight(rows[index])
                         sidebarHeightMotion.targetRect = Qt.rect(0, 0, 1, rowHeight)
                         if (positioned) sidebarMotion.moveTo(top)

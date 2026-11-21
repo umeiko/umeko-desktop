@@ -146,6 +146,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     messageModelChanged = Signal()
     conversationEvicted = Signal(str)
     conversationViewsClosing = Signal()
+    sidebarAboutToChange = Signal()
     sidebarChanged = Signal()
     layoutChanged = Signal()
     toast = Signal(str)
@@ -527,6 +528,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def _refresh_sidebar(self):
         rows = self._project_rows()
         if rows != self._last_sidebar_rows:
+            self.sidebarAboutToChange.emit()
             self._last_sidebar_rows = rows
             self.sidebarChanged.emit()
 
