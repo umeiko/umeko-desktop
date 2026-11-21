@@ -7,7 +7,7 @@ Item {
     objectName: "contextUsageIndicator"
     property var controller: backend
     property bool menuBelow: false
-    property string selectedModel: controller === backend ? backend.config.selectedModel : ""
+    property string selectedModel: controller === backend && !backend.modelGroupSelected ? backend.config.selectedModel : ""
     property var usage: {
         const current = root.controller.contextUsage
         return !root.selectedModel || current.model === root.selectedModel ? current : ({})

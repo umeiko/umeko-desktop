@@ -158,9 +158,9 @@ Item {
                 y: footer.height - Theme.control(33) + (Theme.control(33) - height) / 2
                 width: Math.max(0, Math.min(Theme.control(350), naturalWidth, footer.width - x - trailingRow.width - footer.gap))
                 readonly property bool useDshModels: backend.sessionBackend === "dsh" && backend.dshOwnConfig === true
-                readonly property string providerName: { if (useDshModels) return I18n.t(backend.dshProviderName); const p = backend.config.providers.find(p => p.id === backend.config.selectedProvider); return p ? p.name : I18n.t("选择供应商") }
-                readonly property string modelName: useDshModels ? I18n.t(backend.dshModelName) : backend.config.selectedModel
-                readonly property string effort: backend.reasoningEffort !== "off" ? "· " + Reasoning.label(backend.reasoningEffort) : ""
+                readonly property string providerName: { if (useDshModels) return I18n.t(backend.dshProviderName); if (backend.modelGroupSelected) return I18n.t("模型组"); const p = backend.config.providers.find(p => p.id === backend.config.selectedProvider); return p ? p.name : I18n.t("选择供应商") }
+                readonly property string modelName: useDshModels ? I18n.t(backend.dshModelName) : backend.modelGroupSelected ? "" : backend.config.selectedModel
+                readonly property string effort: !backend.modelGroupSelected && backend.reasoningEffort !== "off" ? "· " + Reasoning.label(backend.reasoningEffort) : ""
                 readonly property real naturalWidth: providerMetrics.advanceWidth + (modelName.length ? slashMetrics.advanceWidth + Math.min(modelMetrics.advanceWidth, Theme.control(135)) + 14 : 0) + (effort.length ? effortMetrics.advanceWidth + 7 : 0) + Theme.icon(12) + 27
                 readonly property real namesWidth: Math.max(0, width - 20 - Theme.icon(12) - 7 - (effortBadge.visible ? effortMetrics.advanceWidth + 7 : 0))
                 readonly property bool showProvider: !modelName.length || namesWidth >= Math.min(providerMetrics.advanceWidth, Theme.control(48)) + Math.min(modelMetrics.advanceWidth, Theme.control(90)) + slashMetrics.advanceWidth + 14

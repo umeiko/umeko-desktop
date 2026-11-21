@@ -32,6 +32,7 @@ from .transcripts import preview
 from .chat_model import ChatModel
 from .transcript_index import TranscriptRepository
 from .model_context import context_suggestion
+from .model_groups import GROUP_MODEL, GROUP_PROVIDER, GROUP_SELECTION, MAX_MEMBERS, configured_members, member_key, settings as group_settings
 from .model_reasoning import reasoning_levels, reconcile_effort
 from .controller_reasoning import ReasoningDiscovery
 from .thinking_formats import FORMAT_OPTIONS
@@ -407,7 +408,12 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Slot(str, result=bool)
     def setSessionBackend(self, value):
-        return self._choose_dsh_backend(value)
+        changed = self._choose_dsh_backend(value)
+        if changed and value == "dsh" and self._repair_model_group_selection(self._view):
+            self.store.save()
+            self.changed.emit()
+            self.reasoningChanged.emit()
+        return changed
 
     @Property(QObject, constant=True)
     def sessionPreview(self):
@@ -444,9 +450,12 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if not self._welcome_portraits:
             self._welcome_portraits = list(range(self._welcome_portrait_count))
             secrets.SystemRandom().shuffle(self._welcome_portraits)
+        provider, model = self.store.data["selectedProvider"], self.store.data["selectedModel"]
+        if self.store.data.get("selectedModelGroup") and self.modelGroupReady:
+            provider, model = GROUP_SELECTION
         return SessionState(workspace=self.store.data["workspace"] if workspace is None else workspace,
             reasoning_effort=reconcile_effort(self.store.data["ui"].get("reasoningEffort", "off"), self._reasoning_levels()),
-            model=self.store.data["selectedModel"], provider=self.store.data["selectedProvider"], greeting=self._welcome_greetings.pop(), portrait=self._welcome_portraits.pop())
+            model=model, provider=provider, greeting=self._welcome_greetings.pop(), portrait=self._welcome_portraits.pop())
 
     def _activate(self, record):
         self._session_preview.cancel()
@@ -456,7 +465,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._streaming_timer.stop()
         self.viewAboutToChange.emit()
         previous_approval = self._dangerous_allowed(self._view)
-        previous_configuration = {key: self.store.data.get(key) for key in ("workspace", "activeProject", "selectedProvider", "selectedModel")}
+        previous_configuration = {key: self.store.data.get(key) for key in ("workspace", "activeProject", "selectedProvider", "selectedModel", "selectedModelGroup")}
         self._view = record
         record.scroll_index, record.scroll_y, record.follow_tail = -1, 0.0, True
         self._view_open_generation += 1
@@ -474,18 +483,21 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         # The index can name a deleted supplier or a retired pre-plugin model.
         # Keep a valid historical selection; otherwise use the current selection.
         available = [(p["id"], m["alias"]) for p in self.store.data["providers"]
-                     if p["api"] != "internal" or getattr(self.gateway.adapter, "ready", True)
+                     if p["api"] != "image" and (p["api"] != "internal" or getattr(self.gateway.adapter, "ready", True))
                      for m in p["models"]]
+        if not is_dsh(record) and self.modelGroupReady:
+            available.append(GROUP_SELECTION)
         historical = record.pending_selection or (record.provider, record.model)
         current = (self.store.data["selectedProvider"], self.store.data["selectedModel"])
         selected = historical if historical in available else current if current in available else next(iter(available), ("", ""))
         if not record.busy and historical != selected:
+            if record.process and historical == GROUP_SELECTION:
+                record.stale = True
             record.provider, record.model = selected
             record.context_usage = {}
         if record.pending_selection and record.pending_selection != selected:
             record.pending_selection = selected if selected != (record.provider, record.model) else None
-        if selected in available:
-            self.store.data.update(selectedProvider=selected[0], selectedModel=selected[1])
+        self._remember_model_selection(*selected)
         self._reconcile_reasoning(record)
         self._reasoning_discovery.sync_active()
         self._mark_read(record)
@@ -638,8 +650,11 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     def _models_busy(self, provider_id=None):
         generation_accounts = {row.get('providerId') for row in self.store.data.get('multimodal', {}).values()}
-        return any(record.busy and (provider_id is None or record.provider == provider_id or
-                   (record.pending_selection and record.pending_selection[0] == provider_id) or provider_id in generation_accounts)
+        group_providers = {member.get("provider") for member in self.store.data.get("modelGroup", {}).get("members", ())}
+        return any((record.busy or (record.provider == GROUP_PROVIDER and record.subagents_active)) and
+                   (provider_id is None or record.provider == provider_id or
+                    (record.provider == GROUP_PROVIDER and provider_id in group_providers) or
+                    (record.pending_selection and record.pending_selection[0] == provider_id) or provider_id in generation_accounts)
                    for record in self._pool.records.values())
 
     @Property("QVariantList", notify=changed)
@@ -1306,6 +1321,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         return self._view.compaction_running or (self._view.busy and self._view.action == "compact")
 
     def _reasoning_levels(self, record=None):
+        if record and record.provider == GROUP_PROVIDER:
+            return []
         if record and is_dsh(record) and getattr(record, 'dsh_options', None):
             return self._dsh_efforts(record)
         provider_id = record.provider if record else self.store.data["selectedProvider"]
@@ -1315,7 +1332,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         return reasoning_levels(model)
 
     def _reconcile_reasoning(self, record):
-        if is_dsh(record): return
+        if is_dsh(record) or record.provider == GROUP_PROVIDER: return
         value = reconcile_effort(record.reasoning_effort, self._reasoning_levels(record))
         if value != record.reasoning_effort:
             record.reasoning_effort = value
@@ -1416,10 +1433,14 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Slot(result=bool)
     def ensureReasoningDetection(self):
+        if self.modelGroupSelected:
+            return False
         return self.ensureModelReasoningDetection(self.store.data['selectedProvider'], self.store.data['selectedModel'])
 
     @Slot(str, result=bool)
     def setReasoningEffort(self, value):
+        if self.modelGroupSelected:
+            return False
         if is_dsh(self._view):
             if self._view.busy or (value != 'off' and value not in self._reasoning_levels(self._view)):
                 return False
@@ -1929,13 +1950,109 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def copyThemePrompt(self):
         self.copy((self.root / 'app/theme-prompt.txt').read_text(encoding='utf-8'))
 
+    @Property('QVariantMap', notify=changed)
+    def modelGroup(self):
+        return group_settings(self.store.data, internal_ready=getattr(self.adapter, "ready", True))
+
+    @Property(bool, notify=changed)
+    def modelGroupReady(self):
+        return bool(self.store.data.get("modelGroup", {}).get("enabled") and any(
+            model for _, _, model in configured_members(self.store.data, internal_ready=getattr(self.adapter, "ready", True))))
+
+    @Property(bool, notify=changed)
+    def modelGroupSelected(self):
+        return self._view.provider == GROUP_PROVIDER
+
+    def _remember_model_selection(self, provider, model):
+        group = provider == GROUP_PROVIDER
+        self.store.data["selectedModelGroup"] = group
+        if not group:
+            self.store.data.update(selectedProvider=provider, selectedModel=model)
+
+    def _repair_model_group_selection(self, record):
+        if record.provider != GROUP_PROVIDER or record.busy or (not is_dsh(record) and self.modelGroupReady):
+            return False
+        record.provider, record.model = self.store.data["selectedProvider"], self.store.data["selectedModel"]
+        record.context_usage = {}
+        if record.process:
+            record.stale = True
+        if record is self._view:
+            self.store.data["selectedModelGroup"] = False
+        return True
+
+    @Slot(result=bool)
+    def selectModelGroup(self):
+        if is_dsh(self._view) or not self.modelGroupReady:
+            return False
+        self.selectModel(*GROUP_SELECTION)
+        return self.modelGroupSelected
+
+    @Slot(bool, str, result=bool)
+    def saveModelGroup(self, enabled, raw):
+        if any(record.provider == GROUP_PROVIDER and (record.busy or record.subagents_active)
+               for record in self._pool.records.values()):
+            self.toast.emit("请等待模型组任务结束后再修改")
+            return False
+        try:
+            requested = json.loads(raw)
+            if not isinstance(requested, list) or len(requested) > MAX_MEMBERS:
+                return False
+            settings = self.modelGroup
+            allowed = {member_key(row): {"off", *row["levels"]} for row in settings["choices"]}
+            allowed.update((member_key(row), {row["effort"]}) for row in settings["members"] if not row["available"])
+            seen, members = set(), []
+            for row in requested:
+                if not isinstance(row, dict) or any(not isinstance(row.get(key), str) for key in ("provider", "model", "effort")):
+                    return False
+                key = member_key(row)
+                if key in seen or row["effort"] not in allowed.get(key, ()):
+                    return False
+                seen.add(key)
+                members.append({"provider": key[0], "model": key[1], "effort": row["effort"]})
+        except (ValueError, KeyError, TypeError):
+            return False
+        previous = self.store.data["modelGroup"]
+        updated = {"enabled": enabled, "members": members}
+        if previous == updated:
+            return True
+        descriptor = self.gateway.model_group_descriptor()
+        self.store.data["modelGroup"] = updated
+        try:
+            self.store.save()
+        except (OSError, RuntimeError):
+            self.store.data["modelGroup"] = previous
+            self.toast.emit("模型组保存失败")
+            return False
+        self.gateway.reset_model_group()
+        if descriptor != self.gateway.model_group_descriptor():
+            for record in self._pool.records.values():
+                if record.provider == GROUP_PROVIDER:
+                    if record.process:
+                        record.stale = True
+                    record.context_usage = {}
+        if self._repair_model_group_selection(self._view):
+            if self._view.id:
+                self._index_record(self._view)
+                self.store.save_sessions(self._sessions)
+            self._viewport_save.start()
+        self.changed.emit()
+        self.contextUsageChanged.emit()
+        self.reasoningChanged.emit()
+        return True
+
     @Slot(str, str)
     def selectModel(self, provider, model):
-        if self._view.busy and is_dsh(self._view):
-            return self.toast.emit("请等待当前任务结束后切换模型")
-        self.gateway.resolve(model, provider)
         record = self._view
-        self.store.data.update(selectedProvider=provider, selectedModel=model)
+        group = provider == GROUP_PROVIDER
+        changes_group = group != self.modelGroupSelected
+        if ((record.busy and is_dsh(record)) or (changes_group and (record.busy or record.subagents_active))):
+            return self.toast.emit("请等待当前任务结束后切换模型")
+        if group:
+            if model != GROUP_MODEL or is_dsh(record) or not self.modelGroupReady:
+                return
+        else:
+            self.gateway.resolve(model, provider)
+        self._remember_model_selection(provider, model)
         if record.busy:
             record.pending_selection = (provider, model) if (provider, model) != (record.provider, record.model) else None
         else:
@@ -1943,6 +2060,11 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
                 record.context_usage = {}
             record.model, record.provider = model, provider
             record.pending_selection = None
+            if changes_group and record.process:
+                record.stale = True
+            if changes_group and record.id:
+                self._index_record(record)
+                self.store.save_sessions(self._sessions)
             self._reconcile_reasoning(record)
             if is_dsh(record): self._switch_dsh_config()
         self.store.save()
@@ -1966,7 +2088,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self._index_record(record)
             self.store.save_sessions(self._sessions)
         if record is self._view:
-            self.store.data.update(selectedProvider=record.provider, selectedModel=record.model)
+            self._remember_model_selection(record.provider, record.model)
             self.store.save()
             self.changed.emit()
             self.contextUsageChanged.emit()

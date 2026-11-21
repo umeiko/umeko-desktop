@@ -210,7 +210,7 @@ def retry_delay(headers, attempt):
     return max(0, seconds) if seconds <= 30 else None
 
 
-def compatible_open(opener, request, *, timeout=20, memory=None, scope=(), automatic=(), records=None, cancelled=None):
+def compatible_open(opener, request, *, timeout=20, memory=None, scope=(), automatic=(), records=None, cancelled=None, http_retries=2):
     """Open a model request, recovering one named rejection before streaming.
 
     Each HTTP attempt has its own diagnostics record. A response already being
@@ -250,7 +250,7 @@ def compatible_open(opener, request, *, timeout=20, memory=None, scope=(), autom
                         memory.remember(scope, changed)
                     rejected_once = True
                     continue
-            if error.code in (429, 503) and retries < 2:
+            if error.code in (429, 503) and retries < http_retries:
                 delay = retry_delay(error.headers, retries)
                 if delay is not None:
                     error.close()
@@ -258,7 +258,7 @@ def compatible_open(opener, request, *, timeout=20, memory=None, scope=(), autom
                     if cancelled.wait(delay):
                         raise InterruptedError('供应商请求已取消') from None
                     continue
-            record['httpRetryManaged'] = error.code in (429, 503)
+            record['httpRetryManaged'] = bool(http_retries) and error.code in (429, 503)
             error.close()
             raise urllib.error.HTTPError(error.url, error.code, error.msg, error.headers, io.BytesIO(raw)) from None
         except OSError as error:
