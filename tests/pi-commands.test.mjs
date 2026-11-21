@@ -56,3 +56,122 @@ test('queued commands are cancelled and never applied to a different session', a
   await controller.run('/reload');controller.clear();await controller.flush();assert.equal(calls,0);
   await controller.run('/reload');id='second';await controller.flush();assert.equal(calls,0);
 });
+
+// Exercise both public names through the same real dispatcher, never a shell or installer.
+import { createUmekoControl } from '../runtime/releases/coding-1.5.2/umeko-control.mjs';
+function aliasFixture() {
+  const calls=[], entries=[], tools=[];
+  let config={agentDir:'/synthetic/agent'}, id='owner';
+  const manager={getSessionId:()=>id,getSessionFile:()=>'/synthetic/session',getCwd:()=>'/synthetic/workspace',
+    appendCustomEntry:(kind,data)=>entries.push({kind,data})};
+  const session={isIdle:true,sessionManager:manager,getAllTools:()=>[{name:'run_pi_command'}],
+    getCallableToolNames:()=>['run_pi_command'],
+    getContextUsage:()=>({tokens:42}),extensionRunner:{getCommand:()=>null}};
+  const controller=createPiCommandController({getRuntime:()=>({session}),getConfig:()=>config,
+    reload:async target=>{assert.equal(target,session);calls.push('reload');},notify:()=>{}});
+  const control=createUmekoControl({emit:()=>assert.fail('Pi alias must never use desktop RPC'),
+    runPiCommand:(...args)=>controller.runTool(...args)});
+  const pi={registerTool:tool=>tools.push(tool),registerCommand:()=>{}};
+  controller.extension(pi);control.extension(pi);
+  const ctx={sessionManager:manager};
+  const execute=(name,args,context=ctx,signal,id='fixture-id')=>tools.find(t=>t.name===name).execute(id,
+    name==='umeko_desktop'?{operation:'pi.run',arguments:args}:args,signal,undefined,context);
+  return {controller,session,calls,entries,execute,setConfig:value=>{config={agentDir:'/synthetic/agent',...value};},switch:()=>{id='other';}};
+}
+
+test('pi.run preserves legacy result, session and tool-call completion identity',async()=>{
+ const f=aliasFixture();
+ assert.deepEqual(await f.execute('umeko_desktop',{command:'/session'}),await f.execute('run_pi_command',{command:'/session'}));
+ f.session.isIdle=false;
+ const queued=await f.execute('umeko_desktop',{command:'/reload'});
+ assert.equal(queued.details.umekoPiCommand.status,'queued');assert.deepEqual(f.calls,[]);
+ f.session.isIdle=true;await f.controller.flush();
+ assert.deepEqual(f.calls,['reload']);assert.equal(f.entries[0].data.toolCallId,'fixture-id');
+ assert.equal(f.entries[0].data.status,'completed');
+});
+
+test('legacy deny, capability and plugin boundaries block both names without resetting config',async()=>{
+ for(const config of [
+  {blockedTools:['run_pi_command']},
+  {piCapabilities:{preset:'custom',custom:{base:'full',tools:{run_pi_command:false}}}},
+  {piCapabilities:{preset:'custom',custom:{base:'full',plugins:{'builtin:pi-commands':false}}}},
+  {pluginSessionPolicy:{allowedTools:['umeko_desktop']}},
+  {globalCoordinator:true},
+ ]) {
+  const before=JSON.stringify(config),f=aliasFixture();f.setConfig(config);
+  for(const name of ['run_pi_command','umeko_desktop'])
+   await assert.rejects(f.execute(name,{command:'/reload'}),/disabled/);
+  assert.deepEqual(f.calls,[]);assert.equal(JSON.stringify(config),before);
+ }
+});
+
+test('pi.run cannot inherit missing child capability or target another session',async()=>{
+ const f=aliasFixture();
+ for(const name of ['run_pi_command','umeko_desktop']) {
+  await assert.rejects(f.execute(name,{command:'/reload'},{sessionManager:{getSessionId:()=> 'child'}}),/does not own/);
+  await assert.rejects(f.execute(name,{command:'/reload'},{}),/does not own/);
+ }
+ f.session.getAllTools=()=>[{name:'umeko_desktop'}];
+ f.session.getCallableToolNames=()=>['umeko_desktop'];
+ await assert.rejects(f.execute('umeko_desktop',{command:'/reload'}),/disabled/);
+ assert.deepEqual(f.calls,[]);
+});
+
+test('pi.run rejects ambiguous arguments, unknown commands and shell combinations before effects',async()=>{
+ const f=aliasFixture();
+ for(const args of [undefined,[],{}, {command:'/reload',scope:'elsewhere'},
+  {command:'/reload',cwd:'/other'}, {command:'/reload',confirmed:true},
+  {command:'/reload',scope:null}, {command:42}, {command:'pi list; echo no'},
+  {command:'pi list | cat'}, {command:'pi install $(touch bad)'}, {command:'/unknown'},
+  {command:'bash echo no'}]) {
+  for(const name of ['run_pi_command','umeko_desktop']) await assert.rejects(f.execute(name,args));
+ }
+ assert.deepEqual(f.calls,[]);
+});
+
+test('queued alias is cancelled, owner checked and denied if legacy capability is revoked',async()=>{
+ for(const action of ['clear','switch','deny','inactive']) {
+  const f=aliasFixture();f.session.isIdle=false;
+  await f.execute('umeko_desktop',{command:'/reload'});
+  if(action==='clear')f.controller.clear();
+  if(action==='switch')f.switch();
+  if(action==='deny')f.setConfig({blockedTools:['run_pi_command']});
+  if(action==='inactive')f.session.getCallableToolNames=()=>['umeko_desktop'];
+  f.session.isIdle=true;await f.controller.flush();assert.deepEqual(f.calls,[]);
+  if(['deny','inactive'].includes(action))assert.equal(f.entries[0].data.status,'failed');
+ }
+ const f=aliasFixture(),abort=new AbortController();abort.abort();
+ await assert.rejects(f.execute('umeko_desktop',{command:'/reload'},undefined,abort.signal),/取消/);
+ assert.deepEqual(f.calls,[]);
+});
+
+test('unconfigured desktop control fails closed rather than forwarding pi.run',async()=>{
+ let tool;const control=createUmekoControl({emit:()=>assert.fail('no fallback')});
+ control.extension({registerTool:value=>{tool=value;},registerCommand:()=>{}});
+ await assert.rejects(tool.execute('id',{operation:'pi.run',arguments:{command:'/session'}}),/unavailable/);
+});
+
+
+test('registered but inactive legacy direct tool denies either route',async()=>{
+ const f=aliasFixture();
+ f.session.getCallableToolNames=()=>['umeko_desktop'];
+ assert.ok(f.session.getAllTools().some(tool=>tool.name==='run_pi_command'));
+ for(const name of ['run_pi_command','umeko_desktop'])
+  await assert.rejects(f.execute(name,{command:'/reload'}),/disabled/);
+ assert.deepEqual(f.calls,[]);
+});
+
+test('duplicate queued commands keep the first receipt without repeating the effect',async()=>{
+ for(const [first,second] of [
+  ['run_pi_command','umeko_desktop'],['umeko_desktop','run_pi_command'],
+ ]) {
+  const f=aliasFixture();f.session.isIdle=false;
+  for(const [name,id] of [[first,'first-call'],[second,'second-call']])
+   assert.equal((await f.execute(name,{command:'/reload'},undefined,undefined,id))
+    .details.umekoPiCommand.status,'queued');
+  f.session.isIdle=true;
+  const reports=await f.controller.flush();
+  assert.deepEqual(f.calls,['reload']);assert.equal(reports.length,1);
+  assert.deepEqual(f.entries.map(entry=>entry.data.toolCallId),['first-call']);
+ }
+});
