@@ -34,5 +34,9 @@
   "archify": {
     "zh": "将需求或现有系统整理为可交互的架构图、流程图、时序图和状态图，支持主题切换与导出。",
     "en": "Turn requirements or existing systems into interactive architecture, workflow, sequence and state diagrams with themes and export."
+  },
+  "git-worktree": {
+    "zh": "为代码任务创建独立 Git 工作树，核对实际执行目录，并保留、重新打开和安全清理工作树。",
+    "en": "Create an isolated Git worktree, verify the execution directory, and retain, reopen or safely clean up task trees."
   }
 }
