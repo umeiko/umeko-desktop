@@ -12,6 +12,10 @@ from app.integration import Completion
 from app.pi_runtime import verify_runtime, RELEASE_NAME
 verify_runtime(ROOT/"runtime/releases"/RELEASE_NAME, ROOT/"runtime/bridge.mjs")
 store=Store(base/'profile');store.data.update(selectedProvider='internal',selectedModel='fixture',providers=[{'id':'internal','name':'Local fixture','api':'internal','baseUrl':'','key':'','models':[{'upstream':'fixture','alias':'fixture'}]}]);store.data['agent']['agentDir']=str(base/'agent');store.save()
+# Keep the agent list empty until the user creates the first agent.
+settings = base / 'profile/desktop-plugins/settings.json'
+settings.parent.mkdir(parents=True, exist_ok=True)
+settings.write_text(json.dumps({'config': {'desktop-pet': {'visible': False}}}), encoding='utf-8')
 from main import create_application
 app,engine,b=create_application();window=engine.rootObjects()[0];warnings=[]
 engine.warnings.connect(lambda values:warnings.extend(x.toString() for x in values))

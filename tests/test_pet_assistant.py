@@ -27,6 +27,9 @@ class PetAssistantTests(unittest.TestCase):
         self.host.gateway = SimpleNamespace(models=lambda:[{'id':'fixture-model'}])
         self.host._pool.retire = Mock()
         self.host._command_pi = Mock(return_value=True)
+        settings = self.host.store.directory / 'desktop-plugins/settings.json'
+        settings.parent.mkdir(parents=True)
+        settings.write_text(json.dumps({'config': {'desktop-pet': {'visible': False}}}), encoding='utf-8')
         self.manager = DesktopPlugins(self.host); self.addCleanup(self.manager.close)
         self.host._desktop_plugins = self.manager
         self.pet, self.bus = self.manager.pet, self.manager.global_agents
