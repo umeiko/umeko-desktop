@@ -21,7 +21,7 @@ from .pet_packs import BUILTIN_APPEARANCES, STATES, import_pack, read_pack
 from .pet_reminders import PetReminders
 
 ID = 'desktop-pet'
-DEFAULTS = {'visible': False, 'appearance': 'yanami', 'size': 192, 'alwaysOnTop': True,
+DEFAULTS = {'visible': True, 'appearance': 'yanami', 'size': 192, 'alwaysOnTop': True,
             'paused': False, 'sampleIntervalMs': 1500, 'minimumStateMs': 3000,
             'reminderNotificationsEnabled': True, 'personas': {}}
 

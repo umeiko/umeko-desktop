@@ -111,7 +111,7 @@ Pi 的网络类扩展需要联网。在 **设置 → Agent → Pi** 中可设置
 
 ## 扩展你的工作方式
 
-- **桌面小宠物：** 官方 Widget 默认加载、窗口默认隐藏。在 **设置 → Agent → 插件管理 → 桌面小宠物** 中开启显示，可拖动、点击互动、使用右键菜单，并导入自己的 WebP / GIF / PNG 或多动作形象 ZIP。Agent 通过 [Widget 接口](runtime/umeko-docs/widget-plugins.md) 管理它。
+- **桌面小宠物：** 官方 Widget 默认显示并保持置顶。可拖动、点击互动、用右键菜单调整大小，或在 **设置 → Agent → 插件管理 → 桌面小宠物** 中导入 WebP / GIF / PNG 或多动作形象 ZIP。Agent 通过 [Widget 接口](runtime/umeko-docs/widget-plugins.md) 管理它。
 - **配置 Agent：** 在 **设置 → Agent → Pi** 管理扩展、MCP 与工具，粘贴 `pi install npm:<package>` 安装扩展，或在本机终端打开内嵌 Pi。
 - **接入账号服务：** 用 [umeko-provider-sdk](provider_dev/README.md) 开发供应商 ZIP，也可以把[开发 Skill](provider_dev/skills/develop-umeko-provider/SKILL.md) 交给 AI。登录实现独立放在插件中。
 - **连接其他客户端：** 在 **API 代理服务** 中配置模型映射、创建 API Key 并启动服务。别名按[供应商二级菜单组织，Base URL 自动生成](docs/api-proxy-menus.md)。

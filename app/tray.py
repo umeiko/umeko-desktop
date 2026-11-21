@@ -26,7 +26,8 @@ class TrayController(QObject):
         self.menu.addSeparator()
         self.quit_action = self.menu.addAction('退出')
         self.quit_action.setObjectName('trayQuitAction')
-        self.quit_action.setMenuRole(QAction.QuitRole)
+        # Keep the action in the status-item menu on macOS.
+        self.quit_action.setMenuRole(QAction.NoRole)
         self.tray.setContextMenu(self.menu)
         self.open_action.triggered.connect(self.restore)
         self.quit_action.triggered.connect(self.requestQuit)

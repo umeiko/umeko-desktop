@@ -66,8 +66,10 @@ def activate_menu_item(menu,index):
     wait(lambda:not menu.property('visible'),'Menu did not close after activation')
 
 def open_pet_menu():
-    QTest.mouseClick(window,Qt.RightButton,Qt.NoModifier,point)
+    QTest.mouseMove(window,point)
+    QTest.mousePress(window,Qt.RightButton,Qt.NoModifier,point)
     wait(lambda:menu.property('opened'),'Context menu did not reopen')
+    QTest.mouseRelease(window,Qt.RightButton,Qt.NoModifier,point)
     assert menu_object(menu,'contentItem.Window.window.flags & Qt.WindowStaysOnTopHint'),'Pet menu lost its explicit stay-on-top flag'
 def variant(value):
     return value.toVariant() if hasattr(value,'toVariant') else value
@@ -274,7 +276,11 @@ def reminder_card_smoke():
 
 try:
     window_loader=main.findChild(QObject,'desktopPetWindowLoader')
-    assert pet.running and window_loader.property('item') is None
+    assert pet.running and pet.visible and pet.config['alwaysOnTop']
+    wait(lambda:window_loader.property('item') is not None,'Pet did not show on a fresh profile')
+    assert window_loader.property('item').flags() & Qt.WindowStaysOnTopHint
+    pet.ui('hide',{})
+    wait(lambda:window_loader.property('item') is None,'Hidden pet retained its window')
     # Select the real Widget settings page, not a test-only control surface.
     main.setProperty('settingsTab',3);main.setProperty('page','settings');QTest.qWait(100)
     page=find('desktopPluginsPage');page.setProperty('selectedId','desktop-pet')
@@ -440,6 +446,27 @@ try:
     activate_menu_item(menu,5)
     assert pet.config['paused'] is not paused,'Pause menu action did not respond'
     open_pet_menu()
+    size_menu=menu_object(menu,'menuAt(7)')
+    menu_object(menu,'itemAt(7).click()')
+    wait(lambda:size_menu.property('opened'),'Size submenu did not open')
+    assert menu_object(size_menu,'itemAt(3).checked'),'Current pet size was not marked'
+    activate_menu_item(size_menu,5)
+    wait(lambda:pet.config['size']==256 and window.width()==288,'Size menu did not resize pet')
+    wait(lambda:not menu.property('visible'),'Size selection did not dismiss the menu')
+    stored=json.loads(backend.desktopPlugins.registry.read_text(encoding='utf-8'))
+    assert stored['config']['desktop-pet']['size']==256,'Size selection did not persist'
+    point=pointer.mapToScene(pointer.boundingRect().center()).toPoint()
+    open_pet_menu()
+    menu_object(menu,'itemAt(7).click()')
+    wait(lambda:size_menu.property('opened'),'Size submenu did not reopen')
+    assert menu_object(size_menu,'itemAt(5).checked'),'New pet size was not marked'
+    wait(lambda:size_menu.property('opacity')>.98,'Size submenu animation did not finish')
+    menu_object(size_menu,'contentItem.Window.window').grabWindow().save(str(out/'menu-size.png'))
+    activate_menu_item(size_menu,3)
+    wait(lambda:pet.config['size']==192 and window.width()==224,'Default size did not restore')
+    wait(lambda:not menu.property('visible'),'Size selection did not dismiss the menu')
+    point=pointer.mapToScene(pointer.boundingRect().center()).toPoint()
+    open_pet_menu()
     appearance_menu=menu_object(menu,'menuAt(4)')
     menu_object(menu,'itemAt(4).click()')
     wait(lambda:appearance_menu.property('opened'),'Appearance submenu did not open')
@@ -464,7 +491,7 @@ try:
     relevant=[w for w in warnings if any(s in w for s in ('DesktopPet','desktop-pet','DesktopPlugin','ReminderDateTimePicker','ReferenceError','TypeError'))]
     assert not relevant,'\n'.join(relevant)
     assert not notification_calls,'Reminder UI used a task/native/tray notification sender'
-    (out/'result.json').write_text(json.dumps({'settings':'passed','reminderCrud':'passed','localDateValidation':'passed','reminderNavigation':'passed','reminderCardStaleAndRemove':'passed','reminderBilingualScreenshots':'passed','notificationCalls':len(notification_calls),'animation':'passed','click':'passed','drag':'passed','contextMenu':'passed','pinToggles':50,'menuActionsAfterPinToggles':len(restored),'appearanceSubmenu':'passed','reminderSubmenu':'passed','hiddenDecoderReleased':True,'warnings':relevant},indent=2),encoding='utf-8')
+    (out/'result.json').write_text(json.dumps({'settings':'passed','reminderCrud':'passed','localDateValidation':'passed','reminderNavigation':'passed','reminderCardStaleAndRemove':'passed','reminderBilingualScreenshots':'passed','notificationCalls':len(notification_calls),'animation':'passed','click':'passed','drag':'passed','contextMenu':'passed','pinToggles':50,'menuActionsAfterPinToggles':len(restored),'sizeSubmenu':'passed','appearanceSubmenu':'passed','reminderSubmenu':'passed','hiddenDecoderReleased':True,'warnings':relevant},indent=2),encoding='utf-8')
     print('Desktop pet offscreen Qt acceptance passed')
 finally:
     backend.close()

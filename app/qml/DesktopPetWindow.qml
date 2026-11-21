@@ -56,7 +56,9 @@ Window {
     color: "transparent"
     visible: pet.visible
     transientParent: null
-    flags: Qt.Tool | Qt.FramelessWindowHint | (config.alwaysOnTop ? Qt.WindowStaysOnTopHint : 0)
+    // macOS hides Tool windows when another app is active. Keep a non-modal panel there.
+    flags: (Qt.platform.os === "osx" ? Qt.Dialog : Qt.Tool) | Qt.FramelessWindowHint
+           | (config.alwaysOnTop ? Qt.WindowStaysOnTopHint : 0)
     title: I18n.t("桌面小宠物")
     function bounds() {
         const area=pet.screenBounds(Math.round(x+width/2),Math.round(y+height/2))
@@ -403,7 +405,10 @@ Window {
         popupType: Popup.Window
         constrainToWindow: false
         delegate: ContextAction {
-            glyph: subMenu && subMenu.objectName === "desktopPetReminderMenu" ? "clock" : "pet"
+            glyph: ({
+                desktopPetReminderMenu: "clock",
+                desktopPetSizeMenu: "sliders"
+            })[subMenu ? subMenu.objectName : ""] || "pet"
         }
         Connections {
             target: petMenu
@@ -454,6 +459,23 @@ Window {
         }
         ContextAction { objectName: "desktopPetPauseAction"; text: I18n.t("暂停动作"); glyph: "stop"; checkable: true; checked: root.config.paused; onTriggered: root.pet.ui("configure", {paused: !root.config.paused}) }
         ContextAction { objectName: "desktopPetPinAction"; text: I18n.t("保持置顶"); glyph: "pin"; checkable: true; checked: root.config.alwaysOnTop; onTriggered: root.pet.ui("configure", {alwaysOnTop: !root.config.alwaysOnTop}) }
+        PetMenu {
+            objectName: "desktopPetSizeMenu"; title: I18n.t("桌宠大小")
+            Repeater {
+                model: [96, 128, 160, 192, 224, 256, 288, 320]
+                ContextAction {
+                    required property int modelData
+                    objectName: "desktopPetSize_" + modelData
+                    text: modelData + " px"
+                    checkable: true
+                    checked: root.config.size === modelData
+                    onTriggered: {
+                        const size = modelData
+                        Qt.callLater(() => root.pet.ui("configure", {size: size}))
+                    }
+                }
+            }
+        }
         ContextAction { text: I18n.t("重置位置"); glyph: "refresh"; onTriggered: root.pet.ui("resetPosition", {}) }
         PetSeparator {}
         ContextAction { text: I18n.t("隐藏桌宠"); glyph: "eye-off"; onTriggered: root.pet.ui("hide", {}) }
