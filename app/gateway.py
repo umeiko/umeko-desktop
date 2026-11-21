@@ -28,12 +28,13 @@ from .openai_responses import responses_request, responses_events
 from .request_diagnostics import RequestDiagnostics, RequestFailure
 from .network_retry import upstream_failure
 from .provider_errors import format_http_error, safe_text
-from .model_reasoning import reasoning_levels
+from .model_reasoning import reasoning_levels, reconcile_effort
+from .model_groups import GROUP_MODEL, MAX_MEMBERS, configured_members, descriptor
 from .reasoning_detection import allowed_levels, is_effort_rejection, detect_model
 from .reasoning_activity import ReasoningActivity
 from .thinking_formats import format_parameters, valid_format
 from umeko_provider_sdk.network import network_scope, proxy_handler, tls_context, trace, TracedResponse
-from umeko_provider_sdk import request_scope
+from umeko_provider_sdk import current_request_cancelled, request_scope
 from umeko_provider_sdk.compatibility import ParameterMemory, compatible_open, raise_api_error
 from umeko_provider_sdk.streaming import normalize_openai_events
 from .project_info import VERSION
@@ -53,10 +54,23 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError("供应商返回重定向；请直接填写最终 API 地址")
 
 
+def _member_unavailable(error, records):
+    response = next((row.get("response", {}) for row in reversed(records) if row.get("response")), {})
+    raw_status = response.get("status")
+    status = int(raw_status) if str(raw_status).isdigit() else 0
+    detail = str(error) + (" " + str(response.get("body", "")) if status >= 400 else "")
+    return status in (401, 402, 403, 404, 408, 425, 429) or status >= 500 or bool(re.search(
+        r"insufficient[ _-]?(?:quota|balance)|quota.{0,20}(?:exceed|exhaust)|rate[ _-]?limit|out of budget|"
+        r"billing|usage limit reached|model_not_found|限流|额度不足|余额不足|配额.{0,8}(?:不足|用尽)|"
+        r"供应商正在登录或刷新|无法连接供应商|供应商请求超时", detail, re.I))
+
+
 class Gateway:
     def __init__(self, store, adapter, plugins=None, reasoning_rejected=None):
         self.store, self.adapter, self.plugins = store, adapter, plugins
         self.reasoning_rejected = reasoning_rejected
+        self._group_lock = threading.Lock()
+        self._group_cooldown = {}
         self.reasoning_activity = ReasoningActivity()
         self.diagnostics = RequestDiagnostics(store.directory)
         self.compatibility = ParameterMemory(store.directory, app_version=VERSION)
@@ -86,6 +100,71 @@ class Gateway:
                              "reasoningFormatState": (model.get("reasoningFormatDetection", {}).get("state", "unknown")
                                                       if model.get("reasoningFormatAuto", True) else "manual")})
         return rows
+
+    def model_group_descriptor(self):
+        return descriptor(self.store.data, internal_ready=getattr(self.adapter, "ready", True))
+
+    def reset_model_group(self):
+        with self._group_lock:
+            self._group_cooldown.clear()
+
+    def group_events(self, messages, tools=None, max_tokens=None, parameters=None):
+        if not self.store.data.get("modelGroup", {}).get("enabled"):
+            raise ValueError("模型组未启用")
+        images = any(isinstance(message.get("content"), list)
+                     and any(block.get("type") == "image_url" for block in message["content"])
+                     for message in messages)
+        candidates = [(member, p, model) for member, p, model in configured_members(
+            self.store.data, internal_ready=getattr(self.adapter, "ready", True))
+            if model and (not images or normalize_vision(model)["vision"])]
+        if not candidates:
+            raise ValueError("模型组没有可用的兼容模型")
+        now = time.monotonic()
+        with self._group_lock:
+            candidates.sort(key=lambda row: self._group_cooldown.get((row[1]["id"], row[2]["alias"]), 0) > now)
+        cancelled = current_request_cancelled()
+        inputs = {key: value for key, value in (parameters or {}).items()
+                  if key not in ("reasoning_effort", "enable_thinking", "chat_template_kwargs", "thinking", "reasoning",
+                                 "_umeko_reasoning_effort", "_umeko_reasoning_format")}
+        last_report = ""
+        for member, provider, model in candidates:
+            if cancelled.is_set():
+                raise InterruptedError("供应商请求已取消")
+            key = (provider["id"], model["alias"])
+            effort = reconcile_effort(member.get("effort", "off"), reasoning_levels(model))
+            committed = False
+            preamble = None
+            try:
+                for event in self.events(model["alias"], messages, tools, max_tokens, provider["id"],
+                                         {**inputs, "_umeko_reasoning_effort": effort}, group=True):
+                    if not committed:
+                        if not any(choice.get("finish_reason") or any((choice.get("delta") or choice.get("message") or {}).get(name)
+                                   for name in ("content", "reasoning_content", "tool_calls", "refusal"))
+                                   for choice in event.get("choices", ())):
+                            preamble = event
+                            continue
+                        committed = True
+                        with self._group_lock:
+                            self._group_cooldown.pop(key, None)
+                        if preamble is not None:
+                            yield preamble
+                    yield event
+                return
+            except RequestFailure as failure:
+                if cancelled.is_set() or not (failure.retryable or getattr(failure, "failover_eligible", False)):
+                    raise
+                with self._group_lock:
+                    if key not in self._group_cooldown and len(self._group_cooldown) >= MAX_MEMBERS:
+                        del self._group_cooldown[next(iter(self._group_cooldown))]
+                    self._group_cooldown[key] = time.monotonic() + (30 if failure.retryable else 60)
+                if committed:
+                    # Pi discards the interrupted assistant attempt before retrying.
+                    if len(candidates) > 1:
+                        failure.retryable = True
+                    raise
+                report = re.search(r" \[Umeko:[a-f0-9-]{36}\]$", str(failure))
+                last_report = report[0] if report else ""
+        raise RequestFailure("模型组中的可用模型均请求失败" + last_report)
 
     def detect_reasoning(self, alias, provider_id=None, advertised_levels=None):
         """Use the normal mapper/transport, with ephemeral probe observations only."""
@@ -148,19 +227,25 @@ class Gateway:
         raise ValueError("模型别名不存在，请检查模型映射")
 
     def complete(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None):
-        data = collect_openai(self.events(alias, messages, tools, max_tokens, provider_id, parameters))
+        return self._completion(self.events(alias, messages, tools, max_tokens, provider_id, parameters))
+
+    @staticmethod
+    def _completion(events):
+        data = collect_openai(events)
         msg, usage = data["choices"][0]["message"], data.get("usage", {})
         calls = [{"id": c["id"], "name": c["function"]["name"], "arguments": json.loads(c["function"]["arguments"])} for c in msg.get("tool_calls") or []]
         return Completion(msg.get("content") or "", calls, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), data["choices"][0]["finish_reason"], msg.get("reasoning_content") or "")
 
-    def events(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None):
+    def events(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None, *, group=False):
         p, model = self.resolve(alias, provider_id)
         records = []
         request = {'transport': p['api'], 'model': model, 'messages': messages,
                    'tools': tools or [], 'max_tokens': max_tokens, 'parameters': parameters or {}}
         try:
             with self.reasoning_activity.chat((p.get('id', ''), model)), network_scope(p.get('proxy'), records):
-                for event in normalize_openai_events(self._events(alias, messages, tools, max_tokens, provider_id, parameters)):
+                transport = self._events(alias, messages, tools, max_tokens, provider_id, parameters,
+                                         **({"group": True} if group else {}))
+                for event in normalize_openai_events(transport):
                     if event.get('error'):
                         raise ValueError(json.dumps(event, ensure_ascii=False))
                     yield event
@@ -172,8 +257,10 @@ class Gateway:
             rejection = self._reasoning_rejection(p, model, effort, error, records)
             if rejection is not None:
                 raise rejection from None
-            raise self.diagnostics.failure(p, request, records[-1]['response'] if records else {},
-                                           error, records) from None
+            failure = self.diagnostics.failure(p, request, records[-1]['response'] if records else {}, error, records)
+            if group:
+                failure.failover_eligible = bool(failure.tls_code) or _member_unavailable(error, records)
+            raise failure from None
 
     def _reasoning_rejection(self, provider, model, effort, error, records):
         if effort is None:
@@ -195,7 +282,7 @@ class Gateway:
         message = safe_text(str(error), self.diagnostics._secrets(provider, {"http": records}))
         return RequestFailure(f'{message}\n当前可选推理档位：{", ".join(supported)}。请调整档位后重新发送。', retryable=False)
 
-    def _events(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None):
+    def _events(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None, *, group=False):
         p, model = self.resolve(alias, provider_id)
         if any(isinstance(m.get("content"), list) and any(block.get("type") == "image_url" for block in m["content"]) for m in messages) and not self.supports_vision(alias, p["id"]):
             raise ValueError("当前模型未启用视觉，请在模型配置中勾选“视觉”或切换支持图片的模型")
@@ -302,9 +389,9 @@ class Gateway:
         request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
         opener = urllib.request.build_opener(proxy_handler(p.get('proxy')), urllib.request.HTTPSHandler(context=tls_context(p.get('proxy'))), NoRedirect(), OmitHeaders(omitted))
         try:
-            with compatible_open(opener, request, timeout=90, memory=self.compatibility,
+            with compatible_open(opener, request, timeout=45 if group else 90, memory=self.compatibility,
                                  scope=(p['id'], base, model), automatic=automatic,
-                                 records=trace.get()) as response:
+                                 records=trace.get(), http_retries=0 if group else 2) as response:
                 def checked_events():
                     for event in response_events(response):
                         if event is None:
@@ -489,9 +576,16 @@ class LocalServer:
                     provider_id = body.get('_umeko_provider') if owner.private else None
                     if provider_id is not None and not isinstance(provider_id, str):
                         raise ValueError('Invalid private provider identity')
-                    if body.get("stream"):
-                        return self.stream_events(owner.gateway.events(body["model"], messages, tools, max_tokens, provider_id=provider_id, parameters=parameters), body["model"], anth)
-                    result = owner.gateway.complete(body["model"], messages, tools, max_tokens, provider_id=provider_id, parameters=parameters)
+                    alias = body["model"]
+                    if owner.private and not provider_id and alias == GROUP_MODEL:
+                        events = owner.gateway.group_events(messages, tools, max_tokens, parameters)
+                        if body.get("stream"):
+                            return self.stream_events(events, alias, anth)
+                        result = self.request_call(lambda: owner.gateway._completion(events))
+                    else:
+                        if body.get("stream"):
+                            return self.stream_events(owner.gateway.events(alias, messages, tools, max_tokens, provider_id=provider_id, parameters=parameters), alias, anth)
+                        result = owner.gateway.complete(alias, messages, tools, max_tokens, provider_id=provider_id, parameters=parameters)
                     self.respond(200, anthropic_response(result, body["model"]) if anth else openai_response(result, body["model"]))
                 except IntegrationRequired as exc:
                     self.respond(422 if owner.private else 503, {"error": {"type": "integration_required", "message": str(exc)}})

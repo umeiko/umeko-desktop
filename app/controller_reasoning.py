@@ -5,6 +5,7 @@ import threading
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from .model_groups import GROUP_PROVIDER, configured_members
 from .model_capabilities import normalize_model
 from .model_reasoning import normalize_reasoning
 from .provider_models import fetch_model_windows
@@ -102,10 +103,17 @@ class ReasoningDiscovery(QObject):
 
     def update_activity(self):
         busy = set()
+        group_targets = None
         for record in self.c._pool.records.values():
             if not record.busy:
                 continue
             provider = record.provider or self.c.store.data['selectedProvider']
+            if provider == GROUP_PROVIDER:
+                if group_targets is None:
+                    group_targets = {(account["id"], row["upstream"]) for _, account, row in configured_members(
+                        self.c.store.data, internal_ready=getattr(self.c.gateway.adapter, "ready", True)) if row}
+                busy.update(group_targets)
+                continue
             alias = record.model or self.c.store.data['selectedModel']
             row = self.model(provider, alias)
             if row:

@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, QUrl
+from .model_groups import GROUP_PROVIDER
 from .themes import BASES
 
 
@@ -348,11 +349,15 @@ class UmekoControl(QObject):
             if target.busy: raise ValueError('Session is still busy')
             if operation == 'models.select':
                 b.gateway.resolve(args['model'], args['provider'])
+                if target.provider == GROUP_PROVIDER and target.process:
+                    if target.subagents_active:
+                        raise ValueError("Session still has active subagents")
+                    target.stale = True
                 target.provider, target.model = args['provider'], args['model']
                 b._reconcile_reasoning(target)
                 target.context_usage = {}
                 if target is b._view:
-                    b.store.data.update(selectedProvider=target.provider, selectedModel=target.model)
+                    b._remember_model_selection(target.provider, target.model)
             else:
                 if args.get('value') != 'off' and args.get('value') not in b._reasoning_levels(target): raise ValueError('Reasoning must be off or one of the configured model levels')
                 target.reasoning_effort = args['value']

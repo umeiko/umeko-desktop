@@ -8,6 +8,7 @@ import copy, hashlib, json, secrets, time, uuid, re
 from itertools import islice
 from pathlib import Path
 from PySide6.QtCore import QObject, QTimer, QUrl
+from .model_groups import GROUP_PROVIDER
 from .pi_sessions import SessionState
 from .chat_model import ChatModel
 from .conversation_state import ConversationState
@@ -547,7 +548,7 @@ class GlobalAgents(QObject):
             if not choices:raise ValueError('没有可用人物形象')
             character=secrets.choice(choices)['id']
         if character not in {row['id'] for row in choices}:raise ValueError('请选择现有角色形象')
-        model=self.text(args,'model',200,False) or caller.model or self.b.store.data.get('selectedModel','')
+        model=self.text(args,'model',200,False) or (caller.model if getattr(caller, "provider", "") != GROUP_PROVIDER else '') or self.b.store.data.get('selectedModel','')
         if model not in {row['id'] for row in self.b.gateway.models()}:raise ValueError('请先配置可用模型')
         fields.update(character=character,model=model)
         while len(self.creation_requests)>=32:
