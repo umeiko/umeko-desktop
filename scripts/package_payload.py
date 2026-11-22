@@ -221,6 +221,8 @@ def optimize_character(manifest):
 
 
 def optimize_portraits(resources):
+    from PIL import Image
+
     qml = resources / 'app/qml/WelcomeMascot.qml'
     if not qml.is_file():
         return []
@@ -229,16 +231,37 @@ def optimize_portraits(resources):
     webp_line = png_line.replace('.png"', '.webp"')
     if png_line not in text and webp_line not in text:
         raise RuntimeError('Welcome portrait source changed; update payload projection')
+    folder = resources / 'app/icons/portraits'
+    count = json.loads((folder / 'manifest.json').read_text(encoding='utf-8'))['count']
+    if type(count) is not int or not 1 <= count <= 99:
+        raise RuntimeError('Invalid welcome portrait count')
     sources = []
-    for index in range(1, 13):
-        png = resources / 'app/icons/portraits' / f'{index:02}.png'
+    for index in range(1, count + 1):
+        png = folder / f'{index:02}.png'
         source = png if png.is_file() else png.with_suffix('.webp')
         if not source.is_file():
             raise RuntimeError('Incomplete welcome portrait set')
         sources.append(source)
-    changes = [row for source in sources
-               if (row := encode_static(source, POLICY['portraitEdge'], webp=True, force=True))]
-    qml.write_text(text.replace(png_line, webp_line), encoding='utf-8')
+    changes = []
+    edge = POLICY['portraitEdge']
+    for source in sources:
+        if source.suffix == '.webp':
+            with Image.open(source) as portrait:
+                if portrait.format != 'WEBP' or getattr(portrait, 'n_frames', 1) != 1:
+                    raise RuntimeError('Expected static WebP welcome portrait: ' + str(source))
+                size = list(portrait.size)
+                if max(size) <= edge:
+                    portrait.load()
+                    # Keep pre-sized repository WebPs byte-identical in packaged builds.
+                    length = source.stat().st_size
+                    changes.append({'path': str(source), 'target': str(source),
+                                    'before': length, 'after': length,
+                                    'originalSize': size, 'size': size,
+                                    'quality': 'preserved', 'colorRms': 0.0})
+                    continue
+        changes.append(encode_static(source, edge, webp=True, force=True))
+    if png_line in text:
+        qml.write_text(text.replace(png_line, webp_line), encoding='utf-8')
     return changes
 
 
@@ -318,6 +341,7 @@ def optimize_payload(resources, workers=4):
     welcome = resources / 'app/qml/WelcomeMascot.qml'
     if welcome.is_file():
         checked.add(welcome)
+        checked.add(resources / 'app/icons/portraits/manifest.json')
     hashes = {file.relative_to(resources).as_posix(): hashlib.sha256(file.read_bytes()).hexdigest()
               for file in sorted(checked)}
     receipt.write_text(json.dumps({'policy': POLICY, 'files': hashes}, indent=2) + '\n', encoding='utf-8')

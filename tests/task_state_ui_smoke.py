@@ -73,8 +73,8 @@ def assert_turn(state, label, icon=None):
     composer_label = find("taskStatusText", composer_status)
     assert label in composer_label.property("text"), composer_label.property("text")
     if not backend.loading:
-        shortcut = find("composerStatus")
-        assert "Enter" in shortcut.property("text"), "Task label removed the keyboard hint"
+        status_text = find("composerStatus")
+        assert not status_text.isVisible() and not status_text.property("text"), "Permanent shortcut hint returned"
 
 
 def check_turn_lifecycle():

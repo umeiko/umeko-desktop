@@ -69,12 +69,12 @@ class PetTests(unittest.TestCase):
         self.assertTrue(value['ok'],value)
         self.wait(lambda:self.manager.bridge.calls[value['requestId']]['status']!='running')
         return control.execute({'operation':'widgets.result','arguments':{'requestId':value['requestId']}})['result']
-    def test_default_loaded_hidden_no_process_and_application_lifetime(self):
-        self.assertTrue(self.manager.enabled('desktop-pet'));self.assertTrue(self.pet.running);self.assertFalse(self.pet.visible)
+    def test_default_visible_and_pinned_no_process_and_application_lifetime(self):
+        self.assertTrue(self.manager.enabled('desktop-pet'));self.assertTrue(self.pet.running);self.assertTrue(self.pet.visible)
+        self.assertTrue(self.pet.config['alwaysOnTop'])
         worker=self.manager.workers['desktop-pet'];self.assertNotIn('process',worker)
         self.host._view.key='next';self.host._view.id='second';self.host.viewChanged.emit()
         self.assertIs(self.manager.workers['desktop-pet'],worker)
-        self.pet.configure({'visible':True});self.assertTrue(self.pet.visible)
         self.manager.setEnabled('desktop-pet',False);self.assertFalse(self.pet.running);self.assertFalse(self.pet.visible);self.assertFalse(self.pet.timer.isActive())
         self.manager.setEnabled('desktop-pet',True);self.assertTrue(self.pet.visible)
         self.manager.close();self.assertFalse(self.pet.running)
@@ -153,10 +153,12 @@ class PetTests(unittest.TestCase):
         self.assertEqual(self.pet.state['appearance'],'komari')
         self.assertEqual(self.pet.state['name'],'小鞠知花')
         self.assertFalse(self.rpc(control,'removeAppearance',{'id':'komari'})['ok'])
+        self.pet.configure({'visible':False, 'alwaysOnTop':False})
         self.manager.close()
         second = DesktopPlugins(self.host);self.addCleanup(second.close)
         self.assertEqual(second.pet.config['appearance'],'komari')
         self.assertFalse(second.pet.visible)
+        self.assertFalse(second.pet.config['alwaysOnTop'])
     def test_tiara_has_six_alpha_animations_and_is_protected(self):
         from PySide6.QtGui import QImageReader
         packs={row['id']:row for row in self.pet.appearances}
@@ -296,6 +298,7 @@ class PetTests(unittest.TestCase):
     def test_agent_import_select_config_and_result_use_existing_widget_channel(self):
         control=self.control();docs=control.execute({'operation':'widgets.docs','arguments':{'id':'desktop-pet'}})
         self.assertIn('importAppearance',docs['methods']);self.assertIn('umeko-pet',docs['document']['text'])
+        self.pet.configure({'visible':False})
         imported=self.rpc(control,'importAppearance',{'path':str(self.image())})
         self.assertTrue(imported['ok'],imported);identifier=imported['result']['appearance']
         self.assertFalse(self.pet.visible);self.assertEqual(self.pet.config['appearance'],'yanami')
@@ -343,6 +346,8 @@ class PetTests(unittest.TestCase):
         manifest, defaults, schema = validate(self.host.root/'umeko-plugins/desktop-pet')
         self.assertEqual(manifest['id'], 'desktop-pet')
         self.assertTrue(defaults['reminderNotificationsEnabled'])
+        self.assertTrue(defaults['visible'])
+        self.assertTrue(defaults['alwaysOnTop'])
         now = datetime(2026, 11, 2, 8, tzinfo=timezone.utc)
         self.pet.reminders.clock = lambda: now
         control = self.control()

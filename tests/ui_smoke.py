@@ -515,10 +515,15 @@ try:
     backend.changed.emit()
     assert (backend.greeting, backend.portrait) == (greeting, portrait)
     capture("30-yanami-theme-chat")
-    for index in range(1, 13):
-        asset = QImage(str(ROOT / f"app/icons/portraits/{index:02d}.png"))
-        assert not asset.isNull() and asset.hasAlphaChannel(), index
-        assert asset.pixelColor(0, 0).alpha() == 0, index
+    folder = ROOT / "app/icons/portraits"
+    count = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))["count"]
+    filenames = [f"{index:02d}.webp" for index in range(1, count + 1)]
+    assert sorted(path.name for path in folder.glob("*.webp")) == filenames
+    for name in filenames:
+        asset = QImage(str(folder / name))
+        assert not asset.isNull() and asset.hasAlphaChannel(), name
+        assert asset.width() == asset.height() == 512, name
+        assert asset.pixelColor(0, 0).alpha() <= 4, name
     class StreamingFixture:
         def __init__(self): self.advance = threading.Event()
         def events(self, model, messages, tools, max_tokens, parameters):

@@ -1,4 +1,5 @@
 """Route native Pi events to their owning session, independently of the view."""
+from .model_groups import GROUP_MODEL, GROUP_PROVIDER
 from .pi_capabilities import merge_resources,from_legacy
 import copy
 import logging
@@ -84,6 +85,7 @@ class PiControllerMixin:
                 record.context_usage = {}
                 self._reconcile_reasoning(record)
         self._pool.invalidate()
+        self._repair_model_group_selection(self._view)
         self.contextUsageChanged.emit()
 
     def _skills_widget_changed(self,record=None):
@@ -231,6 +233,11 @@ class PiControllerMixin:
             systemPromptStateDir=str(self.store.directory / 'system-prompts'),
             generation=generation_config(self.store.data),
             mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
+        if record.provider == GROUP_PROVIDER:
+            group = self.gateway.model_group_descriptor()
+            if group is None:
+                raise RuntimeError("模型组没有可用模型")
+            payload["models"].append(group)
         if plugin_policy:
             payload.update(pluginSessionPolicy=plugin_policy,
                 permissionMode=plugin_policy['mode'], dangerousAllowed=False,
@@ -255,6 +262,7 @@ class PiControllerMixin:
             self.toast.emit('会话数据正在删除，请稍后再试')
             return False
         record = record or self._view
+        self._repair_model_group_selection(record)
         from .plugin_sessions import apply_session_policy
         if action == 'widget-notify' and record.cancelled:
             return False
@@ -337,9 +345,15 @@ class PiControllerMixin:
         if not record.busy:
             self._apply_pending_selection(record)
         images = [{"type": "image", "data": item["data"], "mimeType": item["mime"]} for item in record.attachments if item["kind"] == "image"]
-        model, provider = self.store.data["selectedModel"], self.store.data["selectedProvider"]
+        self._repair_model_group_selection(record)
+        if record.provider == GROUP_PROVIDER:
+            model, provider = record.model, record.provider
+            vision_enabled = bool(images and "image" in (self.gateway.model_group_descriptor() or {}).get("input", ()))
+        else:
+            model, provider = self.store.data["selectedModel"], self.store.data["selectedProvider"]
+            vision_enabled = bool(images and self.gateway.supports_vision(model, provider))
         attachments = record.attachments
-        if images and not self.gateway.supports_vision(model, provider) and not self._can_analyze_attachments(model, provider):
+        if images and not vision_enabled and not self._can_analyze_attachments(model, provider):
             images = []
             vision = self._auxiliary_vision()
             if not (vision['model'] and vision['toolEnabled']):
@@ -357,7 +371,7 @@ class PiControllerMixin:
             return True
         if record.prepared_task and not self._task_records.start(record, attachments):
             return False
-        record.model, record.provider = self.store.data["selectedModel"], self.store.data["selectedProvider"]
+        record.model, record.provider = model, provider
         if not record.id:
             record.id = "pending-" + record.key
         if not record.messages and not record.transcript:
@@ -535,8 +549,9 @@ class PiControllerMixin:
         elif kind == "active_model":
             # Queued sends start at their own request boundary, after the old reply.
             desired = record.pending_selection or (record.provider, record.model)
-            provider, _ = self.gateway.resolve(event["model"])
-            record.provider, record.model = provider["id"], event["model"]
+            model = event["model"]
+            provider = GROUP_PROVIDER if model == GROUP_MODEL else self.gateway.resolve(model)[0]["id"]
+            record.provider, record.model = provider, model
             record.pending_selection = desired if desired != (record.provider, record.model) else None
             record.context_usage = {}
             if visible:

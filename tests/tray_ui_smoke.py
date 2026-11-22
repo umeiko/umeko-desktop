@@ -6,7 +6,7 @@ ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 os.environ.setdefault('QT_QUICK_BACKEND','software')
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QIcon, QWindow
+from PySide6.QtGui import QAction, QIcon, QWindow
 from PySide6.QtQuick import QQuickWindow
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication,QSystemTrayIcon
@@ -22,6 +22,7 @@ with patch.object(QSystemTrayIcon,'isSystemTrayAvailable',return_value=True), pa
     QTest.qWait(50);assert ticks,'Agents stopped when window was hidden'
     notify.assert_called_once();assert notify.call_args.args[1]=='我在这里继续执行任务！需要完全退出你可以右键点击任务栏中的图标~'
     assert not tray.tray.icon().isNull()
+    assert tray.quit_action.menuRole() == QAction.NoRole
     tray.open_action.trigger();QTest.qWait(20);assert window.isVisible()
     window.showMaximized();QTest.qWait(20)
     assert not window.close();tray.tray.messageClicked.emit();QTest.qWait(20)

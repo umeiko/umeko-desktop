@@ -15,6 +15,27 @@ spec.loader.exec_module(payload)
 
 
 class PackagePayloadTest(unittest.TestCase):
+    def test_welcome_portrait_projection_keeps_precompressed_webp(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            folder = root / 'app/icons/portraits'
+            folder.mkdir(parents=True)
+            (folder / 'manifest.json').write_text('{"count": 1}', encoding='utf-8')
+            qml = root / 'app/qml/WelcomeMascot.qml'
+            qml.parent.mkdir()
+            qml.write_text('fallbackSource: "../icons/portraits/" + (root.portraitIndex + 1).toString().padStart(2, "0") + ".webp"',
+                           encoding='utf-8')
+            source = folder / '01.webp'
+            Image.new('RGBA', (512, 512), (80, 144, 217, 184)).save(source, quality=56)
+            original = source.read_bytes()
+
+            report = payload.optimize_payload(root)
+
+            self.assertEqual(source.read_bytes(), original)
+            self.assertEqual(len(report['categories']['portraits']), 1)
+            receipt = json.loads((root / payload.RECEIPT).read_text(encoding='utf-8'))
+            self.assertIn('app/icons/portraits/01.webp', receipt['files'])
+
     def test_character_projection_keeps_pixels_and_shared_slots(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

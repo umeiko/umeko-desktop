@@ -90,6 +90,19 @@ try:
     click("modelOption_" + providers[0] + "_careful")
     assert (backend.config["selectedProvider"], backend.config["selectedModel"]) == (providers[0], "careful")
     wait(lambda: not popup.property("visible"), "Second selection did not close popup")
+    members = [{"provider": providers[0], "model": "swift", "effort": "high"},
+               {"provider": providers[1], "model": "breeze", "effort": "low"}]
+    assert backend.saveModelGroup(True, json.dumps(members))
+    open_popup()
+    assert QMetaObject.invokeMethod(find("modelOptionsList"), "positionViewAtEnd")
+    QTest.qWait(100)
+    group_option = find("modelGroupOption")
+    assert group_option.isVisible() and group_option.property("title") == "模型组"
+    click("modelGroupOption")
+    wait(lambda: not popup.property("visible"), "Model group selection did not close popup")
+    assert backend.modelGroupSelected and find("composerProviderName").property("text") == "模型组"
+    assert backend.config["selectedModel"] == "careful"
+    assert backend.saveModelGroup(False, json.dumps(members)) and not backend.modelGroupSelected
     # QML child conversations stay visible while the model selector is open;
     # only native browser surfaces need to be hidden under QML popups.
     from unittest.mock import patch
@@ -127,7 +140,7 @@ try:
     record = backend._view
     record.id = 'composer-layout-fixture'
     backend.store.data['sessionMeta'][record.id] = {'dangerousAllowed':True}
-    saw_stacked = saw_hidden_hint = saw_elided_name = False
+    saw_stacked = saw_elided_name = False
 
     def rect(item):
         point = item.mapToScene(QPointF(0, 0))
@@ -173,9 +186,9 @@ try:
                     backend.changed.emit(); backend.chatChanged.emit(); QTest.qWait(100)
                     check_toolbar()
                     saw_stacked |= find('composerToolbar').property('stacked')
-                    saw_hidden_hint |= not find('composerStatus').isVisible()
+                    assert not find('composerStatus').isVisible(), 'Permanent shortcut hint returned'
                     saw_elided_name |= not find('composerProviderName').isVisible() or find('composerProviderName').property('truncated')
-    assert saw_stacked and saw_hidden_hint and saw_elided_name
+    assert saw_stacked and saw_elided_name
     # Serif and monospace bearings differ from their horizontal advance.
     for family in ('serif','monospace'):
         backend.setFontFamily(family)
