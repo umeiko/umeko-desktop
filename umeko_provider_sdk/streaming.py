@@ -154,7 +154,8 @@ def normalize_openai_events(events):
             raw = raw or {}
             delta = {key: value for key, value in raw.items() if key not in ('content', 'reasoning', 'reasoning_text', 'reasoning_content', 'tool_calls', 'function_call')}
             reason = raw.get('reasoning_content') or raw.get('reasoning') or raw.get('reasoning_text') or ''
-            finish = finish_reason(choice.get('finish_reason') or choice.get('stop_reason'))
+            # OpenAI-compatible providers may report a stop token as metadata.
+            finish = finish_reason(choice.get('finish_reason'))
             parser = thoughts.setdefault(index, _Thinking())
             text, tagged = parser.feed(raw.get('content') or '', final=bool(full or finish))
             if text or (full and raw.get('content') is not None):

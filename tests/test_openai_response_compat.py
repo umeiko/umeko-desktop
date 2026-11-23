@@ -109,6 +109,45 @@ class OpenAIResponseCompatibility(unittest.TestCase):
             with self.subTest(reason=reason):
                 self.assertEqual(self.collect([delta({'content': 'answer'}, reason)])['choices'][0]['finish_reason'], expected)
 
+    def test_vllm_stop_token_stays_metadata_in_stream(self):
+        from umeko_provider_sdk.streaming import normalize_openai_events
+
+        wire = (b'data: {"choices":[{"index":0,"delta":{"content":"!"},"stop_reason":154827}]}\n\n'
+                b'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
+                b'data: [DONE]\n\n')
+        with fake_response(wire, raw=True) as response:
+            first, last = list(normalize_openai_events(sdk.response_events(response)))
+        self.assertEqual(first['choices'][0]['delta']['content'], '!')
+        self.assertIsNone(first['choices'][0]['finish_reason'])
+        self.assertEqual(first['choices'][0]['stop_reason'], 154827)
+        self.assertEqual(last['choices'][0]['finish_reason'], 'stop')
+
+    def test_vllm_stop_token_stays_metadata_in_json(self):
+        from umeko_provider_sdk.streaming import normalize_openai_events
+
+        body = {'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': '!'},
+                             'provider_specific_fields': {'stop_reason': 154827}, 'finish_reason': 'stop'}]}
+        with fake_response(body, json_body=True) as response:
+            event, = list(normalize_openai_events(sdk.response_events(response)))
+        choice = event['choices'][0]
+        self.assertEqual(choice['message']['content'], '!')
+        self.assertEqual(choice['finish_reason'], 'stop')
+        self.assertEqual(choice['provider_specific_fields'], {'stop_reason': 154827})
+
+    def test_openai_terminal_reasons_are_preserved(self):
+        for reason in ('stop', 'length', 'tool_calls', 'content_filter'):
+            with self.subTest(reason=reason):
+                result = self.collect([delta({'content': 'answer'}), delta(finish=reason)])
+                self.assertEqual(result['choices'][0]['finish_reason'], reason)
+
+    def test_done_without_finish_reason_still_reports_incomplete_stream(self):
+        for metadata in ({}, {'stop_reason': 154827}, {'provider_specific_fields': {'stop_reason': 'END'}}):
+            with self.subTest(metadata=metadata):
+                events = [{'choices': [{'delta': {'content': 'partial'}, **metadata}]}]
+                with fake_response(events) as response:
+                    with self.assertRaisesRegex(ValueError, 'Upstream stream ended before completion'):
+                        sdk.collect_openai(sdk.response_events(response))
+
     def test_missing_done_terminal_success_and_empty_chunks(self):
         result = self.collect([{}, {'choices': []}, delta(), delta({'content': 'answer'}, 'stop')], done=False)
         self.assertEqual(result['choices'][0]['message']['content'], 'answer')
