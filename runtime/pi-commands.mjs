@@ -7,6 +7,8 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { umekoHelp } from './umeko-control.mjs';
 import { installPackage } from './package-install.mjs';
+import { blockedToolNames } from './tool-visibility.mjs';
+import { toolSelection } from './session-capabilities.mjs';
 
 export const PI_COMMAND_TOOL = 'run_pi_command';
 export const DESKTOP_PI_PROMPT = 'You are Umeko, powered by Pi embedded in Umeko Desktop. For Pi/MCP/extension management and slash commands, use run_pi_command; it targets this running session and its configuration. Do not invoke a system pi binary or install a separate Pi. Models and credentials are managed in Umeko settings.';
@@ -98,9 +100,24 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
     const session = getRuntime().session, manager = session.sessionManager;
     return { sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile(), workspace: manager.getCwd(), agentDir: getConfig().agentDir };
   };
-  const queue = (command, toolCallId) => {
+  // Both model-facing names keep the legacy capability and exact session boundary.
+  // Never rewrite persisted flags: an explicit old deny remains authoritative.
+  // The legacy direct tool is callable only while active in Pi’s current loadout.
+  const assertToolAllowed = (ctx, requireContext = true) => {
+    const config = getConfig(), session = getRuntime().session;
+    if (config.globalCoordinator || blockedToolNames(config.blockedTools).includes(PI_COMMAND_TOOL) ||
+        !toolSelection(config.piCapabilities, {name: PI_COMMAND_TOOL, source: 'builtin:pi-commands'}) ||
+        (config.pluginSessionPolicy && !config.pluginSessionPolicy.allowedTools?.includes(PI_COMMAND_TOOL)) ||
+        !session.getCallableToolNames?.().includes(PI_COMMAND_TOOL))
+      throw new Error('Pi command capability is disabled for this session');
+    if (requireContext && (!ctx?.sessionManager ||
+        ctx.sessionManager.getSessionId() !== session.sessionManager.getSessionId()))
+      throw new Error('Pi command caller does not own this session');
+  };
+  const queue = (command, toolCallId, toolOrigin = false) => {
     const sessionId = info().sessionId;
-    if (!pending.some(item => item.command === command && item.sessionId === sessionId)) pending.push({ command, sessionId, toolCallId });
+    // Preserve the legacy one-execution/first-receipt behavior for duplicates.
+    if (!pending.some(item => item.command === command && item.sessionId === sessionId)) pending.push({ command, sessionId, toolCallId, toolOrigin });
     return { ...info(), status: 'queued', command, message: '已排队，将在本轮回复结束后作用于当前 Pi 会话。' };
   };
   const help = () => umekoHelp();
@@ -125,7 +142,7 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
     child.on('error', fail);
     child.on('close', code => code === 0 ? done({ ...context, status: 'completed', output }) : fail(new Error(signal?.aborted ? 'Pi 操作已取消' : output || `Pi 命令未成功完成（${code}）`)));
   });
-  const run = async (text, { signal, toolCallId, scope } = {}) => {
+  const run = async (text, { signal, toolCallId, scope, toolOrigin = false } = {}) => {
     if (signal?.aborted) throw new Error('Pi 操作已取消');
     let words = commandWords(text);
     if (words[0] === 'pi') words.shift();
@@ -135,12 +152,12 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
     if (words[0].startsWith('/')) {
       const name = words[0];
       if (!['/reload','/compact','/name'].includes(name) && !session.extensionRunner.getCommand(name.slice(1))) throw new Error('当前内嵌 Pi 不支持此命令；使用 /help 查看可用命令。');
-      return session.isIdle ? slash(text.replace(/^\s*pi\s+/, '')) : queue(text.replace(/^\s*pi\s+/, ''), toolCallId);
+      return session.isIdle ? slash(text.replace(/^\s*pi\s+/, '')) : queue(text.replace(/^\s*pi\s+/, ''), toolCallId, toolOrigin);
     }
     const [action, ...args] = words;
     if (action === 'mcp') {
       const [operation, ...parameters] = args;
-      if (['list','login','logout','reconnect'].includes(operation) || !operation) return run('/mcp' + (operation && operation !== 'list' ? ' ' + [operation, ...parameters].join(' ') : ''), { signal, toolCallId });
+      if (['list','login','logout','reconnect'].includes(operation) || !operation) return run('/mcp' + (operation && operation !== 'list' ? ' ' + [operation, ...parameters].join(' ') : ''), { signal, toolCallId, toolOrigin });
       if (!['add','remove'].includes(operation)) throw new Error('支持 pi mcp add/remove/list/login/logout/reconnect');
       const { runMcpCommand } = await mcpModules();
       const output = [], errors = [];
@@ -149,7 +166,7 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
       const code = await runMcpCommand([operation, ...scopedMcpArgs(parameters, local)], { cwd: info().workspace, agentDir: info().agentDir, log: line => output.push(line), error: line => errors.push(line) });
       if (code) throw new Error(errors.join('\n') || 'MCP 命令未成功完成');
       if (signal?.aborted) throw new Error('Pi 操作已取消');
-      const applied = session.isIdle ? await slash('/reload') : queue('/reload', toolCallId);
+      const applied = session.isIdle ? await slash('/reload') : queue('/reload', toolCallId, toolOrigin);
       return { ...info(), status: 'completed', output: output.join('\n'), reload: applied.status || 'completed' };
     }
     if (!['install','remove','uninstall','list'].includes(action)) throw new Error('支持 pi install/remove/list、pi mcp 和当前会话的斜杠命令；使用 /help 查看用法。');
@@ -171,17 +188,29 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
     },{signal,onProgress:value=>notify(value.message)})} :
       await nativeCli([action === 'uninstall' ? 'remove' : action, sources[0], local ? '--approve' : '--no-approve', ...(local ? ['--local'] : [])], signal);
     if (signal?.aborted) throw new Error('Pi 操作已取消');
-    const applied = session.isIdle ? await slash('/reload') : queue('/reload', toolCallId);
+    const applied = session.isIdle ? await slash('/reload') : queue('/reload', toolCallId, toolOrigin);
     return { ...result, reload: applied.status || 'completed' };
+  };
+  const runTool = async (id, params, signal, ctx) => {
+    assertToolAllowed(ctx);
+    if (!params || typeof params !== 'object' || Array.isArray(params) ||
+        Object.keys(params).some(key => !['command', 'scope'].includes(key)) ||
+        typeof params.command !== 'string' ||
+        (params.scope !== undefined && !['global', 'project'].includes(params.scope)))
+      throw new Error('Expected Pi command and optional global/project scope');
+    const result = await run(params.command, {signal, toolCallId: id, scope: params.scope, toolOrigin: true});
+    return {content: [{type: 'text', text: JSON.stringify(result)}], details: {umekoPiCommand: result}};
   };
   return {
     run,
+    runTool,
     async flush() {
       const reports = [];
       while (pending.length) {
         const item = pending.shift();
         if (item.sessionId !== info().sessionId) { notify('Pi 命令未执行：原会话已经切换'); continue; }
         try {
+          if (item.toolOrigin) assertToolAllowed(undefined, false);
           const result = await slash(item.command);
           getRuntime().session.sessionManager.appendCustomEntry('umeko-pi-command', { toolCallId: item.toolCallId, command: item.command, status: 'completed', result });
           reports.push({ command: item.command, status: 'completed', result });
@@ -201,9 +230,8 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
         promptSnippet: 'Run Pi administration and slash commands in the current Umeko session.',
         promptGuidelines: ['Use run_pi_command instead of shell pi commands or a separate Pi install. For MCP additions use pi mcp add; for extensions use pi install. Report queued commands as queued until completion is reported.'],
         parameters: Type.Object({ command: Type.String({ minLength: 1, maxLength: 16384 }), scope: Type.Optional(Type.Union([Type.Literal('global'), Type.Literal('project')])) }),
-        async execute(id, params, signal) {
-          const result = await run(params.command, { signal, toolCallId: id, scope: params.scope });
-          return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { umekoPiCommand: result } };
+        async execute(id, params, signal, _update, ctx) {
+          return runTool(id, params, signal, ctx);
         },
       });
     },
