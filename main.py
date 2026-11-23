@@ -21,7 +21,7 @@ if "--umeko-plugin-worker" in sys.argv:
     runpy.run_path(str(_plugin_root / "plugin-runtime/worker.py"), run_name="__main__")
     sys.exit(0)
 
-from app.platform_support import configure_input_method
+from app.platform_support import configure_input_method, configure_windows_vblank_workaround
 
 os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
 configure_input_method()
@@ -47,6 +47,7 @@ def diagnostic(message):
 
 
 def create_application():
+    configure_windows_vblank_workaround()
     root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
     from app.webview import configure, configure_engine
     from app.desktop_preferences import startup_settings

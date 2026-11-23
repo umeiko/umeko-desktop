@@ -1,4 +1,4 @@
-"""Desktop paths and input methods, configured before creating a Qt application."""
+"""Desktop paths and platform settings used before creating a Qt application."""
 from __future__ import annotations
 
 import os
@@ -108,6 +108,14 @@ def migrate_profile(previous, target):
         if changed:
             path.write_bytes(json.dumps(header, ensure_ascii=False).encode() + b'\n' + remainder)
     staging.rename(target)
+
+
+def configure_windows_vblank_workaround(platform=None, environment=None):
+    """Use Qt's timer-based updates to avoid a DXGI vblank worker stall on Windows."""
+    if (platform or sys.platform) != "win32":
+        return
+    environment = os.environ if environment is None else environment
+    environment.setdefault("QT_D3D_NO_VBLANK_THREAD", "1")
 
 
 def configure_input_method(platform=None, environment=None, plugin_directory=None):
