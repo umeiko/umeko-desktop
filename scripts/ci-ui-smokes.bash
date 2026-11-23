@@ -93,6 +93,7 @@ smokes=(
   tests/steering_status_ui_smoke.py
   tests/subagent_report_status_ui_smoke.py
   tests/conversation_search_ui_smoke.py
+  tests/session_title_ui_smoke.py
   tests/sidebar_menu_position_ui_smoke.py
   tests/pi_manager_initial_tools_ui_smoke.py
   tests/slash_commands_ui_smoke.py
