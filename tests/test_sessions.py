@@ -336,6 +336,22 @@ class SessionTests(unittest.TestCase):
             self.assertTrue(next(row for row in c.projectRows if row['id'] == '4')['selected'])
             self.assertEqual(sum(row['kind'] == 'session' for row in c.projectRows), 11)
 
+    def test_sidebar_about_to_change_exposes_old_rows_once(self):
+        c = self.controller
+        c._sessions = [{"id": "anchor", "title": "Before", "workspace": ""}]
+        c._refresh_sidebar()
+        old_rows = c.projectRows
+        events = []
+        c.sidebarAboutToChange.connect(lambda: events.append(("before", c.projectRows)))
+        c.sidebarChanged.connect(lambda: events.append(("after", c.projectRows)))
+        c._sessions[0]["title"] = "After"
+        c._refresh_sidebar()
+        self.assertEqual([kind for kind, rows in events], ["before", "after"])
+        self.assertIs(events[0][1], old_rows)
+        self.assertIs(events[1][1], c.projectRows)
+        c._refresh_sidebar()
+        self.assertEqual(len(events), 2)
+
     def test_context_usage_follows_view_without_background_session_leaks(self):
         c = self.controller
         first, second = c._view, c._new_view()
