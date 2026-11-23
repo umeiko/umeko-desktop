@@ -109,12 +109,37 @@ class OpenAIResponseCompatibility(unittest.TestCase):
             with self.subTest(reason=reason):
                 self.assertEqual(self.collect([delta({'content': 'answer'}, reason)])['choices'][0]['finish_reason'], expected)
 
+    def test_stream_stop_metadata_is_kept_separate_from_finish_reason(self):
+        from umeko_provider_sdk.streaming import normalize_openai_events
+        for stop_reason in (154827, 'length'):
+            with self.subTest(stop_reason=stop_reason):
+                events = [dict(choices=[dict(delta=dict(content='!'), stop_reason=stop_reason)]),
+                          delta(finish='stop')]
+                with fake_response(events) as response:
+                    chunks = list(normalize_openai_events(sdk.response_events(response)))
+                choice = chunks[0]['choices'][0]
+                self.assertEqual(choice['delta']['content'], '!')
+                self.assertEqual(choice['stop_reason'], stop_reason)
+                self.assertIsNone(choice['finish_reason'])
+                self.assertEqual(chunks[1]['choices'][0]['finish_reason'], 'stop')
+
+    def test_json_finish_reason_with_provider_stop_metadata(self):
+        for finish, content, fields in (('stop', 'answer', {'stop_reason': 154827}),
+                                        ('length', '', {'stop_reason': None})):
+            with self.subTest(finish=finish):
+                message = dict(role='assistant', reasoning_content='plan', content=content)
+                body = dict(choices=[dict(message=message, finish_reason=finish, provider_specific_fields=fields)])
+                result = self.collect(body, json_body=True)['choices'][0]
+                self.assertEqual(result['finish_reason'], finish)
+                self.assertEqual(result['message'], message)
+
     def test_missing_done_terminal_success_and_empty_chunks(self):
         result = self.collect([{}, {'choices': []}, delta(), delta({'content': 'answer'}, 'stop')], done=False)
         self.assertEqual(result['choices'][0]['message']['content'], 'answer')
 
     def test_empty_and_broken_streams_raise(self):
-        for events in ([], [delta({'content': 'partial'})]):
+        stop_metadata_only = dict(choices=[dict(delta=dict(content='partial'), stop_reason=154827)])
+        for events in ([], [delta({'content': 'partial'})], [stop_metadata_only]):
             for module in (protocols, sdk):
                 with self.subTest(events=events, module=module.__name__):
                     with fake_response(events, done=False) as response:
