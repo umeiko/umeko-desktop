@@ -18,6 +18,7 @@ from app.provider_models import fetch_model_windows
 from app.request_diagnostics import RequestFailure
 from app.storage import Store
 from umeko_provider_sdk.http import HttpSession
+from umeko_provider_sdk import network
 from umeko_provider_sdk.network import network_scope
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +26,19 @@ FIXTURE = ROOT / 'tests/fixtures/update-tls'
 
 
 class ModelTlsTests(unittest.TestCase):
+    def test_macos_bundle_uses_system_ca_when_openssl_defaults_are_missing(self):
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        defaults = ssl.get_default_verify_paths()._replace(cafile=None, capath=None)
+        with patch.object(network.sys, 'platform', 'darwin'), patch.object(network, '_MACOS_CA_FILE', FIXTURE / 'ca.pem'), \
+                patch.object(ssl, 'get_default_verify_paths', return_value=defaults), \
+                patch.object(ssl, 'create_default_context', return_value=context), patch.dict(os.environ):
+            os.environ.pop('UMEKO_MODEL_CA_FILE', None)
+            os.environ.pop('NODE_EXTRA_CA_CERTS', None)
+            result = network.tls_context()
+        self.assertEqual(result.cert_store_stats()['x509_ca'], 1)
+        self.assertEqual(result.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(result.check_hostname)
+
     def test_model_discovery_uses_provider_ca_and_rejects_untrusted_or_redirected_catalogs(self):
         paths = []
 
