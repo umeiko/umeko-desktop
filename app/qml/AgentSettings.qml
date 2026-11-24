@@ -43,7 +43,7 @@ Column {
                 visible: permissions.sandbox.supported
                 Layout.fillWidth: true; spacing: 12
                 ColumnLayout {
-                    Layout.fillWidth: true; spacing: 4
+                    Layout.preferredWidth: implicitWidth; Layout.maximumWidth: permissions.width * 0.36; spacing: 4
                     Text {
                         Layout.fillWidth: true; wrapMode: Text.Wrap
                         font.family: Theme.fontFamily; color: Theme.ink; font.pixelSize: Theme.font(12, visible)
@@ -67,6 +67,7 @@ Column {
                         backend.windowsSandbox.setEnabled(value)
                     }
                 }
+                Item { Layout.fillWidth: true }
                 Text {
                     Layout.preferredWidth: implicitWidth; Layout.maximumWidth: permissions.width * 0.34
                     wrapMode: Text.Wrap
@@ -88,9 +89,11 @@ Column {
             RowLayout {
                 visible: permissions.sandbox.supported && !permissions.sandbox.elevatedReady
                 Layout.fillWidth: true; spacing: 12
+                Item { Layout.fillWidth: true }
                 Text {
                     objectName: "windowsSandboxNetworkHint"
-                    Layout.fillWidth: true; wrapMode: Text.Wrap
+                    Layout.preferredWidth: implicitWidth; Layout.maximumWidth: permissions.width * 0.62
+                    wrapMode: Text.Wrap
                     text: permissions.sandbox.enabled && !permissions.sandbox.allowNetwork
                         ? I18n.t("禁止联网需要先安装管理员级隔离") : ""
                     font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible)
