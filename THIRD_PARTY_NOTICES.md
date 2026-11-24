@@ -1,5 +1,9 @@
 # Third-party notices
 
+## Shell environment snapshot
+
+`runtime/shell-snapshot.mjs` adapts the session capture and replay design from OpenAI Codex `rust-v0.172.0` (Apache-2.0). See `licenses/codex-NOTICE.txt` for the source files and license.
+
 ## Tool permission classifier
 
 `runtime/tool-permissions.mjs` adapts the command-position guard (`AT_CMD`), quote masking (`stripQuoted`), recursive Windows deletion family (`WINDOWS_ROOT_WIPE`), critical command families and write-only normalized path-rule structure from `@xynogen/pix-gate` 0.4.5, copyright 2026 xynogen (MIT). Source: https://github.com/xynogen/pix-mono/blob/f07f04c186a8b43adb5c443ee65a2ebee53f4e0c/packages/pix-gate/src/lib.ts . The complete license appears in both that module and `licenses/pix-gate-MIT.txt`. Umeko applies its own seven permission categories in place of the upstream default policy. Pi Coding Agent 1.3.0's `permission-gate` and `protected-paths` extension examples (https://github.com/earendil-works/pi/tree/main/packages/coding-agent/examples/extensions) supply the `tool_call` integration pattern under the Pi MIT notice below. `cc-safety-net` 2.7.0 (https://github.com/kenryu42/cc-safety-net/tree/v2.7.0) supplied categories and the test checklist only; no implementation code is copied or bundled.

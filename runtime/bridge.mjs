@@ -14,6 +14,7 @@ import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
+import { blockedShellEnvKey, createShellSnapshots } from "./shell-snapshot.mjs";
 import { createAuxiliaryVision, ANALYZE_IMAGE, AUTO_VISION_ENTRY, automaticVisionView } from "./auxiliary-vision.mjs";
 import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
 import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI } from "./tool-permissions.mjs";
@@ -35,7 +36,7 @@ delete process.env.PI_OFFLINE;
 const bundledBin = fileURLToPath(new URL("./bin/", import.meta.url));
 if (existsSync(bundledBin)) process.env.PATH = bundledBin + delimiter + (process.env.PATH || "");
 for (const key of Object.keys(process.env)) {
-  if (/API_KEY$|ACCESS_TOKEN$|_(AK|SK|SECRET_KEY|SECURITY_TOKEN)$|^NODE_(OPTIONS|PATH)$/i.test(key)) delete process.env[key];
+  if (blockedShellEnvKey(key)) delete process.env[key];
 }
 process.env.NO_PROXY = [process.env.NO_PROXY || process.env.no_proxy || "", "127.0.0.1", "localhost", "::1"].filter(Boolean).join(",");
 process.env.no_proxy = process.env.NO_PROXY;
@@ -46,6 +47,20 @@ const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", entry));
 const { loadMcpConfig } = await import(new URL("./extensions/mcp/config.js", entry));
 const { allToolNames, createAllToolDefinitions } = await import(new URL("./core/tools/index.js", entry));
+const { getShellConfig, getPowerShellConfig } = await import(new URL("./utils/shell.js", entry));
+const bundledNodeDir = fileURLToPath(new URL(process.platform === "win32" ? "../../node" : "../../node/bin", import.meta.url));
+const shellSnapshots = createShellSnapshots({ getShellConfig, getPowerShellConfig,
+  bundledBin: existsSync(bundledBin) ? bundledBin : undefined,
+  bundledNodeDir: existsSync(bundledNodeDir) ? bundledNodeDir : undefined });
+function shellSnapshotExtension(getShellPath) {
+  return pi => {
+    pi.on("session_start", (_event, ctx) => shellSnapshots.begin(ctx.sessionManager.getSessionId(), getShellPath()));
+    pi.on("session_shutdown", (_event, ctx) => shellSnapshots.forget(ctx.sessionManager.getSessionId()));
+  };
+}
+globalThis[Symbol.for("umeko:shell-environment")] = (name, env, config) =>
+  shellSnapshots.environment(name, env.PI_SESSION_ID || runtime?.session.sessionManager.getSessionId(), env,
+    name === "bash" ? config.shell : undefined);
 const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, "background_job"];
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
@@ -129,7 +144,9 @@ function runOwnedBash({shellConfig, command, cwd, onData, signal, timeout, timeo
 }
 
 if (process.platform === "win32") globalThis[Symbol.for("umeko:bash-job")] = runOwnedBash;
-const umekoControl = createUmekoControl({ emit, getPetAssistantBinding: () => config?.petAssistantBinding || '', getPetReminderBinding: () => config?.petReminderBinding || '' });
+const umekoControl = createUmekoControl({ emit, refreshShellEnvironment: ctx =>
+  shellSnapshots.refresh(ctx.sessionManager.getSessionId()),
+  getPetAssistantBinding: () => config?.petAssistantBinding || '', getPetReminderBinding: () => config?.petReminderBinding || '' });
 const auxiliaryVision = createAuxiliaryVision({getConfig:() => config, emit:event => {
   if (event.sessionId && event.sessionId !== runtime?.session.sessionManager.getSessionId()) return subagents.automaticTool(event.sessionId,event);
   emit(event);
@@ -149,7 +166,9 @@ const promptControllers = new WeakMap();
 const loopReview=createLoopReview({emit});
 const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit});
 let checkpointLocked = false;
-const backgroundJobs = createBackgroundJobsExtension({ canStart: () => !checkpointLocked });
+const backgroundJobs = createBackgroundJobsExtension({ canStart: () => !checkpointLocked,
+  getShellPath: ctx => shellSnapshots.shellPath(ctx?.sessionManager?.getSessionId()),
+  getEnvironment: (ctx, shellPath) => shellSnapshots.environment("bash", ctx?.sessionManager?.getSessionId(), null, shellPath) });
 let reasoningEffort = "off";
 const validEffort = value => typeof value === "string" && /^[^\s\x00-\x1f\x7f]{1,64}$/u.test(value);
 let mcpEntries = [], mcpStatus = "", capturingMcp = false, pollingResources = false;
@@ -442,6 +461,7 @@ async function restoreSubagentSession(child, context, customTools) {
         factory: createToolPermissionExtension({getPolicy:()=>childPermissionPolicy(permissionPolicy)}) },
       { name: "umeko-control", builtin: true, replaceable: false, factory: auxiliaryVision.toolExtension },
       { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
+      { name: "shell-snapshot", hidden: true, replaceable: false, factory: shellSnapshotExtension(() => policy.getShellPath()) },
     ],
     systemPrompt:context?.systemPrompt || `You are the ${child.type} subagent embedded in Umeko Desktop. Continue the task in this existing conversation. ${readonly ? "Inspect and report only; do not modify files." : ""}`,
     appendSystemPrompt:context?.systemPrompt?.includes(SUBAGENT_COMPLETION_HINT) ? [] : [SUBAGENT_COMPLETION_HINT],
@@ -535,6 +555,7 @@ async function init(input) {
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },
           { name: "umeko-control", builtin: true, replaceable: false, factory: pi => { umekoControl.extension(pi); auxiliaryVision.toolExtension(pi); } },
           { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
+          { name: "shell-snapshot", hidden: true, replaceable: false, factory: shellSnapshotExtension(() => settings.getShellPath()) },
           { name: "subagents", builtin: true, replaceable: true, factory: subagents.extension },
           { name: "output-continuation", hidden: true, replaceable: false, factory: outputContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
