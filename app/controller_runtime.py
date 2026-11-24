@@ -247,6 +247,9 @@ class PiControllerMixin:
             directory = service.root / "sessions" / record.global_agent
             if record.bus_task:
                 directory = directory / record.bus_task
+                # The bridge generates its handbook at startup. Concurrent
+                # members on Windows must not replace the same output files.
+                payload["docsDir"] = str(directory / "agent-docs")
             payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(directory),
                 **service.skill_config(record),
                 petAssistantBinding=service.m._pet.assistant.binding_for(record),
