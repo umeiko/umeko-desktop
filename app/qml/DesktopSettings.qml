@@ -153,6 +153,7 @@ Column {
                     remoteSettingsSection.addingRemote = false
                     remoteSettingsSection.addReqId = ""
                     if (result.ok) {
+                        remoteHostInput.currentIndex = 0
                         remoteHostInput.editText = ""
                         remoteSettingsSection.remoteActionMessage = ""
                     } else {
@@ -208,13 +209,19 @@ Column {
                     Layout.fillWidth: true
                     implicitHeight: Theme.control(36)
                     editable: true
-                    model: (backend && backend.sshConfigHosts ? backend.sshConfigHosts : []).map(item => item.alias)
-                    currentIndex: -1
+                    model: [""].concat((backend && backend.sshConfigHosts ? backend.sshConfigHosts : []).map(item => item.alias))
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.font(13)
                     palette.text: Theme.ink; palette.buttonText: Theme.ink; palette.base: Theme.surface
                     palette.window: Theme.surface; palette.highlight: Theme.accentBg; palette.highlightedText: Theme.ink
                     Accessible.name: I18n.t("OpenSSH 主机别名")
+                    delegate: ItemDelegate {
+                        required property string modelData
+                        required property int index
+                        width: remoteHostInput.width
+                        text: modelData || I18n.t("OpenSSH 主机别名")
+                        highlighted: remoteHostInput.highlightedIndex === index
+                    }
                     background: Rectangle { radius: 8; color: Theme.surface; border.color: remoteHostInput.activeFocus ? Theme.accent : Theme.line }
                     contentItem: TextField {
                         text: remoteHostInput.editable ? remoteHostInput.editText : remoteHostInput.displayText
@@ -233,8 +240,9 @@ Column {
                 ComboBox {
                     id: remotePlatformInput
                     objectName: "remoteEnvironmentPlatformInput"
-                    Layout.preferredWidth: Math.max(112, platformMetrics.advanceWidth(remotePlatformInput.displayText) + 36)
+                    Layout.preferredWidth: Math.max(112, Math.ceil(platformMetrics.advanceWidth(remotePlatformInput.displayText)) + 44)
                     implicitHeight: Theme.control(36)
+                    leftPadding: 0; rightPadding: 0
                     model: [I18n.t("自动检测"), "Linux", "Windows"]
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.font(13)
