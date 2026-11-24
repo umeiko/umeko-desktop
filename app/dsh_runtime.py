@@ -25,7 +25,7 @@ from .npm_config import npm_environment
 from .pi_runtime import CREATE_NO_WINDOW, node_executable, npm_command
 
 PACKAGE = "@deepseek-ai/dsh"
-PINNED_VERSION = "0.2.2-rc.1"
+PINNED_VERSION = "0.2.2-rc.5"
 OFFICIAL_REGISTRY = "https://registry.npmjs.org/"
 RELEASE_NAME = "dsh-" + PINNED_VERSION
 
