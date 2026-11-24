@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createSandboxPreparation, sandboxCommand, sandboxFailure } from '../runtime/windows-sandbox.mjs';
+import { registerCoworkLocalTools } from '../runtime/cowork-local.mjs';
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'umeko-sandbox-unit-'));
@@ -125,4 +126,20 @@ test('a missing executable triggers recovery and the next command retries after 
   assert.equal(requests(), 2);
   ready(5);
   assert.equal((await recovered).policy.gitRoot, gitRoot);
+});
+
+test('Cowork local extraction uses the bridge preparation before launching its command', async t => {
+  const { workspace } = fixture(t);
+  const source = join(workspace, 'fixture.pdf');
+  writeFileSync(source, 'fixture; process stdout is controlled');
+  let tool;
+  const signal = new AbortController().signal;
+  registerCoworkLocalTools({ registerTool: value => { tool = value; } }, new Set(['read_pdf_text']), (request, toolSignal) => {
+    assert.equal(request.cwd, workspace);
+    assert.ok(request.args.includes(source));
+    assert.equal(toolSignal, signal);
+    return { file: process.execPath, args: ['-e', 'console.log("extracted")'] };
+  });
+  const result = await tool.execute('fixture', { path: source }, signal, undefined, { cwd: workspace });
+  assert.equal(result.content[0].text, process.platform === 'darwin' ? 'extracted' : '--- Page 1 ---\nextracted');
 });

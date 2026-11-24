@@ -105,28 +105,38 @@ const sandboxPreparation = createSandboxPreparation({
   language: () => permissionPolicy.language,
 });
 const waitForWindowsSandbox = sandboxPreparation.wait;
-const sandboxMcp = createWindowsSandboxMcp({
-  createExtension: Pi.createMcpExtension,
-  createTransport: createDefaultTransport,
-  async prepareTransport(server, work, auth, signal) {
-    const { policy } = await waitForWindowsSandbox(signal);
-    if (policy?.enabled) {
-      const expandHome = value => /^~(?:[\\/]|$)/.test(value) ? join(homedir(), value.slice(2)) : value;
-      const { command, args = [], cwd: directory = '.' } = server.config;
-      const cwd = resolve(work, expandHome(directory));
-      const invocation = sandboxCommand({ file: expandHome(command), args: args.map(expandHome), cwd,
-        workspace: work, policy });
-      server = { ...server, config: { ...server.config, command: invocation.file, args: invocation.args, cwd } };
-    }
-    return createDefaultTransport(server, work, auth);
-  },
-  loadConfig(ctx) {
-    const loaded = loadMcpConfig({ agentDir: config.agentDir, cwd: ctx.cwd, projectTrusted: !config?.agent?.safeMode && ctx.isProjectTrusted() });
-    mcpEntries = loaded.servers;
-    setMcpNetwork(mcpEntries);
-    return loaded;
-  },
+function createBridgeSandboxMcp(loadConfig) {
+  return createWindowsSandboxMcp({
+    createExtension: Pi.createMcpExtension,
+    createTransport: createDefaultTransport,
+    async prepareTransport(server, work, auth, signal) {
+      const { policy } = await waitForWindowsSandbox(signal);
+      if (policy?.enabled) {
+        const expandHome = value => /^~(?:[\\/]|$)/.test(value) ? join(homedir(), value.slice(2)) : value;
+        const { command, args = [], cwd: directory = '.' } = server.config;
+        const cwd = resolve(work, expandHome(directory));
+        const invocation = sandboxCommand({ file: expandHome(command), args: args.map(expandHome), cwd,
+          workspace: work, policy });
+        server = { ...server, config: { ...server.config, command: invocation.file, args: invocation.args, cwd } };
+      }
+      return createDefaultTransport(server, work, auth);
+    },
+    loadConfig,
+  });
+}
+const sandboxMcp = createBridgeSandboxMcp(ctx => {
+  const loaded = loadMcpConfig({ agentDir: config.agentDir, cwd: ctx.cwd, projectTrusted: !config?.agent?.safeMode && ctx.isProjectTrusted() });
+  mcpEntries = loaded.servers;
+  setMcpNetwork(mcpEntries);
+  return loaded;
 });
+const sandboxMcpAdapters = new Set([sandboxMcp]);
+
+async function prepareCoworkCommand({ file, args, cwd }, signal) {
+  const { policy } = await waitForWindowsSandbox(signal);
+  if (!policy?.enabled) return { file, args };
+  return { ...sandboxCommand({ file, args, cwd, workspace: cwd, policy }), cwd };
+}
 const stopDeadlineMs = 2_400;
 
 function runCommandSession(request) {
@@ -475,7 +485,7 @@ function coworkMcpFactory(input, tools, owners, onLoad) {
       };
       return target[key];
     } });
-    return Pi.createMcpExtension({ loadConfig: ctx => {
+    const loadConfig = ctx => {
       const ordinary = loadMcpConfig({ agentDir: input.agentDir, cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted() });
       const scoped = privateMcpEntries(input.cowork.mcpDir, ctx.cwd);
       const servers = [
@@ -485,7 +495,12 @@ function coworkMcpFactory(input, tools, owners, onLoad) {
       ].map(entry => entry.config.exposure === "hidden" ? entry : { ...entry, config: { ...entry.config, exposure: "direct" } });
       onLoad?.(servers);
       return { servers, errors: [...ordinary.errors, ...scoped.errors], autoEnableCodemode: false };
-    } })(filtered);
+    };
+    if (process.platform !== "win32") return Pi.createMcpExtension({ loadConfig })(filtered);
+    const adapter = createBridgeSandboxMcp(loadConfig);
+    sandboxMcpAdapters.add(adapter);
+    pi.on("session_shutdown", () => sandboxMcpAdapters.delete(adapter));
+    return adapter.extension(filtered);
   };
 }
 
@@ -604,7 +619,7 @@ async function restoreSubagentSession(child, context, customTools) {
 async function init(input) {
   config = input;
   windowsSandbox = input.windowsSandbox;
-  const webNetwork = {gateway:input.gateway, token:input.token, scope:input.cowork?.webScope};
+  const webNetwork = {gateway:input.gateway, token:input.token, scope:input.cowork?.webScope, prepareLocalCommand:prepareCoworkCommand};
   const availableModels = new Set(input.models?.map(model => model.id));
   const coworkProfiles = input.cowork?.subagents?.map(profile => ({
     ...profile, model: availableModels.has(profile.model) ? profile.model : undefined,
@@ -1071,7 +1086,9 @@ async function execute(input) {
       shellSnapshots.invalidate();
     }
     if (["enabled", "allowNetwork", "elevated"].some(key => previous?.[key] !== windowsSandbox?.[key])) {
-      void sandboxMcp.invalidate().catch(error => emit({ type: "notice", message: error.message }));
+      for (const adapter of sandboxMcpAdapters) {
+        void adapter.invalidate().catch(error => emit({ type: "notice", message: error.message }));
+      }
     }
     return;
   }

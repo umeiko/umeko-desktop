@@ -352,11 +352,11 @@ export function searchResults(rss) {
   return results;
 }
 
-export function coworkTools(pi, allowedTools, network = {}) {
-  const resolveRoute = desktopWebRoute(network);
+export function coworkTools(pi, allowedTools, options = {}) {
+  const resolveRoute = desktopWebRoute(options);
   const download = (url, signal, purpose) => downloadCoworkPage(url, {signal, resolveRoute, purpose});
   const allowed = new Set(allowedTools);
-  registerCoworkLocalTools(pi, allowed);
+  registerCoworkLocalTools(pi, allowed, options.prepareLocalCommand);
   pi.on("tool_call", event => {
     if (!allowed.has(event.toolName)) return {block: true, reason: "This tool is outside the Cowork role's capabilities."};
   });
