@@ -59,6 +59,7 @@ jobs:
           fixture="$RUNNER_TEMP/network-sshd"
           test_user=umeko_net_ci
           chain=UMEKO_NET_CI
+          apt_sources=$(mktemp /tmp/umeko-network-ci-apt.XXXXXX.list)
           mkdir -p "$fixture" "$HOME/.ssh"
           chmod 700 "$HOME/.ssh"
           sudo useradd --create-home --shell /bin/bash "$test_user"
@@ -109,8 +110,17 @@ jobs:
             sudo ip6tables -X "$chain" 2>/dev/null || true
             if [ -f "$fixture/sshd.pid" ]; then sudo kill "$(cat "$fixture/sshd.pid")" || true; fi
             sudo rm -f /etc/sudoers.d/umeko-network-ci
+            rm -f "$apt_sources"
           }
           trap cleanup EXIT
+          # Match the signed archive indexes already read by ci-linux-libraries.
+          # The image's own source list points to a different mirror.
+          for suite in noble noble-updates noble-backports; do
+            printf 'deb https://archive.ubuntu.com/ubuntu %s main restricted universe multiverse\n' "$suite"
+          done > "$apt_sources"
+          printf 'deb https://security.ubuntu.com/ubuntu noble-security main restricted universe multiverse\n' >> "$apt_sources"
+          chmod 644 "$apt_sources"
+          apt-cache -o "Dir::Etc::sourcelist=$apt_sources" -o Dir::Etc::sourceparts=- show sl >/dev/null
           # _apt is the actual download worker for sudo apt-get. Loopback stays
           # available for the SSH reverse forward. The app's runner UID remains
           # unrestricted, so its built-in outbound connection really works.
@@ -128,8 +138,8 @@ jobs:
           fi
           dbus-run-session -- bash -ec '
             printf "ci-ephemeral-password" | gnome-keyring-daemon --unlock --components=secrets
-            .venv/bin/python tests/remote_network_real.py --source --host umeko-network-ci --platform linux --run-dir "$RUNNER_TEMP/network-real" --remote-root /tmp/umeko-network-ci --remote-python /usr/bin/python3
-          '
+            .venv/bin/python tests/remote_network_real.py --source --host umeko-network-ci --platform linux --run-dir "$RUNNER_TEMP/network-real" --remote-root /tmp/umeko-network-ci --remote-python /usr/bin/python3 --apt-sources "$1"
+          ' _ "$apt_sources"
       - name: Upload bounded network evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

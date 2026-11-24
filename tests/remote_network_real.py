@@ -21,7 +21,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def commands(platform, root, python, phase):
+def commands(platform, root, python, phase, apt_sources):
     """Each probe needs a new destination and bypasses package caches."""
     destination = root + '/' + phase
     if platform == 'windows':
@@ -36,6 +36,7 @@ def commands(platform, root, python, phase):
         }
     d = shlex.quote(destination)
     base = 'mkdir -p ' + d + '; '
+    sources = (' -o Dir::Etc::sourcelist=' + shlex.quote(apt_sources) + ' -o Dir::Etc::sourceparts=-') if apt_sources else ''
     return {
         'curl': base + f'timeout 35 curl -fS --connect-timeout 8 --max-time 25 https://example.com/ -o {d}/curl.html && test -s {d}/curl.html',
         'pip': base + f'timeout 45 {shlex.quote(python)} -m pip install --disable-pip-version-check --no-cache-dir --no-deps --retries 0 --timeout 15 --target {d}/pip six==1.17.0 && test -s {d}/pip/six.py',
@@ -43,7 +44,7 @@ def commands(platform, root, python, phase):
         'git': base + f'timeout 45 git -c http.connectTimeout=8 -c http.lowSpeedLimit=1 -c http.lowSpeedTime=20 clone --depth 1 https://github.com/octocat/Hello-World.git {d}/git && test -s {d}/git/README',
         # sl is absent on the disposable CI image; a fresh archive cache means
         # apt has to download package bytes before its actual installation.
-        'apt': base + f'sudo -n mkdir -p {d}/apt/partial && sudo -n chmod 777 {d}/apt {d}/apt/partial && sudo -n apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 -o Dir::Cache::archives={d}/apt install -y sl && dpkg-query -W -f=\'${{Status}}\' sl | grep -q "install ok installed"',
+        'apt': base + f'sudo -n mkdir -p {d}/apt/partial && sudo -n chmod 777 {d}/apt {d}/apt/partial && sudo -n apt-get{sources} -o Acquire::Retries=0 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 -o Dir::Cache::archives={d}/apt install -y sl && dpkg-query -W -f=\'${{Status}}\' sl | grep -q "install ok installed"',
     }
 
 
@@ -58,6 +59,7 @@ def main():
     parser.add_argument('--run-root', type=Path)
     parser.add_argument('--remote-root')
     parser.add_argument('--remote-python')
+    parser.add_argument('--apt-sources', help='APT source list matching the disposable Ubuntu fixture indexes')
     parser.add_argument('--local-proxy', help='Existing local HTTP proxy, never started or modified')
     args = parser.parse_args()
     directory = args.run_dir.resolve()
@@ -80,7 +82,7 @@ def main():
     remote_python = args.remote_python or ('python' if args.platform == 'windows' else 'python3')
     spec = {'scenario': 'remote-network', 'runDir': str(directory), 'host': args.host,
             'platform': args.platform, 'remoteDirectory': remote, 'remotePython': remote_python,
-            'commands': {phase: commands(args.platform, remote, remote_python, phase)
+            'commands': {phase: commands(args.platform, remote, remote_python, phase, args.apt_sources)
                          for phase in ('default', 'disabled', 'enabled', 'reconnected')},
             'bootstrapTimeout': 600 if args.platform == 'windows' else 240}
     if args.platform == 'linux':
