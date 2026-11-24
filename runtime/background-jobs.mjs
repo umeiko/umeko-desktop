@@ -11,7 +11,7 @@ import { assertProcessCommandAllowed, blockedProcessCommand } from "./process-gu
 import { launchCommand } from "./command-process.mjs";
 
 const modelBytesPerStream = 20_000;
-export const DEFAULT_YIELD_MS = process.platform === "win32" ? 10_000 : 1_000;
+export const DEFAULT_YIELD_MS = 10_000;
 
 // Fixed pi-bg primitives only: importing its extension entry would replace bash
 // and introduce UI/injection behavior. Each manager owns a fresh registry.

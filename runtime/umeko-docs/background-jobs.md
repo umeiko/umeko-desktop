@@ -1,6 +1,6 @@
 # Background jobs
 
-Ask Umeko to start a command, continue reading its output, send input, or stop it. Bash and PowerShell return the output so far and a command session ID if still running after 10 seconds on Windows or one second elsewhere. The explicit `timeout` parameter remains a hard deadline, including after the command moves to the background.
+Ask Umeko to start a command, continue reading its output, send input, or stop it. Bash and PowerShell return the output so far and a command session ID if still running after 10 seconds. The explicit `timeout` parameter remains a hard deadline, including after the command moves to the background.
 
 | Action | Input | Result |
 | --- | --- | --- |
