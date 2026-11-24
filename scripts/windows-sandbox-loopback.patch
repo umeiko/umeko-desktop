@@ -1,0 +1,110 @@
+Subject: Require WFP loopback denial for the offline sandbox account
+
+Adapted from openai/codex rust-v0.172.0, windows-sandbox-rs/src/wfp.rs
+and wfp/filter_specs.rs. See licenses/codex-windows-sandbox-NOTICE.txt.
+
+diff --git a/codex-rs/windows-sandbox-rs/src/bin/command_runner/win.rs b/codex-rs/windows-sandbox-rs/src/bin/command_runner/win.rs
+--- a/codex-rs/windows-sandbox-rs/src/bin/command_runner/win.rs
++++ b/codex-rs/windows-sandbox-rs/src/bin/command_runner/win.rs
+@@ -309,3 +309,11 @@ fn spawn_ipc_process(req: &SpawnRequest) -> Result<IpcSpawnedProcess> {
+ 
+     let effective_cwd = effective_cwd(&req.cwd, Some(log_dir.as_path()));
++    log_note(
++        &format!(
++            "runner working directory: requested={} effective={}",
++            req.cwd.display(),
++            effective_cwd.display(),
++        ),
++        Some(log_dir.as_path()),
++    );
+     let desktop = LaunchDesktop::open_private(
+diff --git a/codex-rs/windows-sandbox-rs/src/setup.rs b/codex-rs/windows-sandbox-rs/src/setup.rs
+--- a/codex-rs/windows-sandbox-rs/src/setup.rs
++++ b/codex-rs/windows-sandbox-rs/src/setup.rs
+@@ -49,7 +49,9 @@
+ use windows_sys::Win32::Security::FreeSid;
+ use windows_sys::Win32::Security::SECURITY_NT_AUTHORITY;
+ 
+-pub const SETUP_VERSION: u32 = 5;
++// Umeko requires the additional WFP filters before reporting offline setup
++// ready. Existing v5 installations must provision them explicitly.
++pub const SETUP_VERSION: u32 = 6;
+ pub const OFFLINE_USERNAME: &str = "CodexSandboxOffline";
+ pub const ONLINE_USERNAME: &str = "CodexSandboxOnline";
+ const ERROR_CANCELLED: u32 = 1223;
+diff --git a/codex-rs/windows-sandbox-rs/src/wfp/filter_specs.rs b/codex-rs/windows-sandbox-rs/src/wfp/filter_specs.rs
+--- a/codex-rs/windows-sandbox-rs/src/wfp/filter_specs.rs
++++ b/codex-rs/windows-sandbox-rs/src/wfp/filter_specs.rs
+@@ -11,6 +11,7 @@ pub(super) enum ConditionSpec {
+     User,
+     Protocol(u8),
+     RemotePort(u16),
++    Loopback,
+ }
+ 
+ #[derive(Clone, Copy)]
+@@ -24,6 +25,23 @@ pub(super) struct FilterSpec {
+ }
+ 
+ pub(super) const FILTER_SPECS: &[FilterSpec] = &[
++    // ALE marks the host loopback traffic, including TCP/UDP on 127.0.0.0/8
++    // and ::1. The account restriction excludes the launcher and gateway.
++    // Runner stdio/control use named pipes, outside IP filtering.
++    FilterSpec {
++        key: GUID::from_u128(0x6bb126c4_72c4_48e6_adf6_7a15ac1cd8bc),
++        name: "codex_sandbox_offline_wfp_loopback_v4",
++        description: "Block offline sandbox IPv4 loopback connect",
++        layer_key: FWPM_LAYER_ALE_AUTH_CONNECT_V4,
++        conditions: &[ConditionSpec::User, ConditionSpec::Loopback],
++    },
++    FilterSpec {
++        key: GUID::from_u128(0xb4f6b4f2_efeb_45ae_9633_be0051c6480b),
++        name: "codex_sandbox_offline_wfp_loopback_v6",
++        description: "Block offline sandbox IPv6 loopback connect",
++        layer_key: FWPM_LAYER_ALE_AUTH_CONNECT_V6,
++        conditions: &[ConditionSpec::User, ConditionSpec::Loopback],
++    },
+     FilterSpec {
+         key: GUID::from_u128(0x9f5f3812_79f0_4fe9_9615_4c2c92d2f0ff),
+         name: "codex_wfp_icmp_connect_v4",
+diff --git a/codex-rs/windows-sandbox-rs/src/wfp.rs b/codex-rs/windows-sandbox-rs/src/wfp.rs
+--- a/codex-rs/windows-sandbox-rs/src/wfp.rs
++++ b/codex-rs/windows-sandbox-rs/src/wfp.rs
+@@ -17,17 +17,21 @@
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWP_ACTION_BLOCK;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWP_ACTRL_MATCH_FILTER;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWP_BYTE_BLOB;
++use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWP_CONDITION_FLAG_IS_LOOPBACK;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWP_CONDITION_VALUE0;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWP_CONDITION_VALUE0_0;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWP_EMPTY;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWP_MATCH_EQUAL;
++use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWP_MATCH_FLAGS_ALL_SET;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWP_SECURITY_DESCRIPTOR_TYPE;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWP_UINT8;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWP_UINT16;
++use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWP_UINT32;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWP_VALUE0;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWPM_ACTION0;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWPM_ACTION0_0;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWPM_CONDITION_ALE_USER_ID;
++use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWPM_CONDITION_FLAGS;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWPM_CONDITION_IP_PROTOCOL;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWPM_CONDITION_IP_REMOTE_PORT;
+ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWPM_DISPLAY_DATA0;
+@@ -367,5 +371,15 @@ fn build_conditions(
+                     Anonymous: FWP_CONDITION_VALUE0_0 { uint16: *port },
+                 },
+             },
++            ConditionSpec::Loopback => FWPM_FILTER_CONDITION0 {
++                fieldKey: FWPM_CONDITION_FLAGS,
++                matchType: FWP_MATCH_FLAGS_ALL_SET,
++                conditionValue: FWP_CONDITION_VALUE0 {
++                    r#type: FWP_UINT32,
++                    Anonymous: FWP_CONDITION_VALUE0_0 {
++                        uint32: FWP_CONDITION_FLAG_IS_LOOPBACK,
++                    },
++                },
++            },
+         })
+         .collect()
