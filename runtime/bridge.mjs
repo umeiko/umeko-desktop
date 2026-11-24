@@ -129,7 +129,11 @@ function runOwnedBash({shellConfig, command, cwd, onData, signal, timeout, timeo
 }
 
 if (process.platform === "win32") globalThis[Symbol.for("umeko:bash-job")] = runOwnedBash;
-const umekoControl = createUmekoControl({ emit, getPetAssistantBinding: () => config?.petAssistantBinding || '', getPetReminderBinding: () => config?.petReminderBinding || '' });
+const umekoControl = createUmekoControl({ emit, getCommandRulesContext: ctx => ({
+  dataDir: permissionPolicy.dataDir, workspace: permissionPolicy.workspace ? ctx.cwd : undefined,
+  language: permissionPolicy.language, workspaceTrusted: !permissionPolicy.safeMode && ctx.isProjectTrusted?.() !== false,
+  readOnly: !!config?.pluginSessionPolicy,
+}), getPetAssistantBinding: () => config?.petAssistantBinding || '', getPetReminderBinding: () => config?.petReminderBinding || '' });
 const auxiliaryVision = createAuxiliaryVision({getConfig:() => config, emit:event => {
   if (event.sessionId && event.sessionId !== runtime?.session.sessionManager.getSessionId()) return subagents.automaticTool(event.sessionId,event);
   emit(event);
@@ -178,11 +182,12 @@ const piCommands = createPiCommandController({ Pi, getRuntime: () => runtime, ge
   },
 });
 
-function ask(method, title, detail = "", options = [], dangerCategory) {
+function ask(method, title, detail = "", options = [], dangerCategory, rememberPrefix) {
   const id = crypto.randomUUID();
   return new Promise(resolve => {
     const event = { type: "ui_request", id, method, title, detail, options };
     if (Number.isInteger(dangerCategory) && dangerCategory >= 1 && dangerCategory <= 7) event.dangerCategory = dangerCategory;
+    if (rememberPrefix) event.rememberPrefix = rememberPrefix;
     dialogs.set(id, { resolve, event });
     if (dialogs.size === 1) emit(event);
   });
@@ -199,6 +204,7 @@ const ui = {
   select: (title, options) => ask("select", title, "", options),
   confirm: async (title, detail) => (await ask("confirm", title, detail)) === true,
   confirmDangerous: async (title, detail, category) => (await ask("confirm", title, detail, [], category)) === true,
+  confirmCommand: (title, detail, prefix) => ask("confirm", title, detail, [], undefined, prefix),
   input: (title, placeholder) => ask("input", title, placeholder),
   editor: (title, prefill) => ask("editor", title, prefill),
   notify: (message, level) => { const output = commandOutput.getStore(); if (output) output.push({ message, level }); else if (capturingMcp) mcpStatus = message; else emit({ type: "notice", message }); },
@@ -461,9 +467,9 @@ async function init(input) {
   config = input;
   globalThis[Symbol.for("umeko:auxiliary-vision")] = auxiliaryVision;
   globalThis[Symbol.for("umeko:recent-images-policy")] = { getLimit: () => config.agent?.maxContextImages };
-  permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir, generation: input.generation, dangerousAllowed: input.dangerousAllowed === true };
+  permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir, workspace: input.workspace, safeMode: input.agent?.safeMode, generation: input.generation, dangerousAllowed: input.dangerousAllowed === true };
   if (input.pluginSessionPolicy) permissionPolicy = {...permissionPolicy,
-    allowedTools: input.pluginSessionPolicy.allowedTools, dangerousAllowed: false};
+    allowedTools: input.pluginSessionPolicy.allowedTools, pluginApprovalRequired: input.pluginSessionPolicy.mode === 'ask', dangerousAllowed: false};
   configureUmekoDocs({directory: input.docsDir || join(input.agentDir, "cache", "umeko-docs"), models: input.models});
   reasoningEffort = validEffort(input.reasoningEffort) ? input.reasoningEffort : "off";
   setGateway(input.gateway);

@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
-import { classifyCommand, classifyPath, createToolPermissionExtension } from '../runtime/tool-permissions.mjs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { classifyCommand, classifyPath, createToolPermissionExtension, splitPolicyCommand } from '../runtime/tool-permissions.mjs';
+import { changeCommandRule, commandRuleOperation, evaluateCommandRules, listCommandRules } from '../runtime/command-rules.mjs';
 
 // Known answers reuse the cc-safety-net command/target/wrapper checklist and
 // pix-gate executable-position shapes, narrowed to experiments/.../RULES.md.
@@ -338,6 +342,83 @@ test('classification error blocks visibly instead of silently continuing', async
   assert.match(result.reason, /error|failed|错误|失败/i);
   assert.ok(h.notices.length > 0 || h.prompts.length > 0, 'failure must be visible to the user');
 });
+test('command rules match token prefixes and take the strictest decision across parts and scopes', () => {
+  const rules = [
+    {scope: 'user', pattern: ['git'], decision: 'allow'},
+    {scope: 'workspace', pattern: ['git', 'push'], decision: 'ask'},
+    {scope: 'user', pattern: ['git', 'push', 'protected'], decision: 'forbid'},
+  ];
+  const decide = (command, mode = 'ask') => evaluateCommandRules(splitPolicyCommand(command, 'bash'), rules, 'bash', mode);
+  assert.equal(decide('git status --short').decision, 'allow');
+  assert.equal(decide('git status && git push', 'auto'), rules[1]);
+  assert.equal(decide('git status | git push protected'), rules[2]);
+  assert.equal(decide('git status; printf ok').decision, 'ask');
+  assert.equal(decide('git-status --short', 'auto'), null);
+  assert.deepEqual(decide("printf '%s' 'a ; b'"), {decision: 'ask', remember: ['printf', '%s', 'a ; b']});
+  assert.equal(decide('git status $(printf ok)').remember, undefined);
+});
+
+test('PowerShell command rules split pipelines, continuations and newlines outside literal operands', () => {
+  assert.deepEqual(splitPolicyCommand("Write-Output 'it''s; fine' | Out-String;\r\nWRITE-OUTPUT `; `\r\n next", 'powershell'), {
+    parts: [['Write-Output', "it's; fine"], ['Out-String'], ['WRITE-OUTPUT', ';', 'next']], plain: true,
+  });
+  const denied = {scope: 'workspace', pattern: ['Set-Content', 'stop.txt'], decision: 'forbid', shell: 'powershell'};
+  const script = "Write-Output 'Set-Content stop.txt'\nset-content stop.txt bad";
+  assert.equal(evaluateCommandRules(splitPolicyCommand(script, 'powershell'), [denied], 'powershell', 'auto'), denied);
+  assert.equal(evaluateCommandRules(splitPolicyCommand(script, 'bash'), [denied], 'bash', 'auto'), null);
+});
+
+function ruleFixture(t) {
+  const root = mkdtempSync(join(tmpdir(), 'umeko-command-rules-'));
+  t.after(() => rmSync(root, {recursive: true, force: true}));
+  return {dataDir: join(root, 'profile'), workspace: join(root, 'workspace')};
+}
+
+test('command rule operations manage scoped files and require approval to relax restrictions', async t => {
+  const dirs = ruleFixture(t);
+  const add = {scope: 'workspace', pattern: ['git', 'push'], decision: 'forbid'};
+  assert.equal((await commandRuleOperation('command_rules.add', add, dirs)).changed, true);
+  assert.equal((await commandRuleOperation('command_rules.add', add, dirs)).changed, false);
+  const allow = {scope: 'user', pattern: ['git', 'status'], decision: 'allow', shell: 'bash'};
+  await assert.rejects(commandRuleOperation('command_rules.add', allow, dirs, async () => false), /not approved/);
+  assert.equal((await commandRuleOperation('command_rules.add', allow, dirs, async () => true)).changed, true);
+  assert.deepEqual((await commandRuleOperation('command_rules.list', {}, dirs)).rules, [allow, add]);
+  await assert.rejects(commandRuleOperation('command_rules.remove', add, dirs), /not approved/);
+  assert.equal((await commandRuleOperation('command_rules.remove', add, dirs, async () => true)).changed, true);
+  assert.deepEqual(listCommandRules(dirs), [allow]);
+});
+
+test('remembered approval persists while built-in and compound blocks retain priority', async t => {
+  const dirs = ruleFixture(t);
+  changeCommandRule('add', {scope: 'user', pattern: ['bcdedit'], decision: 'allow'}, dirs);
+  changeCommandRule('add', {scope: 'workspace', pattern: ['Set-Content', 'stop.txt'], decision: 'forbid'}, dirs);
+  let handle;
+  const prompts = [];
+  createToolPermissionExtension({getPolicy: () => ({mode: 'ask', ...dirs})})({on(_event, fn) { handle = fn; }});
+  const ctx = {cwd: dirs.workspace, hasUI: true, ui: {
+    confirm: async (_title, message) => { prompts.push(message); return false; },
+    confirmCommand: async (_title, _message, prefix) => { prompts.push(prefix); return 'alwaysAllow'; },
+    confirmDangerous: async (_title, _message, category) => { prompts.push(category); return false; },
+  }};
+  const run = (toolName, command) => handle({toolName, input: {command}}, ctx);
+  assert.equal(await run('powershell', "Write-Output 'ready'"), undefined);
+  assert.deepEqual(listCommandRules(dirs, 'user').at(-1), {
+    scope: 'user', pattern: ['Write-Output', 'ready'], decision: 'allow', shell: 'powershell',
+  });
+  assert.equal(await run('powershell', 'write-output ready later'), undefined);
+  const blocked = await run('powershell', 'Write-Output ready; Set-Content stop.txt no');
+  assert.match(blocked.reason, /workspace command rule \["Set-Content","stop\.txt"\] \(forbid\)/);
+  assert.equal((await run('powershell', 'bcdedit /?')).block, true);
+  assert.deepEqual(prompts, [['Write-Output', 'ready'], 4]);
+});
+
+test('a malformed command rule file produces a visible error instead of ignoring restrictions', async t => {
+  const dirs = ruleFixture(t);
+  mkdirSync(dirs.dataDir, {recursive: true});
+  writeFileSync(join(dirs.dataDir, 'command-rules.json'), '[{"pattern":["echo"],"decision":"unknown"}]');
+  assert.throws(() => listCommandRules(dirs), /command-rules\.json: Rule 1: Rule decision/);
+});
+
 test('one bounded typical-command batch measures average classifier latency', t => {
   const commands = Object.values(allowFamilies).flat();
   const started = performance.now();

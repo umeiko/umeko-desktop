@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { prepareDocumentation } from './umeko-documents.mjs';
 import { CORE_TOOLS } from './session-capabilities.mjs';
+import { commandRuleOperation, isCommandRuleOperation } from './command-rules.mjs';
 
 export const UMEKO_TOOL = 'umeko_desktop';
 export const SEND_TO_USER = 'send_to_user';
@@ -14,11 +15,11 @@ export const coordinatorNativeTools = value => Array.isArray(value)
 let instanceDocs;
 export const umekoDocs = () => instanceDocs?.docsRoot || fileURLToPath(new URL('./umeko-docs/', import.meta.url));
 export const umekoHelp = () => ({...(instanceDocs || { docsRoot: umekoDocs(), entry: fileURLToPath(new URL('./umeko-docs/README.md', import.meta.url)) }),
-  topics:{plugins:'plugins.md',provider:'provider-plugins.md',widget:'widget-plugins.md',agents:'global-agents.md'}});
+  topics:{plugins:'plugins.md',provider:'provider-plugins.md',widget:'widget-plugins.md',agents:'global-agents.md',command_rules:'command-rules.md'}});
 export function configureUmekoDocs(options) { instanceDocs = prepareDocumentation(options); }
 export const UMEKO_PROMPT = 'umeko-desk 的临时文件存放在 ./.umeko 目录下。 Umeko owns providers, credentials, themes, desktop settings, projects and chats; Pi provider configuration does not apply. First call umeko_desktop operation help to discover its documentation. Discover enabled Widgets with widgets.list (activeOnly true) and read widgets.docs before using them. Apply desktop changes through umeko_desktop, not by editing its settings files.';
 
-export function createUmekoControl({ emit, timeoutMs = 90000, getPetAssistantBinding = () => '', getPetReminderBinding = () => '', waitForSpeech = (ms, signal) => delay(ms, undefined, {signal}) }) {
+export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesContext, getPetAssistantBinding = () => '', getPetReminderBinding = () => '', waitForSpeech = (ms, signal) => delay(ms, undefined, {signal}) }) {
   const pending = new Map();
   let speechTail = Promise.resolve(), speechLife = new AbortController();
   function cancellable(promise, signal) {
@@ -95,8 +96,22 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getPetAssistantBin
       pi.registerTool({ name: UMEKO_TOOL, label: '管理 Umeko', exposure: 'direct',
         description: 'Inspect and configure this running Umeko desktop. Start with help for documentation; widgets.list and widgets.docs discover enabled Widgets and their interfaces. Queued or accepted operations are not completed.',
         parameters: Type.Object({ operation: Type.String({ minLength: 1, maxLength: 80 }), arguments: Type.Optional(Type.Record(Type.String(), Type.Unknown())) }),
-        execute: async (_id, params, signal) => {
-          const result = await this.request(params.operation, params.arguments || {}, signal);
+        execute: async (_id, params, signal, _onUpdate, ctx) => {
+          const args = params.arguments || {};
+          let result;
+          if (getCommandRulesContext && isCommandRuleOperation(params.operation)) {
+            try {
+              signal?.throwIfAborted();
+              const confirm = ctx.hasUI ? async (title, detail) => {
+                const value = await ctx.ui.confirm(title, detail);
+                signal?.throwIfAborted();
+                return value;
+              } : undefined;
+              result = {ok: true, operation: params.operation, ...await commandRuleOperation(params.operation, args, getCommandRulesContext(ctx), confirm)};
+            } catch (error) {
+              result = {ok: false, error: error.message};
+            }
+          } else result = await this.request(params.operation, args, signal);
           return { content: [{ type: 'text', text: JSON.stringify(result) }], isError: result.ok === false };
         },
       });

@@ -35,6 +35,7 @@ SOFTWARE.
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { changeCommandRule, evaluateCommandRules, listCommandRules } from './command-rules.mjs';
 
 // Upstream command-position guard, retained as the common rule entry guard.
 const AT_CMD = String.raw`(?:^|(?<!\\)[;&|({\x60!]|\$\(|-c\s+["'])\s*(?:(?:sudo|doas|env|nohup|time|exec|nice|xargs|command|builtin|then|do|else)\s+(?:-\S+\s+)*)*`;
@@ -117,15 +118,17 @@ export function classifyPath(filePath,context={}) {
 
 // Tokenize operators outside quotes and preserve decoded operand values. Quote
 // masking is used only for boundaries; actual target tokens are never masked.
-function lex(command) {
+function lex(command, shell) {
  const tokens=[],nested=[],masked=stripQuoted(command);
+ const powershell=shell==='powershell';
+ let plain=true;
  let value='',started=false,quote='',quoted=false;
  const push=()=>{if(started){tokens.push({value,quoted});value='';started=false;quoted=false;}};
  const substitution=(start,close)=>{
    let end=start,depth=1,q='';
    for(;end<command.length;end++){
      const c=command[end];
-     if(c==='\\'&&q!=="'"){end++;continue;}
+     if((powershell?c==='`':c==='\\')&&q!=="'"){end++;continue;}
      if(q){if(c===q)q='';continue;}
      if(c==='"'||c==="'"){q=c;continue;}
      if(close===')'&&c==='(')depth++;
@@ -136,17 +139,33 @@ function lex(command) {
  };
  for(let i=0;i<command.length;i++){
    const c=command[i];
+   if(powershell&&c==='`'&&quote!=="'"){
+     const next=command[++i];
+     if(next==='\r'&&command[i+1]==='\n'){i++;continue;}
+     if(next==='\n')continue;
+     if(!next||/[A-Za-z0-9]/.test(next))plain=false;
+     started=true;value+=next||'';continue;
+   }
+   if(shell==='bash'&&c==='\\'&&quote!=="'"&&(!quote||/["$`\\\n]/.test(command[i+1]||''))){
+     const next=command[++i];
+     if(!next)plain=false;
+     if(next==='\n')continue;
+     started=true;value+=next||'';continue;
+   }
    if(quote){
+     if(powershell&&c===quote&&command[i+1]===quote){value+=c;i++;continue;}
      if(c===quote){quote='';continue;}
+     if(shell&&quote==='"'&&c==='$')plain=false;
      if(quote==='"'&&c==='$'&&command[i+1]==='('){i=substitution(i+2,')');value+='$(...)';continue;}
      if(quote==='"'&&c==='`'&&command.indexOf('`',i+1)>=0){i=substitution(i+1,'`');value+='`...`';continue;}
      if(c==='\\'&&quote==='"'&&/["$`]/.test(command[i+1]||'')&&command.slice(i+2).includes('"')){value+=command[++i];continue;}
      value+=c;continue;
    }
+   if(shell&&(c==='$'||c==='`'||(powershell&&c==='@')||(shell==='bash'&&/[*?\[~]/.test(c))))plain=false;
    if(c==='"'||c==="'"){started=true;quoted=true;quote=c;continue;}
    if(c==='$'&&command[i+1]==='('){started=true;i=substitution(i+2,')');value+='$(...)';continue;}
    if(c==='`'&&command.indexOf('`',i+1)>=0){started=true;i=substitution(i+1,'`');value+='`...`';continue;}
-   if(c==='\\'&&!/^(?:[a-z]:|\\\\)/i.test(value)&&/[\s;&|<>"'(){}]/.test(command[i+1]||'')){started=true;value+=command[++i];continue;}
+   if(!shell&&c==='\\'&&!/^(?:[a-z]:|\\\\)/i.test(value)&&/[\s;&|<>"'(){}]/.test(command[i+1]||'')){started=true;value+=command[++i];continue;}
    if(/\s/.test(c)){push();if(c==='\n')tokens.push({op:';'});continue;}
    if(c==='#'&&!started&&masked[i]==='#'){while(i<command.length&&command[i]!=='\n')i++;push();tokens.push({op:';'});continue;}
    // PowerShell's static method invocation is a command in its own right.
@@ -156,6 +175,7 @@ function lex(command) {
        const x=command[end];if(q){if(x===q)q='';continue;}if(x==='"'||x==="'"){q=x;continue;}
        if(x==='(')depth++;if(x===')'&&!--depth)break;
      }
+     if(shell)plain=false;
      value+=command.slice(i,end+1);i=end;continue;
    }
    if(/[;&|()<>{}]/.test(c)){
@@ -163,7 +183,48 @@ function lex(command) {
    }
    started=true;value+=c;
  }
- push();return {tokens,nested};
+ push();return {tokens,nested,plain:plain&&!quote&&!nested.length};
+}
+
+// Match literal command words within a shell tool. Complex syntax can still
+// contribute a restrictive match, but cannot grant a reusable approval.
+export function splitPolicyCommand(command, shell, depth=0) {
+ if(depth>12)return {parts:[],plain:false};
+ const {tokens,nested,plain}=lex(command,shell);
+ const parts=[];
+ let literal=plain, segment=[];
+ const finish=()=>{
+   if(!segment.length)return;
+   const words=segment.map(token=>token.value);
+   const name=executable(words[0]);
+   if(wrappers.has(name)||/^(?:if|elif|fi|for|while|until|case|function|eval|invoke-expression|iex)$/.test(name)||
+      words.some(word=>/^\w+=|^--%$/.test(word)))literal=false;
+   const call=invocation(segment);
+   parts.push(call?call.tokens.map(token=>token.value):words);
+   if(['bash','sh','zsh','dash','ksh','cmd','powershell','pwsh'].includes(name)){
+     literal=false;
+     const flag=words.findIndex(word=>/^(?:-c|-command|\/c|-[a-z]*c[a-z]*)$/i.test(word));
+     if(flag>=0&&words[flag+1]){
+       const innerShell=['cmd','powershell','pwsh'].includes(name)?'powershell':'bash';
+       parts.push(...splitPolicyCommand(words.slice(flag+1).join(' '),innerShell,depth+1).parts);
+     }
+   }
+   segment=[];
+ };
+ for(let i=0;i<tokens.length;i++){
+   const token=tokens[i];
+   if(!token.op){segment.push(token);continue;}
+   if(/^[<>]+$/.test(token.op)){
+     literal=false;
+     if(i+1<tokens.length&&!tokens[i+1].op)i++;
+     continue;
+   }
+   if(![';','&&','||','|'].includes(token.op))literal=false;
+   finish();
+ }
+ finish();
+ for(const inner of nested)parts.push(...splitPolicyCommand(inner,shell,depth+1).parts);
+ return {parts,plain:literal};
 }
 function executable(value) {return value.replace(/\\/g,'/').split('/').at(-1).replace(/\.(exe|com)$/i,'').toLowerCase();}
 const wrappers=new Set(['sudo','doas','env','nohup','time','exec','nice','xargs','command','builtin','then','do','else']);
@@ -389,10 +450,34 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        const shell=name==='bash'||name==='powershell'||backgroundStart;
        const file=name==='write'||name==='edit';
        const generation=name==='image_gen'||name==='voice_gen'||name==='video_gen';
+       const original=shell?String(input.command??input.script??''):file?String(input.path??input.file_path??''):JSON.stringify(input);
        let hit=generation?decision('ask'):null;
-       if(shell)hit=await classify(String(input.command??input.script??''),context);
-       else if(file)hit=classifyPath(String(input.path??input.file_path??''),context);
+       if(shell)hit=await classify(original,context);
+       else if(file)hit=classifyPath(original,context);
        if(hit?.category>=1&&hit.category<=7&&policy.dangerousAllowed===true)hit=null;
+       let extraReason, remember;
+       const commandShell=name==='powershell'?'powershell':'bash';
+       const ruleContext={dataDir:policy.dataDir,workspace:policy.workspace ? baseCwd : undefined};
+       if(shell&&!hit){
+         const workspaceTrusted=!policy.safeMode&&ctx.isProjectTrusted?.()!==false;
+         const rules=listCommandRules(ruleContext).filter(rule=>rule.decision!=='allow'||
+           (!policy.pluginApprovalRequired&&(rule.scope!=='workspace'||workspaceTrusted)));
+         if(rules.length||policy.mode==='ask'){
+           const commandRule=evaluateCommandRules(splitPolicyCommand(original,commandShell),rules,commandShell,policy.mode);
+           if(commandRule?.pattern){
+             const prefix=JSON.stringify(commandRule.pattern);
+             const scope=commandRule.scope==='user'?(language==='zh'?'用户':'user'):(language==='zh'?'工作区':'workspace');
+             extraReason=language==='zh'?`命中${scope}命令规则 ${prefix}（${commandRule.decision}）。`
+               :`Matched ${scope} command rule ${prefix} (${commandRule.decision}).`;
+           }
+           if(commandRule?.decision==='forbid')return {block:true,reason:extraReason};
+           if(commandRule?.decision==='allow')return undefined;
+           if(commandRule?.decision==='ask'){
+             hit=decision('ask');
+             remember=ruleContext.dataDir&&!policy.pluginApprovalRequired?commandRule.remember:undefined;
+           }
+         }
+       }
        if(policy.mode==='ask'){
          if(shell||file)hit=hit||decision('ask');
          else{
@@ -408,8 +493,7 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        const reason=generation ? (language==='zh'
          ? `将提示词或文本发送到 ${destination} 生成${name==='image_gen'?'图片':name==='video_gen'?'视频':'语音'}，可能产生费用。文件保存在当前工作目录，已有文件不会被覆盖。`
          : `Send the prompt or text to ${destination} to generate ${name==='image_gen'?'images':name==='video_gen'?'video':'speech'}; this may incur charges. Save files in the current workspace without overwriting existing files.`)
-         : REASONS[hit.ruleId]?.[language==='zh'?1:0]||hit.reason;
-       const original=shell?String(input.command??input.script??''):file?String(input.path??input.file_path??''):JSON.stringify(input);
+         : extraReason||REASONS[hit.ruleId]?.[language==='zh'?1:0]||hit.reason;
        if(!ctx.hasUI||!ctx.ui?.confirm){
          const message=language==='zh'?`未执行：无法显示审批对话框。${reason}`:`Not executed: approval UI is unavailable. ${reason}`;
          notify(message);return {block:true,reason:message};
@@ -418,7 +502,13 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        const message=language==='zh'?`原因：${reason}\n\n原始${shell?'命令':'路径/输入'}：\n${original}`:`Reason: ${reason}\n\nOriginal ${shell?'command':'path/input'}:\n${original}`;
        const approved=hit.category>=1&&hit.category<=7&&typeof ctx.ui.confirmDangerous==='function'
          ? await ctx.ui.confirmDangerous(title,message,hit.category)
-         : await ctx.ui.confirm(title,message);
+         : remember&&typeof ctx.ui.confirmCommand==='function'
+           ? await ctx.ui.confirmCommand(title,message,remember)
+           : await ctx.ui.confirm(title,message);
+       if(approved==='alwaysAllow'&&remember){
+         changeCommandRule('add',{scope:'user',pattern:remember,decision:'allow',shell:commandShell},ruleContext);
+         return undefined;
+       }
        if(approved!==true)return {block:true,reason:language==='zh'?`用户拒绝执行。${reason}`:`User denied execution. ${reason}`};
        return undefined;
      }catch(error){

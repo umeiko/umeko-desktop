@@ -4,6 +4,10 @@
 
 `runtime/tool-permissions.mjs` adapts the command-position guard (`AT_CMD`), quote masking (`stripQuoted`), recursive Windows deletion family (`WINDOWS_ROOT_WIPE`), critical command families and write-only normalized path-rule structure from `@xynogen/pix-gate` 0.4.5, copyright 2026 xynogen (MIT). Source: https://github.com/xynogen/pix-mono/blob/f07f04c186a8b43adb5c443ee65a2ebee53f4e0c/packages/pix-gate/src/lib.ts . The complete license appears in both that module and `licenses/pix-gate-MIT.txt`. Umeko applies its own seven permission categories in place of the upstream default policy. Pi Coding Agent 1.3.0's `permission-gate` and `protected-paths` extension examples (https://github.com/earendil-works/pi/tree/main/packages/coding-agent/examples/extensions) supply the `tool_call` integration pattern under the Pi MIT notice below. `cc-safety-net` 2.7.0 (https://github.com/kenryu42/cc-safety-net/tree/v2.7.0) supplied categories and the test checklist only; no implementation code is copied or bundled.
 
+## Command prefix rules
+
+`runtime/command-rules.mjs` adapts command prefix matching, decision precedence, and reusable approvals from [OpenAI Codex rust-v0.172.0](https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/execpolicy), copyright 2025 OpenAI (Apache-2.0). The source attribution and full license are in `licenses/codex-execpolicy.txt`.
+
 ## Desktop plugin artwork
 
 The file-tree and version-management plugins include unmodified Microsoft Codicons 0.0.46-24 (CC-BY-4.0, https://github.com/microsoft/vscode-codicons) and the Seti file icon theme shipped by VS Code 1.143.1 (MIT, https://github.com/jesseweed/seti-ui). Seti's WOFF font is repackaged as TTF with the glyph outlines unchanged. Each standalone plugin includes the full license notices and `assets/sources.json` with source versions and SHA-256 hashes. The source-control layout uses the VS Code SCM stylesheet as its sizing reference: https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/scm/browser/media/scm.css .
