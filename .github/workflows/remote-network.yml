@@ -64,19 +64,17 @@ jobs:
           sudo useradd --create-home --shell /bin/bash "$test_user"
           # Password authentication remains disabled; unlock only this ephemeral account.
           sudo passwd -d "$test_user"
-          sudo chmod 755 "$RUNNER_TEMP"
-          chmod 755 "$fixture"
           ssh-keygen -q -t ed25519 -N '' -f "$fixture/host_key"
           ssh-keygen -q -t ed25519 -N '' -f "$fixture/client_key"
-          cp "$fixture/client_key.pub" "$fixture/authorized_keys"
-          chmod 644 "$fixture/authorized_keys"
+          sudo install -d -m 700 -o "$test_user" -g "$test_user" "/home/$test_user/.ssh"
+          sudo install -m 600 -o "$test_user" -g "$test_user" "$fixture/client_key.pub" "/home/$test_user/.ssh/authorized_keys"
           cat > "$fixture/sshd_config" <<EOF
           Port 22223
           ListenAddress 127.0.0.1
           HostKey $fixture/host_key
           PidFile $fixture/sshd.pid
-          AuthorizedKeysFile $fixture/authorized_keys
-          StrictModes no
+          AuthorizedKeysFile .ssh/authorized_keys
+          SetEnv PATH=$(dirname "$(command -v npm)"):/usr/local/bin:/usr/bin:/bin
           PasswordAuthentication no
           KbdInteractiveAuthentication no
           PubkeyAuthentication yes
