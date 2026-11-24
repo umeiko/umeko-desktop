@@ -54,6 +54,10 @@ Release bundles include the unmodified npm package `@gotgenes/pi-subagents` 25.0
 
 `app/team_board.py` and `app/task_records.py` adapt task versions and dependencies from [`@deepseek-ai/dsh-agent-team` 0.2.2-rc.5](https://www.npmjs.com/package/@deepseek-ai/dsh-agent-team/v/0.2.2-rc.5), `packages/team/agent-team/src/task-board.ts` and `task-graph.ts`, and apply the recipient-driven wait design from [`@deepseek-ai/dsh-tool-subagent-control` 0.2.2-rc.5](https://www.npmjs.com/package/@deepseek-ai/dsh-tool-subagent-control/v/0.2.2-rc.5), `packages/subagent/tool-subagent-control/src/wait-agent.ts`. Copyright (c) 2026 DeepSeek. The original MIT notice shared by both packages is in `licenses/dsh-agent-team-and-subagent-control-MIT.txt`.
 
+## Planning handoff
+
+`runtime/input-queue.mjs` adapts the proposed-plan parsing and same-session handoff from [@signalridge/pi-plan-mode 1.6.1, src/message-transform.ts](https://github.com/signalridge/pi-extensions/blob/main/packages/pi-plan-mode/src/message-transform.ts). The MIT notice is in `licenses/pi-plan-mode-MIT.txt`.
+
 ## Background jobs
 
 The bundled background-job extension uses `@alexlikevibe/pi-bg` 2.3.0 (MIT), specifically its per-session registry and file-backed spawn primitive. Its default extension entry is not loaded. The hidden Windows spawn implementation is adapted from that primitive; process-tree termination and cursor-based reads are Umeko adaptations. Source: https://github.com/iefnaf/pi-bg . The upstream license is retained in `licenses/pi-bg-MIT.txt` and with the npm package. The bash guard follows the `tool_call` blocking mechanism in Pi's `permission-gate.ts` example; no confirmation UI is used.
