@@ -70,3 +70,9 @@ test('Pi tool approvals split reason and command; other Pi dialogs are unchanged
   assert.deepEqual(present({ method: 'input', detail: '原因：x\n\n原始命令：\ny' }), { structured: false });
   assert.deepEqual(present({}), { structured: false });
 });
+
+test('a reusable Pi approval shows the serialized prefix sent by the bridge', () => {
+  const prefix = '["git","status"]';
+  const view = present({ method: 'confirm', detail: 'Reason: Ask mode.\n\nOriginal command:\ngit status', rememberPrefix: prefix });
+  assert.deepEqual(view.sections.at(-1), { label: '以后允许的命令前缀', text: prefix, mono: true });
+});
