@@ -33,6 +33,7 @@ def attach(app, controller, directory, window=None):
         action = request["action"]
         accepted = True
         evidence = {}
+        extra = {}
         if action == "send":
             accepted = controller.send(request["text"])
         elif action == "stop":
@@ -40,6 +41,11 @@ def attach(app, controller, directory, window=None):
         elif action == "new":
             controller.newSession()
             controller.setWorkspace(workspace_url)
+        elif action in {"team_setup", "team_send", "team_state"}:
+            try:
+                extra = team_action(controller, action, request)
+            except (OSError, ValueError) as error:
+                accepted, extra = False, {"error": str(error)}
         elif action == "agent_bus":
             service = controller.desktopPlugins.global_agents
             allowed = {"setAutomaticCreation", "snapshot", "send", "setModel"}
@@ -91,7 +97,8 @@ def attach(app, controller, directory, window=None):
         view = controller._view
         result = {"accepted": accepted, "busy": controller.busy, "phase": view.phase,
                   "session": view.id, "messages": view.messages, "evidence": evidence,
-                  "piProcesses": [int(record.process.processId()) for record in controller._pool.records.values() if record.process]}
+                  "piProcesses": [int(record.process.processId()) for record in controller._pool.records.values() if record.process],
+                  **extra}
         temporary = response_path.with_suffix(".tmp")
         temporary.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
         temporary.replace(response_path)
@@ -101,3 +108,37 @@ def attach(app, controller, directory, window=None):
     timer.timeout.connect(receive)
     timer.start(50)
     QTimer.singleShot(120_000, lambda: app.exit(2))
+
+
+def team_action(controller, action, request):
+    plugins = controller.desktopPlugins
+    bus = plugins.global_agents
+    if action == "team_setup":
+        if not plugins.openPage('global-agents') or bus.agents:
+            raise ValueError('Team smoke requires a fresh global-agents Widget')
+        return {'agents': {name: 'agent:' + bus.handle('create', {
+            'name': name, 'instructions': f'Smoke member identity: {name}.'
+        })['id'] for name in ('lead', 'api-dev', 'ui-dev', 'tester')}}
+    if action == "team_send":
+        if not plugins.openPage('global-agents'):
+            raise ValueError('Could not open global-agents Widget')
+        identifier = request['targetId'].removeprefix('agent:')
+        conversation = plugins.selectConversation(identifier)
+        if conversation is None:
+            raise ValueError('Could not select global-agent conversation')
+        sent = conversation.send(request['text'])
+        return {'accepted': sent is not False}
+    team_id = request.get('teamId', '')
+    result = {'queued': len(bus.outbox), 'requests': list(bus.requests.values())}
+    result['agents'] = {
+        agent['name']: {'busy': bool(record and record.busy), 'pid': record.process.processId() if record and record.process else 0,
+                        'sessionId': record.id if record else agent.get('sessionId', ''),
+                        'sessionFile': record.file if record else agent.get('sessionFile', ''),
+                        'chat': bus.messages(record.messages) if record else [],
+                        'approval': bool(record and record.approval)}
+        for identifier, agent in bus.agents.items() for record in (bus.records.get(identifier),)
+    }
+    if team_id:
+        result['board'] = bus.handle('team_board', {'teamId': team_id, 'limit': 50})
+        result['members'] = bus.handle('team_members', {'teamId': team_id})['members']
+    return result

@@ -50,6 +50,10 @@ Dependencies retain their license files in the runtime's node_modules directory.
 
 Release bundles include the unmodified npm package `@gotgenes/pi-subagents` 25.0.5 (MIT) in the runtime's `node_modules` directory. Official source: https://github.com/gotgenes/pi-packages/tree/pi-subagents-v25.0.5/packages/pi-subagents . The full upstream copyright and permission notice is included in `licenses/pi-subagents-MIT.txt` and retained with the package.
 
+`app/team_board.py` adapts direct mentions from [`@tintinweb/pi-subagents` 0.26.3](https://www.npmjs.com/package/@tintinweb/pi-subagents/v/0.26.3), `src/mention.ts` and `src/index.ts`. Copyright (c) 2026 tintinweb. The original MIT notice is in `licenses/tintinweb-pi-subagents-MIT.txt`.
+
+`app/team_board.py` and `app/task_records.py` adapt task versions and dependencies from [`@deepseek-ai/dsh-agent-team` 0.2.2-rc.5](https://www.npmjs.com/package/@deepseek-ai/dsh-agent-team/v/0.2.2-rc.5), `packages/team/agent-team/src/task-board.ts` and `task-graph.ts`, and apply the recipient-driven wait design from [`@deepseek-ai/dsh-tool-subagent-control` 0.2.2-rc.5](https://www.npmjs.com/package/@deepseek-ai/dsh-tool-subagent-control/v/0.2.2-rc.5), `packages/subagent/tool-subagent-control/src/wait-agent.ts`. Copyright (c) 2026 DeepSeek. The original MIT notice shared by both packages is in `licenses/dsh-agent-team-and-subagent-control-MIT.txt`.
+
 ## Planning handoff
 
 `runtime/input-queue.mjs` adapts the proposed-plan parsing and same-session handoff from [@signalridge/pi-plan-mode 1.6.1, src/message-transform.ts](https://github.com/signalridge/pi-extensions/blob/main/packages/pi-plan-mode/src/message-transform.ts). The MIT notice is in `licenses/pi-plan-mode-MIT.txt`.
