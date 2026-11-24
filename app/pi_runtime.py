@@ -214,9 +214,10 @@ def verify_runtime(release: Path, bridge_source: Path):
     copy_runtime_file(bridge_source.parent / 'apply-patch.mjs', release / 'apply-patch.mjs')
     # Older bridge sources have no sandbox adapter. The runtime self-test below
     # rejects a newer bridge whose import cannot be resolved.
-    sandbox_adapter = bridge_source.parent / 'windows-sandbox.mjs'
-    if sandbox_adapter.is_file():
-        copy_runtime_file(sandbox_adapter, release / sandbox_adapter.name)
+    for name in ('windows-sandbox.mjs', 'windows-sandbox-mcp.mjs'):
+        sandbox_adapter = bridge_source.parent / name
+        if sandbox_adapter.is_file():
+            copy_runtime_file(sandbox_adapter, release / name)
     copy_runtime_file(bridge_source.parent / 'generation.mjs', release / 'generation.mjs')
     for name in ('cowork-tools.mjs', 'cowork-local.mjs', 'cowork-subagents.mjs'):
         copy_runtime_file(bridge_source.parent / name, release / name)
