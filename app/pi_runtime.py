@@ -213,6 +213,17 @@ def verify_runtime(release: Path, bridge_source: Path):
     copy_runtime_file(bridge_source.parent / 'update-cleanup.mjs', release / 'update-cleanup.mjs')
     copy_runtime_file(bridge_source.parent / 'apply-patch.mjs', release / 'apply-patch.mjs')
     copy_runtime_file(bridge_source.parent / 'generation.mjs', release / 'generation.mjs')
+    for name in ('cowork-tools.mjs', 'cowork-local.mjs', 'cowork-subagents.mjs'):
+        copy_runtime_file(bridge_source.parent / name, release / name)
+    # Updated or previously prepared Pi kernels may predate the Cowork parser.
+    modules = release / 'node_modules'
+    if not (modules / 'parse5/package.json').is_file():
+        for source in (bridge_source.parent / 'node_modules',
+                       bridge_source.parent / 'releases' / RELEASE_NAME / 'node_modules'):
+            if (source / 'parse5/package.json').is_file() and (source / 'entities/package.json').is_file():
+                shutil.copytree(source / 'parse5', modules / 'parse5', dirs_exist_ok=True)
+                shutil.copytree(source / 'entities', modules / 'parse5/node_modules/entities', dirs_exist_ok=True)
+                break
     copy_runtime_file(bridge_source.parent / 'http-retry-boundary.mjs', release / 'http-retry-boundary.mjs')
     copy_runtime_file(bridge_source.parent / 'system-prompt.mjs', release / 'system-prompt.mjs')
     copy_runtime_file(bridge_source.parent / 'skills.mjs', release / 'skills.mjs')

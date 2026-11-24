@@ -77,7 +77,7 @@ function certificateMessage(error) {
   return '无法验证更新服务器证书（已使用系统信任证书），请将内网根证书安装到系统受信任的根证书颁发机构后重试';
 }
 export async function proxyTunnel(proxy, target, signal, timeout, ca) {
-  const port=Number(target.port || 443), hostname=target.hostname.replace(/^\[|\]$/g,'');
+  const port=Number(target.port || (target.protocol === 'http:' ? 80 : 443)), hostname=target.hostname.replace(/^\[|\]$/g,'');
   if (proxy.protocol==='http:' || proxy.protocol==='https:') {
     return new Promise((resolve,reject)=>{
       const headers={Host:`${target.hostname}:${port}`};

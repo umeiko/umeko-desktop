@@ -1,8 +1,7 @@
 // Global coordinators have an explicit, default-empty Skill loadout. Never
 // discover a user's normal Pi/project resources or execute imported modules.
 import { existsSync, lstatSync, realpathSync, readFileSync, opendirSync, openSync, readSync, closeSync, fstatSync } from 'node:fs';
-import { dirname, join, resolve, relative, isAbsolute } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { basename, dirname, join, relative, isAbsolute } from 'node:path';
 import { Type } from 'typebox';
 import { coordinatorNativeTools } from './umeko-control.mjs';
 
@@ -19,6 +18,15 @@ function skillFile(root, name) {
   } catch {}
 }
 export function coordinatorSkillPaths(input) {
+  if (Array.isArray(input.cowork?.skillPaths)) {
+    return [...new Set(input.cowork.skillPaths)].slice(0, 32).flatMap(path => {
+      if (typeof path !== 'string' || !isAbsolute(path) || !/\.md$/i.test(path)) return [];
+      try {
+        const info = lstatSync(path);
+        return info.isFile() && info.size <= 64 * 1024 ? [realpathSync(path)] : [];
+      } catch { return []; }
+    });
+  }
   if (!input.globalCoordinator || !Array.isArray(input.coordinatorSkills)) return [];
   const roots = input.coordinatorSkillRoots || {}, paths = [];
   for (const id of [...new Set(input.coordinatorSkills)].slice(0, 32)) {
@@ -30,7 +38,7 @@ export function coordinatorSkillPaths(input) {
   return paths;
 }
 export function createCoordinatorSkills(input) {
-  const paths = coordinatorSkillPaths(input), roots = paths.map(dirname);
+  const paths = coordinatorSkillPaths(input), roots = paths.filter(path => basename(path) === "SKILL.md").map(dirname);
   return {
     paths,
     resourceOptions: { noSkills: true, additionalSkillPaths: paths,
@@ -40,13 +48,13 @@ export function createCoordinatorSkills(input) {
       if (coordinatorNativeTools(input.coordinatorTools).includes('read')) return;
       // Override Pi's broad reader even if all selected folders disappeared.
       pi.registerTool({ name: 'read', label: '读取 Skill', exposure: 'direct',
-        description: 'Read text files inside this global coordinator\'s explicitly enabled Skill directories. Other files require enabling the native read tool in the agent settings.',
+        description: 'Read text files inside the explicitly enabled Skill files and directories. Other files require enabling the native read tool in the agent settings.',
         parameters: Type.Object({path: Type.String({minLength:1,maxLength:4096}), offset: Type.Optional(Type.Integer({minimum:1})), limit: Type.Optional(Type.Integer({minimum:1,maximum:500}))}),
         execute: async (_id, args) => {
           let fd;
           try {
             const target = realpathSync(args.path);
-            if (!roots.some(root => inside(target, root))) throw new Error('只能读取为当前子智能体启用的 Skill 文件');
+            if (!paths.includes(target) && !roots.some(root => inside(target, root))) throw new Error('只能读取为当前子智能体启用的 Skill 文件');
             if (!lstatSync(target).isFile()) throw new Error('请选择 Skill 内的文本文件');
             fd = openSync(target, 'r');
             const info = fstatSync(fd);
@@ -90,7 +98,7 @@ export function coordinatorSkillCatalog(Pi, input) {
   return {ok:true,truncated,skills:skills.sort((a,b)=>a.source.localeCompare(b.source) || a.name.localeCompare(b.name))};
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (import.meta.main) {
   try {
     process.env.PI_OFFLINE = '1';
     let raw = ''; for await (const chunk of process.stdin) raw += chunk;

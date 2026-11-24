@@ -116,6 +116,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def sshConfigHosts(self):
         return list(self._ssh_config_hosts)
 
+    @Property(QObject, constant=True)
+    def cowork(self):
+        return self._cowork
+
     @Property('QVariantMap', notify=auxiliaryVisionSettingsChanged)
     def auxiliaryVisionSettings(self):
         return dict(self.store.data['auxiliaryVision'])
@@ -362,7 +366,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._collapsed_projects = set()
         self._show_archived = False
         for session in self._sessions:
-            if session.get("workspace"):
+            if session.get("workspace") and not session.get("cowork"):
                 self._ensure_project(session["workspace"])
         self._kernel_busy = False
         self._last_send_error = ""
@@ -393,6 +397,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         from .slash_commands import SlashCommands
         self._slash_commands = SlashCommands(self)
         self._reasoning_discovery = ReasoningDiscovery(self)
+        from .cowork import Cowork
+        self._cowork = Cowork(self)
 
     @Property(QObject, constant=True)
     def loginStartup(self):
@@ -440,10 +446,12 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Property(bool, notify=chatChanged)
     def canChooseBackend(self):
-        return not (self._view.id or self._view.messages or self._view.busy)
+        return not (self._view.cowork or self._view.id or self._view.messages or self._view.busy)
 
     @Slot(str, result=bool)
     def setSessionBackend(self, value):
+        if self._view.cowork:
+            return value == "pi"
         changed = self._choose_dsh_backend(value)
         if changed and value == "dsh" and self._repair_model_group_selection(self._view):
             self.store.save()
@@ -511,11 +519,12 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self.messageModelChanged.emit()
             self.messageCountChanged.emit()
         self._pool.touch(record, current=True, dirty=False)
-        if record.workspace:
-            project = self._ensure_project(record.workspace, reopen=True)
-            self.store.data.update(workspace=project["path"], activeProject=project["id"])
-        else:
-            self.store.data.update(workspace="", activeProject="")
+        if not record.cowork:
+            if record.workspace:
+                project = self._ensure_project(record.workspace, reopen=True)
+                self.store.data.update(workspace=project["path"], activeProject=project["id"])
+            else:
+                self.store.data.update(workspace="", activeProject="")
         # The index can name a deleted supplier or a retired pre-plugin model.
         # Keep a valid historical selection; otherwise use the current selection.
         available = [(p["id"], m["alias"]) for p in self.store.data["providers"]
@@ -540,6 +549,9 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._viewport_save.start()
         # Rebinding every hidden settings page is expensive. Session-specific
         # signals below update the chat; refresh settings only when they changed.
+        if (previous.cowork or record.cowork) and (previous.workspace, previous.cowork) != (record.workspace, record.cowork):
+            previous_configuration["workspace"] = None
+        self._cowork.view_changed(previous)
         if previous_approval != self._dangerous_allowed(record) or any(self.store.data.get(key) != value for key, value in previous_configuration.items()):
             self.changed.emit()
         self.chatChanged.emit()
@@ -561,6 +573,9 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self._pi_warmup.start()
 
     def _refresh_sidebar(self):
+        if self._view.cowork:
+            self._cowork.refresh_rows()
+            return
         rows = self._project_rows()
         if rows != self._last_sidebar_rows:
             self._last_sidebar_rows = rows
@@ -707,6 +722,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         # it for every QML binding makes settings clicks scale with all history.
         data = copy.deepcopy({key: value for key, value in self.store.data.items()
                               if key != 'sessionMeta'})
+        if self._view.cowork:
+            data["workspace"] = self._view.workspace
         data["hasPassword"] = bool(data.pop("password"))
         data.pop("employeeId", None)
         if isinstance(self.adapter, UnconfiguredAdapter):
@@ -1015,6 +1032,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         by_workspace = {}
         projects_by_key = {os.path.normcase(p['path']): p for p in self.store.data['projects']}
         for session in self._sessions:
+            if session.get("cowork"):
+                continue
             workspace = session.get("workspace", "")
             if workspace:
                 key = self._project_workspace_key(workspace)
@@ -1075,6 +1094,9 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self.chatChanged.emit()
 
     def _clear_current(self):
+        if self._view.cowork:
+            self._cowork.requestTask(self._view.cowork)
+            return
         record = self._new_view()
         self._project_drafts[record.workspace] = record
         self._activate(record)
@@ -1087,7 +1109,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if not session:
             return
         self.store.data["sessionMeta"].setdefault(session_id, {})["archived"] = archived
-        if not archived and session.get('workspace'):
+        if not archived and session.get('workspace') and not session.get('cowork'):
             project = self._ensure_project(session['workspace'], reopen=True)
             project['archived'] = False
         if archived:
@@ -1106,12 +1128,12 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if not project or self._session_files.busy:
             return
         project['archived'] = archived
-        ids = [s["id"] for s in self._sessions if s.get("workspace") and os.path.normcase(str(Path(s["workspace"]).resolve())) == os.path.normcase(project["path"])]
+        ids = [s["id"] for s in self._sessions if not s.get("cowork") and s.get("workspace") and os.path.normcase(str(Path(s["workspace"]).resolve())) == os.path.normcase(project["path"])]
         for session_id in ids:
             self.store.data["sessionMeta"].setdefault(session_id, {})["archived"] = archived
             if archived:
                 self._clear_dangerous_approval(session_id)
-        if archived and (self._view.id in ids or self._project_workspace_key(self._view.workspace) == self._project_workspace_key(project['path'])):
+        if archived and not self._view.cowork and (self._view.id in ids or self._project_workspace_key(self._view.workspace) == self._project_workspace_key(project['path'])):
             self.store.data.update(activeProject='', workspace='')
             self._clear_current()
         if archived:
@@ -1176,6 +1198,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         session = next((s for s in self._sessions if s["id"] == session_id), None)
         if session:
             record = self._new_view(session.get("workspace") or self.store.data["workspace"])
+            record.cowork = session.get("cowork", "")
             record.history = copy.deepcopy(session.get("history", []))
             record.model = session.get("model") or record.model
             record.provider = session.get("provider") or record.provider
@@ -1188,7 +1211,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             return
         payload = {"action": action, "sessionFile": session.get("file"), "history": session.get("history", []),
             "cwd": session.get("workspace") or self.store.data["workspace"] or str(self.store.directory),
-            "sessionDir": str(self.store.directory / "pi/sessions"), **values}
+            "sessionDir": str(self._cowork.session_directory(session["cowork"]) if session.get("cowork")
+                              else self.store.directory / "pi/sessions"), **values}
         if session_id in self._management_jobs:
             return
         self._management_jobs.add(session_id)
@@ -1360,7 +1384,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Property(str, notify=chatChanged)
     def sessionTitle(self):
-        return next((s["title"] for s in self._sessions if s["id"] == self._view.id), "新会话")
+        return next((s["title"] for s in self._sessions if s["id"] == self._view.id), self._view.initial_title or "新会话")
 
     @Property(bool, notify=chatChanged)
     def busy(self):
@@ -1645,6 +1669,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Property(str, notify=changed)
     def workspaceName(self):
+        if self._view.cowork:
+            return Path(self._view.workspace).name or self._view.workspace
         project = next((p for p in self.store.data["projects"] if p["id"] == self.store.data["activeProject"]), None)
         return project["name"] if project else Path(self.store.data["workspace"]).name if self.store.data["workspace"] else "选择工作目录"
 
@@ -1655,7 +1681,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def _dangerous_allowed(self, record):
         if is_dsh(record): return False
         meta = self.store.data["sessionMeta"].get(record.id, {})
-        if not record.id or record.global_agent or meta.get("archived") or meta.get('pluginSession'):
+        if not record.id or record.global_agent or record.cowork or meta.get("archived") or meta.get('pluginSession'):
             return False
         return meta.get("dangerousAllowed") is True
 
@@ -1814,7 +1840,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def _mcp_path(self, scope, workspace=None):
         if scope == "global":
             return Path(self.store.data["agent"].get("agentDir") or Path.home() / ".pi/agent") / "mcp.json"
-        workspace = self.store.data["workspace"] if workspace is None else workspace
+        workspace = self._view.workspace if workspace is None else workspace
         if scope == "project" and workspace:
             return Path(workspace) / ".pi/mcp.json"
         raise ValueError("请先打开项目目录")
@@ -1854,7 +1880,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._mcp_jobs[job_name] = (record, scope, record.workspace)
         self.chatChanged.emit()
         global_raw = raw if scope == "global" else self.readMcp("global")
-        project_raw = raw if scope == "project" else self.readMcp("project") if self.store.data["workspace"] else '{"mcpServers":{}}'
+        project_raw = raw if scope == "project" else self.readMcp("project") if record.workspace else '{"mcpServers":{}}'
         def save():
             result = subprocess.run([node_executable(), str(self._release / "bridge.mjs"), "--check-mcp"],
                 input=json.dumps({"global": global_raw, "project": project_raw}), capture_output=True,
@@ -1869,11 +1895,16 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             return scope
         self._job(job_name, save)
 
-    def _mcp_environment(self, workspace=None):
+    def _mcp_environment(self, workspace=None, extra=(), ordinary=True):
         names = set()
-        for scope in ("global", "project"):
+        paths = list(extra)
+        for scope in ("global", "project") if ordinary else ():
             try:
-                path = self._mcp_path(scope, workspace)
+                paths.append(self._mcp_path(scope, workspace))
+            except ValueError:
+                pass
+        for path in paths:
+            try:
                 if path.is_file():
                     names.update(re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", path.read_text(encoding="utf-8")))
             except (ValueError, OSError):
@@ -1911,19 +1942,29 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         QGuiApplication.clipboard().setText(value)
         self.toast.emit("已复制到剪贴板")
 
-    @Slot(str)
+    @Slot(str, result=bool)
     def setWorkspace(self, url):
-        path = QUrl(url).toLocalFile()
-        if Path(path).is_dir():
-            self.store.data["workspace"] = str(Path(path).resolve())
-            project = self._ensure_project(path, reopen=True)
-            self.store.data["activeProject"] = project["id"]
-            self._collapsed_projects.discard(project["id"])
-            record = self._project_drafts.get(project["path"])
-            if record is None or record.messages or record.busy:
-                record = self._new_view(project["path"])
-                self._project_drafts[project["path"]] = record
-            self._activate(record)
+        if self._cowork.active and not self._view.cowork:
+            self._cowork.requestCreate('', url)
+            return False
+        if self._view.cowork:
+            self._cowork.newTask(self._view.cowork, url)
+            return False
+        address = QUrl(url)
+        path = Path(address.toLocalFile() if address.isLocalFile() else url)
+        if not path.is_absolute() or not path.is_dir():
+            self.toast.emit('工作目录不存在')
+            return False
+        project = self._ensure_project(str(path), reopen=True)
+        self.store.data["workspace"] = project["path"]
+        self.store.data["activeProject"] = project["id"]
+        self._collapsed_projects.discard(project["id"])
+        record = self._project_drafts.get(project["path"])
+        if record is None or record.messages or record.busy:
+            record = self._new_view(project["path"])
+            self._project_drafts[project["path"]] = record
+        self._activate(record)
+        return True
 
     @staticmethod
     def _normalize_remote_workspace_path(remote_path: str, platform: str) -> str:
@@ -2658,11 +2699,13 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             return self._open_dsh(session)
         record = self._pool.find(session_id)
         stale = record and record.transcript and not record.busy and not record.transcript.matches_source()
-        if (record and (not record.loaded or stale)) or (record is None and session.get('file') and self.transcripts.large(session['file'])):
+        if (record and (not record.loaded or stale)) or (record is None and session.get('file') and
+                (session.get('cowork') or self.transcripts.large(session['file']))):
             self._session_preview.open_direct(session_id)
             return
         if record is None:
             record = self._new_view(session.get("workspace", ""))
+            record.cowork = session.get("cowork", "")
             record.id, record.file, record.title = session_id, session.get("file", ""), session["title"]
             record.extension_modes = clean_extension_modes(self.store.data["sessionMeta"].get(session_id, {}).get("extensionModes"))
             record.skill_modes = clean_skill_modes(self.store.data["sessionMeta"].get(session_id, {}).get("skillModes"))
@@ -2956,6 +2999,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._cancel_pi_warmup()
         self._reasoning_discovery.close()
         self._desktop_plugins.close()
+        self._cowork.close()
         self._appearance_save.stop()
         self._viewport_save.stop()
         self._streaming_timer.stop()

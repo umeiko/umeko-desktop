@@ -22,8 +22,10 @@ Popup {
     width: Math.min(parent ? Math.max(460, parent.width - 48) : 680, 680)
 
     signal browseLocalRequested()
+    signal workspaceSelected()
 
     property string activeTab: "local"
+    property bool newConversation: false
     property var hostChoices: []
     property string selectedEnvName: ""
     property string selectedHost: ""
@@ -82,7 +84,11 @@ Popup {
         return typedPath.trim()
     }
 
-    function openPicker(initialTab) {
+    function openPicker(initialTab) { openForWorkspace(initialTab, false) }
+    function openForConversation() { openForWorkspace("", true) }
+
+    function openForWorkspace(initialTab, newConversation) {
+        root.newConversation = newConversation === true
         activeTab = initialTab || (backend.activeRemoteWorkspace && backend.activeRemoteWorkspace.environment ? "remote" : "local")
         mkdirOpen = false
         mkdirName = ""
@@ -104,6 +110,16 @@ Popup {
         Qt.callLater(() => {
             if (activeTab === "remote") pathInput.forceActiveFocus()
         })
+    }
+
+    function finishSelection() {
+        if (root.newConversation) backend.newSession()
+        root.close()
+        root.workspaceSelected()
+    }
+
+    function chooseLocalUrl(url) {
+        if (backend.setWorkspace(url)) finishSelection()
     }
 
     function rebuildHostChoices() {
@@ -420,9 +436,7 @@ Popup {
         const chosen = effectiveSelectedPath
         if (!chosen) return
         ensureReadyThen(function(envName) {
-            if (backend.setRemoteWorkspace(envName, chosen)) {
-                root.close()
-            }
+            if (backend.setRemoteWorkspace(envName, chosen)) root.finishSelection()
         })
     }
 
@@ -672,6 +686,22 @@ Popup {
                     font.pixelSize: Theme.font(13)
                 }
 
+                Picker {
+                    id: recentLocalFolders
+                    objectName: "workspaceRecentLocal"
+                    Layout.fillWidth: true
+                    readonly property var folders: root.visible && root.newConversation ?
+                        backend.projectRows.filter(row => row.kind === "project" && !row.isRemote) : []
+                    visible: folders.length > 0
+                    model: [I18n.t("已打开的目录")].concat(folders.map(row => row.title + "  ·  " + row.path))
+                    currentIndex: 0
+                    Accessible.name: I18n.t("已打开的目录")
+                    onActivated: index => {
+                        if (index > 0) root.chooseLocalUrl(folders[index - 1].path)
+                        currentIndex = 0
+                    }
+                }
+
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 8
@@ -692,12 +722,7 @@ Popup {
                             color: Theme.bg
                             border.color: localPathInput.activeFocus ? Theme.accent : Theme.line
                         }
-                        Keys.onReturnPressed: {
-                            if (text.trim()) {
-                                backend.setWorkspace("file:///" + text.trim().replace(/\\/g, "/").replace(/^\/+/, ""))
-                                root.close()
-                            }
-                        }
+                        Keys.onReturnPressed: if (text.trim()) root.chooseLocalUrl(text.trim())
                     }
                     Button {
                         objectName: "localBrowseButton"
@@ -749,12 +774,7 @@ Popup {
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                         }
-                        onClicked: {
-                            const raw = localPathInput.text.trim()
-                            const url = raw.startsWith("/") ? ("file://" + raw) : ("file:///" + raw.replace(/\\/g, "/"))
-                            backend.setWorkspace(url)
-                            root.close()
-                        }
+                        onClicked: root.chooseLocalUrl(localPathInput.text.trim())
                     }
                 }
             }

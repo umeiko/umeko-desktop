@@ -462,6 +462,7 @@ class LocalServer:
         if host not in ("127.0.0.1", "0.0.0.0") or (private and host != "127.0.0.1"):
             raise ValueError("内核通道仅允许本机访问；代理服务只支持本机或局域网监听")
         self.gateway, self.token, self.private = gateway, token, private
+        self.cowork_web_route = None
         self.host, self.authenticator = host, authenticator
         self.closed = False
         self.protocols = protocols or {"openai": True, "anthropic": True}
@@ -538,10 +539,15 @@ class LocalServer:
                     return self.respond(401, {"error": {"message": "Invalid API key", "type": "authentication_error"}})
                 try:
                     size = int(self.headers.get("Content-Length", "0"))
-                    if not 0 < size <= 32_000_000:
+                    cowork_route = self.path == '/umeko/cowork-web-route'
+                    if cowork_route and (not owner.private or not owner.cowork_web_route or self.headers.get('Origin')):
+                        return self.respond(404, {"error": {"message": "Not found"}})
+                    if not 0 < size <= (16384 if cowork_route else 32_000_000):
                         return self.respond(413, {"error": {"message": "Invalid request size"}})
                     self.connection.settimeout(100)
                     body = json.loads(self.rfile.read(size))
+                    if cowork_route:
+                        return self.respond(200, owner.cowork_web_route(body))
                     if self.path == '/umeko/generate' and owner.private:
                         if isinstance(body, dict) and body.get('kind') == 'video':
                             return self.request_call(lambda: self.stream_generation(body))

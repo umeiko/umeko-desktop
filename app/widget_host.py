@@ -330,6 +330,8 @@ class WidgetHost(QObject):
             if permission not in perms:
                 if not (operation in ('workspace.writeFile', 'workspace.remove') and 'git.write' in perms):
                     raise ValueError('Widget permission is required: ' + permission)
+            if getattr(self.b._view, 'cowork', '') and operation.startswith('pi.') and permission == 'pi.manage':
+                raise ValueError('请在 Coworker 编辑器中调整角色工具')
             if operation in WORKSPACE_OPERATIONS:
                 executor = getattr(self.b, '_workspace_executor', None)
                 if executor is None:
@@ -751,6 +753,9 @@ class WidgetHost(QObject):
                     raise ValueError('Pi 工具列表加载失败')
             self._reply(request, {'ok':True})
             return
+        if operation == 'pi.scan' and getattr(self.b._view, 'cowork', ''):
+            self._reply(request, {'ok': True})
+            return
         if operation == 'pi.details' and args['id'] == NATIVE_ID:
             self._reply(request, {'ok':True})
             return
@@ -770,7 +775,8 @@ class WidgetHost(QObject):
             return
         if operation == 'pi.status':
             management = self.b.piManagement
-            current = management.extensionsCurrent
+            cowork = bool(getattr(self.b._view, 'cowork', ''))
+            current = cowork or management.extensionsCurrent
             all_rows = management.capability_extensions() if current else []
             query=args.get('query','').casefold()
             detail_id=args.get('details','')
@@ -781,7 +787,8 @@ class WidgetHost(QObject):
             modes={path:mode for path,mode in self.b._view.extension_modes.items() if path in paths}
             result={'profile':management.capability_profile(),'sessionBusy':self.b.busy,'busy':management.busy or self.b.kernelBusy or (self.b._view.busy and self.b._view.action=='inspect'), 'status':management.status if current else '',
                 'extensions':page,'total':len(rows),'catalogTotal':len(all_rows), 'hasMore':offset+limit<len(rows),
-                'contextCurrent':current, 'inventoryReady':bool(self.b._view.resources.get('allTools')),
+                'contextCurrent':current, 'inventoryReady':(bool(self.b._view.resources.get('allTools')) and
+                    (not cowork or not self.b._view.stale)) or (cowork and not self.b._view.model),
                 'inventoryFailed':getattr(self.b._view,'action','')=='load' and not self.b.busy and (getattr(self.b._view,'failed',False) or getattr(self.b._view,'cancelled',False)),
                 'agentBusy':self.b.busy or bool(getattr(self.b._view,'subagents_active',False)), 'workspace':request['session'].get('workspace',''),
                 'activationModes':modes,'extensionUpdate':management.extensionUpdate if current else {}}

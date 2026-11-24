@@ -156,7 +156,7 @@ class PiControllerMixin:
         record.file = info.get("file") or record.file
         record.title = info.get("title") or record.title
         workspace = info.get('workspace')
-        if self._ungrouped_import(record.id, workspace, record.workspace):
+        if not record.cowork and self._ungrouped_import(record.id, workspace, record.workspace):
             record.workspace = ''
         elif workspace:
             record.workspace = workspace
@@ -177,6 +177,8 @@ class PiControllerMixin:
         row = next((s for s in self._sessions if s["id"] == record.id), None)
         values = {"id": record.id, "file": record.file, "workspace": record.workspace, "title": record.title,
             "model": record.model, "provider": record.provider}
+        if record.cowork:
+            values["cowork"] = record.cowork
         if row is None:
             self._sessions.insert(0, values)
         else:
@@ -265,6 +267,10 @@ class PiControllerMixin:
                 petAssistantBinding=service.m._pet.assistant.binding_for(record),
                 petReminderBinding=service.m._pet.assistant.reminder_binding_for(record),
                 agent={**agent,"safeMode":True,"instructions":service.prompt(record)})
+        if record.cowork:
+            payload.update(self._cowork.runtime_config(record, agent))
+            if record.initial_title and not record.file:
+                payload['initialSessionTitle'] = record.initial_title
         self._pool.start(record, node_executable(), bridge, payload)
 
     def _write_first_warm_command(self, record, payload):
@@ -338,6 +344,8 @@ class PiControllerMixin:
 
     def _send(self, text, steering=False):
         record = self._view
+        if self._cowork.active and not self._cowork.activeRole:
+            return False
         text = text.strip()
         self._last_send_error = ""
         if self._kernel_busy:
@@ -391,7 +399,7 @@ class PiControllerMixin:
         record.model, record.provider = model, provider
         if not record.id:
             record.id = "pending-" + record.key
-        if not record.messages and not record.transcript:
+        if not record.messages and not record.transcript and not record.initial_title:
             record.title = " ".join(text.split())[:28]
         record.messages.extend([{"role": "user", "text": text, "error": False}, {"role": "assistant", "text": "", "error": False}])
         record.body_dirty = True
@@ -526,6 +534,10 @@ class PiControllerMixin:
             self._pool.trim()
             return
         if kind == 'umeko_request':
+            if record.cowork:
+                self._write_pi({"type": "umeko_response", "id": event.get("id"),
+                                "result": {"ok": False, "error": "Cowork cannot access desktop control"}}, record)
+                return
             result = self._umeko_control.execute({'operation': event.get('operation'), 'arguments': event.get('arguments', {})}, record)
             self._write_pi({'type': 'umeko_response', 'id': event.get('id'), 'result': result}, record)
             return
@@ -747,13 +759,16 @@ class PiControllerMixin:
             if visible:
                 self.contextUsageChanged.emit()
             projects_before = len(self.store.data["projects"])
-            if not record.global_agent: self._merge_native_sessions(event["sessions"])
+            if not record.global_agent and not record.cowork: self._merge_native_sessions(event["sessions"])
             # A stale list captured by another process must not overwrite a live view.
             for live in self._pool.records.values():
                 if live.id and (live.file or live.messages):
                     self._index_record(live)
             self.store.save()
-            self._save_session()
+            if record.cowork:
+                self.store.save_sessions(self._sessions)
+            else:
+                self._save_session()
             if len(self.store.data["projects"]) != projects_before:
                 self.changed.emit()
             transcript = True

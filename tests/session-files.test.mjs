@@ -12,7 +12,7 @@ const entry = (id = 'a', parentId = null) => ({ type: 'message', id, parentId, t
   message: { role: 'user', content: 'Private conversation', timestamp: 1 } });
 const encode = rows => rows.map(row => JSON.stringify(row)).join('\n') + '\n';
 async function fixture(t) {
-  const root = await fs.mkdtemp(join(tmpdir(), 'umeko-session-files-'));
+  const root = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'umeko-session-files-')));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const profile = join(root, 'profile'), sessionDir = join(profile, 'pi/sessions'), cwd = join(root, 'project');
   await fs.mkdir(sessionDir, { recursive: true }); await fs.mkdir(cwd);
@@ -102,6 +102,21 @@ test('project deletion discovers owned sessions missing from the UI index and pr
   const result = await execute({ operation: 'delete', profile: f.profile, workspace: f.cwd, sessions: [session] });
   assert.deepEqual(result.errors, []); assert.deepEqual(new Set(result.deleted.map(s => s.id)), new Set([session.id, 'unindexed']));
   assert.ok(await fs.stat(other)); await assert.rejects(fs.stat(hidden));
+});
+
+test('deleting a Coworker removes unindexed chats only from that instance', async t => {
+  const f = await fixture(t);
+  const victim = join(f.profile, 'cowork/sessions/study');
+  const sibling = join(f.profile, 'cowork/sessions/office');
+  for (const directory of [victim, sibling]) {
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(join(directory, 'unindexed.jsonl'), encode([{ ...header, cwd: f.cwd }, entry()]));
+  }
+  const result = await execute({ operation: 'delete', profile: f.profile, cowork: 'study', sessions: [] });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.deleted.map(row => row.id), [header.id]);
+  await assert.rejects(fs.stat(join(victim, 'unindexed.jsonl')), { code: 'ENOENT' });
+  assert.ok(await fs.stat(join(sibling, 'unindexed.jsonl')));
 });
 
 test('deleting a missing transcript remains retryable and rejects external and prefix-alias paths', async t => {

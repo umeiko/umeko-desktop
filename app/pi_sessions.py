@@ -44,6 +44,7 @@ def saved_viewport(meta):
 class SessionState:
     search_leaf: str = ""
     global_agent: str = ""
+    cowork: str = ""
     key: str = field(default_factory=lambda: uuid.uuid4().hex)
     id: str = ""
     file: str = ""
@@ -53,6 +54,7 @@ class SessionState:
     pending_selection: tuple[str, str] | None = None
     draft_model_roles: dict = field(default_factory=dict)
     title: str = "新会话"
+    initial_title: str = ""
     messages: list = field(default_factory=list)
     history: list = field(default_factory=list)
     tree: list = field(default_factory=list)

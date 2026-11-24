@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 const semver = require("semver");
 const runtimeRoot = dirname(fileURLToPath(import.meta.url));
 const desktopRepository = "https://github.com/umeiko/umeko-desktop";
-export const SUBAGENT_COMPLETION_HINT = "完成任务后，如有需要，请使用 notify_parent 工具向主智能体简要汇报结果。";
+export const SUBAGENT_COMPLETION_HINT = "请在最终回复中交付结果。执行过程中，若有会影响后续工作的发现，并且 notify_parent 工具可用，可以用它通知主智能体。";
 const packageName = /^(?:@[a-z0-9._-]+\/)?[a-z0-9][a-z0-9._-]*$/i;
 const text = value => typeof value === "string" ? value.slice(0, 4096) : "";
 export function webLink(value) {
@@ -298,7 +298,7 @@ export async function manageResources(Pi, input) {
   return { extensions, safeMode: !!input.agent?.safeMode };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (import.meta.main) {
   try {
     // Discovery must not fetch models or install missing packages.
     process.env.PI_OFFLINE = "1";

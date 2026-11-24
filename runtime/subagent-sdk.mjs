@@ -9,13 +9,16 @@ import { SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
 import { backgroundJobsExtension } from "./background-jobs.mjs";
 import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI } from "./tool-permissions.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
+import { coworkSubagentFromPrompt, coworkSubagentResources, coworkSubagentTools } from "./cowork-subagents.mjs";
 
 const permissionHost = () => globalThis[Symbol.for("umeko:tool-permission-host")];
 
 export class DefaultResourceLoader extends NativeResourceLoader {
   constructor(options = {}) {
-    const factories = options.extensionFactories || [];
-    super({ ...options, extensionFactories: [
+    const profile = coworkSubagentFromPrompt(options.systemPromptOverride);
+    const scoped = profile ? coworkSubagentResources(profile) : {};
+    const factories = scoped.extensionFactories || options.extensionFactories || [];
+    super({ ...options, ...scoped, extensionFactories: [
       ...factories,
       { name: "recent-images", hidden: true, replaceable: false,
         factory: createRecentImagesExtension({ getLimit: () => globalThis[Symbol.for("umeko:recent-images-policy")]?.getLimit() }) },
@@ -30,6 +33,7 @@ export class DefaultResourceLoader extends NativeResourceLoader {
     ], ...(globalThis[Symbol.for("umeko:skill-policy-host")]?.enabled() === false ? {
       noSkills: true, skillsOverride: result => ({ ...result, skills: [] }),
     } : {}) });
+    this.coworkProfile = profile;
   }
   getAppendSystemPrompt() {
     const append = super.getAppendSystemPrompt();
@@ -42,7 +46,14 @@ export class DefaultResourceLoader extends NativeResourceLoader {
 // Jiti and ESM can load separate module instances; the process-local symbol is
 // the narrow handoff between its SDK facade and the desktop extension.
 export async function createAgentSession(options) {
-  const result = await nativeCreateAgentSession({...options, excludeTools: [...(options?.excludeTools || []), ...(globalThis[Symbol.for("umeko:tool-visibility-host")]?.getBlockedTools() || [])]});
+  const profile = options?.resourceLoader?.coworkProfile;
+  const result = await nativeCreateAgentSession({...options, excludeTools: [...(options?.excludeTools || []),
+    ...(profile ? [] : (globalThis[Symbol.for("umeko:tool-visibility-host")]?.getBlockedTools() || []))]});
+  if (profile) {
+    const available = new Set(result.session.getAllTools().map(tool => tool.name));
+    result.session.setActiveToolsByName([...coworkSubagentTools(profile), ...(options.customTools || []).map(tool => tool.name)]
+      .filter(name => available.has(name)));
+  }
   globalThis[Symbol.for("umeko:auxiliary-vision")]?.guardSession(result.session);
   // The community package binds children with {}. Relay supported confirmations
   // through the desktop while leaving genuinely headless contexts headless.
