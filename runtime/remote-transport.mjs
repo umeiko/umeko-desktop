@@ -260,11 +260,11 @@ export class RemoteConnection {
   async _selectSsh() {
     if (this.sshCommand) return;
     const env = process.env;
+    // The fault injector forwards the selected real client and never chooses it.
+    const wrapper = this.options.sshWrapper === undefined ? null : checkedSshCommand(this.options.sshWrapper);
     this.sshClient = await selectSshClient(this.config.host, { env });
     if (this.closed) throw abortError();
-    // The fault injector forwards the selected real client and never chooses it.
-    const wrapper = this.options.sshWrapper;
-    this.sshCommand = wrapper ? checkedSshCommand(wrapper) : [this.sshClient];
+    this.sshCommand = wrapper || [this.sshClient];
     if (wrapper) this.sshEnv = { ...env, UMEKO_REAL_SSH: this.sshClient };
     this._state(this.state);
   }
