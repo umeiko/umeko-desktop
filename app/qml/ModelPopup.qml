@@ -64,7 +64,7 @@ AnchoredPidPopup {
             ComboBox {
                 id: modelRole; objectName: "modelRolePicker"
                 visible: backend.sessionBackend === "pi"
-                Layout.preferredWidth: 136
+                Layout.preferredWidth: 164
                 implicitHeight: Theme.control(28)
                 model: [I18n.t("对话模型"), I18n.t("规划模型"), I18n.t("执行模型")]
                 font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible)
