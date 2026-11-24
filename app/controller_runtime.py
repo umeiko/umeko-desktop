@@ -217,6 +217,7 @@ class PiControllerMixin:
         default_cwd.mkdir(exist_ok=True)
         agent = self.store.data["agent"]
         from .generation import generation_config
+        from .remote_environments import network_config
         action = payload["type"]
         payload.update(gateway=f"http://127.0.0.1:{self.private_server.port}/", token=self.private_token,
             workspace=record.workspace, defaultCwd=str(default_cwd),
@@ -233,7 +234,7 @@ class PiControllerMixin:
             dangerousAllowed=action not in ("warm", "fork", "navigate", "new") and self._dangerous_allowed(record),
             dataDir=str(self.store.directory),
             systemPromptStateDir=str(self.store.directory / 'system-prompts'),
-            generation=generation_config(self.store.data),
+            generation=generation_config(self.store.data), remoteNetwork=network_config(self.store),
             mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
         if '--remote-environments-smoke' in sys.argv and os.environ.get('QT_QPA_PLATFORM') == 'offscreen':
             ssh_command = os.environ.get('UMEKO_TEST_SSH_COMMAND')

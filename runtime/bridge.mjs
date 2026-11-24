@@ -62,7 +62,7 @@ function shellSnapshotExtension(getShellPath) {
 globalThis[Symbol.for("umeko:shell-environment")] = (name, env, config) =>
   shellSnapshots.environment(name, env.PI_SESSION_ID || runtime?.session.sessionManager.getSessionId(), env,
     name === "bash" ? config.shell : undefined);
-const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, "background_job", "remote_command", "remote_files"];
+const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, "background_job", "remote_command", "remote_files", "remote_network"];
 const applyPatchEnabled = model => config?.models?.some(row => row.id === model?.id && row.applyPatch === true) === true;
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
@@ -106,6 +106,7 @@ const umekoControl = createUmekoControl({
 });
 const remoteEnvironments = createRemoteEnvironments({
   request: umekoControl.request, emit, getConfig: () => config,
+  getNetworkConfig: () => config?.remoteNetwork,
   getSshEnvironment: () => shellSnapshots.environment(
     process.platform === "win32" ? "powershell" : "bash", runtime?.session.sessionManager.getSessionId(), process.env),
 });
@@ -788,6 +789,10 @@ async function execute(input) {
   }
   if (input.type === "desktop_settings") {
     if (config && input.webview && typeof input.webview === "object") config.webview = input.webview;
+    if (config && input.remoteNetwork && typeof input.remoteNetwork === "object") {
+      config.remoteNetwork = input.remoteNetwork;
+      remoteEnvironments.refreshNetwork();
+    }
     return;
   }
   if (input.type === "loop_review_response") { loopReview.response(input); return; }

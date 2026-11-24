@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { setTimeout as delay } from 'node:timers/promises';
+import { aptProxyLaunch, commandProxyEnvironment, commandProxySetup, proxychainsLaunch } from './remote-network-command.mjs';
 
 const DEFAULT_OUTPUT = 65536;
 const MAX_OUTPUT = 1048576;
@@ -50,7 +51,7 @@ function isMissing(error) {
   return /ENOENT|not found|no such file|cannot find|os error 2\b|系统找不到指定的文件/i.test(String(error?.message ?? error));
 }
 
-function linuxWorker(root, cwd, shell) {
+function linuxWorker(root, cwd, shell, network, proxychains) {
   return `#!/bin/sh
 umask 077
 cd ${quoteSh(root)} || exit 1
@@ -59,8 +60,10 @@ mkdir claimed 2>/dev/null || exit 0
 : > output
 mkfifo stdin || { echo 'Cannot create stdin FIFO' >> output; echo 1 > exit; exit 1; }
 exec 3<>stdin
+${network ? aptProxyLaunch() : ''}
+${proxychains ? proxychainsLaunch() : 'set --'}
 cd ${quoteSh(cwd)} || { echo 'Cannot enter command cwd' >> ${quoteSh(`${root}/output`)}; echo 1 > ${quoteSh(`${root}/exit`)}; exit 1; }
-setsid ${quoteSh(shell)} ${quoteSh(`${root}/command.sh`)} < ${quoteSh(`${root}/stdin`)} >> ${quoteSh(`${root}/output`)} 2>&1 3>&- &
+setsid "$@" ${quoteSh(shell)} ${quoteSh(`${root}/command.sh`)} < ${quoteSh(`${root}/stdin`)} >> ${quoteSh(`${root}/output`)} 2>&1 3>&- &
 child=$!
 printf '%s' "$child" > ${quoteSh(`${root}/pid`)}
 (
@@ -189,7 +192,7 @@ export function createRemoteCommands(connection) {
   const ready = signal => connection.waitForReady(signal);
   const recoverable = error => error?.code !== 'REMOTE_RECONNECT_TIMEOUT' && (error.transport || error.code === 'REMOTE_SESSION_CHANGED' || /unknown.*handle|handle.*not found/i.test(String(error?.message ?? error)));
 
-  async function execute(args, { signal } = {}) {
+  async function execute(args, { signal, proxychains = false } = {}) {
     // One ordered cursor and one stdin sequence per command session. In particular,
     // simultaneous read calls must never consume the same bytes twice.
     const key = !args.action || args.action === 'run' ? Symbol('launch') : args.sessionId;
@@ -250,16 +253,20 @@ export function createRemoteCommands(connection) {
         // reports cmd.exe as its detected login shell. File helpers rely on it.
         const shellPath = typeof metadata.shell === 'string' ? metadata.shell : metadata.shell?.path;
         const shell = windows ? 'powershell.exe' : shellPath ? nativePath(shellPath, false) : '/bin/sh';
+        const network = typeof connection.commandProxyPort === 'function';
+        const setup = network ? commandProxySetup(windows, shell) : '';
         const isCmd = windows && /(?:^|[\\/])cmd(?:\.exe)?$/i.test(shell);
         const commandFile = p.join(job.root, windows ? (isCmd ? 'command.cmd' : 'command.ps1') : 'command.sh');
         const workerFile = p.join(job.root, windows ? 'worker.ps1' : 'worker.sh');
         await rpc('fs/createDirectory', { path: uri(job.root, windows), recursive: true });
-        await write(commandFile, windows ? (isCmd ? `@chcp 65001 >nul\r\n${args.command}\r\n` : `\uFEFF[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)\n[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)\n$OutputEncoding = [Console]::OutputEncoding\n${args.command}\n`) : `${args.command}\n`);
-        await write(workerFile, windows ? `\uFEFF${windowsWorker(job.root, cwd, shell, commandFile)}` : linuxWorker(job.root, cwd, shell));
+        await write(commandFile, windows ? (isCmd ? `@chcp 65001 >nul\r\n${args.command}\r\n` : `\uFEFF[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)\n[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)\n$OutputEncoding = [Console]::OutputEncoding\n${setup}${args.command}\n`) : `${setup}${args.command}\n`);
+        await write(workerFile, windows ? `\uFEFF${windowsWorker(job.root, cwd, shell, commandFile)}` : linuxWorker(job.root, cwd, shell, network, proxychains));
         const argv = windows ? ['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', workerFile, '-Launch'] : ['/bin/sh', '-c', `command -v setsid >/dev/null || { echo 'setsid is required' > ${quoteSh(p.join(job.root, 'launch-error'))}; exit 1; }; setsid /bin/sh ${quoteSh(workerFile)} </dev/null >${quoteSh(p.join(job.root, 'launcher.log'))} 2>&1 &`];
         const launchParams = { processId: `${sessionId}-launcher`, argv, cwd: uri(cwd, windows), envPolicy: { inherit: 'all', ignoreDefaultExcludes: false, exclude: [], set: {}, includeOnly: [] }, env: {}, tty: false, pipeStdin: false, arg0: null };
         job.launcher = { processId: launchParams.processId, afterSeq: null, output: '', pending: true };
         for (let attempt = 0; attempt < 2; attempt++) {
+          // A retry may have reconnected with a different server-allocated port.
+          launchParams.env = commandProxyEnvironment(connection.commandProxyPort?.(), windows, shell);
           try { await rpc('process/start', launchParams, false); job.launcher.generation = connection.sessionGeneration; break; }
           catch (error) {
             // The transport correctly refuses generic process/start replay.

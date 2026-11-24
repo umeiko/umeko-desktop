@@ -114,6 +114,51 @@ class PreferencesMixin:
             self.toast.emit('重启 Umeko 后可使用内置网页预览')
         return True
 
+    def _remote_network_settings_changed(self):
+        from .remote_environments import network_config
+        self.remoteEnvironmentsChanged.emit()
+        payload = {'type': 'desktop_settings', 'remoteNetwork': network_config(self.store)}
+        for record in tuple(self._pool.records.values()):
+            if record.process:
+                self._pool.write(record, payload)
+
+    def _save_remote_network_setting(self, name, value):
+        old = self.store.data.get(name)
+        if old == value:
+            return True
+        self.store.data[name] = value
+        try:
+            self.store.save()
+        except (OSError, RuntimeError) as error:
+            if old is None:
+                self.store.data.pop(name, None)
+            else:
+                self.store.data[name] = old
+            self.toast.emit(str(error))
+            return False
+        self._remote_network_settings_changed()
+        return True
+
+    @Slot(bool, result=bool)
+    def setRemoteNetworkEnabled(self, enabled):
+        return self._save_remote_network_setting('remoteNetworkEnabled', enabled)
+
+    @Slot(str, result=bool)
+    def setRemoteNetworkProxy(self, address):
+        address = address.strip()
+        if address:
+            try:
+                value = urllib.parse.urlsplit(address)
+                valid = (value.scheme in ('http', 'https', 'socks5', 'socks5h') and value.hostname
+                         and value.port != 0 and not value.username and not value.password
+                         and value.path in ('', '/') and not value.query and not value.fragment)
+            except ValueError:
+                valid = False
+            if not valid:
+                self.toast.emit('请输入不含凭据的 HTTP、HTTPS 或 SOCKS5 代理地址')
+                return False
+        return self._save_remote_network_setting('remoteNetworkProxy', address)
+
     def _open_browser(self, url):
         try:
             if QDesktopServices.openUrl(url): return True

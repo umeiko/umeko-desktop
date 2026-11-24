@@ -474,7 +474,8 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        const backgroundStart=name==='background_job'&&input.action==='start';
        const backgroundWrite=name==='background_job'&&input.action==='write';
        const commandStart=name==='bash'||name==='powershell'||backgroundStart;
-       const remoteStart=name==='remote_command'&&input.action==='run';
+       const remoteStart=(name==='remote_command'&&input.action==='run')||
+         (name==='remote_network'&&input.action==='proxychains');
        const remoteRead=(name==='remote_command'&&input.action==='read')||
          (name==='remote_files'&&['read','list','search'].includes(input.action));
        if(remoteRead)return undefined;

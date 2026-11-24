@@ -7,6 +7,12 @@ _HOST = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,252}')
 _STATES = {'disconnected', 'connecting', 'connected', 'reconnecting', 'error'}
 
 
+def network_config(store):
+    proxy = store.data.get('remoteNetworkProxy')
+    return {'enabled': store.data.get('remoteNetworkEnabled') is not False,
+            'proxy': proxy if isinstance(proxy, str) else ''}
+
+
 class RemoteEnvironments:
     def __init__(self, store, changed):
         self.store = store
@@ -78,6 +84,12 @@ class RemoteEnvironments:
         for key in ('recovered', 'resumed'):
             if isinstance(event.get(key), bool):
                 status[key] = event[key]
+        network = event.get('networkStatus')
+        if state == 'connected' and isinstance(network, dict) and network.get('network') in ('local', 'remote'):
+            status['networkStatus'] = {key: network[key] for key in ('network', 'message', 'outbound', 'outboundLabel')
+                                       if isinstance(network.get(key), str)}
+            if type(network.get('port')) is int and 0 < network['port'] <= 65535:
+                status['networkStatus']['port'] = network['port']
         if states.get(source) != status:
             states.pop(source, None)
             states[source] = status

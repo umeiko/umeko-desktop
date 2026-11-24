@@ -139,6 +139,27 @@ Column {
                 font.pixelSize: Theme.font(14)
                 font.weight: Font.DemiBold
             }
+            RowLayout {
+                Layout.fillWidth: true
+                Text {
+                    Layout.fillWidth: true
+                    text: I18n.t("服务器无法访问外网时使用本机网络")
+                    color: Theme.ink
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.font(13)
+                    wrapMode: Text.Wrap
+                }
+                Toggle {
+                    objectName: "remoteNetworkSharingToggle"
+                    checked: backend.remoteNetworkEnabled
+                    Accessible.name: I18n.t("服务器无法访问外网时使用本机网络")
+                    onClicked: {
+                        const value = checked
+                        checked = Qt.binding(function() { return backend.remoteNetworkEnabled })
+                        backend.setRemoteNetworkEnabled(value)
+                    }
+                }
+            }
             Text {
                 Layout.fillWidth: true
                 visible: remoteRows.count === 0
@@ -171,6 +192,16 @@ Column {
                             text: modelData.host
                             wrapMode: Text.Wrap
                             color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                        Text {
+                            objectName: "remoteEnvironmentNetwork_" + modelData.name
+                            Layout.fillWidth: true
+                            visible: modelData.state === "connected" && !!modelData.networkStatus
+                            text: I18n.t(modelData.networkStatus ? modelData.networkStatus.message : "")
+                            color: Theme.muted
+                            wrapMode: Text.Wrap
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.font(12)
                         }

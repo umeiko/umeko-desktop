@@ -389,6 +389,88 @@ class Acceptance:
                 'outageSeconds': self.spec['outageSeconds'], **self.evidence(), 'steps': self.steps,
                 'scope': 'offscreen real gateway/Pi/tools/SSH/exec-server; scripted local model; no upstream model'}
 
+    def run_network(self):
+        """Exercise network sharing through real streamed Pi tool calls."""
+        b = self.backend
+        self.note('network-begin', platform=self.spec['platform'], host=self.spec['host'])
+        saved = b.saveProvider('', 'Test provider', 'openai',
+                               f'http://127.0.0.1:{self.model.server.server_port}/v1', 'fixture-only',
+                               json.dumps([{'upstream': 'test-model', 'alias': 'test-model',
+                                            'reasoningLevelsAuto': False, 'reasoningFormatAuto': False,
+                                            'reasoningLevels': [], 'reasoningFormat': 'openai'}]))
+        assert saved, 'Cannot save isolated scripted provider'
+        provider = next(p for p in b.store.data['providers'] if p['name'] == 'Test provider')
+        b.selectModel(provider['id'], 'test-model')
+        b.setToolPermissionMode('auto')
+        self.wait(lambda: not b.busy, 90, 'Pi fixture startup')
+        added = self.call('umeko_desktop', {'operation': 'remote-environments.add', 'arguments': {
+            'name': 'acceptance', 'host': self.spec['host'], 'platform': self.spec['platform']}})
+        assert added.get('ok'), added
+        tested = self.call('umeko_desktop', {'operation': 'remote-environments.test', 'arguments': {'name': 'acceptance'}},
+                           timeout=self.spec['bootstrapTimeout'])
+        assert tested.get('ok'), tested
+        self.ssh_client = Path(tested['sshClient']).resolve()
+        outcomes = []
+
+        def probe(phase, name, succeeds):
+            command = self.spec['commands'][phase][name]
+            final, output = self.read_until_complete(self.command(command), timeout=120)
+            assert isinstance(final.get('exitCode'), int), ('No command exit status', phase, name, final)
+            assert (final['exitCode'] == 0) == succeeds, (phase, name, final, output[-4000:])
+            outcome = {'phase': phase, 'program': name, 'exitCode': final['exitCode'],
+                       'expectedSuccess': succeeds, 'output': output[-4000:]}
+            outcomes.append(outcome)
+            self.note('network-probe', **outcome)
+
+        status = self.call('remote_network', {'action': 'status', 'environment': 'acceptance'})
+        assert status.get('ok') and status.get('network') == 'local', ('Sharing must be automatic by default', status)
+        if self.spec['platform'] == 'linux':
+            assert status.get('outbound') == 'builtin', ('CI must use the built-in direct outbound path', status)
+        else:
+            assert status.get('outbound') == 'configured', ('Windows must use the explicitly configured proxy', status)
+        probe('default', 'curl', True)
+        disabled = self.call('remote_network', {'action': 'off', 'environment': 'acceptance'})
+        assert disabled.get('ok') and disabled.get('network') == 'remote', disabled
+        for name in self.spec['commands']['disabled']:
+            probe('disabled', name, False)
+        enabled = self.call('remote_network', {'action': 'on', 'environment': 'acceptance'})
+        assert enabled.get('ok') and enabled.get('network') == 'local', enabled
+        for name in self.spec['commands']['enabled']:
+            probe('enabled', name, True)
+        diagnostic = self.call('remote_network', {'action': 'test', 'environment': 'acceptance',
+                                                 'url': 'https://example.com/'})
+        assert diagnostic.get('ok'), diagnostic
+
+        # Fault injection targets only the SSH child recorded by this fixture.
+        # It never enumerates or touches a proxy, service, or unrelated client.
+        control = self.directory / 'ssh-control'
+        launches = [json.loads(line) for line in (control / 'clients.jsonl').read_text().splitlines()]
+        live = [row for row in launches if row.get('tunnel') and self.pid_alive(row['pid'])]
+        assert len(live) == 1, ('Expected one acceptance-owned persistent SSH client', live)
+        killed = live[0]['pid']
+        os.kill(killed, signal.SIGTERM)
+        self.note('network-owned-ssh-cut', pid=killed)
+        probe('reconnected', 'curl', True)
+        after = [json.loads(line) for line in (control / 'clients.jsonl').read_text().splitlines()]
+        assert any(row.get('tunnel') and row['pid'] != killed and self.pid_alive(row['pid']) for row in after), 'No replacement SSH client'
+        if self.spec['platform'] == 'windows':
+            # Remove only this invocation's generated remote download subtree.
+            # Linux has root-owned apt archives on a disposable runner instead.
+            source = ('import pathlib,shutil\np=pathlib.Path(' + repr(self.spec['remoteDirectory']) + ')\n'
+                      'assert p.is_absolute() and p.name == ' + repr(self.directory.name) + '\n'
+                      'shutil.rmtree(p)\nprint("NETWORK_TEMP_CLEANED")')
+            cleaned, output = self.read_until_complete(self.command(self.python(source)))
+            assert cleaned.get('exitCode') == 0 and 'NETWORK_TEMP_CLEANED' in output, cleaned
+        (self.directory / 'chat-tool-rows.json').write_text(json.dumps(self.tool_rows, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
+        result = {'ok': True, 'scenario': 'remote-network', 'probes': outcomes,
+                  'defaultStatus': status, 'disabled': disabled, 'enabled': enabled,
+                  'diagnostic': diagnostic, 'cutSshPid': killed,
+                  'directBaseline': self.spec.get('directBaseline'),
+                  'steps': self.steps, 'actualModelRequests': self.model.requests,
+                  'scope': 'real app/gateway/Pi/tools/SSH/downloads and UI rows; local scripted model'}
+        self.note('network-passed', probeCount=len(outcomes), actualModelRequests=self.model.requests)
+        return result
+
     def collect_ssh_evidence(self):
         lifecycle = self.directory / 'ssh-control/lifecycle.jsonl'
         self.ssh_lifecycle = [json.loads(line) for line in lifecycle.read_text(encoding='utf-8').splitlines()]
@@ -466,7 +548,7 @@ def start(app, engine, controller, spec_path):
         acceptance = None
         try:
             acceptance = Acceptance(app, engine, controller, spec)
-            result = acceptance.run()
+            result = acceptance.run_network() if spec.get('scenario') == 'remote-network' else acceptance.run()
             status = 0
         except BaseException:
             result = {'ok': False, **(acceptance.evidence() if acceptance else {}), 'error': traceback.format_exc()}

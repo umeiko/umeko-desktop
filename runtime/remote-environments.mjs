@@ -2,6 +2,7 @@ import { Type } from "typebox";
 import { createRemoteCommands } from "./remote-command.mjs";
 import { createRemoteFiles } from "./remote-files.mjs";
 import { RemoteConnection } from "./remote-transport.mjs";
+import { networkDescription, serverNetwork } from "./remote-network.mjs";
 
 const select = (...values) => Type.Union(values.map(value => Type.Literal(value)));
 const name = Type.String({ minLength: 1, maxLength: 64 });
@@ -35,6 +36,14 @@ const fileArgs = Type.Object({
   caseSensitive: Type.Optional(Type.Boolean()),
 }, { additionalProperties: false });
 
+const networkArgs = Type.Object({
+  action: select("status", "test", "on", "off", "auto", "proxychains"),
+  environment: name,
+  url: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+  command: Type.Optional(Type.String({ minLength: 1, maxLength: 65536 })),
+  cwd: Type.Optional(pathname),
+}, { additionalProperties: false });
+
 function response(result) {
   return { content: [{ type: "text", text: JSON.stringify(result) }], details: result, isError: result.ok === false };
 }
@@ -54,7 +63,7 @@ function connectionErrorDetails(error) {
     .filter(key => error[key] !== undefined).map(key => [key, error[key]]));
 }
 
-export function createRemoteEnvironments({ request, emit, getConfig = () => ({}), getSshEnvironment }) {
+export function createRemoteEnvironments({ request, emit, getConfig = () => ({}), getSshEnvironment, getNetworkConfig }) {
   const live = new Map();
 
   async function withProgress(name, entry, onUpdate, operation) {
@@ -108,10 +117,11 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
     const connection = new RemoteConnection({ host, platform }, {
       sshWrapper: getConfig()?.remoteTestSshCommand,
       getSshEnvironment,
+      getNetworkConfig,
       onState(state, detail = {}) {
         for (const key of Object.keys(status)) if (key !== "sshClient") delete status[key];
         status.state = state;
-        for (const key of ["sshClient", "message", "sshError", "attempt", "retryAfterMs", "nextRetryAt", "outageStartedAt", "recovered", "resumed"]) {
+        for (const key of ["sshClient", "message", "sshError", "attempt", "retryAfterMs", "nextRetryAt", "outageStartedAt", "recovered", "resumed", "networkStatus"]) {
           if (detail[key] !== undefined) status[key] = detail[key];
         }
         emit({ type: "remote_environment_state", name, host, platform, state, ...status });
@@ -124,6 +134,15 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
   }
 
   return {
+    // Remote workspace tools and chat ! commands can share the durable command
+    // runner, including its current egress settings after a reconnect.
+    async runCommand(name, args, options = {}) {
+      const entry = await environment(name, options.signal);
+      return entry.commands.execute({ ...args, action: args.action ?? "run" }, options);
+    },
+    refreshNetwork() {
+      for (const { connection } of live.values()) connection.refreshNetwork();
+    },
     async test(args, signal, onUpdate) {
       if (!args || typeof args !== "object" || Object.keys(args).length !== 1 || typeof args.name !== "string" || !args.name) {
         return { ok: false, error: "Provide the name of a configured remote environment." };
@@ -135,7 +154,8 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
         entry = await environment(args.name, signal);
         const info = await withProgress(args.name, entry, onUpdate, () => entry.connection.waitForReady(signal));
         return { ok: true, operation: "remote-environments.test", name: args.name, state: "connected", platform: entry.platform,
-          cwd: info.cwd, ...(info.reconnection ? { reconnection: info.reconnection } : {}), ...diagnostics() };
+          cwd: info.cwd, ...(info.reconnection ? { reconnection: info.reconnection } : {}),
+          ...(entry.connection.networkStatus ? { networkStatus: entry.connection.networkStatus } : {}), ...diagnostics() };
       } catch (error) {
         return { ok: false, error: error.message, ...diagnostics(), ...connectionErrorDetails(error) };
       }
@@ -147,7 +167,7 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
     extension(pi) {
       pi.registerTool({
         name: "remote_command", label: "Remote command", parameters: commandArgs,
-        description: "Run shell commands in a named SSH environment. Run returns output and a sessionId; if running, read it to get new output, write input including its newline, or kill that session. Use umeko_desktop remote-environments.list to find configured environments. The session can survive a network interruption.",
+        description: "Run shell commands in a named SSH environment. Run returns output and a sessionId; if running, read it to get new output, write input including its newline, or kill that session. Use umeko_desktop remote-environments.list to find configured environments. The session can survive a network interruption. " + networkDescription,
         annotations: { readOnlyHint: false, destructiveHint: true },
         async execute(_id, args, signal, onUpdate, ctx) {
           const entry = await environment(args.environment, signal);
@@ -157,7 +177,7 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
       });
       pi.registerTool({
         name: "remote_files", label: "Remote files", parameters: fileArgs,
-        description: "Read or write a file, list a directory, search file contents, or upload/download a file or directory in a named SSH environment. path and cwd are remote. localPath is a local workspace path for transfers. Reconnecting resumes in-progress file transfers.",
+        description: "Read or write a file, list a directory, search file contents, or upload/download a file or directory in a named SSH environment. path and cwd are remote. localPath is a local workspace path for transfers. Reconnecting resumes in-progress file transfers. " + networkDescription,
         annotations: { readOnlyHint: false, destructiveHint: true },
         async execute(_id, args, signal, onUpdate, ctx) {
           const entry = await environment(args.environment, signal);
@@ -165,6 +185,32 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
             signal, cwd: ctx.cwd,
             onUpdate: value => onUpdate?.(response(value)),
           }));
+        },
+      });
+      pi.registerTool({
+        name: "remote_network", label: "Remote network", parameters: networkArgs,
+        description: "Inspect a named SSH environment's network, test an HTTP(S) URL, temporarily turn sharing on or off, or restore automatic detection. For a program that ignores proxy environment variables, the proxychains action runs a command with proxychains-ng when it is available on Linux. " + networkDescription,
+        annotations: { readOnlyHint: false, destructiveHint: true },
+        async execute(_id, args, signal, onUpdate) {
+          const entry = await environment(args.environment, signal);
+          const { connection } = entry;
+          return toolResult(args.environment, entry, onUpdate, async () => {
+            if (["on", "off", "auto"].includes(args.action)) {
+              const status = await connection.setNetworkMode(args.action, signal);
+              return { ok: args.action !== "on" || status.network === "local", ...status };
+            }
+            await connection.waitForReady(signal);
+            const status = connection.networkStatus ?? serverNetwork();
+            if (args.action === "status") return { ok: true, ...status };
+            if (args.action === "test") {
+              const reachable = await connection.testNetwork(args.url, signal);
+              return { ok: reachable, ...status, reachable };
+            }
+            if (entry.platform !== "linux") return { ok: false, ...status, error: "proxychains-ng 仅可用于 Linux 远程环境" };
+            if (status.network !== "local") return { ok: false, ...status, error: "本机网络共享尚未接通" };
+            const result = await entry.commands.execute({ ...args, action: "run" }, { signal, proxychains: true });
+            return { ok: result.status !== "failed", ...status, ...result };
+          });
         },
       });
     },
