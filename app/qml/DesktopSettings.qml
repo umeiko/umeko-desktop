@@ -155,18 +155,55 @@ Column {
                     required property var modelData
                     Layout.fillWidth: true
                     spacing: 12
-                    Column {
+                    ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 3
                         Text {
+                            Layout.fillWidth: true
                             text: modelData.name
+                            wrapMode: Text.Wrap
                             color: Theme.ink
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.font(13)
                         }
                         Text {
+                            Layout.fillWidth: true
                             text: modelData.host
+                            wrapMode: Text.Wrap
                             color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                        Text {
+                            objectName: "remoteEnvironmentSshClient_" + modelData.name
+                            Layout.fillWidth: true
+                            visible: !!modelData.sshClient
+                            text: I18n.t("SSH 客户端：") + (modelData.sshClient || "")
+                            color: Theme.muted
+                            wrapMode: Text.WrapAnywhere
+                            textFormat: Text.PlainText
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                        Text {
+                            objectName: "remoteEnvironmentRetry_" + modelData.name
+                            Layout.fillWidth: true
+                            visible: modelData.state === "reconnecting" && !!modelData.retryAfterMs
+                            text: I18n.t("正在等待重试；重试间隔 %1 秒").arg(Math.ceil((modelData.retryAfterMs || 0) / 1000))
+                                  + (modelData.attempt ? " · " + I18n.t("第 %1 次重试").arg(modelData.attempt) : "")
+                            color: Theme.muted
+                            wrapMode: Text.Wrap
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                        Text {
+                            objectName: "remoteEnvironmentError_" + modelData.name
+                            Layout.fillWidth: true
+                            visible: (modelData.state === "reconnecting" || modelData.state === "error") && text.length > 0
+                            text: modelData.message || modelData.sshError || ""
+                            color: Theme.muted
+                            wrapMode: Text.WrapAnywhere
+                            textFormat: Text.PlainText
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.font(12)
                         }

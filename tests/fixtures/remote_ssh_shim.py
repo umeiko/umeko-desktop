@@ -70,7 +70,8 @@ def main():
         # The transport's persistent client forwards the websocket port with -L.
         tunnel = any(arg == '-L' or arg.startswith('-L') for arg in arguments)
         with (control / 'clients.jsonl').open('a', encoding='utf-8') as handle:
-            handle.write(json.dumps({'pid': process.pid, 'ownerPid': os.getpid(), 'tunnel': tunnel, 'argv': arguments}) + '\n')
+            handle.write(json.dumps({'pid': process.pid, 'ownerPid': os.getpid(), 'tunnel': tunnel,
+                                     'executable': str(Path(ssh).resolve()), 'argv': arguments}) + '\n')
         return process.wait()
     finally:
         if process.poll() is None:

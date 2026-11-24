@@ -71,7 +71,7 @@ def main():
     parser.add_argument('--run-dir', type=Path, required=True, help='A fresh isolated directory')
     parser.add_argument('--run-root', type=Path, help='Allowed local root for Windows acceptance')
     parser.add_argument('--remote-root', help='Allowed root for generated data on the remote host')
-    parser.add_argument('--ssh-executable', type=Path, help='Use this OpenSSH client for the test')
+    parser.add_argument('--expected-ssh-executable', type=Path, help='Assert which SSH executable the application selects')
     parser.add_argument('--remote-python', default=None)
     parser.add_argument('--long-seconds', type=int, default=1200, help='Default acceptance requires 1200; smaller is diagnostic only')
     parser.add_argument('--payload-mib', type=int, default=200, help='Default acceptance requires 200; smaller is diagnostic only')
@@ -93,7 +93,7 @@ def main():
     remote_root = remote_path(args.remote_root or '/tmp/umeko-remote-real')
     if not remote_root.is_absolute():
         parser.error('--remote-root must be an absolute path on the remote host')
-    ssh_executable = args.ssh_executable.resolve(strict=True) if args.ssh_executable else None
+    expected_ssh = args.expected_ssh_executable.resolve(strict=True) if args.expected_ssh_executable else None
     directory.mkdir(parents=True, exist_ok=False)
     application = args.app.resolve() if args.app else None
     if application:
@@ -132,6 +132,8 @@ def main():
         spec.update(bootstrapTimeout=240, uploadTimeout=900, downloadTimeout=900)
     if args.remote_python:
         spec['remotePython'] = args.remote_python
+    if expected_ssh:
+        spec['expectedSshExecutable'] = str(expected_ssh)
     spec_path = directory / 'spec.json'
     spec_path.write_text(json.dumps(spec, indent=2), encoding='utf-8')
     settings = {'agent': {'agentDir': str(directory / 'agent'), 'autoCompaction': False, 'toolPermissionMode': 'auto'},
@@ -148,8 +150,7 @@ def main():
                UMEKO_DIAGNOSTICS=str(directory / 'application.log'))
     env.pop('NODE_OPTIONS', None)
     env.pop('NODE_PATH', None)
-    if ssh_executable:
-        env['UMEKO_REAL_SSH'] = str(ssh_executable)
+    env.pop('UMEKO_REAL_SSH', None)
     print('Isolated real SSH acceptance: ' + str(spec_path), flush=True)
     with (directory / 'application-output.log').open('w', encoding='utf-8') as log:
         process = subprocess.Popen(command, env=env, stdout=log, stderr=subprocess.STDOUT,

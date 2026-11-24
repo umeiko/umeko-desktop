@@ -5,15 +5,17 @@
 // SSH owns authentication and host identity; Umeko never handles private keys.
 import { spawn } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import { createHash, randomBytes } from "node:crypto";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
 import { pipeline } from "node:stream/promises";
+import { deflateRawSync } from "node:zlib";
 import WebSocket from "ws";
 import { updateRequest } from "./update-engine.mjs";
+import { selectSshClient, sshDiagnostic } from "./remote-ssh-client.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const manifest = JSON.parse(await readFile(join(here, "remote-exec-assets.json"), "utf8"));
@@ -24,7 +26,13 @@ const quotePs = value => `'${String(value).replaceAll("'", "''")}'`;
 const exists = async path => access(path).then(() => true, () => false);
 const abortError = () => Object.assign(new Error("Remote request cancelled"), { name: "AbortError" });
 const connectionError = () => Object.assign(new Error("Remote connection interrupted"), { transport: true });
-const fatalSsh = /permission denied|authentication failed|host key verification failed|remote host identification has changed|no matching host key|too many authentication failures|bad configuration|could not resolve hostname|unprotected private key|bad permissions|sign_and_send_pubkey: signing failed/i;
+const fatalSsh = /permission denied|authentication failed|host key verification failed|remote host identification has changed|no matching host key|too many authentication failures|bad configuration|could not resolve hostname|unprotected private key|bad permissions|sign_and_send_pubkey: signing failed|posix_spawnp: no such file/i;
+function sshFailure(message, stderr, transport, fatal = false) {
+  const sshError = sshDiagnostic(stderr);
+  return Object.assign(new Error(sshError ? `${message}\n${sshError}` : message), {
+    transport, fatal: fatal || fatalSsh.test(sshError), ...(sshError ? { sshError } : {}),
+  });
+}
 const sleep = (ms, signal) => new Promise((resolve, reject) => {
   if (signal?.aborted) return reject(abortError());
   const abort = () => { clearTimeout(timer); reject(abortError()); };
@@ -48,17 +56,23 @@ export function sshArguments(host) {
 }
 
 function remoteCommand(platform, script) {
-  return platform === "windows"
-    ? `powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(script, "utf16le").toString("base64")}`
-    : `sh -c ${quoteSh(script)}`;
+  if (platform !== "windows") return `sh -c ${quoteSh(script)}`;
+  // An inline startup command avoids depending on stdin EOF through Windows
+  // OpenSSH. Compress the longer listener script to fit cmd.exe's argv limit.
+  const payload = deflateRawSync(script).toString("base64");
+  const source = `$m=[IO.MemoryStream]::new([Convert]::FromBase64String('${payload}'));` +
+    `$d=[IO.Compression.DeflateStream]::new($m,[IO.Compression.CompressionMode]::Decompress);` +
+    `$r=[IO.StreamReader]::new($d);try{&([ScriptBlock]::Create($r.ReadToEnd()))}finally{$r.Dispose()}`;
+  const command = `powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(source, "utf16le").toString("base64")}`;
+  if (command.length > 8191) throw new Error("Remote Windows startup command exceeds the cmd.exe command length limit");
+  return command;
 }
 
-function streamedCommand(platform) {
-  // Keep the Windows OpenSSH/cmd command line below its 8191-character limit.
-  // The script is executable source on stdin, not a giant encoded argv value.
-  return platform === "windows"
-    ? remoteCommand(platform, "$source=[Console]::In.ReadToEnd(); & ([ScriptBlock]::Create($source))")
-    : "sh -s";
+function sftpPath(value, windows, remote = false) {
+  if (/[\r\n]/.test(value)) throw new Error("An SFTP path contains a newline");
+  const normalized = windows ? value.replaceAll("\\", "/") : value;
+  const absolute = remote && windows && /^[a-z]:\//i.test(normalized) ? `/${normalized}` : normalized;
+  return `"${absolute.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
 
 export function discoveryScript(platform) {
@@ -220,50 +234,77 @@ export class RemoteRpcError extends Error {
   constructor(error) { super(error.message || "Remote RPC failed"); this.name = "RemoteRpcError"; this.code = error.code; this.data = error.data; }
 }
 
+function checkedSshCommand(command) {
+  const args = typeof command === "string" ? [command] : command;
+  if (!Array.isArray(args) || !args.length || args.some(value => typeof value !== "string" || !value)) throw new Error("Invalid SSH command");
+  return args;
+}
+
 export class RemoteConnection {
   constructor(config, options = {}) {
     if (!config || !["windows", "linux"].includes(config.platform)) throw new Error("Remote platform must be windows or linux");
     sshArguments(config.host);
     this.config = { ...config }; this.options = options;
-    let command = options.sshCommand;
-    if (!command && process.env.UMEKO_REMOTE_TEST_MODE === "1" && process.env.UMEKO_SSH_COMMAND_JSON) command = JSON.parse(process.env.UMEKO_SSH_COMMAND_JSON);
-    this.sshCommand = typeof command === "string" ? [command] : command || ["ssh"];
-    if (!Array.isArray(this.sshCommand) || !this.sshCommand.length || this.sshCommand.some(value => typeof value !== "string" || !value)) throw new Error("Invalid SSH command");
+    const command = options.sshCommand;
+    this.sshCommand = command === undefined ? null : checkedSshCommand(command);
+    this.sshClient = this.sshCommand?.[0];
     this.state = "disconnected"; this.sessionId = null; this.sessionGeneration = 0;
     this.closed = false; this.nextId = 1; this.pending = new Map(); this.children = new Set(); this.controller = new AbortController();
   }
 
-  _state(state, detail = {}) { this.state = state; this.options.onState?.(state, detail); }
+  _state(state, detail = {}) {
+    this.state = state;
+    this.options.onState?.(state, { ...detail, ...(this.sshClient ? { sshClient: this.sshClient } : {}) });
+  }
+
+  async _selectSsh() {
+    if (this.sshCommand) return;
+    const env = process.env;
+    this.sshClient = await selectSshClient(this.config.host, { env });
+    if (this.closed) throw abortError();
+    // The fault injector forwards the selected real client and never chooses it.
+    const wrapper = env.UMEKO_REMOTE_TEST_MODE === "1" && env.UMEKO_SSH_COMMAND_JSON;
+    this.sshCommand = wrapper ? checkedSshCommand(JSON.parse(wrapper)) : [this.sshClient];
+    if (wrapper) this.sshEnv = { ...env, UMEKO_REAL_SSH: this.sshClient };
+    this._state(this.state);
+  }
 
   _spawn(args) {
-    const child = spawn(this.sshCommand[0], [...this.sshCommand.slice(1), ...sshArguments(this.config.host), ...args], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    return this._spawnClient(this.sshCommand[0], [...this.sshCommand.slice(1), ...sshArguments(this.config.host), ...args], this.sshEnv);
+  }
+
+  _spawnClient(executable, args, env) {
+    const child = spawn(executable, args, { env, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    child.stdin.on("error", () => {}); // Exit diagnostics are collected from stderr.
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
     this.children.add(child); child.once("exit", () => this.children.delete(child));
     return child;
   }
 
   async _ssh(script, { inputFile, timeout = 30_000 } = {}) {
     if (this.closed) throw abortError();
-    const child = this._spawn([this.config.host, inputFile ? remoteCommand(this.config.platform, script) : streamedCommand(this.config.platform)]);
+    const streamScript = !inputFile && process.platform !== "win32" && this.config.platform === "linux";
+    const child = this._spawn([...(inputFile || streamScript ? [] : ["-n"]), this.config.host,
+      streamScript ? "sh -s" : remoteCommand(this.config.platform, script)]);
+    return this._readChild(child, { inputFile, inputText: streamScript ? `${script}\n` : undefined, timeout, label: "SSH command" });
+  }
+
+  async _readChild(child, { inputFile, inputText, timeout, label }) {
     let output = "", diagnostics = "";
     const result = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { child.kill(); reject(Object.assign(new Error("SSH command timed out"), { transport: true })); }, timeout);
-      const abort = () => { child.kill(); reject(abortError()); };
+      const cleanup = () => { clearTimeout(timer); this.controller.signal.removeEventListener("abort", abort); };
+      const timer = setTimeout(() => { cleanup(); child.kill(); reject(sshFailure(`${label} timed out`, diagnostics, true)); }, timeout);
+      const abort = () => { cleanup(); child.kill(); reject(abortError()); };
       this.controller.signal.addEventListener("abort", abort, { once: true });
-      child.stdout.on("data", data => { output += data.toString(); if (output.length > 1024 * 1024) child.kill(); });
-      child.stderr.on("data", data => { diagnostics = (diagnostics + data.toString()).slice(-8192); });
-      child.on("error", error => { clearTimeout(timer); this.controller.signal.removeEventListener("abort", abort); reject(Object.assign(new Error(`Unable to start OpenSSH: ${error.code || "unknown error"}`), { fatal: true })); });
-      child.on("exit", code => {
-        clearTimeout(timer); this.controller.signal.removeEventListener("abort", abort);
+      child.stdout.on("data", data => { output += data; if (output.length > 1024 * 1024) child.kill(); });
+      child.stderr.on("data", data => { diagnostics = (diagnostics + data).slice(-8192); });
+      child.once("error", error => { cleanup(); reject(sshFailure(`Unable to start ${label}`, error.message, false, true)); });
+      child.once("close", code => {
+        cleanup();
         if (code === 0) resolve(output.trim());
-        else {
-          // Never report stdout (bootstrap contains a bearer), argv, or remote
-          // PowerShell source. SSH authentication failures get actionable text.
-          const lines = diagnostics.split(/\r?\n/);
-          const fatal = lines.find(value => fatalSsh.test(value));
-          const network = lines.find(value => /^(?:ssh: |kex_exchange_identification: |banner exchange: |Connection (?:closed|reset|timed out))/i.test(value));
-          const line = fatal || network;
-          reject(Object.assign(new Error(line ? `OpenSSH: ${line.trim().slice(0, 512)}` : `Remote executor bootstrap failed (SSH exit ${code ?? "signal"})`), { fatal: !!fatal || code !== 255, transport: code === 255 }));
-        }
+        // Stdout can contain the listener bearer. Publish only bounded stderr.
+        else reject(sshFailure(`${label} failed (exit ${code ?? "signal"})`, diagnostics, code === 255, code !== 255));
       });
     });
     // The upload and child can fail independently; attach a handler immediately
@@ -272,8 +313,24 @@ export class RemoteConnection {
     if (inputFile) {
       try { await pipeline(createReadStream(inputFile), child.stdin); }
       catch { child.kill(); const error = await result.then(() => null, failure => failure); throw error || new Error("Unable to upload the official remote executor"); }
-    } else child.stdin.end(script + "\n");
+    } else child.stdin.end(inputText);
     return result;
+  }
+
+  async _sftpUpload(inputFile, destination, timeout) {
+    const windowsClient = process.platform === "win32";
+    const executable = join(dirname(this.sshClient), windowsClient ? "sftp.exe" : "sftp");
+    if (!await exists(executable)) throw new Error(`OpenSSH SFTP is missing next to ${this.sshClient}`);
+    const folder = await mkdtemp(join(tmpdir(), "umeko-sftp-"));
+    const batch = join(folder, "upload.sftp");
+    try {
+      await writeFile(batch, `put ${sftpPath(inputFile, windowsClient)} ${sftpPath(destination, this.config.platform === "windows", true)}\n`, { mode: 0o600 });
+      const child = this._spawnClient(executable, ["-b", batch, "-S", this.sshClient, ...sshArguments(this.config.host).slice(1), this.config.host]);
+      await this._readChild(child, { timeout, label: "OpenSSH SFTP upload" });
+    } finally {
+      await unlink(batch).catch(() => {});
+      await rmdir(folder).catch(() => {});
+    }
   }
 
   async _bootstrap() {
@@ -284,12 +341,11 @@ export class RemoteConnection {
     if (!info.present) {
       const asset = await assetFile(this.config.platform, info.arch, this.options);
       const temporary = `${info.root}/upload-${randomBytes(6).toString("hex")}`;
-      const receive = this.config.platform === "windows"
-        ? `$ErrorActionPreference='Stop';$f=[IO.File]::Open(${quotePs(temporary)},'CreateNew');try{[Console]::OpenStandardInput().CopyTo($f)}finally{$f.Dispose()}`
-        : `umask 077; cat > ${quoteSh(temporary)}`;
       // First deployment can take minutes over a jump host. This is a single
       // scoped transfer, not a background retry or a server-wide operation.
-      await this._ssh(receive, { inputFile: asset, timeout: 30 * 60_000 });
+      const timeout = 30 * 60_000;
+      if (process.platform === "win32" || this.config.platform === "windows") await this._sftpUpload(asset, temporary, timeout);
+      else await this._ssh(`umask 077; cat > ${quoteSh(temporary)}`, { inputFile: asset, timeout });
       const install = this.config.platform === "windows"
         ? `$ErrorActionPreference='Stop';Move-Item -LiteralPath ${quotePs(temporary)} -Destination ${quotePs(info.binary)} -Force`
         : `set -eu; tar -xzf ${quoteSh(temporary)} -C ${quoteSh(info.root)}; found=$(find ${quoteSh(info.root)} -maxdepth 2 -type f -name 'codex-exec-server*' ! -name '*tar*' | head -n 1); [ -n "$found" ]; [ "$found" = ${quoteSh(info.binary)} ] || mv "$found" ${quoteSh(info.binary)}; chmod 700 ${quoteSh(info.binary)}; rm -f ${quoteSh(temporary)}`;
@@ -307,27 +363,28 @@ export class RemoteConnection {
     const localPort = await new Promise((resolve, reject) => {
       const probe = createServer(); probe.once("error", reject); probe.listen(0, "127.0.0.1", () => { const port = probe.address().port; probe.close(() => resolve(port)); });
     });
-    const child = this._spawn(["-v", "-N", "-o", "ExitOnForwardFailure=yes", "-L", `127.0.0.1:${localPort}:127.0.0.1:${remotePort}`, this.config.host]);
+    const child = this._spawn(["-v", "-n", "-N", "-o", "ExitOnForwardFailure=yes", "-L", `127.0.0.1:${localPort}:127.0.0.1:${remotePort}`, this.config.host]);
     child.stdin.end(); this.tunnel = child;
-    let failure, diagnostics = "", listening = false;
+    let failure, diagnostics = "", ended = false, listening = false;
+    this.tunnelDiagnostics = "";
     child.stderr.on("data", data => {
-      diagnostics = (diagnostics + data.toString()).slice(-8192);
-      const line = diagnostics.split(/\r?\n/).find(value => fatalSsh.test(value));
-      if (line) failure = Object.assign(new Error(`OpenSSH: ${line.trim().slice(0, 512)}`), { fatal: true });
+      diagnostics = (diagnostics + data).slice(-8192);
+      if (this.tunnel === child) this.tunnelDiagnostics = diagnostics;
       // Do not send the bearer to a port merely because it accepts TCP. The
       // SSH child itself must report that it owns this loopback bind first.
       if (diagnostics.includes(`Local forwarding listening on 127.0.0.1 port ${localPort}.`)) listening = true;
     });
-    child.once("error", error => { failure = Object.assign(new Error(`Unable to start OpenSSH: ${error.code || "unknown error"}`), { fatal: true }); });
+    child.once("error", error => { failure = sshFailure("Unable to start OpenSSH", error.message, false, true); });
+    child.once("close", () => { ended = true; });
     child.once("exit", () => { if (this.tunnel === child) { this.tunnel = null; this._lost(); } });
     for (let i = 0; i < 100; i++) {
       if (failure) throw failure;
-      if (child.exitCode !== null) throw connectionError();
+      if (ended) throw sshFailure(`SSH tunnel exited (${child.exitCode ?? child.signalCode ?? "unknown"})`, diagnostics, true);
       if (this.closed) throw abortError();
-      if (listening) return localPort;
+      if (listening && child.exitCode === null && child.signalCode === null) return localPort;
       await sleep(100, this.controller.signal);
     }
-    throw Object.assign(new Error("SSH tunnel timed out"), { transport: true });
+    throw sshFailure("SSH tunnel timed out", diagnostics, true);
   }
 
   async _openSocket(port, token) {
@@ -382,7 +439,10 @@ export class RemoteConnection {
     this._state(this.sessionId ? "reconnecting" : "connecting");
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
+        if (attempt > 0) this._state("reconnecting");
         this._drop();
+        this.tunnelDiagnostics = "";
+        await this._selectSsh();
         const listener = await this._bootstrap();
         const port = await this._forward(listener.port);
         await this._openSocket(port, listener.token);
@@ -407,8 +467,12 @@ export class RemoteConnection {
         // the same resume ID and bounded recovery budget; never fork a session
         // while the retained attachment still owns its process/file handles.
         if (error instanceof RemoteRpcError && /session .*already attached/i.test(error.message)) error.transport = true;
-        if (error.fatal || !error.transport || attempt === 2) { this._state("error", { message: error.message }); throw error; }
-        this._state("reconnecting", { attempt: attempt + 1, message: error.message, retryAfterMs: 60_000 });
+        if (error.transport && !error.sshError && sshDiagnostic(this.tunnelDiagnostics)) error = sshFailure(error.message, this.tunnelDiagnostics, true, error.fatal);
+        this.sshClient ||= error.sshClient;
+        error.sshClient = this.sshClient;
+        const details = { message: error.message, sshError: error.sshError };
+        if (error.fatal || !error.transport || attempt === 2) { this._state("error", details); throw error; }
+        this._state("reconnecting", { ...details, attempt: attempt + 1, retryAfterMs: 60_000 });
         await sleep(60_000, this.controller.signal);
       }
     }

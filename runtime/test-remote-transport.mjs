@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
+import { inflateRawSync } from "node:zlib";
 import { WebSocketServer } from "ws";
 import { RemoteConnection, RemoteRpcError, sshArguments, discoveryScript, listenerScript } from "./remote-transport.mjs";
 
@@ -13,7 +14,7 @@ class FakeSocket extends EventEmitter {
   terminate() { this.readyState = 3; this.emit("close"); }
 }
 class FakeConnection extends RemoteConnection {
-  constructor(responses = []) { super({ host: "existing-alias", platform: "windows" }); this.responses = responses; this.calls = []; }
+  constructor(responses = []) { super({ host: "existing-alias", platform: "windows" }, { sshCommand: process.execPath }); this.responses = responses; this.calls = []; }
   async _bootstrap() { return { port: 41000, token: "x".repeat(48) }; }
   async _forward() { return 41001; }
   async _openSocket() { this.socket = new FakeSocket(); }
@@ -131,7 +132,7 @@ test("authenticated live loopback WS performs handshake, RPC and notification ro
       socket.send(JSON.stringify({ id: message.id, result: info }));
     }
   }));
-  const connection = new RemoteConnection({ host: "existing-alias", platform: "windows" }, { onNotification: (...args) => notifications.push(args) });
+  const connection = new RemoteConnection({ host: "existing-alias", platform: "windows" }, { sshCommand: process.execPath, onNotification: (...args) => notifications.push(args) });
   connection._bootstrap = async () => ({ port: server.address().port, token });
   connection._forward = async port => port;
   try {
@@ -151,18 +152,45 @@ test("WS bearer rejection stops immediately with a secret-free fatal error", asy
   } finally { connection.close(); await new Promise(resolve => server.close(resolve)); }
 });
 
-test("streamed bootstrap keeps Windows SSH argv short and source off the command line", async () => {
+test("Windows bootstrap sends a short inline command without waiting for SSH stdin", async () => {
   const connection = new RemoteConnection({ host: "existing-alias", platform: "windows" });
   const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.stdin = new PassThrough(); child.kill = () => {};
   let args, received = "";
   child.stdin.on("data", chunk => { received += chunk.toString(); });
-  child.stdin.on("finish", () => { child.stdout.write("result\n"); child.emit("exit", 0); });
+  child.stdin.on("finish", () => { child.stdout.write("result\n"); child.emit("close", 0); });
   connection._spawn = value => { args = value; return child; };
   const source = listenerScript("windows", "C:\\Users\\test\\remote", "C:\\Users\\test\\remote\\codex-exec-server.exe");
   assert.equal(await connection._ssh(source), "result");
-  assert.ok(args.join(" ").length < 1024);
-  assert.equal(received, source + "\n");
-  assert.ok(!args.join(" ").includes("UmekoRemoteExecutor")); connection.close();
+  assert.ok(args.join(" ").length < 8191);
+  assert.equal(args[0], "-n");
+  assert.equal(received, "");
+  const decoder = Buffer.from(args.at(-1).split(" ").at(-1), "base64").toString("utf16le");
+  const payload = decoder.match(/FromBase64String\('([^']+)'\)/)?.[1];
+  assert.equal(inflateRawSync(Buffer.from(payload, "base64")).toString(), source);
+  connection.close();
+});
+
+test("failed SSH reports its own stderr and selected executable without bootstrap output", async () => {
+  const states = [];
+  const connection = new RemoteConnection({ host: "existing-alias", platform: "windows" }, {
+    sshCommand: process.execPath, onState: (state, detail) => states.push({ state, ...detail }),
+  });
+  const child = new EventEmitter();
+  child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.stdin = new PassThrough(); child.kill = () => {};
+  child.stdin.on("finish", () => {
+    child.stdout.write('{"token":"test-bearer"}');
+    child.stderr.write("debug1: verbose configuration details\nposix_spawnp: No such file or directory\nConnection closed by UNKNOWN port 65535\n");
+    child.emit("close", 255);
+  });
+  connection._spawn = () => child;
+  try {
+    await assert.rejects(connection.ready(), error => error.sshClient === process.execPath && error.fatal &&
+      error.sshError === "posix_spawnp: No such file or directory\nConnection closed by UNKNOWN port 65535" &&
+      !error.message.includes("test-bearer") && !error.message.includes("verbose configuration"));
+    assert.equal(states.at(-1).state, "error");
+    assert.equal(states.at(-1).sshClient, process.execPath);
+    assert.match(states.at(-1).sshError, /posix_spawnp/);
+  } finally { connection.close(); }
 });
 
 test("request cancellation interrupts waiting for shared recovery without stopping the connection", async () => {
@@ -194,7 +222,7 @@ test("tunnel readiness is confirmed by the owning OpenSSH child before bearer us
   const connection = new RemoteConnection({ host: "existing-alias", platform: "linux" }); let captured;
   connection._spawn = args => {
     captured = args;
-    const child = new EventEmitter(); child.stdin = new PassThrough(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.exitCode = null; child.kill = () => {};
+    const child = new EventEmitter(); child.stdin = new PassThrough(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.exitCode = null; child.signalCode = null; child.kill = () => {};
     const localPort = args[args.indexOf("-L") + 1].split(":")[1];
     process.nextTick(() => child.stderr.write(`debug1: Local forwarding listening on 127.0.0.1 port ${localPort}.\n`));
     return child;

@@ -27,9 +27,9 @@ class RemoteEnvironments:
         for item in self.configured():
             identity = (item['name'], item['host'], item['platform'])
             states = list(self.connections.get(identity, {}).values())
-            state = next((state for state in ('connected', 'reconnecting', 'connecting', 'error')
-                          if state in states), 'disconnected')
-            rows.append({key: item[key] for key in ('name', 'host', 'platform')} | {'state': state})
+            status = next((status for state in ('connected', 'reconnecting', 'connecting', 'error', 'disconnected')
+                           for status in reversed(states) if status['state'] == state), {'state': 'disconnected'})
+            rows.append({key: item[key] for key in ('name', 'host', 'platform')} | status)
         return rows
 
     def add(self, name, host, platform):
@@ -68,8 +68,16 @@ class RemoteEnvironments:
         if not any(identity == (row['name'], row['host'], row['platform']) for row in self.configured()):
             return
         states = self.connections.setdefault(identity, {})
-        if states.get(source) != state:
-            states[source] = state
+        status = {'state': state}
+        for key in ('sshClient', 'message', 'sshError'):
+            if isinstance(event.get(key), str) and event[key]:
+                status[key] = event[key]
+        for key in ('attempt', 'retryAfterMs'):
+            if isinstance(event.get(key), (int, float)) and not isinstance(event[key], bool) and event[key] > 0:
+                status[key] = event[key]
+        if states.get(source) != status:
+            states.pop(source, None)
+            states[source] = status
             self.changed()
 
     def disconnect(self, source):

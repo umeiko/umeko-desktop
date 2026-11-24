@@ -61,28 +61,36 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
     if (current && current.host === settings.host && current.platform === settings.platform) return current;
     close(name);
     const { host, platform } = settings;
+    const status = {};
     const connection = new RemoteConnection({ host, platform }, {
       sshCommand: getConfig()?.remoteTestSshCommand,
-      onState(state) {
-        emit({ type: "remote_environment_state", name, host, platform, state });
+      onState(state, detail = {}) {
+        for (const key of ["message", "sshError", "attempt", "retryAfterMs"]) delete status[key];
+        for (const key of ["sshClient", "message", "sshError", "attempt", "retryAfterMs"]) {
+          if (detail[key] !== undefined) status[key] = detail[key];
+        }
+        emit({ type: "remote_environment_state", name, host, platform, state, ...status });
       },
     });
-    const entry = { host, platform, connection, commands: createRemoteCommands(connection), files: createRemoteFiles(connection) };
+    const entry = { host, platform, connection, status, commands: createRemoteCommands(connection), files: createRemoteFiles(connection) };
     live.set(name, entry);
     return entry;
   }
 
   return {
     async test(args, signal) {
-      if (Object.keys(args).length !== 1 || typeof args.name !== "string" || !args.name) {
+      if (!args || typeof args !== "object" || Object.keys(args).length !== 1 || typeof args.name !== "string" || !args.name) {
         return { ok: false, error: "Provide the name of a configured remote environment." };
       }
+      let entry;
+      const diagnostics = () => Object.fromEntries(["sshClient", "sshError"]
+        .filter(key => entry?.status[key]).map(key => [key, entry.status[key]]));
       try {
-        const entry = await environment(args.name, signal);
+        entry = await environment(args.name, signal);
         const info = await entry.connection.ready({ signal });
-        return { ok: true, operation: "remote-environments.test", name: args.name, state: "connected", platform: entry.platform, cwd: info.cwd };
+        return { ok: true, operation: "remote-environments.test", name: args.name, state: "connected", platform: entry.platform, cwd: info.cwd, ...diagnostics() };
       } catch (error) {
-        return { ok: false, error: error.message };
+        return { ok: false, error: error.message, ...diagnostics() };
       }
     },
     close,

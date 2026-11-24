@@ -215,6 +215,13 @@ class Acceptance:
         tested = self.call('umeko_desktop', {'operation': 'remote-environments.test', 'arguments': {'name': 'acceptance'}},
                            timeout=self.spec.get('bootstrapTimeout', 240))
         assert tested.get('ok'), tested
+        ssh_client = Path(tested['sshClient']).resolve()
+        if self.spec.get('expectedSshExecutable'):
+            assert ssh_client == Path(self.spec['expectedSshExecutable']).resolve(), tested
+        clients = self.directory / 'ssh-control/clients.jsonl'
+        started_clients = [json.loads(line) for line in clients.read_text(encoding='utf-8').splitlines()]
+        assert started_clients and all(Path(row['executable']).resolve() == ssh_client for row in started_clients)
+        self.note('ssh-client-selected', executable=str(ssh_client))
         short, output = self.read_until_complete(self.command(self.python("print('REMOTE_SHORT_OK')")))
         assert short.get('exitCode') == 0 and output == 'REMOTE_SHORT_OK\n', (short, output)
 
