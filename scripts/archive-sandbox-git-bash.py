@@ -28,9 +28,14 @@ UNATTENDED_EXCLUSIONS = (
 
 
 def included(name):
-    basename = name.rsplit("/", 1)[-1].lower()
+    parts = name.lower().split("/")
+    basename = parts[-1]
     if basename.startswith(("license", "copying", "copyright")):
         return True
+    if len(parts) > 3 and parts[0] in ("usr", "mingw64") and parts[1:3] == ["share", "locale"]:
+        # Match the desktop languages. Bundled commands use their default
+        # messages when a locale is absent, as they do in MinGit.
+        return parts[3].split("_")[0].split("@")[0] in ("en", "zh")
     return not any(fnmatchcase(name, pattern) for pattern in UNATTENDED_EXCLUSIONS)
 
 
