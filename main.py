@@ -121,7 +121,7 @@ def create_application():
         controller.openSession(session)
         controller._system_tray.restore()
     controller._task_notifications.activated.connect(open_finished_session)
-    if '--remote-environments-smoke' not in sys.argv:
+    if '--remote-environments-smoke' not in sys.argv and '--remote-workdir-smoke' not in sys.argv:
         from app.login_session import start_login_proxy
         QTimer.singleShot(0, lambda: start_login_proxy(controller, sys.argv))
         from app.update import start_update_cleanup
@@ -132,13 +132,14 @@ def create_application():
 
 if __name__ == "__main__":
     remote_smoke = '--remote-environments-smoke' in sys.argv
-    if remote_smoke:
+    workdir_smoke = '--remote-workdir-smoke' in sys.argv
+    if remote_smoke or workdir_smoke:
         from app.storage import data_directory, legacy_data_directory
         profile = os.environ.get('UMEKO_DATA_DIR')
         if (os.environ.get('QT_QPA_PLATFORM') != 'offscreen' or not profile
                 or any(Path(profile).resolve().is_relative_to(path.resolve())
                        for path in (data_directory(), legacy_data_directory(), Path.home() / '.umeko'))):
-            raise SystemExit('The remote environment smoke test needs an isolated profile and offscreen Qt.')
+            raise SystemExit('The remote smoke test needs an isolated profile and offscreen Qt.')
     # Opt-in diagnostics for a frozen smoke process that hangs during teardown.
     # Keep the watchdog alive through Python/Qt finalization, after EXIT:0.
     if "--smoke" in sys.argv and os.environ.get('UMEKO_SMOKE_STACKS'):
@@ -154,7 +155,7 @@ if __name__ == "__main__":
         app, engine, controller = create_application()
     except Exception as exc:
         diagnostic(str(exc))
-        if not remote_smoke and "--smoke" not in sys.argv and os.name == "nt":
+        if not remote_smoke and not workdir_smoke and "--smoke" not in sys.argv and os.name == "nt":
             import ctypes
             ctypes.windll.user32.MessageBoxW(None, "应用启动失败。请检查本机设置或从源码启动查看诊断。", "Umeko", 0x10)
         sys.exit(1)
@@ -164,6 +165,9 @@ if __name__ == "__main__":
     if remote_smoke:
         from app.remote_environments_smoke import start
         start(app, engine, controller, Path(sys.argv[sys.argv.index('--remote-environments-smoke') + 1]))
+    elif workdir_smoke:
+        from app.remote_workdir_smoke import start
+        start(app, engine, controller, Path(sys.argv[sys.argv.index('--remote-workdir-smoke') + 1]))
     elif "--smoke" not in sys.argv and "--install-update" not in sys.argv:
         controller.appAbout.startAutomaticChecks()
     if "--smoke" in sys.argv:

@@ -87,7 +87,9 @@ class DesktopPlugins(QObject):
         if kind=='exit':
             loop=self._review_loops.pop(record.key,None)
             if loop and self.enabled(identifier):
-                self.call_for(identifier,'finish',json.dumps({'loopId':loop,'reason':'exited'}),timeout_ms=10000,session=self.bridge.snapshot(record))
+                snap = self.bridge.snapshot(record)
+                t_ms = 30000 if snap.get('remoteWorkspace') else 10000
+                self.call_for(identifier,'finish',json.dumps({'loopId':loop,'reason':'exited'}),timeout_ms=t_ms,session=snap)
             return
         if kind!='loop_review':return
         phase=event.get('phase')
@@ -96,7 +98,9 @@ class DesktopPlugins(QObject):
         else:self._review_loops.pop(record.key,None)
         request=''
         if identifier in self.entries and self.enabled(identifier):
-            request=self.call_for(identifier,phase,json.dumps({'loopId':event['loopId'],'reason':event.get('reason','completed'),'title':event.get('title','')}),timeout_ms=10000,session=self.bridge.snapshot(record))
+            snap = self.bridge.snapshot(record)
+            t_ms = 30000 if snap.get('remoteWorkspace') else 10000
+            request=self.call_for(identifier,phase,json.dumps({'loopId':event['loopId'],'reason':event.get('reason','completed'),'title':event.get('title','')}),timeout_ms=t_ms,session=snap)
         if request:self._review_requests[request]=(record,event.get('id'))
         else:self.b._pool.write(record,{'type':'loop_review_response','id':event.get('id')})
     def checkpoint_locked(self,workspace):
@@ -241,8 +245,9 @@ class DesktopPlugins(QObject):
             if self.storage_key in sessions:sessions[key]=sessions.pop(self.storage_key);self.save()
             self.storage_key=key;switched=True
         messages=[{'role':m.get('role',''),'text':m.get('text','')[:2000]} for m in view.messages[-8:]]
+        remote_ws = self.b._remote_project_for_workspace(view.workspace) if hasattr(self.b, '_remote_project_for_workspace') else None
         value={'token':view.key,'id':view.id,'workspace':view.workspace,'title':view.title,'busy':view.busy,'messages':messages,
-               'leafId':getattr(view,'search_leaf','')}
+               'leafId':getattr(view,'search_leaf',''), **({'remoteWorkspace':remote_ws} if remote_ws else {})}
         if value==self._session:return
         self._session=value;self.sessionChanged.emit()
         if switched:self.changed.emit()
@@ -530,7 +535,9 @@ class DesktopPlugins(QObject):
         if kind in ('session.attach','preview.file') and 'workspace.read' in perms:
             if not self._session.get('workspace'):return
             root=Path(self._session['workspace']).resolve();path=Path(args.get('path','')).resolve()
-            if not path.is_relative_to(root) or not path.is_file():return
+            preview_cache=(self.b.store.directory/'cache'/'remote-previews').resolve()
+            allowed_root=path.is_relative_to(root) or (bool(self._session.get('remoteWorkspace')) and path.is_relative_to(preview_cache))
+            if not allowed_root or not path.is_file():return
             if kind=='session.attach':self.b.attachChatboxFile(str(path))
             else:self.b.widgetDocumentRequested.emit(str(path),path.name,'file',identifier)
     def manage(self,request,done):

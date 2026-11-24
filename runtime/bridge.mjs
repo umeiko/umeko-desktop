@@ -16,6 +16,7 @@ import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
 import { blockedShellEnvKey, createShellSnapshots } from "./shell-snapshot.mjs";
 import { createRemoteEnvironments } from "./remote-environments.mjs";
+import { createRemoteWorkspaceExtension } from "./remote-workspace-tools.mjs";
 import { createAuxiliaryVision, ANALYZE_IMAGE, AUTO_VISION_ENTRY, automaticVisionView } from "./auxiliary-vision.mjs";
 import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
 import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI } from "./tool-permissions.mjs";
@@ -47,7 +48,19 @@ const { isRetryableAssistantError, isContextOverflow } = await import("@earendil
 const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", entry));
 const { loadMcpConfig } = await import(new URL("./extensions/mcp/config.js", entry));
-const { allToolNames, createAllToolDefinitions } = await import(new URL("./core/tools/index.js", entry));
+const {
+  allToolNames, createAllToolDefinitions,
+  createReadToolDefinition, createWriteToolDefinition, createEditToolDefinition,
+  createBashToolDefinition, createPowerShellToolDefinition,
+  createLsToolDefinition, createFindToolDefinition, createGrepToolDefinition,
+  DEFAULT_MAX_BYTES, formatSize, truncateHead, truncateLine,
+} = await import(new URL("./core/tools/index.js", entry));
+const remoteToolsApi = {
+  createReadToolDefinition, createWriteToolDefinition, createEditToolDefinition,
+  createBashToolDefinition, createPowerShellToolDefinition,
+  createLsToolDefinition, createFindToolDefinition, createGrepToolDefinition,
+  DEFAULT_MAX_BYTES, formatSize, truncateHead, truncateLine,
+};
 const { getShellConfig, getPowerShellConfig } = await import(new URL("./utils/shell.js", entry));
 const bundledNodeDir = fileURLToPath(new URL(process.platform === "win32" ? "../../node" : "../../node/bin", import.meta.url));
 const shellSnapshots = createShellSnapshots({ getShellConfig, getPowerShellConfig,
@@ -96,6 +109,9 @@ const umekoControl = createUmekoControl({
   getPetReminderBinding: () => config?.petReminderBinding || '',
   remoteOperation(operation, args, signal) {
     if (operation === "remote-environments.test") return remoteEnvironments.test(args, signal);
+    if (operation === "remote-environments.browse") return remoteEnvironments.browse(args, signal);
+    if (operation === "remote-environments.mkdir") return remoteEnvironments.mkdir(args, signal);
+    if (operation === "remote-environments.home") return remoteEnvironments.home(args, signal);
     if (operation === "remote-environments.remove") {
       return umekoControl.request(operation, args, signal).then(result => {
         if (result.ok) remoteEnvironments.close(args.name);
@@ -435,6 +451,16 @@ async function restoreSubagentSession(child, context, customTools) {
       { name: "umeko-control", builtin: true, replaceable: false, factory: auxiliaryVision.toolExtension },
       { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
       { name: "shell-snapshot", hidden: true, replaceable: false, factory: shellSnapshotExtension(() => policy.getShellPath()) },
+      ...(config?.remoteWorkspace?.environment && config?.remoteWorkspace?.remotePath ? [{
+        name: "remote-workspace", hidden: true, replaceable: false,
+        factory: createRemoteWorkspaceExtension({
+          remoteWorkspace: config.remoteWorkspace,
+          getEntry: remoteEnvironments.getEntry,
+          emit,
+          localCwd: manager.getCwd(),
+          toolsApi: remoteToolsApi,
+        }),
+      }] : []),
     ],
     systemPrompt:context?.systemPrompt || `You are the ${child.type} subagent embedded in Umeko Desktop. Continue the task in this existing conversation. ${readonly ? "Inspect and report only; do not modify files." : ""}`,
     appendSystemPrompt:context?.systemPrompt?.includes(SUBAGENT_COMPLETION_HINT) ? [] : [SUBAGENT_COMPLETION_HINT],
@@ -463,6 +489,9 @@ async function init(input) {
   process.env.PI_CODING_AGENT_DIR = input.agentDir;
   for (const [name, value] of Object.entries(input.mcpEnv || {})) if (!/^NODE_|^(HTTP|HTTPS|ALL)_PROXY$|_(AK|SK|SECRET_KEY|SECURITY_TOKEN)$/i.test(name)) process.env[name] = value;
   const cwd = resolve(input.workspace || input.defaultCwd);
+  if (input.remoteWorkspace?.environment && input.remoteWorkspace?.remotePath) {
+    mkdirSync(cwd, { recursive: true });
+  }
   if (!existsSync(cwd)) throw new Error("工作目录不存在");
   mkdirSync(input.sessionDir, { recursive: true });
   mkdirSync(input.agentDir, { recursive: true });
@@ -523,6 +552,16 @@ async function init(input) {
           { name: "recent-images", hidden: true, replaceable: false, factory: createRecentImagesExtension({ getLimit: () => config.agent?.maxContextImages }) },
       { name: "auxiliary-vision", hidden: true, replaceable: false, factory: auxiliaryVision.contextExtension },
           { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
+          ...(input.remoteWorkspace?.environment && input.remoteWorkspace?.remotePath && !input.globalCoordinator ? [{
+            name: "remote-workspace", hidden: true, replaceable: false,
+            factory: createRemoteWorkspaceExtension({
+              remoteWorkspace: input.remoteWorkspace,
+              getEntry: remoteEnvironments.getEntry,
+              emit,
+              localCwd: cwd,
+              toolsApi: remoteToolsApi,
+            }),
+          }] : []),
           ...(!input.globalCoordinator && (!input.pluginSessionPolicy || input.pluginSessionPolicy.allowedTools.includes(APPLY_PATCH)) &&
               input.models.some(row => row.applyPatch === true) ? [{name:"apply-patch", hidden:true, replaceable:false,
                 factory:createApplyPatchExtension(applyPatchEnabled)}] : []),

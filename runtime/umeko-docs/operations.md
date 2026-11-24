@@ -48,6 +48,9 @@
 | `remote-environments.add`（仅 python） | `name: string`, `host: string`, `platform: string` | 无 | 否 |
 | `remote-environments.list`（仅 python） | 无 | 无 | 否 |
 | `remote-environments.test`（仅 python） | `name: string` | 无 | 否 |
+| `remote-environments.home`（仅 python） | `name: string` | 无 | 否 |
+| `remote-environments.browse`（仅 python） | `name: string`, `path: string=""` | 无 | 否 |
+| `remote-environments.mkdir`（仅 python） | `name: string`, `path: string` | 无 | 否 |
 | `remote-environments.remove`（仅 python） | `name: string` | 无 | 否 |
 | `projects.add` | `paths: json` | 无 | 否 |
 | `projects.open` | `id: string` | 无 | 否 |
@@ -64,6 +67,7 @@
 | `sessions.fork` | `id: string` | session | 是 |
 | `sessions.export` | `id: string`, `path: string` | session | 是 |
 | `workspace.set` | `path: string` | view | 否 |
+| `workspace.setRemote`（仅 python） | `environment: string`, `remotePath: string` | view | 否 |
 | `command_rules.list` | `scope: string=""` | 无 | 否 |
 | `command_rules.add` | `scope: string`, `pattern: json`, `decision: string`, `shell: string=""` | 无 | 否 |
 | `command_rules.remove` | `scope: string`, `pattern: json`, `decision: string`, `shell: string=""` | 无 | 否 |

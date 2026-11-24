@@ -1,6 +1,6 @@
 """JSONL worker; importing packages and managing ZIPs never activates plugin code."""
 from __future__ import annotations
-import contextlib, copy, hashlib, importlib.util, json, os, signal, sys, threading
+import contextlib, copy, hashlib, importlib.util, json, os, queue, signal, sys, threading
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 from umeko_plugin_sdk import Context, Plugin, PluginError
@@ -16,16 +16,37 @@ def emit(value):
     with LOCK:OUTPUT.write(raw+'\n');OUTPUT.flush()
 
 def main():
-    plugin=None;context=None
+    plugin=None;context=None;m={};schema={}
+    inbox: queue.Queue = queue.Queue()
     def shutdown(*_):
         if context:context.close()
         if plugin:
             with contextlib.suppress(Exception):plugin.close()
         raise SystemExit(0)
     signal.signal(signal.SIGTERM,shutdown)
+    def reader():
+        try:
+            while True:
+                raw=sys.stdin.readline(MAX+1)
+                if not raw:break
+                if len(raw)<=MAX:
+                    try:
+                        parsed=json.loads(raw)
+                        if isinstance(parsed,dict) and parsed.get('operation')=='event':
+                            ev_args=parsed.get('arguments',{})
+                            if isinstance(ev_args,dict) and ev_args.get('name')=='host.response' and context is not None:
+                                if context._deliver_sync_response(ev_args.get('data',{})):
+                                    emit({'type':'response','id':parsed.get('id'),'ok':True,'result':{'received':True}})
+                                    continue
+                    except ValueError:
+                        pass
+                inbox.put(raw)
+        finally:
+            inbox.put(None)
+    threading.Thread(target=reader,daemon=True,name='umeko-plugin-stdin').start()
     while True:
-        raw=sys.stdin.readline(MAX+1)
-        if not raw:break
+        raw=inbox.get()
+        if raw is None:break
         request={}
         try:
             if len(raw)>MAX:raise PluginError('插件请求过大')

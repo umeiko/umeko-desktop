@@ -29,6 +29,8 @@ def normalize_projects(data):
         else:
             merged = projects[positions[identifier]]
             for key, value in project.items(): merged.setdefault(key, value)
+            for key in ('environment', 'remotePath', 'remoteHost', 'remotePlatform'):
+                if project.get(key): merged[key] = project[key]
             if project.get('pinned'): merged['pinned'] = True
             if not merged.get('name'): merged['name'] = project.get('name', '')
     active = identifiers.get(data.get('activeProject', ''), data.get('activeProject', ''))

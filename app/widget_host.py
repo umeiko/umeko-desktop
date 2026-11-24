@@ -9,6 +9,7 @@ import copy
 import json
 import re
 import sqlite3
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -91,7 +92,20 @@ OPERATIONS = {
     'skills.delete': ('skills.manage', None),
     'checkpoints.acquire': ('workspace.write', None),
     'checkpoints.release': ('workspace.write', None),
+    'workspace.exec': ('process.execute', None),
+    'workspace.readDir': ('workspace.read', None),
+    'workspace.stat': ('workspace.read', None),
+    'workspace.readFile': ('workspace.read', None),
+    'workspace.writeFile': ('workspace.write', None),
+    'workspace.mkdir': ('workspace.write', None),
+    'workspace.remove': ('workspace.write', None),
+    'workspace.rename': ('workspace.write', None),
+    'workspace.sshTarget': ('workspace.read', None),
+    'workspace.home': ('workspace.read', None),
+    'workspace.previewFile': ('workspace.read', None),
 }
+
+WORKSPACE_OPERATIONS = frozenset(name for name in OPERATIONS if name.startswith('workspace.'))
 
 # User-initiated paste/drop adds new folders only. Replacement still goes
 # through the preview/confirmation path; these operations cannot overwrite.
@@ -106,10 +120,12 @@ def requires_confirmation(name):
 
 class WidgetHost(QObject):
     changed = Signal()
+    _workspaceReply = Signal(object, object)
 
     def __init__(self, manager):
         super().__init__(manager)
         self.m, self.b = manager, manager.b
+        self._workspaceReply.connect(self._deliver_workspace_reply)
         self._approval = {}
         self._pending = None
         self.jobs = OrderedDict()
@@ -246,20 +262,31 @@ class WidgetHost(QObject):
             # This built-in service revalidates the captured persistent source
             # and Agent Bus relation, independently of the displayed chat.
             return identifier
+        if request['operation'] in WORKSPACE_OPERATIONS and self.m.application(identifier):
+            session = request['session']
+            if not isinstance(session, dict) or not session.get('workspace'):
+                raise ValueError('A workspace is required')
+            return identifier
         session = request['session']
         current = self.m._session
         if not isinstance(session, dict) or not session.get('token') or session.get('token') != current.get('token') or session.get('workspace') != current.get('workspace'):
             raise ValueError('The target chat or workspace changed; retry from its page')
         return identifier
 
+    def _deliver_workspace_reply(self, request, value):
+        if self.m.closed:
+            return
+        self._reply(request, value)
+
     def _reply(self, request, value):
         self.requests.pop((request['widget'], request['id']), None)
         if self.m.workers.get(request['widget']) is not request['worker']:
             return
+        max_bytes = 2 * 1024 * 1024 if isinstance(request['operation'], str) and request['operation'] in WORKSPACE_OPERATIONS else 262144
         try:
             raw = json.dumps(value, ensure_ascii=False, allow_nan=False).encode('utf-8')
-            if len(raw) > 262144:
-                value = {'ok': False, 'error': 'Host response exceeds 256 KiB; narrow the query'}
+            if len(raw) > max_bytes:
+                value = {'ok': False, 'error': 'Host response exceeds limit; narrow the query'}
         except (TypeError, ValueError):
             value = {'ok': False, 'error': 'Host returned invalid JSON'}
         value = {'requestId': request['id'], 'operation': request['operation'], **value}
@@ -295,11 +322,31 @@ class WidgetHost(QObject):
             operation, args = request['operation'], request['arguments']
             if operation not in self.capabilities['operations']:
                 raise ValueError('Host operation is not available; inspect hostCapabilities')
-            if not isinstance(args, dict) or len(json.dumps(args, allow_nan=False).encode()) > 16384:
-                raise ValueError('Host arguments must be a JSON object of at most 16 KiB')
+            arg_limit = 1024 * 1024 if operation in WORKSPACE_OPERATIONS else 16384
+            if not isinstance(args, dict) or len(json.dumps(args, allow_nan=False).encode()) > arg_limit:
+                raise ValueError('Host arguments must be a JSON object within size limits')
             permission, _ = OPERATIONS[operation]
-            if permission not in self.m.entries[identifier].get('permissions', []):
-                raise ValueError('Widget permission is required: ' + permission)
+            perms = self.m.entries[identifier].get('permissions', [])
+            if permission not in perms:
+                if not (operation in ('workspace.writeFile', 'workspace.remove') and 'git.write' in perms):
+                    raise ValueError('Widget permission is required: ' + permission)
+            if operation in WORKSPACE_OPERATIONS:
+                executor = getattr(self.b, '_workspace_executor', None)
+                if executor is None:
+                    raise ValueError('Workspace executor is unavailable')
+                def run_workspace():
+                    try:
+                        res = executor.execute(request['session'], operation, args)
+                        if res.get('ok'):
+                            payload = {'ok': True, 'result': res}
+                        else:
+                            payload = {'ok': False, 'error': str(res.get('error') or 'Workspace operation failed')}
+                    except Exception as error:
+                        payload = {'ok': False, 'error': str(error)}
+                    if not self.m.closed:
+                        self._workspaceReply.emit(request, payload)
+                threading.Thread(target=run_workspace, daemon=True, name='umeko-workspace-op').start()
+                return
             if operation.startswith('systemPrompt.'):
                 if self._system_prompt is None:
                     from .system_prompt import SystemPromptHost

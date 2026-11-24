@@ -26,6 +26,8 @@ const quotePs = value => `'${String(value).replaceAll("'", "''")}'`;
 const exists = async path => access(path).then(() => true, () => false);
 const abortError = () => Object.assign(new Error("Remote request cancelled"), { name: "AbortError" });
 const connectionError = () => Object.assign(new Error("Remote connection interrupted"), { transport: true });
+// Grow reconnect intervals across several minutes before surfacing an error.
+export const DEFAULT_RECONNECT_DELAYS_MS = [2_000, 5_000, 10_000, 15_000, 30_000, 45_000, 60_000, 60_000, 60_000, 60_000];
 const fatalSsh = /permission denied|authentication failed|host key verification failed|remote host identification has changed|no matching host key|too many authentication failures|bad configuration|could not resolve hostname|unprotected private key|bad permissions|sign_and_send_pubkey: signing failed|posix_spawnp: no such file/i;
 const disconnectedSsh = /connection (?:reset|timed out|closed)|connection to .+ closed by remote host|broken pipe|send\(\) failed,\s*10054|lost connection/i;
 function sshFailure(message, stderr, transport, fatal = false) {
@@ -455,7 +457,8 @@ export class RemoteConnection {
 
   async _connect() {
     this._state(this.sessionId ? "reconnecting" : "connecting");
-    for (let attempt = 0; attempt < 3; attempt++) {
+    const delays = Array.isArray(this.options.reconnectDelaysMs) ? this.options.reconnectDelaysMs : DEFAULT_RECONNECT_DELAYS_MS;
+    for (let attempt = 0; attempt <= delays.length; attempt++) {
       try {
         if (attempt > 0) this._state("reconnecting");
         this._drop();
@@ -488,10 +491,17 @@ export class RemoteConnection {
         if (error.transport && !error.sshError && sshDiagnostic(this.tunnelDiagnostics)) error = sshFailure(error.message, this.tunnelDiagnostics, true, error.fatal);
         this.sshClient ||= error.sshClient;
         error.sshClient = this.sshClient;
-        const details = { message: error.message, sshError: error.sshError };
-        if (error.fatal || !error.transport || attempt === 2) { this._state("error", details); throw error; }
-        this._state("reconnecting", { ...details, attempt: attempt + 1, retryAfterMs: 60_000 });
-        await sleep(60_000, this.controller.signal);
+        if (error.fatal || !error.transport || attempt === delays.length) {
+          if (!error.fatal && error.transport && attempt > 0) {
+            const detail = error.sshError || error.message;
+            error.message = `Unable to reconnect to ${this.config.host} after ${attempt + 1} attempts${detail ? `\n${detail}` : ""}`;
+          }
+          this._state("error", { message: error.message, sshError: error.sshError });
+          throw error;
+        }
+        const retryAfterMs = delays[attempt];
+        this._state("reconnecting", { message: error.message, sshError: error.sshError, attempt: attempt + 1, retryAfterMs });
+        await sleep(retryAfterMs, this.controller.signal);
       }
     }
   }
@@ -531,4 +541,57 @@ export class RemoteConnection {
     for (const child of this.children) child.kill();
     this._state("disconnected");
   }
+}
+
+function runOneShotSsh(command, args, env, signal, timeoutMs = 15_000) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(abortError());
+    const child = spawn(command[0], [...command.slice(1), ...args], { env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "", stderr = "";
+    const cleanup = () => { clearTimeout(timer); signal?.removeEventListener("abort", abort); };
+    const timer = setTimeout(() => { cleanup(); child.kill(); reject(sshFailure("SSH platform check timed out", stderr, true)); }, timeoutMs);
+    const abort = () => { cleanup(); child.kill(); reject(abortError()); };
+    signal?.addEventListener("abort", abort, { once: true });
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", chunk => { stdout = (stdout + chunk).slice(0, 8192); });
+    child.stderr.on("data", chunk => { stderr = (stderr + chunk).slice(-8192); });
+    child.once("error", error => { cleanup(); reject(sshFailure("Unable to start OpenSSH", error.message, false, true)); });
+    child.once("close", code => { cleanup(); resolve({ code, stdout: stdout.trim(), stderr }); });
+  });
+}
+
+/** Detect whether an OpenSSH alias runs Linux or Windows without reading keys. */
+export async function detectRemotePlatform(host, { getSshEnvironment, sshWrapper, sshCommand, signal } = {}) {
+  sshArguments(host);
+  const env = await getSshEnvironment?.() ?? process.env;
+  let command;
+  let sshClient;
+  let sshEnv = env;
+  if (sshCommand !== undefined) {
+    command = checkedSshCommand(sshCommand);
+    sshClient = command[0];
+  } else {
+    const wrapper = sshWrapper === undefined ? null : checkedSshCommand(sshWrapper);
+    sshClient = await selectSshClient(host, { env });
+    command = wrapper || [sshClient];
+    sshEnv = wrapper ? { ...env, UMEKO_REAL_SSH: sshClient, UMEKO_SSH_TEST_CONTROL: process.env.UMEKO_SSH_TEST_CONTROL } : env;
+  }
+  const baseArgs = [...sshArguments(host), "-n", host];
+  const first = await runOneShotSsh(command, [...baseArgs, "uname -s"], sshEnv, signal);
+  if (first.code === 255) {
+    const error = sshFailure(`Unable to connect to ${host}`, first.stderr, true, false);
+    error.sshClient = sshClient;
+    throw error;
+  }
+  if (first.code === 0) {
+    if (/linux/i.test(first.stdout)) return { platform: "linux", sshClient };
+    if (/mingw|msys|cygwin|windows/i.test(first.stdout)) return { platform: "windows", sshClient };
+    throw Object.assign(new Error(`Unsupported remote system: ${first.stdout || "unknown"}`), { sshClient, fatal: true });
+  }
+  const second = await runOneShotSsh(command, [...baseArgs, "cmd /c echo %OS%"], sshEnv, signal);
+  if (second.code === 0 && /windows_nt/i.test(second.stdout)) return { platform: "windows", sshClient };
+  const error = sshFailure(`Unable to detect operating system on ${host}`, second.stderr || first.stderr, second.code === 255, second.code !== 255);
+  error.sshClient = sshClient;
+  throw error;
 }

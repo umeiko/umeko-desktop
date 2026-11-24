@@ -29,8 +29,10 @@ class WidgetChannel(QObject):
     def workspace(value):return os.path.normcase(os.path.abspath(value)) if value else ''
 
     def snapshot(self,record):
+        remote_ws = self.b._remote_project_for_workspace(record.workspace) if hasattr(self.b, '_remote_project_for_workspace') else None
         return {'token':record.key,'id':record.id,'workspace':record.workspace,'title':record.title,'busy':record.busy,
-            'messages':[{'role':row.get('role',''),'text':row.get('text','')[:2000]} for row in getattr(record,'messages',[])[-8:]]}
+            'messages':[{'role':row.get('role',''),'text':row.get('text','')[:2000]} for row in getattr(record,'messages',[])[-8:]],
+            **({'remoteWorkspace':remote_ws} if remote_ws else {})}
 
     def log_path(self,state=None):
         state=state or self.current

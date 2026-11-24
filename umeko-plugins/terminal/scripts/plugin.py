@@ -1,8 +1,45 @@
-"""User and Agent share each persistent PTY; attaching grants one chat access."""
-import json, os, shutil, sys, threading, uuid
+"""User and Agent share each persistent PTY; attaching grants one chat access.
+
+Remote SSH terminal launch pattern adapted from dsh-remote 1.4.1
+(lib/remote-shell-child.cjs), Copyright (c) 2026 dsh-remote contributors (MIT).
+"""
+import base64, json, os, shlex, shutil, sys, threading, uuid
 from pathlib import Path
 from umeko_plugin_sdk import Plugin, PluginError
 from .terminal import Terminal
+
+
+def _remote_posix_cd(remote_path):
+    raw = str(remote_path or '').strip()
+    if not raw or raw in ('~', '~/'):
+        return 'cd "$HOME"'
+    if raw.startswith('~/'):
+        return 'cd "$HOME"/' + shlex.quote(raw[2:])
+    return 'cd ' + shlex.quote(raw)
+
+
+def _remote_ssh_argv(ssh_client, host, platform, remote_path):
+    args = [
+        ssh_client, '-tt',
+        '-o', 'StrictHostKeyChecking=yes',
+        '-o', 'ServerAliveInterval=15',
+        '-o', 'ServerAliveCountMax=2',
+        host,
+    ]
+    if platform == 'windows':
+        escaped = str(remote_path or '').replace("'", "''")
+        ps = (
+            "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);"
+            "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);"
+            "$OutputEncoding=[Console]::OutputEncoding;"
+            + (f"Set-Location -LiteralPath '{escaped}';" if escaped else "")
+        )
+        encoded = base64.b64encode(ps.encode('utf-16le')).decode('ascii')
+        args.append(f'powershell.exe -NoLogo -NoExit -EncodedCommand {encoded}')
+    else:
+        script = f'{_remote_posix_cd(remote_path)} 2>/dev/null || cd "$HOME"; exec "${{SHELL:-/bin/bash}}" -l'
+        args.append('sh -c ' + shlex.quote(script))
+    return args
 
 
 class Terminals(Plugin):
@@ -19,6 +56,9 @@ class Terminals(Plugin):
         if self.context.call_source=='agent' and not self.allowed(terminal,self.context.capture_session()):raise PluginError('此聊天没有关联该终端，请让用户在终端右键菜单中附加到当前聊天')
         return terminal
     def profiles(self):
+        remote=self.context.remote_workspace
+        if remote:
+            return [{'id':'remote-ssh','path':'ssh','name':remote['host']}]
         if os.name=='nt':
             entries=[('powershell',shutil.which('pwsh.exe') or shutil.which('powershell.exe')),('cmd',os.environ.get('COMSPEC') or shutil.which('cmd.exe'))]
         else:
@@ -29,27 +69,43 @@ class Terminals(Plugin):
         self.context.require('process.execute')
         if self.context.call_source!='ui':raise PluginError('请由用户在终端界面创建终端')
         if len(self.terminals)>=self.context.config['maxTerminals']:raise PluginError('终端数量已达上限，请先关闭不再使用的终端')
-        parent=self.terminals.get(args.get('splitFrom',''));profile=args.get('profile',parent.profile if parent else self.context.config['shell'])
-        profiles=self.profiles();selected=next((row for row in profiles if row['id']==profile),profiles[0] if profiles else None)
-        if not selected:raise PluginError('本机没有可用的终端 Shell')
-        argv=[selected['path']];load=self.context.config.get('useShellProfile',True)
-        if selected['id']=='powershell':
-            # ConPTY transports UTF-8; Windows PowerShell otherwise encodes
-            # managed/native output with the machine's legacy OEM code page.
-            initialize='[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding'
-            argv+=['-NoLogo','-NoExit']+([] if load else ['-NoProfile'])+['-Command',initialize]
-        elif selected['id']=='cmd':argv+=['/Q','/K','chcp 65001>nul']
-        elif Path(selected['path']).name=='bash':argv+=(['-il'] if load else ['--noprofile','--norc','-i'])
-        elif Path(selected['path']).name=='zsh':argv+=(['-il'] if load else ['-f','-i'])
-        else:argv+=['-i']
-        target=self.context.capture_session();cwd=Path(parent.cwd if parent else target.get('workspace') or Path.home()).resolve()
-        if not cwd.is_dir():raise PluginError('终端工作目录不存在')
+        parent=self.terminals.get(args.get('splitFrom',''))
+        target=self.context.capture_session()
+        remote=self.context.remote_workspace
         env={key:value for key,value in os.environ.items() if not key.upper().endswith(('API_KEY','ACCESS_TOKEN','SECRET_KEY','PASSWORD','_AK','_SK'))}
         env.update(TERM='xterm-256color',COLORTERM='truecolor',TERM_PROGRAM='umeko',PYTHONIOENCODING='utf-8')
         identifier='terminal-ID-'+uuid.uuid4().hex[:12];group=parent.group if parent else identifier
         if sum(row.group==group for row in self.terminals.values())>=2:raise PluginError('同一分组最多上下拆分 2 个终端，请使用加号新建分组')
-        try:terminal=Terminal(identifier,selected['name'],selected['id'],argv,cwd,env,80,24,self.context.config['scrollback'],self.changed,group)
+        if remote:
+            ssh_info=self.context.workspace_ssh_target(session=target)
+            ssh_client=ssh_info.get('sshClient') or shutil.which('ssh') or 'ssh'
+            host=ssh_info.get('host') or remote['host']
+            platform=ssh_info.get('platform') or remote.get('platform','linux')
+            remote_path=ssh_info.get('remotePath') or remote['remotePath']
+            argv=_remote_ssh_argv(ssh_client,host,platform,remote_path)
+            cwd=Path(target.get('workspace') or Path.home()).resolve()
+            cwd.mkdir(parents=True,exist_ok=True)
+            name=host;profile_id='remote-ssh';display_cwd=f'{host}:{remote_path}'
+        else:
+            profile=args.get('profile',parent.profile if parent else self.context.config['shell'])
+            profiles=self.profiles();selected=next((row for row in profiles if row['id']==profile),profiles[0] if profiles else None)
+            if not selected:raise PluginError('本机没有可用的终端 Shell')
+            argv=[selected['path']];load=self.context.config.get('useShellProfile',True)
+            if selected['id']=='powershell':
+                # ConPTY transports UTF-8; Windows PowerShell otherwise encodes
+                # managed/native output with the machine's legacy OEM code page.
+                initialize='[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding'
+                argv+=['-NoLogo','-NoExit']+([] if load else ['-NoProfile'])+['-Command',initialize]
+            elif selected['id']=='cmd':argv+=['/Q','/K','chcp 65001>nul']
+            elif Path(selected['path']).name=='bash':argv+=(['-il'] if load else ['--noprofile','--norc','-i'])
+            elif Path(selected['path']).name=='zsh':argv+=(['-il'] if load else ['-f','-i'])
+            else:argv+=['-i']
+            cwd=Path(parent.cwd if parent else target.get('workspace') or Path.home()).resolve()
+            if not cwd.is_dir():raise PluginError('终端工作目录不存在')
+            name=selected['name'];profile_id=selected['id'];display_cwd=str(cwd)
+        try:terminal=Terminal(identifier,name,profile_id,argv,cwd,env,80,24,self.context.config['scrollback'],self.changed,group)
         except (OSError,RuntimeError) as error:raise PluginError('无法启动终端：'+str(error)) from None
+        terminal.cwd=display_cwd
         self.terminals[identifier]=terminal;self.active=identifier;self.publish_list();return terminal.info()
     def listing(self):
         target=self.context.capture_session();agent=self.context.call_source=='agent'
