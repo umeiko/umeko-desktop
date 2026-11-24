@@ -110,7 +110,7 @@ class PreferencesMixin:
                     if record.process:
                         pool.write(record, {'type':'desktop_settings', 'webview':policy})
         self.desktopSettingsChanged.emit()
-        if value['webDisplay'] == 'embedded' and configuration().get('disabled'):
+        if value['webDisplay'] != old['webDisplay'] and value['webDisplay'] == 'embedded' and configuration().get('disabled'):
             self.toast.emit('重启 Umeko 后可使用内置网页预览')
         return True
 

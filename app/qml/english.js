@@ -1557,6 +1557,8 @@ var strings = {
   "系统默认浏览器": "System default browser",
   "无法打开系统默认浏览器": "Could not open the system default browser",
   "重启 Umeko 后可使用内置网页预览": "Restart Umeko to enable embedded web previews",
+  "Windows 图形兼容模式": "Windows graphics compatibility",
+  "用于排查桌宠或锁屏恢复后的窗口卡死。从托盘退出 Umeko 并重新打开后生效。": "Try this if windows freeze with the desktop pet open or after unlocking Windows. Quit Umeko from the system tray and reopen it to apply.",
   "开机启动": "Start at login",
   "开机启动 Umeko": "Start Umeko at login",
   "开机启动 API 代理": "Start API proxy at login",

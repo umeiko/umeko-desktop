@@ -42,10 +42,18 @@ def wait(predicate,message):
 
 def click(name):
     wait(lambda:find(name) is not None and find(name).isVisible(),name+' did not appear')
-    window.grabWindow();item=find(name)
+    item=find(name)
+    flickable=find('settingsScroll').property('contentItem')
+    center=item.boundingRect().center()
+    y=flickable.mapFromScene(item.mapToScene(center)).y()
+    if not 0 <= y < flickable.height():
+        maximum=max(0,flickable.property('contentHeight')-flickable.height())
+        flickable.setProperty('contentY',max(0,min(maximum,flickable.property('contentY')+y-flickable.height()/2)))
+        QTest.qWait(50)
+    window.grabWindow()
     profile=cProfile.Profile()
     profile.enable()
-    QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,item.mapToScene(item.boundingRect().center()).toPoint())
+    QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,item.mapToScene(center).toPoint())
     profile.disable()
     if name in ('desktopAutoOpenSubmissions','desktopChatWidthHints'):
         config_reads=sum(value[1] for (file,line,function),value in pstats.Stats(profile).stats.items()
@@ -73,6 +81,14 @@ try:
     assert not find('desktopAutoOpenSubmissions').property('checked')
     assert find('desktopChatWidthHints').property('checked')
     assert find('desktopWebDisplay').property('currentIndex')==1
+    graphics = find('desktopGraphicsCompatibility')
+    assert graphics.isVisible() == (sys.platform == 'win32')
+    if sys.platform == 'win32':
+        assert not graphics.property('checked')
+        click('desktopGraphicsCompatibility')
+        assert graphics.property('checked') and Store(store.directory).data['desktop']['disableDxgiVblankThread']
+        click('desktopGraphicsCompatibility')
+        assert not graphics.property('checked') and not Store(store.directory).data['desktop']['disableDxgiVblankThread']
     for language,scale in [('zh',1.0),('en',2.0)]:
         backend.setLanguage(language);backend.setFontScale(scale);QTest.qWait(150)
         combo=find('desktopWebDisplay');settings=find('umekoDesktopSettings')

@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 from PySide6.QtCore import QCoreApplication
 from PySide6.QtTest import QSignalSpy
-from app.desktop_preferences import DEFAULTS, normalize, startup_settings, validate_patch
+from app.desktop_preferences import DEFAULTS, configure_graphics, normalize, startup_settings, validate_patch
 from app.storage import Store
 from app.controller import Controller
 
@@ -73,7 +73,8 @@ class DesktopPreferencesTests(unittest.TestCase):
 
     def test_defaults_normalization_and_pre_application_read(self):
         self.assertEqual(normalize(None), DEFAULTS)
-        self.assertEqual(normalize({'autoOpenSubmissions':1,'webDisplay':[],'chatWidthHints':0}), DEFAULTS)
+        self.assertEqual(normalize({'autoOpenSubmissions':1,'webDisplay':[],'chatWidthHints':0,
+                                    'disableDxgiVblankThread':'true'}), DEFAULTS)
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {'UMEKO_DATA_DIR':temp}):
             self.assertEqual(startup_settings(), DEFAULTS)
             store = Store(Path(temp))
@@ -82,8 +83,38 @@ class DesktopPreferencesTests(unittest.TestCase):
             expected = {**DEFAULTS, **store.data['desktop']}
             self.assertEqual(startup_settings(), expected)
             self.assertEqual(Store(Path(temp)).data['desktop'], expected)
-        for value in ([], {'unknown':True}, {'autoOpenSubmissions':'false'}, {'webDisplay':'unsafe'}, {'chatWidthHints':'false'}, {'chatWidthHints':0}):
+        for value in ([], {'unknown':True}, {'autoOpenSubmissions':'false'}, {'webDisplay':'unsafe'},
+                      {'chatWidthHints':'false'}, {'chatWidthHints':0}, {'disableDxgiVblankThread':1}):
             with self.subTest(value=value), self.assertRaises(ValueError): validate_patch(value)
+
+    def test_graphics_compatibility_applies_from_saved_settings_on_windows_startup(self):
+        variable = 'QT_D3D_NO_VBLANK_THREAD'
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {'UMEKO_DATA_DIR': temp}):
+            os.environ.pop(variable, None)
+            controller = Controller(ROOT)
+            try:
+                self.assertFalse(controller.desktopSettings['disableDxgiVblankThread'])
+                result = controller._umeko_control.execute(
+                    {'operation': 'desktop.configure', 'arguments': {'config': {'disableDxgiVblankThread': True}}})
+                self.assertFalse(result['ok'])
+                self.assertFalse(controller.desktopSettings['disableDxgiVblankThread'])
+                self.assertTrue(controller.saveDesktopSettings('{"disableDxgiVblankThread":true}'))
+                self.assertNotIn(variable, os.environ)
+                with patch('app.desktop_preferences.sys.platform', 'linux'):
+                    configure_graphics(startup_settings())
+                    self.assertNotIn(variable, os.environ)
+                with patch('app.desktop_preferences.sys.platform', 'win32'):
+                    configure_graphics(startup_settings())
+                    self.assertEqual(os.environ.pop(variable), '1')
+                self.assertTrue(controller.saveDesktopSettings('{"disableDxgiVblankThread":false}'))
+                with patch('app.desktop_preferences.sys.platform', 'win32'):
+                    configure_graphics(startup_settings())
+                    self.assertNotIn(variable, os.environ)
+                    os.environ[variable] = '1'
+                    configure_graphics(startup_settings())
+                    self.assertEqual(os.environ[variable], '1')
+            finally:
+                controller.close()
 
     def test_partial_settings_hot_update_without_retiring_running_session(self):
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {'UMEKO_DATA_DIR':temp}):
@@ -99,7 +130,8 @@ class DesktopPreferencesTests(unittest.TestCase):
                     retire.assert_not_called()
                     self.assertTrue(controller.saveDesktopSettings(json.dumps({'autoOpenSubmissions':False})))
                     self.assertTrue(controller.saveDesktopSettings(json.dumps({'chatWidthHints':False})))
-                    self.assertEqual(controller.config['desktop'], {'autoOpenSubmissions':False,'webDisplay':'external','chatWidthHints':False})
+                    self.assertEqual(controller.config['desktop'], {**DEFAULTS, 'autoOpenSubmissions':False,
+                                                                   'webDisplay':'external', 'chatWidthHints':False})
                     self.assertEqual(Store(Path(temp)).data['desktop'], controller.config['desktop'])
                     self.assertEqual(startup_settings(), controller.config['desktop'])
                     self.assertTrue(record.busy)
