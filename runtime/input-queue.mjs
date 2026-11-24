@@ -47,7 +47,7 @@ export function createInputQueue({getSession,isRunning,onQueue=()=>{},onEdited=(
       if (!session) throw new Error("Pi 尚未就绪");
       if (["steer","promote-queue","steer-queued"].includes(input.type)) {
         if (!isRunning()) throw new Error("当前任务已结束，请重新发送这条消息");
-        const selected=input.type==="steer" ? {id:input.messageId,text:input.text,images:input.images || [],model:input.model,reasoningEffort:input.reasoningEffort}
+        const selected=input.type==="steer" ? {id:input.messageId,text:input.text,images:input.images || [],model:input.model,reasoningEffort:input.reasoningEffort,modelRoles:input.modelRoles}
           : input.type==="promote-queue" ? items[0] : items.find(item=>item.id===input.id);
         if (!selected) throw new Error("这条消息已经开始处理");
         const remaining=take().filter(item=>item!==selected);
@@ -64,7 +64,7 @@ export function createInputQueue({getSession,isRunning,onQueue=()=>{},onEdited=(
         for (const item of pending) if (item!==selected) await enqueue(item);
       } else if (["follow-up","native-steer"].includes(input.type)) {
         if (!isRunning() || session.isIdle) throw new Error("当前任务已结束，请重新发送这条消息");
-        await enqueue({id:input.messageId,text:input.text,images:input.images || [],model:input.model,reasoningEffort:input.reasoningEffort},input.type==="native-steer" ? "steering" : "followUp");
+        await enqueue({id:input.messageId,text:input.text,images:input.images || [],model:input.model,reasoningEffort:input.reasoningEffort,modelRoles:input.modelRoles},input.type==="native-steer" ? "steering" : "followUp");
       } else throw new Error("未知的排队操作");
     });
     chain=work.catch(()=>{});

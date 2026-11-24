@@ -163,6 +163,9 @@ class PiControllerMixin:
             metadata = self.store.data["sessionMeta"].pop(old_id, {})
             metadata.pop("dangerousAllowed", None)
             self.store.data["sessionMeta"].setdefault(record.id, {}).update(metadata)
+        if record.draft_model_roles:
+            self.store.data["sessionMeta"][record.id].setdefault("modelRoles", record.draft_model_roles)
+            record.draft_model_roles = {}
         if record.file or record.action == "prompt":
             self._index_record(record)
             if record.extension_modes or record.skill_modes or record.blocked_tools: self.store.save()
@@ -202,7 +205,8 @@ class PiControllerMixin:
             self._pool.retire(record)
 
     def _pi_command_payload(self, record, action, **values):
-        return {"type": action, "model": record.model or self.store.data["selectedModel"],
+        roles = self.model_roles_for(record) if not record.global_agent else {}
+        return {"type": action, "model": record.model or self.store.data["selectedModel"], "modelRoles": roles,
                 "reasoningEffort": record.reasoning_effort, **values,
                 "systemPromptEnabled": self._desktop_plugins.system_prompt_enabled(record),
                 "widgetPrompts": self._desktop_plugins.prompt_sources(record)}
@@ -233,11 +237,12 @@ class PiControllerMixin:
             systemPromptStateDir=str(self.store.directory / 'system-prompts'),
             generation=generation_config(self.store.data),
             mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
-        if record.provider == GROUP_PROVIDER:
+        if record.provider == GROUP_PROVIDER or record.global_agent or GROUP_MODEL in payload.get("modelRoles", {}).values():
             group = self.gateway.model_group_descriptor()
-            if group is None:
+            if group is None and record.provider == GROUP_PROVIDER:
                 raise RuntimeError("模型组没有可用模型")
-            payload["models"].append(group)
+            if group is not None:
+                payload["models"].append(group)
         if plugin_policy:
             payload.update(pluginSessionPolicy=plugin_policy,
                 permissionMode=plugin_policy['mode'], dangerousAllowed=False,
@@ -262,7 +267,8 @@ class PiControllerMixin:
             self.toast.emit('会话数据正在删除，请稍后再试')
             return False
         record = record or self._view
-        self._repair_model_group_selection(record)
+        if not record.global_agent:
+            self._repair_model_group_selection(record)
         from .plugin_sessions import apply_session_policy
         if action == 'widget-notify' and record.cancelled:
             return False
@@ -287,8 +293,8 @@ class PiControllerMixin:
         record.action, record.failed, record.cancelled = action, False, False
         record.stop_token = record.stop_state = record.stop_detail = ''
         record.pet_activity = 'thinking'
-        record.prompt_started = time.monotonic() if action in ('prompt','widget-notify') else None
-        record.phase = "loading" if not record.ready else "running" if action in ("prompt", "compact", "widget-notify") else "working"
+        record.prompt_started = time.monotonic() if action in ('prompt','widget-notify','resume-model') else None
+        record.phase = "loading" if not record.ready else "running" if action in ("prompt", "compact", "widget-notify", "resume-model") else "working"
         if getattr(self, '_reasoning_discovery', None):
             self._reasoning_discovery.update_activity()
         record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在压缩上下文" if action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
@@ -363,6 +369,7 @@ class PiControllerMixin:
             if record.task_attempt:
                 self._task_records.input_files(record, attachments)
             self._write_pi({"type": "steer" if steering else "follow-up", "text": text, "images": images,
+                "modelRoles": self.model_roles_for(record),
                 "model": model, "reasoningEffort": reconcile_effort(record.reasoning_effort, self._reasoning_levels())}, record)
             record.attachments, record.draft = [], ""
             self.attachmentsChanged.emit()
@@ -531,7 +538,7 @@ class PiControllerMixin:
         elif kind == "ready":
             record.ready = True
             self._subagents.process_ready(record)
-            record.phase = "running" if record.action in ("prompt", "compact", "widget-notify") else "working"
+            record.phase = "running" if record.action in ("prompt", "compact", "widget-notify", "resume-model") else "working"
             record.tool_status = "正在压缩上下文" if record.action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
             if event.get("session"):
                 self._record_info(record, event["session"])

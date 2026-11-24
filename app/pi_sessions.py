@@ -51,6 +51,7 @@ class SessionState:
     model: str = ""
     provider: str = ""
     pending_selection: tuple[str, str] | None = None
+    draft_model_roles: dict = field(default_factory=dict)
     title: str = "新会话"
     messages: list = field(default_factory=list)
     history: list = field(default_factory=list)

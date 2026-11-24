@@ -1,6 +1,16 @@
 .pragma library
 var strings = {
     "模型组": "Model group",
+    "对话模型": "Chat model",
+    "规划模型": "Planning model",
+    "执行模型": "Execution model",
+    "沿用对话模型": "Use chat model",
+    "成员模型": "Member model",
+    "切换模型": "Switch model",
+    "模型额度不足，等待切换": "Model quota exhausted. Choose another model.",
+    "应用模型": "Apply model",
+    "子智能体设置": "Member settings",
+    "创建全局子智能体": "Create a global agent",
     "启用后可在聊天中选择模型组。遇到网络故障、限流或额度用尽时，会按顺序自动切换到下一个可用模型。": "Select the model group in chat once it is enabled. If a model loses its connection, hits a rate limit, or runs out of quota, the group switches to the next available model in order.",
     "启用模型组": "Enable model group",
     "模型顺序": "Model order",

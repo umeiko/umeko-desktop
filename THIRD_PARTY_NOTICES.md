@@ -50,6 +50,10 @@ Dependencies retain their license files in the runtime's node_modules directory.
 
 Release bundles include the unmodified npm package `@gotgenes/pi-subagents` 25.0.5 (MIT) in the runtime's `node_modules` directory. Official source: https://github.com/gotgenes/pi-packages/tree/pi-subagents-v25.0.5/packages/pi-subagents . The full upstream copyright and permission notice is included in `licenses/pi-subagents-MIT.txt` and retained with the package.
 
+## Planning handoff
+
+`runtime/model-roles.mjs` adapts the proposed-plan parsing and same-session handoff from [@signalridge/pi-plan-mode 1.6.1, src/message-transform.ts](https://github.com/signalridge/pi-extensions/blob/main/packages/pi-plan-mode/src/message-transform.ts). The MIT notice is in `licenses/pi-plan-mode-MIT.txt`.
+
 ## Background jobs
 
 The bundled background-job extension uses `@alexlikevibe/pi-bg` 2.3.0 (MIT), specifically its per-session registry and file-backed spawn primitive. Its default extension entry is not loaded. The hidden Windows spawn implementation is adapted from that primitive; process-tree termination and cursor-based reads are Umeko adaptations. Source: https://github.com/iefnaf/pi-bg . The upstream license is retained in `licenses/pi-bg-MIT.txt` and with the npm package. The bash guard follows the `tool_call` blocking mechanism in Pi's `permission-gate.ts` example; no confirmation UI is used.
