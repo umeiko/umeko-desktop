@@ -193,6 +193,8 @@ def main():
         if not (resources / "provider-resources" / name).is_file():
             raise RuntimeError("Provider development resource is missing: " + name)
     runtime = resources / "runtime/releases" / RELEASE_NAME
+    if not (runtime / 'apply-patch.mjs').is_file() or not (resources / 'runtime/apply-patch.mjs').is_file():
+        raise RuntimeError('Bundled apply_patch module is missing')
     for name in ("fd", "rg"):
         tool = runtime / "bin" / (name + (".exe" if os.name == "nt" else ""))
         subprocess.run([str(tool), "--version"], check=True, capture_output=True, timeout=15)

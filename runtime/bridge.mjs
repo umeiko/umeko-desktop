@@ -18,6 +18,7 @@ import { blockedShellEnvKey, createShellSnapshots } from "./shell-snapshot.mjs";
 import { createAuxiliaryVision, ANALYZE_IMAGE, AUTO_VISION_ENTRY, automaticVisionView } from "./auxiliary-vision.mjs";
 import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
 import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI } from "./tool-permissions.mjs";
+import { APPLY_PATCH, createApplyPatchExtension } from "./apply-patch.mjs";
 import { blockedToolNames, toolInventory } from "./tool-visibility.mjs";
 import { createGenerationExtension } from "./generation.mjs";
 import { createSystemPromptController } from "./system-prompt.mjs";
@@ -61,6 +62,7 @@ globalThis[Symbol.for("umeko:shell-environment")] = (name, env, config) =>
   shellSnapshots.environment(name, env.PI_SESSION_ID || runtime?.session.sessionManager.getSessionId(), env,
     name === "bash" ? config.shell : undefined);
 const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, "background_job"];
+const applyPatchEnabled = model => config?.models?.some(row => row.id === model?.id && row.applyPatch === true) === true;
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 const bashHost = process.env.UMEKO_BASH_JOB_HOST;
@@ -296,6 +298,7 @@ async function bindSession(session) {
       args: event.toolName === ANALYZE_IMAGE ? {...event.args,model:auxiliaryVision.label(),provider:auxiliaryVision.provider()} : event.args, result: event.type === "tool_execution_end" ? textOf(event.result?.content).slice(0,8192) : undefined,
       media: event.type === "tool_execution_end" ? chatboxItems(event.toolName, {...event.result, isError: event.isError}) : undefined,
       video: event.toolName === "video_gen" ? event.partialResult?.details?.video : undefined,
+      patchFiles: event.toolName === APPLY_PATCH && event.type === "tool_execution_end" && !event.isError ? event.result?.details?.patchFiles : undefined,
       taskStep: trackingTask && event.type === "tool_execution_update" ? false : undefined,
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
     const willRetry = event.type === "message_end" && session.autoRetryEnabled && session.retryAttempt < NETWORK_RETRY.maxRetries &&
@@ -358,7 +361,8 @@ function exposeNativeTools(session) {
   const declared = session.getAllTools().filter(tool => ["direct", "model-only"].includes(tool.exposure));
   session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...declared.map(tool => tool.name)])]
     .filter(name => !config?.pluginSessionPolicy || config.pluginSessionPolicy.allowedTools.includes(name))
-    .filter(name => name !== ANALYZE_IMAGE || auxiliaryVision.available(session.model)));
+    .filter(name => name !== ANALYZE_IMAGE || auxiliaryVision.available(session.model))
+    .filter(name => name !== APPLY_PATCH || applyPatchEnabled(session.model)));
 }
 
 function outputContinuationExtension(pi) {
@@ -504,6 +508,9 @@ async function init(input) {
           { name: "recent-images", hidden: true, replaceable: false, factory: createRecentImagesExtension({ getLimit: () => config.agent?.maxContextImages }) },
       { name: "auxiliary-vision", hidden: true, replaceable: false, factory: auxiliaryVision.contextExtension },
           { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
+          ...(!input.globalCoordinator && (!input.pluginSessionPolicy || input.pluginSessionPolicy.allowedTools.includes(APPLY_PATCH)) &&
+              input.models.some(row => row.applyPatch === true) ? [{name:"apply-patch", hidden:true, replaceable:false,
+                factory:createApplyPatchExtension(applyPatchEnabled)}] : []),
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}, (id, items, failed) => taskDelivery("submitted", id, items, failed)) },
           { name: "generation", builtin: true, replaceable: false, factory: createGenerationExtension({getConfig: () => config, onDelivery: (id, items) => taskDelivery("generated", id, items)}) },
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },
@@ -620,6 +627,8 @@ async function state() {
       let path = args.path || args.file_path || args.filePath || "";
       path = path && typeof path === "string" && !path.includes("://") ? canonicalPath(resolve(manager.getCwd(), path.replace(/^~(?=[/\\]|$)/,homedir()))) : "";
       const row = {id:call.id, name:call.name, arguments:args, path, state:result ? result.isError ? "error" : "done" : "interrupted", result:result ? textOf(result.content).slice(0,8192) : ""};
+      if (call.name === APPLY_PATCH && !result?.isError && Array.isArray(details?.patchFiles))
+        row.patchFiles = details.patchFiles.map(file => file.path);
       const media = chatboxItems(call.name, result);
       if (media.length) row.media = media;
       const nested = deliveries.filter(item => item.toolCallId.startsWith(call.id + "/")).map(item => ({id: item.toolCallId, name: CHATBOX_TOOL, arguments: {}, path: "", state: "done", result: "已提交到聊天框", media: item.items.slice(0, 12)}));

@@ -211,6 +211,7 @@ def verify_runtime(release: Path, bridge_source: Path):
     for name in ("tool-visibility.mjs", "session-capabilities.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         copy_runtime_file(bridge_source.parent / name, release / name)
     copy_runtime_file(bridge_source.parent / 'update-cleanup.mjs', release / 'update-cleanup.mjs')
+    copy_runtime_file(bridge_source.parent / 'apply-patch.mjs', release / 'apply-patch.mjs')
     copy_runtime_file(bridge_source.parent / 'generation.mjs', release / 'generation.mjs')
     copy_runtime_file(bridge_source.parent / 'http-retry-boundary.mjs', release / 'http-retry-boundary.mjs')
     copy_runtime_file(bridge_source.parent / 'system-prompt.mjs', release / 'system-prompt.mjs')

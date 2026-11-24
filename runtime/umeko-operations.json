@@ -21,6 +21,7 @@
     "providers.network": {"target":"backend","method":"setProviderProxy","idle":"provider","exists":"provider","args":[["id","string"],["mode","string"],["address","string",""]]},
     "providers.certificate": {"target":"backend","method":"setProviderCertificate","idle":"provider","exists":"provider","args":[["id","string"],["caFile","string",""]]},
     "models.mappings": {"target":"backend","method":"saveMappings","idle":"all","args":[["models","json"]]},
+    "models.applyPatch": {"target":"backend","method":"setModelApplyPatch","editions":["python"],"description":"为指定聊天模型启用或关闭 apply_patch，下次聊天请求生效。","args":[["provider","string"],["model","string"],["enabled","boolean"]]},
     "pluginSessions.setModel": {"target":"backend","method":"savePluginSessionModel","editions":["python"],"description":"reasoningEffort 省略或空字符串时保留当前配置；inherit 删除配置字段并恢复沿用桌面默认档位，下一次输入生效。","args":[["plugin","string"],["profile","string"],["model","string",""],["provider","string",""],["reasoningEffort","string",""]]},
     "models.select": {"target":"backend","method":"selectModel","idle":"target","editions":["python"],"args":[["provider","string"],["model","string"],["sessionId","string",""]]},
     "sessions.reasoning": {"target":"backend","method":"setReasoningEffort","idle":"target","editions":["python"],"args":[["value","string"],["sessionId","string",""]]},

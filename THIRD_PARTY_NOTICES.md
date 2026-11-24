@@ -12,6 +12,10 @@
 
 `runtime/tool-permissions.mjs` adapts command prefix matching, decision precedence, and reusable approvals from [OpenAI Codex rust-v0.172.0](https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/execpolicy), copyright 2025 OpenAI (Apache-2.0). The source attribution and full license are in `licenses/codex-execpolicy.txt`.
 
+## Codex apply_patch
+
+`runtime/apply-patch.mjs` and the patch scenarios in `tests/fixtures/codex-apply-patch.json` adapt the OpenAI Codex `apply-patch` crate and tool grammar from [rust-v0.172.0](https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/apply-patch). The Apache 2.0 license and source attribution are in `licenses/codex-apply-patch-APACHE.txt`.
+
 ## Desktop plugin artwork
 
 The file-tree and version-management plugins include unmodified Microsoft Codicons 0.0.46-24 (CC-BY-4.0, https://github.com/microsoft/vscode-codicons) and the Seti file icon theme shipped by VS Code 1.143.1 (MIT, https://github.com/jesseweed/seti-ui). Seti's WOFF font is repackaged as TTF with the glyph outlines unchanged. Each standalone plugin includes the full license notices and `assets/sources.json` with source versions and SHA-256 hashes. The source-control layout uses the VS Code SCM stylesheet as its sizing reference: https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/scm/browser/media/scm.css .

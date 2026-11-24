@@ -93,6 +93,7 @@ class Gateway:
                              "contextWindow": metadata["contextWindow"],
                              **{key: metadata[key] for key in ("providerContextWindow",) if key in metadata},
                              "input": ["text", "image"] if metadata["vision"] else ["text"],
+                              **({'applyPatch': True} if metadata.get('applyPatch') else {}),
                              "reasoningLevels": reasoning_levels(model),
                              "reasoningFormat": model.get("reasoningFormat", "openai"),
                              "reasoningState": (model.get("reasoningDetection", {}).get("state", "unknown")

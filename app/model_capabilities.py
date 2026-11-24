@@ -47,4 +47,8 @@ def normalize_vision(model: dict, previous: dict | None = None) -> dict:
 
 def normalize_model(model: dict, previous: dict | None = None) -> dict:
     context = normalize_context(model, previous)
-    return {**context, **normalize_vision(model, previous), **normalize_reasoning(model, previous)}
+    apply_patch = model.get('applyPatch', (previous or {}).get('applyPatch', False))
+    if type(apply_patch) is not bool:
+        raise ValueError('applyPatch 必须为 true 或 false')
+    return {**context, **normalize_vision(model, previous), **normalize_reasoning(model, previous),
+            **({'applyPatch': True} if apply_patch else {})}

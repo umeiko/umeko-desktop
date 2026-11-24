@@ -99,6 +99,7 @@ jobs:
 
       - name: Node tests
         run: |
+          node --test tests/apply-patch.test.mjs tests/apply-patch-bridge.test.mjs
           node --test tests/model-selection-queue.test.mjs
           node --test tests/http-retry-boundary.test.mjs
           node --test tests/system-prompt.test.mjs tests/session-files.test.mjs tests/pi-upgrade.test.mjs

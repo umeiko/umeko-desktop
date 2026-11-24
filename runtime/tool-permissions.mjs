@@ -40,6 +40,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
+import {APPLY_PATCH, preparePatchPermission} from './apply-patch.mjs';
 
 // Upstream command-position guard, retained as the common rule entry guard.
 const AT_CMD = String.raw`(?:^|(?<!\\)[;&|({\x60!]|\$\(|-c\s+["'])\s*(?:(?:sudo|doas|env|nohup|time|exec|nice|xargs|command|builtin|then|do|else)\s+(?:-\S+\s+)*)*`;
@@ -476,12 +477,16 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        const command=backgroundWrite?input.input:(input.command??input.script);
        const baseCwd=ctx.cwd||policy.cwd||process.cwd();
        const context={...policy,cwd:backgroundStart&&input.cwd ? path.resolve(baseCwd,input.cwd) : baseCwd};
-        const shell=commandStart||backgroundWrite;
-       const file=name==='write'||name==='edit';
+       const shell=commandStart||backgroundWrite;
+       const patch=name===APPLY_PATCH ? preparePatchPermission(input,baseCwd) : null;
+       const file=name==='write'||name==='edit'||!!patch;
        const generation=name==='image_gen'||name==='voice_gen'||name==='video_gen';
-       const original=shell?String(command??''):file?String(input.path??input.file_path??''):JSON.stringify(input);
+       const original=patch?[...patch.targets].map(([name,{absolute,canonical}])=>absolute===canonical?name:`${name} → ${canonical}`).join('\n'):
+         shell?String(command??''):file?String(input.path??input.file_path??''):JSON.stringify(input);
        let hit=generation?decision('ask'):null;
        if(shell)hit=await classify(original,context);
+       else if(patch)hit=[...patch.targets.values()].flatMap(({absolute,canonical})=>[absolute,canonical])
+         .map(target=>classifyPath(target,context)).find(Boolean)||null;
        else if(file)hit=classifyPath(original,context);
        if(hit?.category>=1&&hit.category<=7&&policy.dangerousAllowed===true)hit=null;
        let extraReason, remember;
@@ -517,7 +522,7 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
            if(hints.readOnlyHint!==true&&(hints.destructiveHint===true||hints.readOnlyHint===false))hit=decision('ask');
          }
        }
-       if(!hit)return undefined;
+       if(!hit){patch?.approve();return undefined;}
        const selected=policy.generation?.[name==='image_gen'?'image':name==='video_gen'?'video':'speech'];
        const destination=selected ? `${selected.provider} / ${selected.model}` : name;
        const reason=generation ? (language==='zh'
@@ -540,6 +545,7 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
          return undefined;
        }
        if(approved!==true)return {block:true,reason:language==='zh'?`用户拒绝执行。${reason}`:`User denied execution. ${reason}`};
+       patch?.approve();
        return undefined;
      }catch(error){
        const detail=error instanceof Error?error.message:String(error);

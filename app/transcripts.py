@@ -9,6 +9,12 @@ from uuid import UUID
 from .chatbox import result_media
 
 
+def patch_files(value):
+    if not isinstance(value, list):
+        return []
+    return [item['path'] for item in value if isinstance(item, dict) and isinstance(item.get('path'), str)]
+
+
 def tool_view(tool_id, name, arguments, cwd, result=None):
     details = result.get('details') if isinstance(result, dict) else None
     if name == 'analyze_image' and isinstance(details, dict) and details.get('model'):
@@ -24,6 +30,8 @@ def tool_view(tool_id, name, arguments, cwd, result=None):
         "result": content_text(result.get("content", []))[:8192] if result else ""}
     media = result_media(name, result)
     if media: row["media"] = media
+    if name == 'apply_patch' and row['state'] == 'done' and isinstance(details, dict):
+        row['patchFiles'] = patch_files(details.get('patchFiles'))
     return row
 
 

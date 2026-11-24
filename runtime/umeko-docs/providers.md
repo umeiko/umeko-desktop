@@ -25,6 +25,12 @@ Umeko 使用自己的供应商网关，桌面供应商通过下面的 `providers
 {"operation":"sessions.reasoning","arguments":{"value":"high"}}
 ```
 
+`apply_patch` 默认关闭。用以下操作为某个模型开启批量文件补丁，传 `enabled:false` 关闭。设置从下次聊天请求生效。
+
+```json
+{"operation":"models.applyPatch","arguments":{"provider":"供应商ID","model":"模型alias","enabled":true}}
+```
+
 `value` 为 `off` 或当前模型的 `reasoningLevels` 中的原始名称；空列表仅支持关闭。在供应商设置添加或刷新模型、打开模型弹窗或已保存模型的齿轮时，对未检测的自动模型后台排队检测：先读取模型目录中明确的档位元数据，再解析无效档位的错误枚举，最后逐档探测。检测只由上面这些操作触发。同一模型有进行中的轮次时，探测等该轮结束再开始。尚未检测时可以直接以 `off` 聊天。结果按供应商和模型缓存，重启后保留；模型切换或打开会话时，失效的档位会调整到最近的可用档位。
 
 档位和思考参数格式各有独立的自动开关。模型字段为 `reasoningLevels`（从低到高的字符串数组）、`reasoningLevelsAuto`（布尔值）、`reasoningFormat`（字符串）、`reasoningFormatAuto`（布尔值）。保存过的旧版 `reasoningLevels` 自动视为手动设置，保持原来的数量、名称与顺序；现有齿轮编辑档位也会切换为手动。手动设置优先于检测，模型刷新不会覆盖它。

@@ -2182,6 +2182,21 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._restart_pi()
         self.changed.emit()
 
+    def setModelApplyPatch(self, provider_id, alias, enabled):
+        provider = self.gateway.provider(provider_id)
+        model = next((row for row in (provider or {}).get('models', []) if row['alias'] == alias), None)
+        if model is None or provider['api'] == 'image':
+            raise ValueError('找不到指定的聊天模型')
+        if (model.get('applyPatch') is True) != enabled:
+            if enabled:
+                model['applyPatch'] = True
+            else:
+                model.pop('applyPatch', None)
+            self.store.save()
+            self._restart_pi()
+            self.changed.emit()
+        return {'provider': provider_id, 'model': alias, 'enabled': enabled}
+
     @Slot(str, result=bool)
     def saveMappings(self, raw):
         try:
