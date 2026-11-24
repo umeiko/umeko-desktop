@@ -454,6 +454,137 @@ class Acceptance:
                 kernel.CloseHandle(handle)
         raise AssertionError('No live test-owned Windows tunnel matches native creation time, image and established connection')
 
+    def run_network(self):
+        """Exercise network sharing through real streamed Pi tool calls."""
+        b = self.backend
+        self.note('network-begin', platform=self.spec['platform'], host=self.spec['host'])
+        saved = b.saveProvider('', 'Test provider', 'openai',
+                               f'http://127.0.0.1:{self.model.server.server_port}/v1', 'fixture-only',
+                               json.dumps([{'upstream': 'test-model', 'alias': 'test-model',
+                                            'reasoningLevelsAuto': False, 'reasoningFormatAuto': False,
+                                            'reasoningLevels': [], 'reasoningFormat': 'openai'}]))
+        assert saved, 'Cannot save isolated scripted provider'
+        provider = next(p for p in b.store.data['providers'] if p['name'] == 'Test provider')
+        b.selectModel(provider['id'], 'test-model')
+        b.setToolPermissionMode('auto')
+        self.wait(lambda: not b.busy, 90, 'Pi fixture startup')
+        added = self.call('umeko_desktop', {'operation': 'remote-environments.add', 'arguments': {
+            'name': 'acceptance', 'host': self.spec['host'], 'platform': self.spec['platform']}})
+        assert added.get('ok'), added
+        tested = self.call('umeko_desktop', {'operation': 'remote-environments.test', 'arguments': {'name': 'acceptance'}},
+                           timeout=self.spec['bootstrapTimeout'])
+        assert tested.get('ok'), tested
+        self.ssh_client = Path(tested['sshClient']).resolve()
+        outcomes = []
+
+        def probe(phase, name, succeeds):
+            command = self.spec['commands'][phase][name]
+            final, output = self.read_until_complete(self.command(command), timeout=120)
+            assert isinstance(final.get('exitCode'), int), ('No command exit status', phase, name, final)
+            if name == 'apt':
+                assert 'Download is performed unsandboxed as root' not in output, ('apt downloader escaped fixture UID', output)
+            assert (final['exitCode'] == 0) == succeeds, (phase, name, final, output[-4000:])
+            outcome = {'phase': phase, 'program': name, 'exitCode': final['exitCode'],
+                       'expectedSuccess': succeeds, 'output': output[-4000:]}
+            outcomes.append(outcome)
+            self.note('network-probe', **outcome)
+
+        status = self.call('remote_network', {'action': 'status', 'environment': 'acceptance'})
+        assert status.get('ok') and status.get('network') == 'local', ('Sharing must be automatic by default', status)
+        if self.spec['platform'] == 'linux':
+            assert status.get('outbound') == 'builtin', ('CI must use the built-in direct outbound path', status)
+        else:
+            assert status.get('outbound') == 'configured', ('Windows must use the explicitly configured proxy', status)
+        qml_network = self.observe_network_settings()
+        probe('default', 'curl', True)
+        disabled = self.call('remote_network', {'action': 'off', 'environment': 'acceptance'})
+        assert disabled.get('ok') and disabled.get('network') == 'remote', disabled
+        for name in self.spec['commands']['disabled']:
+            probe('disabled', name, False)
+        enabled = self.call('remote_network', {'action': 'on', 'environment': 'acceptance'})
+        assert enabled.get('ok') and enabled.get('network') == 'local', enabled
+        for name in self.spec['commands']['enabled']:
+            probe('enabled', name, True)
+        diagnostic = self.call('remote_network', {'action': 'test', 'environment': 'acceptance',
+                                                 'url': 'https://example.com/'})
+        assert diagnostic.get('ok'), diagnostic
+
+        # Fault injection targets only the SSH child recorded by this fixture.
+        # It never enumerates or touches a proxy, service, or unrelated client.
+        control = self.directory / 'ssh-control'
+        launches = [json.loads(line) for line in (control / 'clients.jsonl').read_text().splitlines()]
+        tunnels = [row for row in launches if row.get('tunnel')]
+        assert tunnels and self.pid_alive(tunnels[-1]['pid']), 'Expected a live acceptance-owned SSH client'
+        # On Linux this launcher is wrapped by a Python recorder. Once Umeko
+        # retires the recorder, the detached real ssh may still need reaping.
+        for row in tunnels[:-1]:
+            if not self.pid_alive(row['ownerPid']) and self.pid_alive(row['pid']):
+                os.kill(row['pid'], signal.SIGTERM)
+        killed = tunnels[-1]['pid']
+        os.kill(killed, signal.SIGTERM)
+        self.note('network-owned-ssh-cut', pid=killed)
+        probe('reconnected', 'curl', True)
+        after = [json.loads(line) for line in (control / 'clients.jsonl').read_text().splitlines()]
+        assert any(row.get('tunnel') and row['pid'] != killed and self.pid_alive(row['pid']) for row in after), 'No replacement SSH client'
+        if self.spec['platform'] == 'windows':
+            # Remove only this invocation's generated remote download subtree.
+            # Linux has root-owned apt archives on a disposable runner instead.
+            source = ('import pathlib,shutil,stat\n'
+                      'target=pathlib.Path(' + repr(self.spec['remoteDirectory']) + ')\n'
+                      'root=target.resolve(strict=True)\n'
+                      'assert target.is_absolute() and root.parent == target.parent.resolve(strict=True)\n'
+                      'assert root.name == ' + repr(self.directory.name) + '\n'
+                      'def retry_readonly(remove,item,error):\n'
+                      ' path=pathlib.Path(item)\n'
+                      ' if not isinstance(error,PermissionError) or root not in path.resolve().parents: raise error\n'
+                      ' path.chmod(path.stat().st_mode | stat.S_IWRITE)\n'
+                      ' remove(item)\n'
+                      'shutil.rmtree(root,onexc=retry_readonly)\nprint("NETWORK_TEMP_CLEANED")')
+            cleaned, output = self.read_until_complete(self.command(self.python(source) + '; exit $LASTEXITCODE'))
+            assert cleaned.get('exitCode') == 0 and 'NETWORK_TEMP_CLEANED' in output, (cleaned, output)
+        (self.directory / 'chat-tool-rows.json').write_text(json.dumps(self.tool_rows, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
+        result = {'ok': True, 'scenario': 'remote-network', 'probes': outcomes,
+                  'defaultStatus': status, 'disabled': disabled, 'enabled': enabled,
+                  'qmlNetworkText': qml_network,
+                  'diagnostic': diagnostic, 'cutSshPid': killed,
+                  'directBaseline': self.spec.get('directBaseline'),
+                  'steps': self.steps, 'actualModelRequests': self.model.requests,
+                  'scope': 'real app/gateway/Pi/tools/SSH/downloads and UI rows; local scripted model'}
+        self.note('network-passed', probeCount=len(outcomes), actualModelRequests=self.model.requests)
+        return result
+
+    def observe_network_settings(self):
+        from PySide6.QtCore import QMetaObject
+        window = self.engine.rootObjects()[0]
+
+        def item_named(name):
+            nodes = [window.contentItem()]
+            while nodes:
+                item = nodes.pop()
+                if item.objectName() == name:
+                    return item
+                nodes.extend(item.childItems())
+            return None
+
+        window.setProperty('settingsTab', 3)
+        window.setProperty('page', 'settings')
+        try:
+            self.wait(lambda: item_named('openUmekoDesktopSettingsButton') is not None, 15, 'desktop settings button')
+            button = item_named('openUmekoDesktopSettingsButton')
+            assert QMetaObject.invokeMethod(button, 'clicked'), 'Could not open desktop settings'
+
+            def active_label():
+                label = item_named('remoteEnvironmentNetwork_acceptance')
+                return label if label is not None and label.isVisible() else None
+
+            self.wait(active_label, 15, 'shared network label')
+            text = active_label().property('text')
+            assert text in ('服务器正在使用本机网络', "The server is using this computer's network"), text
+            self.note('qml-network-status', text=text)
+            return text
+        finally:
+            window.setProperty('page', 'chat')
+
     def collect_ssh_evidence(self):
         lifecycle = self.directory / 'ssh-control/lifecycle.jsonl'
         self.ssh_lifecycle = [json.loads(line) for line in lifecycle.read_text(encoding='utf-8').splitlines()]
@@ -537,7 +668,7 @@ def start(app, engine, controller, spec_path):
         acceptance = None
         try:
             acceptance = Acceptance(app, engine, controller, spec)
-            result = acceptance.run()
+            result = acceptance.run_network() if spec.get('scenario') == 'remote-network' else acceptance.run()
             status = 0
         except BaseException:
             result = {'ok': False, **(acceptance.evidence() if acceptance else {}), 'error': traceback.format_exc()}

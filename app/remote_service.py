@@ -14,6 +14,7 @@ import uuid
 from pathlib import Path
 
 from .pi_runtime import CREATE_NO_WINDOW, node_environment, node_executable
+from .remote_environments import network_config
 
 
 class RemoteServiceClient:
@@ -129,6 +130,7 @@ class RemoteServiceClient:
             registry = getattr(self._controller, '_remote_environments', None)
             if registry is not None:
                 payload_params['environments'] = registry.configured()
+            payload_params['remoteNetwork'] = network_config(self._controller.store)
             test_ssh = self._test_ssh_command()
             if test_ssh is not None:
                 payload_params['remoteTestSshCommand'] = test_ssh
@@ -162,6 +164,19 @@ class RemoteServiceClient:
             running = self._process is not None and self._process.poll() is None
         if running:
             self.call('close', {'name': name}, timeout=5.0)
+
+    def refresh_network(self):
+        with self._lock:
+            process = self._process
+        if process is None or process.poll() is not None:
+            return
+        message = {'method': 'setConfig', 'params': {'remoteNetwork': network_config(self._controller.store)}}
+        with self._write_lock:
+            try:
+                process.stdin.write((json.dumps(message) + '\n').encode('utf-8'))
+                process.stdin.flush()
+            except (OSError, ValueError):
+                pass
 
     def close(self):
         with self._lock:

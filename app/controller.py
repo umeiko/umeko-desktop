@@ -108,6 +108,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def remoteEnvironments(self):
         return self._remote_environments.rows()
 
+    @Property(bool, notify=remoteEnvironmentsChanged)
+    def remoteNetworkEnabled(self):
+        return self.store.data.get('remoteNetworkEnabled') is not False
+
     @Property('QVariantList', notify=remoteHostsChanged)
     def sshConfigHosts(self):
         return list(self._ssh_config_hosts)
@@ -244,6 +248,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self.changed.emit()
         if 'remoteEnvironments' in keys:
             self.remoteEnvironmentsChanged.emit()
+        if {'remoteNetworkEnabled', 'remoteNetworkProxy'}.intersection(keys):
+            self._remote_network_settings_changed()
     proxyKeysChanged = Signal()
     editorText = Signal(str)
 

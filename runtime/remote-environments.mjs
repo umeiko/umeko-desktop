@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { Type } from "typebox";
 import { createRemoteCommands } from "./remote-command.mjs";
 import { createRemoteFiles } from "./remote-files.mjs";
+import { networkDescription, serverNetwork } from "./remote-network.mjs";
+import { commandProxyEnvironment, commandProxySetup } from "./remote-network-command.mjs";
 import {
   joinRemotePath,
   nativePathFromUri,
@@ -47,6 +49,14 @@ const fileArgs = Type.Object({
   encoding: Type.Optional(select("utf8", "base64")),
   recursive: Type.Optional(Type.Boolean()),
   caseSensitive: Type.Optional(Type.Boolean()),
+}, { additionalProperties: false });
+
+const networkArgs = Type.Object({
+  action: select("status", "test", "on", "off", "auto", "proxychains"),
+  environment: name,
+  url: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+  command: Type.Optional(Type.String({ minLength: 1, maxLength: 65536 })),
+  cwd: Type.Optional(pathname),
 }, { additionalProperties: false });
 
 function response(result) {
@@ -215,7 +225,7 @@ function connectionErrorDetails(error) {
     .filter(key => error[key] !== undefined).map(key => [key, error[key]]));
 }
 
-export function createRemoteEnvironments({ request, emit, getConfig = () => ({}), getSshEnvironment }) {
+export function createRemoteEnvironments({ request, emit, getConfig = () => ({}), getSshEnvironment, getNetworkConfig }) {
   const live = new Map();
 
   async function withProgress(name, entry, onUpdate, operation) {
@@ -269,10 +279,11 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
     const connection = new RemoteConnection({ host, platform }, {
       sshWrapper: getConfig()?.remoteTestSshCommand,
       getSshEnvironment,
+      getNetworkConfig,
       onState(state, detail = {}) {
         for (const key of Object.keys(status)) if (key !== "sshClient") delete status[key];
         status.state = state;
-        for (const key of ["sshClient", "message", "sshError", "attempt", "retryAfterMs", "nextRetryAt", "outageStartedAt", "outageNoticeAt", "recovered", "resumed"]) {
+        for (const key of ["sshClient", "message", "sshError", "attempt", "retryAfterMs", "nextRetryAt", "outageStartedAt", "outageNoticeAt", "recovered", "resumed", "networkStatus"]) {
           if (detail[key] !== undefined) status[key] = detail[key];
         }
         emit({ type: "remote_environment_state", name, host, platform, state, ...status });
@@ -424,9 +435,18 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
     try {
       const entry = await environment(args.name, signal);
       if (args.op === "sshTarget") {
+        const sharing = getNetworkConfig?.();
+        if (sharing && sharing.enabled !== false) await entry.connection.waitForReady(signal);
         const env = await getSshEnvironment?.() ?? process.env;
         const sshClient = entry.connection.sshClient || await selectSshClient(entry.host, { env });
-        return { ok: true, name: args.name, host: entry.host, platform: entry.platform, sshClient };
+        const port = sharing?.enabled === false ? undefined : entry.connection.commandProxyPort();
+        const windows = entry.platform === "windows";
+        const shell = windows ? "powershell.exe" : "/bin/sh";
+        const variables = Object.entries(commandProxyEnvironment(port, windows, shell)).map(([key, value]) =>
+          windows ? `$env:${key} = ${quotePs(value)}` : `export ${key}=${quoteSh(value)}`);
+        if (port) variables.push(commandProxySetup(windows, shell));
+        return { ok: true, name: args.name, host: entry.host, platform: entry.platform, sshClient, shellSetup: variables.join("\n"),
+          ...(getConfig()?.remoteTestSshCommand ? { sshCommand: getConfig().remoteTestSshCommand } : {}) };
       }
       const { home: homePath, cwd, tempDir } = await resolveHome(entry);
       const baseCwd = args.cwd ? resolveRemoteWorkspacePath(homePath, args.cwd, { platform: entry.platform, homeDir: homePath }) : cwd;
@@ -579,6 +599,9 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
   }
 
   return {
+    refreshNetwork() {
+      for (const { connection } of live.values()) connection.refreshNetwork();
+    },
     getEntry: environment,
     home,
     browse,
@@ -610,7 +633,8 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
         entry = await environment(args.name, signal);
         const info = await withProgress(args.name, entry, onUpdate, () => entry.connection.waitForReady(signal));
         return { ok: true, operation: "remote-environments.test", name: args.name, state: "connected", platform: entry.platform,
-          cwd: info.cwd, ...(info.reconnection ? { reconnection: info.reconnection } : {}), ...diagnostics() };
+          cwd: info.cwd, ...(info.reconnection ? { reconnection: info.reconnection } : {}),
+          ...(entry.connection.networkStatus ? { networkStatus: entry.connection.networkStatus } : {}), ...diagnostics() };
       } catch (error) {
         return { ok: false, error: error.message, ...diagnostics(), ...connectionErrorDetails(error) };
       }
@@ -622,7 +646,7 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
     extension(pi) {
       pi.registerTool({
         name: "remote_command", label: "Remote command", parameters: commandArgs,
-        description: "Run shell commands in a named SSH environment. Run returns output and a sessionId; if running, read it to get new output, write input including its newline, or kill that session. Use umeko_desktop remote-environments.list to find configured environments. The session can survive a network interruption.",
+        description: "Run shell commands in a named SSH environment. Run returns output and a sessionId; if running, read it to get new output, write input including its newline, or kill that session. Use umeko_desktop remote-environments.list to find configured environments. The session can survive a network interruption. " + networkDescription,
         annotations: { readOnlyHint: false, destructiveHint: true },
         async execute(_id, args, signal, onUpdate, ctx) {
           const entry = await environment(args.environment, signal);
@@ -632,7 +656,7 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
       });
       pi.registerTool({
         name: "remote_files", label: "Remote files", parameters: fileArgs,
-        description: "Read or write a file, list a directory, search file contents, or upload/download a file or directory in a named SSH environment. path and cwd are remote. localPath is a local workspace path for transfers. Reconnecting resumes in-progress file transfers.",
+        description: "Read or write a file, list a directory, search file contents, or upload/download a file or directory in a named SSH environment. path and cwd are remote. localPath is a local workspace path for transfers. Reconnecting resumes in-progress file transfers. " + networkDescription,
         annotations: { readOnlyHint: false, destructiveHint: true },
         async execute(_id, args, signal, onUpdate, ctx) {
           const entry = await environment(args.environment, signal);
@@ -640,6 +664,32 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
             signal, cwd: ctx.cwd,
             onUpdate: value => onUpdate?.(response(value)),
           }));
+        },
+      });
+      pi.registerTool({
+        name: "remote_network", label: "Remote network", parameters: networkArgs,
+        description: "Inspect a named SSH environment's network, test an HTTP(S) URL, temporarily turn sharing on or off, or restore automatic detection. For a program that ignores proxy environment variables, the proxychains action runs a command with proxychains-ng when it is available on Linux. " + networkDescription,
+        annotations: { readOnlyHint: false, destructiveHint: true },
+        async execute(_id, args, signal, onUpdate) {
+          const entry = await environment(args.environment, signal);
+          const { connection } = entry;
+          return toolResult(args.environment, entry, onUpdate, async () => {
+            if (["on", "off", "auto"].includes(args.action)) {
+              const status = await connection.setNetworkMode(args.action, signal);
+              return { ok: args.action !== "on" || status.network === "local", ...status };
+            }
+            await connection.waitForReady(signal);
+            const status = connection.networkStatus ?? serverNetwork();
+            if (args.action === "status") return { ok: true, ...status };
+            if (args.action === "test") {
+              const reachable = await connection.testNetwork(args.url, signal);
+              return { ok: reachable, ...status, reachable };
+            }
+            if (entry.platform !== "linux") return { ok: false, ...status, error: "proxychains-ng 仅可用于 Linux 远程环境" };
+            if (status.network !== "local") return { ok: false, ...status, error: "本机网络共享尚未接通" };
+            const result = await entry.commands.execute({ ...args, action: "run" }, { signal, proxychains: true });
+            return { ok: result.status !== "failed", ...status, ...result };
+          });
         },
       });
     },

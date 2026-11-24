@@ -46,6 +46,8 @@
     "dsh.useOwnConfig": {"target":"dsh","method":"setUseOwnConfig","editions":["python"],"args":[["enabled","boolean"]]},
     "desktop.startup": {"target":"startup","method":"setEnabled","editions":["python"],"args":[["umeko","boolean"],["proxy","boolean"]]},
     "network.requestHeaders": {"target":"backend","method":"saveRequestHeaders","editions":["python"],"args":[["headers","json"]]},
+    "network.remoteSharing": {"target":"backend","method":"setRemoteNetworkEnabled","editions":["python"],"args":[["enabled","boolean"]]},
+    "network.remoteProxy": {"target":"backend","method":"setRemoteNetworkProxy","editions":["python"],"args":[["address","string"]]},
     "documents.previewMode": {"target":"documents","method":"setMode","editions":["python"],"args":[["fileType","string"],["mode","string"]]},
     "appearance.sidebar": {"target":"backend","method":"saveSidebarLayout","args":[["width","integer"],["collapsed","boolean",false]]},
     "desktop.configure": {"target":"backend","method":"saveDesktopSettings","editions":["python"],"args":[["config","json"]]},

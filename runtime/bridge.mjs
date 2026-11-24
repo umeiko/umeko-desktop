@@ -75,7 +75,7 @@ function shellSnapshotExtension(getShellPath) {
 globalThis[Symbol.for("umeko:shell-environment")] = (name, env, config) =>
   shellSnapshots.environment(name, env.PI_SESSION_ID || runtime?.session.sessionManager.getSessionId(), env,
     name === "bash" ? config.shell : undefined);
-const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, "background_job", "remote_command", "remote_files"];
+const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, "background_job", "remote_command", "remote_files", "remote_network"];
 const applyPatchEnabled = model => config?.models?.some(row => row.id === model?.id && row.applyPatch === true) === true;
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
@@ -123,6 +123,7 @@ const umekoControl = createUmekoControl({
 });
 const remoteEnvironments = createRemoteEnvironments({
   request: umekoControl.request, emit, getConfig: () => config,
+  getNetworkConfig: () => config?.remoteNetwork,
   getSshEnvironment: () => shellSnapshots.environment(
     process.platform === "win32" ? "powershell" : "bash", runtime?.session.sessionManager.getSessionId(), process.env),
 });
@@ -676,7 +677,7 @@ async function state() {
   const deliveries = branch.filter(e => e.type === "custom" && e.customType === "umeko-chatbox" && e.data?.version === 1 && typeof e.data.toolCallId === "string" && Array.isArray(e.data.items)).map(e => e.data);
   const compactions = new Map();
   const candidates = branch.flatMap(e => {
-    if (e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant"].includes(e.message.role)) return [e];
+    if (e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant", "bashExecution"].includes(e.message.role)) return [e];
     if (automaticVisionView(e)) return [e];
     if (e.type !== "custom" || e.customType !== "umeko-compaction" || ![1, 2].includes(e.data?.version)) return [];
     if (e.data.version === 1) return [e];
@@ -688,7 +689,7 @@ async function state() {
     compactions.set(e.data.eventId, first);
     return [first];
   });
-  const characters = candidates.reduce((sum, e) => sum + (typeof e.message?.content === "string" ? e.message.content.length : (Array.isArray(e.message?.content) ? e.message.content : []).reduce((n, block) => n + (block.text || block.thinking || "").length, 0)), 0);
+  const characters = candidates.reduce((sum, e) => sum + (typeof e.message?.content === "string" ? e.message.content.length : (Array.isArray(e.message?.content) ? e.message.content : []).reduce((n, block) => n + (block.text || block.thinking || "").length, 0)) + (e.message?.output?.length || 0), 0);
   const paged = candidates.length > 256 || characters > 1024 * 1024;
   const selected = config.globalCoordinator ? candidates.slice(-64) : paged ? candidates.slice(-128) : candidates;
   const messages = projectSubagents(branch, selected.map(e => {
@@ -696,6 +697,13 @@ async function state() {
     if (e.type === "custom") return { role: "assistant", text: e.data.version === 1 ? compactionText(e.data) : "", customType: e.customType,
       compaction: e.data, entryId: e.id, timestamp: e.timestamp };
     const message = e.message;
+    if (message.role === "bashExecution") {
+      return { role: "assistant", text: "", entryId: e.id, timestamp: message.timestamp || e.timestamp, tools: [{
+        id: e.id, name: "bash", arguments: { command: message.command }, path: "",
+        state: message.cancelled ? "interrupted" : message.exitCode === 0 ? "done" : "error",
+        result: message.output.slice(0, 8192),
+      }] };
+    }
     const row = {role: message.role, text: textOf(message.content) || (message.stopReason === "aborted" ? "" : message.errorMessage || ""), error: message.stopReason !== "aborted" && !!message.errorMessage, entryId:e.id, timestamp:message.timestamp || e.timestamp};
     if (row.error) row.errorMessage = message.errorMessage;
     if (message.role === "assistant") row.stopReason = message.stopReason || "";
@@ -767,6 +775,19 @@ async function selectModel(alias) {
 
 async function promptWithInterrupts(first) {
   await inputQueue.run(first,async next=>{
+    const shellInput = config.remoteWorkspace && /^(!{1,2})\s*(\S[\s\S]*)$/.exec(next.text);
+    if (shellInput) {
+      const session = runtime.session;
+      const [, prefix, command] = shellInput;
+      const excludeFromContext = prefix === "!!";
+      const event = await session.extensionRunner.emitUserBash({
+        type: "user_bash", command, excludeFromContext, cwd: session.sessionManager.getCwd(),
+      });
+      if (event?.result) session.recordBashResult(command, event.result, { excludeFromContext });
+      else if (event?.operations) await session.executeBash(command, undefined, { excludeFromContext, operations: event.operations });
+      else throw new Error("远程工作目录的命令执行暂不可用");
+      return;
+    }
     if (validEffort(next.reasoningEffort)) reasoningEffort = next.reasoningEffort;
     const generation = commandCancellation;
     const modelOptions = next.modelRoles || first.modelRoles;
@@ -798,6 +819,7 @@ function adoptAgentRun(session) {
 function stopRun() {
   if (stopWork) return stopWork;
   const session = runtime?.session;
+  session?.abortBash();
   if (session) blockedSessions.add(session);
   if (currentRun) currentRun.cancelled = true;
   pendingMemberModel = undefined;
@@ -867,6 +889,10 @@ async function execute(input) {
   }
   if (input.type === "desktop_settings") {
     if (config && input.webview && typeof input.webview === "object") config.webview = input.webview;
+    if (config && input.remoteNetwork && typeof input.remoteNetwork === "object") {
+      config.remoteNetwork = input.remoteNetwork;
+      remoteEnvironments.refreshNetwork();
+    }
     return;
   }
   if (input.type === "loop_review_response") { loopReview.response(input); return; }

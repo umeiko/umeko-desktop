@@ -18,9 +18,9 @@ def _remote_posix_cd(remote_path):
     return 'cd ' + shlex.quote(raw)
 
 
-def _remote_ssh_argv(ssh_client, host, platform, remote_path):
+def _remote_ssh_argv(ssh_client, host, platform, remote_path, shell_setup=''):
     args = [
-        ssh_client, '-tt',
+        *(ssh_client if isinstance(ssh_client, list) else [ssh_client]), '-tt',
         '-o', 'StrictHostKeyChecking=yes',
         '-o', 'ServerAliveInterval=15',
         '-o', 'ServerAliveCountMax=2',
@@ -33,11 +33,12 @@ def _remote_ssh_argv(ssh_client, host, platform, remote_path):
             "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);"
             "$OutputEncoding=[Console]::OutputEncoding;"
             + (f"Set-Location -LiteralPath '{escaped}';" if escaped else "")
+            + shell_setup
         )
         encoded = base64.b64encode(ps.encode('utf-16le')).decode('ascii')
         args.append(f'powershell.exe -NoLogo -NoExit -EncodedCommand {encoded}')
     else:
-        script = f'{_remote_posix_cd(remote_path)} 2>/dev/null || cd "$HOME"; exec "${{SHELL:-/bin/bash}}" -l'
+        script = f'{shell_setup}\n{_remote_posix_cd(remote_path)} 2>/dev/null || cd "$HOME"; exec "${{SHELL:-/bin/bash}}" -l'
         args.append('sh -c ' + shlex.quote(script))
     return args
 
@@ -82,7 +83,10 @@ class Terminals(Plugin):
             host=ssh_info.get('host') or remote['host']
             platform=ssh_info.get('platform') or remote.get('platform','linux')
             remote_path=ssh_info.get('remotePath') or remote['remotePath']
-            argv=_remote_ssh_argv(ssh_client,host,platform,remote_path)
+            ssh_command=ssh_info.get('sshCommand')
+            if ssh_command:
+                env['UMEKO_REAL_SSH']=ssh_client
+            argv=_remote_ssh_argv(ssh_command or ssh_client,host,platform,remote_path,ssh_info.get('shellSetup',''))
             cwd=Path(target.get('workspace') or Path.home()).resolve()
             cwd.mkdir(parents=True,exist_ok=True)
             name=host;profile_id='remote-ssh';display_cwd=f'{host}:{remote_path}'

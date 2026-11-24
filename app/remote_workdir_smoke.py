@@ -141,7 +141,9 @@ class WorkdirAcceptance:
         picker = self._find_qml('workspacePicker')
         assert picker is not None, 'WorkspacePicker not found in Main.qml'
         picker.openPicker('remote')
-        self.wait(lambda: any(h.get('alias') == host for h in self.backend.sshConfigHosts), 20, 'sshConfigHosts load')
+        self.wait(lambda: any(h.get('alias') == host for h in self.backend.sshConfigHosts)
+                  or any(row.get('host') == host for row in self.backend.remoteEnvironments),
+                  20, 'remote host appears in the picker')
         picker.rebuildHostChoices()
         choices = _to_py(picker.property('hostChoices')) or []
         idx = next((i for i, c in enumerate(choices) if c.get('host') == host), -1)
@@ -430,7 +432,11 @@ def start(app, engine, controller, spec_path):
         runner = None
         try:
             runner = WorkdirAcceptance(app, engine, controller, spec)
-            result = runner.run_reopen() if spec.get('phase') == 'reopen' else runner.run_main()
+            if spec.get('phase') == 'network':
+                from .remote_workdir_network_smoke import run_network
+                result = run_network(runner)
+            else:
+                result = runner.run_reopen() if spec.get('phase') == 'reopen' else runner.run_main()
             status = 0
         except BaseException:
             result = {'ok': False, 'phase': spec.get('phase', 'main'), 'error': traceback.format_exc()}

@@ -17,6 +17,8 @@ import WebSocket from "ws";
 import { updateRequest } from "./update-engine.mjs";
 import { selectSshClient, sshDiagnostic } from "./remote-ssh-client.mjs";
 import { withBootstrapLock } from "./remote-bootstrap-lock.mjs";
+import { networkProbeUrl, networkTestScript, outboundLabels, remoteForwardStatus, remoteOutbound, serverNetwork } from "./remote-network.mjs";
+import { prepareRemoteShellProcess } from "./remote-network-command.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const manifest = JSON.parse(await readFile(join(here, "remote-exec-assets.json"), "utf8"));
@@ -249,11 +251,62 @@ export class RemoteConnection {
     this.state = "disconnected"; this.sessionId = null; this.sessionGeneration = 0;
     this.closed = false; this.nextId = 1; this.pending = new Map(); this.children = new Set(); this.controller = new AbortController();
     this.waiters = new Set();
+    this.networkMode = "auto";
+    this.networkRevision = 0;
   }
 
   _state(state, detail = {}) {
     this.state = state;
-    this.options.onState?.(state, { ...detail, ...(this.sshClient ? { sshClient: this.sshClient } : {}) });
+    this.options.onState?.(state, { ...detail, ...(this.sshClient ? { sshClient: this.sshClient } : {}),
+      ...(state === "connected" && this.networkStatus ? { networkStatus: this.networkStatus } : {}) });
+  }
+
+  commandProxyPort() {
+    return this.networkStatus?.port;
+  }
+
+  refreshNetwork() {
+    this.networkRevision++;
+    if (this.state === "connected" && !this.connecting && !this.closed) {
+      this._drop();
+      this._lost();
+    }
+  }
+
+  async setNetworkMode(mode, signal) {
+    if (this.networkMode !== mode) {
+      this.networkMode = mode;
+      this.refreshNetwork();
+    }
+    await this.waitForReady(signal);
+    return this.networkStatus ?? serverNetwork();
+  }
+
+  async testNetwork(url, signal) {
+    await this.waitForReady(signal);
+    const script = networkTestScript(this.config.platform, url, this.commandProxyPort());
+    return await this._ssh(script, { timeout: 15_000 }) === "reachable";
+  }
+
+  async _networkRoute() {
+    const config = this.options.getNetworkConfig?.();
+    if (!config) return;
+    if (config.enabled === false || this.networkMode === "off") {
+      this.networkStatus = serverNetwork("本机网络共享已关闭");
+      return;
+    }
+    if (this.networkMode === "auto") {
+      const probe = networkTestScript(this.config.platform, networkProbeUrl, undefined, true);
+      if (await this._ssh(probe, { timeout: 15_000 }) === "reachable") {
+        this.networkStatus = serverNetwork();
+        return;
+      }
+    }
+    try { return await remoteOutbound(config, this.sshEnv, this.controller.signal); }
+    catch {
+      if (this.closed) throw abortError();
+      this.networkStatus = serverNetwork("本机代理无法启动或代理地址无效");
+    }
   }
 
   async _selectSsh() {
@@ -390,14 +443,15 @@ rm -f ${quoteSh(temporary)}`;
     return result;
   }
 
-  async _forward(remotePort) {
+  async _forward(remotePort, route) {
     const localPort = await new Promise((resolve, reject) => {
       const probe = createServer(); probe.once("error", reject); probe.listen(0, "127.0.0.1", () => { const port = probe.address().port; probe.close(() => resolve(port)); });
     });
     const child = this._spawn(["-v", "-n", "-N", "-o", "ClearAllForwardings=no", "-o", "ExitOnForwardFailure=yes",
-      "-L", `127.0.0.1:${localPort}:127.0.0.1:${remotePort}`, this.config.host]);
+      "-L", `127.0.0.1:${localPort}:127.0.0.1:${remotePort}`,
+      ...(route ? ["-R", `127.0.0.1:0:${route.host}:${route.port}`] : []), this.config.host]);
     child.stdin.end(); this.tunnel = child;
-    let failure, diagnostics = "", ended = false, listening = false;
+    let failure, diagnostics = "", ended = false, listening = false, forwarded;
     this.tunnelDiagnostics = "";
     child.stderr.on("data", data => {
       diagnostics = (diagnostics + data).slice(-8192);
@@ -405,18 +459,28 @@ rm -f ${quoteSh(temporary)}`;
       // Do not send the bearer to a port merely because it accepts TCP. The
       // SSH child itself must report that it owns this loopback bind first.
       if (diagnostics.includes(`Local forwarding listening on 127.0.0.1 port ${localPort}.`)) listening = true;
+      if (route && forwarded === undefined) forwarded = remoteForwardStatus(diagnostics, route);
     });
     child.once("error", error => { failure = sshFailure("Unable to start OpenSSH", error.message, false, true); });
     child.once("close", () => { ended = true; });
     child.once("exit", () => { if (this.tunnel === child) { this.tunnel = null; this._lost(); } });
     for (let i = 0; i < 100; i++) {
       if (failure) throw failure;
+      if (forwarded === false) {
+        this.tunnel = null;
+        child.kill();
+        return false;
+      }
       if (ended) {
         const fatal = rejectedSsh.test(sshDiagnostic(diagnostics));
         throw sshFailure(`SSH tunnel exited (${child.exitCode ?? child.signalCode ?? "unknown"})`, diagnostics, !fatal, fatal);
       }
       if (this.closed) throw abortError();
-      if (listening && child.exitCode === null && child.signalCode === null) return localPort;
+      if (listening && (!route || forwarded) && child.exitCode === null && child.signalCode === null) {
+        if (route) this.networkStatus = { network: "local", port: forwarded, outbound: route.outbound,
+          outboundLabel: outboundLabels[route.outbound], message: "服务器正在使用本机网络" };
+        return localPort;
+      }
       await sleep(100, this.controller.signal);
     }
     const fatal = rejectedSsh.test(sshDiagnostic(diagnostics));
@@ -512,7 +576,15 @@ rm -f ${quoteSh(temporary)}`;
         this.tunnelDiagnostics = "";
         await this._selectSsh();
         const listener = await this._bootstrap();
-        const port = await this._forward(listener.port);
+        const revision = this.networkRevision;
+        const route = this.networkUpstream = await this._networkRoute();
+        let port = await this._forward(listener.port, route);
+        if (port === false) {
+          route.close?.();
+          this.networkUpstream = undefined;
+          this.networkStatus = serverNetwork("服务器拒绝 SSH 反向转发，无法使用本机网络");
+          port = await this._forward(listener.port);
+        }
         await this._openSocket(port, listener.token);
         const previous = this.sessionId;
         let result;
@@ -526,6 +598,7 @@ rm -f ${quoteSh(temporary)}`;
         if (previous !== this.sessionId) this.sessionGeneration++;
         this.socket.send(JSON.stringify({ method: "initialized", params: {} }));
         this.environmentInfo = result.environmentInfo || await this._request("environment/info", "{}", this.controller.signal);
+        if (revision !== this.networkRevision) continue;
         const recovered = this.outageStartedAt !== undefined;
         const recovery = recovered ? { outageStartedAt: this.outageStartedAt, attempt, recovered } : {};
         this._clearOutage();
@@ -615,7 +688,13 @@ rm -f ${quoteSh(temporary)}`;
       if (sessionBound.has(method) && sessionGeneration === undefined) sessionGeneration = this.sessionGeneration;
       if (sessionGeneration !== undefined && sessionGeneration !== this.sessionGeneration) throw sessionChanged();
       const socket = this.socket;
-      try { return await this._request(method, serialized, signal); }
+      const remotePort = method === "process/start" && this.commandProxyPort();
+      // Workspace shells start a streaming exec-server process directly.
+      // Apply the same proxy setup used by durable remote_command launches.
+      const requestParams = remotePort && serialized
+        ? JSON.stringify(prepareRemoteShellProcess(JSON.parse(serialized), remotePort, this.config.platform === "windows"))
+        : serialized;
+      try { return await this._request(method, requestParams, signal); }
       catch (error) {
         if (!error.transport || signal?.aborted || this.closed) throw error;
         if (this.socket === socket) {
@@ -630,6 +709,8 @@ rm -f ${quoteSh(temporary)}`;
   _drop() {
     const socket = this.socket; this.socket = null; socket?.terminate();
     const tunnel = this.tunnel; this.tunnel = null; tunnel?.kill();
+    this.networkUpstream?.close?.();
+    this.networkUpstream = this.networkStatus = undefined;
     for (const pending of this.pending.values()) { pending.cleanup(); pending.reject(connectionError()); }
     this.pending.clear();
   }

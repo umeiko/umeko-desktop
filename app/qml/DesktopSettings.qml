@@ -153,6 +153,7 @@ Column {
                     remoteSettingsSection.addingRemote = false
                     remoteSettingsSection.addReqId = ""
                     if (result.ok) {
+                        remoteHostInput.currentIndex = 0
                         remoteHostInput.editText = ""
                         remoteSettingsSection.remoteActionMessage = ""
                     } else {
@@ -180,6 +181,27 @@ Column {
             }
             RowLayout {
                 Layout.fillWidth: true
+                Text {
+                    Layout.fillWidth: true
+                    text: I18n.t("服务器无法访问外网时使用本机网络")
+                    color: Theme.ink
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.font(13)
+                    wrapMode: Text.Wrap
+                }
+                Toggle {
+                    objectName: "remoteNetworkSharingToggle"
+                    checked: backend.remoteNetworkEnabled !== false
+                    Accessible.name: I18n.t("服务器无法访问外网时使用本机网络")
+                    onClicked: {
+                        const value = checked
+                        checked = Qt.binding(function() { return backend.remoteNetworkEnabled !== false })
+                        backend.setRemoteNetworkEnabled(value)
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
                 spacing: 8
                 ComboBox {
                     id: remoteHostInput
@@ -187,12 +209,19 @@ Column {
                     Layout.fillWidth: true
                     implicitHeight: Theme.control(36)
                     editable: true
-                    model: (backend && backend.sshConfigHosts ? backend.sshConfigHosts : []).map(item => item.alias)
+                    model: [""].concat((backend && backend.sshConfigHosts ? backend.sshConfigHosts : []).map(item => item.alias))
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.font(13)
                     palette.text: Theme.ink; palette.buttonText: Theme.ink; palette.base: Theme.surface
                     palette.window: Theme.surface; palette.highlight: Theme.accentBg; palette.highlightedText: Theme.ink
                     Accessible.name: I18n.t("OpenSSH 主机别名")
+                    delegate: ItemDelegate {
+                        required property string modelData
+                        required property int index
+                        width: remoteHostInput.width
+                        text: modelData || I18n.t("OpenSSH 主机别名")
+                        highlighted: remoteHostInput.highlightedIndex === index
+                    }
                     background: Rectangle { radius: 8; color: Theme.surface; border.color: remoteHostInput.activeFocus ? Theme.accent : Theme.line }
                     contentItem: TextField {
                         text: remoteHostInput.editable ? remoteHostInput.editText : remoteHostInput.displayText
@@ -211,11 +240,13 @@ Column {
                 ComboBox {
                     id: remotePlatformInput
                     objectName: "remoteEnvironmentPlatformInput"
-                    Layout.preferredWidth: 112
+                    Layout.preferredWidth: Math.max(112, Math.ceil(platformMetrics.advanceWidth(remotePlatformInput.displayText)) + 44)
                     implicitHeight: Theme.control(36)
+                    leftPadding: 0; rightPadding: 0
                     model: [I18n.t("自动检测"), "Linux", "Windows"]
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.font(13)
+                    FontMetrics { id: platformMetrics; font: remotePlatformInput.font }
                     palette.text: Theme.ink; palette.buttonText: Theme.ink; palette.base: Theme.surface
                     palette.window: Theme.surface; palette.highlight: Theme.accentBg; palette.highlightedText: Theme.ink
                     background: Rectangle { radius: 8; color: Theme.surface; border.color: remotePlatformInput.activeFocus ? Theme.accent : Theme.line }
@@ -302,15 +333,30 @@ Column {
                             font.pixelSize: Theme.font(12)
                         }
                         Text {
-                            objectName: "remoteEnvironmentSshClient_" + modelData.name
+                            objectName: "remoteEnvironmentNetwork_" + modelData.name
                             Layout.fillWidth: true
-                            visible: !!modelData.sshClient
-                            text: I18n.t("SSH 客户端：") + (modelData.sshClient || "")
+                            visible: modelData.state === "connected" && !!modelData.networkStatus
+                            text: I18n.t(modelData.networkStatus ? modelData.networkStatus.message : "")
+                            color: Theme.muted
+                            wrapMode: Text.Wrap
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                        Text {
+                            id: sshClientLabel
+                            objectName: "remoteEnvironmentSshClient_" + modelData.name
+                            readonly property string executable: String(modelData.sshClient || "")
+                            Layout.fillWidth: true
+                            visible: executable.length > 0
+                            text: I18n.t("SSH 客户端：") + executable.split(/[\\/]/).pop()
                             color: Theme.muted
                             wrapMode: Text.WrapAnywhere
                             textFormat: Text.PlainText
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.font(12)
+                            HoverHandler { id: sshClientHover }
+                            ToolTip.visible: sshClientHover.hovered
+                            ToolTip.text: sshClientLabel.executable
                         }
                         Text {
                             objectName: "remoteEnvironmentRetry_" + modelData.name

@@ -19,6 +19,7 @@ const remote = createRemoteEnvironments({
   },
   emit: event => emit(event),
   getConfig: () => serviceConfig,
+  getNetworkConfig: () => serviceConfig.remoteNetwork,
 });
 
 function updateEnvironments(list) {
@@ -37,6 +38,14 @@ async function handle(message) {
   if (Array.isArray(params.environments)) updateEnvironments(params.environments);
   if (params.remoteTestSshCommand !== undefined) {
     serviceConfig = { ...serviceConfig, remoteTestSshCommand: params.remoteTestSshCommand };
+  }
+  if (params.remoteNetwork && typeof params.remoteNetwork === "object") {
+    const { enabled, proxy } = params.remoteNetwork;
+    const previous = serviceConfig.remoteNetwork;
+    if (!previous || previous.enabled !== enabled || previous.proxy !== proxy) {
+      serviceConfig.remoteNetwork = { enabled, proxy };
+      remote.refreshNetwork();
+    }
   }
 
   const controller = new AbortController();
