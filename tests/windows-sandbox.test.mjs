@@ -52,6 +52,7 @@ test('standard-user profile runs with file isolation and reports network fallbac
   assert.equal(sandboxCommand(input, options).notice, undefined);
   assert.match(sandboxFailure('elevated', false, '[WinError 10013]'), /block network access/);
   assert.match(sandboxFailure('non-elevated', true, 'PermissionError: [Errno 13] Permission denied'), /workspace/);
+  assert.match(sandboxFailure('non-elevated', true, "fatal error - couldn't create signal pipe, Win32 error 5"), /set shell to powershell in background_job/);
   assert.equal(sandboxFailure('off', true, 'Permission denied'), undefined);
 });
 

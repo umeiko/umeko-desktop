@@ -46,6 +46,9 @@ export function sandboxFailure(level, allowNetwork, output = '') {
   if (level === 'off') return undefined;
   const startup = output.split(/\r?\n/).find(line => line.startsWith('Windows sandbox could not start:'));
   if (startup) return startup;
+  if (/couldn.t create signal pipe, Win32 error 5/i.test(output)) {
+    return 'Git Bash could not initialize its signal pipe inside the Windows sandbox. Use the PowerShell tool, or set shell to powershell in background_job.';
+  }
   if (!allowNetwork && /\b(?:10013|WSAEACCES|ENETUNREACH)\b|could not connect|failed to connect|network is unreachable|connection refused|proxy error|无法连接/i.test(output)) {
     return 'The command could not connect. This Windows sandbox was configured to block network access.';
   }
