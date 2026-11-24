@@ -143,9 +143,8 @@ def main():
     command = [str(application)] if application else [python, str(ROOT / 'main.py')]
     command += ['--remote-environments-smoke', str(spec_path)]
     env = dict(os.environ, UMEKO_DATA_DIR=str(directory / 'profile'), PI_CODING_AGENT_DIR=str(directory / 'agent'),
-               QT_QPA_PLATFORM='offscreen', QT_QUICK_BACKEND='software', UMEKO_REMOTE_TEST_MODE='1',
+               QT_QPA_PLATFORM='offscreen', QT_QUICK_BACKEND='software',
                UMEKO_SSH_TEST_CONTROL=str(directory / 'ssh-control'),
-               UMEKO_SSH_COMMAND_JSON=json.dumps([python, str(shim)]),
                UMEKO_TEST_SSH_COMMAND=json.dumps([python, str(shim)]), PYTHONUTF8='1',
                UMEKO_DIAGNOSTICS=str(directory / 'application.log'))
     env.pop('NODE_OPTIONS', None)

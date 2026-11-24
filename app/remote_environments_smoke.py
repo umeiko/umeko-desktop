@@ -220,7 +220,8 @@ class Acceptance:
             assert ssh_client == Path(self.spec['expectedSshExecutable']).resolve(), tested
         clients = self.directory / 'ssh-control/clients.jsonl'
         started_clients = [json.loads(line) for line in clients.read_text(encoding='utf-8').splitlines()]
-        assert started_clients and all(Path(row['executable']).resolve() == ssh_client for row in started_clients)
+        started_executables = {Path(row['executable']).resolve() for row in started_clients}
+        assert started_executables == {ssh_client}, (ssh_client, started_executables)
         self.note('ssh-client-selected', executable=str(ssh_client))
         short, output = self.read_until_complete(self.command(self.python("print('REMOTE_SHORT_OK')")))
         assert short.get('exitCode') == 0 and output == 'REMOTE_SHORT_OK\n', (short, output)

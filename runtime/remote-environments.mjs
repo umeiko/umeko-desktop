@@ -63,7 +63,7 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
     const { host, platform } = settings;
     const status = {};
     const connection = new RemoteConnection({ host, platform }, {
-      sshCommand: getConfig()?.remoteTestSshCommand,
+      sshWrapper: getConfig()?.remoteTestSshCommand,
       onState(state, detail = {}) {
         for (const key of ["message", "sshError", "attempt", "retryAfterMs"]) delete status[key];
         for (const key of ["sshClient", "message", "sshError", "attempt", "retryAfterMs"]) {

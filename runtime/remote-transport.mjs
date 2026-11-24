@@ -263,8 +263,8 @@ export class RemoteConnection {
     this.sshClient = await selectSshClient(this.config.host, { env });
     if (this.closed) throw abortError();
     // The fault injector forwards the selected real client and never chooses it.
-    const wrapper = env.UMEKO_REMOTE_TEST_MODE === "1" && env.UMEKO_SSH_COMMAND_JSON;
-    this.sshCommand = wrapper ? checkedSshCommand(JSON.parse(wrapper)) : [this.sshClient];
+    const wrapper = this.options.sshWrapper;
+    this.sshCommand = wrapper ? checkedSshCommand(wrapper) : [this.sshClient];
     if (wrapper) this.sshEnv = { ...env, UMEKO_REAL_SSH: this.sshClient };
     this._state(this.state);
   }
