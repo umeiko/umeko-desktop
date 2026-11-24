@@ -161,7 +161,7 @@ async function capture(shellName, config, env, cwd) {
   }
 }
 
-export function createShellSnapshots({ getShellConfig, getPowerShellConfig, bundledBin, cwd = homedir() }) {
+export function createShellSnapshots({ getShellConfig, getPowerShellConfig, bundledBin, bundledNodeDir, cwd = homedir() }) {
   const sessions = new Map();
   let previousPath = new Set();
   const config = get => { try { return get(); } catch { return null; } };
@@ -171,6 +171,11 @@ export function createShellSnapshots({ getShellConfig, getPowerShellConfig, bund
       const bash = config(() => getShellConfig(shellPath));
       const powershell = windows ? config(getPowerShellConfig) : null;
       const base = Object.fromEntries(Object.entries(process.env).filter(([key]) => !blockedShellEnvKey(key)));
+      if (bundledNodeDir) {
+        const equal = windows ? normalized : entry => entry.replace(/\/$/, "");
+        const path = entries(getEnv(base, "PATH")).filter(entry => equal(entry) !== equal(bundledNodeDir));
+        setEnv(base, "PATH", path.join(delimiter));
+      }
       const updated = windows ? await refreshWindowsEnvironment(base, powershell, cwd, previousPath) : { environment: base };
       if (updated.registryPath) previousPath = updated.registryPath;
       const [bashEnv, powerShellEnv] = await Promise.all([
@@ -199,6 +204,10 @@ export function createShellSnapshots({ getShellConfig, getPowerShellConfig, bund
         if (runtimeSessionKeys.test(key)) setEnv(env, key, value);
       }
       prefixPath(env, [bundledBin]);
+      if (bundledNodeDir) {
+        const path = entries(getEnv(env, "PATH"));
+        setEnv(env, "PATH", [...path, bundledNodeDir].join(delimiter));
+      }
       return env;
     },
   };
