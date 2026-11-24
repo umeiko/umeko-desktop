@@ -68,7 +68,7 @@
 
 新任务的 `version` 为 1。认领前查看 `ready` 和 `version`，再将该版本填入 `expectedVersion`。如果另一位成员先认领，重新读取任务可看到新负责人和版本。进行中的任务由负责人或协调者更新。`handoff` 立即换负责人，`result` 保存结果并完成任务。
 
-例如，将任务交给 `ui-dev`，并让它接着工作：
+下面这项操作会把任务交给 `ui-dev` 并唤醒它继续工作。
 
 ```json
 {"operation":"agent_bus.team_post","arguments":{"teamId":"团队 ID","event":{"kind":"handoff","taskId":"任务 ID","expectedVersion":2,"to":"ui-dev","text":"@ui-dev 接手界面，接口已就绪。"}}}

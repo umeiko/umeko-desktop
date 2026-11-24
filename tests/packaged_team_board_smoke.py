@@ -9,11 +9,11 @@ import os
 from pathlib import Path
 import re
 import subprocess
-from threading import Barrier, Lock, Thread
+from threading import Barrier, Event, Lock, Thread
 import time
 
 
-MARK = re.compile(r'P641 (BEGIN|API|UI|TEST|QUIET|RESUME|GROUP|ALL|RACE_START|RACE|LEGACY)\b')
+MARK = re.compile(r'P641 (BEGIN|API|UI|TEST|QUIET|RESUME|GROUP|ALL|RACE_START|RACE|HOLD|STEER|LEGACY)\b')
 ACTOR = re.compile(r'Smoke member identity: (lead|api-dev|ui-dev|tester)\.')
 NAMES = ('lead', 'api-dev', 'ui-dev', 'tester')
 
@@ -43,6 +43,8 @@ class ScriptedModel:
         self.ids = {}
         self.team = self.task = self.race_task = ''
         self.barrier = Barrier(2, timeout=15)
+        self.hold_started = Event()
+        self.release_hold = Event()
 
     def count(self):
         with self.lock:
@@ -77,8 +79,11 @@ class ScriptedModel:
             return self.post('handoff', taskId=self.task, expectedVersion=4, to='tester', text='@tester P641 TEST')
         elif phase == 'TEST' and step == 0:
             return self.post('result', taskId=self.task, expectedVersion=5, text='Feature verified')
-        elif phase in ('QUIET', 'RESUME', 'GROUP', 'ALL') and step == 0:
+        elif phase in ('QUIET', 'RESUME', 'GROUP', 'ALL', 'STEER') and step == 0:
             return self.post('message', text=f'{phase.lower()} recorded by {member}')
+        elif phase == 'HOLD':
+            self.hold_started.set()
+            assert self.release_hold.wait(timeout=10), 'Timed out holding the model response'
         elif phase == 'RACE_START':
             if step == 0:
                 return self.post('task', title='One claimant', text='Both developers try the same version')
@@ -125,7 +130,8 @@ class ScriptedModel:
             with self.log.open('a', encoding='utf-8') as stream:
                 stream.write(json.dumps(record) + '\n')
         assert body.get('model') == 'test-model' and member in NAMES and phase, record
-        return number, self.script(member, phase, results, text)
+        response = 'Legacy reply received.' if member == 'lead' and 'Agent Bus result' in text else 'Scripted turn finished.'
+        return number, self.script(member, phase, results, text), response
 
 
 def handler_for(fixture):
@@ -133,7 +139,7 @@ def handler_for(fixture):
         def do_POST(self):
             try:
                 assert self.path == '/v1/chat/completions', self.path
-                number, tool = fixture.complete(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
+                number, tool, response = fixture.complete(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
                 if tool:
                     operation, arguments = tool
                     delta = {'tool_calls': [{'index': 0, 'id': f'call_smoke_{number}', 'type': 'function',
@@ -141,7 +147,7 @@ def handler_for(fixture):
                                  'operation': operation, 'arguments': arguments})}}]}
                     reason = 'tool_calls'
                 else:
-                    delta, reason = {'content': 'Scripted turn finished.'}, 'stop'
+                    delta, reason = {'content': response}, 'stop'
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/event-stream')
                 self.end_headers()
@@ -191,8 +197,12 @@ def launch(executable, directory, name):
             assert process.wait(timeout=12) == 0
         finally:
             if process.poll() is None:
-                process.terminate()
-                process.wait(timeout=12)
+                try:
+                    command(directory, 'quit')
+                    process.wait(timeout=12)
+                except (AssertionError, OSError, subprocess.TimeoutExpired):
+                    process.terminate()
+                    process.wait(timeout=12)
 
 
 def exercise(executable, directory, fixture):
@@ -203,7 +213,7 @@ def exercise(executable, directory, fixture):
         def observe():
             assert not fixture.errors, fixture.errors
             state = command(directory, 'team_state', teamId=fixture.team)
-            if fixture.team and len(state['board']['events']) >= event_count and not state['queued'] and not any(
+            if 'board' in state and len(state['board']['events']) >= event_count and not state['queued'] and not any(
                     row['busy'] for row in state['agents'].values()):
                 return state
         return wait_for(observe, f'Board did not settle after {event_count} events')
@@ -249,15 +259,26 @@ def exercise(executable, directory, fixture):
         claims = [event for event in raced['board']['events'][17:] if event['kind'] == 'claim']
         assert len(claims) == 1 and claims[0]['task']['version'] == 2
 
+        send('@api-dev P641 HOLD')
+        try:
+            assert fixture.hold_started.wait(timeout=12)
+            assert command(directory, 'team_state', teamId=fixture.team)['agents']['api-dev']['busy']
+            send('@api-dev P641 STEER')
+            time.sleep(0.75)
+        finally:
+            fixture.release_hold.set()
+        steered = settled(23)
+        assert steered['board']['events'][-1]['text'] == 'steer recorded by api-dev'
+
         before_legacy = len(fixture.requests)
         send('P641 LEGACY')
         def legacy_reply():
-            state = settled(20)
+            state = settled(23)
             return state if any(row['status'] == 'completed' and row['result'] == 'legacy reply verified'
                                 for row in state['requests']) and sum(row['member'] == 'lead' and row['phase'] == 'LEGACY'
                                 for row in fixture.requests[before_legacy:]) >= 3 else None
         final = wait_for(legacy_reply, 'One-to-one Agent Bus reply did not arrive')
-        assert any('Agent Bus result' in json.dumps(row['chat']) for row in final['agents'].values())
+        assert any('Legacy reply received.' in row['text'] for row in final['agents']['lead']['chat'])
         for member in final['agents'].values():
             assert member['sessionId'] and Path(member['sessionFile']).is_file() and not member['approval'], member
             assert any(tool['name'] == 'umeko_desktop' for msg in member['chat'] for tool in msg['tools']), member
@@ -272,7 +293,8 @@ def exercise(executable, directory, fixture):
         assert not restarted['queued'] and fixture.count() == request_count
     return {'boardEvents': len(final['board']['events']), 'idleRequests': idle_requests,
             'requestCounts': dict(request_count), 'race': {name: result['ok'] for name, result in fixture.claims.items()},
-            'directResumeSameSession': True, 'directRoutingLeadRequests': 0, 'group': True, 'broadcast': True,
+            'directResumeSameSession': True, 'directRoutingLeadRequests': 0, 'runningMention': True,
+            'group': True, 'broadcast': True,
             'oneToOne': True, 'restart': True, 'sessionFiles': 4,
             'applicationPids': [pid, restarted_pid], 'runtimePids': {name: row['pid'] for name, row in final['agents'].items()}}
 
@@ -290,6 +312,9 @@ def main():
             assert not (parent / name).is_file(), str(parent / name)
     profile.mkdir(parents=True)
     workspace.mkdir()
+    (profile / 'desktop-plugins').mkdir()
+    (profile / 'desktop-plugins/settings.json').write_text(
+        json.dumps({'enabled': {'desktop-pet': False}}), encoding='utf-8')
     fixture = ScriptedModel(output / 'model-requests.jsonl')
     with ThreadingHTTPServer(('127.0.0.1', 0), handler_for(fixture)) as server:
         url = f'http://127.0.0.1:{server.server_port}/v1'
