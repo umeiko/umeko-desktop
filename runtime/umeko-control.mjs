@@ -97,7 +97,7 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesCon
       pi.registerTool({ name: UMEKO_TOOL, label: '管理 Umeko', exposure: 'direct',
         description: 'Inspect and configure this running Umeko desktop. Start with help for documentation; widgets.list and widgets.docs discover enabled Widgets and their interfaces. Queued or accepted operations are not completed.',
         parameters: Type.Object({ operation: Type.String({ minLength: 1, maxLength: 80 }), arguments: Type.Optional(Type.Record(Type.String(), Type.Unknown())) }),
-        execute: async (_id, params, signal, _onUpdate, ctx) => {
+        execute: async (_id, params, signal, onUpdate, ctx) => {
           const args = params.arguments || {};
           let result;
           if (params.operation === 'shell.refreshEnvironment' && refreshShellEnvironment) {
@@ -114,7 +114,7 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesCon
             } catch (error) {
               result = {ok: false, error: error.message};
             }
-          } else result = await (remoteOperation?.(params.operation, args, signal) ?? this.request(params.operation, args, signal));
+          } else result = await (remoteOperation?.(params.operation, args, signal, onUpdate) ?? this.request(params.operation, args, signal));
           return { content: [{ type: 'text', text: JSON.stringify(result) }], isError: result.ok === false };
         },
       });
@@ -133,7 +133,8 @@ export function coordinatorToolGate(event, {petAssistant = false, reminderAssist
        event.input?.operation === 'widgets.result')) return;
   if (event.toolName === UMEKO_TOOL && event.input?.operation === 'agent_bus.create')
     return { block: true, reason: 'Only ordinary session Agents may create global subagents. Global subagents cannot create other global subagents.' };
-  if (event.toolName !== UMEKO_TOOL || !['agent_bus.overview','agent_bus.dispatch','agent_bus.requests','agent_bus.reply','agent_bus.connections','agent_bus.set_connection','help','models.list'].includes(event.input?.operation))
+  if (event.toolName !== UMEKO_TOOL || !['agent_bus.overview','agent_bus.dispatch','agent_bus.requests','agent_bus.reply','agent_bus.connections','agent_bus.set_connection',
+    'agent_bus.team_create','agent_bus.team_members','agent_bus.team_board','agent_bus.team_post','help','models.list'].includes(event.input?.operation))
     return { block: true, reason: 'Global coordinators use the opt-in agent_bus.* API; delegate workspace work to a bridged session.' };
 }
 export function coordinatorExtension(pi, options = {}) { pi.on('tool_call', event => coordinatorToolGate(event, options)); }

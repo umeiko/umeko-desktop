@@ -107,8 +107,8 @@ const umekoControl = createUmekoControl({
   }),
   getPetAssistantBinding: () => config?.petAssistantBinding || '',
   getPetReminderBinding: () => config?.petReminderBinding || '',
-  remoteOperation(operation, args, signal) {
-    if (operation === "remote-environments.test") return remoteEnvironments.test(args, signal);
+  remoteOperation(operation, args, signal, onUpdate) {
+    if (operation === "remote-environments.test") return remoteEnvironments.test(args, signal, onUpdate);
     if (operation === "remote-environments.browse") return remoteEnvironments.browse(args, signal);
     if (operation === "remote-environments.mkdir") return remoteEnvironments.mkdir(args, signal);
     if (operation === "remote-environments.home") return remoteEnvironments.home(args, signal);

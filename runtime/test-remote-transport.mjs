@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { RemoteConnection, RemoteRpcError, sshArguments, discoveryScript, listenerScript } from "./remote-transport.mjs";
+import { withBootstrapLock } from "./remote-bootstrap-lock.mjs";
 
 const info = { cwd: "file:///C:/Users/test", userHomeDir: "file:///C:/Users/test", platformOs: "windows", shell: { name: "powershell", path: "powershell.exe" } };
 class FakeSocket extends EventEmitter {
@@ -117,10 +118,14 @@ test("handle reads fail explicitly after session expiry instead of reusing inval
 
 test("retry:false and pre-aborted requests do not replay or connect unnecessarily", async () => {
   const connection = new FakeConnection(); connection.respond = () => { throw Object.assign(new Error("lost"), { transport: true }); };
-  await assert.rejects(connection.rpc("fs/readFile", {}, { retry: false }), /lost/);
-  const calls = connection.calls.length; const controller = new AbortController(); controller.abort();
-  await assert.rejects(connection.rpc("fs/readFile", {}, { signal: controller.signal }), { name: "AbortError" });
-  assert.equal(connection.calls.length, calls); connection.close();
+  try {
+    await assert.rejects(connection.rpc("fs/readFile", {}, { retry: false }), /lost/);
+    await connection.ready();
+    const calls = connection.calls.length; const controller = new AbortController(); controller.abort();
+    await assert.rejects(connection.rpc("fs/readFile", {}, { signal: controller.signal }), { name: "AbortError" });
+    assert.equal(connection.calls.filter(call => call.method === "fs/readFile").length, 1);
+    assert.equal(connection.calls.length, calls);
+  } finally { connection.close(); }
 });
 
 test("real RPC envelopes dispatch notifications and cancel pending requests locally", async () => {
@@ -182,7 +187,8 @@ test("Windows bootstrap sends a short inline command without waiting for SSH std
   child.stdin.on("data", chunk => { received += chunk.toString(); });
   child.stdin.on("finish", () => { child.stdout.write("result\n"); child.emit("close", 0); });
   connection._spawn = value => { args = value; return child; };
-  const source = listenerScript("windows", "C:\\Users\\test\\remote", "C:\\Users\\test\\remote\\codex-exec-server.exe");
+  const root = "C:\\Users\\test\\.local\\share\\umeko\\remote-exec\\rust-v0.172.0\\x64";
+  const source = withBootstrapLock("windows", root, listenerScript("windows", root, root + "\\codex-exec-server.exe"));
   assert.equal(await connection._ssh(source), "result");
   assert.ok(args.join(" ").length < 8191);
   assert.equal(args[0], "-n");
@@ -265,10 +271,91 @@ test("executor bootstrap starts a new upload, then resumes the same staging file
 
 test("request cancellation interrupts waiting for shared recovery without stopping the connection", async () => {
   const connection = new FakeConnection(); let release;
-  connection.ready = () => new Promise(resolve => { release = resolve; });
+  connection._bootstrap = () => new Promise(resolve => { release = resolve; });
   const controller = new AbortController(); const promise = connection.rpc("fs/readFile", {}, { signal: controller.signal });
   controller.abort(); await assert.rejects(promise, { name: "AbortError" });
-  assert.equal(connection.closed, false); assert.equal(connection.calls.length, 0); release(info); connection.close();
+  assert.equal(connection.closed, false); assert.equal(connection.calls.length, 0);
+  release({ port: 41000, token: "x".repeat(48) });
+  await connection.ready();
+  connection.close();
+});
+
+test("a recovered link keeps retrying after three failures and caps the interval at one minute", async () => {
+  const connection = new FakeConnection();
+  const delays = [], states = [];
+  connection.options.onState = (state, detail) => states.push({ state, ...detail });
+  connection.options.reconnectSleep = async ms => { delays.push(ms); };
+  await connection.ready();
+  const outage = Object.assign(new Error("SSH command timed out"), {
+    transport: true, sshError: "Connection timed out during banner exchange",
+  });
+  let attempts = 0;
+  connection._bootstrap = async () => {
+    if (attempts++ < 8) throw outage;
+    return { port: 41000, token: "x".repeat(48) };
+  };
+  try {
+    connection._drop();
+    const waiting = ["fs/readFile", "environment/info"].map(method => connection.rpc(method, {}));
+    await Promise.all(waiting);
+    assert.equal(attempts, 9);
+    assert.deepEqual(delays, [2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000]);
+    const retryStates = states.filter(state => state.retryAfterMs);
+    assert.deepEqual(retryStates.map(state => state.attempt), [2, 3, 4, 5, 6, 7, 8, 9]);
+    for (const state of retryStates) {
+      assert.equal(state.outageStartedAt, retryStates[0].outageStartedAt);
+      assert.ok(state.nextRetryAt >= state.outageStartedAt + state.retryAfterMs);
+    }
+    assert.equal(states.at(-1).recovered, true);
+    assert.equal(states.at(-1).resumed, true);
+    assert.equal(states.at(-1).outageStartedAt, retryStates[0].outageStartedAt);
+  } finally { connection.close(); }
+});
+
+test("a tool wait ends with SSH stderr while background recovery and other waiters continue", async context => {
+  context.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1000 });
+  const connection = new FakeConnection();
+  const diagnostic = "Connection timed out during banner exchange";
+  let attempting, release;
+  const reconnecting = new Promise(resolve => { attempting = resolve; });
+  connection.options.reconnectSleep = async () => {};
+  let attempts = 0;
+  connection._bootstrap = async () => {
+    if (attempts++ === 0) throw Object.assign(new Error(diagnostic), { transport: true, sshError: diagnostic });
+    await new Promise(resolve => { release = resolve; attempting(); });
+    return { port: 41000, token: "x".repeat(48) };
+  };
+  try {
+    const pending = connection.waitForReady();
+    await reconnecting;
+    context.mock.timers.tick(10 * 60_000);
+    await assert.rejects(pending, {
+      code: "REMOTE_RECONNECT_TIMEOUT", state: "reconnecting", attempt: 2, sshError: diagnostic,
+    });
+    assert.equal(connection.waiters.size, 0);
+    assert.equal(connection.state, "reconnecting");
+    assert.ok(connection.connecting);
+    const next = connection.waitForReady();
+    release();
+    assert.deepEqual(await next, info);
+    assert.equal(connection.state, "connected");
+  } finally { connection.close(); }
+});
+
+test("closing an environment interrupts retry backoff and releases its tool waiters", async () => {
+  const connection = new FakeConnection();
+  let backingOff;
+  const announced = new Promise(resolve => { backingOff = resolve; });
+  connection.options.onState = (_state, detail) => { if (detail.retryAfterMs) backingOff(); };
+  connection._bootstrap = async () => { throw Object.assign(new Error("connection reset"), { transport: true }); };
+  const pending = connection.waitForReady();
+  await announced;
+  const recovery = connection.connecting;
+  connection.close();
+  await assert.rejects(pending, { name: "AbortError" });
+  await assert.rejects(recovery, { name: "AbortError" });
+  assert.equal(connection.waiters.size, 0);
+  assert.equal(connection.state, "disconnected");
 });
 
 test("already attached recovery keeps the same resume ID through detach skew", async context => {
@@ -282,7 +369,7 @@ test("already attached recovery keeps the same resume ID through detach skew", a
   connection.options.onState = (_state, detail) => { if (detail.retryAfterMs) retrying(); };
   try {
     await connection.ready(); connection._drop(); const recovery = connection.ready();
-    await announced; context.mock.timers.tick(60_000); await recovery;
+    await announced; context.mock.timers.tick(2000); await recovery;
     assert.equal(connection.sessionGeneration, 1);
     assert.deepEqual(connection.calls.filter(call => call.method === "initialize").map(call => call.params.resumeSessionId), [undefined, "retained", "retained"]);
   } finally { connection.close(); }

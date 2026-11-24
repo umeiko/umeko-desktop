@@ -98,8 +98,16 @@ class Acceptance:
         self.app, self.engine, self.backend, self.spec = app, engine, backend, spec
         self.directory = Path(spec['runDir'])
         self.model = ScriptedModel()
+        self.started = time.monotonic()
         self.steps, self.states = [], []
         self.ui_states = []
+        self.outages = []
+        self.active_outage = None
+        self.current_tool = None
+        self.injected_outage = None
+        self.ssh_lifecycle = []
+        self.relay_drops = []
+        self.ssh_client = None
         self.sequence = 0
         self.long_output = ''
         self.long_started = None
@@ -108,6 +116,9 @@ class Acceptance:
 
     def state_changed(self):
         from PySide6.QtCore import QTimer
+        # Capture every transport transition immediately. Only QML observation
+        # needs deferral; deferring both can hide a short drop and recovery.
+        self.observe_transport()
         # Observe an actual state signal after its QML bindings have updated.
         QTimer.singleShot(0, self.observe_state)
 
@@ -115,7 +126,28 @@ class Acceptance:
         row = {'event': event, 'elapsed': round(time.monotonic() - self.started, 3), **data}
         with (self.directory / 'events.jsonl').open('a', encoding='utf-8') as handle:
             handle.write(json.dumps(row, ensure_ascii=False) + '\n')
+        progress = self.evidence()
+        progress.update(lastEvent=row, elapsed=row['elapsed'])
+        temporary = self.directory / 'progress.json.tmp'
+        temporary.write_text(json.dumps(progress, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
+        temporary.replace(self.directory / 'progress.json')
         print('REMOTE_REAL ' + json.dumps(row, ensure_ascii=False), flush=True)
+
+    def evidence(self):
+        return {'completedTools': len(self.steps), 'currentTool': self.current_tool,
+                'states': self.states, 'qmlStates': self.ui_states, 'outages': self.outages,
+                'injectedOutage': self.injected_outage, 'sshLifecycle': self.ssh_lifecycle,
+                'relayDrops': self.relay_drops,
+                'longOutputBytes': len(self.long_output.encode('utf-8'))}
+
+    def append_long_output(self, result):
+        output = result.get('output', '')
+        self.long_output += output
+        with (self.directory / 'long-command-output.txt').open('a', encoding='utf-8', newline='') as handle:
+            handle.write(output)
+        self.note('long-command-progress', status=result.get('status'),
+                  outputBytes=len(self.long_output.encode('utf-8')),
+                  elapsedSeconds=round(time.monotonic() - self.long_started, 3))
 
     def wait(self, predicate, seconds, label):
         from PySide6.QtTest import QTest
@@ -127,12 +159,29 @@ class Acceptance:
             time.sleep(.005)
         raise AssertionError('Timed out: ' + label)
 
-    def observe_state(self):
+    def observe_transport(self):
         rows = self.backend.remoteEnvironments
-        state = next((r.get('state') for r in rows if r.get('name') == 'acceptance'), None)
-        if state and (not self.states or self.states[-1]['state'] != state):
-            self.states.append({'state': state, 'at': time.monotonic()})
-            self.note('remote-state', state=state)
+        transport = next((r for r in rows if r.get('name') == 'acceptance'), {})
+        status = {key: transport[key] for key in ('state', 'attempt', 'retryAfterMs', 'nextRetryAt',
+                  'outageStartedAt', 'recovered', 'resumed', 'message', 'sshError') if key in transport}
+        if not status.get('state') or (self.states and self.states[-1]['status'] == status):
+            return
+        at = time.monotonic()
+        previous = self.states[-1]['state'] if self.states else None
+        state = status['state']
+        self.states.append({'state': state, 'at': at, 'status': status})
+        if previous == 'connected' and state != 'connected' and not self.active_outage:
+            self.active_outage = {'id': len(self.outages) + 1, 'startedAt': at,
+                                  'startedElapsed': round(at - self.started, 3),
+                                  'outageStartedAt': status.get('outageStartedAt')}
+            self.outages.append(self.active_outage)
+        if state == 'connected' and self.active_outage:
+            self.active_outage.update(recoveredAt=at, durationSeconds=round(at - self.active_outage['startedAt'], 3),
+                                      recoveredElapsed=round(at - self.started, 3), recoveredStatus=status)
+            self.active_outage = None
+        self.note('remote-state', **status)
+
+    def observe_state(self):
         pending = [self.engine.rootObjects()[0].contentItem()]
         while pending:
             item = pending.pop()
@@ -149,7 +198,11 @@ class Acceptance:
         identity = f'remote-real-{self.sequence}'
         self.model.current = {'id': identity, 'name': name, 'arguments': arguments}
         self.model.result = None
-        self.note('tool-start', tool=name, label=label or arguments.get('action', arguments.get('operation')))
+        started = time.monotonic()
+        self.current_tool = {'id': identity, 'tool': name,
+                             'label': label or arguments.get('action', arguments.get('operation')),
+                             'startedElapsed': round(started - self.started, 3), 'timeoutSeconds': timeout}
+        self.note('tool-start', **self.current_tool)
         assert self.backend.send('Execute acceptance step ' + identity), self.backend.lastSendError
         self.wait(lambda: self.model.result is not None and not self.backend.busy, timeout, identity)
         result = decode_result(self.model.result)
@@ -159,8 +212,10 @@ class Acceptance:
                      if tool.get('id') == identity and tool.get('name') == name]
         assert tool_rows, ('No real chat tool row', name, identity)
         self.tool_rows.extend(tool_rows)
-        self.steps.append({'id': identity, 'tool': name, 'label': label, 'result': result})
-        self.note('tool-finish', tool=name, status=result.get('status'), exitCode=result.get('exitCode'))
+        duration = round(time.monotonic() - started, 3)
+        self.steps.append({'id': identity, 'tool': name, 'label': label, 'durationSeconds': duration, 'result': result})
+        self.current_tool = None
+        self.note('tool-finish', tool=name, status=result.get('status'), exitCode=result.get('exitCode'), durationSeconds=duration)
         return result
 
     def command(self, command, **extra):
@@ -190,7 +245,6 @@ class Acceptance:
         return result, output
 
     def run(self):
-        self.started = time.monotonic()
         b = self.backend
         self.note('begin', platform=self.spec['platform'], host=self.spec['host'])
         toasts = []
@@ -216,12 +270,9 @@ class Acceptance:
                            timeout=self.spec.get('bootstrapTimeout', 240))
         assert tested.get('ok'), tested
         ssh_client = Path(tested['sshClient']).resolve()
+        self.ssh_client = ssh_client
         if self.spec.get('expectedSshExecutable'):
             assert ssh_client == Path(self.spec['expectedSshExecutable']).resolve(), tested
-        clients = self.directory / 'ssh-control/clients.jsonl'
-        started_clients = [json.loads(line) for line in clients.read_text(encoding='utf-8').splitlines()]
-        started_executables = {Path(row['executable']).resolve() for row in started_clients}
-        assert started_executables == {ssh_client}, (ssh_client, started_executables)
         self.note('ssh-client-selected', executable=str(ssh_client))
         short, output = self.read_until_complete(self.command(self.python("print('REMOTE_SHORT_OK')")))
         assert short.get('exitCode') == 0 and output == 'REMOTE_SHORT_OK\n', (short, output)
@@ -264,7 +315,7 @@ class Acceptance:
         self.long_started = time.monotonic()
         long = self.command(self.python(source))
         assert long.get('status') == 'running', long
-        self.long_output += long.get('output', '')
+        self.append_long_output(long)
         session = long['sessionId']
 
         # Drop only the SSH client owned by this test; exec-server and the long
@@ -276,37 +327,52 @@ class Acceptance:
         (control / 'blocked').write_text('acceptance fault injection\n')
         killed = candidates[0]['pid']
         os.kill(killed, signal.SIGTERM)
-        self.note('ssh-client-killed', pid=killed)
+        self.injected_outage = {'pid': killed, 'blockedAt': time.monotonic(),
+                                'requestedBlockSeconds': self.spec['outageSeconds']}
+        self.wait(lambda: not self.pid_alive(killed), 10, 'owned SSH client exited')
+        self.injected_outage['confirmedExitedAt'] = time.monotonic()
+        self.note('ssh-client-killed', **self.injected_outage)
         released = threading.Event()
+        release_timing = {}
 
         def restore():
             time.sleep(self.spec['outageSeconds'])
             (control / 'blocked').unlink(missing_ok=True)
+            release_timing['releasedAt'] = time.monotonic()
             released.set()
 
         threading.Thread(target=restore, daemon=True).start()
+        recovery_timeout = self.spec.get('recoveryTimeout', 300)
         recovered = self.call('remote_command', {'action': 'read', 'environment': 'acceptance',
-                              'sessionId': session, 'yieldMs': 1000, 'maxOutputBytes': 262144}, timeout=300,
+                              'sessionId': session, 'yieldMs': 1000, 'maxOutputBytes': 262144}, timeout=recovery_timeout,
                               label='read across >2 minute SSH outage')
         assert released.is_set(), 'Read returned before the transport outage ended'
-        self.long_output += recovered.get('output', '')
+        self.injected_outage.update(release_timing, recoveredAt=time.monotonic())
+        self.injected_outage['actualBlockSeconds'] = round(release_timing['releasedAt'] - self.injected_outage['blockedAt'], 3)
+        self.injected_outage['recoverySeconds'] = round(self.injected_outage['recoveredAt'] - self.injected_outage['blockedAt'], 3)
+        assert self.injected_outage['actualBlockSeconds'] >= self.spec['outageSeconds'], self.injected_outage
+        self.note('injected-outage-recovered', **self.injected_outage)
+        self.append_long_output(recovered)
         assert any(r['state'] in ('reconnecting', 'connecting', 'retrying') for r in self.states), self.states
         assert self.states[-1]['state'] in ('connected', 'ready'), self.states
         assert any(r['state'] == 'reconnecting' for r in self.ui_states), ('QML never bound reconnect state', self.ui_states)
         assert self.ui_states[-1]['state'] == 'connected', self.ui_states
+        assert any(r['status'].get('retryAfterMs', 0) > 0 for r in self.states
+                   if r['at'] >= self.injected_outage['blockedAt']), 'No actual scheduled reconnect retry was observed'
 
         nearby, failed_output = self.read_until_complete(self.command(self.python(
             "import sys\nprint('NEARBY_FAILURE_STDOUT')\nprint('NEARBY_FAILURE_STDERR',file=sys.stderr)\nsys.exit(7)")))
         assert nearby.get('exitCode') == 7 and 'NEARBY_FAILURE_STDOUT' in failed_output and 'NEARBY_FAILURE_STDERR' in failed_output
         from PySide6.QtTest import QTest
         while recovered.get('status') == 'running':
-            assert time.monotonic() - self.long_started < seconds + 180, '20 minute command exceeded deadline'
+            assert time.monotonic() - self.long_started < seconds + self.spec.get('recoveryTimeout', 180), '20 minute command exceeded deadline'
             # Allow several output lines to accumulate per turn so the long
             # command stays inside the fixture's live chat transcript window.
             QTest.qWait(30000)
             recovered = self.call('remote_command', {'action': 'read', 'environment': 'acceptance',
-                                  'sessionId': session, 'yieldMs': 10000, 'maxOutputBytes': 262144}, timeout=90)
-            self.long_output += recovered.get('output', '')
+                                  'sessionId': session, 'yieldMs': 10000, 'maxOutputBytes': 262144},
+                                  timeout=self.spec.get('recoveryTimeout', 90))
+            self.append_long_output(recovered)
         assert recovered.get('exitCode') == 0, recovered
         lines = self.long_output.splitlines()
         assert lines and lines[0].startswith('START:'), self.long_output
@@ -314,13 +380,41 @@ class Acceptance:
         expected = f'START:{pid}\n' + ''.join(f'TICK:{i:04d}\n' for i in range(seconds)) + f'DONE:{pid}\n'
         assert self.long_output == expected, ('Lost, duplicated or reordered output', len(self.long_output), len(expected))
         assert time.monotonic() - self.long_started >= seconds, 'Long command did not actually run for requested duration'
-        (self.directory / 'long-command-output.txt').write_text(self.long_output, encoding='utf-8')
         (self.directory / 'chat-tool-rows.json').write_text(json.dumps(self.tool_rows, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
+        self.collect_ssh_evidence()
+        assert not self.active_outage, ('An observed transport drop never recovered', self.active_outage)
+        self.note('long-command-output-complete', commandPid=pid, outputLines=len(lines),
+                  actualSeconds=round(time.monotonic() - self.long_started, 3))
         self.note('passed', commandPid=pid, longSeconds=seconds, payloadBytes=self.spec['payloadBytes'],
                   outageSeconds=self.spec['outageSeconds'], actualModelRequests=self.model.requests)
         return {'ok': True, 'commandPid': pid, 'longSeconds': seconds, 'payloadBytes': self.spec['payloadBytes'],
-                'outageSeconds': self.spec['outageSeconds'], 'states': self.states, 'qmlStates': self.ui_states, 'steps': self.steps,
+                'outageSeconds': self.spec['outageSeconds'], **self.evidence(), 'steps': self.steps,
                 'scope': 'offscreen real gateway/Pi/tools/SSH/exec-server; scripted local model; no upstream model'}
+
+    def collect_ssh_evidence(self):
+        lifecycle = self.directory / 'ssh-control/lifecycle.jsonl'
+        self.ssh_lifecycle = [json.loads(line) for line in lifecycle.read_text(encoding='utf-8').splitlines()]
+        assert all(Path(row['executable']).resolve() == self.ssh_client for row in self.ssh_lifecycle
+                   if row['event'] == 'client-start'), 'Reconnect selected a different real SSH executable'
+        starts = sorted((r for r in self.ssh_lifecycle if r['event'] == 'client-start' and r.get('tunnel')),
+                        key=lambda r: r['at'])
+        exits = {r['pid']: r for r in self.ssh_lifecycle if r['event'] == 'client-exit' and r.get('tunnel')}
+        drops = []
+        for outage in self.outages:
+            assert 'recoveredAt' in outage, ('Observed disconnection did not recover', outage)
+            previous = max(s['at'] for s in self.states if s['state'] == 'connected' and s['at'] < outage['startedAt'])
+            old = next((r for r in reversed(starts) if r['at'] <= previous), None)
+            new = next((r for r in reversed(starts) if previous < r['at'] <= outage['recoveredAt']), None)
+            assert old and new and old['pid'] != new['pid'], ('No replacement SSH client in observed recovery', outage)
+            # Umeko can close a wrapper before it records its child's exit. The
+            # application transitions and the replacement client prove recovery.
+            exit_record = exits.get(old['pid'], {})
+            drops.append({'pid': old['pid'], 'exitCode': exit_record.get('exitCode'),
+                          'droppedAt': outage['startedAt'], 'replacementPid': new['pid'],
+                          'connectedAt': outage['recoveredAt'], 'durationSeconds': outage['durationSeconds']})
+        assert any(drop['pid'] == self.injected_outage['pid'] for drop in drops), 'Injected SSH client was not replaced'
+        self.relay_drops = drops
+        self.note('ssh-relay-drops-recovered', drops=drops, count=len(drops))
 
     @staticmethod
     def pid_alive(pid):
@@ -380,7 +474,9 @@ def start(app, engine, controller, spec_path):
             result = acceptance.run()
             status = 0
         except BaseException:
-            result = {'ok': False, 'error': traceback.format_exc()}
+            result = {'ok': False, **(acceptance.evidence() if acceptance else {}), 'error': traceback.format_exc()}
+            if acceptance:
+                acceptance.note('failed', error=result['error'])
             print(result['error'], flush=True)
             status = 1
         finally:

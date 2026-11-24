@@ -315,26 +315,26 @@ test("remote-environments browse, mkdir, home, and Windows drive listing", async
   }
 });
 
-test("RemoteConnection reconnects with growing intervals and reports plain-language failure on exhaustion", async () => {
+test("RemoteConnection reconnects with growing intervals and reports plain-language timeout while retrying", async () => {
   assert.ok(DEFAULT_RECONNECT_DELAYS_MS.length >= 6);
   assert.ok(DEFAULT_RECONNECT_DELAYS_MS[0] < DEFAULT_RECONNECT_DELAYS_MS.at(-1));
-  const totalMs = DEFAULT_RECONNECT_DELAYS_MS.reduce((a, b) => a + b, 0);
-  assert.ok(totalMs >= 180_000, "default reconnect window should span multiple minutes");
 
-  const delays = [1, 2, 4];
+  const delays = [5, 10, 20];
   const observed = [];
   const conn = new RemoteConnection({ host: "unreachable-alias", platform: "linux" }, {
     sshCommand: process.execPath,
     reconnectDelaysMs: delays,
+    outageTimeoutMs: 45,
     onState: (state, detail) => observed.push({ state, ...detail }),
   });
   conn._selectSsh = async () => {};
   conn._bootstrap = async () => {
     throw Object.assign(new Error("Connection refused"), { transport: true, sshError: "Connection refused" });
   };
-  await assert.rejects(conn.ready(), /Unable to reconnect to unreachable-alias after 4 attempts[\s\S]*Connection refused/);
+  await assert.rejects(conn.waitForReady(), /The host has not reconnected.*Connection refused/s);
   const reconnecting = observed.filter(e => e.state === "reconnecting" && e.retryAfterMs !== undefined);
-  assert.deepEqual(reconnecting.map(e => e.retryAfterMs), delays);
-  assert.equal(observed.at(-1).state, "error");
+  assert.ok(reconnecting.length >= 2);
+  assert.equal(reconnecting[0].retryAfterMs, 5);
+  assert.equal(reconnecting[1].retryAfterMs, 10);
   conn.close();
 });

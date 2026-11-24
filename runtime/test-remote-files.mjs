@@ -8,17 +8,18 @@ import { createRemoteFiles, resolveRemotePath, remotePathUri, REMOTE_FILE_CHUNK_
 import { remoteFileHelperCommand } from './remote-files-native.mjs';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
-async function fixture(t) {
+async function fixture(t, platform = 'linux') {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'umeko-remote-files-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const remote = path.join(root, 'remote'), local = path.join(root, 'local');
   await fs.mkdir(remote); await fs.mkdir(local);
   const handles = new Map(), readOffsets = [], writes = [];
   let expired = false, expireAt = null;
-  const mapped = uri => path.join(remote, decodeURIComponent(new URL(uri).pathname));
+  const mapped = uri => path.join(remote, decodeURIComponent(new URL(uri).pathname).replace(/^\/[A-Za-z]:/, ''));
   const connection = {
-    sessionId: 'original', platform: 'linux',
-    async ready() { return { cwd: 'file:///work', userHomeDir: 'file:///home/test', platformOs: 'linux' }; },
+    sessionId: 'original', sessionGeneration: 1, platform,
+    async waitForReady(signal) { signal?.throwIfAborted(); return this.ready(); },
+    async ready() { return platform === 'windows' ? { cwd: 'file:///C:/work', userHomeDir: 'file:///C:/Users/test', platformOs: platform } : { cwd: 'file:///work', userHomeDir: 'file:///home/test', platformOs: platform }; },
     async rpc(method, params) {
       const name = params.path ? mapped(params.path) : null;
       if (method === 'fs/createDirectory') { await fs.mkdir(name, { recursive: params.recursive }); return {}; }
@@ -37,7 +38,7 @@ async function fixture(t) {
         if (!expired && expireAt !== null && params.offset >= expireAt) {
           // Represents an outage beyond the fixed executor retention. Handles
           // from the old session no longer exist when the RPC is replayed.
-          expired = true; connection.sessionId = 'replacement-after-80s'; handles.clear();
+          expired = true; connection.sessionId = 'replacement-after-80s'; connection.sessionGeneration++; handles.clear();
         }
         if (!handles.has(params.handleId)) throw new Error('Unknown file handle');
         const file = await fs.open(handles.get(params.handleId), 'r');
@@ -51,7 +52,7 @@ async function fixture(t) {
     },
   };
   const native = async task => {
-    const source = value => mapped(remotePathUri(value, 'linux'));
+    const source = value => mapped(remotePathUri(value, platform));
     if (task.kind === 'hash') return hash(await fs.readFile(source(task.path)));
     const chunks = [];
     for (let i = 0; i < task.chunks; i++) chunks.push(await fs.readFile(path.join(source(task.directory), String(i).padStart(10, '0'))));
@@ -186,4 +187,61 @@ test('recovery: read open lost reply and typed session expiration reopen safely'
   const result = await f.files.execute({ action: 'read', path: 'source' });
   assert.equal(result.content, 'recovered read');
   assert.equal(opens, 3);
+});
+
+test('Windows transfer resumes immutable upload chunks and confirmed download offsets across outages', async t => {
+  const f = await fixture(t, 'windows');
+  const content = Buffer.alloc(REMOTE_FILE_CHUNK_BYTES * 3 + 17, 91);
+  await fs.writeFile(path.join(f.local, 'source.bin'), content);
+  const original = f.connection.rpc.bind(f.connection);
+  let uploadLost = false;
+  const expiredOffsets = new Set();
+  f.connection.rpc = async (method, params, options) => {
+    if (method === 'fs/writeFile' && !uploadLost && params.path.endsWith('/0000000001')) {
+      await original(method, params, options);
+      uploadLost = true;
+      assert.equal(options.retry, true);
+      f.connection.sessionGeneration++;
+      f.connection.sessionId = 'upload-replacement';
+      return original(method, structuredClone(params), options);
+    }
+    if (method === 'fs/readBlock') {
+      assert.equal(options.sessionGeneration, f.connection.sessionGeneration);
+      if (params.offset && !expiredOffsets.has(params.offset)) {
+        expiredOffsets.add(params.offset);
+        f.readOffsets.push(params.offset);
+        f.connection.sessionGeneration++;
+        f.connection.sessionId = `download-replacement-${params.offset}`;
+        throw Object.assign(new Error('Executor replaced while awaiting block'), { code: 'REMOTE_SESSION_CHANGED' });
+      }
+    }
+    if (method === 'fs/close') assert.equal(options.wait, false);
+    return original(method, params, options);
+  };
+  await f.files.execute({ action: 'upload', path: 'folder with spaces/中文.bin', localPath: 'source.bin' }, { cwd: f.local });
+  assert.deepEqual(f.writes.map(row => path.basename(row.path)), ['0000000000', '0000000001', '0000000001', '0000000002', '0000000003']);
+  const download = await f.files.execute({ action: 'download', path: 'folder with spaces/中文.bin', localPath: 'result.bin' }, { cwd: f.local });
+  assert.deepEqual(await fs.readFile(path.join(f.local, 'result.bin')), content);
+  assert.equal(download.bytes, content.length);
+  assert.equal(f.readOffsets.filter(offset => offset === 0).length, 1);
+  for (const offset of expiredOffsets) assert.equal(f.readOffsets.filter(value => value === offset).length, 2);
+});
+
+test('reconnect timeout stops this read without reopening or waiting during cleanup', async t => {
+  const f = await fixture(t);
+  await fs.mkdir(path.join(f.remote, 'work'));
+  await fs.writeFile(path.join(f.remote, 'work', 'source'), 'data');
+  const original = f.connection.rpc.bind(f.connection);
+  let opens = 0, readyCalls = 0, closes = 0;
+  f.connection.waitForReady = async () => { readyCalls++; return f.connection.ready(); };
+  f.connection.rpc = async (method, params, options) => {
+    if (method === 'fs/open') opens++;
+    if (method === 'fs/readBlock') throw Object.assign(new Error('Relay still reconnecting'), { code: 'REMOTE_RECONNECT_TIMEOUT', transport: true });
+    if (method === 'fs/close') { closes++; assert.equal(options.wait, false); }
+    return original(method, params, options);
+  };
+  await assert.rejects(f.files.execute({ action: 'read', path: 'source' }), { code: 'REMOTE_RECONNECT_TIMEOUT' });
+  assert.equal(opens, 1);
+  assert.equal(readyCalls, 1);
+  assert.equal(closes, 1);
 });

@@ -47,6 +47,7 @@ export function remotePathUri(value, platform) {
   return 'file://' + value.split('/').map(encodeURIComponent).join('/');
 }
 const handleLost = error => error?.code === 'REMOTE_SESSION_CHANGED' || /(?:unknown|invalid|missing|not found|closed).*handle|handle.*(?:unknown|invalid|missing|not found|closed)|session.*(?:replaced|expired)/i.test(error?.message || '');
+const recoverable = error => error?.code !== 'REMOTE_RECONNECT_TIMEOUT' && (error?.transport || handleLost(error));
 
 export function createRemoteFiles(connection, dependencies = {}) {
   let commands;
@@ -68,7 +69,7 @@ export function createRemoteFiles(connection, dependencies = {}) {
 
   return { async execute(args, { signal, onUpdate, cwd = process.cwd() } = {}) {
     signal?.throwIfAborted();
-    const info = await connection.ready();
+    const info = await connection.waitForReady(signal);
     const platform = connection.platform || (info.platformOs === 'windows' ? 'windows' : 'linux');
     const paths = platform === 'windows' ? path.win32 : path.posix;
     const remoteCwd = resolveRemotePath(args.cwd || '.', info, platform);
@@ -81,21 +82,22 @@ export function createRemoteFiles(connection, dependencies = {}) {
     const mkdir = value => rpc('fs/createDirectory', { path: uri(value), recursive: true, followSymlinks: false }, { retry: true });
     const progress = event => { signal?.throwIfAborted(); onUpdate?.(event); };
     const readHandle = async value => {
-      let handleId, handleSession;
+      let handleId, handleSession, handleGeneration;
       const open = async () => {
         for (let attempt = 0; attempt < 3; attempt++) {
           handleId = randomUUID().replaceAll('-', '');
           try {
             await rpc('fs/open', { path: uri(value), handleId, mode: 'read' });
             handleSession = connection.sessionId;
+            handleGeneration = connection.sessionGeneration;
             return;
           } catch (error) {
             // fs/open is not replayable at the transport layer. A lost reply to
             // a read-only open can safely be replaced with a fresh handle after
             // reconnecting, even when the old executor session has expired.
-            if (attempt === 2 || !(error.transport || handleLost(error))) throw error;
+            if (attempt === 2 || !recoverable(error)) throw error;
             signal?.throwIfAborted();
-            await connection.ready();
+            await connection.waitForReady(signal);
           }
         }
       };
@@ -107,16 +109,16 @@ export function createRemoteFiles(connection, dependencies = {}) {
           for (let attempt = 0; attempt < 3; attempt++) {
             try {
               if (connection.sessionId !== handleSession) await open();
-              const result = await rpc('fs/readBlock', { handleId, offset, len });
+              const result = await rpc('fs/readBlock', { handleId, offset, len }, { sessionGeneration: handleGeneration });
               return Buffer.from(result.chunk, 'base64');
             } catch (error) {
-              if (attempt === 2 || !(connection.sessionId !== handleSession || handleLost(error) || error.transport)) throw error;
-              if (error.transport) await connection.ready();
+              if (attempt === 2 || error.code === 'REMOTE_RECONNECT_TIMEOUT' || signal?.aborted || !(connection.sessionId !== handleSession || recoverable(error))) throw error;
+              if (error.transport) await connection.waitForReady(signal);
               await open();
             }
           }
         },
-        async close() { await rpc('fs/close', { handleId }, { retry: false }).catch(() => {}); },
+        async close() { await rpc('fs/close', { handleId }, { retry: false, sessionGeneration: handleGeneration, wait: false }).catch(() => {}); },
       };
     };
     const readBounded = async (value, limit, offset = 0) => {

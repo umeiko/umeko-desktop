@@ -16,6 +16,7 @@ import { deflateRawSync } from "node:zlib";
 import WebSocket from "ws";
 import { updateRequest } from "./update-engine.mjs";
 import { selectSshClient, sshDiagnostic } from "./remote-ssh-client.mjs";
+import { withBootstrapLock } from "./remote-bootstrap-lock.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const manifest = JSON.parse(await readFile(join(here, "remote-exec-assets.json"), "utf8"));
@@ -26,10 +27,13 @@ const quotePs = value => `'${String(value).replaceAll("'", "''")}'`;
 const exists = async path => access(path).then(() => true, () => false);
 const abortError = () => Object.assign(new Error("Remote request cancelled"), { name: "AbortError" });
 const connectionError = () => Object.assign(new Error("Remote connection interrupted"), { transport: true });
-// Grow reconnect intervals across several minutes before surfacing an error.
-export const DEFAULT_RECONNECT_DELAYS_MS = [2_000, 5_000, 10_000, 15_000, 30_000, 45_000, 60_000, 60_000, 60_000, 60_000];
 const fatalSsh = /permission denied|authentication failed|host key verification failed|remote host identification has changed|no matching host key|too many authentication failures|bad configuration|could not resolve hostname|unprotected private key|bad permissions|sign_and_send_pubkey: signing failed|posix_spawnp: no such file/i;
 const disconnectedSsh = /connection (?:reset|timed out|closed)|connection to .+ closed by remote host|broken pipe|send\(\) failed,\s*10054|lost connection/i;
+const rejectedSsh = /host key verification failed|remote host identification has changed|permission denied \(|no matching host key type found/i;
+const retryDelays = [2_000, 4_000, 8_000, 16_000, 32_000, 60_000];
+export const DEFAULT_RECONNECT_DELAYS_MS = retryDelays;
+const outageTimeoutMs = 10 * 60_000;
+const sessionChanged = () => Object.assign(new Error("Remote session expired; reopen the process or file handle"), { code: "REMOTE_SESSION_CHANGED" });
 function sshFailure(message, stderr, transport, fatal = false) {
   const sshError = sshDiagnostic(stderr);
   return Object.assign(new Error(sshError ? `${message}\n${sshError}` : message), {
@@ -42,17 +46,6 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
   const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, ms);
   signal?.addEventListener("abort", abort, { once: true });
 });
-function abortable(promise, signal) {
-  if (!signal) return promise;
-  if (signal.aborted) return Promise.reject(abortError());
-  return new Promise((resolve, reject) => {
-    const abort = () => { cleanup(); reject(abortError()); };
-    const cleanup = () => signal.removeEventListener("abort", abort);
-    signal.addEventListener("abort", abort, { once: true });
-    promise.then(value => { cleanup(); resolve(value); }, error => { cleanup(); reject(error); });
-  });
-}
-
 export function sshArguments(host) {
   if (typeof host !== "string" || !/^[a-zA-Z0-9_][a-zA-Z0-9_.@:\-]*$/.test(host)) throw new Error("Enter an OpenSSH host alias or hostname");
   return ["-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2"];
@@ -255,6 +248,7 @@ export class RemoteConnection {
     this.sshClient = this.sshCommand?.[0];
     this.state = "disconnected"; this.sessionId = null; this.sessionGeneration = 0;
     this.closed = false; this.nextId = 1; this.pending = new Map(); this.children = new Set(); this.controller = new AbortController();
+    this.waiters = new Set();
   }
 
   _state(state, detail = {}) {
@@ -272,7 +266,7 @@ export class RemoteConnection {
     this.sshCommand = wrapper || [this.sshClient];
     this.sshEnv = wrapper ? { ...env, UMEKO_REAL_SSH: this.sshClient,
       UMEKO_SSH_TEST_CONTROL: process.env.UMEKO_SSH_TEST_CONTROL } : env;
-    this._state(this.state);
+    this._state(this.state, this.outageStartedAt === undefined ? {} : this._outageDetails());
   }
 
   _spawn(args) {
@@ -300,7 +294,12 @@ export class RemoteConnection {
     let output = "", diagnostics = "";
     const result = new Promise((resolve, reject) => {
       const cleanup = () => { clearTimeout(timer); this.controller.signal.removeEventListener("abort", abort); };
-      const timer = setTimeout(() => { cleanup(); child.kill(); reject(sshFailure(`${label} timed out`, diagnostics, true)); }, timeout);
+      const timer = setTimeout(() => {
+        cleanup();
+        child.kill();
+        const fatal = rejectedSsh.test(sshDiagnostic(diagnostics));
+        reject(sshFailure(`${label} timed out`, diagnostics, !fatal, fatal));
+      }, timeout);
       const abort = () => { cleanup(); child.kill(); reject(abortError()); };
       this.controller.signal.addEventListener("abort", abort, { once: true });
       child.stdout.on("data", data => { output += data; if (output.length > 1024 * 1024) child.kill(); });
@@ -311,7 +310,8 @@ export class RemoteConnection {
         if (code === 0) resolve(output.trim());
         else {
           // SFTP builds do not all report the SSH child's exit as numeric 255.
-          const disconnected = code === 255 || sftp && disconnectedSsh.test(sshDiagnostic(diagnostics));
+          const sshError = sshDiagnostic(diagnostics);
+          const disconnected = !rejectedSsh.test(sshError) && (code === 255 || sftp && disconnectedSsh.test(sshError));
           // Stdout can contain the listener bearer. Publish only bounded stderr.
           reject(sshFailure(`${label} failed (exit ${code ?? "signal"})`, diagnostics, disconnected, !disconnected));
         }
@@ -365,12 +365,24 @@ export class RemoteConnection {
       if (sftp) await this._sftpUpload(asset, temporary, { timeout, resume: info.staged === true });
       else await this._ssh(`umask 077; cat > ${quoteSh(temporary)}`, { inputFile: asset, timeout });
       const install = this.config.platform === "windows"
-        ? `$ErrorActionPreference='Stop';Move-Item -LiteralPath ${quotePs(temporary)} -Destination ${quotePs(info.binary)} -Force`
-        : `set -eu; tar -xzf ${quoteSh(temporary)} -C ${quoteSh(info.root)}; found=$(find ${quoteSh(info.root)} -maxdepth 2 -type f -name 'codex-exec-server*' ! -name '*tar*' | head -n 1); [ -n "$found" ]; [ "$found" = ${quoteSh(info.binary)} ] || mv "$found" ${quoteSh(info.binary)}; chmod 700 ${quoteSh(info.binary)}; rm -f ${quoteSh(temporary)}`;
-      await this._ssh(install);
+        ? `$ErrorActionPreference='Stop';if (Test-Path -LiteralPath ${quotePs(info.binary)} -PathType Leaf) { Remove-Item -LiteralPath ${quotePs(temporary)} -Force } else { Move-Item -LiteralPath ${quotePs(temporary)} -Destination ${quotePs(info.binary)} }`
+        : `set -eu
+if [ ! -x ${quoteSh(info.binary)} ]; then
+  unpack=${quoteSh(temporary + ".unpack")}
+  mkdir -p "$unpack"
+  trap 'rm -rf -- "$unpack"' EXIT
+  tar -xzf ${quoteSh(temporary)} -C "$unpack"
+  found=$(find "$unpack" -maxdepth 2 -type f -name 'codex-exec-server*' ! -name '*tar*' | head -n 1)
+  [ -n "$found" ]
+  chmod 700 "$found"
+  mv "$found" ${quoteSh(info.binary)}
+fi
+rm -f ${quoteSh(temporary)}`;
+      await this._ssh(withBootstrapLock(this.config.platform, info.root, install), { timeout: 90_000 });
     }
     this.sftpUploadId = undefined;
-    const listener = await this._ssh(listenerScript(this.config.platform, info.root, info.binary), { timeout: 60_000 });
+    const listener = await this._ssh(withBootstrapLock(this.config.platform, info.root,
+      listenerScript(this.config.platform, info.root, info.binary)), { timeout: 120_000 });
     let result;
     if (this.config.platform === "windows") result = JSON.parse(listener);
     else { const [port, token] = listener.split(/\r?\n/); result = { port: Number(port), token }; }
@@ -399,12 +411,16 @@ export class RemoteConnection {
     child.once("exit", () => { if (this.tunnel === child) { this.tunnel = null; this._lost(); } });
     for (let i = 0; i < 100; i++) {
       if (failure) throw failure;
-      if (ended) throw sshFailure(`SSH tunnel exited (${child.exitCode ?? child.signalCode ?? "unknown"})`, diagnostics, true);
+      if (ended) {
+        const fatal = rejectedSsh.test(sshDiagnostic(diagnostics));
+        throw sshFailure(`SSH tunnel exited (${child.exitCode ?? child.signalCode ?? "unknown"})`, diagnostics, !fatal, fatal);
+      }
       if (this.closed) throw abortError();
       if (listening && child.exitCode === null && child.signalCode === null) return localPort;
       await sleep(100, this.controller.signal);
     }
-    throw sshFailure("SSH tunnel timed out", diagnostics, true);
+    const fatal = rejectedSsh.test(sshDiagnostic(diagnostics));
+    throw sshFailure("SSH tunnel timed out", diagnostics, !fatal, fatal);
   }
 
   async _openSocket(port, token) {
@@ -450,17 +466,40 @@ export class RemoteConnection {
     for (const pending of this.pending.values()) { pending.cleanup(); pending.reject(connectionError()); }
     this.pending.clear();
     if (this.closed || this.connecting) return;
-    this._state("reconnecting");
-    // One bounded recovery loop; close cancels sleeps and scoped SSH children.
+    this._beginOutage();
+    const reason = sshDiagnostic(this.tunnelDiagnostics);
+    if (reason) this.reconnectSshError = reason;
+    // Keep a single connection attempt alive across concurrent tools. The
+    // per-tool wait can expire without cancelling this environment's recovery.
     this.ready().catch(() => {});
   }
 
+  _beginOutage() {
+    if (this.outageStartedAt !== undefined) return;
+    this.outageStartedAt = Date.now();
+    for (const waiter of this.waiters) waiter.startDeadline();
+  }
+
+  _outageDetails() {
+    return {
+      outageStartedAt: this.outageStartedAt, attempt: this.reconnectAttempt,
+      nextRetryAt: this.nextRetryAt, sshError: this.reconnectSshError,
+    };
+  }
+
+  _clearOutage() {
+    this.outageStartedAt = this.nextRetryAt = this.reconnectSshError = undefined;
+  }
+
   async _connect() {
-    this._state(this.sessionId ? "reconnecting" : "connecting");
-    const delays = Array.isArray(this.options.reconnectDelaysMs) ? this.options.reconnectDelaysMs : DEFAULT_RECONNECT_DELAYS_MS;
-    for (let attempt = 0; attempt <= delays.length; attempt++) {
+    if (this.sessionId) this._beginOutage();
+    const delays = Array.isArray(this.options.reconnectDelaysMs) ? this.options.reconnectDelaysMs : retryDelays;
+    for (let attempt = 1; !this.closed; attempt++) {
+      this.reconnectAttempt = attempt;
+      this.nextRetryAt = undefined;
+      if (this.outageStartedAt === undefined) this._state("connecting");
+      else this._state("reconnecting", this._outageDetails());
       try {
-        if (attempt > 0) this._state("reconnecting");
         this._drop();
         this.tunnelDiagnostics = "";
         await this._selectSsh();
@@ -479,52 +518,110 @@ export class RemoteConnection {
         if (previous !== this.sessionId) this.sessionGeneration++;
         this.socket.send(JSON.stringify({ method: "initialized", params: {} }));
         this.environmentInfo = result.environmentInfo || await this._request("environment/info", "{}", this.controller.signal);
-        this._state("connected", { sessionId: this.sessionId, sessionGeneration: this.sessionGeneration, resumed: !!previous && previous === this.sessionId });
+        const recovered = this.outageStartedAt !== undefined;
+        const recovery = recovered ? { outageStartedAt: this.outageStartedAt, attempt, recovered } : {};
+        this._clearOutage();
+        this._state("connected", { sessionId: this.sessionId, sessionGeneration: this.sessionGeneration, resumed: !!previous && previous === this.sessionId, ...recovery });
         return this.environmentInfo;
       } catch (error) {
         this._drop();
         if (this.closed || error.name === "AbortError") throw abortError();
         // Detection skew can leave the old WS attachment alive briefly. Keep
-        // the same resume ID and bounded recovery budget; never fork a session
+        // the same resume ID; never fork a session
         // while the retained attachment still owns its process/file handles.
         if (error instanceof RemoteRpcError && /session .*already attached/i.test(error.message)) error.transport = true;
         if (error.transport && !error.sshError && sshDiagnostic(this.tunnelDiagnostics)) error = sshFailure(error.message, this.tunnelDiagnostics, true, error.fatal);
         this.sshClient ||= error.sshClient;
         error.sshClient = this.sshClient;
-        if (error.fatal || !error.transport || attempt === delays.length) {
-          if (!error.fatal && error.transport && attempt > 0) {
-            const detail = error.sshError || error.message;
-            error.message = `Unable to reconnect to ${this.config.host} after ${attempt + 1} attempts${detail ? `\n${detail}` : ""}`;
-          }
+        if (error.fatal || !error.transport) {
+          this._clearOutage();
           this._state("error", { message: error.message, sshError: error.sshError });
           throw error;
         }
-        const retryAfterMs = delays[attempt];
-        this._state("reconnecting", { message: error.message, sshError: error.sshError, attempt: attempt + 1, retryAfterMs });
-        await sleep(retryAfterMs, this.controller.signal);
+        if (error.sshError) this.reconnectSshError = error.sshError;
+        this._beginOutage();
+        const retryAfterMs = delays[Math.min(attempt - 1, delays.length - 1)];
+        this.reconnectAttempt = attempt + 1;
+        this.nextRetryAt = Date.now() + retryAfterMs;
+        this._state("reconnecting", { ...this._outageDetails(), retryAfterMs });
+        await (this.options.reconnectSleep ?? sleep)(retryAfterMs, this.controller.signal);
       }
     }
+    throw abortError();
+  }
+
+  _finishWaiters(error, info) {
+    for (const waiter of this.waiters) waiter.finish(error, info);
   }
 
   ready() {
     if (this.closed) return Promise.reject(new Error("Remote connection is closed"));
     if (this.socket?.readyState === WebSocket.OPEN && this.state === "connected") return Promise.resolve(this.environmentInfo);
-    if (!this.connecting) this.connecting = this._connect().finally(() => { this.connecting = null; });
+    if (!this.connecting) this.connecting = this._connect().then(info => {
+      this.connecting = null;
+      this._finishWaiters(null, info);
+      return info;
+    }, error => {
+      this.connecting = null;
+      this._finishWaiters(error);
+      throw error;
+    });
     return this.connecting;
   }
 
-  async rpc(method, params, { signal, retry } = {}) {
+  waitForReady(signal) {
+    if (signal?.aborted || this.closed) return Promise.reject(abortError());
+    if (this.socket?.readyState === WebSocket.OPEN && this.state === "connected") return Promise.resolve(this.environmentInfo);
+    return new Promise((resolve, reject) => {
+      let timer;
+      const abort = () => waiter.finish(abortError());
+      const waiter = {
+        finish: (error, info) => {
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", abort);
+          this.waiters.delete(waiter);
+          if (error) reject(error);
+          else resolve(info);
+        },
+        startDeadline: () => {
+          if (this.outageStartedAt === undefined || timer) return;
+          const budget = this.options.outageTimeoutMs ?? outageTimeoutMs;
+          const remaining = Math.max(0, budget - (Date.now() - this.outageStartedAt));
+          timer = setTimeout(() => {
+            const error = sshFailure("The host has not reconnected. Umeko is still retrying in the background.", this.reconnectSshError);
+            const retryAfterMs = this.nextRetryAt === undefined ? undefined : Math.max(0, this.nextRetryAt - Date.now());
+            waiter.finish(Object.assign(error, this._outageDetails(), { code: "REMOTE_RECONNECT_TIMEOUT", state: "reconnecting", retryAfterMs, sshClient: this.sshClient }));
+          }, remaining);
+        },
+      };
+      this.waiters.add(waiter);
+      signal?.addEventListener("abort", abort, { once: true });
+      this.ready().catch(() => {});
+      waiter.startDeadline();
+    });
+  }
+
+  async rpc(method, params, { signal, retry, sessionGeneration, wait = true } = {}) {
     // Serialize before awaiting so caller mutation cannot change a replay.
     const serialized = params === undefined ? undefined : JSON.stringify(params);
     if (signal?.aborted) throw abortError();
-    await abortable(this.ready(), signal); const generation = this.sessionGeneration;
-    try { return await this._request(method, serialized, signal); }
-    catch (error) {
-      const optedInWrite = retry === true && (method === "fs/writeFile" || method === "fs/writeBlock" || method === "fs/createDirectory" && serialized !== undefined && JSON.parse(serialized)?.recursive === true);
-      if (retry === false || !(retryable.has(method) || optedInWrite) || !error.transport || signal?.aborted || this.closed) throw error;
-      await abortable(this.ready(), signal);
-      if (sessionBound.has(method) && generation !== this.sessionGeneration) throw Object.assign(new Error("Remote session expired; reopen the process or file handle"), { code: "REMOTE_SESSION_CHANGED" });
-      return this._request(method, serialized, signal);
+    const optedInWrite = retry === true && (method === "fs/writeFile" || method === "fs/writeBlock" || method === "fs/createDirectory" && params?.recursive === true);
+    const canReplay = wait && retry !== false && (retryable.has(method) || optedInWrite);
+    for (;;) {
+      if (wait) await this.waitForReady(signal);
+      else if (this.state !== "connected" || this.socket?.readyState !== WebSocket.OPEN) throw connectionError();
+      if (sessionBound.has(method) && sessionGeneration === undefined) sessionGeneration = this.sessionGeneration;
+      if (sessionGeneration !== undefined && sessionGeneration !== this.sessionGeneration) throw sessionChanged();
+      const socket = this.socket;
+      try { return await this._request(method, serialized, signal); }
+      catch (error) {
+        if (!error.transport || signal?.aborted || this.closed) throw error;
+        if (this.socket === socket) {
+          this._drop();
+          this._lost();
+        }
+        if (!canReplay) throw error;
+      }
     }
   }
 
@@ -538,6 +635,7 @@ export class RemoteConnection {
   close() {
     if (this.closed) return;
     this.closed = true; this.controller.abort(); this._drop();
+    this._finishWaiters(abortError());
     for (const child of this.children) child.kill();
     this._state("disconnected");
   }
