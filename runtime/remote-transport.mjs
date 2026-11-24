@@ -18,6 +18,7 @@ import { updateRequest } from "./update-engine.mjs";
 import { selectSshClient, sshDiagnostic } from "./remote-ssh-client.mjs";
 import { withBootstrapLock } from "./remote-bootstrap-lock.mjs";
 import { networkProbeUrl, networkTestScript, outboundLabels, remoteForwardStatus, remoteOutbound, serverNetwork } from "./remote-network.mjs";
+import { prepareRemoteShellProcess } from "./remote-network-command.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const manifest = JSON.parse(await readFile(join(here, "remote-exec-assets.json"), "utf8"));
@@ -683,7 +684,13 @@ rm -f ${quoteSh(temporary)}`;
       if (sessionBound.has(method) && sessionGeneration === undefined) sessionGeneration = this.sessionGeneration;
       if (sessionGeneration !== undefined && sessionGeneration !== this.sessionGeneration) throw sessionChanged();
       const socket = this.socket;
-      try { return await this._request(method, serialized, signal); }
+      const remotePort = method === "process/start" && this.commandProxyPort();
+      // Workspace shells start a streaming exec-server process directly.
+      // Apply the same proxy setup used by durable remote_command launches.
+      const requestParams = remotePort && serialized
+        ? JSON.stringify(prepareRemoteShellProcess(JSON.parse(serialized), remotePort, this.config.platform === "windows"))
+        : serialized;
+      try { return await this._request(method, requestParams, signal); }
       catch (error) {
         if (!error.transport || signal?.aborted || this.closed) throw error;
         if (this.socket === socket) {

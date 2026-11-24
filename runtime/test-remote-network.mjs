@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
 import { networkTestScript, remoteForwardStatus, remoteOutbound } from "./remote-network.mjs";
-import { commandProxyEnvironment, commandProxySetup } from "./remote-network-command.mjs";
+import { commandProxyEnvironment, commandProxySetup, prepareRemoteShellProcess } from "./remote-network-command.mjs";
 
 test("configured HTTP proxy uses the selected endpoint without starting a direct proxy", async () => {
   const route = await remoteOutbound({ proxy: "http://127.0.0.1:12345" }, {});
@@ -41,4 +41,26 @@ test("POSIX setup appends a Git override without discarding existing entries", {
   const setup = commandProxySetup(false, "/bin/sh");
   const printed = execFileSync("/bin/sh", ["-c", setup + "printf '%s\\n' \"$GIT_CONFIG_COUNT\" \"$GIT_CONFIG_KEY_0\" \"$GIT_CONFIG_KEY_1\" \"$GIT_CONFIG_VALUE_1\""], { env, encoding: "utf8" });
   assert.equal(printed, "2\ncore.editor\nhttp.proxy\nhttp://127.0.0.1:46327\n");
+});
+
+test("streaming workspace bash gets shell setup and preserves unrelated process settings", () => {
+  const original = { argv: ["/bin/bash", "-c", "sudo apt-get install -y sl"], cwd: "/work", env: { CUSTOM: "1" }, tty: false };
+  const params = prepareRemoteShellProcess(original, 46327, false);
+  assert.equal(params.env.http_proxy, "http://127.0.0.1:46327");
+  assert.equal(params.env.CUSTOM, "1");
+  assert.equal(params.cwd, "/work");
+  assert.ok(params.argv[2].endsWith(original.argv[2]));
+  assert.match(params.argv[2], /Acquire::https::Proxy/);
+  assert.equal(prepareRemoteShellProcess(original, 0, false), original);
+  assert.equal(prepareRemoteShellProcess(params, 46327, false), params);
+});
+
+test("Windows workspace Git Bash and encoded PowerShell retain their shell and command", () => {
+  const bash = prepareRemoteShellProcess({ argv: ["C:\\Program Files\\Git\\bin\\bash.exe", "-c", "pip install six"] }, 46327, true);
+  assert.equal(bash.env.PIP_PROXY, "http://127.0.0.1:46327");
+  assert.match(bash.argv[2], /export http_proxy/);
+  assert.ok(bash.argv[2].endsWith("pip install six"));
+  const command = Buffer.from("git clone https://example.com/a.git", "utf16le").toString("base64");
+  const ps = prepareRemoteShellProcess({ argv: ["powershell.exe", "-NoProfile", "-EncodedCommand", command] }, 46327, true);
+  assert.match(Buffer.from(ps.argv.at(-1), "base64").toString("utf16le"), /GIT_CONFIG_COUNT.*\n[\s\S]+git clone/);
 });

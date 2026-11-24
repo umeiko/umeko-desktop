@@ -17,7 +17,8 @@ export function commandProxyEnvironment(port, windows, shell) {
   return env;
 }
 
-const bourneShell = name => /(?:^|\/)(?:ba|da|k|m|za|z)?sh$|(?:^|\/)ash$/i.test(name);
+const shellName = path => String(path ?? "").split(/[\\/]/).at(-1).replace(/\.exe$/i, "").toLowerCase();
+const bourneShell = path => /^(?:ba|da|k|m|za|z|a)?sh$/.test(shellName(path));
 
 export function commandProxySetup(windows, shell) {
   if (windows) return `if ($env:UMEKO_REMOTE_HTTP_PROXY) {
@@ -38,6 +39,8 @@ export function commandProxySetup(windows, shell) {
 `;
   if (!bourneShell(shell)) return "";
   return `if [ -n "\${UMEKO_REMOTE_HTTP_PROXY:-}" ]; then
+  export http_proxy="$UMEKO_REMOTE_HTTP_PROXY" https_proxy="$UMEKO_REMOTE_HTTP_PROXY" all_proxy="$UMEKO_REMOTE_HTTP_PROXY"
+  export no_proxy=localhost,127.0.0.1,::1
   umeko_git_count=\${GIT_CONFIG_COUNT:-0}
   case "$umeko_git_count" in 0|[1-9]|[1-5][0-9]|6[0-4]) ;; *) umeko_git_count=0 ;; esac
   export "GIT_CONFIG_KEY_$umeko_git_count=http.proxy"
@@ -65,6 +68,25 @@ export function commandProxySetup(windows, shell) {
   }
 fi
 `;
+}
+
+/** Prepare the exec-server shell form used by remote workspace bash and !.
+ * Streaming, timeout and cancellation remain with the caller.
+ */
+export function prepareRemoteShellProcess(params, port, windows) {
+  if (!port || params?.env?.UMEKO_REMOTE_HTTP_PROXY || !Array.isArray(params?.argv)) return params;
+  const [shell] = params.argv;
+  const powershell = ["powershell", "pwsh"].includes(shellName(shell));
+  if (!powershell && !bourneShell(shell)) return params;
+  const commandIndex = params.argv.findIndex((arg, index) => index > 0 &&
+    (powershell ? /^-(?:EncodedCommand|Command)$/i.test(arg) : ["-c", "-lc"].includes(arg)));
+  if (commandIndex < 0 || typeof params.argv[commandIndex + 1] !== "string") return params;
+  const argv = [...params.argv];
+  const encoded = powershell && /^-EncodedCommand$/i.test(argv[commandIndex]);
+  const command = encoded ? Buffer.from(argv[commandIndex + 1], "base64").toString("utf16le") : argv[commandIndex + 1];
+  const script = commandProxySetup(powershell, shell) + command;
+  argv[commandIndex + 1] = encoded ? Buffer.from(script, "utf16le").toString("base64") : script;
+  return { ...params, argv, env: { ...params.env, ...commandProxyEnvironment(port, windows, shell) } };
 }
 
 // POSIX sh requires function names to be shell identifiers, so apt-get needs
