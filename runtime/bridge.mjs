@@ -525,10 +525,13 @@ async function init(input) {
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}, (id, items, failed) => taskDelivery("submitted", id, items, failed)) },
           { name: "generation", builtin: true, replaceable: false, factory: createGenerationExtension({getConfig: () => config, onDelivery: (id, items) => taskDelivery("generated", id, items)}) },
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },
-          { name: "umeko-control", builtin: true, replaceable: false, factory: pi => { umekoControl.extension(pi); auxiliaryVision.toolExtension(pi); } },
+          { name: "umeko-control", builtin: true, replaceable: false, factory: pi => {
+            umekoControl.extension(pi);
+            auxiliaryVision.toolExtension(pi);
+            remoteEnvironments.extension(pi);
+          } },
           { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
           { name: "shell-snapshot", hidden: true, replaceable: false, factory: shellSnapshotExtension(() => settings.getShellPath()) },
-          { name: "remote-environments", builtin: true, replaceable: false, factory: remoteEnvironments.extension },
           { name: "subagents", builtin: true, replaceable: true, factory: subagents.extension },
           { name: "output-continuation", hidden: true, replaceable: false, factory: outputContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },

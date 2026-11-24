@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: remote-real-${{ github.ref }}
+  group: umeko-remote-environments-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
