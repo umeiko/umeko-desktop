@@ -17,25 +17,20 @@ from app.sandbox_git_bash import ARCHIVE_NAME, REQUIRED_FILES
 
 UNATTENDED_EXCLUSIONS = (
     "git-bash.exe", "git-cmd.exe", "cmd/git-gui.exe", "cmd/gitk.exe",
-    "mingw64/bin/git-gui*", "mingw64/bin/gitk*", "mingw64/bin/*tcl*.dll", "mingw64/bin/*tk[0-9]*.dll",
-    "mingw64/bin/tclsh*.exe", "mingw64/bin/wish*.exe",
-    "mingw64/lib/tcl*", "mingw64/lib/tk*",
-    "mingw64/share/git-gui*", "mingw64/share/gitk*",
-    "mingw64/libexec/git-core/git-gui*", "mingw64/libexec/git-core/git-citool*",
-    "mingw64/share/doc/git-doc*", "mingw64/share/info*", "mingw64/share/man*",
+    "ucrt64/bin/git-gui*", "ucrt64/bin/gitk*", "ucrt64/bin/*tcl*.dll", "ucrt64/bin/*tk[0-9]*.dll",
+    "ucrt64/bin/tclsh*.exe", "ucrt64/bin/wish*.exe",
+    "ucrt64/lib/tcl*", "ucrt64/lib/tk*",
+    "ucrt64/share/git-gui*", "ucrt64/share/gitk*",
+    "ucrt64/libexec/git-core/git-gui*", "ucrt64/libexec/git-core/git-citool*",
+    "ucrt64/share/doc*", "ucrt64/share/info*", "ucrt64/share/man*",
     "usr/share/doc*", "usr/share/info*", "usr/share/man*", "usr/share/vim/*/doc*",
 )
 
 
 def included(name):
-    parts = name.lower().split("/")
-    basename = parts[-1]
+    basename = name.rsplit("/", 1)[-1].lower()
     if basename.startswith(("license", "copying", "copyright")):
         return True
-    if len(parts) > 3 and parts[0] in ("usr", "mingw64") and parts[1:3] == ["share", "locale"]:
-        # Match the desktop languages. Bundled commands use their default
-        # messages when a locale is absent, as they do in MinGit.
-        return parts[3].split("_")[0].split("@")[0] in ("en", "zh")
     return not any(fnmatchcase(name, pattern) for pattern in UNATTENDED_EXCLUSIONS)
 
 

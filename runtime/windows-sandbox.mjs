@@ -44,7 +44,7 @@ export function sandboxCommand({ file, args, cwd, env = process.env, workspace, 
       const packagedBash = join(gitRoot, 'usr', 'bin', 'bash.exe');
       if (!existsSync(packagedBash)) throw new Error('The sandbox Git Bash files are missing. Turn the sandbox off and back on to restore them.');
       const pathKey = Object.keys(env).find(key => key.toUpperCase() === 'PATH') || 'PATH';
-      env = { ...env, [pathKey]: [join(gitRoot, 'usr', 'bin'), join(gitRoot, 'mingw64', 'bin'), env[pathKey]]
+      env = { ...env, [pathKey]: [join(gitRoot, 'usr', 'bin'), join(gitRoot, 'ucrt64', 'bin'), env[pathKey]]
         .filter(Boolean).join(win32.delimiter) };
       file = packagedBash;
     }

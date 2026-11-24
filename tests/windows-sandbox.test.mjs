@@ -73,7 +73,7 @@ test('standard-user Git Bash uses the packaged runtime inside the same native sa
   assert.equal(standard.file, input.policy.launcher);
   assert.equal(standard.level, 'non-elevated');
   assert.deepEqual(standard.args.slice(-4), ['allow', bash, ...input.args]);
-  assert.deepEqual(standard.env.Path.split(';'), [join(root, 'usr', 'bin'), join(root, 'mingw64', 'bin'), 'original']);
+  assert.deepEqual(standard.env.Path.split(';'), [join(root, 'usr', 'bin'), join(root, 'ucrt64', 'bin'), 'original']);
   assert.equal(sandboxCommand({ ...input, file: 'powershell.exe' }, options).args.at(-3), 'powershell.exe');
 });
 
