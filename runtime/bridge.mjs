@@ -48,7 +48,7 @@ const { AuthStorage } = await import(new URL("./core/auth-storage.js", entry));
 const { loadMcpConfig } = await import(new URL("./extensions/mcp/config.js", entry));
 const { allToolNames, createAllToolDefinitions } = await import(new URL("./core/tools/index.js", entry));
 const { getShellConfig, getPowerShellConfig } = await import(new URL("./utils/shell.js", entry));
-const bundledNodeDir = fileURLToPath(new URL(process.platform === "win32" ? "../../node/" : "../../node/bin/", import.meta.url));
+const bundledNodeDir = fileURLToPath(new URL(process.platform === "win32" ? "../../node" : "../../node/bin", import.meta.url));
 const shellSnapshots = createShellSnapshots({ getShellConfig, getPowerShellConfig,
   bundledBin: existsSync(bundledBin) ? bundledBin : undefined,
   bundledNodeDir: existsSync(bundledNodeDir) ? bundledNodeDir : undefined });
