@@ -272,7 +272,7 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
       onState(state, detail = {}) {
         for (const key of Object.keys(status)) if (key !== "sshClient") delete status[key];
         status.state = state;
-        for (const key of ["sshClient", "message", "sshError", "attempt", "retryAfterMs", "nextRetryAt", "outageStartedAt", "recovered", "resumed"]) {
+        for (const key of ["sshClient", "message", "sshError", "attempt", "retryAfterMs", "nextRetryAt", "outageStartedAt", "outageNoticeAt", "recovered", "resumed"]) {
           if (detail[key] !== undefined) status[key] = detail[key];
         }
         emit({ type: "remote_environment_state", name, host, platform, state, ...status });

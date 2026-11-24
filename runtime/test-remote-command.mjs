@@ -172,6 +172,34 @@ assert.equal(result.status, 'failed');
 assert.notEqual(result.exitCode, 0);
 console.log(JSON.stringify({ test: 'kill owned durable native command', status: result.status, exitCode: result.exitCode }));
 
+if (win) {
+  const node = `'${process.execPath.replaceAll("'", "''")}'`;
+  const externalFile = path.join(home, 'external-exit.cjs');
+  await fs.writeFile(externalFile, 'process.stdout.write("external-out\\n"); process.stderr.write("external-err\\n"); process.exit(7);\n');
+  const external = `& ${node} '${externalFile.replaceAll("'", "''")}'`;
+  const cases = [
+    { name: 'external nonzero exit', command: external, code: 7, output: /external-out/, stderr: /external-err/ },
+    { name: 'PowerShell handled external failure', command: `${external}; Write-Output 'handled-failure'`, code: 0, output: /handled-failure/ },
+    { name: 'PowerShell final cmdlet failure', command: "Write-Error 'final-cmdlet-error'", code: 1, output: /final-cmdlet-error/ },
+    { name: 'PowerShell explicit exit', command: "Write-Output 'explicit-exit'; exit 9", code: 9, output: /explicit-exit/ },
+  ];
+  for (const scenario of cases) {
+    let commandResult = await backend.execute({ action: 'run', command: scenario.command, yieldMs: 1000, maxOutputBytes: 23 });
+    let output = commandResult.output;
+    const finishBy = Date.now() + 15000;
+    while (commandResult.status === 'running' && Date.now() < finishBy) {
+      commandResult = await backend.execute({ action: 'read', sessionId: commandResult.sessionId, yieldMs: 500, maxOutputBytes: 23 });
+      output += commandResult.output;
+    }
+    assert.equal(commandResult.exitCode, scenario.code, `${scenario.name}: ${output}`);
+    assert.equal(commandResult.status, scenario.code ? 'failed' : 'completed');
+    assert.match(output, scenario.output);
+    if (scenario.stderr) assert.match(output, scenario.stderr);
+    assert.equal(commandResult.cursor, Buffer.byteLength(output));
+    console.log(JSON.stringify({ test: scenario.name, status: commandResult.status, exitCode: commandResult.exitCode, bytes: commandResult.cursor }));
+  }
+}
+
 modelBootstrapFailure = true;
 await assert.rejects(backend.execute({ action: 'run', command: win ? "Write-Output 'never-started'" : "printf 'never-started'", yieldMs: 1000 }), /Remote command launcher failed: loader diagnostic 8009001d/);
 assert.equal(bootstrapReads, 2);
