@@ -378,7 +378,7 @@ test('remembered prefixes contain known programs and subcommands, without operan
 
 test('ask mode advertises a model hint without mutating native shell definitions', async () => {
   const handlers = new Map();
-  createToolPermissionExtension({getPolicy: () => ({mode: 'ask', dataDir: '/profile'})})({on(name, handler) { handlers.set(name, handler); }});
+  createToolPermissionExtension({getPolicy: () => ({mode: 'ask', dataDir: '/profile'}), suggestPrefixes: true})({on(name, handler) { handlers.set(name, handler); }});
   const bash = {type: 'function', function: {name: 'bash', strict: false, parameters: {type: 'object',
     properties: {command: {type: 'string'}}, required: ['command']}}};
   const strict = {type: 'function', function: {...bash.function, name: 'powershell', strict: true}};

@@ -450,10 +450,10 @@ function advertisePrefixSuggestion(payload) {
 }
 
 /** Per-session factory; getPolicy is the sole source of the active mode. */
-export function createToolPermissionExtension({getPolicy,classify=classifyCommand}={}) {
+export function createToolPermissionExtension({getPolicy,classify=classifyCommand,suggestPrefixes=false}={}) {
  if(typeof getPolicy!=='function')throw new TypeError('getPolicy is required');
  return pi=>{
-   pi.on('before_provider_request',async({payload},ctx)=>{
+   if(suggestPrefixes)pi.on('before_provider_request',async({payload},ctx)=>{
      const policy=await getPolicy();
      if(ctx.hasUI&&policy.mode==='ask'&&policy.dataDir&&!policy.pluginApprovalRequired)
        return advertisePrefixSuggestion(payload);

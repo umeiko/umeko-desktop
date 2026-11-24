@@ -165,7 +165,7 @@ const inputQueue=createInputQueue({getSession:()=>runtime?.session,isRunning:()=
   beforeInterrupt:()=>{clearDialogs(); commandCancellation++; piCommands.clear();}});
 const dialogs = new Map();
 let permissionPolicy = { mode: "auto", language: "en" };
-const permissionExtension = createToolPermissionExtension({ getPolicy: () => permissionPolicy });
+const permissionExtension = createToolPermissionExtension({ getPolicy: () => permissionPolicy, suggestPrefixes: true });
 function clearDangerousApproval() {
   permissionPolicy = {...permissionPolicy, dangerousAllowed: false};
   emit({type:"dangerous_approval_cleared"});
