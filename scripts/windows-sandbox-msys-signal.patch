@@ -1,7 +1,21 @@
 Subject: Permit the restricted logon to open its own MSYS signal pipe
 
 Adapted from git-for-windows/msys2-runtime d25c02bd8bbfef7da4b42eab6f0834bcb9d9343e,
-winsup/cygwin/sigproc.cc and sec/helper.cc. Cygwin license applies.
+winsup/cygwin/sigproc.cc, sec/helper.cc and autoload.cc. Cygwin license applies.
+
+diff --git a/winsup/cygwin/autoload.cc b/winsup/cygwin/autoload.cc
+--- a/winsup/cygwin/autoload.cc
++++ b/winsup/cygwin/autoload.cc
+@@ -394,6 +394,9 @@ LoadDLLfunc (CreateProcessAsUserW, advapi32)
+ LoadDLLfunc (DeregisterEventSource, advapi32)
+ LoadDLLfunc (DecryptFileW, advapi32)
+ LoadDLLfunc (EncryptFileW, advapi32)
++LoadDLLfunc (GetTokenInformation, advapi32)
++LoadDLLfunc (IsTokenRestricted, advapi32)
++LoadDLLfunc (IsValidSid, advapi32)
+ LoadDLLfunc (LogonUserW, advapi32)
+ LoadDLLfunc (LookupAccountNameW, advapi32)
+ LoadDLLfunc (LookupAccountSidW, advapi32)
 
 diff --git a/winsup/cygwin/sigproc.cc b/winsup/cygwin/sigproc.cc
 --- a/winsup/cygwin/sigproc.cc
