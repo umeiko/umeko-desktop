@@ -67,9 +67,7 @@ class WindowsSandbox(QObject):
         self._previous_git = None
         self._cleanup_on_startup = True
         self._setup_pending = False
-        self._retry = QTimer(self)
-        self._retry.setSingleShot(True)
-        self._retry.timeout.connect(self._prepare)
+        self._retry = None
         self._progress_changed.connect(self._set_progress)
         self._prepared.connect(self._finish_preparation)
         if self._supported and self.home.is_dir() and self.launcher.is_file():
@@ -154,7 +152,8 @@ class WindowsSandbox(QObject):
         if enabled:
             self.prepare_for_command()
         elif not self._setup_pending:
-            self._retry.stop()
+            if self._retry is not None:
+                self._retry.stop()
             self._preparing = self._extracting
         self.publish()
         return self.tool_state()
@@ -194,9 +193,18 @@ class WindowsSandbox(QObject):
     def prepare_for_command(self):
         if not self.state["enabled"]:
             return
-        if not self._retry.isActive() or not self._preparing:
+        if self._retry is not None:
+            if self._retry.isActive() and self._preparing:
+                return
             self._retry.stop()
-            self._prepare()
+        self._prepare()
+
+    def _schedule_retry(self, delay):
+        if self._retry is None:
+            self._retry = QTimer(self)
+            self._retry.setSingleShot(True)
+            self._retry.timeout.connect(self._prepare)
+        self._retry.start(delay)
 
     def _prepare(self):
         if self._extracting or not (self.state["enabled"] or self._setup_pending):
@@ -274,11 +282,11 @@ class WindowsSandbox(QObject):
             if self._failed_attempts >= 3:
                 self._error = error
             if self.state["enabled"] or self._setup_pending:
-                self._retry.start(RETRY_INTERVALS_MS[min(self._failed_attempts - 1, len(RETRY_INTERVALS_MS) - 1)])
+                self._schedule_retry(RETRY_INTERVALS_MS[min(self._failed_attempts - 1, len(RETRY_INTERVALS_MS) - 1)])
         elif error == ARCHIVE_INVALID and not self._archive_failed_once and (self.state["enabled"] or self._setup_pending):
             self._archive_failed_once = True
             self._preparing = True
-            self._retry.start(RETRY_INTERVALS_MS[0])
+            self._schedule_retry(RETRY_INTERVALS_MS[0])
         else:
             self.git = None
             self._error = error
