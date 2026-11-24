@@ -3,7 +3,7 @@
 Linux: prepared disposable SSH fixture, --source --host umeko-network-ci.
 Windows: --app Umeko.exe --host AUTHORIZED_ALIAS --platform windows
   --run-root C:/remote-tests --run-dir C:/remote-tests/network-01
-  --remote-root C:/remote-tests --local-proxy http://127.0.0.1:10818
+  --remote-root C:/remote-tests --local-proxy http://127.0.0.1:<proxy-port>
 The Windows host must already lack direct Internet access. This runner never
 changes its firewall, SSH service, proxy processes, or server configuration.
 """
@@ -64,8 +64,8 @@ def main():
     args = parser.parse_args()
     directory = args.run_dir.resolve()
     if args.platform == 'windows':
-        if not args.app or not args.run_root or not args.remote_root:
-            parser.error('Windows requires --app, --run-root and --remote-root')
+        if not args.app or not args.run_root or not args.remote_root or not args.local_proxy:
+            parser.error('Windows requires --app, --run-root, --remote-root and --local-proxy')
         assert args.run_root.resolve() in directory.parents, 'Run directory must be below --run-root'
     assert directory != ROOT and ROOT not in directory.parents, 'Run data must be outside the checkout'
     assert not any(p.name == 'HB-Workspace' for p in (directory, *directory.parents)), 'Run data must be outside HB-Workspace'
@@ -96,9 +96,8 @@ def main():
     settings = {'agent': {'agentDir': str(directory / 'agent'), 'autoCompaction': False, 'toolPermissionMode': 'auto'},
                 'workspace': str(directory / 'workspace'), 'server': {'port': 0},
                 'desktop': {'loginStartup': False}, 'providers': []}
-    proxy = args.local_proxy or ('http://127.0.0.1:10818' if args.platform == 'windows' else None)
-    if proxy:
-        settings['remoteNetworkProxy'] = proxy
+    if args.local_proxy:
+        settings['remoteNetworkProxy'] = args.local_proxy
     (directory / 'profile/settings.json').write_text(json.dumps(settings), encoding='utf-8')
     spec_path = directory / 'spec.json'
     spec_path.write_text(json.dumps(spec, indent=2), encoding='utf-8')

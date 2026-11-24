@@ -21,7 +21,10 @@ test("probe ignores stale proxies and URL tests keep shell metacharacters as dat
   const script = networkTestScript("linux", "https://example.com/?name=';false", 46327);
   assert.match(script, /--proxy' 'http:\/\/127\.0\.0\.1:46327'/);
   assert.match(script, /localhost,127\.0\.0\.1,::1/);
-  assert.match(networkTestScript("windows", "https://example.com", null, true), /'--noproxy' '\*'/);
+  const probe = networkTestScript("windows", "https://example.com", null, true);
+  assert.match(probe, /'--noproxy' '\*'/);
+  assert.match(probe, /'--output' 'NUL'.*'--fail'/);
+  assert.doesNotMatch(probe, /'--head'/);
   assert.throws(() => networkTestScript("linux", "file:///etc/hosts"), /HTTP/);
 });
 

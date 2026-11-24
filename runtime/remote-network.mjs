@@ -2,7 +2,7 @@ import { systemProxy } from "./package-install.mjs";
 import { startRemoteHttpProxy } from "./remote-http-proxy.mjs";
 
 export const networkDescription = "When a server cannot reach the internet, Umeko automatically shares this computer's network, so remote commands need no proxy arguments.";
-export const networkProbeUrl = "https://github.com/";
+export const networkProbeUrl = "https://github.com/robots.txt";
 const noProxy = "localhost,127.0.0.1,::1";
 export const remoteProxyUrl = port => "http://127.0.0.1:" + port;
 export const serverNetwork = (message = "服务器使用自己的网络") => ({ network: "remote", message });
@@ -41,8 +41,11 @@ export function networkTestScript(platform, input, port, probe = false) {
   }
   const bypass = port ? noProxy : "*";
   const proxy = port ? remoteProxyUrl(port) : "";
-  const flags = ["--disable", "--silent", "--show-error", "--head", "--connect-timeout", "4",
-    "--max-time", "6", ...(probe ? [] : ["--fail"]), "--proxy", proxy, "--noproxy", bypass, "--", target.href];
+  // A probe must read the downloaded bytes. A HEAD response, including a
+  // gateway error page, can succeed while GET requests from this host stall.
+  const transfer = probe ? ["--output", platform === "windows" ? "NUL" : "/dev/null"] : ["--head"];
+  const flags = ["--disable", "--silent", "--show-error", ...transfer, "--connect-timeout", "4",
+    "--max-time", "6", "--fail", "--proxy", proxy, "--noproxy", bypass, "--", target.href];
   if (platform === "windows") {
     // Windows PowerShell drops an empty native argument. All hosts here use
     // --noproxy to explicitly select the route, including the direct probe.
@@ -53,12 +56,13 @@ export function networkTestScript(platform, input, port, probe = false) {
 } else {
   try {
     $request = [Net.WebRequest]::Create(${quotePowerShell(target.href)})
-    $request.Method = 'HEAD'; $request.Timeout = 6000; $request.AllowAutoRedirect = $false
+    $request.Method = '${probe ? "GET" : "HEAD"}'; $request.Timeout = 6000; $request.ReadWriteTimeout = 6000; $request.AllowAutoRedirect = $false
     ${port ? `$request.Proxy = New-Object Net.WebProxy(${quotePowerShell(proxy)}, $true)` : "$request.Proxy = $null"}
-    $reply = $request.GetResponse(); $reply.Dispose(); 'reachable'
-  } catch [Net.WebException] {
-    if ($_.Exception.Response) { $_.Exception.Response.Dispose(); ${probe ? "'reachable'" : "'unreachable'"} }
-    else { 'unreachable' }
+    $reply = $request.GetResponse()
+    try { ${probe ? "$reply.GetResponseStream().CopyTo([IO.Stream]::Null); " : ""}'reachable' } finally { $reply.Dispose() }
+  } catch {
+    if ($_.Exception.Response) { $_.Exception.Response.Dispose() }
+    'unreachable'
   }
 }`;
   }
@@ -66,7 +70,7 @@ export function networkTestScript(platform, input, port, probe = false) {
 if command -v curl >/dev/null 2>&1; then
   curl ${flags.map(quoteShell).join(" ")} >/dev/null 2>&1 && ok=true
 elif command -v wget >/dev/null 2>&1; then
-  WGETRC=/dev/null wget --quiet --spider --timeout=5 --tries=1 ${port
+  WGETRC=/dev/null wget --quiet ${probe ? "-O /dev/null" : "--spider"} --timeout=5 --tries=1 ${port
     ? `-e ${quoteShell("http_proxy=" + proxy)} -e ${quoteShell("https_proxy=" + proxy)} -e ${quoteShell("no_proxy=" + noProxy)}`
     : "--no-proxy"} -- ${quoteShell(target.href)} && ok=true
 fi
