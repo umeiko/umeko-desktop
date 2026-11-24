@@ -280,5 +280,6 @@ test("tunnel readiness is confirmed by the owning OpenSSH child before bearer us
   try {
     const port = await connection._forward(40000);
     assert.ok(port > 0); assert.ok(captured.includes("-v")); assert.ok(captured.includes("ExitOnForwardFailure=yes"));
+    assert.ok(captured.includes("ClearAllForwardings=no"));
   } finally { connection.close(); }
 });

@@ -379,7 +379,8 @@ export class RemoteConnection {
     const localPort = await new Promise((resolve, reject) => {
       const probe = createServer(); probe.once("error", reject); probe.listen(0, "127.0.0.1", () => { const port = probe.address().port; probe.close(() => resolve(port)); });
     });
-    const child = this._spawn(["-v", "-n", "-N", "-o", "ExitOnForwardFailure=yes", "-L", `127.0.0.1:${localPort}:127.0.0.1:${remotePort}`, this.config.host]);
+    const child = this._spawn(["-v", "-n", "-N", "-o", "ClearAllForwardings=no", "-o", "ExitOnForwardFailure=yes",
+      "-L", `127.0.0.1:${localPort}:127.0.0.1:${remotePort}`, this.config.host]);
     child.stdin.end(); this.tunnel = child;
     let failure, diagnostics = "", ended = false, listening = false;
     this.tunnelDiagnostics = "";
