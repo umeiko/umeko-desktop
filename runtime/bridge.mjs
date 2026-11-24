@@ -16,6 +16,7 @@ import { configureCoworkSubagents, coworkSubagentFromPrompt, coworkSubagentResou
 import { createInputQueue, createModelRoles } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
+import { sandboxCommand, trackLocalMcpTransport } from "./windows-sandbox.mjs";
 import { blockedShellEnvKey, createShellSnapshots } from "./shell-snapshot.mjs";
 import { createRemoteEnvironments } from "./remote-environments.mjs";
 import { createRemoteWorkspaceExtension } from "./remote-workspace-tools.mjs";
@@ -52,6 +53,7 @@ const { isRetryableAssistantError, isContextOverflow } = await import("@earendil
 const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", entry));
 const { loadMcpConfig } = await import(new URL("./extensions/mcp/config.js", entry));
+const { createDefaultTransport } = await import(new URL("./extensions/mcp/runtime.js", entry));
 const {
   allToolNames, createAllToolDefinitions,
   createReadToolDefinition, createWriteToolDefinition, createEditToolDefinition,
@@ -69,7 +71,13 @@ const { getShellConfig, getPowerShellConfig } = await import(new URL("./utils/sh
 const bundledNodeDir = fileURLToPath(new URL(process.platform === "win32" ? "../../node" : "../../node/bin", import.meta.url));
 const shellSnapshots = createShellSnapshots({ getShellConfig, getPowerShellConfig,
   bundledBin: existsSync(bundledBin) ? bundledBin : undefined,
-  bundledNodeDir: existsSync(bundledNodeDir) ? bundledNodeDir : undefined });
+  bundledNodeDir: existsSync(bundledNodeDir) ? bundledNodeDir : undefined,
+  prepareCapture(command) {
+    if (!windowsSandbox?.enabled) return command;
+    const workspace = config?.workspace || config?.defaultCwd;
+    return { ...sandboxCommand({ ...command, cwd: workspace, workspace, policy: windowsSandbox }), cwd: workspace };
+  },
+});
 function shellSnapshotExtension(getShellPath) {
   return pi => {
     pi.on("session_start", (_event, ctx) => shellSnapshots.begin(ctx.sessionManager.getSessionId(), getShellPath()));
@@ -88,6 +96,8 @@ const bashHostScript = process.env.UMEKO_BASH_JOB_SCRIPT;
 const blockedSessions = new WeakSet();
 let stopWork, currentRun;
 let pendingMemberModel;
+let windowsSandbox;
+const localMcpTransports = new Set();
 const stopDeadlineMs = 2_400;
 
 function runCommandSession(request) {
@@ -96,14 +106,18 @@ function runCommandSession(request) {
   const sessionId = env.PI_SESSION_ID || session?.sessionManager.getSessionId();
   if (closing || signal?.aborted || (session && blockedSessions.has(session) && sessionId === session.sessionManager.getSessionId()))
     throw new Error("aborted");
-  if (shellConfig.commandTransport === "stdin") return undefined;
+  if (shellConfig.commandTransport === "stdin") {
+    if (windowsSandbox?.enabled) throw new Error("Windows sandbox requires Git Bash or Windows PowerShell for this command.");
+    return undefined;
+  }
   const owner = sessionId === session?.sessionManager.getSessionId() ? currentRun : undefined;
-  return backgroundJobs.foreground({ ...request, sessionId, owner });
+  return backgroundJobs.foreground({ ...request, workspace: config?.workspace || config?.defaultCwd, sessionId, owner });
 }
 
 globalThis[Symbol.for("umeko:bash-job")] = runCommandSession;
 const umekoControl = createUmekoControl({
   emit,
+  getSandbox: () => windowsSandbox,
   refreshShellEnvironment: ctx => shellSnapshots.refresh(ctx.sessionManager.getSessionId()),
   getCommandRulesContext: ctx => ({
     dataDir: permissionPolicy.dataDir, workspace: permissionPolicy.workspace ? ctx.cwd : undefined,
@@ -154,6 +168,7 @@ const modelRoles = createModelRoles();
 const QUOTA_MARKER = "[Umeko:model_quota]";
 let checkpointLocked = false;
 const backgroundJobs = createBackgroundJobsExtension({ canStart: () => !checkpointLocked, host: bashHost, hostScript: bashHostScript,
+  getSandbox: () => windowsSandbox,
   getShellPath: ctx => shellSnapshots.shellPath(ctx?.sessionManager?.getSessionId()),
   getEnvironment: (ctx, shellPath, name) => shellSnapshots.environment(name, ctx?.sessionManager?.getSessionId(), null, shellPath),
   onCleanup(sessionId, job) {
@@ -181,6 +196,7 @@ function clearDangerousApproval() {
 }
 const commandOutput = new AsyncLocalStorage();
 const piCommands = createPiCommandController({ Pi, getRuntime: () => runtime, getConfig: () => config,
+  getSandbox: () => windowsSandbox,
   reload: reloadSession, notify: message => emit({ type: "notice", message }),
   invokeSlash: async command => {
     const lines = [];
@@ -558,6 +574,7 @@ async function restoreSubagentSession(child, context, customTools) {
 
 async function init(input) {
   config = input;
+  windowsSandbox = input.windowsSandbox;
   const webNetwork = {gateway:input.gateway, token:input.token, scope:input.cowork?.webScope};
   const availableModels = new Set(input.models?.map(model => model.id));
   const coworkProfiles = input.cowork?.subagents?.map(profile => ({
@@ -694,7 +711,18 @@ async function init(input) {
               mcpEntries = servers;
               setMcpNetwork(mcpEntries);
             })
-            : Pi.createMcpExtension({ loadConfig: ctx => {
+            : Pi.createMcpExtension({ createTransport: (server, work, auth) => {
+            if (process.platform !== 'win32' || 'url' in server.config) return createDefaultTransport(server, work, auth);
+            if (windowsSandbox?.enabled) {
+              const expandHome = value => /^~(?:[\\/]|$)/.test(value) ? join(homedir(), value.slice(2)) : value;
+              const { command, args = [], cwd: directory = '.' } = server.config;
+              const cwd = resolve(work, expandHome(directory));
+              const invocation = sandboxCommand({file: expandHome(command), args: args.map(expandHome), cwd,
+                workspace: work, policy: windowsSandbox});
+              server = {...server, config: {...server.config, command: invocation.file, args: invocation.args, cwd}};
+            }
+            return trackLocalMcpTransport(createDefaultTransport(server, work, auth), localMcpTransports);
+          }, loadConfig: ctx => {
             const loaded = loadMcpConfig({ agentDir, cwd: ctx.cwd, projectTrusted: !input.agent?.safeMode && ctx.isProjectTrusted() });
             mcpEntries = loaded.servers;
             setMcpNetwork(mcpEntries);
@@ -1020,6 +1048,15 @@ async function execute(input) {
   if (input.type === "tool_permission_mode") {
     if (!["auto", "ask"].includes(input.mode)) { emit({ type: "error", message: "Invalid tool permission mode" }); return; }
     permissionPolicy = { ...permissionPolicy, mode: config?.pluginSessionPolicy?.mode === 'ask' ? 'ask' : input.mode, language: input.language || permissionPolicy.language, dataDir: input.dataDir || permissionPolicy.dataDir };
+    return;
+  }
+  if (input.type === "windows_sandbox") {
+    const previous = windowsSandbox;
+    windowsSandbox = input.policy;
+    if (["enabled", "allowNetwork", "elevated"].some(key => previous?.[key] !== windowsSandbox?.[key])) {
+      shellSnapshots.invalidate();
+      for (const transport of localMcpTransports) void transport.close().catch(() => {});
+    }
     return;
   }
   if (input.type === "dangerous_approval") {

@@ -109,6 +109,8 @@
     "extensions.remove": {"target":"management","method":"uninstallPackage","idle":"all","async":true,"args":[["id","string"]]},
     "extensions.checkUpdate": {"target":"management","method":"checkExtensionUpdate","async":true,"args":[["id","string"]]},
     "extensions.install": {"target":"management","method":"installPackage","idle":"all","async":true,"args":[["source","string"],["project","boolean",false]]},
+    "settings.windowsSandbox": {"read":true,"args":[]},
+    "settings.setWindowsSandbox": {"target":"backend","args":[["enabled","boolean"],["allowNetwork","boolean"]]},
     "mcp.add": {"target":"management","method":"addMcp","idle":"all","async":true,"args":[["text","string"],["project","boolean",false]]},
     "mcp.save": {"target":"backend","method":"saveMcp","idle":"all","async":true,"args":[["scope","string"],["config","json"]]},
     "mcp.reconnect": {"target":"backend","method":"reconnectMcp","idle":"view","async":true,"args":[["name","string"]]},

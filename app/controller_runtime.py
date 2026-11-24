@@ -222,6 +222,7 @@ class PiControllerMixin:
         default_cwd = self.store.default_workspace
         default_cwd.mkdir(exist_ok=True)
         agent = self.store.data["agent"]
+        sandbox = getattr(self, 'windowsSandbox', None)
         from .generation import generation_config
         from .remote_environments import network_config
         action = payload["type"]
@@ -237,6 +238,7 @@ class PiControllerMixin:
             legacyHistory=record.history if not record.file else [], models=self.gateway.models(), agent=agent,
             auxiliaryVision=self._auxiliary_vision(),
             permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,
+            windowsSandbox=sandbox.policy() if sandbox is not None else {"enabled": False},
             dangerousAllowed=action not in ("warm", "fork", "navigate", "new") and self._dangerous_allowed(record),
             dataDir=str(self.store.directory),
             systemPromptStateDir=str(self.store.directory / 'system-prompts'),

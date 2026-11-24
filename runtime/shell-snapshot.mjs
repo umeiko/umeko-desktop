@@ -140,7 +140,7 @@ async function refreshWindowsEnvironment(base, powerShell, cwd, previousPath) {
   }
 }
 
-async function capture(shellName, config, env, cwd) {
+async function capture(shellName, config, env, cwd, prepareCapture) {
   if (!config || config.commandTransport === "stdin") return null;
   let args;
   if (shellName === "powershell") {
@@ -152,7 +152,8 @@ async function capture(shellName, config, env, cwd) {
     args = ["--login", "-i", "-c", windows ? script + windowsPath : script];
   }
   try {
-    const { stdout } = await run(config.shell, args, { ...captureOptions, env, cwd });
+    const command = prepareCapture?.({ file: config.shell, args, env, cwd }) || { file: config.shell, args, env, cwd };
+    const { stdout } = await run(command.file, command.args, { ...captureOptions, env: command.env, cwd: command.cwd });
     const result = parseCapturedEnvironment(stdout);
     if (windows) setEnv(result, "PATH", preferRealExecutables(entries(getEnv(result, "PATH"))).join(";"));
     return result;
@@ -161,7 +162,7 @@ async function capture(shellName, config, env, cwd) {
   }
 }
 
-export function createShellSnapshots({ getShellConfig, getPowerShellConfig, bundledBin, bundledNodeDir, cwd = homedir() }) {
+export function createShellSnapshots({ getShellConfig, getPowerShellConfig, bundledBin, bundledNodeDir, cwd = homedir(), prepareCapture }) {
   const sessions = new Map();
   let previousPath = new Set();
   const config = get => { try { return get(); } catch { return null; } };
@@ -179,8 +180,8 @@ export function createShellSnapshots({ getShellConfig, getPowerShellConfig, bund
       const updated = windows ? await refreshWindowsEnvironment(base, powershell, cwd, previousPath) : { environment: base };
       if (updated.registryPath) previousPath = updated.registryPath;
       const [bashEnv, powerShellEnv] = await Promise.all([
-        capture("bash", bash, updated.environment, cwd),
-        capture("powershell", powershell, updated.environment, cwd),
+        capture("bash", bash, updated.environment, cwd, prepareCapture),
+        capture("powershell", powershell, updated.environment, cwd, prepareCapture),
       ]);
       return { base: updated.environment, bash: bashEnv, powershell: powerShellEnv };
     })();
@@ -189,6 +190,7 @@ export function createShellSnapshots({ getShellConfig, getPowerShellConfig, bund
   }
   const current = (id, shellPath) => sessions.get(id)?.pending || refresh(id, shellPath);
   return {
+    invalidate() { for (const session of sessions.values()) session.pending = undefined; },
     begin(id, shellPath) { void current(id, shellPath); },
     forget(id) { sessions.delete(id); },
     shellPath(id) { return sessions.get(id)?.shellPath; },

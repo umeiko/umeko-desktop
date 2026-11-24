@@ -111,13 +111,21 @@ def patch_bash_job(release: Path):
     text = path.read_text(encoding="utf-8")
     hook = 'const host = globalThis[Symbol.for("umeko:bash-job")];'
     if hook in text:
+        previous = ('if (shellName === "bash" && host) {\n'
+                    '                return host({ shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env: env ?? getShellEnv(), toolCallId });')
+        if previous in text:
+            text = text.replace(previous, 'if (host) {\n'
+                                '                const hosted = host({ shellName, shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env: env ?? getShellEnv(), toolCallId });\n'
+                                '                if (hosted !== undefined) return hosted;')
+            path.write_text(text, encoding="utf-8")
         return
     replacements = {
         "exec: async (command, cwd, { onData, signal, timeout, env }) => {":
             "exec: async (command, cwd, { onData, signal, timeout, env, toolCallId }) => {",
         'const commandFromStdin = shellConfig.commandTransport === "stdin";':
-            f'{hook}\n            if (shellName === "bash" && host) {{\n'
-            '                return host({ shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env: env ?? getShellEnv(), toolCallId });\n'
+            f'{hook}\n            if (host) {{\n'
+            '                const hosted = host({ shellName, shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env: env ?? getShellEnv(), toolCallId });\n'
+            '                if (hosted !== undefined) return hosted;\n'
             '            }\n            const commandFromStdin = shellConfig.commandTransport === "stdin";',
         "env: spawnContext.env,": "env: spawnContext.env,\n                        toolCallId: _toolCallId,",
     }
@@ -212,6 +220,11 @@ def verify_runtime(release: Path, bridge_source: Path):
         copy_runtime_file(bridge_source.parent / name, release / name)
     copy_runtime_file(bridge_source.parent / 'update-cleanup.mjs', release / 'update-cleanup.mjs')
     copy_runtime_file(bridge_source.parent / 'apply-patch.mjs', release / 'apply-patch.mjs')
+    # Older bridge sources have no sandbox adapter. The runtime self-test below
+    # rejects a newer bridge whose import cannot be resolved.
+    sandbox_adapter = bridge_source.parent / 'windows-sandbox.mjs'
+    if sandbox_adapter.is_file():
+        copy_runtime_file(sandbox_adapter, release / sandbox_adapter.name)
     copy_runtime_file(bridge_source.parent / 'generation.mjs', release / 'generation.mjs')
     for name in ('cowork-tools.mjs', 'cowork-local.mjs', 'cowork-subagents.mjs'):
         copy_runtime_file(bridge_source.parent / name, release / name)

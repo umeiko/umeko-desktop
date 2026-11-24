@@ -298,6 +298,9 @@ class DshControllerMixin:
         record.tool_status = '正在连接 DeepSeek Harness' if not record.process else '正在生成'
         record.prompt_started = time.monotonic() if action == 'prompt' else None
         try:
+            sandbox = getattr(self, 'windowsSandbox', None)
+            if sandbox is not None and sandbox.state['enabled']:
+                raise RuntimeError('Windows 命令沙箱适用于 Pi 会话。请新建 Pi 会话继续。')
             if record.process and record.ready and not record.stale:
                 self._pool.write(record, {'type': action, **values, 'config': self._dsh_selection(record)})
             else:

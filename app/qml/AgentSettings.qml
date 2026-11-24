@@ -11,7 +11,9 @@ Column {
         objectName: "toolPermissionSettings"
         width: parent.width
         ColumnLayout {
+            id: permissions
             width: parent.width; spacing: 12
+            readonly property var sandbox: backend.windowsSandbox.state
             Text { font.family: Theme.fontFamily; text: I18n.t("工具执行权限"); color: Theme.ink; font.pixelSize: Theme.font(14, visible); font.weight: Font.DemiBold }
             RowLayout {
                 Layout.fillWidth: true; spacing: 8
@@ -36,6 +38,27 @@ Column {
                     ? I18n.t("每次执行命令、编辑或写入文件前询问；读取和搜索直接执行。切换立即保存并生效。")
                     : I18n.t("工具自动执行，仅七类高风险操作需要确认。切换立即保存并生效。")
                 color: Theme.muted; font.pixelSize: Theme.font(11, visible)
+            }
+            RowLayout {
+                visible: permissions.sandbox.supported
+                Layout.fillWidth: true
+                Text {
+                    font.family: Theme.fontFamily; color: Theme.ink; font.pixelSize: Theme.font(12, visible)
+                    text: I18n.t("Windows 命令沙箱") + " · " + I18n.t(permissions.sandbox.level === "elevated" ? "管理员级隔离" : permissions.sandbox.level === "non-elevated" ? "标准用户隔离" : "关闭")
+                }
+                Item { Layout.fillWidth: true }
+                ActionButton {
+                    objectName: "windowsSandboxSetup"
+                    text: I18n.t("安装管理员级隔离")
+                    enabled: !permissions.sandbox.busy && !permissions.sandbox.elevatedReady
+                    onClicked: backend.windowsSandbox.setup()
+                }
+            }
+            Text {
+                Layout.fillWidth: true; wrapMode: Text.Wrap
+                visible: permissions.sandbox.supported
+                font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible)
+                text: permissions.sandbox.error || I18n.t("通过 Agent 设置沙箱开关和联网权限。禁止命令联网需要安装管理员级隔离。")
             }
         }
     }

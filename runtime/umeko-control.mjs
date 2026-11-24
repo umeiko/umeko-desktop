@@ -19,7 +19,7 @@ export const umekoHelp = () => ({...(instanceDocs || { docsRoot: umekoDocs(), en
 export function configureUmekoDocs(options) { instanceDocs = prepareDocumentation(options); }
 export const UMEKO_PROMPT = 'umeko-desk 的临时文件存放在 ./.umeko 目录下。 Umeko owns providers, credentials, themes, desktop settings, projects and chats; Pi provider configuration does not apply. First call umeko_desktop operation help to discover its documentation. Discover enabled Widgets with widgets.list (activeOnly true) and read widgets.docs before using them. Apply desktop changes through umeko_desktop, not by editing its settings files.';
 
-export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesContext, refreshShellEnvironment, remoteOperation,
+export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesContext, refreshShellEnvironment, remoteOperation, getSandbox,
   getPetAssistantBinding = () => '', getPetReminderBinding = () => '', waitForSpeech = (ms, signal) => delay(ms, undefined, {signal}) }) {
   const pending = new Map();
   let speechTail = Promise.resolve(), speechLife = new AbortController();
@@ -99,6 +99,13 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesCon
         parameters: Type.Object({ operation: Type.String({ minLength: 1, maxLength: 80 }), arguments: Type.Optional(Type.Record(Type.String(), Type.Unknown())) }),
         execute: async (_id, params, signal, onUpdate, ctx) => {
           const args = params.arguments || {};
+          const current = getSandbox?.();
+          const operations = params.operation === 'batch' && Array.isArray(args.operations) ? args.operations : [params];
+          const weakening = current?.enabled && operations.some(item => item?.operation === 'settings.setWindowsSandbox' &&
+            (item.arguments?.enabled === false || (!current.allowNetwork && item.arguments?.allowNetwork === true)));
+          if (weakening && !(await ctx?.ui?.confirm('Change Windows sandbox protection?', 'This change would allow future Agent commands to run with fewer restrictions.'))) {
+            return { content: [{ type: 'text', text: 'The user did not approve reducing Windows sandbox protection.' }], isError: true };
+          }
           let result;
           if (params.operation === 'shell.refreshEnvironment' && refreshShellEnvironment) {
             result = {ok: true, ...await refreshShellEnvironment(ctx)};

@@ -279,6 +279,9 @@ class UmekoControl(QObject):
                 value=args.get(name,copy.deepcopy(field[2]) if len(field)>2 else None)
                 if not {'string':isinstance(value,str),'boolean':type(value) is bool,'integer':type(value) is int,'json':isinstance(value,dict)}[kind]:raise ValueError(name+' must be '+kind)
                 values[name]=value
+            if (operation == 'widgets.call' and values['id'] == 'terminal' and values['method'] in ('run', 'write')
+                    and getattr(b, 'windowsSandbox', None) is not None and b.windowsSandbox.state['enabled']):
+                raise ValueError('The Windows sandbox blocks Agent input to the shared terminal. Use bash, powershell or background_job to run the command in the sandbox.')
             return b.desktopPlugins.bridge.execute(operation,values,caller,self)
         if operation == 'operations.list':
             prefix = args.get('prefix', '')
@@ -295,6 +298,9 @@ class UmekoControl(QObject):
             settings.pop('sessionMeta', None)
             return {'config': redacted(settings), 'activeSession': b.activeSession, 'callerSession': caller.id if caller else '',
                     'loginStartup': redacted(getattr(getattr(b, 'loginStartup', None), 'state', {}))}
+        if operation == 'settings.windowsSandbox':
+            if args: raise ValueError('settings.windowsSandbox takes no arguments')
+            return b.windowsSandbox.state
         if operation == 'providers.list': return {'providers': redacted(b.config['providers']), 'presets': b.commonProviders}
         if operation == 'models.list':
             return {'models': [dict(model='umeko/'+row['id'], id=row['id'], provider='umeko', displayProvider=row.get('owned_by', 'Umeko'), contextWindow=row['contextWindow'], vision='image' in row['input'],
@@ -432,6 +438,8 @@ class UmekoControl(QObject):
         if queue and self._blocked(spec, args, caller): return self._queue(operation, args, caller)
         if self._blocked(spec, args, caller): raise ValueError('The relevant task is still busy')
         if operation == 'agent.save': values[0] = {**b.store.data['agent'], **values[0]}
+        if operation == 'settings.setWindowsSandbox':
+            return b.windowsSandbox.configure(*values)
         if operation == 'projects.add':
             values[0] = [QUrl.fromLocalFile(str(Path(path).expanduser().resolve())).toString() for path in values[0]]
         for index, field in enumerate(fields):

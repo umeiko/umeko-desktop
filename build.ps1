@@ -20,6 +20,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Pi compatibility validation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Pi search tool preparation failed' }
 & '.venv/Scripts/python.exe' scripts/fetch-remote-exec.py --platform windows --arch x64 --output runtime/releases/coding-1.5.2/remote-exec-assets
 if ($LASTEXITCODE -ne 0) { throw 'Remote exec-server preparation failed' }
+& '.venv/Scripts/python.exe' scripts/build-windows-sandbox.py
+if ($LASTEXITCODE -ne 0) { throw 'Windows sandbox build failed' }
 & '.venv/Scripts/python.exe' build_icons.py
 & '.venv/Scripts/python.exe' scripts/write-build-info.py
 if ($LASTEXITCODE -ne 0) { throw 'Build metadata generation failed' }
@@ -51,6 +53,7 @@ Copy-Item -LiteralPath 'runtime/package-install.mjs' -Destination (Join-Path $bu
 Copy-Item -LiteralPath 'runtime/dsh-acp-bridge.mjs' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Force
 Copy-Item -LiteralPath 'runtime/dsh-permissions.mjs' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Force
 Copy-Item -Path 'runtime/remote-*.mjs','runtime/remote-exec-assets.json' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Force
+Copy-Item -LiteralPath 'runtime/windows-sandbox.mjs' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Force
 Copy-Item -LiteralPath 'README.md' -Destination (Join-Path $buildDestination 'Umeko/README.md') -Force
 & '.venv/Scripts/python.exe' scripts/package_payload.py --resources (Join-Path $buildDestination 'Umeko/_internal') --report build/payload-optimization.json
 if ($LASTEXITCODE -ne 0) { throw 'Resource optimization failed' }

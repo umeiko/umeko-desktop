@@ -54,3 +54,10 @@ Python 版还提供以下设置操作。先用 `operations.list` 查询当前应
 预览版安装、更新、正式版与预览版切换，以及通道重启继续由用户在“关于”页面确认。用户可以在页面查看运行前提、下载和重启的具体影响。
 
 更改模型连接和选择参阅 providers.md，更改 API 代理参阅 server-updates.md，MCP/扩展配置参阅 extensions.md。任务排队结果见 control.md。
+# Windows 命令沙箱
+
+用 `umeko_desktop` 的 `settings.windowsSandbox` 读取隔离级别和联网状态。用 `settings.setWindowsSandbox` 提供 `enabled` 和 `allowNetwork` 两个布尔值。沙箱默认关闭。降低当前保护时，桌面会请用户确认。
+
+需要禁止联网时，先在 Agent 设置中点击「安装管理员级隔离」，并完成 Windows 的权限提示。标准用户隔离限制写入位置，并在私有桌面启动命令。禁止联网时，缺少管理员级隔离会阻止命令启动。设置应用于之后启动的命令。
+
+沙箱开启后，用 `bash`、`powershell` 或 `background_job` 执行命令。Agent 可以继续读取共享终端的内容。共享终端里的交互输入由用户操作。

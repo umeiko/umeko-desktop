@@ -107,6 +107,8 @@
 | `extensions.remove` | `id: string` | all | 是 |
 | `extensions.checkUpdate` | `id: string` | 无 | 是 |
 | `extensions.install` | `source: string`, `project: boolean=false` | all | 是 |
+| `settings.windowsSandbox` | 无 | 无 | 否 |
+| `settings.setWindowsSandbox` | `enabled: boolean`, `allowNetwork: boolean` | 无 | 否 |
 | `mcp.add` | `text: string`, `project: boolean=false` | all | 是 |
 | `mcp.save` | `scope: string`, `config: json` | all | 是 |
 | `mcp.reconnect` | `name: string` | view | 是 |

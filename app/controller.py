@@ -374,6 +374,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._kernel_status = "就绪"
         self._view.approval = {}
         self._release = root / "runtime/releases" / RELEASE_NAME
+        from .windows_sandbox import WindowsSandbox
+        self._windows_sandbox = WindowsSandbox(self)
         active = self.store.directory / "kernels/active.json"
         if active.exists():
             try:
@@ -403,6 +405,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     @Property(QObject, constant=True)
     def loginStartup(self):
         return self._login_startup
+
+    @Property(QObject, constant=True)
+    def windowsSandbox(self):
+        return self._windows_sandbox
 
     @Property(QObject, constant=True)
     def slashCommands(self):
