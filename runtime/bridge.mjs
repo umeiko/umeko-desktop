@@ -714,7 +714,7 @@ async function promptWithInterrupts(first) {
     const modelOptions = next.modelRoles || first.modelRoles;
     if (modelOptions?.planningModel || modelOptions?.executionModel || modelOptions?.coordinatorModel) {
       await modelRoles.prompt(runtime.session, {...next, model: next.model || first.model, modelRoles: modelOptions}, selectModel,
-        () => !closing && generation === commandCancellation && !inputQueue.hasInterrupts);
+        () => !closing && generation === commandCancellation);
     } else {
       await selectModel(next.model || first.model);
       emit({type:"active_model",model:runtime.session.model.id});
