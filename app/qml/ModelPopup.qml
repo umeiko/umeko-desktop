@@ -7,13 +7,15 @@ AnchoredPidPopup {
     id: root
     objectName: "modelPopup"
     property real heightLimit: 470
+    readonly property string role: modelRole.currentIndex === 1 ? "planningModel" : modelRole.currentIndex === 2 ? "executionModel" : ""
+    readonly property string roleModel: role ? (backend.sessionModelRoles || {})[role] || "" : ""
     readonly property bool useDshModels: backend.sessionBackend === "dsh" && backend.dshOwnConfig === true
     readonly property bool hasDshPath: backend.dshRuntime ? String(backend.dshRuntime.path || backend.dshRuntime.resolvedPath || "").trim().length > 0 : false
     fullWidth: 365
-    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + (backend.modelGroupSelected ? 185 : 270) + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0) + (ownModelsHint.visible ? ownModelsHint.implicitHeight + 10 : 0)))
+    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + (root.role ? 242 : backend.modelGroupSelected ? 185 : 270) + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0) + (ownModelsHint.visible ? ownModelsHint.implicitHeight + 10 : 0)))
     signal configure()
     signal dismissed()
-    onAboutToShow: modelSearch.clear()
+    onAboutToShow: { modelSearch.clear(); modelRole.currentIndex = 0 }
     onAboutToHide: { focus = false; dismissed() }
     onOpened: {
         modelSearch.forceActiveFocus()
@@ -58,10 +60,27 @@ AnchoredPidPopup {
         opacity: root.contentOpacity
         RowLayout {
             Layout.fillWidth: true
-            Text { text: I18n.t("会话后端"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
+            Text { visible: backend.sessionBackend !== "pi"; text: I18n.t("会话后端"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
+            ComboBox {
+                id: modelRole; objectName: "modelRolePicker"
+                visible: backend.sessionBackend === "pi"
+                Layout.preferredWidth: 164
+                implicitHeight: Theme.control(28)
+                model: [I18n.t("对话模型"), I18n.t("规划模型"), I18n.t("执行模型")]
+                font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible)
+                background: Rectangle { radius: 7; color: modelRole.hovered ? Theme.hover : Theme.surface; border.color: Theme.line }
+            }
             Item { Layout.fillWidth: true }
             BackendChoice { objectName: "choosePiBackend"; text: "Pi Coding Agent"; artwork: "../icons/pi.svg"; selected: backend.sessionBackend === "pi"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("pi") }
             BackendChoice { objectName: "chooseDshBackend"; text: "DeepSeek Harness"; artwork: "../icons/dsh.svg"; monochrome: true; experimental: true; visible: root.hasDshPath || backend.sessionBackend === "dsh"; selected: backend.sessionBackend === "dsh"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("dsh") }
+        }
+        ModelChoice {
+            objectName: "clearModelRole"
+            Layout.fillWidth: true
+            title: I18n.t("沿用对话模型")
+            matches: !!root.role
+            selected: !root.roleModel
+            onChosen: if (backend.selectRoleModel(root.role, "")) root.close()
         }
         InputField { id: modelSearch; objectName: "modelSearch"; Layout.fillWidth: true; placeholderText: I18n.t("搜索供应商或模型…"); height: 39 }
         Text {
@@ -90,9 +109,13 @@ AnchoredPidPopup {
                         title: modelData.alias
                         subtitle: root.useDshModels ? "" : modelData.upstream
                         matches: (provider.name + " " + title + " " + subtitle).toLowerCase().includes(modelSearch.text.toLowerCase())
-                        selected: root.useDshModels ? backend.dshCurrentModelValue === modelData.value : !backend.modelGroupSelected && backend.config.selectedProvider === provider.id && backend.config.selectedModel === modelData.alias
+                        selected: root.role ? root.roleModel === modelData.alias : root.useDshModels ? backend.dshCurrentModelValue === modelData.value : !backend.modelGroupSelected && backend.config.selectedProvider === provider.id && backend.config.selectedModel === modelData.alias
                         onChosen: {
                             const controller = backend, providerId = provider.id, alias = modelData.alias, nativeValue = modelData.value, useDshModels = root.useDshModels
+                            if (root.role) {
+                                if (controller.selectRoleModel(root.role, alias)) root.close()
+                                return
+                            }
                             root.close()
                             if (useDshModels) controller.selectDshModel(nativeValue)
                             else controller.selectModel(providerId, alias)
@@ -106,15 +129,22 @@ AnchoredPidPopup {
                 title: I18n.t("模型组")
                 matches: backend.sessionBackend === "pi" && backend.modelGroupReady === true &&
                          (title + " 模型组 Model group").toLowerCase().includes(modelSearch.text.trim().toLowerCase())
-                selected: backend.modelGroupSelected === true
-                onChosen: { root.close(); backend.selectModelGroup() }
+                selected: root.role ? root.roleModel === "@umeko/model group" : backend.modelGroupSelected === true
+                onChosen: {
+                    if (root.role) {
+                        if (backend.selectRoleModel(root.role, "@umeko/model group")) root.close()
+                    } else {
+                        root.close()
+                        backend.selectModelGroup()
+                    }
+                }
             }
         }
         Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
         ColumnLayout {
             id: reasoningControls
             objectName: "reasoningControls"
-            visible: backend.modelGroupSelected !== true
+            visible: !root.role && backend.modelGroupSelected !== true
             Layout.fillWidth: true; spacing: 3
             // Effective levels; detection results can replace them while the popup is open.
             readonly property var levels: { backend.reasoningDetectionState; let values = ["off"]; for (const level of backend.reasoningLevels) values.push(level); return values }
