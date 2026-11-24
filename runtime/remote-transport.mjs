@@ -33,6 +33,7 @@ const fatalSsh = /permission denied|authentication failed|host key verification 
 const disconnectedSsh = /connection (?:reset|timed out|closed)|connection to .+ closed by remote host|broken pipe|send\(\) failed,\s*10054|lost connection/i;
 const rejectedSsh = /host key verification failed|remote host identification has changed|permission denied \(|no matching host key type found/i;
 const retryDelays = [2_000, 4_000, 8_000, 16_000, 32_000, 60_000];
+export const DEFAULT_RECONNECT_DELAYS_MS = retryDelays;
 const outageTimeoutMs = 10 * 60_000;
 const sessionChanged = () => Object.assign(new Error("Remote session expired; reopen the process or file handle"), { code: "REMOTE_SESSION_CHANGED" });
 function sshFailure(message, stderr, transport, fatal = false) {
@@ -546,6 +547,7 @@ rm -f ${quoteSh(temporary)}`;
   _outageDetails() {
     return {
       outageStartedAt: this.outageStartedAt, attempt: this.reconnectAttempt,
+      outageNoticeAt: this.outageStartedAt + (this.options.outageTimeoutMs ?? outageTimeoutMs),
       nextRetryAt: this.nextRetryAt, sshError: this.reconnectSshError,
     };
   }
@@ -556,8 +558,16 @@ rm -f ${quoteSh(temporary)}`;
 
   async _connect() {
     if (this.sessionId) this._beginOutage();
-    for (let attempt = 1; !this.closed; attempt++) {
+    const delays = Array.isArray(this.options.reconnectDelaysMs) ? this.options.reconnectDelaysMs : retryDelays;
+    for (let attempt = this.outageStartedAt === undefined ? 0 : 1; !this.closed; attempt++) {
       this.reconnectAttempt = attempt;
+      if (attempt) {
+        const retryAfterMs = delays[Math.min(attempt - 1, delays.length - 1)];
+        this.nextRetryAt = Date.now() + retryAfterMs;
+        this._state("reconnecting", { ...this._outageDetails(), retryAfterMs });
+        await (this.options.reconnectSleep ?? sleep)(retryAfterMs, this.controller.signal);
+        if (this.closed) throw abortError();
+      }
       this.nextRetryAt = undefined;
       if (this.outageStartedAt === undefined) this._state("connecting");
       else this._state("reconnecting", this._outageDetails());
@@ -611,11 +621,6 @@ rm -f ${quoteSh(temporary)}`;
         }
         if (error.sshError) this.reconnectSshError = error.sshError;
         this._beginOutage();
-        const retryAfterMs = retryDelays[Math.min(attempt - 1, retryDelays.length - 1)];
-        this.reconnectAttempt = attempt + 1;
-        this.nextRetryAt = Date.now() + retryAfterMs;
-        this._state("reconnecting", { ...this._outageDetails(), retryAfterMs });
-        await (this.options.reconnectSleep ?? sleep)(retryAfterMs, this.controller.signal);
       }
     }
     throw abortError();
@@ -656,8 +661,7 @@ rm -f ${quoteSh(temporary)}`;
         },
         startDeadline: () => {
           if (this.outageStartedAt === undefined || timer) return;
-          const budget = this.options.outageTimeoutMs ?? outageTimeoutMs;
-          const remaining = Math.max(0, budget - (Date.now() - this.outageStartedAt));
+          const remaining = Math.max(0, this._outageDetails().outageNoticeAt - Date.now());
           timer = setTimeout(() => {
             const error = sshFailure("The host has not reconnected. Umeko is still retrying in the background.", this.reconnectSshError);
             const retryAfterMs = this.nextRetryAt === undefined ? undefined : Math.max(0, this.nextRetryAt - Date.now());
@@ -718,4 +722,57 @@ rm -f ${quoteSh(temporary)}`;
     for (const child of this.children) child.kill();
     this._state("disconnected");
   }
+}
+
+function runOneShotSsh(command, args, env, signal, timeoutMs = 15_000) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(abortError());
+    const child = spawn(command[0], [...command.slice(1), ...args], { env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "", stderr = "";
+    const cleanup = () => { clearTimeout(timer); signal?.removeEventListener("abort", abort); };
+    const timer = setTimeout(() => { cleanup(); child.kill(); reject(sshFailure("SSH platform check timed out", stderr, true)); }, timeoutMs);
+    const abort = () => { cleanup(); child.kill(); reject(abortError()); };
+    signal?.addEventListener("abort", abort, { once: true });
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", chunk => { stdout = (stdout + chunk).slice(0, 8192); });
+    child.stderr.on("data", chunk => { stderr = (stderr + chunk).slice(-8192); });
+    child.once("error", error => { cleanup(); reject(sshFailure("Unable to start OpenSSH", error.message, false, true)); });
+    child.once("close", code => { cleanup(); resolve({ code, stdout: stdout.trim(), stderr }); });
+  });
+}
+
+/** Detect whether an OpenSSH alias runs Linux or Windows without reading keys. */
+export async function detectRemotePlatform(host, { getSshEnvironment, sshWrapper, sshCommand, signal } = {}) {
+  sshArguments(host);
+  const env = await getSshEnvironment?.() ?? process.env;
+  let command;
+  let sshClient;
+  let sshEnv = env;
+  if (sshCommand !== undefined) {
+    command = checkedSshCommand(sshCommand);
+    sshClient = command[0];
+  } else {
+    const wrapper = sshWrapper === undefined ? null : checkedSshCommand(sshWrapper);
+    sshClient = await selectSshClient(host, { env });
+    command = wrapper || [sshClient];
+    sshEnv = wrapper ? { ...env, UMEKO_REAL_SSH: sshClient, UMEKO_SSH_TEST_CONTROL: process.env.UMEKO_SSH_TEST_CONTROL } : env;
+  }
+  const baseArgs = [...sshArguments(host), "-n", host];
+  const first = await runOneShotSsh(command, [...baseArgs, "uname -s"], sshEnv, signal);
+  if (first.code === 255) {
+    const error = sshFailure(`Unable to connect to ${host}`, first.stderr, true, false);
+    error.sshClient = sshClient;
+    throw error;
+  }
+  if (first.code === 0) {
+    if (/linux/i.test(first.stdout)) return { platform: "linux", sshClient };
+    if (/mingw|msys|cygwin|windows/i.test(first.stdout)) return { platform: "windows", sshClient };
+    throw Object.assign(new Error(`Unsupported remote system: ${first.stdout || "unknown"}`), { sshClient, fatal: true });
+  }
+  const second = await runOneShotSsh(command, [...baseArgs, "cmd /c echo %OS%"], sshEnv, signal);
+  if (second.code === 0 && /windows_nt/i.test(second.stdout)) return { platform: "windows", sshClient };
+  const error = sshFailure(`Unable to detect operating system on ${host}`, second.stderr || first.stderr, second.code === 255, second.code !== 255);
+  error.sshClient = sshClient;
+  throw error;
 }

@@ -45,7 +45,7 @@ class RemoteEnvironmentSettingsTest(unittest.TestCase):
         retry = {**environment, 'state': 'reconnecting', 'sshClient': client,
                  'message': 'OpenSSH failed: ' + diagnostic, 'sshError': diagnostic,
                  'attempt': 1, 'retryAfterMs': 60000, 'nextRetryAt': 1700000060000,
-                 'outageStartedAt': 1700000000000}
+                 'outageStartedAt': 1700000000000, 'outageNoticeAt': 1700000600000}
         self.registry.observe('chat', retry)
         self.assertEqual(self.registry.rows()[0], {key: value for key, value in retry.items()})
         before = self.changed.call_count

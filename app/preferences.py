@@ -118,6 +118,7 @@ class PreferencesMixin:
         from .remote_environments import network_config
         self.remoteEnvironmentsChanged.emit()
         payload = {'type': 'desktop_settings', 'remoteNetwork': network_config(self.store)}
+        self._remote_service.refresh_network()
         for record in tuple(self._pool.records.values()):
             if record.process:
                 self._pool.write(record, payload)

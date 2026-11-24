@@ -240,7 +240,11 @@ class PiControllerMixin:
             systemPromptStateDir=str(self.store.directory / 'system-prompts'),
             generation=generation_config(self.store.data), remoteNetwork=network_config(self.store),
             mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
-        if '--remote-environments-smoke' in sys.argv and os.environ.get('QT_QPA_PLATFORM') == 'offscreen':
+        remote_workspace = self._remote_project_for_workspace(record.workspace)
+        if remote_workspace:
+            Path(record.workspace).mkdir(parents=True, exist_ok=True)
+            payload['remoteWorkspace'] = remote_workspace
+        if ('--remote-environments-smoke' in sys.argv or '--remote-workdir-smoke' in sys.argv) and os.environ.get('QT_QPA_PLATFORM') == 'offscreen':
             ssh_command = os.environ.get('UMEKO_TEST_SSH_COMMAND')
             if ssh_command:
                 payload['remoteTestSshCommand'] = json.loads(ssh_command)

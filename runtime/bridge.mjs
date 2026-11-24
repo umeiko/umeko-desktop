@@ -16,6 +16,7 @@ import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
 import { blockedShellEnvKey, createShellSnapshots } from "./shell-snapshot.mjs";
 import { createRemoteEnvironments } from "./remote-environments.mjs";
+import { createRemoteWorkspaceExtension } from "./remote-workspace-tools.mjs";
 import { createAuxiliaryVision, ANALYZE_IMAGE, AUTO_VISION_ENTRY, automaticVisionView } from "./auxiliary-vision.mjs";
 import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
 import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI } from "./tool-permissions.mjs";
@@ -47,7 +48,19 @@ const { isRetryableAssistantError, isContextOverflow } = await import("@earendil
 const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", entry));
 const { loadMcpConfig } = await import(new URL("./extensions/mcp/config.js", entry));
-const { allToolNames, createAllToolDefinitions } = await import(new URL("./core/tools/index.js", entry));
+const {
+  allToolNames, createAllToolDefinitions,
+  createReadToolDefinition, createWriteToolDefinition, createEditToolDefinition,
+  createBashToolDefinition, createPowerShellToolDefinition,
+  createLsToolDefinition, createFindToolDefinition, createGrepToolDefinition,
+  DEFAULT_MAX_BYTES, formatSize, truncateHead, truncateLine,
+} = await import(new URL("./core/tools/index.js", entry));
+const remoteToolsApi = {
+  createReadToolDefinition, createWriteToolDefinition, createEditToolDefinition,
+  createBashToolDefinition, createPowerShellToolDefinition,
+  createLsToolDefinition, createFindToolDefinition, createGrepToolDefinition,
+  DEFAULT_MAX_BYTES, formatSize, truncateHead, truncateLine,
+};
 const { getShellConfig, getPowerShellConfig } = await import(new URL("./utils/shell.js", entry));
 const bundledNodeDir = fileURLToPath(new URL(process.platform === "win32" ? "../../node" : "../../node/bin", import.meta.url));
 const shellSnapshots = createShellSnapshots({ getShellConfig, getPowerShellConfig,
@@ -97,6 +110,9 @@ const umekoControl = createUmekoControl({
   getPetReminderBinding: () => config?.petReminderBinding || '',
   remoteOperation(operation, args, signal, onUpdate) {
     if (operation === "remote-environments.test") return remoteEnvironments.test(args, signal, onUpdate);
+    if (operation === "remote-environments.browse") return remoteEnvironments.browse(args, signal);
+    if (operation === "remote-environments.mkdir") return remoteEnvironments.mkdir(args, signal);
+    if (operation === "remote-environments.home") return remoteEnvironments.home(args, signal);
     if (operation === "remote-environments.remove") {
       return umekoControl.request(operation, args, signal).then(result => {
         if (result.ok) remoteEnvironments.close(args.name);
@@ -458,6 +474,16 @@ async function restoreSubagentSession(child, context, customTools) {
       { name: "umeko-control", builtin: true, replaceable: false, factory: auxiliaryVision.toolExtension },
       { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
       { name: "shell-snapshot", hidden: true, replaceable: false, factory: shellSnapshotExtension(() => policy.getShellPath()) },
+      ...(config?.remoteWorkspace?.environment && config?.remoteWorkspace?.remotePath ? [{
+        name: "remote-workspace", hidden: true, replaceable: false,
+        factory: createRemoteWorkspaceExtension({
+          remoteWorkspace: config.remoteWorkspace,
+          getEntry: remoteEnvironments.getEntry,
+          emit,
+          localCwd: manager.getCwd(),
+          toolsApi: remoteToolsApi,
+        }),
+      }] : []),
     ],
     systemPrompt:context?.systemPrompt || `You are the ${child.type} subagent embedded in Umeko Desktop. Continue the task in this existing conversation. ${readonly ? "Inspect and report only; do not modify files." : ""}`,
     appendSystemPrompt:context?.systemPrompt?.includes(SUBAGENT_COMPLETION_HINT) ? [] : [SUBAGENT_COMPLETION_HINT],
@@ -486,6 +512,9 @@ async function init(input) {
   process.env.PI_CODING_AGENT_DIR = input.agentDir;
   for (const [name, value] of Object.entries(input.mcpEnv || {})) if (!/^NODE_|^(HTTP|HTTPS|ALL)_PROXY$|_(AK|SK|SECRET_KEY|SECURITY_TOKEN)$/i.test(name)) process.env[name] = value;
   const cwd = resolve(input.workspace || input.defaultCwd);
+  if (input.remoteWorkspace?.environment && input.remoteWorkspace?.remotePath) {
+    mkdirSync(cwd, { recursive: true });
+  }
   if (!existsSync(cwd)) throw new Error("工作目录不存在");
   mkdirSync(input.sessionDir, { recursive: true });
   mkdirSync(input.agentDir, { recursive: true });
@@ -546,6 +575,16 @@ async function init(input) {
           { name: "recent-images", hidden: true, replaceable: false, factory: createRecentImagesExtension({ getLimit: () => config.agent?.maxContextImages }) },
       { name: "auxiliary-vision", hidden: true, replaceable: false, factory: auxiliaryVision.contextExtension },
           { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
+          ...(input.remoteWorkspace?.environment && input.remoteWorkspace?.remotePath && !input.globalCoordinator ? [{
+            name: "remote-workspace", hidden: true, replaceable: false,
+            factory: createRemoteWorkspaceExtension({
+              remoteWorkspace: input.remoteWorkspace,
+              getEntry: remoteEnvironments.getEntry,
+              emit,
+              localCwd: cwd,
+              toolsApi: remoteToolsApi,
+            }),
+          }] : []),
           ...(!input.globalCoordinator && (!input.pluginSessionPolicy || input.pluginSessionPolicy.allowedTools.includes(APPLY_PATCH)) &&
               input.models.some(row => row.applyPatch === true) ? [{name:"apply-patch", hidden:true, replaceable:false,
                 factory:createApplyPatchExtension(applyPatchEnabled)}] : []),
@@ -638,7 +677,7 @@ async function state() {
   const deliveries = branch.filter(e => e.type === "custom" && e.customType === "umeko-chatbox" && e.data?.version === 1 && typeof e.data.toolCallId === "string" && Array.isArray(e.data.items)).map(e => e.data);
   const compactions = new Map();
   const candidates = branch.flatMap(e => {
-    if (e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant"].includes(e.message.role)) return [e];
+    if (e.type === "message" && !omittedRetries.has(e.id) && ["user", "assistant", "bashExecution"].includes(e.message.role)) return [e];
     if (automaticVisionView(e)) return [e];
     if (e.type !== "custom" || e.customType !== "umeko-compaction" || ![1, 2].includes(e.data?.version)) return [];
     if (e.data.version === 1) return [e];
@@ -650,7 +689,7 @@ async function state() {
     compactions.set(e.data.eventId, first);
     return [first];
   });
-  const characters = candidates.reduce((sum, e) => sum + (typeof e.message?.content === "string" ? e.message.content.length : (Array.isArray(e.message?.content) ? e.message.content : []).reduce((n, block) => n + (block.text || block.thinking || "").length, 0)), 0);
+  const characters = candidates.reduce((sum, e) => sum + (typeof e.message?.content === "string" ? e.message.content.length : (Array.isArray(e.message?.content) ? e.message.content : []).reduce((n, block) => n + (block.text || block.thinking || "").length, 0)) + (e.message?.output?.length || 0), 0);
   const paged = candidates.length > 256 || characters > 1024 * 1024;
   const selected = config.globalCoordinator ? candidates.slice(-64) : paged ? candidates.slice(-128) : candidates;
   const messages = projectSubagents(branch, selected.map(e => {
@@ -658,6 +697,13 @@ async function state() {
     if (e.type === "custom") return { role: "assistant", text: e.data.version === 1 ? compactionText(e.data) : "", customType: e.customType,
       compaction: e.data, entryId: e.id, timestamp: e.timestamp };
     const message = e.message;
+    if (message.role === "bashExecution") {
+      return { role: "assistant", text: "", entryId: e.id, timestamp: message.timestamp || e.timestamp, tools: [{
+        id: e.id, name: "bash", arguments: { command: message.command }, path: "",
+        state: message.cancelled ? "interrupted" : message.exitCode === 0 ? "done" : "error",
+        result: message.output.slice(0, 8192),
+      }] };
+    }
     const row = {role: message.role, text: textOf(message.content) || (message.stopReason === "aborted" ? "" : message.errorMessage || ""), error: message.stopReason !== "aborted" && !!message.errorMessage, entryId:e.id, timestamp:message.timestamp || e.timestamp};
     if (row.error) row.errorMessage = message.errorMessage;
     if (message.role === "assistant") row.stopReason = message.stopReason || "";
@@ -729,6 +775,19 @@ async function selectModel(alias) {
 
 async function promptWithInterrupts(first) {
   await inputQueue.run(first,async next=>{
+    const shellInput = config.remoteWorkspace && /^(!{1,2})\s*(\S[\s\S]*)$/.exec(next.text);
+    if (shellInput) {
+      const session = runtime.session;
+      const [, prefix, command] = shellInput;
+      const excludeFromContext = prefix === "!!";
+      const event = await session.extensionRunner.emitUserBash({
+        type: "user_bash", command, excludeFromContext, cwd: session.sessionManager.getCwd(),
+      });
+      if (event?.result) session.recordBashResult(command, event.result, { excludeFromContext });
+      else if (event?.operations) await session.executeBash(command, undefined, { excludeFromContext, operations: event.operations });
+      else throw new Error("远程工作目录的命令执行暂不可用");
+      return;
+    }
     if (validEffort(next.reasoningEffort)) reasoningEffort = next.reasoningEffort;
     const generation = commandCancellation;
     const modelOptions = next.modelRoles || first.modelRoles;
@@ -760,6 +819,7 @@ function adoptAgentRun(session) {
 function stopRun() {
   if (stopWork) return stopWork;
   const session = runtime?.session;
+  session?.abortBash();
   if (session) blockedSessions.add(session);
   if (currentRun) currentRun.cancelled = true;
   pendingMemberModel = undefined;

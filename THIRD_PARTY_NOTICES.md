@@ -38,6 +38,12 @@ Release bundles include fd 10.3.0 (MIT or Apache-2.0, https://github.com/sharkdp
 
 Remote environments use the official `codex-exec-server` binaries from OpenAI Codex `rust-v0.172.0`, under Apache-2.0. The JavaScript client implements the tagged `codex-rs/exec-server-protocol/src/protocol.rs` and `rpc.rs` wire formats. The upstream license and notice are retained in `licenses/codex-exec-server-APACHE.txt` and `licenses/codex-exec-server-NOTICE.txt`. Release assets and SHA-256 values are pinned in `runtime/remote-exec-assets.json`. Source: https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/exec-server .
 
+## Remote working directory helpers (`dsh-remote` and Pi SSH example)
+
+`runtime/remote-ssh-config.mjs`, `app/qml/WorkspacePicker.qml`, and the remote path normalization / Windows drive-listing / SSH terminal launch patterns adapt logic and dialog copy from `dsh-remote` 1.4.1 (MIT, https://www.npmjs.com/package/dsh-remote , `lib/sshconfig.js`, `lib/paths.js`, `lib/routes-fs.js`, `lib/remote-shell-child.cjs`, and `lib/client.js`). The upstream license is retained in `licenses/dsh-remote-MIT.txt`.
+
+`runtime/remote-workspace-tools.mjs` adapts the Pi built-in tool override pattern (`createReadToolDefinition`, `createWriteToolDefinition`, `createEditToolDefinition`, `createBashToolDefinition`, `createLsToolDefinition`, `createFindToolDefinition`, `user_bash`, and `before_agent_start`) from Pi Coding Agent 1.5.2's `examples/extensions/ssh.ts` example under the Pi MIT notice below.
+
 Qt / PySide6 is provided under its upstream LGPLv3 / GPLv3 / commercial terms. The application dynamically loads the unmodified Qt libraries. Their notices and license files are included in the installed PySide6 distribution. Source and licensing: https://www.qt.io/licensing/ and https://code.qt.io/pyside/pyside-setup.git/ .
 
 Pi Coding Agent and its dependencies are from https://github.com/earendil-works/pi (version 1.5.2). The complete upstream coding agent, tools, resource loader and session implementation are retained unmodified. The Pi AI built-in provider catalog and generated model list are replaced with empty catalogs; the application registers its explicit loopback gateway. Upstream protocol SDKs and their individual licenses remain in the runtime node_modules directory.

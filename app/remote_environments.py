@@ -78,7 +78,7 @@ class RemoteEnvironments:
         for key in ('sshClient', 'message', 'sshError'):
             if isinstance(event.get(key), str) and event[key]:
                 status[key] = event[key]
-        for key in ('attempt', 'retryAfterMs', 'nextRetryAt', 'outageStartedAt'):
+        for key in ('attempt', 'retryAfterMs', 'nextRetryAt', 'outageStartedAt', 'outageNoticeAt'):
             if isinstance(event.get(key), (int, float)) and not isinstance(event[key], bool) and event[key] > 0:
                 status[key] = event[key]
         for key in ('recovered', 'resumed'):

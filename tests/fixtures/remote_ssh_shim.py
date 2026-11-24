@@ -59,6 +59,26 @@ def own_windows_client(process):
     return lambda: kernel.CloseHandle(job)
 
 
+def windows_identity(process):
+    """Read native identity from the handle returned by this exact launch."""
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+    kernel.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+                                                ctypes.POINTER(wintypes.DWORD)]
+    created, exited, system, user = (wintypes.FILETIME() for _ in range(4))
+    if not kernel.GetProcessTimes(int(process._handle), ctypes.byref(created), ctypes.byref(exited),
+                                  ctypes.byref(system), ctypes.byref(user)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    size = wintypes.DWORD(32768)
+    image = ctypes.create_unicode_buffer(size.value)
+    if not kernel.QueryFullProcessImageNameW(int(process._handle), 0, image, ctypes.byref(size)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return {'windowsCreationTime': (created.dwHighDateTime << 32) | created.dwLowDateTime,
+            'windowsImage': image.value}
+
+
 def main():
     control = Path(os.environ['UMEKO_SSH_TEST_CONTROL']).resolve()
     control.mkdir(parents=True, exist_ok=True)
@@ -82,13 +102,16 @@ def main():
             close_job = own_windows_client(process)
         # The transport's persistent client forwards the websocket port with -L.
         tunnel = any(arg == '-L' or arg.startswith('-L') for arg in arguments)
+        identity = windows_identity(process) if os.name == 'nt' else {}
+        launched_at = time.monotonic()
         with (control / 'clients.jsonl').open('a', encoding='utf-8') as handle:
             handle.write(json.dumps({'pid': process.pid, 'ownerPid': os.getpid(), 'tunnel': tunnel,
-                                     'executable': str(Path(ssh).resolve()), 'argv': arguments}) + '\n')
+                                     'executable': str(Path(ssh).resolve()), 'argv': arguments,
+                                     'at': launched_at, **identity}) + '\n')
         record(control, 'client-start', pid=process.pid, tunnel=tunnel,
-               executable=str(Path(ssh).resolve()))
+               executable=str(Path(ssh).resolve()), **identity)
         status = process.wait()
-        record(control, 'client-exit', pid=process.pid, tunnel=tunnel, exitCode=status)
+        record(control, 'client-exit', pid=process.pid, tunnel=tunnel, exitCode=status, **identity)
         return status
     finally:
         if process.poll() is None:

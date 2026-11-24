@@ -299,11 +299,12 @@ test("a recovered link keeps retrying after three failures and caps the interval
     const waiting = ["fs/readFile", "environment/info"].map(method => connection.rpc(method, {}));
     await Promise.all(waiting);
     assert.equal(attempts, 9);
-    assert.deepEqual(delays, [2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000]);
+    assert.deepEqual(delays, [2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000, 60000]);
     const retryStates = states.filter(state => state.retryAfterMs);
-    assert.deepEqual(retryStates.map(state => state.attempt), [2, 3, 4, 5, 6, 7, 8, 9]);
+    assert.deepEqual(retryStates.map(state => state.attempt), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
     for (const state of retryStates) {
       assert.equal(state.outageStartedAt, retryStates[0].outageStartedAt);
+      assert.equal(state.outageNoticeAt, state.outageStartedAt + 600_000);
       assert.ok(state.nextRetryAt >= state.outageStartedAt + state.retryAfterMs);
     }
     assert.equal(states.at(-1).recovered, true);
@@ -330,7 +331,7 @@ test("a tool wait ends with SSH stderr while background recovery and other waite
     await reconnecting;
     context.mock.timers.tick(10 * 60_000);
     await assert.rejects(pending, {
-      code: "REMOTE_RECONNECT_TIMEOUT", state: "reconnecting", attempt: 2, sshError: diagnostic,
+      code: "REMOTE_RECONNECT_TIMEOUT", state: "reconnecting", attempt: 1, sshError: diagnostic,
     });
     assert.equal(connection.waiters.size, 0);
     assert.equal(connection.state, "reconnecting");
@@ -366,10 +367,11 @@ test("already attached recovery keeps the same resume ID through detach skew", a
     { sessionId: "retained", environmentInfo: info },
   ]);
   let retrying; const announced = new Promise(resolve => { retrying = resolve; });
-  connection.options.onState = (_state, detail) => { if (detail.retryAfterMs) retrying(); };
+  connection.options.onState = (_state, detail) => { if (detail.attempt === 2 && detail.retryAfterMs) retrying(); };
   try {
     await connection.ready(); connection._drop(); const recovery = connection.ready();
-    await announced; context.mock.timers.tick(2000); await recovery;
+    context.mock.timers.tick(2000);
+    await announced; context.mock.timers.tick(4000); await recovery;
     assert.equal(connection.sessionGeneration, 1);
     assert.deepEqual(connection.calls.filter(call => call.method === "initialize").map(call => call.params.resumeSessionId), [undefined, "retained", "retained"]);
   } finally { connection.close(); }

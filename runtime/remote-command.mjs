@@ -259,7 +259,25 @@ export function createRemoteCommands(connection) {
         const commandFile = p.join(job.root, windows ? (isCmd ? 'command.cmd' : 'command.ps1') : 'command.sh');
         const workerFile = p.join(job.root, windows ? 'worker.ps1' : 'worker.sh');
         await rpc('fs/createDirectory', { path: uri(job.root, windows), recursive: true });
-        await write(commandFile, windows ? (isCmd ? `@chcp 65001 >nul\r\n${args.command}\r\n` : `\uFEFF[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)\n[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)\n$OutputEncoding = [Console]::OutputEncoding\n${setup}${args.command}\n`) : `${setup}${args.command}\n`);
+        let commandText = `${setup}${args.command}\n`;
+        if (windows && isCmd) {
+          commandText = `@chcp 65001 >nul\r\n${args.command}\r\n`;
+        } else if (windows) {
+          // powershell.exe -File exits 0 after a failed final native command.
+          // Capture the final PowerShell status before running any other code.
+          commandText = `\uFEFF[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
+$OutputEncoding = [Console]::OutputEncoding
+${setup}
+$global:LASTEXITCODE = 0
+${args.command}
+$umekoCommandSucceeded = $?
+if ($umekoCommandSucceeded) { exit 0 }
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+exit 1
+`;
+        }
+        await write(commandFile, commandText);
         await write(workerFile, windows ? `\uFEFF${windowsWorker(job.root, cwd, shell, commandFile)}` : linuxWorker(job.root, cwd, shell, network, proxychains));
         const argv = windows ? ['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', workerFile, '-Launch'] : ['/bin/sh', '-c', `command -v setsid >/dev/null || { echo 'setsid is required' > ${quoteSh(p.join(job.root, 'launch-error'))}; exit 1; }; setsid /bin/sh ${quoteSh(workerFile)} </dev/null >${quoteSh(p.join(job.root, 'launcher.log'))} 2>&1 &`];
         const launchParams = { processId: `${sessionId}-launcher`, argv, cwd: uri(cwd, windows), envPolicy: { inherit: 'all', ignoreDefaultExcludes: false, exclude: [], set: {}, includeOnly: [] }, env: {}, tty: false, pipeStdin: false, arg0: null };

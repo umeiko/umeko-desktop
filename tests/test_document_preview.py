@@ -74,7 +74,16 @@ class DocumentPreviewTests(unittest.TestCase):
                 reader.cancel();reader.load(str(path),'markdown');loaded()
                 self.assertEqual(parser.call_count, 1)
                 path.write_text(path.read_text(encoding='utf-8')+'\nChanged!\n',encoding='utf-8')
-                reader.load(str(path),'markdown');loaded()
+                seen_busy_rows = []
+                def observe_busy():
+                    if reader.state.get('busy'):
+                        seen_busy_rows.append(reader.blocks.rowCount())
+                reader.changed.connect(observe_busy)
+                try:
+                    reader.load(str(path),'markdown');loaded()
+                finally:
+                    reader.changed.disconnect(observe_busy)
+                self.assertEqual(seen_busy_rows, [0])
                 self.assertEqual(parser.call_count, 2)
             reader.close()
             self.assertEqual(reader._cache_bytes,0)

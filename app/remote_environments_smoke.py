@@ -135,6 +135,8 @@ class Acceptance:
 
     def evidence(self):
         return {'completedTools': len(self.steps), 'currentTool': self.current_tool,
+                'commandsOnly': bool(self.spec.get('commandsOnly')),
+                'fileStage': 'skipped-explicit-continuation' if self.spec.get('commandsOnly') else 'included',
                 'states': self.states, 'qmlStates': self.ui_states, 'outages': self.outages,
                 'injectedOutage': self.injected_outage, 'sshLifecycle': self.ssh_lifecycle,
                 'relayDrops': self.relay_drops,
@@ -284,27 +286,10 @@ class Acceptance:
         final, tail = self.read_until_complete(reply)
         assert final.get('exitCode') == 0 and interactive.get('output', '') + tail == 'PROMPT\nECHO:acceptance-input\n'
 
-        remote = self.spec['remoteDirectory']
-        upload = self.call('remote_files', {'action': 'upload', 'environment': 'acceptance',
-                           'localPath': str(self.directory / 'payload'), 'path': remote},
-                           timeout=self.spec.get('uploadTimeout', 900))
-        assert not upload.get('error') and upload.get('ok', True), upload
-        download = self.call('remote_files', {'action': 'download', 'environment': 'acceptance',
-                             'path': remote, 'localPath': str(self.directory / 'download')},
-                             timeout=self.spec.get('downloadTimeout', 900))
-        assert not download.get('error') and download.get('ok', True), download
-        self.compare_payload()
-
-        text_path = remote + '/acceptance.txt'
-        text = 'REMOTE_FILE_TEXT\nUnicode: \u4f60\u597d\n'
-        self.call('remote_files', {'action': 'write', 'environment': 'acceptance', 'path': text_path, 'content': text})
-        read = self.call('remote_files', {'action': 'read', 'environment': 'acceptance', 'path': text_path})
-        assert read.get('content') == text, read
-        listing = self.call('remote_files', {'action': 'list', 'environment': 'acceptance', 'path': remote})
-        assert any(row.get('name') == 'acceptance.txt' for row in listing.get('entries', [])), listing
-        found = self.call('remote_files', {'action': 'search', 'environment': 'acceptance', 'path': text_path,
-                         'query': 'REMOTE_FILE_TEXT'})
-        assert any(row.get('line') == 1 and row.get('text') == 'REMOTE_FILE_TEXT' for row in found.get('matches', [])), found
+        if self.spec.get('commandsOnly'):
+            self.note('file-stage-skipped', reason='explicit commands-only continuation', verifiedPayloadBytes=0)
+        else:
+            self.run_file_stage()
 
         # Start after transfer so even a slow lab link cannot consume the
         # twenty-minute producer before the deliberate disconnect happens.
@@ -322,14 +307,21 @@ class Acceptance:
         # detached command stay alive. The shim rejects reconnects for >2 minutes.
         control = self.directory / 'ssh-control'
         launches = [json.loads(line) for line in (control / 'clients.jsonl').read_text().splitlines()]
-        candidates = [r for r in launches if r.get('tunnel') and self.pid_alive(r['pid'])]
-        assert len(candidates) == 1, ('Expected one owned SSH tunnel', candidates)
         (control / 'blocked').write_text('acceptance fault injection\n')
-        killed = candidates[0]['pid']
-        os.kill(killed, signal.SIGTERM)
-        self.injected_outage = {'pid': killed, 'blockedAt': time.monotonic(),
+        blocked_at = time.monotonic()
+        if os.name == 'nt':
+            established_at = next(row['at'] for row in reversed(self.states) if row['state'] == 'connected')
+            killed_identity = self.terminate_windows_tunnel(launches, established_at)
+            killed = killed_identity['pid']
+        else:
+            candidates = [r for r in launches if r.get('tunnel') and self.pid_alive(r['pid'])]
+            assert len(candidates) == 1, ('Expected one owned SSH tunnel', candidates)
+            killed = candidates[0]['pid']
+            os.kill(killed, signal.SIGTERM)
+            self.wait(lambda: not self.pid_alive(killed), 10, 'owned SSH client exited')
+            killed_identity = {'pid': killed}
+        self.injected_outage = {**killed_identity, 'blockedAt': blocked_at,
                                 'requestedBlockSeconds': self.spec['outageSeconds']}
-        self.wait(lambda: not self.pid_alive(killed), 10, 'owned SSH client exited')
         self.injected_outage['confirmedExitedAt'] = time.monotonic()
         self.note('ssh-client-killed', **self.injected_outage)
         released = threading.Event()
@@ -385,11 +377,82 @@ class Acceptance:
         assert not self.active_outage, ('An observed transport drop never recovered', self.active_outage)
         self.note('long-command-output-complete', commandPid=pid, outputLines=len(lines),
                   actualSeconds=round(time.monotonic() - self.long_started, 3))
-        self.note('passed', commandPid=pid, longSeconds=seconds, payloadBytes=self.spec['payloadBytes'],
+        verified_payload = 0 if self.spec.get('commandsOnly') else self.spec['payloadBytes']
+        self.note('passed', commandPid=pid, longSeconds=seconds, payloadBytes=verified_payload,
                   outageSeconds=self.spec['outageSeconds'], actualModelRequests=self.model.requests)
-        return {'ok': True, 'commandPid': pid, 'longSeconds': seconds, 'payloadBytes': self.spec['payloadBytes'],
+        return {'ok': True, 'commandPid': pid, 'longSeconds': seconds, 'payloadBytes': verified_payload,
                 'outageSeconds': self.spec['outageSeconds'], **self.evidence(), 'steps': self.steps,
-                'scope': 'offscreen real gateway/Pi/tools/SSH/exec-server; scripted local model; no upstream model'}
+                'scope': ('commands-only continuation; files not exercised in this run; '
+                          if self.spec.get('commandsOnly') else 'full file and command acceptance; ')
+                         + 'offscreen real gateway/Pi/tools/SSH/exec-server; scripted local model; no upstream model'}
+
+    def run_file_stage(self):
+        remote = self.spec['remoteDirectory']
+        upload = self.call('remote_files', {'action': 'upload', 'environment': 'acceptance',
+                           'localPath': str(self.directory / 'payload'), 'path': remote},
+                           timeout=self.spec.get('uploadTimeout', 900))
+        assert not upload.get('error') and upload.get('ok', True), upload
+        download = self.call('remote_files', {'action': 'download', 'environment': 'acceptance',
+                             'path': remote, 'localPath': str(self.directory / 'download')},
+                             timeout=self.spec.get('downloadTimeout', 900))
+        assert not download.get('error') and download.get('ok', True), download
+        self.compare_payload()
+        text_path = remote + '/acceptance.txt'
+        text = 'REMOTE_FILE_TEXT\nUnicode: \u4f60\u597d\n'
+        self.call('remote_files', {'action': 'write', 'environment': 'acceptance', 'path': text_path, 'content': text})
+        read = self.call('remote_files', {'action': 'read', 'environment': 'acceptance', 'path': text_path})
+        assert read.get('content') == text, read
+        listing = self.call('remote_files', {'action': 'list', 'environment': 'acceptance', 'path': remote})
+        assert any(row.get('name') == 'acceptance.txt' for row in listing.get('entries', [])), listing
+        found = self.call('remote_files', {'action': 'search', 'environment': 'acceptance', 'path': text_path,
+                         'query': 'REMOTE_FILE_TEXT'})
+        assert any(row.get('line') == 1 and row.get('text') == 'REMOTE_FILE_TEXT' for row in found.get('matches', [])), found
+
+    @staticmethod
+    def terminate_windows_tunnel(launches, established_at):
+        """Validate native identity and terminate through one retained handle."""
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+        kernel.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+                                                    ctypes.POINTER(wintypes.DWORD)]
+        kernel.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        kernel.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel.WaitForSingleObject.restype = wintypes.DWORD
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        eligible = sorted((row for row in launches if row.get('tunnel') and row.get('at', float('inf')) <= established_at),
+                          key=lambda row: row['at'], reverse=True)
+        for row in eligible:
+            if not row.get('windowsCreationTime') or not row.get('windowsImage'):
+                continue
+            handle = kernel.OpenProcess(0x1000 | 0x100000 | 0x0001, False, row['pid'])
+            if not handle:
+                continue
+            try:
+                created, exited, system, user = (wintypes.FILETIME() for _ in range(4))
+                code, size = wintypes.DWORD(), wintypes.DWORD(32768)
+                image = ctypes.create_unicode_buffer(size.value)
+                if not (kernel.GetProcessTimes(handle, ctypes.byref(created), ctypes.byref(exited), ctypes.byref(system), ctypes.byref(user))
+                        and kernel.QueryFullProcessImageNameW(handle, 0, image, ctypes.byref(size))
+                        and kernel.GetExitCodeProcess(handle, ctypes.byref(code))):
+                    continue
+                creation = (created.dwHighDateTime << 32) | created.dwLowDateTime
+                if (code.value != 259 or creation != row['windowsCreationTime']
+                        or os.path.normcase(image.value) != os.path.normcase(row['windowsImage'])
+                        or Path(image.value).resolve() != Path(row['executable']).resolve()):
+                    continue
+                if not kernel.TerminateProcess(handle, 1):
+                    raise ctypes.WinError(ctypes.get_last_error())
+                assert kernel.WaitForSingleObject(handle, 10000) == 0, 'Owned SSH handle did not signal exit'
+                return {'pid': row['pid'], 'windowsCreationTime': creation, 'windowsImage': image.value,
+                        'identityVerifiedOnTerminationHandle': True, 'launchedAt': row['at']}
+            finally:
+                kernel.CloseHandle(handle)
+        raise AssertionError('No live test-owned Windows tunnel matches native creation time, image and established connection')
 
     def run_network(self):
         """Exercise network sharing through real streamed Pi tool calls."""
@@ -529,21 +592,24 @@ class Acceptance:
                    if row['event'] == 'client-start'), 'Reconnect selected a different real SSH executable'
         starts = sorted((r for r in self.ssh_lifecycle if r['event'] == 'client-start' and r.get('tunnel')),
                         key=lambda r: r['at'])
-        exits = {r['pid']: r for r in self.ssh_lifecycle if r['event'] == 'client-exit' and r.get('tunnel')}
+        identity = lambda row: (row['pid'], row.get('windowsCreationTime'))
+        exits = {identity(r): r for r in self.ssh_lifecycle if r['event'] == 'client-exit' and r.get('tunnel')}
         drops = []
         for outage in self.outages:
             assert 'recoveredAt' in outage, ('Observed disconnection did not recover', outage)
             previous = max(s['at'] for s in self.states if s['state'] == 'connected' and s['at'] < outage['startedAt'])
             old = next((r for r in reversed(starts) if r['at'] <= previous), None)
             new = next((r for r in reversed(starts) if previous < r['at'] <= outage['recoveredAt']), None)
-            assert old and new and old['pid'] != new['pid'], ('No replacement SSH client in observed recovery', outage)
+            assert old and new and identity(old) != identity(new), ('No replacement SSH client in observed recovery', outage)
             # Umeko can close a wrapper before it records its child's exit. The
             # application transitions and the replacement client prove recovery.
-            exit_record = exits.get(old['pid'], {})
+            exit_record = exits.get(identity(old), {})
             drops.append({'pid': old['pid'], 'exitCode': exit_record.get('exitCode'),
                           'droppedAt': outage['startedAt'], 'replacementPid': new['pid'],
+                          'windowsCreationTime': old.get('windowsCreationTime'),
+                          'replacementWindowsCreationTime': new.get('windowsCreationTime'),
                           'connectedAt': outage['recoveredAt'], 'durationSeconds': outage['durationSeconds']})
-        assert any(drop['pid'] == self.injected_outage['pid'] for drop in drops), 'Injected SSH client was not replaced'
+        assert any(identity(drop) == identity(self.injected_outage) for drop in drops), 'Injected SSH client was not replaced'
         self.relay_drops = drops
         self.note('ssh-relay-drops-recovered', drops=drops, count=len(drops))
 

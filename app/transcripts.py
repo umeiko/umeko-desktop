@@ -171,6 +171,16 @@ def present(entries, cwd, active_compactions=()):
         thinking = content_thinking(content)
         text = text or ("" if message.get("stopReason") == "aborted" else message.get("errorMessage", ""))
         role = message.get("role", "")
+        if role == "bashExecution":
+            command, output = message.get("command", ""), message.get("output", "")
+            identifier = entry["id"]
+            status = "interrupted" if message.get("cancelled") else "done" if message.get("exitCode") == 0 else "error"
+            tree.append({"id": identifier, "role": role, "text": command[:80]})
+            messages.append({"role": "assistant", "text": "", "entryId": identifier,
+                             "timestamp": message.get("timestamp") or entry.get("timestamp"),
+                             "tools": [{"id": identifier, "name": "bash", "arguments": {"command": command},
+                                        "path": "", "state": status, "result": output[:8192]}]})
+            continue
         tree.append({"id": entry["id"], "role": role, "text": text[:80]})
         calls = [block for block in content if isinstance(block, dict) and block.get("type") == "toolCall"] if isinstance(content, list) else []
         if role in ("user", "assistant") and (text or thinking or calls):
