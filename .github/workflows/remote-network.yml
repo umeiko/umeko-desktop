@@ -85,7 +85,7 @@ jobs:
           Subsystem sftp internal-sftp
           EOF
           # Only this disposable user receives sudo; no production server is changed.
-          printf '%s ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/bin/mkdir, /usr/bin/chmod\n' "$test_user" | sudo tee /etc/sudoers.d/umeko-network-ci >/dev/null
+          printf '%s ALL=(root) NOPASSWD: /usr/bin/apt-get\n' "$test_user" | sudo tee /etc/sudoers.d/umeko-network-ci >/dev/null
           sudo chmod 440 /etc/sudoers.d/umeko-network-ci
           sudo mkdir -p /run/sshd
           touch "$fixture/sshd.log"
@@ -121,6 +121,7 @@ jobs:
           printf 'deb https://security.ubuntu.com/ubuntu noble-security main restricted universe multiverse\n' >> "$apt_sources"
           chmod 644 "$apt_sources"
           apt-cache -o "Dir::Etc::sourcelist=$apt_sources" -o Dir::Etc::sourceparts=- show sl >/dev/null
+          sudo apt-get clean
           # _apt is the actual download worker for sudo apt-get. Loopback stays
           # available for the SSH reverse forward. The app's runner UID remains
           # unrestricted, so its built-in outbound connection really works.

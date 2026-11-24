@@ -418,6 +418,8 @@ class Acceptance:
             command = self.spec['commands'][phase][name]
             final, output = self.read_until_complete(self.command(command), timeout=120)
             assert isinstance(final.get('exitCode'), int), ('No command exit status', phase, name, final)
+            if name == 'apt':
+                assert 'Download is performed unsandboxed as root' not in output, ('apt downloader escaped fixture UID', output)
             assert (final['exitCode'] == 0) == succeeds, (phase, name, final, output[-4000:])
             outcome = {'phase': phase, 'program': name, 'exitCode': final['exitCode'],
                        'expectedSuccess': succeeds, 'output': output[-4000:]}
@@ -448,9 +450,14 @@ class Acceptance:
         # It never enumerates or touches a proxy, service, or unrelated client.
         control = self.directory / 'ssh-control'
         launches = [json.loads(line) for line in (control / 'clients.jsonl').read_text().splitlines()]
-        live = [row for row in launches if row.get('tunnel') and self.pid_alive(row['pid'])]
-        assert len(live) == 1, ('Expected one acceptance-owned persistent SSH client', live)
-        killed = live[0]['pid']
+        tunnels = [row for row in launches if row.get('tunnel')]
+        assert tunnels and self.pid_alive(tunnels[-1]['pid']), 'Expected a live acceptance-owned SSH client'
+        # On Linux this launcher is wrapped by a Python recorder. Once Umeko
+        # retires the recorder, the detached real ssh may still need reaping.
+        for row in tunnels[:-1]:
+            if not self.pid_alive(row['ownerPid']) and self.pid_alive(row['pid']):
+                os.kill(row['pid'], signal.SIGTERM)
+        killed = tunnels[-1]['pid']
         os.kill(killed, signal.SIGTERM)
         self.note('network-owned-ssh-cut', pid=killed)
         probe('reconnected', 'curl', True)

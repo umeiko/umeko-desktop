@@ -42,9 +42,9 @@ def commands(platform, root, python, phase, apt_sources):
         'pip': base + f'timeout 45 {shlex.quote(python)} -m pip install --disable-pip-version-check --no-cache-dir --no-deps --retries 0 --timeout 15 --target {d}/pip six==1.17.0 && test -s {d}/pip/six.py',
         'npm': base + f'timeout 45 npm install is-number@7.0.0 --prefix {d} --cache {d}/npm-cache --ignore-scripts --no-audit --no-fund --fetch-retries=0 --fetch-timeout=20000 && test -s {d}/node_modules/is-number/index.js',
         'git': base + f'timeout 45 git -c http.connectTimeout=8 -c http.lowSpeedLimit=1 -c http.lowSpeedTime=20 clone --depth 1 https://github.com/octocat/Hello-World.git {d}/git && test -s {d}/git/README',
-        # sl is absent on the disposable CI image; a fresh archive cache means
-        # apt has to download package bytes before its actual installation.
-        'apt': base + f'sudo -n mkdir -p {d}/apt/partial && sudo -n chmod 777 {d}/apt {d}/apt/partial && sudo -n apt-get{sources} -o Acquire::Retries=0 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 -o Dir::Cache::archives={d}/apt install -y sl && dpkg-query -W -f=\'${{Status}}\' sl | grep -q "install ok installed"',
+        # Keep the system archive directory so apt's unprivileged downloader
+        # can traverse it. The disposable runner cleared its archive cache.
+        'apt': base + f'sudo -n apt-get{sources} -o Acquire::Retries=0 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 install -y sl && dpkg-query -W -f=\'${{Status}}\' sl | grep -q "install ok installed"',
     }
 
 
