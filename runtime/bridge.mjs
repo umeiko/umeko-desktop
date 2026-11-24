@@ -782,6 +782,21 @@ async function execute(input) {
     if (validEffort(input.value)) reasoningEffort = input.value;
     return;
   }
+  if (input.type === "follow-up" && input.petRunId) {
+    const run = currentRun;
+    const session = runtime?.session;
+    const matches = () => executing && !stopWork && currentRun === run
+      && run?.id === input.petRunId && !run.cancelled && runtime?.session === session
+      && session && !blockedSessions.has(session);
+    const receipt = status => emit({type:"pet_follow_up_receipt",runId:input.petRunId,
+      messageId:input.messageId,status});
+    if (!matches()) { receipt("rejected"); return; }
+    void inputQueue.submit(input,matches).then(() => {
+      receipt(inputQueue.items.some(item=>item.id===input.messageId && item.mode==="followUp")
+        ? "queued" : "uncertain");
+    }, () => receipt("uncertain"));
+    return;
+  }
   if (["follow-up", "steer", "promote-queue", "edit-queue", "delete-queue", "steer-queued"].includes(input.type)) {
     if (stopWork || (runtime?.session && blockedSessions.has(runtime.session))) {
       emit({type:"queue_rejected",text:input.text || "",message:"当前任务已停止，请重新发送这条消息"});
@@ -844,6 +859,9 @@ async function execute(input) {
   executing = true;
   const run = {id:crypto.randomUUID(),cancelled:false,cleanupFailures:[]};
   currentRun = run;
+  if ((input.globalCoordinator === true || config?.globalCoordinator === true)
+      && ["prompt", "agent-run", "widget-notify"].includes(input.type))
+    emit({type:"pet_follow_up_run",runId:run.id});
   adoptedRun = input.type === "agent-run";
   if (adoptedRun) emit({ type: "agent_run" });
   trackingTask = input.type === "prompt" && input.trackTask === true;

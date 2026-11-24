@@ -286,6 +286,7 @@ class PiControllerMixin:
         self._reconcile_reasoning(record)
         record.action, record.failed, record.cancelled = action, False, False
         record.stop_token = record.stop_state = record.stop_detail = ''
+        record.pet_follow_up_run = ''
         record.pet_activity = 'thinking'
         record.prompt_started = time.monotonic() if action in ('prompt','widget-notify') else None
         record.phase = "loading" if not record.ready else "running" if action in ("prompt", "compact", "widget-notify") else "working"
@@ -445,6 +446,14 @@ class PiControllerMixin:
         if self._closing:
             return
         kind, visible = event.get("type"), record is self._view
+        if kind == 'pet_follow_up_run':
+            if record.global_agent:
+                record.pet_follow_up_run = event.get('runId', '')
+            return
+        if kind in ('done', 'exit'):
+            record.pet_follow_up_run = ''
+        if kind == 'pet_follow_up_receipt':
+            return  # The pet entry listens separately on the exact pool record.
         if kind == 'ready' and event.get('warm'):
             record.ready, record.prewarming = True, False
             command, record.warm_command = record.warm_command, None

@@ -60,9 +60,25 @@ def menu_object(menu, expression):
     assert not query.hasError(),query.error().toString()
     return value
 
-def activate_menu_item(menu,index):
+def find_menu_item(menu, identity, *, label=False):
+    # Menus grow: resolve the actual action/submenu, never a fixed row number.
+    key = json.dumps(identity)
+    match = 'item.text === ' + key if label else '(item.objectName === ' + key + ' || (item.subMenu && item.subMenu.objectName === ' + key + '))'
+    item = menu_object(menu, '(function(){for(let i=0;i<count;i++){const item=itemAt(i);if(item && ' + match + ')return item}return null})()')
+    assert item is not None, 'Missing menu action: ' + identity
+    return item
+
+def click_menu_item(menu, identity, *, label=False):
+    item = find_menu_item(menu, identity, label=label)
+    wait(lambda:menu.property('opacity')>.98,'Menu action animation is not visible')
+    assert item.isEnabled(),identity
+    # Invoke the real MenuItem click, as before; offscreen native pointer routing
+    # cannot reliably reactivate transient windows across repeated flag changes.
+    assert QMetaObject.invokeMethod(item,'click'),identity
+
+def activate_menu_item(menu,identity,*,label=False):
     assert menu_object(menu,'contentItem.Window.window !== parent.Window.window && contentItem.Window.window.transientParent === parent.Window.window'),'Menu lost its transient parent'
-    menu_object(menu,'itemAt('+str(index)+').click()')
+    click_menu_item(menu,identity,label=label)
     wait(lambda:not menu.property('visible'),'Menu did not close after activation')
 
 def open_pet_menu():
@@ -435,48 +451,49 @@ try:
     for toggle in range(50):
         open_pet_menu()
         pinned=pet.config['alwaysOnTop']
-        activate_menu_item(menu,6)
+        activate_menu_item(menu,'desktopPetPinAction')
         assert pet.config['alwaysOnTop'] is not pinned,'Pin menu action did not toggle the pet'
         open_pet_menu()
-        # The first row used to be covered by the pet on Windows.
-        activate_menu_item(menu,0)
-        assert len(restored)==toggle+1,'Top menu row did not activate'
+        # The Open action used to be covered by the pet on Windows.
+        activate_menu_item(menu,'打开 Umeko',label=True)
+        assert len(restored)==toggle+1,'Open Umeko menu action did not activate'
     open_pet_menu()
     paused=pet.config['paused']
-    activate_menu_item(menu,5)
+    activate_menu_item(menu,'desktopPetPauseAction')
     assert pet.config['paused'] is not paused,'Pause menu action did not respond'
     open_pet_menu()
-    size_menu=menu_object(menu,'menuAt(7)')
-    menu_object(menu,'itemAt(7).click()')
+    size_menu=window.findChild(QObject,'desktopPetSizeMenu')
+    click_menu_item(menu,'desktopPetSizeMenu')
     wait(lambda:size_menu.property('opened'),'Size submenu did not open')
-    assert menu_object(size_menu,'itemAt(3).checked'),'Current pet size was not marked'
-    activate_menu_item(size_menu,5)
+    assert find_menu_item(size_menu,'desktopPetSize_192').property('checked'),'Current pet size was not marked'
+    activate_menu_item(size_menu,'desktopPetSize_256')
     wait(lambda:pet.config['size']==256 and window.width()==288,'Size menu did not resize pet')
     wait(lambda:not menu.property('visible'),'Size selection did not dismiss the menu')
     stored=json.loads(backend.desktopPlugins.registry.read_text(encoding='utf-8'))
     assert stored['config']['desktop-pet']['size']==256,'Size selection did not persist'
     point=pointer.mapToScene(pointer.boundingRect().center()).toPoint()
     open_pet_menu()
-    menu_object(menu,'itemAt(7).click()')
+    click_menu_item(menu,'desktopPetSizeMenu')
     wait(lambda:size_menu.property('opened'),'Size submenu did not reopen')
-    assert menu_object(size_menu,'itemAt(5).checked'),'New pet size was not marked'
+    assert find_menu_item(size_menu,'desktopPetSize_256').property('checked'),'New pet size was not marked'
     wait(lambda:size_menu.property('opacity')>.98,'Size submenu animation did not finish')
     menu_object(size_menu,'contentItem.Window.window').grabWindow().save(str(out/'menu-size.png'))
-    activate_menu_item(size_menu,3)
+    activate_menu_item(size_menu,'desktopPetSize_192')
     wait(lambda:pet.config['size']==192 and window.width()==224,'Default size did not restore')
     wait(lambda:not menu.property('visible'),'Size selection did not dismiss the menu')
     point=pointer.mapToScene(pointer.boundingRect().center()).toPoint()
     open_pet_menu()
-    appearance_menu=menu_object(menu,'menuAt(4)')
-    menu_object(menu,'itemAt(4).click()')
+    appearance_menu=window.findChild(QObject,'desktopPetAppearanceMenu')
+    click_menu_item(menu,'desktopPetAppearanceMenu')
+
     wait(lambda:appearance_menu.property('opened'),'Appearance submenu did not open')
     assert menu_object(appearance_menu,'contentItem.Window.window.flags & Qt.WindowStaysOnTopHint'),'Appearance submenu lost its explicit stay-on-top flag'
-    activate_menu_item(appearance_menu,0)
+    activate_menu_item(appearance_menu,'desktopPetAppearance_'+pet.appearances[0]['id'])
     wait(lambda:not menu.property('visible'),'Appearance selection did not dismiss the menu')
     assert pet.config['appearance']==pet.appearances[0]['id'],'Appearance submenu selection did not respond'
     open_pet_menu()
     reminder_menu=window.findChild(QObject,'desktopPetReminderMenu')
-    menu_object(menu,'itemAt(1).click()')
+    click_menu_item(menu,'desktopPetReminderMenu')
     wait(lambda:reminder_menu.property('opened'),'Reminder submenu did not open')
     assert menu_object(reminder_menu,'contentItem.Window.window.flags & Qt.WindowStaysOnTopHint'),'Reminder submenu lost its explicit stay-on-top flag'
     invoke(reminder_menu.findChild(QObject,'desktopPetReminderNewMenu'),'clicked')

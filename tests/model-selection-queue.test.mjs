@@ -129,3 +129,13 @@ test("editing and deleting deferred inputs retain the remaining FIFO model snaps
     await f.run;
   }
 });
+
+test("a captured follow-up that becomes stale before the queue boundary never calls native followUp", async () => {
+  let current = true, calls = 0;
+  const session = { isIdle:false, model:{id:"same"}, followUp: async()=>{ calls++; } };
+  const queue = createInputQueue({getSession:()=>session,isRunning:()=>true});
+  const pending = queue.submit({type:"follow-up",messageId:"exact",text:"fixture"},()=>current);
+  current = false;
+  await assert.rejects(pending,/当前运行已变化/);
+  assert.equal(calls,0);
+});
