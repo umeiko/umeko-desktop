@@ -124,7 +124,9 @@ while ((result.status === 'running' || result.output.length > 0) && Date.now() <
 assert.equal(result.exitCode, 0);
 assert.match(allOutput, /got:hello 世界/);
 assert.match(allOutput, /done/);
-assert.ok(allOutput.includes(`cwd:${path.join(home, 'work dir')}`));
+const reportedCwd = allOutput.match(/^cwd:([^\r\n]+)\r?$/m)?.[1];
+assert.ok(reportedCwd, `Command did not print its working directory: ${allOutput}`);
+assert.equal(await fs.realpath(reportedCwd), await fs.realpath(path.join(home, 'work dir')));
 assert.equal((await fs.readFile(path.join(home, 'starts.txt'), 'utf8')).trim(), 'start');
 assert.equal(processStarts, 2);
 assert.equal(handles.size, 0);
