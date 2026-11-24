@@ -111,21 +111,13 @@ def patch_bash_job(release: Path):
     text = path.read_text(encoding="utf-8")
     hook = 'const host = globalThis[Symbol.for("umeko:bash-job")];'
     if hook in text:
-        previous = ('if (shellName === "bash" && host) {\n'
-                    '                return host({ shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env: env ?? getShellEnv(), toolCallId });')
-        if previous in text:
-            text = text.replace(previous, 'if (host) {\n'
-                                '                const hosted = host({ shellName, shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env: env ?? getShellEnv(), toolCallId });\n'
-                                '                if (hosted !== undefined) return hosted;')
-            path.write_text(text, encoding="utf-8")
         return
     replacements = {
         "exec: async (command, cwd, { onData, signal, timeout, env }) => {":
             "exec: async (command, cwd, { onData, signal, timeout, env, toolCallId }) => {",
         'const commandFromStdin = shellConfig.commandTransport === "stdin";':
-            f'{hook}\n            if (host) {{\n'
-            '                const hosted = host({ shellName, shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env: env ?? getShellEnv(), toolCallId });\n'
-            '                if (hosted !== undefined) return hosted;\n'
+            f'{hook}\n            if (shellName === "bash" && host) {{\n'
+            '                return host({ shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env: env ?? getShellEnv(), toolCallId });\n'
             '            }\n            const commandFromStdin = shellConfig.commandTransport === "stdin";',
         "env: spawnContext.env,": "env: spawnContext.env,\n                        toolCallId: _toolCallId,",
     }
