@@ -19,7 +19,7 @@ if [[ ${1:-} == --run-one ]]; then
     mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" "$UMEKO_DATA_DIR"
     chmod 700 "$XDG_RUNTIME_DIR"
     printf "ci-ephemeral-password" | gnome-keyring-daemon --unlock --components=secrets
-    .venv/bin/python "$1"
+    .venv/bin/python -X faulthandler "$1"
   ' _ "$script" >"$log" 2>&1 || status=$?
   elapsed=$((SECONDS - started))
   printf '%s\t%s\t%s\n' "$script" "$elapsed" "$status" >"$log_dir/$name.result"
