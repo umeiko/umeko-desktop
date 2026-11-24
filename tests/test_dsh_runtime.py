@@ -70,10 +70,22 @@ class DshRuntimeTests(unittest.TestCase):
             self.assertEqual(missing.exception.code, "missing")
             run.assert_not_called()
 
+    def test_previous_managed_release_is_left_on_disk_and_not_selected(self):
+        own = self.root / "own"
+        old = package(own / "dsh-0.2.2-rc.1", "0.2.2-rc.1")
+        with patch.object(runtime.shutil, "which", return_value=None):
+            with self.assertRaises(runtime.RuntimeFailure) as error:
+                runtime.discover_dsh("", own)
+            self.assertEqual(error.exception.code, "missing")
+            new = package(own / "dsh-0.2.2-rc.5", "0.2.2-rc.5")
+            self.assertEqual(runtime.discover_dsh("", own)["path"], str(new.resolve()))
+        self.assertTrue(old.is_file())
+
     def test_version_floor_official_identity_and_real_initialize_result_are_required(self):
         for version, name, code in [("0.2.1", runtime.PACKAGE, "version"),
-                                    ("0.2.2-rc.0", runtime.PACKAGE, "version"),
-                                    ("0.2.2-rc.1", "dsh", "package")]:
+                                    ("0.2.2-rc.1", runtime.PACKAGE, "version"),
+                                    ("0.2.2-rc.4", runtime.PACKAGE, "version"),
+                                    (runtime.PINNED_VERSION, "dsh", "package")]:
             with self.subTest(version=version, name=name):
                 entry = package(self.root / version, version, name)
                 with patch.object(runtime, "_run") as run:
@@ -192,7 +204,7 @@ class DshRuntimeTests(unittest.TestCase):
         with tarfile.open(fileobj=archive_bytes, mode="w:gz") as archive:
             for name, content in {
                 "package.json": json.dumps(manifest).encode(),
-                "lib/bin.js": b'console.log("0.2.2-rc.1");\n',
+                "lib/bin.js": f'console.log("{manifest["version"]}");\n'.encode(),
             }.items():
                 item = tarfile.TarInfo("package/" + name)
                 item.size = len(content)

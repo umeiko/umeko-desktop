@@ -193,6 +193,8 @@ def main():
         if not (resources / "provider-resources" / name).is_file():
             raise RuntimeError("Provider development resource is missing: " + name)
     runtime = resources / "runtime/releases" / RELEASE_NAME
+    if not (resources / "runtime/package-install.mjs").is_file():
+        raise RuntimeError("Bundled Pi package installer is missing")
     if not (runtime / 'apply-patch.mjs').is_file() or not (resources / 'runtime/apply-patch.mjs').is_file():
         raise RuntimeError('Bundled apply_patch module is missing')
     for name in ("fd", "rg"):

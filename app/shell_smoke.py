@@ -24,6 +24,35 @@ def attach(app, controller, directory, window=None):
     controller.setWorkspace(workspace_url)
     timer = QTimer(app)
     app._shell_smoke_timer = timer
+    dsh_smoke = os.environ.get("UMEKO_DSH_SMOKE") == "1"
+
+    def click(name):
+        item = window.findChild(QObject, name)
+        if item is None or not item.property("visible") or not item.property("enabled"):
+            return False
+        item.clicked.emit()
+        return True
+
+    def dsh_action(action, request):
+        if action == "agent_settings":
+            window.setProperty("settingsTab", 3)
+            window.setProperty("page", "settings")
+        elif action == "chat":
+            window.setProperty("page", "chat")
+        elif action == "backend":
+            return controller.setSessionBackend(request["backend"])
+        elif action == "open":
+            controller.openSession(request["session"])
+        elif action == "click":
+            name = request["name"]
+            return name in {"openDshSettingsButton", "checkDshRuntimeButton", "downloadDshRuntimeButton",
+                            "allowToolButton", "denyToolButton"} and click(name)
+        elif action == "snapshot":
+            name = request["name"]
+            return name in {"settings", "chat"} and window.grabWindow().save(str(directory / (name + ".png")))
+        else:
+            return False
+        return True
 
     def receive():
         if not request_path.is_file():
@@ -93,12 +122,17 @@ def attach(app, controller, directory, window=None):
             else:
                 accepted = window.grabWindow().save(str(directory / (name + ".png")))
         elif action not in {"status", "quit"}:
-            accepted = False
+            accepted = dsh_smoke and dsh_action(action, request)
         view = controller._view
         result = {"accepted": accepted, "busy": controller.busy, "phase": view.phase,
                   "session": view.id, "messages": view.messages, "evidence": evidence,
                   "piProcesses": [int(record.process.processId()) for record in controller._pool.records.values() if record.process],
                   **extra}
+        if dsh_smoke:
+            runtime = controller.dshRuntime
+            result.update(backend=controller.sessionBackend, acpSession=getattr(view, "acp_session_id", ""),
+                          approval=controller.pendingApproval, runtime={"busy": runtime.busy, "ready": runtime.ready,
+                              "version": runtime.version, "status": runtime.status, "hint": runtime.hint})
         temporary = response_path.with_suffix(".tmp")
         temporary.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
         temporary.replace(response_path)
@@ -107,7 +141,7 @@ def attach(app, controller, directory, window=None):
 
     timer.timeout.connect(receive)
     timer.start(50)
-    QTimer.singleShot(120_000, lambda: app.exit(2))
+    QTimer.singleShot(720_000 if dsh_smoke else 120_000, lambda: app.exit(2))
 
 
 def team_action(controller, action, request):
