@@ -101,11 +101,13 @@ function launchDirect({ file, fileArgs, cwd, logPath, errPath, env }) {
     if (errFd !== undefined) closeSync(errFd);
   }
   child.stdin.on("error", () => {});
+  let groupKilled = false;
   const exit = new Promise(resolve => {
     child.once("error", error => resolve({ code: 1, error: error.message, ...clean }));
     child.once("exit", (code, signal) => {
       child.stdin.end();
-      if (!windows) {
+      // On a natural exit the shell can leave descendants in its group.
+      if (!windows && !groupKilled) {
         try { terminateGroup(child.pid); }
         catch (error) { resolve({ code, signal, error: error.message, cleanup: "failed", remaining: null }); return; }
       }
@@ -114,7 +116,11 @@ function launchDirect({ file, fileArgs, cwd, logPath, errPath, env }) {
   });
   function terminate() {
     if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
-    if (!windows) { terminateGroup(child.pid); return; }
+    if (!windows) {
+      terminateGroup(child.pid);
+      groupKilled = true;
+      return;
+    }
     return new Promise((resolve, reject) => {
       const killer = spawn(join(process.env.SystemRoot || "C:\\Windows", "System32", "taskkill.exe"),
         ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });

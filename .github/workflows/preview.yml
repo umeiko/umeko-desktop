@@ -93,9 +93,13 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
 
+      - id: shipped-node
+        name: Read the bundled Node version
+        run: python -c "import json, os; from pathlib import Path; version = json.loads(Path('scripts/node-distributions.json').read_text(encoding='utf-8'))['version']; open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8').write('version=' + version + chr(10))"
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '22'
+          node-version: ${{ steps.shipped-node.outputs.version }}
           cache: npm
           cache-dependency-path: runtime/package-lock.json
 
