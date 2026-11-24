@@ -2,7 +2,7 @@ Subject: Allow restricted Git Bash to open its own local IPC objects
 
 Adapted from git-for-windows/msys2-runtime d25c02bd8bbfef7da4b42eab6f0834bcb9d9343e,
 winsup/cygwin autoload.cc, fhandler/pipe.cc, fork.cc, local_includes/security.h,
-mm/shared.cc, sec/helper.cc and sigproc.cc. Cygwin license applies.
+mm/shared.cc, pinfo.cc, sec/helper.cc and sigproc.cc. Cygwin license applies.
 
 diff --git a/winsup/cygwin/autoload.cc b/winsup/cygwin/autoload.cc
 --- a/winsup/cygwin/autoload.cc
@@ -77,6 +77,22 @@ diff --git a/winsup/cygwin/mm/shared.cc b/winsup/cygwin/mm/shared.cc
 +                                           cygwin_user_h, sizeof (user_info),
 +                                           SH_USER_SHARED, sa);
    debug_printf ("opening user shared for '%W' at %p", name, user_shared);
+diff --git a/winsup/cygwin/pinfo.cc b/winsup/cygwin/pinfo.cc
+--- a/winsup/cygwin/pinfo.cc
++++ b/winsup/cygwin/pinfo.cc
+@@ -386,5 +386,9 @@
+   PSECURITY_ATTRIBUTES sa_buf = (PSECURITY_ATTRIBUTES) alloca (1024);
+-  PSECURITY_ATTRIBUTES sec_attribs = sec_user_nih (sa_buf, cygheap->user.sid(),
+-						   well_known_world_sid,
+-						   FILE_MAP_READ);
++  PSECURITY_ATTRIBUTES sec_attribs = sec_user_nih (
++    sa_buf, cygheap->user.sid (), well_known_world_sid, FILE_MAP_READ);
++  // The restricted fork parent must reopen its child's process record with
++  // the mapping access requested by CreateFileMappingW.
++  alignas (SECURITY_ATTRIBUTES) char restricted_sa[1024];
++  sec_attribs = sec_restricted_object (restricted_sa, sec_attribs,
++                                       FILE_MAP_ALL_ACCESS);
+
 diff --git a/winsup/cygwin/sec/helper.cc b/winsup/cygwin/sec/helper.cc
 --- a/winsup/cygwin/sec/helper.cc
 +++ b/winsup/cygwin/sec/helper.cc
