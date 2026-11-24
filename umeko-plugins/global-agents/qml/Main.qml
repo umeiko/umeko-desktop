@@ -155,7 +155,7 @@ Rectangle {
     function submitForm() {
         if(formSubmitting)return
         const model=state.models[modelPicker.currentIndex]
-        if(!model){formError.text="请先在设置中添加模型供应商";return}
+        if(!model){formError.text=Umeko.I18n.t("请先在设置中添加模型供应商");return}
         formSubmitting=!!(switchOnly ? call("setModel",{id:editing,model:model.id}) : call(editing?"update":proposalId?"confirmCreation":"create",{id:editing,requestId:proposalId,name:nameInput.text,character:chosenCharacter,model:model.id,instructions:instructions.text,skills:chosenSkills,tools:chosenTools}))
     }
     function send() {
@@ -254,7 +254,7 @@ Rectangle {
                 LabelText {visible:!!root.selected;text:root.activityText(root.current);color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
             }
             SmallButton {objectName:"newGlobalAgentButton";visible:!root.selected;text:"＋ 创建";primary:true;onClicked:root.form("")}
-            SmallButton {visible:!!root.selected;text:Umeko.I18n.t(root.current.busy || root.current.state==="quota_paused"?"切换模型":"设置");onClicked:root.form(root.selected)}
+            SmallButton {visible:!!root.selected;text:root.current.busy || root.current.state==="quota_paused"?Umeko.I18n.t("切换模型"):Umeko.I18n.t("设置");onClicked:root.form(root.selected)}
         }
         RowLayout {
             visible:!root.selected;spacing:8
@@ -473,7 +473,7 @@ Rectangle {
         contentItem:ColumnLayout {
             spacing:14
             RowLayout {id:formHeader;Layout.fillWidth:true
-                LabelText {text:Umeko.I18n.t(root.switchOnly?"切换模型":root.editing?"子智能体设置":"创建全局子智能体");font.pixelSize:18*root.sdk.scale;font.weight:Font.DemiBold;Layout.fillWidth:true}
+                LabelText {text:root.switchOnly?Umeko.I18n.t("切换模型"):root.editing?Umeko.I18n.t("子智能体设置"):Umeko.I18n.t("创建全局子智能体");font.pixelSize:18*root.sdk.scale;font.weight:Font.DemiBold;Layout.fillWidth:true}
                 ToolButton {
                     id:closeForm;objectName:"cancelGlobalCreation";Layout.preferredWidth:28;Layout.preferredHeight:28
                     background:Rectangle {radius:6;color:closeForm.hovered?root.c.hover:"transparent"}
@@ -486,9 +486,9 @@ Rectangle {
                 clip:true;ScrollBar.horizontal.policy:ScrollBar.AlwaysOff
                 ColumnLayout {
                     id:formBody;width:formScroll.availableWidth;spacing:14
-            LabelText {objectName:"globalCreationSource";visible:!!root.proposalId;text:root.proposalSource?"来自 "+root.proposalSource:"";color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
-            Field {id:nameInput;objectName:"globalAgentName";visible:!root.switchOnly;Layout.fillWidth:true;placeholderText:"名称（可选，留空使用人物名）";maximumLength:60}
-            LabelText {visible:!root.switchOnly;text:"形象";font.pixelSize:12*root.sdk.scale;color:root.c.muted}
+            LabelText {objectName:"globalCreationSource";visible:!!root.proposalId;text:root.proposalSource?Umeko.I18n.t("来自 %1").arg(root.proposalSource):"";color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
+            Field {id:nameInput;objectName:"globalAgentName";visible:!root.switchOnly;Layout.fillWidth:true;placeholderText:Umeko.I18n.t("名称（可选，留空使用人物名）");maximumLength:60}
+            LabelText {visible:!root.switchOnly;text:Umeko.I18n.t("形象");font.pixelSize:12*root.sdk.scale;color:root.c.muted}
             ScrollView {
                  visible:!root.switchOnly;Layout.fillWidth:true;Layout.preferredHeight:Math.min(180,appearanceFlow.implicitHeight)
                 clip:true;ScrollBar.horizontal.policy:ScrollBar.AlwaysOff
@@ -511,30 +511,34 @@ Rectangle {
             ComboBox {id:modelPicker;objectName:"globalAgentModel";Layout.fillWidth:true;model:root.state.models.map(row=>Object.assign({},row,{label:row.group?Umeko.I18n.t("模型组"):row.label || row.id}));textRole:"label";font.pixelSize:13*root.sdk.scale
                 implicitHeight:42;leftPadding:12;rightPadding:30
                 contentItem:Text {text:modelPicker.displayText;color:root.c.ink;verticalAlignment:Text.AlignVCenter;font:modelPicker.font;elide:Text.ElideRight}
-                indicator:Text {text:"⌄";color:root.c.muted;x:parent.width-24;y:parent.height/2-height/2}
+                indicator:Umeko.Glyph {
+                    name:"chevron-down";color:root.c.muted
+                    width:Umeko.Theme.icon(14);height:width
+                    x:modelPicker.width-width-9;y:(modelPicker.height-height)/2
+                }
                 background:Rectangle {radius:10;color:root.c.bg;border.color:modelPicker.activeFocus?root.c.accent:root.c.line}
             }
             RowLayout {visible:!root.switchOnly;Layout.fillWidth:true
                 LabelText {text:"Skills";color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
-                SmallButton {objectName:"globalAgentSkillsButton";text:root.chosenSkills.length?"已启用 "+root.chosenSkills.length:"未启用";onClicked:{skillsDialog.open();root.loadSkills()}}
+                SmallButton {objectName:"globalAgentSkillsButton";text:root.chosenSkills.length?Umeko.I18n.t("已启用")+" "+root.chosenSkills.length:Umeko.I18n.t("未启用");onClicked:{skillsDialog.open();root.loadSkills()}}
             }
             RowLayout {visible:!root.switchOnly;Layout.fillWidth:true
-                LabelText {text:"可用工具";color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
-                SmallButton {objectName:"globalAgentToolsButton";text:root.chosenTools.length?"已启用 "+root.chosenTools.length:"默认";onClicked:toolsDialog.open()}
+                LabelText {text:Umeko.I18n.t("可用工具");color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
+                SmallButton {objectName:"globalAgentToolsButton";text:root.chosenTools.length?Umeko.I18n.t("已启用")+" "+root.chosenTools.length:Umeko.I18n.t("默认");onClicked:toolsDialog.open()}
             }
             Rectangle {Layout.fillWidth:true;implicitHeight:100;radius:10;color:root.c.bg;border.color:root.c.line
                 ScrollView {anchors.fill:parent;anchors.margins:8;clip:true
-                    TextArea {id:instructions;objectName:"globalAgentInstructions";placeholderText:"职责与偏好（可选）";color:root.c.ink;placeholderTextColor:root.c.muted;wrapMode:TextArea.Wrap;font.pixelSize:13*root.sdk.scale;background:null}
+                    TextArea {id:instructions;objectName:"globalAgentInstructions";placeholderText:Umeko.I18n.t("职责与偏好（可选）");color:root.c.ink;placeholderTextColor:root.c.muted;wrapMode:TextArea.Wrap;font.pixelSize:13*root.sdk.scale;background:null}
                 }
             }
             LabelText {id:formError;visible:!!text;color:root.c.danger;wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true}
                 }
             }
             RowLayout {id:formFooter;Layout.fillWidth:true;spacing:8
-                SmallButton {visible:!!root.editing;text:"删除";dangerous:true;onClicked:{root.deleteId=root.editing;deleteDialog.open()}}
+                SmallButton {visible:!!root.editing;text:Umeko.I18n.t("删除");dangerous:true;onClicked:{root.deleteId=root.editing;deleteDialog.open()}}
                 Item {Layout.fillWidth:true}
-                SmallButton {text:"取消";onClicked:createDialog.close()}
-                SmallButton {objectName:"confirmCreateGlobalAgent";text:Umeko.I18n.t(root.switchOnly?"应用模型":root.editing?"保存":"创建");primary:true;enabled:!root.formSubmitting;onClicked:root.submitForm()}
+                SmallButton {text:Umeko.I18n.t("取消");onClicked:createDialog.close()}
+                SmallButton {objectName:"confirmCreateGlobalAgent";text:root.switchOnly?Umeko.I18n.t("应用模型"):root.editing?Umeko.I18n.t("保存"):Umeko.I18n.t("创建");primary:true;enabled:!root.formSubmitting;onClicked:root.submitForm()}
             }
         }
     }
