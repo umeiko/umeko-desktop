@@ -300,7 +300,7 @@ class UmekoControl(QObject):
                     'loginStartup': redacted(getattr(getattr(b, 'loginStartup', None), 'state', {}))}
         if operation == 'settings.windowsSandbox':
             if args: raise ValueError('settings.windowsSandbox takes no arguments')
-            return b.windowsSandbox.state
+            return b.windowsSandbox.tool_state()
         if operation == 'providers.list': return {'providers': redacted(b.config['providers']), 'presets': b.commonProviders}
         if operation == 'models.list':
             return {'models': [dict(model='umeko/'+row['id'], id=row['id'], provider='umeko', displayProvider=row.get('owned_by', 'Umeko'), contextWindow=row['contextWindow'], vision='image' in row['input'],

@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve, win32 } from 'node:path';
+import { isAbsolute, join, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const helper = fileURLToPath(new URL('./bin/windows-sandbox/umeko-sandbox.exe', import.meta.url));
@@ -13,6 +13,10 @@ function includesPath(root, target) {
 // cancellation, and the Windows Job Object or background job record.
 export function sandboxCommand({ file, args, cwd, env = process.env, workspace, policy }, {platform = process.platform} = {}) {
   if (platform !== 'win32' || !policy?.enabled) return { file, args, env, level: 'off' };
+  if (policy.preparing) throw new Error('Preparing Git Bash for the Windows sandbox. Wait for preparation to finish, then retry the command.');
+  if (policy.preparationError || policy.gitReady === false) {
+    throw new Error('Could not prepare Git Bash for the Windows sandbox. Check Agent settings, then turn the sandbox off and back on.');
+  }
   const launcher = policy.launcher || helper;
   if (!existsSync(launcher)) throw new Error('Windows sandbox could not start: the packaged launcher is missing. Use a complete Windows package.');
   if (!policy.home || !policy.temp || !workspace) throw new Error('Windows sandbox could not start: workspace or sandbox storage is missing.');
@@ -33,9 +37,10 @@ export function sandboxCommand({ file, args, cwd, env = process.env, workspace, 
     throw new Error('Windows sandbox blocked the WSL launcher: use Git Bash or Windows PowerShell for this command.');
   }
   if (level === 'non-elevated' && /(?:^|[\\/])bash(?:\.exe)?$/i.test(file)) {
-    const gitRoot = join(dirname(launcher), 'git');
-    const packagedBash = join(gitRoot, 'bin', 'bash.exe');
-    if (existsSync(packagedBash)) {
+    const gitRoot = policy.gitRoot;
+    if (gitRoot) {
+      const packagedBash = join(gitRoot, 'bin', 'bash.exe');
+      if (!existsSync(packagedBash)) throw new Error('The sandbox Git Bash files are missing. Turn the sandbox off and back on to restore them.');
       const pathKey = Object.keys(env).find(key => key.toUpperCase() === 'PATH') || 'PATH';
       env = { ...env, [pathKey]: [join(gitRoot, 'usr', 'bin'), join(gitRoot, 'mingw64', 'bin'), env[pathKey]]
         .filter(Boolean).join(win32.delimiter) };

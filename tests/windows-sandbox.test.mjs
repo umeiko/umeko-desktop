@@ -63,6 +63,8 @@ test('standard-user Git Bash uses the packaged runtime inside the same native sa
   const bash = join(root, 'bin', 'bash.exe');
   mkdirSync(join(root, 'bin'), { recursive: true });
   writeFileSync(bash, 'fixture; never executed');
+  input.policy.gitRoot = root;
+  input.policy.gitReady = true;
   const elevated = sandboxCommand(input, options);
   assert.equal(elevated.args.at(-3), input.file);
   input.policy.elevated = false;
@@ -73,6 +75,16 @@ test('standard-user Git Bash uses the packaged runtime inside the same native sa
   assert.deepEqual(standard.args.slice(-4), ['allow', bash, ...input.args]);
   assert.deepEqual(standard.env.Path.split(';'), [join(root, 'usr', 'bin'), join(root, 'mingw64', 'bin'), 'original']);
   assert.equal(sandboxCommand({ ...input, file: 'powershell.exe' }, options).args.at(-3), 'powershell.exe');
+});
+
+test('preparation is reported and never launches an unsandboxed command', t => {
+  const input = fixture(t);
+  const options = { platform: 'win32' };
+  input.policy.preparing = true;
+  assert.throws(() => sandboxCommand(input, options), /Preparing Git Bash.*retry/);
+  input.policy.preparing = false;
+  input.policy.gitReady = false;
+  assert.throws(() => sandboxCommand(input, options), /Could not prepare Git Bash/);
 });
 
 test('closing a local MCP transport prevents stale traffic immediately', async () => {

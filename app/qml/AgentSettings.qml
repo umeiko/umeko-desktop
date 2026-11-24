@@ -41,12 +41,60 @@ Column {
             }
             RowLayout {
                 visible: permissions.sandbox.supported
-                Layout.fillWidth: true
-                Text {
-                    font.family: Theme.fontFamily; color: Theme.ink; font.pixelSize: Theme.font(12, visible)
-                    text: I18n.t("Windows 命令沙箱") + " · " + I18n.t(permissions.sandbox.level === "elevated" ? "管理员级隔离" : permissions.sandbox.level === "non-elevated" ? "标准用户隔离" : "关闭")
+                Layout.fillWidth: true; spacing: 12
+                ColumnLayout {
+                    Layout.fillWidth: true; spacing: 4
+                    Text {
+                        Layout.fillWidth: true; wrapMode: Text.Wrap
+                        font.family: Theme.fontFamily; color: Theme.ink; font.pixelSize: Theme.font(12, visible)
+                        text: I18n.t("Windows 命令沙箱")
+                    }
+                    Text {
+                        objectName: "windowsSandboxLevel"
+                        Layout.fillWidth: true; wrapMode: Text.Wrap
+                        font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible)
+                        text: I18n.t(permissions.sandbox.level === "elevated" ? "管理员级隔离" : permissions.sandbox.level === "non-elevated" ? "标准用户隔离" : "沙箱已关闭")
+                    }
                 }
-                Item { Layout.fillWidth: true }
+                Toggle {
+                    objectName: "windowsSandboxEnabled"
+                    checked: permissions.sandbox.enabled
+                    enabled: !permissions.sandbox.busy
+                    Accessible.name: I18n.t("Windows 命令沙箱")
+                    onClicked: {
+                        const value = checked
+                        checked = Qt.binding(function() { return permissions.sandbox.enabled })
+                        backend.windowsSandbox.setEnabled(value)
+                    }
+                }
+                Text {
+                    Layout.preferredWidth: implicitWidth; Layout.maximumWidth: permissions.width * 0.34
+                    wrapMode: Text.Wrap
+                    font.family: Theme.fontFamily; color: Theme.ink; font.pixelSize: Theme.font(12, visible)
+                    text: I18n.t("允许命令联网")
+                }
+                Toggle {
+                    objectName: "windowsSandboxAllowNetwork"
+                    checked: permissions.sandbox.allowNetwork
+                    enabled: !permissions.sandbox.busy
+                    Accessible.name: I18n.t("允许命令联网")
+                    onClicked: {
+                        const value = checked
+                        checked = Qt.binding(function() { return permissions.sandbox.allowNetwork })
+                        backend.windowsSandbox.setAllowNetwork(value)
+                    }
+                }
+            }
+            RowLayout {
+                visible: permissions.sandbox.supported && !permissions.sandbox.elevatedReady
+                Layout.fillWidth: true; spacing: 12
+                Text {
+                    objectName: "windowsSandboxNetworkHint"
+                    Layout.fillWidth: true; wrapMode: Text.Wrap
+                    text: permissions.sandbox.enabled && !permissions.sandbox.allowNetwork
+                        ? I18n.t("禁止联网需要先安装管理员级隔离") : ""
+                    font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible)
+                }
                 ActionButton {
                     objectName: "windowsSandboxSetup"
                     text: I18n.t("安装管理员级隔离")
@@ -54,11 +102,31 @@ Column {
                     onClicked: backend.windowsSandbox.setup()
                 }
             }
+            ColumnLayout {
+                visible: permissions.sandbox.supported && permissions.sandbox.busy
+                Layout.fillWidth: true; spacing: 8
+                Text {
+                    objectName: "windowsSandboxStatus"
+                    Layout.fillWidth: true; wrapMode: Text.Wrap
+                    text: permissions.sandbox.preparing
+                        ? I18n.t("正在解压 Git Bash…") + " " + Math.round(permissions.sandbox.progress || 0) + "%"
+                        : I18n.t("正在准备 Windows 沙箱…")
+                    font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible)
+                }
+                ProgressBar {
+                    objectName: "windowsSandboxProgress"
+                    Layout.fillWidth: true
+                    visible: permissions.sandbox.preparing
+                    from: 0; to: 100; value: permissions.sandbox.progress || 0
+                }
+            }
             Text {
+                objectName: "windowsSandboxError"
                 Layout.fillWidth: true; wrapMode: Text.Wrap
-                visible: permissions.sandbox.supported
-                font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible)
-                text: permissions.sandbox.error || I18n.t("通过 Agent 设置沙箱开关和联网权限。禁止命令联网需要安装管理员级隔离。")
+                visible: permissions.sandbox.supported && text.length > 0
+                font.family: Theme.fontFamily; color: Theme.danger; font.pixelSize: Theme.font(11, visible)
+                textFormat: Text.PlainText
+                text: I18n.t(permissions.sandbox.error || "")
             }
         }
     }

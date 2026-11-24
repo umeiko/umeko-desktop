@@ -24,7 +24,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Remote exec-server preparation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Windows sandbox build failed' }
 $sandboxGit = 'build/sandbox-git'
 if (Test-Path -LiteralPath $sandboxGit -PathType Container) {
-    Copy-Item -LiteralPath $sandboxGit -Destination 'runtime/releases/coding-1.5.2/bin/windows-sandbox/git' -Recurse
+    & '.venv/Scripts/python.exe' scripts/archive-sandbox-git-bash.py
+    if ($LASTEXITCODE -ne 0) { throw 'Git Bash archive preparation failed' }
 }
 & '.venv/Scripts/python.exe' build_icons.py
 & '.venv/Scripts/python.exe' scripts/write-build-info.py

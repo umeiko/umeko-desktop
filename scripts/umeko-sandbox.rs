@@ -14,10 +14,35 @@ use codex_windows_sandbox::{
     spawn_windows_sandbox_session_for_level,
 };
 use std::collections::HashMap;
+use std::io::ErrorKind;
+use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 fn ready(home: &Path) -> bool {
     sandbox_setup_is_complete_with_settings(home, &WindowsSandboxProvisioningSettings::default())
+}
+
+fn remove_git_cache(home: &Path) -> Result<()> {
+    ensure!(home.is_absolute() && home.file_name().is_some_and(|name| name == "windows-sandbox"),
+        "expected an absolute Windows sandbox data directory");
+    match std::fs::symlink_metadata(home) {
+        Ok(metadata) => ensure!(metadata.is_dir() && metadata.file_attributes() & 0x400 == 0,
+            "Windows sandbox data directory must be an ordinary directory"),
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    }
+    let cache = home.join("git");
+    match std::fs::remove_dir_all(&cache) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).context("remove the Git Bash cache"),
+    }
+}
+
+fn default_home() -> Option<PathBuf> {
+    let profile = std::env::var_os("UMEKO_DATA_DIR").filter(|value| !value.is_empty()).map(PathBuf::from)
+        .or_else(|| std::env::var_os("USERPROFILE").map(|value| PathBuf::from(value).join(".umeko").join("desktop")))?;
+    Some(profile.join("windows-sandbox"))
 }
 
 fn environment() -> HashMap<String, String> {
@@ -99,12 +124,24 @@ async fn execute(args: &[String]) -> Result<i32> {
         }
         [operation] if operation == "uninstall" => {
             clean_up_legacy_windows_sandbox()?;
+            if let Some(home) = default_home() {
+                remove_git_cache(&home)?;
+            }
+            Ok(0)
+        }
+        [operation, home] if operation == "uninstall" => {
+            clean_up_legacy_windows_sandbox()?;
+            remove_git_cache(Path::new(home))?;
+            Ok(0)
+        }
+        [operation, home] if operation == "uninstall-cache" => {
+            remove_git_cache(Path::new(home))?;
             Ok(0)
         }
         [operation, home, temp, workspace, cwd, level, network, command @ ..] if operation == "run" => {
             run(Path::new(home), Path::new(temp), Path::new(workspace), Path::new(cwd), level, network, command).await
         }
-        _ => bail!("expected status, setup, run or uninstall"),
+        _ => bail!("expected status, setup, run, uninstall or uninstall-cache"),
     }
 }
 

@@ -1053,7 +1053,7 @@ async function execute(input) {
   if (input.type === "windows_sandbox") {
     const previous = windowsSandbox;
     windowsSandbox = input.policy;
-    if (["enabled", "allowNetwork", "elevated"].some(key => previous?.[key] !== windowsSandbox?.[key])) {
+    if (["enabled", "allowNetwork", "elevated", "gitReady"].some(key => previous?.[key] !== windowsSandbox?.[key])) {
       shellSnapshots.invalidate();
       for (const transport of localMcpTransports) void transport.close().catch(() => {});
     }
