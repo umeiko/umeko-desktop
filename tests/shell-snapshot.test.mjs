@@ -45,3 +45,18 @@ test("Windows PATH puts a real executable before a conflicting Store alias", { s
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("the runtime's bundled Node directory is only a shell fallback", async () => {
+  const pathKey = Object.keys(process.env).find(key => key.toUpperCase() === "PATH") || "PATH";
+  const original = process.env[pathKey];
+  const nodeDir = join(tmpdir(), "bundled-node");
+  const real = join(tmpdir(), "user-node");
+  const snapshots = createShellSnapshots({ getShellConfig: () => null, getPowerShellConfig: () => null, bundledNodeDir: nodeDir });
+  try {
+    process.env[pathKey] = [nodeDir, real].join(delimiter);
+    const environment = await snapshots.environment("bash", "session");
+    assert.equal(environment[pathKey], [real, nodeDir].join(delimiter));
+  } finally {
+    process.env[pathKey] = original;
+  }
+});
