@@ -535,7 +535,7 @@ async function init(input) {
       { name: "auxiliary-vision", hidden: true, replaceable: false, factory: auxiliaryVision.contextExtension },
           { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
           ...(!input.globalCoordinator && (!input.pluginSessionPolicy || input.pluginSessionPolicy.allowedTools.includes(APPLY_PATCH)) &&
-              input.models.some(row => row.applyPatch === true) ? [{name:"apply-patch", builtin:true, replaceable:false,
+              input.models.some(row => row.applyPatch === true) ? [{name:"apply-patch", hidden:true, replaceable:false,
                 factory:createApplyPatchExtension(applyPatchEnabled)}] : []),
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}, (id, items, failed) => taskDelivery("submitted", id, items, failed)) },
           { name: "generation", builtin: true, replaceable: false, factory: createGenerationExtension({getConfig: () => config, onDelivery: (id, items) => taskDelivery("generated", id, items)}) },
