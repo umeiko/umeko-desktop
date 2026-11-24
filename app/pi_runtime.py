@@ -208,7 +208,7 @@ def verify_runtime(release: Path, bridge_source: Path):
     patch_bash_job(release)
     patch_shell_environment(release, bridge_source)
     patch_command_sessions(release, bridge_source)
-    for name in ("tool-visibility.mjs", "session-capabilities.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "model-roles.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
+    for name in ("tool-visibility.mjs", "session-capabilities.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         copy_runtime_file(bridge_source.parent / name, release / name)
     copy_runtime_file(bridge_source.parent / 'update-cleanup.mjs', release / 'update-cleanup.mjs')
     copy_runtime_file(bridge_source.parent / 'apply-patch.mjs', release / 'apply-patch.mjs')

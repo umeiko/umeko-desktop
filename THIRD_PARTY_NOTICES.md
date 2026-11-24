@@ -52,7 +52,7 @@ Release bundles include the unmodified npm package `@gotgenes/pi-subagents` 25.0
 
 ## Planning handoff
 
-`runtime/model-roles.mjs` adapts the proposed-plan parsing and same-session handoff from [@signalridge/pi-plan-mode 1.6.1, src/message-transform.ts](https://github.com/signalridge/pi-extensions/blob/main/packages/pi-plan-mode/src/message-transform.ts). The MIT notice is in `licenses/pi-plan-mode-MIT.txt`.
+`runtime/input-queue.mjs` adapts the proposed-plan parsing and same-session handoff from [@signalridge/pi-plan-mode 1.6.1, src/message-transform.ts](https://github.com/signalridge/pi-extensions/blob/main/packages/pi-plan-mode/src/message-transform.ts). The MIT notice is in `licenses/pi-plan-mode-MIT.txt`.
 
 ## Background jobs
 

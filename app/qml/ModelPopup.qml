@@ -60,15 +60,16 @@ AnchoredPidPopup {
         opacity: root.contentOpacity
         RowLayout {
             Layout.fillWidth: true
-            Text { text: I18n.t("会话后端"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
+            Text { visible: backend.sessionBackend !== "pi"; text: I18n.t("会话后端"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
+            ComboBox {
+                id: modelRole; objectName: "modelRolePicker"
+                visible: backend.sessionBackend === "pi"
+                Layout.preferredWidth: implicitContentWidth + leftPadding + rightPadding + 4
+                model: [I18n.t("对话模型"), I18n.t("规划模型"), I18n.t("执行模型")]
+            }
             Item { Layout.fillWidth: true }
             BackendChoice { objectName: "choosePiBackend"; text: "Pi Coding Agent"; artwork: "../icons/pi.svg"; selected: backend.sessionBackend === "pi"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("pi") }
             BackendChoice { objectName: "chooseDshBackend"; text: "DeepSeek Harness"; artwork: "../icons/dsh.svg"; monochrome: true; experimental: true; visible: root.hasDshPath || backend.sessionBackend === "dsh"; selected: backend.sessionBackend === "dsh"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("dsh") }
-        }
-        ComboBox {
-            id: modelRole; objectName: "modelRolePicker"
-            visible: backend.sessionBackend === "pi"; Layout.fillWidth: true
-            model: [I18n.t("对话模型"), I18n.t("规划模型"), I18n.t("执行模型")]
         }
         ModelChoice {
             objectName: "clearModelRole"

@@ -527,7 +527,9 @@ class GlobalAgents(QObject):
     def halt(self, identifier):
         self.pending_models.pop(identifier, None)
         self.resume_members.discard(identifier)
-        self.agents[identifier].pop('quotaPaused', None)
+        row = self.agents.get(identifier)
+        if row:
+            row.pop('quotaPaused', None)
         record=self.records.get(identifier)
         if record:
             record.cancelled=True; self.b._pool.write(record,{'type':'abort'}); self.b._pool.retire(record)

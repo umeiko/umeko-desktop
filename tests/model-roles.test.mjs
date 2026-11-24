@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {createModelRoles, proposedPlan} from "../runtime/model-roles.mjs";
+import {createModelRoles, proposedPlan} from "../runtime/input-queue.mjs";
 
 const assistant = (text, stopReason = "stop") => ({role:"assistant", stopReason, content:[{type:"text", text}]});
 const plan = "<proposed_plan>\nRead the input and write the summary.\n</proposed_plan>";

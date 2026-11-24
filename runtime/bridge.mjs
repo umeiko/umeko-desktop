@@ -11,7 +11,7 @@ import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from ".
 import { UMEKO_TOOL, SEND_TO_USER, REMINDER, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension, coordinatorNativeTools } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
-import { createInputQueue } from "./input-queue.mjs";
+import { createInputQueue, createModelRoles } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
 import { blockedShellEnvKey, createShellSnapshots } from "./shell-snapshot.mjs";
@@ -23,7 +23,6 @@ import { blockedToolNames, toolInventory } from "./tool-visibility.mjs";
 import { createGenerationExtension } from "./generation.mjs";
 import { createSystemPromptController } from "./system-prompt.mjs";
 import { createCoordinatorSkills } from "./coordinator-skills.mjs";
-import { createModelRoles } from "./model-roles.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
