@@ -1,8 +1,8 @@
-Subject: Allow restricted Git Bash to open its own local pipes
+Subject: Allow restricted Git Bash to open its own local IPC objects
 
 Adapted from git-for-windows/msys2-runtime d25c02bd8bbfef7da4b42eab6f0834bcb9d9343e,
 winsup/cygwin autoload.cc, fhandler/pipe.cc, fork.cc, local_includes/security.h,
-sec/helper.cc and sigproc.cc. Cygwin license applies.
+mm/shared.cc, sec/helper.cc and sigproc.cc. Cygwin license applies.
 
 diff --git a/winsup/cygwin/autoload.cc b/winsup/cygwin/autoload.cc
 --- a/winsup/cygwin/autoload.cc
@@ -21,7 +21,7 @@ diff --git a/winsup/cygwin/fhandler/pipe.cc b/winsup/cygwin/fhandler/pipe.cc
 -  NTSTATUS status = nt_create (sa, r, w, psize, &unique_id);
 +  alignas (SECURITY_ATTRIBUTES) char pipe_sa_buf[1024];
 +  PSECURITY_ATTRIBUTES pipe_sa =
-+    sec_restricted_pipe (pipe_sa_buf, sa, FILE_GENERIC_READ | FILE_GENERIC_WRITE);
++    sec_restricted_object (pipe_sa_buf, sa, FILE_GENERIC_READ | FILE_GENERIC_WRITE);
 +  NTSTATUS status = nt_create (pipe_sa, r, w, psize, &unique_id);
    if (!NT_SUCCESS (status))
 diff --git a/winsup/cygwin/fork.cc b/winsup/cygwin/fork.cc
@@ -32,8 +32,8 @@ diff --git a/winsup/cygwin/fork.cc b/winsup/cygwin/fork.cc
 -      if (!CreatePipe (&rd_proc_pipe, &wr_proc_pipe, &sec_none_nih, 16))
 -	api_fatal ("prefork: couldn't create pipe process tracker, %E");
 +      alignas (SECURITY_ATTRIBUTES) char sa_buf[1024];
-+      PSECURITY_ATTRIBUTES sa = sec_restricted_pipe (sa_buf, &sec_none_nih,
-+                                                    FILE_GENERIC_READ | FILE_GENERIC_WRITE);
++      PSECURITY_ATTRIBUTES sa = sec_restricted_object (sa_buf, &sec_none_nih,
++                                                      FILE_GENERIC_READ | FILE_GENERIC_WRITE);
 +      if (!CreatePipe (&rd_proc_pipe, &wr_proc_pipe, sa, 16))
 +        api_fatal ("prefork: couldn't create pipe process tracker, %E");
 
@@ -42,18 +42,50 @@ diff --git a/winsup/cygwin/local_includes/security.h b/winsup/cygwin/local_inclu
 +++ b/winsup/cygwin/local_includes/security.h
 @@ -526,2 +526,4 @@
 
-+extern PSECURITY_ATTRIBUTES sec_restricted_pipe (PVOID, PSECURITY_ATTRIBUTES, DWORD);
++extern PSECURITY_ATTRIBUTES sec_restricted_object (PVOID, PSECURITY_ATTRIBUTES, DWORD);
 +
  extern bool sec_acl (PACL acl, bool original, bool admins, PSID sid1 = NO_SID,
+diff --git a/winsup/cygwin/mm/shared.cc b/winsup/cygwin/mm/shared.cc
+--- a/winsup/cygwin/mm/shared.cc
++++ b/winsup/cygwin/mm/shared.cc
+@@ -236,5 +236,25 @@
+
+-  user_shared = (user_info *) open_shared (name, USER_VERSION,
+-					   cygwin_user_h, sizeof (user_info),
+-					   SH_USER_SHARED, &sec_none);
++  // Stock MSYS uses one mapping name per account. A restricted logon
++  // cannot reopen an existing mapping from an ordinary shell. Give this MSYS
++  // mapping a separate name per restricted logon, with rights only on it.
++  WCHAR restricted_name[64];
++  const WCHAR *mapping_name = name;
++  alignas (SECURITY_ATTRIBUTES) char sa_buf[1024];
++  PSECURITY_ATTRIBUTES sa = &sec_none;
++  if (!cygwin_user_h && IsTokenRestricted (hProcToken))
++    {
++      TOKEN_STATISTICS stats;
++      DWORD length = 0;
++      if (!GetTokenInformation (hProcToken, TokenStatistics, &stats,
++                                sizeof (stats), &length))
++        api_fatal ("couldn't locate restricted logon for user mapping, %E");
++      __small_swprintf (restricted_name, L"umeko-restricted-user-%x-%x",
++                        (unsigned) stats.AuthenticationId.HighPart,
++                        (unsigned) stats.AuthenticationId.LowPart);
++      mapping_name = restricted_name;
++      sa = sec_restricted_object (sa_buf, sa, FILE_MAP_ALL_ACCESS);
++    }
++  user_shared = (user_info *) open_shared (mapping_name, USER_VERSION,
++                                           cygwin_user_h, sizeof (user_info),
++                                           SH_USER_SHARED, sa);
+   debug_printf ("opening user shared for '%W' at %p", name, user_shared);
 diff --git a/winsup/cygwin/sec/helper.cc b/winsup/cygwin/sec/helper.cc
 --- a/winsup/cygwin/sec/helper.cc
 +++ b/winsup/cygwin/sec/helper.cc
 @@ -629,2 +629,26 @@
 
-+/* Add the token's own logon SID only to the DACL of an MSYS pipe
-+   opened by a restricted token. Keep the normal user and system ACEs. */
++/* Add the token's own logon SID to an explicitly selected MSYS IPC
++   object. Keep the normal user and system ACEs. */
 +PSECURITY_ATTRIBUTES
-+sec_restricted_pipe (PVOID storage, PSECURITY_ATTRIBUTES fallback, DWORD access)
++sec_restricted_object (PVOID storage, PSECURITY_ATTRIBUTES fallback, DWORD access)
 +{
 +  if (!IsTokenRestricted (hProcToken))
 +    return fallback;
@@ -83,5 +115,5 @@ diff --git a/winsup/cygwin/sigproc.cc b/winsup/cygwin/sigproc.cc
 -  char char_sa_buf[1024];
 +  alignas (SECURITY_ATTRIBUTES) char char_sa_buf[1024];
    PSECURITY_ATTRIBUTES sa = sec_user_nih ((PSECURITY_ATTRIBUTES) char_sa_buf, cygheap->user.sid());
-+  sa = sec_restricted_pipe (char_sa_buf, sa, FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES);
++  sa = sec_restricted_object (char_sa_buf, sa, FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES);
    DWORD err = fhandler_pipe::create (sa, &my_readsig, &my_sendsig,
