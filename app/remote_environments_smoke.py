@@ -32,9 +32,11 @@ class ScriptedModel:
                 owner.requests += 1
                 call = owner.current
                 assert self.path == '/v1/chat/completions', self.path
-                assert call is not None, 'Unplanned model request'
+                last_user = next((message.get('content', '') for message in reversed(body['messages'])
+                                  if message.get('role') == 'user'), '')
+                active = call and f"Execute acceptance step {call['id']}" in str(last_user)
                 results = [m for m in body['messages']
-                           if m.get('role') == 'tool' and m.get('tool_call_id') == call['id']]
+                           if active and m.get('role') == 'tool' and m.get('tool_call_id') == call['id']]
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/event-stream')
                 self.end_headers()
@@ -47,7 +49,10 @@ class ScriptedModel:
                     self.wfile.flush()
 
                 emit({'role': 'assistant'})
-                if results:
+                if not active:
+                    emit({'content': 'LOCAL_FIXTURE_IDLE'})
+                    emit({}, 'stop')
+                elif results:
                     owner.result = results[-1].get('content')
                     emit({'content': 'REMOTE_ACCEPTANCE_STEP_COMPLETE'})
                     emit({}, 'stop')
@@ -144,16 +149,15 @@ class Acceptance:
         identity = f'remote-real-{self.sequence}'
         self.model.current = {'id': identity, 'name': name, 'arguments': arguments}
         self.model.result = None
-        before = len(self.backend._view.messages)
         self.note('tool-start', tool=name, label=label or arguments.get('action', arguments.get('operation')))
         assert self.backend.send('Execute acceptance step ' + identity), self.backend.lastSendError
         self.wait(lambda: self.model.result is not None and not self.backend.busy, timeout, identity)
         result = decode_result(self.model.result)
         assert isinstance(result, dict), (name, result)
-        new_rows = self.backend._view.messages[before:]
         # These are the actual UI transcript rows created by controller Pi events.
-        tool_rows = [tool for row in new_rows for tool in row.get('tools', []) if tool.get('name') == name]
-        assert tool_rows, ('No real chat tool row', name, new_rows)
+        tool_rows = [tool for row in self.backend._view.messages for tool in row.get('tools', [])
+                     if tool.get('id') == identity and tool.get('name') == name]
+        assert tool_rows, ('No real chat tool row', name, identity)
         self.tool_rows.extend(tool_rows)
         self.steps.append({'id': identity, 'tool': name, 'label': label, 'result': result})
         self.note('tool-finish', tool=name, status=result.get('status'), exitCode=result.get('exitCode'))
@@ -286,8 +290,10 @@ class Acceptance:
         nearby, failed_output = self.read_until_complete(self.command(self.python(
             "import sys\nprint('NEARBY_FAILURE_STDOUT')\nprint('NEARBY_FAILURE_STDERR',file=sys.stderr)\nsys.exit(7)")))
         assert nearby.get('exitCode') == 7 and 'NEARBY_FAILURE_STDOUT' in failed_output and 'NEARBY_FAILURE_STDERR' in failed_output
+        from PySide6.QtTest import QTest
         while recovered.get('status') == 'running':
             assert time.monotonic() - self.long_started < seconds + 180, '20 minute command exceeded deadline'
+            QTest.qWait(10000)
             recovered = self.call('remote_command', {'action': 'read', 'environment': 'acceptance',
                                   'sessionId': session, 'yieldMs': 10000, 'maxOutputBytes': 262144}, timeout=90)
             self.long_output += recovered.get('output', '')
