@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { inflateRawSync } from "node:zlib";
+import { mkdtemp, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { RemoteConnection, RemoteRpcError, sshArguments, discoveryScript, listenerScript } from "./remote-transport.mjs";
 
@@ -205,6 +208,39 @@ test("a Windows SFTP relay reset retries even when the exit code is not 255", as
     await assert.rejects(connection._readChild(child, { label: "OpenSSH SFTP upload", timeout: 1000, sftp: true }),
       error => error.transport && !error.fatal && error.sshError.includes("10054"));
   } finally { connection.close(); }
+});
+
+test("executor bootstrap starts a new upload, then resumes the same staging file", async () => {
+  const manifest = JSON.parse(await readFile(new URL("./remote-exec-assets.json", import.meta.url), "utf8"));
+  const directory = await mkdtemp(join(tmpdir(), "umeko-ssh-asset-test-"));
+  const asset = join(directory, manifest.assets["windows-x64"].name);
+  const connection = new RemoteConnection({ host: "existing-alias", platform: "windows" }, { assetsDir: directory });
+  const root = "C:\\Users\\test\\remote";
+  const binary = `${root}\\codex-exec-server.exe`;
+  const staging = [], uploads = [];
+  const listener = { port: 41000, token: "x".repeat(48) };
+  connection._ssh = async source => {
+    if (!source.includes("$arch=")) return JSON.stringify(listener);
+    staging.push(source.match(/'upload-([a-f0-9]+)'/)?.[1]);
+    return JSON.stringify({ arch: "x64", root, binary, present: false, staged: staging.length > 1 });
+  };
+  connection._sftpUpload = async (local, remote, { resume }) => {
+    assert.equal(local, asset);
+    uploads.push({ remote, resume });
+    if (!resume) throw Object.assign(new Error("Connection reset"), { transport: true });
+  };
+  try {
+    await writeFile(asset, "synthetic payload");
+    await assert.rejects(connection._bootstrap(), /Connection reset/);
+    assert.deepEqual(await connection._bootstrap(), listener);
+    assert.ok(staging[0]);
+    assert.deepEqual(staging, [staging[0], staging[0]]);
+    assert.deepEqual(uploads, [false, true].map(resume => ({ remote: `${root}/upload-${staging[0]}`, resume })));
+  } finally {
+    connection.close();
+    await unlink(asset);
+    await rmdir(directory);
+  }
 });
 
 test("request cancellation interrupts waiting for shared recovery without stopping the connection", async () => {

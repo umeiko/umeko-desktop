@@ -76,7 +76,7 @@ function sftpPath(value, windows, remote = false) {
   return `"${absolute.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
 
-export function discoveryScript(platform) {
+export function discoveryScript(platform, uploadId) {
   if (platform === "windows") return `
 $ErrorActionPreference='Stop'
 $arch=[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
@@ -91,14 +91,16 @@ $acl.SetAccessRuleProtection($true,$false)
 $sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $rule=New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow')
 $acl.AddAccessRule($rule);Set-Acl -LiteralPath $root -AclObject $acl
-@{arch=$arch;root=$root;binary=$binary;present=(Test-Path -LiteralPath $binary -PathType Leaf)} | ConvertTo-Json -Compress
+$staged=${uploadId ? `(Test-Path -LiteralPath (Join-Path $root ${quotePs(`upload-${uploadId}`)}) -PathType Leaf)` : "$false"}
+@{arch=$arch;root=$root;binary=$binary;present=(Test-Path -LiteralPath $binary -PathType Leaf);staged=$staged} | ConvertTo-Json -Compress
 `;
   return `set -eu
 case "$(uname -m)" in x86_64|amd64) arch=x64;; aarch64|arm64) arch=arm64;; *) echo 'Unsupported remote architecture' >&2; exit 1;; esac
 root="$HOME/.local/share/umeko/remote-exec/${manifest.version}/$arch"
 umask 077; mkdir -p "$root"; chmod 700 "$root"
 present=false; [ ! -f "$root/codex-exec-server" ] || present=true
-printf '%s\\n' "$arch" "$root" "$root/codex-exec-server" "$present"
+staged=false${uploadId ? `; [ ! -f "$root/"${quoteSh(`upload-${uploadId}`)} ] || staged=true` : ""}
+printf '%s\\n' "$arch" "$root" "$root/codex-exec-server" "$present" "$staged"
 `;
 }
 
@@ -322,14 +324,15 @@ export class RemoteConnection {
     return result;
   }
 
-  async _sftpUpload(inputFile, destination, timeout) {
+  async _sftpUpload(inputFile, destination, { timeout, resume }) {
     const windowsClient = process.platform === "win32";
     const executable = join(dirname(this.sshClient), windowsClient ? "sftp.exe" : "sftp");
     if (!await exists(executable)) throw new Error(`OpenSSH SFTP is missing next to ${this.sshClient}`);
     const folder = await mkdtemp(join(tmpdir(), "umeko-sftp-"));
     const batch = join(folder, "upload.sftp");
     try {
-      await writeFile(batch, `put -a ${sftpPath(inputFile, windowsClient)} ${sftpPath(destination, this.config.platform === "windows", true)}\n`, { mode: 0o600 });
+      const put = resume ? "put -a" : "put";
+      await writeFile(batch, `${put} ${sftpPath(inputFile, windowsClient)} ${sftpPath(destination, this.config.platform === "windows", true)}\n`, { mode: 0o600 });
       const child = this._spawnClient(executable, ["-b", batch, "-S", this.sshClient, ...sshArguments(this.config.host).slice(1), this.config.host]);
       await this._readChild(child, { timeout, label: "OpenSSH SFTP upload", sftp: true });
     } finally {
@@ -339,28 +342,31 @@ export class RemoteConnection {
   }
 
   async _bootstrap() {
-    const infoText = await this._ssh(discoveryScript(this.config.platform));
+    const sftp = process.platform === "win32" || this.config.platform === "windows";
+    // A connection owns its staging name across retries. Other sessions use
+    // different names, so their partial uploads cannot be mistaken for ours.
+    const uploadId = sftp ? (this.sftpUploadId ||= randomBytes(6).toString("hex")) : undefined;
+    const infoText = await this._ssh(discoveryScript(this.config.platform, uploadId));
     let info;
     if (this.config.platform === "windows") info = JSON.parse(infoText);
-    else { const [arch, root, binary, present] = infoText.split(/\r?\n/); info = { arch, root, binary, present: present === "true" }; }
+    else {
+      const [arch, root, binary, present, staged] = infoText.split(/\r?\n/);
+      info = { arch, root, binary, present: present === "true", staged: staged === "true" };
+    }
     if (!info.present) {
       const asset = await assetFile(this.config.platform, info.arch, this.options);
-      const sftp = process.platform === "win32" || this.config.platform === "windows";
-      // A connection owns its staging name across retries. Other sessions use
-      // different names, so their partial uploads cannot be mistaken for ours.
-      const uploadId = sftp ? (this.sftpUploadId ||= randomBytes(6).toString("hex")) : randomBytes(6).toString("hex");
-      const temporary = `${info.root}/upload-${uploadId}`;
+      const temporary = `${info.root}/upload-${uploadId || randomBytes(6).toString("hex")}`;
       // First deployment can take minutes over a jump host. This is a single
       // scoped transfer, not a background retry or a server-wide operation.
       const timeout = 30 * 60_000;
-      if (sftp) await this._sftpUpload(asset, temporary, timeout);
+      if (sftp) await this._sftpUpload(asset, temporary, { timeout, resume: info.staged === true });
       else await this._ssh(`umask 077; cat > ${quoteSh(temporary)}`, { inputFile: asset, timeout });
       const install = this.config.platform === "windows"
         ? `$ErrorActionPreference='Stop';Move-Item -LiteralPath ${quotePs(temporary)} -Destination ${quotePs(info.binary)} -Force`
         : `set -eu; tar -xzf ${quoteSh(temporary)} -C ${quoteSh(info.root)}; found=$(find ${quoteSh(info.root)} -maxdepth 2 -type f -name 'codex-exec-server*' ! -name '*tar*' | head -n 1); [ -n "$found" ]; [ "$found" = ${quoteSh(info.binary)} ] || mv "$found" ${quoteSh(info.binary)}; chmod 700 ${quoteSh(info.binary)}; rm -f ${quoteSh(temporary)}`;
       await this._ssh(install);
-      this.sftpUploadId = undefined;
     }
+    this.sftpUploadId = undefined;
     const listener = await this._ssh(listenerScript(this.config.platform, info.root, info.binary), { timeout: 60_000 });
     let result;
     if (this.config.platform === "windows") result = JSON.parse(listener);
