@@ -21,9 +21,10 @@ if "--umeko-plugin-worker" in sys.argv:
     runpy.run_path(str(_plugin_root / "plugin-runtime/worker.py"), run_name="__main__")
     sys.exit(0)
 
-from app.platform_support import configure_input_method
+from app.platform_support import configure_input_method, configure_qml_gc
 
 os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
+configure_qml_gc()
 configure_input_method()
 
 from PySide6.QtCore import QTimer, QUrl
@@ -47,6 +48,7 @@ def diagnostic(message):
 
 
 def create_application():
+    configure_qml_gc()
     root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
     from app.webview import configure, configure_engine
     from app.desktop_preferences import startup_settings

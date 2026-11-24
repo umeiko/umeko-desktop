@@ -136,3 +136,16 @@ def configure_input_method(platform=None, environment=None, plugin_directory=Non
         return  # Preserve native Wayland text input and unrelated IME choices.
     if any(plugins.glob("*fcitx*.so")):
         environment["QT_IM_MODULE"] = "fcitx"
+
+
+def configure_qml_gc(environment=None):
+    """Default Qt's QV4 GC to non-incremental mode unless explicitly overridden.
+
+    In Qt 6.10.2/6.10.3, incremental QV4 GC slices interleaved with asynchronous
+    QQmlIncubator creation can sweep QQmlVMEMetaObject member storage before
+    finalization finishes, causing "Cannot find member data" warnings and a
+    null dereference in QQmlConnections::connectSignalsToMethods()
+    (QTBUG-129241, QTBUG-148459). QV4_GC_TIMELIMIT=0 is Qt's built-in workaround.
+    """
+    environment = os.environ if environment is None else environment
+    environment.setdefault("QV4_GC_TIMELIMIT", "0")
