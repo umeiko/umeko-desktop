@@ -485,7 +485,7 @@ class GlobalAgents(QObject):
             self.changed();self.save();return {'enabled':self.allowed(record,'agent:'+agent_id),'agentId':agent_id,'sessionId':identifier,'direction':'bidirectional'}
         if identifier not in self.agents: raise ValueError('全局子智能体不存在')
         if method=='respond':
-            record=self.ensure(identifier); approval=record.approval
+            record=self.record('agent:'+identifier); approval=record.approval
             if not approval or args.get('requestId')!=approval.get('id'): raise ValueError('确认请求已失效')
             value=args.get('value')
             if approval.get('method')=='confirm' and type(value) is not bool: raise ValueError('确认值必须为布尔值')
@@ -493,9 +493,10 @@ class GlobalAgents(QObject):
             if approval.get('method')=='select' and value is not None and value not in approval.get('options',[]): raise ValueError('请选择提供的选项')
             self.b._pool.write(record,{'type':'ui_response','id':approval['id'],'value':value}); record.approval={}; self.changed(); return {'status':'answered'}
         if method=='send':
-            record=self.ensure(identifier); text=self.text(args,'text',16000)
+            record=self.record('agent:'+identifier); text=self.text(args,'text',16000)
             if input_from_pet:text='(input from pet)\n'+text
-            if not record.busy and sum(r.busy for r in self.records.values())>=4: raise ValueError('最多同时运行 4 个全局子智能体')
+            if record.bus_task and not record.busy: raise ValueError('任务结果正在处理，请等待完成')
+            if not record.busy and sum(r.busy for r in (*self.records.values(), *self.member_sessions.values()))>=4: raise ValueError('最多同时运行 4 个全局子智能体')
             if record.busy:
                 if not record.ready: raise ValueError('代理正在加载，请稍后发送')
                 self.b._pool.write(record,{'type':'steer','text':text}); return {'status':'queued'}
@@ -863,22 +864,24 @@ class GlobalAgents(QObject):
                 self.outbox.pop(identifier,None); row=self.requests.get(item['requestId'])
                 if row and row['status'] not in TERMINAL: self.finish(row,'failed',str(error))
     def observe(self, record, event):
-        if record.id:
+        if record.id and not record.global_agent and not record.id.startswith('pending-'):
             for row in self.creation_requests.values():
                 if row.get('sourceKey')==record.key and row['source']!=self.identifier(record):row['source']=self.identifier(record);row['sourceSession']=record.id;self.changed()
-            draft=self.bridges.pop('draft:'+record.key,None)
-            if draft:
-                access=self.bridge_access(record.id)
-                self.bridges[record.id]=True if draft is True or access['bridgeAll'] else list(dict.fromkeys(access['bridgeAgents']+draft))
+            draft_key, pending_key = 'draft:'+record.key, 'pending-'+record.key
+            if draft_key in self.bridges or pending_key in self.bridges:
+                access = self.bridge_access(record.id, draft_key, pending_key)
+                self.bridges.pop(draft_key, None)
+                self.bridges.pop(pending_key, None)
+                self.bridges[record.id] = True if access['bridgeAll'] else access['bridgeAgents']
                 self.changed()
-            before, after='session:'+record.key, 'session:'+record.id
+            before, after={'session:'+record.key, 'session:'+pending_key}, 'session:'+record.id
             for row in self.requests.values():
                 for field in ('source','target'):
-                    if row[field]==before:row[field]=after;self.changed()
+                    if row[field] in before:row[field]=after;self.changed()
             for item in self.outbox.values():
-                if item['target']==before:item['target']=after
+                if item['target'] in before:item['target']=after
                 for field in ('source','target'):
-                    if item['data'][field]==before:item['data'][field]=after
+                    if item['data'][field] in before:item['data'][field]=after
         kind=event.get('type')
         if kind=='exit' or kind=='done' and (record.failed or record.cancelled):
             identity=self.identifier(record)
