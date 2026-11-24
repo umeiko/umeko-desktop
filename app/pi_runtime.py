@@ -128,11 +128,12 @@ def patch_bash_job(release: Path):
     path.write_text(text, encoding="utf-8")
 
 
-def patch_shell_environment(release: Path):
+def patch_shell_environment(release: Path, bridge_source: Path):
     # The existing Pi shell adapter remains the command and output entrypoint.
     path = release / "node_modules/@earendil-works/pi-coding-agent/dist/core/tools/bash.js"
     if not path.is_file():
         return
+    copy_runtime_file(bridge_source.parent / 'shell-snapshot.mjs', release / 'shell-snapshot.mjs')
     text = path.read_text(encoding="utf-8")
     hook = 'const snapshotEnv = globalThis[Symbol.for("umeko:shell-environment")];'
     if hook in text:
@@ -171,8 +172,7 @@ def verify_runtime(release: Path, bridge_source: Path):
         raise RuntimeError("旧 Agent Core 内核不能用于完整 Pi Coding Agent")
     patch_retry_diagnostics(release)
     patch_bash_job(release)
-    patch_shell_environment(release)
-    copy_runtime_file(bridge_source.parent / 'shell-snapshot.mjs', release / 'shell-snapshot.mjs')
+    patch_shell_environment(release, bridge_source)
     for name in ("tool-visibility.mjs", "session-capabilities.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         copy_runtime_file(bridge_source.parent / name, release / name)
     copy_runtime_file(bridge_source.parent / 'update-cleanup.mjs', release / 'update-cleanup.mjs')
