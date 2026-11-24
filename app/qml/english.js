@@ -483,6 +483,7 @@ var strings = {
   "压缩上下文": "Compact context",
   "默认": "Default",
   "工具执行权限": "Tool permissions",
+  "为智能体自动创建 Git 工作树": "Automatically create Git worktrees for agents",
   "每次询问": "Ask every time",
   "全自动": "Fully automatic",
   "每次执行命令、编辑或写入文件前询问；读取和搜索直接执行。切换立即保存并生效。": "Ask before each command, file edit or write. Reads and searches run directly. Changes are saved and applied immediately.",
