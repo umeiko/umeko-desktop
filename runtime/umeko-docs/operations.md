@@ -42,6 +42,8 @@
 | `dsh.useOwnConfig`（仅 python） | `enabled: boolean` | 无 | 否 |
 | `desktop.startup`（仅 python） | `umeko: boolean`, `proxy: boolean` | 无 | 否 |
 | `network.requestHeaders`（仅 python） | `headers: json` | 无 | 否 |
+| `network.remoteSharing`（仅 python） | `enabled: boolean` | 无 | 否 |
+| `network.remoteProxy`（仅 python） | `address: string` | 无 | 否 |
 | `documents.previewMode`（仅 python） | `fileType: string`, `mode: string` | 无 | 否 |
 | `appearance.sidebar` | `width: integer`, `collapsed: boolean=false` | 无 | 否 |
 | `desktop.configure`（仅 python） | `config: json` | 无 | 否 |

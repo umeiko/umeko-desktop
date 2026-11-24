@@ -151,11 +151,11 @@ Column {
                 }
                 Toggle {
                     objectName: "remoteNetworkSharingToggle"
-                    checked: backend.remoteNetworkEnabled
+                    checked: backend.remoteNetworkEnabled !== false
                     Accessible.name: I18n.t("服务器无法访问外网时使用本机网络")
                     onClicked: {
                         const value = checked
-                        checked = Qt.binding(function() { return backend.remoteNetworkEnabled })
+                        checked = Qt.binding(function() { return backend.remoteNetworkEnabled !== false })
                         backend.setRemoteNetworkEnabled(value)
                     }
                 }

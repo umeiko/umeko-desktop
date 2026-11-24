@@ -242,14 +242,6 @@ jobs:
             verify_desktop
           fi
 
-      - name: Windows window interaction
-        if: runner.os == 'Windows'
-        timeout-minutes: 10
-        shell: pwsh
-        run: |
-          & '.venv/Scripts/python.exe' tests/window_resize_ui_smoke.py
-          if ($LASTEXITCODE -ne 0) { throw 'Window interaction regression failed' }
-
       - name: Windows IME caret positions
         if: runner.os == 'Windows'
         env:
@@ -297,6 +289,14 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
+
+      - name: Windows window interaction
+        if: runner.os == 'Windows'
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          & '.venv/Scripts/python.exe' tests/window_resize_ui_smoke.py
+          if ($LASTEXITCODE -ne 0) { throw 'Window interaction regression failed' }
 
       - name: Upload Provider development resources
         if: matrix.platform == 'windows-x64'
