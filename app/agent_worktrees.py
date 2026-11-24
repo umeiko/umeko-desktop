@@ -11,10 +11,32 @@ import os
 from pathlib import Path
 import re
 import subprocess
+from threading import Lock
+from unicodedata import normalize
 
 
 class WorktreeError(ValueError):
     pass
+
+
+class WorktreeConflict(WorktreeError):
+    def __init__(self, files):
+        self.files = files
+        super().__init__("合并冲突。原目录和任务分支均已保留。\n" + "\n".join(files))
+
+
+def name_part(value, fallback):
+    words = re.findall(r"[^\W_]+", normalize("NFKC", value).casefold())
+    return "-".join(words)[:18].rstrip("-") or fallback
+
+
+def worktree_display(info):
+    path = Path(info["path"])
+    if re.fullmatch(r"[0-9a-f]{32}", path.name):
+        # Keep legacy checkouts addressable by their stored path and ref.
+        return {"branch": f"umeko/task-{path.name[:8]}…",
+                "path": str(path.with_name(path.name[:8] + "…"))}
+    return {"branch": info["branch"], "path": info["path"]}
 
 
 def paths_overlap(left, right):
@@ -28,6 +50,7 @@ def paths_overlap(left, right):
 class GitWorktrees:
     def __init__(self, directory):
         self.directory = Path(directory).resolve()
+        self.creation_lock = Lock()
 
     @staticmethod
     def git(cwd, *args, accepted=(0,)):
@@ -51,7 +74,7 @@ class GitWorktrees:
             raise WorktreeError(reason[:4000] or f"Git 退出码 {result.returncode}")
         return result
 
-    def describe(self, cwd, identifier):
+    def describe(self, cwd, identifier, member="", task=""):
         if not re.fullmatch(r"[0-9a-f]{32}", identifier):
             raise WorktreeError("任务标识无效。")
         result = self.git(cwd, "rev-parse", "--show-toplevel", accepted=(0, 128))
@@ -59,8 +82,7 @@ class GitWorktrees:
             raise WorktreeError("任务目录不是可用的 Git 仓库。")
         repo = Path(result.stdout.strip()).resolve()
         working_directory = Path(cwd).resolve()
-        path = self.directory / identifier
-        if path.is_relative_to(repo):
+        if self.directory.is_relative_to(repo):
             raise WorktreeError("请将应用数据目录放在任务仓库之外。")
         ref = self.git(repo, "symbolic-ref", "-q", "HEAD", accepted=(0, 1)).stdout.strip()
         if not ref.startswith("refs/heads/"):
@@ -68,9 +90,19 @@ class GitWorktrees:
         result = self.git(repo, "rev-parse", "--verify", "HEAD", accepted=(0, 128))
         if result.returncode:
             raise WorktreeError("Git 仓库需要至少一次提交。")
+        stem = f"{name_part(member, 'member')}-{name_part(task, 'task')}-{identifier[:8]}"
+        name = stem
+        attempt = 1
+        while os.path.lexists(self.directory / name) or self.git(
+            repo, "show-ref", "--verify", "--quiet", f"refs/heads/umeko/{name}",
+            accepted=(0, 1),
+        ).returncode == 0:
+            attempt += 1
+            name = f"{stem}-{attempt}"
+        path = self.directory / name
         return {
             "repository": str(repo), "baseRef": ref, "baseCommit": result.stdout.strip(),
-            "branch": f"umeko/task-{identifier}", "path": str(path),
+            "branch": f"umeko/{name}", "path": str(path),
             "cwd": str(path / working_directory.relative_to(repo)),
         }
 
@@ -84,9 +116,15 @@ class GitWorktrees:
 
     def managed_path(self, info):
         path = Path(info["path"])
-        if path != self.directory / path.name or path.resolve() != path or not re.fullmatch(r"[0-9a-f]{32}", path.name):
+        if path != self.directory / path.name or path.resolve() != path:
             raise WorktreeError("这不是本应用创建的任务工作树。")
-        if info["branch"] != f"umeko/task-{path.name}":
+        if re.fullmatch(r"[0-9a-f]{32}", path.name):
+            branch = f"umeko/task-{path.name}"
+        elif re.fullmatch(r"[^\W_]+(?:-[^\W_]+)*-[0-9a-f]{8}(?:-[0-9]+)?", path.name):
+            branch = f"umeko/{path.name}"
+        else:
+            raise WorktreeError("这不是本应用创建的任务工作树。")
+        if info["branch"] != branch:
             raise WorktreeError("工作树与任务分支不匹配。")
         return path
 
@@ -101,13 +139,13 @@ class GitWorktrees:
                 raise WorktreeError("任务工作树已切换分支，请在 Git 中检查。")
         raise WorktreeError("任务工作树不存在或已被移动。")
 
-    def save(self, info, identifier):
+    def save(self, info):
         path = self.check_checkout(info)
         self.git(path, "add", "-A")
         changed = self.git(path, "diff", "--cached", "--quiet", accepted=(0, 1))
         if changed.returncode:
             self.git(path, "-c", "user.name=Umeko", "-c", "user.email=umeko@users.noreply.github.com",
-                     "commit", "-m", f"Save Agent Bus task {identifier}")
+                     "commit", "-m", f"Save {worktree_display(info)['branch']}")
 
     def merge(self, info):
         repo = info["repository"]
@@ -120,11 +158,11 @@ class GitWorktrees:
             return
         if self.git(repo, "merge-base", "--is-ancestor", head, branch, accepted=(0, 1)).returncode:
             # Compute the merge without writing to the original index or files.
-            merged = self.git(repo, "merge-tree", "--write-tree", head, branch, accepted=(0, 1))
+            merged = self.git(repo, "merge-tree", "--write-tree", "--name-only", "--no-messages",
+                              "-z", head, branch, accepted=(0, 1))
+            tree, *paths = merged.stdout.rstrip("\0").split("\0")
             if merged.returncode:
-                detail = "\n".join(merged.stdout.splitlines()[1:])[:2000]
-                raise WorktreeError("合并冲突。原目录和任务分支均已保留。\n" + detail)
-            tree = merged.stdout.splitlines()[0]
+                raise WorktreeConflict(paths[:40])
             branch = self.git(repo, "-c", "user.name=Umeko", "-c",
                               "user.email=umeko@users.noreply.github.com", "commit-tree", tree,
                               "-p", head, "-p", branch, "-m", f'Merge {info["branch"]}').stdout.strip()
@@ -141,7 +179,6 @@ class GitWorktrees:
         return [entry[3:] for entry in status.split("\0") if entry]
 
     def remove(self, info):
-        path = self.check_checkout(info)
         if self.files(info):
             raise WorktreeError("工作树还有未提交或忽略的文件。请先保存在别处。")
-        self.git(info["repository"], "worktree", "remove", str(path))
+        self.git(info["repository"], "worktree", "remove", info["path"])

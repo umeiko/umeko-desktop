@@ -12,7 +12,8 @@ from .model_groups import GROUP_PROVIDER
 from .pi_sessions import SessionState
 from .chat_model import ChatModel
 from .conversation_state import ConversationState
-from .agent_worktrees import GitWorktrees, WorktreeError, paths_overlap
+from .agent_worktrees import (GitWorktrees, WorktreeConflict, WorktreeError,
+                              paths_overlap, worktree_display)
 
 TERMINAL = {'completed', 'failed', 'cancelled', 'interrupted'}
 NATIVE_TOOLS = ('read', 'bash', 'powershell', 'edit', 'write', 'grep', 'find', 'ls')
@@ -33,6 +34,7 @@ class GlobalAgents(QObject):
         self.agents, self.bridges, self.requests, self.records, self.outbox = {}, {}, {}, {}, {}
         self.member_sessions = {}
         self.worktrees = GitWorktrees(self.root / 'worktrees')
+        self.worktree_inspections = {}
         self.merging = set()
         self.creation_requests = {}
         self.skill_jobs = {}
@@ -349,7 +351,20 @@ class GlobalAgents(QObject):
         selected_row = self.member_sessions.get(selected) or self.records.get(selected)
         messages = ChatModel.project(self.messages(selected_row.messages if selected_row and selected_row.messages else self.agents.get(selected,{}).get('messages',[]))) if include_messages else []
         draft=next((self.creation_result(row) | {'sourceTitle':row['sourceTitle']} for row in self.creation_requests.values() if row['status']=='awaiting_approval'),{})
-        return {'agents':agents,'appearances':appearances,'defaultCharacter':fallback,'models':self.b.gateway.models(),'defaultModel':self.b.store.data.get('selectedModel',''), 'targets':self.overview()['targets'],'projects':self.project_rows(),'requests':[{**row,'text':row.get('text','')[:500],'result':row.get('result','')[:500]} for row in list(self.requests.values())[-64:] if row['status'] not in TERMINAL or row.get('worktree') or row.get('access')=='write'],'messages':messages,'revision':self._revision,'error':self.error,'approval':copy.deepcopy(selected_row.approval) if selected_row else {},'selectedId':selected,'currentTarget':self.identifier(self.b._view),'allowAutomaticCreation':self.allow_automatic_creation,'creationDraft':draft,'queue':[{key:row.get(key,'') for key in ('id','source','sourceTitle','text','created')} for row in self.pending_queue(selected)]}
+        return {'agents':agents,'appearances':appearances,'defaultCharacter':fallback,'models':self.b.gateway.models(),'defaultModel':self.b.store.data.get('selectedModel',''), 'targets':self.overview()['targets'],'projects':self.project_rows(),'requests':[self.request_card(row) for row in list(self.requests.values())[-64:] if row['status'] not in TERMINAL or row.get('worktree') or row.get('access')=='write'],'messages':messages,'revision':self._revision,'error':self.error,'approval':copy.deepcopy(selected_row.approval) if selected_row else {},'selectedId':selected,'currentTarget':self.identifier(self.b._view),'allowAutomaticCreation':self.allow_automatic_creation,'creationDraft':draft,'queue':[{key:row.get(key,'') for key in ('id','source','sourceTitle','text','created')} for row in self.pending_queue(selected)]}
+
+    @staticmethod
+    def request_card(row):
+        card = {**row, 'text': row.get('text', '')[:500], 'result': row.get('result', '')[:500]}
+        if row.get('worktree'):
+            card['worktree'] = worktree_display(row['worktree'])
+            if card['result'].startswith('工作树改动已保留。\n合并冲突。'):
+                card['worktreeConflict'] = True
+                card['result'] = ''
+            elif card['result'].startswith('工作树改动已合并。\n'):
+                card['worktreeMerged'] = True
+                card['result'] = card['result'].split('\n', 1)[1]
+        return card
     def project_rows(self):
         return [{key:row.get(key,'') for key in ('id','name','path')} for row in self.b.store.data.get('projects',[]) if row.get('path')]
     def overview(self, caller=None):
@@ -399,10 +414,13 @@ class GlobalAgents(QObject):
         value=args.get(name,'')
         if not isinstance(value,str) or len(value)>maximum or required and not value.strip(): raise ValueError(name+' 无效或过长')
         return value.strip()
-    def handle(self, method, args, *, agent=False, session=None, input_from_pet=False):
+    def handle(self, method, args, *, agent=False, session=None, input_from_pet=False, reply=None):
         if not self.active: raise ValueError('全局子智能体服务未启用')
         if agent: raise ValueError('管理仅允许 Widget 中的用户操作；代理使用 agent_bus.*')
-        if method in ('inspectWorktree', 'removeWorktree', 'openWorktree'):
+        if method == 'inspectWorktree':
+            self.inspect_worktree(args, reply)
+            return None
+        if method in ('removeWorktree', 'openWorktree'):
             return self.manage_worktree(method, args)
         if method in ('listSkills','importSkills'):return self.start_skill_job(method,args)
         if method=='skillsJob':
@@ -675,14 +693,17 @@ class GlobalAgents(QObject):
     def _start_worktree(self, row):
         row['worktreeState'] = 'creating'
         identifier, workspace = row['id'], row['originWorkspace']
+        member = self.agents.get(row['target'][6:], {}).get('name', '')
+        task = row['text']
         self.save()
 
         def create():
-            info = self.worktrees.describe(workspace, identifier)
-            try:
-                self.worktrees.create(info)
-            except (WorktreeError, OSError) as error:
-                return {'info': info, 'error': str(error)}
+            with self.worktrees.creation_lock:
+                info = self.worktrees.describe(workspace, identifier, member, task)
+                try:
+                    self.worktrees.create(info)
+                except (WorktreeError, OSError) as error:
+                    return {'info': info, 'error': str(error)}
             return {'info': info}
 
         self.b._job('bus-worktree-create:'+identifier, create)
@@ -715,13 +736,31 @@ class GlobalAgents(QObject):
             row['status'] = row['worktreeState'] = 'merging'
             self.changed()
 
-            def merge(info=info, identifier=row['id']):
-                self.worktrees.save(info, identifier)
-                self.worktrees.merge(info)
+            def merge(info=info):
+                self.worktrees.save(info)
+                try:
+                    self.worktrees.merge(info)
+                except WorktreeConflict as error:
+                    return {'conflictFiles': error.files}
 
             self.b._job('bus-worktree-merge:'+row['id'], merge)
 
     def _worktree_finished(self, name, result):
+        if name.startswith('bus-worktree-inspect:'):
+            pending = self.worktree_inspections.pop(name, None)
+            if pending:
+                identifier, reply = pending
+                if not result['ok']:
+                    reply({'ok': False, 'error': str(result['value'])})
+                    return
+                try:
+                    row = self.worktree_request(identifier)
+                    details = self.worktree_details(row, result['value'])
+                except (ValueError, OSError) as error:
+                    reply({'ok': False, 'error': str(error)})
+                else:
+                    reply({'ok': True, 'result': details})
+            return
         if not name.startswith(('bus-worktree-create:', 'bus-worktree-merge:')):
             return
         operation, identifier = name.split(':', 1)
@@ -739,32 +778,53 @@ class GlobalAgents(QObject):
             self.save()
         else:
             self.merging.discard(row['worktree']['repository'])
-            row['worktreeState'] = 'merged' if result['ok'] else 'preserved'
+            conflict = result['ok'] and isinstance(result['value'], dict) and 'conflictFiles' in result['value']
+            merged = result['ok'] and not conflict
+            row['worktreeState'] = 'merged' if merged else 'preserved'
+            if conflict:
+                row['conflictFiles'] = result['value']['conflictFiles']
+            reason = WorktreeConflict(row['conflictFiles']) if conflict else result['value']
             reply = row['completion']['result']
-            self.finish(row, 'completed' if result['ok'] else 'failed',
-                        ('工作树改动已合并。\n' if result['ok'] else '工作树改动已保留。\n'+str(result['value'])+'\n') + reply)
+            self.finish(row, 'completed' if merged else 'failed',
+                        ('工作树改动已合并。\n' if merged else '工作树改动已保留。\n'+str(reason)+'\n') + reply)
             self.save()
 
-    def manage_worktree(self, method, args):
-        row = self.requests.get(self.text(args, 'id', 40))
+    def worktree_request(self, identifier):
+        row = self.requests.get(identifier)
         if not row or not row.get('worktree') or row.get('worktreeState') == 'removed':
             raise ValueError('此任务没有可用的工作树。')
+        return row
+
+    def worktree_details(self, row, files):
+        info = row['worktree']
+        linked = {r.id or r.key: r.title for r in self.b._pool.records.values()
+                  if r.workspace and Path(r.workspace).resolve().is_relative_to(Path(info['path']))}
+        if row.get('taskSessionId'):
+            linked.setdefault(row['taskSessionId'], '')
+        running = [row['text'].split('\n', 1)[0][:60]] if row['status'] not in TERMINAL else []
+        sessions = [f'{title} ({identifier[:8]})' if title else identifier[:8]
+                    for identifier, title in linked.items()]
+        return {'id': row['id'], **worktree_display(info), 'files': files,
+                'sessions': sessions, 'running': running}
+
+    def inspect_worktree(self, args, reply):
+        row = self.worktree_request(self.text(args, 'id', 40))
+        if reply is None:
+            raise ValueError('工作树检查需要一个活动的 Widget 请求。')
+        info = row['worktree']
+        name = 'bus-worktree-inspect:' + uuid.uuid4().hex
+        self.worktree_inspections[name] = (row['id'], reply)
+        self.b._job(name, lambda: self.worktrees.files(info))
+
+    def manage_worktree(self, method, args):
+        row = self.worktree_request(self.text(args, 'id', 40))
         info = row['worktree']
         if method == 'openWorktree':
             self.worktrees.check_checkout(info)
             self.b.setWorkspace(QUrl.fromLocalFile(info['cwd']).toString())
             self.m.closePage()
             return {'path':info['cwd']}
-        files = self.worktrees.files(info)
-        linked = list(dict.fromkeys(
-            [r.id or r.key for r in self.b._pool.records.values()
-             if r.workspace and Path(r.workspace).resolve().is_relative_to(Path(info['path']))]
-            + ([row['taskSessionId']] if row.get('taskSessionId') else [])))
-        running = [row['id']] if row['status'] not in TERMINAL else []
-        if method == 'inspectWorktree':
-            return {'id':row['id'], 'path':info['path'], 'branch':info['branch'], 'files':files,
-                    'sessions':linked, 'running':running}
-        if args.get('confirmed') is not True or running or files:
+        if args.get('confirmed') is not True or row['status'] not in TERMINAL:
             raise ValueError('请确认清理，且先结束任务并保存工作树中的文件。')
         if any(r.workspace and Path(r.workspace).resolve().is_relative_to(Path(info['path']))
                and (r.busy or r.process or r is self.b._view)

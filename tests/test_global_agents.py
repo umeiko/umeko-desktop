@@ -26,6 +26,30 @@ class GlobalAgentTests(unittest.TestCase):
     def tearDown(self):self.g.close();self.temp.cleanup()
     def dispatch(self):return self.g.execute('agent_bus.dispatch',{'targetId':self.g.identifier(self.b._view),'text':'检查测试'},self.source)
     def enable(self):self.g.handle('setBridge',{'id':self.g.identifier(self.b._view),'agentId':self.id,'enabled':True})
+    def test_worktree_inspection_defers_git_and_returns_only_short_display_names(self):
+        identifier = uuid.uuid4().hex
+        session_id = uuid.uuid4().hex
+        info = {'path': str(self.g.worktrees.directory / identifier), 'branch': 'umeko/task-' + identifier}
+        row = {'id': identifier, 'status': 'running', 'text': 'Update parser',
+               'worktree': info, 'taskSessionId': session_id}
+        self.g.requests[identifier] = row
+        self.b._job = Mock()
+        reply = Mock()
+        with patch.object(self.g.worktrees, 'files', return_value=['draft.txt']) as files:
+            self.g.handle('inspectWorktree', {'id': identifier}, reply=reply)
+            files.assert_not_called()
+            reply.assert_not_called()
+            name, inspect = self.b._job.call_args.args
+            row['status'] = 'failed'
+            self.g._worktree_finished(name, {'ok': True, 'value': inspect()})
+        details = reply.call_args.args[0]['result']
+        self.assertEqual(details['sessions'], [session_id[:8]])
+        self.assertEqual(details['files'], ['draft.txt'])
+        self.assertEqual(details['running'], [])
+        self.assertNotIn(identifier, details['branch'])
+        self.assertNotIn(identifier, details['path'])
+        self.assertEqual(row['worktree'], info)
+
     def test_first_pi_prompt_keeps_the_draft_bridge_at_native_identity(self):
         self.enable()
         caller = self.b._view
