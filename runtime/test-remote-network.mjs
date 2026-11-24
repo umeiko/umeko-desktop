@@ -10,6 +10,22 @@ test("configured HTTP proxy uses the selected endpoint without starting a direct
   await assert.rejects(() => remoteOutbound({ proxy: "file:///tmp/proxy" }, {}), /代理地址或协议无效/);
 });
 
+test("Windows PowerShell can redirect its built-in curl alias to curl.exe", { skip: process.platform !== "win32" }, () => {
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    "$ProgressPreference = 'SilentlyContinue'",
+    "Set-Alias -Name curl -Value Invoke-WebRequest -Option AllScope -Force",
+    commandProxySetup(true, "powershell.exe"),
+    "(Get-Alias curl).Definition",
+  ].join("\n");
+  const encoded = Buffer.from(script, "utf16le").toString("base64");
+  const stdout = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], {
+    env: { ...process.env, UMEKO_REMOTE_HTTP_PROXY: "http://127.0.0.1:46327" },
+    encoding: "utf8", windowsHide: true,
+  });
+  assert.equal(stdout.trim(), "curl.exe");
+});
+
 test("OpenSSH allocated port belongs to the requested listener", () => {
   const route = { host: "127.0.0.1", port: 12345 };
   assert.equal(remoteForwardStatus("debug1: SSH\nAllocated port 46327 for remote forward to 127.0.0.1:12345\r\n", route), 46327);

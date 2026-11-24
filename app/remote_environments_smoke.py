@@ -466,11 +466,19 @@ class Acceptance:
         if self.spec['platform'] == 'windows':
             # Remove only this invocation's generated remote download subtree.
             # Linux has root-owned apt archives on a disposable runner instead.
-            source = ('import pathlib,shutil\np=pathlib.Path(' + repr(self.spec['remoteDirectory']) + ')\n'
-                      'assert p.is_absolute() and p.name == ' + repr(self.directory.name) + '\n'
-                      'shutil.rmtree(p)\nprint("NETWORK_TEMP_CLEANED")')
-            cleaned, output = self.read_until_complete(self.command(self.python(source)))
-            assert cleaned.get('exitCode') == 0 and 'NETWORK_TEMP_CLEANED' in output, cleaned
+            source = ('import pathlib,shutil,stat\n'
+                      'target=pathlib.Path(' + repr(self.spec['remoteDirectory']) + ')\n'
+                      'root=target.resolve(strict=True)\n'
+                      'assert target.is_absolute() and root.parent == target.parent.resolve(strict=True)\n'
+                      'assert root.name == ' + repr(self.directory.name) + '\n'
+                      'def retry_readonly(remove,item,error):\n'
+                      ' path=pathlib.Path(item)\n'
+                      ' if not isinstance(error,PermissionError) or root not in path.resolve().parents: raise error\n'
+                      ' path.chmod(path.stat().st_mode | stat.S_IWRITE)\n'
+                      ' remove(item)\n'
+                      'shutil.rmtree(root,onexc=retry_readonly)\nprint("NETWORK_TEMP_CLEANED")')
+            cleaned, output = self.read_until_complete(self.command(self.python(source) + '; exit $LASTEXITCODE'))
+            assert cleaned.get('exitCode') == 0 and 'NETWORK_TEMP_CLEANED' in output, (cleaned, output)
         (self.directory / 'chat-tool-rows.json').write_text(json.dumps(self.tool_rows, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
         result = {'ok': True, 'scenario': 'remote-network', 'probes': outcomes,
                   'defaultStatus': status, 'disabled': disabled, 'enabled': enabled,

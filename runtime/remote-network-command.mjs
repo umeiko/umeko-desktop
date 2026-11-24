@@ -24,7 +24,7 @@ export function commandProxySetup(windows, shell) {
   if (windows) return `if ($env:UMEKO_REMOTE_HTTP_PROXY) {
   foreach ($program in @('curl', 'wget')) {
     if (Get-Command "$program.exe" -CommandType Application -ErrorAction SilentlyContinue) {
-      Set-Alias -Name $program -Value "$program.exe"
+      Set-Alias -Name $program -Value "$program.exe" -Option AllScope -Force
     }
   }
   $umekoGitCount = 0
