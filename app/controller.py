@@ -34,6 +34,7 @@ from .chat_model import ChatModel
 from .transcript_index import TranscriptRepository
 from .model_context import context_suggestion
 from .model_groups import GROUP_MODEL, GROUP_PROVIDER, GROUP_SELECTION, MAX_MEMBERS, configured_members, member_key, settings as group_settings
+from .model_roles import SESSION_ROLES, select_route, session_model_roles
 from .model_reasoning import reasoning_levels, reconcile_effort
 from .controller_reasoning import ReasoningDiscovery
 from .thinking_formats import FORMAT_OPTIONS
@@ -1978,6 +1979,44 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if not group:
             self.store.data.update(selectedProvider=provider, selectedModel=model)
 
+    def model_roles_for(self, record):
+        return session_model_roles(record, self.store.data)
+
+    def set_model_role(self, record, role, alias):
+        if record.global_agent or is_dsh(record) or self.store.data["sessionMeta"].get(record.id, {}).get("pluginSession"):
+            raise ValueError("模型分工适用于普通 Pi 会话")
+        if role not in SESSION_ROLES:
+            raise ValueError("未知模型角色")
+        if alias:
+            select_route(self.gateway, alias)
+        if alias == GROUP_MODEL and record.process:
+            record.stale = True
+        roles = self.model_roles_for(record)
+        if alias:
+            roles[role] = alias
+        else:
+            roles.pop(role, None)
+        if record.id:
+            self.store.data["sessionMeta"].setdefault(record.id, {})["modelRoles"] = roles
+            self.store.save()
+        else:
+            record.draft_model_roles = roles
+        self.changed.emit()
+        return roles
+
+    @Property('QVariantMap', notify=changed)
+    def sessionModelRoles(self):
+        return self.model_roles_for(self._view)
+
+    @Slot(str, str, result=bool)
+    def selectRoleModel(self, role, model):
+        try:
+            self.set_model_role(self._view, role, model)
+        except ValueError as error:
+            self.toast.emit(str(error))
+            return False
+        return True
+
     def _repair_model_group_selection(self, record):
         if record.provider != GROUP_PROVIDER or record.busy or (not is_dsh(record) and self.modelGroupReady):
             return False
@@ -1998,7 +2037,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Slot(bool, str, result=bool)
     def saveModelGroup(self, enabled, raw):
-        if any(record.provider == GROUP_PROVIDER and (record.busy or record.subagents_active)
+        if any((record.provider == GROUP_PROVIDER or GROUP_MODEL in self.model_roles_for(record).values())
+               and (record.busy or record.subagents_active)
                for record in self._pool.records.values()):
             self.toast.emit("请等待模型组任务结束后再修改")
             return False
@@ -2035,7 +2075,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self.gateway.reset_model_group()
         if descriptor != self.gateway.model_group_descriptor():
             for record in self._pool.records.values():
-                if record.provider == GROUP_PROVIDER:
+                if record.provider == GROUP_PROVIDER or record.global_agent or GROUP_MODEL in self.model_roles_for(record).values():
                     if record.process:
                         record.stale = True
                     record.context_usage = {}

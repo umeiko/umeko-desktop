@@ -10,7 +10,8 @@ import uuid
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, QUrl
-from .model_groups import GROUP_PROVIDER
+from .model_groups import GROUP_MODEL, GROUP_PROVIDER
+from .model_roles import model_choices
 from .themes import BASES
 
 
@@ -296,8 +297,15 @@ class UmekoControl(QObject):
                     'loginStartup': redacted(getattr(getattr(b, 'loginStartup', None), 'state', {}))}
         if operation == 'providers.list': return {'providers': redacted(b.config['providers']), 'presets': b.commonProviders}
         if operation == 'models.list':
-            return {'models': [dict(model='umeko/'+row['id'], id=row['id'], provider='umeko', displayProvider=row.get('owned_by', 'Umeko'), contextWindow=row['contextWindow'], vision='image' in row['input'])
-                               for row in b.gateway.models()]}
+            return {'models': [dict(model='umeko/'+row['id'], id=row['id'], provider='umeko', displayProvider=row.get('owned_by', 'Umeko'), contextWindow=row['contextWindow'], vision='image' in row['input'],
+                                    label=row['label'], group=row['id'] == GROUP_MODEL)
+                               for row in model_choices(b.gateway)]}
+        if operation in ('models.roles.get', 'models.roles.set'):
+            if operation == 'models.roles.get' and not args:
+                return {'roles': b.model_roles_for(caller or b._view)}
+            if operation == 'models.roles.set' and set(args) == {'role', 'model'} and all(isinstance(value, str) for value in args.values()):
+                return {'status': 'applied', 'roles': b.set_model_role(caller or b._view, args['role'], args['model'])}
+            raise ValueError('请提供 role 和 model，清除设置时使用空模型名')
         if operation == 'characters.list': return {'selected': b.characterStyle['id'], 'characters': b.characterPacks}
         if operation == 'characters.get': return {'character': b.characterStyle}
         if operation == 'characters.config': return {'path':str(b.store.directory/'character-config.json'), 'config':copy.deepcopy(b._character_config), 'overrides':copy.deepcopy(b._character_options)}

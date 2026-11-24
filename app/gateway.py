@@ -54,6 +54,16 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError("供应商返回重定向；请直接填写最终 API 地址")
 
 
+def _quota_exhausted(error, response):
+    status = str(response.get("status", ""))
+    if status == "402":
+        return True
+    return bool(re.search(
+        r"insufficient[ _-]?(?:quota|balance)|quota.{0,20}(?:exceed|exhaust)|out of budget|"
+        r"billing.hard.limit|usage limit reached|额度不足|余额不足|配额.{0,8}(?:不足|用尽)",
+        str(error) + " " + str(response.get("body", "")), re.I))
+
+
 def _member_unavailable(error, records):
     response = next((row.get("response", {}) for row in reversed(records) if row.get("response")), {})
     raw_status = response.get("status")
@@ -261,6 +271,9 @@ class Gateway:
             failure = self.diagnostics.failure(p, request, records[-1]['response'] if records else {}, error, records)
             if group:
                 failure.failover_eligible = bool(failure.tls_code) or _member_unavailable(error, records)
+            elif _quota_exhausted(error, records[-1].get('response', {}) if records else {}):
+                failure.quota_exhausted = True
+                failure.retryable = False
             raise failure from None
 
     def _reasoning_rejection(self, provider, model, effort, error, records):
@@ -455,6 +468,11 @@ class LocalServer:
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
+            def upstream_error(self, error):
+                result = upstream_failure(error)
+                if owner.private and getattr(error, "quota_exhausted", False):
+                    result.update(code="umeko_model_quota", message="[Umeko:model_quota] " + result["message"])
+                return result
             protocol_version = "HTTP/1.1"
 
             def handle(self):
@@ -593,7 +611,7 @@ class LocalServer:
                 except PermissionError as exc:
                     self.respond(403, {"error": {"type": "permission_error", "message": str(exc)}})
                 except RequestFailure as exc:
-                    self.respond(503 if exc.retryable else 400, {"error": upstream_failure(exc)})
+                    self.respond(503 if exc.retryable else 400, {"error": self.upstream_error(exc)})
                 except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
                     self.respond(400, {"error": {"type": "invalid_request_error", "message": str(exc)[:300]}})
                 except ConnectionError:
@@ -705,7 +723,7 @@ class LocalServer:
                 except ConnectionError:
                     pass
                 except Exception as failure:
-                    event({"type": "error", "error": upstream_failure(failure)}, "error" if anth else None)
+                    event({"type": "error", "error": self.upstream_error(failure)}, "error" if anth else None)
                 finally:
                     iterator.close() if hasattr(iterator, "close") else None
                     self.close_connection = True

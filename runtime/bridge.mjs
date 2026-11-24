@@ -11,7 +11,7 @@ import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from ".
 import { UMEKO_TOOL, SEND_TO_USER, REMINDER, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension, coordinatorNativeTools } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
-import { createInputQueue } from "./input-queue.mjs";
+import { createInputQueue, createModelRoles } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
 import { blockedShellEnvKey, createShellSnapshots } from "./shell-snapshot.mjs";
@@ -70,6 +70,7 @@ const bashHost = process.env.UMEKO_BASH_JOB_HOST;
 const bashHostScript = process.env.UMEKO_BASH_JOB_SCRIPT;
 const blockedSessions = new WeakSet();
 let stopWork, currentRun;
+let pendingMemberModel;
 const stopDeadlineMs = 2_400;
 
 function runCommandSession(request) {
@@ -127,6 +128,8 @@ const compactionFailures = new WeakMap();
 const promptControllers = new WeakMap();
 const loopReview=createLoopReview({emit});
 const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit});
+const modelRoles = createModelRoles();
+const QUOTA_MARKER = "[Umeko:model_quota]";
 let checkpointLocked = false;
 const backgroundJobs = createBackgroundJobsExtension({ canStart: () => !checkpointLocked, host: bashHost, hostScript: bashHostScript,
   getShellPath: ctx => shellSnapshots.shellPath(ctx?.sessionManager?.getSessionId()),
@@ -218,6 +221,19 @@ async function bindSession(session) {
     const result = await originalBeforeToolCall?.apply(session.agent,args);
     return blockedSessions.has(session) ? {block:true,reason:"This run was stopped"} : result;
   };
+  const originalPrepareRequest = session.agent.prepareRequest;
+  if (config.globalCoordinator) {
+    session.agent.prepareRequest = async (request, signal) => {
+      const next = pendingMemberModel;
+      if (next && !signal?.aborted) {
+        pendingMemberModel = undefined;
+        await selectModel(next.model);
+        if (validEffort(next.reasoningEffort)) reasoningEffort = next.reasoningEffort;
+        emit({type:"member_model_applied", model:next.model, reasoningEffort:next.reasoningEffort});
+      }
+      return await originalPrepareRequest?.({...request,model:session.model}, signal);
+    };
+  }
   let activeCompaction;
   const publishCompaction = data => {
     const entryId = session.sessionManager.appendCustomEntry("umeko-compaction", data);
@@ -318,8 +334,13 @@ async function bindSession(session) {
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
     const willRetry = event.type === "message_end" && session.autoRetryEnabled && session.retryAttempt < NETWORK_RETRY.maxRetries &&
       isRetryableAssistantError(event.message) && !isContextOverflow(event.message, session.model?.contextWindow || 128000);
-    if (event.type === "message_end" && !willRetry) emit({ type: "message", role: event.message.role,
-      text: textOf(event.message.content), thinking: thinkingOf(event.message.content), stopReason: event.message.stopReason || "", error: event.message.stopReason === "aborted" ? "" : event.message.errorMessage || "", timestamp:event.message.timestamp });
+    if (event.type === "message_end" && !willRetry) {
+      const error = event.message.stopReason === "aborted" ? "" : event.message.errorMessage || "";
+      emit({type: "message", role: event.message.role, text: textOf(event.message.content),
+        thinking: thinkingOf(event.message.content), stopReason: event.message.stopReason || "",
+        quotaExhausted: error.includes(QUOTA_MARKER), error: error.replace(QUOTA_MARKER, "").trim(),
+        model: event.message.model, timestamp: event.message.timestamp});
+    }
     if (event.type === "compaction_start") startCompaction(event.reason);
     if (event.type === "compaction_end") finishCompaction(event);
     if (["auto_retry_start", "summarization_retry_scheduled"].includes(event.type)) {
@@ -337,6 +358,7 @@ async function bindSession(session) {
   unsubscribe = () => {
     session.sendCustomMessage = originalSendCustomMessage;
     session.agent.beforeToolCall = originalBeforeToolCall;
+    session.agent.prepareRequest = originalPrepareRequest;
     compactionFailures.delete(session);
     clearTimeout(retryTimer);
     httpRetryBoundary.close();
@@ -536,6 +558,7 @@ async function init(input) {
           } },
           { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
           { name: "shell-snapshot", hidden: true, replaceable: false, factory: shellSnapshotExtension(() => settings.getShellPath()) },
+          { name: "model-roles", hidden: true, replaceable: false, factory: modelRoles.extension },
           { name: "subagents", builtin: true, replaceable: true, factory: subagents.extension },
           { name: "output-continuation", hidden: true, replaceable: false, factory: outputContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
@@ -694,18 +717,28 @@ async function capabilities() {
   };
 }
 
+async function selectModel(alias) {
+  if (!alias || runtime.session.model?.id === alias) return;
+  const model = modelRuntime.getModel("umeko", alias);
+  if (!model) throw new Error("模型未配置");
+  await runtime.session.setModel(model);
+  selectedModel = model;
+  exposeNativeTools(runtime.session);
+}
+
 async function promptWithInterrupts(first) {
   await inputQueue.run(first,async next=>{
-    if (next.model && runtime.session.model?.id !== next.model) {
-      selectedModel = modelRuntime.getModel("umeko", next.model);
-      if (!selectedModel) throw new Error("模型未配置");
-      await runtime.session.setModel(selectedModel);
-      exposeNativeTools(runtime.session);
-    }
     if (validEffort(next.reasoningEffort)) reasoningEffort = next.reasoningEffort;
-    emit({type:"active_model",model:runtime.session.model.id});
     const generation = commandCancellation;
-    await runtime.session.prompt(next.text, { images: next.images || [] });
+    const modelOptions = next.modelRoles || first.modelRoles;
+    if (modelOptions?.planningModel || modelOptions?.executionModel || modelOptions?.coordinatorModel) {
+      await modelRoles.prompt(runtime.session, {...next, model: next.model || first.model, modelRoles: modelOptions}, selectModel,
+        () => !closing && generation === commandCancellation);
+    } else {
+      await selectModel(next.model || first.model);
+      emit({type:"active_model",model:runtime.session.model.id});
+      await runtime.session.prompt(next.text, { images: next.images || [] });
+    }
     for (let continuation = 0; continuation < 4 && !closing && generation === commandCancellation && !inputQueue.hasInterrupts; continuation++) {
       const reports = await piCommands.flush();
       if (!reports.length || closing || generation !== commandCancellation || inputQueue.hasInterrupts) break;
@@ -728,6 +761,7 @@ function stopRun() {
   const session = runtime?.session;
   if (session) blockedSessions.add(session);
   if (currentRun) currentRun.cancelled = true;
+  pendingMemberModel = undefined;
   commandCancellation++;
   piCommands.clear();
   clearDialogs();
@@ -761,6 +795,12 @@ function stopRun() {
 }
 
 async function execute(input) {
+  if (input.type === "member-model") {
+    if (config?.globalCoordinator && executing && modelRuntime?.getModel("umeko", input.model)) {
+      pendingMemberModel = input;
+    }
+    return;
+  }
   if (input.type === "widget-notify" && (stopWork || (runtime?.session && blockedSessions.has(runtime.session)))) {
     emit({type:"widget_delivery",id:input.notification?.id,status:"cancelled",error:"This run was stopped"});
     if (!executing && input.notification?.wake !== false) emit({type:"done",action:input.type});
@@ -880,11 +920,10 @@ async function execute(input) {
     const promptController = promptControllers.get(runtime.session);
     if (config.widgetPrompts) promptController?.setWidgetPrompts(config.widgetPrompts);
     promptController?.setEnabled(config.systemPromptEnabled === true);
-    if (input.model && runtime.session.model?.id !== input.model) {
-      selectedModel = modelRuntime.getModel("umeko", input.model);
-      if (!selectedModel) throw new Error("模型未配置");
-      await runtime.session.setModel(selectedModel);
-      exposeNativeTools(runtime.session);
+    if (input.type !== "prompt") {
+      const model = input.type === "widget-notify"
+        ? input.modelRoles?.executionModel || input.modelRoles?.coordinatorModel || input.model : input.model;
+      await selectModel(model);
     }
     if (input.type === "system-prompt") {
       const snapshot = input.promptOperation === "inspect" ? await promptController.refresh()
@@ -909,6 +948,12 @@ async function execute(input) {
       }
     }
     else if (input.type === "widget-notify") await widgetMessages.deliver(input.notification);
+    else if (input.type === "resume-model") {
+      blockedSessions.delete(runtime.session);
+      await runtime.session.sendCustomMessage({customType: "umeko-model-resume", display: false,
+        content: "Continue the same task after the model change. Use the conversation and existing tool results to pick up where the previous model stopped. Do not repeat completed actions.",
+      }, {triggerTurn: true});
+    }
     else if (input.type === "new") await runtime.newSession();
     else if (input.type === "open") await runtime.switchSession(input.path);
     else if (input.type === "subagent-open") {
@@ -943,6 +988,7 @@ async function execute(input) {
     if (!run.cancelled) await inputQueue.chain;
     if (stopWork) { await stopWork; stopWork = undefined; }
     if (runtime && (inputQueue.items.length || inputQueue.hasInterrupts)) inputQueue.returnQueue();
+    pendingMemberModel = undefined;
     piCommands.clear();
     trackingTask = false;
     executing = false; adoptedRun = false; emit({ type: "done", action: input.type });

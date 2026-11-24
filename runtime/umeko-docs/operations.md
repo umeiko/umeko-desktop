@@ -22,6 +22,8 @@
 | `models.applyPatch`（仅 python） | `provider: string`, `model: string`, `enabled: boolean` | 无 | 否 |
 | `pluginSessions.setModel`（仅 python） | `plugin: string`, `profile: string`, `model: string=""`, `provider: string=""`, `reasoningEffort: string=""` | 无 | 否 |
 | `models.select`（仅 python） | `provider: string`, `model: string`, `sessionId: string=""` | target | 否 |
+| `models.roles.get`（仅 python） | 无 | 无 | 否 |
+| `models.roles.set`（仅 python） | `role: string`, `model: string` | 无 | 否 |
 | `sessions.reasoning`（仅 python） | `value: string`, `sessionId: string=""` | target | 否 |
 | `agent.defaultReasoning`（仅 python） | `value: string` | 无 | 否 |
 | `themes.import` | `path: string` | 无 | 否 |
@@ -123,6 +125,7 @@
 | `agent_bus.creation_status` | `requestId: string` | 无 | 否 |
 | `agent_bus.connections` | 无 | 无 | 否 |
 | `agent_bus.set_connection` | `sessionId: string`, `enabled: boolean` | 无 | 否 |
+| `agent_bus.set_model`（仅 python） | `targetId: string`, `model: string`, `reasoningEffort: string=""` | 无 | 否 |
 | `agent_bus.overview` | 无 | 无 | 否 |
 | `agent_bus.requests` | 无 | 无 | 否 |
 | `agent_bus.dispatch` | `targetId: string`, `text: string` | 无 | 否 |
