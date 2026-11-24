@@ -28,6 +28,8 @@ from .storage import Store
 from .pi_sessions import PiSessionPool, SessionState, clean_extension_modes, clean_skill_modes, clean_blocked_tools
 from .controller_runtime import PiControllerMixin
 from .remote_environments import RemoteEnvironments
+from .remote_service import RemoteServiceClient
+from .workspace_executor import WorkspaceExecutor
 from .dsh_backend import DshControllerMixin, is_dsh
 from .transcripts import preview
 from .chat_model import ChatModel
@@ -80,6 +82,14 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     characterCatalogChanged = Signal()
     desktopSettingsChanged = Signal()
     remoteEnvironmentsChanged = Signal()
+    remoteHostsChanged = Signal()
+    remoteBrowseFinished = Signal(str, 'QVariantMap')
+    remoteMkdirFinished = Signal(str, 'QVariantMap')
+    remoteHomeFinished = Signal(str, 'QVariantMap')
+    remoteTestFinished = Signal(str, 'QVariantMap')
+    remoteAddHostFinished = Signal(str, 'QVariantMap')
+    _remoteStateArrived = Signal(object)
+    _remoteOpCompleted = Signal(str, str, object)
     auxiliaryVisionSettingsChanged = Signal()
 
     @Property('QVariantList', constant=True)
@@ -97,6 +107,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     @Property('QVariantList', notify=remoteEnvironmentsChanged)
     def remoteEnvironments(self):
         return self._remote_environments.rows()
+
+    @Property('QVariantList', notify=remoteHostsChanged)
+    def sshConfigHosts(self):
+        return list(self._ssh_config_hosts)
 
     @Property('QVariantMap', notify=auxiliaryVisionSettingsChanged)
     def auxiliaryVisionSettings(self):
@@ -240,6 +254,12 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self.store = Store()
         self.store.external_change = self._settings_changed_externally
         self._remote_environments = RemoteEnvironments(self.store, self.remoteEnvironmentsChanged.emit)
+        self._remote_service = RemoteServiceClient(self)
+        self._remote_service.set_state_handler(self._remoteStateArrived.emit)
+        self._remoteStateArrived.connect(lambda event: self._remote_environments.observe('desktop', event) if not self._closing else None)
+        self._remoteOpCompleted.connect(self._on_remote_op_completed)
+        self._workspace_executor = WorkspaceExecutor(self)
+        self._ssh_config_hosts = []
         # Provider changes and externally merged settings still refresh these
         # small views. A local switch only emits its own section's notification.
         self.changed.connect(self.desktopSettingsChanged)
@@ -834,7 +854,13 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Slot()
     def openChatDirectory(self):
-        path = Path(self._view.workspace or self.store.data["workspace"])
+        workspace = self._view.workspace or self.store.data["workspace"]
+        remote = self._remote_project_for_workspace(workspace)
+        if remote:
+            if not self._desktop_plugins.openPage('file-tree'):
+                self.toast.emit(f"远程目录：{remote['host']}:{remote['remotePath']}")
+            return
+        path = Path(workspace)
         if path.is_dir():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
         else:
@@ -1007,7 +1033,13 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             if self._show_archived and not children and not project.get('archived'):
                 continue
             collapsed = project["id"] in self._collapsed_projects
+            is_remote = bool(project.get("environment") and project.get("remotePath"))
             rows.append({**project, "kind": "project", "title": project["name"], "collapsed": collapsed, "pinned": bool(project.get("pinned")),
+                         "isRemote": is_remote,
+                         "remoteHost": project.get("remoteHost", ""),
+                         "remotePath": project.get("remotePath", ""),
+                         "remoteEnvironment": project.get("environment", ""),
+                         "remotePlatform": project.get("remotePlatform", ""),
                          "selected": project["id"] == self.store.data["activeProject"]})
             for session in children:
                 grouped.add(session["id"])
@@ -1094,8 +1126,13 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     @Slot(str)
     def revealProject(self, project_id):
         project = next((p for p in self.store.data["projects"] if p["id"] == project_id), None)
-        if project:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(project["path"]))
+        if not project:
+            return
+        if project.get("environment") and project.get("remotePath"):
+            host = project.get("remoteHost") or project["environment"]
+            self.copy(f"{host}:{project['remotePath']}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(project["path"]))
 
     @Slot(str, str)
     def renameProject(self, project_id, title):
@@ -1175,6 +1212,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def openProject(self, project_id):
         project = next((p for p in self.store.data["projects"] if p["id"] == project_id), None)
         if project:
+            if project.get("environment") and project.get("remotePath"):
+                Path(project["path"]).mkdir(parents=True, exist_ok=True)
             self.setWorkspace(QUrl.fromLocalFile(project["path"]).toString())
 
     @Slot(str)
@@ -1296,6 +1335,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     @Property(str, notify=chatChanged)
     def activeSession(self):
         return self._view.id
+
+    @Property('QVariantMap', notify=chatChanged)
+    def activeRemoteWorkspace(self):
+        return self._remote_project_for_workspace(self._view.workspace) or {}
 
     @Property(str, notify=viewChanged)
     def conversationToken(self):
@@ -1875,6 +1918,240 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
                 record = self._new_view(project["path"])
                 self._project_drafts[project["path"]] = record
             self._activate(record)
+
+    @staticmethod
+    def _normalize_remote_workspace_path(remote_path: str, platform: str) -> str:
+        raw = str(remote_path or '').strip()
+        if not raw:
+            raise ValueError('请输入远程工作目录路径')
+        if platform == 'windows':
+            if re.match(r'^/[A-Za-z]:(?:[\\/]|$)', raw):
+                raw = raw[1:]
+            raw = raw.replace('/', '\\')
+            if re.fullmatch(r'[A-Za-z]:', raw):
+                raw = raw.upper() + '\\'
+            elif re.match(r'^[A-Za-z]:\\', raw):
+                raw = raw[0].upper() + raw[1:]
+                while len(raw) > 3 and raw.endswith('\\'):
+                    raw = raw[:-1]
+            return raw
+        raw = raw.replace('\\', '/')
+        if not raw.startswith('/') and not raw.startswith('~'):
+            raw = '/' + raw
+        while len(raw) > 1 and raw.endswith('/'):
+            raw = raw[:-1]
+        return raw
+
+    def _remote_mirror_dir(self, environment: str, remote_path: str) -> Path:
+        safe_env = re.sub(r'[^A-Za-z0-9._-]+', '_', environment).strip('._-') or 'remote'
+        trimmed = remote_path.rstrip('/\\')
+        base = re.split(r'[/\\]', trimmed)[-1] if trimmed else 'workspace'
+        if not base or re.fullmatch(r'[A-Za-z]:', base):
+            base = 'workspace'
+        safe_base = re.sub(r'[^A-Za-z0-9._-]+', '_', base).strip('._-')[:40] or 'workspace'
+        digest = hashlib.sha256(f"{environment}:{remote_path}".encode('utf-8')).hexdigest()[:8]
+        return (self.store.directory / 'remote-workspaces' / safe_env / f"{safe_base}-{digest}").resolve()
+
+    def _remote_project_for_workspace(self, workspace_path: str) -> dict | None:
+        if not workspace_path:
+            return None
+        try:
+            key = self._project_workspace_key(workspace_path)
+        except OSError:
+            return None
+        project = next((p for p in self.store.data['projects'] if os.path.normcase(p['path']) == key), None)
+        if not project or not project.get('environment') or not project.get('remotePath'):
+            return None
+        env = next((row for row in self._remote_environments.configured() if row['name'] == project['environment']), None)
+        return {
+            'environment': project['environment'],
+            'host': (env or {}).get('host') or project.get('remoteHost') or project['environment'],
+            'platform': (env or {}).get('platform') or project.get('remotePlatform') or 'linux',
+            'remotePath': project['remotePath'],
+        }
+
+    def _unique_remote_env_name(self, host: str) -> str:
+        base = re.sub(r'[^A-Za-z0-9._-]+', '-', str(host or '').strip()).strip('._-')[:56] or 'remote'
+        existing = {row['name'] for row in self._remote_environments.configured()}
+        if base not in existing:
+            return base
+        for index in range(2, 1000):
+            candidate = f"{base}-{index}"
+            if candidate not in existing:
+                return candidate
+        return f"{base}-{uuid.uuid4().hex[:6]}"
+
+    @Slot(str, str, result=bool)
+    def setRemoteWorkspace(self, environment, remote_path):
+        env = next((row for row in self._remote_environments.configured() if row['name'] == environment), None)
+        if not env:
+            self.toast.emit('远程环境不存在，请先添加')
+            return False
+        try:
+            normalized = self._normalize_remote_workspace_path(remote_path, env['platform'])
+            mirror = self._remote_mirror_dir(env['name'], normalized)
+            mirror.mkdir(parents=True, exist_ok=True)
+        except (ValueError, OSError) as error:
+            self.toast.emit(str(error))
+            return False
+        resolved = str(mirror)
+        project = self._ensure_project(resolved, reopen=True)
+        default_title = f"{env['host']}:{normalized}"
+        if not project.get('remotePath') or project.get('name') == Path(resolved).name:
+            project['name'] = default_title
+        project.update(
+            environment=env['name'],
+            remotePath=normalized,
+            remoteHost=env['host'],
+            remotePlatform=env['platform'],
+        )
+        self.store.data['workspace'] = resolved
+        self.store.data['activeProject'] = project['id']
+        self._collapsed_projects.discard(project['id'])
+        self.store.save()
+        record = self._project_drafts.get(project['path'])
+        if record is None or record.messages or record.busy:
+            record = self._new_view(project['path'])
+            self._project_drafts[project['path']] = record
+        self._activate(record)
+        self.changed.emit()
+        self._refresh_sidebar()
+        return True
+
+    def _start_remote_op(self, kind: str, fn) -> str:
+        req_id = uuid.uuid4().hex
+        def run():
+            try:
+                result = fn()
+            except Exception as error:
+                result = {'ok': False, 'error': str(error)}
+            if not self._closing:
+                self._remoteOpCompleted.emit(kind, req_id, result)
+        threading.Thread(target=run, daemon=True, name=f'umeko-remote-{kind}').start()
+        return req_id
+
+    def _on_remote_op_completed(self, kind: str, req_id: str, result):
+        if self._closing:
+            return
+        payload = dict(result) if isinstance(result, dict) else {'ok': False, 'error': str(result)}
+        if kind == 'sshHosts':
+            if payload.get('ok') and isinstance(payload.get('hosts'), list):
+                self._ssh_config_hosts = payload['hosts']
+                self.remoteHostsChanged.emit()
+            return
+        if kind == 'ensureHost':
+            if payload.get('ok') and payload.get('_pendingAdd'):
+                host = payload['host']
+                platform = payload['platform']
+                requested_name = payload.get('requestedName') or ''
+                existing = next((row for row in self._remote_environments.configured() if row['host'] == host), None)
+                if existing:
+                    payload = {'ok': True, 'environment': existing}
+                else:
+                    try:
+                        env_name = requested_name or self._unique_remote_env_name(host)
+                        added = self._remote_environments.add(env_name, host, platform)
+                        payload = {'ok': True, 'environment': added}
+                    except ValueError as error:
+                        payload = {'ok': False, 'error': str(error)}
+            self.remoteAddHostFinished.emit(req_id, payload)
+            return
+        if kind == 'browse':
+            self.remoteBrowseFinished.emit(req_id, payload)
+        elif kind == 'mkdir':
+            self.remoteMkdirFinished.emit(req_id, payload)
+        elif kind == 'home':
+            self.remoteHomeFinished.emit(req_id, payload)
+        elif kind == 'test':
+            self.remoteTestFinished.emit(req_id, payload)
+
+    @Slot()
+    def refreshSshConfigHosts(self):
+        self._start_remote_op('sshHosts', lambda: self._remote_service.call('sshHosts', {}, timeout=15.0))
+
+    @Slot(str, result=str)
+    @Slot(str, str, result=str)
+    def ensureRemoteHost(self, host, platform=''):
+        host = str(host or '').strip()
+        platform = str(platform or '').strip().lower()
+        existing = next((row for row in self._remote_environments.configured()
+                         if row['name'] == host or row['host'] == host), None)
+        if existing:
+            req_id = uuid.uuid4().hex
+            QTimer.singleShot(0, self, lambda: self.remoteAddHostFinished.emit(req_id, {'ok': True, 'environment': existing}))
+            return req_id
+        if platform in ('linux', 'windows'):
+            req_id = uuid.uuid4().hex
+            try:
+                added = self._remote_environments.add(self._unique_remote_env_name(host), host, platform)
+                result = {'ok': True, 'environment': added}
+            except ValueError as error:
+                result = {'ok': False, 'error': str(error)}
+            QTimer.singleShot(0, self, lambda r=result: self.remoteAddHostFinished.emit(req_id, r))
+            return req_id
+        def probe():
+            res = self._remote_service.call('detectPlatform', {'host': host}, timeout=30.0)
+            if not res.get('ok'):
+                return res
+            return {'ok': True, '_pendingAdd': True, 'host': host, 'platform': res['platform']}
+        return self._start_remote_op('ensureHost', probe)
+
+    @Slot(str, str, str, result=str)
+    def addRemoteEnvironment(self, name, host, platform=''):
+        name = str(name or '').strip()
+        host = str(host or '').strip()
+        platform = str(platform or '').strip().lower()
+        if not host:
+            req_id = uuid.uuid4().hex
+            QTimer.singleShot(0, self, lambda: self.remoteAddHostFinished.emit(req_id, {'ok': False, 'error': '请输入 OpenSSH 主机别名'}))
+            return req_id
+        if platform in ('linux', 'windows'):
+            req_id = uuid.uuid4().hex
+            try:
+                added = self._remote_environments.add(name or self._unique_remote_env_name(host), host, platform)
+                result = {'ok': True, 'environment': added}
+            except ValueError as error:
+                result = {'ok': False, 'error': str(error)}
+            QTimer.singleShot(0, self, lambda r=result: self.remoteAddHostFinished.emit(req_id, r))
+            return req_id
+        def probe():
+            res = self._remote_service.call('detectPlatform', {'host': host}, timeout=30.0)
+            if not res.get('ok'):
+                return res
+            return {'ok': True, '_pendingAdd': True, 'host': host, 'requestedName': name, 'platform': res['platform']}
+        return self._start_remote_op('ensureHost', probe)
+
+    @Slot(str, result=str)
+    def testRemoteEnvironment(self, name):
+        env_name = str(name or '').strip()
+        return self._start_remote_op('test', lambda: self._remote_service.call('test', {'name': env_name}, timeout=240.0))
+
+    @Slot(str, result=bool)
+    def removeRemoteEnvironment(self, name):
+        try:
+            self._remote_service.close_environment(name)
+            self._remote_environments.remove(name)
+            return True
+        except ValueError as error:
+            self.toast.emit(str(error))
+            return False
+
+    @Slot(str, str, result=str)
+    def browseRemoteDirectory(self, environment, remote_path=''):
+        env_name = str(environment or '').strip()
+        target = str(remote_path or '')
+        return self._start_remote_op('browse', lambda: self._remote_service.call('browse', {'name': env_name, 'path': target}, timeout=120.0))
+
+    @Slot(str, str, result=str)
+    def createRemoteDirectory(self, environment, remote_path):
+        env_name = str(environment or '').strip()
+        target = str(remote_path or '')
+        return self._start_remote_op('mkdir', lambda: self._remote_service.call('mkdir', {'name': env_name, 'path': target}, timeout=60.0))
+
+    @Slot(str, result=str)
+    def fetchRemoteHome(self, environment):
+        env_name = str(environment or '').strip()
+        return self._start_remote_op('home', lambda: self._remote_service.call('home', {'name': env_name}, timeout=120.0))
 
     @Slot(bool)
     def setDark(self, value):
@@ -2684,6 +2961,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._subagents.close()
         self._proxy_usage_timer.stop()
         self._pool.close()
+        self._remote_service.close()
         self._dsh_history.close()
         self._task_records.close()
         if self.public_server:

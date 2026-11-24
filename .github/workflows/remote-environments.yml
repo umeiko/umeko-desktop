@@ -4,12 +4,21 @@ on:
   pull_request:
     paths:
       - 'app/remote*.py'
+      - 'app/workspace_executor.py'
+      - 'app/widget_host.py'
+      - 'app/desktop_plugins.py'
+      - 'app/widget_channel.py'
       - 'app/controller*.py'
       - 'app/umeko_control.py'
+      - 'app/qml/WorkspacePicker.qml'
+      - 'app/qml/DesktopSettings.qml'
       - 'runtime/remote*.mjs'
       - 'runtime/bridge.mjs'
       - 'runtime/umeko-operations.json'
+      - 'plugin-runtime/**'
+      - 'umeko-plugins/**'
       - 'tests/remote_environments_real.py'
+      - 'tests/remote_workdir_real.py'
       - 'tests/fixtures/remote_ssh_shim.py'
       - 'main.py'
       - '.github/workflows/remote-environments.yml'
@@ -98,9 +107,11 @@ jobs:
             UserKnownHostsFile $fixture/known_hosts
           EOF
           printf '[127.0.0.1]:22222 %s\n' "$(cut -d ' ' -f 1,2 "$fixture/host_key.pub")" > "$fixture/known_hosts"
+          mkdir -p "$RUNNER_TEMP/remote-workdir-parent/sample-sub"
           dbus-run-session -- bash -ec '
             printf "ci-ephemeral-password" | gnome-keyring-daemon --unlock --components=secrets
             .venv/bin/python tests/remote_environments_real.py --source --host umeko-ci --platform linux --run-dir "$RUNNER_TEMP/remote-real"
+            .venv/bin/python tests/remote_workdir_real.py --source --host umeko-ci --platform linux --remote-parent "$RUNNER_TEMP/remote-workdir-parent" --run-dir "$RUNNER_TEMP/remote-workdir-real" --outage-seconds 12
           '
       - name: Upload bounded real-test evidence
         if: always()
@@ -115,6 +126,12 @@ jobs:
             ${{ runner.temp }}/remote-real/chat-tool-rows.json
             ${{ runner.temp }}/remote-real/application*.log
             ${{ runner.temp }}/remote-real/ssh-control/clients.jsonl
+            ${{ runner.temp }}/remote-workdir-real/summary.json
+            ${{ runner.temp }}/remote-workdir-real/result.json
+            ${{ runner.temp }}/remote-workdir-real/reopen-result.json
+            ${{ runner.temp }}/remote-workdir-real/workdir-events.jsonl
+            ${{ runner.temp }}/remote-workdir-real/output-*.log
+            ${{ runner.temp }}/remote-workdir-real/application-*.log
             ${{ runner.temp }}/remote-sshd/sshd.log
           if-no-files-found: warn
           retention-days: 7

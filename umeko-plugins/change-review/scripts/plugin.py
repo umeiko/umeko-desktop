@@ -6,6 +6,7 @@ import uuid
 from umeko_plugin_sdk import Plugin, PluginError
 from .restoration import execute_restore, public_plan, restore_diff, restore_plan, same
 from .snapshots import Snapshot, SnapshotError, remove_snapshot
+from .remote_snapshots import RemoteSnapshot
 
 
 class ChangeReview(Plugin):
@@ -253,6 +254,12 @@ class ChangeReview(Plugin):
             return item
         return self.item(key)
 
+    def _make_snapshot(self, key, prefix):
+        source = self.context.request_session or self.context.session
+        if isinstance(source.get('remoteWorkspace'), dict) and source['remoteWorkspace'].get('environment'):
+            return RemoteSnapshot(self.context, source, self.context.state_dir, self.context.cancelled, prefix=prefix)
+        return Snapshot(key[1], self.context.state_dir, self.context.cancelled, prefix=prefix)
+
     def handle(self, method, arguments):
         key = self.key()
         if method == 'begin':
@@ -267,13 +274,12 @@ class ChangeReview(Plugin):
             item['loopId'] = arguments.get('loopId', '')
             self.active[key] = item
             try:
-                item['snapshot'] = Snapshot(key[1], self.context.state_dir, self.context.cancelled,
-                                            prefix='checkpoint-' if item['checkpointId'] else 'review-')
+                item['snapshot'] = self._make_snapshot(key, prefix='checkpoint-' if item['checkpointId'] else 'review-')
                 item['snapshot'].begin()
-                if item['checkpointId']:
+                if item['checkpointId'] and not isinstance(item['snapshot'], RemoteSnapshot):
                     self.ensure_origin(key, item)
                     self.save_item(item, 'active')
-            except (SnapshotError, OSError, ValueError, TimeoutError) as error:
+            except (SnapshotError, OSError, ValueError, TimeoutError, PluginError) as error:
                 self.capture_error(item, error)
             self.changed()
             return {'captured': not bool(item['error']), 'error': item['error'], 'checkpointId': item['checkpointId']}
@@ -297,11 +303,12 @@ class ChangeReview(Plugin):
                         item['checkpointId'] = ''
                         item['snapshot'] = None
                     elif item['checkpointId']:
-                        self.truncate_future(key, item['snapshot'].end['files'])
+                        if not isinstance(item['snapshot'], RemoteSnapshot):
+                            self.truncate_future(key, item['snapshot'].end['files'])
                         self.save_item(item, 'complete')
                         self.set_current(key, item['checkpointId'])
                         self.retention()
-                except (SnapshotError, OSError, ValueError, TimeoutError) as error:
+                except (SnapshotError, OSError, ValueError, TimeoutError, PluginError) as error:
                     self.capture_error(item, error)
             self.latest = (key, item)
             self.changed()

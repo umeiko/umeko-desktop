@@ -4,7 +4,9 @@
 
 Umeko 按会话保存的终端 PATH 查找 OpenSSH，取不到终端环境时使用应用继承的 PATH。Windows 上的代理命令或密钥路径采用 POSIX 写法时，Umeko 会使用已安装的 Git for Windows OpenSSH。桌面设置显示实际使用的客户端路径和连接失败时的 OpenSSH 错误。
 
-用 `umeko_desktop` 调用 `remote-environments.add`，传入 `name`、`host` 和 `platform`。`platform` 取 `linux` 或 `windows`。用 `remote-environments.list` 查看环境和连接状态，用 `remote-environments.test` 加 `name` 连接测试，用 `remote-environments.remove` 加 `name` 移除配置。桌面设置里的「远程环境」同步显示连接状态。
+用 `umeko_desktop` 调用 `remote-environments.add`，传入 `name`、`host` 和 `platform`。`platform` 取 `linux` 或 `windows`。用 `remote-environments.list` 查看环境和连接状态，用 `remote-environments.test` 加 `name` 连接测试，用 `remote-environments.home` / `remote-environments.browse` / `remote-environments.mkdir` 查询或浏览远端目录并新建目录，用 `remote-environments.remove` 加 `name` 移除配置。桌面设置里的「远程环境」同步显示连接状态并支持添加与测试。
+
+也可以直接通过 `workspace.setRemote`（或界面「选择工作目录 → 远程」）把会话工作目录设到远端机器的目录。绑定远端工作目录后，内置工具（`read`、`write`、`edit`、`bash`、`ls`、`find`、`grep`）、终端、Git、变更审阅与文件管理都在远端执行，本机仅保存模型凭据、会话记录和元数据。
 
 `remote_command` 的 `run` 操作接受环境名 `environment`、命令 `command`，以及可选的远程工作目录 `cwd` 和等待时间 `yieldMs`（毫秒）。Linux 使用远端 shell，Windows 使用 PowerShell。若返回 `running`，用同一个环境名和 `sessionId` 调用 `read` 读取新增输出。用 `write` 的 `input` 字段传入标准输入，命令按行读取时在结尾加换行。用 `kill` 停止该会话。
 
