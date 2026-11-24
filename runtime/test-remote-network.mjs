@@ -17,12 +17,13 @@ test("OpenSSH allocated port belongs to the requested listener", () => {
   assert.equal(remoteForwardStatus("Error: remote port forwarding failed for listen port 0\n", route), false);
 });
 
-test("probe ignores stale proxies and URL tests keep shell metacharacters as data", () => {
+test("probe uses the command environment and URL tests keep shell metacharacters as data", () => {
   const script = networkTestScript("linux", "https://example.com/?name=';false", 46327);
   assert.match(script, /--proxy' 'http:\/\/127\.0\.0\.1:46327'/);
   assert.match(script, /localhost,127\.0\.0\.1,::1/);
   const probe = networkTestScript("windows", "https://example.com", null, true);
-  assert.match(probe, /'--noproxy' '\*'/);
+  assert.doesNotMatch(probe, /'--(?:proxy|noproxy)'/);
+  assert.match(probe, /\$env:HTTPS_PROXY/);
   assert.match(probe, /'--output' 'NUL'.*'--fail'/);
   assert.doesNotMatch(probe, /'--head'/);
   assert.throws(() => networkTestScript("linux", "file:///etc/hosts"), /HTTP/);
