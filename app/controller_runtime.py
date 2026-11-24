@@ -244,7 +244,10 @@ class PiControllerMixin:
                 models=[model for model in payload['models'] if model['id'] == plugin_policy['model']])
         if record.global_agent:
             service=self._desktop_plugins.global_agents
-            payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(service.root/"sessions"/record.global_agent),
+            directory = service.root / "sessions" / record.global_agent
+            if record.bus_task:
+                directory = directory / record.bus_task
+            payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(directory),
                 **service.skill_config(record),
                 petAssistantBinding=service.m._pet.assistant.binding_for(record),
                 petReminderBinding=service.m._pet.assistant.reminder_binding_for(record),

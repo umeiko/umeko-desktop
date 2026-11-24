@@ -122,6 +122,8 @@ Rectangle {
         const next=Object.assign({},pending);next[id]=method;pending=next
         return id
     }
+    property string cleanupRequest: ""
+    property var cleanupDetails: ({files:[],running:[],sessions:[]})
     function refresh() {if(!polling){snapshotSelection=selected;polling=!!call("snapshot",{selected:selected,revision:state.selectedId===selected?state.revision:-1,includeMessages:false})}}
     function openAgent(id) {if(selected)drafts[selected]=input.text;if(id && !sdk.openConversation(id))return;if(!id)sdk.openConversation("");selected=id;input.text=drafts[id] || "";section="agents";refresh()}
     function form(id) {
@@ -182,6 +184,11 @@ Rectangle {
             }
             if(!value.ok){root.error=value.error || "操作失败";if(createDialog.opened)formError.text=root.error;return}
             root.error=""
+            if(method==="inspectWorktree"){
+                root.cleanupRequest=value.result.id
+                root.cleanupDetails=value.result
+                cleanupWorktreeDialog.open()
+            }
             if(method==="snapshot") {
                 if(root.snapshotSelection!==root.selected){Qt.callLater(root.refresh);return}
                 const data=value.result
@@ -355,17 +362,31 @@ Rectangle {
                 clip:true;spacing:10;model:root.state.requests.slice().reverse()
                 delegate:Rectangle {
                     required property var modelData
-                    width:ListView.view.width;height:requestText.implicitHeight+56;radius:12;color:root.c.bg;border.color:root.c.line
+                    width:ListView.view.width;height:requestBody.implicitHeight+24;radius:12;color:root.c.bg;border.color:root.c.line
                     ColumnLayout {anchors.fill:parent;anchors.margins:12;spacing:7
+                        id:requestBody
                         RowLayout {Layout.fillWidth:true
-                            LabelText {text:({queued:"等待投递",sending:"投递中",running:"已投递 · 等待结果",completed:"已完成",failed:"失败",cancelled:"已取消",interrupted:"已中断"})[modelData.status] || modelData.status;color:modelData.status==="failed"?root.c.danger:root.c.accent;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale}
+                            LabelText {text:({queued:"等待投递",sending:"投递中",running:"已投递 · 等待结果",merging:"保存并合并工作树",completed:"已完成",failed:"失败",cancelled:"已取消",interrupted:"已中断"})[modelData.status] || modelData.status;color:modelData.status==="failed"?root.c.danger:root.c.accent;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale}
                             LabelText {text:modelData.id.slice(0,8);color:root.c.muted;font.pixelSize:11*root.sdk.scale}
-                            SmallButton {visible:!(["completed","failed","cancelled","interrupted"].includes(modelData.status));text:"取消";onClicked:root.call("cancelRequest",{id:modelData.id})}
+                            SmallButton {visible:!(["completed","failed","cancelled","interrupted","merging"].includes(modelData.status));text:"取消";onClicked:root.call("cancelRequest",{id:modelData.id})}
                         }
                         LabelText {id:requestText;text:(modelData.result || modelData.text || "").slice(0,500);wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale}
+                        LabelText {
+                            objectName:"agentBusWorktreeDetails";visible:!!modelData.worktree
+                            text:modelData.worktree ? modelData.worktree.branch+"\n"+modelData.worktree.path+(modelData.worktreeState==="removed"?"（已清理）":"") : ""
+                            color:root.c.muted;wrapMode:Text.WrapAnywhere;elide:Text.ElideNone;Layout.fillWidth:true;font.pixelSize:11*root.sdk.scale
+                        }
+                        RowLayout {
+                            visible:!!modelData.worktree && modelData.worktreeState!=="removed"
+                            SmallButton {text:"打开工作树";onClicked:root.call("openWorktree",{id:modelData.id})}
+                            SmallButton {
+                                objectName:"inspectWorktreeButton";text:"清理工作树";dangerous:true
+                                onClicked:root.call("inspectWorktree",{id:modelData.id})
+                            }
+                        }
                     }
                 }
-                LabelText {anchors.centerIn:parent;visible:!root.state.requests.length;text:"暂无进行中的请求";color:root.c.muted}
+                LabelText {anchors.centerIn:parent;visible:!root.state.requests.length;text:"暂无请求";color:root.c.muted}
             }
             ColumnLayout {
                 spacing:12
@@ -435,6 +456,33 @@ Rectangle {
                     Item {Layout.fillWidth:true}
                     LabelText {text:Umeko.I18n.t("Ctrl+Enter / Alt+Enter / Shift+Enter 换行");font.pixelSize:10*root.sdk.scale;color:root.c.muted}
                     SmallButton {objectName:"sendGlobalAgentButton";text:root.current.busy?"引导":"发送";primary:true;enabled:!!input.text.trim();onClicked:root.send()}
+                }
+            }
+        }
+    }
+    Dialog {
+        id:cleanupWorktreeDialog;objectName:"cleanupWorktreeDialog";anchors.centerIn:parent
+        title:"清理工作树";width:Math.min(460,root.width-28);height:Math.min(360,root.height-28);modal:true;padding:16
+        background:Rectangle {radius:14;color:root.c.surface;border.color:root.c.line}
+        contentItem:ColumnLayout {
+            spacing:10
+            ScrollView {
+                Layout.fillWidth:true;Layout.fillHeight:true;clip:true
+                TextArea {
+                    readOnly:true;selectByMouse:true;wrapMode:TextArea.Wrap;color:root.c.ink;background:null
+                    text:[root.cleanupDetails.path || "", "保留分支 "+(root.cleanupDetails.branch || ""),
+                        "未提交或忽略的文件\n"+(root.cleanupDetails.files.join("\n") || "无"),
+                        "运行中的任务\n"+(root.cleanupDetails.running.join("\n") || "无"),
+                        "关联会话\n"+(root.cleanupDetails.sessions.join("\n") || "无")].join("\n\n")
+                }
+            }
+            RowLayout {
+                Layout.alignment:Qt.AlignRight
+                SmallButton {text:"取消";onClicked:cleanupWorktreeDialog.close()}
+                SmallButton {
+                    objectName:"confirmWorktreeCleanup";text:"确认清理";dangerous:true
+                    enabled:!root.cleanupDetails.running.length && !root.cleanupDetails.files.length
+                    onClicked:{root.call("removeWorktree",{id:root.cleanupRequest,confirmed:true});cleanupWorktreeDialog.close()}
                 }
             }
         }

@@ -4,7 +4,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createJiti } from "jiti";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { createInputQueue } from "./input-queue.mjs";
 
@@ -460,7 +460,7 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
     }
   }
 
-  async function extension(pi) {
+  async function extension(pi, { worktrees = false } = {}) {
     dispose(); api = pi;
     hook = (session,options) => observe(session,options);
     globalThis[sessionHook] = hook;
@@ -474,7 +474,10 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
       const service = await jiti.import("@gotgenes/pi-subagents");
       const { AskParentTool } = await jiti.import(fileURLToPath(new URL("session/ask-parent-tool.ts",root)));
       const { NotifyParentTool } = await jiti.import(fileURLToPath(new URL("session/notify-parent-tool.ts",root)));
-      return { factory, getService: service.getSubagentsService,
+      const worktreeFactory = worktrees
+        ? await jiti.import(fileURLToPath(import.meta.resolve("@gotgenes/pi-subagents-worktrees")), { default: true })
+        : undefined;
+      return { factory, worktreeFactory, getService: service.getSubagentsService,
         resumeTools:report=>[new AskParentTool(report).toToolDefinition(),new NotifyParentTool(report).toToolDefinition()] };
     })();
     getService = loaded.getService;
@@ -533,6 +536,17 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
     }));
     const service = getService?.();
     getService = () => service;
+    if (loaded.worktreeFactory) {
+      const path = join(process.env.PI_CODING_AGENT_DIR, "subagents-worktrees.json");
+      try {
+        writeFileSync(path, JSON.stringify({ worktreeAgents: ["general-purpose"] }, null, 2) + "\n", { flag: "wx" });
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+      }
+      loaded.worktreeFactory(new Proxy(pi, {
+        get(target, name) { return name === "registerCommand" ? () => {} : target[name]; },
+      }));
+    }
   }
   function automaticTool(sessionId,event) {
     const owner = [...sessions].find(([_id,value]) => value.session.sessionManager.getSessionId() === sessionId);

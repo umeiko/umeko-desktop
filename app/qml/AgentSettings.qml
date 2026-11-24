@@ -37,6 +37,12 @@ Column {
                     : I18n.t("工具自动执行，仅七类高风险操作需要确认。切换立即保存并生效。")
                 color: Theme.muted; font.pixelSize: Theme.font(11, visible)
             }
+            Switch {
+                objectName: "automaticWorktreesSwitch"
+                text: I18n.t("为智能体自动创建 Git 工作树")
+                checked: backend.config.agent.automaticWorktrees === true
+                onToggled: backend.setAutomaticWorktrees(checked)
+            }
         }
     }
     SettingsFold { objectName: "piFold_context"; width: parent.width; title: I18n.t("上下文"); nested: true; query: root.query; searchTerms: I18n.t("自动压缩 compaction 重新加载 运行设置 自定义指令 提示词 instructions token 回答 上限")

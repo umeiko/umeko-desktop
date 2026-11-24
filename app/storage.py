@@ -114,6 +114,7 @@ DEFAULTS = {
     "desktop": DESKTOP_DEFAULTS,
     "agent": {"maxTokens": 32768, "maxContextImages": 3, "outputLimitDefaultVersion": 1, "instructions": "", "autoCompaction": True,
               "agentDir": "", "skillPaths": [], "extensionPaths": [], "safeMode": False, "toolPermissionMode": "auto",
+              "automaticWorktrees": False,
               "npmRegistry": "", "npmUserconfig": "", "npmCafile": ""},
     "server": {"port": 8787, "openai": True, "anthropic": True, "lan": False, "keys": []},
     "ui": {"sidebarWidth": 244, "sidebarCollapsed": False, "lineSpacing": "standard", "sessionCacheSize": 3},
