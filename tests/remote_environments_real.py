@@ -76,6 +76,8 @@ def main():
     parser.add_argument('--long-seconds', type=int, default=1200, help='Default acceptance requires 1200; smaller is diagnostic only')
     parser.add_argument('--payload-mib', type=int, default=200, help='Default acceptance requires 200; smaller is diagnostic only')
     parser.add_argument('--outage-seconds', type=int, default=125, help='Default acceptance requires >120 seconds')
+    parser.add_argument('--commands-only', action='store_true',
+                        help='Explicit continuation: real command/outage checks only; no file-transfer acceptance claim')
     args = parser.parse_args()
     directory = args.run_dir.resolve()
     if args.platform == 'windows':
@@ -111,8 +113,9 @@ def main():
     (directory / 'agent').mkdir()
     (directory / 'workspace').mkdir()
     (directory / 'ssh-control').mkdir()
-    payload_bytes = args.payload_mib * 1024 * 1024
-    payload(directory / 'payload', payload_bytes)
+    payload_bytes = 0 if args.commands_only else args.payload_mib * 1024 * 1024
+    if not args.commands_only:
+        payload(directory / 'payload', payload_bytes)
     shim = directory / 'ssh-shim.py'
     shutil.copyfile(ROOT / 'tests/fixtures/remote_ssh_shim.py', shim)
     # Keep the venv launcher. Resolving its symlink would select the base
@@ -120,6 +123,7 @@ def main():
     python = os.path.abspath(sys.executable)
     spec = {'runDir': str(directory), 'host': args.host, 'platform': args.platform,
             'longSeconds': args.long_seconds, 'payloadBytes': payload_bytes,
+            'commandsOnly': args.commands_only,
             'outageSeconds': args.outage_seconds,
             'remoteDirectory': (remote_root / directory.name / 'payload').as_posix(),
             'acceptanceScope': args.long_seconds >= 1200 and args.payload_mib >= 200 and args.outage_seconds > 120}
@@ -132,13 +136,18 @@ def main():
         spec['acceptanceScope'] = args.long_seconds == 1200 and args.payload_mib == 200 and args.outage_seconds == 125
     else:
         spec.update(bootstrapTimeout=240, uploadTimeout=900, downloadTimeout=900)
+    spec['commandAcceptanceScope'] = (args.long_seconds == 1200 and args.outage_seconds == 125
+                                      if args.platform == 'windows'
+                                      else args.long_seconds >= 1200 and args.outage_seconds > 120)
+    if args.commands_only:
+        spec['acceptanceScope'] = False
     if args.remote_python:
         spec['remotePython'] = args.remote_python
     if expected_ssh:
         spec['expectedSshExecutable'] = str(expected_ssh)
     spec_path = directory / 'spec.json'
     spec['applicationTimeout'] = (args.long_seconds + spec['bootstrapTimeout']
-                                  + spec['uploadTimeout'] + spec['downloadTimeout']
+                                  + (0 if args.commands_only else spec['uploadTimeout'] + spec['downloadTimeout'])
                                   + (spec['recoveryTimeout'] + args.outage_seconds + 1200
                                      if args.platform == 'windows' else 600))
     spec_path.write_text(json.dumps(spec, indent=2), encoding='utf-8')
@@ -172,8 +181,12 @@ def main():
         print((directory / 'application-output.log').read_text(encoding='utf-8', errors='replace')[-18000:])
         raise RuntimeError(f'Real SSH acceptance failed: exit={status}, result={result_path}')
     result['acceptanceScope'] = spec['acceptanceScope']
+    result['commandsOnly'] = args.commands_only
+    result['commandAcceptanceScope'] = spec['commandAcceptanceScope']
     result_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
-    print(('REAL_REMOTE_ACCEPTANCE_PASSED' if spec['acceptanceScope'] else 'DIAGNOSTIC_ONLY_PASSED') + ': ' + str(result_path))
+    label = ('COMMANDS_ONLY_CONTINUATION_PASSED' if args.commands_only and spec['commandAcceptanceScope']
+             else 'REAL_REMOTE_ACCEPTANCE_PASSED' if spec['acceptanceScope'] else 'DIAGNOSTIC_ONLY_PASSED')
+    print(label + ': ' + str(result_path))
 
 
 if __name__ == '__main__':
