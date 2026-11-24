@@ -60,8 +60,8 @@ test('standard-user Git Bash uses the packaged runtime inside the same native sa
   const input = fixture(t);
   const options = { platform: 'win32' };
   const root = join(input.workspace, '..', 'git');
-  const bash = join(root, 'bin', 'bash.exe');
-  mkdirSync(join(root, 'bin'), { recursive: true });
+  const bash = join(root, 'usr', 'bin', 'bash.exe');
+  mkdirSync(join(root, 'usr', 'bin'), { recursive: true });
   writeFileSync(bash, 'fixture; never executed');
   input.policy.gitRoot = root;
   input.policy.gitReady = true;

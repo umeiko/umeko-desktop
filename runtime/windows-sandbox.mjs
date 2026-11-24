@@ -39,7 +39,9 @@ export function sandboxCommand({ file, args, cwd, env = process.env, workspace, 
   if (level === 'non-elevated' && /(?:^|[\\/])bash(?:\.exe)?$/i.test(file)) {
     const gitRoot = policy.gitRoot;
     if (gitRoot) {
-      const packagedBash = join(gitRoot, 'bin', 'bash.exe');
+      // The bin wrapper resolves a relative path before starting MSYS. Launch
+      // the actual executable so it does not have to traverse the profile.
+      const packagedBash = join(gitRoot, 'usr', 'bin', 'bash.exe');
       if (!existsSync(packagedBash)) throw new Error('The sandbox Git Bash files are missing. Turn the sandbox off and back on to restore them.');
       const pathKey = Object.keys(env).find(key => key.toUpperCase() === 'PATH') || 'PATH';
       env = { ...env, [pathKey]: [join(gitRoot, 'usr', 'bin'), join(gitRoot, 'mingw64', 'bin'), env[pathKey]]
