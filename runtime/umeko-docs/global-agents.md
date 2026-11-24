@@ -44,6 +44,40 @@
 - `agent_bus.requests`：无参数；返回当前调用者发出或收到的最近 64 个请求。完成结果会主动送达并唤醒发起者，等它到达即可；进度只加入上下文。
 - `agent_bus.reply`：`requestId`、`result` 必填，`status` 为 progress / completed / failed / cancelled（默认 completed）。回复对象是当前会话收到且已投递的请求；进入终态后不可再修改。进度间隔至少 5 秒。
 
+## 团队协作
+
+在协调者的聊天中说“和 api-dev、ui-dev、tester 组队，用同一块看板记录任务”。协调者先用 `agent_bus.overview` 查找现有全局子智能体，再用真实 `targetId` 建队。组队本身只保存名单。成员原有的模型、会话和工具权限继续生效。
+
+| 操作 | 参数和返回值 |
+| --- | --- |
+| `agent_bus.team_create` | 传入 `name`、可选的 `coordinatorName`（默认 `lead`）和 `members` 数组。每位成员写作 `{"targetId":"agent:…","name":"api-dev","groups":["devs"]}`，`groups` 可省略。返回团队 `id` 和名单。当前调用者是协调者。 |
+| `agent_bus.team_members` | 省略 `teamId` 时列出自己的团队。指定团队时返回成员、别名、群组和活动状态 `not_started`、`running`、`waiting` 或 `unavailable`。 |
+| `agent_bus.team_board` | 传入 `teamId`，可选 `after`（默认 `0`）、`limit`（1–50，默认 20）。返回当前 `tasks`，以及按 `sequence` 递增排列的 `events`。`hasMore` 为真时用 `nextAfter` 继续翻页。 |
+| `agent_bus.team_post` | 传入 `teamId` 和 `event`。返回已保存的 `event`，以及本次点名的 `deliveries`。`queued` 表示进入总线，`unavailable` 表示目标已删除。 |
+
+事件按提交顺序保存在同一个任务记录数据库中。以下操作用 `event.kind` 选择。
+
+| `kind` | 其余字段 |
+| --- | --- |
+| `message` | `text` |
+| `task` | `title`、`text`、可选的依赖任务 ID 数组 `blockedBy` |
+| `claim` | `taskId`、`expectedVersion` |
+| `dependencies` | `taskId`、`expectedVersion`、`blockedBy`，仅待认领任务可改 |
+| `progress` / `result` | `taskId`、`expectedVersion`、`text` |
+| `handoff` | `taskId`、`expectedVersion`、接手成员的别名 `to`、`text` |
+
+新任务的 `version` 为 1。认领前查看 `ready` 和 `version`，再将该版本填入 `expectedVersion`。如果另一位成员先认领，重新读取任务可看到新负责人和版本。进行中的任务由负责人或协调者更新。`handoff` 立即换负责人，`result` 保存结果并完成任务。
+
+例如，将任务交给 `ui-dev`，并让它接着工作：
+
+```json
+{"operation":"agent_bus.team_post","arguments":{"teamId":"团队 ID","event":{"kind":"handoff","taskId":"任务 ID","expectedVersion":2,"to":"ui-dev","text":"@ui-dev 接手界面，接口已就绪。"}}}
+```
+
+看板事件的 `text` 支持 `@api-dev`、`@devs`、`@all`，大小写不敏感。同一条消息对每位接收者只投递一次，群发跳过发件人。也可以在已有团队的全局子智能体聊天开头输入 `@tester 请开始验收`，宿主会直接记录和投递。如果同一别名命中多个团队，使用包含 `teamId` 的操作来指定团队。工具收到的消息含有真实发件人、团队 ID、事件序号和原文。
+
+运行中的成员通过现有 Pi 会话接收消息。已完成一轮工作的成员闲置等待，收到点名才开始下一轮团队工作。未运行过的成员由首条点名启动。普通进度、认领或看板读取不会唤醒成员。重启后可以继续读取原事件和任务状态，先前未发送完的点名需要重新发出。
+
 最多保留 16 个全局子智能体，同时运行 4 个。总线最多 32 个未完成请求，每个目标最多 4 个，每个发送者每分钟最多发 16 条；任务 30 分钟超时。关闭链路只取消该会话与该全局子智能体之间的未完成请求，其他连接照常；用户删除队列消息时保留取消记录。应用重启后，未完成的请求标为 `interrupted`，不会自动重发。旧版会话级授权已迁移为当时已存在的全局子智能体的具体连接，迁移不涉及之后新建的实例。
 
 总线只传递消息，各方的文件、终端和其他工具权限保持不变。收到的消息是注明来源的应用数据，用户授权仍以用户本人的操作为准。结果回传后任务即结束，无需再派发“确认收到”，以免双方循环互相唤醒。

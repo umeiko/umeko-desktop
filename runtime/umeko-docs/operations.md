@@ -123,6 +123,10 @@
 | `agent_bus.requests` | 无 | 无 | 否 |
 | `agent_bus.dispatch` | `targetId: string`, `text: string` | 无 | 否 |
 | `agent_bus.reply` | `requestId: string`, `result: string`, `status: string="completed"` | 无 | 否 |
+| `agent_bus.team_create` | `name: string`, `coordinatorName: string="lead"`, `members: array` | 无 | 否 |
+| `agent_bus.team_members` | `teamId: string=""` | 无 | 否 |
+| `agent_bus.team_board` | `teamId: string`, `after: integer=0`, `limit: integer=20` | 无 | 否 |
+| `agent_bus.team_post` | `teamId: string`, `event: object` | 无 | 否 |
 
 等待空闲范围 `target` 表示指定的 `sessionId`，省略时使用调用会话。
 
