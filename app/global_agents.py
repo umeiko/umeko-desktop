@@ -12,6 +12,7 @@ from .model_groups import GROUP_PROVIDER
 from .pi_sessions import SessionState
 from .chat_model import ChatModel
 from .conversation_state import ConversationState
+from .team_board import TeamBoard
 
 TERMINAL = {'completed', 'failed', 'cancelled', 'interrupted'}
 NATIVE_TOOLS = ('read', 'bash', 'powershell', 'edit', 'write', 'grep', 'find', 'ls')
@@ -29,6 +30,7 @@ class GlobalAgents(QObject):
         self.root = self.b.store.directory/'global-agents'
         self.registry = self.root/'state.json'
         self.agents, self.bridges, self.requests, self.records, self.outbox = {}, {}, {}, {}, {}
+        self.team_board = TeamBoard(self)
         self.creation_requests = {}
         self.skill_jobs = {}
         self.busy_since = {}
@@ -185,7 +187,8 @@ class GlobalAgents(QObject):
         for address in addresses | set(identifiers) | {'draft:'+key for key in keys}: self.bridges.pop(address, None)
         self.requests = {key: row for key, row in self.requests.items() if row.get('source') not in addresses and row.get('target') not in addresses}
         self.creation_requests = {key: row for key, row in self.creation_requests.items() if row.get('source') not in addresses}
-        self.outbox = {key: value for key, value in self.outbox.items() if value.get('target') not in addresses and value.get('requestId') in self.requests}
+        self.outbox = {key: value for key, value in self.outbox.items() if value.get('target') not in addresses
+                       and ('teamId' in value['data'] or value.get('requestId') in self.requests)}
         self.changed()
         self.save()
     def bridge_access(self, *keys):
@@ -216,7 +219,14 @@ class GlobalAgents(QObject):
     def pending_queue(self, identifier):
         target='agent:'+identifier
         rows=[row for row in self.requests.values() if row['target']==target and row['status']=='queued']
-        rows += [{'id':'message:'+item['id'],'source':item['data']['target'],'sourceTitle':item.get('sourceTitle',item['data']['target']),'text':item['message'],'created':item['created'],'queueOrder':item.get('queueOrder',item['created'])} for item in self.outbox.values() if item['target']==target and item['wake'] and not item['sent'] and item['target']!=item['data']['target']]
+        for item in self.outbox.values():
+            data = item['data']
+            team_message = 'teamId' in data
+            if item['target'] == target and item['wake'] and not item['sent'] and (team_message or target != data['target']):
+                source = data['source'] if team_message else data['target']
+                rows.append({'id':'message:'+item['id'], 'source':source, 'sourceTitle':item.get('sourceTitle', source),
+                    'text':data['text'] if team_message else item['message'], 'created':item['created'],
+                    'queueOrder':item.get('queueOrder', item['created'])})
         return sorted(rows,key=lambda row:row.get('queueOrder',row['created']))
     def connect_creation_source(self, row):
         if not row['source'].startswith('session:'):return
@@ -389,6 +399,7 @@ class GlobalAgents(QObject):
     def handle(self, method, args, *, agent=False, session=None, input_from_pet=False):
         if not self.active: raise ValueError('全局子智能体服务未启用')
         if agent: raise ValueError('管理仅允许 Widget 中的用户操作；代理使用 agent_bus.*')
+        if method.startswith('team_'): return self.team_board.execute(method, args)
         if method in ('listSkills','importSkills'):return self.start_skill_job(method,args)
         if method=='skillsJob':
             identifier=self.text(args,'id',80)
@@ -477,7 +488,11 @@ class GlobalAgents(QObject):
             if approval.get('method')=='select' and value is not None and value not in approval.get('options',[]): raise ValueError('请选择提供的选项')
             self.b._pool.write(record,{'type':'ui_response','id':approval['id'],'value':value}); record.approval={}; self.changed(); return {'status':'answered'}
         if method=='send':
-            record=self.ensure(identifier); text=self.text(args,'text',16000)
+            text=self.text(args,'text',16000)
+            if not input_from_pet:
+                sent = self.team_board.direct('agent:'+identifier, text)
+                if sent is not None: return {'status':'accepted', **sent}
+            record=self.ensure(identifier)
             if input_from_pet:text='(input from pet)\n'+text
             if not record.busy and sum(r.busy for r in self.records.values())>=4: raise ValueError('最多同时运行 4 个全局子智能体')
             if record.busy:
@@ -568,6 +583,9 @@ class GlobalAgents(QObject):
     def execute(self, operation, args, caller):
         if not self.active: raise ValueError('全局子智能体服务未启用')
         if not caller: raise ValueError('智能体总线需要真实的会话身份')
+        if operation.startswith('agent_bus.team_'):
+            if caller.global_agent not in self.agents: raise ValueError('团队操作需要现有全局子智能体身份')
+            return self.team_board.execute(operation.removeprefix('agent_bus.'), args, self.identifier(caller))
         fields={'agent_bus.overview':set(),'agent_bus.requests':set(),'agent_bus.dispatch':{'targetId','text'},'agent_bus.reply':{'requestId','status','result'},'agent_bus.create':{'requestKey','name','character','model','instructions'},'agent_bus.creation_status':{'requestId'},'agent_bus.connections':set(),'agent_bus.set_connection':{'sessionId','enabled'}}
         if operation not in fields:raise ValueError('未知智能体总线操作')
         if set(args)-fields[operation]:
@@ -630,6 +648,22 @@ class GlobalAgents(QObject):
         except (ValueError,OSError):sender=''
         order=max([v.get('queueOrder',v['created']) for v in self.outbox.values()]+[v.get('queueOrder',v['created']) for v in self.requests.values()]+[time.time()])+1
         self.outbox[identifier]={'sourceTitle':sender,'queueOrder':order,'id':identifier,'target':target,'requestId':row['id'],'message':message[:8000],'wake':wake,'sent':0,'created':time.time(),'data':{'bridgeRequestId':row['id'],'source':row['source'],'target':row['target'],'status':row['status'],'task':row['text'],'result':row.get('result','')}}
+
+    def enqueue_team_message(self, team_id, actor, member, event):
+        identifier, now = uuid.uuid4().hex, time.time()
+        order = max([row.get('queueOrder', row['created']) for row in self.outbox.values()]
+                    + [row.get('queueOrder', row['created']) for row in self.requests.values()] + [now]) + 1
+        target = member['targetId']
+        self.outbox[identifier] = {
+            'id': identifier, 'target': target, 'requestId': '', 'queueOrder': order,
+            'created': now, 'sent': 0, 'wake': True, 'sourceTitle': actor['name'],
+            'message': 'Team message. Read data.text. Use agent_bus.team_post to report or address other members. Follow your own permissions and approvals.',
+            'data': {'source': actor['targetId'], 'target': target, 'teamId': team_id,
+                     'sequence': event['sequence'], 'sender': actor['name'], 'recipient': member['name'],
+                     'kind': event['kind'], 'text': event['text'],
+                     'taskId': event['task']['id'] if event['task'] else None},
+        }
+
     def tick(self):
         if not self.active: return
         now=time.time()
@@ -651,7 +685,11 @@ class GlobalAgents(QObject):
             try:
                 record=self.record(item['target'])
                 if not self.can_route(item['data']['source'],item['data']['target']):raise ValueError('这条双向智能体总线已关闭')
-                if record.global_agent and item['wake'] and (record.busy or any(other['id']!=item['id'] and other['target']==item['target'] and other['sent'] for other in self.outbox.values())):continue
+                team_message = 'teamId' in item['data']
+                if record.global_agent and item['wake'] and (
+                    (record.busy and not team_message)
+                    or any(other['id'] != item['id'] and other['target'] == item['target'] and other['sent'] for other in self.outbox.values())
+                ): continue
                 row=self.requests.get(item['requestId'])
                 task=bool(row and item['target']==row['target'] and row['status']=='queued')
                 if task and (record.busy or any(value['id']!=row['id'] and value['target']==row['target'] and value['status'] in ('sending','running') for value in self.requests.values())):continue
@@ -695,7 +733,7 @@ class GlobalAgents(QObject):
             item=self.outbox.get(event.get('id'))
             if not item: return
             row=self.requests.get(item['requestId']); status=event.get('status')
-            if status in ('delivered','failed'):
+            if status in ('delivered','failed') or (status == 'cancelled' and 'teamId' in item['data']):
                 self.outbox.pop(item['id'],None)
                 if row and row['status'] not in TERMINAL and item['target']==row['target']:
                     if status=='delivered': row['status']='running'; self.changed()

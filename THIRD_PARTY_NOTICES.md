@@ -58,6 +58,10 @@ Dependencies retain their license files in the runtime's node_modules directory.
 
 Release bundles include the unmodified npm package `@gotgenes/pi-subagents` 25.0.5 (MIT) in the runtime's `node_modules` directory. Official source: https://github.com/gotgenes/pi-packages/tree/pi-subagents-v25.0.5/packages/pi-subagents . The full upstream copyright and permission notice is included in `licenses/pi-subagents-MIT.txt` and retained with the package.
 
+`app/team_board.py` adapts direct mentions from [`@tintinweb/pi-subagents` 0.26.3](https://www.npmjs.com/package/@tintinweb/pi-subagents/v/0.26.3), `src/mention.ts` and `src/index.ts`. Copyright (c) 2026 tintinweb. The original MIT notice is in `licenses/tintinweb-pi-subagents-MIT.txt`.
+
+`app/team_board.py` and `app/task_records.py` adapt task versions and dependencies from [`@deepseek-ai/dsh-agent-team` 0.2.2-rc.5](https://www.npmjs.com/package/@deepseek-ai/dsh-agent-team/v/0.2.2-rc.5), `packages/team/agent-team/src/task-board.ts` and `task-graph.ts`, and apply the recipient-driven wait design from [`@deepseek-ai/dsh-tool-subagent-control` 0.2.2-rc.5](https://www.npmjs.com/package/@deepseek-ai/dsh-tool-subagent-control/v/0.2.2-rc.5), `packages/subagent/tool-subagent-control/src/wait-agent.ts`. Copyright (c) 2026 DeepSeek. The original MIT notice shared by both packages is in `licenses/dsh-agent-team-and-subagent-control-MIT.txt`.
+
 ## Background jobs
 
 The bundled background-job extension uses `@alexlikevibe/pi-bg` 2.3.0 (MIT), specifically its per-session registry and file-backed spawn primitive. Its default extension entry is not loaded. The hidden Windows spawn implementation is adapted from that primitive; process-tree termination and cursor-based reads are Umeko adaptations. Source: https://github.com/iefnaf/pi-bg . The upstream license is retained in `licenses/pi-bg-MIT.txt` and with the npm package. The bash guard follows the `tool_call` blocking mechanism in Pi's `permission-gate.ts` example; no confirmation UI is used.
