@@ -27,6 +27,7 @@ const exists = async path => access(path).then(() => true, () => false);
 const abortError = () => Object.assign(new Error("Remote request cancelled"), { name: "AbortError" });
 const connectionError = () => Object.assign(new Error("Remote connection interrupted"), { transport: true });
 const fatalSsh = /permission denied|authentication failed|host key verification failed|remote host identification has changed|no matching host key|too many authentication failures|bad configuration|could not resolve hostname|unprotected private key|bad permissions|sign_and_send_pubkey: signing failed|posix_spawnp: no such file/i;
+const disconnectedSsh = /connection (?:reset|timed out|closed)|connection to .+ closed by remote host|broken pipe|send\(\) failed,\s*10054|lost connection/i;
 function sshFailure(message, stderr, transport, fatal = false) {
   const sshError = sshDiagnostic(stderr);
   return Object.assign(new Error(sshError ? `${message}\n${sshError}` : message), {
@@ -290,7 +291,7 @@ export class RemoteConnection {
     return this._readChild(child, { inputFile, inputText: streamScript ? `${script}\n` : undefined, timeout, label: "SSH command" });
   }
 
-  async _readChild(child, { inputFile, inputText, timeout, label }) {
+  async _readChild(child, { inputFile, inputText, timeout, label, sftp = false }) {
     let output = "", diagnostics = "";
     const result = new Promise((resolve, reject) => {
       const cleanup = () => { clearTimeout(timer); this.controller.signal.removeEventListener("abort", abort); };
@@ -303,8 +304,12 @@ export class RemoteConnection {
       child.once("close", code => {
         cleanup();
         if (code === 0) resolve(output.trim());
-        // Stdout can contain the listener bearer. Publish only bounded stderr.
-        else reject(sshFailure(`${label} failed (exit ${code ?? "signal"})`, diagnostics, code === 255, code !== 255));
+        else {
+          // SFTP builds do not all report the SSH child's exit as numeric 255.
+          const disconnected = code === 255 || sftp && disconnectedSsh.test(sshDiagnostic(diagnostics));
+          // Stdout can contain the listener bearer. Publish only bounded stderr.
+          reject(sshFailure(`${label} failed (exit ${code ?? "signal"})`, diagnostics, disconnected, !disconnected));
+        }
       });
     });
     // The upload and child can fail independently; attach a handler immediately
@@ -324,9 +329,9 @@ export class RemoteConnection {
     const folder = await mkdtemp(join(tmpdir(), "umeko-sftp-"));
     const batch = join(folder, "upload.sftp");
     try {
-      await writeFile(batch, `put ${sftpPath(inputFile, windowsClient)} ${sftpPath(destination, this.config.platform === "windows", true)}\n`, { mode: 0o600 });
+      await writeFile(batch, `put -a ${sftpPath(inputFile, windowsClient)} ${sftpPath(destination, this.config.platform === "windows", true)}\n`, { mode: 0o600 });
       const child = this._spawnClient(executable, ["-b", batch, "-S", this.sshClient, ...sshArguments(this.config.host).slice(1), this.config.host]);
-      await this._readChild(child, { timeout, label: "OpenSSH SFTP upload" });
+      await this._readChild(child, { timeout, label: "OpenSSH SFTP upload", sftp: true });
     } finally {
       await unlink(batch).catch(() => {});
       await rmdir(folder).catch(() => {});
@@ -340,16 +345,21 @@ export class RemoteConnection {
     else { const [arch, root, binary, present] = infoText.split(/\r?\n/); info = { arch, root, binary, present: present === "true" }; }
     if (!info.present) {
       const asset = await assetFile(this.config.platform, info.arch, this.options);
-      const temporary = `${info.root}/upload-${randomBytes(6).toString("hex")}`;
+      const sftp = process.platform === "win32" || this.config.platform === "windows";
+      // A connection owns its staging name across retries. Other sessions use
+      // different names, so their partial uploads cannot be mistaken for ours.
+      const uploadId = sftp ? (this.sftpUploadId ||= randomBytes(6).toString("hex")) : randomBytes(6).toString("hex");
+      const temporary = `${info.root}/upload-${uploadId}`;
       // First deployment can take minutes over a jump host. This is a single
       // scoped transfer, not a background retry or a server-wide operation.
       const timeout = 30 * 60_000;
-      if (process.platform === "win32" || this.config.platform === "windows") await this._sftpUpload(asset, temporary, timeout);
+      if (sftp) await this._sftpUpload(asset, temporary, timeout);
       else await this._ssh(`umask 077; cat > ${quoteSh(temporary)}`, { inputFile: asset, timeout });
       const install = this.config.platform === "windows"
         ? `$ErrorActionPreference='Stop';Move-Item -LiteralPath ${quotePs(temporary)} -Destination ${quotePs(info.binary)} -Force`
         : `set -eu; tar -xzf ${quoteSh(temporary)} -C ${quoteSh(info.root)}; found=$(find ${quoteSh(info.root)} -maxdepth 2 -type f -name 'codex-exec-server*' ! -name '*tar*' | head -n 1); [ -n "$found" ]; [ "$found" = ${quoteSh(info.binary)} ] || mv "$found" ${quoteSh(info.binary)}; chmod 700 ${quoteSh(info.binary)}; rm -f ${quoteSh(temporary)}`;
       await this._ssh(install);
+      this.sftpUploadId = undefined;
     }
     const listener = await this._ssh(listenerScript(this.config.platform, info.root, info.binary), { timeout: 60_000 });
     let result;

@@ -193,6 +193,20 @@ test("failed SSH reports its own stderr and selected executable without bootstra
   } finally { connection.close(); }
 });
 
+test("a Windows SFTP relay reset retries even when the exit code is not 255", async () => {
+  const connection = new RemoteConnection({ host: "existing-alias", platform: "windows" });
+  const child = new EventEmitter();
+  child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.stdin = new PassThrough(); child.kill = () => {};
+  child.stdin.on("finish", () => {
+    child.stderr.write("FATAL: send() failed, 10054\nclient_loop: send disconnect: Broken pipe\n");
+    child.emit("close", 3328);
+  });
+  try {
+    await assert.rejects(connection._readChild(child, { label: "OpenSSH SFTP upload", timeout: 1000, sftp: true }),
+      error => error.transport && !error.fatal && error.sshError.includes("10054"));
+  } finally { connection.close(); }
+});
+
 test("request cancellation interrupts waiting for shared recovery without stopping the connection", async () => {
   const connection = new FakeConnection(); let release;
   connection.ready = () => new Promise(resolve => { release = resolve; });
