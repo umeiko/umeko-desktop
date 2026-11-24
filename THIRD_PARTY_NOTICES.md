@@ -8,6 +8,10 @@
 
 `runtime/tool-permissions.mjs` adapts the command-position guard (`AT_CMD`), quote masking (`stripQuoted`), recursive Windows deletion family (`WINDOWS_ROOT_WIPE`), critical command families and write-only normalized path-rule structure from `@xynogen/pix-gate` 0.4.5, copyright 2026 xynogen (MIT). Source: https://github.com/xynogen/pix-mono/blob/f07f04c186a8b43adb5c443ee65a2ebee53f4e0c/packages/pix-gate/src/lib.ts . The complete license appears in both that module and `licenses/pix-gate-MIT.txt`. Umeko applies its own seven permission categories in place of the upstream default policy. Pi Coding Agent 1.3.0's `permission-gate` and `protected-paths` extension examples (https://github.com/earendil-works/pi/tree/main/packages/coding-agent/examples/extensions) supply the `tool_call` integration pattern under the Pi MIT notice below. `cc-safety-net` 2.7.0 (https://github.com/kenryu42/cc-safety-net/tree/v2.7.0) supplied categories and the test checklist only; no implementation code is copied or bundled.
 
+## Command prefix rules
+
+`runtime/tool-permissions.mjs` adapts command prefix matching, decision precedence, and reusable approvals from [OpenAI Codex rust-v0.172.0](https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/execpolicy), copyright 2025 OpenAI (Apache-2.0). The source attribution and full license are in `licenses/codex-execpolicy.txt`.
+
 ## Codex apply_patch
 
 `runtime/apply-patch.mjs` and the patch scenarios in `tests/fixtures/codex-apply-patch.json` adapt the OpenAI Codex `apply-patch` crate and tool grammar from [rust-v0.172.0](https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/apply-patch). The Apache 2.0 license and source attribution are in `licenses/codex-apply-patch-APACHE.txt`.

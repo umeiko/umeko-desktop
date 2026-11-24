@@ -60,6 +60,9 @@
 | `sessions.fork` | `id: string` | session | 是 |
 | `sessions.export` | `id: string`, `path: string` | session | 是 |
 | `workspace.set` | `path: string` | view | 否 |
+| `command_rules.list` | `scope: string=""` | 无 | 否 |
+| `command_rules.add` | `scope: string`, `pattern: json`, `decision: string`, `shell: string=""` | 无 | 否 |
+| `command_rules.remove` | `scope: string`, `pattern: json`, `decision: string`, `shell: string=""` | 无 | 否 |
 | `plugins.import` | `path: string` | 无 | 否 |
 | `plugins.addAccount` | `plugin: string`, `version: string` | 无 | 否 |
 | `plugins.uninstall` | `plugin: string`, `version: string` | all | 否 |
@@ -143,4 +146,4 @@ reasoningEffort 省略或空字符串时保留当前配置；inherit 删除配�
 
 Widget 只读查询：`widgets.list`、`widgets.docs`、`widgets.messages`、`widgets.result`、`widgets.resource`。
 
-`plugins.*` 管理 Provider 插件；`widgets.*` 管理桌面 Widget。`help` 的 `arguments.topic` 可为 `plugins`、`provider`、`widget` 或 `agents`。
+`plugins.*` 管理 Provider 插件；`widgets.*` 管理桌面 Widget。`help` 的 `arguments.topic` 可为 `plugins`、`provider`、`widget`、`agents` 或 `command_rules`。

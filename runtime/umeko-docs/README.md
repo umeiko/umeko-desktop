@@ -15,6 +15,7 @@ Agent 入口只有一个：`umeko_desktop`。第一次使用先调用 `{"operati
 - [制作、导入和切换主题](themes.md)
 - [动画形象、角色资源和第三方形象包](characters.md)
 - [外观、运行、上下文与资源设置](settings.md)
+- [命令规则与记住审批](command-rules.md)
 - [项目、会话、归档、删除与分支](sessions.md)
 - [Pi 扩展、Skills 与 MCP](extensions.md)
 - [API 代理、访问密钥和更新](server-updates.md)

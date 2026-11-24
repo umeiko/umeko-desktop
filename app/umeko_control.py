@@ -245,10 +245,10 @@ class UmekoControl(QObject):
         if operation == 'help':
             docs = b.store.directory/'agent-docs'
             if not (docs/'README.md').is_file(): docs = b._release/'umeko-docs'
-            topics={'plugins':'plugins.md','provider':'provider-plugins.md','widget':'widget-plugins.md','agents':'global-agents.md'}
+            topics={'plugins':'plugins.md','provider':'provider-plugins.md','widget':'widget-plugins.md','agents':'global-agents.md','command_rules':'command-rules.md'}
             topic=args.get('topic','')
             topic={'插件':'plugins','provider插件':'provider','widget插件':'widget','供应商':'provider'}.get(str(topic).lower(),str(topic).lower())
-            if topic and topic not in topics:raise ValueError('topic 请选择 plugins、provider、widget 或 agents')
+            if topic and topic not in topics:raise ValueError('topic 请选择 plugins、provider、widget、agents 或 command_rules')
             result={'docsRoot':str(docs),'entry':str(docs/(topics[topic] if topic else 'README.md')),'topics':{key:str(docs/value) for key,value in topics.items()}}
             # Coordinators cannot use file tools. Supply their guide only on demand.
             if topic=='agents':result['document']=(docs/topics[topic]).read_text(encoding='utf-8')[:65536]
@@ -329,6 +329,8 @@ class UmekoControl(QObject):
             return {'jobs': redacted([{'id': key, **{k: v for k, v in job.items() if k in ('operation', 'status', 'result')}}
                                      for key, job in visible_jobs.items() if not args.get('id') or key == args['id']])}
         spec = self.operations.get(operation)
+        if spec and spec.get('target') == 'bridge':
+            raise ValueError('Call this operation directly from a Pi session.')
         if spec is None: raise ValueError('Unknown Umeko operation; read the documentation or use operations.list')
         fields = spec['args']
         if set(args) - {field[0] for field in fields}: raise ValueError('Unknown argument for ' + operation)
