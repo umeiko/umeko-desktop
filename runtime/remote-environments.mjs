@@ -39,8 +39,51 @@ function response(result) {
   return { content: [{ type: "text", text: JSON.stringify(result) }], details: result, isError: result.ok === false };
 }
 
+function connectionProgress(name, status) {
+  if (status.state !== "reconnecting" && !(status.state === "connected" && status.recovered)) return;
+  const result = { ok: true, operation: "remote-environments.reconnect", environment: name, state: status.state,
+    message: status.state === "reconnecting" ? "正在重新连接" : "连接已恢复" };
+  for (const key of ["attempt", "retryAfterMs", "nextRetryAt", "outageStartedAt", "recovered", "resumed"]) {
+    if (status[key] !== undefined) result[key] = status[key];
+  }
+  return response(result);
+}
+
+function connectionErrorDetails(error) {
+  return Object.fromEntries(["code", "sshClient", "sshError", "state", "attempt", "retryAfterMs", "nextRetryAt", "outageStartedAt"]
+    .filter(key => error[key] !== undefined).map(key => [key, error[key]]));
+}
+
 export function createRemoteEnvironments({ request, emit, getConfig = () => ({}), getSshEnvironment }) {
   const live = new Map();
+
+  async function withProgress(name, entry, onUpdate, operation) {
+    let reconnection;
+    const update = status => {
+      const progress = connectionProgress(name, status);
+      if (!progress) return;
+      if (status.recovered) reconnection = progress.details;
+      onUpdate?.(progress);
+    };
+    entry.listeners.add(update);
+    try {
+      if (entry.status.state === "reconnecting" ||
+          entry.status.recovered && entry.lastReportedRecovery !== entry.status.outageStartedAt) update(entry.status);
+      const result = await operation();
+      if (!reconnection) return result;
+      entry.lastReportedRecovery = reconnection.outageStartedAt;
+      return { ...result, reconnection };
+    }
+    finally { entry.listeners.delete(update); }
+  }
+
+  async function toolResult(name, entry, onUpdate, operation) {
+    try { return response(await withProgress(name, entry, onUpdate, operation)); }
+    catch (error) {
+      if (error.code !== "REMOTE_RECONNECT_TIMEOUT") throw error;
+      return response({ ok: false, error: error.message, ...connectionErrorDetails(error) });
+    }
+  }
 
   function close(name) {
     const entry = live.get(name);
@@ -61,25 +104,27 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
     if (current && current.host === settings.host && current.platform === settings.platform) return current;
     close(name);
     const { host, platform } = settings;
-    const status = {};
+    const status = {}, listeners = new Set();
     const connection = new RemoteConnection({ host, platform }, {
       sshWrapper: getConfig()?.remoteTestSshCommand,
       getSshEnvironment,
       onState(state, detail = {}) {
-        for (const key of ["message", "sshError", "attempt", "retryAfterMs"]) delete status[key];
-        for (const key of ["sshClient", "message", "sshError", "attempt", "retryAfterMs"]) {
+        for (const key of Object.keys(status)) if (key !== "sshClient") delete status[key];
+        status.state = state;
+        for (const key of ["sshClient", "message", "sshError", "attempt", "retryAfterMs", "nextRetryAt", "outageStartedAt", "recovered", "resumed"]) {
           if (detail[key] !== undefined) status[key] = detail[key];
         }
         emit({ type: "remote_environment_state", name, host, platform, state, ...status });
+        for (const listener of listeners) listener(status);
       },
     });
-    const entry = { host, platform, connection, status, commands: createRemoteCommands(connection), files: createRemoteFiles(connection) };
+    const entry = { host, platform, connection, status, listeners, commands: createRemoteCommands(connection), files: createRemoteFiles(connection) };
     live.set(name, entry);
     return entry;
   }
 
   return {
-    async test(args, signal) {
+    async test(args, signal, onUpdate) {
       if (!args || typeof args !== "object" || Object.keys(args).length !== 1 || typeof args.name !== "string" || !args.name) {
         return { ok: false, error: "Provide the name of a configured remote environment." };
       }
@@ -88,10 +133,11 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
         .filter(key => entry?.status[key]).map(key => [key, entry.status[key]]));
       try {
         entry = await environment(args.name, signal);
-        const info = await entry.connection.ready({ signal });
-        return { ok: true, operation: "remote-environments.test", name: args.name, state: "connected", platform: entry.platform, cwd: info.cwd, ...diagnostics() };
+        const info = await withProgress(args.name, entry, onUpdate, () => entry.connection.waitForReady(signal));
+        return { ok: true, operation: "remote-environments.test", name: args.name, state: "connected", platform: entry.platform,
+          cwd: info.cwd, ...(info.reconnection ? { reconnection: info.reconnection } : {}), ...diagnostics() };
       } catch (error) {
-        return { ok: false, error: error.message, ...diagnostics() };
+        return { ok: false, error: error.message, ...diagnostics(), ...connectionErrorDetails(error) };
       }
     },
     close,
@@ -103,9 +149,10 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
         name: "remote_command", label: "Remote command", parameters: commandArgs,
         description: "Run shell commands in a named SSH environment. Run returns output and a sessionId; if running, read it to get new output, write input including its newline, or kill that session. Use umeko_desktop remote-environments.list to find configured environments. The session can survive a network interruption.",
         annotations: { readOnlyHint: false, destructiveHint: true },
-        async execute(_id, args, signal, _onUpdate, ctx) {
+        async execute(_id, args, signal, onUpdate, ctx) {
           const entry = await environment(args.environment, signal);
-          return response(await entry.commands.execute(args, { signal, cwd: ctx.cwd }));
+          return toolResult(args.environment, entry, onUpdate,
+            () => entry.commands.execute(args, { signal, cwd: ctx.cwd }));
         },
       });
       pi.registerTool({
@@ -114,7 +161,7 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
         annotations: { readOnlyHint: false, destructiveHint: true },
         async execute(_id, args, signal, onUpdate, ctx) {
           const entry = await environment(args.environment, signal);
-          return response(await entry.files.execute(args, {
+          return toolResult(args.environment, entry, onUpdate, () => entry.files.execute(args, {
             signal, cwd: ctx.cwd,
             onUpdate: value => onUpdate?.(response(value)),
           }));

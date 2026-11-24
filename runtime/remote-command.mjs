@@ -185,24 +185,28 @@ if ($Launch) {
 
 export function createRemoteCommands(connection) {
   const jobs = new Map();
-  let queue = Promise.resolve();
+  const queues = new Map();
+  const ready = signal => connection.waitForReady(signal);
+  const recoverable = error => error?.code !== 'REMOTE_RECONNECT_TIMEOUT' && (error.transport || error.code === 'REMOTE_SESSION_CHANGED' || /unknown.*handle|handle.*not found/i.test(String(error?.message ?? error)));
 
   async function execute(args, { signal } = {}) {
-    // One ordered cursor and one stdin sequence per command client. In particular,
+    // One ordered cursor and one stdin sequence per command session. In particular,
     // simultaneous read calls must never consume the same bytes twice.
-    const prior = queue;
+    const key = !args.action || args.action === 'run' ? Symbol('launch') : args.sessionId;
+    const prior = queues.get(key) ?? Promise.resolve();
     let release;
-    queue = new Promise(resolve => { release = resolve; });
+    const queued = new Promise(resolve => { release = resolve; });
+    queues.set(key, queued);
     await prior;
     let job;
     try {
       signal?.throwIfAborted();
-      const metadata = await connection.ready();
+      const metadata = await ready(signal);
       const windows = String(metadata.platformOs ?? connection.platform ?? connection.config?.platform).toLowerCase() === 'windows';
       const p = windows ? path.win32 : path.posix;
       const home = nativePath(metadata.userHomeDir, windows);
       const base = windows ? p.join(home, 'AppData', 'Local', 'Temp', 'umeko-remote-commands') : p.join(home, '.cache', 'umeko-remote-commands');
-      const rpc = (method, params, retry = true) => connection.rpc(method, params, { signal, retry });
+      const rpc = (method, params, retry = true, options = {}) => connection.rpc(method, params, { signal, retry, ...options });
       const write = (file, value) => rpc('fs/writeFile', { path: uri(file, windows), dataBase64: Buffer.from(value).toString('base64') });
       const readText = async file => {
         try { return Buffer.from((await rpc('fs/readFile', { path: uri(file, windows) })).dataBase64, 'base64').toString('utf8'); }
@@ -223,7 +227,7 @@ export function createRemoteCommands(connection) {
         if (!job.launcher?.pending) return;
         const launcher = job.launcher;
         try {
-          const state = await rpc('process/read', { processId: launcher.processId, afterSeq: launcher.afterSeq, maxBytes: 16384, waitMs: 100 });
+          const state = await rpc('process/read', { processId: launcher.processId, afterSeq: launcher.afterSeq, maxBytes: 16384, waitMs: 100 }, true, { sessionGeneration: launcher.generation });
           launcher.afterSeq = state.nextSeq ?? launcher.afterSeq;
           launcher.output = (launcher.output + (state.chunks ?? []).map(chunk => Buffer.from(chunk.chunk, 'base64').toString('utf8')).join('')).slice(-16384);
           if (state.failure || state.exited && state.exitCode !== 0) throw new Error(`Remote command launcher failed: ${state.failure || launcher.output || `exit ${state.exitCode}`}`);
@@ -256,13 +260,13 @@ export function createRemoteCommands(connection) {
         const launchParams = { processId: `${sessionId}-launcher`, argv, cwd: uri(cwd, windows), envPolicy: { inherit: 'all', ignoreDefaultExcludes: false, exclude: [], set: {}, includeOnly: [] }, env: {}, tty: false, pipeStdin: false, arg0: null };
         job.launcher = { processId: launchParams.processId, afterSeq: null, output: '', pending: true };
         for (let attempt = 0; attempt < 2; attempt++) {
-          try { await rpc('process/start', launchParams, false); break; }
+          try { await rpc('process/start', launchParams, false); job.launcher.generation = connection.sessionGeneration; break; }
           catch (error) {
             // The transport correctly refuses generic process/start replay.
             // This particular launcher is safe to replay: its native worker's
             // atomic claim prevents duplicate commands even in a new session.
             if (/already exists|duplicate|already.*process/i.test(String(error?.message ?? error))) break;
-            if (attempt === 0 && error.transport && !signal?.aborted) { await connection.ready(); continue; }
+            if (attempt === 0 && error.transport && error.code !== 'REMOTE_RECONNECT_TIMEOUT' && !signal?.aborted) { await ready(signal); continue; }
             throw error;
           }
         }
@@ -299,19 +303,20 @@ export function createRemoteCommands(connection) {
         if (exitText !== null && job.launcher) job.launcher.pending = false;
         for (let attempt = 0; attempt < 2; attempt++) {
           const handleId = randomUUID().replaceAll('-', '');
-          let opened = false;
+          let opened = false, generation;
           try {
             await rpc('fs/open', { handleId, path: uri(p.join(job.root, 'output'), windows), mode: 'read' });
             opened = true;
+            generation = connection.sessionGeneration;
             if (job.launcher) job.launcher.pending = false;
-            const block = await rpc('fs/readBlock', { handleId, offset: job.cursor, len: maxBytes });
+            const block = await rpc('fs/readBlock', { handleId, offset: job.cursor, len: maxBytes }, true, { sessionGeneration: generation });
             bytes = Buffer.from(block.chunk, 'base64');
             break;
           } catch (error) {
-            if (attempt === 0 && (error.transport || error.code === 'REMOTE_SESSION_CHANGED' || /unknown.*handle|handle.*not found/i.test(String(error?.message ?? error)))) { await connection.ready(); continue; }
+            if (attempt === 0 && recoverable(error)) { await ready(signal); continue; }
             if (!isMissing(error)) throw error;
             break;
-          } finally { if (opened) await rpc('fs/close', { handleId }).catch(() => {}); }
+          } finally { if (opened) await rpc('fs/close', { handleId }, false, { sessionGeneration: generation, wait: false }).catch(() => {}); }
         }
         if (bytes.length || exitText !== null || Date.now() >= deadline) break;
         await delay(Math.min(100, Math.max(1, deadline - Date.now())), undefined, { signal });
@@ -328,7 +333,10 @@ export function createRemoteCommands(connection) {
     } catch (error) {
       if (job) error.sessionId = job.sessionId;
       throw error;
-    } finally { release(); }
+    } finally {
+      release();
+      if (queues.get(key) === queued) queues.delete(key);
+    }
   }
   return { execute };
 }

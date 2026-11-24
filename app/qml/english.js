@@ -1146,6 +1146,8 @@ var strings = {
   "SSH 客户端：": "SSH client: ",
   "正在等待重试；重试间隔 %1 秒": "Waiting to retry. Retry interval %1 seconds",
   "第 %1 次重试": "Retry %1",
+  "下次重试：%1": "Next retry: %1",
+  "%1 秒后重试": "Retry in %1 seconds",
   "供应商插件已安装": "Provider plugin installed",
   "随应用提供的供应商": "Providers included with the app",
   "安装供应商": "Install provider",

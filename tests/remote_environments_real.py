@@ -124,10 +124,12 @@ def main():
             'remoteDirectory': (remote_root / directory.name / 'payload').as_posix(),
             'acceptanceScope': args.long_seconds >= 1200 and args.payload_mib >= 200 and args.outage_seconds > 120}
     if args.platform == 'windows':
-        # Measured lab link: approximately 70 KiB/s up and 25 KiB/s down.
-        # Keep the real high-entropy 200 MiB proof; permit transfer time plus
-        # per-file/RPC overhead and the initial 86.5 MB executor bootstrap.
-        spec.update(bootstrapTimeout=2700, uploadTimeout=5400, downloadTimeout=10800)
+        # The current lab link is approximately 40--50 KB/s. Each high-entropy
+        # 200 MiB direction alone needs 1.2--1.5 hours before JSON framing,
+        # 257 files, reconnect waits and tool/RPC overhead. These outer limits
+        # allow those real transfers rather than shrinking the acceptance data.
+        spec.update(bootstrapTimeout=7200, uploadTimeout=14400, downloadTimeout=14400, recoveryTimeout=7200)
+        spec['acceptanceScope'] = args.long_seconds == 1200 and args.payload_mib == 200 and args.outage_seconds == 125
     else:
         spec.update(bootstrapTimeout=240, uploadTimeout=900, downloadTimeout=900)
     if args.remote_python:
@@ -135,6 +137,10 @@ def main():
     if expected_ssh:
         spec['expectedSshExecutable'] = str(expected_ssh)
     spec_path = directory / 'spec.json'
+    spec['applicationTimeout'] = (args.long_seconds + spec['bootstrapTimeout']
+                                  + spec['uploadTimeout'] + spec['downloadTimeout']
+                                  + (spec['recoveryTimeout'] + args.outage_seconds + 1200
+                                     if args.platform == 'windows' else 600))
     spec_path.write_text(json.dumps(spec, indent=2), encoding='utf-8')
     settings = {'agent': {'agentDir': str(directory / 'agent'), 'autoCompaction': False, 'toolPermissionMode': 'auto'},
                 'workspace': str(directory / 'workspace'), 'server': {'port': 0},
@@ -155,8 +161,7 @@ def main():
         process = subprocess.Popen(command, env=env, stdout=log, stderr=subprocess.STDOUT,
                                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
         try:
-            status = process.wait(timeout=args.long_seconds + spec['bootstrapTimeout']
-                                  + spec['uploadTimeout'] + spec['downloadTimeout'] + 600)
+            status = process.wait(timeout=spec['applicationTimeout'])
         except subprocess.TimeoutExpired:
             process.terminate()
             process.wait(timeout=30)

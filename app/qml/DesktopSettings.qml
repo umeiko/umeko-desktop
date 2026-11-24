@@ -188,9 +188,10 @@ Column {
                         Text {
                             objectName: "remoteEnvironmentRetry_" + modelData.name
                             Layout.fillWidth: true
-                            visible: modelData.state === "reconnecting" && !!modelData.retryAfterMs
-                            text: I18n.t("正在等待重试；重试间隔 %1 秒").arg(Math.ceil((modelData.retryAfterMs || 0) / 1000))
-                                  + (modelData.attempt ? " · " + I18n.t("第 %1 次重试").arg(modelData.attempt) : "")
+                            visible: modelData.state === "reconnecting"
+                            text: (modelData.attempt ? I18n.t("第 %1 次重试").arg(modelData.attempt) : I18n.t("正在重新连接"))
+                                  + (modelData.nextRetryAt ? " · " + I18n.t("下次重试：%1").arg(Qt.formatDateTime(new Date(modelData.nextRetryAt), "hh:mm:ss"))
+                                     : modelData.retryAfterMs ? " · " + I18n.t("%1 秒后重试").arg(Math.ceil(modelData.retryAfterMs / 1000)) : "")
                             color: Theme.muted
                             wrapMode: Text.Wrap
                             font.family: Theme.fontFamily
@@ -199,7 +200,7 @@ Column {
                         Text {
                             objectName: "remoteEnvironmentError_" + modelData.name
                             Layout.fillWidth: true
-                            visible: (modelData.state === "reconnecting" || modelData.state === "error") && text.length > 0
+                            visible: modelData.state === "error" && text.length > 0
                             text: modelData.message || modelData.sshError || ""
                             color: Theme.muted
                             wrapMode: Text.WrapAnywhere

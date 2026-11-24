@@ -94,8 +94,8 @@ const umekoControl = createUmekoControl({
   }),
   getPetAssistantBinding: () => config?.petAssistantBinding || '',
   getPetReminderBinding: () => config?.petReminderBinding || '',
-  remoteOperation(operation, args, signal) {
-    if (operation === "remote-environments.test") return remoteEnvironments.test(args, signal);
+  remoteOperation(operation, args, signal, onUpdate) {
+    if (operation === "remote-environments.test") return remoteEnvironments.test(args, signal, onUpdate);
     if (operation === "remote-environments.remove") {
       return umekoControl.request(operation, args, signal).then(result => {
         if (result.ok) remoteEnvironments.close(args.name);

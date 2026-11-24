@@ -44,7 +44,8 @@ class RemoteEnvironmentSettingsTest(unittest.TestCase):
         diagnostic = 'posix_spawnp: No such file or directory'
         retry = {**environment, 'state': 'reconnecting', 'sshClient': client,
                  'message': 'OpenSSH failed: ' + diagnostic, 'sshError': diagnostic,
-                 'attempt': 1, 'retryAfterMs': 60000}
+                 'attempt': 1, 'retryAfterMs': 60000, 'nextRetryAt': 1700000060000,
+                 'outageStartedAt': 1700000000000}
         self.registry.observe('chat', retry)
         self.assertEqual(self.registry.rows()[0], {key: value for key, value in retry.items()})
         before = self.changed.call_count
@@ -52,7 +53,8 @@ class RemoteEnvironmentSettingsTest(unittest.TestCase):
         self.assertEqual(self.registry.rows()[0]['attempt'], 2)
         self.assertEqual(self.changed.call_count, before + 1)
 
-        connected = {**environment, 'state': 'connected', 'sshClient': client}
+        connected = {**environment, 'state': 'connected', 'sshClient': client,
+                     'recovered': True, 'resumed': False, 'outageStartedAt': 1700000000000}
         self.registry.observe('second-chat', connected)
         self.assertEqual(self.registry.rows()[0], connected)
         self.registry.disconnect('second-chat')
@@ -64,7 +66,9 @@ class RemoteEnvironmentSettingsTest(unittest.TestCase):
         qml = (Path(__file__).parents[1] / 'app/qml/DesktopSettings.qml').read_text(encoding='utf-8')
         self.assertIn('"remoteEnvironmentSshClient_" + modelData.name', qml)
         self.assertIn('modelData.sshClient || ""', qml)
-        self.assertIn('modelData.retryAfterMs || 0', qml)
+        self.assertIn('new Date(modelData.nextRetryAt)', qml)
+        self.assertIn('I18n.t("第 %1 次重试").arg(modelData.attempt)', qml)
         error_label = qml.split('objectName: "remoteEnvironmentError_"', 1)[1].split('font.pixelSize:', 1)[0]
+        self.assertIn('visible: modelData.state === "error"', error_label)
         self.assertIn('modelData.message || modelData.sshError || ""', error_label)
         self.assertIn('textFormat: Text.PlainText', error_label)

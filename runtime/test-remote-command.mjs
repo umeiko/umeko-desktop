@@ -24,6 +24,8 @@ let bootstrapReads = 0;
 const connection = {
   config: { platform: process.platform === 'win32' ? 'windows' : 'linux' },
   get sessionId() { return `server-session-${generation}`; },
+  get sessionGeneration() { return generation; },
+  async waitForReady(signal) { signal?.throwIfAborted(); return this.ready(); },
   async ready() {
     // Official wire shape, including a Windows detected shell that differs from
     // the PowerShell command semantics required by the remote tool.
@@ -174,3 +176,74 @@ modelBootstrapFailure = true;
 await assert.rejects(backend.execute({ action: 'run', command: win ? "Write-Output 'never-started'" : "printf 'never-started'", yieldMs: 1000 }), /Remote command launcher failed: loader diagnostic 8009001d/);
 assert.equal(bootstrapReads, 2);
 console.log(JSON.stringify({ test: 'early launcher stderr then nonzero exit', reads: bootstrapReads, detected: true }));
+
+// Deterministic executor model: different commands progress independently while
+// two callers of one command still consume a single ordered UTF8 byte sequence.
+{
+  const files = new Map(), readHandles = new Map();
+  const text = 'A😀B中文C';
+  let blockedPath, unblock, entered, blockNext = false, timeoutNext = false;
+  const enteredRead = new Promise(resolve => { entered = resolve; });
+  const blockedRead = new Promise(resolve => { unblock = resolve; });
+  let opens = 0, waits = 0;
+  const mock = {
+    sessionGeneration: 1, platform: 'windows',
+    async waitForReady(signal) { waits++; signal?.throwIfAborted(); return { cwd: 'file:///C:/work', userHomeDir: 'file:///C:/Users/test', platformOs: 'windows' }; },
+    async rpc(method, params, options) {
+      if (method === 'fs/createDirectory') return {};
+      if (method === 'fs/writeFile') { files.set(params.path, Buffer.from(params.dataBase64, 'base64')); return {}; }
+      if (method === 'process/start') {
+        const worker = params.argv.at(-2);
+        const root = worker.slice(0, worker.lastIndexOf('\\'));
+        const uri = 'file:///' + root.replaceAll('\\', '/');
+        files.set(uri + '/output', Buffer.from(text)); files.set(uri + '/exit', Buffer.from('0'));
+        return {};
+      }
+      if (method === 'process/read') return { chunks: [], exited: true, exitCode: 0 };
+      if (method === 'fs/readFile') {
+        if (!files.has(params.path)) throw new Error('ENOENT');
+        return { dataBase64: files.get(params.path).toString('base64') };
+      }
+      if (method === 'fs/open') { opens++; readHandles.set(params.handleId, params.path); return {}; }
+      if (method === 'fs/readBlock') {
+        assert.equal(options.sessionGeneration, mock.sessionGeneration);
+        if (timeoutNext) { timeoutNext = false; throw Object.assign(new Error('Relay unavailable'), { code: 'REMOTE_RECONNECT_TIMEOUT', transport: true }); }
+        if (blockNext && readHandles.get(params.handleId) === blockedPath) { blockNext = false; entered(); await blockedRead; }
+        const data = files.get(readHandles.get(params.handleId));
+        return { chunk: data.subarray(params.offset, params.offset + params.len).toString('base64') };
+      }
+      if (method === 'fs/close') { assert.equal(options.wait, false); readHandles.delete(params.handleId); return {}; }
+      throw new Error(`Unexpected RPC ${method}`);
+    },
+  };
+  const isolated = createRemoteCommands(mock);
+  const first = await isolated.execute({ command: 'fixture', maxOutputBytes: 1, yieldMs: 0 });
+  blockedPath = [...files.keys()].find(key => key.includes(first.sessionId) && key.endsWith('/output'));
+  blockNext = true;
+  const a1 = isolated.execute({ action: 'read', sessionId: first.sessionId, maxOutputBytes: 2 });
+  await enteredRead;
+  const a2 = isolated.execute({ action: 'read', sessionId: first.sessionId, maxOutputBytes: 3 });
+  let other;
+  let timer;
+  try {
+    other = await Promise.race([
+      isolated.execute({ command: 'another fixture', maxOutputBytes: 32, yieldMs: 0 }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Independent command blocked behind another session')), 1000); }),
+    ]);
+  } finally { clearTimeout(timer); unblock(); }
+  const reads = await Promise.all([a1, a2]);
+  assert.equal(other.output, text);
+  assert.deepEqual(reads.map(row => row.cursor), [3, 6]);
+  const tail = await isolated.execute({ action: 'read', sessionId: first.sessionId, maxOutputBytes: 32 });
+  assert.equal(first.output + reads.map(row => row.output).join('') + tail.output, text);
+  const previousCursor = tail.cursor;
+  const opensBefore = opens, waitsBefore = waits;
+  timeoutNext = true;
+  await assert.rejects(isolated.execute({ action: 'read', sessionId: first.sessionId }), { code: 'REMOTE_RECONNECT_TIMEOUT' });
+  assert.equal(opens, opensBefore + 1);
+  assert.equal(waits, waitsBefore + 1);
+  const resumed = await isolated.execute({ action: 'read', sessionId: first.sessionId });
+  assert.equal(resumed.cursor, previousCursor);
+  assert.equal(resumed.output, '');
+  console.log(JSON.stringify({ test: 'Windows independent sessions, ordered byte cursors, terminal reconnect timeout', cursors: reads.map(row => row.cursor), completeBytes: resumed.cursor }));
+}

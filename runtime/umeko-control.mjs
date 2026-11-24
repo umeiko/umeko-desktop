@@ -97,7 +97,7 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesCon
       pi.registerTool({ name: UMEKO_TOOL, label: '管理 Umeko', exposure: 'direct',
         description: 'Inspect and configure this running Umeko desktop. Start with help for documentation; widgets.list and widgets.docs discover enabled Widgets and their interfaces. Queued or accepted operations are not completed.',
         parameters: Type.Object({ operation: Type.String({ minLength: 1, maxLength: 80 }), arguments: Type.Optional(Type.Record(Type.String(), Type.Unknown())) }),
-        execute: async (_id, params, signal, _onUpdate, ctx) => {
+        execute: async (_id, params, signal, onUpdate, ctx) => {
           const args = params.arguments || {};
           let result;
           if (params.operation === 'shell.refreshEnvironment' && refreshShellEnvironment) {
@@ -114,7 +114,7 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesCon
             } catch (error) {
               result = {ok: false, error: error.message};
             }
-          } else result = await (remoteOperation?.(params.operation, args, signal) ?? this.request(params.operation, args, signal));
+          } else result = await (remoteOperation?.(params.operation, args, signal, onUpdate) ?? this.request(params.operation, args, signal));
           return { content: [{ type: 'text', text: JSON.stringify(result) }], isError: result.ok === false };
         },
       });
