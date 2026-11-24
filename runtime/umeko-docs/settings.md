@@ -58,6 +58,6 @@ Python 版还提供以下设置操作。先用 `operations.list` 查询当前应
 
 用 `umeko_desktop` 的 `settings.windowsSandbox` 读取隔离级别和联网状态。用 `settings.setWindowsSandbox` 提供 `enabled` 和 `allowNetwork` 两个布尔值。沙箱默认关闭。降低当前保护时，桌面会请用户确认。
 
-要启用网络封锁，在 Agent 设置中点击「安装管理员级隔离」，并完成 Windows 的权限提示。标准用户隔离会限制写入位置，并在私有桌面运行命令。未完成管理员安装时，要求断网的命令仍在文件隔离下运行，工具结果会说明网络封锁尚未生效。管理员模式的外部网络封锁由 Windows 执行，本机回环连接仍可能可用。设置应用于之后启动的命令。
+要启用网络封锁，在 Agent 设置中点击「安装管理员级隔离」，并完成 Windows 的权限提示。标准用户隔离会限制写入位置，并在私有桌面运行命令。未完成管理员安装时，要求断网的命令仍在文件隔离下运行，工具结果会说明网络封锁尚未生效。管理员模式启用断网时，Windows 会阻止命令访问外部网络和本机 IPv4、IPv6 回环地址。设置应用于之后启动的命令。
 
 沙箱开启后，用 `bash`、`powershell` 或 `background_job` 执行命令。如果 Git Bash 报告无法创建信号管道，可以使用 `powershell`，或给 `background_job` 指定 `shell: "powershell"`。Agent 可以继续读取共享终端的内容。共享终端里的交互输入由用户操作。

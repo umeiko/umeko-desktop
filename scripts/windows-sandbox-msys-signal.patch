@@ -1,65 +1,76 @@
-Subject: Permit the restricted logon to open its own MSYS signal pipe
+Subject: Allow restricted Git Bash to open its signal and process-tracking pipes
 
 Adapted from git-for-windows/msys2-runtime d25c02bd8bbfef7da4b42eab6f0834bcb9d9343e,
-winsup/cygwin/sigproc.cc, sec/helper.cc and autoload.cc. Cygwin license applies.
+winsup/cygwin autoload.cc, fork.cc, local_includes/security.h, sec/helper.cc and sigproc.cc.
+Cygwin license applies.
 
 diff --git a/winsup/cygwin/autoload.cc b/winsup/cygwin/autoload.cc
 --- a/winsup/cygwin/autoload.cc
 +++ b/winsup/cygwin/autoload.cc
-@@ -394,6 +394,9 @@ LoadDLLfunc (CreateProcessAsUserW, advapi32)
- LoadDLLfunc (DeregisterEventSource, advapi32)
- LoadDLLfunc (DecryptFileW, advapi32)
+@@ -422,2 +422,5 @@
  LoadDLLfunc (EncryptFileW, advapi32)
 +LoadDLLfunc (GetTokenInformation, advapi32)
 +LoadDLLfunc (IsTokenRestricted, advapi32)
 +LoadDLLfunc (IsValidSid, advapi32)
  LoadDLLfunc (LogonUserW, advapi32)
- LoadDLLfunc (LookupAccountNameW, advapi32)
- LoadDLLfunc (LookupAccountSidW, advapi32)
+diff --git a/winsup/cygwin/fork.cc b/winsup/cygwin/fork.cc
+--- a/winsup/cygwin/fork.cc
++++ b/winsup/cygwin/fork.cc
+@@ -121,4 +121,7 @@
+     {
+-      if (!CreatePipe (&rd_proc_pipe, &wr_proc_pipe, &sec_none_nih, 16))
+-	api_fatal ("prefork: couldn't create pipe process tracker, %E");
++      alignas (SECURITY_ATTRIBUTES) char sa_buf[1024];
++      PSECURITY_ATTRIBUTES sa = sec_restricted_pipe (sa_buf, &sec_none_nih,
++                                                    FILE_GENERIC_READ | FILE_GENERIC_WRITE);
++      if (!CreatePipe (&rd_proc_pipe, &wr_proc_pipe, sa, 16))
++        api_fatal ("prefork: couldn't create pipe process tracker, %E");
 
+diff --git a/winsup/cygwin/local_includes/security.h b/winsup/cygwin/local_includes/security.h
+--- a/winsup/cygwin/local_includes/security.h
++++ b/winsup/cygwin/local_includes/security.h
+@@ -526,2 +526,4 @@
+
++extern PSECURITY_ATTRIBUTES sec_restricted_pipe (PVOID, PSECURITY_ATTRIBUTES, DWORD);
++
+ extern bool sec_acl (PACL acl, bool original, bool admins, PSID sid1 = NO_SID,
+diff --git a/winsup/cygwin/sec/helper.cc b/winsup/cygwin/sec/helper.cc
+--- a/winsup/cygwin/sec/helper.cc
++++ b/winsup/cygwin/sec/helper.cc
+@@ -629,2 +629,26 @@
+
++/* Add the token's own logon SID only to the DACL of an MSYS pipe
++   opened by a restricted token. Keep the normal user and system ACEs. */
++PSECURITY_ATTRIBUTES
++sec_restricted_pipe (PVOID storage, PSECURITY_ATTRIBUTES fallback, DWORD access)
++{
++  if (!IsTokenRestricted (hProcToken))
++    return fallback;
++
++  alignas (TOKEN_GROUPS) BYTE logon_data[sizeof (TOKEN_GROUPS) + SECURITY_MAX_SID_SIZE];
++  DWORD length = 0;
++  if (!GetTokenInformation (hProcToken, TokenLogonSid, logon_data,
++                           sizeof (logon_data), &length))
++    return fallback;
++
++  const TOKEN_GROUPS *logon = reinterpret_cast<const TOKEN_GROUPS *> (logon_data);
++  if (logon->GroupCount != 1
++      || (logon->Groups[0].Attributes & SE_GROUP_LOGON_ID) != SE_GROUP_LOGON_ID
++      || !IsValidSid (logon->Groups[0].Sid))
++    return fallback;
++
++  return __sec_user (storage, cygheap->user.sid (), logon->Groups[0].Sid,
++                     access, FALSE);
++}
++
+ /* Helper function to create a file security descriptor which allows
 diff --git a/winsup/cygwin/sigproc.cc b/winsup/cygwin/sigproc.cc
 --- a/winsup/cygwin/sigproc.cc
 +++ b/winsup/cygwin/sigproc.cc
-@@ -489,10 +489,40 @@ sig_dispatch_pending (bool fast)
- /* Signal thread initialization.  Called from dll_crt0_1.
-    This routine starts the signal handling thread.  */
-+static PSECURITY_ATTRIBUTES
-+signal_pipe_attributes (void *storage)
-+{
-+  if (IsTokenRestricted (hProcToken))
-+    {
-+      // The sandbox restricts the token by its logon SID. The explicit
-+      // user/admin/system pipe DACL otherwise denies reopening the write end.
-+      alignas (TOKEN_GROUPS)
-+        BYTE logon_data[sizeof (TOKEN_GROUPS) + SECURITY_MAX_SID_SIZE];
-+      DWORD length = 0;
-+      if (GetTokenInformation (hProcToken, TokenLogonSid, logon_data,
-+                               sizeof (logon_data), &length))
-+        {
-+          const TOKEN_GROUPS *logon =
-+            reinterpret_cast<const TOKEN_GROUPS *> (logon_data);
-+          if (logon->GroupCount == 1
-+              && (logon->Groups[0].Attributes & SE_GROUP_LOGON_ID)
-+                  == SE_GROUP_LOGON_ID
-+              && IsValidSid (logon->Groups[0].Sid))
-+            // Only the ACL on this process's signal pipe is augmented. The
-+            // original owner and SYSTEM entries and the process token remain.
-+            return __sec_user (storage, cygheap->user.sid (),
-+                               logon->Groups[0].Sid,
-+                               FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES, FALSE);
-+        }
-+    }
-+  return sec_user_nih (static_cast<PSECURITY_ATTRIBUTES> (storage),
-+                       cygheap->user.sid ());
-+}
-+
- void
- sigproc_init ()
+@@ -525,4 +525,5 @@
  {
 -  char char_sa_buf[1024];
--  PSECURITY_ATTRIBUTES sa = sec_user_nih ((PSECURITY_ATTRIBUTES) char_sa_buf, cygheap->user.sid());
 +  alignas (SECURITY_ATTRIBUTES) char char_sa_buf[1024];
-+  PSECURITY_ATTRIBUTES sa = signal_pipe_attributes (char_sa_buf);
+   PSECURITY_ATTRIBUTES sa = sec_user_nih ((PSECURITY_ATTRIBUTES) char_sa_buf, cygheap->user.sid());
++  sa = sec_restricted_pipe (char_sa_buf, sa, FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES);
    DWORD err = fhandler_pipe::create (sa, &my_readsig, &my_sendsig,
- 				     PIPE_DEPTH * sizeof (sigpacket), "sigwait",
- 				     PIPE_ADD_PID);
