@@ -16,7 +16,8 @@ import { configureCoworkSubagents, coworkSubagentFromPrompt, coworkSubagentResou
 import { createInputQueue, createModelRoles } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
-import { sandboxCommand, trackLocalMcpTransport } from "./windows-sandbox.mjs";
+import { createSandboxPreparation, sandboxCommand } from "./windows-sandbox.mjs";
+import { createWindowsSandboxMcp } from "./windows-sandbox-mcp.mjs";
 import { blockedShellEnvKey, createShellSnapshots } from "./shell-snapshot.mjs";
 import { createRemoteEnvironments } from "./remote-environments.mjs";
 import { createRemoteWorkspaceExtension } from "./remote-workspace-tools.mjs";
@@ -72,10 +73,11 @@ const bundledNodeDir = fileURLToPath(new URL(process.platform === "win32" ? "../
 const shellSnapshots = createShellSnapshots({ getShellConfig, getPowerShellConfig,
   bundledBin: existsSync(bundledBin) ? bundledBin : undefined,
   bundledNodeDir: existsSync(bundledNodeDir) ? bundledNodeDir : undefined,
-  prepareCapture(command) {
-    if (!windowsSandbox?.enabled) return command;
+  async prepareCapture(command) {
+    const { policy } = await waitForWindowsSandbox();
+    if (!policy?.enabled) return command;
     const workspace = config?.workspace || config?.defaultCwd;
-    return { ...sandboxCommand({ ...command, cwd: workspace, workspace, policy: windowsSandbox }), cwd: workspace };
+    return { ...sandboxCommand({ ...command, cwd: workspace, workspace, policy }), cwd: workspace };
   },
 });
 function shellSnapshotExtension(getShellPath) {
@@ -97,7 +99,34 @@ const blockedSessions = new WeakSet();
 let stopWork, currentRun;
 let pendingMemberModel;
 let windowsSandbox;
-const localMcpTransports = new Set();
+const sandboxPreparation = createSandboxPreparation({
+  getPolicy: () => windowsSandbox,
+  request: () => emit({ type: "windows_sandbox_prepare" }),
+  language: () => permissionPolicy.language,
+});
+const waitForWindowsSandbox = sandboxPreparation.wait;
+const sandboxMcp = createWindowsSandboxMcp({
+  createExtension: Pi.createMcpExtension,
+  createTransport: createDefaultTransport,
+  async prepareTransport(server, work, auth, signal) {
+    const { policy } = await waitForWindowsSandbox(signal);
+    if (policy?.enabled) {
+      const expandHome = value => /^~(?:[\\/]|$)/.test(value) ? join(homedir(), value.slice(2)) : value;
+      const { command, args = [], cwd: directory = '.' } = server.config;
+      const cwd = resolve(work, expandHome(directory));
+      const invocation = sandboxCommand({ file: expandHome(command), args: args.map(expandHome), cwd,
+        workspace: work, policy });
+      server = { ...server, config: { ...server.config, command: invocation.file, args: invocation.args, cwd } };
+    }
+    return createDefaultTransport(server, work, auth);
+  },
+  loadConfig(ctx) {
+    const loaded = loadMcpConfig({ agentDir: config.agentDir, cwd: ctx.cwd, projectTrusted: !config?.agent?.safeMode && ctx.isProjectTrusted() });
+    mcpEntries = loaded.servers;
+    setMcpNetwork(mcpEntries);
+    return loaded;
+  },
+});
 const stopDeadlineMs = 2_400;
 
 function runCommandSession(request) {
@@ -168,7 +197,7 @@ const modelRoles = createModelRoles();
 const QUOTA_MARKER = "[Umeko:model_quota]";
 let checkpointLocked = false;
 const backgroundJobs = createBackgroundJobsExtension({ canStart: () => !checkpointLocked, host: bashHost, hostScript: bashHostScript,
-  getSandbox: () => windowsSandbox,
+  waitForSandbox: waitForWindowsSandbox,
   getShellPath: ctx => shellSnapshots.shellPath(ctx?.sessionManager?.getSessionId()),
   getEnvironment: (ctx, shellPath, name) => shellSnapshots.environment(name, ctx?.sessionManager?.getSessionId(), null, shellPath),
   onCleanup(sessionId, job) {
@@ -711,23 +740,7 @@ async function init(input) {
               mcpEntries = servers;
               setMcpNetwork(mcpEntries);
             })
-            : Pi.createMcpExtension({ createTransport: (server, work, auth) => {
-            if (process.platform !== 'win32' || 'url' in server.config) return createDefaultTransport(server, work, auth);
-            if (windowsSandbox?.enabled) {
-              const expandHome = value => /^~(?:[\\/]|$)/.test(value) ? join(homedir(), value.slice(2)) : value;
-              const { command, args = [], cwd: directory = '.' } = server.config;
-              const cwd = resolve(work, expandHome(directory));
-              const invocation = sandboxCommand({file: expandHome(command), args: args.map(expandHome), cwd,
-                workspace: work, policy: windowsSandbox});
-              server = {...server, config: {...server.config, command: invocation.file, args: invocation.args, cwd}};
-            }
-            return trackLocalMcpTransport(createDefaultTransport(server, work, auth), localMcpTransports);
-          }, loadConfig: ctx => {
-            const loaded = loadMcpConfig({ agentDir, cwd: ctx.cwd, projectTrusted: !input.agent?.safeMode && ctx.isProjectTrusted() });
-            mcpEntries = loaded.servers;
-            setMcpNetwork(mcpEntries);
-            return loaded;
-          } }) },
+            : sandboxMcp.extension },
           { name: "output-continuation", hidden: true, replaceable: false, factory: outputContinuationExtension },
         ],
       },
@@ -1053,9 +1066,12 @@ async function execute(input) {
   if (input.type === "windows_sandbox") {
     const previous = windowsSandbox;
     windowsSandbox = input.policy;
-    if (["enabled", "allowNetwork", "elevated", "gitReady"].some(key => previous?.[key] !== windowsSandbox?.[key])) {
+    sandboxPreparation.changed();
+    if (["enabled", "allowNetwork", "elevated", "gitRoot"].some(key => previous?.[key] !== windowsSandbox?.[key])) {
       shellSnapshots.invalidate();
-      for (const transport of localMcpTransports) void transport.close().catch(() => {});
+    }
+    if (["enabled", "allowNetwork", "elevated"].some(key => previous?.[key] !== windowsSandbox?.[key])) {
+      void sandboxMcp.invalidate().catch(error => emit({ type: "notice", message: error.message }));
     }
     return;
   }
@@ -1198,6 +1214,7 @@ let rl;
 async function shutdown() {
   if (closing) return;
   closing = true;
+  sandboxPreparation.close();
   loopReview.clear();
   umekoControl.clear();
   remoteEnvironments.dispose();

@@ -152,7 +152,7 @@ async function capture(shellName, config, env, cwd, prepareCapture) {
     args = ["--login", "-i", "-c", windows ? script + windowsPath : script];
   }
   try {
-    const command = prepareCapture?.({ file: config.shell, args, env, cwd }) || { file: config.shell, args, env, cwd };
+    const command = await prepareCapture?.({ file: config.shell, args, env, cwd }) || { file: config.shell, args, env, cwd };
     const { stdout } = await run(command.file, command.args, { ...captureOptions, env: command.env, cwd: command.cwd });
     const result = parseCapturedEnvironment(stdout);
     if (windows) setEnv(result, "PATH", preferRealExecutables(entries(getEnv(result, "PATH"))).join(";"));

@@ -32,7 +32,7 @@ const snapshot = job => ({ id: job.id, command: job.command, cwd: job.cwd, pid: 
   ...(job.sandboxNotice ? { sandboxNotice: job.sandboxNotice } : {}),
   ...(job.sandboxFailure ? { sandboxFailure: job.sandboxFailure } : {}) });
 
-export async function createJobManager({ shellPath, cwd = process.cwd(), host, hostScript, onCleanup, getSandbox } = {}) {
+export async function createJobManager({ shellPath, cwd = process.cwd(), host, hostScript, onCleanup, waitForSandbox } = {}) {
   const { BackgroundRegistry } = await loadPrimitives();
   const registry = new BackgroundRegistry();
   const directory = await mkdtemp(join(tmpdir(), "umeko-background-jobs-"));
@@ -52,11 +52,14 @@ export async function createJobManager({ shellPath, cwd = process.cwd(), host, h
       (shellName === "powershell" ? getPowerShellConfig() : getShellConfig(sessionShellPath));
     if (commandTransport === "stdin") throw new Error("Command sessions require a shell that accepts the command as an argument");
     const id = randomUUID(), logPath = join(directory, `${id}.stdout.log`), errPath = join(directory, `${id}.stderr.log`);
-    const launch = sandboxCommand({ file: shell, args: [...args, command], cwd: workingDirectory, env, workspace, policy: getSandbox?.() });
+    const { policy, notice } = await waitForSandbox?.(signal, { report: true }) || {};
+    if (disposed || signal?.aborted) throw new Error("aborted");
+    const launch = sandboxCommand({ file: shell, args: [...args, command], cwd: workingDirectory, env, workspace, policy });
     const child = launchCommand({ host, hostScript, file: launch.file, fileArgs: launch.args,
       cwd: workingDirectory, logPath, errPath, env: launch.env });
     const job = { id, command, cwd: workingDirectory, child, shellName, logPath, errPath, toolCallId, owner,
-      status: "running", exitCode: null, signal: null, startedAt: Date.now(), sandboxNotice: launch.notice };
+      status: "running", exitCode: null, signal: null, startedAt: Date.now(),
+      sandboxNotice: [notice, launch.notice].filter(Boolean).join("\n") };
     registry.jobs.set(id, job);
     registry.totalStarted++;
     let killTimer;

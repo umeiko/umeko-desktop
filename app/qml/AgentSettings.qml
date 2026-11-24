@@ -6,6 +6,37 @@ Column {
     id: root
     property string query: ""
     readonly property var resources: visible ? backend.agentResources : ({})
+    function sandboxErrorText(state) {
+        const error = state.error || ""
+        if (!error) return ""
+        const english = I18n.language === "en"
+        if (error === "git-bash-storage-unwritable") {
+            const directory = String(state.errorPath || "")
+            return english
+                ? "Umeko could not write Git Bash files to “" + directory + "”. It will keep retrying automatically."
+                : "Umeko 无法将 Git Bash 文件写入“" + directory + "”。程序会继续自动重试。"
+        }
+        if (error === "git-bash-archive-missing") {
+            return english
+                ? "This Umeko installation is incomplete because the Git Bash archive is missing. Download Umeko again."
+                : "Umeko 安装包不完整，缺少 Git Bash 归档。请重新下载 Umeko。"
+        }
+        if (error === "git-bash-archive-invalid") {
+            return english
+                ? "The Git Bash archive in this Umeko installation is damaged. Download Umeko again."
+                : "Umeko 安装包中的 Git Bash 归档已损坏。请重新下载 Umeko。"
+        }
+        const knownErrors = [
+            "Windows 沙箱组件缺失。请重新安装完整的 Windows 版本。",
+            "未完成管理员级隔离安装。请在 Windows 提示中允许安装，或稍后重试。",
+            "无法保存沙箱设置。请检查用户数据目录是否可写，然后重试。",
+            "另一个 Agent 正在执行任务。请等任务结束后再开启沙箱。"
+        ]
+        if (knownErrors.indexOf(error) >= 0) return I18n.t(error)
+        return english
+            ? "Umeko could not prepare the Windows sandbox. It will keep retrying automatically."
+            : "Umeko 暂时无法准备 Windows 沙箱，程序会继续自动重试。"
+    }
     spacing: 12
     SectionCard {
         objectName: "toolPermissionSettings"
@@ -43,7 +74,7 @@ Column {
                 visible: permissions.sandbox.supported
                 Layout.fillWidth: true; spacing: 12
                 ColumnLayout {
-                    Layout.preferredWidth: implicitWidth; Layout.maximumWidth: permissions.width * 0.36; spacing: 4
+                    Layout.fillWidth: true; spacing: 4
                     Text {
                         Layout.fillWidth: true; wrapMode: Text.Wrap
                         font.family: Theme.fontFamily; color: Theme.ink; font.pixelSize: Theme.font(12, visible)
@@ -67,9 +98,12 @@ Column {
                         backend.windowsSandbox.setEnabled(value)
                     }
                 }
-                Item { Layout.fillWidth: true }
+            }
+            RowLayout {
+                visible: permissions.sandbox.supported
+                Layout.fillWidth: true; spacing: 12
                 Text {
-                    Layout.preferredWidth: implicitWidth; Layout.maximumWidth: permissions.width * 0.34
+                    Layout.fillWidth: true
                     wrapMode: Text.Wrap
                     font.family: Theme.fontFamily; color: Theme.ink; font.pixelSize: Theme.font(12, visible)
                     text: I18n.t("允许命令联网")
@@ -77,7 +111,7 @@ Column {
                 Toggle {
                     objectName: "windowsSandboxAllowNetwork"
                     checked: permissions.sandbox.allowNetwork
-                    enabled: !permissions.sandbox.busy
+                    enabled: permissions.sandbox.enabled && !permissions.sandbox.busy
                     Accessible.name: I18n.t("允许命令联网")
                     onClicked: {
                         const value = checked
@@ -129,7 +163,7 @@ Column {
                 visible: permissions.sandbox.supported && text.length > 0
                 font.family: Theme.fontFamily; color: Theme.danger; font.pixelSize: Theme.font(11, visible)
                 textFormat: Text.PlainText
-                text: I18n.t(permissions.sandbox.error || "")
+                text: root.sandboxErrorText(permissions.sandbox)
             }
         }
     }

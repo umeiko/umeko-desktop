@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { sandboxCommand, sandboxFailure, trackLocalMcpTransport } from '../runtime/windows-sandbox.mjs';
+import { createSandboxPreparation, sandboxCommand, sandboxFailure } from '../runtime/windows-sandbox.mjs';
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'umeko-sandbox-unit-'));
@@ -77,32 +77,52 @@ test('standard-user Git Bash uses the packaged runtime inside the same native sa
   assert.equal(sandboxCommand({ ...input, file: 'powershell.exe' }, options).args.at(-3), 'powershell.exe');
 });
 
-test('preparation is reported and never launches an unsandboxed command', t => {
-  const input = fixture(t);
-  const options = { platform: 'win32' };
-  input.policy.preparing = true;
-  assert.throws(() => sandboxCommand(input, options), /Preparing Git Bash.*retry/);
-  input.policy.preparing = false;
-  input.policy.gitReady = false;
-  assert.throws(() => sandboxCommand(input, options), /Could not prepare Git Bash/);
+function preparationFixture(t) {
+  const { policy } = fixture(t);
+  const gitRoot = join(policy.home, 'git');
+  const archive = join(policy.launcher, '..', 'git.tar.xz');
+  writeFileSync(archive, 'fixture; real extraction is tested separately');
+  let state = { ...policy, gitRoot, archive, preparing: true, preparationAttempt: 0 };
+  let requests = 0;
+  const preparation = createSandboxPreparation({ platform: 'win32', getPolicy: () => state,
+    request: () => requests++, language: () => 'zh' });
+  const update = values => { state = { ...state, ...values }; preparation.changed(); };
+  function ready(attempt) {
+    const paths = ['bin/bash.exe', 'usr/bin/bash.exe', 'usr/bin/msys-2.0.dll', 'cmd/git.exe', 'ucrt64/bin/git.exe'];
+    for (const path of paths) {
+      mkdirSync(join(gitRoot, path, '..'), { recursive: true });
+      writeFileSync(join(gitRoot, path), 'MZfixture');
+    }
+    writeFileSync(join(gitRoot, '.ready'), '9\n'.repeat(paths.length));
+    update({ gitReady: true, preparationAttempt: attempt, preparing: false,
+      preparationSeconds: 1.2, preparationFirstUse: attempt === 1 });
+  }
+  return { preparation, gitRoot, ready, update, requests: () => requests };
+}
+
+test('commands share preparation, cancel independently, and report elapsed time once', async t => {
+  const { preparation, ready, requests } = preparationFixture(t);
+  const abort = new AbortController();
+  const cancelled = preparation.wait(abort.signal);
+  const started = preparation.wait(undefined, { report: true });
+  assert.equal(requests(), 1);
+  abort.abort();
+  await assert.rejects(cancelled, /aborted/);
+  ready(1);
+  assert.equal((await started).notice, '首次使用沙箱，已准备 Git Bash，用时 1.2 秒。');
+  assert.equal((await preparation.wait(undefined, { report: true })).notice, undefined);
 });
 
-test('closing a local MCP transport prevents stale traffic immediately', async () => {
-  const active = new Set();
-  const calls = [];
-  let finishClose;
-  const transport = trackLocalMcpTransport({
-    async start() { calls.push('start'); },
-    async send(message) { calls.push(message); },
-    close() { return new Promise(resolve => { finishClose = resolve; }); },
-  }, active);
-  await transport.start();
-  await transport.send('first');
-  const closing = transport.close();
-  await assert.rejects(transport.send('stale'), /Reconnect/);
-  await assert.rejects(transport.start(), /Reconnect/);
-  finishClose();
-  await closing;
-  assert.equal(active.size, 0);
-  assert.deepEqual(calls, ['start', 'first']);
+test('a missing executable triggers recovery and the next command retries after storage failure', async t => {
+  const { preparation, ready, gitRoot, update, requests } = preparationFixture(t);
+  ready(1);
+  rmSync(join(gitRoot, 'usr', 'bin', 'bash.exe'));
+  const failed = preparation.wait();
+  assert.equal(requests(), 1);
+  update({ gitReady: false, preparationError: 'Umeko will continue retrying automatically.', preparationAttempt: 4 });
+  await assert.rejects(failed, /continue retrying automatically/);
+  const recovered = preparation.wait();
+  assert.equal(requests(), 2);
+  ready(5);
+  assert.equal((await recovered).policy.gitRoot, gitRoot);
 });

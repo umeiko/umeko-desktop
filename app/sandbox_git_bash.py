@@ -5,6 +5,7 @@ import lzma
 from pathlib import Path, PureWindowsPath
 import shutil
 import tarfile
+from uuid import uuid4
 
 ARCHIVE_NAME = "git-bash-2.56.1-r4.tar.xz"
 VERSION = ARCHIVE_NAME.removesuffix(".tar.xz")
@@ -15,12 +16,22 @@ def _reparse(path):
     return path.is_symlink() or path.is_junction()
 
 
+def _is_executable(path):
+    if not path.is_file() or _reparse(path):
+        return False
+    with path.open("rb") as executable:
+        return executable.read(2) == b"MZ"
+
+
 def git_bash_ready(root):
     try:
-        if _reparse(root.parent) or _reparse(root):
+        if _reparse(root.parent.parent) or _reparse(root.parent) or _reparse(root):
             return False
         lengths = (root / ".ready").read_text(encoding="ascii").splitlines()
-        return bool(lengths) and lengths == [str((root / name).stat().st_size) for name in REQUIRED_FILES]
+        files = [root / name for name in REQUIRED_FILES]
+        if lengths != [str(path.stat().st_size) for path in files]:
+            return False
+        return all(_is_executable(path) for path in files)
     except (OSError, UnicodeError):
         return False
 
@@ -54,9 +65,9 @@ def prepare_git_bash(archive, root, progress):
     if git_bash_ready(root):
         return
     parent = root.parent
+    if _reparse(parent.parent) or _reparse(parent):
+        raise PermissionError("Git Bash cache must be an ordinary directory")
     parent.mkdir(parents=True, exist_ok=True)
-    if _reparse(parent):
-        raise ValueError("Git Bash cache root must be an ordinary directory")
     partial = parent / f".{root.name}.partial"
     _remove(partial)
     _remove(root)
@@ -81,11 +92,55 @@ def prepare_git_bash(archive, root, progress):
             # Reading the XZ footer also checks the final compressed block.
             while stream.read(256 * 1024):
                 pass
-        lengths = [(partial / name).stat().st_size for name in REQUIRED_FILES]
+        lengths = [(partial / name).stat().st_size if _is_executable(partial / name) else 0
+                   for name in REQUIRED_FILES]
         if any(length <= 0 for length in lengths):
             raise ValueError("Git Bash archive is incomplete")
         (partial / ".ready").write_text("\n".join(map(str, lengths)) + "\n", encoding="ascii")
         partial.rename(root)
         progress(100)
     finally:
-        _remove(partial)
+        try:
+            _remove(partial)
+        except OSError:
+            # A scanner or another process can temporarily hold staging open.
+            # Preserve the original exception so recovery can choose a new path.
+            pass
+
+
+def find_git_bash(root):
+    if git_bash_ready(root):
+        return root
+    return next((path for path in sorted(root.parent.glob(f"{root.name}-*"))
+                 if git_bash_ready(path)), None)
+
+
+def recover_git_bash(archive, root, progress, previous=None):
+    """Work around an occupied version directory without deleting a live copy."""
+    replacement = root.with_name(f"{root.name}-{uuid4().hex}")
+    if previous is None:
+        try:
+            prepare_git_bash(archive, root, progress)
+            return root
+        except OSError:
+            # A stale file or staging directory can be locked while the cache
+            # parent is still writable. Try a different directory in that case.
+            if not archive.is_file():
+                raise
+    prepare_git_bash(archive, replacement, progress)
+    return replacement
+
+
+def clean_git_bash_cache(root, keep=None):
+    if _reparse(root.parent.parent) or _reparse(root.parent):
+        return
+    try:
+        candidates = [root, *root.parent.glob(f"{root.name}-*"), *root.parent.glob(f".{root.name}*.partial")]
+    except OSError:
+        return
+    for path in candidates:
+        if path != keep:
+            try:
+                _remove(path)
+            except OSError:
+                pass

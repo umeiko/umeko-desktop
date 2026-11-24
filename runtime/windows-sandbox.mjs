@@ -1,8 +1,81 @@
-import { existsSync, realpathSync } from 'node:fs';
+import { closeSync, existsSync, lstatSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const helper = fileURLToPath(new URL('./bin/windows-sandbox/umeko-sandbox.exe', import.meta.url));
+const gitFiles = ['bin/bash.exe', 'usr/bin/bash.exe', 'usr/bin/msys-2.0.dll', 'cmd/git.exe', 'ucrt64/bin/git.exe'];
+
+function hasGitBash(policy) {
+  if (!policy.gitReady || !policy.gitRoot || !policy.archive || !existsSync(policy.archive)) return false;
+  try {
+    const lengths = readFileSync(join(policy.gitRoot, '.ready'), 'ascii').trim().split('\n');
+    const header = Buffer.alloc(2);
+    return lengths.length === gitFiles.length && gitFiles.every((file, index) => {
+      const path = join(policy.gitRoot, file);
+      const stat = lstatSync(path);
+      if (!stat.isFile() || stat.size < 2 || stat.size !== Number(lengths[index])) return false;
+      const fd = openSync(path, 'r');
+      try { return readSync(fd, header, 0, 2, 0) === 2 && header.toString('ascii') === 'MZ'; }
+      finally { closeSync(fd); }
+    });
+  } catch { return false; }
+}
+
+export function createSandboxPreparation({ getPolicy, request, language, platform = process.platform }) {
+  let pending;
+  let reportedAttempt;
+  function settle(error) {
+    const current = pending;
+    pending = undefined;
+    if (error) current?.reject(error);
+    else current?.resolve();
+  }
+  function changed() {
+    if (!pending) return;
+    const policy = getPolicy();
+    if (!policy?.enabled || hasGitBash(policy)) settle();
+    else if (!policy.preparing && policy.preparationError && policy.preparationAttempt > pending.attempt) {
+      settle(new Error(policy.preparationError));
+    }
+  }
+  async function wait(signal, { report = false } = {}) {
+    let policy = getPolicy();
+    while (platform === 'win32' && policy?.enabled && !hasGitBash(policy)) {
+      if (signal?.aborted) throw new Error('aborted');
+      let flight = pending;
+      if (!flight) {
+        flight = pending = { ...Promise.withResolvers(), attempt: policy.preparationAttempt ?? 0 };
+        request();
+      }
+      const result = flight.promise;
+      let abort;
+      try {
+        await (signal ? Promise.race([result, new Promise((_, reject) => {
+          abort = () => reject(new Error('aborted'));
+          signal.addEventListener('abort', abort, { once: true });
+          if (signal.aborted) abort();
+        })]) : result);
+      } finally { signal?.removeEventListener('abort', abort); }
+      policy = getPolicy();
+    }
+    if (signal?.aborted) throw new Error('aborted');
+    let notice;
+    if (report && platform === 'win32' && policy?.enabled && Number.isFinite(policy.preparationSeconds)
+        && policy.preparationAttempt !== reportedAttempt) {
+      reportedAttempt = policy.preparationAttempt;
+      const seconds = policy.preparationSeconds.toFixed(1);
+      if (language?.()?.startsWith('zh')) {
+        notice = policy.preparationFirstUse ? `首次使用沙箱，已准备 Git Bash，用时 ${seconds} 秒。`
+          : `已恢复沙箱的 Git Bash，用时 ${seconds} 秒。`;
+      } else {
+        notice = policy.preparationFirstUse ? `Prepared Git Bash for first use of the Windows sandbox in ${seconds} seconds.`
+          : `Restored Git Bash for the Windows sandbox in ${seconds} seconds.`;
+      }
+    }
+    return { policy, notice };
+  }
+  return { wait, changed, close: () => settle(new Error('aborted')) };
+}
 
 function includesPath(root, target) {
   const suffix = relative(root, target);
@@ -13,10 +86,6 @@ function includesPath(root, target) {
 // cancellation, and the Windows Job Object or background job record.
 export function sandboxCommand({ file, args, cwd, env = process.env, workspace, policy }, {platform = process.platform} = {}) {
   if (platform !== 'win32' || !policy?.enabled) return { file, args, env, level: 'off' };
-  if (policy.preparing) throw new Error('Preparing Git Bash for the Windows sandbox. Wait for preparation to finish, then retry the command.');
-  if (policy.preparationError || policy.gitReady === false) {
-    throw new Error('Could not prepare Git Bash for the Windows sandbox. Check Agent settings, then turn the sandbox off and back on.');
-  }
   const launcher = policy.launcher || helper;
   if (!existsSync(launcher)) throw new Error('Windows sandbox could not start: the packaged launcher is missing. Use a complete Windows package.');
   if (!policy.home || !policy.temp || !workspace) throw new Error('Windows sandbox could not start: workspace or sandbox storage is missing.');
@@ -42,7 +111,6 @@ export function sandboxCommand({ file, args, cwd, env = process.env, workspace, 
       // The bin wrapper resolves a relative path before starting MSYS. Launch
       // the actual executable so it does not have to traverse the profile.
       const packagedBash = join(gitRoot, 'usr', 'bin', 'bash.exe');
-      if (!existsSync(packagedBash)) throw new Error('The sandbox Git Bash files are missing. Turn the sandbox off and back on to restore them.');
       const pathKey = Object.keys(env).find(key => key.toUpperCase() === 'PATH') || 'PATH';
       env = { ...env, [pathKey]: [join(gitRoot, 'usr', 'bin'), join(gitRoot, 'ucrt64', 'bin'), env[pathKey]]
         .filter(Boolean).join(win32.delimiter) };
@@ -73,23 +141,4 @@ export function sandboxFailure(level, allowNetwork, output = '') {
     return 'Windows denied access while the sandbox was active. Write files only in the current workspace or the sandbox temp directory. Check the command output for the path.';
   }
   return `Windows sandbox was active (${level}). Writes are limited to the current workspace and sandbox temp directory. Network access was ${allowNetwork ? 'allowed' : 'blocked'}.`;
-}
-
-// Pi reconnects a closed transport with the latest settings. A stale client
-// cannot start a subprocess or send it work once its transport is closed.
-export function trackLocalMcpTransport(transport, active) {
-  for (const method of ['start', 'send']) {
-    const invoke = transport[method].bind(transport);
-    transport[method] = async (...args) => {
-      if (!active.has(transport)) throw new Error('The local MCP connection closed. Reconnect it to use the current Windows sandbox policy.');
-      return invoke(...args);
-    };
-  }
-  const close = transport.close.bind(transport);
-  transport.close = async (...args) => {
-    active.delete(transport);
-    return close(...args);
-  };
-  active.add(transport);
-  return transport;
 }

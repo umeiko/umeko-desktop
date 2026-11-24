@@ -16,7 +16,7 @@ class GitBashArchiveTests(unittest.TestCase):
 
     def make_archive(self, extra_name=None):
         source = self.base / "payload"
-        source.write_bytes(b"fixture")
+        source.write_bytes(b"MZfixture")
         with tarfile.open(self.archive, "w:xz") as bundle:
             for name in REQUIRED_FILES:
                 bundle.add(source, arcname=name)
@@ -36,7 +36,7 @@ class GitBashArchiveTests(unittest.TestCase):
         (self.root / REQUIRED_FILES[0]).write_bytes(b"")
         self.assertFalse(git_bash_ready(self.root))
         prepare_git_bash(self.archive, self.root, progress.append)
-        self.assertEqual((self.root / REQUIRED_FILES[0]).read_bytes(), b"fixture")
+        self.assertEqual((self.root / REQUIRED_FILES[0]).read_bytes(), b"MZfixture")
 
     def test_bad_payload_never_creates_a_ready_directory(self):
         self.make_archive("../../outside")

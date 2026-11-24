@@ -473,6 +473,9 @@ class PiControllerMixin:
         if self._closing:
             return
         kind, visible = event.get("type"), record is self._view
+        if kind == 'windows_sandbox_prepare':
+            self.windowsSandbox.prepare_for_command()
+            return
         if kind == 'remote_environment_state':
             self._remote_environments.observe(record.key, event)
             return
