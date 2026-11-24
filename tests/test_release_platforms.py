@@ -60,8 +60,9 @@ class WindowsPublishTests(unittest.TestCase):
         archive.write_bytes(b'verified Windows fixture')
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         archive.with_name(archive.name + '.sha256').write_text(digest + '  ' + archive.name + '\n')
+        node_version = json.loads((ROOT / 'scripts/node-distributions.json').read_text(encoding='utf-8'))['version']
         self.report = dict(platform='windows-x64', archive=archive.name, sha256=digest,
-                           build=dict(commit=COMMIT, version='0.7.0', node=dict(version='22.23.3')),
+                           build=dict(commit=COMMIT, version='0.7.0', node=dict(version=node_version)),
                            gui='passed', pi='passed', terminal='passed')
         self.metadata = native / 'build.json'
         self.metadata.write_text(json.dumps(self.report))
