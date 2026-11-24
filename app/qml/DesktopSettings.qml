@@ -209,6 +209,7 @@ Column {
                     implicitHeight: Theme.control(36)
                     editable: true
                     model: (backend && backend.sshConfigHosts ? backend.sshConfigHosts : []).map(item => item.alias)
+                    currentIndex: -1
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.font(13)
                     palette.text: Theme.ink; palette.buttonText: Theme.ink; palette.base: Theme.surface
@@ -232,11 +233,12 @@ Column {
                 ComboBox {
                     id: remotePlatformInput
                     objectName: "remoteEnvironmentPlatformInput"
-                    Layout.preferredWidth: 112
+                    Layout.preferredWidth: Math.max(112, platformMetrics.advanceWidth(remotePlatformInput.displayText) + 36)
                     implicitHeight: Theme.control(36)
                     model: [I18n.t("自动检测"), "Linux", "Windows"]
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.font(13)
+                    FontMetrics { id: platformMetrics; font: remotePlatformInput.font }
                     palette.text: Theme.ink; palette.buttonText: Theme.ink; palette.base: Theme.surface
                     palette.window: Theme.surface; palette.highlight: Theme.accentBg; palette.highlightedText: Theme.ink
                     background: Rectangle { radius: 8; color: Theme.surface; border.color: remotePlatformInput.activeFocus ? Theme.accent : Theme.line }
@@ -333,15 +335,20 @@ Column {
                             font.pixelSize: Theme.font(12)
                         }
                         Text {
+                            id: sshClientLabel
                             objectName: "remoteEnvironmentSshClient_" + modelData.name
+                            readonly property string executable: String(modelData.sshClient || "")
                             Layout.fillWidth: true
-                            visible: !!modelData.sshClient
-                            text: I18n.t("SSH 客户端：") + (modelData.sshClient || "")
+                            visible: executable.length > 0
+                            text: I18n.t("SSH 客户端：") + executable.split(/[\\/]/).pop()
                             color: Theme.muted
                             wrapMode: Text.WrapAnywhere
                             textFormat: Text.PlainText
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.font(12)
+                            HoverHandler { id: sshClientHover }
+                            ToolTip.visible: sshClientHover.hovered
+                            ToolTip.text: sshClientLabel.executable
                         }
                         Text {
                             objectName: "remoteEnvironmentRetry_" + modelData.name

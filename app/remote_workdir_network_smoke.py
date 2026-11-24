@@ -1,9 +1,7 @@
 """Packaged acceptance for downloads from a remote workdir."""
 import json
-import os
 from pathlib import Path
 import re
-import signal
 import time
 
 from PySide6.QtTest import QTest
@@ -87,19 +85,24 @@ def run_network(runner):
     created = runner.call_plugin('terminal', 'create', {}, timeout=90)
     assert created.get('ok'), created
     terminal = created['result']['id']
+
+    def terminal_output_until(matches, timeout, message):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            reply = runner.call_plugin('terminal', 'read', {'terminalId': terminal, 'lines': 150})
+            state = reply.get('result', {})
+            assert state.get('alive'), ('Remote terminal closed', reply)
+            if matches(state.get('text', '')):
+                return
+            QTest.qWait(300)
+        raise AssertionError((message, terminal))
+
     try:
-        QTest.qWait(1500)
+        terminal_output_until(lambda text: re.search(r'(?:^|\n)PS .+>\s*$', text), 30, 'Remote PowerShell did not become ready')
         sent = runner.call_plugin('terminal', 'write', {'terminalId': terminal, 'text':
             CURL + "curl-terminal.txt; if ($LASTEXITCODE -eq 0) { Write-Output ('TERM_' + 'DOWNLOAD_OK') }\r"})
         assert sent.get('ok'), sent
-        deadline = time.monotonic() + 65
-        while time.monotonic() < deadline:
-            reply = runner.call_plugin('terminal', 'read', {'terminalId': terminal, 'lines': 150})
-            if 'TERM_DOWNLOAD_OK' in reply.get('result', {}).get('text', ''):
-                break
-            QTest.qWait(300)
-        else:
-            raise AssertionError(('Terminal download did not complete', reply))
+        terminal_output_until(lambda text: 'TERM_DOWNLOAD_OK' in text, 65, 'Terminal download did not complete')
     finally:
         runner.call_plugin('terminal', 'kill', {'terminalId': terminal})
     verify('curl-terminal.txt')
@@ -114,8 +117,8 @@ def run_network(runner):
     owned = [row for row in rows if row.get('tunnel') and
              Acceptance.pid_alive(row['ownerPid']) and Acceptance.pid_alive(row['pid'])]
     assert owned, 'No test-owned SSH client to disconnect'
-    for row in owned:
-        os.kill(row['pid'], signal.SIGTERM)
+    requested_at = time.monotonic()
+    stopped = [Acceptance.terminate_windows_tunnel([row], requested_at) for row in owned]
 
     def retry_text():
         item = runner._find_qml('remoteEnvironmentRetry_dev-server')
@@ -126,7 +129,7 @@ def run_network(runner):
 
     runner.wait(first_retry_visible, 25, 'first visible retry and time')
     first_retry = retry_text()
-    runner.note('workspace-retry-visible', text=first_retry, killedPids=[row['pid'] for row in owned])
+    runner.note('workspace-retry-visible', text=first_retry, killedPids=[row['pid'] for row in stopped])
     window.setProperty('page', previous_page)
     tool(CURL + 'curl-reconnected.txt', 'reconnected curl')
     verify('curl-reconnected.txt')
