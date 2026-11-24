@@ -74,13 +74,17 @@ function pi(request) {
     var match = String(request.detail || "").match(/^(?:原因：|Reason: )([\s\S]*?)\n\n(原始[^\n：]*|Original [^\n:]*)[：:]\n([\s\S]*)$/)
     if (!match) return null
     var sections = [{label: "原因", text: match[1], mono: false}, {label: match[2], text: match[3], mono: true}]
-    if (typeof request.rememberPrefix === "string" && request.rememberPrefix.length)
-        sections.push({label: "以后允许的命令前缀", text: request.rememberPrefix, mono: true})
-    return {
+    var view = {
         structured: true, raw: "", action: "", description: "",
         sections: sections,
         permissionLevel: "", permission: "", permissionValue: ""
     }
+    var prefix = request.rememberPrefix
+    if (typeof prefix === "string" && /^[a-z][a-z0-9-]*(?:\.exe)?(?: [a-z0-9-]+)?$/i.test(prefix)) {
+        view.rememberPrefix = prefix
+        sections.push({label: "以后允许的命令前缀", text: prefix, mono: true})
+    }
+    return view
 }
 
 function present(request) {

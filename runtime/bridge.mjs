@@ -187,7 +187,7 @@ function ask(method, title, detail = "", options = [], dangerCategory, rememberP
   return new Promise(resolve => {
     const event = { type: "ui_request", id, method, title, detail, options };
     if (Number.isInteger(dangerCategory) && dangerCategory >= 1 && dangerCategory <= 7) event.dangerCategory = dangerCategory;
-    if (rememberPrefix) event.rememberPrefix = JSON.stringify(rememberPrefix);
+    if (rememberPrefix) event.rememberPrefix = rememberPrefix.join(" ");
     dialogs.set(id, { resolve, event });
     if (dialogs.size === 1) emit(event);
   });

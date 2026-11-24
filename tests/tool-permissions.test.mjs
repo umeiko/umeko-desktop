@@ -354,8 +354,40 @@ test('command rules match token prefixes and take the strictest decision across 
   assert.equal(decide('git status | git push protected'), rules[2]);
   assert.equal(decide('git status; printf ok').decision, 'ask');
   assert.equal(decide('git-status --short', 'auto'), null);
-  assert.deepEqual(decide("printf '%s' 'a ; b'"), {decision: 'ask', remember: ['printf', '%s', 'a ; b']});
+  assert.deepEqual(decide("printf '%s' 'a ; b'"), {decision: 'ask', remember: ['printf']});
   assert.equal(decide('git status $(printf ok)').remember, undefined);
+});
+
+test('remembered prefixes contain known programs and subcommands, without operands or launchers', () => {
+  const suggest = (command, shell, proposal) => evaluateCommandRules(splitPolicyCommand(command, shell), [], shell, 'ask', proposal).remember;
+  assert.deepEqual(suggest('git status --short notes.txt', 'bash', ['git', 'status']), ['git', 'status']);
+  assert.deepEqual(suggest('git status -s notes.txt', 'bash', ['git']), ['git', 'status']);
+  assert.deepEqual(suggest('git status notes.txt', 'bash', ['git', 'status', 'notes.txt']), ['git', 'status']);
+  assert.deepEqual(suggest('npm test -- test-name', 'bash', ['npm', 'run']), ['npm', 'test']);
+  assert.deepEqual(suggest('cargo build --target release', 'bash'), ['cargo', 'build']);
+  assert.deepEqual(suggest("Get-ChildItem -Path 'C:\\Temp'", 'powershell'), ['Get-ChildItem']);
+  for (const command of ['git', 'git -C work status', 'git some-alias', 'custom work.txt', 'npm run script', 'pnpm run script',
+    'yarn run script', 'python -c "print(1)"', 'python3.12 -c "print(1)"', 'node.exe -e "1"',
+    'bash -c "pwd"', '/bin/sh -lc "pwd"', 'powershell.exe -Command "Get-Location"', 'pwsh -c "Get-Location"',
+    'Rscript data.R', 'bun run x', 'cmd /c dir', 'dash -c pwd', 'deno eval x', 'env echo x', 'fish -c pwd',
+    'julia -e 1', 'ksh -c pwd', 'lua -e 1', 'nodejs -e 1', 'osascript x', 'perl -e 1', 'php -r 1',
+    'py -3 x', 'pypy3 x', 'pythonw x', 'pyw x', 'rm x', 'ruby -e 1', 'sudo git status', 'zsh -lc pwd']) {
+    assert.equal(suggest(command, 'bash', command.split(' ').slice(0, 2)), undefined, command);
+  }
+});
+
+test('ask mode advertises a model hint without mutating native shell definitions', async () => {
+  const handlers = new Map();
+  createToolPermissionExtension({getPolicy: () => ({mode: 'ask', dataDir: '/profile'})})({on(name, handler) { handlers.set(name, handler); }});
+  const bash = {type: 'function', function: {name: 'bash', strict: false, parameters: {type: 'object',
+    properties: {command: {type: 'string'}}, required: ['command']}}};
+  const strict = {type: 'function', function: {...bash.function, name: 'powershell', strict: true}};
+  const payload = {tools: [bash, strict]};
+  const advertised = await handlers.get('before_provider_request')({payload}, {hasUI: true});
+  assert.equal(advertised.tools[0].function.parameters.properties.prefix_rule.maxItems, 2);
+  assert.deepEqual(advertised.tools[0].function.parameters.required, ['command']);
+  assert.equal(advertised.tools[1], strict);
+  assert.equal(bash.function.parameters.properties.prefix_rule, undefined);
 });
 
 test('PowerShell command rules split pipelines, continuations and newlines outside literal operands', () => {
@@ -397,19 +429,24 @@ test('remembered approval persists while built-in and compound blocks retain pri
   createToolPermissionExtension({getPolicy: () => ({mode: 'ask', ...dirs})})({on(_event, fn) { handle = fn; }});
   const ctx = {cwd: dirs.workspace, hasUI: true, ui: {
     confirm: async (_title, message) => { prompts.push(message); return false; },
-    confirmCommand: async (_title, _message, prefix) => { prompts.push(prefix); return 'alwaysAllow'; },
+    confirmCommand: async (_title, _message, prefix) => { prompts.push(prefix); return prefix[1] === 'push' ? false : 'alwaysAllow'; },
     confirmDangerous: async (_title, _message, category) => { prompts.push(category); return false; },
   }};
-  const run = (toolName, command) => handle({toolName, input: {command}}, ctx);
+  const run = (toolName, command, prefix_rule) => handle({toolName, input: {command, prefix_rule}}, ctx);
   assert.equal(await run('powershell', "Write-Output 'ready'"), undefined);
   assert.deepEqual(listCommandRules(dirs, 'user').at(-1), {
-    scope: 'user', pattern: ['Write-Output', 'ready'], decision: 'allow', shell: 'powershell',
+    scope: 'user', pattern: ['Write-Output'], decision: 'allow', shell: 'powershell',
   });
   assert.equal(await run('powershell', 'write-output ready later'), undefined);
   const blocked = await run('powershell', 'Write-Output ready; Set-Content stop.txt no');
   assert.match(blocked.reason, /workspace command rule \["Set-Content","stop\.txt"\] \(forbid\)/);
   assert.equal((await run('powershell', 'bcdedit /?')).block, true);
-  assert.deepEqual(prompts, [['Write-Output', 'ready'], 4]);
+  assert.equal(await run('bash', 'git status --short', ['git', 'status']), undefined);
+  assert.equal(await run('bash', 'git status -s'), undefined);
+  assert.equal((await run('bash', 'git push')).block, true);
+  assert.equal((await run('bash', 'node -e "1"', ['node', '-e'])).block, true);
+  assert.deepEqual(prompts.slice(0, -1), [['Write-Output'], 4, ['git', 'status'], ['git', 'push']]);
+  assert.match(prompts.at(-1), /node -e/);
 });
 
 test('a malformed command rule file produces a visible error instead of ignoring restrictions', async t => {

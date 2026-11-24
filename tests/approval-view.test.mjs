@@ -71,8 +71,13 @@ test('Pi tool approvals split reason and command; other Pi dialogs are unchanged
   assert.deepEqual(present({}), { structured: false });
 });
 
-test('a reusable Pi approval shows the serialized prefix sent by the bridge', () => {
-  const prefix = '["git","status"]';
-  const view = present({ method: 'confirm', detail: 'Reason: Ask mode.\n\nOriginal command:\ngit status', rememberPrefix: prefix });
-  assert.deepEqual(view.sections.at(-1), { label: '以后允许的命令前缀', text: prefix, mono: true });
+test('a reusable Pi approval displays plain command text in either language', () => {
+  for (const detail of ['Reason: Ask mode.\n\nOriginal command:\ngit status -s', '原因：询问模式。\n\n原始命令：\ngit status -s']) {
+    const view = present({ method: 'confirm', detail, rememberPrefix: 'git status' });
+    assert.equal(view.rememberPrefix, 'git status');
+    assert.deepEqual(view.sections.at(-1), { label: '以后允许的命令前缀', text: 'git status', mono: true });
+    const legacy = present({ method: 'confirm', detail, rememberPrefix: '["git","status"]' });
+    assert.equal(legacy.rememberPrefix, undefined);
+    assert.equal(legacy.sections.length, 2);
+  }
 });

@@ -54,8 +54,7 @@ Popup {
         }
         ActionButton {
             objectName: "alwaysAllowToolButton"
-            visible: root.actionPrefix === "" && root.approvalBackend.pendingApproval.method === "confirm"
-                     && (root.approvalBackend.pendingApproval.rememberPrefix || []).length > 0
+            visible: root.actionPrefix === "" && !!root.view.rememberPrefix
             Layout.fillWidth: true
             text: I18n.t("以后都允许这类命令")
             onClicked: root.approvalBackend.respondPiDialog("alwaysAllow")

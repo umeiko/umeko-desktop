@@ -9,7 +9,8 @@
  * https://github.com/kenryu42/cc-safety-net/tree/v2.7.0
  * Prefix matching and persisted approvals are adapted from OpenAI Codex
  * rust-v0.172.0, codex-rs/execpolicy/src/{rule,policy,amend}.rs and
- * codex-rs/core/src/exec_policy.rs. Notice: ../licenses/codex-execpolicy.txt.
+ * codex-rs/core/src/exec_policy.rs (including BANNED_PREFIX_SUGGESTIONS).
+ * Notice: ../licenses/codex-execpolicy.txt.
  * This is a direct-command/literal-wrapper detector, not an OS sandbox.
  */
 /*
@@ -431,10 +432,32 @@ export function childPermissionUI(ui) {
  return normalUI;
 }
 
+// Use Pi's provider request hook to advertise the hint on the OpenAI envelope.
+// Pi's native tool definitions and the command passed to the shell stay intact.
+function advertisePrefixSuggestion(payload) {
+ if(!Array.isArray(payload?.tools)) return undefined;
+ const tools=payload.tools.map(tool=>{
+   const definition=tool.function;
+   const schema=definition?.parameters;
+   if(!['bash','powershell'].includes(definition?.name)||definition.strict===true||!schema?.properties?.command) return tool;
+   const prefix_rule={
+     type:'array',items:{type:'string'},minItems:1,maxItems:2,
+     description:'Optional reusable approval prefix: the program and its subcommand, or a standalone command name. Omit paths, argument values, interpreters and commands that run arbitrary code.',
+   };
+   return {...tool,function:{...definition,parameters:{...schema,properties:{...schema.properties,prefix_rule}}}};
+ });
+ return {...payload,tools};
+}
+
 /** Per-session factory; getPolicy is the sole source of the active mode. */
 export function createToolPermissionExtension({getPolicy,classify=classifyCommand}={}) {
  if(typeof getPolicy!=='function')throw new TypeError('getPolicy is required');
  return pi=>{
+   pi.on('before_provider_request',async({payload},ctx)=>{
+     const policy=await getPolicy();
+     if(ctx.hasUI&&policy.mode==='ask'&&policy.dataDir&&!policy.pluginApprovalRequired)
+       return advertisePrefixSuggestion(payload);
+   });
    pi.on('tool_call',async(event,ctx)=>{
      let language='en';
      const notify=message=>{try{ctx.ui?.notify?.(message,'error');}catch{/* model-visible block below remains authoritative */}};
@@ -466,7 +489,7 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
          const rules=listCommandRules(ruleContext).filter(rule=>rule.decision!=='allow'||
            (!policy.pluginApprovalRequired&&(rule.scope!=='workspace'||workspaceTrusted)));
          if(rules.length||policy.mode==='ask'){
-           const commandRule=evaluateCommandRules(splitPolicyCommand(original,commandShell),rules,commandShell,policy.mode);
+           const commandRule=evaluateCommandRules(splitPolicyCommand(original,commandShell),rules,commandShell,policy.mode,input.prefix_rule);
            if(commandRule?.pattern){
              const prefix=JSON.stringify(commandRule.pattern);
              const scope=commandRule.scope==='user'?(language==='zh'?'用户':'user'):(language==='zh'?'工作区':'workspace');
@@ -601,7 +624,36 @@ function matchesPrefix(pattern, tokens, shell) {
     : token === tokens[index]);
 }
 
-export function evaluateCommandRules({parts, plain}, rules, shell, mode) {
+// Recognize the subcommand from each program's vocabulary. A positional
+// operand such as a filename or script name does not identify a command class.
+// This also excludes Codex's banned broad prefixes: bare git, interpreters and
+// shells, launchers, rm, and npm/pnpm/yarn run.
+const reusableSubcommands = new Map([
+  ['git', new Set(['add', 'branch', 'clone', 'commit', 'diff', 'fetch', 'grep', 'log', 'ls-files', 'pull',
+    'push', 'remote', 'restore', 'rev-parse', 'show', 'status', 'switch', 'tag'])],
+  ['npm', new Set(['ci', 'install', 'list', 'test'])],
+  ['pnpm', new Set(['install', 'list', 'test'])],
+  ['yarn', new Set(['install', 'test'])],
+  ['cargo', new Set(['build', 'check', 'doc', 'fmt', 'test'])],
+]);
+const reusableStandalone = {
+  bash: new Set(['cat', 'echo', 'head', 'ls', 'mkdir', 'printf', 'pwd', 'tail', 'touch', 'wc']),
+  powershell: new Set(['get-childitem', 'get-content', 'get-item', 'get-location', 'set-content', 'test-path', 'write-output']),
+};
+
+function reusablePrefix(tokens, shell, suggestion) {
+  const [program, subcommand] = tokens;
+  if (typeof program !== 'string' || !/^[a-z][a-z0-9-]*(?:\.exe)?$/i.test(program)) return undefined;
+  const name = executable(program);
+  let derived;
+  if (reusableSubcommands.get(name)?.has(subcommand)) derived = [program, subcommand];
+  if (reusableStandalone[shell]?.has(name)) derived = [program];
+  if (derived && Array.isArray(suggestion) && suggestion.length === derived.length &&
+      derived.every((word, index) => word === suggestion[index])) return [...suggestion];
+  return derived;
+}
+
+export function evaluateCommandRules({parts, plain}, rules, shell, mode, suggestedPrefix) {
   const applicable = rules.filter(rule => !rule.shell || rule.shell === shell);
   let strictest;
   let allAllowed = plain && parts.length > 0;
@@ -616,7 +668,8 @@ export function evaluateCommandRules({parts, plain}, rules, shell, mode) {
   }
   if (strictest?.decision === 'forbid' || strictest?.decision === 'ask') return strictest;
   if (allAllowed) return {decision: 'allow'};
-  if (mode === 'ask') return {decision: 'ask', remember: plain && parts.length === 1 ? parts[0] : undefined};
+  if (mode === 'ask') return {decision: 'ask', remember: plain && parts.length === 1
+    ? reusablePrefix(parts[0], shell, suggestedPrefix) : undefined};
   // A script whose executable tokens cannot all be determined needs a person
   // to review it when a restriction could apply to one of those tokens.
   if (!plain && applicable.some(rule => rule.decision !== 'allow')) return {decision: 'ask'};
