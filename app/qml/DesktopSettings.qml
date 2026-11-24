@@ -141,20 +141,29 @@ Column {
             }
             Text {
                 Layout.fillWidth: true
-                visible: remoteRows.count === 0
-                text: I18n.t("请让 Agent 用 OpenSSH 主机别名添加远程环境。")
+                text: I18n.t("让 Agent 用 OpenSSH 主机别名添加远程环境，或测试现有连接。")
                 color: Theme.muted
                 wrapMode: Text.Wrap
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.font(13)
             }
             Repeater {
-                id: remoteRows
                 model: backend.remoteEnvironments
                 RowLayout {
+                    id: environmentRow
                     required property var modelData
+                    property double clock: Date.now()
+                    readonly property bool prolongedOutage: modelData.state === "reconnecting"
+                        && !!modelData.outageNoticeAt && clock >= modelData.outageNoticeAt
                     Layout.fillWidth: true
                     spacing: 12
+                    Timer {
+                        interval: 1000
+                        repeat: true
+                        running: environmentRow.modelData.state === "reconnecting"
+                            && !!environmentRow.modelData.outageNoticeAt && !environmentRow.prolongedOutage
+                        onTriggered: environmentRow.clock = Date.now()
+                    }
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 3
@@ -192,6 +201,16 @@ Column {
                             text: (modelData.attempt ? I18n.t("第 %1 次重试").arg(modelData.attempt) : I18n.t("正在重新连接"))
                                   + (modelData.nextRetryAt ? " · " + I18n.t("下次重试：%1").arg(Qt.formatDateTime(new Date(modelData.nextRetryAt), "hh:mm:ss"))
                                      : modelData.retryAfterMs ? " · " + I18n.t("%1 秒后重试").arg(Math.ceil(modelData.retryAfterMs / 1000)) : "")
+                            color: Theme.muted
+                            wrapMode: Text.Wrap
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                        Text {
+                            objectName: "remoteEnvironmentOutage_" + modelData.name
+                            Layout.fillWidth: true
+                            visible: environmentRow.prolongedOutage
+                            text: I18n.t("服务器暂时无法访问，Umeko 会在后台继续重试。")
                             color: Theme.muted
                             wrapMode: Text.Wrap
                             font.family: Theme.fontFamily

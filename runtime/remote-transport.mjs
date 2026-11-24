@@ -482,6 +482,7 @@ rm -f ${quoteSh(temporary)}`;
   _outageDetails() {
     return {
       outageStartedAt: this.outageStartedAt, attempt: this.reconnectAttempt,
+      outageNoticeAt: this.outageStartedAt + (this.options.outageTimeoutMs ?? outageTimeoutMs),
       nextRetryAt: this.nextRetryAt, sshError: this.reconnectSshError,
     };
   }
@@ -492,8 +493,15 @@ rm -f ${quoteSh(temporary)}`;
 
   async _connect() {
     if (this.sessionId) this._beginOutage();
-    for (let attempt = 1; !this.closed; attempt++) {
+    for (let attempt = this.outageStartedAt === undefined ? 0 : 1; !this.closed; attempt++) {
       this.reconnectAttempt = attempt;
+      if (attempt) {
+        const retryAfterMs = retryDelays[Math.min(attempt - 1, retryDelays.length - 1)];
+        this.nextRetryAt = Date.now() + retryAfterMs;
+        this._state("reconnecting", { ...this._outageDetails(), retryAfterMs });
+        await (this.options.reconnectSleep ?? sleep)(retryAfterMs, this.controller.signal);
+        if (this.closed) throw abortError();
+      }
       this.nextRetryAt = undefined;
       if (this.outageStartedAt === undefined) this._state("connecting");
       else this._state("reconnecting", this._outageDetails());
@@ -538,11 +546,6 @@ rm -f ${quoteSh(temporary)}`;
         }
         if (error.sshError) this.reconnectSshError = error.sshError;
         this._beginOutage();
-        const retryAfterMs = retryDelays[Math.min(attempt - 1, retryDelays.length - 1)];
-        this.reconnectAttempt = attempt + 1;
-        this.nextRetryAt = Date.now() + retryAfterMs;
-        this._state("reconnecting", { ...this._outageDetails(), retryAfterMs });
-        await (this.options.reconnectSleep ?? sleep)(retryAfterMs, this.controller.signal);
       }
     }
     throw abortError();
@@ -583,8 +586,7 @@ rm -f ${quoteSh(temporary)}`;
         },
         startDeadline: () => {
           if (this.outageStartedAt === undefined || timer) return;
-          const budget = this.options.outageTimeoutMs ?? outageTimeoutMs;
-          const remaining = Math.max(0, budget - (Date.now() - this.outageStartedAt));
+          const remaining = Math.max(0, this._outageDetails().outageNoticeAt - Date.now());
           timer = setTimeout(() => {
             const error = sshFailure("The host has not reconnected. Umeko is still retrying in the background.", this.reconnectSshError);
             const retryAfterMs = this.nextRetryAt === undefined ? undefined : Math.max(0, this.nextRetryAt - Date.now());

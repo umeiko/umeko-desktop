@@ -25,6 +25,7 @@ def attach(app, controller, directory, window=None):
     timer = QTimer(app)
     app._shell_smoke_timer = timer
     dsh_smoke = os.environ.get("UMEKO_DSH_SMOKE") == "1"
+    remote_settings_smoke = os.environ.get("UMEKO_REMOTE_SETTINGS_SMOKE") == "1"
 
     def click(name):
         item = window.findChild(QObject, name)
@@ -50,6 +51,26 @@ def attach(app, controller, directory, window=None):
         elif action == "snapshot":
             name = request["name"]
             return name in {"settings", "chat"} and window.grabWindow().save(str(directory / (name + ".png")))
+        else:
+            return False
+        return True
+
+    def remote_settings_action(action, request):
+        if action == "remote_settings":
+            window.setProperty("settingsTab", 3)
+            window.setProperty("page", "settings")
+        elif action == "open_remote_settings":
+            return click("openUmekoDesktopSettingsButton")
+        elif action == "remote_settings_language" and request.get("language") in {"zh", "en"}:
+            controller.setLanguage(request["language"])
+        elif action == "remote_settings_snapshot":
+            language = request.get("language")
+            state = request.get("state")
+            if language not in {"zh", "en"} or state not in {"connected", "reconnecting", "long-outage"}:
+                return False
+            settings = window.findChild(QObject, "umekoDesktopSettings")
+            return bool(settings and settings.property("visible")
+                        and window.grabWindow().save(str(directory / f"{language}-{state}.png")))
         else:
             return False
         return True
@@ -122,7 +143,7 @@ def attach(app, controller, directory, window=None):
             else:
                 accepted = window.grabWindow().save(str(directory / (name + ".png")))
         elif action not in {"status", "quit"}:
-            accepted = dsh_smoke and dsh_action(action, request)
+            accepted = (remote_settings_smoke and remote_settings_action(action, request)) or (dsh_smoke and dsh_action(action, request))
         view = controller._view
         result = {"accepted": accepted, "busy": controller.busy, "phase": view.phase,
                   "session": view.id, "messages": view.messages, "evidence": evidence,
@@ -133,6 +154,8 @@ def attach(app, controller, directory, window=None):
             result.update(backend=controller.sessionBackend, acpSession=getattr(view, "acp_session_id", ""),
                           approval=controller.pendingApproval, runtime={"busy": runtime.busy, "ready": runtime.ready,
                               "version": runtime.version, "status": runtime.status, "hint": runtime.hint})
+        if remote_settings_smoke:
+            result["remoteEnvironments"] = controller.remoteEnvironments
         temporary = response_path.with_suffix(".tmp")
         temporary.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
         temporary.replace(response_path)
@@ -141,7 +164,8 @@ def attach(app, controller, directory, window=None):
 
     timer.timeout.connect(receive)
     timer.start(50)
-    QTimer.singleShot(720_000 if dsh_smoke else 120_000, lambda: app.exit(2))
+    timeout = 900_000 if remote_settings_smoke else 720_000 if dsh_smoke else 120_000
+    QTimer.singleShot(timeout, lambda: app.exit(2))
 
 
 def team_action(controller, action, request):
