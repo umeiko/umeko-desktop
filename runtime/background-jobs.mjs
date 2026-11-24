@@ -15,24 +15,21 @@ async function loadPrimitives() {
   const cache = join(process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"), "cache", "umeko-background-jobs");
   const jiti = createJiti(import.meta.url, { moduleCache: false, tryNative: false, fsCache: cache });
   const root = new URL("./", import.meta.resolve("@alexlikevibe/pi-bg/package.json"));
-  const [{ BackgroundRegistry }, { spawnWithFileOutput }] = await Promise.all([
-    jiti.import(fileURLToPath(new URL("src/state.ts", root))),
-    jiti.import(fileURLToPath(new URL("src/spawn.ts", root))),
-  ]);
-  return { BackgroundRegistry, spawnWithFileOutput };
+  const { BackgroundRegistry } = await jiti.import(fileURLToPath(new URL("src/state.ts", root)));
+  return { BackgroundRegistry };
 }
 
 // Adapted from @alexlikevibe/pi-bg 2.3.0 src/spawn.ts (MIT).
-// Windows needs windowsHide, which its public primitive does not expose.
+// The public primitive does not accept a shell environment or windowsHide.
 // stdout/stderr go directly to disk; no growing in-memory output buffer.
-function spawnHiddenWithFileOutput({ file, fileArgs, cwd, logPath, errPath }) {
+function spawnHiddenWithFileOutput({ file, fileArgs, cwd, logPath, errPath, env }) {
   mkdirSync(join(logPath, ".."), { recursive: true });
   const outFd = openSync(logPath, "w");
   let errFd;
   try {
     errFd = openSync(errPath, "w");
     const child = spawn(file, fileArgs, { cwd, stdio: ["ignore", outFd, errFd],
-      detached: true, windowsHide: true, env: { ...process.env } });
+      detached: true, windowsHide: true, env });
     const exit = new Promise(resolve => {
       child.once("exit", (code, signal) => resolve({ code, signal }));
       child.once("error", error => resolve({ code: 1, signal: null, error: error.message }));
@@ -52,7 +49,7 @@ const snapshot = job => ({ id: job.id, command: job.command, cwd: job.cwd, pid: 
   stdoutPath: job.logPath, stderrPath: job.errPath, ...(job.error ? { error: job.error } : {}) });
 
 export async function createJobManager({ shellPath, cwd = process.cwd() } = {}) {
-  const { BackgroundRegistry, spawnWithFileOutput } = await loadPrimitives();
+  const { BackgroundRegistry } = await loadPrimitives();
   const registry = new BackgroundRegistry();
   const directory = await mkdtemp(join(tmpdir(), "umeko-background-jobs-"));
   let disposed = false, disposal;
@@ -61,15 +58,14 @@ export async function createJobManager({ shellPath, cwd = process.cwd() } = {}) 
     if (!job) throw new Error("Unknown background job in this session");
     return job;
   }
-  async function start({ command, cwd: workingDirectory = cwd } = {}) {
+  async function start({ command, cwd: workingDirectory = cwd, env, shellPath: sessionShellPath = shellPath } = {}) {
     if (disposed) throw new Error("Background job manager is closed");
     if (typeof command !== "string" || !command.trim()) throw new Error("A command is required");
     assertProcessCommandAllowed(command);
-    const { shell, args, commandTransport } = getShellConfig(shellPath);
+    const { shell, args, commandTransport } = getShellConfig(sessionShellPath);
     if (commandTransport === "stdin") throw new Error("Background jobs require Git Bash or a shell accepting -c");
     const id = randomUUID(), logPath = join(directory, `${id}.stdout.log`), errPath = join(directory, `${id}.stderr.log`);
-    const launch = process.platform === "win32" ? spawnHiddenWithFileOutput : spawnWithFileOutput;
-    const child = launch({ file: shell, fileArgs: [...args, command], cwd: workingDirectory, logPath, errPath });
+    const child = spawnHiddenWithFileOutput({ file: shell, fileArgs: [...args, command], cwd: workingDirectory, logPath, errPath, env });
     const job = { id, command, cwd: workingDirectory, pid: child.pid, logPath, errPath,
       status: "running", exitCode: null, signal: null, startedAt: Date.now() };
     registry.jobs.set(id, job);
@@ -210,8 +206,12 @@ export function createBackgroundJobsExtension(options = {}) {
           if (input.action === "start" && options.canStart && !(await options.canStart())) throw new Error("Checkpoint restoration is active in this workspace");
           const jobs = await getManager();
           let result;
-          if (input.action === "start") result = await jobs.start({ command: input.command,
-            cwd: resolve(ctx?.cwd || options.cwd || process.cwd(), input.cwd || ".") });
+          if (input.action === "start") {
+            const shellPath = options.getShellPath?.(ctx) || options.shellPath;
+            const env = await options.getEnvironment?.(ctx, shellPath);
+            result = await jobs.start({ command: input.command, env, shellPath,
+              cwd: resolve(ctx?.cwd || options.cwd || process.cwd(), input.cwd || ".") });
+          }
           else if (input.action === "list") result = jobs.list();
           else if (input.action === "status") result = jobs.status(input.id);
           else if (input.action === "read") result = await jobs.read(input.id, input);
