@@ -274,7 +274,14 @@ export function createBackgroundJobsExtension(options = {}) {
       },
     });
   }
-  return { extension, dispose, getManager, foreground, stop, disposeAll };
+  return {
+    extension, dispose, foreground, stop, disposeAll,
+    getManager(id) {
+      // Callers inspecting a standalone extension can omit the ID when it has
+      // one manager. Tool execution itself always uses its own context.
+      return arguments.length === 0 && managers.size === 1 ? managers.values().next().value : getManager(id);
+    },
+  };
 }
 
 export function backgroundJobsExtension(pi) { return createBackgroundJobsExtension().extension(pi); }

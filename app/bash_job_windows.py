@@ -208,7 +208,8 @@ def supervise_session(request, job, cancelled, incoming, emit, stack):
                 reply["error"] = "Command input closed"
             emit(reply)
 
-    threading.Thread(target=write_input, daemon=True).start()
+    writer = threading.Thread(target=write_input, daemon=True)
+    writer.start()
     code = dword(1)
     while not cancelled.is_set():
         wait = wait_process(info.process, 25)
@@ -218,7 +219,9 @@ def supervise_session(request, job, cancelled, incoming, emit, stack):
         if wait == 0xFFFFFFFF:
             raise ctypes.WinError(ctypes.get_last_error())
     cancelled.set()
-    return {"exitCode": code.value, **cleanup(job)}
+    result = cleanup(job)
+    writer.join(timeout=0.15)
+    return {"exitCode": code.value, **result}
 
 
 def main():
