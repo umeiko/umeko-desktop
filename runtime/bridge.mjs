@@ -23,7 +23,6 @@ import { createGenerationExtension } from "./generation.mjs";
 import { createSystemPromptController } from "./system-prompt.mjs";
 import { createCoordinatorSkills } from "./coordinator-skills.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
 import { join, resolve, dirname, basename, delimiter } from "node:path";
@@ -63,84 +62,22 @@ const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 const bashHost = process.env.UMEKO_BASH_JOB_HOST;
 const bashHostScript = process.env.UMEKO_BASH_JOB_SCRIPT;
-const bashJobs = new Set();
 const blockedSessions = new WeakSet();
 let stopWork, currentRun;
-const bashCleanupDeadlineMs = 1_500;
 const stopDeadlineMs = 2_400;
 
-function runOwnedBash({shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env, toolCallId}) {
+function runCommandSession(request) {
+  const { shellConfig, signal, env } = request;
   const session = runtime?.session;
   const sessionId = env.PI_SESSION_ID || session?.sessionManager.getSessionId();
-  if (signal?.aborted || (session && blockedSessions.has(session) && sessionId === session.sessionManager.getSessionId()))
+  if (closing || signal?.aborted || (session && blockedSessions.has(session) && sessionId === session.sessionManager.getSessionId()))
     throw new Error("aborted");
-  if (!bashHost) throw new Error("Windows Bash process host is unavailable");
-  const child = spawn(bashHost, [...(bashHostScript ? [bashHostScript] : []), "--umeko-bash-job"], {
-    cwd, env: {...env, PYINSTALLER_RESET_ENVIRONMENT: "1"}, stdio: ["pipe", "pipe", "ignore"], windowsHide: true,
-  });
-  const lines = createInterface({input: child.stdout});
+  if (shellConfig.commandTransport === "stdin") return undefined;
   const owner = sessionId === session?.sessionManager.getSessionId() ? currentRun : undefined;
-  const job = {sessionId, runId: owner?.id, toolCallId, pid: null, ppid: null, stop};
-  let reason, timeoutTimer, cleanupTimer, settled = false, complete;
-  job.result = new Promise(resolve => { complete = resolve; });
-  bashJobs.add(job);
-
-  function finish(result) {
-    if (settled) return;
-    settled = true;
-    clearTimeout(timeoutTimer);
-    clearTimeout(cleanupTimer);
-    signal?.removeEventListener("abort", onAbort);
-    child.stdin.end();
-    lines.close();
-    child.stdout.destroy();
-    bashJobs.delete(job);
-    const {sessionId, runId, toolCallId, pid, ppid} = job;
-    emit({type:"bash_cleanup",sessionId,runId,toolCallId,pid,ppid,reason:reason || "exit",
-      state:result.cleanup,remaining:result.remaining});
-    if (owner && result.cleanup !== "done") owner.cleanupFailures.push(result);
-    complete(result);
-  }
-
-  function stop(cause) {
-    if (settled || reason) return;
-    reason = cause;
-    child.stdin.end("stop\n");
-    cleanupTimer = setTimeout(() => {
-      // The host's last job handle closes even if its protocol is stuck.
-      child.kill();
-      finish({cleanup:"timed_out",remaining:null});
-    }, bashCleanupDeadlineMs);
-  }
-
-  const onAbort = () => stop("aborted");
-  child.stdin.on("error", () => {});
-  child.once("error", () => finish({cleanup:"failed",remaining:null}));
-  child.once("close", () => finish({cleanup:"failed",remaining:null}));
-  lines.on("line", line => {
-    let result;
-    try { result = JSON.parse(line); } catch { return; }
-    if (Number.isInteger(result.pid)) { job.pid = result.pid; job.ppid = result.ppid; }
-    if (typeof result.output === "string" && !reason) onData(Buffer.from(result.output, "base64"));
-    if (result.cleanup) finish(result);
-  });
-  child.stdin.write(JSON.stringify({args:[shellConfig.shell,...shellConfig.args,command],cwd}) + "\n");
-  if (timeoutMs !== undefined) timeoutTimer = setTimeout(() => stop("timeout"), timeoutMs);
-  signal?.addEventListener("abort", onAbort, {once:true});
-  if (signal?.aborted) onAbort();
-  return job.result.then(result => {
-    if (result.cleanup !== "done") {
-      const remaining = result.remaining?.join(", ") || "unconfirmed";
-      throw new Error(`Bash ${reason || "exit"}: process cleanup ${result.cleanup} (PIDs: ${remaining})`);
-    }
-    if (reason === "aborted") throw new Error("aborted");
-    if (reason === "timeout") throw new Error(`timeout:${timeout}`);
-    if (Object.hasOwn(result, "error")) throw new Error(`Unable to start Windows Bash (${result.error ?? "unknown error"})`);
-    return {exitCode:result.exitCode};
-  });
+  return backgroundJobs.foreground({ ...request, sessionId, owner });
 }
 
-if (process.platform === "win32") globalThis[Symbol.for("umeko:bash-job")] = runOwnedBash;
+globalThis[Symbol.for("umeko:bash-job")] = runCommandSession;
 const umekoControl = createUmekoControl({ emit, refreshShellEnvironment: ctx =>
   shellSnapshots.refresh(ctx.sessionManager.getSessionId()),
   getPetAssistantBinding: () => config?.petAssistantBinding || '', getPetReminderBinding: () => config?.petReminderBinding || '' });
@@ -163,9 +100,16 @@ const promptControllers = new WeakMap();
 const loopReview=createLoopReview({emit});
 const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit});
 let checkpointLocked = false;
-const backgroundJobs = createBackgroundJobsExtension({ canStart: () => !checkpointLocked,
+const backgroundJobs = createBackgroundJobsExtension({ canStart: () => !checkpointLocked, host: bashHost, hostScript: bashHostScript,
   getShellPath: ctx => shellSnapshots.shellPath(ctx?.sessionManager?.getSessionId()),
-  getEnvironment: (ctx, shellPath) => shellSnapshots.environment("bash", ctx?.sessionManager?.getSessionId(), null, shellPath) });
+  getEnvironment: (ctx, shellPath, name) => shellSnapshots.environment(name, ctx?.sessionManager?.getSessionId(), null, shellPath),
+  onCleanup(sessionId, job) {
+    const { owner, toolCallId, pid, ppid, reason, cleanup } = job;
+    emit({type:"bash_cleanup",sessionId,runId:owner?.id,toolCallId,pid,ppid,reason:reason || "exit",
+      state:cleanup.cleanup,remaining:cleanup.remaining});
+    if (owner && cleanup.cleanup !== "done") owner.cleanupFailures.push(cleanup);
+  },
+});
 let reasoningEffort = "off";
 const validEffort = value => typeof value === "string" && /^[^\s\x00-\x1f\x7f]{1,64}$/u.test(value);
 let mcpEntries = [], mcpStatus = "", capturingMcp = false, pollingResources = false;
@@ -750,18 +694,16 @@ function stopRun() {
   umekoControl.clear();
   if (session) inputQueue.cancel();
   const sessionId = session?.sessionManager.getSessionId();
-  const jobs = [...bashJobs].filter(job => job.sessionId === sessionId && job.runId === currentRun?.id);
   const priorFailures = currentRun?.cleanupFailures.slice() || [];
-  for (const job of jobs) job.stop("aborted");
   emit({type:"stop_state",state:"cleaning"});
 
   let timer;
   const aborted = Promise.resolve().then(() => session?.abort()).then(() => true, () => false);
-  const outcomes = Promise.all([aborted, ...jobs.map(job => job.result)]);
+  const outcomes = Promise.all([aborted, backgroundJobs.stop(sessionId)]);
   const deadline = new Promise(resolve => { timer = setTimeout(() => resolve(null),stopDeadlineMs); });
   stopWork = Promise.race([outcomes,deadline]).then(result => {
     clearTimeout(timer);
-    const [idle, ...completed] = result || [];
+    const [idle, completed = []] = result || [];
     const cleanups = [...priorFailures, ...completed];
     const state = !result || cleanups.some(item => item.cleanup === "timed_out") ? "timed_out"
       : !idle || cleanups.some(item => item.cleanup !== "done") ? "failed" : "done";
@@ -790,7 +732,7 @@ async function execute(input) {
       if (!runtime || closing || config.globalCoordinator) throw new Error("Pi instance is not available");
       const context = {...config, cwd: runtime.session.sessionManager.getCwd(), includeProject: !!config.workspace};
       let value;
-      if (input.kind === "background-jobs") value = {jobs: (await backgroundJobs.getManager()).list().map(({id,cwd,status}) => ({id,cwd,status}))};
+      if (input.kind === "background-jobs") value = {jobs: (await backgroundJobs.getManager(runtime?.session.sessionManager.getSessionId())).list().map(({id,cwd,status}) => ({id,cwd,status}))};
       else if (input.kind === "skills") value = await manageSkills(Pi, {...context, action: "browse"});
       else if (input.kind === "extensions") value = (await manageResources(Pi, {...context, action: "scan"})).extensions;
       else if (input.kind === "extension-details") value = (await manageResources(Pi, {...context, action: "details", id: input.extensionId})).details;
@@ -977,6 +919,7 @@ async function shutdown() {
   subagents.dispose();
   piCommands.clear();
   clearDialogs();
+  await backgroundJobs.disposeAll();
   await runtime?.dispose();
   unsubscribe?.();
   rl?.close();
