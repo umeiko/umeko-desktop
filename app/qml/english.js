@@ -144,6 +144,8 @@ var strings = {
     "运行时路径、检查与下载": "Runtime path, checks and download",
     "本次拒绝": "Reject once",
     "本次允许": "Allow once",
+    "以后都允许这类命令": "Always allow commands like this",
+    "以后允许的命令前缀": "Command prefix to remember",
     "单次审批": "One-time approval",
     "仅支持本次允许或拒绝": "Only one-time approval or rejection is supported",
     "Enter 加入队列": "Enter to queue",

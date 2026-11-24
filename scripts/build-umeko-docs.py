@@ -32,7 +32,7 @@ def generate():
                   '', '插件会话优先使用 `pluginSessionProfiles.<plugin>.<profile>.reasoningEffort`，未配置时继承 `ui.reasoningEffort`，两者均未配置时使用 `off`。宿主在新会话或下一次输入时按模型支持的档位对齐，保存的配置值继续保留。详见 [Widget 插件](widget-plugins.md)。',
                   '', '`agent.defaultReasoning` 设置新桌面会话的默认档位；`sessions.reasoning` 设置当前或指定会话的档位。`agent.save` 的 `config` 支持 `autoCompaction`、`maxContextImages` 等局部设置。全局工具权限沿用用户界面确认。完整设置、参数范围与生效时机见 [设置说明](settings.md)。',
                   '', 'Widget 只读查询：`widgets.list`、`widgets.docs`、`widgets.messages`、`widgets.result`、`widgets.resource`。',
-                  '', '`plugins.*` 管理 Provider 插件；`widgets.*` 管理桌面 Widget。`help` 的 `arguments.topic` 可为 `plugins`、`provider`、`widget` 或 `agents`。'])
+                  '', '`plugins.*` 管理 Provider 插件；`widgets.*` 管理桌面 Widget。`help` 的 `arguments.topic` 可为 `plugins`、`provider`、`widget`、`agents` 或 `command_rules`。'])
     return '\n'.join(lines) + '\n'
 
 

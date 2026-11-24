@@ -53,6 +53,14 @@ Popup {
             TextArea { font.family: Theme.fontFamily; id: dialogInput; color: Theme.ink; font.pixelSize: Theme.font(12, visible); selectByMouse: true; wrapMode: TextArea.Wrap; placeholderText: root.approvalBackend.pendingApproval.method === "input" ? root.approvalBackend.pendingApproval.detail || "" : "" }
         }
         ActionButton {
+            objectName: "alwaysAllowToolButton"
+            visible: root.actionPrefix === "" && root.approvalBackend.pendingApproval.method === "confirm"
+                     && ApprovalView.isRememberablePrefix(root.approvalBackend.pendingApproval.rememberPrefix)
+            Layout.fillWidth: true
+            text: I18n.t("以后都允许这类命令")
+            onClicked: root.approvalBackend.respondPiDialog("alwaysAllow")
+        }
+        ActionButton {
             objectName: root.actionPrefix + "grantDangerousToolButton"
             visible: root.actionPrefix === "" && root.approvalBackend.canGrantDangerousApproval
             Layout.fillWidth: true
