@@ -3,6 +3,20 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { createUmekoControl, umekoHelp, UMEKO_PROMPT } from '../runtime/releases/coding-1.5.2/umeko-control.mjs';
 
+test('the desktop tool routes environment refresh and command rules locally', async () => {
+  let desktop;
+  const control = createUmekoControl({
+    emit() { assert.fail('Both operations belong to the bridge'); },
+    refreshShellEnvironment: ctx => ({session: ctx.sessionManager.getSessionId()}),
+    getCommandRulesContext: () => ({}),
+  });
+  control.extension({ registerTool: tool => { desktop = tool; }, registerCommand() {} });
+  const ctx = {sessionManager: {getSessionId: () => 'test-session'}};
+  const call = async operation => JSON.parse((await desktop.execute('test', {operation}, undefined, undefined, ctx)).content[0].text);
+  assert.deepEqual(await call('shell.refreshEnvironment'), {ok: true, session: 'test-session'});
+  assert.deepEqual(await call('command_rules.list'), {ok: true, operation: 'command_rules.list', rules: []});
+});
+
 test('one desktop tool and a directory-only help keep management instructions on demand', async () => {
   const tools = [], commands = [], control = createUmekoControl({ emit() { throw new Error('help must be local'); } });
   control.extension({ registerTool: tool => tools.push(tool), registerCommand: (name, body) => commands.push({ name, body }) });

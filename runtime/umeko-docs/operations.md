@@ -10,6 +10,7 @@
 
 | operation | arguments（类型；=默认值） | 等待空闲范围 | 启动后台工作 |
 | --- | --- | --- | --- |
+| `shell.refreshEnvironment` | 无 | 无 | 否 |
 | `vision.configure` | `config: json` | 无 | 否 |
 | `generation.configure` | `config: json` | 无 | 否 |
 | `providers.save` | `id: string=""`, `name: string`, `api: string`, `baseUrl: string`, `key: string=""`, `models: json` | provider | 否 |

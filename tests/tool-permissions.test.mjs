@@ -449,6 +449,27 @@ test('remembered approval persists while built-in and compound blocks retain pri
   assert.match(prompts.at(-1), /node -e/);
 });
 
+test('background starts match their selected shell while stdin and kill keep session permissions', async t => {
+  const dirs = ruleFixture(t);
+  changeCommandRule('add', {scope: 'workspace', pattern: ['Get-ChildItem'], decision: 'forbid', shell: 'powershell'}, dirs);
+  changeCommandRule('add', {scope: 'workspace', pattern: ['Get-ChildItem'], decision: 'forbid', shell: 'bash'}, dirs);
+  let handler;
+  const prompts = [];
+  createToolPermissionExtension({getPolicy: () => ({mode: 'ask', ...dirs})})({on(_event, fn) { handler = fn; }});
+  const ctx = {cwd: dirs.workspace, hasUI: true, ui: {
+    confirm: async (_title, detail) => { prompts.push(detail); return true; },
+    confirmCommand: async () => assert.fail('Standard input cannot be remembered'),
+  }};
+  const call = input => handler({toolName: 'background_job', input}, ctx);
+  const command = 'get-childitem -Name';
+  const start = await call({action: 'start', command, shell: 'powershell'});
+  assert.match(start.reason, /Get-ChildItem.*forbid/);
+  assert.equal(await call({action: 'write', id: 'owned-job', input: 'Get-ChildItem -Name\n'}), undefined);
+  assert.equal(await call({action: 'kill', id: 'owned-job'}), undefined);
+  assert.equal(prompts.length, 1);
+  assert.match(prompts[0], /Get-ChildItem -Name/);
+});
+
 test('a malformed command rule file produces a visible error instead of ignoring restrictions', async t => {
   const dirs = ruleFixture(t);
   mkdirSync(dirs.dataDir, {recursive: true});

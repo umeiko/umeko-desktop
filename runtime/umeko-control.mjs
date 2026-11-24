@@ -19,7 +19,8 @@ export const umekoHelp = () => ({...(instanceDocs || { docsRoot: umekoDocs(), en
 export function configureUmekoDocs(options) { instanceDocs = prepareDocumentation(options); }
 export const UMEKO_PROMPT = 'umeko-desk 的临时文件存放在 ./.umeko 目录下。 Umeko owns providers, credentials, themes, desktop settings, projects and chats; Pi provider configuration does not apply. First call umeko_desktop operation help to discover its documentation. Discover enabled Widgets with widgets.list (activeOnly true) and read widgets.docs before using them. Apply desktop changes through umeko_desktop, not by editing its settings files.';
 
-export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesContext, getPetAssistantBinding = () => '', getPetReminderBinding = () => '', waitForSpeech = (ms, signal) => delay(ms, undefined, {signal}) }) {
+export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesContext, refreshShellEnvironment,
+  getPetAssistantBinding = () => '', getPetReminderBinding = () => '', waitForSpeech = (ms, signal) => delay(ms, undefined, {signal}) }) {
   const pending = new Map();
   let speechTail = Promise.resolve(), speechLife = new AbortController();
   function cancellable(promise, signal) {
@@ -99,7 +100,9 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesCon
         execute: async (_id, params, signal, _onUpdate, ctx) => {
           const args = params.arguments || {};
           let result;
-          if (getCommandRulesContext && isCommandRuleOperation(params.operation)) {
+          if (params.operation === 'shell.refreshEnvironment' && refreshShellEnvironment) {
+            result = {ok: true, ...await refreshShellEnvironment(ctx)};
+          } else if (getCommandRulesContext && isCommandRuleOperation(params.operation)) {
             try {
               signal?.throwIfAborted();
               const confirm = ctx.hasUI ? async (title, detail) => {

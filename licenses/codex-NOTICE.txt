@@ -1,0 +1,13 @@
+This distribution includes shell execution code adapted from OpenAI Codex,
+tag rust-v0.172.0, licensed under the Apache License, Version 2.0.
+
+Source:
+https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/core/src/shell_snapshot.rs
+https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/core/src/unified_exec/shell_snapshot.rs
+https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/core/src/unified_exec
+
+Umeko adapts capture and replay to use per-session in-memory environment maps and
+adds Windows PowerShell capture, fresh Windows environment values and executable
+ordering. The Apache 2.0 license text is provided in tzdata-APACHE.txt.
+The unified execution adaptation uses Umeko's job registry and pipes with its
+Windows job host, bounded reads, and separate full-output files.

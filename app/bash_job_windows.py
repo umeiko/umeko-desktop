@@ -68,7 +68,8 @@ def expect(result):
     return result
 
 
-def launch(request, job, stdin, stdout):
+def launch(request, job, stdin, stdout, stderr=None):
+    stderr = stdout if stderr is None else stderr
     size = ctypes.c_size_t()
     init_attributes(None, 2, 0, ctypes.byref(size))
     attributes = ctypes.create_string_buffer(size.value)
@@ -76,13 +77,14 @@ def launch(request, job, stdin, stdout):
     try:
         # Assign the job at creation, before Bash can start any descendants.
         jobs = (handle * 1)(job)
-        handles = (handle * 2)(stdin, stdout)
+        inherited = tuple(dict.fromkeys((stdin, stdout, stderr)))
+        handles = (handle * len(inherited))(*inherited)
         expect(update_attribute(attributes, 0, 0x0002000D, jobs, ctypes.sizeof(jobs), None, None))
         expect(update_attribute(attributes, 0, 0x00020002, handles, ctypes.sizeof(handles), None, None))
         startup = StartupInfoEx()
         startup.size = ctypes.sizeof(startup)
         startup.flags = 0x100  # STARTF_USESTDHANDLES
-        startup.stdin, startup.stdout, startup.stderr = stdin, stdout, stdout
+        startup.stdin, startup.stdout, startup.stderr = stdin, stdout, stderr
         startup.attributes = ctypes.addressof(attributes)
         info = ProcessInfo()
         args = ctypes.create_unicode_buffer(subprocess.list2cmdline(request["args"]))
@@ -175,22 +177,80 @@ def supervise(request, job, cancelled, emit, stack):
     return {"exitCode": code.value, **cleanup(job)}
 
 
+def supervise_session(request, job, cancelled, incoming, emit, stack):
+    read_fd, write_fd = os.pipe()
+    stack.callback(os.close, write_fd)
+    try:
+        with open(request["stdoutPath"], "wb") as stdout, open(request["stderrPath"], "wb") as stderr:
+            for fd in (read_fd, stdout.fileno(), stderr.fileno()):
+                os.set_inheritable(fd, True)
+            if cancelled.is_set():
+                return {"exitCode": 1, "cleanup": "done", "remaining": []}
+            info = launch(request, job, msvcrt.get_osfhandle(read_fd),
+                          msvcrt.get_osfhandle(stdout.fileno()), msvcrt.get_osfhandle(stderr.fileno()))
+    finally:
+        os.close(read_fd)
+    stack.callback(close_handle, info.process)
+    emit({"pid": info.pid, "ppid": os.getpid()})
+
+    def write_input():
+        while not cancelled.is_set():
+            try:
+                message = incoming.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            reply = {"writeId": message["writeId"]}
+            try:
+                pending = memoryview(message["input"].encode("utf-8"))
+                while pending:
+                    pending = pending[os.write(write_fd, pending):]
+            except OSError:
+                reply["error"] = "Command input closed"
+            emit(reply)
+
+    writer = threading.Thread(target=write_input, daemon=True)
+    writer.start()
+    code = dword(1)
+    while not cancelled.is_set():
+        wait = wait_process(info.process, 25)
+        if wait == 0:
+            expect(exit_code(info.process, ctypes.byref(code)))
+            break
+        if wait == 0xFFFFFFFF:
+            raise ctypes.WinError(ctypes.get_last_error())
+    cancelled.set()
+    result = cleanup(job)
+    writer.join(timeout=0.15)
+    return {"exitCode": code.value, **result}
+
+
 def main():
     # Windowed PyInstaller executables have no Python standard streams even
     # when their parent redirected the Win32 standard handles.
     control = sys.stdin or _open_inherited_stream(-10, "r")
     replies = sys.stdout or _open_inherited_stream(-11, "w")
 
+    reply_lock = threading.Lock()
+
     def emit(value):
-        print(json.dumps(value, ensure_ascii=True), file=replies, flush=True)
+        with reply_lock:
+            print(json.dumps(value, ensure_ascii=True), file=replies, flush=True)
 
     try:
         request = json.loads(control.readline())
         cancelled = threading.Event()
+        incoming = queue.Queue(maxsize=8)
 
         def listen():
             try:
-                control.readline()  # A stop request or EOF when the bridge exits.
+                for line in control:
+                    if line.strip() == "stop":
+                        break
+                    message = json.loads(line)
+                    try:
+                        incoming.put_nowait(message)
+                    except queue.Full:
+                        emit({"writeId": message["writeId"], "error": "Command input queue is full"})
             finally:
                 cancelled.set()
 
@@ -202,7 +262,10 @@ def main():
             limits.basic.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
             expect(set_job(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)))
             try:
-                result = supervise(request, job, cancelled, emit, stack)
+                if "stdoutPath" in request:
+                    result = supervise_session(request, job, cancelled, incoming, emit, stack)
+                else:
+                    result = supervise(request, job, cancelled, emit, stack)
             except OSError as error:
                 result = {"exitCode": 1, "error": getattr(error, "winerror", None), **cleanup(job)}
         emit(result)

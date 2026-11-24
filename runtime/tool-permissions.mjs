@@ -471,20 +471,24 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        if(name==='umeko_desktop'||name==='pi'||name==='pi_commands')return undefined;
        const input=event.input||{};
        const backgroundStart=name==='background_job'&&input.action==='start';
+       const backgroundWrite=name==='background_job'&&input.action==='write';
+        const commandStart=name==='bash'||name==='powershell'||backgroundStart;
+       const command=backgroundWrite?input.input:(input.command??input.script);
        const baseCwd=ctx.cwd||policy.cwd||process.cwd();
        const context={...policy,cwd:backgroundStart&&input.cwd ? path.resolve(baseCwd,input.cwd) : baseCwd};
-       const shell=name==='bash'||name==='powershell'||backgroundStart;
+        const shell=commandStart||backgroundWrite;
        const file=name==='write'||name==='edit';
        const generation=name==='image_gen'||name==='voice_gen'||name==='video_gen';
-       const original=shell?String(input.command??input.script??''):file?String(input.path??input.file_path??''):JSON.stringify(input);
+       const original=shell?String(command??''):file?String(input.path??input.file_path??''):JSON.stringify(input);
        let hit=generation?decision('ask'):null;
        if(shell)hit=await classify(original,context);
        else if(file)hit=classifyPath(original,context);
        if(hit?.category>=1&&hit.category<=7&&policy.dangerousAllowed===true)hit=null;
        let extraReason, remember;
-       const commandShell=name==='powershell'?'powershell':'bash';
+       const commandShell=name==='powershell'||(backgroundStart&&input.shell==='powershell')?'powershell':'bash';
        const ruleContext={dataDir:policy.dataDir,workspace:policy.workspace ? baseCwd : undefined};
-       if(shell&&!hit){
+       // Input to an existing process still uses the built-in gate above.
+       if(commandStart&&!hit){
          const workspaceTrusted=!policy.safeMode&&ctx.isProjectTrusted?.()!==false;
          const rules=listCommandRules(ruleContext).filter(rule=>rule.decision!=='allow'||
            (!policy.pluginApprovalRequired&&(rule.scope!=='workspace'||workspaceTrusted)));
