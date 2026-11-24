@@ -169,7 +169,7 @@ Rectangle {
         }
         Text {
             objectName:"piManagerNotice";visible:text!=="";Layout.fillWidth:true
-            text:root.notice || (root.readOnly ? root.t("工具由当前 Coworker 配置。","Tools are configured in the current coworker.") : "");textFormat:Text.PlainText;color:root.sdk.colors.muted;font.pixelSize:12*root.sdk.scale
+            text:root.notice || (root.readOnly ? root.t("工具由所属 Coworker 大类配置。","Tools are configured by the Coworker type.") : "");textFormat:Text.PlainText;color:root.sdk.colors.muted;font.pixelSize:12*root.sdk.scale
             wrapMode:Text.Wrap;maximumLineCount:3;elide:Text.ElideRight
         }
         ColumnLayout {

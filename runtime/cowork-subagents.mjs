@@ -4,8 +4,8 @@ import { coworkTools } from "./cowork-tools.mjs";
 const slot = Symbol.for("umeko:cowork-subagents");
 const marker = /\[umeko-cowork-subagent:([a-z0-9-]+)\]/;
 
-export function configureCoworkSubagents(profiles, factories) {
-  globalThis[slot] = profiles ? { profiles: new Map(profiles.map(row => [row.id, row])), factories } : undefined;
+export function configureCoworkSubagents(profiles, factories, network) {
+  globalThis[slot] = profiles ? { profiles: new Map(profiles.map(row => [row.id, row])), factories, network } : undefined;
 }
 
 export function coworkSubagent(id) {
@@ -36,8 +36,9 @@ export function loadCustomAgents() {
       toolNames: coworkSubagentTools(profile),
       systemPrompt: coworkSubagentPrompt(profile),
       promptMode: "replace",
+      model: profile.model ? `umeko/${profile.model}` : undefined,
       inheritContext: profile.context === "chat",
-      locked: ["inherit_context"],
+      locked: ["inherit_context", "model"],
       enabled: true,
       source: "project",
     });
@@ -47,6 +48,8 @@ export function loadCustomAgents() {
 
 export function coworkSubagentResources(profile) {
   const skills = createCoordinatorSkills({ cowork: { skillPaths: profile.skillPaths }, coordinatorTools: profile.tools });
+  // Pi supplies these communication tools when their callbacks are available.
+  const allowedTools = [...coworkSubagentTools(profile), "ask_parent", "notify_parent"];
   return {
     noExtensions: true,
     noContextFiles: true,
@@ -55,7 +58,7 @@ export function coworkSubagentResources(profile) {
     systemPromptOverride: () => coworkSubagentPrompt(profile),
     ...skills.resourceOptions,
     extensionFactories: [
-      { name: "cowork-child-tools", hidden: true, replaceable: false, factory: pi => coworkTools(pi, profile.tools) },
+      { name: "cowork-child-tools", hidden: true, replaceable: false, factory: pi => coworkTools(pi, allowedTools, globalThis[slot]?.network) },
       { name: "cowork-child-skills", hidden: true, replaceable: false, factory: pi => skills.extension(pi) },
       ...(globalThis[slot]?.factories?.(profile) || []),
     ],

@@ -102,7 +102,19 @@ class SessionFiles(QObject):
         project = next((p for p in self.b.store.data['projects'] if p['id'] == identifier), None)
         if project: self._delete(self._sessions(project), identifier)
 
-    def _delete(self, sessions, project_id):
+    @Slot(str, result='QVariantMap')
+    def coworkSummary(self, identifier):
+        ids = {session['id'] for session in self.b._sessions if session.get('cowork') == identifier}
+        running = any(self.b._pool.protected(record) for record in self.b._pool.records.values() if record.cowork == identifier)
+        return {'count': len(ids), 'busy': self.busy or running or bool(ids & self.b._management_jobs)}
+
+    @Slot(str)
+    def deleteCoworker(self, identifier):
+        if identifier in self.b.cowork.profiles:
+            sessions = [dict(row) for row in self.b._sessions if row.get('cowork') == identifier]
+            self._delete(sessions, '', identifier)
+
+    def _delete(self, sessions, project_id, cowork_id=''):
         if self.busy:
             self.b.toast.emit('请等待当前会话文件操作完成'); return
         b = self.b
@@ -110,6 +122,7 @@ class SessionFiles(QObject):
         project = next((p for p in b.store.data['projects'] if p['id'] == project_id), None)
         key = self._workspace(project['path']) if project else None
         records = [r for r in b._pool.records.values() if r.id in ids or
+                   (cowork_id and r.cowork == cowork_id) or
                    key is not None and not r.cowork and self._workspace(r.workspace) == key]
         if any(b._pool.protected(r) for r in records) or ids & b._management_jobs:
             b.toast.emit('此会话或项目仍有任务运行，请先停止任务'); return
@@ -126,6 +139,9 @@ class SessionFiles(QObject):
         for record in records: b._pool.retire(record)
         writers = tuple(b._dsh_history.pending)
         payload = {'operation': 'delete', 'profile': str(b.store.directory), 'sessions': sessions}
+        if cowork_id:
+            payload['cowork'] = cowork_id
+            payload['profile'] = str(b.cowork.root.parent)
         if project:
             payload['workspace'] = project['path']
             default_workspace = str(b.store.default_workspace)
@@ -134,7 +150,7 @@ class SessionFiles(QObject):
                 excluded.update(row['id'] for row in b._sessions
                                 if b._ungrouped_import(row['id'], default_workspace, row.get('workspace')))
                 payload['excludedSessionIds'] = sorted(excluded)
-        self._job = (payload, {'project': project_id, 'records': records})
+        self._job = (payload, {'project': project_id, 'cowork': cowork_id, 'records': records})
         started = time.monotonic()
         def drained():
             alive = [p for p in processes if shiboken6.isValid(p) and p.state() != QProcess.NotRunning]
@@ -189,7 +205,7 @@ class SessionFiles(QObject):
             b._sessions = [row for row in b._sessions if row['id'] not in ids]
             for identifier in ids: b.store.data['sessionMeta'].pop(identifier, None)
             for record in context['records']:
-                if record.id in ids or not record.id and not value['errors']:
+                if record.id in ids or not value['errors'] and (not record.id or context['cowork']):
                     b._conversation_views.discard(record.key)
                     b._pool._clear_body(record)
                     b._conversation_views.discard(record.key)
@@ -204,14 +220,21 @@ class SessionFiles(QObject):
             if project_id and not value['errors']:
                 b.store.data['projects'] = [p for p in b.store.data['projects'] if p['id'] != project_id]
                 if project_id not in b.store.data['removedProjects']: b.store.data['removedProjects'].append(project_id)
-            if clear_current:
+            cowork = context['cowork']
+            if cowork and not value['errors']:
+                try:
+                    b.cowork.remove_instance(cowork)
+                except OSError as error:
+                    value['errors'].append({'error': str(error)})
+            if clear_current and (not cowork or value['errors']):
                 if b._view.id in ids: b._view.id = ''
                 if project_id: b.store.data.update(activeProject='', workspace='')
                 b._clear_current()
             b.store.save()
             b.store.save_sessions(b._sessions)
             b._task_records.changed.emit()
-            if not value['errors']: b.toast.emit('项目及会话数据已删除' if project_id else '会话及数据已删除')
+            if not value['errors']:
+                b.toast.emit('Coworker 实例及会话已删除' if cowork else '项目及会话数据已删除' if project_id else '会话及数据已删除')
         if value['errors']:
             self.fail('无法导入会话' if payload['operation'] == 'import' else '会话未能完全删除', value['errors'])
         b.changed.emit()

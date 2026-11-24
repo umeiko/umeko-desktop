@@ -34,6 +34,9 @@ def test():
         previous.write_text('---\nname: legacy-guide\ndescription: Earlier preview fixture.\n---\nLegacy skill.\n')
         registry = base / 'profile/cowork/roles.json'
         registry.parent.mkdir(parents=True)
+        dormant = registry.parent / 'type-skills/study/dormant-guide/SKILL.md'
+        dormant.parent.mkdir(parents=True)
+        dormant.write_text('---\nname: dormant-guide\ndescription: Previously uploaded but unchecked.\n---\nSaved.\n')
         registry.write_text(json.dumps({'roles': [{
             'id': 'papers', 'name': 'Paper translator', 'description': '', 'workspace': str(workspace),
             'context': 'files', 'prompt': 'Translate papers.', 'tools': ['read'], 'skills': [str(previous), 'pdf'],
@@ -96,12 +99,13 @@ def test():
             QTest.qWait(450)
             assert not backend.desktopSettings['coworkEnabled']
             assert not find('openCoworkButton').isVisible()
-            migrated = workspace / '.umeko/cowork/papers/skills/legacy-guide/SKILL.md'
+            migrated = base / 'profile/cowork/skill-library/migrated/papers/legacy-guide/SKILL.md'
             wait(lambda: str(migrated) in cowork.roleDetails('papers')['skills'], 'Legacy role Skill migration')
             assert previous.read_bytes() == migrated.read_bytes()
+            assert (registry.parent / 'skill-library/migrated/study/dormant-guide/SKILL.md').read_bytes() == dormant.read_bytes()
             assert 'pdf-paper-reading' in cowork.roleDetails('papers')['skills']
             assert backend.saveDesktopSettings('{"coworkEnabled":true}')
-            cowork.newTask('study', str(workspace))
+            assert not cowork.saveInstance('', 'study', 'Study Buddy', str(workspace))
 
             # Both widgets work before a provider or model has been selected.
             open_widget('pi-manager', tools_widget, 'rows')
@@ -119,7 +123,9 @@ def test():
             visible = {row['name']: row for row in prop(skills_widget, 'skills')}
             assert visible['evidence-citations']['enabled']
             assert 'standard-guide' not in visible
-            assert set(prop(skills_widget, 'roots')) == {'builtin', 'project'}
+            assert set(prop(skills_widget, 'roots')) == {'builtin', 'bundled', 'project'}
+            bundled = {row['name'] for row in json.loads((ROOT / 'bundled-skills/sources.json').read_text())}
+            assert bundled <= visible.keys()
             citation = visible['evidence-citations']
             request('skills.attach', {'id': citation['id'], 'enabled': False})
             wait(lambda: 'evidence-citations' not in cowork.role['skills'], 'Skill toggle did not update role')
@@ -127,17 +133,18 @@ def test():
                 row['enabled'] for row in prop(skills_widget, 'skills') if row['name'] == 'evidence-citations'),
                 'Widget did not refresh role selection')
 
-            cowork.importSkill('study', str(workspace), str(source))
+            cowork.importSkill('study', '', str(source))
             wait(lambda: not cowork.importingSkill, 'Skill import')
             assert not cowork.resourceError, cowork.resourceError
-            copied = workspace / '.umeko/cowork/study/skills/private-guide/SKILL.md'
+            copied = base / 'profile/cowork/skill-library/private-guide/SKILL.md'
             assert copied.is_file()
             assert not (workspace / '.pi/skills/private-guide').exists()
-            values = {**cowork.role, 'workspace': str(workspace), 'skills': [str(copied)]}
-            assert cowork.saveRole(json.dumps(values)) == 'study'
+            values = {**cowork.typeDetails('study'), 'skills': [str(copied)]}
+            assert cowork.saveType(json.dumps(values)) == 'study'
             wait(lambda: any(row['name'] == 'private-guide' and row['enabled']
                             for row in prop(skills_widget, 'skills')), 'Widget did not reflect editor changes')
             assert cowork.skill_paths(backend._view) == [str(copied)]
+            assert any(row['id'] == 'bundled:pdf' for row in cowork.skillOptions)
 
             backend.store.data['providers'] = [{
                 'id': 'fixture', 'name': 'Fixture', 'api': 'openai', 'baseUrl': 'http://127.0.0.1:1/v1',
@@ -152,7 +159,17 @@ def test():
             assert {tool['name'] for group in backend.piManagement.capability_extensions()
                     for tool in group['tools'] if tool['visible']} == set(record.resources['tools'])
 
-            cowork.newTask('office', str(workspace))
+            library = next(row for row in cowork.skillOptions if row['id'] == str(copied))
+            assert library['group'] == 'library'
+            office = cowork.typeDetails('office')
+            office['skills'] = office['skills'] + [str(copied)]
+            assert cowork.saveType(json.dumps(office)) == 'office'
+            cowork.deleteSkill('study', str(copied))
+            wait(lambda: not cowork.importingSkill, 'Delete shared library Skill')
+            assert not cowork.resourceError and not copied.exists()
+            assert source.joinpath('SKILL.md').is_file()
+            assert str(copied) not in cowork.typeDetails('study')['skills'] + cowork.typeDetails('office')['skills']
+            assert not cowork.saveInstance('', 'office', 'Office', str(workspace))
             open_widget('skill-manager', skills_widget, 'skills')
             assert 'private-guide' not in {row['name'] for row in prop(skills_widget, 'skills')}
             assert {row['name'] for row in prop(skills_widget, 'skills') if row['enabled']} == {'office-artifacts'}

@@ -184,7 +184,7 @@ class DesktopPlugins(QObject):
             role = getattr(self.b._view, 'cowork', '')
             result['cowork'] = bool(role)
             if role:
-                result['coworkRevision'] = self.b.cowork.revisions.get(role, 0)
+                result['coworkRevision'] = self.b.cowork.revision(role)
         if "session.read" not in self.entries.get(self._page,{}).get("permissions",[]):result.pop("messages",None)
         return result
     @Property('QVariantMap',notify=pageChanged)

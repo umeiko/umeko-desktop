@@ -384,7 +384,7 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        if(name==='umeko_desktop'||name==='pi'||name==='pi_commands')return undefined;
        const input=event.input||{};
        const backgroundStart=name==='background_job'&&input.action==='start';
-       const baseCwd=ctx.cwd||policy.cwd||process.cwd();
+       const baseCwd=policy.sshWorkspace||ctx.cwd||policy.cwd||process.cwd();
        const context={...policy,cwd:backgroundStart&&input.cwd ? path.resolve(baseCwd,input.cwd) : baseCwd};
        const shell=name==='bash'||name==='powershell'||backgroundStart;
        const file=name==='write'||name==='edit';

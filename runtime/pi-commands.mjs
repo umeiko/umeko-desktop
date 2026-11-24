@@ -65,6 +65,7 @@ export async function addMcpFromInput(input) {
   const path = input.local ? join(cwd, '.pi/mcp.json') : join(agentDir, 'mcp.json');
   const text = input.text.trim();
   if (!text.startsWith('{')) {
+    if (input.jsonOnly) throw new Error('请粘贴 MCP 服务器 JSON / Paste MCP server JSON');
     let words = commandWords(text);
     if (words[0] === 'pi') words.shift();
     if (words.shift() !== 'mcp' || words.shift() !== 'add') throw new Error('请使用 pi mcp add <名称> -- <命令>，或 --url <网址>');
@@ -85,6 +86,12 @@ export async function addMcpFromInput(input) {
   const previous = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {};
   if (!previous || typeof previous !== 'object' || Array.isArray(previous) || previous.mcpServers && (typeof previous.mcpServers !== 'object' || Array.isArray(previous.mcpServers))) throw new Error('现有 MCP 配置格式无效，请先修复');
   const next = { ...previous, mcpServers: { ...(previous.mcpServers || {}), ...validated } };
+  if (input.jsonOnly) {
+    const { mcpNamespace } = await import('@earendil-works/pi-mcp');
+    const names = Object.keys(next.mcpServers);
+    if (names.length > 16) throw new Error('此 Coworker 大类最多配置 16 个 MCP 服务器');
+    if (new Set(names.map(mcpNamespace)).size !== names.length) throw new Error('MCP 服务器名称冲突（连字符和下划线会映射为同一名称）');
+  }
   mkdirSync(dirname(path), { recursive: true });
   const temporary = path + '.' + randomUUID() + '.tmp';
   writeFileSync(temporary, JSON.stringify(next, null, 2) + '\n', { mode: 0o600 });

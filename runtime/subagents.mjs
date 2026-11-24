@@ -428,7 +428,10 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
     }
     const tool = subagentTool(previous?.tool, channel, event, record, scope?.args);
     const role = getCowork?.()?.subagents?.find(row => row.id === tool.subagent.type);
-    if (role) tool.subagent.profileName = role.name;
+    if (role) {
+      tool.subagent.profileName = role.name;
+      tool.subagent.character ??= role.character || "";
+    }
     if (channel === "resuming") tool.subagent.avatarSlot = ensureSlot(event.id);
     if (!Number.isInteger(tool.subagent.avatarSlot)) tool.subagent.avatarSlot = ensureSlot(event.id);
     if (record.avatarSlot !== undefined) tool.subagent.avatarSlot = record.avatarSlot;

@@ -156,7 +156,7 @@ export async function manageSkills(Pi, input) {
     const value = await browseSkillFolders(input, input.scopedRoots);
     const selected = new Set(input.selectedSkillIds || []);
     for (const row of value.skills) {
-      row.selectionId = row.scope === "builtin" ? row.folderName : row.path;
+      row.selectionId = row.scope === "builtin" ? row.folderName : row.scope === "bundled" ? "bundled:" + row.folderName : row.path;
       row.enabled = row.valid && input.skillsEnabled !== false && selected.has(row.selectionId);
       row.canToggle = row.valid && input.skillsEnabled !== false;
     }

@@ -13,10 +13,13 @@ Column {
         if (visible) backend.loginStartup.refresh()
     }
     onVisibleChanged: if (startupSettingsReady && visible) backend.loginStartup.refresh()
+    CoworkWebNetworkDialog { id: coworkWeb; network: backend.cowork.webNetwork }
     SectionCard {
         width: parent.width
-        RowLayout {
-            width: parent.width; spacing: 12
+        ColumnLayout {
+            width: parent.width; spacing: 9
+            RowLayout {
+                Layout.fillWidth: true; spacing: 12
             Glyph { name: "spark"; Layout.preferredWidth: Theme.icon(20); Layout.preferredHeight: Theme.icon(20); color: Theme.accent }
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 5
@@ -40,6 +43,14 @@ Column {
                     checked = Qt.binding(() => backend.desktopSettings.coworkEnabled)
                     backend.saveDesktopSettings(JSON.stringify({coworkEnabled:value}))
                 }
+            }
+            }
+            ActionButton {
+                objectName: "openCoworkWebNetwork"
+                Layout.alignment: Qt.AlignRight
+                visible: backend.desktopSettings.coworkEnabled
+                glyph: "settings"; text: I18n.t("网络设置")
+                onClicked: coworkWeb.open()
             }
         }
     }

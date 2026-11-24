@@ -363,6 +363,12 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._reasoning_discovery = ReasoningDiscovery(self)
         from .cowork import Cowork
         self._cowork = Cowork(self)
+        from .session_workspace import SessionWorkspace
+        self._session_workspace = SessionWorkspace(self)
+
+    @Property(QObject, constant=True)
+    def sessionWorkspace(self):
+        return self._session_workspace
 
     @Property(QObject, constant=True)
     def loginStartup(self):
@@ -841,6 +847,9 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Slot()
     def openChatDirectory(self):
+        destination = self._session_workspace.remote(self._view.workspace)
+        if destination:
+            return self.copy(f"{destination['host']}:{destination['path']}")
         path = Path(self._view.workspace or self.store.data["workspace"])
         if path.is_dir():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
@@ -1047,7 +1056,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     def _clear_current(self):
         if self._view.cowork:
-            self._cowork.newTask(self._view.cowork, self._view.workspace)
+            self._cowork.requestTask(self._view.cowork)
             return
         record = self._new_view()
         self._project_drafts[record.workspace] = record
@@ -1107,7 +1116,11 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def revealProject(self, project_id):
         project = next((p for p in self.store.data["projects"] if p["id"] == project_id), None)
         if project:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(project["path"]))
+            destination = project.get('ssh')
+            if destination:
+                self.copy(f"{destination['host']}:{destination['path']}")
+            else:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(project["path"]))
 
     @Slot(str, str)
     def renameProject(self, project_id, title):
@@ -1325,7 +1338,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Property(str, notify=chatChanged)
     def sessionTitle(self):
-        return next((s["title"] for s in self._sessions if s["id"] == self._view.id), "新会话")
+        return next((s["title"] for s in self._sessions if s["id"] == self._view.id), self._view.initial_title or "新会话")
 
     @Property(bool, notify=chatChanged)
     def busy(self):
@@ -1615,6 +1628,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         project = next((p for p in self.store.data["projects"] if p["id"] == self.store.data["activeProject"]), None)
         return project["name"] if project else Path(self.store.data["workspace"]).name if self.store.data["workspace"] else "选择工作目录"
 
+    @Property(bool, notify=changed)
+    def sshWorkspace(self):
+        return not self._view.cowork and bool(self._session_workspace.remote(self._view.workspace))
+
     @Property("QVariantMap", notify=approvalChanged)
     def pendingApproval(self):
         return self._view.approval
@@ -1836,11 +1853,16 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             return scope
         self._job(job_name, save)
 
-    def _mcp_environment(self, workspace=None):
+    def _mcp_environment(self, workspace=None, extra=(), ordinary=True):
         names = set()
-        for scope in ("global", "project"):
+        paths = list(extra)
+        for scope in ("global", "project") if ordinary else ():
             try:
-                path = self._mcp_path(scope, workspace)
+                paths.append(self._mcp_path(scope, workspace))
+            except ValueError:
+                pass
+        for path in paths:
+            try:
                 if path.is_file():
                     names.update(re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", path.read_text(encoding="utf-8")))
             except (ValueError, OSError):
@@ -1897,6 +1919,20 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
                 record = self._new_view(project["path"])
                 self._project_drafts[project["path"]] = record
             self._activate(record)
+
+    def _start_workspace_session(self, path, ssh=None):
+        project = self._ensure_project(path, reopen=True)
+        if ssh and not project.get('ssh'):
+            project.update(ssh=ssh, name=f"{ssh['host']}:{ssh['path']}", glyph='server')
+        was_archived = self._show_archived or project.get('archived')
+        if was_archived:
+            self._show_archived = False
+            project['archived'] = False
+        self._collapsed_projects.discard(project['id'])
+        draft = self._new_view(project['path'])
+        self._project_drafts[project['path']] = draft
+        self._activate(draft)
+        self.store.save()
 
     @Slot(bool)
     def setDark(self, value):
@@ -2640,6 +2676,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if self._closing:
             return
         self._closing = True
+        self._session_workspace.cancel()
         self._cancel_pi_warmup()
         self._reasoning_discovery.close()
         self._desktop_plugins.close()

@@ -119,7 +119,7 @@ Item {
                     id: utilityIcons; objectName: "composerUtilityIcons"; spacing: footer.utilityGap
                     readonly property real naturalWidth: attachButton.width + directoryButton.width + utilityDivider.width + contextIndicator.width + 15
                     ActionButton { id: attachButton; objectName: "attachFilesButton"; glyph: "plus"; quiet: true; width: Theme.control(31); height: Theme.control(31); hint: I18n.t("添加文件"); onClicked: root.chooseFiles() }
-                    ActionButton { id: directoryButton; objectName: "openChatDirectoryButton"; glyph: "folder"; quiet: true; width: Theme.control(31); height: Theme.control(31); hint: I18n.t("在文件管理器中打开当前目录"); onClicked: backend.openChatDirectory() }
+                    ActionButton { id: directoryButton; objectName: "openChatDirectoryButton"; glyph: backend.sshWorkspace ? "server" : "folder"; quiet: true; width: Theme.control(31); height: Theme.control(31); hint: backend.sshWorkspace ? (backend.language === "en" ? "Copy remote folder path" : "复制远程目录路径") : I18n.t("在文件管理器中打开当前目录"); onClicked: backend.openChatDirectory() }
                     Rectangle { id: utilityDivider; width: 1; height: 15; color: Theme.line; anchors.verticalCenter: parent.verticalCenter }
                     ContextUsage { id: contextIndicator }
                 }

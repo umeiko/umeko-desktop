@@ -117,7 +117,7 @@ class SkillJobs(QObject):
             raise ValueError('请刷新当前工作区和全局 Skill 目录后重试')
         _, cwd, agent_dir, _ = self.b.piManagement._context()
         if getattr(record, 'cowork', ''):
-            current_root = self.b.cowork.skill_roots(record.cowork, cwd).get(folder['scope'])
+            current_root = self.b.cowork.skill_roots(record.cowork).get(folder['scope'])
         else:
             current_root = Path(agent_dir).resolve() / 'skills' if folder['scope'] == 'global' else Path(cwd).resolve() / '.pi/skills'
         if current_root != folder['root'] or folder['scope'] == 'project' and not record.workspace:
@@ -135,7 +135,7 @@ class SkillJobs(QObject):
             raise ValueError('Skill manager is busy; retry shortly')
         release, cwd, agent_dir, agent = self.b.piManagement._context()
         cowork = getattr(record, 'cowork', '')
-        scoped = self.b.cowork.skill_roots(cowork, cwd) if cowork else None
+        scoped = self.b.cowork.skill_roots(cowork) if cowork else None
         selected = list(self.b.cowork.selected_skills(record)) if cowork else []
         key = (record.key, record.workspace)
         rows = self.catalog.get(key, [])
@@ -165,7 +165,7 @@ class SkillJobs(QObject):
         if destination is not None and args.get('project') and not record.workspace:
             raise ValueError('Choose a project before importing project skills')
         folder_ops = ('skills.preview', 'skills.open', 'skills.copy', 'skills.insert', 'skills.rename', 'skills.delete')
-        if scoped and row and row.get('scope') == 'builtin' and (operation in ('skills.rename', 'skills.delete') or
+        if scoped and row and row.get('scope') in ('builtin', 'bundled') and (operation in ('skills.rename', 'skills.delete') or
                 (operation == 'skills.open' and args.get('mode') == 'edit')):
             raise ValueError('内置 Cowork Skill 为只读 / Built-in Cowork skills are read-only')
         folder = self.folder_for(request, args['id']) if operation in folder_ops or (scoped and operation == 'skills.details') or operation == 'skills.attach' and row.get('kind') == 'folder' else None
@@ -348,7 +348,7 @@ class SkillJobs(QObject):
                     row = next((item for item in source if item['id'] == job['owner']['arguments']['id']), None)
                     if row:
                         replacement = str(Path(value['directory']) / 'SKILL.md') if operation == 'skills.rename' else ''
-                        self.b.cowork.replace_skill_path(record, row['path'], replacement)
+                        self.b.cowork.replace_skill_path(row['path'], replacement)
                 elif not getattr(record, 'cowork', ''):
                     self.b._restart_pi()
                 if operation == 'skills.import': self.previews.pop(job['owner']['arguments']['id'], None)

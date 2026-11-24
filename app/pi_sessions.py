@@ -53,6 +53,7 @@ class SessionState:
     provider: str = ""
     pending_selection: tuple[str, str] | None = None
     title: str = "新会话"
+    initial_title: str = ""
     messages: list = field(default_factory=list)
     history: list = field(default_factory=list)
     tree: list = field(default_factory=list)

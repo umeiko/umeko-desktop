@@ -253,6 +253,12 @@ class PiControllerMixin:
                 agent={**agent,"safeMode":True,"instructions":service.prompt(record)})
         if record.cowork:
             payload.update(self._cowork.runtime_config(record, agent))
+            if record.initial_title and not record.file:
+                payload['initialSessionTitle'] = record.initial_title
+        elif not record.global_agent:
+            remote = self._session_workspace.runtime(record.workspace)
+            if remote:
+                payload.update(sshWorkspace=remote, mcpEnv={}, dangerousAllowed=False)
         self._pool.start(record, node_executable(), bridge, payload)
 
     def _write_first_warm_command(self, record, payload):
@@ -379,7 +385,7 @@ class PiControllerMixin:
         record.model, record.provider = model, provider
         if not record.id:
             record.id = "pending-" + record.key
-        if not record.messages and not record.transcript:
+        if not record.messages and not record.transcript and not record.initial_title:
             record.title = " ".join(text.split())[:28]
         record.messages.extend([{"role": "user", "text": text, "error": False}, {"role": "assistant", "text": "", "error": False}])
         record.body_dirty = True

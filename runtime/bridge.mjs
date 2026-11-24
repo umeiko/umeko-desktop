@@ -1,4 +1,4 @@
-import { mcpNamespace } from "@earendil-works/pi-mcp";
+import { createMcpToolName, mcpNamespace } from "@earendil-works/pi-mcp";
 import { excludedSessionTools, toolSelection, collectToolCatalog } from "./session-capabilities.mjs";
 // JSONL presentation adapter for the Pi Coding Agent SDK.
 // Tools, loop, skill expansion, extension hooks and session trees belong to Pi.
@@ -8,7 +8,7 @@ import { sessionSkillOptions, manageSkills } from "./skills.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { bindHttpRetryBoundary } from "./http-retry-boundary.mjs";
-import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from "./pi-commands.mjs";
+import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, addMcpFromInput, createPiCommandController } from "./pi-commands.mjs";
 import { UMEKO_TOOL, SEND_TO_USER, REMINDER, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension, coordinatorNativeTools } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
@@ -20,15 +20,17 @@ import { createAuxiliaryVision, ANALYZE_IMAGE, AUTO_VISION_ENTRY, automaticVisio
 import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
 import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI } from "./tool-permissions.mjs";
 import { blockedToolNames, toolInventory } from "./tool-visibility.mjs";
-import { coworkTools } from "./cowork-tools.mjs";
+import { coworkTools, probeCoworkWeb } from "./cowork-tools.mjs";
+import { sshWorkspaceTools, sshWorkspaceToolNames } from "./ssh-workspace.mjs";
 import { createGenerationExtension } from "./generation.mjs";
 import { createSystemPromptController } from "./system-prompt.mjs";
 import { createCoordinatorSkills } from "./coordinator-skills.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
-import { join, resolve, dirname, basename, delimiter } from "node:path";
+import { join, resolve, dirname, basename, delimiter, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir, homedir } from "node:os";
 import http from "node:http";
@@ -380,6 +382,39 @@ function coworkToolNames(input) {
     ...(input.cowork.subagents?.length ? ["subagent", "get_subagent_result", "steer_subagent"] : [])];
 }
 
+function privateMcpEntries(agentDir, cwd) {
+  if (!agentDir) return { servers: [], errors: [] };
+  const loaded = loadMcpConfig({ agentDir, cwd, projectTrusted: false });
+  return { ...loaded, servers: loaded.servers.map(entry => ({
+    ...entry, displayName: entry.name,
+    name: "cw_" + createHash("sha256").update(entry.name).digest("hex").slice(0, 12),
+  })) };
+}
+
+function coworkMcpFactory(input, tools, owners, onLoad) {
+  const selected = new Set(tools.filter(name => name.startsWith("mcp__")));
+  return pi => {
+    const filtered = new Proxy(pi, { get(target, key) {
+      if (key === "getMcpServers") return () => [];
+      if (key === "registerTool") return tool => {
+        if (selected.has(tool.name)) target.registerTool(tool.exposure === "hidden" ? tool : { ...tool, exposure: "direct" });
+      };
+      return target[key];
+    } });
+    return Pi.createMcpExtension({ loadConfig: ctx => {
+      const ordinary = loadMcpConfig({ agentDir: input.agentDir, cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted() });
+      const scoped = privateMcpEntries(input.cowork.mcpDir, ctx.cwd);
+      const servers = [
+        ...ordinary.servers.filter(entry => [...selected].some(name => !owners?.[name]?.startsWith("cowork:mcp:") &&
+          name.startsWith(mcpNamespace(entry.name) + "__"))),
+        ...scoped.servers.filter(entry => [...selected].some(name => owners?.[name] === "cowork:mcp:" + entry.displayName)),
+      ].map(entry => entry.config.exposure === "hidden" ? entry : { ...entry, config: { ...entry.config, exposure: "direct" } });
+      onLoad?.(servers);
+      return { servers, errors: [...ordinary.errors, ...scoped.errors], autoEnableCodemode: false };
+    } })(filtered);
+  };
+}
+
 function exposeNativeTools(session) {
   // Use Pi's registry, schemas and execution. Deferred/codemode tools remain reachable
   // through the native discovery tools; explicitly hidden tools stay hidden.
@@ -446,6 +481,8 @@ async function restoreSubagentSession(child, context, customTools) {
   const profile = config.cowork ? coworkSubagentFromPrompt(context?.systemPrompt) : undefined;
   if (config.cowork && !profile) throw new Error("此子智能体已从当前 Coworker 的配置中移除。");
   const scoped = profile ? coworkSubagentResources(profile) : undefined;
+  const storedPrompt = context?.systemPrompt?.replace(
+    "完成任务后，如有需要，请使用 notify_parent 工具向主智能体简要汇报结果。", SUBAGENT_COMPLETION_HINT);
   const native = await prepareNativeSettings(Pi, {cwd:manager.getCwd(),agentDir:config.agentDir,agent:config.agent});
   const settings = await sessionResourceSettings(Pi, {...config,cwd:manager.getCwd()}, native);
   const policy = Pi.SettingsManager.inMemory({...settings.getSettings(),retry:{...NETWORK_RETRY,provider:{maxRetries:0}},cacheWarming:"off"});
@@ -463,8 +500,8 @@ async function restoreSubagentSession(child, context, customTools) {
       { name: "umeko-control", builtin: true, replaceable: false, factory: auxiliaryVision.toolExtension },
       { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
     ],
-    systemPrompt:context?.systemPrompt || `You are the ${child.type} subagent embedded in Umeko Desktop. Continue the task in this existing conversation. ${readonly ? "Inspect and report only; do not modify files." : ""}`,
-    appendSystemPrompt:context?.systemPrompt?.includes(SUBAGENT_COMPLETION_HINT) ? [] : [SUBAGENT_COMPLETION_HINT],
+    systemPrompt:storedPrompt || `You are the ${child.type} subagent embedded in Umeko Desktop. Continue the task in this existing conversation. ${readonly ? "Inspect and report only; do not modify files." : ""}`,
+    appendSystemPrompt:!scoped && storedPrompt?.includes(SUBAGENT_COMPLETION_HINT) ? [] : [SUBAGENT_COMPLETION_HINT],
     extensionsOverride:base=>({...base,extensions:base.extensions.filter(extension=>!String(extension.path || "").includes("pi-subagents"))})});
   await loader.reload();
   const {session} = await Pi.createAgentSession({cwd:manager.getCwd(),agentDir:config.agentDir,sessionManager:manager,
@@ -480,15 +517,24 @@ async function restoreSubagentSession(child, context, customTools) {
 
 async function init(input) {
   config = input;
-  configureCoworkSubagents(input.cowork ? input.cowork.subagents || [] : undefined, profile => [
+  const webNetwork = {gateway:input.gateway, token:input.token, scope:input.cowork?.webScope};
+  const availableModels = new Set(input.models?.map(model => model.id));
+  const coworkProfiles = input.cowork?.subagents?.map(profile => ({
+    ...profile, model: availableModels.has(profile.model) ? profile.model : undefined,
+  }));
+  configureCoworkSubagents(input.cowork ? coworkProfiles || [] : undefined, profile => [
+    ...(!input.agent?.safeMode && profile.tools.some(name => name.startsWith("mcp__")) ? [{
+      name: "cowork-child-mcp", hidden: true, replaceable: false, factory: coworkMcpFactory(input, profile.tools, profile.toolOwners),
+    }] : []),
     ...(profile.tools.includes("submit_to_chatbox") ? [{ name: "chatbox", builtin: true, replaceable: false,
       factory: pi => chatboxExtension(pi, () => config.webview || {}, (id, items, failed) => taskDelivery("submitted", id, items, failed)) }] : []),
     ...(profile.tools.some(tool => tool === "image_gen" || tool === "video_gen") ? [{ name: "generation", builtin: true, replaceable: false,
       factory: createGenerationExtension({getConfig: () => config, onDelivery: (id, items) => taskDelivery("generated", id, items)}) }] : []),
-  ]);
+  ], webNetwork);
   globalThis[Symbol.for("umeko:auxiliary-vision")] = auxiliaryVision;
   globalThis[Symbol.for("umeko:recent-images-policy")] = { getLimit: () => config.agent?.maxContextImages };
   permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir, generation: input.generation, dangerousAllowed: input.dangerousAllowed === true };
+  if (input.sshWorkspace) permissionPolicy.sshWorkspace = input.sshWorkspace.path;
   if (input.pluginSessionPolicy) permissionPolicy = {...permissionPolicy,
     allowedTools: input.pluginSessionPolicy.allowedTools, dangerousAllowed: false};
   configureUmekoDocs({directory: input.docsDir || join(input.agentDir, "cache", "umeko-docs"), models: input.models});
@@ -518,19 +564,24 @@ async function init(input) {
   selectedModel = modelRuntime.getModel("umeko", input.model);
   if (!selectedModel) throw new Error("请选择已配置的模型");
   const factory = async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
+    const ssh = input.sshWorkspace;
+    const dataDir = input.dataDir && existsSync(input.dataDir) ? realpathSync(input.dataDir) : input.dataDir;
+    const remoteCwd = dataDir && cwd.startsWith(join(dataDir, 'ssh-workspaces') + sep);
+    if (ssh ? cwd !== resolve(input.workspace) : remoteCwd) throw new Error('Open this conversation from its SSH project in Umeko.');
+    const sshPrompt = ssh ? `SSH workspace ${JSON.stringify({host:ssh.host, directory:ssh.path})}. Bash and file tools operate on that host. Use the selected remote directory for relative paths.` : '';
     const coordinatorSkills = input.globalCoordinator || input.cowork ? createCoordinatorSkills(input) : null;
     // Load normal Pi settings/resources without importing auth.json or models.json.
     const nativeManager = await prepareNativeSettings(Pi, { cwd, agentDir, agent: input.agent });
     const settingsManager = await sessionResourceSettings(Pi, {...input,cwd,agentDir}, nativeManager);
     const nativeSettings = settingsManager.getSettings();
-    let selectedExtensions = input.piCapabilities && !input.globalCoordinator && !input.cowork ?
+    let selectedExtensions = input.piCapabilities && !input.globalCoordinator && !input.cowork && !ssh ?
       await sessionExtensionPaths(Pi, {...input,cwd,agentDir}, nativeManager) : null;
     if (input.cowork) {
       const owners = new Set(Object.values(input.cowork.toolOwners || {}));
       const external = !input.agent?.safeMode && [...owners].some(owner => !owner.startsWith("builtin:"));
       const ordinary = external ? await sessionExtensionPaths(Pi, {...input,cwd,agentDir,piCapabilities:null}, nativeManager) : [];
       selectedExtensions = [
-        ...builtins.filter(name => name !== "mcp" || (owners.has("builtin:mcp") && !input.agent?.safeMode))
+        ...builtins.filter(name => name !== "mcp" || (!input.agent?.safeMode && input.cowork.allowedTools.some(tool => tool.startsWith("mcp__"))))
           .map(name => "builtin:" + name),
         ...ordinary.filter(path => owners.has(path) && !path.startsWith("builtin:")),
       ];
@@ -541,11 +592,12 @@ async function init(input) {
       codemode: { ...nativeSettings.codemode, mode: "on" },
       cacheWarming: "off", compaction: { ...nativeSettings.compaction, enabled: input.agent?.autoCompaction !== false },
     }, { projectTrusted: !input.agent?.safeMode });
-    const desktopPrompt = !input.cowork;
+    const desktopPrompt = !input.cowork && !ssh;
     const promptController = await createSystemPromptController({ cwd, agentDir,
       stateDir: input.systemPromptStateDir || join(input.agentDir, "umeko-system-prompts"),
       enabled: config.systemPromptEnabled === true, widgetPrompts: config.widgetPrompts || [],
       appendSources: [
+        { id: "ssh-workspace", name: "SSH workspace", text: sshPrompt },
         { id: "desktop-pi", name: "Pi 操作说明", text: desktopPrompt && (input.globalCoordinator || toolSelection(input.piCapabilities,{name:PI_COMMAND_TOOL,source:"builtin:pi-commands"})) ? DESKTOP_PI_PROMPT+" " : "" },
         { id: "desktop-control", name: "桌面能力说明", text: desktopPrompt && (input.globalCoordinator || toolSelection(input.piCapabilities,{name:UMEKO_TOOL,source:"builtin:umeko-control"})) ? UMEKO_PROMPT+" " : "" },
         { id: "language", name: "回复语言", text: "Reply in the user's language." },
@@ -556,12 +608,13 @@ async function init(input) {
         extensionsOverride: promptController.extensionsOverride,
         ...(input.agent?.safeMode || input.globalCoordinator ? { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
           additionalExtensionPaths: builtins.map(name => "builtin:" + name) } : {}),
-        ...(coordinatorSkills ? coordinatorSkills.resourceOptions : await sessionSkillOptions(Pi, {...input,cwd,agentDir}, nativeManager)),
+        ...(ssh ? {noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true, additionalExtensionPaths: []}
+          : coordinatorSkills ? coordinatorSkills.resourceOptions : await sessionSkillOptions(Pi, {...input,cwd,agentDir}, nativeManager)),
         ...(selectedExtensions ? {noExtensions:true,additionalExtensionPaths:selectedExtensions} : {}),
-        appendSystemPrompt: [input.cowork ? "Reply in the user's language." : (input.globalCoordinator || toolSelection(input.piCapabilities,{name:PI_COMMAND_TOOL,source:"builtin:pi-commands"}) ? DESKTOP_PI_PROMPT+" " : "") + (input.globalCoordinator || toolSelection(input.piCapabilities,{name:UMEKO_TOOL,source:"builtin:umeko-control"}) ? UMEKO_PROMPT+" " : "") + "Reply in the user's language.", input.agent?.instructions || ""],
+        appendSystemPrompt: [sshPrompt, input.cowork || ssh ? "Reply in the user's language." : (input.globalCoordinator || toolSelection(input.piCapabilities,{name:PI_COMMAND_TOOL,source:"builtin:pi-commands"}) ? DESKTOP_PI_PROMPT+" " : "") + (input.globalCoordinator || toolSelection(input.piCapabilities,{name:UMEKO_TOOL,source:"builtin:umeko-control"}) ? UMEKO_PROMPT+" " : "") + "Reply in the user's language.", input.agent?.instructions || ""],
         extensionFactories: [
           ...(input.cowork ? [
-            {name:"cowork-tools",hidden:true,replaceable:false,factory:pi => coworkTools(pi, coworkToolNames(input))},
+            {name:"cowork-tools",hidden:true,replaceable:false,factory:pi => coworkTools(pi, coworkToolNames(input), webNetwork)},
             {name:"cowork-skills",hidden:true,replaceable:false,factory:pi => coordinatorSkills.extension(pi)},
           ] : []),
           ...(input.globalCoordinator ? [
@@ -573,32 +626,37 @@ async function init(input) {
           { name: "recent-images", hidden: true, replaceable: false, factory: createRecentImagesExtension({ getLimit: () => config.agent?.maxContextImages }) },
       { name: "auxiliary-vision", hidden: true, replaceable: false, factory: auxiliaryVision.contextExtension },
           { name: "tool-permissions", hidden: true, replaceable: false, factory: permissionExtension },
-          { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}, (id, items, failed) => taskDelivery("submitted", id, items, failed)) },
+          ...(ssh ? [] : [{ name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}, (id, items, failed) => taskDelivery("submitted", id, items, failed)) },
           { name: "generation", builtin: true, replaceable: false, factory: createGenerationExtension({getConfig: () => config, onDelivery: (id, items) => taskDelivery("generated", id, items)}) },
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },
           { name: "umeko-control", builtin: true, replaceable: false, factory: pi => { umekoControl.extension(pi); auxiliaryVision.toolExtension(pi); } },
           { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
           { name: "subagents", builtin: true, replaceable: true, factory: subagents.extension },
-          { name: "output-continuation", hidden: true, replaceable: false, factory: outputContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
           { name: "tool-search", builtin: true, replaceable: true, factory: Pi.createToolSearchExtension() },
-          { name: "mcp", builtin: true, replaceable: true, factory: Pi.createMcpExtension({ loadConfig: ctx => {
+          { name: "mcp", builtin: true, replaceable: true, factory: input.cowork
+            ? coworkMcpFactory(input, input.cowork.allowedTools, input.cowork.toolOwners, servers => {
+              mcpEntries = servers;
+              setMcpNetwork(mcpEntries);
+            })
+            : Pi.createMcpExtension({ loadConfig: ctx => {
             const loaded = loadMcpConfig({ agentDir, cwd: ctx.cwd, projectTrusted: !input.agent?.safeMode && ctx.isProjectTrusted() });
-            if (input.cowork) {
-              const tools = input.cowork.allowedTools.filter(name => input.cowork.toolOwners?.[name] === "builtin:mcp");
-              loaded.servers = loaded.servers.filter(server => tools.some(name => name.startsWith(mcpNamespace(server.name) + "__")));
-            }
             mcpEntries = loaded.servers;
             setMcpNetwork(mcpEntries);
             return loaded;
-          } }) },
+          } }) }]),
+          { name: "output-continuation", hidden: true, replaceable: false, factory: outputContinuationExtension },
         ],
       },
     });
     // Keep native global/project resource scopes in the loader, while desktop
     // generation/compaction overrides stay in memory on the session itself.
     services.settingsManager = settings;
-    const result = await Pi.createAgentSessionFromServices({ services, sessionManager, sessionStartEvent, model: selectedModel, excludeTools: input.globalCoordinator || input.cowork ? undefined : [...new Set([...blockedToolNames(input.blockedTools),...excludedSessionTools(input.piCapabilities)])] });
+    const unavailable = [...blockedToolNames(input.blockedTools), ...excludedSessionTools(input.piCapabilities)];
+    if (ssh) unavailable.push(...[...allToolNames].filter(name => !sshWorkspaceToolNames.includes(name)));
+    const result = await Pi.createAgentSessionFromServices({ services, sessionManager, sessionStartEvent, model: selectedModel,
+      ...(ssh ? {tools: sshWorkspaceToolNames, customTools: sshWorkspaceTools(Pi, cwd, ssh)} : {}),
+      excludeTools: input.globalCoordinator || input.cowork ? undefined : [...new Set(unavailable)] });
     await promptController.attach(result.session, services.resourceLoader);
     promptControllers.set(result.session, promptController);
     auxiliaryVision.guardSession(result.session);
@@ -611,6 +669,7 @@ async function init(input) {
     manager = Pi.SessionManager.open(file, input.sessionDir, input.cowork ? cwd : undefined);
   } else {
     manager = Pi.SessionManager.create(cwd, input.sessionDir);
+    if (input.cowork && input.initialSessionTitle) manager.appendSessionInfo(input.initialSessionTitle);
     // One-time import into the native append-only transcript; old files remain intact.
     for (const message of input.legacyHistory || []) if (["user", "assistant", "toolResult"].includes(message.role)) manager.appendMessage(message);
   }
@@ -1050,7 +1109,59 @@ async function selfTest() {
   }
 }
 
-if (process.argv.includes("--check-mcp")) {
+if (process.argv.includes("--cowork-web-test")) {
+  try {
+    let raw = "";
+    for await (const chunk of process.stdin) raw += chunk;
+    emit(await probeCoworkWeb(JSON.parse(raw)));
+  } catch {
+    emit({ok:false, stage:"settings", code:"INVALID_PROBE", message:"Invalid connection test"});
+  }
+} else if (process.argv.includes("--cowork-mcp-tools")) {
+  try {
+    let raw = ""; for await (const chunk of process.stdin) raw += chunk;
+    const input = JSON.parse(raw);
+    if (input.text) await addMcpFromInput({ text: input.text, cwd: input.cwd, agentDir: input.scopeDir, jsonOnly: true });
+    process.env.PI_CODING_AGENT_DIR = input.agentDir;
+    for (const [name, value] of Object.entries(input.env || {})) if (!/^NODE_/.test(name)) process.env[name] = value;
+    const { servers, errors } = privateMcpEntries(input.scopeDir, input.cwd);
+    if (errors.length) throw new Error(errors.join("\n").split(input.scopeDir).join("MCP"));
+    const { McpServerConnection, McpOAuthCredentialStore, createDefaultTransport } = await import(new URL("./extensions/mcp/runtime.js", entry));
+    const { getMcpToolExposure } = await import(new URL("./extensions/mcp/config.js", entry));
+    const credentials = new McpOAuthCredentialStore();
+    const catalog = await Promise.all(servers.slice(0, 16).map(async server => {
+      if (server.config.enabled === false) return { name: server.displayName, state: "disabled", tools: [] };
+      const connection = new McpServerConnection({
+        entry: { ...server, config: { ...server.config, timeout: Math.min(server.config.timeout ?? 5, 5) } },
+        cwd: input.cwd, credentials, createTransport: createDefaultTransport, onTools: () => {},
+      });
+      let timer;
+      try {
+        await Promise.race([connection.getClient().catch(() => {}), new Promise(resolve => { timer = setTimeout(resolve, 6500); })]);
+        const rawTools = connection.tools.slice(0, 512);
+        const counts = new Map();
+        for (const tool of rawTools) {
+          const name = createMcpToolName(server.name, tool.name);
+          counts.set(name, (counts.get(name) || 0) + 1);
+        }
+        const tools = rawTools.filter(tool => getMcpToolExposure(server.config, tool.name) !== "hidden").map(tool => ({
+          name: createMcpToolName(server.name, tool.name, name => counts.get(name) > 1),
+          label: tool.name, owner: "cowork:mcp:" + server.displayName,
+          description: (tool.description || "").slice(0, 500),
+        }));
+        return { name: server.displayName, state: connection.state, tools };
+      } finally {
+        clearTimeout(timer);
+        await connection.close();
+      }
+    }));
+    emit({ ok: true, servers: catalog, added: !!input.text });
+  } catch (error) {
+    emit({ ok: false, error: error.message });
+    process.exitCode = 1;
+  }
+}
+else if (process.argv.includes("--check-mcp")) {
   const temp = mkdtempSync(join(tmpdir(), "umeko-mcp-check-"));
   try {
     let raw = ""; for await (const chunk of process.stdin) raw += chunk;

@@ -14,6 +14,10 @@ DropArea {
         const index = listView.indexAt(point.x + listView.contentX, point.y + listView.contentY)
         if (index < 0) return
         const row = listView.model[index]
+        if (backend.cowork.active) {
+            targetProjectId = row.typeId || ""
+            return
+        }
         targetProjectId = row.kind === "project" ? row.id : row.projectId || ""
         const project = listView.model.find(item => item.kind === "project" && item.id === targetProjectId)
         targetProjectTitle = project ? project.title : ""

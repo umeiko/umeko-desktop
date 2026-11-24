@@ -104,6 +104,21 @@ test('project deletion discovers owned sessions missing from the UI index and pr
   assert.ok(await fs.stat(other)); await assert.rejects(fs.stat(hidden));
 });
 
+test('deleting a Coworker removes unindexed chats only from that instance', async t => {
+  const f = await fixture(t);
+  const victim = join(f.profile, 'cowork/sessions/study');
+  const sibling = join(f.profile, 'cowork/sessions/office');
+  for (const directory of [victim, sibling]) {
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(join(directory, 'unindexed.jsonl'), encode([{ ...header, cwd: f.cwd }, entry()]));
+  }
+  const result = await execute({ operation: 'delete', profile: f.profile, cowork: 'study', sessions: [] });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.deleted.map(row => row.id), [header.id]);
+  await assert.rejects(fs.stat(join(victim, 'unindexed.jsonl')), { code: 'ENOENT' });
+  assert.ok(await fs.stat(join(sibling, 'unindexed.jsonl')));
+});
+
 test('deleting a missing transcript remains retryable and rejects external and prefix-alias paths', async t => {
   const f = await fixture(t);
   await deleteSession({ profile: f.profile, session: { id: 'missing', file: join(f.sessionDir, 'missing.jsonl') } });
