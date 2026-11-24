@@ -128,6 +128,10 @@
     "agent_bus.overview": {"target":"global-agents","read":true,"args":[]},
     "agent_bus.requests": {"target":"global-agents","read":true,"args":[]},
     "agent_bus.dispatch": {"target":"global-agents","args":[["targetId","string"],["text","string"]]},
-    "agent_bus.reply": {"target":"global-agents","args":[["requestId","string"],["result","string"],["status","string","completed"]]}
+    "agent_bus.reply": {"target":"global-agents","args":[["requestId","string"],["result","string"],["status","string","completed"]]},
+    "agent_bus.team_create": {"target":"global-agents","editions":["python"],"description":"由当前全局子智能体协调，将现有成员加入共享任务板。","args":[["name","string"],["coordinatorName","string","lead"],["members","json"]]},
+    "agent_bus.team_members": {"target":"global-agents","editions":["python"],"read":true,"description":"列出我的团队，或查询指定团队的成员、群组和等待状态。","args":[["teamId","string",""]]},
+    "agent_bus.team_board": {"target":"global-agents","editions":["python"],"read":true,"description":"读取当前任务和按顺序追加的看板事件。","args":[["teamId","string"],["after","integer",0],["limit","integer",20]]},
+    "agent_bus.team_post": {"target":"global-agents","editions":["python"],"description":"向看板追加消息或任务事件。文本中的点名会直接投递给对应成员。","args":[["teamId","string"],["event","json"]]}
   }
 }
