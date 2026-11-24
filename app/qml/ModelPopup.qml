@@ -12,7 +12,7 @@ AnchoredPidPopup {
     readonly property bool useDshModels: backend.sessionBackend === "dsh" && backend.dshOwnConfig === true
     readonly property bool hasDshPath: backend.dshRuntime ? String(backend.dshRuntime.path || backend.dshRuntime.resolvedPath || "").trim().length > 0 : false
     fullWidth: 365
-    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + (backend.modelGroupSelected ? 185 : 270) + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0) + (ownModelsHint.visible ? ownModelsHint.implicitHeight + 10 : 0)))
+    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + (root.role ? 242 : backend.modelGroupSelected ? 185 : 270) + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0) + (ownModelsHint.visible ? ownModelsHint.implicitHeight + 10 : 0)))
     signal configure()
     signal dismissed()
     onAboutToShow: { modelSearch.clear(); modelRole.currentIndex = 0 }
@@ -64,8 +64,11 @@ AnchoredPidPopup {
             ComboBox {
                 id: modelRole; objectName: "modelRolePicker"
                 visible: backend.sessionBackend === "pi"
-                Layout.preferredWidth: implicitContentWidth + leftPadding + rightPadding + 4
+                Layout.preferredWidth: 136
+                implicitHeight: Theme.control(28)
                 model: [I18n.t("对话模型"), I18n.t("规划模型"), I18n.t("执行模型")]
+                font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible)
+                background: Rectangle { radius: 7; color: modelRole.hovered ? Theme.hover : Theme.surface; border.color: Theme.line }
             }
             Item { Layout.fillWidth: true }
             BackendChoice { objectName: "choosePiBackend"; text: "Pi Coding Agent"; artwork: "../icons/pi.svg"; selected: backend.sessionBackend === "pi"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("pi") }
