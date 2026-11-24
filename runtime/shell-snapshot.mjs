@@ -194,7 +194,7 @@ export function createShellSnapshots({ getShellConfig, getPowerShellConfig, bund
     },
     async environment(shellName, id, spawnEnv, shellPath) {
       const data = await current(id, shellPath);
-      const env = { ...(data[shellName] || data.base) };
+      const env = { ...(data[shellName.toLowerCase()] || data.base) };
       for (const [key, value] of Object.entries(spawnEnv || {})) {
         if (runtimeSessionKeys.test(key)) setEnv(env, key, value);
       }
