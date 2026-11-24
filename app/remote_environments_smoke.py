@@ -329,6 +329,8 @@ class Acceptance:
         os.kill(killed, signal.SIGTERM)
         self.injected_outage = {'pid': killed, 'blockedAt': time.monotonic(),
                                 'requestedBlockSeconds': self.spec['outageSeconds']}
+        self.wait(lambda: not self.pid_alive(killed), 10, 'owned SSH client exited')
+        self.injected_outage['confirmedExitedAt'] = time.monotonic()
         self.note('ssh-client-killed', **self.injected_outage)
         released = threading.Event()
         release_timing = {}
@@ -476,20 +478,23 @@ class Acceptance:
         self.ssh_lifecycle = [json.loads(line) for line in lifecycle.read_text(encoding='utf-8').splitlines()]
         assert all(Path(row['executable']).resolve() == self.ssh_client for row in self.ssh_lifecycle
                    if row['event'] == 'client-start'), 'Reconnect selected a different real SSH executable'
+        starts = sorted((r for r in self.ssh_lifecycle if r['event'] == 'client-start' and r.get('tunnel')),
+                        key=lambda r: r['at'])
+        exits = {r['pid']: r for r in self.ssh_lifecycle if r['event'] == 'client-exit' and r.get('tunnel')}
         drops = []
-        for row in self.ssh_lifecycle:
-            if row['event'] != 'client-exit' or not row.get('tunnel'):
-                continue
-            connected = next((state for state in self.states
-                              if state['state'] == 'connected' and state['at'] >= row['at']), None)
-            successor = next((client for client in self.ssh_lifecycle
-                              if client['event'] == 'client-start' and client.get('tunnel')
-                              and client['at'] >= row['at'] and client['pid'] != row['pid']), None)
-            assert connected and successor, ('Owned relay client exited without a proven replacement connection', row)
-            drops.append({'pid': row['pid'], 'exitCode': row['exitCode'], 'droppedAt': row['at'],
-                          'replacementPid': successor['pid'], 'connectedAt': connected['at'],
-                          'durationSeconds': round(connected['at'] - row['at'], 3)})
-        assert any(drop['pid'] == self.injected_outage['pid'] for drop in drops), 'Injected SSH exit was not recorded'
+        for outage in self.outages:
+            assert 'recoveredAt' in outage, ('Observed disconnection did not recover', outage)
+            previous = max(s['at'] for s in self.states if s['state'] == 'connected' and s['at'] < outage['startedAt'])
+            old = next((r for r in reversed(starts) if r['at'] <= previous), None)
+            new = next((r for r in reversed(starts) if previous < r['at'] <= outage['recoveredAt']), None)
+            assert old and new and old['pid'] != new['pid'], ('No replacement SSH client in observed recovery', outage)
+            # Umeko can close a wrapper before it records its child's exit. The
+            # application transitions and the replacement client prove recovery.
+            exit_record = exits.get(old['pid'], {})
+            drops.append({'pid': old['pid'], 'exitCode': exit_record.get('exitCode'),
+                          'droppedAt': outage['startedAt'], 'replacementPid': new['pid'],
+                          'connectedAt': outage['recoveredAt'], 'durationSeconds': outage['durationSeconds']})
+        assert any(drop['pid'] == self.injected_outage['pid'] for drop in drops), 'Injected SSH client was not replaced'
         self.relay_drops = drops
         self.note('ssh-relay-drops-recovered', drops=drops, count=len(drops))
 
