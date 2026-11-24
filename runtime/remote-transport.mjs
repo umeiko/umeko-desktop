@@ -261,14 +261,15 @@ export class RemoteConnection {
   }
 
   async _selectSsh() {
-    if (this.sshCommand) return;
-    const env = process.env;
+    if (this.options.sshCommand !== undefined) return;
     // The fault injector forwards the selected real client and never chooses it.
     const wrapper = this.options.sshWrapper === undefined ? null : checkedSshCommand(this.options.sshWrapper);
+    const env = await this.options.getSshEnvironment?.() ?? process.env;
     this.sshClient = await selectSshClient(this.config.host, { env });
     if (this.closed) throw abortError();
     this.sshCommand = wrapper || [this.sshClient];
-    if (wrapper) this.sshEnv = { ...env, UMEKO_REAL_SSH: this.sshClient };
+    this.sshEnv = wrapper ? { ...env, UMEKO_REAL_SSH: this.sshClient,
+      UMEKO_SSH_TEST_CONTROL: process.env.UMEKO_SSH_TEST_CONTROL } : env;
     this._state(this.state);
   }
 
@@ -333,7 +334,7 @@ export class RemoteConnection {
     try {
       const put = resume ? "put -a" : "put";
       await writeFile(batch, `${put} ${sftpPath(inputFile, windowsClient)} ${sftpPath(destination, this.config.platform === "windows", true)}\n`, { mode: 0o600 });
-      const child = this._spawnClient(executable, ["-b", batch, "-S", this.sshClient, ...sshArguments(this.config.host).slice(1), this.config.host]);
+      const child = this._spawnClient(executable, ["-b", batch, "-S", this.sshClient, ...sshArguments(this.config.host).slice(1), this.config.host], this.sshEnv);
       await this._readChild(child, { timeout, label: "OpenSSH SFTP upload", sftp: true });
     } finally {
       await unlink(batch).catch(() => {});

@@ -39,7 +39,7 @@ function response(result) {
   return { content: [{ type: "text", text: JSON.stringify(result) }], details: result, isError: result.ok === false };
 }
 
-export function createRemoteEnvironments({ request, emit, getConfig = () => ({}) }) {
+export function createRemoteEnvironments({ request, emit, getConfig = () => ({}), getSshEnvironment }) {
   const live = new Map();
 
   function close(name) {
@@ -64,6 +64,7 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
     const status = {};
     const connection = new RemoteConnection({ host, platform }, {
       sshWrapper: getConfig()?.remoteTestSshCommand,
+      getSshEnvironment,
       onState(state, detail = {}) {
         for (const key of ["message", "sshError", "attempt", "retryAfterMs"]) delete status[key];
         for (const key of ["sshClient", "message", "sshError", "attempt", "retryAfterMs"]) {

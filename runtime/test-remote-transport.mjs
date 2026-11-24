@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { inflateRawSync } from "node:zlib";
+import fs from "node:fs/promises";
 import { mkdtemp, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -39,6 +40,25 @@ test("existing OpenSSH configuration stays authoritative and unsafe aliases are 
   assert.ok(args.includes("BatchMode=yes"));
   assert.ok(!args.some(arg => arg.startsWith("IdentityFile=") || arg.startsWith("ProxyJump=")));
   for (const host of ["-oProxyCommand=evil", "alias\ncommand", "alias;evil", "user@host $(bad)"]) assert.throws(() => sshArguments(host));
+});
+
+test("a new SSH connection picks up the current session shell environment", async t => {
+  t.mock.method(fs, "stat", async () => ({ isFile: () => true }));
+  t.mock.method(fs, "access", async () => {});
+  const first = join(tmpdir(), "first-shell", "usr", "bin");
+  const refreshed = join(tmpdir(), "refreshed-shell", "usr", "bin");
+  const executable = process.platform === "win32" ? "ssh.exe" : "ssh";
+  let shellEnvironment = { PATH: first };
+  const connection = new RemoteConnection({ host: "existing-alias", platform: "windows" }, {
+    getSshEnvironment: async () => shellEnvironment,
+  });
+  t.after(() => connection.close());
+  await connection._selectSsh();
+  assert.equal(connection.sshClient, join(first, executable));
+  shellEnvironment = { PATH: refreshed };
+  await connection._selectSsh();
+  assert.equal(connection.sshClient, join(refreshed, executable));
+  assert.equal(connection.sshEnv, shellEnvironment);
 });
 
 test("bootstrap is home-only, private, detached, and authenticates a PID-owned listener", () => {

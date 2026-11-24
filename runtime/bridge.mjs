@@ -104,7 +104,11 @@ const umekoControl = createUmekoControl({
     }
   },
 });
-const remoteEnvironments = createRemoteEnvironments({ request: umekoControl.request, emit, getConfig: () => config });
+const remoteEnvironments = createRemoteEnvironments({
+  request: umekoControl.request, emit, getConfig: () => config,
+  getSshEnvironment: () => shellSnapshots.environment(
+    process.platform === "win32" ? "powershell" : "bash", runtime?.session.sessionManager.getSessionId(), process.env),
+});
 const auxiliaryVision = createAuxiliaryVision({getConfig:() => config, emit:event => {
   if (event.sessionId && event.sessionId !== runtime?.session.sessionManager.getSessionId()) return subagents.automaticTool(event.sessionId,event);
   emit(event);
