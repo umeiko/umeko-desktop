@@ -95,7 +95,7 @@ function launchDirect({ file, fileArgs, cwd, logPath, errPath, env }) {
   let errFd, child;
   try {
     errFd = openSync(errPath, "w");
-    child = spawn(file, fileArgs, { cwd, stdio: ["pipe", outFd, errFd], detached: true, windowsHide: true, env });
+    child = spawn(file, fileArgs, { cwd, stdio: ["pipe", outFd, errFd], detached: !windows, windowsHide: true, env });
   } finally {
     closeSync(outFd);
     if (errFd !== undefined) closeSync(errFd);
