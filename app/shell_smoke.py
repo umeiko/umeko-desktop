@@ -57,20 +57,23 @@ def attach(app, controller, directory, window=None):
 
     def remote_settings_action(action, request):
         if action == "remote_settings":
+            window.setHeight(max(window.height(), 1050))
             window.setProperty("settingsTab", 3)
             window.setProperty("page", "settings")
         elif action == "open_remote_settings":
             return click("openUmekoDesktopSettingsButton")
-        elif action == "remote_settings_language" and request.get("language") in {"zh", "en"}:
-            controller.setLanguage(request["language"])
         elif action == "remote_settings_snapshot":
             language = request.get("language")
             state = request.get("state")
-            if language not in {"zh", "en"} or state not in {"connected", "reconnecting", "long-outage"}:
+            if language != controller.language or state not in {"connected", "reconnecting", "long-outage"}:
                 return False
             settings = window.findChild(QObject, "umekoDesktopSettings")
-            return bool(settings and settings.property("visible")
-                        and window.grabWindow().save(str(directory / f"{language}-{state}.png")))
+            scroll = window.findChild(QObject, "settingsScroll")
+            if not settings or not settings.property("visible") or not scroll:
+                return False
+            flickable = scroll.property("contentItem")
+            flickable.setProperty("contentY", max(0, flickable.property("contentHeight") - flickable.height()))
+            return window.grabWindow().save(str(directory / f"{language}-{state}.png"))
         else:
             return False
         return True
