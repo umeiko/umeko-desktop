@@ -35,6 +35,7 @@ SOFTWARE.
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import {APPLY_PATCH, preparePatchPermission} from './apply-patch.mjs';
 
 // Upstream command-position guard, retained as the common rule entry guard.
 const AT_CMD = String.raw`(?:^|(?<!\\)[;&|({\x60!]|\$\(|-c\s+["'])\s*(?:(?:sudo|doas|env|nohup|time|exec|nice|xargs|command|builtin|then|do|else)\s+(?:-\S+\s+)*)*`;
@@ -110,7 +111,7 @@ function protectedPath(value,context,{systemOnly=false,noData=false}={}) {
  const exactHome=/^[a-z]:/i.test(home)?p.toLowerCase()===home.toLowerCase():p===home;
  return p==='/' || /^[a-z]:$/i.test(p) || exactHome || ['/home','/root'].includes(p) || (!noData&&data.some(root=>inside(p,root)));
 }
-/** Only native structured write/edit calls use category 7. */
+/** Structured file writes use category 7. */
 export function classifyPath(filePath,context={}) {
  return protectedPath(filePath,context,{systemOnly:true}) ? decision('7') : null;
 }
@@ -387,10 +388,13 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        const baseCwd=ctx.cwd||policy.cwd||process.cwd();
        const context={...policy,cwd:backgroundStart&&input.cwd ? path.resolve(baseCwd,input.cwd) : baseCwd};
        const shell=name==='bash'||name==='powershell'||backgroundStart;
-       const file=name==='write'||name==='edit';
+       const patch=name===APPLY_PATCH ? preparePatchPermission(input,baseCwd) : null;
+       const file=name==='write'||name==='edit'||!!patch;
        const generation=name==='image_gen'||name==='voice_gen'||name==='video_gen';
        let hit=generation?decision('ask'):null;
        if(shell)hit=await classify(String(input.command??input.script??''),context);
+       else if(patch)hit=[...patch.targets.values()].flatMap(({absolute,canonical})=>[absolute,canonical])
+         .map(target=>classifyPath(target,context)).find(Boolean)||null;
        else if(file)hit=classifyPath(String(input.path??input.file_path??''),context);
        if(hit?.category>=1&&hit.category<=7&&policy.dangerousAllowed===true)hit=null;
        if(policy.mode==='ask'){
@@ -402,14 +406,15 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
            if(hints.readOnlyHint!==true&&(hints.destructiveHint===true||hints.readOnlyHint===false))hit=decision('ask');
          }
        }
-       if(!hit)return undefined;
+       if(!hit){patch?.approve();return undefined;}
        const selected=policy.generation?.[name==='image_gen'?'image':name==='video_gen'?'video':'speech'];
        const destination=selected ? `${selected.provider} / ${selected.model}` : name;
        const reason=generation ? (language==='zh'
          ? `将提示词或文本发送到 ${destination} 生成${name==='image_gen'?'图片':name==='video_gen'?'视频':'语音'}，可能产生费用。文件保存在当前工作目录，已有文件不会被覆盖。`
          : `Send the prompt or text to ${destination} to generate ${name==='image_gen'?'images':name==='video_gen'?'video':'speech'}; this may incur charges. Save files in the current workspace without overwriting existing files.`)
          : REASONS[hit.ruleId]?.[language==='zh'?1:0]||hit.reason;
-       const original=shell?String(input.command??input.script??''):file?String(input.path??input.file_path??''):JSON.stringify(input);
+       const original=patch?[...patch.targets].map(([name,{absolute,canonical}])=>absolute===canonical?name:`${name} → ${canonical}`).join('\n'):
+         shell?String(input.command??input.script??''):file?String(input.path??input.file_path??''):JSON.stringify(input);
        if(!ctx.hasUI||!ctx.ui?.confirm){
          const message=language==='zh'?`未执行：无法显示审批对话框。${reason}`:`Not executed: approval UI is unavailable. ${reason}`;
          notify(message);return {block:true,reason:message};
@@ -420,6 +425,7 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
          ? await ctx.ui.confirmDangerous(title,message,hit.category)
          : await ctx.ui.confirm(title,message);
        if(approved!==true)return {block:true,reason:language==='zh'?`用户拒绝执行。${reason}`:`User denied execution. ${reason}`};
+       patch?.approve();
        return undefined;
      }catch(error){
        const detail=error instanceof Error?error.message:String(error);

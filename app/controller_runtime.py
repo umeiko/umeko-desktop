@@ -12,7 +12,7 @@ from PySide6.QtCore import QProcess, QTimer
 
 from .pi_runtime import node_executable
 from .webview import configuration as webview_configuration
-from .transcripts import tool_view, compaction_view, compaction_status
+from .transcripts import tool_view, compaction_view, compaction_status, patch_files
 from .message_attachments import attachment_prompt, split_attachments
 from .model_reasoning import reconcile_effort
 
@@ -637,6 +637,8 @@ class PiControllerMixin:
                 if isinstance(event.get("args"), dict):
                     tool["arguments"] = dict(event["args"])
             tool["state"] = event["state"]
+            if event['name'] == 'apply_patch' and event['state'] == 'done':
+                tool['patchFiles'] = patch_files(event.get('patchFiles'))
             if isinstance(event.get('video'), dict):
                 tool['video'] = dict(event['video'])
             if event['name'] == 'analyze_image' and isinstance(event.get('args'), dict):

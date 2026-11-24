@@ -988,6 +988,7 @@ var strings = {
   "展开侧栏": "Expand sidebar",
   "展开侧栏（Ctrl+B）": "Expand sidebar (Ctrl+B)",
   "展示附件": "Show attachments",
+  "应用补丁": "Apply patch",
   "工作空间": "Workspace",
   "工具与资源": "Tools and resources",
   "已保存，关闭": "Saved, close",
