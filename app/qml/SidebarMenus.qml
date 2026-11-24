@@ -7,9 +7,11 @@ Item {
     id: root
     property var target: ({})
     property string exportId: ""
+    signal coworkEditRequested(string id)
+    signal coworkFolderRequested(string id)
     function openFor(item, point) {
         target = item
-        let menu = item.kind === "project" ? projectMenu : sessionMenu
+        let menu = item.kind === "project" ? (item.cowork ? coworkMenu : projectMenu) : sessionMenu
         // The first implicit size still contains unpolished, wrapped labels.
         // Keep the actual click as Popup's requested position; Qt and
         // FloatingMenu fit it to the window again when its final size is known.
@@ -35,6 +37,11 @@ Item {
         ContextAction { objectName: "contextExportSession"; text: I18n.t("导出会话"); glyph: "download"; enabled: !root.target.busy; onTriggered: { root.exportId = root.target.id; exportDialog.open() } }
         MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.line } }
         ContextAction { objectName: "contextDeleteSession"; text: I18n.t("删除"); glyph: "trash"; destructive: true; enabled: !root.target.busy && !backend.sessionFiles.busy; onTriggered: deletePopup.open() }
+    }
+    RowMenu {
+        id: coworkMenu
+        ContextAction { text: backend.language === "en" ? "Edit coworker" : "编辑 Coworker"; glyph: "edit"; onTriggered: root.coworkEditRequested(root.target.id) }
+        ContextAction { text: backend.language === "en" ? "New task in another folder" : "在其他目录新建任务"; glyph: "folder"; onTriggered: root.coworkFolderRequested(root.target.id) }
     }
     RowMenu {
         id: projectMenu; objectName: "projectContextMenu"

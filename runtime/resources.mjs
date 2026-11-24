@@ -298,7 +298,7 @@ export async function manageResources(Pi, input) {
   return { extensions, safeMode: !!input.agent?.safeMode };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (import.meta.main) {
   try {
     // Discovery must not fetch models or install missing packages.
     process.env.PI_OFFLINE = "1";

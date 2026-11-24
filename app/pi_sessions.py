@@ -44,6 +44,7 @@ def saved_viewport(meta):
 class SessionState:
     search_leaf: str = ""
     global_agent: str = ""
+    cowork: str = ""
     key: str = field(default_factory=lambda: uuid.uuid4().hex)
     id: str = ""
     file: str = ""

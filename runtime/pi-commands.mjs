@@ -210,7 +210,7 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
   };
 }
 
-if (process.argv.includes('--add-mcp') && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (import.meta.main && process.argv.includes('--add-mcp')) {
   try {
     let raw = ''; for await (const chunk of process.stdin) raw += chunk;
     const input = JSON.parse(raw);

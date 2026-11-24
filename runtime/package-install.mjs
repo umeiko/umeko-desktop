@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import tls from 'node:tls';
 import {spawn} from 'node:child_process';
-import {fileURLToPath, pathToFileURL} from 'node:url';
+import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {createInterface} from 'node:readline';
 import {pipeline} from 'node:stream/promises';
@@ -253,7 +253,7 @@ export async function installPackage(input,options={}) {
     await sleep(seconds*1000);
   }
 }
-if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
+if(import.meta.main) {
   const controller=new AbortController();let started=false,finished=false;
   const emit=value=>process.stdout.write(JSON.stringify(value)+'\n');
   const lines=createInterface({input:process.stdin});

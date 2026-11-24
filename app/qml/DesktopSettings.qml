@@ -13,6 +13,36 @@ Column {
         if (visible) backend.loginStartup.refresh()
     }
     onVisibleChanged: if (startupSettingsReady && visible) backend.loginStartup.refresh()
+    SectionCard {
+        width: parent.width
+        RowLayout {
+            width: parent.width; spacing: 12
+            Glyph { name: "spark"; Layout.preferredWidth: Theme.icon(20); Layout.preferredHeight: Theme.icon(20); color: Theme.accent }
+            ColumnLayout {
+                Layout.fillWidth: true; spacing: 5
+                RowLayout {
+                    spacing: 8
+                    Text { text: "Cowork"; color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
+                    ExperimentalBadge {}
+                }
+                Text {
+                    Layout.fillWidth: true; wrapMode: Text.Wrap
+                    text: backend.language === "en" ? "Show Cowork above Settings in the sidebar and organize tasks by role." : "在侧栏设置上方显示 Cowork，按角色管理不同目录下的任务。"
+                    color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12)
+                }
+            }
+            Toggle {
+                objectName: "desktopCoworkEnabled"
+                checked: backend.desktopSettings.coworkEnabled
+                Accessible.name: "Cowork"
+                onClicked: {
+                    const value = checked
+                    checked = Qt.binding(() => backend.desktopSettings.coworkEnabled)
+                    backend.saveDesktopSettings(JSON.stringify({coworkEnabled:value}))
+                }
+            }
+        }
+    }
     Button {
         id: customRequestsEntry
         objectName: "openRequestHeaders"

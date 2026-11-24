@@ -142,7 +142,26 @@ export function skillDetails(row) {
 }
 
 export async function manageSkills(Pi, input) {
+  if (input.action === "list" && Array.isArray(input.selectedSkillPaths)) {
+    const paths = input.selectedSkillPaths.filter(path => typeof path === "string" && isAbsolute(path)).slice(0, 32);
+    const { skills } = Pi.loadSkills({cwd:input.cwd, agentDir:input.agentDir, skillPaths:paths, includeDefaults:false});
+    const selected = new Set(paths.map(key));
+    return {ok:true, skills:skills.filter(skill => selected.has(key(skill.filePath))).map(skill => {
+      const path = skill.filePath;
+      return {id:path, path, name:skill.name, description:skill.description, scope:"cowork", attached:true};
+    })};
+  }
   if (input.action === "validateText") return validateSkillDocuments(input.documents);
+  if (input.action === "browseScoped") {
+    const value = await browseSkillFolders(input, input.scopedRoots);
+    const selected = new Set(input.selectedSkillIds || []);
+    for (const row of value.skills) {
+      row.selectionId = row.scope === "builtin" ? row.folderName : row.path;
+      row.enabled = row.valid && input.skillsEnabled !== false && selected.has(row.selectionId);
+      row.canToggle = row.valid && input.skillsEnabled !== false;
+    }
+    return value;
+  }
   if (input.action === "browse") {
     const value = await browseSkillFolders(input);
     try {
@@ -192,13 +211,11 @@ export async function manageSkills(Pi, input) {
 // A Skill is managed as one directory, with an independent chat selection. Only the
 // current global/workspace roots belong in the folder manager. Discovery stays
 // bounded and inert, including when a user drops a huge or malformed document.
-export async function browseSkillFolders(input) {
-  const roots = { global: resolve(input.agentDir, "skills"),
-    project: input.includeProject ? resolve(input.cwd, ".pi/skills") : "" };
+export async function browseSkillFolders(input, roots = { project: input.includeProject ? resolve(input.cwd, ".pi/skills") : "",
+    global: resolve(input.agentDir, "skills") }) {
   const skills = [], documents = [];
   let entries = 0, bytes = 0, truncated = false;
-  for (const scope of ["project", "global"]) {
-    const root = roots[scope];
+  for (const [scope, root] of Object.entries(roots)) {
     if (!root || !existsSync(root)) continue;
     const walk = async (directory, depth) => {
       if (depth > 24 || entries >= 20000 || skills.length >= 5000 || bytes >= 128 * 1024 * 1024) { truncated = true; return; }
@@ -313,7 +330,7 @@ export async function sessionSkillOptions(Pi, input, nativeSettings) {
   };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (import.meta.main) {
   try {
     process.env.PI_OFFLINE = "1";
     let raw = ""; for await (const chunk of process.stdin) raw += chunk;
@@ -321,7 +338,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     let Pi;
     // Folder browsing needs only native resource settings and frontmatter, not the full SDK,
     // tool registry, provider clients and extension transpilation machinery.
-    if (!["browse", "validateText"].includes(input.action)) {
+    if (!["browse", "browseScoped", "validateText"].includes(input.action)) {
       const { installProviderPolicy } = await import("./provider-policy.mjs"); installProviderPolicy({ offline: true });
       Pi = await import(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "node_modules/@earendil-works/pi-coding-agent/dist/index.js")));
     }

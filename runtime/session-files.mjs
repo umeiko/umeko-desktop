@@ -142,7 +142,8 @@ export async function deleteSession({ profile, session }) {
     if (!/^dsh-[a-zA-Z0-9]+$/.test(session.id)) throw new Error('会话编号无效');
     file = join(profile, 'dsh/transcripts', session.id + '.json');
   }
-  const root = join(profile, session.backend === 'dsh' ? 'dsh/transcripts' : 'pi/sessions');
+  const role = typeof session.cowork === 'string' && /^(?:[a-z]+|custom-[a-f0-9]{32})$/.test(session.cowork) ? session.cowork : '';
+  const root = role ? join(profile, 'cowork/sessions', role) : join(profile, session.backend === 'dsh' ? 'dsh/transcripts' : 'pi/sessions');
   const related = [];
   if (file) {
     await owned(join(root, 'boundary'), profile);

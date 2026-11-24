@@ -116,6 +116,12 @@ ApplicationWindow {
         backend.sessionPreview.cancel(); chatCover.cancel()
     }
     function selectSidebar(row) {
+        if (row.cowork && row.kind === "project") {
+            cancelSidebarSelection()
+            page = "chat"
+            backend.cowork.openRole(row.id)
+            return
+        }
         if (row.selected && !sidebarSwitching && (row.kind === "session" || !backend.activeSession)) { window.page = "chat"; return }
         backend.sessionPreview.cancel(); sidebarToken++
         pendingSidebarKind = row.kind; pendingSidebarTitle = row.title; pendingSidebarId = row.id
@@ -213,6 +219,22 @@ ApplicationWindow {
         page = "settings"
         if (tab === 7) Qt.callLater(() => settingsPage.openPluginManagement())
     }
+    function openCowork() {
+        closeConversationSearch(false)
+        cancelSidebarSelection()
+        modelPopup.close()
+        subagentMatrix.close()
+        page = "chat"
+        backend.cowork.toggle()
+    }
+    function editCoworker(id) {
+        coworkEditorLoader.active = true
+        coworkEditorLoader.item.begin(id ? backend.cowork.prepareRole(id) : {})
+    }
+    function chooseCoworkFolder(id) {
+        coworkFolder.roleId = id
+        coworkFolder.open()
+    }
     function startChat() { searchVisible = false; cancelSidebarSelection(); backend.newSession(); page = "chat"; composer.focusInput() }
     function startProjectChat(row) { cancelSidebarSelection(); backend.openProject(row.id); backend.newSession(); if (row.collapsed) backend.toggleProject(row.id); page = "chat"; composer.focusInput() }
     function focusChatInput() {
@@ -265,6 +287,27 @@ ApplicationWindow {
     Timer { id: toastTimer; interval: 4200; onTriggered: window.notification = "" }
     RequestDetails { id: requestInspector }
     Connections { target: backend; function onRequestDetailsRequested(identifier) { requestInspector.show(identifier) } }
+    Loader {
+        id: coworkEditorLoader
+        active: false
+        sourceComponent: CoworkEditor {
+            parent: Overlay.overlay
+            service: backend.cowork
+            onSaved: (identifier, created) => {
+                if (!created) return
+                window.page = "chat"
+                backend.cowork.newTask(identifier, "")
+                composer.focusInput()
+            }
+            onClosed: Qt.callLater(() => { if (coworkEditorLoader.item && !coworkEditorLoader.item.visible) coworkEditorLoader.active = false })
+        }
+    }
+    FolderDialog {
+        id: coworkFolder
+        property string roleId: ""
+        title: backend.language === "en" ? "Choose a task folder" : "选择任务工作目录"
+        onAccepted: { window.page = "chat"; backend.cowork.newTask(roleId, String(selectedFolder)); composer.focusInput() }
+    }
     FolderDialog { id: folderDialog; title: I18n.t("选择工作目录"); onAccepted: backend.setWorkspace(selectedFolder.toString()) }
     FileDialog { id: attachmentDialog; title: I18n.t("添加文件"); fileMode: FileDialog.OpenFiles; onAccepted: window.acceptChatFiles(selectedFiles.map(url => url.toString())) }
     ImagePreview { id: imageViewer }
@@ -322,13 +365,13 @@ ApplicationWindow {
                     onClicked: window.openConversationSearch()
                 }
             }
-            Text { font.family: Theme.fontFamily; id: recentLabel; x: 29; y: 52 + Theme.control(42); text: backend.showArchived ? I18n.t("已归档") : I18n.t("项目"); font.pixelSize: Theme.font(10, visible); color: Theme.muted; font.letterSpacing: 1 }
+            Text { font.family: Theme.fontFamily; id: recentLabel; x: 29; y: 52 + Theme.control(42); text: backend.showArchived ? I18n.t("已归档") : backend.cowork.active ? "Coworkers" : I18n.t("项目"); font.pixelSize: Theme.font(10, visible); color: Theme.muted; font.letterSpacing: 1 }
             ActionButton { objectName: "archivedViewButton"; anchors.right: parent.right; anchors.rightMargin: 28 + Theme.control(26); y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "archive"; quiet: true; hint: backend.showArchived ? I18n.t("返回项目") : I18n.t("查看归档会话"); onClicked: backend.toggleArchived() }
-            ActionButton { anchors.right: parent.right; anchors.rightMargin: 22; y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "plus"; quiet: true; hint: I18n.t("打开项目文件夹"); onClicked: folderDialog.open() }
+            ActionButton { objectName: backend.cowork.active ? "createCoworkerButton" : "addProjectButton"; anchors.right: parent.right; anchors.rightMargin: 22; y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "plus"; quiet: true; hint: backend.cowork.active ? (backend.language === "en" ? "New coworker" : "新建 Coworker") : I18n.t("打开项目文件夹"); onClicked: backend.cowork.active ? window.editCoworker("") : folderDialog.open() }
             ListView {
                 id: sessionList; objectName: "projectList"
                 x: 12; y: recentLabel.y + Theme.control(28); width: parent.width - 24; height: apiStatus.y - y - 16
-                spacing: 2; clip: true; model: backend.projectRows
+                spacing: 2; clip: true; model: backend.cowork.active ? backend.cowork.rows : backend.projectRows
                 readonly property int selectedRow: model.findIndex(row => window.sidebarSwitching ? row.id === window.pendingSidebarId && row.kind === window.pendingSidebarKind : row.selected && (row.kind === "session" || row.kind === "project" && !backend.activeSession))
                 function rowHeight(row) { return row.kind === "project" ? 38 : 34 }
                 function syncSelection() {
@@ -384,14 +427,37 @@ ApplicationWindow {
                         onPressed: mouse => { if (mouse.button === Qt.LeftButton && modelData.kind === "session") backend.sessionPreview.prefetch(modelData.id) }
                         onClicked: mouse => { if (mouse.button === Qt.RightButton) { sidebarMenus.openFor(modelData, mapToItem(sidebarMenus, mouse.x, mouse.y)); return } window.selectSidebar(modelData) }
                     }
-                    Glyph { visible: modelData.kind === "project"; name: "folder"; x: 15; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(16); height: Theme.icon(16) }
-                    Text { font.family: Theme.fontFamily; x: modelData.kind === "label" ? 17 : 42; width: Math.max(0, parent.width - x - (modelData.kind === "project" ? Theme.control(56) + (modelData.pinned ? Theme.icon(12) + 12 : 8) : (sidebarStatus.visible ? sidebarStatus.implicitWidth + 20 + (modelData.pinned ? Theme.icon(12) + 6 : 0) : 32))); anchors.verticalCenter: parent.verticalCenter; text: modelData.kind === "label" ? I18n.t(modelData.title) : modelData.title; elide: Text.ElideRight; font.pixelSize: Theme.font(modelData.kind === "label" ? 10 : 11, visible); color: modelData.kind === "label" ? Theme.muted : Theme.ink }
+                    Glyph { visible: modelData.kind === "project"; name: modelData.glyph || "folder"; x: 15; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(16); height: Theme.icon(16) }
+                    Text { font.family: Theme.fontFamily; x: modelData.kind === "label" ? 17 : 42; width: Math.max(0, parent.width - x - (modelData.kind === "project" ? Theme.control(modelData.cowork && !backend.showArchived ? 84 : 56) + (modelData.pinned ? Theme.icon(12) + 12 : 8) : (sidebarStatus.visible ? sidebarStatus.implicitWidth + 20 + (modelData.pinned ? Theme.icon(12) + 6 : 0) : 32))); anchors.verticalCenter: parent.verticalCenter; text: modelData.kind === "label" ? I18n.t(modelData.title) : modelData.displayTitle || modelData.title; elide: Text.ElideRight; font.pixelSize: Theme.font(modelData.kind === "label" ? 10 : 11, visible); color: modelData.kind === "label" ? Theme.muted : Theme.ink }
                     TaskStatus { id: sidebarStatus; objectName: "sessionStatus_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; compact: true; status: ({state: modelData.kind === "session" ? (modelData.running ? (modelData.outcome === "stopping" ? "stopping" : "running") : modelData.outcome || "") : ""}); unread: modelData.unread === true && !modelData.running }
                     Glyph { anchors.right: parent.right; anchors.rightMargin: modelData.kind === "project" ? Theme.control(56) + 4 : sidebarStatus.visible ? sidebarStatus.implicitWidth + 17 : 11; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(12); height: Theme.icon(12); name: "pin"; visible: modelData.pinned === true && !modelData.running && !modelData.unread && !(rowMouse.containsMouse) }
                     Accessible.role: Accessible.Button
                     Accessible.name: modelData.title + (sidebarStatus.visible ? " · " + sidebarStatus.text : "")
-                    ActionButton { objectName: "newProjectSession_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: Theme.control(28); anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: Theme.control(28); quiet: true; glyph: "plus"; visible: modelData.kind === "project" && !backend.showArchived; hint: I18n.t("新增会话"); onClicked: window.startProjectChat(modelData) }
-                    ActionButton { objectName: "toggleProject_" + modelData.id; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: Theme.control(28); quiet: true; glyph: modelData.collapsed ? "chevron-right" : "chevron-down"; visible: modelData.kind === "project"; onClicked: backend.toggleProject(modelData.id) }
+                    ActionButton { objectName: "newProjectSession_" + modelData.id; anchors.right: parent.right; anchors.rightMargin: Theme.control(28); anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: Theme.control(28); quiet: true; glyph: "plus"; visible: modelData.kind === "project" && !backend.showArchived; hint: I18n.t("新增会话"); onClicked: {
+                        if (modelData.cowork) {
+                            window.cancelSidebarSelection()
+                            window.page = "chat"
+                            backend.cowork.newTask(modelData.id, "")
+                            composer.focusInput()
+                        } else window.startProjectChat(modelData)
+                    } }
+                    Loader {
+                        active: modelData.kind === "project" && modelData.cowork === true && !backend.showArchived
+                        anchors.right: parent.right; anchors.rightMargin: Theme.control(56); anchors.verticalCenter: parent.verticalCenter
+                        width: Theme.control(28); height: Theme.control(28)
+                        sourceComponent: ActionButton {
+                            objectName: "editCoworker_" + modelData.id
+                            quiet: true; glyph: "edit"
+                            hint: backend.language === "en" ? "Edit coworker" : "编辑 Coworker"
+                            onClicked: window.editCoworker(modelData.id)
+                        }
+                    }
+                    Loader {
+                        active: modelData.cowork === true && modelData.kind === "session" && rowMouse.containsMouse
+                        anchors.fill: parent
+                        sourceComponent: HoverTip { active: true; text: modelData.path || "" }
+                    }
+                    ActionButton { objectName: "toggleProject_" + modelData.id; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(28); height: Theme.control(28); quiet: true; glyph: modelData.collapsed ? "chevron-right" : "chevron-down"; visible: modelData.kind === "project"; onClicked: modelData.cowork ? backend.cowork.toggleRole(modelData.id) : backend.toggleProject(modelData.id) }
                 }
             }
             SidebarSessionDrop {
@@ -403,11 +469,31 @@ ApplicationWindow {
             }
             Item {
                 id: apiStatus; objectName: "apiProxySidebarStatus"; visible: backend.serverRunning
-                x: 26; anchors.bottom: settingsButton.top; anchors.bottomMargin: 9; width: parent.width - 52; height: 29
+                x: 26; anchors.bottom: coworkButton.visible ? coworkButton.top : settingsButton.top; anchors.bottomMargin: 9; width: parent.width - 52; height: 29
                 Rectangle { x: 1; y: 10; width: 6; height: 6; radius: 3; color: "#72a783" }
                 Text { font.family: Theme.fontFamily; x: 17; y: 5; width: Math.max(0, apiPort.x - x - 8); elide: Text.ElideRight; text: I18n.t("API 代理运行中"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
                 Text { id: apiPort; anchors.right: parent.right; y: 5; text: ":" + backend.config.server.port; color: Theme.muted; font.pixelSize: Theme.font(10, visible); font.family: "Consolas" }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: window.settings(1) }
+            }
+            ActionButton {
+                id: coworkButton; objectName: "openCoworkButton"
+                x: settingsButton.x; anchors.bottom: settingsButton.top; anchors.bottomMargin: 4
+                width: settingsButton.width; height: Theme.control(40); quiet: true
+                visible: backend.desktopSettings.coworkEnabled
+                Accessible.name: "Cowork"
+                hint: backend.language === "en" ? "Cowork (experimental)" : "Cowork（实验版）"
+                onClicked: window.openCowork()
+                background: Rectangle {
+                    radius: 8
+                    color: backend.cowork.active ? Theme.accentBg : coworkButton.interactionHovered ? Theme.hover : "transparent"
+                }
+                contentItem: Item {
+                    Row {
+                        x: 16; spacing: 12; anchors.verticalCenter: parent.verticalCenter
+                        Glyph { name: "spark"; color: backend.cowork.active ? Theme.accent : Theme.muted; width: Theme.icon(18); height: Theme.icon(18) }
+                        Text { text: "Cowork"; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12); color: Theme.ink; anchors.verticalCenter: parent.verticalCenter }
+                    }
+                }
             }
             ActionButton {
                 id: settingsButton; objectName: "settingsButton"
@@ -500,9 +586,9 @@ ApplicationWindow {
                     }
                     onClicked: window.toggleSidebar()
                 }
-                Text { font.family: Theme.fontFamily; text: window.page === "chat" ? I18n.t("工作空间") : I18n.t("偏好设置"); color: Theme.muted; font.pixelSize: Theme.font(11, visible); anchors.verticalCenter: parent.verticalCenter }
+                Text { font.family: Theme.fontFamily; text: window.page === "chat" ? (backend.cowork.active ? "Cowork" : I18n.t("工作空间")) : I18n.t("偏好设置"); color: Theme.muted; font.pixelSize: Theme.font(11, visible); anchors.verticalCenter: parent.verticalCenter }
                 Text { font.family: Theme.fontFamily; text: "/"; color: Theme.line; font.pixelSize: Theme.font(12, visible); anchors.verticalCenter: parent.verticalCenter }
-                Text { font.family: Theme.fontFamily; text: window.page === "chat" ? (window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle) : [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于"), I18n.t("Umeko 插件管理")][window.settingsTab]; color: Theme.ink; font.pixelSize: Theme.font(11, visible); width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
+                Text { font.family: Theme.fontFamily; text: window.page === "chat" ? ((backend.cowork.active ? backend.cowork.roleName + " · " : "") + (window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle)) : [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于"), I18n.t("Umeko 插件管理")][window.settingsTab]; color: Theme.ink; font.pixelSize: Theme.font(11, visible); width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
             }
             Row { id: windowControls; anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 18; spacing: 2
                 WindowControlButton { objectName:"minimizeWindowButton";operation:"minimize"; hint: I18n.t("最小化"); onClicked: window.showMinimized() }
@@ -839,7 +925,11 @@ ApplicationWindow {
     Connections { target: backend; function onViewChanged() { subagentMatrix.close() } }
     ApprovalDialog { parent: Overlay.overlay }
     ApprovalDialog { objectName: "widgetHostApproval"; actionPrefix: "widgetHost_"; parent: Overlay.overlay; approvalBackend: backend.desktopPlugins.hostServices }
-    SidebarMenus { id: sidebarMenus; objectName: "sidebarMenus"; parent: Overlay.overlay; anchors.fill: parent }
+    SidebarMenus {
+        id: sidebarMenus; objectName: "sidebarMenus"; parent: Overlay.overlay; anchors.fill: parent
+        onCoworkEditRequested: id => window.editCoworker(id)
+        onCoworkFolderRequested: id => window.chooseCoworkFolder(id)
+    }
     Rectangle {
         z: 100; anchors.horizontalCenter: mainArea.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 27
         width: Math.min(toastLabel.implicitWidth + 40, 750); height: toastLabel.implicitHeight + 24; radius: 10

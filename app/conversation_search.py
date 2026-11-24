@@ -192,6 +192,7 @@ class ConversationSearch(QAbstractListModel):
         workspace = str(Path(controller._view.workspace).resolve()) if controller._view.workspace else ''
         sources = []
         for saved in controller._sessions:
+            if bool(saved.get('cowork')) != bool(controller._view.cowork): continue
             saved_workspace = saved.get('workspace', '')
             if (str(Path(saved_workspace).resolve()) if saved_workspace else '') != workspace: continue
             if options.get('scope') == 'session' and saved['id'] != controller._view.id: continue

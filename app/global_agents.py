@@ -345,7 +345,7 @@ class GlobalAgents(QObject):
             record=self.b._pool.find(source['id']); key='session:'+source['id']
             rows[key]={'id':key,'title':source.get('title',''),'workspace':source.get('workspace',''),'busy':bool(record and record.busy),**self.bridge_access(source['id']),'kind':'session'}
         for record in self.b._pool.records.values():
-            if record.global_agent: continue
+            if record.global_agent or record.cowork: continue
             key=self.identifier(record)
             rows[key]={'id':key,'title':record.title,'workspace':record.workspace,'busy':record.busy,**self.bridge_access(record.id,'draft:'+record.key),'kind':'session','subagents':[{k:child.get(k) for k in ('id','name','type','status')} for child in record.subagents.values()]}
         for row in rows.values():

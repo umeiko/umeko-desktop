@@ -46,7 +46,7 @@ class SessionFiles(QObject):
 
     def _sessions(self, project):
         key = self._workspace(project['path'])
-        return [dict(row) for row in self.b._sessions if self._workspace(row.get('workspace')) == key]
+        return [dict(row) for row in self.b._sessions if not row.get('cowork') and self._workspace(row.get('workspace')) == key]
 
     @Slot(str, result='QVariantMap')
     def projectSummary(self, identifier):
@@ -110,7 +110,7 @@ class SessionFiles(QObject):
         project = next((p for p in b.store.data['projects'] if p['id'] == project_id), None)
         key = self._workspace(project['path']) if project else None
         records = [r for r in b._pool.records.values() if r.id in ids or
-                   key is not None and self._workspace(r.workspace) == key]
+                   key is not None and not r.cowork and self._workspace(r.workspace) == key]
         if any(b._pool.protected(r) for r in records) or ids & b._management_jobs:
             b.toast.emit('此会话或项目仍有任务运行，请先停止任务'); return
         self._busy = True

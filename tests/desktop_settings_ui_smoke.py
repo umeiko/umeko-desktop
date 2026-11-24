@@ -43,6 +43,14 @@ def wait(predicate,message):
 def click(name):
     wait(lambda:find(name) is not None and find(name).isVisible(),name+' did not appear')
     window.grabWindow();item=find(name)
+    scroll=find('settingsScroll')
+    if scroll and scroll.isVisible():
+        center=item.mapToItem(scroll,item.boundingRect().center()).y()
+        if not 0 <= center < scroll.height():
+            flick=scroll.property('contentItem')
+            flick.setProperty('contentY',max(0,min(flick.property('contentHeight')-flick.height(),
+                flick.property('contentY')+center-scroll.height()/2)))
+            QTest.qWait(100)
     profile=cProfile.Profile()
     profile.enable()
     QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,item.mapToScene(item.boundingRect().center()).toPoint())
@@ -71,6 +79,7 @@ try:
     click('openUmekoDesktopSettingsButton')
     assert not find('openPiSettingsButton').isVisible()
     assert not find('desktopAutoOpenSubmissions').property('checked')
+    assert not find('desktopCoworkEnabled').property('checked')
     assert find('desktopChatWidthHints').property('checked')
     assert find('desktopWebDisplay').property('currentIndex')==1
     for language,scale in [('zh',1.0),('en',2.0)]:
