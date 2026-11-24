@@ -652,6 +652,8 @@ async function state() {
       let path = args.path || args.file_path || args.filePath || "";
       path = path && typeof path === "string" && !path.includes("://") ? canonicalPath(resolve(manager.getCwd(), path.replace(/^~(?=[/\\]|$)/,homedir()))) : "";
       const row = {id:call.id, name:call.name, arguments:args, path, state:result ? result.isError ? "error" : "done" : "interrupted", result:result ? textOf(result.content).slice(0,8192) : ""};
+      if (call.name === APPLY_PATCH && !result?.isError && Array.isArray(details?.patchFiles))
+        row.patchFiles = details.patchFiles.map(file => file.path);
       const media = chatboxItems(call.name, result);
       if (media.length) row.media = media;
       const nested = deliveries.filter(item => item.toolCallId.startsWith(call.id + "/")).map(item => ({id: item.toolCallId, name: CHATBOX_TOOL, arguments: {}, path: "", state: "done", result: "已提交到聊天框", media: item.items.slice(0, 12)}));

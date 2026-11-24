@@ -60,6 +60,9 @@ test('real Pi bridge declares and runs apply_patch only on enabled models', {tim
       gateway: 'http://127.0.0.1:' + server.address().port + '/', token: 'local'});
     const finish = events.find(event => event.type === 'tool' && event.name === 'apply_patch' && event.state !== 'running');
     assert.deepEqual(finish?.patchFiles, [{path: 'one.txt', kind: 'modified'}], JSON.stringify(finish));
+    const completed = events.findLast(event => event.type === 'state').messages
+      .flatMap(message => message.tools || []).find(tool => tool.name === 'apply_patch');
+    assert.deepEqual(completed?.patchFiles, ['one.txt']);
     assert.equal(readFileSync(join(workspace, 'one.txt'), 'utf8'), 'new\r\n');
     await request({type: 'prompt', text: 'Inspect available tools', model: 'disabled'});
     const off = requests.find(row => row.model === 'disabled').tools.map(tool => tool.function.name);
