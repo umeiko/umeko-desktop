@@ -258,6 +258,19 @@ jobs:
         if: runner.os == 'Windows'
         run: node --test runtime/test-remote-command.mjs
 
+      - name: Set up the sandbox Bash build tools
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: true
+          install: msys2-devel base-devel autotools cocom curl diffutils gcc gettext-devel git libiconv-devel make mingw-w64-cross-crt mingw-w64-cross-gcc mingw-w64-cross-zlib perl zlib-devel xmlto docbook-xsl libzstd-devel
+
+      - name: Build the sandbox Bash runtime
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: bash scripts/build-sandbox-git-bash.bash
+
       - name: Build Windows
         if: runner.os == 'Windows'
         shell: pwsh

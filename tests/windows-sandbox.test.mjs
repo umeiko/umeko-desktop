@@ -56,6 +56,25 @@ test('standard-user profile runs with file isolation and reports network fallbac
   assert.equal(sandboxFailure('off', true, 'Permission denied'), undefined);
 });
 
+test('standard-user Git Bash uses the packaged runtime inside the same native sandbox', t => {
+  const input = fixture(t);
+  const options = { platform: 'win32' };
+  const root = join(input.workspace, '..', 'git');
+  const bash = join(root, 'bin', 'bash.exe');
+  mkdirSync(join(root, 'bin'), { recursive: true });
+  writeFileSync(bash, 'fixture; never executed');
+  const elevated = sandboxCommand(input, options);
+  assert.equal(elevated.args.at(-3), input.file);
+  input.policy.elevated = false;
+  input.env = { Path: 'original' };
+  const standard = sandboxCommand(input, options);
+  assert.equal(standard.file, input.policy.launcher);
+  assert.equal(standard.level, 'non-elevated');
+  assert.deepEqual(standard.args.slice(-4), ['allow', bash, ...input.args]);
+  assert.deepEqual(standard.env.Path.split(';'), [join(root, 'usr', 'bin'), join(root, 'mingw64', 'bin'), 'original']);
+  assert.equal(sandboxCommand({ ...input, file: 'powershell.exe' }, options).args.at(-3), 'powershell.exe');
+});
+
 test('closing a local MCP transport prevents stale traffic immediately', async () => {
   const active = new Set();
   const calls = [];

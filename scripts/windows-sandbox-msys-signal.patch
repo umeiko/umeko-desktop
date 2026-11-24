@@ -1,0 +1,51 @@
+Subject: Permit the restricted logon to open its own MSYS signal pipe
+
+Adapted from git-for-windows/msys2-runtime d25c02bd8bbfef7da4b42eab6f0834bcb9d9343e,
+winsup/cygwin/sigproc.cc and sec/helper.cc. Cygwin license applies.
+
+diff --git a/winsup/cygwin/sigproc.cc b/winsup/cygwin/sigproc.cc
+--- a/winsup/cygwin/sigproc.cc
++++ b/winsup/cygwin/sigproc.cc
+@@ -489,10 +489,40 @@ sig_dispatch_pending (bool fast)
+ /* Signal thread initialization.  Called from dll_crt0_1.
+    This routine starts the signal handling thread.  */
++static PSECURITY_ATTRIBUTES
++signal_pipe_attributes (void *storage)
++{
++  if (IsTokenRestricted (hProcToken))
++    {
++      // The sandbox restricts the token by its logon SID. The explicit
++      // user/admin/system pipe DACL otherwise denies reopening the write end.
++      alignas (TOKEN_GROUPS)
++        BYTE logon_data[sizeof (TOKEN_GROUPS) + SECURITY_MAX_SID_SIZE];
++      DWORD length = 0;
++      if (GetTokenInformation (hProcToken, TokenLogonSid, logon_data,
++                               sizeof (logon_data), &length))
++        {
++          const TOKEN_GROUPS *logon =
++            reinterpret_cast<const TOKEN_GROUPS *> (logon_data);
++          if (logon->GroupCount == 1
++              && (logon->Groups[0].Attributes & SE_GROUP_LOGON_ID)
++                  == SE_GROUP_LOGON_ID
++              && IsValidSid (logon->Groups[0].Sid))
++            // Only the ACL on this process's signal pipe is augmented. The
++            // original owner and SYSTEM entries and the process token remain.
++            return __sec_user (storage, cygheap->user.sid (),
++                               logon->Groups[0].Sid,
++                               FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES, FALSE);
++        }
++    }
++  return sec_user_nih (static_cast<PSECURITY_ATTRIBUTES> (storage),
++                       cygheap->user.sid ());
++}
++
+ void
+ sigproc_init ()
+ {
+-  char char_sa_buf[1024];
+-  PSECURITY_ATTRIBUTES sa = sec_user_nih ((PSECURITY_ATTRIBUTES) char_sa_buf, cygheap->user.sid());
++  alignas (SECURITY_ATTRIBUTES) char char_sa_buf[1024];
++  PSECURITY_ATTRIBUTES sa = signal_pipe_attributes (char_sa_buf);
+   DWORD err = fhandler_pipe::create (sa, &my_readsig, &my_sendsig,
+ 				     PIPE_DEPTH * sizeof (sigpacket), "sigwait",
+ 				     PIPE_ADD_PID);

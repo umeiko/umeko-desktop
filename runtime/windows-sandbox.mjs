@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from 'node:fs';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const helper = fileURLToPath(new URL('./bin/windows-sandbox/umeko-sandbox.exe', import.meta.url));
@@ -31,6 +31,16 @@ export function sandboxCommand({ file, args, cwd, env = process.env, workspace, 
     : undefined;
   if (/(?:^|[\\/])wsl(?:\.exe)?$/i.test(file) || /^.*[\\/]Windows[\\/]System32[\\/]bash\.exe$/i.test(file)) {
     throw new Error('Windows sandbox blocked the WSL launcher: use Git Bash or Windows PowerShell for this command.');
+  }
+  if (level === 'non-elevated' && /(?:^|[\\/])bash(?:\.exe)?$/i.test(file)) {
+    const gitRoot = join(dirname(launcher), 'git');
+    const packagedBash = join(gitRoot, 'bin', 'bash.exe');
+    if (existsSync(packagedBash)) {
+      const pathKey = Object.keys(env).find(key => key.toUpperCase() === 'PATH') || 'PATH';
+      env = { ...env, [pathKey]: [join(gitRoot, 'usr', 'bin'), join(gitRoot, 'mingw64', 'bin'), env[pathKey]]
+        .filter(Boolean).join(win32.delimiter) };
+      file = packagedBash;
+    }
   }
   return {
     file: launcher,
