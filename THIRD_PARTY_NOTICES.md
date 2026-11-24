@@ -30,6 +30,10 @@ The terminal widget also uses the unmodified Microsoft Codicons font noted above
 
 Release bundles include fd 10.3.0 (MIT or Apache-2.0, https://github.com/sharkdp/fd/tree/v10.3.0) and ripgrep 14.1.1 (MIT or Unlicense, https://github.com/BurntSushi/ripgrep/tree/14.1.1) so Pi's find/grep tools work without a first-run download. Their upstream license files accompany the binaries under `runtime/releases/coding-1.5.2/bin`. Archive SHA-256 values are pinned in `scripts/search-tools.json`.
 
+## Remote network proxy
+
+`runtime/remote-http-proxy.mjs` adapts the HTTP CONNECT handler from [dsh-remote-explorer 0.8.12](https://github.com/btsd321/dsh-remote-explorer/blob/fd660312bd5ceb7bebd39346c46d87955f70a61f/src/tunnel/local-http-proxy.ts), under Apache-2.0. The original license is in `licenses/dsh-remote-explorer-APACHE-2.0.txt`.
+
 ## Codex exec-server
 
 Remote environments use the official `codex-exec-server` binaries from OpenAI Codex `rust-v0.172.0`, under Apache-2.0. The JavaScript client implements the tagged `codex-rs/exec-server-protocol/src/protocol.rs` and `rpc.rs` wire formats. The upstream license and notice are retained in `licenses/codex-exec-server-APACHE.txt` and `licenses/codex-exec-server-NOTICE.txt`. Release assets and SHA-256 values are pinned in `runtime/remote-exec-assets.json`. Source: https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/exec-server .

@@ -430,6 +430,7 @@ class Acceptance:
             assert status.get('outbound') == 'builtin', ('CI must use the built-in direct outbound path', status)
         else:
             assert status.get('outbound') == 'configured', ('Windows must use the explicitly configured proxy', status)
+        qml_network = self.observe_network_settings()
         probe('default', 'curl', True)
         disabled = self.call('remote_network', {'action': 'off', 'environment': 'acceptance'})
         assert disabled.get('ok') and disabled.get('network') == 'remote', disabled
@@ -466,12 +467,45 @@ class Acceptance:
         (self.directory / 'chat-tool-rows.json').write_text(json.dumps(self.tool_rows, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
         result = {'ok': True, 'scenario': 'remote-network', 'probes': outcomes,
                   'defaultStatus': status, 'disabled': disabled, 'enabled': enabled,
+                  'qmlNetworkText': qml_network,
                   'diagnostic': diagnostic, 'cutSshPid': killed,
                   'directBaseline': self.spec.get('directBaseline'),
                   'steps': self.steps, 'actualModelRequests': self.model.requests,
                   'scope': 'real app/gateway/Pi/tools/SSH/downloads and UI rows; local scripted model'}
         self.note('network-passed', probeCount=len(outcomes), actualModelRequests=self.model.requests)
         return result
+
+    def observe_network_settings(self):
+        from PySide6.QtCore import QMetaObject
+        window = self.engine.rootObjects()[0]
+
+        def item_named(name):
+            nodes = [window.contentItem()]
+            while nodes:
+                item = nodes.pop()
+                if item.objectName() == name:
+                    return item
+                nodes.extend(item.childItems())
+            return None
+
+        window.setProperty('settingsTab', 3)
+        window.setProperty('page', 'settings')
+        try:
+            self.wait(lambda: item_named('openUmekoDesktopSettingsButton') is not None, 15, 'desktop settings button')
+            button = item_named('openUmekoDesktopSettingsButton')
+            assert QMetaObject.invokeMethod(button, 'clicked'), 'Could not open desktop settings'
+
+            def active_label():
+                label = item_named('remoteEnvironmentNetwork_acceptance')
+                return label if label is not None and label.isVisible() else None
+
+            self.wait(active_label, 15, 'shared network label')
+            text = active_label().property('text')
+            assert text in ('服务器正在使用本机网络', "The server is using this computer's network"), text
+            self.note('qml-network-status', text=text)
+            return text
+        finally:
+            window.setProperty('page', 'chat')
 
     def collect_ssh_evidence(self):
         lifecycle = self.directory / 'ssh-control/lifecycle.jsonl'

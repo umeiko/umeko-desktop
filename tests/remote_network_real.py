@@ -30,7 +30,7 @@ def commands(platform, root, python, phase):
         base = "$ErrorActionPreference='Stop'; $d=" + q(destination) + "; New-Item -ItemType Directory -Force $d | Out-Null; "
         finish = "; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; "
         return {
-            'curl': base + 'curl.exe -fS --connect-timeout 8 --max-time 25 https://example.com/ -o "$d/curl.html"' + finish + 'if ((Get-Item "$d/curl.html").Length -le 0) { exit 91 }',
+            'curl': base + 'curl.exe -fS --connect-timeout 8 --max-time 25 https://github.com/robots.txt -o "$d/curl.txt"' + finish + 'if ((Get-Item "$d/curl.txt").Length -le 0) { exit 91 }',
             'pip': base + '& ' + q(python) + ' -m pip install --disable-pip-version-check --no-cache-dir --no-deps --retries 0 --timeout 15 --index-url https://pypi.org/simple --target "$d/pip" six==1.17.0' + finish + 'if (!(Test-Path "$d/pip/six.py")) { exit 92 }',
             'git': base + 'git -c http.connectTimeout=8 -c http.lowSpeedLimit=1 -c http.lowSpeedTime=20 clone --depth 1 https://github.com/octocat/Hello-World.git "$d/git"' + finish + 'if (!(Test-Path "$d/git/README")) { exit 93 }',
         }
