@@ -385,14 +385,16 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        if(name==='umeko_desktop'||name==='pi'||name==='pi_commands')return undefined;
        const input=event.input||{};
        const backgroundStart=name==='background_job'&&input.action==='start';
+       const backgroundWrite=name==='background_job'&&input.action==='write';
+       const command=backgroundWrite?input.input:(input.command??input.script);
        const baseCwd=ctx.cwd||policy.cwd||process.cwd();
        const context={...policy,cwd:backgroundStart&&input.cwd ? path.resolve(baseCwd,input.cwd) : baseCwd};
-       const shell=name==='bash'||name==='powershell'||backgroundStart;
+       const shell=name==='bash'||name==='powershell'||backgroundStart||backgroundWrite;
        const patch=name===APPLY_PATCH ? preparePatchPermission(input,baseCwd) : null;
        const file=name==='write'||name==='edit'||!!patch;
        const generation=name==='image_gen'||name==='voice_gen'||name==='video_gen';
        let hit=generation?decision('ask'):null;
-       if(shell)hit=await classify(String(input.command??input.script??''),context);
+       if(shell)hit=await classify(String(command??''),context);
        else if(patch)hit=[...patch.targets.values()].flatMap(({absolute,canonical})=>[absolute,canonical])
          .map(target=>classifyPath(target,context)).find(Boolean)||null;
        else if(file)hit=classifyPath(String(input.path??input.file_path??''),context);
@@ -414,7 +416,7 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
          : `Send the prompt or text to ${destination} to generate ${name==='image_gen'?'images':name==='video_gen'?'video':'speech'}; this may incur charges. Save files in the current workspace without overwriting existing files.`)
          : REASONS[hit.ruleId]?.[language==='zh'?1:0]||hit.reason;
        const original=patch?[...patch.targets].map(([name,{absolute,canonical}])=>absolute===canonical?name:`${name} → ${canonical}`).join('\n'):
-         shell?String(input.command??input.script??''):file?String(input.path??input.file_path??''):JSON.stringify(input);
+         shell?String(command??''):file?String(input.path??input.file_path??''):JSON.stringify(input);
        if(!ctx.hasUI||!ctx.ui?.confirm){
          const message=language==='zh'?`未执行：无法显示审批对话框。${reason}`:`Not executed: approval UI is unavailable. ${reason}`;
          notify(message);return {block:true,reason:message};

@@ -1,13 +1,17 @@
-import { spawn } from "node:child_process";
-import { closeSync, mkdirSync, openSync } from "node:fs";
+// Command sessions, bounded collection and yield adapted from OpenAI Codex,
+// rust-v0.172.0: codex-rs/core/src/unified_exec/. See licenses/codex-NOTICE.txt.
 import { mkdtemp, open } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { createJiti } from "jiti";
-import { getShellConfig } from "./node_modules/@earendil-works/pi-coding-agent/dist/utils/shell.js";
+import { getPowerShellConfig, getShellConfig } from "./node_modules/@earendil-works/pi-coding-agent/dist/utils/shell.js";
 import { assertProcessCommandAllowed, blockedProcessCommand } from "./process-guard.mjs";
+import { launchCommand } from "./command-process.mjs";
+
+const modelBytesPerStream = 20_000;
+export const DEFAULT_YIELD_MS = 10_000;
 
 // Fixed pi-bg primitives only: importing its extension entry would replace bash
 // and introduce UI/injection behavior. Each manager owns a fresh registry.
@@ -15,44 +19,18 @@ async function loadPrimitives() {
   const cache = join(process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"), "cache", "umeko-background-jobs");
   const jiti = createJiti(import.meta.url, { moduleCache: false, tryNative: false, fsCache: cache });
   const root = new URL("./", import.meta.resolve("@alexlikevibe/pi-bg/package.json"));
-  const [{ BackgroundRegistry }, { spawnWithFileOutput }] = await Promise.all([
-    jiti.import(fileURLToPath(new URL("src/state.ts", root))),
-    jiti.import(fileURLToPath(new URL("src/spawn.ts", root))),
-  ]);
-  return { BackgroundRegistry, spawnWithFileOutput };
-}
-
-// Adapted from @alexlikevibe/pi-bg 2.3.0 src/spawn.ts (MIT).
-// Windows needs windowsHide, which its public primitive does not expose.
-// stdout/stderr go directly to disk; no growing in-memory output buffer.
-function spawnHiddenWithFileOutput({ file, fileArgs, cwd, logPath, errPath }) {
-  mkdirSync(join(logPath, ".."), { recursive: true });
-  const outFd = openSync(logPath, "w");
-  let errFd;
-  try {
-    errFd = openSync(errPath, "w");
-    const child = spawn(file, fileArgs, { cwd, stdio: ["ignore", outFd, errFd],
-      detached: true, windowsHide: true, env: { ...process.env } });
-    const exit = new Promise(resolve => {
-      child.once("exit", (code, signal) => resolve({ code, signal }));
-      child.once("error", error => resolve({ code: 1, signal: null, error: error.message }));
-    });
-    if (!child.pid) throw new Error("Failed to spawn background process");
-    child.unref();
-    return { pid: child.pid, exit };
-  } finally {
-    closeSync(outFd);
-    if (errFd !== undefined) closeSync(errFd);
-  }
+  const { BackgroundRegistry } = await jiti.import(fileURLToPath(new URL("src/state.ts", root)));
+  return { BackgroundRegistry };
 }
 
 const snapshot = job => ({ id: job.id, command: job.command, cwd: job.cwd, pid: job.pid,
-  status: job.status, exitCode: job.exitCode, signal: job.signal,
+  status: job.status, exitCode: job.exitCode, signal: job.signal, shell: job.shellName,
   startedAt: job.startedAt, completedAt: job.completedAt,
-  stdoutPath: job.logPath, stderrPath: job.errPath, ...(job.error ? { error: job.error } : {}) });
+  stdoutPath: job.logPath, stderrPath: job.errPath, ...(job.error ? { error: job.error } : {}),
+  ...(job.reason ? { reason: job.reason } : {}) });
 
-export async function createJobManager({ shellPath, cwd = process.cwd() } = {}) {
-  const { BackgroundRegistry, spawnWithFileOutput } = await loadPrimitives();
+export async function createJobManager({ shellPath, cwd = process.cwd(), host, hostScript, onCleanup } = {}) {
+  const { BackgroundRegistry } = await loadPrimitives();
   const registry = new BackgroundRegistry();
   const directory = await mkdtemp(join(tmpdir(), "umeko-background-jobs-"));
   let disposed = false, disposal;
@@ -61,25 +39,40 @@ export async function createJobManager({ shellPath, cwd = process.cwd() } = {}) 
     if (!job) throw new Error("Unknown background job in this session");
     return job;
   }
-  async function start({ command, cwd: workingDirectory = cwd } = {}) {
+  async function start({ command, cwd: workingDirectory = cwd, env, shellPath: sessionShellPath = shellPath,
+    shellName = "bash", shellConfig, timeoutMs, signal, toolCallId, owner } = {}) {
     if (disposed) throw new Error("Background job manager is closed");
+    if (signal?.aborted) throw new Error("aborted");
     if (typeof command !== "string" || !command.trim()) throw new Error("A command is required");
-    assertProcessCommandAllowed(command);
-    const { shell, args, commandTransport } = getShellConfig(shellPath);
-    if (commandTransport === "stdin") throw new Error("Background jobs require Git Bash or a shell accepting -c");
+    assertProcessCommandAllowed(command, shellName);
+    const { shell, args, commandTransport } = shellConfig ||
+      (shellName === "powershell" ? getPowerShellConfig() : getShellConfig(sessionShellPath));
+    if (commandTransport === "stdin") throw new Error("Command sessions require a shell that accepts the command as an argument");
     const id = randomUUID(), logPath = join(directory, `${id}.stdout.log`), errPath = join(directory, `${id}.stderr.log`);
-    const launch = process.platform === "win32" ? spawnHiddenWithFileOutput : spawnWithFileOutput;
-    const child = launch({ file: shell, fileArgs: [...args, command], cwd: workingDirectory, logPath, errPath });
-    const job = { id, command, cwd: workingDirectory, pid: child.pid, logPath, errPath,
+    const child = launchCommand({ host, hostScript, file: shell, fileArgs: [...args, command],
+      cwd: workingDirectory, logPath, errPath, env });
+    const job = { id, command, cwd: workingDirectory, child, shellName, logPath, errPath, toolCallId, owner,
       status: "running", exitCode: null, signal: null, startedAt: Date.now() };
     registry.jobs.set(id, job);
     registry.totalStarted++;
+    let killTimer;
+    const abort = () => void kill(id, "aborted").catch(() => {});
+    if (timeoutMs !== undefined) killTimer = setTimeout(() => void kill(id, "timeout").catch(() => {}), timeoutMs);
     job.donePromise = child.exit.then(result => {
-      job.exitCode = result.code; job.signal = result.signal; job.error = result.error;
-      job.status = job.killRequested ? "killed" : result.code === 0 ? "completed" : "failed";
+      clearTimeout(killTimer);
+      job.exitCode = result.code; job.signal = result.signal ?? null; job.error = result.error;
+      job.cleanup = { cleanup: result.cleanup, remaining: result.remaining };
+      job.status = result.cleanup !== "done" ? "failed" : job.reason ? "killed" : result.code === 0 ? "completed" : "failed";
       job.completedAt = Date.now();
+      onCleanup?.(job);
       return snapshot(job);
     });
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    const ready = await child.ready.finally(() => signal?.removeEventListener("abort", abort));
+    if (ready) Object.assign(job, ready);
+    if (signal?.aborted) throw new Error("aborted");
+    if (!job.pid) throw new Error(job.error || "Failed to spawn command");
     return snapshot(job);
   }
   function status(id) { return snapshot(owned(id)); }
@@ -120,61 +113,72 @@ export async function createJobManager({ shellPath, cwd = process.cwd() } = {}) 
     return { ...snapshot(job), stdout: stdout.text, stderr: stderr.text,
       stdoutOffset: stdout.offset, stderrOffset: stderr.offset, hasMore: stdout.hasMore || stderr.hasMore };
   }
-  async function wait(id, { timeoutMs = 10000 } = {}) {
+  async function wait(id, { timeoutMs = 10000, signal } = {}) {
     const job = owned(id);
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > 60000) throw new Error("timeoutMs must be between 0 and 60000");
     if (job.status !== "running") return { ...snapshot(job), timedOut: false };
-    let timer;
+    let timer, abort;
     try {
-      const result = await Promise.race([job.donePromise, new Promise(resolve => {
+      const result = await Promise.race([job.donePromise, new Promise((resolve, reject) => {
         timer = setTimeout(() => resolve(null), timeoutMs);
+        abort = () => reject(new Error("aborted"));
+        signal?.addEventListener("abort", abort, { once: true });
+        if (signal?.aborted) abort();
       })]);
       return { ...(result || snapshot(job)), timedOut: result === null };
-    } finally { clearTimeout(timer); }
+    } finally { clearTimeout(timer); signal?.removeEventListener("abort", abort); }
   }
-  async function kill(id) {
+  async function kill(id, reason = "stopped") {
     const job = owned(id);
     if (job.status !== "running") return snapshot(job);
-    if (!Number.isSafeInteger(job.pid) || job.pid <= 0 || job.pid === process.pid) throw new Error("Invalid owned process PID");
     if (job.killPromise) return job.killPromise;
     job.killPromise = (async () => {
-      job.killRequested = true;
+      job.reason = reason;
       try {
-        if (process.platform === "win32") {
-          await new Promise((resolve, reject) => {
-            // The only Windows killer targets the PID recorded at spawn.
-            const child = spawn(join(process.env.SystemRoot || "C:\\Windows", "System32", "taskkill.exe"),
-              ["/PID", String(job.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
-            child.once("error", reject);
-            child.once("exit", code => code === 0 || job.status !== "running" ? resolve() : reject(new Error(`Could not stop background job (taskkill exit ${code})`)));
-          });
-        } else {
-          try { process.kill(-job.pid, "SIGKILL"); }
-          catch (error) { if (error.code !== "ESRCH") throw error; }
-        }
+        await job.child.terminate();
         const result = await wait(id, { timeoutMs: 10000 });
         if (result.timedOut) throw new Error("Background process did not exit after stop");
+        if (job.cleanup.cleanup !== "done") throw new Error(`Command tree cleanup ${job.cleanup.cleanup}`);
         return snapshot(job);
-      } catch (error) { if (job.status === "running") job.killRequested = false; throw error; }
+      } catch (error) { if (job.status === "running") job.reason = undefined; throw error; }
     })();
     try { return await job.killPromise; } finally { job.killPromise = undefined; }
+  }
+  async function write(id, input) {
+    const job = owned(id);
+    if (job.status !== "running") throw new Error("Command input closed");
+    if (typeof input !== "string" || !input || Buffer.byteLength(input) > 16_384) {
+      throw new Error("Input must be between 1 and 16384 UTF-8 bytes");
+    }
+    assertProcessCommandAllowed(input, job.shellName);
+    await job.child.write(input);
+    return snapshot(job);
+  }
+  async function stopRunning(reason) {
+    const running = [...registry.jobs.values()].filter(job => job.status === "running");
+    return Promise.all(running.map(async job => {
+      try { await kill(job.id, reason); } catch { /* stop reports the outcome below */ }
+      return job.cleanup || { cleanup: "failed", remaining: job.pid ? [job.pid] : null };
+    }));
   }
   function dispose() {
     if (disposal) return disposal;
     disposed = true;
     disposal = (async () => {
-      const results = await Promise.allSettled([...registry.jobs.values()].filter(job => job.status === "running").map(job => kill(job.id)));
-      const failures = results.filter(result => result.status === "rejected");
-      if (failures.length) throw new AggregateError(failures.map(result => result.reason), "Could not stop all background jobs");
+      const results = await stopRunning("session closed");
+      if (results.some(result => result.cleanup !== "done")) throw new Error("Could not stop all background jobs");
     })();
     return disposal;
   }
-  return { start, status, read, wait, kill, list: () => [...registry.jobs.values()].map(snapshot), dispose, directory };
+  return { start, status, read, wait, kill, write, stopRunning,
+    list: () => [...registry.jobs.values()].map(snapshot), dispose, directory };
 }
 
 const parameters = { type: "object", properties: {
-  action: { type: "string", enum: ["start", "status", "read", "wait", "kill", "list"] },
+  action: { type: "string", enum: ["start", "status", "read", "write", "wait", "kill", "list"] },
   command: { type: "string", description: "Shell command for start" },
+  shell: { type: "string", enum: ["bash", "powershell"], description: "Shell for start (default: bash)" },
+  input: { type: "string", description: "Text to send to standard input; include a newline to submit a line" },
   cwd: { type: "string", description: "Working directory for start" },
   id: { type: "string", description: "Job ID returned by start; only jobs in this session are accessible" },
   stdoutOffset: { type: "integer", minimum: 0, description: "Byte cursor returned by the previous read" },
@@ -184,38 +188,83 @@ const parameters = { type: "object", properties: {
 }, required: ["action"] };
 
 export function createBackgroundJobsExtension(options = {}) {
-  let manager;
-  const getManager = () => manager ||= createJobManager(options);
-  async function dispose() {
-    const current = manager;
+  const managers = new Map();
+  const sessionId = ctx => ctx?.sessionManager?.getSessionId();
+  const getManager = id => {
+    if (!managers.has(id)) managers.set(id, createJobManager({ ...options, onCleanup: job => options.onCleanup?.(id, job) }));
+    return managers.get(id);
+  };
+  async function dispose(id) {
+    const current = managers.get(id);
     if (!current) return;
-    await (await current).dispose();
-    if (manager === current) manager = undefined;
+    try { await (await current).dispose(); }
+    finally { if (managers.get(id) === current) managers.delete(id); }
+  }
+  async function stop(id) {
+    const current = managers.get(id);
+    return current ? (await current).stopRunning("aborted") : [];
+  }
+  async function disposeAll() {
+    return Promise.allSettled([...managers.keys()].map(id => dispose(id)));
+  }
+  async function foreground({ signal, timeout, onData, owner, sessionId: id, ...request }) {
+    const jobs = await getManager(id);
+    const job = await jobs.start({ ...request, signal, owner });
+    let cancelled;
+    const abort = () => { cancelled ||= jobs.kill(job.id, "aborted").catch(() => {}); };
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    try {
+      await jobs.wait(job.id, { timeoutMs: DEFAULT_YIELD_MS, signal });
+      const chunk = await jobs.read(job.id, { maxBytes: modelBytesPerStream });
+      if (chunk.stdout) onData(Buffer.from(chunk.stdout));
+      if (chunk.stderr) onData(Buffer.from(`${chunk.stdout ? "\n" : ""}${chunk.stderr}`));
+      if (signal?.aborted || chunk.reason === "aborted") throw new Error("aborted");
+      if (chunk.status !== "running" && chunk.reason === "timeout") throw new Error(`timeout:${timeout}`);
+      if (chunk.error) throw new Error(chunk.error);
+      if (chunk.status === "running" || chunk.hasMore) {
+        return { exitCode: chunk.status === "running" ? null : chunk.exitCode, commandSession: {
+          id: job.id, status: chunk.status, stdoutOffset: chunk.stdoutOffset, stderrOffset: chunk.stderrOffset,
+          stdoutPath: job.stdoutPath, stderrPath: job.stderrPath, hasMore: chunk.hasMore,
+        } };
+      }
+      return { exitCode: chunk.exitCode ?? 1 };
+    } finally {
+      signal?.removeEventListener("abort", abort);
+      if (cancelled) await cancelled;
+    }
   }
   function extension(pi) {
     pi.on("tool_call", event => {
       // Pi's native command tools share input.command, including calls made
       // through codemode. Other built-ins are file tools, not shell executors.
       if (!["bash", "powershell"].includes(event.toolName) && !(event.toolName === "background_job" && event.input?.action === "start")) return;
-      const reason = blockedProcessCommand(event.input?.command, event.toolName === "powershell" ? "powershell" : "bash");
+      const name = event.toolName === "powershell" || event.input?.shell === "powershell" ? "powershell" : "bash";
+      const reason = blockedProcessCommand(event.input?.command, name);
       if (reason) return { block: true, reason };
     });
-    pi.on("session_before_switch", dispose);
-    pi.on("session_shutdown", dispose);
+    pi.on("session_before_switch", (_event, ctx) => dispose(sessionId(ctx)));
+    pi.on("session_shutdown", (_event, ctx) => dispose(sessionId(ctx)));
     pi.registerTool({ name: "background_job", label: "Background job",
-      description: "Run a shell command in the background and keep working. Start returns a job ID and separate output log paths. Use read with returned byte cursors for new output, wait with a bounded timeout for exit status, and kill by job ID to stop only this session's job tree. Jobs stop when the session closes or switches.",
+      description: "Manage shell commands in this conversation. Use an ID returned by bash, PowerShell, or start. Read new output with the returned byte cursors, write text to stdin, wait for exit, or kill the command tree. Log files contain full stdout and stderr.",
       parameters,
-      async execute(_toolCallId, input, _signal, _onUpdate, ctx) {
+      async execute(toolCallId, input, signal, _onUpdate, ctx) {
         try {
           if (input.action === "start" && options.canStart && !(await options.canStart())) throw new Error("Checkpoint restoration is active in this workspace");
-          const jobs = await getManager();
+          const jobs = await getManager(sessionId(ctx));
           let result;
-          if (input.action === "start") result = await jobs.start({ command: input.command,
-            cwd: resolve(ctx?.cwd || options.cwd || process.cwd(), input.cwd || ".") });
+          if (input.action === "start") {
+            const shellPath = options.getShellPath?.(ctx) || options.shellPath;
+            const shellName = input.shell === "powershell" ? "powershell" : "bash";
+            const env = await options.getEnvironment?.(ctx, shellPath, shellName);
+            result = await jobs.start({ command: input.command, env, shellPath, shellName, signal, toolCallId,
+              cwd: resolve(ctx?.cwd || options.cwd || process.cwd(), input.cwd || ".") });
+          }
           else if (input.action === "list") result = jobs.list();
           else if (input.action === "status") result = jobs.status(input.id);
-          else if (input.action === "read") result = await jobs.read(input.id, input);
-          else if (input.action === "wait") result = await jobs.wait(input.id, input);
+          else if (input.action === "read") result = await jobs.read(input.id, { ...input, maxBytes: Math.min(input.maxBytes ?? modelBytesPerStream, modelBytesPerStream) });
+          else if (input.action === "write") result = await jobs.write(input.id, input.input);
+          else if (input.action === "wait") result = await jobs.wait(input.id, { ...input, signal });
           else if (input.action === "kill") result = await jobs.kill(input.id);
           else throw new Error("Unknown background job action");
           return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
@@ -225,7 +274,14 @@ export function createBackgroundJobsExtension(options = {}) {
       },
     });
   }
-  return { extension, dispose, getManager };
+  return {
+    extension, dispose, foreground, stop, disposeAll,
+    getManager(id) {
+      // Callers inspecting a standalone extension can omit the ID when it has
+      // one manager. Tool execution itself always uses its own context.
+      return arguments.length === 0 && managers.size === 1 ? managers.values().next().value : getManager(id);
+    },
+  };
 }
 
 export function backgroundJobsExtension(pi) { return createBackgroundJobsExtension().extension(pi); }

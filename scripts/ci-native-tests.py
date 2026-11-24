@@ -82,6 +82,8 @@ NODE_HOST = [
     ('update-engine', 'cleanup retains recent or active temporary download jobs and reclaims abandoned ones'),
 ]
 NODE_WINDOWS = [
+    ('shell-snapshot', 'Windows PATH puts a real executable before a conflicting Store alias'),
+    ('command-sessions', 'command stdin remains available after the command is handed off'),
     ('update-engine', 'Windows parent handle remains unsignaled after exit code is set; timeout leaves installation untouched'),
     ('update-engine', 'Windows installer holds the live parent handle until termination before replacing files'),
     ('update-engine', 'Windows rename diagnostics identify an external executable holding the installation working directory'),

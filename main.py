@@ -181,6 +181,9 @@ if __name__ == "__main__":
             engine.rootObjects()[0].requestActivate()
             snapshot = sys.argv[sys.argv.index('--snapshot') + 1] if '--snapshot' in sys.argv else ''
             _smoke_finish_timer = watch_smoke_finish(app, engine.rootObjects()[0], smoke_finish, snapshot)
+        elif os.environ.get("UMEKO_SHELL_SMOKE_DIRECTORY"):
+            from app.shell_smoke import attach
+            attach(app, controller, Path(os.environ["UMEKO_SHELL_SMOKE_DIRECTORY"]))
         else:
             QTimer.singleShot(5500 if preview_url else 1500, app.quit)
     result = app.exec()

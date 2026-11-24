@@ -12,6 +12,7 @@
     "approvals.respond": {"permission":"sessions.manage","lifecycle":"application","arguments":{"handle":"string","requestId":"string","decision":"allow|deny|unhandled"},"profileRequirement":"allowApprovals","result":{"accepted":"boolean"}}
   },
   "operations": {
+    "shell.refreshEnvironment": {"target":"runtime","args":[],"description":"重新读取本会话后续 Bash、PowerShell 和后台命令使用的环境。返回采集状态。"},
   "vision.configure": {"target":"backend","method":"saveAuxiliaryVision","args":[["config","json"]]},
   "generation.configure": {"target":"backend","method":"saveMultimodalSettings","args":[["config","json"]]},
     "providers.save": {"target":"backend","method":"saveProvider","idle":"provider","args":[["id","string",""],["name","string"],["api","string"],["baseUrl","string"],["key","string",""],["models","json"]]},
