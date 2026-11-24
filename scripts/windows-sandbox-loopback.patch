@@ -7,7 +7,7 @@ diff --git a/codex-rs/windows-sandbox-rs/src/bin/command_runner/win.rs b/codex-r
 --- a/codex-rs/windows-sandbox-rs/src/bin/command_runner/win.rs
 +++ b/codex-rs/windows-sandbox-rs/src/bin/command_runner/win.rs
 @@ -309,3 +309,11 @@ fn spawn_ipc_process(req: &SpawnRequest) -> Result<IpcSpawnedProcess> {
- 
+
      let effective_cwd = effective_cwd(&req.cwd, Some(log_dir.as_path()));
 +    log_note(
 +        &format!(
@@ -24,7 +24,7 @@ diff --git a/codex-rs/windows-sandbox-rs/src/setup.rs b/codex-rs/windows-sandbox
 @@ -49,7 +49,9 @@
  use windows_sys::Win32::Security::FreeSid;
  use windows_sys::Win32::Security::SECURITY_NT_AUTHORITY;
- 
+
 -pub const SETUP_VERSION: u32 = 5;
 +// Umeko requires the additional WFP filters before reporting offline setup
 +// ready. Existing v5 installations must provision them explicitly.
@@ -41,11 +41,11 @@ diff --git a/codex-rs/windows-sandbox-rs/src/wfp/filter_specs.rs b/codex-rs/wind
      RemotePort(u16),
 +    Loopback,
  }
- 
+
  #[derive(Clone, Copy)]
 @@ -24,6 +25,23 @@ pub(super) struct FilterSpec {
  }
- 
+
  pub(super) const FILTER_SPECS: &[FilterSpec] = &[
 +    // ALE marks the host loopback traffic, including TCP/UDP on 127.0.0.0/8
 +    // and ::1. The account restriction excludes the launcher and gateway.

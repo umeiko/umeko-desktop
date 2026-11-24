@@ -1,8 +1,8 @@
-Subject: Allow restricted Git Bash to open its signal and process-tracking pipes
+Subject: Allow restricted Git Bash to open its own local pipes
 
 Adapted from git-for-windows/msys2-runtime d25c02bd8bbfef7da4b42eab6f0834bcb9d9343e,
-winsup/cygwin autoload.cc, fork.cc, local_includes/security.h, sec/helper.cc and sigproc.cc.
-Cygwin license applies.
+winsup/cygwin autoload.cc, fhandler/pipe.cc, fork.cc, local_includes/security.h,
+sec/helper.cc and sigproc.cc. Cygwin license applies.
 
 diff --git a/winsup/cygwin/autoload.cc b/winsup/cygwin/autoload.cc
 --- a/winsup/cygwin/autoload.cc
@@ -13,6 +13,17 @@ diff --git a/winsup/cygwin/autoload.cc b/winsup/cygwin/autoload.cc
 +LoadDLLfunc (IsTokenRestricted, advapi32)
 +LoadDLLfunc (IsValidSid, advapi32)
  LoadDLLfunc (LogonUserW, advapi32)
+diff --git a/winsup/cygwin/fhandler/pipe.cc b/winsup/cygwin/fhandler/pipe.cc
+--- a/winsup/cygwin/fhandler/pipe.cc
++++ b/winsup/cygwin/fhandler/pipe.cc
+@@ -987,3 +987,6 @@
+
+-  NTSTATUS status = nt_create (sa, r, w, psize, &unique_id);
++  alignas (SECURITY_ATTRIBUTES) char pipe_sa_buf[1024];
++  PSECURITY_ATTRIBUTES pipe_sa =
++    sec_restricted_pipe (pipe_sa_buf, sa, FILE_GENERIC_READ | FILE_GENERIC_WRITE);
++  NTSTATUS status = nt_create (pipe_sa, r, w, psize, &unique_id);
+   if (!NT_SUCCESS (status))
 diff --git a/winsup/cygwin/fork.cc b/winsup/cygwin/fork.cc
 --- a/winsup/cygwin/fork.cc
 +++ b/winsup/cygwin/fork.cc
@@ -60,7 +71,7 @@ diff --git a/winsup/cygwin/sec/helper.cc b/winsup/cygwin/sec/helper.cc
 +    return fallback;
 +
 +  return __sec_user (storage, cygheap->user.sid (), logon->Groups[0].Sid,
-+                     access, FALSE);
++                     access, fallback->bInheritHandle);
 +}
 +
  /* Helper function to create a file security descriptor which allows
