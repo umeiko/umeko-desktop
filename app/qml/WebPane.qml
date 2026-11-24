@@ -51,12 +51,12 @@ Rectangle {
     }
     function returnFromDocument() {
         const source = previewWidget
-        if (source && backend.desktopPlugins.page.id === source) { mode = "plugin"; previewWidget = ""; backend.documentPreview.cancel() }
+        if (source && backend.desktopPlugins.page.id === source) { backend.documentPreview.cancel(); mode = "plugin"; previewWidget = "" }
         else dismiss()
     }
     function showSubagent() { previewWidget = ""; backend.desktopPlugins.closePage(); address.focus = false; backend.documentPreview.cancel(); mode = "subagent"; opened = true }
     function showPlugin() { previewWidget = ""; if (mode === "subagent") backend.subagents.closeView(); address.focus = false; backend.documentPreview.cancel(); mode = "plugin"; opened = true }
-    function dismiss() { previewWidget = ""; backend.desktopPlugins.closePage(); address.focus = false; opened = false; backend.documentPreview.cancel(); if (mode === "subagent") backend.subagents.closeView() }
+    function dismiss() { previewWidget = ""; backend.desktopPlugins.closePage(); address.focus = false; backend.documentPreview.cancel(); opened = false; if (mode === "subagent") backend.subagents.closeView() }
     function snapWidth() { motion.snap() }
     function navigate() {
         const url = backend.normalizeWebUrl(address.text)

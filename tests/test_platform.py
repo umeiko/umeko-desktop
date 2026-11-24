@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.platform_support import configure_input_method, data_directory, legacy_data_directory, migrate_profile
+from app.platform_support import configure_input_method, configure_qml_gc, data_directory, legacy_data_directory, migrate_profile
 from app.storage import Store, keyring_protect
 
 
@@ -127,3 +127,11 @@ class PlatformTests(unittest.TestCase):
             with self.assertRaises(RuntimeError): keyring_protect("keyring:missing", True)
             Backend.__module__ = "keyrings.alt.file"
             with self.assertRaises(RuntimeError): keyring_protect("secret", account="fixture")
+
+    def test_qml_gc_defaults_to_non_incremental_and_preserves_overrides(self):
+        env = {}
+        configure_qml_gc(env)
+        self.assertEqual(env["QV4_GC_TIMELIMIT"], "0")
+        custom = {"QV4_GC_TIMELIMIT": "5"}
+        configure_qml_gc(custom)
+        self.assertEqual(custom["QV4_GC_TIMELIMIT"], "5")

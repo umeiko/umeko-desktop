@@ -94,6 +94,8 @@ export -f unit_tests dbus-run-session gnome-keyring-daemon flock rm
                 (root/'scripts/ci-ui-smokes.bash').write_text(runner,encoding='utf-8',newline='\n')
                 python=root/'.venv/bin/python';python.parent.mkdir(parents=True)
                 python.write_text('#!/usr/bin/env bash\n'
+                    '[[ "$1" == "-X" && "$2" == "faulthandler" ]] || exit 99\n'
+                    'shift 2\n'
                     'printf "%s\\n" "$XDG_DATA_HOME" "$DBUS_SESSION_BUS_ADDRESS" "$PI_CODING_AGENT_DIR" '
                     '"$UMEKO_DATA_DIR" "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" > "${1##*/}.env"\n'
                     'exit "$UI_STATUS"\n',encoding='utf-8',newline='\n')
