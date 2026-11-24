@@ -1,7 +1,9 @@
 """Package the patched PortableGit using solid LZMA2, like the official release.
 
-See git-for-windows/build-extra/portable/release.sh at f48a694d.
+See git-for-windows/build-extra/portable/release.sh and make-file-list.sh
+at f48a694d for solid compression and the noninteractive package exclusions.
 """
+from fnmatch import fnmatchcase
 import lzma
 from pathlib import Path
 import shutil
@@ -12,6 +14,24 @@ import tarfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from app.sandbox_git_bash import ARCHIVE_NAME, REQUIRED_FILES
+
+UNATTENDED_EXCLUSIONS = (
+    "git-bash.exe", "git-cmd.exe", "cmd/git-gui.exe", "cmd/gitk.exe",
+    "mingw64/bin/git-gui*", "mingw64/bin/gitk*", "mingw64/bin/*tcl*.dll", "mingw64/bin/*tk[0-9]*.dll",
+    "mingw64/bin/tclsh*.exe", "mingw64/bin/wish*.exe",
+    "mingw64/lib/tcl*", "mingw64/lib/tk*",
+    "mingw64/share/git-gui*", "mingw64/share/gitk*",
+    "mingw64/libexec/git-core/git-gui*", "mingw64/libexec/git-core/git-citool*",
+    "mingw64/share/doc/git-doc*", "mingw64/share/info*", "mingw64/share/man*",
+    "usr/share/doc*", "usr/share/info*", "usr/share/man*", "usr/share/vim/*/doc*",
+)
+
+
+def included(name):
+    basename = name.rsplit("/", 1)[-1].lower()
+    if basename.startswith(("license", "copying", "copyright")):
+        return True
+    return not any(fnmatchcase(name, pattern) for pattern in UNATTENDED_EXCLUSIONS)
 
 
 def main():
@@ -26,6 +46,9 @@ def main():
     if legacy.is_dir():
         shutil.rmtree(legacy)
     archive = output / ARCHIVE_NAME
+    for prior in output.glob("git-bash-*.tar.xz"):
+        if prior != archive:
+            prior.unlink()
     temporary = archive.with_suffix(".tmp")
     # Group similar file types, as the upstream solid 7-Zip build does.
     entries = sorted(bundle.rglob("*"), key=lambda path: (path.suffix.lower(), path.as_posix().lower()))
@@ -36,6 +59,8 @@ def main():
             with tarfile.open(fileobj=compressed, mode="w|", dereference=True) as tar:
                 for path in entries:
                     relative = path.relative_to(bundle).as_posix()
+                    if not included(relative):
+                        continue
                     attributes = path.lstat()
                     if attributes.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
                         raise RuntimeError(f"Unexpected reparse point in PortableGit: {relative}")

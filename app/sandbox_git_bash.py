@@ -6,7 +6,7 @@ from pathlib import Path, PureWindowsPath
 import shutil
 import tarfile
 
-ARCHIVE_NAME = "git-bash-2.56.1-r1.tar.xz"
+ARCHIVE_NAME = "git-bash-2.56.1-r2.tar.xz"
 VERSION = ARCHIVE_NAME.removesuffix(".tar.xz")
 REQUIRED_FILES = ("bin/bash.exe", "usr/bin/bash.exe", "usr/bin/msys-2.0.dll", "cmd/git.exe")
 
