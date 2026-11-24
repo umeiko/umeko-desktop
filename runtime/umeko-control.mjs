@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { prepareDocumentation } from './umeko-documents.mjs';
 import { CORE_TOOLS } from './session-capabilities.mjs';
-import { commandRuleOperation, isCommandRuleOperation } from './command-rules.mjs';
+import { commandRuleOperation, isCommandRuleOperation } from './tool-permissions.mjs';
 
 export const UMEKO_TOOL = 'umeko_desktop';
 export const SEND_TO_USER = 'send_to_user';

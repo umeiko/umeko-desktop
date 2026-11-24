@@ -6,7 +6,7 @@
 
 ## Command prefix rules
 
-`runtime/command-rules.mjs` adapts command prefix matching, decision precedence, and reusable approvals from [OpenAI Codex rust-v0.172.0](https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/execpolicy), copyright 2025 OpenAI (Apache-2.0). The source attribution and full license are in `licenses/codex-execpolicy.txt`.
+`runtime/tool-permissions.mjs` adapts command prefix matching, decision precedence, and reusable approvals from [OpenAI Codex rust-v0.172.0](https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/execpolicy), copyright 2025 OpenAI (Apache-2.0). The source attribution and full license are in `licenses/codex-execpolicy.txt`.
 
 ## Desktop plugin artwork
 

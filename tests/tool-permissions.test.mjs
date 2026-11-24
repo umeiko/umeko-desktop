@@ -4,8 +4,8 @@ import { performance } from 'node:perf_hooks';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { classifyCommand, classifyPath, createToolPermissionExtension, splitPolicyCommand } from '../runtime/tool-permissions.mjs';
-import { changeCommandRule, commandRuleOperation, evaluateCommandRules, listCommandRules } from '../runtime/command-rules.mjs';
+import { classifyCommand, classifyPath, createToolPermissionExtension, splitPolicyCommand,
+  changeCommandRule, commandRuleOperation, evaluateCommandRules, listCommandRules } from '../runtime/tool-permissions.mjs';
 
 // Known answers reuse the cc-safety-net command/target/wrapper checklist and
 // pix-gate executable-position shapes, narrowed to experiments/.../RULES.md.
