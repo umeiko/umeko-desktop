@@ -17,6 +17,7 @@ Agent 入口只有一个：`umeko_desktop`。第一次使用先调用 `{"operati
 - [外观、运行、上下文与资源设置](settings.md)
 - [命令规则与记住审批](command-rules.md)
 - [项目、会话、归档、删除与分支](sessions.md)
+- [在远程环境运行命令与传输文件](remote-environments.md)
 - [Pi 扩展、Skills 与 MCP](extensions.md)
 - [API 代理、访问密钥和更新](server-updates.md)
 - [全部操作及参数](operations.md)

@@ -127,4 +127,124 @@ Column {
             }
         }
     }
+    SectionCard {
+        width: parent.width
+        ColumnLayout {
+            width: parent.width
+            spacing: 10
+            Text {
+                text: I18n.t("远程环境")
+                color: Theme.ink
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.font(14)
+                font.weight: Font.DemiBold
+            }
+            Text {
+                Layout.fillWidth: true
+                text: I18n.t("让 Agent 用 OpenSSH 主机别名添加远程环境，或测试现有连接。")
+                color: Theme.muted
+                wrapMode: Text.Wrap
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.font(13)
+            }
+            Repeater {
+                model: backend.remoteEnvironments
+                RowLayout {
+                    id: environmentRow
+                    required property var modelData
+                    property double clock: Date.now()
+                    readonly property bool prolongedOutage: modelData.state === "reconnecting"
+                        && !!modelData.outageNoticeAt && clock >= modelData.outageNoticeAt
+                    Layout.fillWidth: true
+                    spacing: 12
+                    Timer {
+                        interval: 1000
+                        repeat: true
+                        running: environmentRow.modelData.state === "reconnecting"
+                            && !!environmentRow.modelData.outageNoticeAt && !environmentRow.prolongedOutage
+                        onTriggered: environmentRow.clock = Date.now()
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 3
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.name
+                            wrapMode: Text.Wrap
+                            color: Theme.ink
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(13)
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.host
+                            wrapMode: Text.Wrap
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                        Text {
+                            objectName: "remoteEnvironmentSshClient_" + modelData.name
+                            Layout.fillWidth: true
+                            visible: !!modelData.sshClient
+                            text: I18n.t("SSH 客户端：") + (modelData.sshClient || "")
+                            color: Theme.muted
+                            wrapMode: Text.WrapAnywhere
+                            textFormat: Text.PlainText
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                        Text {
+                            objectName: "remoteEnvironmentRetry_" + modelData.name
+                            Layout.fillWidth: true
+                            visible: modelData.state === "reconnecting"
+                            text: (modelData.attempt ? I18n.t("第 %1 次重试").arg(modelData.attempt) : I18n.t("正在重新连接"))
+                                  + (modelData.nextRetryAt ? " · " + I18n.t("下次重试：%1").arg(Qt.formatDateTime(new Date(modelData.nextRetryAt), "hh:mm:ss"))
+                                     : modelData.retryAfterMs ? " · " + I18n.t("%1 秒后重试").arg(Math.ceil(modelData.retryAfterMs / 1000)) : "")
+                            color: Theme.muted
+                            wrapMode: Text.Wrap
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                        Text {
+                            objectName: "remoteEnvironmentOutage_" + modelData.name
+                            Layout.fillWidth: true
+                            visible: environmentRow.prolongedOutage
+                            text: I18n.t("服务器暂时无法访问，Umeko 会在后台继续重试。")
+                            color: Theme.muted
+                            wrapMode: Text.Wrap
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                        Text {
+                            objectName: "remoteEnvironmentError_" + modelData.name
+                            Layout.fillWidth: true
+                            visible: modelData.state === "error" && text.length > 0
+                            text: modelData.message || modelData.sshError || ""
+                            color: Theme.muted
+                            wrapMode: Text.WrapAnywhere
+                            textFormat: Text.PlainText
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                    }
+                    BusyIndicator {
+                        visible: running
+                        running: modelData.state === "connecting" || modelData.state === "reconnecting"
+                        Layout.preferredWidth: Theme.icon(24)
+                        Layout.preferredHeight: Theme.icon(24)
+                    }
+                    Text {
+                        objectName: "remoteEnvironmentState_" + modelData.name
+                        property string connectionState: modelData.state
+                        text: I18n.t(({connected: "已连接", connecting: "连接中", reconnecting: "正在重新连接",
+                                       disconnected: "未连接", error: "连接失败"})[modelData.state] || "未连接")
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.font(13)
+                    }
+                }
+            }
+        }
+    }
 }

@@ -30,6 +30,10 @@ The terminal widget also uses the unmodified Microsoft Codicons font noted above
 
 Release bundles include fd 10.3.0 (MIT or Apache-2.0, https://github.com/sharkdp/fd/tree/v10.3.0) and ripgrep 14.1.1 (MIT or Unlicense, https://github.com/BurntSushi/ripgrep/tree/14.1.1) so Pi's find/grep tools work without a first-run download. Their upstream license files accompany the binaries under `runtime/releases/coding-1.5.2/bin`. Archive SHA-256 values are pinned in `scripts/search-tools.json`.
 
+## Codex exec-server
+
+Remote environments use the official `codex-exec-server` binaries from OpenAI Codex `rust-v0.172.0`, under Apache-2.0. The JavaScript client implements the tagged `codex-rs/exec-server-protocol/src/protocol.rs` and `rpc.rs` wire formats. The upstream license and notice are retained in `licenses/codex-exec-server-APACHE.txt` and `licenses/codex-exec-server-NOTICE.txt`. Release assets and SHA-256 values are pinned in `runtime/remote-exec-assets.json`. Source: https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/exec-server .
+
 Qt / PySide6 is provided under its upstream LGPLv3 / GPLv3 / commercial terms. The application dynamically loads the unmodified Qt libraries. Their notices and license files are included in the installed PySide6 distribution. Source and licensing: https://www.qt.io/licensing/ and https://code.qt.io/pyside/pyside-setup.git/ .
 
 Pi Coding Agent and its dependencies are from https://github.com/earendil-works/pi (version 1.5.2). The complete upstream coding agent, tools, resource loader and session implementation are retained unmodified. The Pi AI built-in provider catalog and generated model list are replaced with empty catalogs; the application registers its explicit loopback gateway. Upstream protocol SDKs and their individual licenses remain in the runtime node_modules directory.

@@ -47,6 +47,10 @@
 | `documents.previewMode`（仅 python） | `fileType: string`, `mode: string` | 无 | 否 |
 | `appearance.sidebar` | `width: integer`, `collapsed: boolean=false` | 无 | 否 |
 | `desktop.configure`（仅 python） | `config: json` | 无 | 否 |
+| `remote-environments.add`（仅 python） | `name: string`, `host: string`, `platform: string` | 无 | 否 |
+| `remote-environments.list`（仅 python） | 无 | 无 | 否 |
+| `remote-environments.test`（仅 python） | `name: string` | 无 | 否 |
+| `remote-environments.remove`（仅 python） | `name: string` | 无 | 否 |
 | `projects.add` | `paths: json` | 无 | 否 |
 | `projects.open` | `id: string` | 无 | 否 |
 | `projects.rename` | `id: string`, `title: string` | 无 | 否 |

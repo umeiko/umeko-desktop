@@ -2,9 +2,11 @@
 from .model_groups import GROUP_MODEL, GROUP_PROVIDER
 from .pi_capabilities import merge_resources,from_legacy
 import copy
+import json
 import logging
 import os
 import re
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -237,6 +239,10 @@ class PiControllerMixin:
             systemPromptStateDir=str(self.store.directory / 'system-prompts'),
             generation=generation_config(self.store.data),
             mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
+        if '--remote-environments-smoke' in sys.argv and os.environ.get('QT_QPA_PLATFORM') == 'offscreen':
+            ssh_command = os.environ.get('UMEKO_TEST_SSH_COMMAND')
+            if ssh_command:
+                payload['remoteTestSshCommand'] = json.loads(ssh_command)
         if record.provider == GROUP_PROVIDER or record.global_agent or GROUP_MODEL in payload.get("modelRoles", {}).values():
             group = self.gateway.model_group_descriptor()
             if group is None and record.provider == GROUP_PROVIDER:
@@ -452,6 +458,11 @@ class PiControllerMixin:
         if self._closing:
             return
         kind, visible = event.get("type"), record is self._view
+        if kind == 'remote_environment_state':
+            self._remote_environments.observe(record.key, event)
+            return
+        if kind == 'exit':
+            self._remote_environments.disconnect(record.key)
         if kind == 'ready' and event.get('warm'):
             record.ready, record.prewarming = True, False
             command, record.warm_command = record.warm_command, None

@@ -1,0 +1,120 @@
+name: Real remote environments
+
+on:
+  pull_request:
+    paths:
+      - 'app/remote*.py'
+      - 'app/controller*.py'
+      - 'app/umeko_control.py'
+      - 'runtime/remote*.mjs'
+      - 'runtime/bridge.mjs'
+      - 'runtime/umeko-operations.json'
+      - 'tests/remote_environments_real.py'
+      - 'tests/fixtures/remote_ssh_shim.py'
+      - 'main.py'
+      - '.github/workflows/remote-environments.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: umeko-remote-environments-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  linux-real-ssh:
+    name: Linux musl exec-server and real SSH
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QT_QUICK_BACKEND: software
+      PYTHONUTF8: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: runtime/package-lock.json
+      - name: Install Qt and isolated SSH fixture dependencies
+        run: bash scripts/ci-linux-libraries.bash openssh-server xterm gnome-keyring dbus-x11 extra-cmake-modules libgl1-mesa-dev libxkbcommon-dev libxcb1-dev libx11-dev libegl1 libopengl0 libgl1 libdbus-1-3 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-image0 libxcb-render-util0 libxcb-randr0 libxcb-xfixes0 libnss3 libasound2t64
+      - name: Prepare the real Pi runtime
+        run: bash setup.sh
+      - name: Fetch pinned official Linux musl exec-server
+        run: .venv/bin/python scripts/fetch-remote-exec.py --platform linux --arch x64 --output runtime/releases/coding-1.5.2/remote-exec-assets
+      - name: Focused remote protocol, command and file tests
+        run: node --test runtime/test-remote-*.mjs
+      - name: Exercise gateway, Pi, tools, SSH and official Linux musl exec-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/remote-sshd"
+          mkdir -p "$fixture" "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          ssh-keygen -q -t ed25519 -N '' -f "$fixture/host_key"
+          ssh-keygen -q -t ed25519 -N '' -f "$fixture/client_key"
+          cp "$fixture/client_key.pub" "$fixture/authorized_keys"
+          cat > "$fixture/sshd_config" <<EOF
+          Port 22222
+          ListenAddress 127.0.0.1
+          HostKey $fixture/host_key
+          PidFile $fixture/sshd.pid
+          AuthorizedKeysFile $fixture/authorized_keys
+          StrictModes no
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PubkeyAuthentication yes
+          UsePAM yes
+          PermitRootLogin no
+          AllowUsers $USER
+          Subsystem sftp internal-sftp
+          EOF
+          sudo mkdir -p /run/sshd
+          touch "$fixture/sshd.log"
+          sudo /usr/sbin/sshd -f "$fixture/sshd_config" -E "$fixture/sshd.log"
+          cleanup() {
+            if [ -f "$fixture/sshd.pid" ]; then sudo kill "$(cat "$fixture/sshd.pid")" || true; fi
+          }
+          trap cleanup EXIT
+          cat >> "$HOME/.ssh/config" <<EOF
+          Host umeko-ci
+            HostName 127.0.0.1
+            Port 22222
+            User $USER
+            IdentityFile $fixture/client_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile $fixture/known_hosts
+          EOF
+          printf '[127.0.0.1]:22222 %s\n' "$(cut -d ' ' -f 1,2 "$fixture/host_key.pub")" > "$fixture/known_hosts"
+          dbus-run-session -- bash -ec '
+            printf "ci-ephemeral-password" | gnome-keyring-daemon --unlock --components=secrets
+            .venv/bin/python tests/remote_environments_real.py --source --host umeko-ci --platform linux --run-dir "$RUNNER_TEMP/remote-real"
+          '
+      - name: Upload bounded real-test evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: remote-environments-linux-evidence
+          path: |
+            ${{ runner.temp }}/remote-real/result.json
+            ${{ runner.temp }}/remote-real/spec.json
+            ${{ runner.temp }}/remote-real/events.jsonl
+            ${{ runner.temp }}/remote-real/long-command-output.txt
+            ${{ runner.temp }}/remote-real/chat-tool-rows.json
+            ${{ runner.temp }}/remote-real/application*.log
+            ${{ runner.temp }}/remote-real/ssh-control/clients.jsonl
+            ${{ runner.temp }}/remote-sshd/sshd.log
+          if-no-files-found: warn
+          retention-days: 7

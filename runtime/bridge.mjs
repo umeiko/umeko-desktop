@@ -15,6 +15,7 @@ import { createInputQueue, createModelRoles } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
 import { blockedShellEnvKey, createShellSnapshots } from "./shell-snapshot.mjs";
+import { createRemoteEnvironments } from "./remote-environments.mjs";
 import { createAuxiliaryVision, ANALYZE_IMAGE, AUTO_VISION_ENTRY, automaticVisionView } from "./auxiliary-vision.mjs";
 import { createWidgetMessages, createLoopReview } from "./widget-messages.mjs";
 import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI } from "./tool-permissions.mjs";
@@ -61,7 +62,7 @@ function shellSnapshotExtension(getShellPath) {
 globalThis[Symbol.for("umeko:shell-environment")] = (name, env, config) =>
   shellSnapshots.environment(name, env.PI_SESSION_ID || runtime?.session.sessionManager.getSessionId(), env,
     name === "bash" ? config.shell : undefined);
-const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, "background_job"];
+const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, PI_COMMAND_TOOL, UMEKO_TOOL, "background_job", "remote_command", "remote_files"];
 const applyPatchEnabled = model => config?.models?.some(row => row.id === model?.id && row.applyPatch === true) === true;
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
@@ -94,6 +95,20 @@ const umekoControl = createUmekoControl({
   }),
   getPetAssistantBinding: () => config?.petAssistantBinding || '',
   getPetReminderBinding: () => config?.petReminderBinding || '',
+  remoteOperation(operation, args, signal, onUpdate) {
+    if (operation === "remote-environments.test") return remoteEnvironments.test(args, signal, onUpdate);
+    if (operation === "remote-environments.remove") {
+      return umekoControl.request(operation, args, signal).then(result => {
+        if (result.ok) remoteEnvironments.close(args.name);
+        return result;
+      });
+    }
+  },
+});
+const remoteEnvironments = createRemoteEnvironments({
+  request: umekoControl.request, emit, getConfig: () => config,
+  getSshEnvironment: () => shellSnapshots.environment(
+    process.platform === "win32" ? "powershell" : "bash", runtime?.session.sessionManager.getSessionId(), process.env),
 });
 const auxiliaryVision = createAuxiliaryVision({getConfig:() => config, emit:event => {
   if (event.sessionId && event.sessionId !== runtime?.session.sessionManager.getSessionId()) return subagents.automaticTool(event.sessionId,event);
@@ -536,7 +551,11 @@ async function init(input) {
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}, (id, items, failed) => taskDelivery("submitted", id, items, failed)) },
           { name: "generation", builtin: true, replaceable: false, factory: createGenerationExtension({getConfig: () => config, onDelivery: (id, items) => taskDelivery("generated", id, items)}) },
           { name: "pi-commands", builtin: true, replaceable: false, factory: piCommands.extension },
-          { name: "umeko-control", builtin: true, replaceable: false, factory: pi => { umekoControl.extension(pi); auxiliaryVision.toolExtension(pi); } },
+          { name: "umeko-control", builtin: true, replaceable: false, factory: pi => {
+            umekoControl.extension(pi);
+            auxiliaryVision.toolExtension(pi);
+            remoteEnvironments.extension(pi);
+          } },
           { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
           { name: "shell-snapshot", hidden: true, replaceable: false, factory: shellSnapshotExtension(() => settings.getShellPath()) },
           { name: "model-roles", hidden: true, replaceable: false, factory: modelRoles.extension },
@@ -984,6 +1003,7 @@ async function shutdown() {
   closing = true;
   loopReview.clear();
   umekoControl.clear();
+  remoteEnvironments.dispose();
   subagents.dispose();
   piCommands.clear();
   clearDialogs();
