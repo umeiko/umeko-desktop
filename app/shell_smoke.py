@@ -4,7 +4,8 @@ import json
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QTimer
+from PySide6.QtCore import QMetaObject, QObject, QTimer, QUrl
+from PySide6.QtQml import QQmlEngine, QQmlExpression
 
 
 def attach(app, controller, directory, window=None):
@@ -19,7 +20,8 @@ def attach(app, controller, directory, window=None):
 
     request_path = directory / "request.json"
     response_path = directory / "response.json"
-    controller.setWorkspace(str(workspace))
+    workspace_url = QUrl.fromLocalFile(str(workspace)).toString()
+    controller.setWorkspace(workspace_url)
     timer = QTimer(app)
     app._shell_smoke_timer = timer
     dsh_smoke = os.environ.get("UMEKO_DSH_SMOKE") == "1"
@@ -59,6 +61,7 @@ def attach(app, controller, directory, window=None):
         request_path.unlink()
         action = request["action"]
         accepted = True
+        evidence = {}
         extra = {}
         if action == "send":
             accepted = controller.send(request["text"])
@@ -66,17 +69,65 @@ def attach(app, controller, directory, window=None):
             controller.stop()
         elif action == "new":
             controller.newSession()
-            controller.setWorkspace(str(workspace))
+            controller.setWorkspace(workspace_url)
         elif action in {"team_setup", "team_send", "team_state"}:
             try:
                 extra = team_action(controller, action, request)
             except (OSError, ValueError) as error:
                 accepted, extra = False, {"error": str(error)}
+        elif action == "agent_bus":
+            service = controller.desktopPlugins.global_agents
+            allowed = {"setAutomaticCreation", "snapshot", "send", "setModel"}
+            method = request["method"]
+            if method in allowed:
+                try:
+                    evidence = service.handle(method, request.get("arguments", {}))
+                except ValueError as error:
+                    accepted, evidence = False, {"error": str(error)}
+            else:
+                accepted = False
+        elif action == "model_group":
+            accepted = controller.selectModelGroup()
+        elif action == "model_picker" and window:
+            controller.setLanguage(request["language"])
+            popup = window.findChild(QObject, "modelPopup")
+            if popup and not popup.property("desiredOpen"):
+                QMetaObject.invokeMethod(popup, "toggle")
+            picker = window.findChild(QObject, "modelRolePicker")
+            accepted = bool(picker and picker.setProperty("currentIndex", request.get("index", 1)))
+            search = window.findChild(QObject, "modelSearch")
+            if search:
+                search.setProperty("text", "test-model")
+            if picker:
+                evidence["label"] = picker.property("currentText")
+        elif action == "open_member_widget":
+            popup = window.findChild(QObject, "modelPopup") if window else None
+            if popup and popup.property("desiredOpen"):
+                QMetaObject.invokeMethod(popup, "toggle")
+            accepted = controller.desktopPlugins.openPage("global-agents")
+        elif action == "member_picker" and window:
+            controller.setLanguage(request["language"])
+            page = window.findChild(QObject, "globalAgentsPage")
+            if page:
+                expression = QQmlExpression(QQmlEngine.contextForObject(page), page,
+                                            "form(" + json.dumps(request.get("id", "")) + ")")
+                expression.evaluate()
+                accepted = not expression.hasError()
+            else:
+                accepted = False
+        elif action == "capture" and window:
+            name = request.get("name", "")
+            if name not in {"model-picker-zh", "model-picker-en", "member-picker-zh", "member-picker-en"}:
+                accepted = False
+            else:
+                accepted = window.grabWindow().save(str(directory / (name + ".png")))
         elif action not in {"status", "quit"}:
             accepted = dsh_smoke and dsh_action(action, request)
         view = controller._view
         result = {"accepted": accepted, "busy": controller.busy, "phase": view.phase,
-                  "session": view.id, "messages": view.messages, **extra}
+                  "session": view.id, "messages": view.messages, "evidence": evidence,
+                  "piProcesses": [int(record.process.processId()) for record in controller._pool.records.values() if record.process],
+                  **extra}
         if dsh_smoke:
             runtime = controller.dshRuntime
             result.update(backend=controller.sessionBackend, acpSession=getattr(view, "acp_session_id", ""),
