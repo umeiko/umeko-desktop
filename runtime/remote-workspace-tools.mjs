@@ -87,7 +87,9 @@ export function createRemoteWorkspaceExtension({
       ctx?.ui?.setStatus?.("remote", "正在重新连接");
       emit?.({ type: "status", text: "正在重新连接" });
     }
-    const info = await entry.connection.ready();
+    const info = typeof entry.connection.waitForReady === "function"
+      ? await entry.connection.waitForReady(signal)
+      : await entry.connection.ready();
     const homeDir = nativePathFromUri(info.userHomeDir || info.cwd, platform);
     return { entry, platform, remoteRoot, homeDir, info };
   }

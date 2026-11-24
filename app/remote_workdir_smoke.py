@@ -309,7 +309,7 @@ class WorkdirAcceptance:
             # Give the SSH shell a moment to initialize prompt
             from PySide6.QtTest import QTest
             QTest.qWait(2500)
-            w_res = self.call_plugin('terminal', 'write', {'terminalId': term_id, 'data': f'echo {marker}\r'})
+            w_res = self.call_plugin('terminal', 'write', {'terminalId': term_id, 'text': f'echo {marker}\r'})
             assert w_res.get('ok'), w_res
             term_text = ''
             deadline = time.monotonic() + 30
@@ -323,9 +323,10 @@ class WorkdirAcceptance:
             assert marker in term_text, f'Terminal output never contained {marker}: {term_text[-500:]}'
             self.checks['terminal'] = {'ok': True, 'markerSeen': True, 'tail': term_text[-200:]}
         finally:
-            self.call_plugin('terminal', 'close', {'terminalId': term_id})
+            self.call_plugin('terminal', 'kill', {'terminalId': term_id})
 
     def _run_reconnect_check(self):
+        from PySide6.QtTest import QTest
         control = self.directory / 'ssh-control'
         clients_file = control / 'clients.jsonl'
         assert clients_file.is_file(), 'SSH control log missing'
@@ -352,6 +353,7 @@ class WorkdirAcceptance:
             released.set()
 
         threading.Thread(target=restore, daemon=True).start()
+        QTest.qWait(400)
         # Keep WorkspacePicker observing state during outage
         picker = self._find_qml('workspacePicker')
         if picker is not None:

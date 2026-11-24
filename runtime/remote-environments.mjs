@@ -71,7 +71,9 @@ export async function runRemoteProcess(connection, platform, {
   signal,
 } = {}) {
   signal?.throwIfAborted();
-  const info = await connection.ready();
+  const info = typeof connection.waitForReady === "function"
+    ? await connection.waitForReady(signal)
+    : await connection.ready();
   const effectivePlatform = platform || (String(info.platformOs || "").toLowerCase() === "windows" ? "windows" : "linux");
   const home = nativePathFromUri(info.userHomeDir || info.cwd, effectivePlatform);
   const resolvedCwd = resolveRemoteWorkspacePath(nativePathFromUri(info.cwd || info.userHomeDir, effectivePlatform), cwd || ".", {
@@ -287,8 +289,10 @@ export function createRemoteEnvironments({ request, emit, getConfig = () => ({})
     return entry;
   }
 
-  async function resolveHome(entry) {
-    const info = await entry.connection.ready();
+  async function resolveHome(entry, signal) {
+    const info = typeof entry.connection.waitForReady === "function"
+      ? await entry.connection.waitForReady(signal)
+      : await entry.connection.ready();
     const home = nativePathFromUri(info.userHomeDir || info.cwd, entry.platform);
     const cwd = nativePathFromUri(info.cwd || info.userHomeDir, entry.platform);
     const tempDir = info.tempDir ? nativePathFromUri(info.tempDir, entry.platform) : "";

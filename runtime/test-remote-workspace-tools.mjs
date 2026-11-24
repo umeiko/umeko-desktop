@@ -283,6 +283,7 @@ test("remote-environments browse, mkdir, home, and Windows drive listing", async
   winRemote.dirs.add("C:\\work\\empty");
 
   context.mock.method(RemoteConnection.prototype, "ready", async function () { return winRemote.connection.ready(); });
+  context.mock.method(RemoteConnection.prototype, "waitForReady", async function () { return winRemote.connection.ready(); });
   context.mock.method(RemoteConnection.prototype, "rpc", async function (method, params) { return winRemote.connection.rpc(method, params); });
 
   const envs = createRemoteEnvironments({

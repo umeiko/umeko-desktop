@@ -12,12 +12,12 @@ Column {
         startupSettingsReady = true
         if (visible) {
             backend.loginStartup.refresh()
-            backend.refreshSshConfigHosts()
+            if (typeof backend.refreshSshConfigHosts === "function") backend.refreshSshConfigHosts()
         }
     }
     onVisibleChanged: if (startupSettingsReady && visible) {
         backend.loginStartup.refresh()
-        backend.refreshSshConfigHosts()
+        if (typeof backend.refreshSshConfigHosts === "function") backend.refreshSshConfigHosts()
     }
     Button {
         id: customRequestsEntry
@@ -147,6 +147,7 @@ Column {
 
             Connections {
                 target: backend
+                ignoreUnknownSignals: true
                 function onRemoteAddHostFinished(reqId, result) {
                     if (reqId !== remoteSettingsSection.addReqId) return
                     remoteSettingsSection.addingRemote = false
@@ -186,7 +187,7 @@ Column {
                     Layout.fillWidth: true
                     implicitHeight: Theme.control(36)
                     editable: true
-                    model: (backend.sshConfigHosts || []).map(item => item.alias)
+                    model: (backend && backend.sshConfigHosts ? backend.sshConfigHosts : []).map(item => item.alias)
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.font(13)
                     palette.text: Theme.ink; palette.buttonText: Theme.ink; palette.base: Theme.surface
