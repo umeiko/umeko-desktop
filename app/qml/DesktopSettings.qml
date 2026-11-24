@@ -13,69 +13,6 @@ Column {
         if (visible) backend.loginStartup.refresh()
     }
     onVisibleChanged: if (startupSettingsReady && visible) backend.loginStartup.refresh()
-    SectionCard {
-        width: parent.width
-        ColumnLayout {
-            width: parent.width
-            spacing: 10
-            Text {
-                text: I18n.t("远程环境")
-                color: Theme.ink
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.font(14)
-                font.weight: Font.DemiBold
-            }
-            Text {
-                Layout.fillWidth: true
-                visible: remoteRows.count === 0
-                text: I18n.t("请让 Agent 用 OpenSSH 主机别名添加远程环境。")
-                color: Theme.muted
-                wrapMode: Text.Wrap
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.font(13)
-            }
-            Repeater {
-                id: remoteRows
-                model: backend.remoteEnvironments
-                RowLayout {
-                    required property var modelData
-                    Layout.fillWidth: true
-                    spacing: 12
-                    Column {
-                        Layout.fillWidth: true
-                        spacing: 3
-                        Text {
-                            text: modelData.name
-                            color: Theme.ink
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.font(13)
-                        }
-                        Text {
-                            text: modelData.host
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.font(12)
-                        }
-                    }
-                    BusyIndicator {
-                        visible: running
-                        running: modelData.state === "connecting" || modelData.state === "reconnecting"
-                        Layout.preferredWidth: Theme.icon(24)
-                        Layout.preferredHeight: Theme.icon(24)
-                    }
-                    Text {
-                        objectName: "remoteEnvironmentState_" + modelData.name
-                        property string connectionState: modelData.state
-                        text: I18n.t(({connected: "已连接", connecting: "连接中", reconnecting: "正在重新连接",
-                                       disconnected: "未连接", error: "连接失败"})[modelData.state] || "未连接")
-                        color: Theme.muted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.font(13)
-                    }
-                }
-            }
-        }
-    }
     Button {
         id: customRequestsEntry
         objectName: "openRequestHeaders"
@@ -186,6 +123,69 @@ Column {
                     background: Rectangle { radius: 8; color: Theme.surface; border.color: browserChoice.activeFocus ? Theme.accent : Theme.line }
                     contentItem: Text { text: browserChoice.displayText; font: browserChoice.font; color: Theme.ink; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; leftPadding: 12; rightPadding: 30 }
                     indicator: Glyph { name: "chevron-down"; width: Theme.icon(14); height: width; x: parent.width-width-12; y: (parent.height-height)/2; color: Theme.muted }
+                }
+            }
+        }
+    }
+    SectionCard {
+        width: parent.width
+        ColumnLayout {
+            width: parent.width
+            spacing: 10
+            Text {
+                text: I18n.t("远程环境")
+                color: Theme.ink
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.font(14)
+                font.weight: Font.DemiBold
+            }
+            Text {
+                Layout.fillWidth: true
+                visible: remoteRows.count === 0
+                text: I18n.t("请让 Agent 用 OpenSSH 主机别名添加远程环境。")
+                color: Theme.muted
+                wrapMode: Text.Wrap
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.font(13)
+            }
+            Repeater {
+                id: remoteRows
+                model: backend.remoteEnvironments
+                RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    spacing: 12
+                    Column {
+                        Layout.fillWidth: true
+                        spacing: 3
+                        Text {
+                            text: modelData.name
+                            color: Theme.ink
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(13)
+                        }
+                        Text {
+                            text: modelData.host
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                    }
+                    BusyIndicator {
+                        visible: running
+                        running: modelData.state === "connecting" || modelData.state === "reconnecting"
+                        Layout.preferredWidth: Theme.icon(24)
+                        Layout.preferredHeight: Theme.icon(24)
+                    }
+                    Text {
+                        objectName: "remoteEnvironmentState_" + modelData.name
+                        property string connectionState: modelData.state
+                        text: I18n.t(({connected: "已连接", connecting: "连接中", reconnecting: "正在重新连接",
+                                       disconnected: "未连接", error: "连接失败"})[modelData.state] || "未连接")
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.font(13)
+                    }
                 }
             }
         }

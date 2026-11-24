@@ -293,7 +293,9 @@ class Acceptance:
         from PySide6.QtTest import QTest
         while recovered.get('status') == 'running':
             assert time.monotonic() - self.long_started < seconds + 180, '20 minute command exceeded deadline'
-            QTest.qWait(10000)
+            # Allow several output lines to accumulate per turn so the long
+            # command stays inside the fixture's live chat transcript window.
+            QTest.qWait(30000)
             recovered = self.call('remote_command', {'action': 'read', 'environment': 'acceptance',
                                   'sessionId': session, 'yieldMs': 10000, 'maxOutputBytes': 262144}, timeout=90)
             self.long_output += recovered.get('output', '')
