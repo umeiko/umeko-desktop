@@ -18,6 +18,7 @@
 | `providers.network` | `id: string`, `mode: string`, `address: string=""` | provider | 否 |
 | `providers.certificate` | `id: string`, `caFile: string=""` | provider | 否 |
 | `models.mappings` | `models: json` | all | 否 |
+| `models.applyPatch`（仅 python） | `provider: string`, `model: string`, `enabled: boolean` | 无 | 否 |
 | `pluginSessions.setModel`（仅 python） | `plugin: string`, `profile: string`, `model: string=""`, `provider: string=""`, `reasoningEffort: string=""` | 无 | 否 |
 | `models.select`（仅 python） | `provider: string`, `model: string`, `sessionId: string=""` | target | 否 |
 | `sessions.reasoning`（仅 python） | `value: string`, `sessionId: string=""` | target | 否 |
