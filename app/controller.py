@@ -27,6 +27,7 @@ from .npm_config import npm_environment
 from .storage import Store
 from .pi_sessions import PiSessionPool, SessionState, clean_extension_modes, clean_skill_modes, clean_blocked_tools
 from .controller_runtime import PiControllerMixin
+from .remote_environments import RemoteEnvironments
 from .dsh_backend import DshControllerMixin, is_dsh
 from .transcripts import preview
 from .chat_model import ChatModel
@@ -77,6 +78,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     appearanceChanged = Signal()
     characterCatalogChanged = Signal()
     desktopSettingsChanged = Signal()
+    remoteEnvironmentsChanged = Signal()
     auxiliaryVisionSettingsChanged = Signal()
 
     @Property('QVariantList', constant=True)
@@ -90,6 +92,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     @Property('QVariantMap', notify=desktopSettingsChanged)
     def desktopSettings(self):
         return dict(self.store.data['desktop'])
+
+    @Property('QVariantList', notify=remoteEnvironmentsChanged)
+    def remoteEnvironments(self):
+        return self._remote_environments.rows()
 
     @Property('QVariantMap', notify=auxiliaryVisionSettingsChanged)
     def auxiliaryVisionSettings(self):
@@ -221,6 +227,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self.toast.emit('settings.json 无法解析，已另存为 settings.external-invalid.json' if invalid and not keys
                         else 'settings.json 在 Umeko 外被修改，已读入这些修改')
         self.changed.emit()
+        if 'remoteEnvironments' in keys:
+            self.remoteEnvironmentsChanged.emit()
     proxyKeysChanged = Signal()
     editorText = Signal(str)
 
@@ -230,6 +238,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._app_about = AppAbout(self)
         self.store = Store()
         self.store.external_change = self._settings_changed_externally
+        self._remote_environments = RemoteEnvironments(self.store, self.remoteEnvironmentsChanged.emit)
         # Provider changes and externally merged settings still refresh these
         # small views. A local switch only emits its own section's notification.
         self.changed.connect(self.desktopSettingsChanged)

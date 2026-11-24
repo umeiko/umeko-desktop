@@ -17,6 +17,11 @@ if [[ "$(uname -s)" == Linux ]]; then .venv/bin/python scripts/build-input-metho
 .venv/bin/python scripts/bundle_node.py
 .venv/bin/python prepare_runtime.py
 .venv/bin/python scripts/fetch-search-tools.py
+if [[ "$(uname -s)" == Linux ]]; then
+    arch=x64
+    if [[ "$(uname -m)" == aarch64 ]]; then arch=arm64; fi
+    .venv/bin/python scripts/fetch-remote-exec.py --platform linux --arch "$arch" --output runtime/releases/coding-1.5.2/remote-exec-assets
+fi
 QT_QPA_PLATFORM=offscreen .venv/bin/python build_icons.py
 .venv/bin/python scripts/write-build-info.py
 .venv/bin/python scripts/build-provider-resources.py
@@ -62,6 +67,8 @@ for target in targets:
         shutil.copy2(root / 'runtime/preview-network.mjs', target / 'runtime/preview-network.mjs')
         shutil.copy2(root / 'runtime/dsh-acp-bridge.mjs', target / 'runtime/dsh-acp-bridge.mjs')
         shutil.copy2(root / 'runtime/dsh-permissions.mjs', target / 'runtime/dsh-permissions.mjs')
+        for source in [*(root / 'runtime').glob('remote-*.mjs'), root / 'runtime/remote-exec-assets.json']:
+            shutil.copy2(source, target / 'runtime')
         report = optimize_payload(target)
         (root / 'build' / ('payload-' + target.name + '.json')).write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 shutil.copy2(root / 'README.md', bundle / 'Umeko/README.md')

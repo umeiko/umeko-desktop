@@ -240,6 +240,20 @@ class UmekoControl(QObject):
             return b.desktopPlugins.global_agents.execute(operation,args,caller)
         if caller and getattr(caller,'global_agent','') and operation not in ('help','models.list') and not b.desktopPlugins.pet.assistant.allows_timer(caller, operation, args):
             raise ValueError('全局协调子智能体只能使用 agent_bus.* 和 models.list；其他任务请委派给已开启桥的工作区代理')
+        if operation.startswith('remote-environments.'):
+            spec = self.operations.get(operation)
+            fields = tuple(field[0] for field in spec['args']) if spec else ()
+            if not spec or set(fields) != set(args) or not all(isinstance(args[field], str) for field in fields):
+                raise ValueError('Invalid remote environment operation or arguments')
+            registry = b._remote_environments
+            if operation == 'remote-environments.list':
+                return {'environments': registry.rows()}
+            if operation == 'remote-environments.add':
+                return {'environment': registry.add(args['name'], args['host'], args['platform'])}
+            if operation == 'remote-environments.remove':
+                registry.remove(args['name'])
+                return {'name': args['name'], 'status': 'removed'}
+            raise ValueError('Run the connection test from the Pi desktop tool.')
         if operation == 'extensions.install' and not _widget_install:
             raise ValueError('Agent package installation must use run_pi_command and its native installation permission; confirmed Widget installs use the private host entry')
         if operation == 'help':

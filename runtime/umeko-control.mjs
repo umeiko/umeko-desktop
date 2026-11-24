@@ -19,7 +19,7 @@ export const umekoHelp = () => ({...(instanceDocs || { docsRoot: umekoDocs(), en
 export function configureUmekoDocs(options) { instanceDocs = prepareDocumentation(options); }
 export const UMEKO_PROMPT = 'umeko-desk 的临时文件存放在 ./.umeko 目录下。 Umeko owns providers, credentials, themes, desktop settings, projects and chats; Pi provider configuration does not apply. First call umeko_desktop operation help to discover its documentation. Discover enabled Widgets with widgets.list (activeOnly true) and read widgets.docs before using them. Apply desktop changes through umeko_desktop, not by editing its settings files.';
 
-export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesContext, refreshShellEnvironment,
+export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesContext, refreshShellEnvironment, remoteOperation,
   getPetAssistantBinding = () => '', getPetReminderBinding = () => '', waitForSpeech = (ms, signal) => delay(ms, undefined, {signal}) }) {
   const pending = new Map();
   let speechTail = Promise.resolve(), speechLife = new AbortController();
@@ -114,7 +114,7 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesCon
             } catch (error) {
               result = {ok: false, error: error.message};
             }
-          } else result = await this.request(params.operation, args, signal);
+          } else result = await (remoteOperation?.(params.operation, args, signal) ?? this.request(params.operation, args, signal));
           return { content: [{ type: 'text', text: JSON.stringify(result) }], isError: result.ok === false };
         },
       });

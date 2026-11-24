@@ -257,6 +257,10 @@ jobs:
         shell: bash
         run: .venv/Scripts/python.exe -m unittest tests.test_windows_ime_position -v
 
+      - name: Windows remote command lifecycle
+        if: runner.os == 'Windows'
+        run: node --test runtime/test-remote-command.mjs
+
       - name: Build Windows
         if: runner.os == 'Windows'
         shell: pwsh
