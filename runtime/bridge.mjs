@@ -12,6 +12,7 @@ import { PI_COMMAND_TOOL, DESKTOP_PI_PROMPT, createPiCommandController } from ".
 import { UMEKO_TOOL, SEND_TO_USER, REMINDER, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension, coordinatorNativeTools } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
+import { configureCoworkSubagents, coworkSubagentFromPrompt, coworkSubagentResources, coworkSubagentTools } from "./cowork-subagents.mjs";
 import { createInputQueue } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
@@ -136,7 +137,8 @@ const auxiliaryVision = createAuxiliaryVision({getConfig:() => config, emit:even
   if (event.sessionId && event.sessionId !== runtime?.session.sessionManager.getSessionId()) return subagents.automaticTool(event.sessionId,event);
   emit(event);
 }});
-const subagents = createSubagentExtension({ emit, restoreSession: restoreSubagentSession, getParentRun: () => currentRun });
+const subagents = createSubagentExtension({ emit, restoreSession: restoreSubagentSession,
+  getParentRun: () => currentRun, getCowork: () => config?.cowork });
 const textOf = content => typeof content === "string" ? content : (content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
 const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
 const compactionText = data => `已压缩：${data.before} → ${data.after} tokens`;
@@ -374,7 +376,8 @@ function contextUsage(session) {
 }
 
 function coworkToolNames(input) {
-  return [...input.cowork.allowedTools, ...(input.cowork.skillPaths?.length ? ["read"] : [])];
+  return [...input.cowork.allowedTools, ...(input.cowork.skillPaths?.length ? ["read"] : []),
+    ...(input.cowork.subagents?.length ? ["subagent", "get_subagent_result", "steer_subagent"] : [])];
 }
 
 function exposeNativeTools(session) {
@@ -440,6 +443,9 @@ async function restoreSubagentSession(child, context, customTools) {
   const manager = Pi.SessionManager.open(child.outputFile);
   const model = modelRuntime.getModel("umeko", context?.model || runtime.session.model?.id);
   if (!model) throw new Error("原子代理使用的模型已不在供应商配置中。");
+  const profile = config.cowork ? coworkSubagentFromPrompt(context?.systemPrompt) : undefined;
+  if (config.cowork && !profile) throw new Error("此子智能体已从当前 Coworker 的配置中移除。");
+  const scoped = profile ? coworkSubagentResources(profile) : undefined;
   const native = await prepareNativeSettings(Pi, {cwd:manager.getCwd(),agentDir:config.agentDir,agent:config.agent});
   const settings = await sessionResourceSettings(Pi, {...config,cwd:manager.getCwd()}, native);
   const policy = Pi.SettingsManager.inMemory({...settings.getSettings(),retry:{...NETWORK_RETRY,provider:{maxRetries:0}},cacheWarming:"off"});
@@ -447,8 +453,9 @@ async function restoreSubagentSession(child, context, customTools) {
   // transcripts use the standard read-only policy for Explore/Plan.
   const readonly = ["Explore","Plan"].includes(child.type);
   const loader = new Pi.DefaultResourceLoader({cwd:manager.getCwd(),agentDir:config.agentDir,settingsManager:policy,
-    ...await sessionSkillOptions(Pi, {...config,cwd:manager.getCwd()}, native),
+    ...(scoped || await sessionSkillOptions(Pi, {...config,cwd:manager.getCwd()}, native)),
     extensionFactories: [
+      ...(scoped?.extensionFactories || []),
       { name: "recent-images", hidden: true, replaceable: false, factory: createRecentImagesExtension({ getLimit: () => config.agent?.maxContextImages }) },
       { name: "auxiliary-vision", hidden: true, replaceable: false, factory: auxiliaryVision.contextExtension },
       { name: "tool-permissions", hidden: true, replaceable: false,
@@ -463,7 +470,8 @@ async function restoreSubagentSession(child, context, customTools) {
   const {session} = await Pi.createAgentSession({cwd:manager.getCwd(),agentDir:config.agentDir,sessionManager:manager,
     modelRuntime,model,settingsManager:policy,resourceLoader:loader,thinkingLevel:context?.thinkingLevel || "off",
     customTools,excludeTools:["subagent","get_subagent_result","steer_subagent",...blockedToolNames(config.blockedTools)],
-    tools:context?.tools || (readonly ? ["read","grep","find","ls"] : undefined)});
+    tools:profile ? [...coworkSubagentTools(profile), ...customTools.map(tool => tool.name)] :
+      context?.tools || (readonly ? ["read","grep","find","ls"] : undefined)});
   auxiliaryVision.guardSession(session);
   await session.bindExtensions({uiContext:childPermissionUI(ui),mode:"rpc",abortHandler:()=>session.abort(),
     shutdownHandler:()=>session.abort(),onError:error=>emit({type:"notice",message:error.message})});
@@ -472,6 +480,12 @@ async function restoreSubagentSession(child, context, customTools) {
 
 async function init(input) {
   config = input;
+  configureCoworkSubagents(input.cowork ? input.cowork.subagents || [] : undefined, profile => [
+    ...(profile.tools.includes("submit_to_chatbox") ? [{ name: "chatbox", builtin: true, replaceable: false,
+      factory: pi => chatboxExtension(pi, () => config.webview || {}, (id, items, failed) => taskDelivery("submitted", id, items, failed)) }] : []),
+    ...(profile.tools.some(tool => tool === "image_gen" || tool === "video_gen") ? [{ name: "generation", builtin: true, replaceable: false,
+      factory: createGenerationExtension({getConfig: () => config, onDelivery: (id, items) => taskDelivery("generated", id, items)}) }] : []),
+  ]);
   globalThis[Symbol.for("umeko:auxiliary-vision")] = auxiliaryVision;
   globalThis[Symbol.for("umeko:recent-images-policy")] = { getLimit: () => config.agent?.maxContextImages };
   permissionPolicy = { mode: input.permissionMode || input.agent?.toolPermissionMode || "auto", language: input.language || "en", dataDir: input.dataDir, generation: input.generation, dangerousAllowed: input.dangerousAllowed === true };

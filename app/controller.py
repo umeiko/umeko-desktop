@@ -1880,6 +1880,9 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Slot(str)
     def setWorkspace(self, url):
+        if self._cowork.active and not self._view.cowork:
+            self._cowork.requestCreate('', url)
+            return
         if self._view.cowork:
             self._cowork.newTask(self._view.cowork, url)
             return

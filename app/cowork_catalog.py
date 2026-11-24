@@ -38,6 +38,18 @@ CONTEXT_GUIDANCE = {
     'library': 'Use the working directory, attached files and selected source folders. Read source materials without changing their contents.',
 }
 
+SUBAGENT_POOL = [
+    dict(id='researcher', name=('资料研究员', 'Researcher'), description=('查找并核对资料来源', 'Find and verify sources'),
+         prompt='Find relevant evidence and report findings with precise citations. Flag uncertainty and leave source material intact.',
+         context='library', tools=['read', 'find', 'grep', 'ls', 'web_search', 'web_fetch'], skills=['evidence-citations']),
+    dict(id='reviewer', name=('复核助手', 'Reviewer'), description=('检查结论、遗漏和矛盾', 'Check conclusions, omissions and contradictions'),
+         prompt='Review the draft against the provided sources. Return concrete findings and suggested corrections. Preserve the original files.',
+         context='files', tools=['read', 'find', 'grep', 'read_pdf_text'], skills=['evidence-citations']),
+    dict(id='planner', name=('任务规划员', 'Planner'), description=('拆解目标和工作步骤', 'Break down goals and plan the work'),
+         prompt='Turn the goal and existing decisions into a practical sequence of tasks. Identify dependencies and decisions that are still open.',
+         context='chat', tools=['read'], skills=[]),
+]
+
 
 def recipe(identifier, icon, tone, name, description, prompt, starters, tools=(), skills=(), context='chat'):
     return dict(id=identifier, icon=icon, tone=tone, name=name, description=description, prompt=prompt,

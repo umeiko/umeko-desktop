@@ -32,7 +32,7 @@ DropArea {
     onDropped: drop => {
         locate(drop.x, drop.y)
         if (backend.cowork.active)
-            backend.cowork.newTask(targetProjectId || backend.cowork.activeRole, drop.urls[0].toString())
+            backend.cowork.requestCreate(targetProjectId, drop.urls[0].toString())
         else
             backend.dropProjects(JSON.stringify(drop.urls.map(url => url.toString())), targetProjectId)
         drop.accept(Qt.CopyAction)

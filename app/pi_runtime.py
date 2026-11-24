@@ -158,7 +158,7 @@ def verify_runtime(release: Path, bridge_source: Path):
         copy_runtime_file(bridge_source.parent / name, release / name)
     copy_runtime_file(bridge_source.parent / 'update-cleanup.mjs', release / 'update-cleanup.mjs')
     copy_runtime_file(bridge_source.parent / 'generation.mjs', release / 'generation.mjs')
-    for name in ('cowork-tools.mjs', 'cowork-local.mjs'):
+    for name in ('cowork-tools.mjs', 'cowork-local.mjs', 'cowork-subagents.mjs'):
         copy_runtime_file(bridge_source.parent / name, release / name)
     # Updated or previously prepared Pi kernels may predate the Cowork parser.
     modules = release / 'node_modules'

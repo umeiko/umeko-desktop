@@ -10,9 +10,11 @@ Popup {
     required property var service
     property string roleId: ""
     property string skillRoleId: ""
+    property string templateId: ""
     property string workspace: ""
     property var selectedTools: []
     property var selectedSkills: []
+    property var selectedSubagents: []
     property bool saveFailed: false
     property string folderError: ""
     signal saved(string roleId, bool created)
@@ -26,22 +28,28 @@ Popup {
     Overlay.modal: Rectangle { color: Qt.alpha(Theme.ink, 0.26) }
 
     function tr(zh, en) { return backend.language === "zh" ? zh : en }
-    function begin(role) {
+    function begin(role, source, folder) {
         roleId = role.id || ""
         skillRoleId = roleId || service.newRoleId()
-        workspace = role.workspace || ""
-        nameField.text = role.name || ""
-        descriptionField.text = role.description || ""
-        instructions.text = role.prompt || ""
-        selectedSkills = (role.skills || []).slice()
-        selectedTools = (role.tools || ["read"]).slice()
-        contextChoice.currentIndex = Math.max(0, service.contextOptions.findIndex(value => value.id === (role.context || "files")))
+        templateId = source || ""
+        workspace = role.workspace || folder || ""
+        templateChoice.currentIndex = Math.max(0, service.templates.findIndex(row => row.id === templateId))
+        applyRole(roleId ? role : service.templateDetails(templateId))
         saveFailed = false
         folderError = ""
         tabs.currentIndex = 0
         service.loadSkills(skillRoleId, workspace)
         open()
         Qt.callLater(nameField.forceActiveFocus)
+    }
+    function applyRole(role) {
+        nameField.text = role.name || ""
+        descriptionField.text = role.description || ""
+        instructions.text = role.prompt || ""
+        selectedSkills = (role.skills || []).slice()
+        selectedTools = (role.tools || ["read"]).slice()
+        selectedSubagents = (role.subagents || []).slice()
+        contextChoice.currentIndex = Math.max(0, service.contextOptions.findIndex(value => value.id === (role.context || "files")))
     }
     function chooseWorkspace(url) {
         const path = service.folderPath(String(url))
@@ -55,8 +63,9 @@ Popup {
     }
     function save() {
         const created = !roleId
-        const id = service.saveRole(JSON.stringify({id:skillRoleId, name:nameField.text, description:descriptionField.text,
-            workspace:workspace, prompt:instructions.text, context:contextChoice.currentValue, tools:selectedTools, skills:selectedSkills}))
+        const id = service.saveRole(JSON.stringify({id:skillRoleId, template:templateId, name:nameField.text, description:descriptionField.text,
+            workspace:workspace, prompt:instructions.text, context:contextChoice.currentValue, tools:selectedTools, skills:selectedSkills,
+            subagents:selectedSubagents}))
         saveFailed = !id
         if (id) {
             close()
@@ -66,6 +75,10 @@ Popup {
     function importSkill(url) {
         if (workspace && !service.importingSkill)
             service.importSkill(skillRoleId, workspace, String(url))
+    }
+    function setChild(row, enabled) {
+        const items = selectedSubagents.filter(item => item.id !== row.id)
+        selectedSubagents = enabled ? items.concat([row]) : items
     }
 
     Connections {
@@ -163,6 +176,100 @@ Popup {
         }
     }
 
+    Popup {
+        id: childEditor
+        objectName: "coworkSubagentEditor"
+        parent: Overlay.overlay; modal: true; focus: true; anchors.centerIn: parent
+        width: Math.min(root.width, parent.width - 42); height: Math.min(root.height, parent.height - 54)
+        padding: 20
+        background: Rectangle { radius: 15; color: Theme.surface; border.color: Theme.line }
+        property var draft: ({id:"", name:"", description:"", prompt:"", context:"files", tools:[], skills:[]})
+        property int tab: 0
+        function edit(source, clone) {
+            const row = source || {name:root.tr("我的子智能体", "My subagent"), description:"", prompt:"Handle the assigned subtask and report findings.", context:"files", tools:["read"], skills:[]}
+            draft = Object.assign({}, row, {id:clone ? root.service.newSubagentId() : row.id,
+                     name:clone && source ? row.name + root.tr(" 副本", " copy") : row.name,
+                     tools:row.tools.slice(), skills:row.skills.slice()})
+            childName.text = draft.name; childPrompt.text = draft.prompt
+            childContext.currentIndex = Math.max(0, root.service.contextOptions.findIndex(item => item.id === draft.context))
+            tab = 0; open()
+        }
+        ColumnLayout {
+            anchors.fill: parent; spacing: 10
+            Text {
+                text: root.tr("配置子智能体", "Configure subagent")
+                color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(20); font.weight: Font.DemiBold
+            }
+            RowLayout {
+                Repeater {
+                    model: [root.tr("角色", "Role"), root.tr("Pi 工具", "Pi tools"), "Skills"]
+                    delegate: ActionButton {
+                        required property int index
+                        required property string modelData
+                        objectName: "coworkSubagentTab_" + index
+                        text: modelData; primary: childEditor.tab === index; quiet: !primary
+                        onClicked: childEditor.tab = index
+                    }
+                }
+            }
+            StackLayout {
+                Layout.fillWidth: true; Layout.fillHeight: true; currentIndex: childEditor.tab
+                ColumnLayout {
+                    InputField {
+                        id: childName; objectName: "coworkSubagentName"
+                        Layout.fillWidth: true; maximumLength: 60
+                        placeholderText: root.tr("子智能体名称", "Subagent name")
+                    }
+                    Picker {
+                        id: childContext; objectName: "coworkSubagentContext"
+                        Layout.fillWidth: true; model: root.service.contextOptions.map(item => item.label)
+                        readonly property string selectionId: currentIndex < 0 ? "files" : root.service.contextOptions[currentIndex].id
+                        Accessible.name: root.tr("上下文", "Context")
+                    }
+                    Text {
+                        Layout.fillWidth: true; wrapMode: Text.Wrap
+                        text: childContext.selectionId === "chat" ? root.tr("继承主会话中的消息。", "Inherit messages from the parent conversation.") :
+                              root.tr("使用委派指令与当前工作目录。", "Use the delegated task and current working folder.")
+                        color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12)
+                    }
+                    ScrollView {
+                        Layout.fillWidth: true; Layout.fillHeight: true
+                        TextArea {
+                            id: childPrompt; objectName: "coworkSubagentPrompt"
+                            placeholderText: root.tr("系统提示词", "System prompt")
+                            color: Theme.ink; wrapMode: TextEdit.Wrap; selectByMouse: true; font.family: Theme.fontFamily
+                            background: Rectangle { radius: 8; color: Theme.bg; border.color: Theme.line }
+                            onTextChanged: if (length > 8000) remove(8000, length)
+                        }
+                    }
+                }
+                CapabilityPicker {
+                    options: root.service.subagentToolOptions; selection: childEditor.draft.tools
+                    onSelectionUpdated: values => childEditor.draft = Object.assign({}, childEditor.draft, {tools:values})
+                }
+                CapabilityPicker {
+                    options: root.service.skillOptions; selection: childEditor.draft.skills
+                    onSelectionUpdated: values => childEditor.draft = Object.assign({}, childEditor.draft, {skills:values})
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                ActionButton { text: root.tr("取消", "Cancel"); quiet: true; onClicked: childEditor.close() }
+                ActionButton {
+                    objectName: "coworkSaveSubagent"; primary: true
+                    text: root.tr("保存子智能体", "Save subagent")
+                    enabled: childName.text.trim() !== "" && childPrompt.text.trim() !== ""
+                    onClicked: {
+                        root.setChild(Object.assign({}, childEditor.draft, {name:childName.text, prompt:childPrompt.text,
+                                      context:childContext.selectionId}), true)
+                        childEditor.close()
+                    }
+                }
+            }
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent; spacing: 12
         RowLayout {
@@ -184,11 +291,11 @@ Popup {
             Layout.fillWidth: true; spacing: 7
             Repeater {
                 model: [root.tr("角色", "Role"), root.tr("Pi 工具", "Pi tools") + " (" + root.selectedTools.length + ")",
-                        "Skills (" + root.selectedSkills.length + ")"]
+                        "Skills (" + root.selectedSkills.length + ")", root.tr("子智能体", "Subagents") + " (" + root.selectedSubagents.length + ")"]
                 delegate: ActionButton {
                     required property int index
                     required property string modelData
-                    objectName: ["coworkRoleTab", "coworkToolsTab", "coworkSkillsTab"][index]
+                    objectName: ["coworkRoleTab", "coworkToolsTab", "coworkSkillsTab", "coworkSubagentsTab"][index]
                     text: modelData; primary: tabs.currentIndex === index; quiet: !primary
                     implicitHeight: 34
                     onClicked: tabs.currentIndex = index
@@ -208,6 +315,26 @@ Popup {
                 ColumnLayout {
                     width: form.availableWidth - 8
                     spacing: 7
+                    RowLayout {
+                        visible: !root.roleId
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.tr("从模板或现有 Coworker 创建", "Start from a template or coworker")
+                            color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(13)
+                        }
+                        Picker {
+                            id: templateChoice; objectName: "coworkTemplateChoice"
+                            Layout.preferredWidth: 252
+                            model: root.service.templates.map(row => row.label)
+                            Accessible.name: root.tr("Coworker 模板", "Coworker template")
+                            enabled: !root.service.importingSkill
+                            onActivated: {
+                                root.templateId = root.service.templates[currentIndex].id
+                                root.applyRole(root.service.templateDetails(root.templateId))
+                            }
+                        }
+                    }
                     Text {
                         text: root.tr("工作目录", "Working folder")
                         color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(13); font.weight: Font.DemiBold
@@ -369,6 +496,48 @@ Popup {
                     onSelectionUpdated: values => root.selectedSkills = values
                 }
             }
+            ScrollView {
+                id: poolView
+                contentWidth: availableWidth; clip: true
+                ColumnLayout {
+                    width: poolView.availableWidth - 8; spacing: 8
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.tr("子智能体池", "Subagent pool"); color: Theme.ink
+                            font.family: Theme.fontFamily; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold
+                        }
+                        ActionButton {
+                            objectName: "coworkCreateSubagent"; glyph: "plus"
+                            text: root.tr("新建自定义", "New custom")
+                            onClicked: childEditor.edit(null, true)
+                        }
+                    }
+                    Repeater {
+                        model: root.service.subagentTemplates.concat(root.selectedSubagents.filter(row => row.id.startsWith("child-")))
+                        delegate: RowLayout {
+                            id: childRow
+                            required property var modelData
+                            readonly property bool custom: modelData.id.startsWith("child-")
+                            Layout.fillWidth: true
+                            CheckBox {
+                                objectName: "coworkSubagentEnabled_" + childRow.modelData.id
+                                Layout.fillWidth: true
+                                text: childRow.modelData.name
+                                checked: root.selectedSubagents.some(row => row.id === childRow.modelData.id)
+                                onClicked: root.setChild(childRow.modelData, checked)
+                            }
+                            ActionButton {
+                                objectName: "coworkSubagentEdit_" + childRow.modelData.id
+                                text: childRow.custom ? root.tr("编辑", "Edit") : root.tr("克隆", "Clone")
+                                glyph: childRow.custom ? "edit" : "copy"; quiet: true
+                                onClicked: childEditor.edit(childRow.modelData, !childRow.custom)
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         Text {
@@ -386,7 +555,7 @@ Popup {
             }
             ActionButton {
                 objectName: "coworkSaveRole"
-                text: root.tr("保存角色", "Save coworker"); primary: true
+                text: root.roleId ? root.tr("保存", "Save") : root.tr("创建 Coworker", "Create coworker"); primary: true
                 enabled: !!root.workspace && nameField.text.trim() !== "" && instructions.text.trim() !== "" && !root.service.importingSkill
                 onClicked: root.save()
             }

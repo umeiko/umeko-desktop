@@ -41,7 +41,7 @@ Item {
     RowMenu {
         id: coworkMenu
         ContextAction { text: backend.language === "en" ? "Edit coworker" : "编辑 Coworker"; glyph: "edit"; onTriggered: root.coworkEditRequested(root.target.id) }
-        ContextAction { text: backend.language === "en" ? "New task in another folder" : "在其他目录新建任务"; glyph: "folder"; onTriggered: root.coworkFolderRequested(root.target.id) }
+        ContextAction { text: backend.language === "en" ? "Clone to another folder" : "复制到其他目录"; glyph: "folder"; onTriggered: root.coworkFolderRequested(root.target.id) }
     }
     RowMenu {
         id: projectMenu; objectName: "projectContextMenu"

@@ -325,6 +325,8 @@ class PiControllerMixin:
 
     def _send(self, text, steering=False):
         record = self._view
+        if self._cowork.active and not self._cowork.activeRole:
+            return False
         text = text.strip()
         self._last_send_error = ""
         if self._kernel_busy:
