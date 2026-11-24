@@ -490,7 +490,7 @@ Rectangle {
             Field {id:nameInput;objectName:"globalAgentName";visible:!root.switchOnly;Layout.fillWidth:true;placeholderText:Umeko.I18n.t("名称（可选，留空使用人物名）");maximumLength:60}
             LabelText {visible:!root.switchOnly;text:Umeko.I18n.t("形象");font.pixelSize:12*root.sdk.scale;color:root.c.muted}
             ScrollView {
-                 visible:!root.switchOnly;Layout.fillWidth:true;Layout.preferredHeight:Math.min(180,appearanceFlow.implicitHeight)
+                 visible:!root.switchOnly;Layout.fillWidth:true;Layout.preferredHeight:Math.min(188,appearanceFlow.implicitHeight)
                 clip:true;ScrollBar.horizontal.policy:ScrollBar.AlwaysOff
                 Flow {
                 id:appearanceFlow;width:parent.width;spacing:8
@@ -501,7 +501,7 @@ Rectangle {
                         TapHandler {onTapped:root.chosenCharacter=modelData.id}
                         Column {anchors.centerIn:parent;spacing:5
                             Image {anchors.horizontalCenter:parent.horizontalCenter;source:modelData.portrait;width:52;height:52;fillMode:Image.PreserveAspectFit;sourceSize.width:104;sourceSize.height:104}
-                            LabelText {text:modelData.name;font.pixelSize:11*root.sdk.scale;width:72;horizontalAlignment:Text.AlignHCenter}
+                            LabelText {text:Umeko.I18n.t(modelData.name);font.pixelSize:11*root.sdk.scale;width:72;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.WordWrap;maximumLineCount:2}
                         }
                     }
                 }

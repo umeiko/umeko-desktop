@@ -15,6 +15,7 @@ var strings = {
     "来自 %1": "From %1",
     "名称（可选，留空使用人物名）": "Name (optional, defaults to the character name)",
     "形象": "Appearance",
+    "鲸鱼娘": "Whale Girl",
     "职责与偏好（可选）": "Responsibilities and preferences (optional)",
     "请先在设置中添加模型供应商": "Add a model provider in Settings first",
     "启用后可在聊天中选择模型组。遇到网络故障、限流或额度用尽时，会按顺序自动切换到下一个可用模型。": "Select the model group in chat once it is enabled. If a model loses its connection, hits a rate limit, or runs out of quota, the group switches to the next available model in order.",
