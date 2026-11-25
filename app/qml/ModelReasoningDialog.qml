@@ -336,7 +336,10 @@ Popup {
                                     placeholderText: Reasoning.defaults[index] || I18n.t("例如：xhigh")
                                     maximumLength: 64
                                     Accessible.name: I18n.t("档位名称") + " " + (index + 1)
-                                    onTextEdited: { names.setProperty(index, "value", text); root.error = "" }
+                                    onTextChanged: if (text !== value) {
+                                        names.setProperty(index, "value", text)
+                                        root.error = ""
+                                    }
                                 }
                             }
                         }

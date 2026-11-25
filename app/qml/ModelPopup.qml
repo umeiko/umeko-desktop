@@ -51,6 +51,10 @@ AnchoredPidPopup {
         property bool matches: true
         property bool selected: false
         signal chosen()
+        Accessible.role: Accessible.Button
+        Accessible.name: title
+        Accessible.description: subtitle
+        Accessible.onPressAction: chosen()
         height: matches ? 44 : 0
         visible: matches
         radius: 7
@@ -162,6 +166,15 @@ AnchoredPidPopup {
                 value: Math.max(0, reasoningControls.levels.indexOf(backend.reasoningEffort))
                 Accessible.name: I18n.t("思考强度")
                 onMoved: backend.setReasoningEffort(reasoningControls.levels[Math.round(value)])
+                // Assistive tools set value directly. Wait for range and value bindings to settle.
+                onValueChanged: if (root.opened) Qt.callLater(applyAccessibleValue)
+                function applyAccessibleValue() {
+                    const levels = reasoningControls.levels
+                    const index = Math.round(value)
+                    if (root.opened && enabled && index >= 0 && index < levels.length
+                            && index !== Math.max(0, levels.indexOf(backend.reasoningEffort)))
+                        backend.setReasoningEffort(levels[index])
+                }
                 Keys.onPressed: event => {
                     if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
                         backend.setReasoningEffort(reasoningControls.levels[event.key === Qt.Key_Home ? 0 : reasoningControls.levels.length - 1])
