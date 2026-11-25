@@ -207,7 +207,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         from .plugin_sessions import profile_rows
         return profile_rows(self)
 
-    @Property('QVariantList', notify=changed)
+    @Property('QVariantList', notify=reasoningDetectionChanged)
     def pluginSessionModels(self):
         return [{'providerId': row['providerID'], 'model': row['id'], 'label': row['owned_by'] + ' / ' + row['id'],
                  'reasoningLevels': self._reasoning_levels(SimpleNamespace(model=row['id'], provider=row['providerID']))}
@@ -1390,7 +1390,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Property(str, notify=chatChanged)
     def sessionTitle(self):
-        return next((s["title"] for s in self._sessions if s["id"] == self._view.id), self._view.initial_title or "新会话")
+        return next((s["title"] for s in self._sessions if s["id"] == self._view.id), self._view.initial_title or "")
 
     @Property(bool, notify=chatChanged)
     def busy(self):
@@ -1414,8 +1414,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             return []
         if record and is_dsh(record) and getattr(record, 'dsh_options', None):
             return self._dsh_efforts(record)
-        provider_id = record.provider if record else self.store.data["selectedProvider"]
-        alias = record.model if record else self.store.data["selectedModel"]
+        if record and record.provider and record.model:
+            provider_id, alias = record.provider, record.model
+        else:
+            provider_id, alias = self.store.data["selectedProvider"], self.store.data["selectedModel"]
         provider = next((p for p in self.store.data["providers"] if p["id"] == provider_id), {})
         model = next((m for m in provider.get("models", []) if m["alias"] == alias), {})
         return reasoning_levels(model)
@@ -2486,6 +2488,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self._reconcile_reasoning(record)
             if is_dsh(record): self._switch_dsh_config()
         self.store.save()
+        self.reasoningDetectionChanged.emit()
         self.changed.emit()
         self.chatChanged.emit()
         self.contextUsageChanged.emit()
@@ -2508,6 +2511,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if record is self._view:
             self._remember_model_selection(record.provider, record.model)
             self.store.save()
+            self.reasoningDetectionChanged.emit()
             self.changed.emit()
             self.contextUsageChanged.emit()
 

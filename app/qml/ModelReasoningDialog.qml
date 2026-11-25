@@ -34,7 +34,8 @@ Popup {
     readonly property string levelsState: saved ? (levelsDetection.state || "unknown") : "unknown"
     readonly property string formatState: saved ? (formatDetection.state || "unknown") : "unknown"
     readonly property var detectedLevels: levelsDetection.levels && levelsDetection.levels.length !== undefined ? Array.from(levelsDetection.levels, String) : []
-    readonly property bool alwaysThinks: formatAuto && formatState === "known" && formatDetection.offSupported === false
+    readonly property bool detectedSwitchOnly: levelsDetection.verified === true && Reasoning.isSwitchOnly(formatDetection.format)
+    readonly property bool alwaysThinks: formatAuto && formatState === "known" && formatDetection.onObserved === true && formatDetection.offSupported === false
     readonly property var formatIds: {
         let values = []
         const options = backend.reasoningFormatOptions
@@ -52,7 +53,11 @@ Popup {
         case "openai-none": return I18n.t("通过 reasoning_effort 设置，关闭时发送 none")
         case "chat-template": return I18n.t("通过 chat_template_kwargs 里的 enable_thinking 开关")
         case "qwen": return I18n.t("通过 enable_thinking 开关")
+        case "qwen-switch": return I18n.t("通过 enable_thinking 开关")
+        case "reasoning-switch": return I18n.t("通过 enable_reasoning 开关")
+        case "template-thinking": return I18n.t("通过 chat_template_kwargs 里的 thinking 开关")
         case "deepseek": return I18n.t("通过 thinking.type 开关")
+        case "deepseek-switch": return I18n.t("通过 thinking.type 开关")
         case "anthropic-adaptive": return I18n.t("通过 Anthropic 自适应思考开关")
         case "anthropic": return I18n.t("使用 Anthropic 原生思考参数")
         case "responses": return I18n.t("使用 Responses 原生思考参数")
@@ -73,11 +78,49 @@ Popup {
     }
     function switchText() {
         if (formatState !== "known") return ""
-        switch (formatDetection.status) {
-        case "on-off-verified": return I18n.t("已确认可以开启和关闭思考")
-        case "on-not-observable": return I18n.t("检测时没有看到思考内容，无法确认开启是否生效")
-        default: return ""
+        if (formatDetection.verified !== true) return I18n.t("可手动选择方式后重试。")
+        if (formatDetection.offVerified === true && formatDetection.offSupported === true)
+            return I18n.t("已观察到开启和关闭时的思考变化")
+        return I18n.t("已观察到思考变化；关闭效果未能确认")
+    }
+    function detectedLabel(level) {
+        return detectedSwitchOnly ? I18n.reasoningLabel("开启") : Reasoning.label(level)
+    }
+    function evidenceText() {
+        const rows = levelsDetection.evidence || [], values = []
+        const seen = []
+        for (const row of rows) {
+            if (row.reasoningAmount === undefined || row.reasoningAmount === null || row.correct === false) continue
+            if (seen.indexOf(row.level) >= 0) continue
+            if (levelsDetection.verified === true && detectedLevels.indexOf(row.level) < 0) continue
+            const metric = String(row.metric || "").toLowerCase()
+            const unit = metric.indexOf("token") >= 0 ? I18n.t("思考 token") : metric.indexOf("char") >= 0 ? I18n.t("思考字符") : I18n.t("思考量")
+            const label = row.level === "off"
+                ? (Object.keys(row.parameters || {}).length ? I18n.reasoningLabel("关闭") : I18n.t("默认"))
+                : detectedLabel(String(row.level || ""))
+            values.push(label + " " + row.reasoningAmount + " " + unit)
+            seen.push(row.level)
+            if (values.length >= 5) break
         }
+        return values.length ? I18n.t("观察结果：") + values.join(" · ") : ""
+    }
+    function aliasesText() {
+        const aliases = levelsDetection.aliases || {}, values = []
+        for (const name of Object.keys(aliases)) {
+            const target = String(aliases[name])
+            if (name !== target) values.push(Reasoning.label(name) + " → " + Reasoning.label(target))
+            if (values.length >= 4) break
+        }
+        return values.length ? I18n.t("相近档位合并：") + values.join(" · ") : ""
+    }
+    function degradingText() {
+        const styles = formatDetection.degradingStyles || [], values = []
+        for (const style of styles) {
+            const detail = String(style.reason || "").includes("reasoning")
+                ? I18n.t("（思考消失）") : I18n.t("（答题质量下降）")
+            values.push(formatLabel(style.format) + detail)
+        }
+        return values.length ? I18n.t("已排除：") + values.join("；") : ""
     }
     function refreshDetection() {
         settings = providerId && lookupAlias && typeof backend.modelReasoningSettings === "function"
@@ -164,7 +207,7 @@ Popup {
                     Item { Layout.fillWidth: true }
                     Picker {
                         id: levelsMode; objectName: root.objectName + "_levelsMode"
-                        Layout.preferredWidth: Theme.control(140)
+                        Layout.preferredWidth: Theme.control(190)
                         model: [I18n.t("自动检测"), I18n.t("手动设置")]
                         currentIndex: root.levelsAuto ? 0 : 1
                         Accessible.name: I18n.t("档位来源")
@@ -182,7 +225,7 @@ Popup {
                         Text {
                             objectName: root.objectName + "_levelsState"
                             Layout.fillWidth: true; wrapMode: Text.Wrap
-                            text: root.stateText(root.levelsState) + (root.levelsState === "known" && root.levelsDetection.verified === false ? I18n.t(" · 档位未经验证") : "")
+                            text: root.levelsState === "known" ? I18n.t(Reasoning.detectedStatus(root.levelsDetection, root.formatDetection)) : root.stateText(root.levelsState)
                             color: root.levelsState === "failed" ? Theme.danger : Theme.ink
                             font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible)
                         }
@@ -192,14 +235,14 @@ Popup {
                         visible: text !== ""
                         Layout.fillWidth: true; wrapMode: Text.Wrap; maximumLineCount: 4; elide: Text.ElideRight; textFormat: Text.PlainText
                         text: root.levelsState === "failed" ? root.failureText(root.levelsDetection)
-                            : root.levelsState === "known" && root.levelsDetection.verified === false
-                                ? (root.levelsDetection.invalidAccepted ? I18n.t("服务端接受任何档位值，无法确认哪些档位真的有效。下面是常用档位，不保证每一档效果不同。") : I18n.t("这些档位没有经过服务端确认，不保证每一档效果不同。"))
-                            : root.levelsState === "known" && root.detectedLevels.length === 0 ? I18n.t("没有检测到可用档位，只能选「关闭」。") : ""
+                            : root.levelsState === "known" && root.levelsDetection.verified !== true
+                                ? (root.detectedLevels.length ? I18n.t("暂用常用档位。可手动填写供应商支持的名称，或重新检测。") : I18n.t("可手动填写供应商支持的名称或重新检测。"))
+                            : ""
                         color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible)
                     }
                     Text {
-                        visible: root.detectedLevels.length > 0
-                        text: I18n.t("共 %1 档，从低到高，不含关闭").arg(root.detectedLevels.length)
+                        visible: root.detectedLevels.length > (root.levelsDetection.verified === true ? 1 : 0)
+                        text: (root.levelsDetection.verified === true ? I18n.t("已观察到 %1 个代表档位，按思考量排序") : I18n.t("常用档位：%1 档")).arg(root.detectedLevels.length)
                         color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10, visible)
                     }
                     Flow {
@@ -217,12 +260,24 @@ Popup {
                                 Text {
                                     id: levelText
                                     anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 8
-                                    text: (index + 1) + "  " + Reasoning.label(modelData); textFormat: Text.PlainText
+                                    text: (root.detectedSwitchOnly ? "" : (index + 1) + "  ") + root.detectedLabel(modelData); textFormat: Text.PlainText
                                     verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
                                     color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11)
                                 }
                             }
                         }
+                    }
+                    Text {
+                        objectName: root.objectName + "_levelEvidence"
+                        text: root.evidenceText(); visible: text !== ""
+                        Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                        color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10, visible)
+                    }
+                    Text {
+                        objectName: root.objectName + "_levelAliases"
+                        text: root.aliasesText(); visible: text !== ""
+                        Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                        color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10, visible)
                     }
                 }
                 // Manual levels: the #88 editor, unchanged.
@@ -287,7 +342,10 @@ Popup {
                                     placeholderText: Reasoning.defaults[index] || I18n.t("例如：xhigh")
                                     maximumLength: 64
                                     Accessible.name: I18n.t("档位名称") + " " + (index + 1)
-                                    onTextEdited: { names.setProperty(index, "value", text); root.error = "" }
+                                    onTextChanged: if (text !== value) {
+                                        names.setProperty(index, "value", text)
+                                        root.error = ""
+                                    }
                                 }
                             }
                         }
@@ -319,7 +377,7 @@ Popup {
                         Text {
                             objectName: root.objectName + "_formatState"
                             Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
-                            text: root.formatState === "known" ? I18n.t("已检测：") + root.formatLabel(root.formatDetection.format || root.formatValue) : root.stateText(root.formatState)
+                            text: root.formatState === "known" ? (root.formatDetection.verified === true ? I18n.t("已检测：") + root.formatLabel(root.formatDetection.format || root.formatValue) : I18n.t("开关效果未能确认")) : root.stateText(root.formatState)
                             color: root.formatState === "failed" ? Theme.danger : Theme.ink
                             font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible)
                         }
@@ -332,6 +390,12 @@ Popup {
                             : root.formatState === "failed" ? root.failureText(root.formatDetection) : root.switchText()
                         color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible)
                     }
+                    Text {
+                        objectName: root.objectName + "_degradingStyles"
+                        text: root.degradingText(); visible: root.formatAuto && text !== ""
+                        Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                        color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10, visible)
+                    }
                     Rectangle {
                         objectName: root.objectName + "_alwaysThinks"
                         visible: root.alwaysThinks
@@ -340,7 +404,7 @@ Popup {
                         Text {
                             id: alwaysText
                             anchors.fill: parent; anchors.margins: 8; wrapMode: Text.Wrap
-                            text: I18n.t("这个模型总会思考，选「关闭」也会思考")
+                            text: I18n.t("本次未找到可关闭思考的方式")
                             color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible)
                         }
                     }

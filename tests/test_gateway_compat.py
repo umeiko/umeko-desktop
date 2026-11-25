@@ -320,7 +320,10 @@ class GatewayCompatibilityTests(unittest.TestCase):
         stream = b'data: null\n\ndata: ' + json.dumps(frame).encode() + b'\n\n'
         gateway, _, _ = self.gateway(lambda body, n: (200, stream, {}))
         with patch('app.gateway.detect_model', side_effect=lambda request, **kwargs: request('high', 'openai', 16)):
-            self.assertEqual(gateway.detect_reasoning('fixture'), {'thinking': True, 'content': True})
+            self.assertEqual(gateway.detect_reasoning('fixture'), {
+                'thinking': True, 'content': True, 'thinkingChars': 6,
+                'reasoningTokens': None, 'answer': 'OK', 'correct': False,
+                'finishReason': None})
 
     def test_other_client_parameter_status_uses_the_same_recovery(self):
         gateway, service, _ = self.gateway(lambda body, n: (415, {'error': {

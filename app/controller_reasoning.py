@@ -8,6 +8,7 @@ from PySide6.QtCore import QObject, Signal, Slot
 from .model_groups import GROUP_PROVIDER, configured_members
 from .model_capabilities import normalize_model
 from .model_reasoning import normalize_reasoning
+from .plugin_sessions import apply_session_policy
 from .provider_models import fetch_model_windows
 from .thinking_formats import FORMAT_OPTIONS, valid_format
 
@@ -31,11 +32,13 @@ class ReasoningDiscovery(QObject):
                 for key in ('reasoningDetection', 'reasoningFormatDetection'):
                     if row[key]['state'] == 'probing':
                         row[key]['state'] = 'unknown'
-                # Earlier caches never tried off for formats without visible on.
-                # Revisit only automatic format results after this upgrade.
+                # Acceptance-only caches get one background effect measurement.
                 cached = row['reasoningFormatDetection']
-                if row['reasoningFormatAuto'] and cached['state'] == 'known' and 'offSupported' not in cached:
+                if row['reasoningFormatAuto'] and cached['state'] == 'known' and cached.get('evidenceVersion') != 1:
                     cached['state'] = 'unknown'
+                levels = row['reasoningDetection']
+                if row['reasoningLevelsAuto'] and levels['state'] == 'known' and levels.get('evidenceVersion') != 1:
+                    levels['state'] = 'unknown'
         for _ in range(2):
             threading.Thread(target=self._worker, daemon=True).start()
         self.c.changed.connect(self.sync_active)
@@ -90,6 +93,15 @@ class ReasoningDiscovery(QObject):
     def notify(self, save=False):
         reconciled = []
         for record in self.c._pool.records.values():
+            if self._plugin_owned(record):
+                # Plugin profiles own their effort choice. Busy runs keep the
+                # old policy until the next input, just like profile edits.
+                if not record.busy:
+                    try:
+                        apply_session_policy(self.c, record)
+                    except (OSError, ValueError):
+                        pass  # The next plugin input reports its policy error.
+                continue
             previous = record.reasoning_effort
             self.c._reconcile_reasoning(record)
             if record.reasoning_effort != previous:
@@ -100,6 +112,9 @@ class ReasoningDiscovery(QObject):
             self.send(record)
         self.c.reasoningDetectionChanged.emit()
         self.c.reasoningChanged.emit()
+
+    def _plugin_owned(self, record):
+        return bool(self.c.store.data.get('sessionMeta', {}).get(record.id, {}).get('pluginSession'))
 
     def update_activity(self):
         busy = set()
@@ -247,7 +262,7 @@ class ReasoningDiscovery(QObject):
                 if row['upstream'] in levels:
                     found = levels[row['upstream']]
                     row['reasoningDetection'] = {'state': 'known', 'source': 'metadata',
-                                                 'levels': list(found), 'verified': True}
+                                                 'levels': list(found), 'verified': False}
                     if row['reasoningLevelsAuto']:
                         row['reasoningLevels'] = list(found)
                 if row.get('reasoningFormatAuto', True) or (row['reasoningLevelsAuto'] and row['upstream'] not in levels):
@@ -275,7 +290,7 @@ class ReasoningDiscovery(QObject):
                 if row.get('reasoningFormatAuto', True) and format_result.get('state') == 'known':
                     row['reasoningFormat'] = format_result['format']
         for record in self.c._pool.records.values():
-            if record.provider == provider['id']:
+            if record.provider == provider['id'] and not self._plugin_owned(record):
                 self.c._reconcile_reasoning(record)
                 self.send(record)
         self.notify(save=True)

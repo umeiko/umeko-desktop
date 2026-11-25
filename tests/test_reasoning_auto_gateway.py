@@ -16,6 +16,7 @@ from app.gateway import Gateway, LocalServer
 from app.integration import UnconfiguredAdapter
 from app.provider_models import fetch_model_windows
 from app.request_diagnostics import RequestFailure
+from app.reasoning_detection import PROBE_QUESTION
 
 
 MESSAGES = [{"role": "user", "content": "Reply OK."}]
@@ -79,12 +80,14 @@ class ReasoningGatewayTests(unittest.TestCase):
                     return self.send({"content": [{"type": "text", "text": "OK"}], "stop_reason": "end_turn"})
                 thinking = mode == "chat-template" and nested.get("enable_thinking") is True
                 thinking = thinking or mode == "qwen" and body.get("enable_thinking") is True
-                delta = {"content": "OK"}
+                probe = body.get('messages', [])[-1].get('content') == PROBE_QUESTION
+                answer = '24' if probe else 'OK'
+                delta = {"content": answer}
                 if thinking:
                     delta["reasoning"] = "visible reasoning"
                 if mode == "split-think":
                     raw = "".join("data: " + json.dumps({"choices": [{"delta": {"content": value}}]}) + "\n\n"
-                                  for value in ("<thi", "nk>hidden", "</think>", "OK"))
+                                  for value in ("<thi", "nk>hidden", "</think>", answer))
                     raw = raw.encode()
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
@@ -112,7 +115,7 @@ class ReasoningGatewayTests(unittest.TestCase):
     def complete(self, parameters):
         return self.gateway.complete("friendly", MESSAGES, parameters=parameters)
 
-    def test_custom_enum_and_no_enum_use_real_one_token_requests(self):
+    def test_custom_enum_and_no_enum_keep_unverified_fallback(self):
         self.model.update(reasoningLevelsAuto=True, reasoningFormatAuto=False)
         for mode, expected in (("enum", ["level1", "level3"]), ("no-list", ["low", "high"])):
             with self.subTest(mode=mode):
@@ -121,7 +124,8 @@ class ReasoningGatewayTests(unittest.TestCase):
                 result = self.gateway.detect_reasoning("friendly")
                 self.assertEqual(result["levels"]["levels"], expected)
                 self.assertEqual(result["levels"]["state"], "known")
-                self.assertTrue(all(body["max_tokens"] == 1 for _, body in self.calls[start:]))
+                self.assertFalse(result['levels']['verified'])
+                self.assertTrue(all(body["max_tokens"] == 512 for _, body in self.calls[start:]))
         self.assertFalse((self.store.directory / "request-errors").exists())
         self.assertFalse(self.rejections)
 
@@ -140,7 +144,7 @@ class ReasoningGatewayTests(unittest.TestCase):
         self.model.update(reasoningFormatAuto=True)
         self.mode = "qwen"
         result = self.gateway.detect_reasoning("friendly")
-        self.assertEqual(result["format"]["format"], "qwen")
+        self.assertEqual(result["format"]["format"], "qwen-switch")
         on = [body for _, body in self.calls if body.get("enable_thinking") is True]
         self.assertTrue(on)
         self.assertTrue(all("enable_thinking" not in body.get("chat_template_kwargs", {}) for body in on))
@@ -149,7 +153,11 @@ class ReasoningGatewayTests(unittest.TestCase):
         self.mode = "split-think"
         with patch("app.gateway.detect_model", side_effect=lambda request, **kwargs: request("high", "openai", 16)):
             result = self.gateway.detect_reasoning("friendly")
-        self.assertEqual(result, {"thinking": True, "content": True})
+        self.assertTrue(result['thinking'])
+        self.assertTrue(result['content'])
+        self.assertEqual(result['thinkingChars'], 6)
+        self.assertEqual(result['answer'], '24')
+        self.assertTrue(result['correct'])
         self.assertTrue(all(not any(key.startswith("_umeko_") for key in body) for _, body in self.calls))
 
     def test_forwarding_uses_mapper_once_and_off_is_explicit(self):

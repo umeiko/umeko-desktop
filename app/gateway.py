@@ -31,7 +31,8 @@ from .context_images import ContextImageRecovery
 from .provider_errors import format_http_error, safe_text
 from .model_reasoning import reasoning_levels, reconcile_effort
 from .model_groups import GROUP_MODEL, MAX_MEMBERS, configured_members, descriptor
-from .reasoning_detection import allowed_levels, is_effort_rejection, detect_model
+from .reasoning_detection import allowed_levels, is_effort_rejection, detect_model, PROBE_QUESTION, probe_answer_correct
+from .reasoning_observation import observe_reasoning
 from .reasoning_activity import ReasoningActivity
 from .thinking_formats import format_parameters, valid_format
 from umeko_provider_sdk.network import network_scope, proxy_handler, tls_context, trace, TracedResponse
@@ -137,7 +138,7 @@ class Gateway:
             candidates.sort(key=lambda row: self._group_cooldown.get((row[1]["id"], row[2]["alias"]), 0) > now)
         cancelled = current_request_cancelled()
         inputs = {key: value for key, value in (parameters or {}).items()
-                  if key not in ("reasoning_effort", "enable_thinking", "chat_template_kwargs", "thinking", "reasoning",
+                  if key not in ("reasoning_effort", "enable_thinking", "enable_reasoning", "chat_template_kwargs", "thinking", "reasoning",
                                  "_umeko_reasoning_effort", "_umeko_reasoning_format")}
         last_report = ""
         for member, provider, model in candidates:
@@ -185,35 +186,19 @@ class Gateway:
         configured = next(model for model in provider["models"] if model["alias"] == alias)
 
         def request(effort, format, max_tokens):
-            records, content = [], []
-            reasoning = False
+            records = []
             try:
                 with self.reasoning_activity.probe({(provider['id'], configured['upstream'])}), network_scope(provider.get("proxy"), records):
-                    for event in self._events(alias, [{"role": "user", "content": "Reply OK."}],
-                                              max_tokens=max_tokens, provider_id=provider["id"],
-                                              parameters={"_umeko_reasoning_effort": effort,
-                                                          "_umeko_reasoning_format": format}):
-                        if event.get("error"):
-                            raise ValueError(json.dumps(event, ensure_ascii=False))
-                        for choice in event.get("choices", []):
-                            delta = choice.get("delta", choice.get("message", {}))
-                            reasoning = reasoning or any(isinstance(delta.get(key), str) and bool(delta[key].strip())
-                                                         for key in ("reasoning_content", "reasoning", "reasoning_text"))
-                            value = delta.get("content")
-                            if isinstance(value, str):
-                                content.append(value)
-                            elif isinstance(value, list):
-                                content.extend(part.get("text", "") for part in value
-                                               if isinstance(part, dict) and isinstance(part.get("text"), str))
+                    return observe_reasoning(self._events(
+                        alias, [{"role": "user", "content": PROBE_QUESTION}],
+                        max_tokens=max_tokens, provider_id=provider["id"],
+                        parameters={"_umeko_reasoning_effort": effort,
+                                    "_umeko_reasoning_format": format}), probe_answer_correct)
             except Exception as error:
                 response = records[-1].get("response", {}) if records else {}
                 failure = ValueError(safe_text(response.get("body") or str(error), [provider.get("key", "")]))
                 failure.status_code = response.get("status")
                 raise failure from None
-            text = "".join(content)
-            reasoning = reasoning or "<think>" in text.lower()
-            ordinary = re.sub(r"<think>.*?(?:</think>|$)", "", text, flags=re.I | re.S)
-            return {"thinking": bool(reasoning), "content": bool(ordinary.strip())}
 
         protocol = "anthropic" if provider["api"] == "anthropic" else (
             "responses" if provider.get("wireApi") == "responses" else "openai")
@@ -322,7 +307,7 @@ class Gateway:
         probe_override = "_umeko_reasoning_format" in parameters
         format_override = parameters.pop("_umeko_reasoning_format", None)
         already_formatted = any(key in parameters for key in
-                                ("enable_thinking", "chat_template_kwargs", "thinking", "reasoning"))
+                                ("enable_thinking", "enable_reasoning", "chat_template_kwargs", "thinking", "reasoning"))
         intent = parameters.pop("_umeko_reasoning_effort", None) if private_intent else (
             parameters.get("reasoning_effort") if format_override or not already_formatted else None)
         parameters = {key: value for key, value in parameters.items() if not key.startswith("_umeko_")}
@@ -336,7 +321,7 @@ class Gateway:
                     and isinstance(detection, dict) and detection.get("state") == "known"
                     and detection.get("offVerified") is True and valid_format(detection.get("offFormat"))):
                 format = detection["offFormat"]
-            for key in ("reasoning_effort", "enable_thinking", "chat_template_kwargs", "thinking", "reasoning"):
+            for key in ("reasoning_effort", "enable_thinking", "enable_reasoning", "chat_template_kwargs", "thinking", "reasoning"):
                 parameters.pop(key, None)
             parameters.update(format_parameters(format, intent))
         if not probe_override:
@@ -413,7 +398,7 @@ class Gateway:
         try:
             with compatible_open(opener, request, timeout=45 if group else 90, memory=self.compatibility,
                                  scope=(p['id'], base, model), automatic=automatic,
-                                 records=trace.get(), http_retries=0 if group else 2) as response:
+                                 records=trace.get(), http_retries=0 if group or probe_override else 2) as response:
                 def checked_events():
                     for event in response_events(response):
                         if event is None:
@@ -585,7 +570,8 @@ class LocalServer:
                         automatic = body['_umeko_auto_parameters']
                         allowed = {'tool_choice', 'parallel_tool_calls', 'response_format', 'stream_options',
                                    'temperature', 'top_p', 'top_k', 'seed', 'n', 'user', 'dimensions', 'max_tokens',
-                                   'max_completion_tokens', 'stream', 'reasoning_effort', 'thinking', 'reasoning', 'enable_thinking', 'chat_template_kwargs'}
+                                   'max_completion_tokens', 'stream', 'reasoning_effort', 'thinking', 'reasoning',
+                                   'enable_thinking', 'enable_reasoning', 'chat_template_kwargs'}
                         if not isinstance(automatic, list) or any(not isinstance(key, str) or key not in allowed for key in automatic):
                             raise ValueError('Invalid automatic parameter metadata')
                         parameters['_umeko_auto_parameters'] = automatic

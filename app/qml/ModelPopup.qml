@@ -9,11 +9,40 @@ AnchoredPidPopup {
     property real heightLimit: 470
     readonly property bool useDshModels: backend.sessionBackend === "dsh" && backend.dshOwnConfig === true
     readonly property bool hasDshPath: backend.dshRuntime ? String(backend.dshRuntime.path || backend.dshRuntime.resolvedPath || "").trim().length > 0 : false
+    readonly property var reasoningSettings: {
+        backend.reasoningDetectionState
+        const config = backend.config
+        return typeof backend.modelReasoningSettings === "function"
+            ? backend.modelReasoningSettings(config.selectedProvider || "", config.selectedModel || "") || ({}) : ({})
+    }
+    readonly property var formatDetection: reasoningSettings.reasoningFormatDetection || ({})
+    readonly property bool offUnsupported: backend.reasoningOffSupported === false
+        && (useDshModels || formatDetection.onObserved === true)
+    readonly property bool defaultReasoning: !useDshModels && reasoningSettings.reasoningFormatAuto !== false
+        && !offUnsupported && formatDetection.offVerified !== true
+    readonly property bool switchOnly: !useDshModels && Reasoning.isSwitchOnly(reasoningSettings.reasoningFormat)
+    function effortLabel(value) {
+        if (value === "off") return defaultReasoning ? I18n.t("默认") : I18n.reasoningLabel("关闭")
+        return switchOnly ? I18n.reasoningLabel("开启") : Reasoning.label(value)
+    }
+    readonly property string reasoningEffectHint: {
+        const row = reasoningSettings
+        if (!row.states) return ""
+        const levels = row.reasoningDetection || {}, format = formatDetection
+        const levelText = row.reasoningLevelsAuto === false ? I18n.t("档位手动设置")
+            : levels.state === "probing" ? I18n.t("档位检测中…")
+            : I18n.t(Reasoning.detectedStatus(levels, format))
+        const formatText = row.reasoningFormatAuto === false ? I18n.t("开关手动设置")
+            : format.state === "probing" ? I18n.t("开关检测中…")
+            : format.verified === true ? I18n.t("开关已确认") : I18n.t("开关效果未能确认")
+        return levelText + " · " + formatText
+    }
     readonly property bool showBackendChoices: hasDshPath || backend.sessionBackend === "dsh"
     fullWidth: 365
     fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight
         + (backend.modelGroupSelected ? 185 : 270)
         - (showBackendChoices ? 0 : piChoice.implicitHeight + popupLayout.spacing)
+        + (effectHint.visible ? effectHint.implicitHeight + reasoningControls.spacing + 3 : 0)
         + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0)
         + (ownModelsHint.visible ? ownModelsHint.implicitHeight + 10 : 0)))
     signal configure()
@@ -32,6 +61,10 @@ AnchoredPidPopup {
         property bool matches: true
         property bool selected: false
         signal chosen()
+        Accessible.role: Accessible.Button
+        Accessible.name: title
+        Accessible.description: subtitle
+        Accessible.onPressAction: chosen()
         height: matches ? 44 : 0
         visible: matches
         radius: 7
@@ -87,7 +120,7 @@ AnchoredPidPopup {
                 required property var modelData
                 width: modelList.width; spacing: 3
                 property var provider: modelData
-                Text { font.family: Theme.fontFamily; x: 9; topPadding: 5; bottomPadding: 7; text: provider.name + "  ·  " + provider.models.length + I18n.t(" 个模型"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
+                Text { font.family: Theme.fontFamily; x: 9; topPadding: 5; bottomPadding: 7; text: provider.name + "  ·  " + I18n.modelCount(provider.models.length); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
                 Repeater {
                     model: provider.models
                     ModelChoice {
@@ -129,7 +162,13 @@ AnchoredPidPopup {
                 Layout.fillWidth: true
                 Text { text: I18n.t("思考强度"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
                 Item { Layout.fillWidth: true }
-                Text { objectName: "reasoningSelectedLabel"; text: backend.reasoningEffort === "off" ? I18n.t("关闭") : Reasoning.label(backend.reasoningEffort); textFormat: Text.PlainText; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12); Layout.maximumWidth: reasoningControls.width * 0.6; elide: Text.ElideRight }
+                Text {
+                    objectName: "reasoningSelectedLabel"
+                    text: root.effortLabel(backend.reasoningEffort); textFormat: Text.PlainText
+                    Accessible.role: Accessible.StaticText; Accessible.name: text
+                    color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12)
+                    Layout.maximumWidth: reasoningControls.width * 0.6; elide: Text.ElideRight
+                }
             }
             Slider {
                 id: effortSlider; objectName: "reasoningEffortSlider"
@@ -143,6 +182,15 @@ AnchoredPidPopup {
                 value: Math.max(0, reasoningControls.levels.indexOf(backend.reasoningEffort))
                 Accessible.name: I18n.t("思考强度")
                 onMoved: backend.setReasoningEffort(reasoningControls.levels[Math.round(value)])
+                // Assistive tools set value directly. Wait for range and value bindings to settle.
+                onValueChanged: if (root.opened) Qt.callLater(applyAccessibleValue)
+                function applyAccessibleValue() {
+                    const levels = reasoningControls.levels
+                    const index = Math.round(value)
+                    if (root.opened && enabled && index >= 0 && index < levels.length
+                            && index !== Math.max(0, levels.indexOf(backend.reasoningEffort)))
+                        backend.setReasoningEffort(levels[index])
+                }
                 Keys.onPressed: event => {
                     if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
                         backend.setReasoningEffort(reasoningControls.levels[event.key === Qt.Key_Home ? 0 : reasoningControls.levels.length - 1])
@@ -181,14 +229,21 @@ AnchoredPidPopup {
             }
             RowLayout {
                 Layout.fillWidth: true
-                Text { text: I18n.t("关闭"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10) }
+                Text { text: root.effortLabel("off"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10) }
                 Item { Layout.fillWidth: true }
-                Text { text: reasoningControls.levels.length > 1 ? Reasoning.label(reasoningControls.levels[reasoningControls.levels.length - 1]) : ""; textFormat: Text.PlainText; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10); Layout.maximumWidth: reasoningControls.width * 0.6; elide: Text.ElideRight }
+                Text { text: reasoningControls.levels.length > 1 ? root.effortLabel(reasoningControls.levels[reasoningControls.levels.length - 1]) : ""; textFormat: Text.PlainText; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10); Layout.maximumWidth: reasoningControls.width * 0.6; elide: Text.ElideRight }
+            }
+            Text {
+                id: effectHint; objectName: "reasoningEffectHint"
+                visible: !root.useDshModels && text !== ""
+                text: root.reasoningEffectHint; textFormat: Text.PlainText
+                Layout.fillWidth: true; Layout.topMargin: 3; wrapMode: Text.Wrap
+                color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10)
             }
             Text {
                 id: offNote; objectName: "reasoningOffNote"
-                visible: backend.reasoningOffSupported === false
-                text: I18n.t("这个模型总会思考，选「关闭」也会思考")
+                visible: root.offUnsupported
+                text: I18n.t("本次未找到可关闭思考的方式")
                 Layout.fillWidth: true; Layout.topMargin: 3; wrapMode: Text.Wrap
                 color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10)
             }
