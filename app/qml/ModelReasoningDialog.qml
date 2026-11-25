@@ -201,7 +201,7 @@ Popup {
                     Item { Layout.fillWidth: true }
                     Picker {
                         id: levelsMode; objectName: root.objectName + "_levelsMode"
-                        Layout.preferredWidth: Theme.control(140)
+                        Layout.preferredWidth: Theme.control(190)
                         model: [I18n.t("自动检测"), I18n.t("手动设置")]
                         currentIndex: root.levelsAuto ? 0 : 1
                         Accessible.name: I18n.t("档位来源")

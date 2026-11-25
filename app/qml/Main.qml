@@ -671,7 +671,19 @@ ApplicationWindow {
                 }
                 Text { font.family: Theme.fontFamily; text: window.page === "chat" ? (backend.cowork.active ? "Cowork" : I18n.t("工作空间")) : I18n.t("偏好设置"); color: Theme.muted; font.pixelSize: Theme.font(11, visible); anchors.verticalCenter: parent.verticalCenter }
                 Text { visible: window.page !== "chat" || !window.coworkEmpty; font.family: Theme.fontFamily; text: "/"; color: Theme.line; font.pixelSize: Theme.font(12, visible); anchors.verticalCenter: parent.verticalCenter }
-                Text { visible: window.page !== "chat" || !window.coworkEmpty; font.family: Theme.fontFamily; text: window.page === "chat" ? ((backend.cowork.active ? backend.cowork.roleName + " · " : "") + (window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle)) : [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于"), I18n.t("Umeko 插件管理")][window.settingsTab]; color: Theme.ink; font.pixelSize: Theme.font(11, visible); width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
+                Text {
+                    visible: window.page !== "chat" || !window.coworkEmpty
+                    font.family: Theme.fontFamily
+                    text: {
+                        if (window.page !== "chat")
+                            return [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于"), I18n.t("Umeko 插件管理")][window.settingsTab]
+                        const title = window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle
+                        const prefix = backend.cowork.active ? backend.cowork.roleName + " · " : ""
+                        return prefix + (title || I18n.t("新会话"))
+                    }
+                    color: Theme.ink; font.pixelSize: Theme.font(11, visible)
+                    width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter
+                }
             }
             Row { id: windowControls; anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 18; spacing: 2
                 WindowControlButton { objectName:"minimizeWindowButton";operation:"minimize"; hint: I18n.t("最小化"); onClicked: window.showMinimized() }

@@ -1384,7 +1384,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Property(str, notify=chatChanged)
     def sessionTitle(self):
-        return next((s["title"] for s in self._sessions if s["id"] == self._view.id), self._view.initial_title or "新会话")
+        return next((s["title"] for s in self._sessions if s["id"] == self._view.id), self._view.initial_title or "")
 
     @Property(bool, notify=chatChanged)
     def busy(self):
@@ -2480,6 +2480,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self._reconcile_reasoning(record)
             if is_dsh(record): self._switch_dsh_config()
         self.store.save()
+        self.reasoningDetectionChanged.emit()
         self.changed.emit()
         self.chatChanged.emit()
         self.contextUsageChanged.emit()
@@ -2502,6 +2503,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if record is self._view:
             self._remember_model_selection(record.provider, record.model)
             self.store.save()
+            self.reasoningDetectionChanged.emit()
             self.changed.emit()
             self.contextUsageChanged.emit()
 
