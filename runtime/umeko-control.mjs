@@ -19,7 +19,7 @@ export const umekoHelp = () => ({...(instanceDocs || { docsRoot: umekoDocs(), en
 export function configureUmekoDocs(options) { instanceDocs = prepareDocumentation(options); }
 export const UMEKO_PROMPT = 'umeko-desk 的临时文件存放在 ./.umeko 目录下。 Umeko owns providers, credentials, themes, desktop settings, projects and chats; Pi provider configuration does not apply. First call umeko_desktop operation help to discover its documentation. Discover enabled Widgets with widgets.list (activeOnly true) and read widgets.docs before using them. Apply desktop changes through umeko_desktop, not by editing its settings files.';
 
-export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesContext, refreshShellEnvironment, remoteOperation,
+export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesContext, refreshShellEnvironment, remoteOperation, getSandbox,
   getPetAssistantBinding = () => '', getPetReminderBinding = () => '', waitForSpeech = (ms, signal) => delay(ms, undefined, {signal}) }) {
   const pending = new Map();
   let speechTail = Promise.resolve(), speechLife = new AbortController();
@@ -100,6 +100,13 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesCon
         parameters: Type.Object({ operation: Type.String({ minLength: 1, maxLength: 80 }), arguments: Type.Optional(Type.Record(Type.String(), Type.Unknown())) }),
         execute: async (id, params, signal, onUpdate, ctx) => {
           const args = params.arguments || {};
+          const current = getSandbox?.();
+          const operations = params.operation === 'batch' && Array.isArray(args.operations) ? args.operations : [params];
+          const weakening = current?.enabled && operations.some(item => item?.operation === 'settings.setWindowsSandbox' &&
+            (item.arguments?.enabled === false || (!current.allowNetwork && item.arguments?.allowNetwork === true)));
+          if (weakening && !(await ctx?.ui?.confirm('Change Windows sandbox protection?', 'This change would allow future Agent commands to run with fewer restrictions.'))) {
+            return { content: [{ type: 'text', text: 'The user did not approve reducing Windows sandbox protection.' }], isError: true };
+          }
           let result;
           if (params.operation === 'pi.run') {
             try {
@@ -107,6 +114,17 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesCon
               if (typeof args.command !== 'string' || Object.keys(args).some(key => key !== 'command' && key !== 'scope') ||
                   ![undefined, '', 'global', 'project'].includes(args.scope))
                 throw new Error('pi.run requires command and accepts optional scope: global or project');
+              const command = args.command.trimStart();
+              if (command.startsWith('!')) {
+                const bash = command.slice(1).trimStart();
+                if (!bash || args.scope) throw new Error('Use pi.run with ! followed by a Bash command and omit scope.');
+                const { result, isError } = await ctx.executeTool('bash', { command: bash }, { signal, onUpdate });
+                const output = result.content.filter(item => item.type === 'text').map(item => item.text).join('\n');
+                const exitCode = result.structuredContent?.exit_code ?? null;
+                const commandSession = result.details?.commandSession;
+                const status = isError ? 'failed' : commandSession?.status ?? 'completed';
+                return { content: [{ type: 'text', text: JSON.stringify({ ok: !isError, status, exitCode, output }) }], details: result.details, isError };
+              }
               const output = await runPiCommand(args.command, { signal, toolCallId: id, scope: args.scope || undefined }, ctx);
               return { content: [{ type: 'text', text: JSON.stringify({ ok: true, ...output }) }], details: { umekoPiCommand: output } };
             } catch (error) {

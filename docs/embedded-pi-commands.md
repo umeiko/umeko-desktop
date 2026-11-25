@@ -8,7 +8,9 @@ Pass `command` and an optional `scope` (`global` or `project`) in `arguments`. S
 {"operation":"pi.run","arguments":{"command":"pi list"}}
 ```
 
-Extension administration invokes the current release's CLI with bundled Node and the active configuration directory. MCP and slash operations use the current native session. Commands are parsed as an argument list, without a shell. Reload, compaction, and extension slash commands requested during a model turn run after the turn finishes. Their results return as hidden native Pi messages so the agent can continue the user's task with the updated tools. Stopping or steering a task cancels its pending commands; queued commands always stay with their own session.
+Prefix a shell command with `!`, for example `{"operation":"pi.run","arguments":{"command":"!pwd"}}`. The current session's Bash tool runs it with the usual tool approval, workspace, and Windows sandbox settings.
+
+Extension administration invokes the current release's CLI with bundled Node and the active configuration directory. MCP and slash operations use the current native session. Management commands are parsed as an argument list. Reload, compaction, and extension slash commands requested during a model turn run after the turn finishes. Their results return as hidden native Pi messages so the agent can continue the user's task with the updated tools. Stopping or steering a task cancels its pending commands; queued commands always stay with their own session.
 
 Settings → Agent → Pi → Extensions and tools → MCP includes **Add server**. Paste a `pi mcp add` command or named `mcpServers` JSON, then choose global or current project scope. The selected scope determines the native `mcp.json` file. JSON additions preserve existing servers; native validation runs before changes are written.
 

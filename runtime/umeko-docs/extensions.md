@@ -8,7 +8,7 @@
 
 Pi 插件管理页面提供标准 Pi、极简、默认和自定义四种会话预设。默认保留当前已配置的能力；标准 Pi 仅保留 8 个原生工具，极简保留 read/bash/edit/write，自定义可逐插件和逐工具开关。切换预设保留上次自定义配置，不更改其他会话或磁盘上的 Pi 设置。
 
-Skills 通过 `agent.save` 的 `config.skillPaths` 配置额外路径。Pi 自身资源和包仍沿用 Pi 的 settings。`pi.run` 支持 `pi install`、`pi remove`、`pi list`、`/reload`、`/compact`、`/session`、`/name` 和已加载扩展注册的命令。用 `pi.run` 执行 `/help` 可查看可用命令。
+Skills 通过 `agent.save` 的 `config.skillPaths` 配置额外路径。Pi 自身资源和包仍沿用 Pi 的 settings。`pi.run` 支持 `pi install`、`pi remove`、`pi list`、`/reload`、`/compact`、`/session`、`/name` 和已加载扩展注册的命令。`arguments.command` 以 `!` 开头时，后面的内容交给当前会话的 Bash 工具，沿用工具审批、工作区和 Windows 沙箱设置。例如 `{"operation":"pi.run","arguments":{"command":"!pwd"}}`。`/help` 可查看可用命令。
 
 ## 创建和管理 Skill 目录
 

@@ -118,7 +118,7 @@ export async function addMcpFromInput(input) {
   return { path, message: `已添加 ${Object.keys(validated).length} 个 MCP 服务器` };
 }
 
-export function createPiCommandController({ Pi, getRuntime, getConfig, reload, invokeSlash, notify }) {
+export function createPiCommandController({ Pi, getRuntime, getConfig, reload, invokeSlash, notify, getSandbox }) {
   const pending = [];
   const info = () => {
     const session = getRuntime().session, manager = session.sessionManager;
@@ -131,7 +131,7 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
   };
   const help = () => ({
     ...umekoHelp(), ...info(),
-    commands: [...new Set(['/help', '/session', '/reload', '/compact', '/name',
+    commands: [...new Set(['/help', '/session', '/reload', '/compact', '/name', '!<Bash command>',
       'pi install', 'pi remove', 'pi list', 'pi mcp',
       ...getRuntime().session.extensionRunner.getRegisteredCommands().map(command => '/' + command.name)])],
   });
@@ -190,6 +190,7 @@ export function createPiCommandController({ Pi, getRuntime, getConfig, reload, i
       const manager = new Pi.DefaultPackageManager({ cwd: info().workspace, agentDir: info().agentDir, settingsManager });
       return { ...info(), packages: manager.listConfiguredPackages() };
     }
+    if (getSandbox?.()?.enabled) throw new Error('The Windows sandbox blocks changing Pi packages from an Agent command. Manage packages in Agent settings.');
     if (getConfig().agent?.safeMode) throw new Error('请先在 Umeko 中关闭恢复模式，再修改 Pi 扩展');
     const local = scope === 'project' || scope === undefined && args.some(a => ['--local','-l'].includes(a));
     const sources = args.filter(a => !['--local','-l'].includes(a));

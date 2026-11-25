@@ -71,6 +71,16 @@ test('real embedded Pi tool installs into its own profile, reloads the same sess
   send({type:'prompt',text:'Add project MCP'});await wait(()=>events.filter(e=>e.type==='done').length>count);
   assert.equal(JSON.parse(readFileSync(join(cwd,'.pi/mcp.json'))).mcpServers.fixture.url,'http://127.0.0.1:9/mcp');
   assert.equal(existsSync(join(agentDir,'mcp.json')),false);
+  count=events.filter(e=>e.type==='done').length;command='!printf pi-run > pi-run.txt';awaiting=true;
+  send({type:'prompt',text:'Run Bash from pi.run'});await wait(()=>events.filter(e=>e.type==='done').length>count);
+  const shellResult=events.filter(e=>e.type==='tool'&&e.name==='umeko_desktop'&&e.state==='done').at(-1);
+  assert.equal(JSON.parse(shellResult.result).exitCode,0);
+  assert.equal(readFileSync(join(cwd,'pi-run.txt'),'utf8'),'pi-run');
+  count=events.filter(e=>e.type==='done').length;
+  const requestCount=requests.length;
+  send({type:'prompt',text:'!printf user-bash'});await wait(()=>events.filter(e=>e.type==='done').length>count);
+  assert.equal(requests.length,requestCount);
+  assert.ok(events.filter(e=>e.type==='state').at(-1).messages.some(m=>m.tools?.some(t=>t.name==='bash'&&t.result==='user-bash'&&t.state==='done')));
   const entryCount=()=>readFileSync(compacted.session.file,'utf8').split('\n').filter(Boolean).map(line=>JSON.parse(line)).filter(e=>e.customType==='umeko-pi-command').length;
   const completed=entryCount();
   count=events.filter(e=>e.type==='done').length;command='/reload';awaiting=true;paused=true;
