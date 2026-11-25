@@ -1408,8 +1408,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             return []
         if record and is_dsh(record) and getattr(record, 'dsh_options', None):
             return self._dsh_efforts(record)
-        provider_id = record.provider if record else self.store.data["selectedProvider"]
-        alias = record.model if record else self.store.data["selectedModel"]
+        if record and record.provider and record.model:
+            provider_id, alias = record.provider, record.model
+        else:
+            provider_id, alias = self.store.data["selectedProvider"], self.store.data["selectedModel"]
         provider = next((p for p in self.store.data["providers"] if p["id"] == provider_id), {})
         model = next((m for m in provider.get("models", []) if m["alias"] == alias), {})
         return reasoning_levels(model)
