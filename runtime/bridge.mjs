@@ -161,7 +161,11 @@ globalThis[Symbol.for("umeko:search-command")] = async (file, args, cwd, workspa
   const { policy } = await waitForWindowsSandbox(signal);
   if (!policy?.enabled) return { file, args, cwd };
   const work = config?.workspace || config?.defaultCwd || workspace;
-  return { ...sandboxCommand({ file, args, cwd: cwd || work, workspace: work, policy }), cwd: cwd || work, windowsHide: true };
+  // Pi returns bare names for tools found on PATH. The restricted runner has
+  // a different PATH and must receive the actual packaged executable.
+  const executable = join(bundledBin, basename(file).replace(/\.exe$/i, "") + ".exe");
+  if (!existsSync(executable)) throw new Error("The Windows sandbox could not find the packaged search tool. Use a complete Umeko package.");
+  return { ...sandboxCommand({ file: executable, args, cwd: cwd || work, workspace: work, policy }), cwd: cwd || work, windowsHide: true };
 };
 const umekoControl = createUmekoControl({
   emit,
