@@ -1,6 +1,5 @@
 .pragma library
 var strings = {
-    // Built-in Widget names, summaries, and descriptions.
     "本轮变更审查": "Turn review",
     "按轮次查看代码检查点和历史差异": "Review code checkpoints and diffs by turn",
     "默认关闭。可查看本轮差异；显式开启检查后持久保存历史检查点，并在预览和冲突检查后恢复。不会修改聊天、项目暂存区、分支或历史。": "Off by default. Review the current turn’s diff. Enable checkpoints to save and restore changes after previewing them and checking for conflicts. Chat, staging, branches, and Git history are preserved.",
@@ -33,7 +32,6 @@ var strings = {
     "浏览和安装 Widget": "Browse and install Widgets",
     "发现、安装和管理桌面 Widget。": "Discover, install and manage desktop Widgets.",
 
-    // Built-in Widget panels.
     " · 待处理 %1": " · %1 pending",
     "Agent Bus（智能体总线）": "Agent Bus",
     "Skills 加载失败": "Could not load Skills",
