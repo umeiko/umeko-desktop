@@ -138,8 +138,11 @@ ApplicationWindow {
             else:
                 level_hint = "已观察到档位变化"
             active_label = text("reasoningSelectedLabel")
-            if backend.effort == "off":
-                expected = "关闭" if style.get("offVerified") or backend.off_supported is False else "默认"
+            if scenario == "ignored":
+                assert active_label == "默认", active_label
+            elif backend.effort == "off":
+                cannot_disable = backend.off_supported is False and style.get("onObserved") is True
+                expected = "关闭" if style.get("offVerified") or cannot_disable else "默认"
                 assert active_label == expected, active_label
             elif style.get("format") in ("qwen-switch", "reasoning-switch", "deepseek-switch", "template-thinking"):
                 assert active_label == "开启", active_label

@@ -16,8 +16,10 @@ AnchoredPidPopup {
             ? backend.modelReasoningSettings(config.selectedProvider || "", config.selectedModel || "") || ({}) : ({})
     }
     readonly property var formatDetection: reasoningSettings.reasoningFormatDetection || ({})
+    readonly property bool offUnsupported: backend.reasoningOffSupported === false
+        && (useDshModels || formatDetection.onObserved === true)
     readonly property bool defaultReasoning: !useDshModels && reasoningSettings.reasoningFormatAuto !== false
-        && backend.reasoningOffSupported !== false && formatDetection.offVerified !== true
+        && !offUnsupported && formatDetection.offVerified !== true
     readonly property bool switchOnly: !useDshModels && Reasoning.isSwitchOnly(reasoningSettings.reasoningFormat)
     function effortLabel(value) {
         if (value === "off") return defaultReasoning ? I18n.t("默认") : I18n.reasoningLabel("关闭")
@@ -160,7 +162,13 @@ AnchoredPidPopup {
                 Layout.fillWidth: true
                 Text { text: I18n.t("思考强度"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
                 Item { Layout.fillWidth: true }
-                Text { objectName: "reasoningSelectedLabel"; text: root.effortLabel(backend.reasoningEffort); textFormat: Text.PlainText; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12); Layout.maximumWidth: reasoningControls.width * 0.6; elide: Text.ElideRight }
+                Text {
+                    objectName: "reasoningSelectedLabel"
+                    text: root.effortLabel(backend.reasoningEffort); textFormat: Text.PlainText
+                    Accessible.role: Accessible.StaticText; Accessible.name: text
+                    color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12)
+                    Layout.maximumWidth: reasoningControls.width * 0.6; elide: Text.ElideRight
+                }
             }
             Slider {
                 id: effortSlider; objectName: "reasoningEffortSlider"
@@ -234,7 +242,7 @@ AnchoredPidPopup {
             }
             Text {
                 id: offNote; objectName: "reasoningOffNote"
-                visible: backend.reasoningOffSupported === false && (root.useDshModels || root.formatDetection.onObserved === true)
+                visible: root.offUnsupported
                 text: I18n.t("本次未找到可关闭思考的方式")
                 Layout.fillWidth: true; Layout.topMargin: 3; wrapMode: Text.Wrap
                 color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10)
