@@ -31,7 +31,7 @@ INTERNAL = ("openai-none", "chat-template", "anthropic-adaptive", "on-off-verifi
             "on-not-observable", "probing", "invalidAccepted", "offSupported", "{", "}")
 
 KNOWN_FORMAT = {"state": "known", "source": "probe", "format": "chat-template", "verified": True,
-                "offSupported": True, "status": "on-off-verified"}
+                "offSupported": True, "offVerified": True, "status": "on-off-verified"}
 STATES = {
     "auto-known": {
         "reasoningLevelsAuto": True, "reasoningFormatAuto": True, "reasoningFormat": "chat-template",
