@@ -18,6 +18,12 @@ QtObject {
         }
         return plugin && (plugin.id === "skill-manager" || plugin.id === "task-records") && plugin.builtin !== false ? t(value) : value
     }
+    function modelCount(count) {
+        return count === 1 ? t("1 个模型") : t("%1 个模型").arg(count)
+    }
+    function reasoningLabel(value) {
+        return root.language === "en" ? English.strings["reasoning:" + value] : value
+    }
     function t(value) {
         const text = String(value || "")
         const report = text.match(/^([\s\S]*)( \[Umeko:[a-f0-9-]{36}\])$/)

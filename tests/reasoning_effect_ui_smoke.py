@@ -131,17 +131,27 @@ ApplicationWindow {
             invoke(window, "showMenu")
             settle(950)
             hint = text("reasoningEffectHint")
-            if backend.effort != "off":
-                assert text("reasoningSelectedLabel") != "关闭", backend.effort
+            if not levels.get("verified"):
+                level_hint = "档位效果未能确认"
+            elif len(backend.levels) == 1:
+                level_hint = "仅可开关思考" if style.get("offVerified") else "只有一个思考选项"
+            else:
+                level_hint = "已观察到档位变化"
+            active_label = text("reasoningSelectedLabel")
+            if backend.effort == "off":
+                expected = "关闭" if style.get("offVerified") or backend.off_supported is False else "默认"
+                assert active_label == expected, active_label
+            elif style.get("format") in ("qwen-switch", "reasoning-switch", "deepseek-switch", "template-thinking"):
+                assert active_label == "开启", active_label
             assert int(find("reasoningEffortSlider").property("value")) == (["off", *backend.levels].index(backend.effort))
-            assert ("已观察到档位变化" if levels.get("verified") else "档位效果未能确认") in hint, hint
+            assert level_hint in hint, hint
             assert ("开关已确认" if style.get("verified") else "开关效果未能确认") in hint, hint
             shot(scenario + "-menu", menu)
             invoke(window, "closeMenu")
             settle(850)
             invoke(window, "showDialog", Q_ARG("QVariant", json.dumps(row)))
             assert dialog.property("visible")
-            assert text("effectDialog_levelsState") == ("已观察到档位变化" if levels.get("verified") else "档位效果未能确认")
+            assert text("effectDialog_levelsState") == level_hint
             if style.get("degradingStyles"):
                 assert "已排除" in text("effectDialog_degradingStyles")
             if levels.get("evidence"):

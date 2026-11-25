@@ -34,6 +34,7 @@ Popup {
     readonly property string levelsState: saved ? (levelsDetection.state || "unknown") : "unknown"
     readonly property string formatState: saved ? (formatDetection.state || "unknown") : "unknown"
     readonly property var detectedLevels: levelsDetection.levels && levelsDetection.levels.length !== undefined ? Array.from(levelsDetection.levels, String) : []
+    readonly property bool detectedSwitchOnly: levelsDetection.verified === true && Reasoning.isSwitchOnly(formatDetection.format)
     readonly property bool alwaysThinks: formatAuto && formatState === "known" && formatDetection.onObserved === true && formatDetection.offSupported === false
     readonly property var formatIds: {
         let values = []
@@ -77,10 +78,13 @@ Popup {
     }
     function switchText() {
         if (formatState !== "known") return ""
-        if (formatDetection.verified !== true) return I18n.t("开关效果未能确认，可手动选择方式后重试。")
+        if (formatDetection.verified !== true) return I18n.t("可手动选择方式后重试。")
         if (formatDetection.offVerified === true && formatDetection.offSupported === true)
             return I18n.t("已观察到开启和关闭时的思考变化")
         return I18n.t("已观察到思考变化；关闭效果未能确认")
+    }
+    function detectedLabel(level) {
+        return detectedSwitchOnly ? I18n.reasoningLabel("开启") : Reasoning.label(level)
     }
     function evidenceText() {
         const rows = levelsDetection.evidence || [], values = []
@@ -91,7 +95,9 @@ Popup {
             if (levelsDetection.verified === true && detectedLevels.indexOf(row.level) < 0) continue
             const metric = String(row.metric || "").toLowerCase()
             const unit = metric.indexOf("token") >= 0 ? I18n.t("思考 token") : metric.indexOf("char") >= 0 ? I18n.t("思考字符") : I18n.t("思考量")
-            const label = row.level === "off" ? I18n.t("关闭") : Reasoning.label(String(row.level || ""))
+            const label = row.level === "off"
+                ? (Object.keys(row.parameters || {}).length ? I18n.reasoningLabel("关闭") : I18n.t("默认"))
+                : detectedLabel(String(row.level || ""))
             values.push(label + " " + row.reasoningAmount + " " + unit)
             seen.push(row.level)
             if (values.length >= 5) break
@@ -219,7 +225,7 @@ Popup {
                         Text {
                             objectName: root.objectName + "_levelsState"
                             Layout.fillWidth: true; wrapMode: Text.Wrap
-                            text: root.levelsState === "known" ? (root.levelsDetection.verified === true ? I18n.t("已观察到档位变化") : I18n.t("档位效果未能确认")) : root.stateText(root.levelsState)
+                            text: root.levelsState === "known" ? I18n.t(Reasoning.detectedStatus(root.levelsDetection, root.formatDetection)) : root.stateText(root.levelsState)
                             color: root.levelsState === "failed" ? Theme.danger : Theme.ink
                             font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible)
                         }
@@ -229,13 +235,13 @@ Popup {
                         visible: text !== ""
                         Layout.fillWidth: true; wrapMode: Text.Wrap; maximumLineCount: 4; elide: Text.ElideRight; textFormat: Text.PlainText
                         text: root.levelsState === "failed" ? root.failureText(root.levelsDetection)
-                            : root.levelsState === "known" && root.levelsDetection.verified === false
-                                ? (root.detectedLevels.length ? I18n.t("暂用常用档位。可手动填写供应商支持的名称，或重新检测。") : I18n.t("档位效果未能确认，可手动填写供应商支持的名称或重新检测。"))
-                            : root.levelsState === "known" && root.detectedLevels.length === 0 ? I18n.t("没有检测到可用档位，只能选「关闭」。") : ""
+                            : root.levelsState === "known" && root.levelsDetection.verified !== true
+                                ? (root.detectedLevels.length ? I18n.t("暂用常用档位。可手动填写供应商支持的名称，或重新检测。") : I18n.t("可手动填写供应商支持的名称或重新检测。"))
+                            : ""
                         color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible)
                     }
                     Text {
-                        visible: root.detectedLevels.length > 0
+                        visible: root.detectedLevels.length > (root.levelsDetection.verified === true ? 1 : 0)
                         text: (root.levelsDetection.verified === true ? I18n.t("已观察到 %1 个代表档位，按思考量排序") : I18n.t("常用档位：%1 档")).arg(root.detectedLevels.length)
                         color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10, visible)
                     }
@@ -254,7 +260,7 @@ Popup {
                                 Text {
                                     id: levelText
                                     anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 8
-                                    text: (index + 1) + "  " + Reasoning.label(modelData); textFormat: Text.PlainText
+                                    text: (root.detectedSwitchOnly ? "" : (index + 1) + "  ") + root.detectedLabel(modelData); textFormat: Text.PlainText
                                     verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
                                     color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11)
                                 }

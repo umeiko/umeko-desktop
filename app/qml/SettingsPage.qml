@@ -253,7 +253,7 @@ Item {
                                         contentItem: RowLayout { spacing: 12
                                             ColumnLayout { id: providerLabel; Layout.fillWidth: true; spacing: 3
                                                 Text { font.family: Theme.fontFamily; text: modelData.name; textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12, visible); Layout.fillWidth: true; elide: Text.ElideRight }
-                                                Text { font.family: Theme.fontFamily; text: modelData.models.length + I18n.t(" 个模型"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
+                                                Text { font.family: Theme.fontFamily; text: I18n.modelCount(modelData.models.length); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
                                             }
                                             Glyph { name: "chevron-right"; width: Theme.icon(18); height: Theme.icon(18); color: Theme.muted }
                                         }

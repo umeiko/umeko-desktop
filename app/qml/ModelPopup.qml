@@ -15,13 +15,21 @@ AnchoredPidPopup {
         return typeof backend.modelReasoningSettings === "function"
             ? backend.modelReasoningSettings(config.selectedProvider || "", config.selectedModel || "") || ({}) : ({})
     }
+    readonly property var formatDetection: reasoningSettings.reasoningFormatDetection || ({})
+    readonly property bool defaultReasoning: !useDshModels && reasoningSettings.reasoningFormatAuto !== false
+        && backend.reasoningOffSupported !== false && formatDetection.offVerified !== true
+    readonly property bool switchOnly: !useDshModels && Reasoning.isSwitchOnly(reasoningSettings.reasoningFormat)
+    function effortLabel(value) {
+        if (value === "off") return defaultReasoning ? I18n.t("默认") : I18n.reasoningLabel("关闭")
+        return switchOnly ? I18n.reasoningLabel("开启") : Reasoning.label(value)
+    }
     readonly property string reasoningEffectHint: {
         const row = reasoningSettings
         if (!row.states) return ""
-        const levels = row.reasoningDetection || {}, format = row.reasoningFormatDetection || {}
+        const levels = row.reasoningDetection || {}, format = formatDetection
         const levelText = row.reasoningLevelsAuto === false ? I18n.t("档位手动设置")
             : levels.state === "probing" ? I18n.t("档位检测中…")
-            : levels.verified === true ? I18n.t("已观察到档位变化") : I18n.t("档位效果未能确认")
+            : I18n.t(Reasoning.detectedStatus(levels, format))
         const formatText = row.reasoningFormatAuto === false ? I18n.t("开关手动设置")
             : format.state === "probing" ? I18n.t("开关检测中…")
             : format.verified === true ? I18n.t("开关已确认") : I18n.t("开关效果未能确认")
@@ -110,7 +118,7 @@ AnchoredPidPopup {
                 required property var modelData
                 width: modelList.width; spacing: 3
                 property var provider: modelData
-                Text { font.family: Theme.fontFamily; x: 9; topPadding: 5; bottomPadding: 7; text: provider.name + "  ·  " + provider.models.length + I18n.t(" 个模型"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
+                Text { font.family: Theme.fontFamily; x: 9; topPadding: 5; bottomPadding: 7; text: provider.name + "  ·  " + I18n.modelCount(provider.models.length); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
                 Repeater {
                     model: provider.models
                     ModelChoice {
@@ -152,7 +160,7 @@ AnchoredPidPopup {
                 Layout.fillWidth: true
                 Text { text: I18n.t("思考强度"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
                 Item { Layout.fillWidth: true }
-                Text { objectName: "reasoningSelectedLabel"; text: backend.reasoningEffort === "off" ? I18n.t("关闭") : Reasoning.label(backend.reasoningEffort); textFormat: Text.PlainText; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12); Layout.maximumWidth: reasoningControls.width * 0.6; elide: Text.ElideRight }
+                Text { objectName: "reasoningSelectedLabel"; text: root.effortLabel(backend.reasoningEffort); textFormat: Text.PlainText; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12); Layout.maximumWidth: reasoningControls.width * 0.6; elide: Text.ElideRight }
             }
             Slider {
                 id: effortSlider; objectName: "reasoningEffortSlider"
@@ -213,9 +221,9 @@ AnchoredPidPopup {
             }
             RowLayout {
                 Layout.fillWidth: true
-                Text { text: I18n.t("关闭"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10) }
+                Text { text: root.effortLabel("off"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10) }
                 Item { Layout.fillWidth: true }
-                Text { text: reasoningControls.levels.length > 1 ? Reasoning.label(reasoningControls.levels[reasoningControls.levels.length - 1]) : ""; textFormat: Text.PlainText; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10); Layout.maximumWidth: reasoningControls.width * 0.6; elide: Text.ElideRight }
+                Text { text: reasoningControls.levels.length > 1 ? root.effortLabel(reasoningControls.levels[reasoningControls.levels.length - 1]) : ""; textFormat: Text.PlainText; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10); Layout.maximumWidth: reasoningControls.width * 0.6; elide: Text.ElideRight }
             }
             Text {
                 id: effectHint; objectName: "reasoningEffectHint"
@@ -226,7 +234,7 @@ AnchoredPidPopup {
             }
             Text {
                 id: offNote; objectName: "reasoningOffNote"
-                visible: backend.reasoningOffSupported === false && (root.useDshModels || (root.reasoningSettings.reasoningFormatDetection || {}).onObserved === true)
+                visible: backend.reasoningOffSupported === false && (root.useDshModels || root.formatDetection.onObserved === true)
                 text: I18n.t("本次未找到可关闭思考的方式")
                 Layout.fillWidth: true; Layout.topMargin: 3; wrapMode: Text.Wrap
                 color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(10)
