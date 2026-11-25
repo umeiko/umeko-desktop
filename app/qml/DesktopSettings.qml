@@ -8,6 +8,7 @@ Column {
     spacing: 16
     signal requestHeadersRequested()
     property bool startupSettingsReady: false
+    readonly property bool coworkEnabled: backend.desktopSettings.coworkEnabled === true
     readonly property bool remoteWorkspaceEnabled: backend.desktopSettings.remoteWorkspaceEnabled === true
     onRemoteWorkspaceEnabledChanged: if (startupSettingsReady && visible && remoteWorkspaceEnabled) backend.refreshSshConfigHosts()
     Component.onCompleted: {
@@ -21,7 +22,11 @@ Column {
         backend.loginStartup.refresh()
         if (remoteWorkspaceEnabled) backend.refreshSshConfigHosts()
     }
-    CoworkWebNetworkDialog { id: coworkWeb; network: backend.cowork.webNetwork }
+    Loader {
+        id: coworkWeb
+        active: root.coworkEnabled
+        sourceComponent: CoworkWebNetworkDialog { network: backend.cowork.webNetwork }
+    }
     SectionCard {
         width: parent.width
         ColumnLayout {
@@ -44,11 +49,11 @@ Column {
             }
             Toggle {
                 objectName: "desktopCoworkEnabled"
-                checked: backend.desktopSettings.coworkEnabled
+                checked: root.coworkEnabled
                 Accessible.name: "Cowork"
                 onClicked: {
                     const value = checked
-                    checked = Qt.binding(() => backend.desktopSettings.coworkEnabled)
+                    checked = Qt.binding(() => root.coworkEnabled)
                     backend.saveDesktopSettings(JSON.stringify({coworkEnabled:value}))
                 }
             }
@@ -56,9 +61,9 @@ Column {
             ActionButton {
                 objectName: "openCoworkWebNetwork"
                 Layout.alignment: Qt.AlignRight
-                visible: backend.desktopSettings.coworkEnabled
+                visible: root.coworkEnabled
                 glyph: "settings"; text: I18n.t("网络设置")
-                onClicked: coworkWeb.open()
+                onClicked: coworkWeb.item.open()
             }
         }
     }
