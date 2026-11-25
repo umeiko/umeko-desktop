@@ -27,10 +27,11 @@ MCP_OWNER = re.compile(r'cowork:mcp:[A-Za-z0-9_-]{1,256}')
 SUBAGENT_ID = re.compile(r'(?:researcher|reviewer|planner|child-[0-9a-f]{32})')
 BUILTIN_SUBAGENTS = {row['id'] for row in SUBAGENT_POOL}
 CHARACTER_ID = re.compile(r'[a-z0-9][a-z0-9-]{0,47}')
-# These administrative tools can change the running session or launch an
-# unscoped agent. Cowork's tool selection cannot be delegated around them.
+# Cowork uses a separate, role-scoped subagent pool. Pi commands are
+# exposed through the desktop tool when the role grants it.
+DESKTOP_TOOL = 'umeko_desktop'
 ROLE_INCOMPATIBLE = {
-    'umeko_desktop', 'run_pi_command', 'subagent', 'get_subagent_result', 'steer_subagent',
+    'run_pi_command', 'subagent', 'get_subagent_result', 'steer_subagent',
 }
 
 
@@ -365,6 +366,11 @@ class Cowork(QObject):
     def _category(self, record):
         return self.categories[self.profiles[record.cowork]['typeId']]
 
+    def allows_desktop_control(self, record):
+        role = self.profiles.get(record.cowork, {})
+        category = self.categories.get(role.get('typeId'), {})
+        return self.b.desktopSettings['coworkEnabled'] and DESKTOP_TOOL in category.get('tools', ())
+
     def revision(self, identifier):
         return self._revisions.get(self.profiles.get(identifier, {}).get('typeId'), 0)
 
@@ -640,6 +646,10 @@ class Cowork(QObject):
                         values[row['name']] = row
         for name in TOOL_LABELS:
             values.setdefault(name, {'name': name, 'owner': 'builtin:cowork-tools', 'description': ''})
+        values[DESKTOP_TOOL] = {**values.get(DESKTOP_TOOL, {}), 'name': DESKTOP_TOOL, 'owner': 'builtin:umeko-control',
+                               'label': self._local(('管理 Umeko', 'Manage Umeko')),
+                               'description': self._local(('查看和修改应用设置、管理 Widget 和运行 Pi 命令。',
+                                                           'Inspect and change app settings, manage Widgets, and run Pi commands.'))}
         if type_id and type_id == self._mcp_scope:
             values.update(self._mcp_catalog)
         return values

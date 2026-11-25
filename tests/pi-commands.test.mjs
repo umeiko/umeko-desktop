@@ -23,6 +23,11 @@ test('retired command filters still govern the Pi operation', () => {
   assert.equal(piCommandsEnabled({}, settings(['-' + extension], ['+' + extension])), true);
 });
 
+test('Cowork enables Pi commands through the role desktop-tool grant', () => {
+  assert.equal(piCommandsEnabled({ cowork: { allowedTools: ['read'] } }), false);
+  assert.equal(piCommandsEnabled({ cowork: { allowedTools: ['umeko_desktop'] } }), true);
+});
+
 test('Pi command tokenizer preserves quoted literals and never evaluates a shell', () => {
   assert.deepEqual(commandWords('pi mcp add test --env "KEY=${TOKEN}" -- node "a file.mjs"'), ['pi','mcp','add','test','--env','KEY=${TOKEN}','--','node','a file.mjs']);
   assert.deepEqual(commandWords('pi install "C:\\work\\package"'), ['pi','install','C:\\work\\package']);

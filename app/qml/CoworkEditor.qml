@@ -283,6 +283,7 @@ Popup {
         }
         InputField {
             id: filter
+            objectName: "coworkCapabilityFilter_" + picker.groupKind
             Layout.fillWidth: true
             placeholderText: root.tr("按名称或来源搜索…", "Search by name or source…")
         }
@@ -337,10 +338,12 @@ Popup {
                                 textFormat: Text.PlainText; elide: Text.ElideRight
                             }
                             Text {
+                                objectName: "coworkOptionDescription"
                                 width: Math.max(0, optionText.width - optionText.leftPadding - optionText.rightPadding)
-                                text: [entry.modelData.source, entry.modelData.description].filter(Boolean).join(" · ")
+                                text: [entry.modelData.source, entry.modelData.description].filter(Boolean).join(" · ").replace(/\s+/g, " ").trim()
                                 visible: !!text
                                 color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11)
+                                wrapMode: Text.Wrap; maximumLineCount: 2
                                 textFormat: Text.PlainText; elide: Text.ElideRight
                             }
                         }

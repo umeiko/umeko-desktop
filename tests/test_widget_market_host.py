@@ -27,6 +27,7 @@ class WidgetMarketHostTests(unittest.TestCase):
         self.manager = self.backend.desktopPlugins
         self.host = self.manager.hostServices
         self.fetch = local_catalog(self.backend)
+        self.manager.setEnabled('widget-market', True)
         self.assertTrue(self.manager.openPage('widget-market'))
         wait_for(lambda: self.manager.workers.get('widget-market', {}).get('ready'), self.app, lambda: 'Market worker did not initialize: ' + str(self.manager.page))
 

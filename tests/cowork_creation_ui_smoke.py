@@ -105,6 +105,11 @@ def test():
             assert cowork.webNetwork.settings['proxyDns'] is True
             click('settingsButton')
             ordinary = backend._view
+            ordinary.resources['toolCatalog'] = [
+                {'name': name, 'owner': f'builtin:{name}',
+                 'description': f'Short summary for {name}.\n\n' + ('Long tool documentation ' * 40)}
+                for name in ('codemode', 'tool_search')
+            ]
             click('openCoworkButton')
             assert cowork.active and not cowork.activeRole and cowork.rows == []
             assert find('coworkEmptyState').isVisible()
@@ -128,6 +133,21 @@ def test():
             click('coworkToolsTab')
             assert find('coworkToolsTab').property('text').startswith('Tools')
             assert find('coworkToolGroup_bundled').isVisible()
+            search = find('coworkCapabilityFilter_tools')
+            for scale in (1.0, 1.7):
+                backend.setFontScale(scale)
+                for name in ('codemode', 'tool_search'):
+                    search.setProperty('text', name)
+                    wait(lambda: find('coworkOption_' + name) is not None, 'filtered tool row')
+                    QTest.qWait(80)
+                    option = find('coworkOption_' + name)
+                    body = option.property('contentItem')
+                    details = next(item for item in body.childItems() if item.objectName() == 'coworkOptionDescription')
+                    assert details.property('lineCount') == 2 and details.property('truncated')
+                    assert details.property('contentWidth') <= details.width() + 1
+                    assert details.mapToItem(option, details.boundingRect().topRight()).x() <= option.property('indicator').x()
+            backend.setFontScale(1.0)
+            search.setProperty('text', '')
             click('coworkToolGroup_mcp')
             click('coworkAddMcp')
             find('coworkMcpJson').setProperty('text', '{"mcpServers":')
@@ -141,6 +161,10 @@ def test():
             assert not (base / 'agent/mcp.json').exists()
             mcp_option = next(row['id'] for row in cowork.toolOptions if row['label'] == 'parent-note')
             click('coworkOption_' + mcp_option)
+            click('coworkToolGroup_bundled')
+            search.setProperty('text', '管理 Umeko')
+            assert not find('coworkOption_umeko_desktop').property('checked')
+            click('coworkOption_umeko_desktop')
             click('coworkSubagentsTab')
             click('coworkSubagentEnabled_researcher')
             click('coworkSubagentEdit_reviewer')
@@ -174,6 +198,8 @@ def test():
             click('coworkSubagentDelete_planner')
             assert not find('coworkSubagentEdit_planner')
             click('coworkSaveRole')
+            assert 'umeko_desktop' in cowork.role['tools']
+            assert 'umeko_desktop' not in {row['id'] for row in cowork.subagentToolOptions}
             expected = ['researcher', 'reviewer', 'child-']
             assert all(row['id'].startswith(prefix) for row, prefix in zip(cowork.role['subagents'], expected))
             assert cowork.role['hiddenSubagents'] == ['planner']
