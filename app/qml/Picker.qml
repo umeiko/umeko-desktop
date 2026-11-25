@@ -2,6 +2,10 @@ import QtQuick
 import QtQuick.Controls
 ComboBox {
     id: control
+    Accessible.onPressAction: {
+        if (popup.visible) popup.close()
+        else popup.open()
+    }
     implicitHeight: Math.max(40, font.pixelSize + 20)
     font.pixelSize: Theme.font(12, visible)
     leftPadding: 12; rightPadding: Theme.control(30)
@@ -15,6 +19,8 @@ ComboBox {
         contentItem: ListView { clip: true; implicitHeight: contentHeight; model: control.popup.visible ? control.delegateModel : null; currentIndex: control.highlightedIndex }
     }
     delegate: ItemDelegate { width: control.width - 10; height: Math.max(36, font.pixelSize + 14); text: modelData; font.pixelSize: Theme.font(12, visible)
+        Accessible.name: text
+        Accessible.onPressAction: clicked()
         contentItem: Text { text: modelData; color: Theme.ink; font: parent.font; verticalAlignment: Text.AlignVCenter }
         background: Rectangle { radius: 5; color: parent.highlighted ? Theme.accentBg : "transparent" }
         highlighted: control.highlightedIndex === index }
