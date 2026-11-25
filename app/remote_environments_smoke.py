@@ -248,6 +248,7 @@ class Acceptance:
 
     def run(self):
         b = self.backend
+        assert b.saveDesktopSettings('{"remoteWorkspaceEnabled":true}')
         self.note('begin', platform=self.spec['platform'], host=self.spec['host'])
         toasts = []
         capture_toast = toasts.append

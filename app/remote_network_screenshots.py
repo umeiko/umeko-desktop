@@ -39,6 +39,7 @@ class NetworkSettingsShots:
 
     def open_settings(self):
         from PySide6.QtCore import QMetaObject
+        assert self.backend.saveDesktopSettings('{"remoteWorkspaceEnabled":true}')
         self.window.setProperty('settingsTab', 3)
         self.window.setProperty('page', 'settings')
         self.owner.wait(lambda: self.find('umekoDesktopSettings') is not None, 15, 'desktop settings object')

@@ -12,7 +12,7 @@ The user guide covers both editions; source code remains in separate repositorie
 | Theme format | [JSON colors and creation prompt](https://github.com/umeiko/umeko-desktop/blob/main/docs/themes.md) |
 | Character format | [Art, dialogue and ZIP limits](https://github.com/umeiko/umeko-desktop/blob/main/docs/characters.md) |
 | submit tool | [Parameters, results and preview boundaries](https://github.com/umeiko/umeko-desktop/blob/main/docs/chatbox-media.md) |
-| Embedded Pi commands | [run_pi_command behavior](https://github.com/umeiko/umeko-desktop/blob/main/docs/embedded-pi-commands.md) |
+| Embedded Pi commands | [pi.run behavior](https://github.com/umeiko/umeko-desktop/blob/main/docs/embedded-pi-commands.md) |
 
 Some detailed SDK and format references are written in Chinese. This guide covers user workflows; the source references define exact interfaces.
 

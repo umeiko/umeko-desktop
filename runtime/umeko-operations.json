@@ -13,6 +13,7 @@
   },
   "operations": {
     "shell.refreshEnvironment": {"target":"runtime","args":[],"description":"重新读取本会话后续 Bash、PowerShell 和后台命令使用的环境。返回采集状态。"},
+    "pi.run": {"target":"bridge","description":"在调用会话的内嵌 Pi 中运行包管理、MCP 和已注册的斜杠命令。scope 为 global 或 project，省略时沿用命令参数。用 /help 查询可用命令。queued 只表示已排队。","args":[["command","string"],["scope","string",""]]},
   "vision.configure": {"target":"backend","method":"saveAuxiliaryVision","args":[["config","json"]]},
   "generation.configure": {"target":"backend","method":"saveMultimodalSettings","args":[["config","json"]]},
     "providers.save": {"target":"backend","method":"saveProvider","idle":"provider","args":[["id","string",""],["name","string"],["api","string"],["baseUrl","string"],["key","string",""],["models","json"]]},

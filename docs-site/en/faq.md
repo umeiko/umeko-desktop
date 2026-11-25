@@ -6,7 +6,7 @@ Umeko connects to the API or provider plugin you configure; it comes without a m
 
 ## Is it the same instance as my system pi? {#is-it-the-same-instance-as-my-system-pi}
 
-Umeko runs the full Pi kernel embedded in the desktop conversation, with model access coming from the desktop provider settings. A global `pi` has its own version and configuration. Ask agents to use `run_pi_command` for the embedded Pi, and open management terminals from inside the app. See [Extensions & MCP](./guide/skills).
+Umeko runs the full Pi kernel embedded in the desktop conversation, with model access coming from the desktop provider settings. A global `pi` has its own version and configuration. Ask agents to use `umeko_desktop` with operation `pi.run` for the embedded Pi, and open management terminals from inside the app. See [Extensions & MCP](./guide/skills).
 
 ## Why does the model not know a tool? {#why-does-the-model-not-know-a-tool}
 

@@ -156,6 +156,25 @@ Item {
                         onOpenRequested: { root.multimodalOpen = true; settingsScroll.contentItem.contentY = 0 }
                         onBackRequested: { root.multimodalOpen = false; settingsScroll.contentItem.contentY = 0 }
                     }
+                    ItemDelegate {
+                        objectName: "modelGroupSettingsEntry"
+                        visible: !root.multimodalOpen; width: parent.width
+                        implicitHeight: Math.max(60, groupEntry.implicitHeight + 28)
+                        leftPadding: 20; rightPadding: 20
+                        background: Rectangle { radius: 10; color: parent.hovered ? Theme.hover : Theme.surface; border.color: Theme.line }
+                        contentItem: RowLayout {
+                            id: groupEntry; spacing: 12
+                            Glyph { name: "layers"; width: Theme.icon(20); height: Theme.icon(20); color: Theme.muted }
+                            Text { text: I18n.t("模型组"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14) }
+                            HelpButton {
+                                objectName: "modelGroupHelp"
+                                help: I18n.t("启用后可在聊天中选择模型组。遇到网络故障、限流或额度用尽时，会按顺序自动切换到下一个可用模型。")
+                            }
+                            Item { Layout.fillWidth: true }
+                            Glyph { name: "chevron-right"; width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }
+                        }
+                        onClicked: root.openModelGroup(true)
+                    }
                     ProviderPluginsSection { visible: !root.multimodalOpen; width: parent.width }
                     SectionCard {
                         objectName: "commonProvidersSection"
@@ -201,25 +220,7 @@ Item {
                             }
                         }
                     }
-                    ItemDelegate {
-                        objectName: "modelGroupSettingsEntry"
-                        visible: !root.multimodalOpen; width: parent.width
-                        implicitHeight: Math.max(60, groupEntry.implicitHeight + 28)
-                        leftPadding: 20; rightPadding: 20
-                        background: Rectangle { radius: 10; color: parent.hovered ? Theme.hover : Theme.surface; border.color: Theme.line }
-                        contentItem: RowLayout {
-                            id: groupEntry; spacing: 12
-                            Glyph { name: "layers"; width: Theme.icon(20); height: Theme.icon(20); color: Theme.muted }
-                            Text { text: I18n.t("模型组"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14) }
-                            HelpButton {
-                                objectName: "modelGroupHelp"
-                                help: I18n.t("启用后可在聊天中选择模型组。遇到网络故障、限流或额度用尽时，会按顺序自动切换到下一个可用模型。")
-                            }
-                            Item { Layout.fillWidth: true }
-                            Glyph { name: "chevron-right"; width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }
-                        }
-                        onClicked: root.openModelGroup(true)
-                    }
+
                 }
                 Loader {
                     width: parent.width

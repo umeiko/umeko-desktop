@@ -3,6 +3,16 @@ from __future__ import annotations
 import copy
 
 NATIVE_ID = 'builtin:pi-tools'
+REMOTE_WORKSPACE_TOOLS = frozenset(('remote_command', 'remote_files', 'remote_network'))
+
+
+def without_remote_workspace_tools(resources):
+    result = dict(resources)
+    for key in ('toolCatalog', 'allTools'):
+        if key in resources:
+            result[key] = [tool for tool in resources[key] if tool['name'] not in REMOTE_WORKSPACE_TOOLS]
+    result['tools'] = [name for name in resources.get('tools', []) if name not in REMOTE_WORKSPACE_TOOLS]
+    return result
 
 def from_legacy(value, blocked=()):
     return value or ({'preset':'custom','custom':{'base':'full','tools':{name:False for name in blocked},'plugins':{}}} if blocked else {})

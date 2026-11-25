@@ -8,16 +8,18 @@ Column {
     spacing: 16
     signal requestHeadersRequested()
     property bool startupSettingsReady: false
+    readonly property bool remoteWorkspaceEnabled: backend.desktopSettings.remoteWorkspaceEnabled === true
+    onRemoteWorkspaceEnabledChanged: if (startupSettingsReady && visible && remoteWorkspaceEnabled) backend.refreshSshConfigHosts()
     Component.onCompleted: {
         startupSettingsReady = true
         if (visible) {
             backend.loginStartup.refresh()
-            if (typeof backend.refreshSshConfigHosts === "function") backend.refreshSshConfigHosts()
+            if (remoteWorkspaceEnabled) backend.refreshSshConfigHosts()
         }
     }
     onVisibleChanged: if (startupSettingsReady && visible) {
         backend.loginStartup.refresh()
-        if (typeof backend.refreshSshConfigHosts === "function") backend.refreshSshConfigHosts()
+        if (remoteWorkspaceEnabled) backend.refreshSshConfigHosts()
     }
     CoworkWebNetworkDialog { id: coworkWeb; network: backend.cowork.webNetwork }
     SectionCard {
@@ -59,6 +61,39 @@ Column {
                 onClicked: coworkWeb.open()
             }
         }
+    }
+    TeamCollaborationSettings { width: parent.width }
+    SectionCard {
+        width: parent.width
+        RowLayout {
+            width: parent.width
+            spacing: 12
+            Text {
+                Layout.fillWidth: true
+                text: I18n.t("远程工作区设置")
+                color: Theme.ink
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.font(14)
+                font.weight: Font.DemiBold
+                wrapMode: Text.Wrap
+            }
+            Toggle {
+                objectName: "desktopRemoteWorkspaceEnabled"
+                checked: root.remoteWorkspaceEnabled
+                Accessible.name: I18n.t("远程工作区设置")
+                onClicked: {
+                    const value = checked
+                    checked = Qt.binding(() => root.remoteWorkspaceEnabled)
+                    backend.saveDesktopSettings(JSON.stringify({remoteWorkspaceEnabled: value}))
+                }
+            }
+        }
+    }
+    Loader {
+        width: parent.width
+        active: root.remoteWorkspaceEnabled
+        visible: active
+        sourceComponent: remoteEnvironmentSettings
     }
     Button {
         id: customRequestsEntry
@@ -174,8 +209,10 @@ Column {
             }
         }
     }
-    SectionCard {
-        width: parent.width
+    Component {
+        id: remoteEnvironmentSettings
+        SectionCard {
+        objectName: "remoteWorkspaceEnvironmentSettings"
         ColumnLayout {
             id: remoteSettingsSection
             width: parent.width
@@ -485,6 +522,7 @@ Column {
                     }
                 }
             }
+        }
         }
     }
 }

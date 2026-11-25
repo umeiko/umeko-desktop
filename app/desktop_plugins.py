@@ -184,6 +184,8 @@ class DesktopPlugins(QObject):
     @Property('QVariantMap',notify=sessionChanged)
     def session(self):
         result=dict(self._session)
+        if self._page == 'pi-manager' and self.entries.get(self._page, {}).get('builtin'):
+            result['remoteWorkspaceEnabled'] = self.b.store.data['desktop']['remoteWorkspaceEnabled']
         if self._page in ('pi-manager', 'skill-manager') and self.entries.get(self._page, {}).get('builtin'):
             role = getattr(self.b._view, 'cowork', '')
             result['cowork'] = bool(role)

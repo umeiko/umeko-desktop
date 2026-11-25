@@ -17,6 +17,29 @@ test('the desktop tool routes environment refresh and command rules locally', as
   assert.deepEqual(await call('command_rules.list'), {ok: true, operation: 'command_rules.list', rules: []});
 });
 
+test('pi.run is session-local, validates arguments and rechecks access at execution', async () => {
+  let tool, allowed = true;
+  const context = {}, signal = new AbortController().signal;
+  const control = createUmekoControl({ emit() { assert.fail('pi.run must stay in the embedded runtime'); } });
+  control.extension({ registerTool: value => { tool = value; }, registerCommand() {} }, {
+    canRunPiCommand: () => allowed,
+    runPiCommand: async (command, options, caller) => {
+      assert.equal(command, '/reload');
+      assert.deepEqual(options, { signal, toolCallId: 'call', scope: 'project' });
+      assert.equal(caller, context);
+      return { status: 'queued' };
+    },
+  });
+  const call = arguments_ => tool.execute('call', { operation: 'pi.run', arguments: arguments_ }, signal, undefined, context);
+  const queued = await call({ command: '/reload', scope: 'project' });
+  assert.deepEqual(JSON.parse(queued.content[0].text), { ok: true, status: 'queued' });
+  assert.equal((await call({ command: '/reload', scope: 'foreign' })).isError, true);
+  assert.equal((await call({ command: '/reload', sessionId: 'another-chat' })).isError, true);
+  allowed = false;
+  assert.match((await call({ command: '/reload' })).content[0].text, /disabled in this session/);
+  assert.equal(JSON.parse((await tool.execute('help', { operation: 'help' })).content[0].text).ok, true);
+});
+
 test('one desktop tool and a directory-only help keep management instructions on demand', async () => {
   const tools = [], commands = [], control = createUmekoControl({ emit() { throw new Error('help must be local'); } });
   control.extension({ registerTool: tool => tools.push(tool), registerCommand: (name, body) => commands.push({ name, body }) });

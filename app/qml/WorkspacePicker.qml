@@ -25,6 +25,12 @@ Popup {
     signal workspaceSelected()
 
     property string activeTab: "local"
+    property bool allowRemote: false
+    onAllowRemoteChanged: if (!allowRemote) {
+        activeTab = "local"
+        _afterEnsure = null
+        autocompleteTimer.stop()
+    }
     property bool newConversation: false
     property var hostChoices: []
     property string selectedEnvName: ""
@@ -89,13 +95,15 @@ Popup {
 
     function openForWorkspace(initialTab, newConversation) {
         root.newConversation = newConversation === true
-        activeTab = initialTab || (backend.activeRemoteWorkspace && backend.activeRemoteWorkspace.environment ? "remote" : "local")
+        activeTab = allowRemote ? (initialTab || (backend.activeRemoteWorkspace && backend.activeRemoteWorkspace.environment ? "remote" : "local")) : "local"
         mkdirOpen = false
         mkdirName = ""
         browserError = ""
         autocompleteVisible = false
-        backend.refreshSshConfigHosts()
-        rebuildHostChoices()
+        if (allowRemote) {
+            backend.refreshSshConfigHosts()
+            rebuildHostChoices()
+        }
         if (activeTab === "remote") {
             const active = backend.activeRemoteWorkspace
             if (active && active.environment) {
@@ -433,10 +441,11 @@ Popup {
     }
 
     function confirmRemoteSelection() {
+        if (!allowRemote) return
         const chosen = effectiveSelectedPath
         if (!chosen) return
         ensureReadyThen(function(envName) {
-            if (backend.setRemoteWorkspace(envName, chosen)) root.finishSelection()
+            if (root.allowRemote && backend.setRemoteWorkspace(envName, chosen)) root.finishSelection()
         })
     }
 
@@ -610,6 +619,7 @@ Popup {
 
             // Segmented tabs: 本机 / 远程
             Rectangle {
+                visible: root.allowRemote
                 implicitHeight: Theme.control(34)
                 implicitWidth: tabRow.implicitWidth + 8
                 radius: 8
@@ -643,6 +653,7 @@ Popup {
                     }
                     Button {
                         objectName: "workspaceTabRemote"
+                        visible: root.allowRemote
                         implicitHeight: Theme.control(26)
                         leftPadding: 14; rightPadding: 14
                         hoverEnabled: true

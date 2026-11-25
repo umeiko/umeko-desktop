@@ -138,6 +138,11 @@ class PiManagement(QObject):
             return {'preset': 'custom', 'readOnly': True}
         return normalize(from_legacy(record.pi_capabilities,record.blocked_tools))
 
+    def inventory_current(self, record):
+        return (bool(record.resources.get('allTools'))
+                and record.resources.get('remoteWorkspaceEnabled', False)
+                == self.controller.store.data['desktop']['remoteWorkspaceEnabled'])
+
     def capability_extensions(self):
         from .pi_capabilities import catalog,plugin_enabled,tool_enabled
         record=self.controller._view;profile=self.capability_profile();tools=catalog(record.resources)

@@ -11,6 +11,7 @@
 | operation | arguments（类型；=默认值） | 等待空闲范围 | 启动后台工作 |
 | --- | --- | --- | --- |
 | `shell.refreshEnvironment` | 无 | 无 | 否 |
+| `pi.run` | `command: string`, `scope: string=""` | 无 | 否 |
 | `vision.configure` | `config: json` | 无 | 否 |
 | `generation.configure` | `config: json` | 无 | 否 |
 | `providers.save` | `id: string=""`, `name: string`, `api: string`, `baseUrl: string`, `key: string=""`, `models: json` | provider | 否 |
@@ -106,7 +107,7 @@
 | `extensions.enable` | `id: string`, `enabled: boolean` | all | 是 |
 | `extensions.remove` | `id: string` | all | 是 |
 | `extensions.checkUpdate` | `id: string` | 无 | 是 |
-| `extensions.install` | `source: string`, `project: boolean=false` | all | 是 |
+| `extensions.install`（仅限已确认的 Widget 宿主调用） | `source: string`, `project: boolean=false` | all | 是 |
 | `mcp.add` | `text: string`, `project: boolean=false` | all | 是 |
 | `mcp.save` | `scope: string`, `config: json` | all | 是 |
 | `mcp.reconnect` | `name: string` | view | 是 |
