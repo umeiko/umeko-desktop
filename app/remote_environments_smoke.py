@@ -667,6 +667,8 @@ def start(app, engine, controller, spec_path):
     def run():
         acceptance = None
         try:
+            # Both scenarios exercise the opt-in tools on isolated profiles.
+            assert controller.saveDesktopSettings('{"remoteWorkspaceEnabled":true}')
             acceptance = Acceptance(app, engine, controller, spec)
             result = acceptance.run_network() if spec.get('scenario') == 'remote-network' else acceptance.run()
             status = 0

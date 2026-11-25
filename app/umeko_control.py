@@ -256,7 +256,7 @@ class UmekoControl(QObject):
                 return {'name': args['name'], 'status': 'removed'}
             raise ValueError('Run the connection test from the Pi desktop tool.')
         if operation == 'extensions.install' and not _widget_install:
-            raise ValueError('Agent package installation must use run_pi_command and its native installation permission; confirmed Widget installs use the private host entry')
+            raise ValueError('Agent package installation must use umeko_desktop with pi.run; confirmed Widget installs use the private host entry')
         if operation == 'help':
             docs = b.store.directory/'agent-docs'
             if not (docs/'README.md').is_file(): docs = b._release/'umeko-docs'
@@ -279,9 +279,16 @@ class UmekoControl(QObject):
                 value=args.get(name,copy.deepcopy(field[2]) if len(field)>2 else None)
                 if not {'string':isinstance(value,str),'boolean':type(value) is bool,'integer':type(value) is int,'json':isinstance(value,dict)}[kind]:raise ValueError(name+' must be '+kind)
                 values[name]=value
-            if (operation == 'widgets.call' and values['id'] == 'terminal' and values['method'] in ('run', 'write')
-                    and getattr(b, 'windowsSandbox', None) is not None and b.windowsSandbox.state['enabled']):
-                raise ValueError('The Windows sandbox blocks Agent input to the shared terminal. Use bash, powershell or background_job to run the command in the sandbox.')
+            sandbox = getattr(b, 'windowsSandbox', None)
+            starts_widget_code = operation in ('widgets.call', 'widgets.config', 'widgets.open') or (
+                operation in ('widgets.enable', 'widgets.activate') and values['enabled'])
+            if sandbox is not None and sandbox.state['enabled'] and starts_widget_code:
+                identifier = values['id']
+                plugin = b.desktopPlugins.entries.get(identifier, {})
+                terminal_read = (identifier == 'terminal' and operation == 'widgets.call'
+                                 and values['method'] in ('list', 'read', 'interrupt'))
+                if 'process.execute' in plugin.get('permissions', []) and not terminal_read:
+                    raise ValueError('This Widget starts processes outside the Windows sandbox. Use bash, powershell or background_job to run the command in the sandbox.')
             return b.desktopPlugins.bridge.execute(operation,values,caller,self)
         if operation == 'operations.list':
             prefix = args.get('prefix', '')

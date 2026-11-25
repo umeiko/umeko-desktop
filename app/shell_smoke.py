@@ -57,6 +57,8 @@ def attach(app, controller, directory, window=None):
 
     def remote_settings_action(action, request):
         if action == "remote_settings":
+            if not controller.saveDesktopSettings('{"remoteWorkspaceEnabled":true}'):
+                return False
             window.setHeight(max(window.height(), 1050))
             window.setProperty("settingsTab", 3)
             window.setProperty("page", "settings")
@@ -69,10 +71,12 @@ def attach(app, controller, directory, window=None):
                 return False
             settings = window.findChild(QObject, "umekoDesktopSettings")
             scroll = window.findChild(QObject, "settingsScroll")
-            if not settings or not settings.property("visible") or not scroll:
+            card = window.findChild(QObject, "remoteWorkspaceEnvironmentSettings")
+            if not settings or not settings.property("visible") or not scroll or not card:
                 return False
             flickable = scroll.property("contentItem")
-            flickable.setProperty("contentY", max(0, flickable.property("contentHeight") - flickable.height()))
+            top = card.mapToItem(flickable.property("contentItem"), 0, 0).y()
+            flickable.setProperty("contentY", max(0, min(top, flickable.property("contentHeight") - flickable.height())))
             return window.grabWindow().save(str(directory / f"{language}-{state}.png"))
         else:
             return False
@@ -117,13 +121,10 @@ def attach(app, controller, directory, window=None):
             popup = window.findChild(QObject, "modelPopup")
             if popup and not popup.property("desiredOpen"):
                 QMetaObject.invokeMethod(popup, "toggle")
-            picker = window.findChild(QObject, "modelRolePicker")
-            accepted = bool(picker and picker.setProperty("currentIndex", request.get("index", 1)))
             search = window.findChild(QObject, "modelSearch")
+            accepted = bool(popup and search and not window.findChild(QObject, "modelRolePicker"))
             if search:
                 search.setProperty("text", "test-model")
-            if picker:
-                evidence["label"] = picker.property("currentText")
         elif action == "open_member_widget":
             popup = window.findChild(QObject, "modelPopup") if window else None
             if popup and popup.property("desiredOpen"):

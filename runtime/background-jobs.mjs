@@ -136,12 +136,13 @@ export async function createJobManager({ shellPath, cwd = process.cwd(), host, h
   }
   async function wait(id, { timeoutMs = 10000, signal } = {}) {
     const job = owned(id);
-    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > 60000) throw new Error("timeoutMs must be between 0 and 60000");
+    if (timeoutMs !== Infinity && (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > 60000))
+      throw new Error("timeoutMs must be between 0 and 60000");
     if (job.status !== "running") return { ...snapshot(job), timedOut: false };
     let timer, abort;
     try {
       const result = await Promise.race([job.donePromise, new Promise((resolve, reject) => {
-        timer = setTimeout(() => resolve(null), timeoutMs);
+        if (timeoutMs !== Infinity) timer = setTimeout(() => resolve(null), timeoutMs);
         abort = () => reject(new Error("aborted"));
         signal?.addEventListener("abort", abort, { once: true });
         if (signal?.aborted) abort();
@@ -228,7 +229,7 @@ export function createBackgroundJobsExtension(options = {}) {
   async function disposeAll() {
     return Promise.allSettled([...managers.keys()].map(id => dispose(id)));
   }
-  async function foreground({ signal, timeout, onData, owner, sessionId: id, ...request }) {
+  async function foreground({ signal, timeout, onData, owner, sessionId: id, waitForExit = false, ...request }) {
     const jobs = await getManager(id);
     const job = await jobs.start({ ...request, signal, owner });
     let cancelled;
@@ -236,7 +237,7 @@ export function createBackgroundJobsExtension(options = {}) {
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
     try {
-      await jobs.wait(job.id, { timeoutMs: DEFAULT_YIELD_MS, signal });
+      await jobs.wait(job.id, { timeoutMs: waitForExit ? Infinity : DEFAULT_YIELD_MS, signal });
       const chunk = await jobs.read(job.id, { maxBytes: modelBytesPerStream });
       if (chunk.stdout) onData(Buffer.from(chunk.stdout));
       if (chunk.stderr) onData(Buffer.from(`${chunk.stdout ? "\n" : ""}${chunk.stderr}`));

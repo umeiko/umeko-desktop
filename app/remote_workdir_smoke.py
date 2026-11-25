@@ -132,6 +132,7 @@ class WorkdirAcceptance:
         return reply
 
     def _run_dialog_flow(self):
+        assert self.backend.saveDesktopSettings('{"remoteWorkspaceEnabled":true}')
         host = self.spec['host']
         remote_parent = self.spec['remoteParent']
         folder_name = self.spec['folderName']

@@ -48,6 +48,6 @@ Configure MCP under **Settings → Agent → Pi**. Paste a `pi mcp add …` comm
 
 > Inspect the extensions installed in this embedded Pi and explain their tools. Tell me the source before installing anything new.
 
-The Pi kernel is embedded in the current desktop conversation. Agents use `run_pi_command` to run supported `pi install`, `pi mcp`, `/reload` or `/compact` operations on this instance.
+The Pi kernel is embedded in the current desktop conversation. Agents use `umeko_desktop` with operation `pi.run` to run supported `pi install`, `pi mcp`, `/reload` or `/compact` operations on this instance.
 
 Extensions and local MCP processes can execute code. Install trusted sources and read their documentation first. Configuration changes may require a refresh or the next task to take effect.

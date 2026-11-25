@@ -36,7 +36,7 @@ from .chat_model import ChatModel
 from .transcript_index import TranscriptRepository
 from .model_context import context_suggestion
 from .model_groups import GROUP_MODEL, GROUP_PROVIDER, GROUP_SELECTION, MAX_MEMBERS, configured_members, member_key, settings as group_settings
-from .model_roles import SESSION_ROLES, select_route, session_model_roles
+from .model_roles import SESSION_ROLES, model_choices, select_route, session_model_roles
 from .model_reasoning import reasoning_levels, reconcile_effort
 from .controller_reasoning import ReasoningDiscovery
 from .thinking_formats import FORMAT_OPTIONS
@@ -2310,10 +2310,14 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self.store.data.update(selectedProvider=provider, selectedModel=model)
 
     def model_roles_for(self, record):
+        if not self.store.data['desktop']['teamCollaborationEnabled']:
+            return {}
         return session_model_roles(record, self.store.data)
 
     def set_model_role(self, record, role, alias):
-        if record.global_agent or is_dsh(record) or self.store.data["sessionMeta"].get(record.id, {}).get("pluginSession"):
+        if not self.store.data['desktop']['teamCollaborationEnabled']:
+            raise ValueError("请先在 Umeko Desktop 设置中开启团队协作")
+        if record.global_agent or record.cowork or is_dsh(record) or self.store.data["sessionMeta"].get(record.id, {}).get("pluginSession"):
             raise ValueError("模型分工适用于普通 Pi 会话")
         if role not in SESSION_ROLES:
             raise ValueError("未知模型角色")
@@ -2334,9 +2338,44 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self.changed.emit()
         return roles
 
-    @Property('QVariantMap', notify=changed)
+    @Property('QVariantMap', notify=desktopSettingsChanged)
     def sessionModelRoles(self):
         return self.model_roles_for(self._view)
+
+    @Property(bool, notify=changed)
+    def sessionModelRolesAvailable(self):
+        record = self._view
+        return not (record.global_agent or record.cowork or is_dsh(record) or
+                    self.store.data["sessionMeta"].get(record.id, {}).get("pluginSession"))
+
+    @Property('QVariantList', notify=changed)
+    def teamModelChoices(self):
+        return [{'id': row['id'], 'label': row['label'], 'group': row['group']}
+                for row in model_choices(self.gateway)]
+
+    @Property('QVariantList', notify=changed)
+    def teamMemberModels(self):
+        bus = self.desktopPlugins.global_agents
+        return [{'id': row['id'], 'name': row['name'],
+                 'model': bus.pending_models.get(row['id'], (row.get('model', ''),))[0]}
+                for row in bus.agents.values() if not row.get('managedBy')]
+
+    @Slot(str, str, result=bool)
+    def selectTeamMemberModel(self, identifier, model):
+        if not self.store.data['desktop']['teamCollaborationEnabled']:
+            return False
+        bus = self.desktopPlugins.global_agents
+        row = bus.agents.get(identifier)
+        if not row or row.get('managedBy'):
+            return False
+        try:
+            effort = row.get('reasoningEffort', '') if row.get('model') == model else ''
+            bus.switch_member_model(identifier, model, effort)
+        except ValueError as error:
+            self.toast.emit(str(error))
+            return False
+        self.changed.emit()
+        return True
 
     @Slot(str, str, result=bool)
     def selectRoleModel(self, role, model):

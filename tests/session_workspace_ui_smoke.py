@@ -54,9 +54,12 @@ def test():
             click('newChatButton')
             wait(lambda: find('workspaceRecentLocal'), 'recent folders')
             assert backend._view is existing_view
+            assert not find('workspaceTabRemote')
+            assert backend.saveDesktopSettings('{"remoteWorkspaceEnabled":true}')
             click('workspaceTabRemote')
             wait(lambda: find('remoteHostCombo'), 'remote host picker')
-            click('workspaceTabLocal')
+            assert backend.saveDesktopSettings('{"remoteWorkspaceEnabled":false}')
+            wait(lambda: find('workspaceRecentLocal') and not find('workspaceTabRemote'), 'local-only picker after disabling remote')
             chooser = find('workspaceRecentLocal')
             assert chooser.property('count') == 3
             assert QMetaObject.invokeMethod(chooser, 'activated', Qt.DirectConnection, Q_ARG(int, 1))

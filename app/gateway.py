@@ -27,6 +27,7 @@ from .protocols import response_events, collect_openai, anthropic_events_to_open
 from .openai_responses import responses_request, responses_events
 from .request_diagnostics import RequestDiagnostics, RequestFailure
 from .network_retry import upstream_failure
+from .context_images import ContextImageRecovery
 from .provider_errors import format_http_error, safe_text
 from .model_reasoning import reasoning_levels, reconcile_effort
 from .model_groups import GROUP_MODEL, MAX_MEMBERS, configured_members, descriptor
@@ -83,6 +84,7 @@ class Gateway:
         self._group_cooldown = {}
         self.reasoning_activity = ReasoningActivity()
         self.diagnostics = RequestDiagnostics(store.directory)
+        self.context_images = ContextImageRecovery(store.directory)
         self.compatibility = ParameterMemory(store.directory, app_version=VERSION)
 
     def provider(self, provider_id):
@@ -254,12 +256,18 @@ class Gateway:
                    'tools': tools or [], 'max_tokens': max_tokens, 'parameters': parameters or {}}
         try:
             with self.reasoning_activity.chat((p.get('id', ''), model)), network_scope(p.get('proxy'), records):
-                transport = self._events(alias, messages, tools, max_tokens, provider_id, parameters,
-                                         **({"group": True} if group else {}))
-                for event in normalize_openai_events(transport):
-                    if event.get('error'):
-                        raise ValueError(json.dumps(event, ensure_ascii=False))
-                    yield event
+                def open_events(projected):
+                    transport = self._events(alias, projected, tools, max_tokens, provider_id, parameters,
+                                             **({"group": True} if group else {}))
+                    for event in normalize_openai_events(transport):
+                        if event.get('error'):
+                            raise ValueError(json.dumps(event, ensure_ascii=False))
+                        yield event
+                image_session = (parameters or {}).get('_umeko_image_session')
+                if image_session:
+                    yield from self.context_images.events(image_session, messages, records, open_events)
+                else:
+                    yield from open_events(messages)
             self.diagnostics.compatibility(p, request, records)
         except (IntegrationRequired, PermissionError):
             raise
@@ -586,6 +594,11 @@ class LocalServer:
                         if not isinstance(effort, str) or not effort:
                             raise ValueError("Invalid private reasoning effort")
                         parameters["_umeko_reasoning_effort"] = effort
+                    if owner.private and '_umeko_image_session' in body:
+                        session = body['_umeko_image_session']
+                        if not isinstance(session, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', session):
+                            raise ValueError('Invalid private image session identity')
+                        parameters['_umeko_image_session'] = session
                     if anth and "effort" in body.get("output_config", {}):
                         parameters["reasoning_effort"] = body["output_config"]["effort"]
                     if anth and "stop_sequences" in body:

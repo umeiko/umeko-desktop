@@ -1,6 +1,6 @@
 """Route native Pi events to their owning session, independently of the view."""
 from .model_groups import GROUP_MODEL, GROUP_PROVIDER
-from .pi_capabilities import merge_resources,from_legacy
+from .pi_capabilities import merge_resources, from_legacy, without_remote_workspace_tools
 import copy
 import json
 import logging
@@ -101,6 +101,13 @@ class PiControllerMixin:
                 self._pool.retire(current)
         self.contextUsageChanged.emit()
         self.changed.emit()
+
+    def _remote_workspace_tools_changed(self):
+        self._pool.invalidate()
+        if not self.store.data['desktop']['remoteWorkspaceEnabled']:
+            for record in self._pool.records.values():
+                self._update_pi_resources(record, record.resources)
+        self._desktop_plugins.sessionChanged.emit()
 
     def _merge_native_sessions(self, native):
         native = [row for row in native if row["id"] not in self._session_files.deleted and row["id"] not in self._session_files.pending]
@@ -243,6 +250,7 @@ class PiControllerMixin:
             dataDir=str(self.store.directory),
             systemPromptStateDir=str(self.store.directory / 'system-prompts'),
             generation=generation_config(self.store.data), remoteNetwork=network_config(self.store),
+            remoteWorkspaceEnabled=self.store.data['desktop']['remoteWorkspaceEnabled'],
             mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
         remote_workspace = self._remote_project_for_workspace(record.workspace)
         if remote_workspace:
@@ -463,6 +471,8 @@ class PiControllerMixin:
 
     def _update_pi_resources(self, record, resources):
         resources = merge_resources(record.resources, resources, record.pi_capabilities)
+        if not self.store.data['desktop']['remoteWorkspaceEnabled']:
+            resources = without_remote_workspace_tools(resources)
         if resources != record.resources:
             record.resources = resources
             record.body_dirty = True

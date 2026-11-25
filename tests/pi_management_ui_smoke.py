@@ -147,7 +147,7 @@ try:
     backend.openProject(clean_info["id"])
     manager.setRecoveryMode(False)
     wait_for(lambda: not manager.busy)
-    optional = {"codemode", "tool-search", "chatbox", "pi-commands", "umeko-control", "background-jobs"}
+    optional = {"codemode", "tool-search", "chatbox", "umeko-control", "background-jobs"}
     for name in optional:
         row = next(row for row in manager.extensions if row["path"] == "builtin:" + name)
         assert not row["info"]["required"] and row["enabled"]
@@ -165,7 +165,8 @@ try:
         wait_for(lambda: not manager.busy)
     backend.loadCapabilities()
     wait_for(lambda: not backend.busy)
-    assert {"codemode", "tool_search", "submit_to_chatbox", "run_pi_command", "umeko_desktop", "background_job"}.issubset(set(backend.agentResources["tools"]))
+    assert {"codemode", "tool_search", "submit_to_chatbox", "umeko_desktop", "background_job"}.issubset(set(backend.agentResources["tools"]))
+    assert "run_pi_command" not in backend.agentResources["tools"]
     assert not warnings, "\n".join(warnings)
     print("PI_MANAGEMENT_UI_OK: Agent/Pi navigation, Widget-only extension placement, console plan, task guard, factory recovery")
 finally:

@@ -4,6 +4,8 @@
 
 动态查询可用 `operations.list`，按 prefix 筛选。参数传在 arguments 中，JSON 类型直接传对象/数组。
 
+`pi.run` 的 `arguments.command` 可传 Pi 管理命令、斜杠命令或 `!<Bash 命令>`。`!` 后的命令使用当前会话的 Bash 工具，沿用工具审批、工作区和 Windows 沙箱设置。
+
 只读及组合操作：`help`、`operations.list`、`batch`、`settings.get`、`providers.list`、`models.list`、`characters.list`、`characters.get`、`characters.config`、`plugins.list`、`plugins.getConfig`、`themes.list`、`themes.prompt`、`projects.list`、`sessions.list`、`sessions.get`、`mcp.get`、`status.get`、`jobs.get`。
 
 会话专用：`models.select(provider, model, sessionId?)`、`sessions.reasoning(value, sessionId?)`。缺省关联调用会话。
@@ -11,6 +13,7 @@
 | operation | arguments（类型；=默认值） | 等待空闲范围 | 启动后台工作 |
 | --- | --- | --- | --- |
 | `shell.refreshEnvironment` | 无 | 无 | 否 |
+| `pi.run` | `command: string`, `scope: string=""` | 无 | 否 |
 | `vision.configure` | `config: json` | 无 | 否 |
 | `generation.configure` | `config: json` | 无 | 否 |
 | `providers.save` | `id: string=""`, `name: string`, `api: string`, `baseUrl: string`, `key: string=""`, `models: json` | provider | 否 |
@@ -106,7 +109,7 @@
 | `extensions.enable` | `id: string`, `enabled: boolean` | all | 是 |
 | `extensions.remove` | `id: string` | all | 是 |
 | `extensions.checkUpdate` | `id: string` | 无 | 是 |
-| `extensions.install` | `source: string`, `project: boolean=false` | all | 是 |
+| `extensions.install`（仅限已确认的 Widget 宿主调用） | `source: string`, `project: boolean=false` | all | 是 |
 | `settings.windowsSandbox` | 无 | 无 | 否 |
 | `settings.setWindowsSandbox` | `enabled: boolean`, `allowNetwork: boolean` | 无 | 否 |
 | `mcp.add` | `text: string`, `project: boolean=false` | all | 是 |
