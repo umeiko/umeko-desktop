@@ -655,7 +655,7 @@ async function init(input) {
     ...profile, model: availableModels.has(profile.model) ? profile.model : undefined,
   }));
   configureCoworkSubagents(input.cowork ? coworkProfiles || [] : undefined, profile => [
-    ...(!input.agent?.safeMode && profile.tools.some(name => name.startsWith("mcp__")) ? [{
+    ...(!input.agent?.safeMode && !input.terminalOwned && profile.tools.some(name => name.startsWith("mcp__")) ? [{
       name: "cowork-child-mcp", hidden: true, replaceable: false, factory: coworkMcpFactory(input, profile.tools, profile.toolOwners),
     }] : []),
     ...(profile.tools.includes("submit_to_chatbox") ? [{ name: "chatbox", builtin: true, replaceable: false,
@@ -784,12 +784,12 @@ async function init(input) {
           { name: "subagents", builtin: true, replaceable: true, factory: subagents.extension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
           { name: "tool-search", builtin: true, replaceable: true, factory: Pi.createToolSearchExtension() },
-          { name: "mcp", builtin: true, replaceable: true, factory: input.cowork
+          ...(!input.terminalOwned ? [{ name: "mcp", builtin: true, replaceable: true, factory: input.cowork
             ? coworkMcpFactory(input, input.cowork.allowedTools, input.cowork.toolOwners, servers => {
               mcpEntries = servers;
               setMcpNetwork(mcpEntries);
             })
-            : sandboxMcp.extension },
+            : sandboxMcp.extension }] : []),
           { name: "output-continuation", hidden: true, replaceable: false, factory: outputContinuationExtension },
         ],
       },
@@ -811,7 +811,7 @@ async function init(input) {
     if (!existsSync(file)) throw new Error("Pi 会话文件不存在，未创建替代会话");
     manager = Pi.SessionManager.open(file, input.sessionDir, input.cowork ? cwd : undefined);
   } else {
-    manager = Pi.SessionManager.create(cwd, input.sessionDir);
+    manager = Pi.SessionManager.create(cwd, input.sessionDir, input.initialSessionId ? {id: input.initialSessionId} : undefined);
     if (input.cowork && input.initialSessionTitle) manager.appendSessionInfo(input.initialSessionTitle);
     // One-time import into the native append-only transcript; old files remain intact.
     for (const message of input.legacyHistory || []) if (["user", "assistant", "toolResult"].includes(message.role)) manager.appendMessage(message);
@@ -988,7 +988,7 @@ async function promptWithInterrupts(first) {
     } else {
       await selectModel(next.model || first.model);
       emit({type:"active_model",model:runtime.session.model.id});
-      await runtime.session.prompt(next.text, { images: next.images || [] });
+      await runtime.session.prompt(next.text, { images: next.images || [], expandPromptTemplates: !next.literalSlash });
     }
     for (let continuation = 0; continuation < 4 && !closing && generation === commandCancellation && !inputQueue.hasInterrupts; continuation++) {
       const reports = await piCommands.flush();
@@ -1097,12 +1097,12 @@ async function execute(input) {
     if (validEffort(input.value)) reasoningEffort = input.value;
     return;
   }
-  if (["follow-up", "steer", "promote-queue", "edit-queue", "delete-queue", "steer-queued"].includes(input.type)) {
+  if (["follow-up", "steer", "promote-queue", "edit-queue", "delete-queue", "steer-queued", "terminal-follow-up", "terminal-steer"].includes(input.type)) {
     if (stopWork || (runtime?.session && blockedSessions.has(runtime.session))) {
       emit({type:"queue_rejected",text:input.text || "",message:"当前任务已停止，请重新发送这条消息"});
       return;
     }
-    void inputQueue.submit(input).catch(error=>emit({type:"queue_rejected",text:input.text || "",message:error.message}));
+    void inputQueue.submit(input).catch(error=>emit({type:"queue_rejected",text:input.text || "",message:error.message,messageId:input.messageId}));
     return;
   }
   if (input.type === "resources") {

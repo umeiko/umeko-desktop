@@ -2475,6 +2475,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._remember_model_selection(provider, model)
         if record.busy:
             record.pending_selection = (provider, model) if (provider, model) != (record.provider, record.model) else None
+            record.pending_reasoning_effort = None
         else:
             if (model, provider) != (record.model, record.provider):
                 record.context_usage = {}
@@ -2499,11 +2500,17 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     def _apply_pending_selection(self, record):
         """Commit this session's next choice at the completed request boundary."""
-        if record.pending_selection is None:
+        if record.pending_selection is None and record.pending_reasoning_effort is None:
             return
-        record.provider, record.model = record.pending_selection
-        record.pending_selection = None
-        record.context_usage = {}
+        if record.pending_selection is not None:
+            record.provider, record.model = record.pending_selection
+            record.pending_selection = None
+            record.context_usage = {}
+        if record.pending_reasoning_effort is not None:
+            record.reasoning_effort, record.pending_reasoning_effort = record.pending_reasoning_effort, None
+            if record.id:
+                self.store.data["sessionMeta"].setdefault(record.id, {})["reasoningEffort"] = record.reasoning_effort
+            self.store.save()
         self._reconcile_reasoning(record)
         if record.id:
             self._index_record(record)
@@ -2753,24 +2760,29 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self._session_preview.open_direct(session_id)
             return
         if record is None:
-            record = self._new_view(session.get("workspace", ""))
-            record.cowork = session.get("cowork", "")
-            record.id, record.file, record.title = session_id, session.get("file", ""), session["title"]
-            record.extension_modes = clean_extension_modes(self.store.data["sessionMeta"].get(session_id, {}).get("extensionModes"))
-            record.skill_modes = clean_skill_modes(self.store.data["sessionMeta"].get(session_id, {}).get("skillModes"))
-            record.blocked_tools = clean_blocked_tools(self.store.data["sessionMeta"].get(session_id, {}).get("blockedTools"))
-            record.pi_capabilities = self.store.data["sessionMeta"].get(session_id, {}).get("piCapabilities") or {}
-            effort = self.store.data["sessionMeta"].get(session_id, {}).get("reasoningEffort", record.reasoning_effort)
-            record.reasoning_effort = effort
-            record.history = copy.deepcopy(session.get("history", []))
-            record.messages = copy.deepcopy(session.get("messages", []))
-            record.model, record.provider = session.get("model") or record.model, session.get("provider") or record.provider
-            if record.file:
-                try:
-                    record.messages, record.tree = preview(record.file)
-                except OSError:
-                    self.toast.emit("原生会话文件暂时无法读取")
+            record = self._saved_pi_record(session)
         self._activate(record)
+
+    def _saved_pi_record(self, session, *, read_transcript=True):
+        session_id = session["id"]
+        record = self._new_view(session.get("workspace", ""))
+        record.cowork = session.get("cowork", "")
+        record.id, record.file, record.title = session_id, session.get("file", ""), session["title"]
+        record.extension_modes = clean_extension_modes(self.store.data["sessionMeta"].get(session_id, {}).get("extensionModes"))
+        record.skill_modes = clean_skill_modes(self.store.data["sessionMeta"].get(session_id, {}).get("skillModes"))
+        record.blocked_tools = clean_blocked_tools(self.store.data["sessionMeta"].get(session_id, {}).get("blockedTools"))
+        record.pi_capabilities = self.store.data["sessionMeta"].get(session_id, {}).get("piCapabilities") or {}
+        effort = self.store.data["sessionMeta"].get(session_id, {}).get("reasoningEffort", record.reasoning_effort)
+        record.reasoning_effort = effort
+        record.history = copy.deepcopy(session.get("history", []))
+        record.messages = copy.deepcopy(session.get("messages", []))
+        record.model, record.provider = session.get("model") or record.model, session.get("provider") or record.provider
+        if record.file and read_transcript:
+            try:
+                record.messages, record.tree = preview(record.file)
+            except OSError:
+                self.toast.emit("原生会话文件暂时无法读取")
+        return record
 
     @Slot(str)
     def deleteSession(self, session_id):
@@ -2790,9 +2802,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if not self._view.busy:
             self._command_pi("navigate", entryId=entry_id)
 
-    def _save_session(self):
-        if is_dsh(self._view):
-            return self._save_dsh(self._view)
+    def _save_session(self, record=None):
+        record = record or self._view
+        if is_dsh(record):
+            return self._save_dsh(record)
         # UI index only. Native Pi JSONL is the sole transcript and tree store.
         self.store.save_sessions(self._sessions)
 

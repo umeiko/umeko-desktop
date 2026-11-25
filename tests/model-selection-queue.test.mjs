@@ -129,3 +129,38 @@ test("editing and deleting deferred inputs retain the remaining FIFO model snaps
     await f.run;
   }
 });
+
+test("terminal steering batches queued text and draft in arrival order", async () => {
+  const f = fixture();
+  const input = { model: "choice-a", reasoningEffort: "off", modelRoles: {} };
+  try {
+    for (const text of ["First", "Second"]) {
+      await f.queue.submit({ ...input, type: "terminal-follow-up", messageId: text, text });
+    }
+    await f.queue.submit({ ...input, type: "terminal-steer", messageId: "draft", text: "Third" });
+    await f.run;
+    assert.deepEqual(f.calls.map(item => item.text), ["Running turn", "First\n\nSecond\n\nThird"]);
+    assert.deepEqual(f.aborted, ["choice-a"]);
+    assert.deepEqual(f.queue.items, []);
+  } finally {
+    f.release();
+    await f.run;
+  }
+});
+
+test("queued shell commands run at the normal boundary and delimit terminal steering", async () => {
+  const f = fixture();
+  const input = { model: "choice-a", reasoningEffort: "off" };
+  try {
+    for (const text of ["First", "!pwd", "After shell command"]) {
+      await f.queue.submit({ ...input, type: "terminal-follow-up", messageId: text, text });
+    }
+    assert.deepEqual(f.native, [{ text: "First", images: [] }]);
+    await f.queue.submit({ type: "terminal-steer" });
+    await f.run;
+    assert.deepEqual(f.calls.map(item => item.text), ["Running turn", "First", "!pwd", "After shell command"]);
+  } finally {
+    f.release();
+    await f.run;
+  }
+});

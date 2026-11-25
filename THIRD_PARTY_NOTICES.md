@@ -150,3 +150,7 @@ Scheduled Tasks bundles tzdata 2026.6 (Apache-2.0) for IANA time zones when syst
 ## Agent Client Protocol SDK
 
 The optional DeepSeek Harness backend uses the official `@agentclientprotocol/sdk` 2.4.0, licensed under Apache-2.0. The original license is included in `licenses/acp-sdk-LICENSE`. Source: https://github.com/agentclientprotocol/typescript-sdk.
+
+## CLI activity animation
+
+The CLI uses the Braille and moon activity frames and frame scheduling from [Kimi Code at 1c684ee](https://github.com/MoonshotAI/kimi-code/tree/1c684ee2b34c316cc6f67080ceca46d804da934c/apps/kimi-code/src/tui), copyright 2026 Moonshot AI (MIT). See `licenses/kimi-code-MIT.txt`.

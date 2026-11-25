@@ -11,6 +11,10 @@ if __name__ == '__main__' and '--update-process-helper' in sys.argv:
     from app.update_windows import main as update_process_main
     sys.exit(update_process_main(sys.argv[sys.argv.index('--update-process-helper') + 1:]))
 
+if __name__ == '__main__' and sys.argv[1:2] == ['--umeko-cli']:
+    from app.terminal_client import main as terminal_main
+    sys.exit(terminal_main(sys.argv[2:]))
+
 if __name__ == '__main__':
     from app.preview_launch import route_start
     if route_start(Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))):
@@ -111,7 +115,7 @@ def create_application():
     controller.appearanceChanged.connect(lambda: controller._system_tray.set_language(controller.language))
     controller._system_tray.quitRequested.connect(app.quit)
     controller._system_tray.notificationRequested.connect(controller.toast)
-    if controller.loginStartup.background:
+    if controller.loginStartup.background or '--cli-host' in sys.argv:
         controller._system_tray.minimize_to_tray(notify=False)
     from app.notifications import TaskNotifications
     controller._task_notifications = TaskNotifications(engine.rootObjects()[0], controller._system_tray.tray, root, controller)
@@ -151,8 +155,23 @@ if __name__ == "__main__":
     from app.login_session import instance_for_launch
     from app.preview_launch import profile_directory
     instance_lock, continue_launch = instance_for_launch(profile_directory(), sys.argv)
-    if not continue_launch:
+    if not continue_launch or ('--cli-host' in sys.argv and instance_lock is None):
         sys.exit(0)
+    if instance_lock is None and not any(arg in sys.argv for arg in (
+            "--install-update", "--smoke", "--remote-environments-smoke", "--remote-workdir-smoke")):
+        # If a terminal start already owns this profile, reveal that desktop.
+        from app.terminal_client import TerminalClient
+        from PySide6.QtCore import QCoreApplication
+        try:
+            peer = TerminalClient(start=False)
+            peer.call("show")
+        except (OSError, ValueError):
+            core = QCoreApplication.instance()
+            if core is not None:
+                core.shutdown()
+        else:
+            peer.close()
+            sys.exit(0)
     try:
         app, engine, controller = create_application()
     except Exception as exc:
@@ -161,6 +180,14 @@ if __name__ == "__main__":
             import ctypes
             ctypes.windll.user32.MessageBoxW(None, "应用启动失败。请检查本机设置或从源码启动查看诊断。", "Umeko", 0x10)
         sys.exit(1)
+    if instance_lock is not None and not any(arg in sys.argv for arg in (
+            "--install-update", "--smoke", "--remote-environments-smoke", "--remote-workdir-smoke")):
+        from app.terminal_host import TerminalHost
+        try:
+            terminal_host = TerminalHost(controller)
+            app.aboutToQuit.connect(terminal_host.close)
+        except OSError as error:
+            diagnostic(f"Terminal host unavailable: {error}")
     diagnostic("QML_READY")
     preview_url=os.environ.get('UMEKO_WEB_PREVIEW_URL') if '--demo' in sys.argv else ''
     if preview_url: QTimer.singleShot(800, lambda: controller.webRequested.emit(preview_url,'Preview'))

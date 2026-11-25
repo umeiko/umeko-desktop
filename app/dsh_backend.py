@@ -350,7 +350,9 @@ class DshControllerMixin:
         self.chatChanged.emit()
         return True
 
-    def _send(self, text, steering=False):
+    def _send(self, text, steering=False, *, terminal_record=None, hold=False):
+        if terminal_record is not None:
+            return super()._send(text, steering, terminal_record=terminal_record, hold=hold)
         if self._view.id in self._session_files.pending:
             self.toast.emit('会话数据正在删除，请稍后再试')
             return False
@@ -413,7 +415,9 @@ class DshControllerMixin:
             return
         return super()._write_pi(payload, record)
 
-    def _stop(self):
+    def _stop(self, record=None):
+        if record is not None:
+            return super()._stop(record)
         record = self._view
         if not is_dsh(record):
             return super()._stop()

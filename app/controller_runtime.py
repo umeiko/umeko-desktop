@@ -281,6 +281,8 @@ class PiControllerMixin:
             payload.update(self._cowork.runtime_config(record, agent))
             if record.initial_title and not record.file:
                 payload['initialSessionTitle'] = record.initial_title
+        if record.terminal_owned:
+            payload.update(terminalOwned=True, mcpEnv={}, initialSessionId=record.id if not record.id.startswith("pending-") else "")
         self._pool.start(record, node_executable(), bridge, payload)
 
     def _write_first_warm_command(self, record, payload):
@@ -352,11 +354,12 @@ class PiControllerMixin:
         self.piCommandStarted.emit(record, action)
         return True
 
-    def _send(self, text, steering=False):
-        record = self._view
-        if self._cowork.active and not self._cowork.activeRole:
+    def _send(self, text, steering=False, *, terminal_record=None, hold=False):
+        record = terminal_record or self._view
+        if terminal_record is None and self._cowork.active and not self._cowork.activeRole:
             return False
         text = text.strip()
+        attachments = record.attachments if terminal_record is None else []
         self._last_send_error = ""
         if self._kernel_busy:
             self._last_send_error = "Pi 内核检查或更新正在进行；完成后即可再次发送消息。"
@@ -369,24 +372,29 @@ class PiControllerMixin:
             self.toast.emit(self._last_send_error)
             self.changed.emit()
             return False
-        if (not text and not record.attachments) or (record.busy and record.phase != "running"):
+        if (not text and not attachments) or (record.busy and record.phase != "running"):
             return False
         if record.busy and getattr(record, 'stop_token', ''):
-            if record.prompt_after_stop is not None:
+            if terminal_record is not None or record.prompt_after_stop is not None:
                 return False
             record.prompt_after_stop = (text, steering)
             return True
         if not record.busy:
+            if not record.subagents_active and terminal_record is None and record.terminal_owned and not record.terminal_clients:
+                record.terminal_owned = False
+                record.stale = bool(record.process)
             self._apply_pending_selection(record)
-        images = [{"type": "image", "data": item["data"], "mimeType": item["mime"]} for item in record.attachments if item["kind"] == "image"]
+        images = [{"type": "image", "data": item["data"], "mimeType": item["mime"]} for item in attachments if item["kind"] == "image"]
         self._repair_model_group_selection(record)
-        if record.provider == GROUP_PROVIDER:
+        if terminal_record is not None:
+            provider, model = record.pending_selection or (record.provider, record.model)
+            vision_enabled = False
+        elif record.provider == GROUP_PROVIDER:
             model, provider = record.model, record.provider
             vision_enabled = bool(images and "image" in (self.gateway.model_group_descriptor() or {}).get("input", ()))
         else:
             model, provider = self.store.data["selectedModel"], self.store.data["selectedProvider"]
             vision_enabled = bool(images and self.gateway.supports_vision(model, provider))
-        attachments = record.attachments
         if images and not vision_enabled and not self._can_analyze_attachments(model, provider):
             images = []
             vision = self._auxiliary_vision()
@@ -395,16 +403,26 @@ class PiControllerMixin:
                 attachments = [{**item, "kind": "file" if item["kind"] == "image" else item["kind"]} for item in attachments]
         text = attachment_prompt(text, attachments)
         if record.phase == "running":
+            if terminal_record is not None and record.action not in ("prompt", "agent-run", "widget-notify"):
+                return False
             if record.task_attempt:
                 self._task_records.input_files(record, attachments)
-            self._write_pi({"type": "steer" if steering else "follow-up", "text": text, "images": images,
+            effort = record.reasoning_effort
+            if terminal_record is not None and record.pending_reasoning_effort is not None:
+                effort = record.pending_reasoning_effort
+            else:
+                effort = reconcile_effort(effort, self._reasoning_levels(record))
+            self._write_pi({"type": ("terminal-steer" if steering else "terminal-follow-up") if terminal_record is not None else ("steer" if steering else "follow-up"), "text": text, "images": images,
                 "modelRoles": self.model_roles_for(record),
-                "model": model, "reasoningEffort": reconcile_effort(record.reasoning_effort, self._reasoning_levels())}, record)
-            record.attachments, record.draft = [], ""
-            self.attachmentsChanged.emit()
-            self.editorText.emit("")
+                "model": model, "reasoningEffort": effort, "messageId": uuid.uuid4().hex, "hold": hold}, record)
+            if terminal_record is None:
+                record.attachments, record.draft = [], ""
+                self.attachmentsChanged.emit()
+                self.editorText.emit("")
             return True
         if record.prepared_task and not self._task_records.start(record, attachments):
+            return False
+        if terminal_record is not None and not model:
             return False
         record.model, record.provider = model, provider
         if not record.id:
@@ -417,19 +435,22 @@ class PiControllerMixin:
         self._index_record(record)
         self.store.data["sessionMeta"].setdefault(record.id, {})["unread"] = False
         tracking = {"trackTask": True} if record.task_attempt else {}
-        if self._command_pi("prompt", text=text, images=images, **tracking):
-            record.attachments, record.draft = [], ""
-            self.attachmentsChanged.emit()
-            self.editorText.emit("")
-            self._save_session()
+        if terminal_record is not None and text.startswith("/"):
+            tracking["literalSlash"] = True
+        if self._command_pi("prompt", record=record, text=text, images=images, **tracking):
+            if terminal_record is None:
+                record.attachments, record.draft = [], ""
+                self.attachmentsChanged.emit()
+                self.editorText.emit("")
+            self._save_session(record)
             self.transcriptChanged.emit()
             return True
         if record.task_attempt:
             self._task_records.finish(record, "failed", "Pi 未能启动尝试")
         return False
 
-    def _request_compaction(self):
-        record = self._view
+    def _request_compaction(self, record=None, instructions=None):
+        record = record or self._view
         if self._kernel_busy:
             self.toast.emit("请等待 Pi 内核操作结束 / Wait for the Pi runtime operation to finish")
             return False
@@ -438,7 +459,7 @@ class PiControllerMixin:
             return False
         if record.busy:
             return False
-        if not self._command_pi("compact", record=record):
+        if not self._command_pi("compact", record=record, customInstructions=instructions or None):
             return False
         return True
 
@@ -639,6 +660,8 @@ class PiControllerMixin:
         elif kind == "queue_returned":
             self._restore_queued(record, [*event.get("steering", []), *event.get("followUp", [])])
         elif kind == "compaction_event":
+            if event.get("mode") == "auto" and event.get("state") == "success":
+                record.auto_compaction_serial += 1
             row = compaction_view({"type": "custom", "customType": "umeko-compaction",
                 "data": event, "id": event.get("entryId"), "timestamp": event.get("timestamp")})
             if row:
@@ -868,8 +891,8 @@ class PiControllerMixin:
         if transcript and visible:
             self.transcriptChanged.emit()
 
-    def _stop(self):
-        record = self._view
+    def _stop(self, record=None):
+        record = record or self._view
         if record.phase == "running" and not record.cancelled:
             record.cancelled = True
             token = uuid.uuid4().hex

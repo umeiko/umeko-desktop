@@ -37,7 +37,7 @@ export function createModelRoles() {
     async prompt(session, input, select, canExecute) {
       const {planningModel, executionModel, coordinatorModel} = input.modelRoles || {};
       const implementation = executionModel || coordinatorModel || input.model;
-      const run = () => session.prompt(input.text, {images: input.images || []});
+      const run = () => session.prompt(input.text, {images: input.images || [], expandPromptTemplates: !input.literalSlash});
       if (!planningModel || input.text.startsWith("/")) {
         await select(implementation);
         await run();
@@ -71,6 +71,11 @@ export function createModelRoles() {
   };
 }
 
+// Terminal commands are dispatched at an idle boundary so Pi can interpret
+// them as commands. They also delimit a batch of steering messages.
+const terminalCommand = text => text.startsWith("!");
+const literalSlash = text => text.startsWith("/");
+
 export function createInputQueue({getSession,isRunning,onQueue=()=>{},onEdited=()=>{},onReturned=()=>{},beforeInterrupt=()=>{}}) {
   let chain=Promise.resolve(), items=[], adding, interrupts=[], deferred=[], epoch=0;
   function sync(steering,followUp) {
@@ -80,7 +85,7 @@ export function createInputQueue({getSession,isRunning,onQueue=()=>{},onEdited=(
       const item=index>=0 ? previous.splice(index,1)[0] : adding || {id:crypto.randomUUID(),text,images:[]};
       return {...item,nativeText:text,mode};
     })).concat(deferred.map(item=>({...item,mode:"followUp"})));
-    onQueue(steering,[...followUp,...deferred.map(item=>item.text)],items.map(({id,text,mode})=>({id,text,mode})));
+    onQueue(steering,[...followUp,...deferred.map(item=>item.text)],items.map(({id,text,mode,hold})=>({id,text,mode,...(hold ? {hold} : {})})));
   }
   function publish() {
     const session=getSession();
@@ -88,7 +93,7 @@ export function createInputQueue({getSession,isRunning,onQueue=()=>{},onEdited=(
   }
   async function enqueue(item,mode="followUp") {
     const nextModel=interrupts.at(-1)?.model || getSession().model?.id;
-    if (mode==="followUp" && item.model && (deferred.length || item.model!==nextModel)) {
+    if (mode === "followUp" && (deferred.length || item.terminalCommand || item.literalSlash || (item.model && item.model !== nextModel))) {
       deferred.push({...item,id:item.id || crypto.randomUUID()});
       publish();
       return;
@@ -115,7 +120,39 @@ export function createInputQueue({getSession,isRunning,onQueue=()=>{},onEdited=(
       if (token!==epoch) throw new Error("当前任务已停止，请重新发送这条消息");
       const session=getSession();
       if (!session) throw new Error("Pi 尚未就绪");
-      if (["steer","promote-queue","steer-queued"].includes(input.type)) {
+      if (input.type === "terminal-steer") {
+        if (!isRunning() || session.isIdle) throw new Error("当前回合已结束，请重新发送这条消息");
+        const draft = input.text && !terminalCommand(input.text) ? input : null;
+        const selected = [];
+        const target = items[0] || draft;
+        if (target && !terminalCommand(target.text) && !target.images?.length) {
+          for (const item of items) {
+            if (terminalCommand(item.text) || item.images?.length || item.model !== target.model ||
+                item.reasoningEffort !== target.reasoningEffort ||
+                JSON.stringify(item.modelRoles) !== JSON.stringify(target.modelRoles)) break;
+            selected.push(item);
+          }
+        }
+        // A draft can still steer when an actual shell/skill command is at
+        // the queue front. The command remains queued for normal dispatch.
+        const includeDraft = draft && (!selected.length ||
+            (selected.length === items.length && draft.model === target.model &&
+             draft.reasoningEffort === target.reasoningEffort &&
+             JSON.stringify(draft.modelRoles) === JSON.stringify(target.modelRoles)));
+        const batch = includeDraft ? [...selected, draft] : selected;
+        if (!batch.length) {
+          if (input.text) await enqueue({...input, id: input.messageId, terminalCommand: terminalCommand(input.text), literalSlash: literalSlash(input.text)});
+          return;
+        }
+        const remaining = take().filter(item => !selected.includes(item));
+        if (input.text && !includeDraft) remaining.push({...input, id: input.messageId, terminalCommand: terminalCommand(input.text), literalSlash: literalSlash(input.text)});
+        interrupts.push({...batch[0], text: batch.map(item => item.text).join("\n\n"),
+          literalSlash: literalSlash(batch[0].text)});
+        beforeInterrupt();
+        await session.abort();
+        if (token === epoch) for (const item of remaining) await enqueue(item);
+        else if (remaining.length) onReturned(remaining);
+      } else if (["steer","promote-queue","steer-queued"].includes(input.type)) {
         if (!isRunning()) throw new Error("当前任务已结束，请重新发送这条消息");
         const selected=input.type==="steer" ? {id:input.messageId,text:input.text,images:input.images || [],model:input.model,reasoningEffort:input.reasoningEffort,modelRoles:input.modelRoles}
           : input.type==="promote-queue" ? items[0] : items.find(item=>item.id===input.id);
@@ -132,9 +169,9 @@ export function createInputQueue({getSession,isRunning,onQueue=()=>{},onEdited=(
         const pending=take();
         if (input.type==="edit-queue") onEdited(selected);
         for (const item of pending) if (item!==selected) await enqueue(item);
-      } else if (["follow-up","native-steer"].includes(input.type)) {
+      } else if (["follow-up","native-steer","terminal-follow-up"].includes(input.type)) {
         if (!isRunning() || session.isIdle) throw new Error("当前任务已结束，请重新发送这条消息");
-        await enqueue({id:input.messageId,text:input.text,images:input.images || [],model:input.model,reasoningEffort:input.reasoningEffort,modelRoles:input.modelRoles},input.type==="native-steer" ? "steering" : "followUp");
+        await enqueue({id:input.messageId,text:input.text,images:input.images || [],model:input.model,reasoningEffort:input.reasoningEffort,modelRoles:input.modelRoles, hold:input.hold, literalSlash: input.type === "terminal-follow-up" && literalSlash(input.text), terminalCommand: input.type === "terminal-follow-up" && terminalCommand(input.text)},input.type==="native-steer" ? "steering" : "followUp");
       } else throw new Error("未知的排队操作");
     });
     chain=work.catch(()=>{});
