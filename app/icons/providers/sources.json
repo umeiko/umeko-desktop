@@ -27,5 +27,17 @@
     "url": "https://zcode.z.ai/favicon-192x192.png?v=20260707-transparent",
     "sha256": "089bdfa74910eaed241eac46bf5d02bb5718f15d8d6b247a1ee61b3372c9c82c",
     "description": "Official ZCode favicon; Z brand mark belongs to Zhipu / Z.ai."
+  },
+  "volcengine.svg": {
+    "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/9752d967494e48d8f83f2808feb2b0207bf70997/packages/static-svg/icons/volcengine-color.svg",
+    "sha256": "84f9e2cd1da7e73dc6c9a0f2521745d39cae96c008752cdb1baf57a8c94393a1",
+    "license": "MIT, LobeHub Icons; platform brand mark belongs to its respective owner",
+    "licenseUrl": "https://github.com/lobehub/lobe-icons/blob/9752d967494e48d8f83f2808feb2b0207bf70997/LICENSE"
+  },
+  "bailian.svg": {
+    "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/9752d967494e48d8f83f2808feb2b0207bf70997/packages/static-svg/icons/bailian-color.svg",
+    "sha256": "5cc26dc961b2ecd0912f4e023c8ce745bcc52ac45b1c4baeadd7201f6b60de25",
+    "license": "MIT, LobeHub Icons; platform brand mark belongs to its respective owner",
+    "licenseUrl": "https://github.com/lobehub/lobe-icons/blob/9752d967494e48d8f83f2808feb2b0207bf70997/LICENSE"
   }
 }

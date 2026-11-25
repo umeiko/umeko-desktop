@@ -338,7 +338,7 @@ try:
         def complete(self, model, messages, tools, max_tokens):
             system = messages[0]["content"]
             assert "You are Umeko" in system
-            assert "Pi embedded in Umeko Desktop" in system and "run_pi_command" in system
+            assert "Pi embedded in Umeko Desktop" in system and "pi.run" in system
             assert "You have no shell or file write tool" not in system
             if messages[-1]["role"] != "tool":
                 return Completion(tool_calls=[{"id":"write-test","name":"write","arguments":{"path":"hello.txt","content":"hello world"}}])
@@ -515,10 +515,15 @@ try:
     backend.changed.emit()
     assert (backend.greeting, backend.portrait) == (greeting, portrait)
     capture("30-yanami-theme-chat")
-    for index in range(1, 13):
-        asset = QImage(str(ROOT / f"app/icons/portraits/{index:02d}.png"))
-        assert not asset.isNull() and asset.hasAlphaChannel(), index
-        assert asset.pixelColor(0, 0).alpha() == 0, index
+    folder = ROOT / "app/icons/portraits"
+    count = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))["count"]
+    filenames = [f"{index:02d}.webp" for index in range(1, count + 1)]
+    assert sorted(path.name for path in folder.glob("*.webp")) == filenames
+    for name in filenames:
+        asset = QImage(str(folder / name))
+        assert not asset.isNull() and asset.hasAlphaChannel(), name
+        assert asset.width() == asset.height() == 512, name
+        assert asset.pixelColor(0, 0).alpha() <= 4, name
     class StreamingFixture:
         def __init__(self): self.advance = threading.Event()
         def events(self, model, messages, tools, max_tokens, parameters):

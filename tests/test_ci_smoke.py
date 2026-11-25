@@ -8,11 +8,57 @@ import unittest
 import runpy
 import shutil
 from pathlib import Path
+from unittest.mock import Mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class SmokeProfileTests(unittest.TestCase):
+    def test_preview_waits_for_verifier_before_capture_and_exit(self):
+        from PySide6.QtCore import QCoreApplication, QTimer
+        from app.smoke_lifecycle import watch_smoke_finish
+        app = QCoreApplication.instance() or QCoreApplication([])
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / 'finish'
+            window = Mock()
+            window.grabWindow.return_value.save.return_value = True
+            timer = watch_smoke_finish(app, window, str(marker), 'preview.png')
+            observed = []
+
+            def verifier_ready():
+                observed.append(not window.grabWindow.called)
+                marker.write_text('ready', encoding='utf-8')
+
+            QTimer.singleShot(150, verifier_ready)
+            watchdog = QTimer()
+            watchdog.setSingleShot(True)
+            watchdog.timeout.connect(lambda: app.exit(7))
+            watchdog.start(2000)
+            try:
+                self.assertEqual(app.exec(), 0)
+                self.assertEqual(observed, [True])
+                window.grabWindow.return_value.save.assert_called_once_with('preview.png')
+                self.assertFalse(timer.isActive())
+            finally:
+                timer.stop()
+                watchdog.stop()
+
+    def test_preview_capture_failure_is_not_a_successful_exit(self):
+        from PySide6.QtCore import QCoreApplication
+        from app.smoke_lifecycle import watch_smoke_finish
+        app = QCoreApplication.instance() or QCoreApplication([])
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / 'finish'
+            marker.touch()
+            window = Mock()
+            window.grabWindow.return_value.save.return_value = False
+            timer = watch_smoke_finish(app, window, str(marker), 'preview.png')
+            try:
+                self.assertEqual(app.exec(), 1)
+                self.assertFalse(timer.isActive())
+            finally:
+                timer.stop()
+
     def test_packaged_preview_network_helper_runs_offline(self):
         verifier = runpy.run_path(str(ROOT / 'scripts/ci-smoke.py'), run_name='preview_network_fixture')
         with tempfile.TemporaryDirectory() as directory:

@@ -9,6 +9,8 @@ import sqlite3
 import stat
 import uuid
 
+from .team_board import next_task, task_ready
+
 SCHEMA = """
 CREATE TABLE tasks (
     id TEXT PRIMARY KEY, objective TEXT NOT NULL, scope TEXT NOT NULL,
@@ -33,6 +35,20 @@ CREATE TABLE files (
     recorded_state TEXT NOT NULL, checked TEXT, check_result TEXT,
     UNIQUE (attempt_id, source, event_id, path)
 );
+"""
+
+TEAM_SCHEMA = """
+CREATE TABLE IF NOT EXISTS agent_teams (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, members TEXT NOT NULL, created TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS team_board_events (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id TEXT NOT NULL REFERENCES agent_teams(id),
+    kind TEXT NOT NULL, actor TEXT NOT NULL, text TEXT NOT NULL,
+    task_id TEXT, task TEXT, recipients TEXT NOT NULL, created TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS team_events_by_team ON team_board_events(team_id, sequence);
+CREATE INDEX IF NOT EXISTS team_events_by_task ON team_board_events(team_id, task_id, sequence);
 """
 
 
@@ -112,6 +128,7 @@ class TaskStore:
                 db.execute("ALTER TABLE steps ADD COLUMN updated TEXT")
                 db.execute("ALTER TABLE files ADD COLUMN observed TEXT")
                 db.execute("PRAGMA user_version = 2")
+            db.executescript(TEAM_SCHEMA)
 
     @contextmanager
     def connection(self):
@@ -126,6 +143,79 @@ class TaskStore:
         with self.connection() as db:
             db.execute("INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?)", (task_id, objective, scope, project, now, now))
         return task_id
+
+    @staticmethod
+    def _team(row):
+        return {**dict(row), 'members': json.loads(row['members'])}
+
+    def create_team(self, name, members):
+        team = {'id': uuid.uuid4().hex, 'name': name, 'members': members, 'created': timestamp()}
+        with self.connection() as db:
+            db.execute('INSERT INTO agent_teams (id, name, members, created) VALUES (?, ?, ?, ?)',
+                       (team['id'], name, json.dumps(members, ensure_ascii=False), team['created']))
+        return team
+
+    def teams(self):
+        with self.connection() as db:
+            return [self._team(row) for row in db.execute('SELECT * FROM agent_teams ORDER BY created, id')]
+
+    def team(self, team_id):
+        with self.connection() as db:
+            row = db.execute('SELECT * FROM agent_teams WHERE id = ?', (team_id,)).fetchone()
+            return self._team(row) if row else None
+
+    @staticmethod
+    def _team_tasks(db, team_id):
+        rows = db.execute('''
+            SELECT event.task FROM (
+                SELECT MIN(sequence) AS first, MAX(sequence) AS latest FROM team_board_events
+                WHERE team_id = ? AND task_id IS NOT NULL GROUP BY task_id
+            ) revisions JOIN team_board_events event ON event.sequence = revisions.latest
+            ORDER BY revisions.first
+        ''', (team_id,))
+        tasks = (json.loads(row['task']) for row in rows)
+        return {task['id']: task for task in tasks}
+
+    @staticmethod
+    def _team_event(row):
+        return {**dict(row), 'task': json.loads(row['task']) if row['task'] else None,
+                'recipients': json.loads(row['recipients'])}
+
+    def team_board(self, team_id, after, limit):
+        with self.connection() as db:
+            db.execute('BEGIN')
+            tasks = self._team_tasks(db, team_id)
+            rows = db.execute('''
+                SELECT sequence, kind, actor, text, task, recipients, created FROM team_board_events
+                WHERE team_id = ? AND sequence > ? ORDER BY sequence LIMIT ?
+            ''', (team_id, after, limit + 1)).fetchall()
+        events = [self._team_event(row) for row in rows[:limit]]
+        return {'teamId': team_id, 'events': events, 'hasMore': len(rows) > limit,
+                'nextAfter': events[-1]['sequence'] if events else after,
+                'tasks': [{**task, 'ready': task['status'] == 'pending' and task_ready(task, tasks)}
+                          for task in tasks.values()]}
+
+    def post_team_event(self, team, actor, kind, fields, recipients):
+        # Adapted from @deepseek-ai/dsh-agent-team 0.2.2-rc.5, task-board.ts:
+        # read current version, validate, and append under one writer transaction.
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            task = None
+            if kind != 'message':
+                tasks = self._team_tasks(db, team['id'])
+                if kind == 'task':
+                    if len(tasks) >= 128:
+                        raise ValueError('每个团队最多保留 128 项任务')
+                    fields = {**fields, 'taskId': uuid.uuid4().hex}
+                task = next_task(tasks, kind, fields, actor, team['members'])
+            text, created = fields['text'], timestamp()
+            cursor = db.execute('''
+                INSERT INTO team_board_events (team_id, kind, actor, text, task_id, task, recipients, created)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (team['id'], kind, actor['name'], text, task['id'] if task else None,
+                  json.dumps(task, ensure_ascii=False) if task else None, json.dumps(recipients), created))
+            return {'sequence': cursor.lastrowid, 'kind': kind, 'actor': actor['name'], 'text': text,
+                    'task': task, 'recipients': recipients, 'created': created}
 
     def tasks(self, offset=0, limit=-1):
         with self.connection() as db:
@@ -299,3 +389,12 @@ class TaskStore:
                     SELECT 1 FROM attempts WHERE task_id = ? AND state = 'running'
                 )
             """, (task_id, task_id)).rowcount)
+
+    def erase_sessions(self, identifiers):
+        """Remove private attempts and their dependent steps/files with a chat."""
+        with self.connection() as db:
+            for identifier in identifiers:
+                tasks = [row[0] for row in db.execute('SELECT DISTINCT task_id FROM attempts WHERE session_id = ?', (identifier,))]
+                db.execute('DELETE FROM attempts WHERE session_id = ?', (identifier,))
+                for task in tasks:
+                    db.execute('DELETE FROM tasks WHERE id = ? AND NOT EXISTS (SELECT 1 FROM attempts WHERE task_id = ?)', (task, task))

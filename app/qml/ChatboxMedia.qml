@@ -8,6 +8,8 @@ Column {
     property string toolId: ""
     property var expansionState: ({details:({})})
     property var selectionController: null
+    readonly property bool sessionActive: !selectionController || selectionController.sessionActive
+    readonly property int renderGeneration: selectionController ? selectionController.renderGeneration : 0
     property int messageIndex: -1
     property int blockOffset: 0
     spacing: 10
@@ -61,7 +63,67 @@ Column {
                     Image {
                         id: preview; objectName: "chatboxImage_" + card.key; anchors.fill: parent
                         readonly property bool loaded: status === Image.Ready
-                        source: parent.visible ? card.item.url : ""; asynchronous: true; cache: true; autoTransform: true
+                        readonly property string wantedSource: card.inlineImage ? String(card.item.url || "") : ""
+                        readonly property bool requestActive: root.sessionActive
+                        readonly property int currentGeneration: root.renderGeneration
+                        property int requestGeneration: -1
+                        property bool initialized: false
+                        property var byteOwner: null
+                        property double reportedBytes: 0
+                        readonly property var accountingOwner: root.selectionController
+                        // sourceSize is only the requested bound. With both item
+                        // dimensions fixed, implicit size reflects the decoded
+                        // pixmap; include it for providers that exceed the bound.
+                        // DPR and RGBA give a conservative decoded-memory estimate.
+                        readonly property size decodedSize: Qt.size(
+                            Math.ceil(Math.max(0, sourceSize.width, implicitWidth * Math.max(1, Screen.devicePixelRatio))),
+                            Math.ceil(Math.max(0, sourceSize.height, implicitHeight * Math.max(1, Screen.devicePixelRatio))))
+                        readonly property double decodedBytes: loaded ? decodedSize.width * decodedSize.height * 4 : 0
+                        function reportBytes() {
+                            if (!initialized) return
+                            if (byteOwner === accountingOwner) {
+                                const delta = decodedBytes - reportedBytes
+                                reportedBytes = decodedBytes
+                                if (byteOwner && typeof byteOwner.adjustDecodedImageBytes === "function" && delta)
+                                    byteOwner.adjustDecodedImageBytes(delta)
+                                return
+                            }
+                            if (byteOwner && typeof byteOwner.adjustDecodedImageBytes === "function")
+                                byteOwner.adjustDecodedImageBytes(-reportedBytes)
+                            byteOwner = accountingOwner
+                            reportedBytes = decodedBytes
+                            if (byteOwner && typeof byteOwner.adjustDecodedImageBytes === "function")
+                                byteOwner.adjustDecodedImageBytes(reportedBytes)
+                        }
+                        function syncSource() {
+                            if (!initialized) return
+                            const sameSource = source.toString() === wantedSource
+                            // A completed image belongs to this retained item and
+                            // can survive a switch; never retain an in-flight load.
+                            if (sameSource && status === Image.Ready) {
+                                requestGeneration = currentGeneration
+                                return
+                            }
+                            if (!requestActive || !sameSource || requestGeneration !== currentGeneration)
+                                source = "" // Qt disconnects/cancels the old pixmap request.
+                            requestGeneration = currentGeneration
+                            if (requestActive) source = wantedSource
+                        }
+                        onWantedSourceChanged: syncSource()
+                        onRequestActiveChanged: syncSource()
+                        onCurrentGenerationChanged: syncSource()
+                        onStatusChanged: {
+                            if (initialized && status === Image.Ready && (!requestActive || requestGeneration !== currentGeneration))
+                                source = ""
+                        }
+                        onDecodedBytesChanged: reportBytes()
+                        onAccountingOwnerChanged: reportBytes()
+                        Component.onCompleted: { initialized = true; syncSource(); reportBytes() }
+                        Component.onDestruction: {
+                            if (byteOwner && typeof byteOwner.adjustDecodedImageBytes === "function")
+                                byteOwner.adjustDecodedImageBytes(-reportedBytes)
+                        }
+                        asynchronous: true; cache: false; autoTransform: true
                         sourceSize: Qt.size(Math.min(1200, card.item.pixelWidth || 1200), Math.min(900, card.item.pixelHeight || 900)); fillMode: Image.PreserveAspectFit
                     }
                     BusyIndicator { anchors.centerIn: parent; running: preview.status === Image.Loading; visible: running; width: 26; height: 26 }

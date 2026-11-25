@@ -1,10 +1,11 @@
 {
-  "visible": false,
+  "visible": true,
   "appearance": "yanami",
   "size": 192,
   "alwaysOnTop": true,
   "paused": false,
   "reminderNotificationsEnabled": true,
   "sampleIntervalMs": 1500,
-  "minimumStateMs": 3000
+  "minimumStateMs": 3000,
+  "personas": {}
 }

@@ -49,13 +49,16 @@ FocusScope {
     property int requestedGeneration: 0
     readonly property bool working: !!job || Object.keys(pending).length > 0
     readonly property bool sessionBusy: !!(sdk.session && sdk.session.busy)
+    readonly property bool cowork: !!(sdk.session && sdk.session.cowork)
+    readonly property int coworkRevision: cowork ? (sdk.session.coworkRevision || 0) : 0
+    onCoworkRevisionChanged: if (initialized && cowork) coworkRefresh.restart()
     readonly property real rowHeight: 56 * sdk.scale
     readonly property var selected: skills.filter(row => row.id === selectedId)[0] || null
     readonly property var entries: folderEntries()
     readonly property bool importReady: !!importPreview.id && !(importPreview.errors || []).length
         && (importPreview.skills || []).some(row => !row.error && importDecisions[row.name] !== "skip" && (!row.conflict || row.replaceable))
     function t(zh,en) {return sdk.language.indexOf("zh")===0 ? zh : en}
-    function scopeLabel(scope) {return scope==="project" ? t("工作区","Workspace") : t("全局","Global")}
+    function scopeLabel(scope) {return scope==="builtin" ? "umeko-desktop" : scope==="project" ? (cowork ? t("用户自定义 Skill 库","User Skill library") : t("工作区","Workspace")) : t("全局","Global")}
     function description(row){return row ? (row.descriptions || {})[sdk.language] || row.description || "" : ""}
     function loadPreview() {
         if(!selected || !sdk.active)return
@@ -96,8 +99,8 @@ FocusScope {
     Timer{interval:80;repeat:true;running:root.sdk.active && !!root.previewJob;onTriggered:if(!root.previewRequest)root.previewRequest=root.sdk.requestHost("skills.job",{id:root.previewJob})}
     function folderEntries() {
         let result=[]
-        for(const scope of ["project","global"]) {
-            const rows=skills.filter(row=>row.scope===scope && (row.name+" "+description(row)+" "+(row.description || "")).toLowerCase().indexOf(query.toLowerCase())>=0)
+        for(const scope of cowork ? ["project","builtin"] : ["project","global"]) {
+            const rows=skills.filter(row=>(row.scope===scope || scope==="builtin" && row.scope==="bundled") && (row.name+" "+description(row)+" "+(row.description || "")).toLowerCase().indexOf(query.toLowerCase())>=0)
                 .sort((a,b)=>a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
             result.push({kind:"scope",scope:scope,count:rows.length})
             if(collapsedScopes.indexOf(scope)>=0)continue
@@ -201,7 +204,7 @@ FocusScope {
         notice=errorText(result.error || (noticeError ? t("操作失败，请重试。","Operation failed; retry.") : ""))
         if(noticeError)return
         if(operation==="skills.browse") {
-            skills=result.skills || [];roots=result.roots || {};if(!roots.project)selectedScope="global"
+            skills=result.skills || [];roots=result.roots || {};if(!roots.project)selectedScope=cowork ? "builtin" : "global"
             if(!selected)selectedId=skills.length ? skills[0].id : ""
             previewDelay.restart()
             if(listPosition){const position=listPosition;listPosition=null;Qt.callLater(()=>{list.currentIndex=Math.max(0,Math.min(position.index,entries.length-1));list.contentY=Math.max(0,Math.min(position.y,list.contentHeight-list.height));selectedScope=position.scope})}
@@ -252,7 +255,8 @@ FocusScope {
             Label{text:root.route==="main" ? "Skills" : root.t("导入 Skill","Import Skill");font.bold:true;font.pixelSize:Umeko.Theme.font(16);Layout.fillWidth:true}
             Umeko.HelpButton {
                 objectName:"skillManagerDiscoveryHelp"
-                help:root.t("启用后，全局和当前工作区中可用 Skill 的名称、简介和路径会自动提供给智能体；任务匹配时才读取正文和附带资料，无需先双击。每个 Skill 行尾的复选框单独控制当前会话是否启用，自动保存，不修改全局或工作区的 Pi 默认配置。双击只把文件夹附加到输入框。停用此 Widget 会关闭相应范围的技能发现与加载；重新启用后恢复原配置。收起面板不影响启用状态。运行中的任务在本轮结束后应用开关。",
+                help:root.cowork ? root.t("导入和勾选的 Skill 由同一 Coworker 大类的实例共用。运行中的任务在本轮结束后应用变更。","Imported Skills and selections are shared by instances of this Coworker type. Running tasks apply changes after their current turn.") :
+                    root.t("启用后，全局和当前工作区中可用 Skill 的名称、简介和路径会自动提供给智能体；任务匹配时才读取正文和附带资料，无需先双击。每个 Skill 行尾的复选框单独控制当前会话是否启用，自动保存，不修改全局或工作区的 Pi 默认配置。双击只把文件夹附加到输入框。停用此 Widget 会关闭相应范围的技能发现与加载；重新启用后恢复原配置。收起面板不影响启用状态。运行中的任务在本轮结束后应用开关。",
                     "When enabled, available Skills in Global and the current workspace are advertised to the agent by name, description and path. Instructions and references are read only when needed; no double-click is required. Each checkbox controls availability in this chat and saves automatically, without changing Pi defaults. Double-click only attaches the folder to the composer. Disabling this Widget turns off skill discovery and loading in that scope; enabling it restores the existing configuration. Closing the panel does not disable Skills. Running tasks apply the change after their current turn.")
             }
             SmallButton{objectName:"skillManagerImport";visible:root.route==="main";text:root.t("导入","Import");enabled:!root.working;onClicked:root.openImport()}
@@ -343,9 +347,7 @@ FocusScope {
                             visible:entry.skill;Layout.preferredWidth:20*root.sdk.scale;Layout.preferredHeight:22*root.sdk.scale
                             padding:0;spacing:0;checked:entry.skill && !!entry.modelData.skill.enabled
                             enabled:entry.skill && entry.modelData.skill.canToggle!==false && !root.working && !root.sessionBusy
-                            indicator:Rectangle {width:15*root.sdk.scale;height:15*root.sdk.scale;x:(skillEnabled.width-width)/2;y:(skillEnabled.height-height)/2;radius:3*root.sdk.scale;color:skillEnabled.checked ? root.sdk.colors.accent : "transparent";border.color:skillEnabled.enabled ? skillEnabled.checked ? root.sdk.colors.accent : root.sdk.colors.muted : root.sdk.colors.line
-                                Umeko.Glyph {anchors.centerIn:parent;name:"check";visible:skillEnabled.checked;color:root.sdk.colors.surface;width:13*root.sdk.scale;height:13*root.sdk.scale}
-                            }
+
                             contentItem:Item {}
                             onClicked:{const next=checked;checked=Qt.binding(()=>entry.skill && !!entry.modelData.skill.enabled);root.setEnabled(entry.modelData.skill,next)}
                             Accessible.name:entry.skill ? root.t("启用 ","Enable ")+entry.modelData.skill.name : ""
@@ -364,7 +366,7 @@ FocusScope {
                     RowLayout {
                         Layout.fillWidth:true
                         Label {Layout.fillWidth:true;font.bold:true;text:root.selected ? root.selected.name+" · SKILL.md" : root.t("Skill 预览","Skill preview")}
-                        SmallButton {text:root.t("打开","Open");visible:!!root.selected;onClicked:root.request("skills.open",{id:root.selectedId,mode:"edit"})}
+                        SmallButton {text:root.t("打开","Open");visible:!!root.selected && !["builtin","bundled"].includes(root.selected.scope);onClicked:root.request("skills.open",{id:root.selectedId,mode:"edit"})}
                     }
                     Label {Layout.fillWidth:true;visible:!!root.selected && !!text;text:root.description(root.selected);wrapMode:Text.Wrap;maximumLineCount:3;color:root.sdk.colors.muted;font.pixelSize:Umeko.Theme.font(10)}
                     ScrollView {
@@ -393,8 +395,8 @@ FocusScope {
             Input{id:importSource;objectName:"skillManagerImportSource";Layout.fillWidth:true;placeholderText:root.t("本地路径","Local path");enabled:!root.working;onTextChanged:root.clearImportPreview();onAccepted:root.previewImport()}
             RowLayout {
                 Layout.fillWidth:true
-                SmallButton{objectName:"skillManagerImportProject";text:root.t("工作区","Workspace");selected:root.importProject;enabled:!root.working && !!root.roots.project;onClicked:{root.importProject=true;root.clearImportPreview()}}
-                SmallButton{objectName:"skillManagerImportGlobal";text:root.t("全局","Global");selected:!root.importProject;enabled:!root.working;onClicked:{root.importProject=false;root.clearImportPreview()}}
+                SmallButton{objectName:"skillManagerImportProject";text:root.scopeLabel("project");selected:root.importProject;enabled:!root.working && !!root.roots.project;onClicked:{root.importProject=true;root.clearImportPreview()}}
+                SmallButton{objectName:"skillManagerImportGlobal";visible:!root.cowork;text:root.t("全局","Global");selected:!root.importProject;enabled:!root.working;onClicked:{root.importProject=false;root.clearImportPreview()}}
                 Item{Layout.fillWidth:true}
                 SmallButton{objectName:"skillManagerImportPreview";text:root.t("预览","Preview");enabled:!root.working && importSource.text.trim()!=="";onClicked:root.previewImport()}
             }
@@ -449,7 +451,7 @@ FocusScope {
           Column {
             id:menuColumn;width:menuViewport.width
             Repeater {
-                model:root.contextRow ? ["insert","preview","edit","reveal","copy","copyPath","paste","rename","delete"] : ["paste"]
+                model:root.contextRow ? (["builtin","bundled"].includes(root.contextRow.scope) ? ["insert","preview","reveal","copy","copyPath"] : ["insert","preview","edit","reveal","copy","copyPath","paste","rename","delete"]) : ["paste"]
                 delegate:Button {
                     required property string modelData
                     objectName:"skillManagerMenu_"+modelData;width:menuColumn.width;height:29*root.sdk.scale
@@ -466,6 +468,10 @@ FocusScope {
     Timer {
         interval:200;repeat:true;running:root.sdk.active && !!root.job
         onTriggered:root.pollJob()
+    }
+    Timer {
+        id:coworkRefresh;interval:100
+        onTriggered:if(root.sdk.active) { if(root.working) restart(); else root.reload(true) }
     }
     Connections {
         target:root.sdk;ignoreUnknownSignals:true

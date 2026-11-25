@@ -8,7 +8,7 @@
 
 > 用户附带了来自widget：terminal-ID-xxxxxxxxxxxx的终端
 
-英文界面使用对应英文提示。这个引用指向终端插件中的已有进程。先 `umeko_desktop widgets.docs`，参数 `{"id":"terminal"}`，再通过 `widgets.call` 操作它。不要把 `terminal-ID-...` 当成 Widget 包 ID，也不要另外创建一个 Shell 代替用户附加的终端。
+英文界面使用对应英文提示。这个引用指向终端插件中的已有进程。先 `umeko_desktop widgets.docs`，参数 `{"id":"terminal"}`，再通过 `widgets.call` 操作它：Widget ID 始终是 `terminal`，`terminal-ID-...` 填在 `terminalId` 参数里。直接使用用户附加的这个终端。
 
 只有用户已附加到本聊天的终端才允许 Agent 访问；`list` 仅返回这些终端。其他聊天、猜测 ID、终端已关闭或工作区已改变时会被拒绝，需要用户重新附加。
 
@@ -26,7 +26,7 @@
 {"operation":"widgets.call","arguments":{"id":"terminal","method":"read","arguments":{"terminalId":"terminal-ID-xxxxxxxxxxxx","lines":100}}}
 ```
 
-方法调用返回 `accepted`、`requestId`，再以 `widgets.result` 读取 `completed` 或 `failed` 的实际 RPC 结果。`run` 的 `completed` 仅表示命令已写入终端，**不代表 Shell 命令执行结束或成功**。使用 `read` 检查真实输出、程序交互提示和 Shell 提示符；不要伪造退出码。`exitCode` 仅代表终端 Shell 进程退出，不是最近命令的退出码。
+方法调用返回 `accepted`、`requestId`，再以 `widgets.result` 读取 `completed` 或 `failed` 的实际 RPC 结果。`run` 的 `completed` 表示命令已写入终端；**命令的输出和是否结束用 `read` 查看**，包括程序交互提示和 Shell 提示符。向用户报告结果时以 `read` 读到的内容为准。`exitCode` 是终端 Shell 进程本身的退出码，与最近一条命令无关。
 
 ## 可见性与生命周期
 

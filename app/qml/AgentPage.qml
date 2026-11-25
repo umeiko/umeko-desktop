@@ -9,6 +9,7 @@ Column {
     property bool toolsOpen: false
     property bool pluginsOpen: false
     property bool desktopOpen: false
+    property bool requestHeadersOpen: false
     property bool dshOpen: false
     property real availableHeight: 600
     signal navigated()
@@ -17,7 +18,8 @@ Column {
     onPiOpenChanged: { if (!piOpen) toolsOpen = false; else { pluginsOpen = false; desktopOpen = false; dshOpen = false; backend.piManagement.scan() }; navigated() }
     onToolsOpenChanged: navigated()
     onPluginsOpenChanged: navigated()
-    onDesktopOpenChanged: { if (desktopOpen) { piOpen = false; pluginsOpen = false; dshOpen = false }; navigated() }
+    onDesktopOpenChanged: { requestHeadersOpen = false; if (desktopOpen) { piOpen = false; pluginsOpen = false; dshOpen = false }; navigated() }
+    onRequestHeadersOpenChanged: navigated()
     onDshOpenChanged: { if (dshOpen) { piOpen = false; pluginsOpen = false; desktopOpen = false }; navigated() }
     onVisibleChanged: if (!visible) { piOpen = false; pluginsOpen = false; desktopOpen = false; dshOpen = false }
     Button {
@@ -136,6 +138,9 @@ Column {
         }
         onClicked: root.desktopOpen = true
     }
+    PluginSessionModels {
+        width: parent.width; visible: profiles.length > 0 && !root.piOpen && !root.pluginsOpen && !root.desktopOpen && !root.dshOpen
+    }
     Column {
         objectName: "dshSettingsPage"
         width: parent.width; visible: root.dshOpen; spacing: 14
@@ -149,7 +154,7 @@ Column {
         DshSettings { width: parent.width }
     }
     Column {
-        width: parent.width; visible: root.desktopOpen; spacing: 14
+        width: parent.width; visible: root.desktopOpen && !root.requestHeadersOpen; spacing: 14
         RowLayout {
             width: parent.width; spacing: 8
             ActionButton { objectName: "backFromUmekoDesktopButton"; text: "Agent"; glyph: "arrow-left"; quiet: true; onClicked: root.desktopOpen = false }
@@ -157,7 +162,18 @@ Column {
             Text { font.family: Theme.fontFamily; text: "Umeko Desktop"; color: Theme.ink; font.pixelSize: Theme.font(14); font.weight: Font.Medium }
             Item { Layout.fillWidth: true }
         }
-        DesktopSettings { width: parent.width }
+        DesktopSettings { width: parent.width; onRequestHeadersRequested: root.requestHeadersOpen = true }
+    }
+    Column {
+        objectName: "customRequestsPage"
+        width: parent.width; visible: root.desktopOpen && root.requestHeadersOpen; spacing: 14
+        RowLayout {
+            width: parent.width; spacing: 8
+            ActionButton { objectName: "backFromRequestHeaders"; text: "Umeko Desktop"; glyph: "arrow-left"; quiet: true; onClicked: root.requestHeadersOpen = false }
+            Glyph { name: "chevron-right"; width: Theme.icon(13); height: Theme.icon(13) }
+            Text { Layout.fillWidth: true; text: I18n.t("自定义请求"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14); font.weight: Font.Medium; elide: Text.ElideRight }
+        }
+        RequestHeadersSettings { width: parent.width }
     }
     Column {
         width: parent.width; visible: root.pluginsOpen; spacing: 14
@@ -171,7 +187,13 @@ Column {
         DesktopPluginsPage { id:pluginManager; width: parent.width; height: Math.max(360, root.availableHeight - 64) }
     }
     Column {
+        id: piSettingsBody
         width: parent.width; visible: root.piOpen && !root.toolsOpen; spacing: 18
+        // The settings page is preloaded. Only marshal the catalog when the
+        // visible Pi page is actually searching it.
+        readonly property bool searching: visible && search.text.trim().length > 0
+        readonly property string resourceSearchText: searching ? JSON.stringify(backend.agentResources) : ""
+        readonly property string extensionSearchText: searching ? JSON.stringify(backend.piManagement.extensions) : ""
         RowLayout { width: parent.width; spacing: 8
             ActionButton { objectName: "backToAgentButton"; text: "Agent"; glyph: "arrow-left"; quiet: true; onClicked: root.piOpen = false }
             Glyph { name: "chevron-right"; width: Theme.icon(13); height: Theme.icon(13) }
@@ -188,9 +210,9 @@ Column {
         }
         SettingsFold {
             objectName: "piFold_extensions"; width: parent.width; title: I18n.t("扩展与工具"); query: search.text
-            searchTerms: I18n.t("安装 Skills MCP 服务器 builtin extensions 工具 资源 ") + JSON.stringify(backend.piManagement.extensions) + JSON.stringify(backend.agentResources)
+            searchTerms: I18n.t("安装 Skills MCP 服务器 builtin extensions 工具 资源 ") + piSettingsBody.extensionSearchText + piSettingsBody.resourceSearchText
             SettingsFold { objectName: "piFold_mcp"; width: parent.width; title: I18n.t("MCP 服务器"); nested: true; query: search.text; searchTerms: I18n.t("builtin:mcp 全局 项目 配置服务器 JSON"); McpSettings { width: parent.width } }
-            SettingsFold { objectName: "piFold_tools"; width: parent.width; title: I18n.t("工具与资源"); nested: true; query: search.text; searchTerms: I18n.t("原生 工具 Skills 提示模板 命令 资源 ") + JSON.stringify(backend.agentResources)
+            SettingsFold { objectName: "piFold_tools"; width: parent.width; title: I18n.t("工具与资源"); nested: true; query: search.text; searchTerms: I18n.t("原生 工具 Skills 提示模板 命令 资源 ") + piSettingsBody.resourceSearchText
                 SectionCard { width: parent.width; ActionButton { objectName: "openToolCatalogButton"; text: I18n.t("查看工具与资源"); glyph: "layers"; enabled: !backend.piManagement.busy && !backend.kernelBusy; onClicked: root.toolsOpen = true } }
             }
         }

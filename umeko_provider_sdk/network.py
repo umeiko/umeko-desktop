@@ -6,10 +6,12 @@ import urllib.parse
 import re
 import os
 import ssl
+import sys
 from pathlib import Path
 
 policy = ContextVar('umeko_network_policy', default=None)
 trace = ContextVar('umeko_network_trace', default=None)
+_MACOS_CA_FILE = Path('/etc/ssl/cert.pem')
 
 
 def validate_ca_file(value):
@@ -35,6 +37,11 @@ def tls_context(settings=None):
     """Extend platform trust for this provider only; keep peer/hostname checks."""
     settings = policy.get() if settings is None else settings
     context = ssl.create_default_context()
+    if sys.platform == 'darwin':
+        # Bundled OpenSSL can point to a Python installation absent on this Mac.
+        defaults = ssl.get_default_verify_paths()
+        if not (defaults.cafile or defaults.capath) and _MACOS_CA_FILE.is_file():
+            context.load_verify_locations(cafile=str(_MACOS_CA_FILE))
     files = (os.environ.get('NODE_EXTRA_CA_CERTS'), os.environ.get('UMEKO_MODEL_CA_FILE'), (settings or {}).get('caFile'))
     for path in dict.fromkeys(file for file in files if file):
         context.load_verify_locations(cafile=validate_ca_file(path))
@@ -85,6 +92,8 @@ class TracedResponse:
         return self._read('read', *args)
     def readline(self, *args):
         return self._read('readline', *args)
+    def read1(self, *args):
+        return self._read('read1' if hasattr(self.response, 'read1') else 'read', *args)
     def __enter__(self):
         return self
     def __exit__(self, *args):

@@ -1,6 +1,8 @@
 """Actual settings/navigation and browser dispatch, without opening a browser or loading WebView."""
 import json
+import cProfile
 import os
+import pstats
 import sys
 import tempfile
 import time
@@ -17,7 +19,9 @@ from app.storage import Store
 from app import webview
 from main import create_application
 
-store=Store();store.data['desktop']={'autoOpenSubmissions':False,'webDisplay':'external'};store.save()
+store=Store();store.data['desktop']={'autoOpenSubmissions':False,'webDisplay':'external'}
+store.data['sessionMeta']={f'history-{i}':{'draft':'Preserved draft '+str(i), 'viewport':{'index':i,'offset':24}} for i in range(1000)}
+store.save()
 app,engine,backend=create_application();window=engine.rootObjects()[0];window.resize(1200,900)
 warnings=[];engine.warnings.connect(lambda values:warnings.extend(v.toString() for v in values))
 output=ROOT/'build/desktop-settings-ui';output.mkdir(parents=True,exist_ok=True)
@@ -39,7 +43,23 @@ def wait(predicate,message):
 def click(name):
     wait(lambda:find(name) is not None and find(name).isVisible(),name+' did not appear')
     window.grabWindow();item=find(name)
-    QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,item.mapToScene(item.boundingRect().center()).toPoint());QTest.qWait(100)
+    scroll=find('settingsScroll')
+    if scroll and scroll.isVisible():
+        center=item.mapToItem(scroll,item.boundingRect().center()).y()
+        if not 0 <= center < scroll.height():
+            flick=scroll.property('contentItem')
+            flick.setProperty('contentY',max(0,min(flick.property('contentHeight')-flick.height(),
+                flick.property('contentY')+center-scroll.height()/2)))
+            QTest.qWait(100)
+    profile=cProfile.Profile()
+    profile.enable()
+    QTest.mouseClick(window,Qt.LeftButton,Qt.NoModifier,item.mapToScene(item.boundingRect().center()).toPoint())
+    profile.disable()
+    if name in ('desktopAutoOpenSubmissions','desktopChatWidthHints'):
+        config_reads=sum(value[1] for (file,line,function),value in pstats.Stats(profile).stats.items()
+                         if Path(file).name=='controller.py' and Path(file).parent.name=='app' and function=='config')
+        assert config_reads==0,('A desktop switch refreshed the whole QML configuration',name,config_reads)
+    QTest.qWait(100)
 
 def js(source):
     expression=QQmlExpression(engine.rootContext(),window,source);expression.evaluate()
@@ -59,6 +79,27 @@ try:
     click('openUmekoDesktopSettingsButton')
     assert not find('openPiSettingsButton').isVisible()
     assert not find('desktopAutoOpenSubmissions').property('checked')
+    assert not find('desktopCoworkEnabled').property('checked')
+    assert not find('openCoworkButton').isVisible()
+    assert not find('desktopTeamCollaborationEnabled').property('checked')
+    assert not find('desktopRemoteWorkspaceEnabled').property('checked')
+    assert find('teamRole_planningModelPicker') is None
+    assert find('remoteEnvironmentHostInput') is None
+    click('desktopCoworkEnabled')
+    assert find('coworkSidebarExperimentalBadge').isVisible()
+    click('desktopCoworkEnabled')
+    assert not find('openCoworkButton').isVisible()
+    click('desktopTeamCollaborationEnabled')
+    assert find('teamRole_planningModelPicker').isVisible()
+    assert find('teamRole_executionModelPicker').isVisible()
+    assert Store(store.directory).data['desktop']['teamCollaborationEnabled']
+    click('desktopTeamCollaborationEnabled')
+    assert find('teamRole_planningModelPicker') is None
+    click('desktopRemoteWorkspaceEnabled')
+    assert find('remoteEnvironmentHostInput').isVisible()
+    assert Store(store.directory).data['desktop']['remoteWorkspaceEnabled']
+    click('desktopRemoteWorkspaceEnabled')
+    assert find('remoteEnvironmentHostInput') is None
     assert find('desktopChatWidthHints').property('checked')
     assert find('desktopWebDisplay').property('currentIndex')==1
     for language,scale in [('zh',1.0),('en',2.0)]:
@@ -86,6 +127,13 @@ try:
     assert backend.config['desktop']['chatWidthHints'] and find('chatWidthControls').property('hintsEnabled')
     click('backFromUmekoDesktopButton')
     assert find('openPiSettingsButton').isVisible() and find('openDesktopPluginsButton').isVisible()
+    window.setProperty('settingsTab', 0); QTest.qWait(100)
+    multimodal = find('multimodalSettingsEntry')
+    group = find('modelGroupSettingsEntry')
+    assert multimodal.isVisible() and group.isVisible()
+    assert multimodal.mapToScene(multimodal.boundingRect().bottomLeft()).y() < group.mapToScene(group.boundingRect().topLeft()).y()
+    providers = find('commonProvidersSection')
+    assert group.mapToScene(group.boundingRect().bottomLeft()).y() < providers.mapToScene(providers.boundingRect().topLeft()).y()
     window.setProperty('page','chat');QTest.qWait(100)
     pane=find('webPane');url='http://127.0.0.1:9876/preview'
     html=base/'page.html';html.write_text('<h1>Local page</h1>')
@@ -108,6 +156,7 @@ try:
         wait(lambda:not backend.documentPreview.state.get('busy'),'Markdown did not finish loading')
         assert find('webSurfaceLoader').property('item') is None
     assert not warnings,'\n'.join(warnings)
+    assert Store(store.directory).data['sessionMeta']['history-999']['draft']=='Preserved draft 999'
     print('DESKTOP_SETTINGS_UI_OK: persisted policy, Agent navigation, bilingual scaled settings, manual/automatic browser routing, local HTML and no embedded WebView')
 finally:
     backend.close()

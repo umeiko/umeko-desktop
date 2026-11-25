@@ -5,6 +5,7 @@ import QtQuick.Layouts
 Column {
     id: root
     property string query: ""
+    readonly property var resources: visible ? backend.agentResources : ({})
     spacing: 12
     SectionCard {
         objectName: "toolPermissionSettings"
@@ -16,13 +17,14 @@ Column {
                 Layout.fillWidth: true; spacing: 8
                 Repeater {
                     model: [{mode:"ask",label:I18n.t("每次询问")},{mode:"auto",label:I18n.t("全自动")}]
-                    ActionButton {
+                    RadioButton {
                         required property var modelData
                         objectName: "toolPermission_" + modelData.mode
                         text: modelData.label
-                        primary: backend.config.agent.toolPermissionMode === modelData.mode
+                        font.family:Theme.fontFamily;font.pixelSize:Theme.font(12,true)
+                        checked: backend.config.agent.toolPermissionMode === modelData.mode
                         Accessible.role: Accessible.RadioButton
-                        Accessible.checked: primary
+                        Accessible.checked: checked
                         onClicked: backend.setToolPermissionMode(modelData.mode)
                     }
                 }
@@ -95,7 +97,7 @@ Column {
             Text { font.family: Theme.fontFamily; text: I18n.t("Pi 配置目录"); color: Theme.ink; font.pixelSize: Theme.font(11, visible) }
             InputField { id: agentDir; objectName: "piAgentDir"; Layout.fillWidth: true; text: backend.config.agent.agentDir; placeholderText: I18n.t("默认 ~/.pi/agent") }
             Repeater {
-                model: [{kind:"skills",label:"Skills",items:backend.agentResources.skills}]
+                model: [{kind:"skills",label:"Skills",items:root.resources.skills || []}]
                 ColumnLayout {
                     required property var modelData
                     Layout.fillWidth: true; spacing: 9
@@ -122,7 +124,7 @@ Column {
             Text { font.family: Theme.fontFamily; text: I18n.t("额外扩展路径"); color: Theme.ink; font.pixelSize: Theme.font(11, visible) }
             InputField { id: extensionPaths; Layout.fillWidth: true; text: backend.config.agent.extensionPaths.join(";"); placeholderText: I18n.t("多个路径用分号分隔") }
             Repeater {
-                model: backend.agentResources.diagnostics
+                model: root.resources.diagnostics || []
                 Text { font.family: Theme.fontFamily; required property var modelData; Layout.fillWidth: true; text: modelData.message || ""; color: Theme.danger; font.pixelSize: Theme.font(11, visible); wrapMode: Text.Wrap }
             }
         }

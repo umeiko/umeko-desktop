@@ -8,10 +8,32 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { randomBytes } from "node:crypto";
+import { crc32, deflateSync } from "node:zlib";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const release = join(root, "runtime/releases/coding-1.3.0");
+const release = join(root, "runtime/releases/coding-1.5.2");
 const png = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAACXBIWXMAAA9hAAAPYQGoP6dpAAAAKElEQVRIie3NMQEAAAjDMMC/ZzDBvlRA01vZJvwHAAAAAAAAAAAAbx2jxAE/0VKtIwAAAABJRU5ErkJggg==";
+
+function noisyPng(size) {
+  const chunk = (type, data) => {
+    const buffer = Buffer.alloc(data.length + 12);
+    buffer.writeUInt32BE(data.length, 0);
+    buffer.write(type, 4);
+    data.copy(buffer, 8);
+    buffer.writeUInt32BE(crc32(buffer.subarray(4, -4)), buffer.length - 4);
+    return buffer;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(size, 0);
+  header.writeUInt32BE(size, 4);
+  header[8] = 8;
+  header[9] = 2;
+  const stride = size * 3 + 1, rows = randomBytes(stride * size);
+  for (let i = 0; i < rows.length; i += stride) rows[i] = 0;
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header),
+    chunk("IDAT", deflateSync(rows)), chunk("IEND", Buffer.alloc(0))]);
+}
 
 test("real bridge completes 25 mixed images, reopens an archived image, and preserves history", { timeout: 120000 }, async t => {
   const base = process.env.UMEKO_RECENT_IMAGES_TEST_ROOT || tmpdir();
@@ -19,12 +41,20 @@ test("real bridge completes 25 mixed images, reopens an archived image, and pres
   const dir = mkdtempSync(join(base, "recent-images-")), agentDir = join(dir, "agent");
   mkdirSync(agentDir, { recursive: true });
   writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ retry: { enabled: false }, cacheWarming: "off" }));
-  const counts = [], errors = [], readPaths = [];
+  const counts = [], errors = [], readPaths = [], oversized = [], projected = [];
   let reopening = false, sessionFile, child, stderr = "";
   const server = createServer(async (req, res) => {
     let raw = "";
     for await (const chunk of req) raw += chunk;
+    if (Buffer.byteLength(raw) > 1024 * 1024) {
+      oversized.push(Buffer.byteLength(raw));
+      res.writeHead(413, { "Content-Type": "text/html" });
+      res.end("<html>413 Request Entity Too Large</html>");
+      return;
+    }
     const body = JSON.parse(raw);
+    projected.push(body.messages.flatMap(message => Array.isArray(message.content)
+      ? message.content.filter(block => block.type === "image_url").map(block => block.image_url.url.length) : []));
     const count = body.messages.reduce((n, message) => n + (Array.isArray(message.content)
       ? message.content.filter(block => block.type === "image_url").length : 0), 0);
     counts.push(count);
@@ -117,4 +147,25 @@ test("real bridge completes 25 mixed images, reopens an archived image, and pres
   assert.ok(!messages.some(m => JSON.stringify(m.content).includes("[Image removed from context")));
   assert.ok(messages.some(m => m.role === "assistant" && m.content.some(b => b.text === "seen")));
   console.log(`25-image conversation: ${counts.length} requests; maximum ${Math.max(...counts)} images; ${errors.length} provider errors; context files: []`);
+
+  reopening = false;
+  const noisy = noisyPng(1024), largePath = join(dir, "large-read.png");
+  assert.ok(noisy.byteLength > 1024 * 1024);
+  writeFileSync(largePath, noisy);
+  await command({ type: "prompt", text: `Read image ${JSON.stringify(largePath)}` });
+  const readProjection = projected.at(-1);
+  assert.ok(readProjection.some(size => size > 10000), "The provider still received a resized read-result image");
+  assert.ok(Math.max(...readProjection) < 257 * 1024);
+  const received = await command({ type: "prompt", text: "Inspect this attachment", images: [
+    { type: "image", data: noisy.toString("base64"), mimeType: "image/png" },
+  ] });
+  assert.ok(projected.at(-1).some(size => size > 10000), "The provider still received a resized attachment");
+  assert.equal(received.find(e => e.type === "message" && e.role === "assistant").text, "seen");
+  assert.deepEqual(oversized, []);
+  const persisted = readFileSync(sessionFile, "utf8").trim().split("\n").map(JSON.parse);
+  assert.ok(persisted.some(e => e.message?.role === "toolResult" && e.message.content.some(
+    block => block.type === "image" && block.data.length > 1024 * 1024)), "The original read result is preserved");
+  assert.ok(persisted.some(e => e.message?.role === "user" && Array.isArray(e.message.content) &&
+    e.message.content.some(block => block.data === noisy.toString("base64"))));
+  console.log(`Large read/attachment: ${noisy.byteLength} original bytes; largest projected data URI ${Math.max(...readProjection)} bytes`);
 });

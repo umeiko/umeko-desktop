@@ -6,6 +6,7 @@ Column {
     id: root
     property var tools: []
     property var expansionState: ({expanded:false, details:({})})
+    signal foldChanged()
     property bool expanded: expansionState.expanded
     onExpansionStateChanged: expanded = expansionState.expanded
     property var selectionController: null
@@ -28,7 +29,7 @@ Column {
     // chatbox preview instead of folding out the file text. Failed reads keep
     // the inline row because the error text is the useful content there.
     function opensPreview(tool) { return tool.name === "read" && !!tool.path && tool.state !== "error" }
-    function action(name) { return ({read:I18n.t("读取"),write:I18n.t("写入"),edit:I18n.t("编辑"),bash:I18n.t("运行"),powershell:I18n.t("运行"),grep:I18n.t("搜索"),find:I18n.t("查找"),ls:I18n.t("浏览"),codemode:I18n.t("执行代码"),tool_search:I18n.t("查找工具"),submit_to_chatbox:I18n.t("展示附件"),subagent:I18n.t("子代理")})[name] || name }
+    function action(name) { return ({read:I18n.t("读取"),write:I18n.t("写入"),edit:I18n.t("编辑"),apply_patch:I18n.t("应用补丁"),bash:I18n.t("运行"),powershell:I18n.t("运行"),grep:I18n.t("搜索"),find:I18n.t("查找"),ls:I18n.t("浏览"),codemode:I18n.t("执行代码"),tool_search:I18n.t("查找工具"),submit_to_chatbox:I18n.t("展示附件"),subagent:I18n.t("子代理")})[name] || name }
     function agentType(value) {
         return ({"general-purpose":I18n.t("通用"), Explore:I18n.t("探索"), Plan:I18n.t("规划")})[value] || value || I18n.t("子代理")
     }
@@ -43,6 +44,7 @@ Column {
     function agentActivity(value) { return value === "Continuing" ? I18n.t("继续执行中") : value || "" }
     function preview(tool) {
         const args = tool.arguments || {}
+        if (tool.name === "apply_patch") return (tool.patchFiles || []).join(" · ")
         if (tool.video) return videoProgress(tool.video) + (args.prompt ? " · " + args.prompt : "")
         if (tool.name === "analyze_image" && args.model) {
             const label = args.cached ? I18n.t("复用 {model} 的识图结果") : tool.state === "running" ? I18n.t("正在通过 {model} 识图") : I18n.t("通过 {model} 识图")
@@ -96,7 +98,7 @@ Column {
         ChatHitArea {
             id: headerMouse; objectName: "toggleTools_" + root.messageIndex + "_" + root.blockOffset
             anchors.fill: parent; selectionController: root.selectionController
-            onClicked: { root.expanded = !root.expanded; root.expansionState.expanded = root.expanded }
+            onClicked: { root.expanded = !root.expanded; root.expansionState.expanded = root.expanded; root.foldChanged() }
         }
         Accessible.role: Accessible.Button; Accessible.name: root.summary; Accessible.description: root.expanded ? I18n.t("已展开") : I18n.t("已折叠")
     }
@@ -110,7 +112,7 @@ Column {
             readonly property bool opensPreview: root.opensPreview(tool)
             function activate() {
                 if (opensPreview) { root.openFile(tool.path); return }
-                details = !details; root.expansionState.details[tool.id] = details
+                details = !details; root.expansionState.details[tool.id] = details; root.foldChanged()
             }
             Connections { target: root; function onExpansionStateChanged() { toolRow.details = !!root.expansionState.details[toolRow.tool.id] } }
             width: root.width; spacing: 4
@@ -124,7 +126,7 @@ Column {
                 }
                 HoverTip { active: toolRow.opensPreview && rowMouse.interactionHovered && !pathMouse.interactionHovered; text: toolRow.tool.path + I18n.t("\n点击预览") }
                 Glyph {
-                    name: root.command(toolRow.tool.name) ? "terminal" : toolRow.tool.name === "edit" || toolRow.tool.name === "write" ? "edit" : "file"
+                    name: root.command(toolRow.tool.name) ? "terminal" : ["edit", "write", "apply_patch"].includes(toolRow.tool.name) ? "edit" : "file"
                     width: Theme.icon(14); height: Theme.icon(14); anchors.verticalCenter: parent.verticalCenter
                 }
                 Text { font.family: Theme.fontFamily; id: verb; x: Theme.icon(14) + 8; text: root.action(toolRow.tool.name); color: Theme.muted; font.pixelSize: Theme.font(12, visible, root.selectionController); anchors.verticalCenter: parent.verticalCenter }

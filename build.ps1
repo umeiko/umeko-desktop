@@ -8,7 +8,7 @@ $buildBundlePrefix = (Join-Path $buildDestination 'Umeko').TrimEnd('\') + '\'
 foreach ($buildProcess in @(Get-Process Umeko -ErrorAction SilentlyContinue)) {
     if (-not $buildProcess.Path -or $buildProcess.Path.StartsWith($buildBundlePrefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Close the app running from the target bundle before building. No output was changed.' }
 }
-& '.venv/Scripts/python.exe' -m pip install pyinstaller==6.19.0 cmake==3.31.6
+& '.venv/Scripts/python.exe' -m pip install pyinstaller==6.19.0 cmake==3.31.6 Pillow==13.0.0
 if ($LASTEXITCODE -ne 0) { throw 'Build dependency installation failed' }
 & '.venv/Scripts/python.exe' scripts/build-notifications.py
 if ($LASTEXITCODE -ne 0) { throw 'Native notification adapter build failed' }
@@ -18,6 +18,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Bundled Node.js preparation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Pi compatibility validation failed' }
 & '.venv/Scripts/python.exe' scripts/fetch-search-tools.py
 if ($LASTEXITCODE -ne 0) { throw 'Pi search tool preparation failed' }
+& '.venv/Scripts/python.exe' scripts/fetch-remote-exec.py --platform windows --arch x64 --output runtime/releases/coding-1.5.2/remote-exec-assets
+if ($LASTEXITCODE -ne 0) { throw 'Remote exec-server preparation failed' }
 & '.venv/Scripts/python.exe' build_icons.py
 & '.venv/Scripts/python.exe' scripts/write-build-info.py
 if ($LASTEXITCODE -ne 0) { throw 'Build metadata generation failed' }
@@ -32,7 +34,7 @@ try {
     $env:PATH = "$PSScriptRoot/.venv/Scripts;$env:SystemRoot/System32;$env:SystemRoot"
     & '.venv/Scripts/python.exe' scripts/webview_package.py --frontend build/webview-support
     if ($LASTEXITCODE -ne 0) { throw 'WebView frontend preparation failed' }
-    & '.venv/Scripts/python.exe' -m PyInstaller --clean --noconfirm --windowed --onedir --collect-all pypinyin --add-data 'bundled-skills;bundled-skills' --name Umeko --distpath $buildDestination --icon app/icons/app.ico --add-binary 'build/notification-runtime/umeko_notifications.dll;notification-runtime' --add-data 'build/desktop-plugin-resources;desktop-plugin-resources' --add-data 'plugin-runtime;plugin-runtime' --add-data 'umeko-plugins;umeko-plugins' --add-data 'app/qml;app/qml' --add-data 'app/theme-prompt.txt;app' --add-data 'app/character-defaults.json;app' --add-data 'app/provider-presets.json;app' --add-data 'app/icons;app/icons' --add-data 'runtime/skills.mjs;runtime' --add-data 'runtime/markdown-preview.mjs;runtime' --add-data 'runtime/session-capabilities.mjs;runtime' --add-data 'runtime/tool-visibility.mjs;runtime' --add-data 'runtime/conversation-search.mjs;runtime' --add-data 'runtime/update-engine.mjs;runtime' --add-data 'runtime/update-cleanup.mjs;runtime' --add-data 'runtime/widget-market.mjs;runtime' --add-data 'runtime/bridge.mjs;runtime' --add-data 'runtime/input-queue.mjs;runtime' --add-data 'runtime/widget-messages.mjs;runtime' --add-data 'runtime/background-jobs.mjs;runtime' --add-data 'runtime/process-guard.mjs;runtime' --add-data 'runtime/tool-permissions.mjs;runtime' --add-data 'runtime/subagents.mjs;runtime' --add-data 'runtime/subagent-sdk.mjs;runtime' --add-data 'runtime/subagent-settings.mjs;runtime' --add-data 'runtime/rpc-ui.mjs;runtime' --add-data 'runtime/provider-policy.mjs;runtime' --add-data 'runtime/resources.mjs;runtime' --add-data 'runtime/chatbox.mjs;runtime' --add-data 'runtime/network-retry.mjs;runtime' --add-data 'runtime/pi-commands.mjs;runtime' --add-data 'runtime/umeko-control.mjs;runtime' --add-data 'runtime/umeko-documents.mjs;runtime' --add-data 'runtime/umeko-operations.json;runtime' --add-data 'runtime/umeko-docs;runtime/umeko-docs' --add-data 'runtime/webview-component.mjs;runtime' --add-data 'runtime/webview-component.json;runtime' --add-data 'build/webview-support;webview-support' --add-data 'build/build-info.json;.' --add-data 'build/provider-resources;provider-resources' --add-data 'THIRD_PARTY_NOTICES.md;.' --add-data 'licenses;licenses' main.py
+    & '.venv/Scripts/python.exe' -m PyInstaller --clean --noconfirm --windowed --onedir --collect-all pypinyin --collect-all tzdata --hidden-import zoneinfo --add-data 'bundled-skills;bundled-skills' --add-data 'cowork-skills;cowork-skills' --name Umeko --distpath $buildDestination --icon app/icons/app.ico --add-binary 'build/notification-runtime/umeko_notifications.dll;notification-runtime' --add-data 'build/desktop-plugin-resources;desktop-plugin-resources' --add-data 'plugin-runtime;plugin-runtime' --add-data 'build/builtin-widgets;umeko-plugins' --add-data 'app/qml;app/qml' --add-data 'app/theme-prompt.txt;app' --add-data 'app/character-defaults.json;app' --add-data 'app/provider-presets.json;app' --add-data 'app/icons;app/icons' --add-data 'runtime/coordinator-skills.mjs;runtime' --add-data 'runtime/cowork-tools.mjs;runtime' --add-data 'runtime/cowork-local.mjs;runtime' --add-data 'runtime/cowork-subagents.mjs;runtime' --add-data 'runtime/skills.mjs;runtime' --add-data 'runtime/markdown-preview.mjs;runtime' --add-data 'runtime/session-capabilities.mjs;runtime' --add-data 'runtime/tool-visibility.mjs;runtime' --add-data 'runtime/conversation-search.mjs;runtime' --add-data 'runtime/session-files.mjs;runtime' --add-data 'runtime/update-engine.mjs;runtime' --add-data 'runtime/update-cleanup.mjs;runtime' --add-data 'runtime/widget-market.mjs;runtime' --add-data 'runtime/bridge.mjs;runtime' --add-data 'runtime/input-queue.mjs;runtime' --add-data 'runtime/widget-messages.mjs;runtime' --add-data 'runtime/background-jobs.mjs;runtime' --add-data 'runtime/shell-snapshot.mjs;runtime' --add-data 'runtime/command-process.mjs;runtime' --add-data 'runtime/process-guard.mjs;runtime' --add-data 'runtime/tool-permissions.mjs;runtime' --add-data 'runtime/apply-patch.mjs;runtime' --add-data 'runtime/subagents.mjs;runtime' --add-data 'runtime/subagent-sdk.mjs;runtime' --add-data 'runtime/subagent-settings.mjs;runtime' --add-data 'runtime/rpc-ui.mjs;runtime' --add-data 'runtime/provider-policy.mjs;runtime' --add-data 'runtime/resources.mjs;runtime' --add-data 'runtime/chatbox.mjs;runtime' --add-data 'runtime/network-retry.mjs;runtime' --add-data 'runtime/pi-commands.mjs;runtime' --add-data 'runtime/umeko-control.mjs;runtime' --add-data 'runtime/umeko-documents.mjs;runtime' --add-data 'runtime/umeko-operations.json;runtime' --add-data 'runtime/umeko-docs;runtime/umeko-docs' --add-data 'runtime/webview-component.mjs;runtime' --add-data 'runtime/webview-component.json;runtime' --add-data 'build/webview-support;webview-support' --add-data 'build/build-info.json;.' --add-data 'build/provider-resources;provider-resources' --add-data 'THIRD_PARTY_NOTICES.md;.' --add-data 'licenses;licenses' main.py
     if ($LASTEXITCODE -ne 0) { throw 'Application packaging failed' }
 } finally {
     $env:PATH = $originalBuildPath
@@ -40,12 +42,16 @@ try {
 $releaseParent = Join-Path $buildDestination 'Umeko/_internal/runtime/releases'
 New-Item -ItemType Directory -Path $releaseParent -Force | Out-Null
 # Node loads its own runtime files; copy them byte-for-byte after Qt packaging.
-Copy-Item -LiteralPath 'runtime/releases/coding-1.3.0' -Destination $releaseParent -Recurse -Force
-$generatedRuntimeCache = Join-Path $releaseParent 'coding-1.3.0/node_modules/.cache'
+Copy-Item -LiteralPath 'runtime/releases/coding-1.5.2' -Destination $releaseParent -Recurse -Force
+$generatedRuntimeCache = Join-Path $releaseParent 'coding-1.5.2/node_modules/.cache'
 if (Test-Path -LiteralPath $generatedRuntimeCache) { Remove-Item -LiteralPath $generatedRuntimeCache -Recurse -Force }
 Copy-Item -LiteralPath 'runtime/node' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Recurse -Force
 Copy-Item -LiteralPath 'runtime/preview-network.mjs' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Force
+Copy-Item -LiteralPath 'runtime/package-install.mjs' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Force
 Copy-Item -LiteralPath 'runtime/dsh-acp-bridge.mjs' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Force
 Copy-Item -LiteralPath 'runtime/dsh-permissions.mjs' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Force
+Copy-Item -Path 'runtime/remote-*.mjs','runtime/remote-exec-assets.json' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Force
 Copy-Item -LiteralPath 'README.md' -Destination (Join-Path $buildDestination 'Umeko/README.md') -Force
+& '.venv/Scripts/python.exe' scripts/package_payload.py --resources (Join-Path $buildDestination 'Umeko/_internal') --report build/payload-optimization.json
+if ($LASTEXITCODE -ne 0) { throw 'Resource optimization failed' }
 Write-Output ('Portable app: ' + (Join-Path $buildDestination 'Umeko/Umeko.exe'))

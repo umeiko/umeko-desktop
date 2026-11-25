@@ -159,14 +159,15 @@ def _replace_target(destination, name, catalog):
     return target, False, False, ""
 
 
-def preview_import(source, destination, catalog, validate_markdown, *, preserve_folder_names=False):
+def preview_import(source, destination, catalog, validate_markdown, *, preserve_folder_names=False, plan_store=None):
     """Return JSON-safe preview data; the sole pending plan retains source bytes.
 
     validate_markdown receives [{key, markdown, directoryName}] and returns
     [{key, name, description, valid, diagnostics}]. It must not create files.
     A new preview releases the previous plan rather than retaining 128 MiB per UI attempt.
     """
-    _plans.clear()
+    plans = _plans if plan_store is None else plan_store
+    plans.clear()
     preview = {"planId": "", "source": Path(source).name, "skills": [], "errors": []}
     try:
         original_destination = Path(destination).expanduser()
@@ -222,25 +223,26 @@ def preview_import(source, destination, catalog, validate_markdown, *, preserve_
                     item.row.update(conflict=True, replaceable=False, error="导入批次中存在多个同名技能，请分开处理。")
         token = uuid.uuid4().hex
         directories = snapshot([destination, *(item.target.parent for item in skills if not item.row.get('error'))])
-        _plans[token] = _Plan(destination, skills, directories)
+        plans[token] = _Plan(destination, skills, directories)
         preview.update(planId=token, skills=[dict(item.row) for item in skills])
     except (OSError, ValueError, RuntimeError, zipfile.BadZipFile, NotImplementedError, zlib.error, EOFError) as error:
         preview["errors"] = [str(error)[:1500]]
     return preview
 
 
-def discard_import(preview):
+def discard_import(preview, *, plan_store=None):
+    plans = _plans if plan_store is None else plan_store
     token = preview.get("planId", "") if isinstance(preview, dict) else str(preview)
-    _plans.pop(token, None)
+    plans.pop(token, None)
 
 
-def import_local(source, destination, catalog, validate_markdown):
+def import_local(source, destination, catalog, validate_markdown, *, plan_store=None):
     """Paste/drop without a preview UI. Refuse the batch on validation/conflict.
 
     There is deliberately no replacement option. The same pinned transaction
     rechecks every destination before writing, including races after validation.
     """
-    preview = preview_import(source, destination, catalog, validate_markdown, preserve_folder_names=True)
+    preview = preview_import(source, destination, catalog, validate_markdown, preserve_folder_names=True, plan_store=plan_store)
     try:
         errors = list(preview['errors'])
         for row in preview['skills']:
@@ -248,22 +250,23 @@ def import_local(source, destination, catalog, validate_markdown):
                 errors.append(row['name'] + ': ' + (row.get('error') or '同名 Skill 已存在，未覆盖原文件。'))
         if errors:
             raise ValueError('\n'.join(errors[:8]))
-        return commit_import(preview, {}, destination)
+        return commit_import(preview, {}, destination, plan_store=plan_store)
     finally:
-        discard_import(preview)
+        discard_import(preview, plan_store=plan_store)
 
 
-def commit_import(preview, decisions, expected_root):
+def commit_import(preview, decisions, expected_root, *, plan_store=None):
     """Consume a confirmed plan, atomically replacing one skill at a time."""
     token = preview.get("planId", "") if isinstance(preview, dict) else str(preview)
-    plan = _plans.get(token)
+    plans = _plans if plan_store is None else plan_store
+    plan = plans.get(token)
     if plan is None:
         raise ValueError("导入预览已关闭或被新的预览替代，请重新预览")
     if Path(expected_root).expanduser().resolve() != plan.destination:
         raise ValueError("技能目标目录与已确认的预览不一致")
     if not isinstance(decisions, dict) or any(value not in ("skip", "replace") for value in decisions.values()):
         raise ValueError("导入决定只能为 skip 或 replace")
-    _plans.pop(token)
+    plans.pop(token)
     result = {"imported": [], "skipped": [], "errors": []}
     selected = []
     for item in plan.skills:

@@ -5,8 +5,10 @@ import threading
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from .model_groups import GROUP_PROVIDER, configured_members
 from .model_capabilities import normalize_model
 from .model_reasoning import normalize_reasoning
+from .plugin_sessions import apply_session_policy
 from .provider_models import fetch_model_windows
 from .thinking_formats import FORMAT_OPTIONS, valid_format
 
@@ -54,7 +56,7 @@ class ReasoningDiscovery(QObject):
                 if kind == 'catalog':
                     keys = {(snapshot['id'], upstream) for upstream in snapshot['_reasoning_targets']}
                     with self.c.gateway.reasoning_activity.probe(keys):
-                        result = {'windows': fetch_model_windows(snapshot)}
+                        result = {'windows': fetch_model_windows(snapshot, copy.deepcopy(self.c.store.data.get('requestHeaders')))}
                 else:
                     result = self.c.gateway.detect_reasoning(alias, snapshot['id'],
                               advertised_levels=next((row.get('reasoningDetection', {}).get('levels')
@@ -91,6 +93,15 @@ class ReasoningDiscovery(QObject):
     def notify(self, save=False):
         reconciled = []
         for record in self.c._pool.records.values():
+            if self._plugin_owned(record):
+                # Plugin profiles own their effort choice. Busy runs keep the
+                # old policy until the next input, just like profile edits.
+                if not record.busy:
+                    try:
+                        apply_session_policy(self.c, record)
+                    except (OSError, ValueError):
+                        pass  # The next plugin input reports its policy error.
+                continue
             previous = record.reasoning_effort
             self.c._reconcile_reasoning(record)
             if record.reasoning_effort != previous:
@@ -102,12 +113,22 @@ class ReasoningDiscovery(QObject):
         self.c.reasoningDetectionChanged.emit()
         self.c.reasoningChanged.emit()
 
+    def _plugin_owned(self, record):
+        return bool(self.c.store.data.get('sessionMeta', {}).get(record.id, {}).get('pluginSession'))
+
     def update_activity(self):
         busy = set()
+        group_targets = None
         for record in self.c._pool.records.values():
             if not record.busy:
                 continue
             provider = record.provider or self.c.store.data['selectedProvider']
+            if provider == GROUP_PROVIDER:
+                if group_targets is None:
+                    group_targets = {(account["id"], row["upstream"]) for _, account, row in configured_members(
+                        self.c.store.data, internal_ready=getattr(self.c.gateway.adapter, "ready", True)) if row}
+                busy.update(group_targets)
+                continue
             alias = record.model or self.c.store.data['selectedModel']
             row = self.model(provider, alias)
             if row:
@@ -269,7 +290,7 @@ class ReasoningDiscovery(QObject):
                 if row.get('reasoningFormatAuto', True) and format_result.get('state') == 'known':
                     row['reasoningFormat'] = format_result['format']
         for record in self.c._pool.records.values():
-            if record.provider == provider['id']:
+            if record.provider == provider['id'] and not self._plugin_owned(record):
                 self.c._reconcile_reasoning(record)
                 self.send(record)
         self.notify(save=True)

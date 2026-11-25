@@ -10,6 +10,20 @@ Popup {
     property int callIndex: -1
     readonly property var calls: reportData && Array.isArray(reportData.http) ? reportData.http : []
     readonly property var selectedCall: callIndex >= 0 && callIndex < calls.length ? calls[callIndex] : null
+    readonly property string compatibilityNotice: {
+        const records = selectedCall && Array.isArray(selectedCall.compatibility) ? selectedCall.compatibility : []
+        return records.map(record => {
+            const days = record.ageDays || 0
+            const age = days === 0 ? I18n.t("今天记录")
+                : days === 1 ? I18n.t("1 天前记录")
+                : I18n.t("{days} 天前记录").replace("{days}", String(days))
+            return I18n.t(record.action === "auto"
+                ? "已按此前的拒绝记录将 {parameter} 改为 auto（{age}）"
+                : "已按此前的拒绝记录省略 {parameter}（{age}）")
+                .replace("{parameter}", String(record.parameter || ""))
+                .replace("{age}", age)
+        }).join("；")
+    }
     readonly property string visibleText: {
         if (!report) return I18n.t("此请求的详情已过期或不可读取。")
         if (!reportData || typeof reportData !== "object") return report
@@ -89,6 +103,16 @@ Popup {
                 currentIndex: root.callIndex
                 onActivated: index => root.callIndex = index
             }
+        }
+        Text {
+            objectName: "requestCompatibilityNotice"
+            visible: root.compatibilityNotice.length > 0
+            Layout.fillWidth: true
+            text: root.compatibilityNotice; textFormat: Text.PlainText
+            color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible)
+            elide: Text.ElideRight
+            HoverHandler { id: compatibilityHover }
+            HoverTip { active: compatibilityHover.hovered; text: root.compatibilityNotice }
         }
         ScrollView {
             id: detailsScroll

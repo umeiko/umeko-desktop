@@ -134,11 +134,20 @@ class PiManagement(QObject):
     def capability_profile(self):
         from .pi_capabilities import normalize,from_legacy
         record=self.controller._view
+        if getattr(record, 'cowork', ''):
+            return {'preset': 'custom', 'readOnly': True}
         return normalize(from_legacy(record.pi_capabilities,record.blocked_tools))
+
+    def inventory_current(self, record):
+        return (bool(record.resources.get('allTools'))
+                and record.resources.get('remoteWorkspaceEnabled', False)
+                == self.controller.store.data['desktop']['remoteWorkspaceEnabled'])
 
     def capability_extensions(self):
         from .pi_capabilities import catalog,plugin_enabled,tool_enabled
         record=self.controller._view;profile=self.capability_profile();tools=catalog(record.resources)
+        if getattr(record, 'cowork', ''):
+            return self._cowork_capabilities(record)
         rows=[{'id':'builtin:pi-tools','path':'native','name':'Pi 原生工具','source':'native','scope':'session','enabled':True,
                'info':{'icon':'code','origin':'pi','bundled':True,'description':'read · bash · powershell · edit · write · grep · find · ls'}},*copy.deepcopy(self._extensions)]
         for row in rows:
@@ -149,12 +158,34 @@ class PiManagement(QObject):
             row['toolCount']=len(owned);row['enabledToolCount']=sum(t['visible'] for t in row['tools'])
         return rows
 
+    def _cowork_capabilities(self, record):
+        from hashlib import sha256
+        from .pi_capabilities import NATIVE_ID
+        groups = {}
+        for tool in self.controller.cowork.capability_tools(record):
+            groups.setdefault(tool['owner'], []).append(tool)
+        rows = []
+        for owner, tools in groups.items():
+            native = owner == 'native'
+            identifier = NATIVE_ID if native else 'cowork:' + sha256(owner.encode()).hexdigest()[:24]
+            name = 'Pi 原生工具' if native else 'Umeko Cowork' if owner == 'builtin:cowork-tools' else Path(owner).stem.removeprefix('builtin:')
+            active = sum(tool['enabled'] for tool in tools)
+            rows.append({'id': identifier, 'path': owner, 'name': name, 'source': 'builtin' if native or owner.startswith('builtin:') else 'local',
+                         'scope': 'session', 'sessionEnabled': bool(active), 'enabled': bool(active),
+                         'toolCount': len(tools), 'enabledToolCount': active, 'tools': tools,
+                         'info': {'icon': 'code' if native else 'package', 'description': ''}})
+        return rows
+
     def capability_tools(self,identifier,query='',offset=0,limit=100):
         from .pi_capabilities import catalog,plugin_enabled,tool_enabled
         row=next((r for r in self.capability_extensions() if r['id']==('builtin:pi-tools' if identifier=='native' else identifier)),None)
         if row is None:raise ValueError('Refresh the current extension catalog first')
         record=self.controller._view;profile=self.capability_profile();source=row['path'];fallback=row['sessionEnabled']
         if query.casefold() in (str(row.get('name',''))+' '+source+' '+str(row.get('info',{}).get('description',''))).casefold():query=''
+        if profile.get('readOnly'):
+            tools = [tool for tool in row['tools'] if not query or query.casefold() in (tool['name'] + ' ' + tool['description']).casefold()]
+            return {'tools': tools[offset:offset+limit], 'total': len(tools), 'hasMore': offset+limit<len(tools),
+                    'profile': profile, 'loading': False, 'sessionEnabled': row['sessionEnabled']}
         tools=[{'name':t['name'][:256],'description':t.get('description','')[:1024],'enabled':tool_enabled(profile,t,fallback) and t.get('exposure')!='hidden','visible':tool_enabled(profile,t,fallback) and t.get('exposure')!='hidden','editable':row['sessionEnabled'] and t.get('exposure')!='hidden','owner':source}
             for t in catalog(record.resources) if t['owner']==source and (not query or query.casefold() in (t['name']+' '+t.get('description','')).casefold())]
         return {'tools':tools[offset:offset+limit],'total':len(tools),'hasMore':offset+limit<len(tools),'profile':profile,
@@ -165,6 +196,7 @@ class PiManagement(QObject):
         c=self.controller;record=c._view
         if record.busy or record.subagents_active or self._busy or c.kernelBusy:raise ValueError('当前会话正在运行，请在任务结束后调整工具')
         if record.global_agent:raise ValueError('当前会话的运行边界不允许修改工具配置')
+        if getattr(record, 'cowork', ''):raise ValueError('请在 Coworker 编辑器中调整角色工具')
         previous=copy.deepcopy((record.pi_capabilities,record.blocked_tools,record.resources,c.store.data['sessionMeta'].get(record.id,{})))
         try:
             record.pi_capabilities=change(self.capability_profile(),action,args,self._extensions,record.resources)
@@ -179,6 +211,7 @@ class PiManagement(QObject):
             record.pi_capabilities,record.blocked_tools,record.resources,metadata=previous
             if record.id:c.store.data['sessionMeta'][record.id]=metadata
             raise ValueError('工具配置保存失败：'+str(error)) from error
+        c.agentResourcesChanged.emit()
         QTimer.singleShot(0,self,lambda:c._command_pi('inspect',record) if c._view is record and not record.busy and record.model else None)
         return {'profile':self.capability_profile()}
     @Property(bool, notify=changed)
@@ -458,6 +491,7 @@ class PiManagement(QObject):
         self._backup = value["backup"]
         self._extensions = []
         c._view.resources = {"tools": [], "skills": [], "extensions": [], "diagnostics": []}
+        c.agentResourcesChanged.emit()
         c._kernel_status = "已恢复出厂内核（恢复模式）"
 
     def _finished(self, name, result):

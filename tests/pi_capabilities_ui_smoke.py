@@ -31,8 +31,10 @@ def wait(check,label):
     output=ROOT/'build/pi-capabilities-ui';output.mkdir(parents=True,exist_ok=True);window.grabWindow().save(str(output/'failure.png'))
     raise AssertionError(label+' '+repr({'notice':page.property('notice') if page else None,'working':page.property('working') if page else None,'sessionBusy':page.property('sessionBusy') if page else None,'recordId':backend._view.id,'widgetSessionKey':page.property('sessionKey') if page else None,'widgetProfile':profile(),'profile':backend._view.pi_capabilities,'phase':backend._view.phase,'approval':backend.desktopPlugins._host_services.pendingApproval})+'\n'+'\n'.join(warnings))
 def click(name):
-    wait(lambda:find(name) is not None and find(name).isEnabled() and ready(),name);item=find(name);window.grabWindow()
-    QTest.qWait(120);wait(lambda:ready() and item.isEnabled(),name+' did not settle')
+    wait(lambda:find(name) is not None and find(name).isEnabled() and ready(),name);window.grabWindow()
+    # Runtime inspection can replace list delegates during this settling wait.
+    QTest.qWait(120);wait(lambda:ready() and find(name) is not None and find(name).isEnabled(),name+' did not settle')
+    item=find(name)
     assert item.isEnabled(),(name,'disabled',find('piManagerWidget').property('sessionBusy'))
     spy=QSignalSpy(item,item.metaObject().method(item.metaObject().indexOfSignal('clicked()')))
     point=item.mapToScene(item.boundingRect().center()).toPoint()
@@ -63,6 +65,31 @@ record.file=str(transcript);record.title='Pi fixture';backend._index_record(reco
 try:
     window.resize(1480,1000);window.show();window.requestActivate();wait(window.isActive,'Test window did not activate');window.setProperty('page','chat');open_page()
     wait(lambda:'toolCatalog' in backend._view.resources and ready(),'Native tools not loaded')
+    remote_tools = {'remote_command', 'remote_files', 'remote_network'}
+    control = next(row for row in backend.piManagement.extensions if row['path'] == 'builtin:umeko-control')
+    search = find('piManagerSearch')
+    search.setProperty('text', 'umeko-control')
+    wait(lambda:find('piExtension_'+control['id']) is not None and ready(), 'Umeko control extension not found')
+    click('piExtension_'+control['id'])
+    wait(lambda:find('piToolSwitch_umeko_desktop') is not None and ready(), 'Desktop tool not shown')
+
+    def remote_tools_match(enabled):
+        resources = backend._view.resources
+        listed = {tool['name'] for tool in backend.piManagement.capability_tools(control['id'])['tools']}
+        expected = remote_tools if enabled else set()
+        return (ready()
+                and backend.piManagement.inventory_current(backend._view)
+                and remote_tools.intersection(resources['tools']) == expected
+                and remote_tools.intersection(listed) == expected
+                and all((find('piToolSwitch_'+name) is not None) == enabled for name in remote_tools))
+
+    assert remote_tools_match(False), 'Remote tools were present with the default setting'
+    for enabled in (True, False):
+        assert backend.saveDesktopSettings(json.dumps({'remoteWorkspaceEnabled': enabled}))
+        wait(lambda:remote_tools_match(enabled), f'Remote tools did not follow the workspace switch ({enabled})')
+    click('piExtension_'+control['id'])
+    search.setProperty('text', '')
+    wait(lambda:find('piManagerWidget').property('query') == '' and ready(), 'Search did not clear')
     assert find('piManagerWidget').property('expandedId')=='', 'A plugin expanded on first open'
     assert find('piToolSwitch_read') is None or not find('piToolSwitch_read').isVisible()
     click('piExtension_builtin:pi-tools')

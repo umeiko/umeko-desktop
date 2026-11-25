@@ -1,7 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { createUmekoControl, umekoHelp, UMEKO_PROMPT } from '../runtime/releases/coding-1.3.0/umeko-control.mjs';
+import { createUmekoControl, umekoHelp, UMEKO_PROMPT } from '../runtime/releases/coding-1.5.2/umeko-control.mjs';
+
+test('the desktop tool routes environment refresh and command rules locally', async () => {
+  let desktop;
+  const control = createUmekoControl({
+    emit() { assert.fail('Both operations belong to the bridge'); },
+    refreshShellEnvironment: ctx => ({session: ctx.sessionManager.getSessionId()}),
+    getCommandRulesContext: () => ({}),
+  });
+  control.extension({ registerTool: tool => { desktop = tool; }, registerCommand() {} });
+  const ctx = {sessionManager: {getSessionId: () => 'test-session'}};
+  const call = async operation => JSON.parse((await desktop.execute('test', {operation}, undefined, undefined, ctx)).content[0].text);
+  assert.deepEqual(await call('shell.refreshEnvironment'), {ok: true, session: 'test-session'});
+  assert.deepEqual(await call('command_rules.list'), {ok: true, operation: 'command_rules.list', rules: []});
+});
+
+test('pi.run is session-local, validates arguments and rechecks access at execution', async () => {
+  let tool, allowed = true;
+  const context = {}, signal = new AbortController().signal;
+  const control = createUmekoControl({ emit() { assert.fail('pi.run must stay in the embedded runtime'); } });
+  control.extension({ registerTool: value => { tool = value; }, registerCommand() {} }, {
+    canRunPiCommand: () => allowed,
+    runPiCommand: async (command, options, caller) => {
+      assert.equal(command, '/reload');
+      assert.deepEqual(options, { signal, toolCallId: 'call', scope: 'project' });
+      assert.equal(caller, context);
+      return { status: 'queued' };
+    },
+  });
+  const call = arguments_ => tool.execute('call', { operation: 'pi.run', arguments: arguments_ }, signal, undefined, context);
+  const queued = await call({ command: '/reload', scope: 'project' });
+  assert.deepEqual(JSON.parse(queued.content[0].text), { ok: true, status: 'queued' });
+  assert.equal((await call({ command: '/reload', scope: 'foreign' })).isError, true);
+  assert.equal((await call({ command: '/reload', sessionId: 'another-chat' })).isError, true);
+  allowed = false;
+  assert.match((await call({ command: '/reload' })).content[0].text, /disabled in this session/);
+  assert.equal(JSON.parse((await tool.execute('help', { operation: 'help' })).content[0].text).ok, true);
+});
 
 test('one desktop tool and a directory-only help keep management instructions on demand', async () => {
   const tools = [], commands = [], control = createUmekoControl({ emit() { throw new Error('help must be local'); } });
@@ -13,6 +50,7 @@ test('one desktop tool and a directory-only help keep management instructions on
   assert.ok(existsSync(help.entry)); assert.ok(existsSync(help.docsRoot));
   assert.equal(Object.hasOwn(help, 'commands'), false);
   assert.match(UMEKO_PROMPT, /Pi provider configuration does not apply/);
+  assert.match(UMEKO_PROMPT, /umeko-desk.*临时文件.*\.\/\.umeko/);
   for (const text of [UMEKO_PROMPT, tools[0].description]) {
     assert.doesNotMatch(text, /agent_bus|global.subagent|coordinator|requestKey/i);
     assert.match(text, /widgets\.docs/);

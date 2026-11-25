@@ -3,6 +3,14 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+if __name__ == '__main__' and sys.argv[1:2] == ['--umeko-bash-job']:
+    from app.bash_job_windows import main as bash_job_main
+    os._exit(bash_job_main())
+
+if __name__ == '__main__' and '--update-process-helper' in sys.argv:
+    from app.update_windows import main as update_process_main
+    sys.exit(update_process_main(sys.argv[sys.argv.index('--update-process-helper') + 1:]))
+
 if __name__ == '__main__':
     from app.preview_launch import route_start
     if route_start(Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))):
@@ -13,9 +21,10 @@ if "--umeko-plugin-worker" in sys.argv:
     runpy.run_path(str(_plugin_root / "plugin-runtime/worker.py"), run_name="__main__")
     sys.exit(0)
 
-from app.platform_support import configure_input_method
+from app.platform_support import configure_input_method, configure_qml_gc
 
 os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
+configure_qml_gc()
 configure_input_method()
 
 from PySide6.QtCore import QTimer, QUrl
@@ -39,10 +48,14 @@ def diagnostic(message):
 
 
 def create_application():
+    configure_qml_gc()
     root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
     from app.webview import configure, configure_engine
     from app.desktop_preferences import startup_settings
     configure(root, enabled=startup_settings()['webDisplay'] == 'embedded')
+    from PySide6.QtQuickControls2 import QQuickStyle
+    QQuickStyle.setStyle("UmekoStyle")
+    QQuickStyle.setFallbackStyle("Basic")
     app = QApplication(sys.argv)
     from app.input_method import InputMethodUpdates
     app._input_method_updates = InputMethodUpdates(app)
@@ -59,6 +72,7 @@ def create_application():
         from app.update import UpdateInstaller
         installer = UpdateInstaller(root, sys.argv[sys.argv.index("--install-update") + 1])
         engine = QQmlApplicationEngine()
+        engine.addImportPath(str(root / "app/qml"))
         engine.rootContext().setContextProperty("installer", installer)
         engine.load(QUrl.fromLocalFile(str(root / "app/qml/Installer.qml")))
         if not engine.rootObjects(): raise RuntimeError("安装器界面加载失败")
@@ -82,6 +96,7 @@ def create_application():
     from app.terminal_view import register_terminal_types
     register_terminal_types()
     engine = QQmlApplicationEngine()
+    engine.addImportPath(str(root / "app/qml"))
     configure_engine(engine)
     engine.warnings.connect(lambda errors: diagnostic("\n".join(e.toString() for e in errors)))
     engine.rootContext().setContextProperty("backend", controller)
@@ -108,15 +123,25 @@ def create_application():
         controller.openSession(session)
         controller._system_tray.restore()
     controller._task_notifications.activated.connect(open_finished_session)
-    from app.login_session import start_login_proxy
-    QTimer.singleShot(0, lambda: start_login_proxy(controller, sys.argv))
-    from app.update import start_update_cleanup
-    QTimer.singleShot(0, lambda: start_update_cleanup(root, controller.store.directory))
+    if '--remote-environments-smoke' not in sys.argv and '--remote-workdir-smoke' not in sys.argv:
+        from app.login_session import start_login_proxy
+        QTimer.singleShot(0, lambda: start_login_proxy(controller, sys.argv))
+        from app.update import start_update_cleanup
+        QTimer.singleShot(0, lambda: start_update_cleanup(root, controller.store.directory))
     QTimer.singleShot(150, controller.loadNativeIndex)
     return app, engine, controller
 
 
 if __name__ == "__main__":
+    remote_smoke = '--remote-environments-smoke' in sys.argv
+    workdir_smoke = '--remote-workdir-smoke' in sys.argv
+    if remote_smoke or workdir_smoke:
+        from app.storage import data_directory, legacy_data_directory
+        profile = os.environ.get('UMEKO_DATA_DIR')
+        if (os.environ.get('QT_QPA_PLATFORM') != 'offscreen' or not profile
+                or any(Path(profile).resolve().is_relative_to(path.resolve())
+                       for path in (data_directory(), legacy_data_directory(), Path.home() / '.umeko'))):
+            raise SystemExit('The remote smoke test needs an isolated profile and offscreen Qt.')
     # Opt-in diagnostics for a frozen smoke process that hangs during teardown.
     # Keep the watchdog alive through Python/Qt finalization, after EXIT:0.
     if "--smoke" in sys.argv and os.environ.get('UMEKO_SMOKE_STACKS'):
@@ -132,14 +157,20 @@ if __name__ == "__main__":
         app, engine, controller = create_application()
     except Exception as exc:
         diagnostic(str(exc))
-        if "--smoke" not in sys.argv and os.name == "nt":
+        if not remote_smoke and not workdir_smoke and "--smoke" not in sys.argv and os.name == "nt":
             import ctypes
             ctypes.windll.user32.MessageBoxW(None, "应用启动失败。请检查本机设置或从源码启动查看诊断。", "Umeko", 0x10)
         sys.exit(1)
     diagnostic("QML_READY")
     preview_url=os.environ.get('UMEKO_WEB_PREVIEW_URL') if '--demo' in sys.argv else ''
     if preview_url: QTimer.singleShot(800, lambda: controller.webRequested.emit(preview_url,'Preview'))
-    if "--smoke" not in sys.argv and "--install-update" not in sys.argv:
+    if remote_smoke:
+        from app.remote_environments_smoke import start
+        start(app, engine, controller, Path(sys.argv[sys.argv.index('--remote-environments-smoke') + 1]))
+    elif workdir_smoke:
+        from app.remote_workdir_smoke import start
+        start(app, engine, controller, Path(sys.argv[sys.argv.index('--remote-workdir-smoke') + 1]))
+    elif "--smoke" not in sys.argv and "--install-update" not in sys.argv:
         controller.appAbout.startAutomaticChecks()
     if "--smoke" in sys.argv:
         notifications = controller._task_notifications.native
@@ -155,11 +186,24 @@ if __name__ == "__main__":
         diagnostic("NODE_EXECUTABLE:" + node_executable())
         if hasattr(controller, "_system_tray"):
             diagnostic("TRAY_ICON_READY:" + str(int(not controller._system_tray.tray.icon().pixmap(32,32).isNull())))
-    if "--snapshot" in sys.argv:
+    smoke_finish = os.environ.get('UMEKO_SMOKE_FINISH_FILE', '') if preview_url and '--smoke' in sys.argv else ''
+    if "--snapshot" in sys.argv and not smoke_finish:
         output = sys.argv[sys.argv.index("--snapshot") + 1]
         QTimer.singleShot(4000 if preview_url else 650, lambda: engine.rootObjects()[0].grabWindow().save(output))
     if "--smoke" in sys.argv:
-        QTimer.singleShot(5500 if preview_url else 1500, app.quit)
+        if smoke_finish:
+            from app.smoke_lifecycle import watch_smoke_finish
+            # Match the native preview test: let WebView2 render in an active
+            # window rather than leave requestAnimationFrame occluded by CI.
+            engine.rootObjects()[0].raise_()
+            engine.rootObjects()[0].requestActivate()
+            snapshot = sys.argv[sys.argv.index('--snapshot') + 1] if '--snapshot' in sys.argv else ''
+            _smoke_finish_timer = watch_smoke_finish(app, engine.rootObjects()[0], smoke_finish, snapshot)
+        elif os.environ.get("UMEKO_SHELL_SMOKE_DIRECTORY"):
+            from app.shell_smoke import attach
+            attach(app, controller, Path(os.environ["UMEKO_SHELL_SMOKE_DIRECTORY"]), engine.rootObjects()[0])
+        else:
+            QTimer.singleShot(5500 if preview_url else 1500, app.quit)
     result = app.exec()
     diagnostic("EXIT:" + str(result))
     import shiboken6

@@ -1,0 +1,299 @@
+"""Real plugin session model QML with an isolated backend; no desktop or Pi services."""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+os.environ["QT_QUICK_BACKEND"] = "software"
+os.environ["QT_QUICK_CONTROLS_STYLE"] = "Basic"
+TEST_DIRECTORY = Path(os.environ.get("UMEKO_TEST_ROOT", "C:/UmekoTests/issue160" if os.name == "nt"
+                                    else str(Path(tempfile.gettempdir()) / "umeko-issue160")))
+TEST_DIRECTORY.mkdir(parents=True, exist_ok=True)
+for name in ("TMP", "TEMP", "TMPDIR"):
+    os.environ[name] = str(TEST_DIRECTORY)
+tempfile.tempdir = str(TEST_DIRECTORY)
+for name, directory in (("UMEKO_DATA_DIR", "data"), ("XDG_CONFIG_HOME", "config"),
+                        ("XDG_DATA_HOME", "data"), ("XDG_CACHE_HOME", "cache")):
+    os.environ[name] = str(TEST_DIRECTORY / directory)
+
+from PySide6.QtCore import QObject, QPointF, Property, QUrl, Signal, Slot
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuick import QQuickWindow
+import shiboken6
+from test_preview_channel import isolated_test_module, qt_application
+
+CHOICES = [{"providerId": "test-provider", "model": "test-model-a", "label": "Test provider / test-model-a",
+            "reasoningLevels": ["low", "high"]},
+           {"providerId": "test-provider", "model": "test-model-b", "label": "Test provider / test-model-b",
+            "reasoningLevels": ["medium", "xhigh"]}]
+
+
+class ProfileBackend(QObject):
+    changed = Signal()
+
+    def __init__(self, language="zh"):
+        super().__init__()
+        self._language = language
+        self._profiles = [{"plugin": "session-task-service", "profile": "tasks", "pluginName": "Session task service",
+                           "model": "test-model-a", "provider": "test-provider"}]
+        self.choices = [dict(row) for row in CHOICES]
+        self.calls = []
+        self.accept_save = True
+
+    @Property(str, notify=changed)
+    def language(self): return self._language
+
+    @Property(float, constant=True)
+    def fontScale(self): return 1.0
+
+    @Property(str, constant=True)
+    def lineSpacing(self): return "standard"
+
+    @Property("QVariantMap", notify=changed)
+    def config(self):
+        return {"fontFamily": qt_application().font().family(), "theme": "light", "ui": {}}
+
+    @Property("QVariantMap", constant=True)
+    def themeStyle(self): return {"base": "light", "colors": {}}
+
+    @Property("QVariantList", notify=changed)
+    def pluginSessionProfiles(self): return [dict(row) for row in self._profiles]
+
+    @Property("QVariantList", notify=changed)
+    def pluginSessionModels(self): return [dict(row) for row in self.choices]
+
+    @Slot(str, str, str, str, result=bool)
+    @Slot(str, str, str, str, str, result=bool)
+    def savePluginSessionModel(self, plugin, profile, model, provider, effort=""):
+        self.calls.append((plugin, profile, model, provider, effort))
+        if not self.accept_save:
+            return False
+        saved = self._profiles[0]
+        saved.update(model=model, provider=provider)
+        if effort == 'inherit':
+            saved.pop('reasoningEffort', None)
+        elif effort:
+            saved['reasoningEffort'] = effort
+        self.changed.emit()
+        return True
+
+
+class ProfileSettings:
+    def __init__(self, language="zh", backend=None):
+        self.backend = backend or ProfileBackend(language)
+        self.engine = QQmlApplicationEngine()
+        self.warnings = []
+        self.engine.warnings.connect(lambda errors: self.warnings.extend(error.toString() for error in errors))
+        self.engine.rootContext().setContextProperty("backend", self.backend)
+        qml = '''
+import QtQuick
+import QtQuick.Controls
+import "%s" as UI
+ApplicationWindow {
+    width: 820; height: 360; visible: true
+    color: UI.Theme.bg
+    UI.PluginSessionModels { x: 36; y: 36; width: parent.width - 72 }
+}
+''' % QUrl.fromLocalFile(str(ROOT / "app/qml")).toString()
+        self.engine.loadData(qml.encode("utf-8"), QUrl.fromLocalFile(str(ROOT / "tests/PluginSessionModelsHarness.qml")))
+        roots = self.engine.rootObjects()
+        if not roots:
+            raise AssertionError("\n".join(self.warnings))
+        self.window = roots[0]
+        if not isinstance(self.window, QQuickWindow):
+            raise AssertionError("Expected a Qt Quick application window")
+        qt_application().processEvents()
+        qt_application().processEvents()
+
+    def items(self):
+        # Repeater delegates are visual children, not QObject children.
+        pending, found = [self.window.contentItem()], []
+        while pending:
+            item = pending.pop()
+            found.append(item)
+            pending.extend(item.childItems())
+        return found
+
+    def picker(self):
+        return self.named_picker("pluginSessionModel_session-task-service_tasks")
+
+    def reasoning_picker(self):
+        return self.named_picker("pluginSessionReasoning_session-task-service_tasks")
+
+    def named_picker(self, name):
+        item = next((item for item in self.items() if item.objectName() == name), None)
+        if item is None:
+            raise AssertionError("Missing picker " + name)
+        return item
+
+    def close(self):
+        self.window.close()
+        shiboken6.delete(self.engine)
+
+
+class PluginSessionModelSettingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls): cls.app = qt_application()
+
+    def ui(self, language="zh"):
+        result = ProfileSettings(language)
+        self.addCleanup(result.close)
+        return result
+
+    def test_picker_shows_current_model_and_saves_only_model_and_provider(self):
+        ui = self.ui()
+        picker = ui.picker()
+        self.assertEqual(picker.property("currentIndex"), 0)
+        self.assertEqual(picker.property("displayText"), "Test provider / test-model-a")
+        picker.setProperty("currentIndex", 1)
+        picker.activated.emit(1)
+        self.app.processEvents()
+        self.assertEqual(ui.backend.calls, [("session-task-service", "tasks", "test-model-b", "test-provider", "")])
+        self.app.processEvents()
+        self.assertEqual(picker.property("displayText"), "Test provider / test-model-b")
+        self.assertEqual(ui.warnings, [])
+
+    def test_unconfigured_effort_inherits_and_saves_explicit_level(self):
+        ui = self.ui()
+        picker = ui.reasoning_picker()
+        self.assertEqual(picker.property("displayText"), "沿用桌面")
+        self.assertEqual(picker.property("values").toVariant(), ["inherit", "off", "low", "high"])
+        picker.setProperty("currentIndex", 3)
+        picker.activated.emit(3)
+        self.app.processEvents()
+        self.app.processEvents()
+        picker = ui.reasoning_picker()
+        self.assertEqual(ui.backend.calls[-1], ("session-task-service", "tasks", "test-model-a", "test-provider", "high"))
+        self.assertEqual(picker.property("displayText"), "High")
+        self.assertEqual(picker.property("values").toVariant(), ["inherit", "off", "low", "high"])
+        self.assertEqual(ui.warnings, [])
+
+    def test_model_change_uses_its_levels_and_preserves_configured_effort(self):
+        ui = self.ui()
+        ui.backend._profiles[0]["reasoningEffort"] = "high"
+        ui.backend.changed.emit()
+        self.app.processEvents()
+        picker = ui.picker()
+        picker.setProperty("currentIndex", 1)
+        picker.activated.emit(1)
+        self.app.processEvents()
+        self.app.processEvents()
+        effort = ui.reasoning_picker()
+        self.assertEqual(effort.property("values").toVariant(), ["inherit", "off", "medium", "xhigh"])
+        self.assertEqual(effort.property("displayText"), "High")
+        self.assertEqual(ui.backend._profiles[0]['reasoningEffort'], 'high')
+        self.assertEqual(ui.warnings, [])
+
+    def test_rejected_effort_save_restores_saved_effort(self):
+        ui = self.ui()
+        ui.backend.accept_save = False
+        picker = ui.reasoning_picker()
+        picker.setProperty("currentIndex", 3)
+        picker.activated.emit(3)
+        self.app.processEvents()
+        self.assertEqual(picker.property("currentIndex"), 0)
+        self.assertEqual(picker.property("displayText"), "沿用桌面")
+        self.assertEqual(ui.warnings, [])
+
+    def test_off_is_available_when_model_has_no_reasoning_levels(self):
+        ui = self.ui()
+        ui.backend._profiles[0].update(reasoningEffort="off")
+        ui.backend.choices[0]['reasoningLevels'] = []
+        ui.backend.changed.emit()
+        self.app.processEvents()
+        self.app.processEvents()
+        picker = ui.reasoning_picker()
+        self.assertEqual(picker.property("values").toVariant(), ["inherit", "off"])
+        self.assertEqual(picker.property("displayText"), "关闭")
+        self.assertEqual(ui.warnings, [])
+
+    def test_rejected_save_restores_the_saved_model(self):
+        ui = self.ui()
+        ui.backend.accept_save = False
+        picker = ui.picker()
+        picker.setProperty("currentIndex", 1)
+        picker.activated.emit(1)
+        self.app.processEvents()
+        self.app.processEvents()
+        self.assertEqual(picker.property("currentIndex"), 0)
+        self.assertEqual(ui.warnings, [])
+
+    def test_inherit_stays_first_and_clears_the_saved_effort(self):
+        ui = self.ui()
+        ui.backend._profiles[0]['reasoningEffort'] = 'high'
+        ui.backend.changed.emit()
+        self.app.processEvents()
+        picker = ui.reasoning_picker()
+        self.assertEqual(picker.property('values').toVariant()[0], 'inherit')
+        picker.setProperty('currentIndex', 0)
+        picker.activated.emit(0)
+        self.app.processEvents()
+        self.assertEqual(ui.backend.calls[-1][-1], 'inherit')
+        self.assertNotIn('reasoningEffort', ui.backend._profiles[0])
+        self.assertEqual(ui.reasoning_picker().property('currentIndex'), 0)
+        self.assertEqual(ui.reasoning_picker().property('displayText'), '沿用桌面')
+        self.assertEqual(ui.warnings, [])
+
+    def test_inherit_failure_restores_the_saved_effort(self):
+        ui = self.ui()
+        ui.backend._profiles[0]['reasoningEffort'] = 'high'
+        ui.backend.changed.emit()
+        self.app.processEvents()
+        ui.backend.accept_save = False
+        picker = ui.reasoning_picker()
+        picker.setProperty('currentIndex', 0)
+        picker.activated.emit(0)
+        self.app.processEvents()
+        self.assertEqual(picker.property('displayText'), 'High')
+        self.assertEqual(ui.backend._profiles[0]['reasoningEffort'], 'high')
+        self.assertEqual(ui.warnings, [])
+
+    def test_columns_align_for_different_names_and_long_names_are_elided(self):
+        ui = self.ui()
+        ui.backend._profiles[0]['pluginName'] = '交接会话'
+        ui.backend._profiles.append({'plugin': 'other', 'profile': 'bot',
+            'pluginName': '机器人会话与一个需要截断的很长名称' * 8,
+            'model': 'test-model-b', 'provider': 'test-provider', 'reasoningEffort': 'medium'})
+        ui.backend.changed.emit()
+        self.app.processEvents()
+        self.app.processEvents()
+        items = {item.objectName(): item for item in ui.items() if item.objectName()}
+        for prefix in ('pluginSessionModel_', 'pluginSessionReasoning_'):
+            first = items[prefix + 'session-task-service_tasks']
+            second = items[prefix + 'other_bot']
+            self.assertAlmostEqual(first.mapToScene(QPointF()).x(), second.mapToScene(QPointF()).x())
+            self.assertAlmostEqual(first.width(), second.width())
+        self.assertTrue(items['pluginSessionName_other_bot'].property('truncated'))
+        self.assertEqual(ui.warnings, [])
+
+    def test_english_labels(self):
+        ui = self.ui("en")
+        texts = {item.property("text") for item in ui.items() if isinstance(item.property("text"), str)}
+        self.assertIn("Plugin session models", texts)
+        self.assertIn("Session profile: tasks", texts)
+        self.assertIn("Reasoning effort", texts)
+        self.assertEqual(ui.reasoning_picker().property("displayText"), "Use desktop setting")
+        self.assertEqual(ui.warnings, [])
+
+
+if __name__ != "__main__":
+    class IsolatedPluginSessionModelSettingTests(unittest.TestCase):
+        def test_plugin_session_model_setting_in_isolated_process(self):
+            isolated_test_module(self, Path(__file__).resolve())
+
+
+def load_tests(loader, tests, pattern):
+    if __name__ == "__main__":
+        return tests
+    return unittest.TestSuite([IsolatedPluginSessionModelSettingTests("test_plugin_session_model_setting_in_isolated_process")])
+
+
+if __name__ == "__main__":
+    unittest.main()

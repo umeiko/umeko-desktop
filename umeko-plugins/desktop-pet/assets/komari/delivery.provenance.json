@@ -1,0 +1,70 @@
+{
+  "source": "User-provided desktop delivery 小鞠_桌宠动画_20261115",
+  "processing": "Original delivered GIF bytes copied unchanged; no re-encoding or frame synthesis.",
+  "sourceNotes": "小鞠桌宠动画 · 七状态\n\n七段动作沿用原状态设计，角色、衣服和书本以本次定稿为准。\n七段均由 MiniMax H3 独立生成绿幕动态，再抠成512×512透明无限循环GIF。\nGIF采用共享色表、透明背景和清除上一帧的处置方式；全部原生帧正序保留。\n按要求设置约时长：idle1.8s / thinking2.4s / working2.0s / waiting2.6s / done2.0s / error2.5s / idle-rare4.2s。\nGIF帧间隔以10毫秒为单位分配，绿幕原片保留原生24fps时长；原片放在“绿幕原片”。\n未自动打开播放器。\n\nSHA256:\nd6895a71da552a089b189912158582492c439be92cdd4796b0aee0094ad52bc1  idle.gif\nb4f9d684eb6ed48bc00d005e05ffd9298e42807f7dc54a24f01b8732c75daed7  thinking.gif\n6335389b354d7b141e1d959e07bba3f8ce5307552b5813ea9545da1ee753931a  working.gif\na85354f63ce85a8881a811e842933ece5c23e4cd1ff14ee40a90f4c7e42474f9  waiting.gif\n811c9ce4a6822c6d953e6409cb76d39a8b80411673388d0bc0c08556f1e66858  done.gif\n1367535a9c93a26c9d3d72c4633a70cb797d3c75d180f61ed3d3a39aa3e823fe  error.gif\nb5a43ff81bf4baf0ec900a31899a6526010a27606efc5dd40f2f800b996195e8  idle-rare.gif\n",
+  "files": {
+    "idle.gif": {
+      "sha256": "d6895a71da552a089b189912158582492c439be92cdd4796b0aee0094ad52bc1",
+      "width": 512,
+      "height": 512,
+      "frames": 39,
+      "durationMs": 1800,
+      "loop": 0,
+      "transparent": true
+    },
+    "thinking.gif": {
+      "sha256": "b4f9d684eb6ed48bc00d005e05ffd9298e42807f7dc54a24f01b8732c75daed7",
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "durationMs": 2400,
+      "loop": 0,
+      "transparent": true
+    },
+    "working.gif": {
+      "sha256": "6335389b354d7b141e1d959e07bba3f8ce5307552b5813ea9545da1ee753931a",
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "durationMs": 2000,
+      "loop": 0,
+      "transparent": true
+    },
+    "waiting.gif": {
+      "sha256": "a85354f63ce85a8881a811e842933ece5c23e4cd1ff14ee40a90f4c7e42474f9",
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "durationMs": 2600,
+      "loop": 0,
+      "transparent": true
+    },
+    "done.gif": {
+      "sha256": "811c9ce4a6822c6d953e6409cb76d39a8b80411673388d0bc0c08556f1e66858",
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "durationMs": 2000,
+      "loop": 0,
+      "transparent": true
+    },
+    "error.gif": {
+      "sha256": "1367535a9c93a26c9d3d72c4633a70cb797d3c75d180f61ed3d3a39aa3e823fe",
+      "width": 512,
+      "height": 512,
+      "frames": 56,
+      "durationMs": 2500,
+      "loop": 0,
+      "transparent": true
+    },
+    "idle-rare.gif": {
+      "sha256": "b5a43ff81bf4baf0ec900a31899a6526010a27606efc5dd40f2f800b996195e8",
+      "width": 512,
+      "height": 512,
+      "frames": 107,
+      "durationMs": 4200,
+      "loop": 0,
+      "transparent": true
+    }
+  }
+}

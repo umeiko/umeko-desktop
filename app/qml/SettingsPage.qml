@@ -18,6 +18,18 @@ Item {
     property string mappingSignature: ""
     property string mappingProviderId: ""
     readonly property var mappingAccount: backend.config.providers.find(p => p.id === mappingProviderId) || null
+    property bool modelGroupOpen: false
+    property real providersScrollPosition: 0
+    function openModelGroup(value) {
+        const flick = settingsScroll.contentItem
+        if (value) providersScrollPosition = flick.contentY
+        modelGroupOpen = value
+        Qt.callLater(() => {
+            if (root.modelGroupOpen !== value) return
+            flick.cancelFlick()
+            flick.contentY = value ? 0 : Math.min(root.providersScrollPosition, Math.max(0, flick.contentHeight - flick.height))
+        })
+    }
     property var activeInlineScroll: null
     function activateInlineScroll(item) { activeInlineScroll = item }
     function scrollSettings(delta) {
@@ -25,7 +37,7 @@ Item {
         flick.cancelFlick()
         flick.contentY = Math.max(0, Math.min(Math.max(0, flick.contentHeight - flick.height), flick.contentY - delta))
     }
-    onTabChanged: { multimodalOpen = false; activeInlineScroll = null; if (providerPopup) providerPopup.close() }
+    onTabChanged: { multimodalOpen = false; modelGroupOpen = false; activeInlineScroll = null; if (providerPopup) providerPopup.close() }
     onVisibleChanged: if (!visible) { multimodalOpen = false; activeInlineScroll = null; if (providerPopup) providerPopup.close() }
     TapHandler {
         onPressedChanged: if (pressed && root.activeInlineScroll) {
@@ -138,11 +150,30 @@ Item {
                 width: settingsScroll.availableWidth; spacing: 18
 
                 Column {
-                    visible: root.tab === 0; width: parent.width; spacing: 18
+                    visible: root.tab === 0 && !root.modelGroupOpen; width: parent.width; spacing: 18
                     AuxiliaryVisionSettings {
                         width: parent.width; expanded: root.multimodalOpen
                         onOpenRequested: { root.multimodalOpen = true; settingsScroll.contentItem.contentY = 0 }
                         onBackRequested: { root.multimodalOpen = false; settingsScroll.contentItem.contentY = 0 }
+                    }
+                    ItemDelegate {
+                        objectName: "modelGroupSettingsEntry"
+                        visible: !root.multimodalOpen; width: parent.width
+                        implicitHeight: Math.max(60, groupEntry.implicitHeight + 28)
+                        leftPadding: 20; rightPadding: 20
+                        background: Rectangle { radius: 10; color: parent.hovered ? Theme.hover : Theme.surface; border.color: Theme.line }
+                        contentItem: RowLayout {
+                            id: groupEntry; spacing: 12
+                            Glyph { name: "layers"; width: Theme.icon(20); height: Theme.icon(20); color: Theme.muted }
+                            Text { text: I18n.t("模型组"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14) }
+                            HelpButton {
+                                objectName: "modelGroupHelp"
+                                help: I18n.t("启用后可在聊天中选择模型组。遇到网络故障、限流或额度用尽时，会按顺序自动切换到下一个可用模型。")
+                            }
+                            Item { Layout.fillWidth: true }
+                            Glyph { name: "chevron-right"; width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }
+                        }
+                        onClicked: root.openModelGroup(true)
                     }
                     ProviderPluginsSection { visible: !root.multimodalOpen; width: parent.width }
                     SectionCard {
@@ -189,6 +220,13 @@ Item {
                             }
                         }
                     }
+
+                }
+                Loader {
+                    width: parent.width
+                    active: root.tab === 0 && root.modelGroupOpen
+                    visible: active
+                    sourceComponent: ModelGroupSettings { onBackRequested: root.openModelGroup(false) }
                 }
 
                 ApiProxySettings { visible: root.tab === 1; width: parent.width }
@@ -205,8 +243,8 @@ Item {
                                 HelpButton { objectName: "mappingHelp"; help: I18n.t("左侧填写供应商的原始模型名称，右侧是聊天与 API 代理服务使用的别名。每个供应商可有多条映射，别名必须唯一。插件供应商的模型 ID 由模型发现提供。") }
                             }
                             ColumnLayout { visible: !root.mappingAccount; Layout.fillWidth: true; spacing: 8
-                                Text { font.family: Theme.fontFamily; visible: backend.config.providers.length === 0; text: I18n.t("添加供应商后设置模型别名"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
-                                Repeater { model: backend.config.providers
+                                Text { font.family: Theme.fontFamily; visible: !backend.config.providers.some(p => p.api !== "image"); text: I18n.t("添加供应商后设置模型别名"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
+                                Repeater { model: backend.config.providers.filter(p => p.api !== "image")
                                     ItemDelegate {
                                         required property var modelData
                                         objectName: "mappingProvider_" + modelData.id

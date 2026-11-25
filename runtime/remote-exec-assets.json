@@ -1,0 +1,10 @@
+{
+  "version": "rust-v0.172.0",
+  "source": "https://github.com/openai/codex/releases/tag/rust-v0.172.0",
+  "assets": {
+    "windows-x64": { "name": "codex-exec-server-x86_64-pc-windows-msvc.exe", "sha256": "d38c0050e669c90579925b8645c8869ebad8283a7f29a681d1ea53620ee2eae6" },
+    "windows-arm64": { "name": "codex-exec-server-aarch64-pc-windows-msvc.exe", "sha256": "49e55dae8fa5e3bd0e77890ee5f5b4e0246d4bc282f36f15ef103dd15dfdf31c" },
+    "linux-x64": { "name": "codex-exec-server-x86_64-unknown-linux-musl.tar.gz", "sha256": "1276ea8882a5c96fbc35fdb57c169198fe95f845dab0be864a8a0bc026efa8d5" },
+    "linux-arm64": { "name": "codex-exec-server-aarch64-unknown-linux-musl.tar.gz", "sha256": "0e519e433a34a09dc774fc0a3c4fda6c68d9acb64b147bb79ce18f56230a566a" }
+  }
+}

@@ -11,7 +11,7 @@ Rectangle {
     Image {
         visible:parent.iconName!=="code"
         anchors.fill: parent
-        source: "assets/extensions/" + (["codemode","tool-search","mcp","chatbox","pi-commands","umeko-control","background-jobs","subagents"].indexOf(parent.iconName)>=0 ? parent.iconName : "package") + ".svg"
+        source: "assets/extensions/" + (["codemode","tool-search","mcp","chatbox","umeko-control","background-jobs","subagents"].indexOf(parent.iconName)>=0 ? parent.iconName : "package") + ".svg"
         fillMode: Image.PreserveAspectFit
         sourceSize.width: parent.width*2
         sourceSize.height: parent.height*2

@@ -27,8 +27,14 @@ AnchoredPidPopup {
             : format.verified === true ? I18n.t("开关已确认") : I18n.t("开关效果未能确认")
         return levelText + " · " + formatText
     }
+    readonly property bool showBackendChoices: hasDshPath || backend.sessionBackend === "dsh"
     fullWidth: 365
-    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight + 270 + (effectHint.visible ? effectHint.implicitHeight + reasoningControls.spacing + 3 : 0) + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0) + (ownModelsHint.visible ? ownModelsHint.implicitHeight + 10 : 0)))
+    fullHeight: Math.max(220, Math.min(470, heightLimit, modelList.contentHeight
+        + (backend.modelGroupSelected ? 185 : 270)
+        - (showBackendChoices ? 0 : piChoice.implicitHeight + popupLayout.spacing)
+        + (effectHint.visible ? effectHint.implicitHeight + reasoningControls.spacing + 3 : 0)
+        + (offNote.visible ? offNote.implicitHeight + reasoningControls.spacing + 3 : 0)
+        + (ownModelsHint.visible ? ownModelsHint.implicitHeight + 10 : 0)))
     signal configure()
     signal dismissed()
     onAboutToShow: modelSearch.clear()
@@ -38,17 +44,50 @@ AnchoredPidPopup {
         if (backend.sessionBackend !== "dsh" && typeof backend.ensureReasoningDetection === "function") backend.ensureReasoningDetection()
     }
     onClosed: dismissed()
+    component ModelChoice: Rectangle {
+        id: choice
+        required property string title
+        property string subtitle: ""
+        property bool matches: true
+        property bool selected: false
+        signal chosen()
+        height: matches ? 44 : 0
+        visible: matches
+        radius: 7
+        color: modelMouse.containsMouse ? Theme.hover : selected ? Theme.accentBg : "transparent"
+        Column {
+            x: 11; width: parent.width - 44; anchors.verticalCenter: parent.verticalCenter; spacing: 3
+            Text {
+                text: choice.title; width: parent.width; elide: Text.ElideRight; textFormat: Text.PlainText
+                font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible); color: Theme.ink
+            }
+            Text {
+                text: choice.subtitle; visible: text.length > 0; width: parent.width; elide: Text.ElideRight; textFormat: Text.PlainText
+                font.family: Theme.fontFamily; font.pixelSize: Theme.font(9, visible); color: Theme.muted
+            }
+        }
+        Glyph {
+            anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
+            name: "check"; width: Theme.icon(15); height: Theme.icon(15); visible: choice.selected
+        }
+        MouseArea {
+            id: modelMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+            onClicked: choice.chosen()
+        }
+    }
     contentItem: Item {
         clip: true
     ColumnLayout {
+        id: popupLayout
         width: root.expandedWidth - root.padding * 2; height: root.expandedHeight - root.padding * 2; spacing: 10
         opacity: root.contentOpacity
         RowLayout {
+            visible: root.showBackendChoices
             Layout.fillWidth: true
-            Text { text: I18n.t("会话后端"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
+            Text { visible: backend.sessionBackend !== "pi"; text: I18n.t("会话后端"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11) }
             Item { Layout.fillWidth: true }
-            BackendChoice { objectName: "choosePiBackend"; text: "Pi Coding Agent"; artwork: "../icons/pi.svg"; selected: backend.sessionBackend === "pi"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("pi") }
-            BackendChoice { objectName: "chooseDshBackend"; text: "DeepSeek Harness"; artwork: "../icons/dsh.svg"; monochrome: true; experimental: true; visible: root.hasDshPath || backend.sessionBackend === "dsh"; selected: backend.sessionBackend === "dsh"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("dsh") }
+            BackendChoice { id: piChoice; objectName: "choosePiBackend"; text: "Pi Coding Agent"; artwork: "../icons/pi.svg"; selected: backend.sessionBackend === "pi"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("pi") }
+            BackendChoice { objectName: "chooseDshBackend"; text: "DeepSeek Harness"; artwork: "../icons/dsh.svg"; monochrome: true; experimental: true; selected: backend.sessionBackend === "dsh"; enabled: backend.canChooseBackend === true; onClicked: backend.setSessionBackend("dsh") }
         }
         InputField { id: modelSearch; objectName: "modelSearch"; Layout.fillWidth: true; placeholderText: I18n.t("搜索供应商或模型…"); height: 39 }
         Text {
@@ -60,8 +99,8 @@ AnchoredPidPopup {
             font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible)
         }
         ListView {
-            id: modelList; Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 9
-            model: root.useDshModels ? backend.dshModelProviders : backend.config.providers
+            id: modelList; objectName: "modelOptionsList"; Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 9
+            model: root.useDshModels ? backend.dshModelProviders : backend.config.providers.filter(p => p.api !== "image")
             ScrollBar.vertical: ScrollBar {}
             delegate: Column {
                 required property var modelData
@@ -70,35 +109,38 @@ AnchoredPidPopup {
                 Text { font.family: Theme.fontFamily; x: 9; topPadding: 5; bottomPadding: 7; text: provider.name + "  ·  " + provider.models.length + I18n.t(" 个模型"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
                 Repeater {
                     model: provider.models
-                    Rectangle {
+                    ModelChoice {
                         required property var modelData
                         objectName: "modelOption_" + provider.id + "_" + modelData.alias
-                        property bool matches: (provider.name + " " + modelData.alias + (root.useDshModels ? "" : " " + modelData.upstream)).toLowerCase().indexOf(modelSearch.text.toLowerCase()) >= 0
-                        property bool selected: root.useDshModels ? backend.dshCurrentModelValue === modelData.value : backend.config.selectedProvider === provider.id && backend.config.selectedModel === modelData.alias
-                        width: modelList.width; height: matches ? 44 : 0; visible: matches; radius: 7
-                        color: modelMouse.containsMouse ? Theme.hover : selected ? Theme.accentBg : "transparent"
-                        Column { x: 11; width: parent.width - 44; anchors.verticalCenter: parent.verticalCenter; spacing: 3
-                            Text { font.family: Theme.fontFamily; text: modelData.alias; width: parent.width; elide: Text.ElideRight; color: Theme.ink; font.pixelSize: Theme.font(12, visible) }
-                            Text { font.family: Theme.fontFamily; text: modelData.upstream; visible: !root.useDshModels; width: parent.width; elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(9, visible) }
-                        }
-                        Glyph { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "check"; width: Theme.icon(15); height: Theme.icon(15); visible: parent.selected }
-                        MouseArea {
-                            id: modelMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                const controller = backend, providerId = provider.id, alias = modelData.alias, nativeValue = modelData.value, useDshModels = root.useDshModels
-                                root.close()
-                                if (useDshModels) controller.selectDshModel(nativeValue)
-                                else controller.selectModel(providerId, alias)
-                            }
+                        width: modelList.width
+                        title: modelData.alias
+                        subtitle: root.useDshModels ? "" : modelData.upstream
+                        matches: (provider.name + " " + title + " " + subtitle).toLowerCase().includes(modelSearch.text.toLowerCase())
+                        selected: root.useDshModels ? backend.dshCurrentModelValue === modelData.value : !backend.modelGroupSelected && backend.config.selectedProvider === provider.id && backend.config.selectedModel === modelData.alias
+                        onChosen: {
+                            const controller = backend, providerId = provider.id, alias = modelData.alias, nativeValue = modelData.value, useDshModels = root.useDshModels
+                            root.close()
+                            if (useDshModels) controller.selectDshModel(nativeValue)
+                            else controller.selectModel(providerId, alias)
                         }
                     }
                 }
+            }
+            footer: ModelChoice {
+                objectName: "modelGroupOption"
+                width: modelList.width
+                title: I18n.t("模型组")
+                matches: backend.sessionBackend === "pi" && backend.modelGroupReady === true &&
+                         (title + " 模型组 Model group").toLowerCase().includes(modelSearch.text.trim().toLowerCase())
+                selected: backend.modelGroupSelected === true
+                onChosen: { root.close(); backend.selectModelGroup() }
             }
         }
         Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
         ColumnLayout {
             id: reasoningControls
             objectName: "reasoningControls"
+            visible: backend.modelGroupSelected !== true
             Layout.fillWidth: true; spacing: 3
             // Effective levels; detection results can replace them while the popup is open.
             readonly property var levels: { backend.reasoningDetectionState; let values = ["off"]; for (const level of backend.reasoningLevels) values.push(level); return values }

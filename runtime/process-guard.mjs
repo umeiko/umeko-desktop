@@ -157,7 +157,7 @@ export function blockedProcessCommand(command, shell = "bash") {
   return undefined;
 }
 
-export function assertProcessCommandAllowed(command) {
-  const reason = blockedProcessCommand(command);
+export function assertProcessCommandAllowed(command, shell) {
+  const reason = blockedProcessCommand(command, shell);
   if (reason) throw new Error(reason);
 }

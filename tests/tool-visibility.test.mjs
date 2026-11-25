@@ -33,7 +33,7 @@ test('real Pi excludes native, Umeko and deferred tools across reload, nested ca
  const children=[];
  function start(blockedTools,sessionFile) {
   const events=[];let buffer='',stderr='';
-  const child=spawn(process.execPath,[join(root,'runtime/releases/coding-1.3.0/bridge.mjs')],{cwd,stdio:['pipe','pipe','pipe']});children.push(child);
+  const child=spawn(process.execPath,[join(root,'runtime/releases/coding-1.5.2/bridge.mjs')],{cwd,stdio:['pipe','pipe','pipe']});children.push(child);
   child.stderr.on('data',data=>stderr+=data);
   child.stdout.on('data',data=>{buffer+=data;let i;while((i=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);if(line)events.push(JSON.parse(line));}});
   const send=input=>child.stdin.write(JSON.stringify(input)+'\n');

@@ -21,7 +21,7 @@ test('real embedded Pi tool installs into its own profile, reloads the same sess
   if(paused&&!awaiting)await new Promise(done=>{releaseReply=done;});
   if(res.destroyed)return;
   let message,finish;
-  if(awaiting){awaiting=false;message={role:'assistant',content:null,tool_calls:[{index:0,id:'pi-command-'+requests.length,type:'function',function:{name:'run_pi_command',arguments:JSON.stringify({command})}}]};finish='tool_calls';}
+  if(awaiting){awaiting=false;message={role:'assistant',content:null,tool_calls:[{index:0,id:'pi-command-'+requests.length,type:'function',function:{name:'umeko_desktop',arguments:JSON.stringify({operation:'pi.run',arguments:{command}})}}]};finish='tool_calls';}
   else {message={role:'assistant',content:'command response finished'};finish='stop';}
   res.writeHead(200,{'Content-Type':'text/event-stream'});
   const common={id:'fixture',object:'chat.completion.chunk',created:1,model:'fixture'};
@@ -29,7 +29,7 @@ test('real embedded Pi tool installs into its own profile, reloads the same sess
  });
  await new Promise(done=>server.listen(0,'127.0.0.1',done));
  const events=[];let stderr='',buffer='';
- child=spawn(process.execPath,[join(root,'runtime/releases/coding-1.3.0/bridge.mjs')],{cwd,stdio:['pipe','pipe','pipe']});
+ child=spawn(process.execPath,[join(root,'runtime/releases/coding-1.5.2/bridge.mjs')],{cwd,stdio:['pipe','pipe','pipe']});
  child.stderr.on('data',data=>stderr+=data);
  child.stdout.on('data',data=>{buffer+=data;let i;while((i=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);if(line)events.push(JSON.parse(line));}});
  const send=input=>child.stdin.write(JSON.stringify(input)+'\n');
@@ -40,7 +40,7 @@ test('real embedded Pi tool installs into its own profile, reloads the same sess
   // Only initial startup gets a separate budget; tool and reload waits stay 15s.
   send(initial);await wait(()=>events.some(e=>e.type==='done'),45000);
   const first=events.find(e=>e.type==='ready').session.id;
-  const tool=events.find(e=>e.type==='tool'&&e.name==='run_pi_command'&&e.state==='done');
+  const tool=events.find(e=>e.type==='tool'&&e.name==='umeko_desktop'&&e.state==='done');
   assert.equal(JSON.parse(tool.result).sessionId,first);assert.equal(JSON.parse(tool.result).agentDir,agentDir);
   assert.ok(requests[0].messages.filter(m=>['system','developer'].includes(m.role)).some(m=>String(m.content).includes('embedded in Umeko Desktop')));
   let count=events.filter(e=>e.type==='done').length;
@@ -51,16 +51,18 @@ test('real embedded Pi tool installs into its own profile, reloads the same sess
 
   let state=events.filter(e=>e.type==='state').at(-1);assert.equal(state.session.id,first);
   assert.ok(state.resources.commands.some(c=>c.name==='command-fixture'));
-  assert.ok(state.resources.tools.includes('run_pi_command'));
+  assert.ok(state.resources.tools.includes('umeko_desktop'));
+  assert.ok(!state.resources.allTools.some(tool=>tool.name==='run_pi_command'));
+  assert.ok(!state.resources.extensions.some(extension=>extension.path==='builtin:pi-commands'));
   count=events.filter(e=>e.type==='done').length;command='/command-fixture hello';awaiting=true;
   send({type:'prompt',text:'Run registered command'});await wait(()=>events.filter(e=>e.type==='done').length>count);
-  const feedback=requests.flatMap(request=>request.messages).map(message=>typeof message.content==='string'?message.content:(message.content||[]).map(part=>part.text||'').join('\n')).filter(text=>text.includes('Umeko runtime results for run_pi_command'));
-  const reports=feedback.flatMap(text=>JSON.parse(text.slice(text.indexOf('Umeko runtime results for run_pi_command')).split('\n')[1]));
+  const feedback=requests.flatMap(request=>request.messages).map(message=>typeof message.content==='string'?message.content:(message.content||[]).map(part=>part.text||'').join('\n')).filter(text=>text.includes('Umeko runtime results for pi.run'));
+  const reports=feedback.flatMap(text=>JSON.parse(text.slice(text.indexOf('Umeko runtime results for pi.run')).split('\n')[1]));
   assert.ok(reports.some(report=>report.command==='/command-fixture hello'&&report.result.output==='fixture:hello:'+cwd));
   const final=events.filter(e=>e.type==='state').at(-1);assert.equal(final.session.id,first);
   assert.ok(final.messages.some(m=>m.role==='user'&&m.text==='Inspect this Pi'));
   assert.equal(events.filter(e=>e.type==='error').length,0);
-  assert.ok(events.filter(e=>e.type==='tool'&&e.name==='run_pi_command'&&e.state==='done').length>=3);
+  assert.ok(events.filter(e=>e.type==='tool'&&e.name==='umeko_desktop'&&e.state==='done').length>=3);
   count=events.filter(e=>e.type==='done').length;command='/compact preserve current task';awaiting=true;
   send({type:'prompt',text:'Compact this instance'});await wait(()=>events.filter(e=>e.type==='done').length>count);
   const compacted=events.filter(e=>e.type==='state').at(-1);assert.equal(compacted.session.id,first);

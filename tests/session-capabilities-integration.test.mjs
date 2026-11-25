@@ -6,7 +6,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync} from
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-const bridge=fileURLToPath(new URL('../runtime/releases/coding-1.3.0/bridge.mjs',import.meta.url));
+const bridge=fileURLToPath(new URL('../runtime/releases/coding-1.5.2/bridge.mjs',import.meta.url));
 const core=['bash','edit','find','grep','ls','powershell','read','write'];
 test('real Pi presets control imports, tool registration, nested calls and restored chat loadouts',{timeout:120000},async()=>{
   const root=mkdtempSync(join(tmpdir(),'umeko-capabilities-')),cwd=join(root,'work'),agentDir=join(root,'agent'),sessions=join(root,'sessions');
@@ -16,13 +16,18 @@ test('real Pi presets control imports, tool registration, nested calls and resto
     writeFileSync(${JSON.stringify(marker)},'loaded');
     pi.registerTool({name:'fixture_secret',label:'Secret',description:'Filtered deferred tool',exposure:'codemode',parameters:{type:'object',properties:{}},execute:async()=>{writeFileSync(${JSON.stringify(executed)},'executed');return {content:[{type:'text',text:'should not execute'}]}}});
     pi.registerTool({name:'fixture_probe',label:'Probe',description:'Probe nested execution',parameters:{type:'object',properties:{}},execute:async(_id,_args,_signal,_update,ctx)=>ctx.executeTool('fixture_secret',{})});
+    pi.registerTool({name:'fixture_pi_probe',label:'Pi probe',description:'Check a nested Pi operation',parameters:{type:'object',properties:{}},
+      execute:async(_id,_args,_signal,_update,ctx)=>{
+        const {result}=await ctx.executeTool('umeko_desktop',{operation:'pi.run',arguments:{command:'/session'}});
+        return result;
+      }});
   };`);
   const settings=JSON.stringify({extensions:[join(agentDir,'extensions','fixture.mjs'),'+builtin:umeko-control','+builtin:mcp'],compaction:{enabled:false}});
   writeFileSync(join(agentDir,'settings.json'),settings);
-  let probe=true;const requests=[];
+  let probe={name:'fixture_probe',arguments:'{}'};const requests=[];
   const server=createServer(async(req,res)=>{
     let raw='';for await(const part of req)raw+=part;const body=JSON.parse(raw);requests.push(body);
-    const delta=probe ? {role:'assistant',content:null,tool_calls:[{index:0,id:'probe',type:'function',function:{name:'fixture_probe',arguments:'{}'}}]} : {role:'assistant',content:'done'};probe=false;
+    const delta=probe ? {role:'assistant',content:null,tool_calls:[{index:0,id:'probe-'+requests.length,type:'function',function:probe}]} : {role:'assistant',content:'done'};probe=null;
     const chunk={id:'fixture',object:'chat.completion.chunk',created:1,model:'fixture'};
     res.writeHead(200,{'Content-Type':'text/event-stream'});res.end(`data: ${JSON.stringify({...chunk,choices:[{index:0,delta,finish_reason:null}]})}\n\ndata: ${JSON.stringify({...chunk,choices:[{index:0,delta:{},finish_reason:delta.tool_calls?'tool_calls':'stop'}]})}\n\ndata: [DONE]\n\n`);
   });
@@ -55,6 +60,20 @@ test('real Pi presets control imports, tool registration, nested calls and resto
     assert.ok(!JSON.stringify(requests[0].tools).includes('fixture_secret'));
     const file=child.state().session.file;assert.ok(file);await child.close();
     const reopened=await start({preset:'minimal'},file);assert.deepEqual([...reopened.state().resources.tools].sort(),['bash','edit','read','write']);await reopened.close();
+    const legacy=await start({preset:'custom',custom:{base:'full',tools:{run_pi_command:false}}},file);
+    assert.ok(legacy.state().resources.tools.includes('umeko_desktop'));
+    assert.ok(!legacy.state().resources.allTools.some(tool=>tool.name==='run_pi_command'));
+    for(const functionCall of [
+      {name:'umeko_desktop',arguments:JSON.stringify({operation:'pi.run',arguments:{command:'/session'}})},
+      {name:'fixture_pi_probe',arguments:'{}'},
+    ]){
+      probe=functionCall;
+      const completed=legacy.events.filter(e=>e.type==='done').length;
+      legacy.send({type:'prompt',text:'Check disabled Pi commands'});
+      await legacy.wait(()=>legacy.events.filter(e=>e.type==='done').length>completed);
+      assert.match(JSON.stringify(requests.at(-1).messages.at(-1)),/Pi commands are disabled in this session/);
+    }
+    await legacy.close();
     assert.equal(readFileSync(join(agentDir,'settings.json'),'utf8'),settings,'A session preset modified global Pi settings');
   }finally{
     for(const child of children)if(child.exitCode===null)child.kill();

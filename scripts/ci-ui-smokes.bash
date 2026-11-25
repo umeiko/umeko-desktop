@@ -19,7 +19,7 @@ if [[ ${1:-} == --run-one ]]; then
     mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" "$UMEKO_DATA_DIR"
     chmod 700 "$XDG_RUNTIME_DIR"
     printf "ci-ephemeral-password" | gnome-keyring-daemon --unlock --components=secrets
-    .venv/bin/python "$1"
+    .venv/bin/python -X faulthandler "$1"
   ' _ "$script" >"$log" 2>&1 || status=$?
   elapsed=$((SECONDS - started))
   printf '%s\t%s\t%s\n' "$script" "$elapsed" "$status" >"$log_dir/$name.result"
@@ -47,16 +47,23 @@ smokes=(
   scripts/smoke-plugin-sessions.py
   tests/model_popup_ui_smoke.py
   tests/pi_capabilities_ui_smoke.py
+  tests/cowork_widgets_ui_smoke.py
+  tests/cowork_creation_ui_smoke.py
+  tests/session_workspace_ui_smoke.py
   tests/global_agents_ui_smoke.py
   tests/desktop_plugins_ui_smoke.py
+  tests/scheduled_tasks_ui_smoke.py
   tests/pi_management_ui_smoke.py
   tests/subagent_collection_ui_smoke.py
   tests/thinking_stream_ui_smoke.py
   tests/skill_manager_host_ui_smoke.py
   tests/video_ui_smoke.py
   tests/desktop_pet_ui_smoke.py
+  tests/desktop_pet_task_ui_smoke.py
+  tests/desktop_pet_drag_ui_smoke.py
   tests/subagent_pane_ui_smoke.py
   tests/multimodal_ui_smoke.py
+  tests/image_providers_ui_smoke.py
   tests/auxiliary_vision_ui_smoke.py
   tests/appearance_ui_smoke.py
   tests/characters_ui_smoke.py
@@ -75,6 +82,7 @@ smokes=(
   tests/preview_resize_ui_smoke.py
   tests/api_proxy_layout_ui_smoke.py
   tests/large_chat_ui_smoke.py
+  tests/question_navigator_ui_smoke.py
   tests/scroll_oscillation_ui_smoke.py
   tests/grouped_loading_ui_smoke.py
   tests/provider_error_ui_smoke.py
@@ -83,20 +91,25 @@ smokes=(
   tests/login_startup_launch_smoke.py
   tests/sidebar_highlight_ui_smoke.py
   tests/chat_loading_ui_smoke.py
+  tests/recent_history_ui_smoke.py
   tests/scroll_paging_ui_smoke.py
   tests/task_state_ui_smoke.py
+  tests/composer_shortcut_hint_ui_smoke.py
   tests/steering_status_ui_smoke.py
+  tests/subagent_report_status_ui_smoke.py
   tests/conversation_search_ui_smoke.py
   tests/sidebar_menu_position_ui_smoke.py
   tests/pi_manager_initial_tools_ui_smoke.py
   tests/slash_commands_ui_smoke.py
   tests/large_markdown_ui_smoke.py
   tests/history_window_ui_smoke.py
+  tests/selection_attachment_ui_smoke.py
   tests/request_details_ui_smoke.py
   tests/skill_manager_ui_smoke.py
   tests/provider_login_cancel_ui_smoke.py
   tests/pid_thread_ui_smoke.py
   tests/input_method_ui_smoke.py
+  tests/update_notes_ui_smoke.py
 )
 
 mkdir -p build

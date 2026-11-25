@@ -6,12 +6,15 @@ Column {
     id: root
     objectName: "multimodalSettings"
     spacing: 18
-    property string savedSignature: ""
+    property var savedSignatures: ({})
     function reload() {
-        const signature = JSON.stringify(backend.config.multimodal)
-        if (signature === savedSignature) return
-        savedSignature = signature
-        image.load(); speech.load(); video.load()
+        const settings = backend.config.multimodal
+        for (const card of [image, speech, video]) {
+            const signature = JSON.stringify(settings[card.kind])
+            if (signature === savedSignatures[card.kind]) continue
+            savedSignatures[card.kind] = signature
+            card.load()
+        }
     }
     Component.onCompleted: reload()
     Connections { target: backend; function onChanged() { root.reload() } }
@@ -24,7 +27,8 @@ Column {
             onClicked: backend.saveMultimodalSettings(JSON.stringify({image: image.values(), speech: speech.values(), video: video.values()}))
         }
     }
-    GenerationSettingsCard { id: image; objectName: "imageGenerationSettings"; width: parent.width; kind: "image"; title: I18n.t("图片生成") }
+    ImageProviderDialog { id: imageProviders }
+    GenerationSettingsCard { id: image; objectName: "imageGenerationSettings"; width: parent.width; kind: "image"; title: I18n.t("图片生成"); onImageProvidersRequested: imageProviders.open() }
     GenerationSettingsCard { id: speech; objectName: "speechGenerationSettings"; width: parent.width; kind: "speech"; title: I18n.t("语音生成") }
     GenerationSettingsCard { id: video; objectName: "videoGenerationSettings"; width: parent.width; kind: "video"; title: I18n.t("视频生成") }
 }

@@ -11,7 +11,7 @@ from pathlib import Path
 from .filesystem_paths import filesystem_path, ordinary_path
 
 PACKAGE = "@earendil-works/pi-coding-agent"
-PINNED_VERSION = "1.3.0"
+PINNED_VERSION = "1.5.2"
 RELEASE_NAME = "coding-" + PINNED_VERSION
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 CATALOG = '''// Umeko provider policy. Native coding-agent implementation is unchanged.
@@ -102,6 +102,84 @@ def patch_retry_diagnostics(release: Path):
         path.write_text(text.replace(original, replacement), encoding="utf-8")
 
 
+def patch_bash_job(release: Path):
+    # Keep the built-in tool's source, policy, output handling, and shell
+    # settings. The hook also covers Pi's direct Bash execution API.
+    path = release / "node_modules/@earendil-works/pi-coding-agent/dist/core/tools/bash.js"
+    if not path.is_file():
+        return  # The compatibility check below reports a missing SDK.
+    text = path.read_text(encoding="utf-8")
+    hook = 'const host = globalThis[Symbol.for("umeko:bash-job")];'
+    if hook in text:
+        return
+    replacements = {
+        "exec: async (command, cwd, { onData, signal, timeout, env }) => {":
+            "exec: async (command, cwd, { onData, signal, timeout, env, toolCallId }) => {",
+        'const commandFromStdin = shellConfig.commandTransport === "stdin";':
+            f'{hook}\n            if (shellName === "bash" && host) {{\n'
+            '                return host({ shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env: env ?? getShellEnv(), toolCallId });\n'
+            '            }\n            const commandFromStdin = shellConfig.commandTransport === "stdin";',
+        "env: spawnContext.env,": "env: spawnContext.env,\n                        toolCallId: _toolCallId,",
+    }
+    for original, replacement in replacements.items():
+        if text.count(original) != 1:
+            raise RuntimeError("Pi Bash 接口已变化，需要更新进程清理适配")
+        text = text.replace(original, replacement)
+    path.write_text(text, encoding="utf-8")
+
+
+def patch_shell_environment(release: Path, bridge_source: Path):
+    # The existing Pi shell adapter remains the command and output entrypoint.
+    path = release / "node_modules/@earendil-works/pi-coding-agent/dist/core/tools/bash.js"
+    if not path.is_file():
+        return
+    copy_runtime_file(bridge_source.parent / 'shell-snapshot.mjs', release / 'shell-snapshot.mjs')
+    text = path.read_text(encoding="utf-8")
+    hook = 'const snapshotEnv = globalThis[Symbol.for("umeko:shell-environment")];'
+    if hook in text:
+        return
+    anchor = 'const host = globalThis[Symbol.for("umeko:bash-job")];'
+    if text.count(anchor) != 1:
+        raise RuntimeError("Pi shell environment adapter is unavailable")
+    path.write_text(text.replace(anchor, f'{hook}\n'
+        '            if (snapshotEnv) env = await snapshotEnv(shellName, env ?? getShellEnv(), shellConfig);\n'
+        f'            {anchor}'), encoding="utf-8")
+
+
+def patch_command_sessions(release: Path, bridge_source: Path):
+    path = release / "node_modules/@earendil-works/pi-coding-agent/dist/core/tools/bash.js"
+    if not path.is_file():
+        return
+    copy_runtime_file(bridge_source.parent / 'command-process.mjs', release / 'command-process.mjs')
+    text = path.read_text(encoding="utf-8")
+    if "Command session: " in text:
+        return
+    replacements = {
+        'if (shellName === "bash" && host) {\n                return host({ shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env: env ?? getShellEnv(), toolCallId });':
+            'if (host) {\n                const result = await host({ shellName, shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env: env ?? getShellEnv(), toolCallId });\n'
+            '                if (result) return result;',
+        'exit_code: Type.Number(),': 'exit_code: Type.Union([Type.Number(), Type.Null()]),\n'
+            '    command_session: Type.Optional(Type.Record(Type.String(), Type.Unknown())),',
+        'let exitCode;': 'let exitCode, commandSession;',
+        'exitCode = result.exitCode;': 'exitCode = result.exitCode;\n                    commandSession = result.commandSession;',
+        'if (exitCode === null) {': 'if (exitCode === null && !commandSession) {',
+        'exit_code: exitCode,': 'exit_code: exitCode,\n'
+            '                    ...(commandSession ? { command_session: commandSession } : {}),',
+        'if (exitCode !== 0) {': 'if (commandSession) {\n'
+            '                    let text = appendStatus(snapshot.content, "Command session: " + JSON.stringify(commandSession));\n'
+            '                    const failed = exitCode !== null && exitCode !== 0;\n'
+            '                    if (failed) text = appendStatus(text, "Command exited with code " + exitCode);\n'
+            '                    return { content: [{ type: "text", text }], details: { ...details, commandSession }, structuredContent, isError: failed };\n'
+            '                }\n'
+            '                if (exitCode !== 0) {',
+    }
+    for original, replacement in replacements.items():
+        if text.count(original) != 1:
+            raise RuntimeError("Pi shell tool interface changed; update command session adapter")
+        text = text.replace(original, replacement)
+    path.write_text(text, encoding="utf-8")
+
+
 def copy_runtime_file(source, destination):
     """Leave prepared adapters untouched; publish changed files atomically."""
     source, destination = Path(source), Path(destination)
@@ -127,13 +205,33 @@ def verify_runtime(release: Path, bridge_source: Path):
     if manifest.get("package") != PACKAGE or manifest.get("projection") != 2:
         raise RuntimeError("旧 Agent Core 内核不能用于完整 Pi Coding Agent")
     patch_retry_diagnostics(release)
+    patch_bash_job(release)
+    patch_shell_environment(release, bridge_source)
+    patch_command_sessions(release, bridge_source)
     for name in ("tool-visibility.mjs", "session-capabilities.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         copy_runtime_file(bridge_source.parent / name, release / name)
     copy_runtime_file(bridge_source.parent / 'update-cleanup.mjs', release / 'update-cleanup.mjs')
+    copy_runtime_file(bridge_source.parent / 'apply-patch.mjs', release / 'apply-patch.mjs')
     copy_runtime_file(bridge_source.parent / 'generation.mjs', release / 'generation.mjs')
+    for name in ('cowork-tools.mjs', 'cowork-local.mjs', 'cowork-subagents.mjs'):
+        copy_runtime_file(bridge_source.parent / name, release / name)
+    # Updated or previously prepared Pi kernels may predate the Cowork parser.
+    modules = release / 'node_modules'
+    if not (modules / 'parse5/package.json').is_file():
+        for source in (bridge_source.parent / 'node_modules',
+                       bridge_source.parent / 'releases' / RELEASE_NAME / 'node_modules'):
+            if (source / 'parse5/package.json').is_file() and (source / 'entities/package.json').is_file():
+                shutil.copytree(source / 'parse5', modules / 'parse5', dirs_exist_ok=True)
+                shutil.copytree(source / 'entities', modules / 'parse5/node_modules/entities', dirs_exist_ok=True)
+                break
+    copy_runtime_file(bridge_source.parent / 'http-retry-boundary.mjs', release / 'http-retry-boundary.mjs')
     copy_runtime_file(bridge_source.parent / 'system-prompt.mjs', release / 'system-prompt.mjs')
     copy_runtime_file(bridge_source.parent / 'skills.mjs', release / 'skills.mjs')
+    copy_runtime_file(bridge_source.parent / 'coordinator-skills.mjs', release / 'coordinator-skills.mjs')
     copy_runtime_file(bridge_source.parent / 'markdown-preview.mjs', release / 'markdown-preview.mjs')
+    for source in sorted(bridge_source.parent.glob('remote-*')):
+        if source.suffix in ('.mjs', '.json'):
+            copy_runtime_file(source, release / source.name)
     shutil.copytree(bridge_source.parent/'umeko-docs', release/'umeko-docs', dirs_exist_ok=True, copy_function=copy_runtime_file)
     environment = node_environment(dict(os.environ, PI_OFFLINE="1"))
     environment.pop("NODE_OPTIONS", None)

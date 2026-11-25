@@ -71,6 +71,12 @@ class FakeBackend(QObject):
     def config(self):
         return self._config
 
+    desktopSettingsChanged = Signal()
+
+    @Property("QVariantMap", notify=desktopSettingsChanged)
+    def desktopSettings(self):
+        return self._config['desktop']
+
     @Property(str, notify=changed)
     def language(self):
         return self._language
@@ -91,6 +97,7 @@ class FakeBackend(QObject):
     def saveDesktopSettings(self, payload):
         self._config["desktop"].update(json.loads(payload))
         self.changed.emit()
+        self.desktopSettingsChanged.emit()
 
     def set_language(self, language):
         self._language = language

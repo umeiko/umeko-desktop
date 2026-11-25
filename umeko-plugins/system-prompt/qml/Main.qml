@@ -9,6 +9,8 @@ FocusScope {
     required property var sdk
     clip: true
     property bool initialized: false
+    property string loadedContext: ""
+    property string failedContext: ""
     property var tree: []
     property var drafts: ({})
     property var collapsed: ({})
@@ -31,6 +33,11 @@ FocusScope {
     readonly property color changedColor: dark ? "#d7b65b" : "#946200"
     readonly property color changedBg: dark ? "#1fd7b65b" : "#1fe0a526"
     readonly property var breadcrumb: pathTo(tree, selectedId, [])
+    function contextKey() {
+        // Opaque native revision: status/busy notifications are not prompt changes.
+        const session = sdk.session || {}
+        return JSON.stringify([session.token || session.id || "", session.workspace || "", session.leafId || ""])
+    }
     function t(zh, en) { return sdk.language.indexOf("zh") === 0 ? zh : en }
     function count(value) { return Number(value || 0).toLocaleString(Qt.locale("en_US"), "f", 0) }
     // Known runtime names are translated here; Skill, Widget and file names are shown as they are.
@@ -44,6 +51,7 @@ FocusScope {
         "section:project_context": ["工作区指令", "Workspace instructions"], "section:skills": ["技能目录", "Skill catalog"],
         "skill:catalog": ["技能简介", "Skill summary"],
         "umeko:desktop-pi": ["Pi 操作说明", "Pi usage"], "umeko:desktop-control": ["桌面能力说明", "Desktop capabilities"],
+        "widget:prompt": ["提示词", "Prompt"],
         "umeko:language": ["回复语言", "Reply language"], "umeko:instructions": ["自定义指令", "Custom instructions"]
     })
     function label(node) {
@@ -98,7 +106,7 @@ FocusScope {
             }))
             if (folder && expanded && node.children.length === 0)
                 rows.push({id: node.id + ":empty", hint: true, depth: depth + 1, label: node.labelKey === "group:widgets"
-                    ? t("当前没有 Widget 写入系统提示词，Widget 说明由模型在需要时通过工具读取", "No Widget adds text to the system prompt; the model reads Widget docs through tools when needed")
+                    ? t("当前启用的 Widget 没有声明提示词", "No active Widget declares a prompt")
                     : t("此来源当前没有内容", "Nothing from this source")})
             else if (folder && expanded) rows = rows.concat(flatten(node.children, depth + 1))
         }
@@ -116,7 +124,7 @@ FocusScope {
         drafts = next
     }
     function request(operation, args) {
-        if (!sdk.active || working || (operation !== "systemPrompt.inspect" && sessionBusy)) return false
+        if (!sdk.active || working || sessionBusy) return false
         const operations = sdk.hostCapabilities && sdk.hostCapabilities.operations
         if (operations && !operations[operation]) {
             notice = t("此操作需要更新版本的 Umeko。", "This operation needs a newer Umeko version.")
@@ -158,10 +166,16 @@ FocusScope {
         delete next[identifier]
         pending = next
         if (!value || value.ok === false) {
+            failedContext = contextKey()
             notice = t("操作失败。你的草稿仍保留，请刷新后重试。", "The operation failed. Your drafts are kept; refresh and retry.")
+            if (value && value.error) notice += "\n" + String(value.error).slice(0, 1000)
             return
         }
-        if (value.tree) applySnapshot(value)
+        if (value.tree) {
+            applySnapshot(value)
+            loadedContext = contextKey()
+            failedContext = ""
+        }
         if (entry.operation === "systemPrompt.save" || entry.operation === "systemPrompt.restore") {
             // Clear only the draft covered by this completed operation.
             // A refresh or an unrelated checkbox update never discards drafts.
@@ -209,6 +223,7 @@ FocusScope {
             visible: root.sessionBusy || !!root.notice
             Layout.fillWidth: true
             text: root.notice || root.t("会话运行中，结束后可修改。", "The session is busy. Changes are available when it finishes.")
+            textFormat: Text.PlainText
             wrapMode: Text.Wrap
             color: root.notice ? root.sdk.colors.danger : root.sdk.colors.muted
             font.family: Umeko.Theme.fontFamily
@@ -288,7 +303,11 @@ FocusScope {
         target: root.sdk
         ignoreUnknownSignals: true
         function onActiveChanged() { if (root.initialized && root.sdk.active) root.reload(); else root.initialize() }
-        function onSessionChanged() { if (root.initialized && root.sdk.active && !root.working) root.reload() }
+        function onSessionChanged() {
+            if (root.initialized && root.sdk.active && !root.working && !root.sessionBusy
+                    && root.contextKey() !== root.loadedContext && root.contextKey() !== root.failedContext)
+                root.reload()
+        }
         function onHostResponse(identifier, value) { root.complete(identifier, value) }
     }
 }

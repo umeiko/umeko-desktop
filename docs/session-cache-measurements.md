@@ -10,11 +10,11 @@ development setup, with the installed Pi SDK in `runtime/node_modules`:
 ```
 
 The script uses Qt offscreen/software, temporary saved sessions and an ideal
-Test provider / test-model. It makes no model/API requests, closes its Pi
-processes and removes fixtures. `--profile-phases` instruments a temporary QML
-copy. JSON stays in local `artifacts/session-switch-measurements/`; override
-with `--output-dir`. Use the same script and environment with each source
-revision to compare them. Raw results are not committed.
+local test provider, so it runs without model/API requests. It closes its Pi
+processes and removes fixtures when done. `--profile-phases` instruments a
+temporary QML copy. JSON results go to local
+`artifacts/session-switch-measurements/`; change this with `--output-dir`. To
+compare revisions, run the same script in the same environment on each one.
 
 Windows, CPython 3.14.7, Qt 6.10.2, Pi 1.3.0, 1300×1000 software frames.
 Main `73cba53` versus final implementation `61a7f5b`; milliseconds,
@@ -34,25 +34,22 @@ median [interquartile range]. Fixtures include code, tables and tool output.
 
 The sequence warms A–E, returns to A, then runs B/C/D/E/A five times:
 every revisit is rank 5. Separate subsequent probes select ranks 2/3/4/5
-five times each. Native initialization is outside timed switches; browsing
-does not start Pi. First open is application-cold, not OS-cache-cold.
+five times each. Native initialization happens outside the timed switches, and
+browsing history starts no Pi process. First open means the application has not
+loaded the session yet (the OS file cache may be warm).
 
-After eight native 500-message sessions then blank, Pi count is 8→3,
-summed Pi RSS 846.8→369.6 MiB and Python/QML RSS 348.3→322.0 MiB.
-This is about 504 MiB less total RSS, a point sample rather than unique
-physical memory or sustained-growth evidence.
+After visiting eight native 500-message sessions and then a blank one, the Pi
+process count went from 8 to 3, summed Pi RSS from 846.8 to 369.6 MiB and
+Python/QML RSS from 348.3 to 322.0 MiB: about 504 MiB less total RSS in that
+sample.
 
-The discarded render-cache trial (`28b4644`, nine samples per fixture) met
-the ≥20% render improvement threshold in only 2/6 fixtures, short of 4/6;
-its first-open browse medians rose 27–86 ms. Main rendering is restored.
-Direct JavaScript Markdown probes typically took 0–0.14 ms; larger Qt event
-work combines delegate creation, internal text conversion and layout.
-Frame capture also includes deferred Qt work, so neither phase is pure CPU
-time for a single operation.
+A render-cache variant (`28b4644`, nine samples per fixture) improved rendering
+by 20% or more in 2 of 6 fixtures and slowed first-open browsing by 27–86 ms, so
+the existing rendering path was kept. Direct JavaScript Markdown calls took
+0–0.14 ms; the larger Qt event time is delegate creation, internal text
+conversion and layout. Frame capture includes deferred Qt work.
 
-Results vary: the final read-only English 100-message cached return was
-116 [299]→362 [389] ms, with strongly bimodal samples. Chinese long first
-open also had a higher median and wide spread. These measurements do not
-establish universal speedup, display latency or long-term stability; the
-first frame may precede background formatting. No larger view-retention
-mechanism was added.
+The English 100-message read-only cached return moved from 116 [299] to
+362 [389] ms with strongly bimodal samples, and the Chinese 500-message first
+open had a higher median with a wide spread. The first frame can appear before
+background formatting finishes.

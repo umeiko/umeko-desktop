@@ -348,6 +348,9 @@ class DshControllerMixin:
         return True
 
     def _send(self, text, steering=False):
+        if self._view.id in self._session_files.pending:
+            self.toast.emit('会话数据正在删除，请稍后再试')
+            return False
         record = self._view
         if not is_dsh(record):
             return super()._send(text, steering)

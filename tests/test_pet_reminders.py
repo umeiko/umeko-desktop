@@ -95,6 +95,179 @@ class ReminderTests(unittest.TestCase):
     def disk(self):
         return json.loads(self.service.path.read_text(encoding='utf-8'))
 
+    def test_daily_local_clock_and_persistent_unread_survive_restart(self):
+        self.clock.now=datetime(2026,3,7,13,tzinfo=timezone.utc)
+        self.service.assistant=lambda:'a'*32
+        item=self.service.handle('createItem',{'title':'每日喝水','dueAt':'2026-03-07T09:00:00-05:00','repeat':'daily','timeZone':'America/New_York'})['item']
+        self.service.start();self.clock.advance(3600);self.service.check()
+        current=self.get(item)
+        self.assertEqual(current['dueAt'],'2026-03-08T13:00:00Z')
+        self.assertEqual((current['localTime'],current['dailyTime'],current['occurrence']),('09:00','09:00:00',2))
+        self.assertEqual(len(self.service.unread_alerts()),1)
+        event,=self.service.pending_notifications()
+        self.assertEqual((event['agentId'],event['occurrence']),('a'*32,1))
+        self.service.stop();restored=self.make();restored.start()
+        self.assertEqual(len(restored.unread_alerts()),1)
+        self.assertEqual(restored.pending_notifications()[0]['id'],event['id'])
+        restored.acknowledge_notifications([event['id']])
+        self.assertEqual(len(restored.unread_alerts()),1,'Agent delivery must not clear user unread state')
+        restored.mark_viewed(item['id']);self.assertEqual(restored.unread_alerts(),[])
+        self.assertEqual(restored.handle('getItem',{'id':item['id']})['item']['dueAt'],'2026-03-08T13:00:00Z')
+        self.clock.advance(23*3600);restored.check()
+        self.assertEqual(len(restored.unread_alerts()),1)
+        self.assertEqual(restored.pending_notifications()[0]['occurrence'],2)
+
+    def test_completed_edits_preserve_completion_but_rescheduling_rearms_after_restart(self):
+        for repeat in ('once', 'daily'):
+            with self.subTest(repeat=repeat):
+                directory=Path(self.temp.name)/repeat
+                service=self.make(directory=directory)
+                service.start()
+                args={'title':'已完成事项','dueAt':self.clock.at(-1),'repeat':repeat}
+                if repeat=='daily':args['timeZone']='UTC'
+                item=service.handle('createItem',args)['item']
+                service.handle('completeItem',{'id':item['id']})
+                edited=service.handle('updateItem',{'id':item['id'],'title':'编辑后','notes':'仍然完成','dueAt':item['dueAt']})['item']
+                self.assertTrue(edited['completed'])
+                self.assertEqual(edited['occurrence'],item['occurrence'])
+                count=len(self.requests)
+                service.check()
+                self.assertEqual(len(self.requests),count)
+                future=self.clock.at(120)
+                rearmed=service.handle('updateItem',{'id':item['id'],'dueAt':future})['item']
+                self.assertFalse(rearmed['completed'])
+                self.assertEqual(rearmed['occurrence'],edited['occurrence']+1)
+                self.assertIsNone(rearmed['firedOccurrence'])
+                self.assertIsNone(rearmed['processedAt'])
+                self.assertEqual(service.pending_notifications(),[])
+                self.assertEqual(len(service.unread_alerts()),1)
+                service.stop()
+                restored=self.make(directory=directory)
+                restored.start()
+                self.assertFalse(self.get(item,restored)['completed'])
+                self.assertEqual(len(self.requests),count)
+                self.clock.advance(120);restored.check()
+                self.assertEqual(len(self.requests),count+1)
+                restored.check()
+                self.assertEqual(len(self.requests),count+1)
+                self.assertEqual(restored.pending_notifications()[0]['occurrence'],rearmed['occurrence'])
+                restored.stop()
+
+    def test_restore_overdue_is_quiet_idempotent_and_durable(self):
+        self.service.start()
+        item=self.create(60)
+        self.service.handle('completeItem',{'id':item['id']})
+        self.clock.advance(120)
+        restored=self.service.handle('completeItem',{'id':item['id'],'completed':False})['item']
+        self.assertFalse(restored['completed']);self.assertTrue(restored['overdue'])
+        self.assertEqual(restored['dueAt'],item['dueAt'])
+        self.assertEqual(restored['notificationOutcome'],'restored_overdue')
+        self.assertEqual(self.requests,[]);self.assertEqual(self.service.unread_alerts(),[])
+        self.assertEqual(self.service.pending_notifications(),[])
+        self.assertEqual(self.service.handle('completeItem',{'id':item['id'],'completed':False})['item']['revision'],restored['revision'])
+        self.service.stop();reloaded=self.make();reloaded.start()
+        self.assertFalse(self.get(item,reloaded)['completed']);self.assertEqual(self.requests,[])
+
+    def test_restore_future_resumes_original_timer_and_processed_restore_does_not_replay(self):
+        self.service.start();item=self.create(120)
+        self.service.handle('completeItem',{'id':item['id']});self.clock.advance(60)
+        current=self.service.handle('completeItem',{'id':item['id'],'completed':False})['item']
+        self.assertEqual(current['occurrence'],item['occurrence']);self.assertFalse(current['overdue'])
+        self.clock.advance(60);self.service.check();self.assertEqual(len(self.requests),1)
+        fired=self.get(item)
+        self.service.handle('completeItem',{'id':item['id']})
+        current=self.service.handle('completeItem',{'id':item['id'],'completed':False})['item']
+        self.assertEqual(current['processedAt'],fired['processedAt'])
+        self.assertEqual(current['notificationOutcome'],fired['notificationOutcome'])
+        self.assertEqual(len(self.requests),1)
+
+    def test_restore_daily_skips_missed_alert_and_resumes_next_calendar_day(self):
+        self.service.start()
+        item=self.service.handle('createItem',{'title':'每日','repeat':'daily','timeZone':'UTC','dueAt':self.clock.at(60)})['item']
+        self.service.handle('completeItem',{'id':item['id']});self.clock.advance(120)
+        current=self.service.handle('completeItem',{'id':item['id'],'completed':False})['item']
+        self.assertFalse(current['completed']);self.assertGreater(current['dueAt'],self.clock.at(0).replace('+00:00','Z'))
+        self.assertEqual(current['occurrence'],2);self.assertEqual(self.requests,[])
+        self.clock.advance(86400);self.service.check();self.assertEqual(len(self.requests),1)
+
+    def test_failed_completed_reschedule_does_not_reopen_or_replace_history(self):
+        self.service.start()
+        item=self.create(-1)
+        self.service.handle('completeItem',{'id':item['id']})
+        before=self.disk()
+        with patch.object(self.service,'_write',side_effect=OSError('read-only')):
+            with self.assertRaises(ValueError):self.update(item,dueAt=self.clock.at(120))
+        self.assertEqual(self.disk(),before)
+        with patch.object(self.service,'_write',side_effect=OSError('read-only')):
+            with self.assertRaises(ValueError):self.service.handle('completeItem',{'id':item['id'],'completed':False})
+        self.assertEqual(self.disk(),before)
+        self.assertTrue(self.get(item)['completed'])
+        self.assertIsNone(self.service.summary()['nextDueAt'])
+        # Removing a completed reminder's time is a content edit, not rearming.
+        self.assertTrue(self.update(item,clearDueAt=True)['completed'])
+
+    def test_clear_completed_is_atomic_and_keeps_open_items_and_unread(self):
+        self.service.start()
+        due=self.create(-1);open_item=self.create(60)
+        self.service.handle('completeItem',{'id':due['id']})
+        completed=self.create();self.service.handle('completeItem',{'id':completed['id']})
+        before=self.disk()
+        with patch.object(self.service,'_write',side_effect=OSError('write failed')):
+            with self.assertRaises(ValueError):self.service.handle('clearCompleted',{})
+        self.assertEqual(self.disk(),before)
+        self.assertEqual(len(self.service.handle('listItems',{'status':'all'})['items']),3)
+        self.assertEqual(self.service.handle('clearCompleted',{}),{'deletedCount':2})
+        self.assertEqual([item['id'] for item in self.service.handle('listItems',{'status':'all'})['items']],[open_item['id']])
+        self.assertEqual(len(self.service.unread_alerts()),1)
+        self.assertEqual(self.service.handle('clearCompleted',{}),{'deletedCount':0})
+        restored=self.make()
+        self.assertEqual([item['id'] for item in restored.handle('listItems',{})['items']],[open_item['id']])
+        with self.assertRaises(ValueError):restored.handle('clearCompleted',{'status':'all'})
+
+    def test_daily_dst_gap_fold_and_long_sleep_do_not_burst(self):
+        from app.pet_reminders import _next_daily
+        item={'dueAt':'2026-03-07T07:30:00Z','timeZone':'America/New_York','dailyTime':'02:30:00'}
+        self.assertEqual(_next_daily(item,datetime(2026,3,7,8,tzinfo=timezone.utc)),datetime(2026,3,8,7,tzinfo=timezone.utc))
+        item.update(dueAt='2026-10-31T05:30:00Z',dailyTime='01:30:00')
+        first=_next_daily(item,datetime(2026,10,31,6,tzinfo=timezone.utc))
+        self.assertEqual(first,datetime(2026,11,1,5,30,tzinfo=timezone.utc))
+        item['dueAt']=first.isoformat()
+        self.assertEqual(_next_daily(item,first),datetime(2026,11,2,6,30,tzinfo=timezone.utc))
+        self.service.start();daily=self.service.handle('createItem',{'title':'Daily','dueAt':self.clock.at(60),'repeat':'daily','timeZone':'UTC'})['item']
+        self.clock.advance(10*86400+120);self.service.check()
+        self.assertEqual(len(self.requests),1)
+        self.assertEqual(self.get(daily)['occurrence'],2)
+        self.assertGreater(datetime.fromisoformat(self.get(daily)['dueAt'].replace('Z','+00:00')),self.clock.now)
+
+    def test_legacy_data_migrates_and_crash_claim_recovers_daily_schedule(self):
+        item=self.create(60);legacy=self.disk();legacy['schemaVersion']=1;legacy.pop('notifications',None);legacy.pop('alerts',None)
+        for row in legacy['items']:
+            for key in ('repeat','timeZone','dailyTime','agentId'):row.pop(key)
+        self.service.path.write_text(json.dumps(legacy))
+        restored=self.make();self.assertEqual(restored.handle('getItem',{'id':item['id']})['item']['repeat'],'once')
+        daily=restored.handle('createItem',{'title':'Daily','dueAt':self.clock.at(60),'repeat':'daily','timeZone':'UTC'})['item']
+        saved=json.loads(restored.path.read_text());row=next(v for v in saved['items'] if v['id']==daily['id'])
+        row.update(firedOccurrence=row['occurrence'],processedAt=self.clock.at(60).replace('+00:00','Z'),notificationOutcome='claimed')
+        restored.path.write_text(json.dumps(saved));restored.stop()
+        self.clock.advance(60);again=self.make();again.start()
+        self.assertEqual(again.handle('getItem',{'id':daily['id']})['item']['occurrence'],2)
+
+    def test_unread_is_not_cleared_by_completion_or_elapsed_time(self):
+        self.service.start();item=self.create(0)
+        self.assertEqual(len(self.service.unread_alerts()),1)
+        self.clock.advance(9*3600);self.service.check()
+        self.service.handle('completeItem',{'id':item['id']})
+        self.assertEqual(len(self.service.unread_alerts()),1)
+        self.service.mark_viewed(item['id']);self.assertEqual(self.service.unread_alerts(),[])
+
+    def test_daily_and_local_picker_validation(self):
+        with self.assertRaises(ValueError):self.service.handle('createItem',{'title':'Missing time','repeat':'daily'})
+        gap=self.service.resolve_local_time({'date':'2026-03-08','time':'02:30','timeZone':'America/New_York'})
+        self.assertEqual(gap['candidates'],[])
+        fold=self.service.resolve_local_time({'date':'2026-11-01','time':'01:30','timeZone':'America/New_York'})
+        self.assertEqual([v['label'] for v in fold['candidates']],['UTC-04:00','UTC-05:00'])
+        self.assertEqual(self.service.resolve_local_time({'date':'2026-02-30','time':'09:00','timeZone':'UTC'})['candidates'],[])
+
     def test_offline_crud_roundtrip_plain_text_and_result_isolation(self):
         with patch('socket.create_connection', side_effect=AssertionError('network access')):
             self.service.start()
@@ -139,7 +312,7 @@ class ReminderTests(unittest.TestCase):
         self.service.check()
         self.assertEqual(len(self.requests), 1)
         self.assertTrue(self.get(item)['overdue'])
-        self.assertEqual(self.service.summary(), {'openCount': 1, 'overdueCount': 1, 'nextDueAt': None, 'error': ''})
+        self.assertEqual(self.service.summary(), {'openCount': 1, 'overdueCount': 1, 'nextDueAt': None, 'unreadCount':1, 'error': ''})
 
     def test_restart_collects_missed_items_once_and_does_not_repeat_processed_items(self):
         first = self.create(2)
@@ -163,8 +336,8 @@ class ReminderTests(unittest.TestCase):
         class SimulatedCrash(BaseException):
             pass
 
-        def interrupted(items):
-            original_write(items)
+        def interrupted(items,notifications=None,alerts=None):
+            original_write(items,notifications,alerts)
             raise SimulatedCrash()
 
         with patch.object(self.service, '_write', interrupted):
@@ -309,9 +482,9 @@ class ReminderTests(unittest.TestCase):
         original = self.service._write
         snapshots = []
 
-        def record(items):
+        def record(items,notifications=None,alerts=None):
             snapshots.append(copy.deepcopy(items))
-            original(items)
+            original(items,notifications,alerts)
 
         self.clock.advance(3)
         with patch.object(self.service, '_write', record):
@@ -360,11 +533,11 @@ class ReminderTests(unittest.TestCase):
         original = self.service._write
         calls = []
 
-        def write(items):
+        def write(items,notifications=None,alerts=None):
             calls.append(items)
             if len(calls) == 2:
                 raise OSError('second write failed')
-            original(items)
+            original(items,notifications,alerts)
 
         with patch.object(self.service, '_write', write):
             self.service.start()
@@ -438,7 +611,10 @@ class ReminderTests(unittest.TestCase):
                  ('createItem', {'title': 'ok', 'completed': True}),
                  ('updateItem', {'id': item['id']}),
                  ('updateItem', {'id': item['id'], 'revision': 10}),
-                 ('completeItem', {'id': True}), ('getItem', {'id': 'bad'}),
+                 ('completeItem', {'id': True}),
+                 ('completeItem', {'id': item['id'], 'completed': 'false'}),
+                 ('completeItem', {'id': item['id'], 'completed': 0}),
+                 ('completeItem', {'id': item['id'], 'completed': None}), ('getItem', {'id': 'bad'}),
                  ('deleteItem', {'id': '00000000-0000-0000-0000-000000000000'})]
         for value in (False, 1, [], '2026-11-02T08:00:00', '2026-02-30T08:00:00Z',
                       '2026-11-02T08:00:00+24:00', '2026-11-02T08:00:00+01:60'):

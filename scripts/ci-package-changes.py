@@ -25,9 +25,9 @@ def needs_packages(paths):
     return any(is_package_input(path) for path in paths)
 
 
-def package_matrix(event, all_platforms):
+def package_matrix(event, all_platforms, node_changed=False):
     rows = [dict(name='Windows x64', runner='windows-2022', platform='windows-x64')]
-    if event == 'workflow_dispatch' and all_platforms == 'true':
+    if (event == 'workflow_dispatch' and all_platforms == 'true') or node_changed:
         rows += [dict(name='Linux x64', runner='ubuntu-22.04', platform='linux-x64'),
                  dict(name='macOS Apple Silicon', runner='macos-15', platform='macos-arm64'),
                  dict(name='macOS Intel', runner='macos-15-intel', platform='macos-x64')]
@@ -58,6 +58,7 @@ def is_package_input(path):
 if __name__ == '__main__':
     event = os.environ.get('GITHUB_EVENT_NAME', 'pull_request')
     packages = True
+    node_changed = False
     if event == 'pull_request':
         result = subprocess.run(
             ['git', 'diff', '--name-only', '-z', os.environ['PR_BASE'], 'HEAD'],
@@ -65,8 +66,11 @@ if __name__ == '__main__':
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         paths = result.stdout.decode('utf-8', errors='surrogateescape').split('\0')
         packages = needs_packages([p for p in paths if p])
-    matrix = package_matrix(event, os.environ.get('CI_ALL_PLATFORMS', ''))
+        node_changed = 'scripts/node-distributions.json' in paths
+    matrix = package_matrix(event, os.environ.get('CI_ALL_PLATFORMS', ''), node_changed)
+    node_version = json.loads(Path('scripts/node-distributions.json').read_text(encoding='utf-8'))['version']
     with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as output:
         output.write(f'packages={str(packages).lower()}\n')
         output.write('matrix=' + json.dumps(matrix) + '\n')
+        output.write('node_version=' + node_version + '\n')
     print(f'Native packages required: {packages}')

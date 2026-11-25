@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 const semver = require("semver");
 const runtimeRoot = dirname(fileURLToPath(import.meta.url));
 const desktopRepository = "https://github.com/umeiko/umeko-desktop";
-export const SUBAGENT_COMPLETION_HINT = "完成任务后，如有需要，请使用 notify_parent 工具向主智能体简要汇报结果。";
+export const SUBAGENT_COMPLETION_HINT = "请在最终回复中交付结果。执行过程中，若有会影响后续工作的发现，并且 notify_parent 工具可用，可以用它通知主智能体。";
 const packageName = /^(?:@[a-z0-9._-]+\/)?[a-z0-9][a-z0-9._-]*$/i;
 const text = value => typeof value === "string" ? value.slice(0, 4096) : "";
 export function webLink(value) {
@@ -32,8 +32,8 @@ export function extensionInfo(row) {
   const builtin = row.path.startsWith("builtin:"), name = row.path.slice(8), required = false;
   let root = row.metadata?.packageRoot || row.metadata?.baseDir || "";
   let origin = "local", updateKind = "none", manifest = {};
-  if (builtin && ["chatbox", "pi-commands", "umeko-control", "background-jobs"].includes(name)) {
-    const descriptions = {chatbox:"向聊天和侧栏展示文件、图片、文档与网页。", "pi-commands":"向当前内嵌 Pi 实例发送原生命令和斜杠命令。", "umeko-control":"查询和管理 Umeko 的供应商、主题、扩展与应用设置。", "background-jobs":"运行后台命令、读取独立日志、等待结果或只停止该任务的进程树；阻止按名称批量结束进程。"};
+  if (builtin && ["chatbox", "umeko-control", "background-jobs"].includes(name)) {
+    const descriptions = {chatbox:"向聊天和侧栏展示文件、图片、文档与网页。", "umeko-control":"管理 Umeko 的桌面设置，并通过 pi.run 使用当前内嵌 Pi 的命令。", "background-jobs":"运行后台命令、读取独立日志、等待结果或只停止该任务的进程树；阻止按名称批量结束进程。"};
     return {icon:name, required, origin:"desktop", bundled:true, description:descriptions[name], homepage:desktopRepository, repository:desktopRepository, version:"", package:"", updateKind:"desktop"};
   }
   if (builtin) {
@@ -99,7 +99,7 @@ export async function checkExtensionUpdate(row, {cwd, lookup = npmVersion} = {})
   return {id:row.id,status:"unsupported",message:"本地扩展没有可检查的更新源"};
 }
 
-export const builtins = ["codemode", "tool-search", "mcp", "chatbox", "generation", "pi-commands", "umeko-control", "background-jobs", "subagents"];
+export const builtins = ["codemode", "tool-search", "mcp", "chatbox", "generation", "umeko-control", "background-jobs", "subagents"];
 const target = entry => entry.replace(/^[!+-]/, "");
 const canonical = (value, base) => value.startsWith("builtin:") ? value : resolve(base, value);
 export function extensionName(path, metadata = {}) {
@@ -225,7 +225,7 @@ export async function sessionResourceSettings(Pi, input, native) {
 export function extensionDocument(row) {
   const info=extensionInfo(row);
   const name=row.path.startsWith("builtin:") ? row.path.slice(8) : row.name;
-  const tools={codemode:["codemode"], "tool-search":["tool_search"], mcp:["MCP 服务器提供的工具"], chatbox:["submit_to_chatbox"], "pi-commands":["run_pi_command"], "umeko-control":["umeko_desktop", "analyze_image"], "background-jobs":["background_job"], subagents:["subagent", "get_subagent_result", "steer_subagent"]};
+  const tools={codemode:["codemode"], "tool-search":["tool_search"], mcp:["MCP 服务器提供的工具"], chatbox:["submit_to_chatbox"], "umeko-control":["umeko_desktop", "analyze_image"], "background-jobs":["background_job"], subagents:["subagent", "get_subagent_result", "steer_subagent"]};
   const summary=`# ${name}
 
 ${info.description || "本地 Pi 扩展。"}
@@ -298,7 +298,7 @@ export async function manageResources(Pi, input) {
   return { extensions, safeMode: !!input.agent?.safeMode };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (import.meta.main) {
   try {
     // Discovery must not fetch models or install missing packages.
     process.env.PI_OFFLINE = "1";

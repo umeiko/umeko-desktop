@@ -10,6 +10,8 @@
 
 | operation | arguments（类型；=默认值） | 等待空闲范围 | 启动后台工作 |
 | --- | --- | --- | --- |
+| `shell.refreshEnvironment` | 无 | 无 | 否 |
+| `pi.run` | `command: string`, `scope: string=""` | 无 | 否 |
 | `vision.configure` | `config: json` | 无 | 否 |
 | `generation.configure` | `config: json` | 无 | 否 |
 | `providers.save` | `id: string=""`, `name: string`, `api: string`, `baseUrl: string`, `key: string=""`, `models: json` | provider | 否 |
@@ -18,6 +20,13 @@
 | `providers.network` | `id: string`, `mode: string`, `address: string=""` | provider | 否 |
 | `providers.certificate` | `id: string`, `caFile: string=""` | provider | 否 |
 | `models.mappings` | `models: json` | all | 否 |
+| `models.applyPatch`（仅 python） | `provider: string`, `model: string`, `enabled: boolean` | 无 | 否 |
+| `pluginSessions.setModel`（仅 python） | `plugin: string`, `profile: string`, `model: string=""`, `provider: string=""`, `reasoningEffort: string=""` | 无 | 否 |
+| `models.select`（仅 python） | `provider: string`, `model: string`, `sessionId: string=""` | target | 否 |
+| `models.roles.get`（仅 python） | 无 | 无 | 否 |
+| `models.roles.set`（仅 python） | `role: string`, `model: string` | 无 | 否 |
+| `sessions.reasoning`（仅 python） | `value: string`, `sessionId: string=""` | target | 否 |
+| `agent.defaultReasoning`（仅 python） | `value: string` | 无 | 否 |
 | `themes.import` | `path: string` | 无 | 否 |
 | `characters.import` | `path: string` | 无 | 否 |
 | `characters.select` | `id: string` | 无 | 否 |
@@ -28,8 +37,26 @@
 | `appearance.language` | `language: string` | 无 | 否 |
 | `appearance.fontScale` | `scale: number` | 无 | 否 |
 | `appearance.fontFamily`（仅 python） | `family: string` | 无 | 否 |
+| `appearance.lineSpacing`（仅 python） | `spacing: string` | 无 | 否 |
+| `sessions.cache`（仅 python） | `size: integer` | 无 | 否 |
+| `sessions.backend`（仅 python） | `value: string` | view | 否 |
+| `sessions.dshModel`（仅 python） | `value: string` | view | 否 |
+| `dsh.path`（仅 python） | `path: string` | 无 | 否 |
+| `dsh.useOwnConfig`（仅 python） | `enabled: boolean` | 无 | 否 |
+| `desktop.startup`（仅 python） | `umeko: boolean`, `proxy: boolean` | 无 | 否 |
+| `network.requestHeaders`（仅 python） | `headers: json` | 无 | 否 |
+| `network.remoteSharing`（仅 python） | `enabled: boolean` | 无 | 否 |
+| `network.remoteProxy`（仅 python） | `address: string` | 无 | 否 |
+| `documents.previewMode`（仅 python） | `fileType: string`, `mode: string` | 无 | 否 |
 | `appearance.sidebar` | `width: integer`, `collapsed: boolean=false` | 无 | 否 |
 | `desktop.configure`（仅 python） | `config: json` | 无 | 否 |
+| `remote-environments.add`（仅 python） | `name: string`, `host: string`, `platform: string` | 无 | 否 |
+| `remote-environments.list`（仅 python） | 无 | 无 | 否 |
+| `remote-environments.test`（仅 python） | `name: string` | 无 | 否 |
+| `remote-environments.home`（仅 python） | `name: string` | 无 | 否 |
+| `remote-environments.browse`（仅 python） | `name: string`, `path: string=""` | 无 | 否 |
+| `remote-environments.mkdir`（仅 python） | `name: string`, `path: string` | 无 | 否 |
+| `remote-environments.remove`（仅 python） | `name: string` | 无 | 否 |
 | `projects.add` | `paths: json` | 无 | 否 |
 | `projects.open` | `id: string` | 无 | 否 |
 | `projects.rename` | `id: string`, `title: string` | 无 | 否 |
@@ -45,6 +72,10 @@
 | `sessions.fork` | `id: string` | session | 是 |
 | `sessions.export` | `id: string`, `path: string` | session | 是 |
 | `workspace.set` | `path: string` | view | 否 |
+| `workspace.setRemote`（仅 python） | `environment: string`, `remotePath: string` | view | 否 |
+| `command_rules.list` | `scope: string=""` | 无 | 否 |
+| `command_rules.add` | `scope: string`, `pattern: json`, `decision: string`, `shell: string=""` | 无 | 否 |
+| `command_rules.remove` | `scope: string`, `pattern: json`, `decision: string`, `shell: string=""` | 无 | 否 |
 | `plugins.import` | `path: string` | 无 | 否 |
 | `plugins.addAccount` | `plugin: string`, `version: string` | 无 | 否 |
 | `plugins.uninstall` | `plugin: string`, `version: string` | all | 否 |
@@ -76,7 +107,7 @@
 | `extensions.enable` | `id: string`, `enabled: boolean` | all | 是 |
 | `extensions.remove` | `id: string` | all | 是 |
 | `extensions.checkUpdate` | `id: string` | 无 | 是 |
-| `extensions.install` | `source: string`, `project: boolean=false` | all | 是 |
+| `extensions.install`（仅限已确认的 Widget 宿主调用） | `source: string`, `project: boolean=false` | all | 是 |
 | `mcp.add` | `text: string`, `project: boolean=false` | all | 是 |
 | `mcp.save` | `scope: string`, `config: json` | all | 是 |
 | `mcp.reconnect` | `name: string` | view | 是 |
@@ -101,11 +132,36 @@
 | `agent_bus.creation_status` | `requestId: string` | 无 | 否 |
 | `agent_bus.connections` | 无 | 无 | 否 |
 | `agent_bus.set_connection` | `sessionId: string`, `enabled: boolean` | 无 | 否 |
+| `agent_bus.set_model`（仅 python） | `targetId: string`, `model: string`, `reasoningEffort: string=""` | 无 | 否 |
 | `agent_bus.overview` | 无 | 无 | 否 |
 | `agent_bus.requests` | 无 | 无 | 否 |
 | `agent_bus.dispatch` | `targetId: string`, `text: string` | 无 | 否 |
 | `agent_bus.reply` | `requestId: string`, `result: string`, `status: string="completed"` | 无 | 否 |
+| `agent_bus.team_create`（仅 python） | `name: string`, `coordinatorName: string="lead"`, `members: json` | 无 | 否 |
+| `agent_bus.team_members`（仅 python） | `teamId: string=""` | 无 | 否 |
+| `agent_bus.team_board`（仅 python） | `teamId: string`, `after: integer=0`, `limit: integer=20` | 无 | 否 |
+| `agent_bus.team_post`（仅 python） | `teamId: string`, `event: json` | 无 | 否 |
+
+等待空闲范围 `target` 表示指定的 `sessionId`，省略时使用调用会话。
+
+Python 插件会话可用 `pluginSessions.setModel` 同时设置模型路由和思考强度，也可只更新思考强度：
+
+```json
+{"operation":"pluginSessions.setModel","arguments":{"plugin":"session-task-service","profile":"tasks","reasoningEffort":"medium"}}
+```
+
+reasoningEffort 省略或空字符串时保留当前配置；inherit 删除配置字段并恢复沿用桌面默认档位，下一次输入生效。
+
+`inherit` 是清除档位的操作值，保存后配置中移除 `reasoningEffort` 字段。其他值可填写 `off`、`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`、`ultra` 或模型直接支持的自定义档位。省略模型时保留模型，新模型省略供应商时使用实际路由。
+
+```json
+{"operation":"pluginSessions.setModel","arguments":{"plugin":"session-task-service","profile":"tasks","reasoningEffort":"inherit"}}
+```
+
+插件会话优先使用 `pluginSessionProfiles.<plugin>.<profile>.reasoningEffort`，未配置时继承 `ui.reasoningEffort`，两者均未配置时使用 `off`。宿主在新会话或下一次输入时按模型支持的档位对齐，保存的配置值继续保留。详见 [Widget 插件](widget-plugins.md)。
+
+`agent.defaultReasoning` 设置新桌面会话的默认档位；`sessions.reasoning` 设置当前或指定会话的档位。`agent.save` 的 `config` 支持 `autoCompaction`、`maxContextImages` 等局部设置。全局工具权限沿用用户界面确认。完整设置、参数范围与生效时机见 [设置说明](settings.md)。
 
 Widget 只读查询：`widgets.list`、`widgets.docs`、`widgets.messages`、`widgets.result`、`widgets.resource`。
 
-`plugins.*` 管理 Provider 插件；`widgets.*` 管理桌面 Widget。`help` 的 `arguments.topic` 可为 `plugins`、`provider`、`widget` 或 `agents`。
+`plugins.*` 管理 Provider 插件；`widgets.*` 管理桌面 Widget。`help` 的 `arguments.topic` 可为 `plugins`、`provider`、`widget`、`agents` 或 `command_rules`。

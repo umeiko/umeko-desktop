@@ -41,6 +41,7 @@ class FakeSdk(QObject):
         self.requests = []
         self.counter = 0
         self.busy = False
+        self.leaf_id = "leaf-one"
         self.fail = False
         self.lang = "zh"
         self.tree = [dict(id="group", name="项目指令文件", labelKey="group:workspace", children=[
@@ -73,7 +74,7 @@ class FakeSdk(QObject):
     def language(self): return self.lang
 
     @Property("QVariantMap", notify=sessionChanged)
-    def session(self): return {"busy": self.busy}
+    def session(self): return {"token": "fixture-chat", "workspace": "/fixture", "leafId": self.leaf_id, "busy": self.busy}
 
     @Property("QVariantMap", constant=True)
     def colors(self):
@@ -209,6 +210,37 @@ class SystemPromptUiSmoke(unittest.TestCase):
 
         try:
             idle()
+            initial_requests = len(sdk.requests)
+            sdk.sessionChanged.emit()
+            QTest.qWait(80)
+            self.assertEqual(len(sdk.requests), initial_requests,
+                             "Status notifications for the same context must not reinspect the prompt")
+            sdk.busy = True
+            sdk.leaf_id = "leaf-two"
+            sdk.sessionChanged.emit()
+            js('reload()')
+            QTest.qWait(30)
+            self.assertEqual(len(sdk.requests), initial_requests, "Busy chats must defer inspections")
+            sdk.busy = False
+            sdk.sessionChanged.emit()
+            idle()
+            self.assertEqual(len(sdk.requests), initial_requests + 1,
+                             "A completed turn must refresh the real prompt once")
+            sdk.fail = True
+            sdk.leaf_id = "leaf-three"
+            sdk.sessionChanged.emit()
+            idle()
+            self.assertIn("fixture error", root.property("notice"))
+            failed_requests = len(sdk.requests)
+            for _ in range(10):
+                sdk.sessionChanged.emit()
+                QTest.qWait(10)
+            self.assertEqual(len(sdk.requests), failed_requests,
+                             "Failed inspections must wait for explicit retry rather than loop")
+            action("systemPromptRefresh")
+            idle()
+            self.assertEqual(len(sdk.requests), failed_requests + 1)
+            self.assertEqual(root.property("notice"), "")
             self.assertEqual(root.property("selectedId"), "intro")
             self.assertEqual(js("Number(checkState)", find("systemPromptCheck_group")), 1)
             self.assertEqual(len(value(root, "entries")), 7)
@@ -295,7 +327,7 @@ class SystemPromptUiSmoke(unittest.TestCase):
             window.setWidth(360); window.setHeight(650); QTest.qWait(30)
             self.assertGreater(find("systemPromptEditor").width(), 200)
             self.assertFalse(warnings, "\n".join(warnings))
-            print("SYSTEM_PROMPT_UI_OK: mixed folders, collapse, draft retention, save/failure, restore overlay, disabled/stale, busy guard, i18n, neutral screenshots", flush=True)
+            print("SYSTEM_PROMPT_UI_OK: stable context refresh, failed-inspection retry guard, mixed folders, collapse, draft retention, save/failure, restore overlay, disabled/stale, busy guard, i18n, neutral screenshots", flush=True)
         finally:
             window.close()
             shiboken6.delete(engine)

@@ -112,7 +112,7 @@
   "retiredAssets": [
     {
       "id": "reply",
-      "file": "source/reply.png",
+      "file": "https://github.com/umeiko/umeko-desktop/blob/0d190d437f97782374f5060dc3bb67b35ab412c9/art/characters/doubao-v1/source/reply.png",
       "prompt": "Use case: identity-preserve. Asset type: transparent Umeko Desktop sprite. This is the APPROVED CLASSIC DOUBAO MASTER. Preserve EXACTLY this girl's refined beautiful cinematic 3D face, large expressive dark chocolate eyes, delicate neat brows, graceful nose, peach lips, warm fair skin and elegant neck. Preserve her smooth straight chin-length side-parted dark-chocolate asymmetrical BOB HAIRCUT, charcoal BLACK KNITTED LONG-SLEEVE TOP and vivid RED KNITTED SCARF wrapped around her neck with two ends hanging down the chest. Same hair silhouette, knit textures, refined proportions and soft studio rendering. No long hair, bun, ponytail, hair ornaments, jewelry, earrings, flowers, blue dress, baby face or pixel art. One independent centered figure, square canvas, genuine alpha transparency, empty margins around the whole hair, arms and hands. No studio backdrop, floor, scenery, text, watermark, frame, extra characters or cast shadow/glow outside the figure. POSE: compact head-and-shoulders portrait for the assistant reply marker. Both eyes open toward viewer, warm quietly proud closed-mouth smile and a tiny head tilt. Show the entire bob with 7% transparent margins, upper shoulders and RED scarf. No arms or hands. Square canvas.",
       "reference": "source/welcome.png",
       "generatedPath": "C:\\Users\\admin\\.codex\\generated_images\\01a18fa8-9bef-7ab1-a339-1700860aa447\\exec-5d5b8745-8cc2-40b1-960b-46f92e3aa2ed.png"

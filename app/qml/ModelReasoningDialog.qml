@@ -109,7 +109,11 @@ Popup {
     }
     function degradingText() {
         const styles = formatDetection.degradingStyles || [], values = []
-        for (const style of styles) values.push(formatLabel(style.format) + I18n.t("（答题质量下降）"))
+        for (const style of styles) {
+            const detail = String(style.reason || "").includes("reasoning")
+                ? I18n.t("（思考消失）") : I18n.t("（答题质量下降）")
+            values.push(formatLabel(style.format) + detail)
+        }
         return values.length ? I18n.t("已排除：") + values.join("；") : ""
     }
     function refreshDetection() {

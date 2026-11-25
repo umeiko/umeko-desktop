@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from PySide6.QtCore import QCoreApplication, QObject, Signal
+from app.pi_management import PiManagement
 from app.widget_host import WidgetHost
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'plugin-runtime'))
@@ -27,6 +28,9 @@ class Manager(QObject):
         self.calls, self.frames, self.replies = [], [], {}
         self.b = SimpleNamespace(piManagement=management, busy=False, kernelBusy=False,
             pendingApproval={}, _view=SimpleNamespace(extension_modes={}, resources={},busy=False,action='idle'), _umeko_control=SimpleNamespace(execute=self.execute))
+        self.b.store = SimpleNamespace(data={'desktop': {'remoteWorkspaceEnabled': False}})
+        management.controller = self.b
+        management.inventory_current = lambda record: PiManagement.inventory_current(management, record)
         from app.tool_visibility import catalog
         management.capability_extensions=lambda:catalog(self.b._view,management.extensions)
         management.capability_profile=lambda:{'preset':'full','custom':{'base':'full','tools':{},'plugins':{}}}
@@ -68,6 +72,37 @@ class WidgetHostTests(unittest.TestCase):
             'arguments': args or {}, 'session': session or dict(self.manager._session)})
         self.app.processEvents()
         return identifier
+
+    def test_scheduled_tasks_page_can_only_open_its_own_sessions(self):
+        manager = self.manager
+        widget = 'scheduled-tasks'
+        manager._page = widget
+        manager.entries[widget] = {'builtin': True, 'permissions': ['sessions.manage']}
+        manager.workers[widget] = {'ready': True}
+        manager.entries['a']['permissions'].append('sessions.manage')
+        manager.b.store = SimpleNamespace(data={
+            'pluginSessionProfiles': {widget: {'demo': {'workspace': '/demo', 'model': 'demo',
+                'provider': 'internal', 'tools': ['read']}}},
+            'sessionMeta': {'owned': {'pluginSession': {'plugin': widget, 'namespace': widget}},
+                            'foreign': {'pluginSession': {'plugin': 'a', 'namespace': widget}}},
+        })
+        manager.b._sessions = [{'id': 'owned'}, {'id': 'foreign'}]
+        opened = []
+        manager.b.openSession = opened.append
+
+        def request(operation, args, *, page=True, target=widget):
+            identifier = self.host.request_for(target, {'operation': operation, 'arguments': args,
+                'session': manager._session}, page=page)
+            self.app.processEvents()
+            return manager.replies[identifier]
+
+        self.assertFalse(request('scheduledTasks.profiles', {}, page=False)['ok'])
+        self.assertFalse(request('scheduledTasks.profiles', {}, target='a')['ok'])
+        self.assertEqual(request('scheduledTasks.profiles', {})['result']['profiles'],
+                         [{'name': 'demo', 'workspace': '/demo', 'model': 'demo'}])
+        self.assertFalse(request('scheduledTasks.openSession', {'session_id': 'foreign'})['ok'])
+        self.assertTrue(request('scheduledTasks.openSession', {'session_id': 'owned'})['ok'])
+        self.assertEqual(opened, ['owned'])
 
     def test_task_records_require_the_active_builtin_qml_page(self):
         from app.task_records import TaskStore
@@ -381,7 +416,7 @@ class WidgetHostTests(unittest.TestCase):
     def test_busy_agent_cannot_turn_widget_admin_into_an_install_bypass(self):
         self.manager.b.busy = True
         identifier = self.request('pi.install', {'source': 'npm:fixture@1.0.0'})
-        self.assertIn('run_pi_command', self.manager.replies[identifier]['error'])
+        self.assertIn('pi.run', self.manager.replies[identifier]['error'])
         self.assertFalse(self.host.pendingApproval)
         self.assertEqual(self.manager.calls, [])
 

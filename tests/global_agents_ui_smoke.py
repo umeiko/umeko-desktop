@@ -6,11 +6,16 @@ work=tempfile.TemporaryDirectory(prefix='umeko-global-ui-');base=Path(work.name)
 os.environ.update(UMEKO_DATA_DIR=str(base/'profile'),PI_CODING_AGENT_DIR=str(base/'agent'),UMEKO_LANGUAGE='zh',QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software')
 from PySide6.QtCore import QObject,Qt
 from PySide6.QtTest import QTest
+from chat_input_keys import check_newline_and_ime
 from app.storage import Store
 from app.integration import Completion
 from app.pi_runtime import verify_runtime, RELEASE_NAME
 verify_runtime(ROOT/"runtime/releases"/RELEASE_NAME, ROOT/"runtime/bridge.mjs")
 store=Store(base/'profile');store.data.update(selectedProvider='internal',selectedModel='fixture',providers=[{'id':'internal','name':'Local fixture','api':'internal','baseUrl':'','key':'','models':[{'upstream':'fixture','alias':'fixture'}]}]);store.data['agent']['agentDir']=str(base/'agent');store.save()
+# Keep the agent list empty until the user creates the first agent.
+settings = base / 'profile/desktop-plugins/settings.json'
+settings.parent.mkdir(parents=True, exist_ok=True)
+settings.write_text(json.dumps({'config': {'desktop-pet': {'visible': False}}}), encoding='utf-8')
 from main import create_application
 app,engine,b=create_application();window=engine.rootObjects()[0];warnings=[]
 engine.warnings.connect(lambda values:warnings.extend(x.toString() for x in values))
@@ -69,6 +74,43 @@ try:
     wait(lambda:len(g.agents)==1,'Creation failed');identifier=next(iter(g.agents));assert g.agents[identifier]['character']==b.characterStyle['id']
     assert g.agents[identifier]['name']==next(row['name'] for row in b.characterPacks if row['id']==b.characterStyle['id'])
     wait(lambda:page.property('selected')==identifier,'Context not opened')
+    # Native tools are optional, scoped to this agent and saved by the form.
+    from PySide6.QtQml import QQmlExpression, QQmlEngine
+    def evaluate(object,script):
+        expression=QQmlExpression(QQmlEngine.contextForObject(object),object,script)
+        result=expression.evaluate()
+        assert not expression.hasError(),expression.error().toString()
+        return result
+    assert g.agents[identifier]['tools']==[]
+    evaluate(page,'form('+json.dumps(identifier)+')');QTest.qWait(150)
+    evaluate(find('globalAgentFormScroll'),'contentItem.contentY = Math.max(0,contentItem.contentHeight-contentItem.height)')
+    click('globalAgentToolsButton');wait(lambda:find('globalAgentToolsDialog').property('opened'),'Tool picker did not open')
+    click('globalTool_read');click('globalTool_write')
+    window.grabWindow().save(str(out/'native-tools.png'))
+    click('doneGlobalAgentTools');click('confirmCreateGlobalAgent')
+    wait(lambda:g.agents[identifier].get('tools')==['read','write'],'Tool selection not saved')
+    def shown_tools():
+        state=page.property('state');state=state.toVariant() if hasattr(state,'toVariant') else state
+        return next((row.get('tools',[]) for row in state['agents'] if row['id']==identifier),None)
+    wait(lambda:shown_tools()==['read','write'],'Tool selection snapshot stale')
+    assert g.skill_config(g.ensure(identifier))['coordinatorTools']==['read','write']
+    evaluate(page,'form('+json.dumps(identifier)+')');QTest.qWait(150)
+    evaluate(find('globalAgentFormScroll'),'contentItem.contentY = Math.max(0,contentItem.contentHeight-contentItem.height)')
+    click('globalAgentToolsButton');wait(lambda:find('globalAgentToolsDialog').property('opened'),'Tool picker did not reopen')
+    assert find('globalTool_read').property('checked') and find('globalTool_write').property('checked')
+    click('selectAllGlobalAgentTools')
+    all_tools=['read','bash','powershell','edit','write','grep','find','ls']
+    assert not find('selectAllGlobalAgentTools').isEnabled()
+    click('doneGlobalAgentTools');click('confirmCreateGlobalAgent')
+    wait(lambda:g.agents[identifier].get('tools')==all_tools,'Select all was not saved')
+    wait(lambda:shown_tools()==all_tools,'Select all snapshot stale')
+    assert g.skill_config(g.ensure(identifier))['coordinatorTools']==all_tools
+    evaluate(page,'form('+json.dumps(identifier)+')');QTest.qWait(150)
+    evaluate(find('globalAgentFormScroll'),'contentItem.contentY = Math.max(0,contentItem.contentHeight-contentItem.height)')
+    click('globalAgentToolsButton');wait(lambda:find('globalAgentToolsDialog').property('opened'),'Tool picker did not reopen after select all')
+    assert not find('selectAllGlobalAgentTools').isEnabled()
+    click('resetGlobalAgentTools');click('doneGlobalAgentTools');click('confirmCreateGlobalAgent')
+    wait(lambda:g.agents[identifier].get('tools')==[],'Reset did not restore default tools')
     # The target is a genuine, separate native Pi session, initially a draft.
     target=g.identifier(b._view);g.handle('setBridge',{'id':target,'agentId':identifier,'enabled':True})
     # Exercise the Widget's own host-dialog binding, then the real target gate.
@@ -78,12 +120,16 @@ try:
     click('confirmGlobalAgentApproval')
     assert not coordinator.approval
     b.setToolPermissionMode('ask')
-    find('globalAgentInput').setProperty('text','coordinate '+target);click('sendGlobalAgentButton')
+    input_field=find('globalAgentInput')
+    call_count=len(fixture.calls)
+    check_newline_and_ime(window,input_field)
+    assert len(fixture.calls)==call_count
+    input_field.setProperty('text','coordinate '+target);QTest.keyClick(window,Qt.Key_Return)
     wait(lambda:fixture.pause_started.is_set(),'Native model did not reach pending interval')
     assert sum(row['role']=='user' and row['text']=='coordinate '+target for row in coordinator.messages)==1,'Native echo duplicated the user message before reply'
-    wait(lambda:sum(row['role']=='user' for row in (page.property('state').toVariant() if hasattr(page.property('state'),'toVariant') else page.property('state'))['messages'])==1,'Pending user message missing from Widget')
+    wait(lambda:sum(row['role']=='user' for row in [g.presentation.displayMessage(i) for i in range(g.presentation.messageCount)])==1,'Pending user message missing from Widget')
     QTest.qWait(750)
-    assert sum(row['role']=='user' for row in (page.property('state').toVariant() if hasattr(page.property('state'),'toVariant') else page.property('state'))['messages'])==1,'Pending user message displayed twice'
+    assert sum(row['role']=='user' for row in [g.presentation.displayMessage(i) for i in range(g.presentation.messageCount)])==1,'Pending user message displayed twice'
     window.grabWindow().save(str(out/'pending-single-message.png'));fixture.pause.set()
     wait(lambda:b.pendingApproval,'Target permission prompt was bypassed')
     b.respondApproval(True)
@@ -94,7 +140,7 @@ try:
     assert all(row['id']!=coordinator.id for row in b._sessions)
     # Coordinator model sees only its allowlisted host tool; target keeps native tools.
     assert any(len(tools)==1 and tools[0].get('name',tools[0].get('function',{}).get('name'))=='umeko_desktop' for _,tools in fixture.calls)
-    wait(lambda:len((page.property('state').toVariant() if hasattr(page.property('state'),'toVariant') else page.property('state'))['messages'])>0,'Transcript not visible')
+    wait(lambda:len([g.presentation.displayMessage(i) for i in range(g.presentation.messageCount)])>0,'Transcript not visible')
     QTest.qWait(500);window.grabWindow().save(str(out/'conversation.png'))
     projected=g.snapshot(identifier)['messages'];last_index=len(projected)-1
     wait(lambda:find('widgetAssistantAvatar_'+str(last_index)) is not None,'Shared renderer avatar missing')
@@ -153,7 +199,7 @@ try:
     click('agentBusRequestsTabButton');click('globalSubagentsHelpButton')
     wait(lambda:find('globalSubagentsHelpPopup').property('opened'),'Request help did not open')
     assert find('globalSubagentsHelpTitle').property('text')=='请求'
-    assert '返回结果' in find('globalSubagentsHelpText').property('text')
+    assert '仅显示尚未结束' in find('globalSubagentsHelpText').property('text')
     assert '不会撤销' in find('globalSubagentsHelpText').property('text')
     window.grabWindow().save(str(out/'requests-help.png'))
     assert identifier in g.bridges.get('tree-client-one',[])
@@ -245,6 +291,25 @@ try:
     kazuhiko_row=g.agents[kazuhiko['id']]
     # Automatic creation above may already have picked this character.
     assert kazuhiko_row['character']=='kazuhiko' and re.fullmatch(r'温水和彦(?:-[1-9]\d*)?',kazuhiko_row['name'])
+    # The global settings run an independent asynchronous catalog job. Choices
+    # remain default-empty until the user saves, then reach the real Pi prompt.
+    from PySide6.QtCore import Q_ARG
+    assert not kazuhiko_row['skills']
+    assert QMetaObject.invokeMethod(page,'form',Q_ARG('QVariant',kazuhiko['id']))
+    wait(lambda:find('globalAgentSkillsButton').isVisible(),'Skill settings missing')
+    click('globalAgentSkillsButton')
+    wait(lambda:not page.property('skillWorking'),'Skill catalog did not finish')
+    assert not page.property('skillError'),page.property('skillError')
+    find('globalAgentSkillSearch').setProperty('text','humanizer')
+    wait(lambda:find('globalSkill_builtin:humanizer') is not None,'Bundled Skill missing')
+    click('globalSkill_builtin:humanizer');click('doneGlobalAgentSkills');click('confirmCreateGlobalAgent')
+    wait(lambda:g.agents[kazuhiko['id']]['skills']==['builtin:humanizer'],'Skill selection did not save')
+    skill_record=g.ensure(kazuhiko['id']);g.handle('send',{'id':kazuhiko['id'],'text':'你好'})
+    wait(lambda:not skill_record.busy,'Skill-enabled coordinator did not finish')
+    assert not skill_record.failed
+    assert 'humanizer' in str(fixture.calls[-1][0])
+    assert 'read' in {tool.get('name',tool.get('function',{}).get('name')) for tool in fixture.calls[-1][1]}
+    assert not g.agents[identifier]['skills'],'One global changed another global’s Skills'
     for remaining in list(g.agents):g.handle('delete',{'id':remaining})
     page.setProperty('selected','');page.setProperty('section','agents')
     wait(lambda:find('createFirstGlobalAgentButton').isVisible() and not find('globalAgentsList').isVisible(),'Deleting the final agent did not restore the empty state')

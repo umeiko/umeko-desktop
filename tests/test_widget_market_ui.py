@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 os.environ.update(QT_QPA_PLATFORM='offscreen', QT_QUICK_BACKEND='software', QT_QUICK_CONTROLS_STYLE='Basic')
-from PySide6.QtCore import QObject, QEventLoop, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, QCoreApplication, QEventLoop, QTimer, Qt, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtQuick import QQuickWindow, QQuickItem
 from PySide6.QtQml import QQmlExpression, qmlContext
@@ -101,6 +101,7 @@ class MarketUi:
         self.no_network = self.patches.enter_context(patch.object(socket.socket, 'connect', side_effect=AssertionError('No outgoing network is permitted')))
         self.browser = self.patches.enter_context(patch.object(QDesktopServices, 'openUrl', return_value=True))
         self.patches.enter_context(patch('PySide6.QtWidgets.QFileDialog.getOpenFileName', return_value=('', '')))
+        QCoreApplication.setAttribute(Qt.AA_DontUseNativeDialogs)
         from main import create_application
         self.app, self.engine, self.backend = create_application()
         self.app.setQuitOnLastWindowClosed(False)
@@ -175,7 +176,7 @@ class MarketUi:
             self.manager.entries[identifier] = {**public_manifest(identifier, version=installed), 'builtin': False}
         self.catalog.fixture = self.catalog.fixture.__class__()
         self.catalog.fetcher = self.catalog.fixture
-        self.manager.settings['enabled'].update({'focus-timer': True, 'clipboard-notes': False, 'billion-context': False})
+        self.manager.settings['enabled'].update({'widget-market': True, 'focus-timer': True, 'clipboard-notes': False, 'billion-context': False})
         self.manager.settings.setdefault('sessions', {})[self.manager.storage_key] = ['widget-market', 'focus-timer']
         self.manager.save(); self.manager.changed.emit(); self.backend.setTheme('light')
         self.window.setProperty('page', 'chat'); self.language(language)
@@ -281,12 +282,15 @@ class WidgetMarketUiTests(unittest.TestCase):
         ui.catalog.fixture.routes[RELEASES] = OSError('Offline')
         ui.js('load(true)'); ui.idle()
         self.assertEqual(len(ui.rows()), 3); self.assertTrue(ui.find('widgetMarketNotice').isVisible())
-        dialog = ui.find('desktopPluginImportDialog')
-        ui.js('options = FileDialog.DontUseNativeDialog', dialog)
         ui.click('widgetMarketImportLocal')
-        wait_for(lambda: ui.window.property('page') == 'settings' and ui.find('desktopPluginsPage').isVisible()
-            and dialog.property('visible'), ui.app, 'Local import did not open Agent Widgets and its ZIP picker')
+        def importing():
+            page = ui.find('desktopPluginsPage', required=False)
+            dialog = ui.find('desktopPluginImportDialog', required=False)
+            return (ui.window.property('page') == 'settings' and page is not None and page.isVisible()
+                and dialog is not None and dialog.property('visible'))
+        wait_for(importing, ui.app, 'Local import did not open Agent Widgets and its ZIP picker')
         self.assertEqual(ui.window.property('settingsTab'), 3)
+        dialog = ui.find('desktopPluginImportDialog')
         ui.js('close()', dialog)
         self.assertEqual(ui.warnings, [])
 

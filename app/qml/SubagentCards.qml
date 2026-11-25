@@ -15,7 +15,7 @@ Column {
         Row {
             id: faces; x: Theme.control(12); anchors.verticalCenter: parent.verticalCenter; spacing: -Theme.icon(15)
             Repeater { model: root.grouped ? Math.min(3,root.agents.length) : 0
-                SubagentAvatar { required property int index; width: Theme.icon(34); height: width; slot: root.current(root.agents[index]).avatarSlot || 0 }
+                SubagentAvatar { required property int index; readonly property var agent: root.current(root.agents[index]); width: Theme.icon(34); height: width; slot: agent.avatarSlot || 0; character: agent.character || "" }
             }
         }
         Column { x: faces.x+faces.width+Theme.control(12); width: Math.max(0,parent.width-x-Theme.control(28)); anchors.verticalCenter: parent.verticalCenter; spacing: 5

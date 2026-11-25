@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 
 export function resolveSdkEntry(runtimeDirectory) {
   return createRequire(import.meta.url).resolve('@agentclientprotocol/sdk', {
-    paths: [runtimeDirectory, join(runtimeDirectory, 'releases', 'coding-1.3.0')],
+    paths: [runtimeDirectory, join(runtimeDirectory, 'releases', 'coding-1.5.2')],
   });
 }
 

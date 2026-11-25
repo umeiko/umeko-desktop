@@ -4,6 +4,6 @@
 
 每段动画 6 帧、4.2 秒；人形桌宠仍为 384×576，鲸鱼娘仍为 360×360。普通待机、彩蛋动作在 preview.html 中并排展示。完整提示词、参考和原始生成路径见 generation.json，同名 .prompt.txt 是逐张提示词。
 
-运行 `python3 art/desktop-pets/rare-idle-v1/build.py` 会更新对应桌宠的 idle-rare.webp、pet.json 与 rare-idle.provenance.json。主页半身图由 art/rare-scenes/v5/build.py 单独打包，互不覆盖。
+运行 `python3 art/desktop-pets/rare-idle-v1/build.py` 会更新仍使用 WebP 的桌宠彩蛋。八奈见的现行彩蛋使用独立交付的 GIF，本目录保留早期版本的参考和生成记录。主页半身图由 art/rare-scenes/v5/build.py 单独打包。
 
 沿用每个完整待机循环 0.005 的抽取概率，隐藏、暂停或繁忙时不抽取；动画循环结束再决定回到普通待机。只显示当前动画，隐藏时释放解码器，不增加模型调用。

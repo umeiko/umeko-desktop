@@ -27,14 +27,19 @@ from .protocols import response_events, collect_openai, anthropic_events_to_open
 from .openai_responses import responses_request, responses_events
 from .request_diagnostics import RequestDiagnostics, RequestFailure
 from .network_retry import upstream_failure
+from .context_images import ContextImageRecovery
 from .provider_errors import format_http_error, safe_text
-from .model_reasoning import reasoning_levels
+from .model_reasoning import reasoning_levels, reconcile_effort
+from .model_groups import GROUP_MODEL, MAX_MEMBERS, configured_members, descriptor
 from .reasoning_detection import allowed_levels, is_effort_rejection, detect_model, PROBE_QUESTION, probe_answer_correct
 from .reasoning_observation import observe_reasoning
 from .reasoning_activity import ReasoningActivity
 from .thinking_formats import format_parameters, valid_format
 from umeko_provider_sdk.network import network_scope, proxy_handler, tls_context, trace, TracedResponse
-from umeko_provider_sdk import request_scope
+from umeko_provider_sdk import current_request_cancelled, request_scope
+from umeko_provider_sdk.compatibility import ParameterMemory, compatible_open, raise_api_error
+from umeko_provider_sdk.streaming import normalize_openai_events
+from .project_info import VERSION
 
 
 def validate_base_url(url: str) -> str:
@@ -51,12 +56,37 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError("供应商返回重定向；请直接填写最终 API 地址")
 
 
+def _quota_exhausted(error, response):
+    status = str(response.get("status", ""))
+    if status == "402":
+        return True
+    return bool(re.search(
+        r"insufficient[ _-]?(?:quota|balance)|quota.{0,20}(?:exceed|exhaust)|out of budget|"
+        r"billing.hard.limit|usage limit reached|额度不足|余额不足|配额.{0,8}(?:不足|用尽)",
+        str(error) + " " + str(response.get("body", "")), re.I))
+
+
+def _member_unavailable(error, records):
+    response = next((row.get("response", {}) for row in reversed(records) if row.get("response")), {})
+    raw_status = response.get("status")
+    status = int(raw_status) if str(raw_status).isdigit() else 0
+    detail = str(error) + (" " + str(response.get("body", "")) if status >= 400 else "")
+    return status in (401, 402, 403, 404, 408, 425, 429) or status >= 500 or bool(re.search(
+        r"insufficient[ _-]?(?:quota|balance)|quota.{0,20}(?:exceed|exhaust)|rate[ _-]?limit|out of budget|"
+        r"billing|usage limit reached|model_not_found|限流|额度不足|余额不足|配额.{0,8}(?:不足|用尽)|"
+        r"供应商正在登录或刷新|无法连接供应商|供应商请求超时", detail, re.I))
+
+
 class Gateway:
     def __init__(self, store, adapter, plugins=None, reasoning_rejected=None):
         self.store, self.adapter, self.plugins = store, adapter, plugins
         self.reasoning_rejected = reasoning_rejected
+        self._group_lock = threading.Lock()
+        self._group_cooldown = {}
         self.reasoning_activity = ReasoningActivity()
         self.diagnostics = RequestDiagnostics(store.directory)
+        self.context_images = ContextImageRecovery(store.directory)
+        self.compatibility = ParameterMemory(store.directory, app_version=VERSION)
 
     def provider(self, provider_id):
         return next((p for p in self.store.data["providers"] if p["id"] == provider_id), None)
@@ -76,6 +106,7 @@ class Gateway:
                              "contextWindow": metadata["contextWindow"],
                              **{key: metadata[key] for key in ("providerContextWindow",) if key in metadata},
                              "input": ["text", "image"] if metadata["vision"] else ["text"],
+                              **({'applyPatch': True} if metadata.get('applyPatch') else {}),
                              "reasoningLevels": reasoning_levels(model),
                              "reasoningFormat": model.get("reasoningFormat", "openai"),
                              "reasoningState": (model.get("reasoningDetection", {}).get("state", "unknown")
@@ -83,6 +114,71 @@ class Gateway:
                              "reasoningFormatState": (model.get("reasoningFormatDetection", {}).get("state", "unknown")
                                                       if model.get("reasoningFormatAuto", True) else "manual")})
         return rows
+
+    def model_group_descriptor(self):
+        return descriptor(self.store.data, internal_ready=getattr(self.adapter, "ready", True))
+
+    def reset_model_group(self):
+        with self._group_lock:
+            self._group_cooldown.clear()
+
+    def group_events(self, messages, tools=None, max_tokens=None, parameters=None):
+        if not self.store.data.get("modelGroup", {}).get("enabled"):
+            raise ValueError("模型组未启用")
+        images = any(isinstance(message.get("content"), list)
+                     and any(block.get("type") == "image_url" for block in message["content"])
+                     for message in messages)
+        candidates = [(member, p, model) for member, p, model in configured_members(
+            self.store.data, internal_ready=getattr(self.adapter, "ready", True))
+            if model and (not images or normalize_vision(model)["vision"])]
+        if not candidates:
+            raise ValueError("模型组没有可用的兼容模型")
+        now = time.monotonic()
+        with self._group_lock:
+            candidates.sort(key=lambda row: self._group_cooldown.get((row[1]["id"], row[2]["alias"]), 0) > now)
+        cancelled = current_request_cancelled()
+        inputs = {key: value for key, value in (parameters or {}).items()
+                  if key not in ("reasoning_effort", "enable_thinking", "enable_reasoning", "chat_template_kwargs", "thinking", "reasoning",
+                                 "_umeko_reasoning_effort", "_umeko_reasoning_format")}
+        last_report = ""
+        for member, provider, model in candidates:
+            if cancelled.is_set():
+                raise InterruptedError("供应商请求已取消")
+            key = (provider["id"], model["alias"])
+            effort = reconcile_effort(member.get("effort", "off"), reasoning_levels(model))
+            committed = False
+            preamble = None
+            try:
+                for event in self.events(model["alias"], messages, tools, max_tokens, provider["id"],
+                                         {**inputs, "_umeko_reasoning_effort": effort}, group=True):
+                    if not committed:
+                        if not any(choice.get("finish_reason") or any((choice.get("delta") or choice.get("message") or {}).get(name)
+                                   for name in ("content", "reasoning_content", "tool_calls", "refusal"))
+                                   for choice in event.get("choices", ())):
+                            preamble = event
+                            continue
+                        committed = True
+                        with self._group_lock:
+                            self._group_cooldown.pop(key, None)
+                        if preamble is not None:
+                            yield preamble
+                    yield event
+                return
+            except RequestFailure as failure:
+                if cancelled.is_set() or not (failure.retryable or getattr(failure, "failover_eligible", False)):
+                    raise
+                with self._group_lock:
+                    if key not in self._group_cooldown and len(self._group_cooldown) >= MAX_MEMBERS:
+                        del self._group_cooldown[next(iter(self._group_cooldown))]
+                    self._group_cooldown[key] = time.monotonic() + (30 if failure.retryable else 60)
+                if committed:
+                    # Pi discards the interrupted assistant attempt before retrying.
+                    if len(candidates) > 1:
+                        failure.retryable = True
+                    raise
+                report = re.search(r" \[Umeko:[a-f0-9-]{36}\]$", str(failure))
+                last_report = report[0] if report else ""
+        raise RequestFailure("模型组中的可用模型均请求失败" + last_report)
 
     def detect_reasoning(self, alias, provider_id=None, advertised_levels=None):
         """Use the normal mapper/transport, with ephemeral probe observations only."""
@@ -128,23 +224,36 @@ class Gateway:
                         return p, m["upstream"]
         raise ValueError("模型别名不存在，请检查模型映射")
 
-    def complete(self, alias, messages, tools=None, max_tokens=4096, provider_id=None, parameters=None):
-        data = collect_openai(self.events(alias, messages, tools, max_tokens, provider_id, parameters))
+    def complete(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None):
+        return self._completion(self.events(alias, messages, tools, max_tokens, provider_id, parameters))
+
+    @staticmethod
+    def _completion(events):
+        data = collect_openai(events)
         msg, usage = data["choices"][0]["message"], data.get("usage", {})
         calls = [{"id": c["id"], "name": c["function"]["name"], "arguments": json.loads(c["function"]["arguments"])} for c in msg.get("tool_calls") or []]
         return Completion(msg.get("content") or "", calls, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), data["choices"][0]["finish_reason"], msg.get("reasoning_content") or "")
 
-    def events(self, alias, messages, tools=None, max_tokens=4096, provider_id=None, parameters=None):
+    def events(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None, *, group=False):
         p, model = self.resolve(alias, provider_id)
         records = []
         request = {'transport': p['api'], 'model': model, 'messages': messages,
                    'tools': tools or [], 'max_tokens': max_tokens, 'parameters': parameters or {}}
         try:
             with self.reasoning_activity.chat((p.get('id', ''), model)), network_scope(p.get('proxy'), records):
-                for event in self._events(alias, messages, tools, max_tokens, provider_id, parameters):
-                    if event.get('error'):
-                        raise ValueError(json.dumps(event, ensure_ascii=False))
-                    yield event
+                def open_events(projected):
+                    transport = self._events(alias, projected, tools, max_tokens, provider_id, parameters,
+                                             **({"group": True} if group else {}))
+                    for event in normalize_openai_events(transport):
+                        if event.get('error'):
+                            raise ValueError(json.dumps(event, ensure_ascii=False))
+                        yield event
+                image_session = (parameters or {}).get('_umeko_image_session')
+                if image_session:
+                    yield from self.context_images.events(image_session, messages, records, open_events)
+                else:
+                    yield from open_events(messages)
+            self.diagnostics.compatibility(p, request, records)
         except (IntegrationRequired, PermissionError):
             raise
         except Exception as error:
@@ -152,8 +261,13 @@ class Gateway:
             rejection = self._reasoning_rejection(p, model, effort, error, records)
             if rejection is not None:
                 raise rejection from None
-            raise self.diagnostics.failure(p, request, records[-1]['response'] if records else {},
-                                           error, records) from None
+            failure = self.diagnostics.failure(p, request, records[-1]['response'] if records else {}, error, records)
+            if group:
+                failure.failover_eligible = bool(failure.tls_code) or _member_unavailable(error, records)
+            elif _quota_exhausted(error, records[-1].get('response', {}) if records else {}):
+                failure.quota_exhausted = True
+                failure.retryable = False
+            raise failure from None
 
     def _reasoning_rejection(self, provider, model, effort, error, records):
         if effort is None:
@@ -172,14 +286,22 @@ class Gateway:
             configured = next((item for item in provider["models"] if item["upstream"] == model), {})
             levels = reasoning_levels(configured)
         supported = ["off"] + [item for item in levels if item not in (effort, "off")]
-        message = safe_text(str(error), [provider.get("key", "")])
+        message = safe_text(str(error), self.diagnostics._secrets(provider, {"http": records}))
         return RequestFailure(f'{message}\n当前可选推理档位：{", ".join(supported)}。请调整档位后重新发送。', retryable=False)
 
-    def _events(self, alias, messages, tools=None, max_tokens=4096, provider_id=None, parameters=None):
+    def _events(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None, *, group=False):
         p, model = self.resolve(alias, provider_id)
         if any(isinstance(m.get("content"), list) and any(block.get("type") == "image_url" for block in m["content"]) for m in messages) and not self.supports_vision(alias, p["id"]):
             raise ValueError("当前模型未启用视觉，请在模型配置中勾选“视觉”或切换支持图片的模型")
         tools = tools or []
+        automatic = set((parameters or {}).get('_umeko_auto_parameters', ()))
+        default_tokens = max_tokens is None
+        max_tokens = 4096 if default_tokens else max_tokens
+        # Capture provenance before the reasoning mapper consumes private intent.
+        user_parameters = {key: value for key, value in (parameters or {}).items()
+                           if not key.startswith('_umeko_') and key not in automatic}
+        if '_umeko_reasoning_effort' in (parameters or {}):
+            user_parameters.pop('reasoning_effort', None)
         parameters = dict(parameters or {})
         private_intent = "_umeko_reasoning_effort" in parameters
         probe_override = "_umeko_reasoning_format" in parameters
@@ -202,6 +324,11 @@ class Gateway:
             for key in ("reasoning_effort", "enable_thinking", "enable_reasoning", "chat_template_kwargs", "thinking", "reasoning"):
                 parameters.pop(key, None)
             parameters.update(format_parameters(format, intent))
+        if not probe_override:
+            automatic.update(set(parameters) - set(user_parameters))
+            parameters.update(user_parameters)
+        else:
+            automatic.clear()
         if p["api"] == "plugin":
             if self.plugins is None:
                 raise IntegrationRequired("请先导入供应商实现")
@@ -217,10 +344,8 @@ class Gateway:
             yield openai_response(result, model)
             return
         base = validate_base_url(p["baseUrl"])
-        headers = {"Content-Type": "application/json", "User-Agent": "Umeko-Desktop"}
         if p["api"] == "anthropic":
             url = base + ("/messages" if base.endswith("/v1") else "/v1/messages")
-            headers.update({"x-api-key": p["key"], "anthropic-version": "2023-06-01"})
             parameters = dict(parameters)
             if "reasoning_effort" in parameters:
                 parameters["output_config"] = {"effort": parameters.pop("reasoning_effort")}
@@ -235,7 +360,7 @@ class Gateway:
             parallel = parameters.pop("parallel_tool_calls", None)
             if parallel is not None:
                 parameters.setdefault("tool_choice", {"type": "auto"})["disable_parallel_tool_use"] = not parallel
-            body = {**parameters, "model": model, "max_tokens": max_tokens, "stream": True,
+            body = {**parameters, "model": model, "max_tokens": max_tokens, "stream": parameters.get('stream', True),
                     "messages": [self.to_anthropic_message(m) for m in messages if m["role"] != "system"]}
             system = "\n".join(str(m.get("content", "")) for m in messages if m["role"] == "system")
             if system:
@@ -244,40 +369,63 @@ class Gateway:
                 body["tools"] = [{"name": t["name"], "description": t.get("description", ""), "input_schema": t["parameters"]} for t in tools]
         elif p.get('wireApi') == 'responses':
             url = base + '/responses'
-            headers['Authorization'] = 'Bearer ' + p['key']
             body = {**responses_request(messages, tools, max_tokens, parameters), 'model': model}
             if "reasoning" in parameters:
                 body["reasoning"] = parameters["reasoning"]
         else:
             url = base + "/chat/completions"
-            headers["Authorization"] = "Bearer " + p["key"]
-            body = {**parameters, "model": model, "messages": chat_completion_messages(messages), "max_tokens": max_tokens, "stream": True}
+            body = {**parameters, "model": model, "messages": chat_completion_messages(messages), "stream": parameters.get('stream', True)}
+            if 'max_completion_tokens' not in body:
+                body.setdefault('max_tokens', max_tokens)
             if tools:
                 body["tools"] = [{"type": "function", "function": t} for t in tools]
+        if default_tokens and not probe_override:
+            automatic.add('max_output_tokens' if p.get('wireApi') == 'responses' else 'max_tokens')
+        if not probe_override and 'stream' not in user_parameters:
+            automatic.add('stream')
+        if p.get('wireApi') == 'responses' and not probe_override:
+            automatic.update(name for name in ('store',) if name not in user_parameters)
+            if 'reasoning_effort' in automatic:
+                automatic.add('reasoning')
+            if 'tools' not in user_parameters:
+                automatic.update(f'tools.{index}.strict' for index, tool in enumerate(tools)
+                                 if 'strict' not in tool)
+        from .request_headers import build, OmitHeaders
+        headers, omitted = build(self.store.data.get('requestHeaders'), p)
+        secrets = [p['key'], *headers.values()]
         request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
-        opener = urllib.request.build_opener(proxy_handler(p.get('proxy')), urllib.request.HTTPSHandler(context=tls_context(p.get('proxy'))), NoRedirect())
-        record = {'request': {'url': url, 'method': 'POST', 'headers': headers, 'body': body},
-                  'response': {'status': None, 'headers': {}, 'body': ''}}
-        trace.get().append(record)
+        opener = urllib.request.build_opener(proxy_handler(p.get('proxy')), urllib.request.HTTPSHandler(context=tls_context(p.get('proxy'))), NoRedirect(), OmitHeaders(omitted))
         try:
-            with opener.open(request, timeout=90) as response:
-                record['response'].update(status=response.status, headers=dict(response.headers))
+            with compatible_open(opener, request, timeout=45 if group else 90, memory=self.compatibility,
+                                 scope=(p['id'], base, model), automatic=automatic,
+                                 records=trace.get(), http_retries=0 if group or probe_override else 2) as response:
                 def checked_events():
-                    for event in response_events(TracedResponse(response, record)):
-                        if event.get("error") or event.get("type") == "response.failed":
-                            raise ValueError(json.dumps(event, ensure_ascii=False))
+                    for event in response_events(response):
+                        if event is None:
+                            continue
+                        try:
+                            raise_api_error(event)
+                        except ValueError:
+                            # Retain both SSE bytes and a structured error for
+                            # the existing reasoning capability reader.
+                            records = trace.get()
+                            if records:
+                                failure = records[-1]['response']
+                                failure['streamBody'] = failure.get('body', '')
+                                failure['body'] = json.dumps(event, ensure_ascii=False)
+                            raise
                         yield event
                 events = checked_events()
-                yield from anthropic_events_to_openai(events) if p["api"] == "anthropic" else responses_events(events) if p.get('wireApi') == 'responses' else events
+                yield from anthropic_events_to_openai(events) if p["api"] == "anthropic" else responses_events(events) if p.get('wireApi') == 'responses' else events if probe_override else normalize_openai_events(events)
         except urllib.error.HTTPError as exc:
-            record['response'].update(status=exc.code, headers=dict(exc.headers), body=exc.read().decode('utf-8', 'replace'))
-            exc.close()
-            raise ValueError(format_http_error(exc.code, record['response']['body'], exc.headers, [p['key']])) from None
+            try:
+                raise ValueError(format_http_error(exc.code, exc.read(), exc.headers, secrets)) from None
+            finally:
+                exc.close()
         except (urllib.error.URLError, TimeoutError) as exc:
-            record['exception'] = traceback.format_exc()
             if isinstance(exc, TimeoutError) or isinstance(getattr(exc, 'reason', None), TimeoutError):
                 raise ValueError('供应商请求超时，请检查网络或超时设置') from None
-            raise ValueError("无法连接供应商，请检查地址、网络与证书") from None
+            raise ValueError('无法连接供应商：' + safe_text(str(exc), secrets)) from None
 
     @staticmethod
     def to_anthropic_message(m):
@@ -298,7 +446,8 @@ class Gateway:
                     head, data = url.split(",", 1)
                     content.append({"type": "image", "source": {"type": "base64", "media_type": head[5:].split(";")[0], "data": data}})
         for call in m.get("tool_calls", []):
-            content.append({"type": "tool_use", "id": call["id"], "name": call["function"]["name"], "input": json.loads(call["function"]["arguments"])})
+            arguments = call['function']['arguments']
+            content.append({"type": "tool_use", "id": call["id"], "name": call["function"]["name"], "input": json.loads(arguments) if isinstance(arguments, str) else arguments})
         return {"role": m["role"], "content": content or [{"type": "text", "text": " "}]}
 
 class LocalServer:
@@ -306,12 +455,18 @@ class LocalServer:
         if host not in ("127.0.0.1", "0.0.0.0") or (private and host != "127.0.0.1"):
             raise ValueError("内核通道仅允许本机访问；代理服务只支持本机或局域网监听")
         self.gateway, self.token, self.private = gateway, token, private
+        self.cowork_web_route = None
         self.host, self.authenticator = host, authenticator
         self.closed = False
         self.protocols = protocols or {"openai": True, "anthropic": True}
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
+            def upstream_error(self, error):
+                result = upstream_failure(error)
+                if owner.private and getattr(error, "quota_exhausted", False):
+                    result.update(code="umeko_model_quota", message="[Umeko:model_quota] " + result["message"])
+                return result
             protocol_version = "HTTP/1.1"
 
             def handle(self):
@@ -377,10 +532,15 @@ class LocalServer:
                     return self.respond(401, {"error": {"message": "Invalid API key", "type": "authentication_error"}})
                 try:
                     size = int(self.headers.get("Content-Length", "0"))
-                    if not 0 < size <= 32_000_000:
+                    cowork_route = self.path == '/umeko/cowork-web-route'
+                    if cowork_route and (not owner.private or not owner.cowork_web_route or self.headers.get('Origin')):
+                        return self.respond(404, {"error": {"message": "Not found"}})
+                    if not 0 < size <= (16384 if cowork_route else 32_000_000):
                         return self.respond(413, {"error": {"message": "Invalid request size"}})
                     self.connection.settimeout(100)
                     body = json.loads(self.rfile.read(size))
+                    if cowork_route:
+                        return self.respond(200, owner.cowork_web_route(body))
                     if self.path == '/umeko/generate' and owner.private:
                         if isinstance(body, dict) and body.get('kind') == 'video':
                             return self.request_call(lambda: self.stream_generation(body))
@@ -403,12 +563,28 @@ class LocalServer:
                             messages.insert(0, {"role": "system", "content": system})
                     tools = body.get("tools", [])
                     tools = [{"name": t["name"], "description": t.get("description", ""), "parameters": t["input_schema"]} for t in tools] if anth else [t["function"] for t in tools]
-                    parameters = {k: body[k] for k in ("temperature", "top_p", "top_k", "stop", "tool_choice", "parallel_tool_calls", "reasoning_effort", "enable_thinking", "enable_reasoning", "chat_template_kwargs", "thinking", "reasoning") if k in body}
+                    parameters = {key: value for key, value in body.items()
+                                  if key not in ('model', 'messages', 'tools', 'max_tokens', 'system', 'output_config', 'stop_sequences')
+                                  and not key.startswith('_umeko_')}
+                    if owner.private and '_umeko_auto_parameters' in body:
+                        automatic = body['_umeko_auto_parameters']
+                        allowed = {'tool_choice', 'parallel_tool_calls', 'response_format', 'stream_options',
+                                   'temperature', 'top_p', 'top_k', 'seed', 'n', 'user', 'dimensions', 'max_tokens',
+                                   'max_completion_tokens', 'stream', 'reasoning_effort', 'thinking', 'reasoning',
+                                   'enable_thinking', 'enable_reasoning', 'chat_template_kwargs'}
+                        if not isinstance(automatic, list) or any(not isinstance(key, str) or key not in allowed for key in automatic):
+                            raise ValueError('Invalid automatic parameter metadata')
+                        parameters['_umeko_auto_parameters'] = automatic
                     if owner.private and "_umeko_reasoning_effort" in body:
                         effort = body["_umeko_reasoning_effort"]
                         if not isinstance(effort, str) or not effort:
                             raise ValueError("Invalid private reasoning effort")
                         parameters["_umeko_reasoning_effort"] = effort
+                    if owner.private and '_umeko_image_session' in body:
+                        session = body['_umeko_image_session']
+                        if not isinstance(session, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', session):
+                            raise ValueError('Invalid private image session identity')
+                        parameters['_umeko_image_session'] = session
                     if anth and "effort" in body.get("output_config", {}):
                         parameters["reasoning_effort"] = body["output_config"]["effort"]
                     if anth and "stop_sequences" in body:
@@ -418,20 +594,29 @@ class LocalServer:
                         if "disable_parallel_tool_use" in choice:
                             parameters["parallel_tool_calls"] = not choice["disable_parallel_tool_use"]
                         parameters["tool_choice"] = {"type": "function", "function": {"name": choice["name"]}} if choice.get("type") == "tool" else {"any": "required"}.get(choice.get("type"), choice.get("type", "auto"))
-                    max_tokens = min(max(int(body.get("max_tokens", body.get("max_completion_tokens", 4096))), 1), 32768)
+                    max_tokens = body.get('max_tokens', body.get('max_completion_tokens'))
+                    if max_tokens is not None and (type(max_tokens) is not int or max_tokens <= 0):
+                        raise ValueError('max_tokens must be a positive integer')
                     provider_id = body.get('_umeko_provider') if owner.private else None
                     if provider_id is not None and not isinstance(provider_id, str):
                         raise ValueError('Invalid private provider identity')
-                    if body.get("stream"):
-                        return self.stream_events(owner.gateway.events(body["model"], messages, tools, max_tokens, provider_id=provider_id, parameters=parameters), body["model"], anth)
-                    result = owner.gateway.complete(body["model"], messages, tools, max_tokens, provider_id=provider_id, parameters=parameters)
+                    alias = body["model"]
+                    if owner.private and not provider_id and alias == GROUP_MODEL:
+                        events = owner.gateway.group_events(messages, tools, max_tokens, parameters)
+                        if body.get("stream"):
+                            return self.stream_events(events, alias, anth)
+                        result = self.request_call(lambda: owner.gateway._completion(events))
+                    else:
+                        if body.get("stream"):
+                            return self.stream_events(owner.gateway.events(alias, messages, tools, max_tokens, provider_id=provider_id, parameters=parameters), alias, anth)
+                        result = owner.gateway.complete(alias, messages, tools, max_tokens, provider_id=provider_id, parameters=parameters)
                     self.respond(200, anthropic_response(result, body["model"]) if anth else openai_response(result, body["model"]))
                 except IntegrationRequired as exc:
                     self.respond(422 if owner.private else 503, {"error": {"type": "integration_required", "message": str(exc)}})
                 except PermissionError as exc:
                     self.respond(403, {"error": {"type": "permission_error", "message": str(exc)}})
                 except RequestFailure as exc:
-                    self.respond(503 if exc.retryable else 400, {"error": upstream_failure(exc)})
+                    self.respond(503 if exc.retryable else 400, {"error": self.upstream_error(exc)})
                 except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
                     self.respond(400, {"error": {"type": "invalid_request_error", "message": str(exc)[:300]}})
                 except ConnectionError:
@@ -543,7 +728,7 @@ class LocalServer:
                 except ConnectionError:
                     pass
                 except Exception as failure:
-                    event({"type": "error", "error": upstream_failure(failure)}, "error" if anth else None)
+                    event({"type": "error", "error": self.upstream_error(failure)}, "error" if anth else None)
                 finally:
                     iterator.close() if hasattr(iterator, "close") else None
                     self.close_connection = True

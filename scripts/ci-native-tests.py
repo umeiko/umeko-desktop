@@ -14,6 +14,7 @@ COMMON = [
     'tests.test_terminal_widget',
     'tests.test_skill_import',
     'tests.test_update',
+    'tests.test_update_windows',
     'tests.test_update_cleanup',
     'tests.test_preview_source',
     # Keep the module entrypoint: load_tests isolates its Qt application.
@@ -35,6 +36,7 @@ WINDOWS = [
     'tests.test_codearts_plugin_account.AccountTests.test_models_uses_direct_executable_and_private_trusted_directory',
     'tests.test_codearts_transport.TransportTests.test_broker_keepalive_peer_reset_closes_without_handler_traceback',
     'tests.test_desktop_plugins.DesktopPluginTests.test_terminal_worker_grants_the_composer_chat_and_executes_in_the_visible_pty',
+        'tests.test_desktop_plugins.DesktopPluginTests.test_application_close_releases_default_scheduler_lock_before_returning',
     'tests.test_desktop_plugins.GitDemoTests.test_git_status_diff_stage_unstage_and_history_on_disposable_repository',
     'tests.test_pi.PiTests.test_all_native_tools_and_optional_extensions_reach_model_after_reload_and_resume',
     'tests.test_pi.PiTests.test_desktop_steering_interrupts_shell_and_preserves_followup',
@@ -80,6 +82,12 @@ NODE_HOST = [
     ('update-engine', 'cleanup retains recent or active temporary download jobs and reclaims abandoned ones'),
 ]
 NODE_WINDOWS = [
+    ('shell-snapshot', 'Windows PATH puts a real executable before a conflicting Store alias'),
+    ('command-sessions', 'command stdin remains available after the command is handed off'),
+    ('update-engine', 'Windows parent handle remains unsignaled after exit code is set; timeout leaves installation untouched'),
+    ('update-engine', 'Windows installer holds the live parent handle until termination before replacing files'),
+    ('update-engine', 'Windows rename diagnostics identify an external executable holding the installation working directory'),
+    ('update-engine', 'Windows locked-folder diagnostics localize unknown owners and preserve the error code'),
     ('tool-permissions-integration', 'actual native powershell tool is intercepted before its harmless write'),
     ('subagent-queue', 'child queue edits/removal, immediate tool and model interruption, FIFO continuation, promotion, isolation and stop recovery'),
 ]

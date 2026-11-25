@@ -69,12 +69,12 @@ class PetTests(unittest.TestCase):
         self.assertTrue(value['ok'],value)
         self.wait(lambda:self.manager.bridge.calls[value['requestId']]['status']!='running')
         return control.execute({'operation':'widgets.result','arguments':{'requestId':value['requestId']}})['result']
-    def test_default_loaded_hidden_no_process_and_application_lifetime(self):
-        self.assertTrue(self.manager.enabled('desktop-pet'));self.assertTrue(self.pet.running);self.assertFalse(self.pet.visible)
+    def test_default_visible_and_pinned_no_process_and_application_lifetime(self):
+        self.assertTrue(self.manager.enabled('desktop-pet'));self.assertTrue(self.pet.running);self.assertTrue(self.pet.visible)
+        self.assertTrue(self.pet.config['alwaysOnTop'])
         worker=self.manager.workers['desktop-pet'];self.assertNotIn('process',worker)
         self.host._view.key='next';self.host._view.id='second';self.host.viewChanged.emit()
         self.assertIs(self.manager.workers['desktop-pet'],worker)
-        self.pet.configure({'visible':True});self.assertTrue(self.pet.visible)
         self.manager.setEnabled('desktop-pet',False);self.assertFalse(self.pet.running);self.assertFalse(self.pet.visible);self.assertFalse(self.pet.timer.isActive())
         self.manager.setEnabled('desktop-pet',True);self.assertTrue(self.pet.visible)
         self.manager.close();self.assertFalse(self.pet.running)
@@ -110,15 +110,15 @@ class PetTests(unittest.TestCase):
         self.assertTrue(next(row for row in self.pet.appearances if row['id'] == 'doubao')['builtin'])
         for file in [*pack['states'].values(), pack['rareIdle']['image']]:
             reader = QImageReader(str(folder/file))
-            self.assertEqual(reader.imageCount(), 12, file)
+            self.assertEqual(reader.imageCount(), 39 if file == "idle.gif" else 107 if file == "idle-rare.gif" else 56, file)
             image = reader.read()
-            self.assertEqual((image.width(), image.height()), (360,360))
+            self.assertEqual((image.width(), image.height()), (512,512))
             self.assertTrue(image.hasAlphaChannel())
             self.assertEqual(image.pixelColor(0,0).alpha(), 0)
         self.assertTrue(self.rpc(self.control(),'selectAppearance',{'id':'doubao'})['ok'])
         for state in pack['states']:
             self.pet.motion.state = state
-            self.assertTrue(self.pet.state['source'].endswith('/doubao/'+state+'.webp'))
+            self.assertTrue(self.pet.state['source'].endswith('/doubao/'+state+'.gif'))
             self.assertTrue(self.pet.state['animated'])
         self.assertFalse(self.rpc(self.control(),'removeAppearance',{'id':'doubao'})['ok'])
         self.manager.close()
@@ -127,21 +127,38 @@ class PetTests(unittest.TestCase):
         self.assertEqual(second.pet.config['appearance'], 'doubao')
 
     def test_builtin_komari_has_six_valid_animations_and_persists_selection(self):
+        from PySide6.QtGui import QImageReader
         packs = {row['id']:row for row in self.pet.appearances}
         self.assertTrue(packs['yanami']['builtin'])
         self.assertTrue(packs['komari']['builtin'])
         pack = read_pack(self.host.root/'umeko-plugins/desktop-pet/assets/komari', check=True)
         self.assertEqual(set(pack['states']), {'idle','thinking','working','waiting','done','error'})
         self.assertTrue(all(pack['images'][name]['animated'] and pack['images'][name]['frames'] > 1 for name in pack['states'].values()))
+        clips = {'idle': (39, 1800), 'thinking': (56, 2400), 'working': (56, 2000),
+                 'waiting': (56, 2600), 'done': (56, 2000), 'error': (56, 2500),
+                 'idle-rare': (107, 4200)}
+        for state, (count, duration) in clips.items():
+            reader = QImageReader(str(self.host.root/'umeko-plugins/desktop-pet/assets/komari'/(state+'.gif')))
+            self.assertEqual(reader.imageCount(), count, state)
+            actual_duration = 0
+            for _ in range(count):
+                image = reader.read()
+                self.assertFalse(image.isNull(), state)
+                self.assertEqual((image.width(), image.height()), (512, 512))
+                self.assertEqual(image.pixelColor(0, 0).alpha(), 0)
+                actual_duration += reader.nextImageDelay()
+            self.assertEqual(actual_duration, duration, state)
         control = self.control()
         self.assertTrue(self.rpc(control,'selectAppearance',{'id':'komari'})['ok'])
         self.assertEqual(self.pet.state['appearance'],'komari')
         self.assertEqual(self.pet.state['name'],'小鞠知花')
         self.assertFalse(self.rpc(control,'removeAppearance',{'id':'komari'})['ok'])
+        self.pet.configure({'visible':False, 'alwaysOnTop':False})
         self.manager.close()
         second = DesktopPlugins(self.host);self.addCleanup(second.close)
         self.assertEqual(second.pet.config['appearance'],'komari')
         self.assertFalse(second.pet.visible)
+        self.assertFalse(second.pet.config['alwaysOnTop'])
     def test_tiara_has_six_alpha_animations_and_is_protected(self):
         from PySide6.QtGui import QImageReader
         packs={row['id']:row for row in self.pet.appearances}
@@ -151,9 +168,9 @@ class PetTests(unittest.TestCase):
         self.assertEqual(set(pack['states']),{'idle','thinking','working','waiting','done','error'})
         for state,file in pack['states'].items():
             reader=QImageReader(str(self.host.root/'umeko-plugins/desktop-pet/assets/tiara'/file))
-            self.assertEqual(reader.imageCount(),6,state)
+            self.assertEqual(reader.imageCount(),39 if state == "idle" else 56,state)
             image=reader.read()
-            self.assertEqual((image.width(),image.height()),(384,576))
+            self.assertEqual((image.width(),image.height()),(512,512))
             self.assertTrue(image.hasAlphaChannel())
             self.assertEqual(image.pixelColor(0,0).alpha(),0)
         control=self.control()
@@ -171,7 +188,7 @@ class PetTests(unittest.TestCase):
             self.pet.idleCycle()
             self.assertTrue(self.pet.state['rareIdle'])
             self.assertTrue(self.pet.state['animated'])
-            self.assertTrue(self.pet.state['source'].endswith('/idle-rare.webp'))
+            self.assertTrue(self.pet.state['source'].endswith('/idle-rare.gif'))
             self.assertEqual(spoken[-1], self.pet._packs['tiara']['rareIdle']['line'])
             for _ in range(20): self.pet.sample()
             self.assertEqual(draw.call_count, 1, 'Observer polling must not reroll')
@@ -201,7 +218,7 @@ class PetTests(unittest.TestCase):
             normal = QImageReader(str(folder / pack['states']['idle']))
             reader = QImageReader(str(rare))
             self.assertEqual(reader.size(), normal.size(), identifier)
-            self.assertEqual(reader.imageCount(), 6, identifier)
+            self.assertEqual(reader.imageCount(), 88 if identifier == 'yanami' else 107 if identifier in ('tiara', 'komari') else 6, identifier)
             self.assertTrue(pack['images'][rare.name]['animated'], identifier)
             hashes = set()
             for _ in range(reader.imageCount()):
@@ -281,6 +298,7 @@ class PetTests(unittest.TestCase):
     def test_agent_import_select_config_and_result_use_existing_widget_channel(self):
         control=self.control();docs=control.execute({'operation':'widgets.docs','arguments':{'id':'desktop-pet'}})
         self.assertIn('importAppearance',docs['methods']);self.assertIn('umeko-pet',docs['document']['text'])
+        self.pet.configure({'visible':False})
         imported=self.rpc(control,'importAppearance',{'path':str(self.image())})
         self.assertTrue(imported['ok'],imported);identifier=imported['result']['appearance']
         self.assertFalse(self.pet.visible);self.assertEqual(self.pet.config['appearance'],'yanami')
@@ -328,6 +346,8 @@ class PetTests(unittest.TestCase):
         manifest, defaults, schema = validate(self.host.root/'umeko-plugins/desktop-pet')
         self.assertEqual(manifest['id'], 'desktop-pet')
         self.assertTrue(defaults['reminderNotificationsEnabled'])
+        self.assertTrue(defaults['visible'])
+        self.assertTrue(defaults['alwaysOnTop'])
         now = datetime(2026, 11, 2, 8, tzinfo=timezone.utc)
         self.pet.reminders.clock = lambda: now
         control = self.control()
@@ -401,26 +421,20 @@ class PetTests(unittest.TestCase):
         self.assertEqual(self.pet.reminderCard, [])
         self.assertFalse(self.pet.handle('getItem', {'id':first['id']})['item']['completed'])
 
-    def test_reminder_card_filters_mutations_and_rejects_stale_complete_button(self):
-        now = datetime(2026, 11, 2, 8, tzinfo=timezone.utc)
-        self.pet.reminders.clock = lambda: now
+    def test_reminder_card_retains_unread_until_view_and_rejects_stale_completion(self):
+        now=datetime(2026,11,2,8,tzinfo=timezone.utc)
+        self.pet.reminders.clock=lambda:now
         self.pet.configure({'visible':True})
-        first = self.pet.handle('createItem', {'title':'original', 'dueAt':now.isoformat()})['item']
-        self.assertEqual(len(self.pet.reminderCard), 1)
-        edited = self.pet.handle('updateItem', {'id':first['id'], 'title':'edited'})['item']
-        self.assertEqual(self.pet.reminderCard, [])
-        self.pet.completeReminder(first['id'], first['revision'])
-        self.assertFalse(self.pet.handle('getItem', {'id':first['id']})['item']['completed'])
-        self.assertEqual(self.pet.reminderCard, [])
-        second = self.pet.handle('createItem', {'title':'complete', 'dueAt':now.isoformat()})['item']
-        self.pet.completeReminder(second['id'], second['revision'])
-        self.assertTrue(self.pet.handle('getItem', {'id':second['id']})['item']['completed'])
-        self.assertEqual(self.pet.reminderCard, [])
-        third = self.pet.handle('createItem', {'title':'delete', 'dueAt':now.isoformat()})['item']
-        self.assertEqual(self.pet.reminderCard[0]['id'], third['id'])
-        self.pet.handle('deleteItem', {'id':third['id']})
-        self.assertEqual(self.pet.reminderCard, [])
-        self.assertEqual([row['id'] for row in self.pet.reminderItems], [edited['id']])
+        item=self.pet.handle('createItem',{'title':'original','dueAt':now.isoformat()})['item']
+        self.pet.handle('updateItem',{'id':item['id'],'title':'edited'})
+        self.assertEqual(len(self.pet.reminderCard),1)
+        self.pet.completeReminder(item['id'],item['revision'])
+        self.assertFalse(self.pet.handle('getItem',{'id':item['id']})['item']['completed'])
+        self.pet.configure({'visible':False});self.assertEqual(self.pet.reminderCard,[])
+        self.pet.configure({'visible':True});self.assertEqual(len(self.pet.reminderCard),1)
+        self.pet.openReminders(item['id'],False)
+        self.assertEqual(self.pet.reminderCard,[])
+        self.assertEqual(self.pet.reminders.unread_alerts(),[])
 
     def test_reminder_selection_and_current_card_close_on_visibility_or_preference(self):
         now = datetime(2026, 11, 2, 8, tzinfo=timezone.utc)
@@ -445,7 +459,9 @@ class PetTests(unittest.TestCase):
         self.pet.configure({'reminderNotificationsEnabled':False})
         self.assertEqual(self.pet.reminderCard, [])
         self.pet.configure({'reminderNotificationsEnabled':True})
-        self.assertEqual(self.pet.reminderCard, [])
+        self.assertEqual(len(self.pet.reminderCard),1)
+        self.pet.openReminders(next_item['id'],False)
+        self.assertEqual(self.pet.reminderCard,[])
 
     def test_reminder_lifecycle_stop_and_reenable_recovers_overdue_card(self):
         now = [datetime(2026, 11, 2, 8, tzinfo=timezone.utc)]

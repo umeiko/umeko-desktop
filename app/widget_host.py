@@ -9,6 +9,7 @@ import copy
 import json
 import re
 import sqlite3
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,6 +42,9 @@ OPERATIONS = {
     **{name: ('tasks.read' if name in ('tasks.list', 'tasks.get', 'tasks.detail') else 'tasks.manage', None)
        for name in TASK_FIELDS},
     **{name: ('sessions.manage', None) for name in SESSION_OPERATIONS},
+    'scheduledTasks.profiles': ('sessions.manage', None),
+    'scheduledTasks.openSession': ('sessions.manage', None),
+    **{name: ('sessions.manage', None) for name in ('scheduledTasks.targets', 'scheduledTasks.trigger', 'scheduledTasks.status', 'scheduledTasks.openTarget')},
     'market.list': ('pi.read', None),
     'market.prepare': ('pi.read', None),
     'market.discard': ('pi.read', None),
@@ -88,7 +92,20 @@ OPERATIONS = {
     'skills.delete': ('skills.manage', None),
     'checkpoints.acquire': ('workspace.write', None),
     'checkpoints.release': ('workspace.write', None),
+    'workspace.exec': ('process.execute', None),
+    'workspace.readDir': ('workspace.read', None),
+    'workspace.stat': ('workspace.read', None),
+    'workspace.readFile': ('workspace.read', None),
+    'workspace.writeFile': ('workspace.write', None),
+    'workspace.mkdir': ('workspace.write', None),
+    'workspace.remove': ('workspace.write', None),
+    'workspace.rename': ('workspace.write', None),
+    'workspace.sshTarget': ('workspace.read', None),
+    'workspace.home': ('workspace.read', None),
+    'workspace.previewFile': ('workspace.read', None),
 }
+
+WORKSPACE_OPERATIONS = frozenset(name for name in OPERATIONS if name.startswith('workspace.'))
 
 # User-initiated paste/drop adds new folders only. Replacement still goes
 # through the preview/confirmation path; these operations cannot overwrite.
@@ -103,10 +120,12 @@ def requires_confirmation(name):
 
 class WidgetHost(QObject):
     changed = Signal()
+    _workspaceReply = Signal(object, object)
 
     def __init__(self, manager):
         super().__init__(manager)
         self.m, self.b = manager, manager.b
+        self._workspaceReply.connect(self._deliver_workspace_reply)
         self._approval = {}
         self._pending = None
         self.jobs = OrderedDict()
@@ -141,6 +160,12 @@ class WidgetHost(QObject):
     def runtimes(self):
         from .pi_runtime import node_executable
         return {'node': {'executable': node_executable()}}
+
+    def scheduled_service(self):
+        if not hasattr(self, '_scheduled_tasks'):
+            from .scheduled_task_host import ScheduledTaskHost
+            self._scheduled_tasks = ScheduledTaskHost(self)
+        return self._scheduled_tasks
 
     @Property('QVariantMap', notify=changed)
     def pendingApproval(self):
@@ -233,20 +258,35 @@ class WidgetHost(QObject):
             if not self.m.application(identifier):
                 raise ValueError('Session service requires an application lifecycle Widget')
             return identifier
+        if request['operation'] in ('scheduledTasks.trigger', 'scheduledTasks.status') and identifier == 'scheduled-tasks' and self.m.entries[identifier].get('builtin') and self.m.application(identifier):
+            # This built-in service revalidates the captured persistent source
+            # and Agent Bus relation, independently of the displayed chat.
+            return identifier
+        if request['operation'] in WORKSPACE_OPERATIONS and self.m.application(identifier):
+            session = request['session']
+            if not isinstance(session, dict) or not session.get('workspace'):
+                raise ValueError('A workspace is required')
+            return identifier
         session = request['session']
         current = self.m._session
         if not isinstance(session, dict) or not session.get('token') or session.get('token') != current.get('token') or session.get('workspace') != current.get('workspace'):
             raise ValueError('The target chat or workspace changed; retry from its page')
         return identifier
 
+    def _deliver_workspace_reply(self, request, value):
+        if self.m.closed:
+            return
+        self._reply(request, value)
+
     def _reply(self, request, value):
         self.requests.pop((request['widget'], request['id']), None)
         if self.m.workers.get(request['widget']) is not request['worker']:
             return
+        max_bytes = 2 * 1024 * 1024 if isinstance(request['operation'], str) and request['operation'] in WORKSPACE_OPERATIONS else 262144
         try:
             raw = json.dumps(value, ensure_ascii=False, allow_nan=False).encode('utf-8')
-            if len(raw) > 262144:
-                value = {'ok': False, 'error': 'Host response exceeds 256 KiB; narrow the query'}
+            if len(raw) > max_bytes:
+                value = {'ok': False, 'error': 'Host response exceeds limit; narrow the query'}
         except (TypeError, ValueError):
             value = {'ok': False, 'error': 'Host returned invalid JSON'}
         value = {'requestId': request['id'], 'operation': request['operation'], **value}
@@ -282,11 +322,33 @@ class WidgetHost(QObject):
             operation, args = request['operation'], request['arguments']
             if operation not in self.capabilities['operations']:
                 raise ValueError('Host operation is not available; inspect hostCapabilities')
-            if not isinstance(args, dict) or len(json.dumps(args, allow_nan=False).encode()) > 16384:
-                raise ValueError('Host arguments must be a JSON object of at most 16 KiB')
+            arg_limit = 1024 * 1024 if operation in WORKSPACE_OPERATIONS else 16384
+            if not isinstance(args, dict) or len(json.dumps(args, allow_nan=False).encode()) > arg_limit:
+                raise ValueError('Host arguments must be a JSON object within size limits')
             permission, _ = OPERATIONS[operation]
-            if permission not in self.m.entries[identifier].get('permissions', []):
-                raise ValueError('Widget permission is required: ' + permission)
+            perms = self.m.entries[identifier].get('permissions', [])
+            if permission not in perms:
+                if not (operation in ('workspace.writeFile', 'workspace.remove') and 'git.write' in perms):
+                    raise ValueError('Widget permission is required: ' + permission)
+            if getattr(self.b._view, 'cowork', '') and operation.startswith('pi.') and permission == 'pi.manage':
+                raise ValueError('请在 Coworker 编辑器中调整角色工具')
+            if operation in WORKSPACE_OPERATIONS:
+                executor = getattr(self.b, '_workspace_executor', None)
+                if executor is None:
+                    raise ValueError('Workspace executor is unavailable')
+                def run_workspace():
+                    try:
+                        res = executor.execute(request['session'], operation, args)
+                        if res.get('ok'):
+                            payload = {'ok': True, 'result': res}
+                        else:
+                            payload = {'ok': False, 'error': str(res.get('error') or 'Workspace operation failed')}
+                    except Exception as error:
+                        payload = {'ok': False, 'error': str(error)}
+                    if not self.m.closed:
+                        self._workspaceReply.emit(request, payload)
+                threading.Thread(target=run_workspace, daemon=True, name='umeko-workspace-op').start()
+                return
             if operation.startswith('systemPrompt.'):
                 if self._system_prompt is None:
                     from .system_prompt import SystemPromptHost
@@ -296,6 +358,35 @@ class WidgetHost(QObject):
             if operation in TASK_FIELDS:
                 self._task_request(request)
                 return
+            if operation in ('scheduledTasks.targets', 'scheduledTasks.trigger', 'scheduledTasks.status', 'scheduledTasks.openTarget'):
+                result = self.scheduled_service().request(request)
+                self._reply(request, {'ok': True, 'result': result})
+                return
+            if operation in ('scheduledTasks.profiles', 'scheduledTasks.openSession'):
+                if identifier != 'scheduled-tasks' or not self.m.entries[identifier].get('builtin') or not request['page'] or self.m._page != identifier:
+                    raise ValueError('Available only to the built-in Scheduled Tasks page')
+                if operation == 'scheduledTasks.profiles' and not args:
+                    profiles = self.b.store.data.get('pluginSessionProfiles', {}).get(identifier, {})
+                    if not isinstance(profiles, dict):
+                        raise ValueError('Scheduled Tasks profiles must be an object')
+                    rows = [{'name': name, 'workspace': profile['workspace'], 'model': profile['model']}
+                            for name, profile in sorted(profiles.items()) if isinstance(profile, dict)
+                            and all(isinstance(profile.get(k), str) for k in ('workspace', 'model'))]
+                    self._reply(request, {'ok': True, 'result': {'profiles': rows}})
+                    return
+                if operation == 'scheduledTasks.openSession' and set(args) == {'session_id'}:
+                    session_id = args['session_id']
+                    if not isinstance(session_id, str):
+                        raise ValueError('A session ID is required')
+                    owner = self.b.store.data.get('sessionMeta', {}).get(session_id, {}).get('pluginSession', {})
+                    if owner.get('plugin') != identifier or owner.get('namespace') != identifier:
+                        raise ValueError('This session does not belong to Scheduled Tasks')
+                    if not any(row.get('id') == session_id for row in self.b._sessions):
+                        raise ValueError('This session is no longer available')
+                    self._reply(request, {'ok': True, 'result': {}})
+                    self.b.openSession(session_id)
+                    return
+                raise ValueError('Invalid Scheduled Tasks arguments')
             if operation in SESSION_OPERATIONS:
                 if self._sessions is None: self._sessions = PluginSessions(self)
                 self._sessions.request(request)
@@ -382,7 +473,7 @@ class WidgetHost(QObject):
                 self._execute(request);return
             if requires_confirmation(operation):
                 if self.b.busy or self.b.piManagement.busy or self.b.kernelBusy:
-                    raise ValueError('Pi is busy; Agent installs must use run_pi_command and its native queued reload')
+                    raise ValueError('Pi is busy; Agent installs must use umeko_desktop with pi.run and its native queued reload')
                 if self._pending or self.b.pendingApproval:
                     raise ValueError('Another confirmation is pending')
                 approval = {'id': request['id'], 'method': 'confirm',
@@ -653,7 +744,7 @@ class WidgetHost(QObject):
             return
         if operation == 'pi.inventory':
             record=self.b._view
-            if not record.resources.get('allTools') or record.stale or (not record.process and record.model):
+            if not self.b.piManagement.inventory_current(record) or record.stale or (not record.process and record.model):
                 if self.b.busy or record.subagents_active or self.b.kernelBusy:
                     raise ValueError('请等待当前任务结束后刷新工具列表')
                 if not getattr(record,'model',''):
@@ -661,6 +752,9 @@ class WidgetHost(QObject):
                 if not self.b._command_pi('load', record):
                     raise ValueError('Pi 工具列表加载失败')
             self._reply(request, {'ok':True})
+            return
+        if operation == 'pi.scan' and getattr(self.b._view, 'cowork', ''):
+            self._reply(request, {'ok': True})
             return
         if operation == 'pi.details' and args['id'] == NATIVE_ID:
             self._reply(request, {'ok':True})
@@ -681,7 +775,8 @@ class WidgetHost(QObject):
             return
         if operation == 'pi.status':
             management = self.b.piManagement
-            current = management.extensionsCurrent
+            cowork = bool(getattr(self.b._view, 'cowork', ''))
+            current = cowork or management.extensionsCurrent
             all_rows = management.capability_extensions() if current else []
             query=args.get('query','').casefold()
             detail_id=args.get('details','')
@@ -692,7 +787,8 @@ class WidgetHost(QObject):
             modes={path:mode for path,mode in self.b._view.extension_modes.items() if path in paths}
             result={'profile':management.capability_profile(),'sessionBusy':self.b.busy,'busy':management.busy or self.b.kernelBusy or (self.b._view.busy and self.b._view.action=='inspect'), 'status':management.status if current else '',
                 'extensions':page,'total':len(rows),'catalogTotal':len(all_rows), 'hasMore':offset+limit<len(rows),
-                'contextCurrent':current, 'inventoryReady':bool(self.b._view.resources.get('allTools')),
+                'contextCurrent':current, 'inventoryReady':(management.inventory_current(self.b._view) and
+                    (not cowork or not self.b._view.stale)) or (cowork and not self.b._view.model),
                 'inventoryFailed':getattr(self.b._view,'action','')=='load' and not self.b.busy and (getattr(self.b._view,'failed',False) or getattr(self.b._view,'cancelled',False)),
                 'agentBusy':self.b.busy or bool(getattr(self.b._view,'subagents_active',False)), 'workspace':request['session'].get('workspace',''),
                 'activationModes':modes,'extensionUpdate':management.extensionUpdate if current else {}}

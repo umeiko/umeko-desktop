@@ -34,5 +34,5 @@ features:
 ---
 
 <div class="home-note">
-This guide covers the Python / Qt and C++ / Qt editions, with differences called out where needed. It follows main; some features may require a build newer than the latest stable release. Switch to 简体中文 or use search at the top.
+This guide covers the Python / Qt and C++ / Qt editions, with differences noted on each page. It follows main, so some newer features need the latest build. Switch to 简体中文 or use search at the top.
 </div>

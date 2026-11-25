@@ -23,8 +23,9 @@ ListView {
         const kept = contentY
         model = entries
         Qt.callLater(() => {
-            contentY = Math.max(originY, Math.min(kept, originY + contentHeight - height))
-            reveal()
+            if (!root) return
+            root.contentY = Math.max(root.originY, Math.min(kept, root.originY + root.contentHeight - root.height))
+            root.reveal()
         })
     }
     Component.onCompleted: model = entries

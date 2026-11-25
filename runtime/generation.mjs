@@ -114,9 +114,16 @@ export function createGenerationExtension({getConfig, fetchImpl = globalThis.fet
     ]) {
       const selection = generationSelection(getConfig(), kind);
       if (!selection) continue;
+      const hasImageLimits = kind === "image" && Number.isInteger(selection.maxCount) && selection.maxCount >= 1 && selection.maxCount <= 10 &&
+        Array.isArray(selection.formats) && selection.formats.length > 0 && selection.formats.every(value => ["png", "jpeg", "webp"].includes(value));
+      const toolParameters = hasImageLimits ? Type.Object({
+        ...parameters.properties,
+        count: Type.Optional(Type.Integer({minimum: 1, maximum: selection.maxCount})),
+        format: formats(selection.formats),
+      }) : parameters;
       pi.registerTool({name, label: kind === "image" ? "生成图片" : kind === "video" ? "生成视频" : "生成语音", exposure: "direct",
         description: `Generate ${kind === "image" ? "images" : kind === "video" ? "video" : "speech"} with the configured ${selection.provider} / ${selection.model}. Sends the prompt or text to that provider after user confirmation. Saves new files in the current workspace without overwriting existing files, and displays them in chat. Optional output_filename must be a plain filename.${kind === "video" ? " Video output is MP4; seconds is a positive integer string and size is WIDTHxHEIGHT. Progress is reported while generation runs." : ""} Omitted options use Umeko's generation settings. Returns paths, never media bytes to the chat model.`,
-        annotations: {readOnlyHint: false, destructiveHint: false}, parameters,
+        annotations: {readOnlyHint: false, destructiveHint: false}, parameters: toolParameters,
         async execute(id, params, signal, onUpdate, ctx) {
           signal?.throwIfAborted();
           checkFilename(params.output_filename);

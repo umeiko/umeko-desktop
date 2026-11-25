@@ -10,6 +10,27 @@ from umeko_provider_sdk.network import validate_ca_file
 
 
 class PreferencesMixin:
+    @Slot(str, result=bool)
+    def saveRequestHeaders(self, raw):
+        from .request_headers import validate
+        old = self.store.data.get('requestHeaders')
+        try:
+            value = validate(json.loads(raw))
+            if value == old:
+                return True
+            self.store.data['requestHeaders'] = value
+            self.store.save()
+        except (ValueError, OSError, RuntimeError) as error:
+            if old is None:
+                self.store.data.pop('requestHeaders', None)
+            else:
+                self.store.data['requestHeaders'] = old
+            self.toast.emit(str(error))
+            return False
+        self.changed.emit()
+        self.toast.emit('请求头已保存，将用于后续模型请求')
+        return True
+
     @Slot(int, result=bool)
     def setSessionCacheSize(self, size):
         if type(size) is not int or not 0 <= size <= 2147483647:
@@ -33,6 +54,7 @@ class PreferencesMixin:
     @Slot(str, result=bool)
     def saveMultimodalSettings(self, raw):
         from .multimodal_settings import normalize, validate
+        from .generation import capabilities
         old = self.store.data['multimodal']
         try:
             if self._models_busy():
@@ -44,11 +66,13 @@ class PreferencesMixin:
                     row['model'] = ''
                     continue
                 provider = self.gateway.provider(row['providerId'])
-                if not provider or (provider['api'] != 'openai' and
-                                    kind not in provider.get('generationCapabilities', [])):
+                if not provider or kind not in capabilities(provider):
                     raise ValueError('请选择支持该生成功能的供应商')
                 if not row['model']:
                     raise ValueError('请输入模型 ID')
+                if provider.get('api') == 'image':
+                    from .image_providers import parameters
+                    parameters(provider, row['model'], row)
                 if kind == 'speech' and not row['voice']:
                     raise ValueError('请输入供应商支持的音色 ID')
             if value == old:
@@ -77,17 +101,66 @@ class PreferencesMixin:
         except (ValueError, OSError, RuntimeError) as error:
             self.store.data['desktop'] = old
             self.toast.emit(str(error)); return False
-        self.documentPreview.refreshWebPolicy()
-        pool = getattr(self, '_pool', None)
-        if pool:
-            for record in tuple(pool.records.values()):
-                if record.process:
-                    pool.write(record, {'type':'desktop_settings', 'webview':configuration(value)})
-        self.changed.emit()
+        if any(value[key] != old[key] for key in ('autoOpenSubmissions', 'webDisplay')):
+            self.documentPreview.refreshWebPolicy()
+            pool = getattr(self, '_pool', None)
+            if pool:
+                policy = configuration(value)
+                for record in tuple(pool.records.values()):
+                    if record.process:
+                        pool.write(record, {'type':'desktop_settings', 'webview':policy})
+        if old['remoteWorkspaceEnabled'] != value['remoteWorkspaceEnabled']:
+            self._remote_workspace_tools_changed()
         self.desktopSettingsChanged.emit()
-        if value['webDisplay'] == 'embedded' and configuration().get('disabled'):
+        if old['webDisplay'] != value['webDisplay'] and value['webDisplay'] == 'embedded' and configuration().get('disabled'):
             self.toast.emit('重启 Umeko 后可使用内置网页预览')
         return True
+
+    def _remote_network_settings_changed(self):
+        from .remote_environments import network_config
+        self.remoteEnvironmentsChanged.emit()
+        payload = {'type': 'desktop_settings', 'remoteNetwork': network_config(self.store)}
+        self._remote_service.refresh_network()
+        for record in tuple(self._pool.records.values()):
+            if record.process:
+                self._pool.write(record, payload)
+
+    def _save_remote_network_setting(self, name, value):
+        old = self.store.data.get(name)
+        if old == value:
+            return True
+        self.store.data[name] = value
+        try:
+            self.store.save()
+        except (OSError, RuntimeError) as error:
+            if old is None:
+                self.store.data.pop(name, None)
+            else:
+                self.store.data[name] = old
+            self.toast.emit(str(error))
+            return False
+        self._remote_network_settings_changed()
+        return True
+
+    @Slot(bool, result=bool)
+    def setRemoteNetworkEnabled(self, enabled):
+        return self._save_remote_network_setting('remoteNetworkEnabled', enabled)
+
+    @Slot(str, result=bool)
+    def setRemoteNetworkProxy(self, address):
+        address = address.strip()
+        if address:
+            try:
+                value = urllib.parse.urlsplit(address)
+                valid = (value.scheme in ('http', 'https', 'socks5', 'socks5h') and value.hostname
+                         and value.port != 0 and not value.username and not value.password
+                         and value.path in ('', '/') and not value.query and not value.fragment)
+            except ValueError:
+                valid = False
+            if not valid:
+                self.toast.emit('请输入不含凭据的 HTTP、HTTPS 或 SOCKS5 代理地址')
+                return False
+        return self._save_remote_network_setting('remoteNetworkProxy', address)
 
     def _open_browser(self, url):
         try:

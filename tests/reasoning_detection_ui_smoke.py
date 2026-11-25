@@ -62,7 +62,7 @@ STATES = {
         "reasoningLevelsAuto": True, "reasoningFormatAuto": True, "reasoningFormat": "openai",
         "reasoningDetection": {"state": "known", "levels": ["low", "high", "max"], "verified": True},
         "reasoningFormatDetection": {"state": "known", "format": "openai", "verified": False,
-                                     "offSupported": False, "status": "cannot-disable"}},
+                                     "onObserved": True, "offSupported": False, "status": "cannot-disable"}},
 }
 
 
@@ -236,10 +236,10 @@ ApplicationWindow {
 
             texts = open_state("auto-known")
             assert shown("providerModelReasoning_autoLevels") and not shown("providerModelReasoning_manualLevels")
-            assert text("providerModelReasoning_levelsState") == "已检测"
+            assert text("providerModelReasoning_levelsState") == "已观察到档位变化"
             assert "1  Low" in texts and "3  High" in texts, texts
             assert text("providerModelReasoning_formatState") == "已检测：通过 chat_template_kwargs 里的 enable_thinking 开关"
-            assert text("providerModelReasoning_formatNote") == "已确认可以开启和关闭思考"
+            assert text("providerModelReasoning_formatNote") == "已观察到开启和关闭时的思考变化"
             assert not shown("providerModelReasoning_alwaysThinks")
             assert find("providerModelReasoning_format", content).property("currentIndex") == 0
             shot("dialog-auto-detected" + suffix)
@@ -257,9 +257,9 @@ ApplicationWindow {
             shot("dialog-failed" + suffix)
 
             texts = open_state("unverified")
-            assert text("providerModelReasoning_levelsState") == "已检测 · 档位未经验证"
-            assert "服务端接受任何档位值" in text("providerModelReasoning_levelsNote")
-            assert "7  Max" in texts and "共 7 档，从低到高，不含关闭" in texts, texts
+            assert text("providerModelReasoning_levelsState") == "档位效果未能确认"
+            assert "暂用常用档位" in text("providerModelReasoning_levelsNote")
+            assert "7  Max" in texts and "常用档位：7 档" in texts, texts
             shot("dialog-unverified" + suffix)
 
             open_state("manual-levels")
@@ -279,8 +279,8 @@ ApplicationWindow {
 
             open_state("always-thinks")
             assert shown("providerModelReasoning_alwaysThinks")
-            assert "这个模型总会思考，选「关闭」也会思考" in visible_texts(content)
-            assert text("providerModelReasoning_formatState") == "已检测：通过 reasoning_effort 设置，关闭时不发送"
+            assert "本次未找到可关闭思考的方式" in visible_texts(content)
+            assert text("providerModelReasoning_formatState") == "开关效果未能确认"
             shot("dialog-always-thinks" + suffix)
             invoke(dialog, "close")
 
@@ -294,7 +294,7 @@ ApplicationWindow {
             slider = find("reasoningEffortSlider")
             note = find("reasoningOffNote")
             assert slider.property("to") == 4 and slider.property("value") == 3
-            assert note.isVisible() and note.property("text") == "这个模型总会思考，选「关闭」也会思考"
+            assert note.isVisible() and note.property("text") == "本次未找到可关闭思考的方式"
             note_bottom = note.mapToScene(note.boundingRect().bottomLeft()).y()
             manage = find("manageProvidersButton")
             assert note_bottom <= manage.mapToScene(manage.boundingRect().topLeft()).y(), "note overlaps the footer"

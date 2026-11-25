@@ -17,45 +17,55 @@ Column {
     spacing: compact ? 6 : 12
     Repeater {
         model: root.blocks.length
-        Column {
+        Loader {
+            id: part
             required property int index
             property var modelData: root.blocks[index] || ({code:false, text:"", language:""})
             width: root.width
-            SelectableText {
-                id: proseText
-                conversationLinks: true
-                selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset + index
-                visible: !modelData.code; width: parent.width
-                text: modelData.code ? "" : modelData.html !== undefined ? modelData.html : root.markdown ? Markdown.forQt(modelData.text) : modelData.text; color: root.textColor
-                wrapMode: TextEdit.Wrap; textFormat: modelData.html !== undefined ? TextEdit.RichText : root.markdown ? TextEdit.MarkdownText : TextEdit.PlainText
-                font.pixelSize: Theme.font(13, visible, root.selectionController)
-                TextSpacing { document: proseText.textDocument; factor: Theme.proseLineHeight }
-            }
-            Rectangle {
-                visible: modelData.code; width: parent.width; height: codeText.contentHeight + 60
-                radius: 9; color: Theme.dark ? "#171c19" : "#f3f5f0"; border.color: Theme.line
-                Text { x: 14; y: 12; text: modelData.language || I18n.t("代码"); font.pixelSize: Theme.font(10, visible, root.selectionController); color: Theme.muted; font.family: "Consolas" }
-                ActionButton {
-                    id: copyButton; objectName: "copyCode_" + index
-                    selectionController: root.selectionController
-                    property bool copied: false
-                    anchors.right: parent.right; anchors.rightMargin: 6; y: 4; height: Theme.control(28)
-                    text: copied ? I18n.t("已复制") : I18n.t("复制"); glyph: copied ? "check" : "copy"; quiet: true
-                    onClicked: { backend.copy(modelData.text); copied = true; resetCopy.restart() }
-                    Timer { id: resetCopy; interval: 1600; onTriggered: copyButton.copied = false }
-                }
+            sourceComponent: modelData.code ? code : prose
+            Component {
+                id: prose
                 SelectableText {
-                    selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset + index
-                    id: codeText; objectName: "codeBlock_" + index
-                    readonly property var syntaxColors: codeColors
-                    x: 14; y: 42; width: parent.width - 28
-                    text: modelData.code ? modelData.text : ""; color: Theme.ink
-                    wrapMode: TextEdit.WrapAnywhere; textFormat: TextEdit.PlainText
-                    font.family: "Consolas"; font.pixelSize: Theme.font(12, visible, root.selectionController)
-                    SyntaxHighlighter {
-                        id: codeColors
-                        objectName: "syntax_" + root.messageIndex + "_" + (root.blockOffset + index)
-                        document: codeText.textDocument; language: modelData.language || ""; dark: Theme.dark; enabled: codeText.visible
+                    id: proseText
+                    conversationLinks: true
+                    selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset + part.index
+                    text: part.modelData.html !== undefined ? part.modelData.html : root.markdown ? Markdown.forQt(part.modelData.text) : part.modelData.text
+                    color: root.textColor
+                    wrapMode: TextEdit.Wrap; textFormat: part.modelData.html !== undefined ? TextEdit.RichText : root.markdown ? TextEdit.MarkdownText : TextEdit.PlainText
+                    font.pixelSize: Theme.font(13, visible, root.selectionController)
+                    TextSpacing { document: proseText.textDocument; factor: Theme.proseLineHeight }
+                }
+            }
+            Component {
+                id: code
+                Rectangle {
+                    height: codeText.contentHeight + 60
+                    radius: 9; color: Theme.dark ? "#171c19" : "#f3f5f0"; border.color: Theme.line
+                    Text { x: 14; y: 12; text: part.modelData.language || I18n.t("代码"); font.pixelSize: Theme.font(10, visible, root.selectionController); color: Theme.muted; font.family: "Consolas" }
+                    ActionButton {
+                        id: copyButton; objectName: "copyCode_" + part.index
+                        selectionController: root.selectionController
+                        property bool copied: false
+                        anchors.right: parent.right; anchors.rightMargin: 6; y: 4; height: Theme.control(28)
+                        text: copied ? I18n.t("已复制") : I18n.t("复制"); glyph: copied ? "check" : "copy"; quiet: true
+                        onClicked: { backend.copy(part.modelData.text); copied = true; resetCopy.restart() }
+                        Timer { id: resetCopy; interval: 1600; onTriggered: copyButton.copied = false }
+                    }
+                    SelectableText {
+                        selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset + part.index
+                        id: codeText; objectName: "codeBlock_" + part.index
+                        readonly property var syntaxColors: codeColors
+                        x: 14; y: 42; width: parent.width - 28
+                        text: part.modelData.text; color: Theme.ink
+                        wrapMode: TextEdit.WrapAnywhere; textFormat: TextEdit.PlainText
+                        font.family: "Consolas"; font.pixelSize: Theme.font(12, visible, root.selectionController)
+                        SyntaxHighlighter {
+                            id: codeColors
+                            objectName: "syntax_" + root.messageIndex + "_" + (root.blockOffset + part.index)
+                            document: codeText.textDocument; language: part.modelData.language || ""; dark: Theme.dark
+                            enabled: codeText.visible && (!root.selectionController || root.selectionController.sessionActive)
+                            renderGeneration: root.selectionController ? root.selectionController.renderGeneration : 0
+                        }
                     }
                 }
             }

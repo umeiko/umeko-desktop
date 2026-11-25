@@ -18,6 +18,15 @@ Rectangle {
     property var selected: null
     property var details: ({})
     property var profile: ({preset:"full"})
+    readonly property bool readOnly: !!sdk.session.cowork || !!profile.readOnly
+    readonly property bool remoteWorkspaceEnabled: sdk.session.remoteWorkspaceEnabled === true
+    onRemoteWorkspaceEnabledChanged: {
+        initialized = false
+        inventoryRequested = false
+        inventoryLoading = false
+        toolPages = {}
+        initialize()
+    }
     readonly property bool sessionBusy: !!sdk.session.busy
     onSessionBusyChanged:if(initialized && !sessionBusy && sdk.active && Object.keys(pending).length===0)status(false)
     property string expandedId: ""
@@ -62,7 +71,7 @@ Rectangle {
         const args=selected ? {details:selected.id,limit:1} : {query:query,offset:append ? rows.length : 0,limit:12}
         request("pi.status",args,append ? "append" : "status")
     }
-    function scan() { selected=null; inventoryRequested=false; notice=""; request("pi.scan") }
+    function scan() { selected=null; inventoryRequested=false; lastError=false; notice=""; if(readOnly)status(false);else request("pi.scan") }
     function select(row) {
         selected=row;details={};update={};notice=""
         if(row.id==="builtin:pi-tools")status(false);else request("pi.details",{id:row.id})
@@ -71,7 +80,9 @@ Rectangle {
     function back() { selected=null;notice="";status(false) }
     function openLink(url) { if(/^https?:\/\//i.test(url)) Qt.openUrlExternally(url) }
     function initialize() {
-        const key=JSON.stringify([sdk.session.token,sdk.session.workspace])
+        const identity=[sdk.session.token,sdk.session.workspace]
+        if(sdk.session.cowork) identity.push(sdk.session.coworkRevision || 0)
+        const key=JSON.stringify(identity)
         if(sessionKey!==key){sessionKey=key;initialized=false;selected=null;rows=[];toolPages={};pending={};job="";hostBusy=false;inventoryRequested=false;inventoryLoading=false;expandedId=""}
         if(sdk.active && !initialized){initialized=true;status(false)}
     }
@@ -103,9 +114,7 @@ Rectangle {
     }
     component SessionSwitch: Switch {
         id:toggle
-        implicitWidth:40*root.sdk.scale;implicitHeight:28*root.sdk.scale;padding:0;spacing:0
-        indicator:Rectangle {width:34*root.sdk.scale;height:19*root.sdk.scale;x:3*root.sdk.scale;y:(toggle.height-height)/2;radius:height/2;color:toggle.checked ? root.sdk.colors.accent : root.sdk.colors.line
-            Rectangle {width:15*root.sdk.scale;height:15*root.sdk.scale;radius:height/2;x:toggle.checked ? parent.width-width-2*root.sdk.scale : 2*root.sdk.scale;y:2*root.sdk.scale;color:root.sdk.colors.surface;Behavior on x {NumberAnimation {duration:100}}}}
+        implicitWidth:48*root.sdk.scale;implicitHeight:28*root.sdk.scale;padding:0;spacing:0
         contentItem:Item {}
         HoverHandler {cursorShape:parent.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor}
     }
@@ -126,9 +135,9 @@ Rectangle {
                 contentItem:RowLayout {
                     spacing:8
                     Text {Layout.leftMargin:12;Layout.fillWidth:true;text:toolRow.modelData.name;textFormat:Text.PlainText;elide:Text.ElideMiddle;color:group.pluginEnabled ? root.sdk.colors.ink : root.sdk.colors.muted;font.pixelSize:12*root.sdk.scale}
-                    SessionSwitch {objectName:"piToolSwitch_"+toolRow.modelData.name;Layout.rightMargin:4;checked:!!toolRow.modelData.enabled;enabled:group.pluginEnabled && !root.working && !root.sessionBusy;onClicked:root.request("pi.tool",{name:toolRow.modelData.name,enabled:checked})}
+                    SessionSwitch {objectName:"piToolSwitch_"+toolRow.modelData.name;Layout.rightMargin:4;checked:!!toolRow.modelData.enabled;enabled:!root.readOnly && group.pluginEnabled && !root.working && !root.sessionBusy;onClicked:root.request("pi.tool",{name:toolRow.modelData.name,enabled:checked})}
                 }
-                onClicked:if(group.pluginEnabled && !root.working && !root.sessionBusy)root.request("pi.tool",{name:modelData.name,enabled:!modelData.enabled})
+                onClicked:if(!root.readOnly && group.pluginEnabled && !root.working && !root.sessionBusy)root.request("pi.tool",{name:modelData.name,enabled:!modelData.enabled})
                 ToolTip.visible:hovered;ToolTip.delay:450;ToolTip.timeout:12000
                 ToolTip.text:modelData.description || modelData.name
                 HoverHandler {cursorShape:Qt.PointingHandCursor}
@@ -145,11 +154,11 @@ Rectangle {
             IconImage {visible:!root.selected;source:"assets/pi.svg";color:root.sdk.colors.muted;sourceSize:Qt.size(48,48);Layout.preferredWidth:24;Layout.preferredHeight:24}
             Text {Layout.fillWidth:true;text:root.selected ? "" : root.t("Pi 能力","Pi capabilities");textFormat:Text.PlainText;elide:Text.ElideRight;color:root.sdk.colors.ink;font.pixelSize:16*root.sdk.scale;font.bold:true}
             SmallButton {objectName:"piManagerCancelInstall";visible:root.jobOperation==="pi.install" && !!root.job;enabled:root.canCancel;text:root.t("取消安装","Cancel install");onClicked:{root.canCancel=false;root.request("pi.cancel",{id:root.job})}}
-            SmallButton {objectName:"piManagerInstall";visible:!root.selected;iconName:"add";text:"";ToolTip.text:root.t("安装插件","Install extension");enabled:!root.working;onClicked:install.open()}
+            SmallButton {objectName:"piManagerInstall";visible:!root.selected && !root.readOnly;iconName:"add";text:"";ToolTip.text:root.t("安装插件","Install extension");enabled:!root.working;onClicked:install.open()}
             SmallButton {objectName:"piManagerRefresh";visible:!root.selected;iconName:"refresh";text:"";ToolTip.text:root.t("刷新本地列表","Refresh local inventory");enabled:!root.working;onClicked:root.scan()}
         }
         RowLayout {
-            objectName:"piCapabilityPresets";Layout.fillWidth:true;spacing:3
+            objectName:"piCapabilityPresets";visible:!root.readOnly;Layout.fillWidth:true;spacing:3
             Repeater {
                 model:[{id:"standard",label:"标准 Pi",en:"Standard"},{id:"minimal",label:"极简",en:"Minimal"},{id:"full",label:"默认",en:"Default"},{id:"custom",label:"自定义",en:"Custom"}]
                 delegate:Button {
@@ -168,7 +177,7 @@ Rectangle {
         }
         Text {
             objectName:"piManagerNotice";visible:text!=="";Layout.fillWidth:true
-            text:root.notice;textFormat:Text.PlainText;color:root.sdk.colors.muted;font.pixelSize:12*root.sdk.scale
+            text:root.notice || (root.readOnly ? root.t("工具由所属 Coworker 大类配置。","Tools are configured by the Coworker type.") : "");textFormat:Text.PlainText;color:root.sdk.colors.muted;font.pixelSize:12*root.sdk.scale
             wrapMode:Text.Wrap;maximumLineCount:3;elide:Text.ElideRight
         }
         ColumnLayout {
@@ -206,8 +215,8 @@ Rectangle {
                                 Text {Layout.fillWidth:true;text:entry.modelData.id==="builtin:pi-tools" ? root.t("Pi 原生工具","Native Pi tools") : entry.modelData.name;elide:Text.ElideRight;textFormat:Text.PlainText;color:root.sdk.colors.ink;font.pixelSize:12*root.sdk.scale}
                                 Text {visible:entry.modelData.toolCount>0;text:entry.modelData.enabledToolCount+" / "+entry.modelData.toolCount;color:root.sdk.colors.muted;font.pixelSize:11*root.sdk.scale}
                             }
-                            SessionSwitch {objectName:"piPluginSwitch_"+entry.modelData.id;checked:!!entry.modelData.sessionEnabled;enabled:!root.working && !root.sessionBusy;onClicked:root.request("pi.plugin",{id:entry.modelData.id,enabled:checked})}
-                            SmallButton {objectName:"piExtensionDetails_"+entry.modelData.id;visible:entry.modelData.id!=="builtin:pi-tools";iconName:"more";text:"";padding:4*root.sdk.scale;horizontalPadding:4*root.sdk.scale;verticalPadding:4*root.sdk.scale;implicitWidth:28*root.sdk.scale;implicitHeight:28*root.sdk.scale;Layout.minimumWidth:implicitWidth;Layout.maximumWidth:implicitWidth;Layout.preferredHeight:implicitHeight;Layout.alignment:Qt.AlignVCenter;ToolTip.text:root.t("说明与管理","Details and management");onClicked:root.select(entry.modelData)}
+                            SessionSwitch {objectName:"piPluginSwitch_"+entry.modelData.id;checked:!!entry.modelData.sessionEnabled;enabled:!root.readOnly && !root.working && !root.sessionBusy;onClicked:root.request("pi.plugin",{id:entry.modelData.id,enabled:checked})}
+                            SmallButton {objectName:"piExtensionDetails_"+entry.modelData.id;visible:!root.readOnly && entry.modelData.id!=="builtin:pi-tools";iconName:"more";text:"";padding:4*root.sdk.scale;horizontalPadding:4*root.sdk.scale;verticalPadding:4*root.sdk.scale;implicitWidth:28*root.sdk.scale;implicitHeight:28*root.sdk.scale;Layout.minimumWidth:implicitWidth;Layout.maximumWidth:implicitWidth;Layout.preferredHeight:implicitHeight;Layout.alignment:Qt.AlignVCenter;ToolTip.text:root.t("说明与管理","Details and management");onClicked:root.select(entry.modelData)}
                         }
                         onClicked:root.expand(entry.modelData)
                         HoverHandler {cursorShape:Qt.PointingHandCursor}

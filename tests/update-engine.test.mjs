@@ -9,7 +9,7 @@ import {Readable} from 'node:stream';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {fileURLToPath} from 'node:url';
-import {selectAsset, download, install, prepare, platformKey, safeName} from '../runtime/update-engine.mjs';
+import {selectAsset, download, install, prepare, platformKey, safeName, windowsProcessGuard, renameRetry} from '../runtime/update-engine.mjs';
 import {cleanupStartup} from '../runtime/update-cleanup.mjs';
 
 const sha = b => createHash('sha256').update(b).digest('hex');
@@ -171,6 +171,82 @@ test('an uncommitted or cancelled handoff never replaces the application',async 
     assert.equal(await fs.readFile(job.executable,'utf8'),'old app');
   }
 });
+
+test('Windows parent handle remains unsignaled after exit code is set; timeout leaves installation untouched',async t=>{
+  for (const language of ['zh','en']) {
+    const {job,jobFile,base}=await fixture(t,zip(entries()));
+    let waited, closed = false;
+    // A published exit code is deliberately irrelevant to the handle result.
+    const guard = {exitCode:0, async wait(timeout) {waited=timeout; return false;}, close() {closed=true;}};
+    job.language=language;
+    const before=await fs.readdir(base);
+    const message=language==='en' ? 'The previous version has not fully exited. Restart your computer before updating again.' :
+      '旧版本进程没有完全退出，请重启电脑后再更新。';
+    await assert.rejects(install(job,jobFile,{guard}), error=>error.message===message);
+    assert.ok(waited>119000 && waited<=120000);
+    assert.equal(closed,true);
+    assert.equal(await fs.readFile(job.executable,'utf8'),'old app');
+    assert.deepEqual(await fs.readdir(base),before);
+    console.log(`parent-timeout (${language}): ${message}; installation unchanged`);
+  }
+});
+
+test('Windows installer holds the live parent handle until termination before replacing files', {skip:process.platform!=='win32'}, async t=>{
+  const {job,jobFile}=await fixture(t,zip(entries()));
+  const child=spawn(process.execPath,['-e',"console.log('ready');setInterval(()=>{},1000)"],{windowsHide:true,stdio:['ignore','pipe','pipe']});
+  t.after(()=>{if(child.exitCode===null && child.signalCode===null)child.kill();});
+  await once(child.stdout,'data');
+  job.parentPid=child.pid;
+  const guard=await windowsProcessGuard(job,jobFile);
+  let finished=false;
+  const result=install(job,jobFile,{guard}).then(()=>{finished=true;});
+  await new Promise(resolve=>setTimeout(resolve,250));
+  assert.equal(finished,false);
+  assert.equal(await fs.readFile(job.executable,'utf8'),'old app');
+  const exited=once(child,'exit');child.kill();await exited;
+  await result;
+  assert.equal(await fs.readFile(job.executable,'utf8'),'new app');
+  console.log('parent-handle: live parent => waiting; terminated parent => installation completed');
+});
+
+test('Windows rename diagnostics identify an external executable holding the installation working directory', {skip:process.platform!=='win32'}, async t=>{
+  const {job,jobFile,base}=await fixture(t,zip(entries()));
+  const sibling=job.installDir+'-sibling';await fs.mkdir(sibling);
+  const launch=cwd=>spawn(process.execPath,['-e',"console.log('ready');setInterval(()=>{},1000)"],{cwd,windowsHide:true,stdio:['ignore','pipe','pipe']});
+  const child=launch(job.installDir), unrelated=launch(sibling);
+  t.after(()=>{for(const worker of [child,unrelated])if(worker.exitCode===null && worker.signalCode===null)worker.kill();});
+  await Promise.all([once(child.stdout,'data'),once(unrelated.stdout,'data')]);
+  const guard=await windowsProcessGuard(job,jobFile);
+  t.after(()=>guard.close());
+  try {
+    assert.equal(await guard.wait(0),true);
+    const target=path.join(base,'renamed');
+    await assert.rejects(renameRetry(job.installDir,target,{guard}), error=>{
+      assert.ok(['EPERM','EACCES','EBUSY'].includes(error.code));
+      assert.equal(error.message,`安装目录正被这些程序使用：${path.basename(process.execPath)}。请关闭它们后重试。`);
+      console.log(`cwd-lock: ${error.message}`);
+      return true;
+    });
+    const exited=once(child,'exit');child.kill();await exited;
+    // The sibling process is still running and must not block this directory.
+    await renameRetry(job.installDir,target,{guard});
+    assert.equal(await fs.readFile(path.join(target,exe),'utf8'),'old app');
+    console.log('cwd-lock: holder terminated => rename succeeded; sibling process remained running');
+  } finally {
+    for (const worker of [child,unrelated]) {
+      if (worker.exitCode===null && worker.signalCode===null) {const exited=once(worker,'exit');worker.kill();await exited;}
+    }
+    await guard.close();
+  }
+});
+
+test('Windows locked-folder diagnostics localize unknown owners and preserve the error code',async t=>{
+  const rename=fs.rename;
+  fs.rename=async()=>{throw Object.assign(Error('locked'),{code:'EACCES'});};
+  t.after(()=>{fs.rename=rename;});
+  await assert.rejects(renameRetry('source','target',{guard:{async blockers(){return [];}},language:'en'}),error=>
+    error.code==='EACCES' && error.message==='The installation folder is being used by another program. Restart your computer before updating again.');
+});
 test('framework-style internal symlinks survive installation', {skip:process.platform==='win32'}, async t=>{
   for(const format of ['zip','tar']) {
     const extra=format==='zip'?[{name:'UmekoCpp/node-link',raw:'runtime/node',mode:0o120777}]:[{name:'UmekoCpp/node-link',target:'runtime/node'}];
@@ -243,11 +319,18 @@ test('first successful start removes legacy orphans, staging and stale partials 
   const active=path.join(context.downloadsDir,'.umeko-downloads','c'.repeat(64));
   const recent=path.join(context.downloadsDir,'.umeko-downloads','d'.repeat(64));
   for(const directory of [stage,stale,active,recent])await fs.mkdir(directory,{recursive:true});
-  await fs.writeFile(path.join(stale,'full.part'),'old partial');
-  await fs.writeFile(path.join(active,'lock.json'),JSON.stringify({pid:process.pid}));
-  await fs.utimes(recent,new Date(Date.now()+60000),new Date(Date.now()+60000));
+  const cutoff=Date.now(), oldTime=new Date(cutoff-60000), recentTime=new Date(cutoff+60000);
+  const partial=path.join(stale,'full.part'), lock=path.join(active,'lock.json');
+  await fs.writeFile(partial,'old partial');
+  await fs.utimes(partial,oldTime,oldTime);
+  await fs.utimes(stale,oldTime,oldTime);
+  await fs.writeFile(lock,JSON.stringify({pid:process.pid}));
+  // Make this job stale too: only the live PID should protect it.
+  await fs.utimes(lock,oldTime,oldTime);
+  await fs.utimes(active,oldTime,oldTime);
+  await fs.utimes(recent,recentTime,recentTime);
   const unrelated=path.join(context.downloadsDir,'my-document.zip');await fs.writeFile(unrelated,'user file');
-  const logs=[];const result=await cleanupStartup(context,{cutoff:Date.now()+1,log:entry=>logs.push(entry)});
+  const logs=[];const result=await cleanupStartup(context,{cutoff,log:entry=>logs.push(entry)});
   assert.deepEqual(result.failed,[]);
   await assert.rejects(fs.stat(backup),{code:'ENOENT'});
   await assert.rejects(fs.stat(stage),{code:'ENOENT'});
