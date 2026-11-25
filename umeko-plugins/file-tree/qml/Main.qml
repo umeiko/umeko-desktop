@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "../../../app/qml" as Umeko
 Rectangle {
     id: root
     objectName:"fileTreePluginPage"
@@ -47,7 +48,7 @@ Rectangle {
     }
     function call(method,args,kind) {
         const token=sdk.call(method,args)
-        if (!token) {error="插件暂时繁忙，请稍后重试";return false}
+        if (!token) {error=Umeko.I18n.t("插件暂时繁忙，请稍后重试");return false}
         const pending=Object.assign({},requests);pending[token]={kind:kind || method,path:args.path || "."};requests=pending;loading++
         return true
     }
@@ -97,7 +98,7 @@ Rectangle {
     function submitRename() {
         if(!renameEntry || renameBusy)return
         const name=renameDraft.trim()
-        if(!name || name==="." || name===".." || /[\\/\u0000]/.test(name)) {renameError="请输入有效的文件名称";return}
+        if(!name || name==="." || name===".." || /[\\/\u0000]/.test(name)) {renameError=Umeko.I18n.t("请输入有效的文件名称");return}
         if(name===renameEntry.split("/").pop()){cancelRename(true);return}
         renameError="";renameBusy=true
         if(!call("rename",{path:renameEntry,name:name})) {renameBusy=false;renameError=error;focusRename(false)}
@@ -119,8 +120,8 @@ Rectangle {
         const request=root.requests[token];if(!request)return
         const pending=Object.assign({},root.requests);delete pending[token];root.requests=pending;root.loading=Math.max(0,root.loading-1)
         if(!value.ok){
-            if(request.kind==="rename"){root.renameBusy=false;root.renameError=value.error || "重命名失败";Qt.callLater(function(){root.focusRename(false)})}
-            else root.error=value.error || "插件操作失败"
+            if(request.kind==="rename"){root.renameBusy=false;root.renameError=value.error || Umeko.I18n.t("重命名失败");Qt.callLater(function(){root.focusRename(false)})}
+            else root.error=value.error || Umeko.I18n.t("插件操作失败")
             return
         }
         const result=value.result || {}
@@ -144,11 +145,11 @@ Rectangle {
         anchors.fill:parent;spacing:0
         RowLayout {
             Layout.fillWidth:true;Layout.preferredHeight:30*root.sdk.scale;Layout.leftMargin:16*root.sdk.scale;Layout.rightMargin:8*root.sdk.scale;spacing:0
-            Text {text:"文件管理器";color:root.c.ink;font.family:"Segoe UI";font.pixelSize:11*root.sdk.scale;Layout.fillWidth:true}
-            VsButton {uiScale:root.sdk.scale;iconName:"filter";foreground:root.c.muted;hoverColor:root.c.hover;hint:"筛选文件";onClicked:{root.filterOpen=!root.filterOpen;if(root.filterOpen)filter.forceActiveFocus();else filter.clear()}}
-            VsButton {uiScale:root.sdk.scale;iconName:root.hidden?"eye":"eye-closed";foreground:root.c.muted;hoverColor:root.c.hover;hint:"显示隐藏文件";onClicked:{root.hidden=!root.hidden;root.refresh()}}
-            VsButton {uiScale:root.sdk.scale;iconName:"collapse-all";foreground:root.c.muted;hoverColor:root.c.hover;hint:"全部折叠";onClicked:{root.expanded=({".":true});root.rebuild()}}
-            VsButton {objectName:"fileTreeRefresh";uiScale:root.sdk.scale;iconName:"refresh";foreground:root.c.muted;hoverColor:root.c.hover;hint:"刷新";onClicked:root.refresh()}
+            Text {text:Umeko.I18n.t("文件管理器");color:root.c.ink;font.family:"Segoe UI";font.pixelSize:11*root.sdk.scale;Layout.fillWidth:true}
+            VsButton {uiScale:root.sdk.scale;iconName:"filter";foreground:root.c.muted;hoverColor:root.c.hover;hint:Umeko.I18n.t("筛选文件");onClicked:{root.filterOpen=!root.filterOpen;if(root.filterOpen)filter.forceActiveFocus();else filter.clear()}}
+            VsButton {uiScale:root.sdk.scale;iconName:root.hidden?"eye":"eye-closed";foreground:root.c.muted;hoverColor:root.c.hover;hint:Umeko.I18n.t("显示隐藏文件");onClicked:{root.hidden=!root.hidden;root.refresh()}}
+            VsButton {uiScale:root.sdk.scale;iconName:"collapse-all";foreground:root.c.muted;hoverColor:root.c.hover;hint:Umeko.I18n.t("全部折叠");onClicked:{root.expanded=({".":true});root.rebuild()}}
+            VsButton {objectName:"fileTreeRefresh";uiScale:root.sdk.scale;iconName:"refresh";foreground:root.c.muted;hoverColor:root.c.hover;hint:Umeko.I18n.t("刷新");onClicked:root.refresh()}
         }
         RowLayout {
             Layout.fillWidth:true;Layout.leftMargin:16*root.sdk.scale;Layout.rightMargin:8*root.sdk.scale;Layout.bottomMargin:6*root.sdk.scale;spacing:8*root.sdk.scale
@@ -171,14 +172,14 @@ Rectangle {
         }
         TextField {
             id:filter;objectName:"fileTreeFilter";visible:root.filterOpen;Layout.fillWidth:true;Layout.preferredHeight:26*root.sdk.scale;Layout.leftMargin:16*root.sdk.scale;Layout.rightMargin:16*root.sdk.scale;Layout.bottomMargin:6*root.sdk.scale
-            placeholderText:"筛选已加载的文件";font.family:"Segoe UI";font.pixelSize:13*root.sdk.scale;color:root.c.ink;selectByMouse:true
+            placeholderText:Umeko.I18n.t("筛选已加载的文件");font.family:"Segoe UI";font.pixelSize:13*root.sdk.scale;color:root.c.ink;selectByMouse:true
             background:Rectangle {color:root.c.bg;border.color:filter.activeFocus?root.c.accent:root.c.line;radius:3}
             onTextChanged:root.rebuild()
         }
         Rectangle {
             Layout.fillWidth:true;implicitHeight:22*root.sdk.scale;color:root.c.surface
             VsIcon {x:3*root.sdk.scale;anchors.verticalCenter:parent.verticalCenter;name:root.workspaceOpen?"chevron-down":"chevron-right";size:16*root.sdk.scale;color:root.c.ink}
-            Text {anchors.verticalCenter:parent.verticalCenter;x:22*root.sdk.scale;width:parent.width-x-8*root.sdk.scale;text:(root.rootName || root.sdk.session.workspace.split(/[\\/]/).pop() || "工作目录").toUpperCase();elide:Text.ElideRight;color:root.c.ink;font.family:"Segoe UI";font.pixelSize:11*root.sdk.scale;font.weight:Font.DemiBold;textFormat:Text.PlainText}
+            Text {anchors.verticalCenter:parent.verticalCenter;x:22*root.sdk.scale;width:parent.width-x-8*root.sdk.scale;text:(root.rootName || root.sdk.session.workspace.split(/[\\/]/).pop() || Umeko.I18n.t("工作目录")).toUpperCase();elide:Text.ElideRight;color:root.c.ink;font.family:"Segoe UI";font.pixelSize:11*root.sdk.scale;font.weight:Font.DemiBold;textFormat:Text.PlainText}
             MouseArea {anchors.fill:parent;onClicked:{root.workspaceOpen=!root.workspaceOpen;root.rebuild()}ToolTip.visible:containsMouse;ToolTip.text:root.sdk.session.workspace || ""}
         }
         Text {visible:!!root.error;Layout.fillWidth:true;Layout.margins:14;text:root.error;textFormat:Text.PlainText;color:root.c.danger;wrapMode:Text.Wrap;font.pixelSize:12*root.sdk.scale}
@@ -233,35 +234,35 @@ Rectangle {
                     onDoubleClicked:event=>{if(event.button===Qt.LeftButton && !row.directory)root.openFile(row.path)}
                 }
             }
-            Text {anchors.centerIn:parent;visible:list.count===0 && !root.loading && !root.error;text:"当前目录为空";color:root.c.muted;font.pixelSize:12*root.sdk.scale}
+            Text {anchors.centerIn:parent;visible:list.count===0 && !root.loading && !root.error;text:Umeko.I18n.t("当前目录为空");color:root.c.muted;font.pixelSize:12*root.sdk.scale}
         }
-        Text {visible:root.clipped;Layout.fillWidth:true;Layout.margins:10;wrapMode:Text.Wrap;text:"目录条目较多，已限制单层及总预览数量。刷新可重新加载。";color:root.c.muted;font.pixelSize:10*root.sdk.scale}
+        Text {visible:root.clipped;Layout.fillWidth:true;Layout.margins:10;wrapMode:Text.Wrap;text:Umeko.I18n.t("目录条目较多，已限制单层及总预览数量。刷新可重新加载。");color:root.c.muted;font.pixelSize:10*root.sdk.scale}
     }
     Menu {
         id:menu;objectName:"fileManagerContextMenu";parent:root;width:Math.min(340*root.sdk.scale,root.width-12);padding:4
         onClosed:if(root.renameEntry)Qt.callLater(function(){root.focusRename(false)})
         font.family:"Segoe UI";font.pixelSize:13*root.sdk.scale;palette.text:root.c.ink;palette.window:root.c.surface
         background:Rectangle {color:root.c.surface;radius:5;border.color:root.c.line}
-        VsMenuItem {objectName:"fileManagerPreview";text:"预览文件";colors:root.c;uiScale:root.sdk.scale;enabled:!root.contextEntry.directory;onTriggered:root.call("preview",{path:root.contextEntry.path})}
-        VsMenuItem {text:"打开方式…";colors:root.c;uiScale:root.sdk.scale;enabled:!root.contextEntry.directory;onTriggered:root.call("openWith",{path:root.contextEntry.path})}
-        VsMenuItem {text:"在文件管理器中打开";colors:root.c;uiScale:root.sdk.scale;onTriggered:root.call("reveal",{path:root.contextEntry.path})}
+        VsMenuItem {objectName:"fileManagerPreview";text:Umeko.I18n.t("预览文件");colors:root.c;uiScale:root.sdk.scale;enabled:!root.contextEntry.directory;onTriggered:root.call("preview",{path:root.contextEntry.path})}
+        VsMenuItem {text:Umeko.I18n.t("打开方式…");colors:root.c;uiScale:root.sdk.scale;enabled:!root.contextEntry.directory;onTriggered:root.call("openWith",{path:root.contextEntry.path})}
+        VsMenuItem {text:Umeko.I18n.t("在文件管理器中打开");colors:root.c;uiScale:root.sdk.scale;onTriggered:root.call("reveal",{path:root.contextEntry.path})}
         MenuSeparator {contentItem:Rectangle {implicitHeight:1;color:root.c.line}}
-        VsMenuItem {text:"附加到聊天";colors:root.c;uiScale:root.sdk.scale;enabled:!root.contextEntry.directory;onTriggered:root.call("attach",{path:root.contextEntry.path})}
+        VsMenuItem {text:Umeko.I18n.t("附加到聊天");colors:root.c;uiScale:root.sdk.scale;enabled:!root.contextEntry.directory;onTriggered:root.call("attach",{path:root.contextEntry.path})}
         MenuSeparator {contentItem:Rectangle {implicitHeight:1;color:root.c.line}}
-        VsMenuItem {objectName:"fileManagerCut";text:"剪切";shortcutText:"Ctrl+X";colors:root.c;uiScale:root.sdk.scale;onTriggered:root.call("cut",{path:root.contextEntry.path})}
-        VsMenuItem {objectName:"fileManagerCopy";text:"复制";shortcutText:"Ctrl+C";colors:root.c;uiScale:root.sdk.scale;onTriggered:root.call("copy",{path:root.contextEntry.path})}
+        VsMenuItem {objectName:"fileManagerCut";text:Umeko.I18n.t("剪切");shortcutText:"Ctrl+X";colors:root.c;uiScale:root.sdk.scale;onTriggered:root.call("cut",{path:root.contextEntry.path})}
+        VsMenuItem {objectName:"fileManagerCopy";text:Umeko.I18n.t("复制");shortcutText:"Ctrl+C";colors:root.c;uiScale:root.sdk.scale;onTriggered:root.call("copy",{path:root.contextEntry.path})}
         MenuSeparator {contentItem:Rectangle {implicitHeight:1;color:root.c.line}}
-        VsMenuItem {text:"复制路径";shortcutText:"Shift+Alt+C";colors:root.c;uiScale:root.sdk.scale;onTriggered:root.call("copyPath",{path:root.contextEntry.path},"copyPath")}
-        VsMenuItem {text:"复制相对路径";shortcutText:"Ctrl+K Ctrl+Shift+C";colors:root.c;uiScale:root.sdk.scale;onTriggered:root.sdk.copyText(root.contextEntry.path)}
+        VsMenuItem {text:Umeko.I18n.t("复制路径");shortcutText:"Shift+Alt+C";colors:root.c;uiScale:root.sdk.scale;onTriggered:root.call("copyPath",{path:root.contextEntry.path},"copyPath")}
+        VsMenuItem {text:Umeko.I18n.t("复制相对路径");shortcutText:"Ctrl+K Ctrl+Shift+C";colors:root.c;uiScale:root.sdk.scale;onTriggered:root.sdk.copyText(root.contextEntry.path)}
         MenuSeparator {contentItem:Rectangle {implicitHeight:1;color:root.c.line}}
-        VsMenuItem {objectName:"fileManagerRename";text:"重命名…";shortcutText:"F2";colors:root.c;uiScale:root.sdk.scale;onTriggered:root.renameSelected()}
-        VsMenuItem {objectName:"fileManagerDelete";text:"永久删除";shortcutText:"Del";colors:root.c;uiScale:root.sdk.scale;onTriggered:root.deleteSelected()}
+        VsMenuItem {objectName:"fileManagerRename";text:Umeko.I18n.t("重命名…");shortcutText:"F2";colors:root.c;uiScale:root.sdk.scale;onTriggered:root.renameSelected()}
+        VsMenuItem {objectName:"fileManagerDelete";text:Umeko.I18n.t("永久删除");shortcutText:"Del";colors:root.c;uiScale:root.sdk.scale;onTriggered:root.deleteSelected()}
     }
     Dialog {
         id:deleteDialog;objectName:"fileManagerDeleteDialog";parent:root;anchors.centerIn:parent;modal:true
-        width:Math.min(460*root.sdk.scale,parent.width-24);title:"永久删除？";palette.window:root.c.surface;palette.windowText:root.c.ink
+        width:Math.min(460*root.sdk.scale,parent.width-24);title:Umeko.I18n.t("永久删除？");palette.window:root.c.surface;palette.windowText:root.c.ink
         Overlay.modal:Rectangle {color:"transparent"}
-        contentItem:Text {text:root.deleteEntry+"\n此操作无法撤销。";color:root.c.ink;textFormat:Text.PlainText;wrapMode:Text.Wrap;font.pixelSize:13*root.sdk.scale}
-        footer:RowLayout {Item {Layout.fillWidth:true}Button {text:"取消";onClicked:deleteDialog.close()}Button {objectName:"fileManagerDeleteConfirm";text:"永久删除";palette.buttonText:root.c.danger;onClicked:{deleteDialog.close();root.call("delete",{path:root.deleteEntry})}}}
+        contentItem:Text {text:root.deleteEntry+Umeko.I18n.t("\n此操作无法撤销。");color:root.c.ink;textFormat:Text.PlainText;wrapMode:Text.Wrap;font.pixelSize:13*root.sdk.scale}
+        footer:RowLayout {Item {Layout.fillWidth:true}Button {text:Umeko.I18n.t("取消");onClicked:deleteDialog.close()}Button {objectName:"fileManagerDeleteConfirm";text:Umeko.I18n.t("永久删除");palette.buttonText:root.c.danger;onClicked:{deleteDialog.close();root.call("delete",{path:root.deleteEntry})}}}
     }
 }

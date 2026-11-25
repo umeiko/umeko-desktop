@@ -193,10 +193,13 @@ try:
     assert not root.property('notice') and not root.property('importFailure')
     # Explicit Import retains its replacement workflow; paste never opens it.
     click('skillManagerImport');find('skillManagerImportSource').setProperty('text','/fixture/copied-skill')
+    assert not find('skillManagerImportHelp').isVisible()
     click('skillManagerImportPreview');idle()
     assert variant(root.property('importDecisions'))=={'notes-helper':'replace','existing':'skip','blocked':'skip'}
     assert not find('skillManagerImportReplace_blocked').isEnabled()
+    assert find('skillManagerImportHelp').isVisible()
     click('skillManagerImportSubmit');idle();assert variant(root.property('importResult'))['imported']==['notes-helper']
+    assert not find('skillManagerImportHelp').isVisible()
     click('skillManagerBack');idle()
     click('skillManagerEntry_skill-00',Qt.RightButton);click('skillManagerMenu_delete');idle();assert len(sdk.rows)==39
     assert js('acceptsImportUrls(["file:///tmp/test.skill"])')
@@ -225,6 +228,11 @@ try:
     drop('skillManagerScope_project')
     assert root.property('route')=='main' and root.property('importFailure')==sdk.import_error
     assert find('skillManagerImportError').isVisible() and len(app.topLevelWindows())==windows
+    help_label = find('skillManagerImportErrorHelp')
+    assert help_label.isVisible() and help_label.property('text') == 'Try dragging the Skill into the chat and ask Umeko to set it up.'
+    sdk._language='zh';sdk.languageChanged.emit();QTest.qWait(20)
+    assert help_label.property('text') == '试试直接把 Skill 拖进聊天区，让 Umeko 帮你配置！'
+    sdk._language='en';sdk.languageChanged.emit();QTest.qWait(20)
     click('skillManagerImportErrorClose');sdk.import_error='';assert not root.property('importFailure')
     sdk.fail=True;js('paste("project")');idle()
     assert root.property('importFailure')=='Fixture failure' and root.property('route')=='main'

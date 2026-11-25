@@ -231,6 +231,13 @@ def main():
             assert find('skillManagerImportError').isVisible() and not host.panelApproval
             assert (target/'SKILL.md').read_bytes()==original
             find('skillManagerImportErrorClose').clicked.emit()
+            find('skillManagerImport').clicked.emit()
+            find('skillManagerImportSource').setProperty('text',str(workspace/'missing.skill'))
+            js('previewImport()')
+            wait_for(lambda:idle() and find('skillManagerImportHelp').isVisible(),
+                     'Invalid Skill preview did not show the chat drop hint')
+            find('skillManagerBack').clicked.emit()
+            wait_for(idle,'Returning from the import page did not refresh Skills')
 
             # Renaming changes only the directory. Denied deletion keeps it.
             actual=variant(widget.property('skills'));row=next(row for row in actual if row['name']=='global-guide' and row['scope']=='project')

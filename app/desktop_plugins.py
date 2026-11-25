@@ -197,7 +197,7 @@ class DesktopPlugins(QObject):
     def page(self):
         if not self._page:return {}
         e=self.entries[self._page];worker=self.workers.get(self._page)
-        return {'id':self._page,'title':e['name'],**self.icon_for(self._page),'url':QUrl.fromLocalFile(str(self.path(self._page)/e['page'])).toString(),'selection':self._selection,'config':self.settings.get('config',{}).get(self._page,read(self.path(self._page)/e.get('config','config.json'),{})),'error':self._error,'loading':not worker or not worker['ready']}
+        return {'id':self._page,'title':e['name'],'builtin':e.get('builtin',False),**self.icon_for(self._page),'url':QUrl.fromLocalFile(str(self.path(self._page)/e['page'])).toString(),'selection':self._selection,'config':self.settings.get('config',{}).get(self._page,read(self.path(self._page)/e.get('config','config.json'),{})),'error':self._error,'loading':not worker or not worker['ready']}
     @Property(bool,notify=changed)
     def busy(self):return self._busy
     @Property(str,notify=changed)

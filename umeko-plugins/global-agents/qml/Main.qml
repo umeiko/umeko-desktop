@@ -28,10 +28,10 @@ Rectangle {
     property var chosenSkills: []
     property var chosenTools: []
     readonly property var nativeToolCatalog: [
-        {id:"read",description:"读取文件和图片"}, {id:"bash",description:"执行终端命令"},
-        {id:"powershell",description:"执行 PowerShell 命令"}, {id:"edit",description:"编辑已有文件"},
-        {id:"write",description:"创建或覆盖文件"}, {id:"grep",description:"搜索文件内容"},
-        {id:"find",description:"查找文件"}, {id:"ls",description:"列出目录"}
+        {id:"read",description:Umeko.I18n.t("读取文件和图片")}, {id:"bash",description:Umeko.I18n.t("执行终端命令")},
+        {id:"powershell",description:Umeko.I18n.t("执行 PowerShell 命令")}, {id:"edit",description:Umeko.I18n.t("编辑已有文件")},
+        {id:"write",description:Umeko.I18n.t("创建或覆盖文件")}, {id:"grep",description:Umeko.I18n.t("搜索文件内容")},
+        {id:"find",description:Umeko.I18n.t("查找文件")}, {id:"ls",description:Umeko.I18n.t("列出目录")}
     ]
     function toggleTool(id,enabled) {let next=chosenTools.filter(value=>value!==id);if(enabled)next.push(id);chosenTools=next}
     property var skillCatalog: []
@@ -64,8 +64,9 @@ Rectangle {
     }
     Timer {interval:1000;repeat:true;running:root.sdk.active;onTriggered:root.clock=Date.now()}
     readonly property var current: state.agents.find(row => row.id===selected) || ({})
-    readonly property string helpTitle: selected?"与子智能体对话":section==="bridge"?"Agent Bus（智能体总线）":section==="requests"?"请求":"全局子智能体"
-    readonly property string helpText: selected?"连接的会话可双向发送任务和回复。总线消息按到达顺序排队，聊天上方可删除待处理消息或移到队首，优先处理不打断当前任务。输入框可手动 steering；停止会取消其未完成请求。历史保留最近一个完整压缩区间和本轮对话。点击上下文圈环查看用量或压缩，通过右侧问题目录跳转。":section==="bridge"?"展开项目并点击会话，进入二级列表。勾选对应的全局子智能体，建立与该会话的一条双向链路；双方均可发送任务并接收回复。关闭会取消这条链路上的未完成请求。":section==="requests"?"仅显示尚未结束的请求，完成后自动移出。取消不会撤销已执行的操作。":"创建拥有独立上下文的子智能体，向已授权的对话分派任务。开启‘允许自动被创建’后，模型请求直接创建；关闭时需要你在预填表单中确认。模型未指定形象时随机分配，创建成功后自动连接来源对话。"
+    readonly property string requestsLabel: sdk.language === "en" ? "Requests" : "请求"
+    readonly property string helpTitle: selected?Umeko.I18n.t("与子智能体对话"):section==="bridge"?Umeko.I18n.t("Agent Bus（智能体总线）"):section==="requests"?requestsLabel:Umeko.I18n.t("全局子智能体")
+    readonly property string helpText: selected?Umeko.I18n.t("连接的会话可双向发送任务和回复。总线消息按到达顺序排队，聊天上方可删除待处理消息或移到队首，优先处理不打断当前任务。输入框可手动 steering；停止会取消其未完成请求。历史保留最近一个完整压缩区间和本轮对话。点击上下文圈环查看用量或压缩，通过右侧问题目录跳转。"):section==="bridge"?Umeko.I18n.t("展开项目并点击会话，进入二级列表。勾选对应的全局子智能体，建立与该会话的一条双向链路；双方均可发送任务并接收回复。关闭会取消这条链路上的未完成请求。"):section==="requests"?Umeko.I18n.t("仅显示尚未结束的请求，完成后自动移出。取消不会撤销已执行的操作。"):Umeko.I18n.t("创建拥有独立上下文的子智能体，向已授权的对话分派任务。开启‘允许自动被创建’后，模型请求直接创建；关闭时需要你在预填表单中确认。模型未指定形象时随机分配，创建成功后自动连接来源对话。")
     color: c.surface
     function bridgeTree(projects, targets, query, collapsed) {
         // Pi returns native paths; saved projects may use forward slashes.
@@ -81,7 +82,7 @@ Rectangle {
             const key=pathKey(target.workspace)
             if(!groups[key]) {
                 const parts=key.replace(/\\/g,"/").split("/").filter(Boolean)
-                groups[key]={key:key,name:names[key] || parts[parts.length-1] || (key?key:"未选择项目"),path:key,chats:[]}
+                groups[key]={key:key,name:names[key] || parts[parts.length-1] || (key?key:Umeko.I18n.t("未选择项目")),path:key,chats:[]}
             }
             groups[key].chats.push(target)
         }
@@ -89,7 +90,7 @@ Rectangle {
         const ordered=Object.values(groups).sort((a,b)=>a.name.localeCompare(b.name) || a.key.localeCompare(b.key))
         for(const group of ordered) {
             const projectMatches=!needle || (group.name+" "+group.path).toLowerCase().includes(needle)
-            const chats=group.chats.filter(row=>projectMatches || (row.title || "新会话").toLowerCase().includes(needle))
+            const chats=group.chats.filter(row=>projectMatches || (row.title || Umeko.I18n.t("新会话")).toLowerCase().includes(needle))
             if(!chats.length)continue
             const closed=!needle && !!collapsed[group.key]
             rows.push({kind:"project",key:group.key,title:group.name,path:group.path,count:chats.length,collapsed:closed})
@@ -120,7 +121,7 @@ Rectangle {
     onCollapsedProjectsChanged:updateBusTree()
     function call(method,args) {
         const id=sdk.call(method,args || {})
-        if(!id){error="服务忙，请稍后重试";return}
+        if(!id){error=Umeko.I18n.t("服务忙，请稍后重试");return}
         const next=Object.assign({},pending);next[id]=method;pending=next
         return id
     }
@@ -145,7 +146,7 @@ Rectangle {
         if(proposalId && proposalId!==draft.requestId && !formSubmitting){proposalId="";proposalSource="";createDialog.close()}
         if(!draft.requestId || draft.requestId===dismissedProposalId || createDialog.opened || formSubmitting)return
         form("")
-        proposalId=draft.requestId;proposalSource=draft.sourceTitle || "会话"
+        proposalId=draft.requestId;proposalSource=draft.sourceTitle || Umeko.I18n.t("会话")
         nameInput.text=draft.name || "";instructions.text=draft.instructions || "";chosenCharacter=draft.character
         modelPicker.currentIndex=state.models.findIndex(row=>row.id===draft.model)
     }
@@ -174,16 +175,16 @@ Rectangle {
             if(method==="listSkills" || method==="importSkills")root.skillStarting=false
             if(method==="skillsJob")root.skillPolling=false
             if(["listSkills","importSkills","skillsJob"].includes(method)) {
-                if(!value.ok){root.skillJob="";root.skillError=value.error || "Skills 加载失败";return}
+                if(!value.ok){root.skillJob="";root.skillError=value.error || Umeko.I18n.t("Skills 加载失败");return}
                 const result=value.result || ({})
                 if(method!=="skillsJob"){root.skillJob=result.jobId || "";return}
                 if(result.status==="running")return
                 root.skillJob=""
-                if(result.status!=="completed" || !result.result || !result.result.ok){root.skillError=(result.result || {}).error || "Skills 加载失败";return}
+                if(result.status!=="completed" || !result.result || !result.result.ok){root.skillError=(result.result || {}).error || Umeko.I18n.t("Skills 加载失败");return}
                 root.skillCatalog=result.result.skills || []
                 return
             }
-            if(!value.ok){root.error=value.error || "操作失败";if(createDialog.opened)formError.text=root.error;return}
+            if(!value.ok){root.error=value.error || Umeko.I18n.t("操作失败");if(createDialog.opened)formError.text=root.error;return}
             root.error=""
             if(method==="snapshot") {
                 if(root.snapshotSelection!==root.selected){Qt.callLater(root.refresh);return}
@@ -240,10 +241,10 @@ Rectangle {
             ColumnLayout {
                 Layout.fillWidth:true;spacing:3
                 RowLayout {Layout.fillWidth:true;spacing:6
-                    LabelText {objectName:"globalSubagentsHeading";text:root.selected?(root.current.name || "全局子智能体"):"全局子智能体";font.pixelSize:19*root.sdk.scale;font.weight:Font.DemiBold;Layout.fillWidth:true}
+                    LabelText {objectName:"globalSubagentsHeading";text:root.selected?(root.current.name || Umeko.I18n.t("全局子智能体")):Umeko.I18n.t("全局子智能体");font.pixelSize:19*root.sdk.scale;font.weight:Font.DemiBold;Layout.fillWidth:true}
                     ToolButton {
                         id:helpButton;objectName:"globalSubagentsHelpButton";Layout.preferredWidth:28;Layout.preferredHeight:28
-                        Accessible.name:"使用说明"
+                        Accessible.name:Umeko.I18n.t("使用说明")
                         background:Rectangle {radius:8;color:helpButton.hovered?root.c.hover:"transparent"}
                         contentItem:Item {Rectangle {anchors.centerIn:parent;width:16;height:16;radius:8;color:"transparent";border.color:root.c.muted
                             Text {anchors.centerIn:parent;text:"?";color:root.c.muted;font.pixelSize:12}
@@ -253,24 +254,24 @@ Rectangle {
                 }
                 LabelText {visible:!!root.selected;text:root.activityText(root.current);color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
             }
-            SmallButton {objectName:"newGlobalAgentButton";visible:!root.selected;text:"＋ 创建";primary:true;onClicked:root.form("")}
+            SmallButton {objectName:"newGlobalAgentButton";visible:!root.selected;text:Umeko.I18n.t("＋ 创建");primary:true;onClicked:root.form("")}
             SmallButton {visible:!!root.selected;text:root.current.busy || root.current.state==="quota_paused"?Umeko.I18n.t("切换模型"):Umeko.I18n.t("设置");onClicked:root.form(root.selected)}
         }
         RowLayout {
             visible:!root.selected;spacing:8
-            SmallButton {objectName:"globalSubagentsTabButton";text:"子智能体  "+root.state.agents.length;primary:root.section==="agents";onClicked:root.section="agents"}
-            SmallButton {objectName:"agentBusTabButton";text:"智能体总线";primary:root.section==="bridge";onClicked:root.section="bridge"}
-            SmallButton {objectName:"agentBusRequestsTabButton";text:"请求";primary:root.section==="requests";onClicked:root.section="requests"}
+            SmallButton {objectName:"globalSubagentsTabButton";text:Umeko.I18n.t("子智能体  %1").arg(root.state.agents.length);primary:root.section==="agents";onClicked:root.section="agents"}
+            SmallButton {objectName:"agentBusTabButton";text:Umeko.I18n.t("智能体总线");primary:root.section==="bridge";onClicked:root.section="bridge"}
+            SmallButton {objectName:"agentBusRequestsTabButton";text:root.requestsLabel;primary:root.section==="requests";onClicked:root.section="requests"}
         }
-        CompactCheckBox {objectName:"allowAutomaticGlobalCreation";visible:!root.selected && root.section==="agents";text:"允许自动被创建";checked:!!root.state.allowAutomaticCreation;onToggled:root.call("setAutomaticCreation",{enabled:checked})}
+        CompactCheckBox {objectName:"allowAutomaticGlobalCreation";visible:!root.selected && root.section==="agents";text:Umeko.I18n.t("允许自动被创建");checked:!!root.state.allowAutomaticCreation;onToggled:root.call("setAutomaticCreation",{enabled:checked})}
         LabelText {visible:!!root.error || !!root.state.error;text:root.error || root.state.error || "";color:root.c.danger;wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true}
         StackLayout {
             Layout.fillWidth:true;Layout.fillHeight:true
             currentIndex:root.selected?3:root.section==="agents"?0:root.section==="bridge"?1:2
             Item {
                 ColumnLayout {anchors.centerIn:parent;spacing:12;visible:!root.state.agents.length
-                    LabelText {text:"暂无全局子智能体";color:root.c.muted;Layout.alignment:Qt.AlignHCenter}
-                    SmallButton {objectName:"createFirstGlobalAgentButton";text:"创建第一个全局子智能体";primary:true;Layout.alignment:Qt.AlignHCenter;onClicked:root.form("")}
+                    LabelText {text:Umeko.I18n.t("暂无全局子智能体");color:root.c.muted;Layout.alignment:Qt.AlignHCenter}
+                    SmallButton {objectName:"createFirstGlobalAgentButton";text:Umeko.I18n.t("创建第一个全局子智能体");primary:true;Layout.alignment:Qt.AlignHCenter;onClicked:root.form("")}
                 }
                 ListView {
                     objectName:"globalAgentsList"
@@ -286,7 +287,7 @@ Rectangle {
                             Image {source:modelData.portrait;Layout.preferredWidth:54;Layout.preferredHeight:54;fillMode:Image.PreserveAspectFit;sourceSize.width:108;sourceSize.height:108}
                             ColumnLayout {Layout.fillWidth:true;spacing:5
                                 LabelText {text:modelData.name;Layout.fillWidth:true;font.weight:Font.Medium}
-                                LabelText {text:root.activityText(modelData)+(modelData.queued?" · 待处理 "+modelData.queued:"");color:root.c.accent;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
+                                LabelText {text:root.activityText(modelData)+(modelData.queued?Umeko.I18n.t(" · 待处理 %1").arg(modelData.queued):"");color:root.c.accent;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
                             }
                             LabelText {text:"›";color:root.c.muted;font.pixelSize:24}
                         }
@@ -298,11 +299,11 @@ Rectangle {
                 RowLayout {
                     visible:!!root.busSessionId;Layout.fillWidth:true;spacing:8
                     SmallButton {objectName:"agentBusBackButton";text:"‹";onClicked:root.busSessionId=""}
-                    LabelText {objectName:"agentBusConnectionHeading";text:root.busSession.title || "新会话";font.pixelSize:13*root.sdk.scale;Layout.fillWidth:true}
+                    LabelText {objectName:"agentBusConnectionHeading";text:root.busSession.title || Umeko.I18n.t("新会话");font.pixelSize:13*root.sdk.scale;Layout.fillWidth:true}
                     TreeIcon {iconName:"link"}
-                    LabelText {text:"全局子智能体";font.pixelSize:12*root.sdk.scale;color:root.c.muted}
+                    LabelText {text:Umeko.I18n.t("全局子智能体");font.pixelSize:12*root.sdk.scale;color:root.c.muted}
                 }
-                Field {id:bridgeSearch;objectName:"agentBusSearch";visible:!root.busSessionId;Layout.fillWidth:true;implicitHeight:32*root.sdk.scale;font.pixelSize:13*root.sdk.scale;placeholderText:"搜索项目或对话";onTextChanged:root.updateBusTree()}
+                Field {id:bridgeSearch;objectName:"agentBusSearch";visible:!root.busSessionId;Layout.fillWidth:true;implicitHeight:32*root.sdk.scale;font.pixelSize:13*root.sdk.scale;placeholderText:Umeko.I18n.t("搜索项目或对话");onTextChanged:root.updateBusTree()}
                 ListView {
                     objectName:"agentBusProjectTree";visible:!root.busSessionId
                     Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:0
@@ -325,12 +326,12 @@ Rectangle {
                             anchors.fill:parent;anchors.leftMargin:(treeRow.project?2:26)*root.sdk.scale;anchors.rightMargin:4*root.sdk.scale;spacing:5*root.sdk.scale
                             TreeIcon {visible:treeRow.project;iconName:modelData.collapsed?"chevron-right":"chevron-down"}
                             TreeIcon {iconName:treeRow.project?"folder":"chat";color:!treeRow.project && !!modelData.busy?root.c.accent:root.c.muted}
-                            LabelText {text:modelData.title || "新会话";font.pixelSize:13*root.sdk.scale;font.weight:treeRow.project?Font.Medium:Font.Normal;Layout.fillWidth:true}
+                            LabelText {text:modelData.title || Umeko.I18n.t("新会话");font.pixelSize:13*root.sdk.scale;font.weight:treeRow.project?Font.Medium:Font.Normal;Layout.fillWidth:true}
                             LabelText {text:treeRow.project?String(modelData.count):String((modelData.bridgeAgents || []).length);color:root.c.muted;font.pixelSize:12*root.sdk.scale}
                             LabelText {visible:!treeRow.project;text:"›";color:root.c.muted}
                         }
                     }
-                    LabelText {anchors.centerIn:parent;visible:parent.count===0;text:bridgeSearch.text?"没有匹配的项目或对话":"暂无对话";color:root.c.muted}
+                    LabelText {anchors.centerIn:parent;visible:parent.count===0;text:bridgeSearch.text?Umeko.I18n.t("没有匹配的项目或对话"):Umeko.I18n.t("暂无对话");color:root.c.muted}
                 }
                 ListView {
                     objectName:"agentBusConnectionsList";visible:!!root.busSessionId
@@ -347,11 +348,11 @@ Rectangle {
                             objectName:"agentBusCheckbox_"+root.busSessionId+"_"+modelData.id
                             checked:!!root.busSession.bridgeAll || (root.busSession.bridgeAgents || []).includes(modelData.id)
                             text:"";Layout.preferredWidth:24*root.sdk.scale
-                            Accessible.name:(root.busSession.title || "会话")+" 与 "+modelData.name+"的双向连接"
+                            Accessible.name:Umeko.I18n.t("%1 与 %2的双向连接").arg(root.busSession.title || Umeko.I18n.t("会话")).arg(modelData.name)
                             onToggled:root.call("setBridge",{id:root.busSessionId,agentId:modelData.id,enabled:checked})
                         }
                     }
-                    LabelText {anchors.centerIn:parent;visible:!root.state.agents.length;text:"暂无全局子智能体";color:root.c.muted}
+                    LabelText {anchors.centerIn:parent;visible:!root.state.agents.length;text:Umeko.I18n.t("暂无全局子智能体");color:root.c.muted}
                 }
             }
             ListView {
@@ -361,14 +362,14 @@ Rectangle {
                     width:ListView.view.width;height:requestText.implicitHeight+56;radius:12;color:root.c.bg;border.color:root.c.line
                     ColumnLayout {anchors.fill:parent;anchors.margins:12;spacing:7
                         RowLayout {Layout.fillWidth:true
-                            LabelText {text:({queued:"等待投递",sending:"投递中",running:"已投递 · 等待结果",completed:"已完成",failed:"失败",cancelled:"已取消",interrupted:"已中断"})[modelData.status] || modelData.status;color:modelData.status==="failed"?root.c.danger:root.c.accent;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale}
+                            LabelText {text:({queued:Umeko.I18n.t("等待投递"),sending:Umeko.I18n.t("投递中"),running:Umeko.I18n.t("已投递 · 等待结果"),completed:Umeko.I18n.t("已完成"),failed:Umeko.I18n.t("失败"),cancelled:Umeko.I18n.t("已取消"),interrupted:Umeko.I18n.t("已中断")})[modelData.status] || modelData.status;color:modelData.status==="failed"?root.c.danger:root.c.accent;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale}
                             LabelText {text:modelData.id.slice(0,8);color:root.c.muted;font.pixelSize:11*root.sdk.scale}
-                            SmallButton {visible:!(["completed","failed","cancelled","interrupted"].includes(modelData.status));text:"取消";onClicked:root.call("cancelRequest",{id:modelData.id})}
+                            SmallButton {visible:!(["completed","failed","cancelled","interrupted"].includes(modelData.status));text:Umeko.I18n.t("取消");onClicked:root.call("cancelRequest",{id:modelData.id})}
                         }
                         LabelText {id:requestText;text:(modelData.result || modelData.text || "").slice(0,500);wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale}
                     }
                 }
-                LabelText {anchors.centerIn:parent;visible:!root.state.requests.length;text:"暂无进行中的请求";color:root.c.muted}
+                LabelText {anchors.centerIn:parent;visible:!root.state.requests.length;text:Umeko.I18n.t("暂无进行中的请求");color:root.c.muted}
             }
             ColumnLayout {
                 spacing:12
@@ -381,7 +382,7 @@ Rectangle {
                         item.controller=root.sdk.conversation
                         item.viewName="globalAgentConversation"
                         item.messagePrefix="widget"
-                        item.assistantName=Qt.binding(()=>root.current.name || "子智能体")
+                        item.assistantName=Qt.binding(()=>root.current.name || Umeko.I18n.t("子智能体"))
                         item.portrait=Qt.binding(()=>root.current.portrait || "")
                         item.replyPortrait=Qt.binding(()=>root.current.replyPortrait || root.current.portrait || "")
                     }
@@ -390,15 +391,15 @@ Rectangle {
                     visible:!!root.state.approval && !!root.state.approval.id
                     Layout.fillWidth:true;implicitHeight:approvalBox.implicitHeight+24;radius:12;color:root.c.accentBg;border.color:root.c.accent
                     ColumnLayout {id:approvalBox;anchors.fill:parent;anchors.margins:12;spacing:8
-                        LabelText {text:(root.state.approval || {}).title || "等待你的确认";font.weight:Font.Medium;Layout.fillWidth:true}
+                        LabelText {text:(root.state.approval || {}).title || Umeko.I18n.t("等待你的确认");font.weight:Font.Medium;Layout.fillWidth:true}
                         ScrollView {Layout.fillWidth:true;Layout.preferredHeight:Math.min(120,approvalDetail.implicitHeight);clip:true
                             TextArea {id:approvalDetail;text:((root.state.approval || {}).detail || "").slice(0,16000);readOnly:true;selectByMouse:true;wrapMode:TextArea.Wrap;color:root.c.ink;font.pixelSize:12*root.sdk.scale;background:null;padding:0}
                         }
-                        Field {id:approvalInput;visible:["input","editor"].includes((root.state.approval || {}).method);Layout.fillWidth:true;placeholderText:"回复"}
+                        Field {id:approvalInput;visible:["input","editor"].includes((root.state.approval || {}).method);Layout.fillWidth:true;placeholderText:Umeko.I18n.t("回复")}
                         ComboBox {id:approvalChoice;visible:(root.state.approval || {}).method==="select";model:(root.state.approval || {}).options || [];Layout.fillWidth:true}
                         RowLayout {Layout.fillWidth:true;Item {Layout.fillWidth:true}
-                            SmallButton {text:"拒绝";onClicked:root.call("respond",{id:root.selected,requestId:root.state.approval.id,value:root.state.approval.method==="confirm"?false:null})}
-                            SmallButton {objectName:"confirmGlobalAgentApproval";text:"确认";primary:true;onClicked:root.call("respond",{id:root.selected,requestId:root.state.approval.id,value:root.state.approval.method==="confirm"?true:root.state.approval.method==="select"?approvalChoice.currentText:approvalInput.text})}
+                            SmallButton {text:Umeko.I18n.t("拒绝");onClicked:root.call("respond",{id:root.selected,requestId:root.state.approval.id,value:root.state.approval.method==="confirm"?false:null})}
+                            SmallButton {objectName:"confirmGlobalAgentApproval";text:Umeko.I18n.t("确认");primary:true;onClicked:root.call("respond",{id:root.selected,requestId:root.state.approval.id,value:root.state.approval.method==="confirm"?true:root.state.approval.method==="select"?approvalChoice.currentText:approvalInput.text})}
                         }
                     }
                 }
@@ -409,7 +410,7 @@ Rectangle {
                         Layout.fillWidth:true;Layout.preferredHeight:item?item.implicitHeight:0
                         visible:Layout.preferredHeight>0
                         sourceComponent:root.sdk.queuedMessagesComponent
-                        onLoaded:{item.controller=busQueueController;item.objectPrefix="global_bus_";item.primaryActionText="优先";item.showSourceNames=true;item.editEnabled=false;item.heightLimit=170*root.sdk.scale}
+                        onLoaded:{item.controller=busQueueController;item.objectPrefix="global_bus_";item.primaryActionText=Umeko.I18n.t("优先");item.showSourceNames=true;item.editEnabled=false;item.heightLimit=170*root.sdk.scale}
                         Connections {target:busQueue.item;function onInspected(message){root.queuePreview=message;queueMessageDialog.open()}}
                     }
                 Rectangle {
@@ -417,7 +418,7 @@ Rectangle {
                     ScrollView {anchors.fill:parent;anchors.margins:10;clip:true
                         Umeko.ChatInput {
                             id: input; objectName: "globalAgentInput"
-                            placeholderText: root.current.busy ? "补充或引导当前任务…" : "输入任务…"
+                            placeholderText: root.current.busy ? Umeko.I18n.t("补充或引导当前任务…") : Umeko.I18n.t("输入任务…")
                             color: root.c.ink; placeholderTextColor: root.c.muted
                             selectionColor: root.c.accent; selectedTextColor: "white"
                             selectByMouse: true; wrapMode: TextArea.Wrap
@@ -434,10 +435,10 @@ Rectangle {
                         Layout.preferredWidth:25*root.sdk.scale;Layout.preferredHeight:31*root.sdk.scale
                         onLoaded:{item.objectName="globalAgentContextUsage";item.controller=root.sdk.conversation}
                     }
-                    SmallButton {visible:root.current.busy || root.state.requests.some(row=>!(["completed","failed","cancelled","interrupted"].includes(row.status)) && row.source==="agent:"+root.selected);text:"停止";dangerous:true;onClicked:root.call("stop",{id:root.selected})}
+                    SmallButton {visible:root.current.busy || root.state.requests.some(row=>!(["completed","failed","cancelled","interrupted"].includes(row.status)) && row.source==="agent:"+root.selected);text:Umeko.I18n.t("停止");dangerous:true;onClicked:root.call("stop",{id:root.selected})}
                     Item {Layout.fillWidth:true}
                     LabelText {text:Umeko.I18n.t("Ctrl+Enter / Alt+Enter / Shift+Enter 换行");font.pixelSize:10*root.sdk.scale;color:root.c.muted}
-                    SmallButton {objectName:"sendGlobalAgentButton";text:root.current.busy?"引导":"发送";primary:true;enabled:!!input.text.trim();onClicked:root.send()}
+                    SmallButton {objectName:"sendGlobalAgentButton";text:root.current.busy?Umeko.I18n.t("引导"):Umeko.I18n.t("发送");primary:true;enabled:!!input.text.trim();onClicked:root.send()}
                 }
             }
         }
@@ -447,11 +448,11 @@ Rectangle {
         width:Math.min(460,root.width-28);height:Math.min(420,root.height-28);modal:true;padding:16
         background:Rectangle {radius:14;color:root.c.surface;border.color:root.c.line}
         contentItem:ColumnLayout {spacing:10
-            LabelText {text:root.queuePreview.sourceTitle || "待处理消息";font.weight:Font.Medium;Layout.fillWidth:true}
+            LabelText {text:root.queuePreview.sourceTitle || Umeko.I18n.t("待处理消息");font.weight:Font.Medium;Layout.fillWidth:true}
             ScrollView {Layout.fillWidth:true;Layout.fillHeight:true;clip:true
                 TextArea {objectName:"globalBusQueuePreviewText";text:root.queuePreview.text || "";readOnly:true;selectByMouse:true;wrapMode:TextArea.Wrap;color:root.c.ink;font.pixelSize:13*root.sdk.scale;background:null}
             }
-            SmallButton {text:"关闭";Layout.alignment:Qt.AlignRight;onClicked:queueMessageDialog.close()}
+            SmallButton {text:Umeko.I18n.t("关闭");Layout.alignment:Qt.AlignRight;onClicked:queueMessageDialog.close()}
         }
     }
     Popup {
@@ -549,10 +550,10 @@ Rectangle {
         contentItem:ColumnLayout {spacing:14
             RowLayout {Layout.fillWidth:true;spacing:8
                 LabelText {text:"Skills";font.pixelSize:18*root.sdk.scale;font.weight:Font.DemiBold;Layout.fillWidth:true}
-                SmallButton {objectName:"importGlobalAgentSkill";text:"导入";enabled:!root.skillWorking;onClicked:skillImportMenu.popup()}
+                SmallButton {objectName:"importGlobalAgentSkill";text:Umeko.I18n.t("导入");enabled:!root.skillWorking;onClicked:skillImportMenu.popup()}
             }
-            LabelText {text:"仅对这个子智能体启用";color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
-            Field {id:skillSearch;objectName:"globalAgentSkillSearch";Layout.fillWidth:true;placeholderText:"搜索 Skills"}
+            LabelText {text:Umeko.I18n.t("仅对这个子智能体启用");color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true}
+            Field {id:skillSearch;objectName:"globalAgentSkillSearch";Layout.fillWidth:true;placeholderText:Umeko.I18n.t("搜索 Skills")}
             ListView {
                 objectName:"globalAgentSkillsList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:4
                 model:root.skillCatalog.filter(row=>(row.name+" "+root.skillDescription(row)).toLowerCase().includes(skillSearch.text.toLowerCase()))
@@ -563,18 +564,18 @@ Rectangle {
                     ColumnLayout {anchors.fill:parent;anchors.margins:10;spacing:4
                         RowLayout {Layout.fillWidth:true
                             CompactCheckBox {objectName:"globalSkill_"+modelData.id;text:modelData.name;checked:root.chosenSkills.includes(modelData.id);enabled:modelData.valid;Layout.fillWidth:true;onToggled:root.toggleSkill(modelData.id,checked)}
-                            LabelText {text:modelData.source==="builtin"?"内置":"已导入";color:root.c.muted;font.pixelSize:11*root.sdk.scale}
+                            LabelText {text:modelData.source==="builtin"?Umeko.I18n.t("内置"):Umeko.I18n.t("已导入");color:root.c.muted;font.pixelSize:11*root.sdk.scale}
                         }
                         LabelText {text:root.skillDescription(modelData);color:root.c.muted;Layout.fillWidth:true;font.pixelSize:11*root.sdk.scale;maximumLineCount:2;wrapMode:Text.Wrap}
                     }
                 }
-                LabelText {anchors.centerIn:parent;visible:!parent.count;text:root.skillWorking?"正在加载…":"暂无 Skills";color:root.c.muted}
+                LabelText {anchors.centerIn:parent;visible:!parent.count;text:root.skillWorking?Umeko.I18n.t("正在加载…"):Umeko.I18n.t("暂无 Skills");color:root.c.muted}
             }
             LabelText {objectName:"globalAgentSkillError";visible:!!root.skillError;text:root.skillError;color:root.c.danger;Layout.fillWidth:true;wrapMode:Text.Wrap;elide:Text.ElideNone;font.pixelSize:12*root.sdk.scale}
             RowLayout {Layout.fillWidth:true
-                SmallButton {text:"全部关闭";enabled:root.chosenSkills.length>0;onClicked:root.chosenSkills=[]}
+                SmallButton {text:Umeko.I18n.t("全部关闭");enabled:root.chosenSkills.length>0;onClicked:root.chosenSkills=[]}
                 Item {Layout.fillWidth:true}
-                SmallButton {objectName:"doneGlobalAgentSkills";text:"完成";primary:true;onClicked:skillsDialog.close()}
+                SmallButton {objectName:"doneGlobalAgentSkills";text:Umeko.I18n.t("完成");primary:true;onClicked:skillsDialog.close()}
             }
         }
     }
@@ -584,10 +585,10 @@ Rectangle {
         background:Rectangle {radius:18;color:root.c.surface;border.color:root.c.line}
         contentItem:ColumnLayout {spacing:14
             RowLayout {Layout.fillWidth:true
-                LabelText {text:"可用工具";font.pixelSize:18*root.sdk.scale;font.weight:Font.DemiBold;Layout.fillWidth:true}
-                SmallButton {objectName:"selectAllGlobalAgentTools";text:"全选";enabled:root.chosenTools.length<root.nativeToolCatalog.length;onClicked:root.chosenTools=root.nativeToolCatalog.map(tool=>tool.id)}
+                LabelText {text:Umeko.I18n.t("可用工具");font.pixelSize:18*root.sdk.scale;font.weight:Font.DemiBold;Layout.fillWidth:true}
+                SmallButton {objectName:"selectAllGlobalAgentTools";text:Umeko.I18n.t("全选");enabled:root.chosenTools.length<root.nativeToolCatalog.length;onClicked:root.chosenTools=root.nativeToolCatalog.map(tool=>tool.id)}
             }
-            LabelText {text:"为当前子智能体启用 Pi 原生工具。沿用现有工具权限设置。";color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true;wrapMode:Text.Wrap;elide:Text.ElideNone}
+            LabelText {text:Umeko.I18n.t("为当前子智能体启用 Pi 原生工具。沿用现有工具权限设置。");color:root.c.muted;font.pixelSize:12*root.sdk.scale;Layout.fillWidth:true;wrapMode:Text.Wrap;elide:Text.ElideNone}
             ListView {
                 objectName:"globalAgentToolsList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:5
                 model:root.nativeToolCatalog
@@ -603,9 +604,9 @@ Rectangle {
                 ScrollBar.vertical:ScrollBar {}
             }
             RowLayout {Layout.fillWidth:true
-                SmallButton {objectName:"resetGlobalAgentTools";text:"恢复默认";enabled:root.chosenTools.length>0;onClicked:root.chosenTools=[]}
+                SmallButton {objectName:"resetGlobalAgentTools";text:Umeko.I18n.t("恢复默认");enabled:root.chosenTools.length>0;onClicked:root.chosenTools=[]}
                 Item {Layout.fillWidth:true}
-                SmallButton {objectName:"doneGlobalAgentTools";text:"完成";primary:true;onClicked:toolsDialog.close()}
+                SmallButton {objectName:"doneGlobalAgentTools";text:Umeko.I18n.t("完成");primary:true;onClicked:toolsDialog.close()}
             }
         }
     }
@@ -619,19 +620,19 @@ Rectangle {
             contentItem:Text {text:importItem.text;color:root.c.ink;font.pixelSize:13*root.sdk.scale;verticalAlignment:Text.AlignVCenter}
             background:Rectangle {radius:8;color:importItem.highlighted?root.c.hover:"transparent"}
         }
-        MenuItem {text:"从文件夹导入…";onTriggered:skillFolderPicker.open()}
-        MenuItem {text:"从压缩包导入…";onTriggered:skillFilePicker.open()}
+        MenuItem {text:Umeko.I18n.t("从文件夹导入…");onTriggered:skillFolderPicker.open()}
+        MenuItem {text:Umeko.I18n.t("从压缩包导入…");onTriggered:skillFilePicker.open()}
     }
-    NativeDialogs.FolderDialog {id:skillFolderPicker;title:"导入 Skill 文件夹";onAccepted:root.loadSkills("importSkills",{source:selectedFolder.toString()})}
-    NativeDialogs.FileDialog {id:skillFilePicker;title:"导入 Skill 压缩包";nameFilters:["Skills (*.zip *.skill)"];onAccepted:root.loadSkills("importSkills",{source:selectedFile.toString()})}
+    NativeDialogs.FolderDialog {id:skillFolderPicker;title:Umeko.I18n.t("导入 Skill 文件夹");onAccepted:root.loadSkills("importSkills",{source:selectedFolder.toString()})}
+    NativeDialogs.FileDialog {id:skillFilePicker;title:Umeko.I18n.t("导入 Skill 压缩包");nameFilters:["Skills (*.zip *.skill)"];onAccepted:root.loadSkills("importSkills",{source:selectedFile.toString()})}
     Dialog {
         id:deleteDialog;anchors.centerIn:parent;width:Math.min(380,root.width-28);modal:true;padding:20
         background:Rectangle {radius:16;color:root.c.surface;border.color:root.c.line}
         contentItem:ColumnLayout {spacing:18
-            LabelText {text:"删除这个全局子智能体？\n正在运行的任务会停止，原始上下文文件会保留。";wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true}
+            LabelText {text:Umeko.I18n.t("删除这个全局子智能体？\n正在运行的任务会停止，原始上下文文件会保留。");wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true}
             RowLayout {Item {Layout.fillWidth:true}
-                SmallButton {text:"取消";onClicked:deleteDialog.close()}
-                SmallButton {text:"删除";dangerous:true;onClicked:{createDialog.close();root.call("delete",{id:root.deleteId})}}
+                SmallButton {text:Umeko.I18n.t("取消");onClicked:deleteDialog.close()}
+                SmallButton {text:Umeko.I18n.t("删除");dangerous:true;onClicked:{createDialog.close();root.call("delete",{id:root.deleteId})}}
             }
         }
     }

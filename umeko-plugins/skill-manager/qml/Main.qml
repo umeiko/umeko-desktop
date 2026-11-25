@@ -57,6 +57,10 @@ FocusScope {
     readonly property var entries: folderEntries()
     readonly property bool importReady: !!importPreview.id && !(importPreview.errors || []).length
         && (importPreview.skills || []).some(row => !row.error && importDecisions[row.name] !== "skip" && (!row.conflict || row.replaceable))
+    readonly property bool importHasErrors: (noticeError && !!notice) || !!(importPreview.errors || []).length
+        || (importPreview.skills || []).some(row => !!row.error) || !!(importResult.errors || []).length
+    readonly property string importHelp: t("试试直接把 Skill 拖进聊天区，让 Umeko 帮你配置！",
+        "Try dragging the Skill into the chat and ask Umeko to set it up.")
     function t(zh,en) {return sdk.language.indexOf("zh")===0 ? zh : en}
     function scopeLabel(scope) {return scope==="builtin" ? "umeko-desktop" : scope==="project" ? (cowork ? t("用户自定义 Skill 库","User Skill library") : t("工作区","Workspace")) : t("全局","Global")}
     function description(row){return row ? (row.descriptions || {})[sdk.language] || row.description || "" : ""}
@@ -392,7 +396,15 @@ FocusScope {
         ColumnLayout {
             visible:root.route==="import";Layout.fillWidth:true;Layout.fillHeight:true;spacing:9*root.sdk.scale
             Label{Layout.fillWidth:true;text:root.t("输入本地文件夹、ZIP 或 .skill 路径。","Enter a local folder, ZIP or .skill path.");wrapMode:Text.Wrap;color:root.sdk.colors.muted;font.pixelSize:Umeko.Theme.font(11)}
-            Input{id:importSource;objectName:"skillManagerImportSource";Layout.fillWidth:true;placeholderText:root.t("本地路径","Local path");enabled:!root.working;onTextChanged:root.clearImportPreview();onAccepted:root.previewImport()}
+            Input {
+                id: importSource
+                objectName: "skillManagerImportSource"
+                Layout.fillWidth: true
+                placeholderText: root.t("本地路径", "Local path")
+                enabled: !root.working
+                onTextChanged: { root.clearImportPreview(); root.notice = ""; root.noticeError = false }
+                onAccepted: root.previewImport()
+            }
             RowLayout {
                 Layout.fillWidth:true
                 SmallButton{objectName:"skillManagerImportProject";text:root.scopeLabel("project");selected:root.importProject;enabled:!root.working && !!root.roots.project;onClicked:{root.importProject=true;root.clearImportPreview()}}
@@ -401,6 +413,15 @@ FocusScope {
                 SmallButton{objectName:"skillManagerImportPreview";text:root.t("预览","Preview");enabled:!root.working && importSource.text.trim()!=="";onClicked:root.previewImport()}
             }
             Repeater{model:(root.importPreview.errors || []).slice(0,12);delegate:Label{required property var modelData;Layout.fillWidth:true;text:root.errorText(modelData);wrapMode:Text.Wrap;color:root.sdk.colors.danger;font.pixelSize:Umeko.Theme.font(11);maximumLineCount:4}}
+            Label {
+                objectName: "skillManagerImportHelp"
+                visible: root.importHasErrors
+                Layout.fillWidth: true
+                text: root.importHelp
+                wrapMode: Text.Wrap
+                color: root.sdk.colors.muted
+                font.pixelSize: Umeko.Theme.font(11)
+            }
             ListView {
                 objectName:"skillManagerImportList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;model:root.importPreview.skills || [];spacing:7*root.sdk.scale
                 ScrollBar.vertical:ScrollBar{policy:ScrollBar.AsNeeded}
@@ -434,6 +455,14 @@ FocusScope {
             ScrollView {
                 Layout.fillWidth:true;Layout.fillHeight:true;clip:true;contentWidth:availableWidth
                 TextArea{width:parent.width;text:root.importFailure;readOnly:true;selectByMouse:true;wrapMode:TextEdit.Wrap;textFormat:TextEdit.PlainText;color:root.sdk.colors.ink;font.family:Umeko.Theme.fontFamily;font.pixelSize:Umeko.Theme.font(11);background:null}
+            }
+            Label {
+                objectName: "skillManagerImportErrorHelp"
+                Layout.fillWidth: true
+                text: root.importHelp
+                wrapMode: Text.Wrap
+                color: root.sdk.colors.muted
+                font.pixelSize: Umeko.Theme.font(11)
             }
             SmallButton{objectName:"skillManagerImportErrorClose";text:root.t("确定","OK");Layout.alignment:Qt.AlignRight;onClicked:{root.importFailure="";list.forceActiveFocus()}}
         }

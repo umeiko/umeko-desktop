@@ -72,13 +72,14 @@ Item {
                         id: entry
                         required property var modelData
                         objectName: "openDesktopPlugin_" + modelData.id
+                        text: I18n.widgetText(modelData, modelData.name)
                         width: pluginList.width; height: Theme.control(34); padding: 8
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         background: Rectangle { radius: 6; color: root.manager.page.id === entry.modelData.id ? Theme.accentBg : entry.hovered ? Theme.hover : "transparent" }
                         contentItem: RowLayout {
                             spacing: 9
                             WidgetIcon { plugin:entry.modelData; width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }
-                            Text { font.family: Theme.fontFamily; text: I18n.widgetText(entry.modelData, entry.modelData.name); textFormat: Text.PlainText; font.pixelSize: Theme.font(12, visible); color: Theme.ink; elide: Text.ElideRight; Layout.fillWidth: true }
+                            Text { font.family: Theme.fontFamily; text: entry.text; textFormat: Text.PlainText; font.pixelSize: Theme.font(12, visible); color: Theme.ink; elide: Text.ElideRight; Layout.fillWidth: true }
                             Glyph { name: "check"; visible: root.manager.page.id === entry.modelData.id; width: Theme.icon(14); height: Theme.icon(14); color: Theme.accent }
                         }
                         onClicked: { const id = modelData.id; menu.close(); root.manager.openPage(id) }

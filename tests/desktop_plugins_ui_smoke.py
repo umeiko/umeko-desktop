@@ -67,6 +67,10 @@ try:
     assert not backend.desktopPlugins.enabled('system-prompt')
     assert find('desktopPluginInstalledList').property('count')==len(backend.desktopPlugins.rows)
     search=find('desktopPluginSearch');search.setProperty('text','版本管理');QTest.qWait(50);assert find('desktopPluginInstalledList').property('count')==1
+    backend.setLanguage('en')
+    search.setProperty('text','Version Control')
+    wait(lambda:find('desktopPluginInstalledList').property('count')==1,'English Widget search did not find Version Control')
+    backend.setLanguage('zh')
     search.setProperty('text','');QTest.qWait(50);window.grabWindow().save(str(out/'manager.png'))
     manager=backend.desktopPlugins
     window.setProperty('page','chat');QTest.qWait(100)
@@ -77,6 +81,14 @@ try:
     assert find('desktopPluginQuickList').property('count')==7
     assert not manager.enabled('task-records')
     window.grabWindow().save(str(out/'quick-menu.png'))
+    backend.setLanguage('en')
+    widget_names = {'global-agents':'Global Agents', 'pi-manager':'Plugin management',
+                    'file-tree':'File Manager', 'git-viewer':'Version Control', 'terminal':'Terminal'}
+    for widget, expected in widget_names.items():
+        entry = find('openDesktopPlugin_' + widget)
+        assert entry is not None and entry.property('text') == expected, widget
+    window.grabWindow().save(str(out/'quick-menu-en.png'))
+    backend.setLanguage('zh')
     click('desktopPluginMenuButton')
     wait(lambda:not find('desktopPluginSessionMenu').property('visible'),'Second click did not close menu')
     click('desktopPluginRecentButton',Qt.RightButton)
@@ -150,6 +162,7 @@ try:
     choose_action(2,'attach')
     for language,scale in [('en',2.0),('zh',1.0)]:
         backend.setLanguage(language);backend.setFontScale(scale);QTest.qWait(150)
+        assert find('webPaneTitle').property('text') == ('File Manager' if language == 'en' else '文件管理器')
         choice=find('fileTreeDoubleClickAction');page=find('fileTreePluginPage')
         assert choice.property('currentIndex')==2
         assert choice.isVisible() and choice.width()>50
@@ -218,6 +231,14 @@ try:
     click('gitChange_untracked_example.py')
     wait(lambda:find('gitDiffText') is not None and 'hello' in find('gitDiffText').property('text'),'Git diff did not open')
     window.grabWindow().save(str(out/'git-diff.png'))
+    backend.setLanguage('en')
+    assert find('webPaneTitle').property('text') == 'Version Control'
+    assert manager.openPage('global-agents')
+    wait(lambda:find('globalSubagentsHeading') is not None,'Global Agents widget did not open')
+    assert find('globalSubagentsHeading').property('text') == 'Global Agents'
+    assert find('agentBusRequestsTabButton').property('text') == 'Requests'
+    backend.setLanguage('zh')
+    assert find('globalSubagentsHeading').property('text') == '全局子智能体'
     window.setProperty('page','settings');QTest.qWait(200);assert not manager.page;assert not find('webPane').property('opened')
     window.setProperty('page','chat');assert manager.openPage('file-tree');QTest.qWait(200);backend.newSession();QTest.qWait(250);assert not manager.page and set(manager.workers)=={'desktop-pet','global-agents','scheduled-tasks','terminal'}
     manager.setSessionEnabled('file-tree',False);manager.setSessionEnabled('git-viewer',False);manager.setEnabled('global-agents',False);manager.setSessionEnabled('pi-manager',False);manager.setSessionEnabled('skill-manager',False);manager.setSessionEnabled('widget-market',False);manager.setSessionEnabled('task-records',False)
