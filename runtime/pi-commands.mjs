@@ -4,14 +4,15 @@ import { dirname, join, resolve, delimiter, matchesGlob } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { umekoHelp } from './umeko-control.mjs';
+import { UMEKO_TOOL, umekoHelp } from './umeko-control.mjs';
 import { installPackage } from './package-install.mjs';
 import { effectiveProfile } from './session-capabilities.mjs';
 
 export const DESKTOP_PI_PROMPT = 'For Pi/MCP/extension management and slash commands, use umeko_desktop with operation pi.run and arguments.command. It targets the Pi embedded in Umeko Desktop. Use pi.run with /help for the available commands. Report queued commands as queued until completion.';
 
 export function piCommandsEnabled(input, settings) {
-  if (input.globalCoordinator || input.cowork || input.pluginSessionPolicy) return false;
+  if (input.globalCoordinator || input.pluginSessionPolicy) return false;
+  if (input.cowork) return input.cowork.allowedTools?.includes(UMEKO_TOOL) === true;
   const tool = 'run_pi_command', extension = 'builtin:pi-commands';
   const profile = effectiveProfile(input.piCapabilities);
   if (profile.tools[tool] === false || input.blockedTools?.includes(tool)) return false;

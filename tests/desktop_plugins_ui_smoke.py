@@ -61,6 +61,8 @@ try:
         'scheduled-tasks',
     }
     assert backend.desktopPlugins.enabled('scheduled-tasks')
+    assert backend.desktopPlugins.enabled('terminal')
+    assert not backend.desktopPlugins.enabled('widget-market')
     assert 'scheduled-tasks' in backend.desktopPlugins.workers
     assert not backend.desktopPlugins.enabled('system-prompt')
     assert find('desktopPluginInstalledList').property('count')==len(backend.desktopPlugins.rows)
@@ -175,7 +177,7 @@ try:
     source_worker=manager.workers['file-tree'];source_page=find('fileTreePluginPage')
     click('fileTreeRow_renamed.md',Qt.RightButton);click('fileManagerPreview')
     wait(lambda:find('webPane').property('mode')=='document','File did not open in document preview')
-    assert manager.page.get('id')=='file-tree' and set(manager.workers)=={'desktop-pet','global-agents','scheduled-tasks','file-tree'}
+    assert manager.page.get('id')=='file-tree' and set(manager.workers)=={'desktop-pet','global-agents','scheduled-tasks','terminal','file-tree'}
     assert manager.workers['file-tree'] is source_worker
     click('backDocumentPreviewButton')
     wait(lambda:find('webPane').property('mode')=='plugin' and find('fileTreeEntries') is not None,'Preview Back did not return to its Widget')
@@ -217,9 +219,10 @@ try:
     wait(lambda:find('gitDiffText') is not None and 'hello' in find('gitDiffText').property('text'),'Git diff did not open')
     window.grabWindow().save(str(out/'git-diff.png'))
     window.setProperty('page','settings');QTest.qWait(200);assert not manager.page;assert not find('webPane').property('opened')
-    window.setProperty('page','chat');assert manager.openPage('file-tree');QTest.qWait(200);backend.newSession();QTest.qWait(250);assert not manager.page and set(manager.workers)=={'desktop-pet','global-agents','scheduled-tasks'}
+    window.setProperty('page','chat');assert manager.openPage('file-tree');QTest.qWait(200);backend.newSession();QTest.qWait(250);assert not manager.page and set(manager.workers)=={'desktop-pet','global-agents','scheduled-tasks','terminal'}
     manager.setSessionEnabled('file-tree',False);manager.setSessionEnabled('git-viewer',False);manager.setEnabled('global-agents',False);manager.setSessionEnabled('pi-manager',False);manager.setSessionEnabled('skill-manager',False);manager.setSessionEnabled('widget-market',False);manager.setSessionEnabled('task-records',False)
     manager.setEnabled('scheduled-tasks',False)
+    manager.setEnabled('terminal',False)
     click('desktopPluginMenuButton')
     wait(lambda:find('desktopPluginSessionMenu').property('desiredOpen') and not find('desktopPluginSessionMenu').property('animating'),'Empty plugin menu did not open')
     assert find('desktopPluginQuickList').property('count')==0

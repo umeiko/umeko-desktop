@@ -549,9 +549,9 @@ class PiControllerMixin:
             self._pool.trim()
             return
         if kind == 'umeko_request':
-            if record.cowork:
+            if record.cowork and not self._cowork.allows_desktop_control(record):
                 self._write_pi({"type": "umeko_response", "id": event.get("id"),
-                                "result": {"ok": False, "error": "Cowork cannot access desktop control"}}, record)
+                                "result": {"ok": False, "error": "This Cowork role has not enabled umeko_desktop"}}, record)
                 return
             result = self._umeko_control.execute({'operation': event.get('operation'), 'arguments': event.get('arguments', {})}, record)
             self._write_pi({'type': 'umeko_response', 'id': event.get('id'), 'result': result}, record)

@@ -176,7 +176,7 @@ class MarketUi:
             self.manager.entries[identifier] = {**public_manifest(identifier, version=installed), 'builtin': False}
         self.catalog.fixture = self.catalog.fixture.__class__()
         self.catalog.fetcher = self.catalog.fixture
-        self.manager.settings['enabled'].update({'focus-timer': True, 'clipboard-notes': False, 'billion-context': False})
+        self.manager.settings['enabled'].update({'widget-market': True, 'focus-timer': True, 'clipboard-notes': False, 'billion-context': False})
         self.manager.settings.setdefault('sessions', {})[self.manager.storage_key] = ['widget-market', 'focus-timer']
         self.manager.save(); self.manager.changed.emit(); self.backend.setTheme('light')
         self.window.setProperty('page', 'chat'); self.language(language)

@@ -721,10 +721,10 @@ async function init(input) {
       codemode: { ...nativeSettings.codemode, mode: "on" },
       cacheWarming: "off", compaction: { ...nativeSettings.compaction, enabled: input.agent?.autoCompaction !== false },
     }, { projectTrusted: !input.agent?.safeMode });
-    const desktopPrompt = !input.cowork;
     const canRunPiCommand = () => piCommandsEnabled(input, nativeManager);
-    const desktopControlPrompt = desktopPrompt && (input.globalCoordinator ||
-      toolSelection(input.piCapabilities, { name: UMEKO_TOOL, source: "builtin:umeko-control" }));
+    const desktopControlPrompt = input.cowork
+      ? input.cowork.allowedTools.includes(UMEKO_TOOL)
+      : input.globalCoordinator || toolSelection(input.piCapabilities, { name: UMEKO_TOOL, source: "builtin:umeko-control" });
     const piPrompt = desktopControlPrompt && canRunPiCommand() ? DESKTOP_PI_PROMPT + " " : "";
     const controlPrompt = desktopControlPrompt ? UMEKO_PROMPT + " " : "";
     const promptController = await createSystemPromptController({ cwd, agentDir,

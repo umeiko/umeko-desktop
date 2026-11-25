@@ -104,7 +104,8 @@ class UmekoControl(QObject):
         if sum(job['status'] == 'queued' for job in self.jobs.values()) >= 32:
             raise ValueError('Too many pending Umeko changes; wait for existing jobs')
         identifier = self._new_job(operation, 'queued')
-        self.jobs[identifier].update(arguments=copy.deepcopy(args), caller=caller.key if caller else '')
+        self.jobs[identifier].update(arguments=copy.deepcopy(args), caller=caller.key if caller else '',
+                                     cowork=bool(getattr(caller, 'cowork', '')))
         self.timer.start()
         return {'ok': True, 'status': 'queued', 'jobId': identifier,
                 'message': '等待相关任务结束后应用；使用 jobs.get 查看结果。'}
@@ -115,6 +116,9 @@ class UmekoControl(QObject):
         for identifier, job in list(self.jobs.items()):
             if job['status'] != 'queued': continue
             caller = self._caller(job['caller'])
+            if job['cowork'] and (caller is None or not self.b.cowork.allows_desktop_control(caller)):
+                self._finish(identifier, {'ok': False, 'error': 'This Cowork role has not enabled umeko_desktop'})
+                continue
             if time.monotonic() - job['created'] > 600:
                 self._finish(identifier, {'ok': False, 'error': 'Timed out waiting for an idle desktop task'})
                 continue

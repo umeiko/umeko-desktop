@@ -111,8 +111,8 @@ class DesktopPlugins(QObject):
     def application(self,identifier):return self.entries.get(identifier,{}).get('lifecycle','session')=='application'
     def enabled(self,identifier):
         if identifier not in self.entries:return False
-        default = identifier not in ('task-records', 'system-prompt') and (not self.application(identifier)
-            or identifier in ('desktop-pet','global-agents','scheduled-tasks') and self.entries[identifier].get('builtin',False))
+        default = identifier not in ('task-records', 'system-prompt', 'widget-market') and (not self.application(identifier)
+            or identifier in ('desktop-pet','global-agents','scheduled-tasks','terminal') and self.entries[identifier].get('builtin',False))
         return self.settings.get('enabled',{}).get(identifier,default)
     @Property(QObject,constant=True)
     def pet(self):return self._pet

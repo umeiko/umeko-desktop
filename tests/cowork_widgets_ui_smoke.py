@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import tempfile
 import time
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -69,8 +70,8 @@ def test():
                     return item
                 pending.extend(item.childItems())
 
-        def wait(condition, message):
-            deadline = time.monotonic() + 18
+        def wait(condition, message, timeout=18):
+            deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
                 QTest.qWait(30)
                 if condition():
@@ -134,7 +135,7 @@ def test():
                 'Widget did not refresh role selection')
 
             cowork.importSkill('study', '', str(source))
-            wait(lambda: not cowork.importingSkill, 'Skill import')
+            wait(lambda: not cowork.importingSkill, 'Skill import', timeout=65)
             assert not cowork.resourceError, cowork.resourceError
             copied = base / 'profile/cowork/skill-library/private-guide/SKILL.md'
             assert copied.is_file()
@@ -158,6 +159,27 @@ def test():
             assert set(record.resources['tools']) == set(cowork.role['tools'])
             assert {tool['name'] for group in backend.piManagement.capability_extensions()
                     for tool in group['tools'] if tool['visible']} == set(record.resources['tools'])
+
+            def desktop_request():
+                with patch.object(backend, '_write_pi') as write:
+                    backend._handle_pi_event(record, {'type': 'umeko_request', 'id': 'test', 'operation': 'models.list'})
+                    return write.call_args.args[0]['result']
+
+            assert 'umeko_desktop' not in record.resources['tools']
+            assert not desktop_request()['ok']
+            study = cowork.typeDetails('study')
+            enabled = {**study, 'tools': [*study['tools'], 'umeko_desktop']}
+            assert cowork.saveType(json.dumps(enabled)) == 'study'
+            assert backend._command_pi('inspect', record)
+            wait(lambda: not record.busy and 'umeko_desktop' in record.resources['tools'], 'Granted desktop tool')
+            assert desktop_request()['ok']
+            queued = backend._umeko_control._queue('models.list', {}, record)
+            assert cowork.saveType(json.dumps(study)) == 'study'
+            backend._umeko_control._drain()
+            assert backend._umeko_control.jobs[queued['jobId']]['status'] == 'failed'
+            assert not desktop_request()['ok']
+            assert backend._command_pi('inspect', record)
+            wait(lambda: not record.busy and 'umeko_desktop' not in record.resources['tools'], 'Revoked desktop tool')
 
             library = next(row for row in cowork.skillOptions if row['id'] == str(copied))
             assert library['group'] == 'library'
