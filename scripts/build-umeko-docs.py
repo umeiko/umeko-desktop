@@ -19,6 +19,8 @@ def generate():
             default = '=' + json.dumps(field[2], ensure_ascii=False) if len(field) > 2 else ''
             args.append(f'`{field[0]}: {field[1]}{default}`')
         label = f'`{name}`' + ('（仅 ' + ', '.join(spec['editions']) + '）' if spec.get('editions') else '')
+        if name == 'extensions.install':
+            label += '（仅限已确认的 Widget 宿主调用）'
         lines.append('| ' + ' | '.join((label, ', '.join(args) or '无', spec.get('idle', '无'), '是' if spec.get('async') else '否')) + ' |')
     lines.extend(['', '等待空闲范围 `target` 表示指定的 `sessionId`，省略时使用调用会话。',
                   '', 'Python 插件会话可用 `pluginSessions.setModel` 同时设置模型路由和思考强度，也可只更新思考强度：',

@@ -19,6 +19,14 @@ Rectangle {
     property var details: ({})
     property var profile: ({preset:"full"})
     readonly property bool readOnly: !!sdk.session.cowork || !!profile.readOnly
+    readonly property bool remoteWorkspaceEnabled: sdk.session.remoteWorkspaceEnabled === true
+    onRemoteWorkspaceEnabledChanged: {
+        initialized = false
+        inventoryRequested = false
+        inventoryLoading = false
+        toolPages = {}
+        initialize()
+    }
     readonly property bool sessionBusy: !!sdk.session.busy
     onSessionBusyChanged:if(initialized && !sessionBusy && sdk.active && Object.keys(pending).length===0)status(false)
     property string expandedId: ""

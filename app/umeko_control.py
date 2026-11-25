@@ -256,7 +256,7 @@ class UmekoControl(QObject):
                 return {'name': args['name'], 'status': 'removed'}
             raise ValueError('Run the connection test from the Pi desktop tool.')
         if operation == 'extensions.install' and not _widget_install:
-            raise ValueError('Agent package installation must use run_pi_command and its native installation permission; confirmed Widget installs use the private host entry')
+            raise ValueError('Agent package installation must use umeko_desktop with pi.run; confirmed Widget installs use the private host entry')
         if operation == 'help':
             docs = b.store.directory/'agent-docs'
             if not (docs/'README.md').is_file(): docs = b._release/'umeko-docs'

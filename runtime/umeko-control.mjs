@@ -53,7 +53,7 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesCon
     },
     response(event) { finish(event.id, null, event.result); },
     clear() { for (const id of [...pending.keys()]) finish(id, 'Umeko connection closed');speechLife.abort();speechLife=new AbortController();speechTail=Promise.resolve(); },
-    extension(pi) {
+    extension(pi, { runPiCommand, canRunPiCommand = () => false } = {}) {
       if (getPetAssistantBinding()) pi.registerTool({
         name: SEND_TO_USER, label: '告诉用户', exposure: 'direct',
         description: 'Speak through your bound desktop pet. For pet input, task briefs and notifications, reply here without repeating it in ordinary chat. Direct questions in the agent chat may use ordinary chat. Prefer 10–30 visible characters per call, at most 80. Longer replies may use multiple calls; each returns after a reading pause and concurrent calls are displayed in order. Stop on unavailable or binding_changed.',
@@ -95,12 +95,24 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesCon
       });
       pi.registerCommand('help', { description: 'Umeko documentation directory', handler: async (_args, ctx) => ctx.ui.notify(umekoDocs(), 'info') });
       pi.registerTool({ name: UMEKO_TOOL, label: '管理 Umeko', exposure: 'direct',
-        description: 'Inspect and configure this running Umeko desktop. Start with help for documentation; widgets.list and widgets.docs discover enabled Widgets and their interfaces. Queued or accepted operations are not completed.',
+        description: 'Inspect and configure this running Umeko desktop. Start with help for documentation; widgets.list and widgets.docs discover enabled Widgets and their interfaces. Queued or accepted operations are not completed.' +
+          (canRunPiCommand() ? ' Use pi.run with arguments.command (and optional scope: global or project) for commands in the embedded Pi session.' : ''),
         parameters: Type.Object({ operation: Type.String({ minLength: 1, maxLength: 80 }), arguments: Type.Optional(Type.Record(Type.String(), Type.Unknown())) }),
-        execute: async (_id, params, signal, onUpdate, ctx) => {
+        execute: async (id, params, signal, onUpdate, ctx) => {
           const args = params.arguments || {};
           let result;
-          if (params.operation === 'shell.refreshEnvironment' && refreshShellEnvironment) {
+          if (params.operation === 'pi.run') {
+            try {
+              if (!runPiCommand || !canRunPiCommand()) throw new Error('Pi commands are disabled in this session');
+              if (typeof args.command !== 'string' || Object.keys(args).some(key => key !== 'command' && key !== 'scope') ||
+                  ![undefined, '', 'global', 'project'].includes(args.scope))
+                throw new Error('pi.run requires command and accepts optional scope: global or project');
+              const output = await runPiCommand(args.command, { signal, toolCallId: id, scope: args.scope || undefined }, ctx);
+              return { content: [{ type: 'text', text: JSON.stringify({ ok: true, ...output }) }], details: { umekoPiCommand: output } };
+            } catch (error) {
+              result = { ok: false, error: error.message };
+            }
+          } else if (params.operation === 'shell.refreshEnvironment' && refreshShellEnvironment) {
             result = {ok: true, ...await refreshShellEnvironment(ctx)};
           } else if (getCommandRulesContext && isCommandRuleOperation(params.operation)) {
             try {

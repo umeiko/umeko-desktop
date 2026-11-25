@@ -1,7 +1,7 @@
 // Only the community package loader resolves this facade. Keep its native
 // session lifecycle and retry implementation, with Umeko's in-memory policy.
 export * from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
-import { SettingsManager as NativeSettingsManager } from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
+import { SettingsManager as NativeSettingsManager, resizeImage } from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { createAgentSession as nativeCreateAgentSession } from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { DefaultResourceLoader as NativeResourceLoader } from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { NETWORK_RETRY } from "./network-retry.mjs";
@@ -21,7 +21,7 @@ export class DefaultResourceLoader extends NativeResourceLoader {
     super({ ...options, ...scoped, extensionFactories: [
       ...factories,
       { name: "recent-images", hidden: true, replaceable: false,
-        factory: createRecentImagesExtension({ getLimit: () => globalThis[Symbol.for("umeko:recent-images-policy")]?.getLimit() }) },
+        factory: createRecentImagesExtension({ getLimit: () => globalThis[Symbol.for("umeko:recent-images-policy")]?.getLimit(), resizeImage }) },
       { name: "auxiliary-vision", hidden: true, replaceable: false,
         factory: pi => globalThis[Symbol.for("umeko:auxiliary-vision")]?.contextExtension(pi) },
       ...(factories.some(item => item.name === "umeko-control") ? [] : [{name:"umeko-control", builtin:true, replaceable:false,

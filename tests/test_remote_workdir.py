@@ -471,6 +471,7 @@ ApplicationWindow {
     WorkspacePicker {
         id: picker
         objectName: "picker"
+        allowRemote: true
     }
 }
 """

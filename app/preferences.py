@@ -109,8 +109,10 @@ class PreferencesMixin:
                 for record in tuple(pool.records.values()):
                     if record.process:
                         pool.write(record, {'type':'desktop_settings', 'webview':policy})
+        if old['remoteWorkspaceEnabled'] != value['remoteWorkspaceEnabled']:
+            self._remote_workspace_tools_changed()
         self.desktopSettingsChanged.emit()
-        if value['webDisplay'] == 'embedded' and configuration().get('disabled'):
+        if old['webDisplay'] != value['webDisplay'] and value['webDisplay'] == 'embedded' and configuration().get('disabled'):
             self.toast.emit('重启 Umeko 后可使用内置网页预览')
         return True
 

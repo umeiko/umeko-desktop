@@ -345,6 +345,7 @@ ApplicationWindow {
     FolderDialog { id: folderDialog; title: I18n.t("选择工作目录"); onAccepted: workspacePicker.chooseLocalUrl(selectedFolder.toString()) }
     WorkspacePicker {
         id: workspacePicker
+        allowRemote: backend.desktopSettings.remoteWorkspaceEnabled === true
         onBrowseLocalRequested: folderDialog.open()
         onWorkspaceSelected: {
             window.searchVisible = false
@@ -563,10 +564,17 @@ ApplicationWindow {
                     color: backend.cowork.active ? Theme.accentBg : coworkButton.interactionHovered ? Theme.hover : "transparent"
                 }
                 contentItem: Item {
-                    Row {
-                        x: 16; spacing: 12; anchors.verticalCenter: parent.verticalCenter
-                        Glyph { name: "spark"; color: backend.cowork.active ? Theme.accent : Theme.muted; width: Theme.icon(18); height: Theme.icon(18) }
-                        Text { text: "Cowork"; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12); color: Theme.ink; anchors.verticalCenter: parent.verticalCenter }
+                    RowLayout {
+                        anchors.left: parent.left; anchors.leftMargin: 16
+                        anchors.right: parent.right; anchors.rightMargin: 16
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 10
+                        Glyph { name: "spark"; color: backend.cowork.active ? Theme.accent : Theme.muted; Layout.preferredWidth: Theme.icon(18); Layout.preferredHeight: Theme.icon(18) }
+                        Text { text: "Cowork"; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12); color: Theme.ink; Layout.fillWidth: true; elide: Text.ElideRight }
+                        ExperimentalBadge {
+                            objectName: "coworkSidebarExperimentalBadge"
+                            Layout.alignment: Qt.AlignVCenter
+                        }
                     }
                 }
             }

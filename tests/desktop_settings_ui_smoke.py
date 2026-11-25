@@ -80,6 +80,26 @@ try:
     assert not find('openPiSettingsButton').isVisible()
     assert not find('desktopAutoOpenSubmissions').property('checked')
     assert not find('desktopCoworkEnabled').property('checked')
+    assert not find('openCoworkButton').isVisible()
+    assert not find('desktopTeamCollaborationEnabled').property('checked')
+    assert not find('desktopRemoteWorkspaceEnabled').property('checked')
+    assert find('teamRole_planningModelPicker') is None
+    assert find('remoteEnvironmentHostInput') is None
+    click('desktopCoworkEnabled')
+    assert find('coworkSidebarExperimentalBadge').isVisible()
+    click('desktopCoworkEnabled')
+    assert not find('openCoworkButton').isVisible()
+    click('desktopTeamCollaborationEnabled')
+    assert find('teamRole_planningModelPicker').isVisible()
+    assert find('teamRole_executionModelPicker').isVisible()
+    assert Store(store.directory).data['desktop']['teamCollaborationEnabled']
+    click('desktopTeamCollaborationEnabled')
+    assert find('teamRole_planningModelPicker') is None
+    click('desktopRemoteWorkspaceEnabled')
+    assert find('remoteEnvironmentHostInput').isVisible()
+    assert Store(store.directory).data['desktop']['remoteWorkspaceEnabled']
+    click('desktopRemoteWorkspaceEnabled')
+    assert find('remoteEnvironmentHostInput') is None
     assert find('desktopChatWidthHints').property('checked')
     assert find('desktopWebDisplay').property('currentIndex')==1
     for language,scale in [('zh',1.0),('en',2.0)]:
@@ -107,6 +127,13 @@ try:
     assert backend.config['desktop']['chatWidthHints'] and find('chatWidthControls').property('hintsEnabled')
     click('backFromUmekoDesktopButton')
     assert find('openPiSettingsButton').isVisible() and find('openDesktopPluginsButton').isVisible()
+    window.setProperty('settingsTab', 0); QTest.qWait(100)
+    multimodal = find('multimodalSettingsEntry')
+    group = find('modelGroupSettingsEntry')
+    assert multimodal.isVisible() and group.isVisible()
+    assert multimodal.mapToScene(multimodal.boundingRect().bottomLeft()).y() < group.mapToScene(group.boundingRect().topLeft()).y()
+    providers = find('commonProvidersSection')
+    assert group.mapToScene(group.boundingRect().bottomLeft()).y() < providers.mapToScene(providers.boundingRect().topLeft()).y()
     window.setProperty('page','chat');QTest.qWait(100)
     pane=find('webPane');url='http://127.0.0.1:9876/preview'
     html=base/'page.html';html.write_text('<h1>Local page</h1>')

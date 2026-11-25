@@ -324,6 +324,7 @@ def main():
                            'key': '', 'models': [{'upstream': 'test-model', 'alias': 'test-model',
                                                   'reasoningLevelsAuto': False, 'reasoningFormatAuto': False}]}],
             'agent': {'agentDir': str(profile / 'agent')}, 'ui': {'sessionCacheSize': 8},
+            'desktop': {'teamCollaborationEnabled': True},
         }), encoding='utf-8')
         Thread(target=server.serve_forever, daemon=True).start()
         try:

@@ -27,7 +27,7 @@ class Backend(QObject):
         self._closing = False
         self.language = 'zh'
         self._release = Path('.')
-        self._view = SimpleNamespace(key='first', workspace='', skill_modes={}, known_skills={})
+        self._view = SimpleNamespace(key='first', workspace='', skill_modes={}, known_skills={}, cowork='')
         self.store = SimpleNamespace(data={'agent': {}})
         self.desktopPlugins = Plugins(self)
         self.piManagement = SimpleNamespace(_context=lambda: (self._release, '.', '.', {}))

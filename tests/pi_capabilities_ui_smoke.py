@@ -65,6 +65,31 @@ record.file=str(transcript);record.title='Pi fixture';backend._index_record(reco
 try:
     window.resize(1480,1000);window.show();window.requestActivate();wait(window.isActive,'Test window did not activate');window.setProperty('page','chat');open_page()
     wait(lambda:'toolCatalog' in backend._view.resources and ready(),'Native tools not loaded')
+    remote_tools = {'remote_command', 'remote_files', 'remote_network'}
+    control = next(row for row in backend.piManagement.extensions if row['path'] == 'builtin:umeko-control')
+    search = find('piManagerSearch')
+    search.setProperty('text', 'umeko-control')
+    wait(lambda:find('piExtension_'+control['id']) is not None and ready(), 'Umeko control extension not found')
+    click('piExtension_'+control['id'])
+    wait(lambda:find('piToolSwitch_umeko_desktop') is not None and ready(), 'Desktop tool not shown')
+
+    def remote_tools_match(enabled):
+        resources = backend._view.resources
+        listed = {tool['name'] for tool in backend.piManagement.capability_tools(control['id'])['tools']}
+        expected = remote_tools if enabled else set()
+        return (ready()
+                and backend.piManagement.inventory_current(backend._view)
+                and remote_tools.intersection(resources['tools']) == expected
+                and remote_tools.intersection(listed) == expected
+                and all((find('piToolSwitch_'+name) is not None) == enabled for name in remote_tools))
+
+    assert remote_tools_match(False), 'Remote tools were present with the default setting'
+    for enabled in (True, False):
+        assert backend.saveDesktopSettings(json.dumps({'remoteWorkspaceEnabled': enabled}))
+        wait(lambda:remote_tools_match(enabled), f'Remote tools did not follow the workspace switch ({enabled})')
+    click('piExtension_'+control['id'])
+    search.setProperty('text', '')
+    wait(lambda:find('piManagerWidget').property('query') == '' and ready(), 'Search did not clear')
     assert find('piManagerWidget').property('expandedId')=='', 'A plugin expanded on first open'
     assert find('piToolSwitch_read') is None or not find('piToolSwitch_read').isVisible()
     click('piExtension_builtin:pi-tools')

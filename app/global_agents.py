@@ -582,7 +582,7 @@ class GlobalAgents(QObject):
             if not choices:raise ValueError('没有可用人物形象')
             character=secrets.choice(choices)['id']
         if character not in {row['id'] for row in choices}:raise ValueError('请选择现有角色形象')
-        roles = session_model_roles(caller, self.b.store.data)
+        roles = session_model_roles(caller, self.b.store.data) if self.team_board.enabled else {}
         caller_model = roles.get('executionModel') or roles.get('coordinatorModel') or caller.model
         model = member_model(self.text(args,'model',200,False), roles.get('memberDefaultModel'), caller_model, self.b.store.data.get('selectedModel',''))
         select_route(self.b.gateway, model)
@@ -770,6 +770,8 @@ class GlobalAgents(QObject):
                     self.outbox.pop(identifier,None)
                     row=self.requests.get(item['requestId'])
                     if row and row['status'] not in TERMINAL and item['target']==row['target']: self.finish(row,'failed','投递回执超时；请先检查目标上下文再重试。')
+                continue
+            if 'teamId' in item['data'] and not self.team_board.enabled:
                 continue
             try:
                 record=self.record(item['target'])

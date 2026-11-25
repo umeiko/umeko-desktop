@@ -473,7 +473,7 @@ class WidgetHost(QObject):
                 self._execute(request);return
             if requires_confirmation(operation):
                 if self.b.busy or self.b.piManagement.busy or self.b.kernelBusy:
-                    raise ValueError('Pi is busy; Agent installs must use run_pi_command and its native queued reload')
+                    raise ValueError('Pi is busy; Agent installs must use umeko_desktop with pi.run and its native queued reload')
                 if self._pending or self.b.pendingApproval:
                     raise ValueError('Another confirmation is pending')
                 approval = {'id': request['id'], 'method': 'confirm',
@@ -744,7 +744,7 @@ class WidgetHost(QObject):
             return
         if operation == 'pi.inventory':
             record=self.b._view
-            if not record.resources.get('allTools') or record.stale or (not record.process and record.model):
+            if not self.b.piManagement.inventory_current(record) or record.stale or (not record.process and record.model):
                 if self.b.busy or record.subagents_active or self.b.kernelBusy:
                     raise ValueError('请等待当前任务结束后刷新工具列表')
                 if not getattr(record,'model',''):
@@ -787,7 +787,7 @@ class WidgetHost(QObject):
             modes={path:mode for path,mode in self.b._view.extension_modes.items() if path in paths}
             result={'profile':management.capability_profile(),'sessionBusy':self.b.busy,'busy':management.busy or self.b.kernelBusy or (self.b._view.busy and self.b._view.action=='inspect'), 'status':management.status if current else '',
                 'extensions':page,'total':len(rows),'catalogTotal':len(all_rows), 'hasMore':offset+limit<len(rows),
-                'contextCurrent':current, 'inventoryReady':(bool(self.b._view.resources.get('allTools')) and
+                'contextCurrent':current, 'inventoryReady':(management.inventory_current(self.b._view) and
                     (not cowork or not self.b._view.stale)) or (cowork and not self.b._view.model),
                 'inventoryFailed':getattr(self.b._view,'action','')=='load' and not self.b.busy and (getattr(self.b._view,'failed',False) or getattr(self.b._view,'cancelled',False)),
                 'agentBusy':self.b.busy or bool(getattr(self.b._view,'subagents_active',False)), 'workspace':request['session'].get('workspace',''),
