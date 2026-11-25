@@ -211,6 +211,8 @@ def patch_search_sandbox(release: Path):
          'const child = spawn(fdPath, args, { stdio: ["ignore", "pipe", "pipe"] });'),
     ):
         path = tools / f'{name}.js'
+        if not path.is_file():
+            continue
         text = path.read_text(encoding='utf-8')
         hook = 'const prepare = globalThis[Symbol.for("umeko:search-command")];'
         if hook in text:
