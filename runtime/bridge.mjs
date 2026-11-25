@@ -31,9 +31,9 @@ import { createGenerationExtension } from "./generation.mjs";
 import { createSystemPromptController } from "./system-prompt.mjs";
 import { createCoordinatorSkills } from "./coordinator-skills.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
-import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
+import { constants, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
 import { join, resolve, dirname, basename, delimiter } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir, homedir } from "node:os";
@@ -157,15 +157,24 @@ function runCommandSession(request) {
 
 globalThis[Symbol.for("umeko:bash-job")] = runCommandSession;
 globalThis[Symbol.for("umeko:search-command")] = async (file, args, cwd, workspace, signal) => {
-  if (!windowsSandbox?.enabled) return { file, args, cwd };
+  if (process.platform !== "win32" || !windowsSandbox?.enabled) return { file, args, cwd };
   const { policy } = await waitForWindowsSandbox(signal);
   if (!policy?.enabled) return { file, args, cwd };
   const work = config?.workspace || config?.defaultCwd || workspace;
-  // Pi returns bare names for tools found on PATH. The restricted runner has
-  // a different PATH and must receive the actual packaged executable.
+  // The restricted account may be unable to traverse the installation path.
+  // Stage the pinned binary in the existing, sandbox-writable temp directory.
   const executable = join(bundledBin, basename(file).replace(/\.exe$/i, "") + ".exe");
   if (!existsSync(executable)) throw new Error("The Windows sandbox could not find the packaged search tool. Use a complete Umeko package.");
-  return { ...sandboxCommand({ file: executable, args, cwd: cwd || work, workspace: work, policy }), cwd: cwd || work, windowsHide: true };
+  const staged = join(policy.temp, `search-${randomUUID()}-${basename(executable)}`);
+  copyFileSync(executable, staged, constants.COPYFILE_EXCL);
+  const cleanup = () => { try { rmSync(staged, {force: true}); } catch { /* A transient Windows handle may still be open. */ } };
+  try {
+    return { ...sandboxCommand({ file: staged, args, cwd: cwd || work, workspace: work, policy }),
+      cwd: cwd || work, windowsHide: true, cleanup };
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
 };
 const umekoControl = createUmekoControl({
   emit,

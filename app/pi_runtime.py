@@ -215,11 +215,9 @@ def patch_search_sandbox(release: Path):
             continue
         text = path.read_text(encoding='utf-8')
         hook = 'const prepare = globalThis[Symbol.for("umeko:search-command")];'
-        if hook in text:
+        if 'child.once("close", () => launch.cleanup?.());' in text:
             continue
-        if text.count(original) != 1:
-            raise RuntimeError(f'Pi {name} tool interface changed; update the search sandbox adapter')
-        path.write_text(text.replace(original, f'''{hook}
+        current = f'''{hook}
                         const directory = {directory};
                         const launch = prepare ? await prepare({file}, args, directory, ctx?.cwd || cwd, signal) :
                             {{ file: {file}, args, cwd: directory }};
@@ -227,7 +225,26 @@ def patch_search_sandbox(release: Path):
                         const child = spawn(launch.file, launch.args, {{
                             cwd: launch.cwd, env: launch.env, windowsHide: launch.windowsHide,
                             stdio: ["ignore", "pipe", "pipe"],
-                        }});'''), encoding='utf-8')
+                        }});'''
+        anchor = current if hook in text else original
+        if text.count(anchor) != 1:
+            raise RuntimeError(f'Pi {name} tool interface changed; update the search sandbox adapter')
+        path.write_text(text.replace(anchor, f'''{hook}
+                        const directory = {directory};
+                        const launch = prepare ? await prepare({file}, args, directory, ctx?.cwd || cwd, signal) :
+                            {{ file: {file}, args, cwd: directory }};
+                        let child;
+                        try {{
+                            signal?.throwIfAborted();
+                            child = spawn(launch.file, launch.args, {{
+                                cwd: launch.cwd, env: launch.env, windowsHide: launch.windowsHide,
+                                stdio: ["ignore", "pipe", "pipe"],
+                            }});
+                        }} catch (error) {{
+                            launch.cleanup?.();
+                            throw error;
+                        }}
+                        child.once("close", () => launch.cleanup?.());'''), encoding='utf-8')
 
 
 def verify_runtime(release: Path, bridge_source: Path):
