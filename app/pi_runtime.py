@@ -198,6 +198,55 @@ def copy_runtime_file(source, destination):
     return str(destination)
 
 
+def patch_search_sandbox(release: Path):
+    # Keep Pi's argument parsing, output limits and cancellation for rg and fd.
+    tools = release / 'node_modules/@earendil-works/pi-coding-agent/dist/core/tools'
+    for name, file, directory, original in (
+        ('grep', 'rgPath', 'isDirectory ? searchPath : undefined',
+         'const child = spawn(rgPath, args, {\n'
+         '                            cwd: isDirectory ? searchPath : undefined,\n'
+         '                            stdio: ["ignore", "pipe", "pipe"],\n'
+         '                        });'),
+        ('find', 'fdPath', 'undefined',
+         'const child = spawn(fdPath, args, { stdio: ["ignore", "pipe", "pipe"] });'),
+    ):
+        path = tools / f'{name}.js'
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding='utf-8')
+        hook = 'const prepare = globalThis[Symbol.for("umeko:search-command")];'
+        if 'child.once("close", () => launch.cleanup?.());' in text:
+            continue
+        current = f'''{hook}
+                        const directory = {directory};
+                        const launch = prepare ? await prepare({file}, args, directory, ctx?.cwd || cwd, signal) :
+                            {{ file: {file}, args, cwd: directory }};
+                        signal?.throwIfAborted();
+                        const child = spawn(launch.file, launch.args, {{
+                            cwd: launch.cwd, env: launch.env, windowsHide: launch.windowsHide,
+                            stdio: ["ignore", "pipe", "pipe"],
+                        }});'''
+        anchor = current if hook in text else original
+        if text.count(anchor) != 1:
+            raise RuntimeError(f'Pi {name} tool interface changed; update the search sandbox adapter')
+        path.write_text(text.replace(anchor, f'''{hook}
+                        const directory = {directory};
+                        const launch = prepare ? await prepare({file}, args, directory, ctx?.cwd || cwd, signal) :
+                            {{ file: {file}, args, cwd: directory }};
+                        let child;
+                        try {{
+                            signal?.throwIfAborted();
+                            child = spawn(launch.file, launch.args, {{
+                                cwd: launch.cwd, env: launch.env, windowsHide: launch.windowsHide,
+                                stdio: ["ignore", "pipe", "pipe"],
+                            }});
+                        }} catch (error) {{
+                            launch.cleanup?.();
+                            throw error;
+                        }}
+                        child.once("close", () => launch.cleanup?.());'''), encoding='utf-8')
+
+
 def verify_runtime(release: Path, bridge_source: Path):
     node_release = ordinary_path(release)
     release, bridge_source = filesystem_path(release), filesystem_path(bridge_source)
@@ -208,10 +257,17 @@ def verify_runtime(release: Path, bridge_source: Path):
     patch_bash_job(release)
     patch_shell_environment(release, bridge_source)
     patch_command_sessions(release, bridge_source)
+    patch_search_sandbox(release)
     for name in ("tool-visibility.mjs", "session-capabilities.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         copy_runtime_file(bridge_source.parent / name, release / name)
     copy_runtime_file(bridge_source.parent / 'update-cleanup.mjs', release / 'update-cleanup.mjs')
     copy_runtime_file(bridge_source.parent / 'apply-patch.mjs', release / 'apply-patch.mjs')
+    # Older bridge sources have no sandbox adapter. The runtime self-test below
+    # rejects a newer bridge whose import cannot be resolved.
+    for name in ('windows-sandbox.mjs', 'windows-sandbox-mcp.mjs'):
+        sandbox_adapter = bridge_source.parent / name
+        if sandbox_adapter.is_file():
+            copy_runtime_file(sandbox_adapter, release / name)
     copy_runtime_file(bridge_source.parent / 'generation.mjs', release / 'generation.mjs')
     for name in ('cowork-tools.mjs', 'cowork-local.mjs', 'cowork-subagents.mjs'):
         copy_runtime_file(bridge_source.parent / name, release / name)

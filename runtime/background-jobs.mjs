@@ -9,6 +9,7 @@ import { createJiti } from "jiti";
 import { getPowerShellConfig, getShellConfig } from "./node_modules/@earendil-works/pi-coding-agent/dist/utils/shell.js";
 import { assertProcessCommandAllowed, blockedProcessCommand } from "./process-guard.mjs";
 import { launchCommand } from "./command-process.mjs";
+import { sandboxCommand, sandboxFailure } from "./windows-sandbox.mjs";
 
 const modelBytesPerStream = 20_000;
 export const DEFAULT_YIELD_MS = 10_000;
@@ -27,9 +28,11 @@ const snapshot = job => ({ id: job.id, command: job.command, cwd: job.cwd, pid: 
   status: job.status, exitCode: job.exitCode, signal: job.signal, shell: job.shellName,
   startedAt: job.startedAt, completedAt: job.completedAt,
   stdoutPath: job.logPath, stderrPath: job.errPath, ...(job.error ? { error: job.error } : {}),
-  ...(job.reason ? { reason: job.reason } : {}) });
+  ...(job.reason ? { reason: job.reason } : {}),
+  ...(job.sandboxNotice ? { sandboxNotice: job.sandboxNotice } : {}),
+  ...(job.sandboxFailure ? { sandboxFailure: job.sandboxFailure } : {}) });
 
-export async function createJobManager({ shellPath, cwd = process.cwd(), host, hostScript, onCleanup } = {}) {
+export async function createJobManager({ shellPath, cwd = process.cwd(), host, hostScript, onCleanup, waitForSandbox } = {}) {
   const { BackgroundRegistry } = await loadPrimitives();
   const registry = new BackgroundRegistry();
   const directory = await mkdtemp(join(tmpdir(), "umeko-background-jobs-"));
@@ -39,7 +42,7 @@ export async function createJobManager({ shellPath, cwd = process.cwd(), host, h
     if (!job) throw new Error("Unknown background job in this session");
     return job;
   }
-  async function start({ command, cwd: workingDirectory = cwd, env, shellPath: sessionShellPath = shellPath,
+  async function start({ command, cwd: workingDirectory = cwd, workspace = cwd, env, shellPath: sessionShellPath = shellPath,
     shellName = "bash", shellConfig, timeoutMs, signal, toolCallId, owner } = {}) {
     if (disposed) throw new Error("Background job manager is closed");
     if (signal?.aborted) throw new Error("aborted");
@@ -49,19 +52,37 @@ export async function createJobManager({ shellPath, cwd = process.cwd(), host, h
       (shellName === "powershell" ? getPowerShellConfig() : getShellConfig(sessionShellPath));
     if (commandTransport === "stdin") throw new Error("Command sessions require a shell that accepts the command as an argument");
     const id = randomUUID(), logPath = join(directory, `${id}.stdout.log`), errPath = join(directory, `${id}.stderr.log`);
-    const child = launchCommand({ host, hostScript, file: shell, fileArgs: [...args, command],
-      cwd: workingDirectory, logPath, errPath, env });
+    const { policy, notice } = await waitForSandbox?.(signal, { report: true }) || {};
+    if (disposed || signal?.aborted) throw new Error("aborted");
+    const launch = sandboxCommand({ file: shell, args: [...args, command], cwd: workingDirectory, env, workspace, policy });
+    const child = launchCommand({ host, hostScript, file: launch.file, fileArgs: launch.args,
+      cwd: workingDirectory, logPath, errPath, env: launch.env });
     const job = { id, command, cwd: workingDirectory, child, shellName, logPath, errPath, toolCallId, owner,
-      status: "running", exitCode: null, signal: null, startedAt: Date.now() };
+      status: "running", exitCode: null, signal: null, startedAt: Date.now(),
+      sandboxNotice: [notice, launch.notice].filter(Boolean).join("\n") };
     registry.jobs.set(id, job);
     registry.totalStarted++;
     let killTimer;
     const abort = () => void kill(id, "aborted").catch(() => {});
     if (timeoutMs !== undefined) killTimer = setTimeout(() => void kill(id, "timeout").catch(() => {}), timeoutMs);
-    job.donePromise = child.exit.then(result => {
+    job.donePromise = child.exit.then(async result => {
       clearTimeout(killTimer);
       job.exitCode = result.code; job.signal = result.signal ?? null; job.error = result.error;
       job.cleanup = { cleanup: result.cleanup, remaining: result.remaining };
+      if (launch.level !== "off" && result.code && !job.reason && !result.error) {
+        let stderr = "";
+        try {
+          const handle = await open(errPath, "r");
+          try {
+            const size = (await handle.stat()).size;
+            const offset = Math.max(0, size - 8192);
+            const tail = Buffer.alloc(size - offset);
+            const { bytesRead } = await handle.read(tail, 0, tail.length, offset);
+            stderr = tail.subarray(0, bytesRead).toString("utf8");
+          } finally { await handle.close(); }
+        } catch { /* The exit result is still available if the log is gone. */ }
+        job.sandboxFailure = sandboxFailure(launch.level, launch.allowNetwork, stderr);
+      }
       job.status = result.cleanup !== "done" ? "failed" : job.reason ? "killed" : result.code === 0 ? "completed" : "failed";
       job.completedAt = Date.now();
       onCleanup?.(job);
@@ -115,12 +136,13 @@ export async function createJobManager({ shellPath, cwd = process.cwd(), host, h
   }
   async function wait(id, { timeoutMs = 10000, signal } = {}) {
     const job = owned(id);
-    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > 60000) throw new Error("timeoutMs must be between 0 and 60000");
+    if (timeoutMs !== Infinity && (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > 60000))
+      throw new Error("timeoutMs must be between 0 and 60000");
     if (job.status !== "running") return { ...snapshot(job), timedOut: false };
     let timer, abort;
     try {
       const result = await Promise.race([job.donePromise, new Promise((resolve, reject) => {
-        timer = setTimeout(() => resolve(null), timeoutMs);
+        if (timeoutMs !== Infinity) timer = setTimeout(() => resolve(null), timeoutMs);
         abort = () => reject(new Error("aborted"));
         signal?.addEventListener("abort", abort, { once: true });
         if (signal?.aborted) abort();
@@ -207,7 +229,7 @@ export function createBackgroundJobsExtension(options = {}) {
   async function disposeAll() {
     return Promise.allSettled([...managers.keys()].map(id => dispose(id)));
   }
-  async function foreground({ signal, timeout, onData, owner, sessionId: id, ...request }) {
+  async function foreground({ signal, timeout, onData, owner, sessionId: id, waitForExit = false, ...request }) {
     const jobs = await getManager(id);
     const job = await jobs.start({ ...request, signal, owner });
     let cancelled;
@@ -215,10 +237,12 @@ export function createBackgroundJobsExtension(options = {}) {
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
     try {
-      await jobs.wait(job.id, { timeoutMs: DEFAULT_YIELD_MS, signal });
+      await jobs.wait(job.id, { timeoutMs: waitForExit ? Infinity : DEFAULT_YIELD_MS, signal });
       const chunk = await jobs.read(job.id, { maxBytes: modelBytesPerStream });
       if (chunk.stdout) onData(Buffer.from(chunk.stdout));
       if (chunk.stderr) onData(Buffer.from(`${chunk.stdout ? "\n" : ""}${chunk.stderr}`));
+      const details = [chunk.sandboxNotice, chunk.sandboxFailure].filter(Boolean);
+      if (details.length) onData(Buffer.from(`\n${details.join("\n")}\n`));
       if (signal?.aborted || chunk.reason === "aborted") throw new Error("aborted");
       if (chunk.status !== "running" && chunk.reason === "timeout") throw new Error(`timeout:${timeout}`);
       if (chunk.error) throw new Error(chunk.error);
@@ -257,8 +281,9 @@ export function createBackgroundJobsExtension(options = {}) {
             const shellPath = options.getShellPath?.(ctx) || options.shellPath;
             const shellName = input.shell === "powershell" ? "powershell" : "bash";
             const env = await options.getEnvironment?.(ctx, shellPath, shellName);
+            const workspace = ctx?.cwd || options.cwd || process.cwd();
             result = await jobs.start({ command: input.command, env, shellPath, shellName, signal, toolCallId,
-              cwd: resolve(ctx?.cwd || options.cwd || process.cwd(), input.cwd || ".") });
+              workspace, cwd: resolve(workspace, input.cwd || ".") });
           }
           else if (input.action === "list") result = jobs.list();
           else if (input.action === "status") result = jobs.status(input.id);

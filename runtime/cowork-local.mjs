@@ -3,6 +3,7 @@ import { stat } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { promisify } from "node:util";
 import { Type } from "typebox";
+import { sandboxFailure } from "./windows-sandbox.mjs";
 
 const execute = promisify(execFile);
 const pathParameter = Type.String({minLength: 1, maxLength: 4096});
@@ -55,20 +56,22 @@ async function sourceFile(path, cwd, extensions) {
   return target;
 }
 
-async function run(command, args, signal, setupHint) {
+async function run(command, args, signal, setupHint, cwd, prepareCommand) {
+  const launch = await prepareCommand?.({ file: command, args, cwd }, signal) || { file: command, args };
   try {
-    const {stdout} = await execute(command, args, {signal, timeout: 30000, maxBuffer: 512 * 1024,
-      windowsHide: true});
+    const {stdout} = await execute(launch.file, launch.args, {signal, timeout: 30000, maxBuffer: 512 * 1024,
+      env: launch.env, cwd: launch.cwd, windowsHide: true});
     return stdout.trim();
   } catch (error) {
     signal?.throwIfAborted();
     if (error.code === "ENOENT") throw new Error(setupHint);
     if (error.killed) throw new Error("Local extraction timed out.");
+    if (launch.level && launch.level !== "off") throw new Error(sandboxFailure(launch.level, launch.allowNetwork, error.stderr));
     throw new Error("Local extraction failed for this file.");
   }
 }
 
-export function registerCoworkLocalTools(pi, allowed) {
+export function registerCoworkLocalTools(pi, allowed, prepareCommand) {
   if (allowed.has("ocr_image")) {
     pi.registerTool({name: "ocr_image", label: "提取图片文字", exposure: "direct", annotations: {readOnlyHint: true},
       description: "Extract text from a local image using Apple Vision on macOS or Tesseract elsewhere. Use an explicitly attached image. Languages is an optional Tesseract language list, such as chi_sim+eng.",
@@ -76,8 +79,8 @@ export function registerCoworkLocalTools(pi, allowed) {
       async execute(_id, {path, languages}, signal, _update, ctx) {
         const file = await sourceFile(path, ctx.cwd, OCR_FORMATS);
         const text = process.platform === "darwin" ?
-          await run("/usr/bin/osascript", ["-l", "JavaScript", "-e", OCR_SCRIPT, file], signal, "Use auxiliary vision if Apple Vision is unavailable.") :
-          await run("tesseract", [file, "stdout", "-l", languages || "eng"], signal, "Install Tesseract or use auxiliary vision.");
+          await run("/usr/bin/osascript", ["-l", "JavaScript", "-e", OCR_SCRIPT, file], signal, "Use auxiliary vision if Apple Vision is unavailable.", ctx.cwd, prepareCommand) :
+          await run("tesseract", [file, "stdout", "-l", languages || "eng"], signal, "Install Tesseract or use auxiliary vision.", ctx.cwd, prepareCommand);
         return {content: [{type: "text", text: text.slice(0, 20000) || "No readable text found."}]};
       },
     });
@@ -92,10 +95,10 @@ export function registerCoworkLocalTools(pi, allowed) {
         let text;
         if (process.platform === "darwin") {
           text = await run("/usr/bin/osascript", ["-l", "JavaScript", "-e", PDF_SCRIPT, file, String(start_page), String(pages)],
-            signal, "Use the PDF Skill if PDFKit is unavailable.");
+            signal, "Use the PDF Skill if PDFKit is unavailable.", ctx.cwd, prepareCommand);
         } else {
           const output = await run("pdftotext", ["-layout", "-f", String(start_page), "-l", String(start_page + pages - 1), file, "-"],
-            signal, "Install Poppler or use the PDF Skill.");
+            signal, "Install Poppler or use the PDF Skill.", ctx.cwd, prepareCommand);
           text = output.split("\f").filter((page, index, all) => page.trim() || index < all.length - 1)
             .map((page, index) => "--- Page " + (start_page + index) + " ---\n" + page.trim()).join("\n\n");
         }

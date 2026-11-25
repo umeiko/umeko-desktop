@@ -12,6 +12,10 @@
 
 `runtime/tool-permissions.mjs` adapts command prefix matching, decision precedence, and reusable approvals from [OpenAI Codex rust-v0.172.0](https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/execpolicy), copyright 2025 OpenAI (Apache-2.0). The source attribution and full license are in `licenses/codex-execpolicy.txt`.
 
+## Git Bash for Windows sandbox commands
+
+Windows CI packages include [Portable Git for Windows 2.56.1](https://github.com/git-for-windows/git/releases/tag/v2.56.1.windows.1) under the sandbox runtime. The package retains its notices and includes the [MSYS2 runtime license](https://github.com/git-for-windows/msys2-runtime/blob/d25c02bd8bbfef7da4b42eab6f0834bcb9d9343e/winsup/CYGWIN_LICENSE). The runtime source is [git-for-windows/msys2-runtime at d25c02b](https://github.com/git-for-windows/msys2-runtime/tree/d25c02bd8bbfef7da4b42eab6f0834bcb9d9343e), with the packaged `umeko-signal-pipe.patch` applied. The build recipe is `scripts/build-sandbox-git-bash.bash`.
+
 ## Codex apply_patch
 
 `runtime/apply-patch.mjs` and the patch scenarios in `tests/fixtures/codex-apply-patch.json` adapt the OpenAI Codex `apply-patch` crate and tool grammar from [rust-v0.172.0](https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/apply-patch). The Apache 2.0 license and source attribution are in `licenses/codex-apply-patch-APACHE.txt`.

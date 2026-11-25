@@ -1,0 +1,9 @@
+This product builds and bundles code from OpenAI Codex (rust-v0.172.0):
+https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/windows-sandbox-rs
+
+The command entry point adapts codex-rs/cli/src/debug_sandbox.rs and
+codex-rs/core/src/windows_sandbox.rs. The build provides Umeko-specific Windows
+account and firewall identities and requires explicit successful provisioning.
+
+Copyright OpenAI. Licensed under the Apache License, Version 2.0.
+https://github.com/openai/codex/blob/rust-v0.172.0/LICENSE

@@ -6,12 +6,45 @@ Column {
     id: root
     property string query: ""
     readonly property var resources: visible ? backend.agentResources : ({})
+    function sandboxErrorText(state) {
+        const error = state.error || ""
+        if (!error) return ""
+        const english = I18n.language === "en"
+        if (error === "git-bash-storage-unwritable") {
+            const directory = String(state.errorPath || "")
+            return english
+                ? "Umeko could not write Git Bash files to “" + directory + "”. It will keep retrying automatically."
+                : "Umeko 无法将 Git Bash 文件写入“" + directory + "”。程序会继续自动重试。"
+        }
+        if (error === "git-bash-archive-missing") {
+            return english
+                ? "This Umeko installation is incomplete because the Git Bash archive is missing. Download Umeko again."
+                : "Umeko 安装包不完整，缺少 Git Bash 归档。请重新下载 Umeko。"
+        }
+        if (error === "git-bash-archive-invalid") {
+            return english
+                ? "The Git Bash archive in this Umeko installation is damaged. Download Umeko again."
+                : "Umeko 安装包中的 Git Bash 归档已损坏。请重新下载 Umeko。"
+        }
+        const knownErrors = [
+            "Windows 沙箱组件缺失。请重新安装完整的 Windows 版本。",
+            "未完成管理员级隔离安装。请在 Windows 提示中允许安装，或稍后重试。",
+            "无法保存沙箱设置。请检查用户数据目录是否可写，然后重试。",
+            "另一个 Agent 正在执行任务。请等任务结束后再开启沙箱。"
+        ]
+        if (knownErrors.indexOf(error) >= 0) return I18n.t(error)
+        return english
+            ? "Umeko could not prepare the Windows sandbox. It will keep retrying automatically."
+            : "Umeko 暂时无法准备 Windows 沙箱，程序会继续自动重试。"
+    }
     spacing: 12
     SectionCard {
         objectName: "toolPermissionSettings"
         width: parent.width
         ColumnLayout {
+            id: permissions
             width: parent.width; spacing: 12
+            readonly property var sandbox: backend.windowsSandbox.state
             Text { font.family: Theme.fontFamily; text: I18n.t("工具执行权限"); color: Theme.ink; font.pixelSize: Theme.font(14, visible); font.weight: Font.DemiBold }
             RowLayout {
                 Layout.fillWidth: true; spacing: 8
@@ -36,6 +69,101 @@ Column {
                     ? I18n.t("每次执行命令、编辑或写入文件前询问；读取和搜索直接执行。切换立即保存并生效。")
                     : I18n.t("工具自动执行，仅七类高风险操作需要确认。切换立即保存并生效。")
                 color: Theme.muted; font.pixelSize: Theme.font(11, visible)
+            }
+            RowLayout {
+                visible: permissions.sandbox.supported
+                Layout.fillWidth: true; spacing: 12
+                ColumnLayout {
+                    Layout.fillWidth: true; spacing: 4
+                    Text {
+                        Layout.fillWidth: true; wrapMode: Text.Wrap
+                        font.family: Theme.fontFamily; color: Theme.ink; font.pixelSize: Theme.font(12, visible)
+                        text: I18n.t("Windows 命令沙箱")
+                    }
+                    Text {
+                        objectName: "windowsSandboxLevel"
+                        Layout.fillWidth: true; wrapMode: Text.Wrap
+                        font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible)
+                        text: I18n.t(permissions.sandbox.level === "elevated" ? "管理员级隔离" : permissions.sandbox.level === "non-elevated" ? "标准用户隔离" : "沙箱已关闭")
+                    }
+                }
+                Toggle {
+                    objectName: "windowsSandboxEnabled"
+                    checked: permissions.sandbox.enabled
+                    enabled: !permissions.sandbox.busy
+                    Accessible.name: I18n.t("Windows 命令沙箱")
+                    onClicked: {
+                        const value = checked
+                        checked = Qt.binding(function() { return permissions.sandbox.enabled })
+                        backend.windowsSandbox.setEnabled(value)
+                    }
+                }
+            }
+            RowLayout {
+                visible: permissions.sandbox.supported
+                Layout.fillWidth: true; spacing: 12
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.Wrap
+                    font.family: Theme.fontFamily; color: Theme.ink; font.pixelSize: Theme.font(12, visible)
+                    text: I18n.t("允许命令联网")
+                }
+                Toggle {
+                    objectName: "windowsSandboxAllowNetwork"
+                    checked: permissions.sandbox.allowNetwork
+                    enabled: permissions.sandbox.enabled && !permissions.sandbox.busy
+                    Accessible.name: I18n.t("允许命令联网")
+                    onClicked: {
+                        const value = checked
+                        checked = Qt.binding(function() { return permissions.sandbox.allowNetwork })
+                        backend.windowsSandbox.setAllowNetwork(value)
+                    }
+                }
+            }
+            RowLayout {
+                visible: permissions.sandbox.supported && !permissions.sandbox.elevatedReady
+                Layout.fillWidth: true; spacing: 12
+                Item { Layout.fillWidth: true }
+                Text {
+                    objectName: "windowsSandboxNetworkHint"
+                    Layout.preferredWidth: implicitWidth; Layout.maximumWidth: permissions.width * 0.62
+                    wrapMode: Text.Wrap
+                    text: permissions.sandbox.enabled && !permissions.sandbox.allowNetwork
+                        ? I18n.t("禁止联网需要先安装管理员级隔离") : ""
+                    font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible)
+                }
+                ActionButton {
+                    objectName: "windowsSandboxSetup"
+                    text: I18n.t("安装管理员级隔离")
+                    enabled: !permissions.sandbox.busy && !permissions.sandbox.elevatedReady
+                    onClicked: backend.windowsSandbox.setup()
+                }
+            }
+            ColumnLayout {
+                visible: permissions.sandbox.supported && permissions.sandbox.busy
+                Layout.fillWidth: true; spacing: 8
+                Text {
+                    objectName: "windowsSandboxStatus"
+                    Layout.fillWidth: true; wrapMode: Text.Wrap
+                    text: permissions.sandbox.preparing
+                        ? I18n.t("正在解压 Git Bash…") + " " + Math.round(permissions.sandbox.progress || 0) + "%"
+                        : I18n.t("正在准备 Windows 沙箱…")
+                    font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible)
+                }
+                ProgressBar {
+                    objectName: "windowsSandboxProgress"
+                    Layout.fillWidth: true
+                    visible: permissions.sandbox.preparing
+                    from: 0; to: 100; value: permissions.sandbox.progress || 0
+                }
+            }
+            Text {
+                objectName: "windowsSandboxError"
+                Layout.fillWidth: true; wrapMode: Text.Wrap
+                visible: permissions.sandbox.supported && text.length > 0
+                font.family: Theme.fontFamily; color: Theme.danger; font.pixelSize: Theme.font(11, visible)
+                textFormat: Text.PlainText
+                text: root.sandboxErrorText(permissions.sandbox)
             }
         }
     }

@@ -40,6 +40,25 @@ test('pi.run is session-local, validates arguments and rechecks access at execut
   assert.equal(JSON.parse((await tool.execute('help', { operation: 'help' })).content[0].text).ok, true);
 });
 
+test('pi.run preserves errors from the session Bash tool', async () => {
+  let tool;
+  const control = createUmekoControl({ emit() { assert.fail('Bash must stay in the calling session'); } });
+  control.extension({ registerTool: value => { tool = value; }, registerCommand() {} }, {
+    canRunPiCommand: () => true,
+    runPiCommand: () => assert.fail('Bash must use the session tool pipeline'),
+  });
+  const signal = new AbortController().signal;
+  const context = { async executeTool(name, args, options) {
+    assert.equal(name, 'bash');
+    assert.deepEqual(args, { command: 'pwd' });
+    assert.equal(options.signal, signal);
+    return { isError: true, result: { content: [{ type: 'text', text: 'Command denied' }] } };
+  } };
+  const result = await tool.execute('call', { operation: 'pi.run', arguments: { command: '!pwd' } }, signal, undefined, context);
+  assert.equal(result.isError, true);
+  assert.deepEqual(JSON.parse(result.content[0].text), { ok: false, status: 'failed', exitCode: null, output: 'Command denied' });
+});
+
 test('one desktop tool and a directory-only help keep management instructions on demand', async () => {
   const tools = [], commands = [], control = createUmekoControl({ emit() { throw new Error('help must be local'); } });
   control.extension({ registerTool: tool => tools.push(tool), registerCommand: (name, body) => commands.push({ name, body }) });
