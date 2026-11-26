@@ -124,6 +124,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def cowork(self):
         return self._cowork
 
+    @Property(QObject, constant=True)
+    def quickOcr(self):
+        return self._quick_ocr
+
     @Property('QVariantMap', notify=auxiliaryVisionSettingsChanged)
     def auxiliaryVisionSettings(self):
         return dict(self.store.data['auxiliaryVision'])
@@ -405,6 +409,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._reasoning_discovery = ReasoningDiscovery(self)
         from .cowork import Cowork
         self._cowork = Cowork(self)
+        from .quick_ocr import QuickOcr
+        self._quick_ocr = QuickOcr(self)
 
     @Property(QObject, constant=True)
     def loginStartup(self):
@@ -3079,6 +3085,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._cancel_pi_warmup()
         self._reasoning_discovery.close()
         self._desktop_plugins.close()
+        self._quick_ocr.close()
         self._cowork.close()
         self._appearance_save.stop()
         self._viewport_save.stop()

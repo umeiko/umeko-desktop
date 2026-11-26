@@ -73,7 +73,7 @@ BUILTINS = [
            [('逐节翻译这篇 PDF 论文', 'Translate this PDF paper section by section'), ('先翻译摘要并整理术语表', 'Translate the abstract and build a glossary')],
            ('read_pdf_text', 'read', 'write', 'bash', 'powershell', 'submit_to_chatbox'), ('pdf-paper-reading',), 'files'),
     recipe('ocr', 'eye', 'amber', ('快速 OCR', 'Quick OCR'),
-           ('从截图或照片中提取可复制的文字。', 'Extract copyable text from screenshots and photos.'),
+           ('使用会话右上角「本地 OCR」提取可复制的文字，不上传图片。', 'Use Local OCR in the conversation header to extract text without uploading images.'),
            'First use ocr_image on the attached file. Use visible image input or analyze_image if the local extractor is unavailable or if the layout needs interpretation. Preserve reading order, line breaks and table columns. Keep the original language and mark unreadable spans with [unclear]. If no image is available or the model cannot see it, explain that clearly.',
            [('提取这张图里的文字', 'Extract the text from this image'), ('把截图里的表格整理成 Markdown', 'Turn the table in this screenshot into Markdown')],
            ('ocr_image', 'analyze_image'), context='files'),

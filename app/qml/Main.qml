@@ -705,7 +705,26 @@ ApplicationWindow {
                 WindowControlButton { objectName:"maximizeWindowButton";operation:"maximize";maximized:window.visibility===Window.Maximized; hint: I18n.t("最大化"); onClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized() }
                 WindowControlButton { objectName:"closeToTrayButton";operation:"close"; hint: I18n.t("收起到托盘"); onClicked: window.close() }
             }
-            SubagentIndicator { id: subagentIndicator; anchors.right: windowControls.left; anchors.rightMargin: 13; anchors.verticalCenter: windowControls.verticalCenter; visible: window.page === "chat" && backend.subagents.activeCount > 0 }
+            ActionButton {
+                id: quickOcrButton; objectName: "openQuickOcr"
+                visible: window.page === "chat" && backend.cowork.active && backend.cowork.role.typeId === "ocr"
+                anchors.right: windowControls.left; anchors.rightMargin: 12; anchors.verticalCenter: windowControls.verticalCenter
+                quiet: true; glyph: "eye"
+                text: backend.language === "en" ? "Local OCR" : "本地 OCR"
+                hint: backend.language === "en" ? "Extract text without uploading the image" : "本地提取文字，不上传图片"
+                onClicked: {
+                    if (quickOcrLoader.item) quickOcrLoader.item.showDialog()
+                    else quickOcrLoader.active = true
+                }
+            }
+            SubagentIndicator { id: subagentIndicator; anchors.right: quickOcrButton.visible ? quickOcrButton.left : windowControls.left; anchors.rightMargin: 13; anchors.verticalCenter: windowControls.verticalCenter; visible: window.page === "chat" && backend.subagents.activeCount > 0 }
+        }
+
+        Loader {
+            id: quickOcrLoader
+            active: false
+            sourceComponent: QuickOcrDialog { parent: Overlay.overlay; service: backend.quickOcr }
+            onLoaded: item.showDialog()
         }
 
         Item {
