@@ -32,8 +32,15 @@ def _profile_effort(backend, profile, model, provider):
     entry = next((m for m in configured.get('models', []) if m['alias'] == model), {})
     levels = reasoning_levels(entry)
     value = profile.get('reasoningEffort', backend.store.data.get('ui', {}).get('reasoningEffort', 'off'))
-    if 'reasoningEffort' in profile and value not in ['off', *_ORDER, *levels]:
+    # Effect discovery can merge raw effort names into a measured representative.
+    # Resolve the profile's original choice through that route's evidence only;
+    # a manual list is user authority and must never inherit an automatic alias.
+    aliases = entry.get('reasoningDetection', {}).get('aliases', {}) if entry.get('reasoningLevelsAuto') is True else {}
+    aliases = aliases if isinstance(aliases, dict) else {}
+    if 'reasoningEffort' in profile and value not in ['off', *_ORDER, *levels, *aliases]:
         raise ValueError('The profile reasoningEffort must be off or a valid reasoning level')
+    if value != 'off' and isinstance(value, str) and aliases.get(value) in levels:
+        value = aliases[value]
     return reconcile_effort(value, levels)
 
 

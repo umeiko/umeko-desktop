@@ -3,7 +3,30 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { commandWords, addMcpFromInput, createPiCommandController } from '../runtime/releases/coding-1.5.2/pi-commands.mjs';
+import { commandWords, addMcpFromInput, createPiCommandController, piCommandsEnabled } from '../runtime/releases/coding-1.5.2/pi-commands.mjs';
+
+test('retired command filters still govern the Pi operation', () => {
+  const tool = 'run_pi_command', extension = 'builtin:pi-commands';
+  const settings = (global, project = []) => ({
+    getGlobalSettings: () => ({ extensions: global }),
+    getProjectSettings: () => ({ extensions: project }),
+  });
+  assert.equal(piCommandsEnabled({}), true);
+  for (const config of [
+    { globalCoordinator: true }, { cowork: {} }, { pluginSessionPolicy: {} },
+    { blockedTools: [tool] }, { sessionExtensions: { [extension]: false } },
+    { piCapabilities: { preset: 'custom', custom: { tools: { [tool]: false } } } },
+    { piCapabilities: { preset: 'custom', custom: { plugins: { [extension]: false } } } },
+  ]) assert.equal(piCommandsEnabled(config), false);
+  assert.equal(piCommandsEnabled({}, settings(['-' + extension])), false);
+  assert.equal(piCommandsEnabled({}, settings(['!builtin:*'])), false);
+  assert.equal(piCommandsEnabled({}, settings(['-' + extension], ['+' + extension])), true);
+});
+
+test('Cowork enables Pi commands through the role desktop-tool grant', () => {
+  assert.equal(piCommandsEnabled({ cowork: { allowedTools: ['read'] } }), false);
+  assert.equal(piCommandsEnabled({ cowork: { allowedTools: ['umeko_desktop'] } }), true);
+});
 
 test('Pi command tokenizer preserves quoted literals and never evaluates a shell', () => {
   assert.deepEqual(commandWords('pi mcp add test --env "KEY=${TOKEN}" -- node "a file.mjs"'), ['pi','mcp','add','test','--env','KEY=${TOKEN}','--','node','a file.mjs']);

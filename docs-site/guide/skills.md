@@ -48,6 +48,6 @@ Skill 的目录为 `<workspace>/.pi/skills/<name>/SKILL.md` 与 `<agentDir>/skil
 
 > 帮我查看当前内嵌 Pi 已安装的扩展，解释它们提供什么工具。安装新扩展前先告诉我来源。
 
-Umeko 的内核内嵌在当前桌面会话。Agent 通过 `run_pi_command` 在这个实例上执行 `pi install`、`pi mcp`、`/reload` 或 `/compact` 等受支持的操作。
+Umeko 的内核内嵌在当前桌面会话。Agent 通过 `umeko_desktop` 的 `pi.run` 在这个实例上执行 `pi install`、`pi mcp`、`/reload` 或 `/compact` 等受支持的操作。
 
 扩展和 MCP 本地进程可以执行代码，只从可信来源安装。操作前先看说明，配置变化通常需要刷新或下一轮任务才能生效。

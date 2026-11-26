@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+launcher="${BASH_SOURCE[0]}"
+while [[ -L "$launcher" ]]; do
+    directory="$(cd -- "$(dirname -- "$launcher")" && pwd)"
+    launcher="$(readlink "$launcher")"
+    [[ "$launcher" = /* ]] || launcher="$directory/$launcher"
+done
+root="$(cd -- "$(dirname -- "$launcher")" && pwd)"
+if [[ -x "$root/.venv/bin/python" ]]; then
+    exec "$root/.venv/bin/python" "$root/main.py" --umeko-cli "$@"
+elif [[ -x "$root/dist/Umeko.app/Contents/MacOS/Umeko" ]]; then
+    exec "$root/dist/Umeko.app/Contents/MacOS/Umeko" --umeko-cli "$@"
+elif [[ -x "$root/dist/Umeko/Umeko" ]]; then
+    exec "$root/dist/Umeko/Umeko" --umeko-cli "$@"
+fi
+echo 'Run ./setup.sh in the Umeko checkout first.' >&2
+exit 1

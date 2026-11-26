@@ -104,23 +104,26 @@ class VideoSettingsTests(unittest.TestCase):
                 """
                 self.assertEqual(self.evaluate(fixture + methods + '\nload(); values();'), settings)
 
-    def test_card_reuses_openai_and_video_capable_accounts_and_models(self):
+    def test_card_uses_dedicated_video_and_video_capable_plugin_accounts_and_models(self):
         source = (QML / 'GenerationSettingsCard.qml').read_text(encoding='utf-8')
         expression = re.search(r'property var accounts: (.*)', source).group(1)
         fixture = """
             var root = {kind: 'video'};
             var backend = {config: {providers: [
                 {id: 'openai-account', api: 'openai'},
+                {id: 'video-account', api: 'video', generationModels: ['video-model']},
                 {id: 'video-plugin', api: 'plugin', generationCapabilities: ['video']},
                 {id: 'speech-plugin', api: 'plugin', generationCapabilities: ['speech']},
                 {id: 'chat-account', api: 'anthropic'}
             ]}};
         """
         self.assertEqual(self.evaluate(fixture + '(' + expression + ').map(p => p.id)'),
-                         ['openai-account', 'video-plugin'])
+                         ['video-account', 'video-plugin'])
         models = re.search(r'readonly property var models: (.*)', source).group(1)
-        fixture = "var imagePreset = null, account = {api: 'openai', models: [{upstream: 'video-model'}]};"
+        fixture = "var root = {kind: 'video'}, imagePreset = null, account = {api: 'video', generationModels: ['video-model']};"
         self.assertEqual(self.evaluate(fixture + '(' + models + ')'), [{'upstream': 'video-model'}])
+        fixture_plugin = "var root = {kind: 'video'}, imagePreset = null, account = {api: 'plugin', models: [{upstream: 'video-model'}]};"
+        self.assertEqual(self.evaluate(fixture_plugin + '(' + models + ')'), [{'upstream': 'video-model'}])
         self.assertEqual(self.evaluate(fixture + 'account = null; (' + models + ')'), [])
         self.assertIn('onTextEdited: root.modelId = text', source)
 

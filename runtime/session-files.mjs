@@ -142,7 +142,8 @@ export async function deleteSession({ profile, session }) {
     if (!/^dsh-[a-zA-Z0-9]+$/.test(session.id)) throw new Error('会话编号无效');
     file = join(profile, 'dsh/transcripts', session.id + '.json');
   }
-  const root = join(profile, session.backend === 'dsh' ? 'dsh/transcripts' : 'pi/sessions');
+  const role = typeof session.cowork === 'string' && /^(?:[a-z]+|custom-[a-f0-9]{32})$/.test(session.cowork) ? session.cowork : '';
+  const root = role ? join(profile, 'cowork/sessions', role) : join(profile, session.backend === 'dsh' ? 'dsh/transcripts' : 'pi/sessions');
   const related = [];
   if (file) {
     await owned(join(root, 'boundary'), profile);
@@ -199,12 +200,13 @@ export async function execute(input) {
     const deleted = [], errors = [];
     const excluded = new Set(input.excludedSessionIds || []);
     const sessions = [...input.sessions];
-    if (input.workspace) {
-      const directory = join(await fs.realpath(input.profile), 'pi/sessions');
+    if (input.workspace || input.cowork) {
+      if (input.cowork && !/^(?:[a-z]+|custom-[a-f0-9]{32})$/.test(input.cowork)) throw new Error('Coworker 编号无效');
+      const directory = join(await fs.realpath(input.profile), input.cowork ? 'cowork/sessions/' + input.cowork : 'pi/sessions');
       await owned(join(directory, 'boundary'), input.profile);
       let names = []; try { names = await fs.readdir(directory); } catch (error) { if (error.code !== 'ENOENT') throw error; }
       const canonical = async path => { const clean = await fs.realpath(path).catch(() => resolve(path)); return process.platform === 'win32' ? clean.toLowerCase() : clean; };
-      const workspace = await canonical(input.workspace);
+      const workspace = input.workspace ? await canonical(input.workspace) : '';
       for (const name of names.filter(name => name.endsWith('.jsonl'))) {
         const file = join(directory, name);
         if (sessions.some(s => resolve(s.file || '.') === file)) continue;
@@ -214,8 +216,9 @@ export async function execute(input) {
           const buffer = Buffer.alloc(65536), { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
           const first = buffer.subarray(0, bytesRead).toString('utf8').split('\n')[0];
           let header; try { header = JSON.parse(first); } catch { continue; }
-          if (header?.type === 'session' && !excluded.has(header.id) && text(header.cwd) && await canonical(header.cwd) === workspace)
-            sessions.push({ id: header.id, file, workspace: input.workspace, title: '会话记录' });
+          if (header?.type === 'session' && text(header.id) && !excluded.has(header.id) && text(header.cwd) &&
+              (input.cowork || await canonical(header.cwd) === workspace))
+            sessions.push({ id: header.id, file, workspace: input.workspace || header.cwd, cowork: input.cowork, title: '会话记录' });
         } finally { await handle.close(); }
       }
     }

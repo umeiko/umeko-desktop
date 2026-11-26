@@ -12,7 +12,7 @@
 | 主题格式 | [JSON 配色与制作提示词](https://github.com/umeiko/umeko-desktop/blob/main/docs/themes.md) |
 | 人物格式 | [图片、台词与 ZIP 限制](https://github.com/umeiko/umeko-desktop/blob/main/docs/characters.md) |
 | submit 工具 | [参数、结果与预览边界](https://github.com/umeiko/umeko-desktop/blob/main/docs/chatbox-media.md) |
-| 内嵌 Pi 命令 | [run_pi_command 行为](https://github.com/umeiko/umeko-desktop/blob/main/docs/embedded-pi-commands.md) |
+| 内嵌 Pi 命令 | [pi.run 行为](https://github.com/umeiko/umeko-desktop/blob/main/docs/embedded-pi-commands.md) |
 
 ## Python 版从源码启动 {#run-the-python-edition-from-source}
 

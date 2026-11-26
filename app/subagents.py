@@ -103,7 +103,7 @@ class Subagents(QObject):
         projected = {}
         for row in rows.values():
             index = slot(row); counts[index] += 1
-            name = self.controller.characterNames[index] + (f" · {counts[index]}" if totals[index] > 1 else "")
+            name = (row.get("profileName") or self.controller.characterNames[index]) + (f" · {counts[index]}" if totals[index] > 1 else "")
             projected[row["id"]] = dict(row, avatar=AVATARS[index], name=name, active=row.get("status") in ACTIVE)
         self._projection_cache[record.key] = (len(rows), projected)
         return projected

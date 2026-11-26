@@ -11,6 +11,10 @@ if __name__ == '__main__' and '--update-process-helper' in sys.argv:
     from app.update_windows import main as update_process_main
     sys.exit(update_process_main(sys.argv[sys.argv.index('--update-process-helper') + 1:]))
 
+if __name__ == '__main__' and sys.argv[1:2] == ['--umeko-cli']:
+    from app.terminal_client import main as terminal_main
+    sys.exit(terminal_main(sys.argv[2:]))
+
 if __name__ == '__main__':
     from app.preview_launch import route_start
     if route_start(Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))):
@@ -21,9 +25,10 @@ if "--umeko-plugin-worker" in sys.argv:
     runpy.run_path(str(_plugin_root / "plugin-runtime/worker.py"), run_name="__main__")
     sys.exit(0)
 
-from app.platform_support import configure_input_method
+from app.platform_support import configure_input_method, configure_qml_gc
 
 os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
+configure_qml_gc()
 configure_input_method()
 
 from PySide6.QtCore import QTimer, QUrl
@@ -47,6 +52,7 @@ def diagnostic(message):
 
 
 def create_application():
+    configure_qml_gc()
     root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
     from app.webview import configure, configure_engine
     from app.desktop_preferences import startup_settings
@@ -109,7 +115,7 @@ def create_application():
     controller.appearanceChanged.connect(lambda: controller._system_tray.set_language(controller.language))
     controller._system_tray.quitRequested.connect(app.quit)
     controller._system_tray.notificationRequested.connect(controller.toast)
-    if controller.loginStartup.background:
+    if controller.loginStartup.background or '--cli-host' in sys.argv:
         controller._system_tray.minimize_to_tray(notify=False)
     from app.notifications import TaskNotifications
     controller._task_notifications = TaskNotifications(engine.rootObjects()[0], controller._system_tray.tray, root, controller)
@@ -121,15 +127,25 @@ def create_application():
         controller.openSession(session)
         controller._system_tray.restore()
     controller._task_notifications.activated.connect(open_finished_session)
-    from app.login_session import start_login_proxy
-    QTimer.singleShot(0, lambda: start_login_proxy(controller, sys.argv))
-    from app.update import start_update_cleanup
-    QTimer.singleShot(0, lambda: start_update_cleanup(root, controller.store.directory))
+    if '--remote-environments-smoke' not in sys.argv and '--remote-workdir-smoke' not in sys.argv:
+        from app.login_session import start_login_proxy
+        QTimer.singleShot(0, lambda: start_login_proxy(controller, sys.argv))
+        from app.update import start_update_cleanup
+        QTimer.singleShot(0, lambda: start_update_cleanup(root, controller.store.directory))
     QTimer.singleShot(150, controller.loadNativeIndex)
     return app, engine, controller
 
 
 if __name__ == "__main__":
+    remote_smoke = '--remote-environments-smoke' in sys.argv
+    workdir_smoke = '--remote-workdir-smoke' in sys.argv
+    if remote_smoke or workdir_smoke:
+        from app.storage import data_directory, legacy_data_directory
+        profile = os.environ.get('UMEKO_DATA_DIR')
+        if (os.environ.get('QT_QPA_PLATFORM') != 'offscreen' or not profile
+                or any(Path(profile).resolve().is_relative_to(path.resolve())
+                       for path in (data_directory(), legacy_data_directory(), Path.home() / '.umeko'))):
+            raise SystemExit('The remote smoke test needs an isolated profile and offscreen Qt.')
     # Opt-in diagnostics for a frozen smoke process that hangs during teardown.
     # Keep the watchdog alive through Python/Qt finalization, after EXIT:0.
     if "--smoke" in sys.argv and os.environ.get('UMEKO_SMOKE_STACKS'):
@@ -139,20 +155,49 @@ if __name__ == "__main__":
     from app.login_session import instance_for_launch
     from app.preview_launch import profile_directory
     instance_lock, continue_launch = instance_for_launch(profile_directory(), sys.argv)
-    if not continue_launch:
+    if not continue_launch or ('--cli-host' in sys.argv and instance_lock is None):
         sys.exit(0)
+    if instance_lock is None and not any(arg in sys.argv for arg in (
+            "--install-update", "--smoke", "--remote-environments-smoke", "--remote-workdir-smoke")):
+        # If a terminal start already owns this profile, reveal that desktop.
+        from app.terminal_client import TerminalClient
+        from PySide6.QtCore import QCoreApplication
+        try:
+            peer = TerminalClient(start=False)
+            peer.call("show")
+        except (OSError, ValueError):
+            core = QCoreApplication.instance()
+            if core is not None:
+                core.shutdown()
+        else:
+            peer.close()
+            sys.exit(0)
     try:
         app, engine, controller = create_application()
     except Exception as exc:
         diagnostic(str(exc))
-        if "--smoke" not in sys.argv and os.name == "nt":
+        if not remote_smoke and not workdir_smoke and "--smoke" not in sys.argv and os.name == "nt":
             import ctypes
             ctypes.windll.user32.MessageBoxW(None, "应用启动失败。请检查本机设置或从源码启动查看诊断。", "Umeko", 0x10)
         sys.exit(1)
+    if instance_lock is not None and not any(arg in sys.argv for arg in (
+            "--install-update", "--smoke", "--remote-environments-smoke", "--remote-workdir-smoke")):
+        from app.terminal_host import TerminalHost
+        try:
+            terminal_host = TerminalHost(controller)
+            app.aboutToQuit.connect(terminal_host.close)
+        except OSError as error:
+            diagnostic(f"Terminal host unavailable: {error}")
     diagnostic("QML_READY")
     preview_url=os.environ.get('UMEKO_WEB_PREVIEW_URL') if '--demo' in sys.argv else ''
     if preview_url: QTimer.singleShot(800, lambda: controller.webRequested.emit(preview_url,'Preview'))
-    if "--smoke" not in sys.argv and "--install-update" not in sys.argv:
+    if remote_smoke:
+        from app.remote_environments_smoke import start
+        start(app, engine, controller, Path(sys.argv[sys.argv.index('--remote-environments-smoke') + 1]))
+    elif workdir_smoke:
+        from app.remote_workdir_smoke import start
+        start(app, engine, controller, Path(sys.argv[sys.argv.index('--remote-workdir-smoke') + 1]))
+    elif "--smoke" not in sys.argv and "--install-update" not in sys.argv:
         controller.appAbout.startAutomaticChecks()
     if "--smoke" in sys.argv:
         notifications = controller._task_notifications.native
@@ -183,7 +228,7 @@ if __name__ == "__main__":
             _smoke_finish_timer = watch_smoke_finish(app, engine.rootObjects()[0], smoke_finish, snapshot)
         elif os.environ.get("UMEKO_SHELL_SMOKE_DIRECTORY"):
             from app.shell_smoke import attach
-            attach(app, controller, Path(os.environ["UMEKO_SHELL_SMOKE_DIRECTORY"]))
+            attach(app, controller, Path(os.environ["UMEKO_SHELL_SMOKE_DIRECTORY"]), engine.rootObjects()[0])
         else:
             QTimer.singleShot(5500 if preview_url else 1500, app.quit)
     result = app.exec()

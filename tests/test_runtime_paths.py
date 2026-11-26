@@ -86,6 +86,8 @@ class RuntimePathTests(unittest.TestCase):
         (source_io / "skills.mjs").write_text("fixture")
         (source_io / "coordinator-skills.mjs").write_text("fixture")
         (source_io / "generation.mjs").write_text("fixture")
+        for name in ("cowork-tools.mjs", "cowork-local.mjs", "cowork-subagents.mjs"):
+            (source_io / name).write_text("fixture")
         (source_io / "http-retry-boundary.mjs").write_text("fixture")
         (source_io / "system-prompt.mjs").write_text("fixture")
         (source_io / "update-cleanup.mjs").write_text("fixture")
@@ -102,6 +104,8 @@ class RuntimePathTests(unittest.TestCase):
         self.assertEqual((release_io / "coordinator-skills.mjs").read_text(), "fixture")
         self.assertEqual((release_io / "markdown-preview.mjs").read_text(), "fixture")
         self.assertEqual((release_io / "generation.mjs").read_text(), "fixture")
+        for name in ("cowork-tools.mjs", "cowork-local.mjs", "cowork-subagents.mjs"):
+            self.assertEqual((release_io / name).read_text(), "fixture")
         self.assertEqual((release_io / "system-prompt.mjs").read_text(), "fixture")
         self.assertEqual((release_io / "update-cleanup.mjs").read_text(), "fixture")
         self.assertEqual(ordinary_path(filesystem_path(release)), release)

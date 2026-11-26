@@ -35,7 +35,7 @@ A context window you set yourself takes precedence over both.
 Hover over the context-usage circle below the composer to inspect usage. Click
 the circle and choose **Compact context**. The action is available while the
 current conversation is idle. It uses Pi’s compaction and keeps the composer
-draft. The Agent can also run native commands through `run_pi_command`.
+draft. The Agent can also run native commands through `umeko_desktop` with operation `pi.run`.
 
 Automatic and manual compaction create a muted, collapsible event at their
 chronological position in history. The event updates from progress to success
@@ -51,7 +51,7 @@ clears when compaction finishes. Post-compaction token counts are Pi estimates.
 值时按模型名匹配或使用 128000 默认值。
 
 悬停输入框底部的上下文圆环可查看用量，点击后选择“压缩上下文”。该操作在当前会话
-空闲时可用，输入框草稿保持不变。Agent 也可以通过 run_pi_command 使用原生命令。
+空闲时可用，输入框草稿保持不变。Agent 也可以通过 `umeko_desktop` 的 `pi.run` 使用原生命令。
 
 自动和手动压缩均在历史中显示可展开事件，从进行中更新为成功或失败；展开可查看
 摘要、错误和压缩前后 token 估计值。这些事件只在本地显示，模型收不到；重开会话和

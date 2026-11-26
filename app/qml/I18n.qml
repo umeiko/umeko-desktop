@@ -6,17 +6,13 @@ QtObject {
     id: root
     readonly property string language: backend.language
     function widgetText(plugin, value) {
-        if (plugin && plugin.id === "widget-market" && plugin.builtin !== false && root.language === "en") {
-            if (value === "Widget 市场") return "Widget Market"
-            if (value === "发现、安装和管理桌面 Widget。") return "Discover, install and manage desktop Widgets."
-            if (value === "浏览和安装 Widget") return "Browse and install Widgets"
-        }
-        if (plugin && plugin.id === "scheduled-tasks" && plugin.builtin !== false && root.language === "en") {
-            if (value === "定时任务") return "Scheduled Tasks"
-            if (value === "安排预写消息在独立 Pi 会话中运行") return "Run a saved prompt in a separate Pi conversation"
-            if (value === "在 Umeko 运行时按计划执行，查看每次运行的结果。") return "Run tasks on a schedule while Umeko is open and review each result."
-        }
-        return plugin && (plugin.id === "skill-manager" || plugin.id === "task-records") && plugin.builtin !== false ? t(value) : value
+        return plugin && plugin.builtin ? t(value) : value
+    }
+    function modelCount(count) {
+        return count === 1 ? t("1 个模型") : t("%1 个模型").arg(count)
+    }
+    function reasoningLabel(value) {
+        return root.language === "en" ? English.strings["reasoning:" + value] : value
     }
     function t(value) {
         const text = String(value || "")

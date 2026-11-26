@@ -14,7 +14,7 @@ ActionButton {
     onVisibleChanged: if (!visible) menu.close()
     contentItem: RowLayout {
         spacing: 5
-        SubagentAvatar { Layout.preferredWidth: Theme.icon(27); Layout.preferredHeight: Theme.icon(27); slot: backend.subagents.activeAgents.length ? backend.subagents.activeAgents[0].avatarSlot || 0 : 0 }
+        SubagentAvatar { readonly property var agent: backend.subagents.activeAgents[0]; Layout.preferredWidth: Theme.icon(27); Layout.preferredHeight: Theme.icon(27); slot: agent?.avatarSlot || 0; character: agent?.character || "" }
         Text { font.family: Theme.fontFamily; id: count; text: backend.subagents.activeCount; color: Theme.ink; font.pixelSize: Theme.font(11, visible) }
         Glyph { name: "chevron-down"; Layout.preferredWidth: Theme.icon(10); Layout.preferredHeight: Theme.icon(10) }
     }

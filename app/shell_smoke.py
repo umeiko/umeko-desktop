@@ -4,10 +4,11 @@ import json
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QMetaObject, QObject, QTimer, QUrl
+from PySide6.QtQml import QQmlEngine, QQmlExpression
 
 
-def attach(app, controller, directory):
+def attach(app, controller, directory, window=None):
     directory = directory.resolve()
     profile = directory / "profile"
     workspace = directory / "workspace"
@@ -19,9 +20,67 @@ def attach(app, controller, directory):
 
     request_path = directory / "request.json"
     response_path = directory / "response.json"
-    controller.setWorkspace(str(workspace))
+    workspace_url = QUrl.fromLocalFile(str(workspace)).toString()
+    controller.setWorkspace(workspace_url)
     timer = QTimer(app)
     app._shell_smoke_timer = timer
+    dsh_smoke = os.environ.get("UMEKO_DSH_SMOKE") == "1"
+    remote_settings_smoke = os.environ.get("UMEKO_REMOTE_SETTINGS_SMOKE") == "1"
+
+    def click(name):
+        item = window.findChild(QObject, name)
+        if item is None or not item.property("visible") or not item.property("enabled"):
+            return False
+        item.clicked.emit()
+        return True
+
+    def dsh_action(action, request):
+        if action == "agent_settings":
+            window.setProperty("settingsTab", 3)
+            window.setProperty("page", "settings")
+        elif action == "chat":
+            window.setProperty("page", "chat")
+        elif action == "backend":
+            return controller.setSessionBackend(request["backend"])
+        elif action == "open":
+            controller.openSession(request["session"])
+        elif action == "click":
+            name = request["name"]
+            return name in {"openDshSettingsButton", "checkDshRuntimeButton", "downloadDshRuntimeButton",
+                            "allowToolButton", "denyToolButton"} and click(name)
+        elif action == "snapshot":
+            name = request["name"]
+            return name in {"settings", "chat"} and window.grabWindow().save(str(directory / (name + ".png")))
+        else:
+            return False
+        return True
+
+    def remote_settings_action(action, request):
+        if action == "remote_settings":
+            if not controller.saveDesktopSettings('{"remoteWorkspaceEnabled":true}'):
+                return False
+            window.setHeight(max(window.height(), 1050))
+            window.setProperty("settingsTab", 3)
+            window.setProperty("page", "settings")
+        elif action == "open_remote_settings":
+            return click("openUmekoDesktopSettingsButton")
+        elif action == "remote_settings_snapshot":
+            language = request.get("language")
+            state = request.get("state")
+            if language != controller.language or state not in {"connected", "reconnecting", "long-outage"}:
+                return False
+            settings = window.findChild(QObject, "umekoDesktopSettings")
+            scroll = window.findChild(QObject, "settingsScroll")
+            card = window.findChild(QObject, "remoteWorkspaceEnvironmentSettings")
+            if not settings or not settings.property("visible") or not scroll or not card:
+                return False
+            flickable = scroll.property("contentItem")
+            top = card.mapToItem(flickable.property("contentItem"), 0, 0).y()
+            flickable.setProperty("contentY", max(0, min(top, flickable.property("contentHeight") - flickable.height())))
+            return window.grabWindow().save(str(directory / f"{language}-{state}.png"))
+        else:
+            return False
+        return True
 
     def receive():
         if not request_path.is_file():
@@ -30,6 +89,7 @@ def attach(app, controller, directory):
         request_path.unlink()
         action = request["action"]
         accepted = True
+        evidence = {}
         extra = {}
         if action == "send":
             accepted = controller.send(request["text"])
@@ -37,17 +97,69 @@ def attach(app, controller, directory):
             controller.stop()
         elif action == "new":
             controller.newSession()
-            controller.setWorkspace(str(workspace))
+            controller.setWorkspace(workspace_url)
         elif action in {"team_setup", "team_send", "team_state"}:
             try:
                 extra = team_action(controller, action, request)
             except (OSError, ValueError) as error:
                 accepted, extra = False, {"error": str(error)}
+        elif action == "agent_bus":
+            service = controller.desktopPlugins.global_agents
+            allowed = {"setAutomaticCreation", "snapshot", "send", "setModel"}
+            method = request["method"]
+            if method in allowed:
+                try:
+                    evidence = service.handle(method, request.get("arguments", {}))
+                except ValueError as error:
+                    accepted, evidence = False, {"error": str(error)}
+            else:
+                accepted = False
+        elif action == "model_group":
+            accepted = controller.selectModelGroup()
+        elif action == "model_picker" and window:
+            controller.setLanguage(request["language"])
+            popup = window.findChild(QObject, "modelPopup")
+            if popup and not popup.property("desiredOpen"):
+                QMetaObject.invokeMethod(popup, "toggle")
+            search = window.findChild(QObject, "modelSearch")
+            accepted = bool(popup and search and not window.findChild(QObject, "modelRolePicker"))
+            if search:
+                search.setProperty("text", "test-model")
+        elif action == "open_member_widget":
+            popup = window.findChild(QObject, "modelPopup") if window else None
+            if popup and popup.property("desiredOpen"):
+                QMetaObject.invokeMethod(popup, "toggle")
+            accepted = controller.desktopPlugins.openPage("global-agents")
+        elif action == "member_picker" and window:
+            controller.setLanguage(request["language"])
+            page = window.findChild(QObject, "globalAgentsPage")
+            if page:
+                expression = QQmlExpression(QQmlEngine.contextForObject(page), page,
+                                            "form(" + json.dumps(request.get("id", "")) + ")")
+                expression.evaluate()
+                accepted = not expression.hasError()
+            else:
+                accepted = False
+        elif action == "capture" and window:
+            name = request.get("name", "")
+            if name not in {"model-picker-zh", "model-picker-en", "member-picker-zh", "member-picker-en"}:
+                accepted = False
+            else:
+                accepted = window.grabWindow().save(str(directory / (name + ".png")))
         elif action not in {"status", "quit"}:
-            accepted = False
+            accepted = (remote_settings_smoke and remote_settings_action(action, request)) or (dsh_smoke and dsh_action(action, request))
         view = controller._view
         result = {"accepted": accepted, "busy": controller.busy, "phase": view.phase,
-                  "session": view.id, "messages": view.messages, **extra}
+                  "session": view.id, "messages": view.messages, "evidence": evidence,
+                  "piProcesses": [int(record.process.processId()) for record in controller._pool.records.values() if record.process],
+                  **extra}
+        if dsh_smoke:
+            runtime = controller.dshRuntime
+            result.update(backend=controller.sessionBackend, acpSession=getattr(view, "acp_session_id", ""),
+                          approval=controller.pendingApproval, runtime={"busy": runtime.busy, "ready": runtime.ready,
+                              "version": runtime.version, "status": runtime.status, "hint": runtime.hint})
+        if remote_settings_smoke:
+            result["remoteEnvironments"] = controller.remoteEnvironments
         temporary = response_path.with_suffix(".tmp")
         temporary.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
         temporary.replace(response_path)
@@ -56,7 +168,8 @@ def attach(app, controller, directory):
 
     timer.timeout.connect(receive)
     timer.start(50)
-    QTimer.singleShot(120_000, lambda: app.exit(2))
+    timeout = 900_000 if remote_settings_smoke else 720_000 if dsh_smoke else 120_000
+    QTimer.singleShot(timeout, lambda: app.exit(2))
 
 
 def team_action(controller, action, request):

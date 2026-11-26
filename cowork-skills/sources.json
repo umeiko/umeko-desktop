@@ -1,0 +1,34 @@
+[
+  {
+    "repository": "https://github.com/openai/skills",
+    "commit": "49f948faa9258a0c61caceaf225e179651397431",
+    "path": "skills/.curated/pdf",
+    "id": "pdf-paper-reading",
+    "upstreamName": "pdf",
+    "adaptation": "Umeko 0.6.4: Pi tool names, host prerequisites and artifact delivery; source license retained. Cowork-only Pi skill name."
+  },
+  {
+    "repository": "https://github.com/NousResearch/hermes-agent",
+    "commit": "9f050ccc82f8240ae57f3c039a22b913ebcd2829",
+    "path": "skills/research/grounded-citations",
+    "id": "evidence-citations",
+    "upstreamName": "grounded-citations",
+    "adaptation": "Umeko 0.6.4: Pi tool names, host prerequisites and artifact delivery; source license retained. Cowork-only Pi skill name."
+  },
+  {
+    "repository": "https://github.com/NousResearch/hermes-agent",
+    "commit": "9f050ccc82f8240ae57f3c039a22b913ebcd2829",
+    "path": "skills/productivity/microsoft-office",
+    "id": "office-artifacts",
+    "upstreamName": "microsoft-office",
+    "adaptation": "Umeko 0.6.4: Pi tool names, host prerequisites and artifact delivery; source license retained. Cowork-only Pi skill name."
+  },
+  {
+    "repository": "https://github.com/NousResearch/hermes-agent",
+    "commit": "352b249f67fb6a4a7d7904acaca9dd410db229e0",
+    "path": "skills/productivity/document-to-action-items",
+    "id": "document-to-action-items",
+    "upstreamName": "document-to-action-items",
+    "adaptation": "Pi file and PDF tool names, companion skill names; source license retained."
+  }
+]

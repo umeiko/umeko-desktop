@@ -2,7 +2,8 @@
 import unittest
 
 from app.reasoning_detection import (
-    EFFORT_CANDIDATES, allowed_levels, detect_model, is_effort_rejection, metadata_levels,
+    EFFORT_CANDIDATES, allowed_levels, detect_model_legacy as detect_model,
+    is_effort_rejection, metadata_levels,
 )
 from app.thinking_formats import format_parameters, valid_format
 

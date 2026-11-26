@@ -17,6 +17,7 @@ assert re.fullmatch(r'\d+',RUN) and re.fullmatch(r'v\d+\.\d+\.\d+',TAG)
 minimal=False
 version=TAG.removeprefix('v')
 assert REPO=='umeiko/umeko-desktop'
+node_version=json.loads(Path(__file__).with_name('node-distributions.json').read_text(encoding='utf-8'))['version']
 
 def gh(*args):
     return subprocess.check_output(['gh',*map(str,args)],text=True)
@@ -44,7 +45,7 @@ for metadata in incoming.rglob('build.json'):
     assert report['build']['commit']==commit and report['build']['version']==version
     assert report['gui']=='passed' and report['pi']=='passed'
     if tuple(map(int,version.split('.'))) >= (0,6,1):assert report.get('terminal')=='passed'
-    assert report['build']['node']['version']=='22.23.3'
+    assert report['build']['node']['version']==node_version
     seen.add(target)
     suffix='.tar.gz' if target=='linux-x64' else '.zip'
     archive=metadata.with_name(report['archive'])

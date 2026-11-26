@@ -29,7 +29,7 @@ Rectangle {
     function statusLabel(status) { return I18n.t(({running:"运行中",queued:"排队中",completed:"已完成",error:"出错",stopped:"已停止",aborted:"已中断"})[status] || "子代理") }
     Item {
         id: header; width: parent.width; height: Theme.control(76)
-        SubagentAvatar { x: Theme.control(16); anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(41); height: width; slot: root.agent.avatarSlot || 0 }
+        SubagentAvatar { x: Theme.control(16); anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(41); height: width; slot: root.agent.avatarSlot || 0; character: root.agent.character || "" }
         Column { x: Theme.control(68); width: Math.max(0,parent.width-x-Theme.control(100)); anchors.verticalCenter: parent.verticalCenter; spacing: 6
             Text { font.family: Theme.fontFamily; width: parent.width; text: (root.agent.name || I18n.t("子代理")) + " · " + root.statusLabel(root.agent.status); textFormat: Text.PlainText; maximumLineCount: 1; wrapMode: Text.NoWrap; color: Theme.ink; font.pixelSize: Theme.font(12, visible); elide: Text.ElideRight }
             Text { font.family: Theme.fontFamily; objectName: "subagentHeaderSummary"; width: parent.width; text: String(root.agent.task || root.agent.type || "").replace(/\s+/g," "); maximumLineCount: 1; wrapMode: Text.NoWrap; textFormat: Text.PlainText; color: Theme.muted; font.pixelSize: Theme.font(10, visible); elide: Text.ElideRight }
@@ -39,6 +39,7 @@ Rectangle {
     ContextUsage { objectName: "subagentContextUsage"; menuBelow: true; controller: backend.subagents.conversation; anchors.right: parent.right; anchors.rightMargin: 50; y: Theme.control(22) }
     Rectangle { anchors.top: header.bottom; width: parent.width; height: 1; color: Theme.line }
     readonly property int roleSlot: Math.max(0, Math.min(3, root.agent.avatarSlot || 0))
+    readonly property var characterPack: Character.personalityEnabled ? Character.subagentPack(root.agent.character) : undefined
     readonly property var conversation: chat.view
     readonly property var selection: chat.selection
     AgentConversationPane {
@@ -49,8 +50,8 @@ Rectangle {
         viewName: "subagentConversation"; messagePrefix: "subagent"
         assistantName: root.agent.name || I18n.t("子代理")
         roleSlot: root.roleSlot
-        portrait: Character.roleAsset(root.roleSlot, "avatar", "../icons/subagents/" + ["lemon-yakishio","chika-komari","kaju-nukumizu","yumeko-shikiya"][root.roleSlot] + "-catch.png")
-        replyPortrait: Character.roleAsset(root.roleSlot, "avatar", "../icons/subagents/" + ["lemon-yakishio","chika-komari","kaju-nukumizu","yumeko-shikiya"][root.roleSlot] + ".png")
+        portrait: root.characterPack?.portrait || Character.roleAsset(root.roleSlot, "avatar", "../icons/subagents/" + ["lemon-yakishio","chika-komari","kaju-nukumizu","yumeko-shikiya"][root.roleSlot] + "-catch.png")
+        replyPortrait: root.characterPack?.replyPortrait || Character.roleAsset(root.roleSlot, "avatar", "../icons/subagents/" + ["lemon-yakishio","chika-komari","kaju-nukumizu","yumeko-shikiya"][root.roleSlot] + ".png")
     }
     Shortcut { sequence: "Ctrl+S"; enabled: prompt.activeFocus && !root.contextState.loading && !root.contextState.pending; onActivated: composer.send(true) }
     Item {
@@ -120,7 +121,7 @@ Rectangle {
     ChatFileDrop {
         anchors.fill: parent; z: 70; chatWindow: root
         objectName: "subagentFileDropArea"; overlayName: "subagentFileDropOverlay"; mascotName: "subagentFileCatchMascot"
-        mascotSource: Character.roleAsset(root.agent.avatarSlot || 0, "catch", "../icons/subagents/" + ["lemon-yakishio","chika-komari","kaju-nukumizu","yumeko-shikiya"][root.agent.avatarSlot || 0] + "-catch.png")
+        mascotSource: root.characterPack?.portrait || Character.roleAsset(root.agent.avatarSlot || 0, "catch", "../icons/subagents/" + ["lemon-yakishio","chika-komari","kaju-nukumizu","yumeko-shikiya"][root.agent.avatarSlot || 0] + "-catch.png")
         promptText: Character.roleLine(root.agent.avatarSlot || 0, "fileDrop", Character.scene("files.drop", ""))
     }
 }

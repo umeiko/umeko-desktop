@@ -473,16 +473,22 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        const input=event.input||{};
        const backgroundStart=name==='background_job'&&input.action==='start';
        const backgroundWrite=name==='background_job'&&input.action==='write';
-        const commandStart=name==='bash'||name==='powershell'||backgroundStart;
+       const commandStart=name==='bash'||name==='powershell'||backgroundStart;
+       const remoteStart=(name==='remote_command'&&input.action==='run')||
+         (name==='remote_network'&&input.action==='proxychains');
+       const remoteRead=(name==='remote_command'&&input.action==='read')||
+         (name==='remote_files'&&['read','list','search'].includes(input.action));
+       if(remoteRead)return undefined;
        const command=backgroundWrite?input.input:(input.command??input.script);
        const baseCwd=ctx.cwd||policy.cwd||process.cwd();
        const context={...policy,cwd:backgroundStart&&input.cwd ? path.resolve(baseCwd,input.cwd) : baseCwd};
-       const shell=commandStart||backgroundWrite;
+       const shell=commandStart||backgroundWrite||remoteStart;
        const patch=name===APPLY_PATCH ? preparePatchPermission(input,baseCwd) : null;
-       const file=name==='write'||name==='edit'||!!patch;
+       const transfer=name==='remote_files'&&['upload','download'].includes(input.action);
+       const file=name==='write'||name==='edit'||!!patch||transfer;
        const generation=name==='image_gen'||name==='voice_gen'||name==='video_gen';
        const original=patch?[...patch.targets].map(([name,{absolute,canonical}])=>absolute===canonical?name:`${name} → ${canonical}`).join('\n'):
-         shell?String(command??''):file?String(input.path??input.file_path??''):JSON.stringify(input);
+         shell?String(command??''):file?String(transfer?input.localPath??'':input.path??input.file_path??''):JSON.stringify(input);
        let hit=generation?decision('ask'):null;
        if(shell)hit=await classify(original,context);
        else if(patch)hit=[...patch.targets.values()].flatMap(({absolute,canonical})=>[absolute,canonical])
@@ -529,12 +535,13 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
          ? `将提示词或文本发送到 ${destination} 生成${name==='image_gen'?'图片':name==='video_gen'?'视频':'语音'}，可能产生费用。文件保存在当前工作目录，已有文件不会被覆盖。`
          : `Send the prompt or text to ${destination} to generate ${name==='image_gen'?'images':name==='video_gen'?'video':'speech'}; this may incur charges. Save files in the current workspace without overwriting existing files.`)
          : extraReason||REASONS[hit.ruleId]?.[language==='zh'?1:0]||hit.reason;
+       const approvalInput=name==='remote_files'||name==='remote_command'?JSON.stringify(input):original;
        if(!ctx.hasUI||!ctx.ui?.confirm){
          const message=language==='zh'?`未执行：无法显示审批对话框。${reason}`:`Not executed: approval UI is unavailable. ${reason}`;
          notify(message);return {block:true,reason:message};
        }
        const title=language==='zh'?'批准工具操作':'Approve tool operation';
-       const message=language==='zh'?`原因：${reason}\n\n原始${shell?'命令':'路径/输入'}：\n${original}`:`Reason: ${reason}\n\nOriginal ${shell?'command':'path/input'}:\n${original}`;
+       const message=language==='zh'?`原因：${reason}\n\n原始${shell?'命令':'路径/输入'}：\n${approvalInput}`:`Reason: ${reason}\n\nOriginal ${shell?'command':'path/input'}:\n${approvalInput}`;
        const approved=hit.category>=1&&hit.category<=7&&typeof ctx.ui.confirmDangerous==='function'
          ? await ctx.ui.confirmDangerous(title,message,hit.category)
          : remember&&typeof ctx.ui.confirmCommand==='function'

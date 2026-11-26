@@ -47,7 +47,7 @@ Build on the target OS and CPU architecture:
 ./build.sh
 ```
 
-Outputs: `dist/Umeko/Umeko.exe` (Windows), `dist/Umeko/Umeko` (Linux), and `dist/Umeko.app` (macOS). Keep the complete bundle directory. Node.js 22.23.3 and npm are bundled; no separate Node.js installation is needed. macOS builds use local ad-hoc signing and are not notarized.
+Outputs: `dist/Umeko/Umeko.exe` (Windows), `dist/Umeko/Umeko` (Linux), and `dist/Umeko.app` (macOS). Keep the complete bundle directory. Node.js 24.19.0 and npm are bundled; no separate Node.js installation is needed. macOS builds use local ad-hoc signing and are not notarized.
 
 Build into the fixed `dist` output. On Windows, close a running copy of the target bundle before packaging over it. To reclaim older generated Windows builds, review `./scripts/clean-builds.ps1 -WhatIf`, then run `./scripts/clean-builds.ps1`. It skips running applications, linked directories and unrecognized folders, keeps the canonical `dist/Umeko` bundle, and keeps the latest fallback preview if that bundle is missing. It removes generated builds only; source, profiles, projects and conversation files stay in place.
 

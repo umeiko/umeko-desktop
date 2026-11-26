@@ -26,6 +26,19 @@ class GlobalAgentTests(unittest.TestCase):
     def tearDown(self):self.g.close();self.temp.cleanup()
     def dispatch(self):return self.g.execute('agent_bus.dispatch',{'targetId':self.g.identifier(self.b._view),'text':'检查测试'},self.source)
     def enable(self):self.g.handle('setBridge',{'id':self.g.identifier(self.b._view),'agentId':self.id,'enabled':True})
+    def test_automatic_worktrees_never_use_a_cowork_folder(self):
+        self.b.store.data['agent'] = {'automaticWorktrees': True}
+        cowork = SessionState(cowork='fixed-role', workspace=str(self.temp.name))
+        ordinary = SessionState(workspace=str(self.temp.name))
+        self.g.agents[self.id]['tools'] = ['write']
+        self.assertEqual(self.g.task_scope(cowork, self.source, ''), {})
+        self.assertEqual(self.g.task_scope(self.source, cowork, ''), {})
+        self.b._view = cowork
+        self.assertEqual(self.g.task_scope(self.source, self.source, ''), {})
+        with self.assertRaisesRegex(ValueError, 'Cowork'):
+            self.g.task_scope(cowork, self.source, 'write')
+        self.assertEqual(self.g.task_scope(ordinary, self.source, 'write')['access'], 'write')
+
     def test_worktree_inspection_defers_git_and_returns_only_short_display_names(self):
         identifier = uuid.uuid4().hex
         session_id = uuid.uuid4().hex

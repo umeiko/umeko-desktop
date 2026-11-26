@@ -7,6 +7,8 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
+import urllib.error
+import urllib.request
 from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -110,6 +112,62 @@ class GatewayCompatibilityTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, 'messages'):
             gateway.complete('fixture', MESSAGES, parameters={'seed': 1, '_umeko_auto_parameters': ['seed']})
         self.assertEqual(len(service.requests), 1)
+
+    def test_private_size_rejection_recovers_once_and_keeps_the_rejected_image_out_of_future_requests(self):
+        image = {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,ZmFrZS1pbWFnZQ=='}}
+        messages = [
+            {'role': 'user', 'content': 'Read the screenshot'},
+            {'role': 'assistant', 'content': None, 'tool_calls': [
+                {'id': 'read-1', 'type': 'function', 'function': {'name': 'read', 'arguments': '{}'}}]},
+            {'role': 'tool', 'tool_call_id': 'read-1', 'content': 'Read the original image'},
+            {'role': 'user', 'content': [{'type': 'text', 'text': 'Image from read'}, image]},
+            {'role': 'user', 'content': 'Can this chat still answer?'},
+        ]
+        original = copy.deepcopy(messages)
+        def reply(body, _count):
+            if any(image in message['content'] for message in body['messages'] if isinstance(message.get('content'), list)):
+                return 413, {'error': {'message': 'Request Entity Too Large'}}, {}
+            return 200, OK, {}
+        gateway, service, store = self.gateway(reply, models=[{'alias':'fixture', 'upstream':'fixture', 'vision':True}])
+
+        def local_request(gateway, private, session):
+            server = LocalServer(gateway, 0, 'fixture-local-key', private=private)
+            self.addCleanup(server.close)
+            request = urllib.request.Request(f'http://127.0.0.1:{server.port}/v1/chat/completions',
+                data=json.dumps({'model': 'fixture', 'messages': messages, 'stream': True,
+                                 '_umeko_image_session': session}).encode(),
+                headers={'Authorization': 'Bearer fixture-local-key', 'Content-Type': 'application/json'})
+            with urllib.request.urlopen(request, timeout=10) as response:
+                self.assertIn(b'"content": "OK"', response.read())
+
+        # A public caller cannot opt into the desktop recovery policy.
+        with self.assertRaises(urllib.error.HTTPError):
+            local_request(gateway, False, 'fixture-chat')
+        self.assertEqual(len(service.requests), 1)
+        local_request(gateway, True, 'fixture-chat')
+        self.assertEqual(len(service.requests), 3)
+        fallback = service.requests[-1]['messages']
+        self.assertEqual(fallback[2]['tool_call_id'], 'read-1')
+        self.assertEqual(fallback[-1], messages[-1])
+        self.assertIn('original remains in the chat', fallback[3]['content'][1]['text'])
+        self.assertNotIn('_umeko_image_session', service.requests[-1])
+        self.assertEqual(messages, original)
+
+        restored = Gateway(store, UnconfiguredAdapter())
+        local_request(restored, True, 'fixture-chat')
+        self.assertEqual(len(service.requests), 4, 'A reopened chat must not send the rejected image again')
+        local_request(restored, True, 'unrelated-chat')
+        self.assertEqual(len(service.requests), 6, 'Recovery belongs to the requesting chat only')
+
+    def test_image_context_overflow_is_retried_at_most_once(self):
+        gateway, service, _ = self.gateway(lambda _body, _count: (400, {
+            'error': {'code': 'context_length_exceeded', 'message': 'Context length exceeded'}}, {}),
+            models=[{'alias':'fixture', 'upstream':'fixture', 'vision':True}])
+        message = {'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url':'data:image/png;base64,ZmFrZQ=='}}]}
+        with self.assertRaisesRegex(ValueError, 'Context length exceeded'):
+            gateway.complete('fixture', [message], parameters={'_umeko_image_session':'fixture-chat'})
+        self.assertEqual(len(service.requests), 2)
+        self.assertEqual(service.requests[1]['messages'][0]['content'][0]['type'], 'text')
 
     def test_silent_drop_is_success_without_rejection_memory(self):
         gateway, service, _ = self.gateway(lambda body, n: (200, OK, {}))
@@ -262,7 +320,10 @@ class GatewayCompatibilityTests(unittest.TestCase):
         stream = b'data: null\n\ndata: ' + json.dumps(frame).encode() + b'\n\n'
         gateway, _, _ = self.gateway(lambda body, n: (200, stream, {}))
         with patch('app.gateway.detect_model', side_effect=lambda request, **kwargs: request('high', 'openai', 16)):
-            self.assertEqual(gateway.detect_reasoning('fixture'), {'thinking': True, 'content': True})
+            self.assertEqual(gateway.detect_reasoning('fixture'), {
+                'thinking': True, 'content': True, 'thinkingChars': 6,
+                'reasoningTokens': None, 'answer': 'OK', 'correct': False,
+                'finishReason': None})
 
     def test_other_client_parameter_status_uses_the_same_recovery(self):
         gateway, service, _ = self.gateway(lambda body, n: (415, {'error': {

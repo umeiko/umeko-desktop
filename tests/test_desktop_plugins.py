@@ -53,7 +53,10 @@ class DesktopPluginTests(unittest.TestCase):
     def test_scheduled_tasks_defaults_on_and_respects_explicit_opt_out(self):
         self.assertTrue(self.manager.enabled('scheduled-tasks'))
         self.assertTrue(self.manager.session_enabled('scheduled-tasks'))
+        stopped = []
+        self.manager.workers['scheduled-tasks']['process'].finished.connect(lambda *_: stopped.append(True))
         self.manager.setEnabled('scheduled-tasks', False)
+        self.wait(lambda: bool(stopped))
         self.manager.synchronize()
         self.assertFalse(self.manager.enabled('scheduled-tasks'))
         self.assertNotIn('scheduled-tasks', self.manager.workers)
@@ -333,14 +336,15 @@ def create_plugin(context):return Fixture(context)
 
     def test_official_tree_is_lazy_bounded_and_closes_worker(self):
         directory=Path(self.host._view.workspace);(directory/'a.py').write_text('print(1)');(directory/'nested').mkdir();(directory/'nested/x.txt').write_text('hello')
-        self.assertEqual({row['id'] for row in self.manager.sessionPlugins},{'file-tree','git-viewer','global-agents','pi-manager','scheduled-tasks','skill-manager','widget-market'})
+        self.assertEqual({row['id'] for row in self.manager.sessionPlugins},{'file-tree','git-viewer','global-agents','pi-manager','scheduled-tasks','skill-manager','terminal'})
+        self.assertFalse(self.manager.openPage('widget-market'))
         self.assertNotIn('pi-manager',self.manager.workers)
         self.assertTrue(self.manager.openPage('file-tree'));result=self.call('list',{'path':'.'})
         self.assertTrue(result['ok']);entries=result['result']['entries'];self.assertEqual(entries[0]['name'],'nested')
         self.assertNotIn('x.txt',str(entries))
         self.assertNotIn('messages',self.manager.session)
         self.assertFalse(self.call('list',{'path':'..'})['ok'])
-        self.manager.closePage();self.assertEqual(set(self.manager.workers),{'desktop-pet','global-agents','scheduled-tasks'});self.app.processEvents()
+        self.manager.closePage();self.assertEqual(set(self.manager.workers),{'desktop-pet','global-agents','scheduled-tasks','terminal'});self.app.processEvents()
 
     def test_widget_icons_have_a_shared_catalog_and_validate_custom_assets(self):
         rows={row['id']:row for row in self.manager.rows}
@@ -610,7 +614,7 @@ def create_plugin(context):return Fixture(context)
         self.assertEqual(self.host.sent,[('session-one','from-plugin',True)])
         self.assertTrue(marker.exists())
         self.manager.call('late','{}');self.host._view.key='token-two';self.host._view.id='session-two';self.host.viewChanged.emit()
-        self.assertFalse(self.manager.page);self.assertEqual(set(self.manager.workers),{'desktop-pet','global-agents','scheduled-tasks'})
+        self.assertFalse(self.manager.page);self.assertEqual(set(self.manager.workers),{'desktop-pet','global-agents','scheduled-tasks','terminal'})
         deadline=time.monotonic()+1
         while time.monotonic()<deadline:self.app.processEvents();time.sleep(.01)
         self.assertEqual(len(self.host.sent),1)
@@ -740,10 +744,16 @@ def create_plugin(context):return Fixture(context)
         self.manager.setEnabled('global-agents',False)
         self.assertEqual(self.manager.recentPlugin['id'],'scheduled-tasks')
         self.manager.setEnabled('scheduled-tasks',False)
+        self.assertEqual(self.manager.recentPlugin['id'],'terminal')
+        self.manager.setEnabled('terminal',False)
         self.assertEqual(self.manager.recentPlugin,{})
         self.manager.setSessionEnabled('file-tree',True)
+        self.manager.setEnabled('widget-market',True)
         persisted=DesktopPlugins(self.host)
-        try:self.assertEqual(persisted.recentPlugin['id'],'file-tree')
+        try:
+            self.assertEqual(persisted.recentPlugin['id'],'file-tree')
+            self.assertFalse(persisted.enabled('terminal'))
+            self.assertTrue(persisted.enabled('widget-market'))
         finally:persisted.close()
     def test_import_refuses_builtin_override_and_unsafe_zip_paths(self):
         for name in ('../outside.txt','/absolute.txt','C:/drive.txt','scripts\\bad.py','A.txt'):

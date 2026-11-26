@@ -8,7 +8,8 @@ import copy, hashlib, json, secrets, time, uuid, re
 from itertools import islice
 from pathlib import Path
 from PySide6.QtCore import QObject, QTimer, QUrl
-from .model_groups import GROUP_PROVIDER
+from .model_groups import GROUP_MODEL, GROUP_PROVIDER
+from .model_roles import model_choices, member_model, select_route, session_model_roles
 from .pi_sessions import SessionState
 from .chat_model import ChatModel
 from .conversation_state import ConversationState
@@ -41,6 +42,8 @@ class GlobalAgents(QObject):
         self.creation_requests = {}
         self.skill_jobs = {}
         self.busy_since = {}
+        self.pending_models = {}
+        self.resume_members = set()
         self.allow_automatic_creation = False
         self.pet_assistant_id = ''
         self.active = False
@@ -223,6 +226,10 @@ class GlobalAgents(QObject):
         except (ValueError,OSError):return False
     def activity(self, identifier):
         record=self.records.get(identifier)
+        if self.agents[identifier].get('quotaPaused'):
+            self.busy_since.pop(identifier,None)
+            return {'busy':False,'state':'quota_paused','busySince':0,'busyForSeconds':0,
+                    'activity':'paused','queued':len(self.pending_queue(identifier))}
         active=next((row for row in self.requests.values() if row['target']=='agent:'+identifier and row['status'] in ('sending','running','merging')),None)
         busy=bool(record and record.busy or active)
         if busy:self.busy_since.setdefault(identifier,int((time.time()-(time.monotonic()-record.prompt_started) if record and record.prompt_started else active.get('started',time.time()) if active else time.time())*1000))
@@ -266,7 +273,9 @@ class GlobalAgents(QObject):
             row = self.agents[identifier]; directory = self.root/'sessions'/identifier; directory.mkdir(parents=True,exist_ok=True)
             file = row.get('sessionFile','')
             if file and (not Path(file).resolve().is_relative_to(directory.resolve()) or not Path(file).is_file()): raise ValueError('全局子智能体上下文文件不存在或不属于此代理')
-            record = SessionState(global_agent=identifier, id=row.get('sessionId',''), file=file, workspace=str(self.root/'workspaces'/identifier), title=row['name'], model=row['model'], provider='umeko', messages=copy.deepcopy(row.get('messages',[])))
+            provider = GROUP_PROVIDER if row['model'] == GROUP_MODEL else row.get('modelProvider', 'umeko')
+            record = SessionState(global_agent=identifier, id=row.get('sessionId',''), file=file, workspace=str(self.root/'workspaces'/identifier), title=row['name'], model=row['model'], provider=provider,
+                                  reasoning_effort=row.get('reasoningEffort', 'off'), messages=copy.deepcopy(row.get('messages',[])))
             Path(record.workspace).mkdir(parents=True, exist_ok=True)
             self.records[identifier] = record; self.b._pool.touch(record)
         return self.records[identifier]
@@ -361,7 +370,7 @@ class GlobalAgents(QObject):
         selected_row = self.member_sessions.get(selected) or self.records.get(selected)
         messages = ChatModel.project(self.messages(selected_row.messages if selected_row and selected_row.messages else self.agents.get(selected,{}).get('messages',[]))) if include_messages else []
         draft=next((self.creation_result(row) | {'sourceTitle':row['sourceTitle']} for row in self.creation_requests.values() if row['status']=='awaiting_approval'),{})
-        return {'agents':agents,'appearances':appearances,'defaultCharacter':fallback,'models':self.b.gateway.models(),'defaultModel':self.b.store.data.get('selectedModel',''), 'targets':self.overview()['targets'],'projects':self.project_rows(),'requests':[self.request_card(row) for row in list(self.requests.values())[-64:] if row['status'] not in TERMINAL or row.get('worktree') or row.get('access')=='write'],'messages':messages,'revision':self._revision,'error':self.error,'approval':copy.deepcopy(selected_row.approval) if selected_row else {},'selectedId':selected,'currentTarget':self.identifier(self.b._view),'allowAutomaticCreation':self.allow_automatic_creation,'creationDraft':draft,'queue':[{key:row.get(key,'') for key in ('id','source','sourceTitle','text','created')} for row in self.pending_queue(selected)]}
+        return {'agents':agents,'appearances':appearances,'defaultCharacter':fallback,'models':model_choices(self.b.gateway),'defaultModel':self.b.store.data.get('selectedModel',''), 'targets':self.overview()['targets'],'projects':self.project_rows(),'requests':[self.request_card(row) for row in list(self.requests.values())[-64:] if row['status'] not in TERMINAL or row.get('worktree') or row.get('access')=='write'],'messages':messages,'revision':self._revision,'error':self.error,'approval':copy.deepcopy(selected_row.approval) if selected_row else {},'selectedId':selected,'currentTarget':self.identifier(self.b._view),'allowAutomaticCreation':self.allow_automatic_creation,'creationDraft':draft,'queue':[{key:row.get(key,'') for key in ('id','source','sourceTitle','text','created')} for row in self.pending_queue(selected)]}
 
     @staticmethod
     def request_card(row):
@@ -383,7 +392,7 @@ class GlobalAgents(QObject):
             record=self.b._pool.find(source['id']); key='session:'+source['id']
             rows[key]={'id':key,'title':source.get('title',''),'workspace':source.get('workspace',''),'busy':bool(record and record.busy),**self.bridge_access(source['id']),'kind':'session'}
         for record in self.b._pool.records.values():
-            if record.global_agent: continue
+            if record.global_agent or record.cowork: continue
             key=self.identifier(record)
             rows[key]={'id':key,'title':record.title,'workspace':record.workspace,'busy':record.busy,**self.bridge_access(record.id,'draft:'+record.key),'kind':'session','subagents':[{k:child.get(k) for k in ('id','name','type','status')} for child in record.subagents.values()]}
         for row in rows.values():
@@ -463,7 +472,7 @@ class GlobalAgents(QObject):
             if method=='create' and len(self.agents)>=16: raise ValueError('最多保留 16 个全局子智能体')
             name=self.text(args,'name',60,False); character=args.get('character') or self.b.characterStyle['id']; model=args.get('model') or self.b.store.data.get('selectedModel','')
             if character not in {row['id'] for row in getattr(self.b,'subagentCharacterPacks',self.b.characterPacks)}: raise ValueError('请选择现有角色形象')
-            if model not in {row['id'] for row in self.b.gateway.models()}: raise ValueError('请先配置可用模型')
+            route=select_route(self.b.gateway, model)
             identifier=args.get('id') if method=='update' else uuid.uuid4().hex
             instructions=self.text(args,'instructions',8000,False)
             skills=self.selected_skills(args.get('skills',self.agents.get(identifier,{}).get('skills',[])))
@@ -478,6 +487,7 @@ class GlobalAgents(QObject):
             automatic=not name;number=0
             if automatic:name,number=self.automatic_name(character,identifier)
             self.agents[identifier]={**self.agents.get(identifier,{}), **{'id':identifier,'name':name,'character':character,'model':model,'instructions':instructions,'skills':skills,'tools':tools,'autoName':automatic,'autoNameIndex':number}}
+            self.agents[identifier]['modelProvider'] = route.get('providerID', 'umeko')
             self.changed(); self.save(); return {'id':identifier}
         identifier=self.text(args,'id',80)
         if method in ('cancelRequest','prioritizeRequest') and identifier.startswith('message:'):
@@ -513,6 +523,8 @@ class GlobalAgents(QObject):
                 self.outbox={k:v for k,v in self.outbox.items() if {v['data']['source'],v['data']['target']}!={identifier,'agent:'+agent_id}}
             self.changed();self.save();return {'enabled':self.allowed(record,'agent:'+agent_id),'agentId':agent_id,'sessionId':identifier,'direction':'bidirectional'}
         if identifier not in self.agents: raise ValueError('全局子智能体不存在')
+        if method=='setModel':
+            return self.switch_member_model(identifier, self.text(args,'model',200), self.text(args,'reasoningEffort',40,False))
         if method=='respond':
             record=self.record('agent:'+identifier); approval=record.approval
             if not approval or args.get('requestId')!=approval.get('id'): raise ValueError('确认请求已失效')
@@ -522,6 +534,8 @@ class GlobalAgents(QObject):
             if approval.get('method')=='select' and value is not None and value not in approval.get('options',[]): raise ValueError('请选择提供的选项')
             self.b._pool.write(record,{'type':'ui_response','id':approval['id'],'value':value}); record.approval={}; self.changed(); return {'status':'answered'}
         if method=='send':
+            if self.agents[identifier].get('quotaPaused'):
+                raise ValueError('模型额度不足，请切换模型后继续')
             text=self.text(args,'text',16000)
             if not input_from_pet:
                 sent = self.team_board.direct('agent:'+identifier, text)
@@ -561,6 +575,11 @@ class GlobalAgents(QObject):
             self.changed(); self.save(); return {'status':'deleted'}
         raise ValueError('未知全局子智能体操作')
     def halt(self, identifier):
+        self.pending_models.pop(identifier, None)
+        self.resume_members.discard(identifier)
+        row = self.agents.get(identifier)
+        if row:
+            row.pop('quotaPaused', None)
         record=self.member_sessions.get(identifier) or self.records.get(identifier)
         if record:
             record.cancelled=True; self.b._pool.write(record,{'type':'abort'}); self.b._pool.retire(record)
@@ -598,8 +617,10 @@ class GlobalAgents(QObject):
             if not choices:raise ValueError('没有可用人物形象')
             character=secrets.choice(choices)['id']
         if character not in {row['id'] for row in choices}:raise ValueError('请选择现有角色形象')
-        model=self.text(args,'model',200,False) or (caller.model if getattr(caller, "provider", "") != GROUP_PROVIDER else '') or self.b.store.data.get('selectedModel','')
-        if model not in {row['id'] for row in self.b.gateway.models()}:raise ValueError('请先配置可用模型')
+        roles = session_model_roles(caller, self.b.store.data) if self.team_board.enabled else {}
+        caller_model = roles.get('executionModel') or roles.get('coordinatorModel') or caller.model
+        model = member_model(self.text(args,'model',200,False), roles.get('memberDefaultModel'), caller_model, self.b.store.data.get('selectedModel',''))
+        select_route(self.b.gateway, model)
         fields.update(character=character,model=model)
         while len(self.creation_requests)>=32:
             old=next((k for k,v in self.creation_requests.items() if v['status']!='awaiting_approval'),None)
@@ -621,7 +642,8 @@ class GlobalAgents(QObject):
         if operation.startswith('agent_bus.team_'):
             if caller.global_agent not in self.agents: raise ValueError('团队操作需要现有全局子智能体身份')
             return self.team_board.execute(operation.removeprefix('agent_bus.'), args, self.identifier(caller))
-        fields={'agent_bus.overview':set(),'agent_bus.requests':set(),'agent_bus.dispatch':{'targetId','text','access'},'agent_bus.reply':{'requestId','status','result'},'agent_bus.create':{'requestKey','name','character','model','instructions'},'agent_bus.creation_status':{'requestId'},'agent_bus.connections':set(),'agent_bus.set_connection':{'sessionId','enabled'}}
+        fields={'agent_bus.overview':set(),'agent_bus.requests':set(),'agent_bus.dispatch':{'targetId','text','access'},'agent_bus.reply':{'requestId','status','result'},'agent_bus.create':{'requestKey','name','character','model','instructions'},'agent_bus.creation_status':{'requestId'},'agent_bus.connections':set(),'agent_bus.set_connection':{'sessionId','enabled'},
+                'agent_bus.set_model':{'targetId','model','reasoningEffort'}}
         if operation not in fields:raise ValueError('未知智能体总线操作')
         if set(args)-fields[operation]:
             if operation=='agent_bus.create':raise ValueError('agent_bus.create 支持 requestKey（必填）、name、character、model、instructions；职责用 instructions，名称用 name，不支持 role/title。示例：{"operation":"agent_bus.create","arguments":{"requestKey":"create-tester-1","name":"测试员","instructions":"协助测试"}}')
@@ -634,6 +656,14 @@ class GlobalAgents(QObject):
             if not caller.global_agent or caller.global_agent not in self.agents:raise ValueError('只有全局子智能体能管理自己的连接')
             return self.handle('setBridge',{'id':self.text(args,'sessionId',80),'agentId':caller.global_agent,'enabled':args.get('enabled')})
         if operation=='agent_bus.create':return self.request_creation(args,caller)
+        if operation=='agent_bus.set_model':
+            target = self.text(args,'targetId',80)
+            identity = self.identifier(caller)
+            manages_member = any(row['source']==identity and row['target']==target and row['status'] not in TERMINAL
+                                 for row in self.requests.values()) if caller.global_agent else self.allowed(caller,target)
+            if not target.startswith('agent:') or not manages_member:
+                raise ValueError('只有已连接的协调会话可以切换成员模型')
+            return self.handle('setModel',{'id':target[6:],'model':args.get('model'),'reasoningEffort':args.get('reasoningEffort','')})
         if operation=='agent_bus.creation_status':
             row=self.creation_requests.get(self.text(args,'requestId',40))
             if not row or not self.owns_creation(row,caller):raise ValueError('只能查询当前会话发起的创建请求')
@@ -681,6 +711,11 @@ class GlobalAgents(QObject):
     def task_scope(self, caller, target, access):
         if access not in ('', 'read', 'write'):
             raise ValueError('access 必须为 read 或 write。')
+        source = self.b._view if caller.global_agent and not caller.bus_task else caller
+        if source.cowork or target.cowork:
+            if access:
+                raise ValueError('Cowork 会话使用绑定的工作目录，不支持指定工作树权限。')
+            return {}
         enabled = self.b.store.data.get('agent', {}).get('automaticWorktrees') is True
         if not target.global_agent:
             if access or caller.bus_task:
@@ -879,6 +914,66 @@ class GlobalAgents(QObject):
         if self.active and self.can_route(row['target'],row['source']):
             self.enqueue(row['source'],row,'Agent Bus result ['+status+']: '+result,True)
         self.changed()
+
+    def switch_member_model(self, identifier, model, effort=""):
+        route = select_route(self.b.gateway, model)
+        if effort and effort not in ('off', *route.get('reasoningLevels', [])):
+            raise ValueError('请选择该模型支持的推理档位')
+        record = self.record('agent:'+identifier)
+        selection = (model, route.get('providerID', 'umeko'), effort or 'off')
+        if record.busy:
+            self.pending_models[identifier] = selection
+            self.send_member_selection(record)
+            self.changed(False)
+            return {'status':'queued', 'model':model}
+        self.apply_member_selection(record, selection)
+        return {'status':'queued' if identifier in self.resume_members else 'applied','model':model}
+
+    def send_member_selection(self, record):
+        selection = self.pending_models.get(record.global_agent)
+        if selection and record.ready and not record.stale:
+            self.b._pool.write(record, {'type':'member-model','model':selection[0],'reasoningEffort':selection[2]})
+
+    def apply_member_selection(self, record, selection):
+        model, provider, effort = selection
+        identifier = record.global_agent
+        row = self.agents[identifier]
+        record.model, record.provider, record.reasoning_effort = model, provider, effort
+        if record.bus_task:
+            base = self.records[identifier]
+            base.model, base.provider, base.reasoning_effort = model, provider, effort
+        row.update(model=model, modelProvider=provider, reasoningEffort=effort)
+        if row.get('quotaPaused'):
+            self.resume_members.add(identifier)
+        self.changed()
+        self.save()
+
+    def pause_member(self, record):
+        identifier = record.global_agent
+        self.agents[identifier]['quotaPaused'] = True
+        for row in self.requests.values():
+            if row['target'] != self.identifier(record) or row['status'] != 'running':
+                continue
+            row.update(status='paused', pausedAt=time.time(), result='成员模型额度不足，切换模型后继续。')
+            if self.can_route(row['target'], row['source']):
+                message = 'This member ran out of model quota. Choose an available model through agent_bus.set_model for '+row['target']+' to resume the same conversation.'
+                self.enqueue(row['source'], row, message, True)
+        self.changed()
+
+    def resume_member(self, identifier):
+        record = self.record('agent:'+identifier)
+        if record.busy or record.approval:
+            return
+        self.resume_members.discard(identifier)
+        if not self.b._command_pi('resume-model', record):
+            return
+        self.agents[identifier].pop('quotaPaused', None)
+        for row in self.requests.values():
+            if row['target'] == self.identifier(record) and row['status'] == 'paused':
+                row.update(status='running', deadline=row['deadline'] + time.time() - row.pop('pausedAt'))
+                self.outbox = {key:item for key,item in self.outbox.items()
+                               if item['requestId'] != row['id'] or item['data']['status'] != 'paused' or item['sent']}
+        self.changed()
     def enqueue(self, target, row, message, wake):
         self.outbox={k:v for k,v in self.outbox.items() if not(v['requestId']==row['id'] and v['target']==target)}
         if len(self.outbox)>=256: raise ValueError('智能体总线投递队列已满')
@@ -909,10 +1004,12 @@ class GlobalAgents(QObject):
     def tick(self):
         if not self.active: return
         now=time.time()
+        for identifier in list(self.resume_members):
+            self.resume_member(identifier)
         for row in self.creation_requests.values():
             if row['status']=='awaiting_approval' and now>row['deadline']:row['status']='expired';self.changed()
         for row in list(self.requests.values()):
-            if row['status'] not in TERMINAL and row['status'] != 'merging' and now>row['deadline']: self.finish(row,'failed','等待代理结果超时；请先检查目标上下文，避免重复执行。')
+            if row['status'] not in TERMINAL and row['status'] not in ('merging', 'paused') and now>row['deadline']: self.finish(row,'failed','等待代理结果超时；请先检查目标上下文，避免重复执行。')
         self._settle_worktrees()
         before=dict(self.busy_since)
         for identifier in self.agents:self.activity(identifier)
@@ -925,8 +1022,11 @@ class GlobalAgents(QObject):
                     row=self.requests.get(item['requestId'])
                     if row and row['status'] not in TERMINAL and item['target']==row['target']: self.finish(row,'failed','投递回执超时；请先检查目标上下文再重试。')
                 continue
+            if 'teamId' in item['data'] and not self.team_board.enabled:
+                continue
             try:
                 record=self.record(item['target'])
+                if record.global_agent and item['wake'] and self.agents[record.global_agent].get('quotaPaused'): continue
                 if not self.can_route(item['data']['source'],item['data']['target']):raise ValueError('这条双向智能体总线已关闭')
                 team_message = 'teamId' in item['data']
                 if record.global_agent and item['wake'] and (
@@ -981,7 +1081,19 @@ class GlobalAgents(QObject):
                 for field in ('source','target'):
                     if item['data'][field] in before:item['data'][field]=after
         kind=event.get('type')
-        if kind=='exit' or kind=='done' and (record.failed or record.cancelled):
+        member = self.agents.get(record.global_agent)
+        if member and kind=='message' and event.get('quotaExhausted') and event.get('model', record.model) != GROUP_MODEL:
+            self.pause_member(record)
+        if member and kind=='ready':
+            self.send_member_selection(record)
+        if member and kind=='member_model_applied':
+            selection = self.pending_models.get(record.global_agent)
+            if selection and selection[0]==event.get('model') and selection[2]==event.get('reasoningEffort'):
+                self.pending_models.pop(record.global_agent)
+                self.apply_member_selection(record, selection)
+        if member and kind=='done' and record.global_agent in self.pending_models:
+            self.apply_member_selection(record, self.pending_models.pop(record.global_agent))
+        if (kind=='exit' or kind=='done' and (record.failed or record.cancelled)) and not (member and member.get('quotaPaused')):
             identity=self.identifier(record)
             for row in list(self.requests.values()):
                 if row['target']==identity and row['status'] not in TERMINAL and row['status'] != 'merging' and (not row.get('access') or record.bus_task==row['id']):

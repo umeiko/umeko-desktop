@@ -156,6 +156,10 @@ class TeamBoard:
     def __init__(self, bus):
         self.bus = bus
 
+    @property
+    def enabled(self):
+        return self.bus.b.store.data.get('desktop', {}).get('teamCollaborationEnabled') is True
+
     def storage(self):
         store = self.bus.b._task_records._storage()
         if store is None:
@@ -181,6 +185,8 @@ class TeamBoard:
                 if member['targetId'] == identity]
 
     def execute(self, method, args, identity=None):
+        if not self.enabled:
+            raise ValueError('请先在 Umeko Desktop 设置中开启团队协作')
         # With no bound agent identity, callers are the built-in Widget host.
         fields = OPERATION_FIELDS.get(method)
         if fields is None or set(args) - (fields if identity else fields | {'coordinatorId', 'actorId'}):
@@ -255,7 +261,7 @@ class TeamBoard:
         return {'event': row, 'deliveries': deliveries}
 
     def direct(self, identity, text):
-        if not DIRECT.match(text):
+        if not self.enabled or not DIRECT.match(text):
             return None
         try:
             store = self.storage()

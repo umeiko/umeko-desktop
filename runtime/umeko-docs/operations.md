@@ -4,6 +4,8 @@
 
 动态查询可用 `operations.list`，按 prefix 筛选。参数传在 arguments 中，JSON 类型直接传对象/数组。
 
+`pi.run` 的 `arguments.command` 可传 Pi 管理命令、斜杠命令或 `!<Bash 命令>`。`!` 后的命令使用当前会话的 Bash 工具，沿用工具审批、工作区和 Windows 沙箱设置。
+
 只读及组合操作：`help`、`operations.list`、`batch`、`settings.get`、`providers.list`、`models.list`、`characters.list`、`characters.get`、`characters.config`、`plugins.list`、`plugins.getConfig`、`themes.list`、`themes.prompt`、`projects.list`、`sessions.list`、`sessions.get`、`mcp.get`、`status.get`、`jobs.get`。
 
 会话专用：`models.select(provider, model, sessionId?)`、`sessions.reasoning(value, sessionId?)`。缺省关联调用会话。
@@ -11,6 +13,7 @@
 | operation | arguments（类型；=默认值） | 等待空闲范围 | 启动后台工作 |
 | --- | --- | --- | --- |
 | `shell.refreshEnvironment` | 无 | 无 | 否 |
+| `pi.run` | `command: string`, `scope: string=""` | 无 | 否 |
 | `vision.configure` | `config: json` | 无 | 否 |
 | `generation.configure` | `config: json` | 无 | 否 |
 | `providers.save` | `id: string=""`, `name: string`, `api: string`, `baseUrl: string`, `key: string=""`, `models: json` | provider | 否 |
@@ -22,6 +25,8 @@
 | `models.applyPatch`（仅 python） | `provider: string`, `model: string`, `enabled: boolean` | 无 | 否 |
 | `pluginSessions.setModel`（仅 python） | `plugin: string`, `profile: string`, `model: string=""`, `provider: string=""`, `reasoningEffort: string=""` | 无 | 否 |
 | `models.select`（仅 python） | `provider: string`, `model: string`, `sessionId: string=""` | target | 否 |
+| `models.roles.get`（仅 python） | 无 | 无 | 否 |
+| `models.roles.set`（仅 python） | `role: string`, `model: string` | 无 | 否 |
 | `sessions.reasoning`（仅 python） | `value: string`, `sessionId: string=""` | target | 否 |
 | `agent.defaultReasoning`（仅 python） | `value: string` | 无 | 否 |
 | `themes.import` | `path: string` | 无 | 否 |
@@ -42,9 +47,18 @@
 | `dsh.useOwnConfig`（仅 python） | `enabled: boolean` | 无 | 否 |
 | `desktop.startup`（仅 python） | `umeko: boolean`, `proxy: boolean` | 无 | 否 |
 | `network.requestHeaders`（仅 python） | `headers: json` | 无 | 否 |
+| `network.remoteSharing`（仅 python） | `enabled: boolean` | 无 | 否 |
+| `network.remoteProxy`（仅 python） | `address: string` | 无 | 否 |
 | `documents.previewMode`（仅 python） | `fileType: string`, `mode: string` | 无 | 否 |
 | `appearance.sidebar` | `width: integer`, `collapsed: boolean=false` | 无 | 否 |
 | `desktop.configure`（仅 python） | `config: json` | 无 | 否 |
+| `remote-environments.add`（仅 python） | `name: string`, `host: string`, `platform: string` | 无 | 否 |
+| `remote-environments.list`（仅 python） | 无 | 无 | 否 |
+| `remote-environments.test`（仅 python） | `name: string` | 无 | 否 |
+| `remote-environments.home`（仅 python） | `name: string` | 无 | 否 |
+| `remote-environments.browse`（仅 python） | `name: string`, `path: string=""` | 无 | 否 |
+| `remote-environments.mkdir`（仅 python） | `name: string`, `path: string` | 无 | 否 |
+| `remote-environments.remove`（仅 python） | `name: string` | 无 | 否 |
 | `projects.add` | `paths: json` | 无 | 否 |
 | `projects.open` | `id: string` | 无 | 否 |
 | `projects.rename` | `id: string`, `title: string` | 无 | 否 |
@@ -60,6 +74,7 @@
 | `sessions.fork` | `id: string` | session | 是 |
 | `sessions.export` | `id: string`, `path: string` | session | 是 |
 | `workspace.set` | `path: string` | view | 否 |
+| `workspace.setRemote`（仅 python） | `environment: string`, `remotePath: string` | view | 否 |
 | `command_rules.list` | `scope: string=""` | 无 | 否 |
 | `command_rules.add` | `scope: string`, `pattern: json`, `decision: string`, `shell: string=""` | 无 | 否 |
 | `command_rules.remove` | `scope: string`, `pattern: json`, `decision: string`, `shell: string=""` | 无 | 否 |
@@ -94,7 +109,9 @@
 | `extensions.enable` | `id: string`, `enabled: boolean` | all | 是 |
 | `extensions.remove` | `id: string` | all | 是 |
 | `extensions.checkUpdate` | `id: string` | 无 | 是 |
-| `extensions.install` | `source: string`, `project: boolean=false` | all | 是 |
+| `extensions.install`（仅限已确认的 Widget 宿主调用） | `source: string`, `project: boolean=false` | all | 是 |
+| `settings.windowsSandbox` | 无 | 无 | 否 |
+| `settings.setWindowsSandbox` | `enabled: boolean`, `allowNetwork: boolean` | 无 | 否 |
 | `mcp.add` | `text: string`, `project: boolean=false` | all | 是 |
 | `mcp.save` | `scope: string`, `config: json` | all | 是 |
 | `mcp.reconnect` | `name: string` | view | 是 |
@@ -120,6 +137,7 @@
 | `agent_bus.creation_status` | `requestId: string` | 无 | 否 |
 | `agent_bus.connections` | 无 | 无 | 否 |
 | `agent_bus.set_connection` | `sessionId: string`, `enabled: boolean` | 无 | 否 |
+| `agent_bus.set_model`（仅 python） | `targetId: string`, `model: string`, `reasoningEffort: string=""` | 无 | 否 |
 | `agent_bus.overview` | 无 | 无 | 否 |
 | `agent_bus.requests` | 无 | 无 | 否 |
 | `agent_bus.dispatch` | `targetId: string`, `text: string`, `access: string=""` | 无 | 否 |

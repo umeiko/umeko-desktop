@@ -107,7 +107,9 @@ class VideoGenerationTests(unittest.TestCase):
         self.thread.start()
         self.addCleanup(self.stop_server)
         self.base = f'http://127.0.0.1:{self.server.server_port}'
-        self.provider = {'id': 'fixture', 'name': 'Video fixture', 'api': 'openai',
+        self.provider = {'id': 'fixture', 'name': 'Video fixture', 'api': 'video',
+                         'presetId': 'openai-video', 'generationModels': ['manual-video'],
+                         'generationCapabilities': ['video'],
                          'baseUrl': self.base + '/v1', 'key': 'fixture-secret', 'models': [],
                          'proxy': {'mode': 'direct', 'url': ''}}
         self.store = SimpleNamespace(directory=Path(self.temp.name), data={
@@ -149,7 +151,7 @@ class VideoGenerationTests(unittest.TestCase):
 
     def test_configuration_requires_valid_account_model_key_and_base(self):
         self.assertEqual(generation_config(self.store.data)['video'], {'provider': 'Video fixture', 'model': 'manual-video'})
-        for field, value in [('key', ''), ('baseUrl', 'invalid'), ('api', 'anthropic')]:
+        for field, value in [('key', ''), ('baseUrl', 'invalid'), ('api', 'openai'), ('api', 'anthropic')]:
             original = self.provider[field]
             self.provider[field] = value
             self.assertIsNone(generation_config(self.store.data)['video'])

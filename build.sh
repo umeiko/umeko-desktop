@@ -17,6 +17,11 @@ if [[ "$(uname -s)" == Linux ]]; then .venv/bin/python scripts/build-input-metho
 .venv/bin/python scripts/bundle_node.py
 .venv/bin/python prepare_runtime.py
 .venv/bin/python scripts/fetch-search-tools.py
+if [[ "$(uname -s)" == Linux ]]; then
+    arch=x64
+    if [[ "$(uname -m)" == aarch64 ]]; then arch=arm64; fi
+    .venv/bin/python scripts/fetch-remote-exec.py --platform linux --arch "$arch" --output runtime/releases/coding-1.5.2/remote-exec-assets
+fi
 QT_QPA_PLATFORM=offscreen .venv/bin/python build_icons.py
 .venv/bin/python scripts/write-build-info.py
 .venv/bin/python scripts/build-provider-resources.py
@@ -35,10 +40,11 @@ if [[ "$(uname -s)" == Linux ]]; then
     trap 'rm -rf -- "$bundle_output"' EXIT
 fi
 .venv/bin/python -m PyInstaller --clean --noconfirm --windowed --onedir --name Umeko \
-    --distpath "$bundle_output" "${extra[@]}" --collect-all keyring --collect-all pypinyin --collect-all tzdata --hidden-import zoneinfo --add-data 'bundled-skills:bundled-skills' \
+    --distpath "$bundle_output" "${extra[@]}" --collect-all keyring --collect-all pypinyin --collect-all tzdata --hidden-import zoneinfo --add-data 'bundled-skills:bundled-skills' --add-data 'cowork-skills:cowork-skills' \
     --add-data 'build/desktop-plugin-resources:desktop-plugin-resources' --add-data 'plugin-runtime:plugin-runtime' --add-data 'build/builtin-widgets:umeko-plugins' --add-data 'app/qml:app/qml' --add-data 'app/theme-prompt.txt:app' --add-data 'app/character-defaults.json:app' --add-data 'app/provider-presets.json:app' --add-data 'app/icons:app/icons' \
-    --add-data 'runtime/coordinator-skills.mjs:runtime' --add-data 'runtime/skills.mjs:runtime' --add-data 'runtime/markdown-preview.mjs:runtime' --add-data 'runtime/session-capabilities.mjs:runtime' --add-data 'runtime/tool-visibility.mjs:runtime' --add-data 'runtime/conversation-search.mjs:runtime' --add-data 'runtime/session-files.mjs:runtime' --add-data 'runtime/update-engine.mjs:runtime' --add-data 'runtime/update-cleanup.mjs:runtime' --add-data 'runtime/widget-market.mjs:runtime' --add-data 'runtime/bridge.mjs:runtime' --add-data 'runtime/input-queue.mjs:runtime' --add-data 'runtime/widget-messages.mjs:runtime' --add-data 'runtime/background-jobs.mjs:runtime' --add-data 'runtime/shell-snapshot.mjs:runtime' --add-data 'runtime/command-process.mjs:runtime' --add-data 'runtime/process-guard.mjs:runtime' --add-data 'runtime/tool-permissions.mjs:runtime' --add-data 'runtime/apply-patch.mjs:runtime' --add-data 'runtime/subagents.mjs:runtime' --add-data 'runtime/subagent-sdk.mjs:runtime' --add-data 'runtime/subagent-settings.mjs:runtime' --add-data 'runtime/rpc-ui.mjs:runtime' --add-data 'runtime/provider-policy.mjs:runtime' \
+    --add-data 'runtime/coordinator-skills.mjs:runtime' --add-data 'runtime/cowork-tools.mjs:runtime' --add-data 'runtime/cowork-local.mjs:runtime' --add-data 'runtime/cowork-subagents.mjs:runtime' --add-data 'runtime/skills.mjs:runtime' --add-data 'runtime/markdown-preview.mjs:runtime' --add-data 'runtime/session-capabilities.mjs:runtime' --add-data 'runtime/tool-visibility.mjs:runtime' --add-data 'runtime/conversation-search.mjs:runtime' --add-data 'runtime/session-files.mjs:runtime' --add-data 'runtime/update-engine.mjs:runtime' --add-data 'runtime/update-cleanup.mjs:runtime' --add-data 'runtime/widget-market.mjs:runtime' --add-data 'runtime/bridge.mjs:runtime' --add-data 'runtime/input-queue.mjs:runtime' --add-data 'runtime/widget-messages.mjs:runtime' --add-data 'runtime/background-jobs.mjs:runtime' --add-data 'runtime/shell-snapshot.mjs:runtime' --add-data 'runtime/command-process.mjs:runtime' --add-data 'runtime/process-guard.mjs:runtime' --add-data 'runtime/tool-permissions.mjs:runtime' --add-data 'runtime/apply-patch.mjs:runtime' --add-data 'runtime/subagents.mjs:runtime' --add-data 'runtime/subagent-sdk.mjs:runtime' --add-data 'runtime/subagent-settings.mjs:runtime' --add-data 'runtime/rpc-ui.mjs:runtime' --add-data 'runtime/provider-policy.mjs:runtime' \
     --add-data 'runtime/resources.mjs:runtime' --add-data 'runtime/chatbox.mjs:runtime' --add-data 'runtime/network-retry.mjs:runtime' --add-data 'runtime/pi-commands.mjs:runtime' --add-data 'runtime/umeko-control.mjs:runtime' --add-data 'runtime/umeko-documents.mjs:runtime' --add-data 'runtime/umeko-operations.json:runtime' --add-data 'runtime/umeko-docs:runtime/umeko-docs' --add-data 'runtime/webview-component.mjs:runtime' --add-data 'runtime/webview-component.json:runtime' --add-data 'build/webview-support:webview-support' \
+    --add-data 'runtime/package-install.mjs:runtime' --add-data 'runtime/windows-sandbox.mjs:runtime' \
     --add-data 'build/build-info.json:.' --add-data 'build/provider-resources:provider-resources' --add-data 'THIRD_PARTY_NOTICES.md:.' --add-data 'licenses:licenses' main.py
 .venv/bin/python - "$output" "$bundle_output" <<'PY'
 from pathlib import Path
@@ -62,6 +68,8 @@ for target in targets:
         shutil.copy2(root / 'runtime/preview-network.mjs', target / 'runtime/preview-network.mjs')
         shutil.copy2(root / 'runtime/dsh-acp-bridge.mjs', target / 'runtime/dsh-acp-bridge.mjs')
         shutil.copy2(root / 'runtime/dsh-permissions.mjs', target / 'runtime/dsh-permissions.mjs')
+        for source in [*(root / 'runtime').glob('remote-*.mjs'), root / 'runtime/remote-exec-assets.json']:
+            shutil.copy2(source, target / 'runtime')
         report = optimize_payload(target)
         (root / 'build' / ('payload-' + target.name + '.json')).write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 shutil.copy2(root / 'README.md', bundle / 'Umeko/README.md')

@@ -11,7 +11,7 @@ Rectangle {
     radius: 9; clip: true
     color: hit.pressed ? Theme.accentBg : hit.interactionHovered ? Theme.hover : Theme.surface
     border.color: hit.interactionHovered ? Qt.alpha(Theme.accent,0.5) : Theme.line
-    SubagentAvatar { id: avatar; x: Theme.control(10); anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(39); height: width; slot: root.agent.avatarSlot || 0 }
+    SubagentAvatar { id: avatar; x: Theme.control(10); anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(39); height: width; slot: root.agent.avatarSlot || 0; character: root.agent.character || "" }
     Column {
         id: summary
         x: avatar.x+avatar.width+Theme.control(12); width: Math.max(0,parent.width-x-Theme.control(28))

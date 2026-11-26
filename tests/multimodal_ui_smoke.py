@@ -173,9 +173,8 @@ def run():
         try:
             window.resize(1320, 1200)
             base_url = f'http://127.0.0.1:{server.server_port}/v1'
-            assert backend.saveProvider('', 'Test provider', 'openai', base_url, 'local-test-key', 'test-image-model,test-voice-model')
-            provider = backend.store.data['providers'][0]
-            provider['proxy'] = {'mode': 'direct', 'url': ''}
+            assert backend.saveProvider('', 'Chat LLM', 'openai', base_url, 'local-test-key', 'test-image-model')
+            backend.store.data['providers'][0]['proxy'] = {'mode': 'direct', 'url': ''}
             workspace = Path(profile) / 'workspace'
             workspace.mkdir()
             backend.store.data['workspace'] = str(workspace)
@@ -187,13 +186,30 @@ def run():
             until(lambda: find(window, 'multimodalSettings').isVisible(), lambda: str(warnings))
             assert find(window, 'auxiliaryVisionModel').isVisible()
             assert not find(window, 'apiProvidersSection').isVisible()
-            for kind, index in [('image', 1), ('speech', 2)]:
+            # Icons match each modality and LLM providers are NOT listed in multimodal pickers.
+            assert find(window, 'imageGenerationGlyph').property('name') == 'image'
+            assert find(window, 'speechGenerationGlyph').property('name') == 'voice'
+            assert find(window, 'videoGenerationGlyph').property('name') == 'video'
+            for kind in ('image', 'speech', 'video'):
+                assert find(window, kind + 'GenerationProvider').property('count') == 1
+            assert backend.saveCustomMultimodalProvider('image', json.dumps({
+                'name': 'Test provider', 'baseUrl': base_url, 'model': 'test-image-model', 'key': 'local-test-key'}))
+            assert backend.saveCustomMultimodalProvider('speech', json.dumps({
+                'name': 'Test provider', 'baseUrl': base_url, 'model': 'test-voice-model', 'key': 'local-test-key'}))
+            image_provider = next(p for p in backend.store.data['providers'] if p['api'] == 'image')
+            speech_provider = next(p for p in backend.store.data['providers'] if p['api'] == 'speech')
+            image_provider['proxy'] = {'mode': 'direct', 'url': ''}
+            speech_provider['proxy'] = {'mode': 'direct', 'url': ''}
+            providers_by_kind = {'image': image_provider, 'speech': speech_provider}
+            backend.changed.emit()
+            QCoreApplication.processEvents()
+            for kind in ('image', 'speech'):
                 picker = find(window, kind + 'GenerationProvider')
                 assert picker.property('count') == 2
                 QMetaObject.invokeMethod(picker, 'activated', Q_ARG(int, 1))
                 model = find(window, kind + 'GenerationModel')
-                assert model.property('count') == 3
-                QMetaObject.invokeMethod(model, 'activated', Q_ARG(int, index))
+                assert model.property('count') == 2
+                QMetaObject.invokeMethod(model, 'activated', Q_ARG(int, 1))
             image_model = find(window, 'imageGenerationModel')
             QMetaObject.invokeMethod(image_model, 'activated', Q_ARG(int, 0))
             manual = find(window, 'imageGenerationModelId')
@@ -201,9 +217,10 @@ def run():
             QMetaObject.invokeMethod(manual, 'textEdited')
             assert backend.saveAuxiliaryVision('{"autoAnalyze":false}')
             assert manual.property('text') == 'test-manual-image', 'Saving image-understanding preferences must preserve unsaved generation fields'
+            before_reject = dict(backend.store.data['multimodal']['image'])
             assert QMetaObject.invokeMethod(find(window, 'saveMultimodalSettings'), 'clicked')
             # Voice has not been set; the shared save rejects the incomplete selection.
-            assert backend.store.data['multimodal'] == DEFAULTS
+            assert backend.store.data['multimodal']['image'] == before_reject
             find(window, 'speechGenerationVoice').setProperty('text', 'test-voice')
             assert QMetaObject.invokeMethod(find(window, 'saveMultimodalSettings'), 'clicked')
             assert backend.store.data['multimodal']['image']['model'] == 'test-manual-image'
@@ -211,12 +228,12 @@ def run():
             assert QMetaObject.invokeMethod(find(window, 'saveMultimodalSettings'), 'clicked')
             assert backend.store.data['multimodal']['image']['model'] == 'test-image-model'
             QCoreApplication.processEvents()
-            for kind, expected_index in [('image', 1), ('speech', 2)]:
+            for kind in ('image', 'speech'):
                 card = find(window, kind + 'GenerationSettings')
                 provider_picker = find(window, kind + 'GenerationProvider')
                 model_picker = find(window, kind + 'GenerationModel')
                 assert provider_picker.property('currentIndex') == 1
-                assert model_picker.property('currentIndex') == expected_index
+                assert model_picker.property('currentIndex') == 1
                 assert provider_picker.property('displayText') == 'Test provider'
                 assert model_picker.property('displayText') == 'test-' + ('image' if kind == 'image' else 'voice') + '-model'
             assert Store(Path(profile)).data['multimodal'] == backend.store.data['multimodal']
@@ -241,7 +258,7 @@ def run():
                 for kind in ('image', 'speech'):
                     card = find(window, kind + 'GenerationSettings')
                     picker = find(window, kind + 'GenerationProvider')
-                    assert card.property('providerId') == provider['id']
+                    assert card.property('providerId') == providers_by_kind[kind]['id']
                     assert card.property('modelId') == backend.store.data['multimodal'][kind]['model']
                     assert picker.property('displayText') == 'Test provider'
                 assert find(window, 'speechGenerationVoice').property('text') == 'test-voice'
