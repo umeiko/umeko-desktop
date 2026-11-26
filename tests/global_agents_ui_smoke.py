@@ -209,6 +209,8 @@ try:
     worktree_path = str(base / 'review-checkout')
     g.requests[cleaned_id] = {
         'id': cleaned_id, 'status': 'failed', 'worktreeState': 'preserved',
+        'source': g.identifier(b._view), 'target': 'agent:' + identifier,
+        'text': 'Review the saved changes',
         'worktree': {'branch': worktree_branch, 'path': worktree_path},
         'result': '工作树改动已保留。\n合并冲突。',
     }
