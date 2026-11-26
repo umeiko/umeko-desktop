@@ -306,7 +306,9 @@ class PiControllerMixin:
             self._repair_model_group_selection(record)
         from .plugin_sessions import apply_session_policy
         if action == 'widget-notify' and record.cancelled:
-            return False
+            data = values.get('notification', {}).get('data', {})
+            if not (data.get('groupChat') is True and data.get('source') == 'user'):
+                return False
         try:
             plugin_policy = apply_session_policy(self, record)
         except (OSError, ValueError) as error:
@@ -580,8 +582,13 @@ class PiControllerMixin:
                 self._write_pi({"type": "umeko_response", "id": event.get("id"),
                                 "result": {"ok": False, "error": "This Cowork role has not enabled umeko_desktop"}}, record)
                 return
-            result = self._umeko_control.execute({'operation': event.get('operation'), 'arguments': event.get('arguments', {})}, record)
-            self._write_pi({'type': 'umeko_response', 'id': event.get('id'), 'result': result}, record)
+            def respond(result):
+                self._write_pi({'type': 'umeko_response', 'id': event.get('id'), 'result': result}, record)
+
+            request = {'operation': event.get('operation'), 'arguments': event.get('arguments', {})}
+            result = self._umeko_control.execute(request, record, reply=respond)
+            if result is not None:
+                respond(result)
             return
         transcript = False
         dirty = max(0, len(record.messages) - 2)

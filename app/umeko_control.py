@@ -210,8 +210,8 @@ class UmekoControl(QObject):
         if value.get('state') == 'error' or value.get('busy') is False:
             self._completed(identifier, ('installation', 'update'), {'ok': value.get('state') != 'error', 'value': value, **({'error': value.get('message', 'Update installation failed')} if value.get('state') == 'error' else {})})
 
-    def execute(self, request, caller=None, queue=True, _job_id=None):
-        return self._dispatch(request, caller, queue, _job_id)
+    def execute(self, request, caller=None, queue=True, _job_id=None, *, reply=None):
+        return self._dispatch(request, caller, queue, _job_id, reply=reply)
 
     def _confirmed_widget_install(self, arguments, caller):
         # Only the in-process Widget host calls this after native confirmation.
@@ -219,14 +219,20 @@ class UmekoControl(QObject):
         return self._dispatch({'operation':'extensions.install','arguments':arguments},
                               caller, False, _widget_install=True)
 
-    def _dispatch(self, request, caller=None, queue=True, _job_id=None, *, _widget_install=False):
+    def _dispatch(self, request, caller=None, queue=True, _job_id=None, *, _widget_install=False, reply=None):
         try:
             if not isinstance(request, dict) or set(request) - {'operation', 'arguments'}: raise ValueError('Expected operation and arguments')
             operation = request.get('operation')
             args = request.get('arguments', {})
             if not isinstance(operation, str) or not isinstance(args, dict): raise ValueError('Invalid desktop request')
             if len(json.dumps(args)) > 2 * 1024 * 1024: raise ValueError('Desktop arguments exceed 2 MiB')
-            result = self._execute(operation, args, caller, queue, _job_id, _widget_install=_widget_install)
+            if operation == 'agent_bus.reply_to_groupchat' and reply is not None:
+                result = self.b.desktopPlugins.global_agents.execute(
+                    operation, args, caller, reply=lambda value: reply({'operation': operation, **value}))
+                if result is None:
+                    return None
+            else:
+                result = self._execute(operation, args, caller, queue, _job_id, _widget_install=_widget_install)
             return {'ok': True, 'operation': operation, **result}
         except Exception as error:
             result = {'ok': False, 'status': 'failed', 'operation': request.get('operation', '') if isinstance(request, dict) else '', 'error': str(error)}

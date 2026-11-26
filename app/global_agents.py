@@ -16,6 +16,7 @@ from .conversation_state import ConversationState
 from .agent_worktrees import (GitWorktrees, WorktreeConflict, WorktreeError,
                               paths_overlap, worktree_display)
 from .team_board import TeamBoard
+from .group_chat import GroupChat
 
 TERMINAL = {'completed', 'failed', 'cancelled', 'interrupted'}
 NATIVE_TOOLS = ('read', 'bash', 'powershell', 'edit', 'write', 'grep', 'find', 'ls')
@@ -39,6 +40,7 @@ class GlobalAgents(QObject):
         self.worktree_inspections = {}
         self.merging = set()
         self.team_board = TeamBoard(self)
+        self.group_chat = GroupChat(self)
         self.creation_requests = {}
         self.skill_jobs = {}
         self.busy_since = {}
@@ -370,20 +372,8 @@ class GlobalAgents(QObject):
         selected_row = self.member_sessions.get(selected) or self.records.get(selected)
         messages = ChatModel.project(self.messages(selected_row.messages if selected_row and selected_row.messages else self.agents.get(selected,{}).get('messages',[]))) if include_messages else []
         draft=next((self.creation_result(row) | {'sourceTitle':row['sourceTitle']} for row in self.creation_requests.values() if row['status']=='awaiting_approval'),{})
-        return {'agents':agents,'appearances':appearances,'defaultCharacter':fallback,'models':model_choices(self.b.gateway),'defaultModel':self.b.store.data.get('selectedModel',''), 'targets':self.overview()['targets'],'projects':self.project_rows(),'requests':[self.request_card(row) for row in list(self.requests.values())[-64:] if row['status'] not in TERMINAL or row.get('worktree') or row.get('access')=='write'],'messages':messages,'revision':self._revision,'error':self.error,'approval':copy.deepcopy(selected_row.approval) if selected_row else {},'selectedId':selected,'currentTarget':self.identifier(self.b._view),'allowAutomaticCreation':self.allow_automatic_creation,'creationDraft':draft,'queue':[{key:row.get(key,'') for key in ('id','source','sourceTitle','text','created')} for row in self.pending_queue(selected)]}
+        return {'agents':agents,'appearances':appearances,'defaultCharacter':fallback,'models':model_choices(self.b.gateway),'defaultModel':self.b.store.data.get('selectedModel',''), 'targets':self.overview()['targets'],'projects':self.project_rows(),'hasPendingDispatch':bool(selected and any(row['source']=='agent:'+selected and row['status'] not in TERMINAL for row in self.requests.values())),'messages':messages,'revision':self._revision,'error':self.error,'approval':copy.deepcopy(selected_row.approval) if selected_row else {},'selectedId':selected,'currentTarget':self.identifier(self.b._view),'allowAutomaticCreation':self.allow_automatic_creation,'creationDraft':draft,'queue':[{key:row.get(key,'') for key in ('id','source','sourceTitle','text','created')} for row in self.pending_queue(selected)]}
 
-    @staticmethod
-    def request_card(row):
-        card = {**row, 'text': row.get('text', '')[:500], 'result': row.get('result', '')[:500]}
-        if row.get('worktree'):
-            card['worktree'] = worktree_display(row['worktree'])
-            if card['result'].startswith('工作树改动已保留。\n合并冲突。'):
-                card['worktreeConflict'] = True
-                card['result'] = ''
-            elif card['result'].startswith('工作树改动已合并。\n'):
-                card['worktreeMerged'] = True
-                card['result'] = card['result'].split('\n', 1)[1]
-        return card
     def project_rows(self):
         return [{key:row.get(key,'') for key in ('id','name','path')} for row in self.b.store.data.get('projects',[]) if row.get('path')]
     def overview(self, caller=None):
@@ -436,6 +426,8 @@ class GlobalAgents(QObject):
     def handle(self, method, args, *, agent=False, session=None, input_from_pet=False, reply=None):
         if not self.active: raise ValueError('全局子智能体服务未启用')
         if agent: raise ValueError('管理仅允许 Widget 中的用户操作；代理使用 agent_bus.*')
+        if method.startswith('groupChat'):
+            return self.group_chat.handle(method, args, reply)
         if method == 'inspectWorktree':
             self.inspect_worktree(args, reply)
             return None
@@ -636,9 +628,13 @@ class GlobalAgents(QObject):
             if not self.m.openPage('global-agents'):
                 self.creation_requests.pop(identifier);raise ValueError('无法打开全局子智能体 Widget')
         self.changed();self.save();return self.creation_result(row)
-    def execute(self, operation, args, caller):
+    def execute(self, operation, args, caller, *, reply=None):
         if not self.active: raise ValueError('全局子智能体服务未启用')
         if not caller: raise ValueError('智能体总线需要真实的会话身份')
+        if operation == 'agent_bus.reply_to_groupchat':
+            return self.group_chat.reply(args, caller, reply)
+        if caller.key in self.group_chat.active and operation in ('agent_bus.team_post', 'agent_bus.dispatch'):
+            raise ValueError('群聊轮次请用 reply_to_groupchat 回复或点名成员')
         if operation.startswith('agent_bus.team_'):
             if caller.global_agent not in self.agents: raise ValueError('团队操作需要现有全局子智能体身份')
             return self.team_board.execute(operation.removeprefix('agent_bus.'), args, self.identifier(caller))
@@ -987,7 +983,7 @@ class GlobalAgents(QObject):
         if row.get('worktree'):
             self.outbox[identifier]['data']['worktree'] = row['worktree']
 
-    def enqueue_team_message(self, team_id, actor, member, event):
+    def enqueue_team_message(self, team_id, actor, member, event, *, group_chat=None):
         identifier, now = uuid.uuid4().hex, time.time()
         order = max([row.get('queueOrder', row['created']) for row in self.outbox.values()]
                     + [row.get('queueOrder', row['created']) for row in self.requests.values()] + [now]) + 1
@@ -1001,6 +997,14 @@ class GlobalAgents(QObject):
                      'kind': event['kind'], 'text': event['text'],
                      'taskId': event['task']['id'] if event['task'] else None},
         }
+        if group_chat is not None:
+            item = self.outbox[identifier]
+            item['groupChat'] = group_chat
+            item['message'] = group_chat['instruction']
+            item['data'].update(groupChat=True, poke=group_chat['poke'],
+                                files=group_chat['files'], members=group_chat['members'])
+            if group_chat.get('quote') is not None:
+                item['data']['quote'] = group_chat['quote']
     def tick(self):
         if not self.active: return
         now=time.time()
@@ -1027,11 +1031,13 @@ class GlobalAgents(QObject):
             try:
                 record=self.record(item['target'])
                 if record.global_agent and item['wake'] and self.agents[record.global_agent].get('quotaPaused'): continue
-                if not self.can_route(item['data']['source'],item['data']['target']):raise ValueError('这条双向智能体总线已关闭')
+                group_chat = item.get('groupChat')
+                if group_chat is None and not self.can_route(item['data']['source'],item['data']['target']):
+                    raise ValueError('这条双向智能体总线已关闭')
                 team_message = 'teamId' in item['data']
                 if record.global_agent and item['wake'] and (
                     (record.busy and not team_message)
-                    or (record.bus_task and item['requestId'] != record.bus_task)
+                    or (record.bus_task and item['requestId'] != record.bus_task and group_chat is None)
                     or any(other['id'] != item['id'] and other['target'] == item['target'] and other['sent'] for other in self.outbox.values())
                 ): continue
                 row=self.requests.get(item['requestId'])
@@ -1081,6 +1087,8 @@ class GlobalAgents(QObject):
                 for field in ('source','target'):
                     if item['data'][field] in before:item['data'][field]=after
         kind=event.get('type')
+        if kind in ('done', 'exit'):
+            self.group_chat.active.pop(record.key, None)
         member = self.agents.get(record.global_agent)
         if member and kind=='message' and event.get('quotaExhausted') and event.get('model', record.model) != GROUP_MODEL:
             self.pause_member(record)
@@ -1102,6 +1110,8 @@ class GlobalAgents(QObject):
             item=self.outbox.get(event.get('id'))
             if not item: return
             row=self.requests.get(item['requestId']); status=event.get('status')
+            if status == 'delivered' and item.get('groupChat') is not None:
+                self.group_chat.delivered(record, item)
             if status in ('delivered','failed') or (status == 'cancelled' and 'teamId' in item['data']):
                 self.outbox.pop(item['id'],None)
                 if row and row['status'] not in TERMINAL and item['target']==row['target']:

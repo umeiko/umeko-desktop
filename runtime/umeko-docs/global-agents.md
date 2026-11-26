@@ -65,6 +65,8 @@
 | `agent_bus.team_board` | 传入 `teamId`，可选 `after`（默认 `0`）、`limit`（1–50，默认 20）。返回当前 `tasks`，以及按 `sequence` 递增排列的 `events`。`hasMore` 为真时用 `nextAfter` 继续翻页。 |
 | `agent_bus.team_post` | 传入 `teamId` 和 `event`。返回已保存的 `event`，以及本次点名的 `deliveries`。`queued` 表示进入总线，`unavailable` 表示目标已删除。 |
 
+收到带 `(from group chat)` 的消息时，用独立工具 `reply_to_groupchat` 在群里发言。可以传入 `text`、`items`，也可以同时传入两者。附件写作 `items: [{"path":"report.pdf"}]`，每条消息最多附带 8 个本地文件。支持当前工作目录中的相对路径、绝对路径，以及本轮收到的附件路径。图片在群聊中直接展示。可用 `recipient` 指定群成员的 ID，省略时点名 `user`。每次投递可发一条公开回复。同一条用户消息最多唤醒一位额外的成员，已收到这条消息的成员只会看到点名，不会再次被唤醒。普通助手输出留在单聊。附件路径见消息的 `data.files`，读取遵循该成员的工具权限。
+
 事件按提交顺序保存在同一个任务记录数据库中。以下操作用 `event.kind` 选择。
 
 | `kind` | 其余字段 |

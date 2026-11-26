@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 work=tempfile.TemporaryDirectory(prefix='umeko-global-ui-');base=Path(work.name)
 os.environ.update(UMEKO_DATA_DIR=str(base/'profile'),PI_CODING_AGENT_DIR=str(base/'agent'),UMEKO_LANGUAGE='zh',QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software')
-from PySide6.QtCore import QObject,Qt
+from PySide6.QtCore import QMetaObject,QObject,Qt
 from PySide6.QtTest import QTest
 from chat_input_keys import check_newline_and_ime
 from app.storage import Store
@@ -138,8 +138,9 @@ try:
     assert (Path(b._view.workspace)/'bridge-proof.txt').read_text()=='approved bridge work'
     coordinator=g.records[identifier];assert coordinator.file and b._view.file and coordinator.file!=b._view.file
     assert all(row['id']!=coordinator.id for row in b._sessions)
-    # Coordinator model sees only its allowlisted host tool; target keeps native tools.
-    assert any(len(tools)==1 and tools[0].get('name',tools[0].get('function',{}).get('name'))=='umeko_desktop' for _,tools in fixture.calls)
+    # The coordinator receives host tools only; the delegation target keeps its native tools.
+    assert any({tool.get('name', tool.get('function', {}).get('name')) for tool in tools}
+               == {'umeko_desktop', 'reply_to_groupchat'} for _, tools in fixture.calls)
     wait(lambda:len([g.presentation.displayMessage(i) for i in range(g.presentation.messageCount)])>0,'Transcript not visible')
     QTest.qWait(500);window.grabWindow().save(str(out/'conversation.png'))
     projected=g.snapshot(identifier)['messages'];last_index=len(projected)-1
@@ -196,42 +197,27 @@ try:
     assert find('globalSubagentsHelpTitle').property('text')=='Agent Bus（智能体总线）'
     assert '勾选' in find('globalSubagentsHelpText').property('text')
     QTest.keyClick(window,Qt.Key_Escape);QTest.qWait(150)
-    click('agentBusRequestsTabButton');click('globalSubagentsHelpButton')
-    wait(lambda:find('globalSubagentsHelpPopup').property('opened'),'Request help did not open')
-    assert find('globalSubagentsHelpTitle').property('text')=='请求'
-    assert '仅显示尚未结束' in find('globalSubagentsHelpText').property('text')
-    assert '不会撤销' in find('globalSubagentsHelpText').property('text')
-    window.grabWindow().save(str(out/'requests-help.png'))
+    assert find('agentBusRequestsTabButton') is None
+    click('groupChatTabButton')
+    wait(lambda:find('groupChat').isVisible(),'Group chat did not open')
+    assert find('groupChatPicker') is None
     assert identifier in g.bridges.get('tree-client-one',[])
-    QTest.keyClick(window,Qt.Key_Escape);QTest.qWait(150)
-    cleaned_id = 'f' * 32
-    worktree_branch = 'umeko/writer-review-12345678'
-    worktree_path = str(base / 'review-checkout')
-    g.requests[cleaned_id] = {
-        'id': cleaned_id, 'status': 'failed', 'worktreeState': 'preserved',
-        'source': g.identifier(b._view), 'target': 'agent:' + identifier,
-        'text': 'Review the saved changes',
-        'worktree': {'branch': worktree_branch, 'path': worktree_path},
-        'result': '工作树改动已保留。\n合并冲突。',
-    }
-    g.changed(False)
-    wait(lambda: find('agentBusWorktreeDetails') and
-         find('agentBusWorktreeDetails').property('text') == f'{worktree_branch}\n{worktree_path}',
-         'Retained worktree path did not appear')
-    g.requests[cleaned_id]['worktreeState'] = 'removed'
-    g.changed(False)
-    wait(lambda: find('agentBusWorktreeDetails').property('text') == f'{worktree_branch}\n工作树已清理',
-         'Removed worktree should show its status instead of its former path')
-    g.requests.pop(cleaned_id)
-    g.changed(False)
     # A project near the end of a long, virtualized tree must not jump back to
     # the top when it is collapsed or a background snapshot updates.
     for index in range(60):
         b._sessions.append({'id':f'long-tree-{index}','title':'后台对话','workspace':str(base/f'aaa-{index:02}'),'model':'fixture','provider':'internal','file':''})
     b.changed.emit();click('agentBusTabButton')
     wait(lambda:find('agentBusProjectTree').property('count')>120,'Long tree snapshot missing')
-    from PySide6.QtCore import QMetaObject
-    assert QMetaObject.invokeMethod(find('agentBusProjectTree'),'positionViewAtEnd')
+    tree = find('agentBusProjectTree')
+    evaluate(tree, """{
+        for (let index = 0; index < count; ++index) {
+            const row = model.get(index).rowData
+            if (row.kind === "project" && row.key === %s) {
+                positionViewAtIndex(index, ListView.Center)
+                break
+            }
+        }
+    }""" % json.dumps(project_key))
     wait(lambda:find('agentBusProject_'+project_key) is not None,'Could not scroll to the project')
     QTest.qWait(200);click('agentBusProject_'+project_key)
     wait(lambda:find('agentBusConversation_session:tree-client-one') is None,'Long project did not collapse')

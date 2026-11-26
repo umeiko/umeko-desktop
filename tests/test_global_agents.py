@@ -3,8 +3,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
-from PySide6.QtCore import QObject, QCoreApplication
+from PySide6.QtCore import QObject, QCoreApplication, QUrl
 from app.global_agents import GlobalAgents
+from app.group_chat import open_attachment
 from app.pi_sessions import SessionState, PiSessionPool
 
 class Backend(QObject):
@@ -26,6 +27,29 @@ class GlobalAgentTests(unittest.TestCase):
     def tearDown(self):self.g.close();self.temp.cleanup()
     def dispatch(self):return self.g.execute('agent_bus.dispatch',{'targetId':self.g.identifier(self.b._view),'text':'检查测试'},self.source)
     def enable(self):self.g.handle('setBridge',{'id':self.g.identifier(self.b._view),'agentId':self.id,'enabled':True})
+
+    def test_group_file_uses_the_windows_https_handler(self):
+        attachment = Path(self.temp.name) / '交付 包.zip'
+        browser = Path(self.temp.name) / 'Default Browser.exe'
+
+        def association(flags, kind, protocol, verb, output, _length):
+            self.assertEqual((flags, kind, protocol, verb), (0x1000, 2, 'https', 'open'))
+            output.value = str(browser)
+            return 0
+
+        with (patch('app.group_chat.sys.platform', 'win32'),
+              patch('ctypes.WinDLL', create=True) as win_dll,
+              patch('app.group_chat.subprocess.Popen') as launch):
+            query = win_dll.return_value.AssocQueryStringW
+            query.side_effect = association
+            self.assertTrue(open_attachment(attachment))
+            url = bytes(QUrl.fromLocalFile(str(attachment)).toEncoded()).decode('ascii')
+            launch.assert_called_once_with([str(browser), url])
+            query.side_effect = None
+            query.return_value = 1
+            self.assertFalse(open_attachment(attachment))
+            launch.assert_called_once()
+
     def test_automatic_worktrees_never_use_a_cowork_folder(self):
         self.b.store.data['agent'] = {'automaticWorktrees': True}
         cowork = SessionState(cowork='fixed-role', workspace=str(self.temp.name))
@@ -85,11 +109,12 @@ class GlobalAgentTests(unittest.TestCase):
         return self.g.execute('agent_bus.create',{'requestKey':key,**fields},self.b._view)
     def creation_status(self,row,caller=None):
         return self.g.execute('agent_bus.creation_status',{'requestId':row['requestId']},caller or self.b._view)
-    def test_request_tab_only_shows_unfinished_requests(self):
+    def test_agent_stop_state_tracks_pending_dispatch_without_a_requests_tab(self):
         self.enable();identifier=self.dispatch()['requestId']
-        self.assertEqual([r['id'] for r in self.g.snapshot()['requests']],[identifier])
+        self.assertNotIn('requests', self.g.snapshot())
+        self.assertTrue(self.g.snapshot(self.id)['hasPendingDispatch'])
         self.g.finish(self.g.requests[identifier],'completed','真实完成结果')
-        self.assertEqual(self.g.snapshot()['requests'],[])
+        self.assertFalse(self.g.snapshot(self.id)['hasPendingDispatch'])
         self.assertEqual(self.g.requests[identifier]['result'],'真实完成结果')
         with self.assertRaises(ValueError):self.g.execute('agent_bus.reply',{'requestId':identifier,'result':'重复'},self.b._view)
     def test_each_global_agent_has_default_empty_persistent_skill_selection(self):

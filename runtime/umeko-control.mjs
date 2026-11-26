@@ -10,6 +10,7 @@ import { commandRuleOperation, isCommandRuleOperation } from './tool-permissions
 export const UMEKO_TOOL = 'umeko_desktop';
 export const SEND_TO_USER = 'send_to_user';
 export const REMINDER = 'reminder';
+export const REPLY_TO_GROUPCHAT = 'reply_to_groupchat';
 export const coordinatorNativeTools = value => Array.isArray(value)
   ? [...new Set(value.filter(name => CORE_TOOLS.includes(name)))] : [];
 let instanceDocs;
@@ -53,7 +54,23 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesCon
     },
     response(event) { finish(event.id, null, event.result); },
     clear() { for (const id of [...pending.keys()]) finish(id, 'Umeko connection closed');speechLife.abort();speechLife=new AbortController();speechTail=Promise.resolve(); },
-    extension(pi, { runPiCommand, canRunPiCommand = () => false } = {}) {
+    extension(pi, { runPiCommand, canRunPiCommand = () => false, globalCoordinator = false } = {}) {
+      if (globalCoordinator) pi.registerTool({
+        name: REPLY_TO_GROUPCHAT, label: '回复群聊', exposure: 'direct',
+        description: 'Post one visible reply to the group chat during a tagged (from group chat) turn. Provide text, local attachments in items, or both. Attach files from your working directory or from the current group message. Images display inline. Address one recipient, default user, or use the listed member ID for a handoff. Never address everyone. Replies to the user end the chain. A teammate already invited to the same user message will not be woken again.',
+        parameters: Type.Object({
+          text: Type.Optional(Type.String({minLength: 1, maxLength: 4000})),
+          items: Type.Optional(Type.Array(Type.Object({
+            path: Type.String({minLength: 1, maxLength: 4096, description: 'Workspace-relative or absolute local file path, or a local file URL'}),
+          }), {minItems: 1, maxItems: 8})),
+          recipient: Type.Optional(Type.String({minLength: 1, maxLength: 80, default: 'user'})),
+          messageId: Type.Optional(Type.Integer({minimum: 1, description: 'data.sequence of an earlier delivery in the current turn'})),
+        }),
+        execute: async (_id, args, signal) => {
+          const result = await this.request('agent_bus.reply_to_groupchat', args, signal);
+          return {content: [{type: 'text', text: JSON.stringify(result)}], isError: result.ok === false};
+        },
+      });
       if (getPetAssistantBinding()) pi.registerTool({
         name: SEND_TO_USER, label: '告诉用户', exposure: 'direct',
         description: 'Speak through your bound desktop pet. For pet input, task briefs and notifications, reply here without repeating it in ordinary chat. Direct questions in the agent chat may use ordinary chat. Prefer 10–30 visible characters per call, at most 80. Longer replies may use multiple calls; each returns after a reading pause and concurrent calls are displayed in order. Stop on unavailable or binding_changed.',
@@ -155,6 +172,7 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesCon
 // Mandatory coordinator boundary, independent of user extension/tool filters.
 export function coordinatorToolGate(event, {petAssistant = false, reminderAssistant = false, skillReader = false, nativeTools = []} = {}) {
   if (coordinatorNativeTools(nativeTools).includes(event.toolName)) return;
+  if (event.toolName === REPLY_TO_GROUPCHAT) return;  // The host checks the active receipt and team.
   if (petAssistant && event.toolName === SEND_TO_USER) return;
   if (reminderAssistant && event.toolName === REMINDER) return;
   if (skillReader && event.toolName === 'read') return;

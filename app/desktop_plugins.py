@@ -75,6 +75,18 @@ class DesktopPlugins(QObject):
             self.b.toast.emit(str(error))
             return None
 
+    @Slot(str, result='QVariantList')
+    def groupChatAttachments(self, raw):
+        if (self._page != 'global-agents' or not self.enabled('global-agents')
+                or not self.entries.get('global-agents', {}).get('builtin')
+                or not self.global_agents.team_board.enabled):
+            return []
+        group = self.global_agents.group_chat
+        try:
+            return group.stage_files(json.loads(raw)) if raw else group.paste_files()
+        except (OSError, ValueError):
+            return []
+
     def _task_records_changed(self):
         if self._page == 'task-records':
             self.event.emit('tasks.changed', {})
@@ -416,7 +428,7 @@ class DesktopPlugins(QObject):
             def invoke():
                 if self.workers.get(identifier) is not w:return
                 try:
-                    if identifier=='global-agents' and method=='inspectWorktree':
+                    if identifier=='global-agents' and method in ('inspectWorktree', 'groupChatHistory', 'groupChatSearch', 'groupChatSaveFile'):
                         w['service'].handle(method,args,agent=agent,session=session or self._session,reply=respond)
                         return
                     result=w['service'].handle(method,args,agent=agent,session=session or self._session) if identifier=='global-agents' else w['service'].handle(method,args)
@@ -427,8 +439,14 @@ class DesktopPlugins(QObject):
                 respond(value)
             QTimer.singleShot(0,self,invoke)
             def service_timeout():
-                error = ('检查工作树超时，请重试。' if method=='inspectWorktree'
-                         else '桌宠操作超时，可通过 status 查看导入结果')
+                if method == 'inspectWorktree':
+                    error = '检查工作树超时，请重试。'
+                elif method in ('groupChatHistory', 'groupChatSearch'):
+                    error = '读取群聊超时，请重试。'
+                elif method == 'groupChatSaveFile':
+                    error = '保存附件超时，请检查目标文件。'
+                else:
+                    error = '桌宠操作超时，可通过 status 查看导入结果'
                 respond({'ok':False,'error':error})
             QTimer.singleShot(timeout_ms,self,service_timeout)
             return request

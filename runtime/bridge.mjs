@@ -9,7 +9,7 @@ import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
 import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { bindHttpRetryBoundary } from "./http-retry-boundary.mjs";
 import { DESKTOP_PI_PROMPT, addMcpFromInput, createPiCommandController, piCommandsEnabled } from "./pi-commands.mjs";
-import { UMEKO_TOOL, SEND_TO_USER, REMINDER, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension, coordinatorNativeTools } from "./umeko-control.mjs";
+import { UMEKO_TOOL, SEND_TO_USER, REMINDER, REPLY_TO_GROUPCHAT, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension, coordinatorNativeTools } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
 import { configureCoworkSubagents, coworkSubagentFromPrompt, coworkSubagentResources, coworkSubagentTools } from "./cowork-subagents.mjs";
@@ -545,7 +545,7 @@ function exposeNativeTools(session) {
   }
   if (config?.globalCoordinator) {
     const available = new Set(session.getAllTools().map(tool => tool.name));
-    session.setActiveToolsByName([...new Set([UMEKO_TOOL,
+    session.setActiveToolsByName([...new Set([UMEKO_TOOL, REPLY_TO_GROUPCHAT,
       ...(config.petAssistantBinding ? [SEND_TO_USER] : []), ...(config.petReminderBinding ? [REMINDER] : []),
       ...(config.coordinatorSkills?.length ? ['read'] : []), ...coordinatorNativeTools(config.coordinatorTools)])]
       .filter(name => available.has(name)));
@@ -774,7 +774,7 @@ async function init(input) {
           { name: "chatbox", builtin: true, replaceable: false, factory: pi => chatboxExtension(pi, () => config.webview || {}, (id, items, failed) => taskDelivery("submitted", id, items, failed)) },
           { name: "generation", builtin: true, replaceable: false, factory: createGenerationExtension({getConfig: () => config, onDelivery: (id, items) => taskDelivery("generated", id, items)}) },
           { name: "umeko-control", builtin: true, replaceable: false, factory: pi => {
-            umekoControl.extension(pi, { runPiCommand, canRunPiCommand });
+            umekoControl.extension(pi, { runPiCommand, canRunPiCommand, globalCoordinator: Boolean(input.globalCoordinator) });
             auxiliaryVision.toolExtension(pi);
             if (remoteWorkspaceEnabled) remoteEnvironments.extension(pi);
           } },

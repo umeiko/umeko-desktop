@@ -1,5 +1,7 @@
 .pragma library
 var strings = {
+    "群聊": "Group chat",
+    "用 @ 点名成员。点击头像进入单聊，右键可以点名或拍一拍。": "Mention members with @. Click an avatar to open its chat, or right-click to mention or poke.",
     "团队看板": "Team board",
     "查看团队成员、任务和协作记录。打开或刷新看板不会唤醒成员。": "View members, tasks, and activity without waking team members.",
     "等待点名": "Awaiting mention",

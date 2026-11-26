@@ -236,7 +236,8 @@ try:
     assert manager.openPage('global-agents')
     wait(lambda:find('globalSubagentsHeading') is not None,'Global Agents widget did not open')
     assert find('globalSubagentsHeading').property('text') == 'Global Agents'
-    assert find('agentBusRequestsTabButton').property('text') == 'Requests'
+    assert find('agentBusRequestsTabButton') is None
+    assert find('groupChatTabButton').property('text') == 'Group chat'
     backend.setLanguage('zh')
     assert find('globalSubagentsHeading').property('text') == '全局子智能体'
     window.setProperty('page','settings');QTest.qWait(200);assert not manager.page;assert not find('webPane').property('opened')
