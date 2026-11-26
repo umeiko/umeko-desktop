@@ -17,6 +17,10 @@ QtObject {
     readonly property string base: style.base || backend.config.theme
     readonly property bool dark: base === "dark"
     readonly property bool yanami: base === "yanami"
+    readonly property real defaultWallpaperOpacity: yanami ? 5.5 : 0
+    function wallpaperOpacity(configured, custom) {
+        return typeof configured === "number" ? configured : custom ? 24 : defaultWallpaperOpacity
+    }
     readonly property var palette: Colors.palette(base, style.colors)
     readonly property color bg: palette.bg
     readonly property color sidebar: palette.sidebar

@@ -5,6 +5,44 @@ import QtQuick.Layouts
 Column {
     id: root; objectName: "appearanceSettings"; spacing: 18
     ThemeSettings { width: parent.width }
+    Loader {
+        id: wallpaperDialog
+        active: false
+        sourceComponent: ChatWallpaperDialog {}
+    }
+    SectionCard {
+        width: parent.width
+        RowLayout {
+            width: parent.width; spacing: 12
+            Rectangle {
+                width: Theme.control(36); height: width; radius: 9; color: Theme.accentBg
+                Glyph { name: "image"; color: Theme.accent; anchors.centerIn: parent }
+            }
+            ColumnLayout {
+                Layout.fillWidth: true; spacing: 3
+                Text {
+                    Layout.fillWidth: true
+                    text: I18n.t("聊天背景"); color: Theme.ink; font.family: Theme.fontFamily
+                    font.pixelSize: Theme.font(14); font.weight: Font.DemiBold
+                }
+                Text {
+                    Layout.fillWidth: true
+                    readonly property var wallpaper: backend.chatWallpaper.settings
+                    text: wallpaper.source ? wallpaper.name || I18n.t("自定义背景") : I18n.t("默认背景")
+                    textFormat: Text.PlainText; color: Theme.muted; font.family: Theme.fontFamily
+                    font.pixelSize: Theme.font(11); elide: Text.ElideMiddle
+                }
+            }
+            ActionButton {
+                objectName: "chatWallpaperSettings"
+                text: I18n.t("配置背景")
+                onClicked: {
+                    wallpaperDialog.active = true
+                    wallpaperDialog.item.begin()
+                }
+            }
+        }
+    }
     SectionCard {
         width: parent.width
         ColumnLayout {
