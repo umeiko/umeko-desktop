@@ -120,6 +120,8 @@ Syntax coloring waits for a 180 ms pause in code changes and uses one background
 
 All eight native tools are enabled by default: `read`, `bash`, `powershell`, `edit`, `write`, `grep`, `find`, `ls`. `codemode`, `tool_search`, and directly callable extension tools are enabled by default too. The Pi plugin Widget lets you change the activation scope or disable any listed extension, including Umeko's built-ins, and change individual native tools' visibility for the current chat. The tools call executables installed on the host; to use `powershell` on Unix, install PowerShell.
 
+On local Windows, the Pi PowerShell tool uses UTF-8 by default. For a native program known to emit CP936/GBK bytes on stdout and stderr, ask the agent to call PowerShell with `output_encoding: "gbk"`. This changes decoding for that command only and leaves the byte logs unchanged. For mixed-encoding output, configure the native program to write UTF-8 instead.
+
 Skills, extensions, templates and commands load from the configured Pi agent directory and project `.pi` resources. Settings accepts additional Skill/extension paths. “View native capabilities” shows the actual registry, activation states and schemas. Deferred tools keep native discovery; hidden or disabled tools stay unavailable. New sessions, resume, fork and reload keep this behavior and leave Pi settings files as they are.
 
 Extension confirmation, selection and input dialogs are supported. Custom terminal components run in Pi's terminal UI. Model suppliers come from the application's provider settings. Kernel updates verify a candidate before switching; if verification fails, the current kernel stays active.
