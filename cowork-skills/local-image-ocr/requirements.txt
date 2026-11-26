@@ -1,0 +1,4 @@
+rapidocr==3.10.0
+onnxruntime==1.24.3
+opencv-python-headless==5.1.0.95
+Pillow==13.0.0

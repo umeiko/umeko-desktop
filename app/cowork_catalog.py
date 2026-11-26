@@ -19,6 +19,7 @@ TOOL_LABELS = {
 }
 
 SKILL_LABELS = {
+    'local-image-ocr': ('本地图像 OCR', 'Local image OCR', 'Umeko'),
     'evidence-citations': ('来源与引文', 'Grounded citations', 'Nous Research · grounded-citations'),
     'office-artifacts': ('Microsoft Office', 'Microsoft Office', 'Nous Research · microsoft-office'),
     'pdf-paper-reading': ('论文 PDF 阅读', 'PDF paper reading', 'OpenAI Skills · pdf'),
@@ -51,9 +52,11 @@ SUBAGENT_POOL = [
 ]
 
 
-def recipe(identifier, icon, tone, name, description, prompt, starters, tools=(), skills=(), context='chat'):
+def recipe(identifier, icon, tone, name, description, prompt, starters, tools=(), skills=(), context='chat',
+           *, image_paths_only=False):
     return dict(id=identifier, icon=icon, tone=tone, name=name, description=description, prompt=prompt,
-                starters=starters, tools=list(tools), skills=list(skills), context=context, custom=False)
+                starters=starters, tools=list(tools), skills=list(skills), context=context, custom=False,
+                imagePathsOnly=image_paths_only)
 
 
 BUILTINS = [
@@ -78,9 +81,9 @@ BUILTINS = [
            ('read_pdf_text', 'read', 'write', 'bash', 'powershell', 'submit_to_chatbox'), ('pdf-paper-reading',), 'files'),
     recipe('ocr', 'eye', 'amber', ('快速 OCR', 'Quick OCR'),
            ('从截图或照片中提取可复制的文字。', 'Extract copyable text from screenshots and photos.'),
-           'First use ocr_image on the attached file. Use visible image input or analyze_image if the local extractor is unavailable or if the layout needs interpretation. Preserve reading order, line breaks and table columns. Keep the original language and mark unreadable spans with [unclear]. If no image is available or the model cannot see it, explain that clearly.',
+           'For an attached image, follow the local-image-ocr Skill. Prepare or reuse a local OCR environment as needed, then transcribe the original image in this conversation. Pass image paths only to local OCR commands. If there is no image, ask for one before setting up OCR.',
            [('提取这张图里的文字', 'Extract the text from this image'), ('把截图里的表格整理成 Markdown', 'Turn the table in this screenshot into Markdown')],
-           ('ocr_image', 'analyze_image'), context='files'),
+           ('read', 'bash', 'powershell'), ('local-image-ocr',), 'files', image_paths_only=True),
     recipe('knowledge', 'layers', 'teal', ('知识库洞察', 'Knowledge insights'),
            ('串联多份资料，找出共识、分歧和证据。', 'Find themes, disagreements and evidence across your sources.'),
            'Use only the source files or folders selected by the user. Locate likely sources before reading. Compare claims across documents, cite filenames and page or line references, expose conflicts and unanswered questions. Ask for source materials when none are attached.',

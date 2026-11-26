@@ -1294,12 +1294,13 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self.toast.emit("Pi 加载完成后可添加附件")
             return False
         accepted = False
+        encode_image = not self._cowork.image_paths_only(self._view)
         try:
             for url in json.loads(raw):
                 parsed = QUrl(url)
                 if not parsed.isLocalFile():
                     continue
-                item = self._file_attachment(url)
+                item = self._file_attachment(url, encode_image=encode_image)
                 if item is None: continue
                 if any(existing["path"] == item["path"] for existing in self._view.attachments):
                     accepted = True
