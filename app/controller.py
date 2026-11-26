@@ -1354,6 +1354,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def pasteAttachments(self):
         if self._view.busy and self._view.phase != "running":
             return False
+        return self._paste_attachments(
+            lambda urls: self.addAttachments(json.dumps(urls)), lambda: self.store.directory / "attachments")
+
+    def _paste_attachments(self, accept, clipboard_folder):
         mime = QGuiApplication.clipboard().mimeData()
         if mime is None:
             return False
@@ -1369,15 +1373,19 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         text = clipboard_text.replace("\r\n", "\n").rstrip("\n")
         if clipboard_text and (not urls or text not in file_texts):
             return False
-        if urls and self.addAttachments(json.dumps([url.toString() for url in urls])):
+        if urls and accept([url.toString() for url in urls]):
             return True
         if mime.hasImage():
-            folder = self.store.directory / "attachments"
+            image = QGuiApplication.clipboard().image()
+            if image.isNull() or image.width() * image.height() > 40_000_000:
+                return False
+            folder = clipboard_folder()
             folder.mkdir(exist_ok=True)
             path = folder / ("clipboard-" + uuid.uuid4().hex[:12] + ".png")
-            image = QGuiApplication.clipboard().image()
-            if not image.isNull() and image.save(str(path)):
-                return self.addAttachments(json.dumps([QUrl.fromLocalFile(str(path)).toString()]))
+            if image.save(str(path)):
+                if accept([QUrl.fromLocalFile(str(path)).toString()]):
+                    return True
+                path.unlink(missing_ok=True)
         return False
 
     @Slot(str)

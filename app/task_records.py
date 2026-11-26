@@ -49,6 +49,10 @@ CREATE TABLE IF NOT EXISTS team_board_events (
 );
 CREATE INDEX IF NOT EXISTS team_events_by_team ON team_board_events(team_id, sequence);
 CREATE INDEX IF NOT EXISTS team_events_by_task ON team_board_events(team_id, task_id, sequence);
+CREATE TABLE IF NOT EXISTS global_chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message TEXT NOT NULL
+);
 """
 
 

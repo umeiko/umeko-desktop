@@ -7,7 +7,8 @@ Item {
     id: root
     readonly property Item modelAnchor: modelButton
     readonly property int queueOffset: queued.height
-    height: 157 + footer.height - 33 + (backend.attachments.length ? Theme.control(48) : 0) + queueOffset
+    readonly property var attachmentItems: backend ? backend.attachments : []
+    height: 157 + footer.height - 33 + (attachmentItems.length ? Theme.control(48) : 0) + queueOffset
     signal openModels()
     signal chooseFiles()
     signal messageSent()
@@ -54,24 +55,13 @@ Item {
         x: 0; y: root.queueOffset; width: parent.width; height: parent.height - root.queueOffset; radius: 15; color: Theme.surface
         border.color: prompt.activeFocus && (Theme.yanami || Theme.base === "white") ? Theme.accent : prompt.activeFocus ? (Theme.dark ? "#59735e" : "#b3c3b0") : Theme.line
         Behavior on border.color { ColorAnimation { duration: 180 } }
-        Flickable {
-            x: 16; y: 12; width: parent.width - 32; height: Theme.control(36); visible: backend.attachments.length > 0
-            contentWidth: attachmentRow.width; contentHeight: height; clip: true
-            Row { id: attachmentRow; spacing: 7
-                Repeater {
-                    model: backend.attachments
-                    Rectangle {
-                        required property var modelData
-                        width: Math.min(attachmentName.implicitWidth, 165) + Theme.control(63); height: Theme.control(33); radius: 7; color: Theme.accentBg
-                        Glyph { x: 9; anchors.verticalCenter: parent.verticalCenter; name: modelData.kind === "web" ? "globe" : modelData.kind === "folder" ? "folder" : modelData.kind === "image" ? "image" : "file"; width: Theme.icon(15); height: Theme.icon(15) }
-                        Text { font.family: Theme.fontFamily; id: attachmentName; x: Theme.control(31); anchors.verticalCenter: parent.verticalCenter; width: Math.min(implicitWidth, 165); text: modelData.name; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.ink; font.pixelSize: Theme.font(10, visible) }
-                        ActionButton { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: Theme.control(27); height: Theme.control(27); quiet: true; glyph: "x"; onClicked: backend.removeAttachment(modelData.id) }
-                    }
-                }
-            }
+        ComposerAttachments {
+            x: 16; y: 12; width: parent.width - 32; height: implicitHeight; visible: items.length > 0
+            items: root.attachmentItems
+            onRemoveRequested: id => backend.removeAttachment(id)
         }
         ScrollView {
-            x: 20; y: backend.attachments.length ? Theme.control(48) + 15 : 15; width: parent.width - 40; height: 82; clip: true
+            x: 20; y: root.attachmentItems.length ? Theme.control(48) + 15 : 15; width: parent.width - 40; height: 82; clip: true
             ChatInput {
                 id: prompt; objectName: "promptInput"
                 color: Theme.ink; placeholderTextColor: Theme.muted

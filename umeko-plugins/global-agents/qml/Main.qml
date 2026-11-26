@@ -9,10 +9,11 @@ Rectangle {
     objectName: "globalAgentsPage"
     required property var sdk
     readonly property var c: sdk.colors
-    property var state: ({agents:[],targets:[],projects:[],appearances:[],models:[],requests:[],messages:[],queue:[]})
+    property var state: ({agents:[],targets:[],projects:[],appearances:[],models:[],messages:[],queue:[]})
     property string selected: ""
     property var drafts: ({})
     property string section: "agents"
+    readonly property bool groupChatVisible: visible && sdk.active && !selected && section === "group"
     property string error: ""
     property string snapshotSelection: ""
     property bool polling: false
@@ -64,9 +65,8 @@ Rectangle {
     }
     Timer {interval:1000;repeat:true;running:root.sdk.active;onTriggered:root.clock=Date.now()}
     readonly property var current: state.agents.find(row => row.id===selected) || ({})
-    readonly property string requestsLabel: sdk.language === "en" ? "Requests" : "请求"
-    readonly property string helpTitle: selected?Umeko.I18n.t("与子智能体对话"):section==="bridge"?Umeko.I18n.t("Agent Bus（智能体总线）"):section==="requests"?requestsLabel:Umeko.I18n.t("全局子智能体")
-    readonly property string helpText: selected?Umeko.I18n.t("连接的会话可双向发送任务和回复。总线消息按到达顺序排队，聊天上方可删除待处理消息或移到队首，优先处理不打断当前任务。输入框可手动 steering；停止会取消其未完成请求。历史保留最近一个完整压缩区间和本轮对话。点击上下文圈环查看用量或压缩，通过右侧问题目录跳转。"):section==="bridge"?Umeko.I18n.t("展开项目并点击会话，进入二级列表。勾选对应的全局子智能体，建立与该会话的一条双向链路；双方均可发送任务并接收回复。关闭会取消这条链路上的未完成请求。"):section==="requests"?Umeko.I18n.t("仅显示尚未结束的请求，完成后自动移出。取消不会撤销已执行的操作。"):Umeko.I18n.t("创建拥有独立上下文的子智能体，向已授权的对话分派任务。开启‘允许自动被创建’后，模型请求直接创建；关闭时需要你在预填表单中确认。模型未指定形象时随机分配，创建成功后自动连接来源对话。")
+    readonly property string helpTitle: selected?Umeko.I18n.t("与子智能体对话"):section==="bridge"?Umeko.I18n.t("Agent Bus（智能体总线）"):section==="group"?Umeko.I18n.t("群聊"):Umeko.I18n.t("全局子智能体")
+    readonly property string helpText: selected?Umeko.I18n.t("连接的会话可双向发送任务和回复。总线消息按到达顺序排队，聊天上方可删除待处理消息或移到队首，优先处理不打断当前任务。输入框可手动 steering；停止会取消其未完成请求。历史保留最近一个完整压缩区间和本轮对话。点击上下文圈环查看用量或压缩，通过右侧问题目录跳转。"):section==="bridge"?Umeko.I18n.t("展开项目并点击会话，进入二级列表。勾选对应的全局子智能体，建立与该会话的一条双向链路；双方均可发送任务并接收回复。关闭会取消这条链路上的未完成请求。"):section==="group"?Umeko.I18n.t("用 @ 点名成员。点击头像进入单聊，右键可以点名或拍一拍。"):Umeko.I18n.t("创建拥有独立上下文的子智能体，向已授权的对话分派任务。开启‘允许自动被创建’后，模型请求直接创建；关闭时需要你在预填表单中确认。模型未指定形象时随机分配，创建成功后自动连接来源对话。")
     color: c.surface
     function bridgeTree(projects, targets, query, collapsed) {
         // Pi returns native paths; saved projects may use forward slashes.
@@ -117,28 +117,7 @@ Rectangle {
         }
         if(busRows.count>rows.length)busRows.remove(rows.length,busRows.count-rows.length)
     }
-    ListModel { id: requestRows; dynamicRoles: true }
-    function updateRequestRows() {
-        const rows = (state.requests || []).slice().reverse()
-        for (let i = 0; i < rows.length; i++) {
-            let old = i
-            while (old < requestRows.count && requestRows.get(old).requestData.id !== rows[i].id)
-                old++
-            if (old === requestRows.count)
-                requestRows.insert(i, {requestData: rows[i]})
-            else {
-                if (old !== i) requestRows.move(old, i, 1)
-                if (JSON.stringify(requestRows.get(i).requestData) !== JSON.stringify(rows[i]))
-                    requestRows.setProperty(i, "requestData", rows[i])
-            }
-        }
-        if (requestRows.count > rows.length)
-            requestRows.remove(rows.length, requestRows.count - rows.length)
-    }
-    onStateChanged: {
-        updateBusTree()
-        updateRequestRows()
-    }
+    onStateChanged: updateBusTree()
     onCollapsedProjectsChanged:updateBusTree()
     function call(method,args) {
         const id=sdk.call(method,args || {})
@@ -146,24 +125,17 @@ Rectangle {
         const next=Object.assign({},pending);next[id]=method;pending=next
         return id
     }
-    property string cleanupRequest: ""
-    property string cleanupInspection: ""
-    property string cleanupError: ""
-    property var cleanupDetails: ({})
-    readonly property bool requestsVisible: visible && sdk.active && !selected && section === "requests"
-    onRequestsVisibleChanged: if (!requestsVisible) cleanupWorktreeDialog.close()
-    function inspectWorktree(row) {
-        error = ""
-        cleanupRequest = row.id
-        cleanupDetails = row.worktree
-        cleanupError = ""
-        cleanupWorktreeDialog.open()
-        cleanupInspection = call("inspectWorktree", {id: row.id}) || ""
-        if (!cleanupInspection)
-            cleanupError = error
-    }
     function refresh() {if(!polling){snapshotSelection=selected;polling=!!call("snapshot",{selected:selected,revision:state.selectedId===selected?state.revision:-1,includeMessages:false})}}
-    function openAgent(id) {if(selected)drafts[selected]=input.text;if(id && !sdk.openConversation(id))return;if(!id)sdk.openConversation("");selected=id;input.text=drafts[id] || "";section="agents";refresh()}
+    property string returnSection: "agents"
+    function openAgent(id, fromSection) {
+        if (selected) drafts[selected] = input.text
+        if (!sdk.openConversation(id)) return
+        if (id) returnSection = fromSection || "agents"
+        selected = id
+        input.text = drafts[id] || ""
+        section = id ? "agents" : returnSection
+        refresh()
+    }
     function form(id) {
         proposalId="";proposalSource="";formSubmitting=false
         editing=id || ""
@@ -221,15 +193,6 @@ Rectangle {
                 root.skillCatalog=result.result.skills || []
                 return
             }
-            if(method==="inspectWorktree"){
-                if (id !== root.cleanupInspection) return
-                root.cleanupInspection = ""
-                if (value.ok)
-                    root.cleanupDetails = value.result
-                else
-                    root.cleanupError = value.error || "操作失败"
-                return
-            }
             if(!value.ok){root.error=value.error || Umeko.I18n.t("操作失败");if(createDialog.opened)formError.text=root.error;return}
             root.error=""
             if(method==="snapshot") {
@@ -281,6 +244,7 @@ Rectangle {
     ColumnLayout {
         anchors.fill:parent;anchors.margins:18;spacing:14
         RowLayout {
+            visible: root.section !== "group" || !!root.selected
             Layout.fillWidth:true;spacing:10
             SmallButton {visible:!!root.selected;text:"‹";onClicked:{root.openAgent("")}}
             Image {visible:!!root.selected;source:root.current.portrait || "";Layout.preferredWidth:38;Layout.preferredHeight:38;fillMode:Image.PreserveAspectFit;sourceSize.width:76;sourceSize.height:76}
@@ -303,17 +267,19 @@ Rectangle {
             SmallButton {objectName:"newGlobalAgentButton";visible:!root.selected;text:Umeko.I18n.t("＋ 创建");primary:true;onClicked:root.form("")}
             SmallButton {visible:!!root.selected;text:root.current.busy || root.current.state==="quota_paused"?Umeko.I18n.t("切换模型"):Umeko.I18n.t("设置");onClicked:root.form(root.selected)}
         }
-        RowLayout {
-            visible:!root.selected;spacing:8
+        Flow {
+            Layout.fillWidth: true
+            visible: !root.selected
+            spacing: 6
             SmallButton {objectName:"globalSubagentsTabButton";text:Umeko.I18n.t("子智能体  %1").arg(root.state.agents.length);primary:root.section==="agents";onClicked:root.section="agents"}
             SmallButton {objectName:"agentBusTabButton";text:Umeko.I18n.t("智能体总线");primary:root.section==="bridge";onClicked:root.section="bridge"}
-            SmallButton {objectName:"agentBusRequestsTabButton";text:root.requestsLabel;primary:root.section==="requests";onClicked:root.section="requests"}
+            SmallButton {objectName:"groupChatTabButton";text:Umeko.I18n.t("群聊");primary:root.section==="group";onClicked:root.section="group"}
         }
         CompactCheckBox {objectName:"allowAutomaticGlobalCreation";visible:!root.selected && root.section==="agents";text:Umeko.I18n.t("允许自动被创建");checked:!!root.state.allowAutomaticCreation;onToggled:root.call("setAutomaticCreation",{enabled:checked})}
         LabelText {visible:!!root.error || !!root.state.error;text:root.error || root.state.error || "";color:root.c.danger;wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true}
         StackLayout {
             Layout.fillWidth:true;Layout.fillHeight:true
-            currentIndex:root.selected?3:root.section==="agents"?0:root.section==="bridge"?1:2
+            currentIndex:root.selected?2:root.section==="agents"?0:root.section==="bridge"?1:3
             Item {
                 ColumnLayout {anchors.centerIn:parent;spacing:12;visible:!root.state.agents.length
                     LabelText {text:Umeko.I18n.t("暂无全局子智能体");color:root.c.muted;Layout.alignment:Qt.AlignHCenter}
@@ -401,49 +367,6 @@ Rectangle {
                     LabelText {anchors.centerIn:parent;visible:!root.state.agents.length;text:Umeko.I18n.t("暂无全局子智能体");color:root.c.muted}
                 }
             }
-            ListView {
-                objectName: "agentBusRequestsList"
-                clip:true;spacing:10;model:requestRows
-                delegate:Rectangle {
-                    required property var requestData
-                    width:ListView.view.width;height:requestBody.implicitHeight+24;radius:12;color:root.c.bg;border.color:root.c.line
-                    ColumnLayout {anchors.fill:parent;anchors.margins:12;spacing:7
-                        id:requestBody
-                        RowLayout {Layout.fillWidth:true
-                            LabelText {text:Umeko.I18n.t(({queued:"等待投递",sending:"投递中",running:"已投递 · 等待结果",merging:"保存并合并工作树",paused:"已暂停",completed:"已完成",failed:"失败",cancelled:"已取消",interrupted:"已中断"})[requestData.status] || requestData.status);color:requestData.status==="failed"?root.c.danger:root.c.accent;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale}
-                            LabelText {visible:!requestData.worktree;text:requestData.id.slice(0,8);color:root.c.muted;font.pixelSize:11*root.sdk.scale}
-                            SmallButton {visible:!(["completed","failed","cancelled","interrupted","merging"].includes(requestData.status));text:Umeko.I18n.t("取消");onClicked:root.call("cancelRequest",{id:requestData.id})}
-                        }
-                        LabelText {
-                            id:requestText
-                            text: requestData.worktreeConflict
-                                  ? [Umeko.I18n.t("合并冲突。原目录和任务分支均已保留。"),
-                                     (requestData.conflictFiles || []).join("\n")].filter(Boolean).join("\n").slice(0,500)
-                                  : requestData.worktreeMerged
-                                  ? [Umeko.I18n.t("工作树改动已合并。"), requestData.result].filter(Boolean).join("\n").slice(0,500)
-                                  : (requestData.result || requestData.text || "").slice(0,500)
-                            wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale
-                        }
-                        LabelText {
-                            objectName:"agentBusWorktreeDetails";visible:!!requestData.worktree
-                            text:requestData.worktree ? requestData.worktree.branch+"\n"+
-                                 (requestData.worktreeState==="removed" ? Umeko.I18n.t("工作树已清理") : requestData.worktree.path) : ""
-                            color:root.c.muted;wrapMode:Text.WrapAnywhere;elide:Text.ElideNone;Layout.fillWidth:true;font.pixelSize:11*root.sdk.scale
-                        }
-                        RowLayout {
-                            visible:!!requestData.worktree && requestData.worktreeState!=="removed"
-                            SmallButton {text:Umeko.I18n.t("打开工作树");onClicked:root.call("openWorktree",{id:requestData.id})}
-                            SmallButton {
-                                objectName:"inspectWorktreeButton"
-                                readonly property string requestId: requestData.id
-                                text:Umeko.I18n.t("清理工作树");dangerous:true
-                                onClicked:root.inspectWorktree(requestData)
-                            }
-                        }
-                    }
-                }
-                LabelText {anchors.centerIn:parent;visible:!root.state.requests.length;text:Umeko.I18n.t("暂无请求");color:root.c.muted}
-            }
             ColumnLayout {
                 spacing:12
                 Loader {
@@ -508,51 +431,18 @@ Rectangle {
                         Layout.preferredWidth:25*root.sdk.scale;Layout.preferredHeight:31*root.sdk.scale
                         onLoaded:{item.objectName="globalAgentContextUsage";item.controller=root.sdk.conversation}
                     }
-                    SmallButton {visible:root.current.busy || root.state.requests.some(row=>!(["completed","failed","cancelled","interrupted"].includes(row.status)) && row.source==="agent:"+root.selected);text:Umeko.I18n.t("停止");dangerous:true;onClicked:root.call("stop",{id:root.selected})}
+                    SmallButton {visible:!!root.current.busy || !!root.state.hasPendingDispatch;text:Umeko.I18n.t("停止");dangerous:true;onClicked:root.call("stop",{id:root.selected})}
                     Item {Layout.fillWidth:true}
                     LabelText {text:Umeko.I18n.t("Ctrl+Enter / Alt+Enter / Shift+Enter 换行");font.pixelSize:10*root.sdk.scale;color:root.c.muted}
                     SmallButton {objectName:"sendGlobalAgentButton";text:root.current.busy?Umeko.I18n.t("引导"):Umeko.I18n.t("发送");primary:true;enabled:!!input.text.trim();onClicked:root.send()}
                 }
             }
-        }
-    }
-    Dialog {
-        id:cleanupWorktreeDialog
-        objectName: root.requestsVisible ? "cleanupWorktreeDialog" : ""
-        anchors.centerIn:parent
-        title:Umeko.I18n.t("清理工作树");width:Math.min(460,root.width-28);height:Math.min(360,root.height-28);modal:true;padding:16
-        onClosed: root.cleanupInspection = ""
-        background:Rectangle {radius:14;color:root.c.surface;border.color:root.c.line}
-        contentItem:ColumnLayout {
-            spacing:10
-            ScrollView {
-                Layout.fillWidth:true;Layout.fillHeight:true;clip:true
-                TextArea {
-                    readOnly:true;selectByMouse:true;wrapMode:TextArea.Wrap;color:root.c.ink;background:null
-                    text: {
-                        const details = root.cleanupDetails
-                        const lines = [details.path || "", Umeko.I18n.t("保留分支")+" "+(details.branch || "")]
-                        if (root.cleanupInspection)
-                            lines.push(Umeko.I18n.t("正在检查工作树…"))
-                        else if (root.cleanupError)
-                            lines.push(Umeko.I18n.t(root.cleanupError))
-                        else if (details.files)
-                            lines.push(Umeko.I18n.t("未提交或忽略的文件")+"\n"+(details.files.join("\n") || Umeko.I18n.t("无")),
-                                       Umeko.I18n.t("运行中的任务")+"\n"+(details.running.join("\n") || Umeko.I18n.t("无")),
-                                       Umeko.I18n.t("关联会话")+"\n"+(details.sessions.join("\n") || Umeko.I18n.t("无")))
-                        return lines.join("\n\n")
-                    }
-                }
-            }
-            RowLayout {
-                Layout.alignment:Qt.AlignRight
-                SmallButton {text:Umeko.I18n.t("取消");onClicked:cleanupWorktreeDialog.close()}
-                SmallButton {
-                    objectName:"confirmWorktreeCleanup";text:Umeko.I18n.t("确认清理");dangerous:true
-                    enabled: !root.cleanupInspection && !root.cleanupError && !!root.cleanupDetails.files
-                             && !root.cleanupDetails.running.length && !root.cleanupDetails.files.length
-                    onClicked:{root.call("removeWorktree",{id:root.cleanupRequest,confirmed:true});cleanupWorktreeDialog.close()}
-                }
+            GroupChat {
+                sdk: root.sdk
+                agents: root.state.agents
+                active: root.groupChatVisible
+                collaborationEnabled: backend.desktopSettings.teamCollaborationEnabled === true
+                onOpenAgent: id => root.openAgent(id, "group")
             }
         }
     }

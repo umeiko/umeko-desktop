@@ -32,6 +32,9 @@ FocusScope {
         function requestHost(operation,args) { return root.manager.requestHost(operation,JSON.stringify(args || {})) }
         function saveConfig(value) { return root.manager.saveConfig(root.page.id,JSON.stringify(value)) }
         function copyText(text) { backend.copy(text) }
+        function groupChatAttachments(urls) {
+            return root.live ? root.manager.groupChatAttachments(urls ? JSON.stringify(urls) : "") : []
+        }
     }
     Component { id: conversationRenderer; AgentConversationPane {} }
     Component { id: usageRenderer; ContextUsage {} }
