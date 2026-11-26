@@ -554,26 +554,44 @@ ApplicationWindow {
             ActionButton {
                 id: coworkButton; objectName: "openCoworkButton"
                 x: settingsButton.x; anchors.bottom: settingsButton.top; anchors.bottomMargin: 4
-                width: settingsButton.width; height: Theme.control(40); quiet: true
+                width: settingsButton.width; height: Math.max(Theme.control(40), modeContent.implicitHeight + 12); quiet: true
                 visible: backend.desktopSettings.coworkEnabled
-                Accessible.name: "Cowork"
-                hint: backend.language === "en" ? "Cowork (experimental)" : "Cowork（实验版）"
+                text: backend.cowork.active ? I18n.t("编码（AICoding）") : I18n.t("协同办公（CoWork）")
+                Accessible.name: text
+                hint: backend.cowork.active ? text : text + " · " + I18n.t("实验版")
                 onClicked: window.openCowork()
                 background: Rectangle {
                     radius: 8
                     color: backend.cowork.active ? Theme.accentBg : coworkButton.interactionHovered ? Theme.hover : "transparent"
                 }
                 contentItem: Item {
-                    RowLayout {
+                    Glyph {
+                        id: modeGlyph
                         anchors.left: parent.left; anchors.leftMargin: 16
-                        anchors.right: parent.right; anchors.rightMargin: 16
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: 10
-                        Glyph { name: "spark"; color: backend.cowork.active ? Theme.accent : Theme.muted; Layout.preferredWidth: Theme.icon(18); Layout.preferredHeight: Theme.icon(18) }
-                        Text { text: "Cowork"; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12); color: Theme.ink; Layout.fillWidth: true; elide: Text.ElideRight }
+                        name: "spark"; width: Theme.icon(18); height: width
+                        color: backend.cowork.active ? Theme.accent : Theme.muted
+                    }
+                    TextMetrics { id: modeLabelMetrics; font: modeLabel.font; text: modeLabel.text }
+                    Flow {
+                        id: modeContent
+                        anchors.left: modeGlyph.right; anchors.leftMargin: 8
+                        anchors.right: parent.right; anchors.rightMargin: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 4
+                        Item {
+                            width: Math.min(modeContent.width, Math.ceil(modeLabelMetrics.advanceWidth) + 4)
+                            height: Math.max(modeLabel.implicitHeight, coworkBadge.visible ? coworkBadge.implicitHeight : 0)
+                            Text {
+                                id: modeLabel; objectName: "coworkSidebarModeLabel"
+                                anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                                text: coworkButton.text; textFormat: Text.PlainText; wrapMode: Text.Wrap
+                                font.family: Theme.fontFamily; font.pixelSize: Theme.font(12); color: Theme.ink
+                            }
+                        }
                         ExperimentalBadge {
-                            objectName: "coworkSidebarExperimentalBadge"
-                            Layout.alignment: Qt.AlignVCenter
+                            id: coworkBadge; objectName: "coworkSidebarExperimentalBadge"
+                            visible: !backend.cowork.active
                         }
                     }
                 }
