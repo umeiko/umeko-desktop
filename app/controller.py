@@ -33,6 +33,7 @@ from .workspace_executor import WorkspaceExecutor
 from .dsh_backend import DshControllerMixin, is_dsh
 from .transcripts import preview
 from .chat_model import ChatModel
+from .chat_wallpaper import ChatWallpaper
 from .transcript_index import TranscriptRepository
 from .model_context import context_suggestion
 from .model_groups import GROUP_MODEL, GROUP_PROVIDER, GROUP_SELECTION, MAX_MEMBERS, configured_members, member_key, settings as group_settings
@@ -107,6 +108,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     @Property('QVariantMap', notify=desktopSettingsChanged)
     def desktopSettings(self):
         return dict(self.store.data['desktop'])
+
+    @Property(QObject, constant=True)
+    def chatWallpaper(self):
+        return self._chat_wallpaper
 
     @Property('QVariantList', notify=remoteEnvironmentsChanged)
     def remoteEnvironments(self):
@@ -254,6 +259,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self.toast.emit('settings.json 无法解析，已另存为 settings.external-invalid.json' if invalid and not keys
                         else 'settings.json 在 Umeko 外被修改，已读入这些修改')
         self.changed.emit()
+        if 'chatWallpaper' in keys:
+            self._chat_wallpaper.changed.emit()
         if 'remoteEnvironments' in keys:
             self.remoteEnvironmentsChanged.emit()
         if {'remoteNetworkEnabled', 'remoteNetworkProxy'}.intersection(keys):
@@ -266,6 +273,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self.root = root
         self._app_about = AppAbout(self)
         self.store = Store()
+        self._chat_wallpaper = ChatWallpaper(self.store, self)
         self.store.external_change = self._settings_changed_externally
         self._remote_environments = RemoteEnvironments(self.store, self.remoteEnvironmentsChanged.emit)
         self._remote_service = RemoteServiceClient(self)
@@ -3092,6 +3100,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if self._closing:
             return
         self._closing = True
+        self._chat_wallpaper.close()
         self._cancel_pi_warmup()
         self._reasoning_discovery.close()
         self._desktop_plugins.close()

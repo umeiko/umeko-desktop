@@ -6,6 +6,8 @@ QtObject {
     readonly property string id: style.id || "yanami"
     readonly property bool personalityEnabled: id !== "system"
     readonly property var assets: style.assets || ({})
+    readonly property url wallpaperFallback: id === "yanami" ? Qt.resolvedUrl("../icons/yanami-chat-watermark.png") : asset("welcome", "")
+    readonly property url wallpaper: asset("background", wallpaperFallback)
     readonly property var lines: style.lines || ({})
     readonly property var subagentPacks: backend.subagentCharacterPacks
     // A bounded per-conversation cache: UI updates and settings navigation never reroll.
