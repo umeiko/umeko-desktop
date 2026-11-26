@@ -228,6 +228,9 @@ def main():
     # Windowed PyInstaller executables have no Python standard streams even
     # when their parent redirected the Win32 standard handles.
     control = sys.stdin or _open_inherited_stream(-10, "r")
+    if sys.stdin is not None:
+        # Node writes UTF-8 JSON; source runs must not use the system code page.
+        control.reconfigure(encoding="utf-8")
     replies = sys.stdout or _open_inherited_stream(-11, "w")
 
     reply_lock = threading.Lock()

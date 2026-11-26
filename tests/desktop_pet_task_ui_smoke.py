@@ -12,7 +12,7 @@ temporary = tempfile.TemporaryDirectory(prefix='umeko-pet-task-ui-')
 os.environ.update(UMEKO_DATA_DIR=str(Path(temporary.name) / 'profile'),
                   PI_CODING_AGENT_DIR=str(Path(temporary.name) / 'agent'),
                   QT_QPA_PLATFORM='offscreen', QT_QUICK_BACKEND='software', UMEKO_LANGUAGE='zh')
-from PySide6.QtCore import QObject, QPointF, Qt
+from PySide6.QtCore import QObject, QPoint, QPointF, QRect, Qt
 from PySide6.QtGui import QGuiApplication, QInputMethodEvent
 from PySide6.QtQml import QQmlEngine, QQmlExpression
 from PySide6.QtTest import QTest
@@ -52,12 +52,34 @@ try:
     wait(lambda: main.findChild(QObject, 'desktopPetWindow') is not None, 'Pet did not load')
     window = main.findChild(QObject, 'desktopPetWindow')
     wait(lambda: window.mask().boundingRect().height() > 50, 'Pet silhouette did not load')
-    point = window.mask().boundingRect().center()
+    pointer = window.findChild(QObject, 'desktopPetPointer')
+
+    def pet_click_point():
+        # The animated mask can include a speech bubble or briefly retain the
+        # larger pre-resize outline. Click the current silhouette inside the
+        # MouseArea and native window, not the center of the full mask.
+        for _ in range(100):
+            origin = pointer.mapToScene(QPointF())
+            art = QRect(origin.toPoint(), pointer.size().toSize())
+            bounds = QRect(0, 0, window.width(), window.height()).intersected(art)
+            visible = window.mask().intersected(bounds)
+            if not visible.isEmpty():
+                center = visible.boundingRect().center()
+                if visible.contains(center):
+                    return center
+                for y in range(visible.boundingRect().top(), visible.boundingRect().bottom() + 1):
+                    for x in range(visible.boundingRect().left(), visible.boundingRect().right() + 1):
+                        candidate = QPoint(x, y)
+                        if visible.contains(candidate):
+                            return candidate
+            QTest.qWait(20)
+        raise AssertionError('No visible pet silhouette inside the current mouse area')
+
     composer = window.findChild(QObject, 'desktopPetTaskComposer')
     field = composer.findChild(QObject, 'desktopPetTaskInput')
     send = composer.findChild(QObject, 'desktopPetTaskSend')
     backend.desktopPlugins.setEnabled('global-agents', False)
-    QTest.mouseDClick(window, Qt.LeftButton, Qt.NoModifier, point)
+    QTest.mouseDClick(window, Qt.LeftButton, Qt.NoModifier, pet_click_point())
     QTest.qWait(100)
     assert not composer.property('visible'), 'Unbound double click opened a popup'
     backend.desktopPlugins.setEnabled('global-agents', True)
@@ -72,7 +94,7 @@ try:
     backend._command_pi = command
 
     def open_composer(verify_motion=False):
-        QTest.mouseDClick(window, Qt.LeftButton, Qt.NoModifier, point)
+        QTest.mouseDClick(window, Qt.LeftButton, Qt.NoModifier, pet_click_point())
         if verify_motion:
             wait(lambda: 0 < composer.property('animationProgress') < 1, 'PID opening did not render intermediate frames')
         wait(lambda: composer.property('opened'), 'Double click did not open the composer')
@@ -196,7 +218,7 @@ try:
     wait(lambda: not composer.property('visible'), 'Escape did not dismiss')
     native = open_composer()
     assert field.property('text') == '失败时保留这段输入', 'Dismissal discarded the draft'
-    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
+    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, pet_click_point())
     assert composer.property('desiredOpen'), 'Clicking pet dismissed input'
     main.show(); main.requestActivate()
     wait(lambda: not composer.property('visible'), 'Switching outside pet/input did not dismiss')
@@ -244,7 +266,6 @@ try:
     original_size = pet.config['size']
     pet.ui('configure', {'size': 96})
     QTest.qWait(100)
-    point = window.mask().boundingRect().center()
     for scale in (1., 1.6):
         backend.store.data['ui']['fontScale'] = scale; backend.appearanceChanged.emit()
         for edge in ('left', 'right'):
@@ -282,7 +303,6 @@ try:
     pet.ui('configure', {'size': original_size})
     backend.store.data['ui']['fontScale'] = 1.; backend.appearanceChanged.emit()
     QTest.qWait(100)
-    point = window.mask().boundingRect().center()
     window.setPosition(area['x'] + area['width'] - window.width() - 32,
                        area['y'] + area['height'] - window.height() - 28)
 

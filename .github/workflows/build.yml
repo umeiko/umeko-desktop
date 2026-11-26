@@ -276,6 +276,10 @@ jobs:
         shell: pwsh
         run: ./build.ps1
 
+      - name: Windows PowerShell output encoding
+        if: runner.os == 'Windows'
+        run: node --test tests/powershell-output-encoding.test.mjs
+
       - name: Build Unix
         if: runner.os != 'Windows'
         run: bash build.sh

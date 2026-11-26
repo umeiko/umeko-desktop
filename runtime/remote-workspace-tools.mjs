@@ -214,7 +214,7 @@ export function createRemoteWorkspaceExtension({
     const baseWrite = createWriteToolDefinition(localCwd);
     const baseEdit = createEditToolDefinition(localCwd);
     const baseBash = createBashToolDefinition(localCwd);
-    const basePowerShell = createPowerShellToolDefinition(localCwd);
+    const basePowerShell = createPowerShellToolDefinition(localCwd, { supportsOutputEncoding: false });
     const baseLs = createLsToolDefinition(localCwd);
     const baseFind = createFindToolDefinition(localCwd);
     const baseGrep = createGrepToolDefinition(localCwd);

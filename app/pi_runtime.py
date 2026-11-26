@@ -180,6 +180,49 @@ def patch_command_sessions(release: Path, bridge_source: Path):
     path.write_text(text, encoding="utf-8")
 
 
+def patch_powershell_output_encoding(release: Path):
+    # Extend the host-backed tool only; custom PowerShell operations (e.g. remote)
+    # do not run through Umeko's local command log reader.
+    tools = release / "node_modules/@earendil-works/pi-coding-agent/dist/core/tools"
+    bash, powershell = tools / "bash.js", tools / "powershell.js"
+    if not bash.is_file() or not powershell.is_file():
+        return
+    plans = [
+        (bash, "supportsOutputEncoding ?", {
+            'timeout, env, toolCallId }) => {': 'timeout, env, toolCallId, outputEncoding }) => {',
+            'env: env ?? getShellEnv(), toolCallId });': 'env: env ?? getShellEnv(), toolCallId, outputEncoding });',
+            '            const commandFromStdin = shellConfig.commandTransport === "stdin";':
+                '            if (outputEncoding === "gbk") throw new Error("GBK output requires the Umeko Windows command host");\n'
+                '            const commandFromStdin = shellConfig.commandTransport === "stdin";',
+            '        parameters: bashSchema,': '        parameters: options?.supportsOutputEncoding ? Type.Object({ ...bashSchema.properties,\n'
+                '            output_encoding: Type.Optional(Type.Union([Type.Literal("utf8"), Type.Literal("gbk")], { description: "Set gbk only for native CP936/GBK output on both streams (default: utf8)" })),\n'
+                '        }) : bashSchema,',
+            'async execute(_toolCallId, { command, timeout }, signal, onUpdate, ctx)':
+                'async execute(_toolCallId, { command, timeout, output_encoding }, signal, onUpdate, ctx)',
+            '                        toolCallId: _toolCallId,':
+                '                        toolCallId: _toolCallId,\n'
+                '                        outputEncoding: options?.supportsOutputEncoding ? output_encoding : undefined,',
+        }),
+        (powershell, "supportsOutputEncoding:", {
+            '        ...options,\n        operations: options?.operations ?? createLocalPowerShellOperations(),':
+                '        ...options,\n        supportsOutputEncoding: process.platform === "win32" && options?.supportsOutputEncoding !== false && !options?.operations,\n'
+                '        operations: options?.operations ?? createLocalPowerShellOperations(),',
+        }),
+    ]
+    pending = []
+    for path, marker, replacements in plans:
+        text = path.read_text(encoding="utf-8")
+        if marker in text:
+            continue
+        for original, replacement in replacements.items():
+            if text.count(original) != 1:
+                raise RuntimeError("Pi PowerShell interface changed; update output encoding adapter")
+            text = text.replace(original, replacement)
+        pending.append((path, text))
+    for path, text in pending:
+        path.write_text(text, encoding="utf-8")
+
+
 def copy_runtime_file(source, destination):
     """Leave prepared adapters untouched; publish changed files atomically."""
     source, destination = Path(source), Path(destination)
@@ -257,6 +300,7 @@ def verify_runtime(release: Path, bridge_source: Path):
     patch_bash_job(release)
     patch_shell_environment(release, bridge_source)
     patch_command_sessions(release, bridge_source)
+    patch_powershell_output_encoding(release)
     patch_search_sandbox(release)
     for name in ("tool-visibility.mjs", "session-capabilities.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         copy_runtime_file(bridge_source.parent / name, release / name)

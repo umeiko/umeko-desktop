@@ -63,6 +63,10 @@ class FakeBackend(QObject):
             "desktop": {"chatWidthHints": True, "autoOpenSubmissions": True, "webDisplay": "embedded"},
         }
 
+    @Property(bool, constant=True)
+    def packagedCliAvailable(self):
+        return False
+
     @Property(QObject, constant=True)
     def loginStartup(self):
         return self.startup
