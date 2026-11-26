@@ -21,6 +21,7 @@ Item {
     property bool initialized: false
     property bool layoutDirty: false
     property bool released: false
+    property bool officeMode: false
     property bool busy: false
     property bool running: false
     property string toolStatus: ""
@@ -1453,7 +1454,7 @@ Item {
                     Loader {
                         id: closingMascot
                         readonly property string mascotName: pane.messagePrefix === "subagent" ? "subagentReplyMascot_" + messageRow.index : "replyEndMascot_" + messageRow.index
-                        readonly property bool eligible: pane.controller.sessionBackend !== "dsh" && !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
+                        readonly property bool eligible: !pane.officeMode && pane.controller.sessionBackend !== "dsh" && !modelData._loading && !messageRow.statusNotice && messageRow.index === conversation.count - 1 && modelData.role === "assistant" && !modelData.error && (modelData.text || "").trim().length > 0 && !pane.running && (pane.turnStatus.state === "finished" || modelData.stopReason === "stop")
                         property bool created: false
                         objectName: active ? "" : mascotName
                         width: Character.id === "doubao" ? Theme.icon(72) : 56

@@ -40,6 +40,7 @@ class Cowork(QObject):
     rowsChanged = Signal()
     typesChanged = Signal()
     resourcesChanged = Signal()
+    launchChanged = Signal()
     createRequested = Signal(str, str)
     taskRequested = Signal(str)
     skillImportFinished = Signal('QStringList')
@@ -63,9 +64,11 @@ class Cowork(QObject):
         self._revisions = {}
         self._standard_view = None
         self._empty_view = None
-        self._last_role = 'study'
+        self._launch_type = ''
+        self._launch_folder = ''
         self._collapsed_types = set()
         self._rows = []
+        self._recent = []
         self._drafts = {}
         self._visible_drafts = {}
         self._skills = []
@@ -228,6 +231,69 @@ class Cowork(QObject):
     def active(self):
         return bool(self.b._view.cowork) or self.b._view is self._empty_view
 
+    @Property(str, notify=launchChanged)
+    def launchType(self):
+        return self._launch_type
+
+    @Property(str, notify=launchChanged)
+    def launchFolder(self):
+        return self._launch_folder or str(self.b.store.default_workspace)
+
+    @Slot(str)
+    def selectLaunchType(self, identifier):
+        if self.active and not self.activeRole and (not identifier or identifier in self.categories):
+            self._launch_type = identifier
+            self.launchChanged.emit()
+
+    @Slot(str)
+    def selectLaunchFolder(self, value):
+        if self.active and not self.activeRole:
+            self._launch_folder = self.folderPath(value) or self._launch_folder
+            self.launchChanged.emit()
+
+    @Slot(str, result=bool)
+    def launch(self, text):
+        source = self.b._view
+        if not self.active or self.activeRole or self.b.kernelBusy or self.b.sessionFiles.busy or not (text.strip() or source.attachments):
+            return False
+        if not self.b.store.data.get('selectedModel') and not self.b.modelGroupSelected:
+            self.b.toast.emit(self._local(('请先选择可用的模型', 'Choose an available model first')))
+            return False
+        type_id = self._launch_type or 'general'
+        category = self.categories.get(type_id)
+        if not category:
+            self.b.toast.emit(self._local(('所选能力已不可用，请重新选择', 'This capability is no longer available')))
+            return False
+        try:
+            folder = self.folderPath(self._launch_folder) if self._launch_folder else self.default_folder()
+            if not folder:
+                raise ValueError(self._local(('工作目录不存在，请重新选择', 'Choose an existing working folder')))
+            identifier = 'custom-' + uuid.uuid5(uuid.NAMESPACE_URL, 'umeko:cowork:quick:' + type_id + '\n' + folder).hex
+            if identifier not in self.profiles:
+                if len(self.profiles) >= MAX_INSTANCES:
+                    raise ValueError(self._local(('已达到 Coworker 实例上限', 'Coworker instance limit reached')))
+                self.profiles[identifier] = self._instance(identifier, type_id, category['name'], folder)
+                try:
+                    self._save()
+                except OSError:
+                    del self.profiles[identifier]
+                    raise
+        except (OSError, ValueError) as error:
+            self.b.toast.emit(str(error))
+            return False
+        record = self.b._new_view(folder)
+        record.cowork = identifier
+        record.draft, record.attachments = text, source.attachments[:]
+        name = ' '.join(text.split()) or (source.attachments[0].get('name', '') if source.attachments else '')
+        record.initial_title = record.title = name[:48]
+        self._collapsed_types.discard(type_id)
+        self.b._activate(record)
+        # Keep inputs in the new conversation if the backend rejects the send.
+        source.draft, source.attachments = '', []
+        self._launch_type = ''
+        self.launchChanged.emit()
+        return self.b.send(text)
+
     @Property(QObject, constant=True)
     def webNetwork(self):
         return self._web
@@ -244,6 +310,10 @@ class Cowork(QObject):
     @Property('QVariantList', notify=rowsChanged)
     def rows(self):
         return self._rows
+
+    @Property('QVariantList', notify=rowsChanged)
+    def recent(self):
+        return self._recent
 
     @Property('QVariantMap', notify=changed)
     def role(self):
@@ -336,6 +406,7 @@ class Cowork(QObject):
 
     def refresh_rows(self):
         grouped = {}
+        recent = []
         has_sessions = set()
         saved_ids = set()
         archived_view = getattr(self.b, '_show_archived', False)
@@ -351,14 +422,16 @@ class Cowork(QObject):
                 if bool(meta.get('archived')) == archived_view:
                     has_sessions.add(identifier)
                     children = grouped.setdefault(role['typeId'], [])
-                    if role['typeId'] in self._collapsed_types:
-                        continue
-                    children.append({
+                    row = {
                         **self._conversation_row(role, session['workspace'], session['title']),
                         'id': session_id, 'kind': 'session', 'archived': archived_view,
                         'pinned': bool(meta.get('pinned')), 'selected': active.id == session_id,
                         **self.b._session_flags(session_id),
-                    })
+                    }
+                    if not archived_view:
+                        recent.append(row)
+                    if role['typeId'] not in self._collapsed_types:
+                        children.append(row)
         self._visible_drafts = {}
         if not archived_view:
             for record in (*self._drafts.values(), active):
@@ -369,14 +442,15 @@ class Cowork(QObject):
                 draft = self._visible_drafts.get(identifier)
                 if identifier not in has_sessions or draft:
                     children = grouped.setdefault(role['typeId'], [])
-                    if role['typeId'] in self._collapsed_types:
-                        continue
                     path = draft.workspace if draft else role['workspace'] or str(self.default_workspace(identifier))
                     title = (draft.initial_title if draft else '') or self._local(role['name'])
-                    children.append({
+                    row = {
                         **self._conversation_row(role, path, title),
                         'id': identifier, 'kind': 'coworkDraft', 'selected': draft is active,
-                    })
+                    }
+                    recent.append(row)
+                    if role['typeId'] not in self._collapsed_types:
+                        children.append(row)
         rows = []
         for type_id, category in self.categories.items():
             if type_id not in grouped:
@@ -387,8 +461,9 @@ class Cowork(QObject):
                          'glyph': category['icon'], 'collapsed': collapsed})
             if not collapsed:
                 rows.extend(sorted(grouped[type_id], key=lambda child: not child.get('pinned', False)))
-        if rows != self._rows:
-            self._rows = rows
+        recent.sort(key=lambda row: not row.get('pinned', False))
+        if rows != self._rows or recent != self._recent:
+            self._rows, self._recent = rows, recent
             self.rowsChanged.emit()
 
     def _conversation_row(self, role, path, title):
@@ -414,8 +489,6 @@ class Cowork(QObject):
         was_active = bool(previous.cowork) or previous is self._empty_view
         if self.active and not was_active:
             self._standard_view = previous
-        if self.activeRole:
-            self._last_role = self.activeRole
         if was_active != self.active or previous.cowork != self.activeRole:
             self.changed.emit()
         if was_active or self.active:
@@ -426,13 +499,7 @@ class Cowork(QObject):
         if self.active:
             self.leave()
         elif self.b.desktopSettings['coworkEnabled']:
-            instances = self._instances()
-            target = self._last_role if self._last_role in instances else next((key for key in self.profiles if key in instances), '')
-            if target:
-                self.openRole(target)
-            else:
-                self._empty_view = self.b._new_view()
-                self.b._activate(self._empty_view)
+            self.showOverview()
 
     @Slot()
     def leave(self):
@@ -446,8 +513,10 @@ class Cowork(QObject):
     @Slot()
     def showOverview(self):
         if self.b.desktopSettings['coworkEnabled']:
-            self._empty_view = self.b._new_view()
-            self.b._activate(self._empty_view)
+            if self._empty_view is None:
+                self._empty_view = self.b._new_view('')
+            if self.b._view is not self._empty_view:
+                self.b._activate(self._empty_view)
 
     @Slot(str)
     def openRole(self, identifier):
@@ -571,8 +640,7 @@ class Cowork(QObject):
             raise
         self._drafts = {key: record for key, record in self._drafts.items() if key[0] != identifier}
         if self.activeRole == identifier:
-            self._empty_view = self.b._new_view()
-            self.b._activate(self._empty_view)
+            self.showOverview()
             target = next(iter(self.profiles), '')
             if target:
                 self.openRole(target)

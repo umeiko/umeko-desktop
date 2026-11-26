@@ -731,7 +731,7 @@ class PiControllerMixin:
                 tool['arguments'] = dict(event['args'])
             if event.get("media"):
                 tool["media"] = event["media"]
-                if visible and self.store.data['desktop']['autoOpenSubmissions'] and event.get('name')=='submit_to_chatbox' and event.get('state')=='done':
+                if visible and not record.cowork and self.store.data['desktop']['autoOpenSubmissions'] and event.get('name')=='submit_to_chatbox' and event.get('state')=='done':
                     for item in event['media']:
                         if item.get('kind')=='web':
                             if self.store.data['desktop']['webDisplay']=='external' or (self.webviewAvailable and item.get('presentation')=='webview'):
