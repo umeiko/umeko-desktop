@@ -196,6 +196,8 @@ class PiControllerMixin:
 
     def _warm_active_pi(self):
         record = self._view
+        if getattr(self, "_quick_ocr", None) and self._quick_ocr.applies(record):
+            return
         if (self._closing or self._kernel_busy or record.process or not record.file
                 or self._pool.protected(record) or record.global_agent
                 or record.id in self._session_files.pending
@@ -302,6 +304,8 @@ class PiControllerMixin:
             self.toast.emit('会话数据正在删除，请稍后再试')
             return False
         record = record or self._view
+        if getattr(self, "_quick_ocr", None) and self._quick_ocr.applies(record):
+            return False
         if not record.global_agent:
             self._repair_model_group_selection(record)
         from .plugin_sessions import apply_session_policy
@@ -362,6 +366,8 @@ class PiControllerMixin:
 
     def _send(self, text, steering=False, *, terminal_record=None, hold=False):
         record = terminal_record or self._view
+        if getattr(self, "_quick_ocr", None) and self._quick_ocr.applies(record):
+            return terminal_record is None and self._quick_ocr.send(record, text)
         if terminal_record is None and self._cowork.active and not self._cowork.activeRole:
             return False
         text = text.strip()
@@ -899,6 +905,8 @@ class PiControllerMixin:
 
     def _stop(self, record=None):
         record = record or self._view
+        if getattr(self, "_quick_ocr", None) and self._quick_ocr.applies(record):
+            return self._quick_ocr.stop(record)
         if record.phase == "running" and not record.cancelled:
             record.cancelled = True
             token = uuid.uuid4().hex

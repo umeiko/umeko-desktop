@@ -791,7 +791,7 @@ class ChatModel(QAbstractListModel):
                 current["text"], attachments = split_attachments(current.get("text", ""))
                 if attachments:
                     current["attachments"] = attachments
-            if current.get("role") == "assistant" and current.get("customType") != "umeko-compaction":
+            if current.get("role") == "assistant" and not current.get("plainText") and current.get("customType") != "umeko-compaction":
                 # Native failures can contain both partial output and a separate
                 # errorMessage. Keep both; the report ID belongs to the failure.
                 # The error is projected into activity below. Keeping its raw
@@ -843,7 +843,8 @@ class ChatModel(QAbstractListModel):
                     steps.append({"kind": "text", "text": notice, "error": True})
                 current["activity"] = steps
             continuing = bool(rows and rows[-1].get('stopReason') == 'length' and not current.get('error'))
-            merging = bool(rows and current.get("role") == rows[-1].get("role") == "assistant"
+            merging = bool(rows and not current.get("plainText") and not rows[-1].get("plainText")
+                    and current.get("role") == rows[-1].get("role") == "assistant"
                     and current.get("customType") != "umeko-compaction" and rows[-1].get("customType") != "umeko-compaction"
                     and (continuing or rows[-1].get("tools") or rows[-1].get('_chain_tools') or current.get("tools")))
             if merging and (max_group is None or source_index - starts[-1] < max_group):

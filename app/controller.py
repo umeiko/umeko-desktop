@@ -405,6 +405,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._reasoning_discovery = ReasoningDiscovery(self)
         from .cowork import Cowork
         self._cowork = Cowork(self)
+        from .quick_ocr import QuickOcr
+        self._quick_ocr = QuickOcr(self)
 
     @Property(QObject, constant=True)
     def loginStartup(self):
@@ -562,6 +564,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if (previous.cowork or record.cowork) and (previous.workspace, previous.cowork) != (record.workspace, record.cowork):
             previous_configuration["workspace"] = None
         self._cowork.view_changed(previous)
+        self._quick_ocr.on_view(record)
         if previous_approval != self._dangerous_allowed(record) or any(self.store.data.get(key) != value for key, value in previous_configuration.items()):
             self.changed.emit()
         self.chatChanged.emit()
@@ -577,6 +580,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self._recent_history.complete(record)
 
         # Reopening a crashed cached kernel uses the existing recovery command.
+        if self._quick_ocr.applies(record):
+            return
         if record.crashed and not self._pool.protected(record):
             self._command_pi('inspect', record=record)
         elif record.file and not record.process and not is_dsh(record):
@@ -1286,7 +1291,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
                 parsed = QUrl(url)
                 if not parsed.isLocalFile():
                     continue
-                item = self._file_attachment(url)
+                item = (self._quick_ocr.attachment(url) if self.localQuickOcr else self._file_attachment(url))
                 if item is None: continue
                 if any(existing["path"] == item["path"] for existing in self._view.attachments):
                     accepted = True
@@ -1379,6 +1384,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     @Property('QVariantMap', notify=chatChanged)
     def activeRemoteWorkspace(self):
         return self._remote_project_for_workspace(self._view.workspace) or {}
+
+    @Property(bool, notify=viewChanged)
+    def localQuickOcr(self):
+        return self._quick_ocr.applies(self._view)
 
     @Property(str, notify=viewChanged)
     def conversationToken(self):
@@ -3092,6 +3101,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if self._closing:
             return
         self._closing = True
+        self._quick_ocr.close()
         self._cancel_pi_warmup()
         self._reasoning_discovery.close()
         self._desktop_plugins.close()

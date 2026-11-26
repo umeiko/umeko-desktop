@@ -1267,12 +1267,12 @@ Item {
                             MessageBody {
                                 id: reply
                                 width: parent.width
-                                preparedBlocks: modelData._rendered || null
+                                preparedBlocks: modelData.plainText ? null : modelData._rendered || null
                                 selectionController: chatSelection
                                 messageIndex: messageRow.index
                                 visible: modelData.role !== "user" && text.length > 0 && !(modelData.activity || []).length
                                 text: modelData.role === "user" || (modelData.activity || []).length ? "" : modelData.text || (messageRow.index === conversation.count - 1 && pane.busy ? I18n.t(pane.toolStatus) + "…" : "")
-                                markdown: modelData.role === "assistant" && !modelData.error
+                                markdown: modelData.role === "assistant" && !modelData.error && !modelData.plainText
                                 textColor: modelData.error ? Theme.danger : Theme.ink
                             }
                         }

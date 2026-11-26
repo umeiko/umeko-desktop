@@ -5,6 +5,7 @@ import "ReasoningLevels.js" as Reasoning
 
 Item {
     id: root
+    readonly property bool localOcr: backend && backend.localQuickOcr === true
     readonly property Item modelAnchor: modelButton
     readonly property int queueOffset: queued.height
     height: 157 + footer.height - 33 + (backend.attachments.length ? Theme.control(48) : 0) + queueOffset
@@ -25,7 +26,7 @@ Item {
     function setText(value) { prompt.text = value; prompt.forceActiveFocus(); prompt.cursorPosition = value.length }
     function sendMessage(steering) {
         if (backend.kernelBusy || backend.loading) return
-        if (/^\//.test(prompt.text)) {
+        if (!localOcr && /^\//.test(prompt.text)) {
             if (backend.slashCommands.execute(prompt.text)) setText("")
             return
         }
@@ -124,7 +125,7 @@ Item {
                     ContextUsage { id: contextIndicator }
                 }
                 ActionButton {
-                    id: permissionButton; objectName: "composerPermissionStatus"
+                    id: permissionButton; objectName: "composerPermissionStatus"; visible: !root.localOcr
                     glyph: "lock"; quiet: true; height: Theme.control(31)
                     readonly property string fullText: backend.sessionBackend === "dsh" ? I18n.t("单次审批") : (backend.config.agent.toolPermissionMode === "ask" ? I18n.t("询问") : I18n.t("自动")) + (backend.dangerousAllowed ? " · " + I18n.t("本会话已授权") : "")
                     text: footer.permissionTextVisible ? fullText : ""
@@ -153,7 +154,7 @@ Item {
                 }
             }
             ActionButton {
-                id: modelButton; objectName: "modelSelector"; quiet: true; height: Theme.control(31)
+                id: modelButton; objectName: "modelSelector"; visible: !root.localOcr; quiet: true; height: Theme.control(31)
                 x: footer.stacked ? 0 : utilityRow.implicitWidth + footer.gap
                 y: footer.height - Theme.control(33) + (Theme.control(33) - height) / 2
                 width: Math.max(0, Math.min(Theme.control(350), naturalWidth, footer.width - x - trailingRow.width - footer.gap))
@@ -199,7 +200,8 @@ Item {
                     id: statusText; objectName: "composerStatus"
                     readonly property real availableWidth: footer.trailingBudget - sendButton.width
                         - (taskStatus.visible ? taskStatus.width + trailingRow.spacing : 0) - trailingRow.spacing
-                    text: backend.compacting ? I18n.t(backend.toolStatus)
+                    text: root.localOcr && backend.running ? backend.toolStatus
+                        : backend.compacting ? I18n.t(backend.toolStatus)
                         : backend.loading ? I18n.t(backend.toolStatus || "正在加载 Pi") : ""
                     visible: text.length > 0 && availableWidth >= statusMetrics.advanceWidth
                     font.family: Theme.fontFamily; font.pixelSize: Theme.font(10)

@@ -11,6 +11,10 @@ if __name__ == '__main__' and '--update-process-helper' in sys.argv:
     from app.update_windows import main as update_process_main
     sys.exit(update_process_main(sys.argv[sys.argv.index('--update-process-helper') + 1:]))
 
+if __name__ == '__main__' and sys.argv[1:2] == ['--umeko-quick-ocr-install']:
+    from app.quick_ocr_component import main as quick_ocr_installer
+    sys.exit(quick_ocr_installer(Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)), sys.argv[2:]))
+
 if __name__ == '__main__' and sys.argv[1:2] == ['--umeko-cli']:
     from app.terminal_client import main as terminal_main
     sys.exit(terminal_main(sys.argv[2:]))
