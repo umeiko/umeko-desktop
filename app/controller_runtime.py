@@ -392,7 +392,10 @@ class PiControllerMixin:
                 record.terminal_owned = False
                 record.stale = bool(record.process)
             self._apply_pending_selection(record)
-        images = [{"type": "image", "data": item["data"], "mimeType": item["mime"]} for item in attachments if item["kind"] == "image"]
+        images = [] if self._cowork.image_paths_only(record) else [
+            {"type": "image", "data": item["data"], "mimeType": item["mime"]}
+            for item in attachments if item["kind"] == "image"
+        ]
         self._repair_model_group_selection(record)
         if terminal_record is not None:
             provider, model = record.pending_selection or (record.provider, record.model)

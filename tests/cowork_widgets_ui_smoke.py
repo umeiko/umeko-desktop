@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.update(QT_QPA_PLATFORM='offscreen', QT_QUICK_BACKEND='software')
 
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QImage
 from PySide6.QtTest import QTest
 from app.pi_management import resource_command
 from app.storage import Store
@@ -196,11 +198,39 @@ def test():
             assert 'private-guide' not in {row['name'] for row in prop(skills_widget, 'skills')}
             assert {row['name'] for row in prop(skills_widget, 'skills') if row['enabled']} == {'office-artifacts'}
 
+            assert not cowork.saveInstance('', 'ocr', 'Quick OCR', str(workspace))
+            open_widget('skill-manager', skills_widget, 'skills')
+            assert {row['name'] for row in prop(skills_widget, 'skills') if row['enabled']} == {'local-image-ocr'}
+            record = backend._view
+            record.provider = record.model = 'fixture'
+            assert backend._command_pi('inspect', record)
+            wait(lambda: not record.busy and record.resources.get('allTools'), 'Quick OCR Pi resources')
+            assert {skill['name'] for skill in record.resources['skills']} == {'local-image-ocr'}
+            shell = 'powershell' if sys.platform == 'win32' else 'bash'
+            assert {'read', shell} <= set(record.resources['tools'])
+            assert 'analyze_image' not in record.resources['tools']
+
+            image = workspace / 'sample text.png'
+            fixture = QImage(24, 24, QImage.Format_RGB32)
+            fixture.fill(0xffffffff)
+            assert fixture.save(str(image))
+            attachment = json.dumps([QUrl.fromLocalFile(str(image)).toString()])
+            assert backend.addAttachments(attachment)
+            assert record.attachments[0]['kind'] == 'image' and 'data' not in record.attachments[0]
+            with patch.object(backend, '_command_pi', return_value=True) as command:
+                assert backend._send('Read this screenshot.')
+                assert command.call_args.kwargs['images'] == []
+                assert str(image) in command.call_args.kwargs['text']
+
             cowork.leave()
             open_widget('skill-manager', skills_widget, 'skills')
             names = {row['name'] for row in prop(skills_widget, 'skills')}
             assert 'standard-guide' in names and 'private-guide' not in names
-            assert not names.intersection({'evidence-citations', 'office-artifacts', 'pdf-paper-reading', 'document-to-action-items'})
+            assert not names.intersection({'evidence-citations', 'office-artifacts', 'pdf-paper-reading',
+                                           'document-to-action-items', 'local-image-ocr'})
+            assert backend.addAttachments(attachment)
+            assert backend._view.attachments[0]['data']
+            assert not (workspace / '.umeko/quick-ocr').exists()
             assert resource_command(backend._release, workspace, agent, {}, action='scan')
             print('COWORK_WIDGETS_UI_OK: offline tool inventory, role Skill toggle/import, editor sync and ordinary-chat isolation')
         finally:

@@ -402,6 +402,10 @@ class Cowork(QObject):
     def _category(self, record):
         return self.categories[self.profiles[record.cowork]['typeId']]
 
+    def image_paths_only(self, record):
+        role = self.profiles.get(record.cowork, {})
+        return self.categories.get(role.get('typeId'), {}).get('imagePathsOnly', False)
+
     def allows_desktop_control(self, record):
         role = self.profiles.get(record.cowork, {})
         category = self.categories.get(role.get('typeId'), {})
