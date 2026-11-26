@@ -2,6 +2,8 @@
 
 `projects.list` 查询项目 ID；`sessions.list` 查询会话元数据，可传 `offset`、`limit`（1–200）和 `workspace` 过滤。列表只返回元数据，不含聊天正文。`sessions.get` 按 `id` 读单项，省略 id 读取发起工具调用的会话。
 
+从终端或 ACP 编辑器继续桌面 Pi 会话，见 [Umeko CLI 与 ACP](cli-acp.md)。
+
 项目操作：
 
 - `projects.add`：`paths` 为目录路径数组，添加并打开项目。
