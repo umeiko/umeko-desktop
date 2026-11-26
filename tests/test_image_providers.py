@@ -144,6 +144,25 @@ class ImageProviderAccountTests(unittest.TestCase):
         self.assertEqual(self.b.gateway.provider(identifier)['key'], 'fixture-key')
         self.assertTrue(self.b.saveMultimodalSettings(json.dumps({'image': {'size': '2048x2048', 'format': 'png'}})))
 
+    def test_dedicated_speech_and_video_providers_stay_out_of_chat_models(self):
+        self.assertTrue(self.b.saveCustomMultimodalProvider('speech', json.dumps({
+            'name': 'My voice service', 'baseUrl': 'https://voice.example/v1', 'model': 'tts-1', 'key': 'voice-secret'})))
+        self.assertTrue(self.b.saveCustomMultimodalProvider('video', json.dumps({
+            'name': 'My video service', 'baseUrl': 'https://video.example/v1', 'model': 'vid-1', 'key': 'video-secret'})))
+        self.assertEqual(self.b.gateway.models(), [])
+        speech_id = self.b.store.data['multimodal']['speech']['providerId']
+        video_id = self.b.store.data['multimodal']['video']['providerId']
+        self.assertEqual(self.b.store.data['multimodal']['speech']['model'], 'tts-1')
+        self.assertEqual(self.b.store.data['multimodal']['video']['model'], 'vid-1')
+        self.assertEqual(len(self.b.multimodalProviders), 2)
+        self.assertNotIn('voice-secret', self.b.store.path.read_text())
+        self.assertNotIn('video-secret', self.b.store.path.read_text())
+        self.assertTrue(self.b.removeMultimodalProvider(speech_id))
+        self.assertEqual(self.b.store.data['multimodal']['speech'], DEFAULTS['speech'])
+        self.assertTrue(self.b.removeMultimodalProvider(video_id))
+        self.assertEqual(self.b.store.data['multimodal']['video'], DEFAULTS['video'])
+        self.assertFalse(self.b.multimodalProviders)
+
 
 class ImageProviderProtocolTests(unittest.TestCase):
     def setUp(self):

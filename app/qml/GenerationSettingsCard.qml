@@ -9,11 +9,11 @@ SectionCard {
     property string providerId: ""
     property string modelId: ""
     property string formatValue: kind === "speech" ? "mp3" : ""
-    signal imageProvidersRequested()
-    property var accounts: backend.config.providers.filter(p => p.api === "openai" || (p.generationCapabilities || []).includes(root.kind))
+    signal providersRequested()
+    property var accounts: backend.config.providers.filter(p => p.api === root.kind || (p.api === "plugin" && (p.generationCapabilities || []).includes(root.kind)))
     readonly property var account: accounts.find(p => p.id === providerId) || null
     readonly property var imagePreset: account && account.api === "image" && account.imageProtocol !== "openai" ? backend.imageProviderPresets.find(p => p.id === account.presetId) || null : null
-    readonly property var models: imagePreset ? imagePreset.modelDetails.map(m => ({upstream:m.id, name:m.name})) : account ? account.api === "image" ? (account.imageModels || []).map(id => ({upstream:id})) : account.models : []
+    readonly property var models: imagePreset ? imagePreset.modelDetails.map(m => ({upstream:m.id, name:m.name})) : account ? (account.api === root.kind ? (account.imageModels || account.generationModels || []).map(id => ({upstream:id})) : account.models) : []
     readonly property var imageLimits: imagePreset ? imagePreset.modelDetails.find(m => m.id === modelId) || imagePreset.modelDetails[0] : null
     readonly property int mappedIndex: models.findIndex(m => m.upstream === modelId)
     onProviderIdChanged: Qt.callLater(syncPickers)
@@ -58,11 +58,11 @@ SectionCard {
         width: parent.width; spacing: 12
         RowLayout {
             Layout.fillWidth: true
-            Glyph { name: root.kind === "image" ? "image" : "file"; width: Theme.icon(20); height: Theme.icon(20); color: Theme.accent }
+            Glyph { objectName: root.kind + "GenerationGlyph"; name: root.kind === "image" ? "image" : root.kind === "video" ? "video" : "voice"; width: Theme.icon(20); height: Theme.icon(20); color: Theme.accent }
             Text { text: root.title; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14, visible); font.weight: Font.DemiBold; color: Theme.ink }
             Item { Layout.fillWidth: true }
             Text { text: root.kind === "image" ? "image_gen" : root.kind === "video" ? "video_gen" : "voice_gen"; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible); color: Theme.muted }
-            ActionButton { objectName: root.kind === "image" ? "manageImageProviders" : ""; visible: root.kind === "image"; text: I18n.t("供应商"); glyph: "settings"; quiet: true; onClicked: root.imageProvidersRequested() }
+            ActionButton { objectName: root.kind === "image" ? "manageImageProviders" : root.kind === "speech" ? "manageSpeechProviders" : "manageVideoProviders"; text: I18n.t("供应商"); glyph: "settings"; quiet: true; onClicked: root.providersRequested() }
         }
         GridLayout {
             Layout.fillWidth: true; columns: 2; columnSpacing: 14; rowSpacing: 7
@@ -76,7 +76,7 @@ SectionCard {
                 onActivated: index => {
                     const selected = index > 0 ? root.accounts[index - 1] : null
                     root.providerId = selected ? selected.id : ""
-                    root.modelId = selected && selected.api === "image" ? selected.imageModels[0] : ""
+                    root.modelId = selected && selected.api === root.kind ? ((selected.imageModels || selected.generationModels || [])[0] || "") : ""
                 }
                 Accessible.name: root.title + " " + I18n.t("供应商")
             }

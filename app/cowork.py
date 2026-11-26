@@ -256,6 +256,42 @@ class Cowork(QObject):
     def templates(self):
         return [{'id': key, 'label': self._local(row['name'])} for key, row in self.categories.items()]
 
+    @Property('QVariantList', notify=typesChanged)
+    def catalog(self):
+        return [{
+            'id': key,
+            'name': self._local(row['name']),
+            'description': self._local(row['description']),
+            'icon': row.get('icon', 'spark'),
+            'tone': row.get('tone', 'blue'),
+            'custom': bool(row.get('custom')),
+            'toolCount': len(row.get('tools', [])),
+            'skillCount': len(row.get('skills', [])),
+            'subagentCount': len(self._enabled_subagents(row)),
+            'context': self._local(CONTEXTS.get(row.get('context', 'files'), CONTEXTS['files'])),
+        } for key, row in self.categories.items()]
+
+    @Property('QVariantList', notify=rowsChanged)
+    def instances(self):
+        result = []
+        for identifier, role in self.profiles.items():
+            category = self.categories.get(role['typeId'], {})
+            path = role.get('workspace') or str(self.default_workspace(identifier))
+            folder = (Path(path).name or path) if path else ''
+            if not role.get('workspace') and path == str(self.default_workspace(identifier)):
+                folder = self._local(('默认目录', 'Default folder'))
+            result.append({
+                'id': identifier,
+                'typeId': role['typeId'],
+                'typeName': self._local(category.get('name', ('', ''))),
+                'name': self._local(role['name']),
+                'icon': category.get('icon', 'spark'),
+                'tone': category.get('tone', 'blue'),
+                'workspace': path,
+                'folder': folder,
+            })
+        return result
+
     @Slot(str, result='QVariantMap')
     def typeDetails(self, identifier):
         row = self.categories.get(identifier)
@@ -276,7 +312,7 @@ class Cowork(QObject):
 
     @Slot(result='QVariantList')
     def subagentModels(self):
-        providers = {row['id'] for row in self.b.store.data['providers'] if row['api'] != 'image'}
+        providers = {row['id'] for row in self.b.store.data['providers'] if row['api'] not in ('image', 'speech', 'video')}
         return [{'id': row['id'], 'label': f"{row['owned_by']} / {row['id']}"}
                 for row in self.b.gateway.models() if row['providerID'] in providers]
 
@@ -407,6 +443,13 @@ class Cowork(QObject):
             else:
                 self.b._activate(record)
 
+    @Slot()
+    def showOverview(self):
+        if self.b.desktopSettings['coworkEnabled']:
+            self._empty_view = self.b._new_view()
+            self.b._activate(self._empty_view)
+
+    @Slot(str)
     def openRole(self, identifier):
         if identifier not in self.profiles or not self.b.desktopSettings['coworkEnabled']:
             return
@@ -435,6 +478,15 @@ class Cowork(QObject):
         type_id = row['typeId'] if row else template
         self.createRequested.emit(type_id if type_id in self.categories else '', self.folderPath(folder))
 
+    def default_folder(self):
+        path = self.b.store.default_workspace
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            return str(path.resolve())
+        except OSError:
+            home = Path.home()
+            return str(home.resolve()) if home.is_dir() else ''
+
     @Slot(str, str, bool, result='QVariantMap')
     def instanceDefaults(self, type_id, identifier, clone):
         role = self.profiles.get(identifier)
@@ -444,11 +496,13 @@ class Cowork(QObject):
         if not category:
             return {}
         name = self._local((role or category)['name'])
-        workspace = self.taskDefaults(identifier)['workspace'] if role else ''
+        workspace = self.taskDefaults(identifier)['workspace'] if role else self.default_folder()
         if clone:
             suffix = self._local((' 副本', ' copy'))
             name = name[:60 - len(suffix)] + suffix
-            siblings = {self._local(row['name']).casefold() for row in self.profiles.values() if row['workspace'] == workspace}
+        if clone or not role:
+            siblings = {self._local(row['name']).casefold() for row in self.profiles.values()
+                        if row['workspace'] == workspace and (clone or row['typeId'] == type_id)}
             if name.casefold() in siblings:
                 base = name
                 for number in range(2, len(siblings) + 2):
@@ -536,7 +590,7 @@ class Cowork(QObject):
             return {}
         folder = role.get('workspace') or next((row['workspace'] for row in self.b._sessions if row.get('cowork') == identifier),
                                                 str(self.default_workspace(identifier)))
-        folder = self.folderPath(folder)
+        folder = self.folderPath(folder) or self.default_folder()
         return {'roleName': self._local(role['name']), 'title': self._local(('新会话', 'New conversation')),
                 'workspace': folder}
 

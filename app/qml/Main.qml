@@ -669,7 +669,22 @@ ApplicationWindow {
                     }
                     onClicked: window.toggleSidebar()
                 }
-                Text { font.family: Theme.fontFamily; text: window.page === "chat" ? (backend.cowork.active ? "Cowork" : I18n.t("工作空间")) : I18n.t("偏好设置"); color: Theme.muted; font.pixelSize: Theme.font(11, visible); anchors.verticalCenter: parent.verticalCenter }
+                Text {
+                    font.family: Theme.fontFamily
+                    text: window.page === "chat" ? (backend.cowork.active ? "Cowork" : I18n.t("工作空间")) : I18n.t("偏好设置")
+                    color: coworkHeaderOverview.containsMouse && coworkHeaderOverview.enabled ? Theme.ink : Theme.muted
+                    font.pixelSize: Theme.font(11, visible)
+                    anchors.verticalCenter: parent.verticalCenter
+                    MouseArea {
+                        id: coworkHeaderOverview
+                        objectName: "coworkHeaderOverview"
+                        anchors.fill: parent; anchors.margins: -6
+                        enabled: window.page === "chat" && backend.cowork.active && !window.coworkEmpty
+                        hoverEnabled: enabled
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: { window.cancelSidebarSelection(); backend.cowork.showOverview() }
+                    }
+                }
                 Text { visible: window.page !== "chat" || !window.coworkEmpty; font.family: Theme.fontFamily; text: "/"; color: Theme.line; font.pixelSize: Theme.font(12, visible); anchors.verticalCenter: parent.verticalCenter }
                 Text {
                     visible: window.page !== "chat" || !window.coworkEmpty
@@ -698,24 +713,19 @@ ApplicationWindow {
             visible: window.page === "chat"
             opacity: visible ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 180 } }
-            Rectangle {
-                objectName: "coworkEmptyState"
-                visible: window.coworkEmpty
-                anchors.fill: parent; z: 110; color: Theme.bg
-                MouseArea { anchors.fill: parent }
-                ColumnLayout {
-                    anchors.centerIn: parent; spacing: 16
-                    Text {
-                        Layout.alignment: Qt.AlignHCenter
-                        text: backend.language === "en" ? "Create your first coworker" : "创建第一个 Coworker"
-                        color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(20)
-                    }
-                    ActionButton {
-                        Layout.alignment: Qt.AlignHCenter
-                        objectName: "coworkEmptyCreate"; primary: true; glyph: "plus"
-                        visible: window.sidebarLayoutCollapsed
-                        text: backend.language === "en" ? "New coworker" : "新建 Coworker"
-                        onClicked: window.createCoworker("", "")
+            Loader {
+                id: coworkOverviewLoader
+                active: window.coworkEmpty
+                anchors.fill: parent; z: 110
+                sourceComponent: CoworkOverview {
+                    objectName: "coworkEmptyState"
+                    service: backend.cowork
+                    onCreateRequested: typeId => window.createCoworker(typeId, "")
+                    onEditTypeRequested: typeId => window.editCoworkType(typeId, "")
+                    onOpenInstanceRequested: instanceId => {
+                        window.cancelSidebarSelection()
+                        window.page = "chat"
+                        backend.cowork.openRole(instanceId)
                     }
                 }
             }

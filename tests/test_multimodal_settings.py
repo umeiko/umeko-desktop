@@ -45,31 +45,38 @@ class MultimodalSettingsTests(unittest.TestCase):
                 patch('app.provider_plugins.BundledProviders.sync', return_value=[]):
             controller = Controller(ROOT)
             try:
-                self.assertTrue(controller.saveProvider('', 'Test provider', 'openai', 'https://provider.invalid/v1',
-                                                        'fixture-key', 'test-image-model,test-voice-model'))
-                provider = copy.deepcopy(controller.store.data['providers'][0])
+                self.assertTrue(controller.saveCustomMultimodalProvider('image', json.dumps({
+                    'name': 'Test image provider', 'baseUrl': 'https://provider.invalid/v1',
+                    'model': 'test-image-model', 'key': 'fixture-key'})))
+                self.assertTrue(controller.saveCustomMultimodalProvider('speech', json.dumps({
+                    'name': 'Test speech provider', 'baseUrl': 'https://provider.invalid/v1',
+                    'model': 'test-voice-model', 'key': 'fixture-speech-key'})))
+                image_provider = copy.deepcopy(controller.store.data['providers'][0])
+                speech_provider = copy.deepcopy(controller.store.data['providers'][1])
                 selection = {'video': DEFAULTS['video'].copy(),
-                             'image': {**DEFAULTS['image'], 'providerId': provider['id'], 'model': 'manual-image'},
-                             'speech': {**DEFAULTS['speech'], 'providerId': provider['id'],
+                             'image': {**DEFAULTS['image'], 'providerId': image_provider['id'], 'model': 'manual-image'},
+                             'speech': {**DEFAULTS['speech'], 'providerId': speech_provider['id'],
                                         'model': 'test-voice-model', 'voice': 'test-voice'}}
                 with patch.object(controller, '_restart_pi') as restart:
                     self.assertTrue(controller.saveMultimodalSettings(json.dumps(selection)))
                     restart.assert_called_once()
-                self.assertEqual(controller.store.data['providers'][0], provider)
+                self.assertEqual(controller.store.data['providers'][0], image_provider)
                 self.assertEqual(Store(Path(directory)).data['multimodal'], selection)
                 self.assertNotIn('fixture-key', controller.store.path.read_text(encoding='utf-8'))
+                self.assertNotIn('fixture-speech-key', controller.store.path.read_text(encoding='utf-8'))
                 self.assertNotIn('key', controller.config['providers'][0])
                 self.assertEqual(generation_config(controller.store.data)['image'],
-                                 {'provider': 'Test provider', 'model': 'manual-image'})
+                                 {'provider': 'Test image provider', 'model': 'manual-image', 'maxCount': 10, 'formats': ['png', 'jpeg', 'webp']})
                 before = copy.deepcopy(selection)
                 with patch.object(controller.store, 'save', side_effect=OSError('fixture save failure')):
                     self.assertFalse(controller.saveMultimodalSettings(json.dumps({'image': {'model': 'another-image'}})))
                 self.assertEqual(controller.store.data['multimodal'], before)
                 controller._view.phase = 'running'
                 controller._view.provider = 'another-chat-account'
-                self.assertTrue(controller._models_busy(provider['id']))
-                self.assertFalse(controller.saveProvider(provider['id'], 'Changed during generation', 'openai',
-                                                         provider['baseUrl'], '', json.dumps(provider['models'])))
+                self.assertTrue(controller._models_busy(image_provider['id']))
+                self.assertFalse(controller.saveCustomMultimodalProvider('image', json.dumps({
+                    'id': image_provider['id'], 'name': 'Changed during generation',
+                    'baseUrl': image_provider['baseUrl'], 'model': 'test-image-model', 'key': ''})))
                 self.assertFalse(controller.saveMultimodalSettings(json.dumps({'image': {'model': 'while-running'}})))
                 controller._view.phase = 'idle'
                 self.assertTrue(controller.saveMultimodalSettings(json.dumps({'image': {'providerId': ''}})))
@@ -87,9 +94,17 @@ class MultimodalSettingsTests(unittest.TestCase):
             controller = Controller(ROOT)
             try:
                 self.assertFalse(controller.saveMultimodalSettings(json.dumps({'image': {'providerId': 'missing', 'model': 'image'}})))
-                self.assertTrue(controller.saveProvider('', 'Test provider', 'openai', 'https://provider.invalid/v1', 'fixture-key', 'test-voice-model'))
-                provider_id = controller.store.data['providers'][0]['id']
-                self.assertFalse(controller.saveMultimodalSettings(json.dumps({'speech': {'providerId': provider_id, 'model': 'test-voice-model'}})))
-                self.assertFalse(controller.saveMultimodalSettings(json.dumps({'image': {'providerId': provider_id}})))
+                # Chat LLM OpenAI providers must not be accepted as multimodal generation providers.
+                self.assertTrue(controller.saveProvider('', 'LLM provider', 'openai', 'https://provider.invalid/v1', 'fixture-key', 'chat-model'))
+                llm_id = controller.store.data['providers'][0]['id']
+                self.assertFalse(controller.saveMultimodalSettings(json.dumps({'image': {'providerId': llm_id, 'model': 'chat-model'}})))
+                self.assertFalse(controller.saveMultimodalSettings(json.dumps({'speech': {'providerId': llm_id, 'model': 'chat-model', 'voice': 'alloy'}})))
+                self.assertFalse(controller.saveMultimodalSettings(json.dumps({'video': {'providerId': llm_id, 'model': 'chat-model'}})))
+                self.assertTrue(controller.saveCustomMultimodalProvider('speech', json.dumps({
+                    'name': 'Speech provider', 'baseUrl': 'https://provider.invalid/v1',
+                    'model': 'test-voice-model', 'key': 'fixture-key'})))
+                speech_id = controller.multimodalProviders[0]['id']
+                self.assertFalse(controller.saveMultimodalSettings(json.dumps({'speech': {'providerId': speech_id, 'model': 'test-voice-model'}})))
+                self.assertFalse(controller.saveMultimodalSettings(json.dumps({'image': {'providerId': speech_id, 'model': 'test-voice-model'}})))
             finally:
                 controller.close()

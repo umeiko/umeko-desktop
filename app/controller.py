@@ -100,6 +100,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def imageProviders(self):
         return self._image_provider_rows()
 
+    @Property('QVariantList', notify=changed)
+    def multimodalProviders(self):
+        return self._multimodal_provider_rows()
+
     @Property('QVariantMap', notify=desktopSettingsChanged)
     def desktopSettings(self):
         return dict(self.store.data['desktop'])
@@ -534,7 +538,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         # The index can name a deleted supplier or a retired pre-plugin model.
         # Keep a valid historical selection; otherwise use the current selection.
         available = [(p["id"], m["alias"]) for p in self.store.data["providers"]
-                     if p["api"] != "image" and (p["api"] != "internal" or getattr(self.gateway.adapter, "ready", True))
+                     if p["api"] not in ("image", "speech", "video") and (p["api"] != "internal" or getattr(self.gateway.adapter, "ready", True))
                      for m in p["models"]]
         if not is_dsh(record) and self.modelGroupReady:
             available.append(GROUP_SELECTION)
@@ -1950,6 +1954,20 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         QGuiApplication.clipboard().setText(value)
         self.toast.emit("已复制到剪贴板")
 
+    @Slot(result=str)
+    def defaultWorkspace(self):
+        active = next((p for p in self.store.data['projects']
+                       if p['id'] == self.store.data.get('activeProject') and not p.get('archived') and not p.get('remote')), None)
+        if active and active.get('path') and Path(active['path']).is_dir():
+            return active['path']
+        path = self.store.default_workspace
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            return str(path.resolve())
+        except OSError:
+            home = Path.home()
+            return str(home.resolve()) if home.is_dir() else ''
+
     @Slot(str, result=bool)
     def setWorkspace(self, url):
         if self._cowork.active and not self._view.cowork:
@@ -2599,8 +2617,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     @Slot(str)
     def removeProvider(self, provider_id):
         provider = self.gateway.provider(provider_id)
-        if provider and provider['api'] == 'image':
-            return self.removeImageProvider(provider_id)
+        if provider and provider['api'] in ('image', 'speech', 'video'):
+            return self.removeMultimodalProvider(provider_id)
         if provider and provider["api"] == "plugin":
             return self._provider_plugins.remove(provider_id)
         if self._models_busy(provider_id):
@@ -2614,7 +2632,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def setModelApplyPatch(self, provider_id, alias, enabled):
         provider = self.gateway.provider(provider_id)
         model = next((row for row in (provider or {}).get('models', []) if row['alias'] == alias), None)
-        if model is None or provider['api'] == 'image':
+        if model is None or provider['api'] in ('image', 'speech', 'video'):
             raise ValueError('找不到指定的聊天模型')
         if (model.get('applyPatch') is True) != enabled:
             if enabled:

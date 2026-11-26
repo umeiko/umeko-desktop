@@ -62,6 +62,7 @@ Popup {
         const values = service.instanceDefaults(identifier, "", false)
         roleName = values.typeName
         titleField.text = values.title
+        if (!workspace && values.workspace) setFolder(values.workspace)
         typeChoice.currentIndex = service.templates.findIndex(row => row.id === identifier)
         errorText = ""
     }

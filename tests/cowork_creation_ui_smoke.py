@@ -81,7 +81,9 @@ def test():
             index = next(index for index, row in enumerate(cowork.templates) if row['id'] == template)
             menu.setProperty('currentIndex', index)
             assert QMetaObject.invokeMethod(menu, 'activated', Qt.DirectConnection, Q_ARG(int, index))
-            assert not find('coworkInstanceConfirm').isEnabled()
+            default_workspace = str((base / 'profile/workspace').resolve())
+            assert find('coworkInstanceWorkspace').property('text') == default_workspace
+            assert find('coworkInstanceConfirm').isEnabled()
             choose_folder(folder)
             wait(lambda: find('coworkInstanceConfirm').isEnabled(), 'required workspace')
 
@@ -113,6 +115,15 @@ def test():
             click('openCoworkButton')
             assert cowork.active and not cowork.activeRole and cowork.rows == []
             assert find('coworkEmptyState').isVisible()
+            assert find('coworkEmptyCreate').isVisible() and find('coworkEmptyCreate').isEnabled()
+            assert find('coworkCard_study').isVisible() and find('coworkCard_office').isVisible()
+            assert find('coworkCardNewType').isVisible()
+            click('coworkCard_office')
+            default_workspace = str((base / 'profile/workspace').resolve())
+            assert find('coworkInstanceTitle').property('text') == '文档生成'
+            assert find('coworkInstanceWorkspace').property('text') == default_workspace
+            assert find('coworkInstanceConfirm').isEnabled()
+            click('coworkInstanceCancel')
             click('newChatButton')
             choose_template('study', workspace)
             assert find('coworkInstanceTitle').property('text') == 'Study Buddy'
@@ -286,9 +297,15 @@ def test():
             assert not any(row['title'] == '资料归纳' for row in cowork.rows)
             click('coworkInstanceCancel')
             assert any(row['label'] == '资料归纳' for row in cowork.templates)
+            click('coworkHeaderOverview')
+            wait(lambda: find('coworkEmptyState') and find('coworkEmptyState').isVisible(), 'return to cowork overview')
+            assert find('coworkInstanceCard_' + identifier).isVisible()
+            assert find('coworkCard_' + cowork.templates[-1]['id']).isVisible()
+            click('coworkInstanceCard_' + identifier)
+            wait(lambda: cowork.activeRole == identifier, 'open instance from overview')
             click('openCoworkButton')
             assert backend._view is ordinary
-            assert not [warning for warning in notices if 'CoworkEditor.qml' in warning or 'CoworkSessionDialog.qml' in warning], notices[-15:]
+            assert not [warning for warning in notices if 'CoworkEditor.qml' in warning or 'CoworkSessionDialog.qml' in warning or 'CoworkOverview.qml' in warning], notices[-15:]
             print('COWORK_CREATION_UI_OK: flat categories, shared subagent preferences, instance actions and configured conversations')
         finally:
             window.hide()

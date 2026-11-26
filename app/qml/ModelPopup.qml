@@ -114,7 +114,7 @@ AnchoredPidPopup {
         }
         ListView {
             id: modelList; objectName: "modelOptionsList"; Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 9
-            model: root.useDshModels ? backend.dshModelProviders : backend.config.providers.filter(p => p.api !== "image")
+            model: root.useDshModels ? backend.dshModelProviders : backend.config.providers.filter(p => !["image", "speech", "video"].includes(p.api))
             ScrollBar.vertical: ScrollBar {}
             delegate: Column {
                 required property var modelData

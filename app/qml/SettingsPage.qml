@@ -243,8 +243,8 @@ Item {
                                 HelpButton { objectName: "mappingHelp"; help: I18n.t("左侧填写供应商的原始模型名称，右侧是聊天与 API 代理服务使用的别名。每个供应商可有多条映射，别名必须唯一。插件供应商的模型 ID 由模型发现提供。") }
                             }
                             ColumnLayout { visible: !root.mappingAccount; Layout.fillWidth: true; spacing: 8
-                                Text { font.family: Theme.fontFamily; visible: !backend.config.providers.some(p => p.api !== "image"); text: I18n.t("添加供应商后设置模型别名"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
-                                Repeater { model: backend.config.providers.filter(p => p.api !== "image")
+                                Text { font.family: Theme.fontFamily; visible: !backend.config.providers.some(p => !["image", "speech", "video"].includes(p.api)); text: I18n.t("添加供应商后设置模型别名"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
+                                Repeater { model: backend.config.providers.filter(p => !["image", "speech", "video"].includes(p.api))
                                     ItemDelegate {
                                         required property var modelData
                                         objectName: "mappingProvider_" + modelData.id

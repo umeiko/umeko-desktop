@@ -100,6 +100,7 @@ Popup {
         mkdirName = ""
         browserError = ""
         autocompleteVisible = false
+        localPathInput.text = backend.defaultWorkspace()
         if (allowRemote) {
             backend.refreshSshConfigHosts()
             rebuildHostChoices()

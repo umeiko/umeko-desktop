@@ -49,10 +49,21 @@ def test():
             QTest.qWait(110)
 
         try:
+            # Fresh profile: New conversation pre-fills default workspace and enables confirm.
+            click('newChatButton')
+            default_workspace = str((base / 'profile/workspace').resolve())
+            wait(lambda: find('localPathInput') and find('localPathInput').property('text') == default_workspace, 'default local workspace')
+            assert find('localChooseButton').isEnabled()
+            click('localChooseButton')
+            wait(lambda: not find('localPathInput'), 'picker closes after choosing default workspace')
+            assert backend._view.workspace == default_workspace
+
             assert backend.setWorkspace(first.as_uri()) and backend.setWorkspace(second.as_uri())
             existing_view = backend._view
             click('newChatButton')
             wait(lambda: find('workspaceRecentLocal'), 'recent folders')
+            assert find('localPathInput').property('text') == str(second)
+            assert find('localChooseButton').isEnabled()
             assert backend._view is existing_view
             assert not find('workspaceTabRemote')
             assert backend.saveDesktopSettings('{"remoteWorkspaceEnabled":true}')
@@ -61,8 +72,12 @@ def test():
             assert backend.saveDesktopSettings('{"remoteWorkspaceEnabled":false}')
             wait(lambda: find('workspaceRecentLocal') and not find('workspaceTabRemote'), 'local-only picker after disabling remote')
             chooser = find('workspaceRecentLocal')
-            assert chooser.property('count') == 3
-            assert QMetaObject.invokeMethod(chooser, 'activated', Qt.DirectConnection, Q_ARG(int, 1))
+            assert chooser.property('count') == 4
+            first_index = next(i for i, row in enumerate(backend.projectRows) if row.get('path') == str(first))
+            # Find 'Folder A' in chooser model (index 0 is placeholder)
+            model = chooser.property('model')
+            folder_a_index = next(i for i, label in enumerate(model) if 'Folder A' in label)
+            assert QMetaObject.invokeMethod(chooser, 'activated', Qt.DirectConnection, Q_ARG(int, folder_a_index))
             wait(lambda: not find('workspaceRecentLocal'), 'picker closes on selection')
             assert backend._view.workspace == str(first) and backend._view is not existing_view
             project = next(row for row in backend.projectRows if row.get('path') == str(second))

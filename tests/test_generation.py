@@ -110,13 +110,20 @@ class GenerationTests(unittest.TestCase):
         self.thread.start()
         self.addCleanup(self.stop_server)
         self.base = 'http://127.0.0.1:' + str(self.server.server_port)
-        provider = {'id': 'fixture', 'name': 'Fixture account', 'api': 'openai',
-                    'baseUrl': self.base + '/v1', 'key': 'fixture-secret', 'models': [],
-                    'proxy': {'mode': 'direct', 'url': ''}}
+        image_provider = {'id': 'fixture', 'name': 'Fixture account', 'api': 'image',
+                          'presetId': 'openai-image', 'imageProtocol': 'openai',
+                          'baseUrl': self.base + '/v1', 'key': 'fixture-secret', 'models': [],
+                          'imageModels': ['manual-image'], 'generationCapabilities': ['image'],
+                          'proxy': {'mode': 'direct', 'url': ''}}
+        speech_provider = {'id': 'fixture-speech', 'name': 'Fixture speech', 'api': 'speech',
+                           'presetId': 'openai-speech',
+                           'baseUrl': self.base + '/v1', 'key': 'fixture-secret', 'models': [],
+                           'generationModels': ['manual-voice'], 'generationCapabilities': ['speech'],
+                           'proxy': {'mode': 'direct', 'url': ''}}
         self.store = SimpleNamespace(directory=Path(self.temp.name), data={
-            'providers': [provider], 'multimodal': {
+            'providers': [image_provider, speech_provider], 'multimodal': {
                 'image': {'providerId': 'fixture', 'model': 'manual-image'},
-                'speech': {'providerId': 'fixture', 'model': 'manual-voice', 'voice': 'test-voice'}}})
+                'speech': {'providerId': 'fixture-speech', 'model': 'manual-voice', 'voice': 'test-voice'}}})
         self.gateway = Gateway(self.store, None)
 
     def stop_server(self):
@@ -151,9 +158,12 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(self.calls[0][2], {'model': 'new-voice-model', 'input': 'hello', 'voice': 'test-voice', 'response_format': 'mp3', 'speed': 1.25})
 
     def test_configuration_description_requires_voice_and_valid_account(self):
-        self.assertEqual(generation_config(self.store.data)['image'], {'provider': 'Fixture account', 'model': 'manual-image'})
+        self.assertEqual(generation_config(self.store.data)['image'],
+                         {'provider': 'Fixture account', 'model': 'manual-image', 'maxCount': 10, 'formats': ['png', 'jpeg', 'webp']})
         self.store.data['multimodal']['speech']['voice'] = ''
         self.assertIsNone(generation_config(self.store.data)['speech'])
+        self.store.data['providers'][0]['api'] = 'openai'
+        self.assertIsNone(generation_config(self.store.data)['image'])
         self.store.data['providers'][0]['api'] = 'anthropic'
         self.assertIsNone(generation_config(self.store.data)['image'])
         with self.assertRaises(ValueError):

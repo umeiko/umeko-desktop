@@ -40,11 +40,10 @@ class VideoJobFailed(ProviderError):
 
 
 def capabilities(provider):
-    if provider.get('api') == 'image':
-        return ['image']
-    if provider.get('api') == 'openai':
-        return ['image', 'speech', 'video']
-    return provider.get('generationCapabilities', []) if provider.get('api') == 'plugin' else []
+    api = provider.get('api')
+    if api in ('image', 'speech', 'video'):
+        return [api]
+    return provider.get('generationCapabilities', []) if api == 'plugin' else []
 
 
 def selection(data, kind):
@@ -57,9 +56,9 @@ def selection(data, kind):
     model = settings.get('model', '').strip()
     if not model:
         raise ValueError('请先配置生成模型 ID')
-    if provider.get('api') in ('openai', 'image') and not provider.get('key'):
+    if provider.get('api') in ('image', 'speech', 'video') and not provider.get('key'):
         raise ValueError('请先配置供应商 API Key')
-    if provider.get('api') in ('openai', 'image'):
+    if provider.get('api') in ('image', 'speech', 'video'):
         from .gateway import validate_base_url
         validate_base_url(provider.get('baseUrl', ''))
     if provider.get('api') == 'image':

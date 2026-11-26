@@ -48,6 +48,13 @@ PRESETS = (
 CUSTOM_PRESET = {'id': 'openai-image', 'name': '自定义（OpenAI 兼容）', 'label': '自定义（OpenAI 兼容）',
                  'protocol': 'openai', 'icon': '', 'keyUrl': '', 'custom': True,
                  'maxCount': 10, 'formats': ['png', 'jpeg', 'webp']}
+SPEECH_CUSTOM_PRESET = {'id': 'openai-speech', 'name': '自定义（OpenAI 兼容）', 'label': '自定义（OpenAI 兼容）',
+                        'protocol': 'openai', 'icon': '', 'keyUrl': '', 'custom': True}
+VIDEO_CUSTOM_PRESET = {'id': 'openai-video', 'name': '自定义（OpenAI 兼容）', 'label': '自定义（OpenAI 兼容）',
+                       'protocol': 'openai', 'icon': '', 'keyUrl': '', 'custom': True}
+MULTIMODAL_APIS = ('image', 'speech', 'video')
+MULTIMODAL_CUSTOM_PRESETS = {'image': CUSTOM_PRESET, 'speech': SPEECH_CUSTOM_PRESET, 'video': VIDEO_CUSTOM_PRESET}
+MULTIMODAL_SAVED_TOAST = {'image': '图片供应商已保存', 'speech': '语音供应商已保存', 'video': '视频供应商已保存'}
 
 
 def _text(value, limit, label):
@@ -159,6 +166,12 @@ class ImageProvidersMixin:
                  'model': (p.get('imageModels') or [''])[0]}
                 for p in self.store.data['providers'] if p.get('api') == 'image']
 
+    def _multimodal_provider_rows(self):
+        return [{'id': p['id'], 'api': p['api'], 'presetId': p.get('presetId', ''), 'name': p['name'],
+                 'hasKey': bool(p.get('key')), 'baseUrl': p.get('baseUrl', ''),
+                 'model': (p.get('imageModels') or p.get('generationModels') or [''])[0]}
+                for p in self.store.data['providers'] if p.get('api') in MULTIMODAL_APIS]
+
     @Slot(str, str, result=bool)
     def saveImageProvider(self, preset_id, key):
         preset = next((p for p in PRESETS if p['id'] == preset_id), None)
@@ -166,34 +179,41 @@ class ImageProvidersMixin:
             self.toast.emit('请选择图片供应商 / Select an image provider')
             return False
         existing = next((p for p in self.store.data['providers'] if p.get('api') == 'image' and p.get('presetId') == preset_id), None)
-        return self._save_image_account(preset, existing, key, preset['name'], preset['baseUrl'], preset['models'])
+        return self._save_multimodal_account('image', preset, existing, key, preset['name'], preset['baseUrl'], preset['models'])
 
     @Slot(str, result=bool)
     def saveCustomImageProvider(self, raw):
+        return self.saveCustomMultimodalProvider('image', raw)
+
+    @Slot(str, str, result=bool)
+    def saveCustomMultimodalProvider(self, kind, raw):
         try:
+            if kind not in MULTIMODAL_CUSTOM_PRESETS:
+                raise ValueError('多模态供应商类型无效 / Invalid multimodal provider kind')
+            preset = MULTIMODAL_CUSTOM_PRESETS[kind]
             value = json.loads(raw)
             if not isinstance(value, dict) or set(value) - {'id', 'name', 'baseUrl', 'key', 'model'}:
-                raise ValueError('图片供应商配置无效 / Invalid image provider settings')
+                raise ValueError('多模态供应商配置无效 / Invalid multimodal provider settings')
             existing = None
             if value.get('id'):
-                existing = next((p for p in self.store.data['providers'] if p.get('api') == 'image' and p.get('presetId') == CUSTOM_PRESET['id'] and p['id'] == value['id']), None)
+                existing = next((p for p in self.store.data['providers'] if p.get('api') == kind and p.get('presetId') == preset['id'] and p['id'] == value['id']), None)
                 if existing is None:
-                    raise ValueError('图片供应商已不存在 / Image provider no longer exists')
+                    raise ValueError('多模态供应商已不存在 / Multimodal provider no longer exists')
             from .gateway import validate_base_url
             base = validate_base_url(_text(value.get('baseUrl'), 2048, 'Base URL'))
             name = _text(value.get('name'), 60, '供应商名称')
             model = _text(value.get('model'), 200, '模型 ID')
-            return self._save_image_account(CUSTOM_PRESET, existing, value.get('key', ''), name, base, [model])
+            return self._save_multimodal_account(kind, preset, existing, value.get('key', ''), name, base, [model])
         except (ValueError, TypeError) as error:
             self.toast.emit(str(error))
             return False
 
-    def _save_image_account(self, preset, existing, key, name, base, models):
+    def _save_multimodal_account(self, kind, preset, existing, key, name, base, models):
         previous_providers = self.store.data['providers']
         previous_settings = self.store.data['multimodal']
         try:
             if not isinstance(key, str):
-                raise ValueError('图片供应商配置无效 / Invalid image provider settings')
+                raise ValueError('多模态供应商配置无效 / Invalid multimodal provider settings')
             if self._models_busy():
                 raise ValueError('请等待当前任务结束后修改多模态设置')
             key = key.strip() or (existing or {}).get('key', '')
@@ -203,17 +223,23 @@ class ImageProvidersMixin:
             # cannot be replaced, its old account still resolves the old key.
             identifier = existing['id'] if existing and key == existing.get('key') else uuid.uuid4().hex[:12]
             provider = {**(existing or {}), 'id': identifier,
-                        'name': name, 'api': 'image', 'baseUrl': base, 'key': key,
-                        'models': [], 'imageModels': list(models), 'presetId': preset['id'],
-                        'imageProtocol': preset['protocol'], 'generationCapabilities': ['image'],
+                        'name': name, 'api': kind, 'baseUrl': base, 'key': key,
+                        'models': [], 'presetId': preset['id'],
+                        'generationCapabilities': [kind],
                         'proxy': (existing or {}).get('proxy', {'mode': 'system', 'url': ''})}
-            settings = copy.deepcopy(previous_settings)
-            if existing and settings['image']['providerId'] == existing['id']:
-                settings['image']['providerId'] = identifier
-                if settings['image']['model'] not in models:
-                    settings['image']['model'] = models[0]
+            if kind == 'image':
+                provider['imageModels'] = list(models)
+                provider['imageProtocol'] = preset['protocol']
             else:
-                settings['image'] = {**DEFAULTS['image'], 'providerId': provider['id'], 'model': models[0]}
+                provider['generationModels'] = list(models)
+            settings = copy.deepcopy(previous_settings)
+            if existing and settings[kind]['providerId'] == existing['id']:
+                settings[kind]['providerId'] = identifier
+                if settings[kind]['model'] not in models:
+                    settings[kind]['model'] = models[0]
+            else:
+                preserved = {'voice': settings[kind]['voice']} if kind == 'speech' and settings[kind].get('voice') else {}
+                settings[kind] = {**DEFAULTS[kind], **preserved, 'providerId': provider['id'], 'model': models[0]}
             if existing == provider and settings == previous_settings:
                 return True
             self.store.data['providers'] = [p for p in previous_providers if p['id'] != (existing or {}).get('id')] + [provider]
@@ -229,23 +255,29 @@ class ImageProvidersMixin:
             self.gateway.compatibility.clear_provider(existing['id'])
         self._restart_pi()
         self.changed.emit()
-        self.toast.emit('图片供应商已保存')
+        self.toast.emit(MULTIMODAL_SAVED_TOAST[kind])
         return True
 
     @Slot(str, result=bool)
     def removeImageProvider(self, identifier):
+        return self.removeMultimodalProvider(identifier)
+
+    @Slot(str, result=bool)
+    def removeMultimodalProvider(self, identifier):
         previous_providers = self.store.data['providers']
         previous_settings = self.store.data['multimodal']
         try:
-            provider = next((p for p in previous_providers if p.get('api') == 'image' and (p['id'] == identifier or p.get('presetId') == identifier and identifier != CUSTOM_PRESET['id'])), None)
+            provider = next((p for p in previous_providers if p.get('api') in MULTIMODAL_APIS and (
+                p['id'] == identifier or (p.get('api') == 'image' and p.get('presetId') == identifier and identifier != CUSTOM_PRESET['id']))), None)
             if not provider:
                 return True
             if self._models_busy(provider['id']):
                 raise ValueError('该供应商仍有会话运行，结束后可移除')
+            kind = provider['api']
             self.store.data['providers'] = [p for p in previous_providers if p['id'] != provider['id']]
             settings = copy.deepcopy(previous_settings)
-            if settings['image']['providerId'] == provider['id']:
-                settings['image'] = copy.deepcopy(DEFAULTS['image'])
+            if settings[kind]['providerId'] == provider['id']:
+                settings[kind] = copy.deepcopy(DEFAULTS[kind])
             self.store.data['multimodal'] = settings
             self.store.save()
         except (ValueError, OSError, RuntimeError) as error:
