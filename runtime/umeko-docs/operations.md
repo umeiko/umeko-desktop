@@ -118,6 +118,7 @@
 | `network.npm` | `config: json` | all | 否 |
 | `network.testNpm` | 无 | 无 | 是 |
 | `agent.save` | `config: json` | view | 否 |
+| `agent.setAutomaticWorktrees` | `enabled: boolean` | 无 | 否 |
 | `agent.refresh` | 无 | all | 是 |
 | `agent.recovery` | `enabled: boolean` | all | 否 |
 | `agent.restoreFactory` | 无 | all | 是 |
@@ -139,7 +140,7 @@
 | `agent_bus.set_model`（仅 python） | `targetId: string`, `model: string`, `reasoningEffort: string=""` | 无 | 否 |
 | `agent_bus.overview` | 无 | 无 | 否 |
 | `agent_bus.requests` | 无 | 无 | 否 |
-| `agent_bus.dispatch` | `targetId: string`, `text: string` | 无 | 否 |
+| `agent_bus.dispatch` | `targetId: string`, `text: string`, `access: string=""` | 无 | 否 |
 | `agent_bus.reply` | `requestId: string`, `result: string`, `status: string="completed"` | 无 | 否 |
 | `agent_bus.team_create`（仅 python） | `name: string`, `coordinatorName: string="lead"`, `members: json` | 无 | 否 |
 | `agent_bus.team_members`（仅 python） | `teamId: string=""` | 无 | 否 |

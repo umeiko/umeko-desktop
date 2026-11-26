@@ -781,7 +781,9 @@ async function init(input) {
           { name: "background-jobs", builtin: true, replaceable: false, factory: backgroundJobs.extension },
           { name: "shell-snapshot", hidden: true, replaceable: false, factory: shellSnapshotExtension(() => settings.getShellPath()) },
           { name: "model-roles", hidden: true, replaceable: false, factory: modelRoles.extension },
-          { name: "subagents", builtin: true, replaceable: true, factory: subagents.extension },
+          { name: "subagents", builtin: true, replaceable: true, factory: pi =>
+            subagents.extension(pi, { worktrees: input.agent?.automaticWorktrees === true && !input.globalCoordinator && !input.cowork }) },
+          { name: "output-continuation", hidden: true, replaceable: false, factory: outputContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
           { name: "tool-search", builtin: true, replaceable: true, factory: Pi.createToolSearchExtension() },
           ...(!input.terminalOwned ? [{ name: "mcp", builtin: true, replaceable: true, factory: input.cowork

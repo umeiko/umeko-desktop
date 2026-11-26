@@ -204,6 +204,26 @@ try:
     window.grabWindow().save(str(out/'requests-help.png'))
     assert identifier in g.bridges.get('tree-client-one',[])
     QTest.keyClick(window,Qt.Key_Escape);QTest.qWait(150)
+    cleaned_id = 'f' * 32
+    worktree_branch = 'umeko/writer-review-12345678'
+    worktree_path = str(base / 'review-checkout')
+    g.requests[cleaned_id] = {
+        'id': cleaned_id, 'status': 'failed', 'worktreeState': 'preserved',
+        'source': g.identifier(b._view), 'target': 'agent:' + identifier,
+        'text': 'Review the saved changes',
+        'worktree': {'branch': worktree_branch, 'path': worktree_path},
+        'result': '工作树改动已保留。\n合并冲突。',
+    }
+    g.changed(False)
+    wait(lambda: find('agentBusWorktreeDetails') and
+         find('agentBusWorktreeDetails').property('text') == f'{worktree_branch}\n{worktree_path}',
+         'Retained worktree path did not appear')
+    g.requests[cleaned_id]['worktreeState'] = 'removed'
+    g.changed(False)
+    wait(lambda: find('agentBusWorktreeDetails').property('text') == f'{worktree_branch}\n工作树已清理',
+         'Removed worktree should show its status instead of its former path')
+    g.requests.pop(cleaned_id)
+    g.changed(False)
     # A project near the end of a long, virtualized tree must not jump back to
     # the top when it is collapsed or a background snapshot updates.
     for index in range(60):

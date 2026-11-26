@@ -117,13 +117,50 @@ Rectangle {
         }
         if(busRows.count>rows.length)busRows.remove(rows.length,busRows.count-rows.length)
     }
-    onStateChanged:updateBusTree()
+    ListModel { id: requestRows; dynamicRoles: true }
+    function updateRequestRows() {
+        const rows = (state.requests || []).slice().reverse()
+        for (let i = 0; i < rows.length; i++) {
+            let old = i
+            while (old < requestRows.count && requestRows.get(old).requestData.id !== rows[i].id)
+                old++
+            if (old === requestRows.count)
+                requestRows.insert(i, {requestData: rows[i]})
+            else {
+                if (old !== i) requestRows.move(old, i, 1)
+                if (JSON.stringify(requestRows.get(i).requestData) !== JSON.stringify(rows[i]))
+                    requestRows.setProperty(i, "requestData", rows[i])
+            }
+        }
+        if (requestRows.count > rows.length)
+            requestRows.remove(rows.length, requestRows.count - rows.length)
+    }
+    onStateChanged: {
+        updateBusTree()
+        updateRequestRows()
+    }
     onCollapsedProjectsChanged:updateBusTree()
     function call(method,args) {
         const id=sdk.call(method,args || {})
         if(!id){error=Umeko.I18n.t("服务忙，请稍后重试");return}
         const next=Object.assign({},pending);next[id]=method;pending=next
         return id
+    }
+    property string cleanupRequest: ""
+    property string cleanupInspection: ""
+    property string cleanupError: ""
+    property var cleanupDetails: ({})
+    readonly property bool requestsVisible: visible && sdk.active && !selected && section === "requests"
+    onRequestsVisibleChanged: if (!requestsVisible) cleanupWorktreeDialog.close()
+    function inspectWorktree(row) {
+        error = ""
+        cleanupRequest = row.id
+        cleanupDetails = row.worktree
+        cleanupError = ""
+        cleanupWorktreeDialog.open()
+        cleanupInspection = call("inspectWorktree", {id: row.id}) || ""
+        if (!cleanupInspection)
+            cleanupError = error
     }
     function refresh() {if(!polling){snapshotSelection=selected;polling=!!call("snapshot",{selected:selected,revision:state.selectedId===selected?state.revision:-1,includeMessages:false})}}
     function openAgent(id) {if(selected)drafts[selected]=input.text;if(id && !sdk.openConversation(id))return;if(!id)sdk.openConversation("");selected=id;input.text=drafts[id] || "";section="agents";refresh()}
@@ -182,6 +219,15 @@ Rectangle {
                 root.skillJob=""
                 if(result.status!=="completed" || !result.result || !result.result.ok){root.skillError=(result.result || {}).error || Umeko.I18n.t("Skills 加载失败");return}
                 root.skillCatalog=result.result.skills || []
+                return
+            }
+            if(method==="inspectWorktree"){
+                if (id !== root.cleanupInspection) return
+                root.cleanupInspection = ""
+                if (value.ok)
+                    root.cleanupDetails = value.result
+                else
+                    root.cleanupError = value.error || "操作失败"
                 return
             }
             if(!value.ok){root.error=value.error || Umeko.I18n.t("操作失败");if(createDialog.opened)formError.text=root.error;return}
@@ -356,20 +402,47 @@ Rectangle {
                 }
             }
             ListView {
-                clip:true;spacing:10;model:root.state.requests.slice().reverse()
+                objectName: "agentBusRequestsList"
+                clip:true;spacing:10;model:requestRows
                 delegate:Rectangle {
-                    required property var modelData
-                    width:ListView.view.width;height:requestText.implicitHeight+56;radius:12;color:root.c.bg;border.color:root.c.line
+                    required property var requestData
+                    width:ListView.view.width;height:requestBody.implicitHeight+24;radius:12;color:root.c.bg;border.color:root.c.line
                     ColumnLayout {anchors.fill:parent;anchors.margins:12;spacing:7
+                        id:requestBody
                         RowLayout {Layout.fillWidth:true
-                            LabelText {text:({queued:Umeko.I18n.t("等待投递"),sending:Umeko.I18n.t("投递中"),running:Umeko.I18n.t("已投递 · 等待结果"),completed:Umeko.I18n.t("已完成"),failed:Umeko.I18n.t("失败"),cancelled:Umeko.I18n.t("已取消"),interrupted:Umeko.I18n.t("已中断")})[modelData.status] || modelData.status;color:modelData.status==="failed"?root.c.danger:root.c.accent;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale}
-                            LabelText {text:modelData.id.slice(0,8);color:root.c.muted;font.pixelSize:11*root.sdk.scale}
-                            SmallButton {visible:!(["completed","failed","cancelled","interrupted"].includes(modelData.status));text:Umeko.I18n.t("取消");onClicked:root.call("cancelRequest",{id:modelData.id})}
+                            LabelText {text:Umeko.I18n.t(({queued:"等待投递",sending:"投递中",running:"已投递 · 等待结果",merging:"保存并合并工作树",paused:"已暂停",completed:"已完成",failed:"失败",cancelled:"已取消",interrupted:"已中断"})[requestData.status] || requestData.status);color:requestData.status==="failed"?root.c.danger:root.c.accent;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale}
+                            LabelText {visible:!requestData.worktree;text:requestData.id.slice(0,8);color:root.c.muted;font.pixelSize:11*root.sdk.scale}
+                            SmallButton {visible:!(["completed","failed","cancelled","interrupted","merging"].includes(requestData.status));text:Umeko.I18n.t("取消");onClicked:root.call("cancelRequest",{id:requestData.id})}
                         }
-                        LabelText {id:requestText;text:(modelData.result || modelData.text || "").slice(0,500);wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale}
+                        LabelText {
+                            id:requestText
+                            text: requestData.worktreeConflict
+                                  ? [Umeko.I18n.t("合并冲突。原目录和任务分支均已保留。"),
+                                     (requestData.conflictFiles || []).join("\n")].filter(Boolean).join("\n").slice(0,500)
+                                  : requestData.worktreeMerged
+                                  ? [Umeko.I18n.t("工作树改动已合并。"), requestData.result].filter(Boolean).join("\n").slice(0,500)
+                                  : (requestData.result || requestData.text || "").slice(0,500)
+                            wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true;font.pixelSize:12*root.sdk.scale
+                        }
+                        LabelText {
+                            objectName:"agentBusWorktreeDetails";visible:!!requestData.worktree
+                            text:requestData.worktree ? requestData.worktree.branch+"\n"+
+                                 (requestData.worktreeState==="removed" ? Umeko.I18n.t("工作树已清理") : requestData.worktree.path) : ""
+                            color:root.c.muted;wrapMode:Text.WrapAnywhere;elide:Text.ElideNone;Layout.fillWidth:true;font.pixelSize:11*root.sdk.scale
+                        }
+                        RowLayout {
+                            visible:!!requestData.worktree && requestData.worktreeState!=="removed"
+                            SmallButton {text:Umeko.I18n.t("打开工作树");onClicked:root.call("openWorktree",{id:requestData.id})}
+                            SmallButton {
+                                objectName:"inspectWorktreeButton"
+                                readonly property string requestId: requestData.id
+                                text:Umeko.I18n.t("清理工作树");dangerous:true
+                                onClicked:root.inspectWorktree(requestData)
+                            }
+                        }
                     }
                 }
-                LabelText {anchors.centerIn:parent;visible:!root.state.requests.length;text:Umeko.I18n.t("暂无进行中的请求");color:root.c.muted}
+                LabelText {anchors.centerIn:parent;visible:!root.state.requests.length;text:Umeko.I18n.t("暂无请求");color:root.c.muted}
             }
             ColumnLayout {
                 spacing:12
@@ -439,6 +512,46 @@ Rectangle {
                     Item {Layout.fillWidth:true}
                     LabelText {text:Umeko.I18n.t("Ctrl+Enter / Alt+Enter / Shift+Enter 换行");font.pixelSize:10*root.sdk.scale;color:root.c.muted}
                     SmallButton {objectName:"sendGlobalAgentButton";text:root.current.busy?Umeko.I18n.t("引导"):Umeko.I18n.t("发送");primary:true;enabled:!!input.text.trim();onClicked:root.send()}
+                }
+            }
+        }
+    }
+    Dialog {
+        id:cleanupWorktreeDialog
+        objectName: root.requestsVisible ? "cleanupWorktreeDialog" : ""
+        anchors.centerIn:parent
+        title:Umeko.I18n.t("清理工作树");width:Math.min(460,root.width-28);height:Math.min(360,root.height-28);modal:true;padding:16
+        onClosed: root.cleanupInspection = ""
+        background:Rectangle {radius:14;color:root.c.surface;border.color:root.c.line}
+        contentItem:ColumnLayout {
+            spacing:10
+            ScrollView {
+                Layout.fillWidth:true;Layout.fillHeight:true;clip:true
+                TextArea {
+                    readOnly:true;selectByMouse:true;wrapMode:TextArea.Wrap;color:root.c.ink;background:null
+                    text: {
+                        const details = root.cleanupDetails
+                        const lines = [details.path || "", Umeko.I18n.t("保留分支")+" "+(details.branch || "")]
+                        if (root.cleanupInspection)
+                            lines.push(Umeko.I18n.t("正在检查工作树…"))
+                        else if (root.cleanupError)
+                            lines.push(Umeko.I18n.t(root.cleanupError))
+                        else if (details.files)
+                            lines.push(Umeko.I18n.t("未提交或忽略的文件")+"\n"+(details.files.join("\n") || Umeko.I18n.t("无")),
+                                       Umeko.I18n.t("运行中的任务")+"\n"+(details.running.join("\n") || Umeko.I18n.t("无")),
+                                       Umeko.I18n.t("关联会话")+"\n"+(details.sessions.join("\n") || Umeko.I18n.t("无")))
+                        return lines.join("\n\n")
+                    }
+                }
+            }
+            RowLayout {
+                Layout.alignment:Qt.AlignRight
+                SmallButton {text:Umeko.I18n.t("取消");onClicked:cleanupWorktreeDialog.close()}
+                SmallButton {
+                    objectName:"confirmWorktreeCleanup";text:Umeko.I18n.t("确认清理");dangerous:true
+                    enabled: !root.cleanupInspection && !root.cleanupError && !!root.cleanupDetails.files
+                             && !root.cleanupDetails.running.length && !root.cleanupDetails.files.length
+                    onClicked:{root.call("removeWorktree",{id:root.cleanupRequest,confirmed:true});cleanupWorktreeDialog.close()}
                 }
             }
         }

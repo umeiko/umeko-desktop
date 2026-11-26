@@ -70,6 +70,12 @@ Column {
                     : I18n.t("工具自动执行，仅七类高风险操作需要确认。切换立即保存并生效。")
                 color: Theme.muted; font.pixelSize: Theme.font(11, visible)
             }
+            Switch {
+                objectName: "automaticWorktreesSwitch"
+                text: I18n.t("为智能体自动创建 Git 工作树")
+                checked: backend.config.agent.automaticWorktrees === true
+                onToggled: backend.setAutomaticWorktrees(checked)
+            }
             RowLayout {
                 visible: permissions.sandbox.supported
                 Layout.fillWidth: true; spacing: 12

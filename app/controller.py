@@ -1838,6 +1838,22 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         except (ValueError, KeyError, TypeError) as exc:
             self.toast.emit(str(exc))
 
+    @Slot(bool, result=bool)
+    def setAutomaticWorktrees(self, enabled):
+        agent = self.store.data['agent']
+        previous = agent.get('automaticWorktrees', False)
+        agent['automaticWorktrees'] = enabled
+        try:
+            self.store.save()
+        except (OSError, RuntimeError) as error:
+            agent['automaticWorktrees'] = previous
+            self.toast.emit(str(error))
+            return False
+        if enabled != previous:
+            self._skills_widget_changed()
+        self.changed.emit()
+        return True
+
     @Slot(str)
     def openPiFolder(self, kind):
         base = Path(self.store.data["agent"].get("agentDir") or Path.home() / ".pi/agent")

@@ -26,6 +26,61 @@ class GlobalAgentTests(unittest.TestCase):
     def tearDown(self):self.g.close();self.temp.cleanup()
     def dispatch(self):return self.g.execute('agent_bus.dispatch',{'targetId':self.g.identifier(self.b._view),'text':'检查测试'},self.source)
     def enable(self):self.g.handle('setBridge',{'id':self.g.identifier(self.b._view),'agentId':self.id,'enabled':True})
+    def test_automatic_worktrees_never_use_a_cowork_folder(self):
+        self.b.store.data['agent'] = {'automaticWorktrees': True}
+        cowork = SessionState(cowork='fixed-role', workspace=str(self.temp.name))
+        ordinary = SessionState(workspace=str(self.temp.name))
+        self.g.agents[self.id]['tools'] = ['write']
+        self.assertEqual(self.g.task_scope(cowork, self.source, ''), {})
+        self.assertEqual(self.g.task_scope(self.source, cowork, ''), {})
+        self.b._view = cowork
+        self.assertEqual(self.g.task_scope(self.source, self.source, ''), {})
+        with self.assertRaisesRegex(ValueError, 'Cowork'):
+            self.g.task_scope(cowork, self.source, 'write')
+        self.assertEqual(self.g.task_scope(ordinary, self.source, 'write')['access'], 'write')
+
+    def test_worktree_inspection_defers_git_and_returns_only_short_display_names(self):
+        identifier = uuid.uuid4().hex
+        session_id = uuid.uuid4().hex
+        info = {'path': str(self.g.worktrees.directory / identifier), 'branch': 'umeko/task-' + identifier}
+        row = {'id': identifier, 'status': 'running', 'text': 'Update parser',
+               'worktree': info, 'taskSessionId': session_id}
+        self.g.requests[identifier] = row
+        self.b._job = Mock()
+        reply = Mock()
+        with patch.object(self.g.worktrees, 'files', return_value=['draft.txt']) as files:
+            self.g.handle('inspectWorktree', {'id': identifier}, reply=reply)
+            files.assert_not_called()
+            reply.assert_not_called()
+            name, inspect = self.b._job.call_args.args
+            row['status'] = 'failed'
+            self.g._worktree_finished(name, {'ok': True, 'value': inspect()})
+        details = reply.call_args.args[0]['result']
+        self.assertEqual(details['sessions'], [session_id[:8]])
+        self.assertEqual(details['files'], ['draft.txt'])
+        self.assertEqual(details['running'], [])
+        self.assertNotIn(identifier, details['branch'])
+        self.assertNotIn(identifier, details['path'])
+        self.assertEqual(row['worktree'], info)
+
+    def test_first_pi_prompt_keeps_the_draft_bridge_at_native_identity(self):
+        self.enable()
+        caller = self.b._view
+        caller.id = 'pending-' + caller.key
+        self.g.observe(caller, {'type':'subagents'})
+        caller.id = 'native-session'
+        self.g.observe(caller, {'type':'session'})
+        self.assertTrue(self.g.allowed(caller, 'agent:'+self.id))
+        self.assertNotIn('pending-'+caller.key, self.g.bridges)
+
+    def test_task_tool_approval_is_answered_in_the_task_session(self):
+        task = SessionState(global_agent=self.id, bus_task='task',
+                            approval={'id':'approval','method':'confirm'})
+        self.g.member_sessions[self.id] = task
+        with patch.object(self.b._pool, 'write') as write:
+            result = self.g.handle('respond', {'id':self.id,'requestId':'approval','value':True})
+        self.assertEqual(result, {'status':'answered'})
+        write.assert_called_once_with(task, {'type':'ui_response','id':'approval','value':True})
     def create_request(self,key='first',**fields):
         return self.g.execute('agent_bus.create',{'requestKey':key,**fields},self.b._view)
     def creation_status(self,row,caller=None):

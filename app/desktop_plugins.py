@@ -408,20 +408,28 @@ class DesktopPlugins(QObject):
         if not isinstance(args,dict):return ''
         request=uuid.uuid4().hex;w['pending'].add(request)
         if 'service' in w:
+            def respond(value):
+                if self.workers.get(identifier) is w and request in w['pending']:
+                    w['pending'].remove(request)
+                    self.response.emit(request,value)
+
             def invoke():
                 if self.workers.get(identifier) is not w:return
                 try:
+                    if identifier=='global-agents' and method=='inspectWorktree':
+                        w['service'].handle(method,args,agent=agent,session=session or self._session,reply=respond)
+                        return
                     result=w['service'].handle(method,args,agent=agent,session=session or self._session) if identifier=='global-agents' else w['service'].handle(method,args)
                     if identifier=='desktop-pet' and method=='importAppearance':
                         self._pet_imports[result['importId']]=(request,w);return
                     value={'ok':True,'result':result}
                 except (ValueError,OSError,TypeError) as error:value={'ok':False,'error':str(error)}
-                w['pending'].discard(request);self.response.emit(request,value)
+                respond(value)
             QTimer.singleShot(0,self,invoke)
             def service_timeout():
-                if self.workers.get(identifier) is w and request in w['pending']:
-                    w['pending'].discard(request)
-                    self.response.emit(request,{'ok':False,'error':'桌宠操作超时，可通过 status 查看导入结果'})
+                error = ('检查工作树超时，请重试。' if method=='inspectWorktree'
+                         else '桌宠操作超时，可通过 status 查看导入结果')
+                respond({'ok':False,'error':error})
             QTimer.singleShot(timeout_ms,self,service_timeout)
             return request
         snapshot={**(session or self._session),'language':getattr(self.b,'language','zh')}

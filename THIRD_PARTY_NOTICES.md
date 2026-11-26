@@ -68,6 +68,10 @@ Dependencies retain their license files in the runtime's node_modules directory.
 
 Release bundles include the unmodified npm package `@gotgenes/pi-subagents` 25.0.5 (MIT) in the runtime's `node_modules` directory. Official source: https://github.com/gotgenes/pi-packages/tree/pi-subagents-v25.0.5/packages/pi-subagents . The full upstream copyright and permission notice is included in `licenses/pi-subagents-MIT.txt` and retained with the package.
 
+Release bundles include `@gotgenes/pi-subagents-worktrees` 0.3.3 (MIT) in the runtime's `node_modules` directory. The notice is retained with the npm package and in `licenses/pi-subagents-worktrees-MIT.txt`.
+
+Agent Bus worktrees adapt the overlapping-directory rule from `@wjj865-code/dsh-orchestrator` 0.33.1 and the Git sync/merge sequence from `opencode-mission-control` 2.0.1. Their MIT notices are in `licenses/dsh-orchestrator-MIT.txt` and `licenses/opencode-mission-control-MIT.txt`.
+
 `app/team_board.py` adapts direct mentions from [`@tintinweb/pi-subagents` 0.26.3](https://www.npmjs.com/package/@tintinweb/pi-subagents/v/0.26.3), `src/mention.ts` and `src/index.ts`. Copyright (c) 2026 tintinweb. The original MIT notice is in `licenses/tintinweb-pi-subagents-MIT.txt`.
 
 `app/team_board.py` and `app/task_records.py` adapt task versions and dependencies from [`@deepseek-ai/dsh-agent-team` 0.2.2-rc.5](https://www.npmjs.com/package/@deepseek-ai/dsh-agent-team/v/0.2.2-rc.5), `packages/team/agent-team/src/task-board.ts` and `task-graph.ts`, and apply the recipient-driven wait design from [`@deepseek-ai/dsh-tool-subagent-control` 0.2.2-rc.5](https://www.npmjs.com/package/@deepseek-ai/dsh-tool-subagent-control/v/0.2.2-rc.5), `packages/subagent/tool-subagent-control/src/wait-agent.ts`. Copyright (c) 2026 DeepSeek. The original MIT notice shared by both packages is in `licenses/dsh-agent-team-and-subagent-control-MIT.txt`.

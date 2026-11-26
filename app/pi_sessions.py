@@ -51,6 +51,8 @@ class SessionState:
     id: str = ""
     file: str = ""
     workspace: str = ""
+    bus_task: str = ""
+    bus_read_only: bool = False
     model: str = ""
     provider: str = ""
     pending_selection: tuple[str, str] | None = None
@@ -211,6 +213,8 @@ class PiSessionPool(QObject):
         process.setProcessEnvironment(environment)
         process.setProgram(program)
         process.setArguments([str(bridge)])
+        if payload.get("agent", {}).get("automaticWorktrees"):
+            process.setWorkingDirectory(payload.get("workspace") or payload["defaultCwd"])
         process.started.connect(lambda: self.write(record, payload) if record.process is process else None)
         process.readyReadStandardOutput.connect(lambda: self._read(record, process))
         process.readyReadStandardError.connect(lambda: process.readAllStandardError())
