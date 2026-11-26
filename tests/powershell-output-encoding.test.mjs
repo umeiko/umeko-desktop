@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { test } from "node:test";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -19,6 +19,7 @@ test("Windows Pi PowerShell opt-in decodes CP936 on both streams without changin
   const cwd = await mkdtemp(join(tmpdir(), "Umeko 中文-CP936-"));
   const priorAgent = process.env.PI_CODING_AGENT_DIR;
   const priorPath = process.env.PATH;
+  const priorProgramFiles = process.env.ProgramFiles;
   process.env.PI_CODING_AGENT_DIR = cwd;
   let adapter, manager;
   try {
@@ -35,16 +36,21 @@ test("Windows Pi PowerShell opt-in decodes CP936 on both streams without changin
     const selected = getPowerShellConfig().shell;
     const legacy = join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
     assert.ok(existsSync(legacy), "Windows PowerShell 5.1 should be available on Windows CI");
-    const shells = [...new Set([selected, legacy].map(path => path.toLowerCase()))];
+    assert.equal(basename(selected).toLowerCase(), "pwsh.exe", "PowerShell 7 should be available on Windows CI");
+    const shells = [selected, legacy];
     adapter = createBackgroundJobsExtension({ cwd, host: python, hostScript });
     manager = await adapter.getManager("encoding-fixture");
     const fixture = join(cwd, "native.cjs");
     await writeFile(fixture, 'process.stdout.write(Buffer.from(process.argv[2], "hex"));process.stderr.write(Buffer.from(process.argv[3], "hex"));\n');
     const command = (out, err) => ["&", quote(process.execPath), quote(fixture), out, err].join(" ");
-    for (const [n, shell] of shells.entries()) {
-      process.env.PATH = shell === selected.toLowerCase()
-        ? priorPath
-        : [join(process.env.SystemRoot, "System32"), join(legacy, "..")].join(";");
+    for (const [n, executable] of shells.entries()) {
+      const shell = executable.toLowerCase();
+      if (n === 1) {
+        // Pi checks the default installation after PATH. Hide both discovery
+        // routes for pwsh in this process without changing the runner.
+        process.env.PATH = [join(process.env.SystemRoot, "System32"), dirname(legacy)].join(";");
+        process.env.ProgramFiles = cwd;
+      }
       assert.equal(getPowerShellConfig().shell.toLowerCase(), shell);
       globalThis[hostKey] = req => {
         assert.equal(req.shellConfig.shell.toLowerCase(), shell);
@@ -52,6 +58,9 @@ test("Windows Pi PowerShell opt-in decodes CP936 on both streams without changin
       };
       const run = async (command, output_encoding) =>
         (await tool.execute("test-" + n, { command, timeout: 12, ...(output_encoding && { output_encoding }) })).structuredContent;
+      const version = await run("Write-Output ($PSVersionTable.PSVersion.ToString())");
+      assert.equal(version.exit_code, 0, shell);
+      assert.match(version.output.trim(), n === 0 ? /^7\./u : /^5\.1\./u, shell);
       const nativeUnicode = await run(command("e4b8ade69687", "e6b58be8af95"));
       assert.equal(nativeUnicode.exit_code, 0, shell);
       assert.equal(nativeUnicode.output, "中文\n测试", shell);
@@ -98,6 +107,8 @@ test("Windows Pi PowerShell opt-in decodes CP936 on both streams without changin
   } finally {
     delete globalThis[hostKey];
     process.env.PATH = priorPath;
+    if (priorProgramFiles === undefined) delete process.env.ProgramFiles;
+    else process.env.ProgramFiles = priorProgramFiles;
     if (priorAgent === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = priorAgent;
     await adapter?.disposeAll();
