@@ -13,6 +13,7 @@ Rectangle {
     property string selected: ""
     property var drafts: ({})
     property string section: "agents"
+    readonly property bool teamBoardVisible: visible && sdk.active && !selected && section === "team"
     property string error: ""
     property string snapshotSelection: ""
     property bool polling: false
@@ -65,8 +66,8 @@ Rectangle {
     Timer {interval:1000;repeat:true;running:root.sdk.active;onTriggered:root.clock=Date.now()}
     readonly property var current: state.agents.find(row => row.id===selected) || ({})
     readonly property string requestsLabel: sdk.language === "en" ? "Requests" : "请求"
-    readonly property string helpTitle: selected?Umeko.I18n.t("与子智能体对话"):section==="bridge"?Umeko.I18n.t("Agent Bus（智能体总线）"):section==="requests"?requestsLabel:Umeko.I18n.t("全局子智能体")
-    readonly property string helpText: selected?Umeko.I18n.t("连接的会话可双向发送任务和回复。总线消息按到达顺序排队，聊天上方可删除待处理消息或移到队首，优先处理不打断当前任务。输入框可手动 steering；停止会取消其未完成请求。历史保留最近一个完整压缩区间和本轮对话。点击上下文圈环查看用量或压缩，通过右侧问题目录跳转。"):section==="bridge"?Umeko.I18n.t("展开项目并点击会话，进入二级列表。勾选对应的全局子智能体，建立与该会话的一条双向链路；双方均可发送任务并接收回复。关闭会取消这条链路上的未完成请求。"):section==="requests"?Umeko.I18n.t("仅显示尚未结束的请求，完成后自动移出。取消不会撤销已执行的操作。"):Umeko.I18n.t("创建拥有独立上下文的子智能体，向已授权的对话分派任务。开启‘允许自动被创建’后，模型请求直接创建；关闭时需要你在预填表单中确认。模型未指定形象时随机分配，创建成功后自动连接来源对话。")
+    readonly property string helpTitle: selected?Umeko.I18n.t("与子智能体对话"):section==="bridge"?Umeko.I18n.t("Agent Bus（智能体总线）"):section==="requests"?requestsLabel:section==="team"?Umeko.I18n.t("团队看板"):Umeko.I18n.t("全局子智能体")
+    readonly property string helpText: selected?Umeko.I18n.t("连接的会话可双向发送任务和回复。总线消息按到达顺序排队，聊天上方可删除待处理消息或移到队首，优先处理不打断当前任务。输入框可手动 steering；停止会取消其未完成请求。历史保留最近一个完整压缩区间和本轮对话。点击上下文圈环查看用量或压缩，通过右侧问题目录跳转。"):section==="bridge"?Umeko.I18n.t("展开项目并点击会话，进入二级列表。勾选对应的全局子智能体，建立与该会话的一条双向链路；双方均可发送任务并接收回复。关闭会取消这条链路上的未完成请求。"):section==="requests"?Umeko.I18n.t("仅显示尚未结束的请求，完成后自动移出。取消不会撤销已执行的操作。"):section==="team"?Umeko.I18n.t("查看团队成员、任务和协作记录。打开或刷新看板不会唤醒成员。"):Umeko.I18n.t("创建拥有独立上下文的子智能体，向已授权的对话分派任务。开启‘允许自动被创建’后，模型请求直接创建；关闭时需要你在预填表单中确认。模型未指定形象时随机分配，创建成功后自动连接来源对话。")
     color: c.surface
     function bridgeTree(projects, targets, query, collapsed) {
         // Pi returns native paths; saved projects may use forward slashes.
@@ -303,17 +304,20 @@ Rectangle {
             SmallButton {objectName:"newGlobalAgentButton";visible:!root.selected;text:Umeko.I18n.t("＋ 创建");primary:true;onClicked:root.form("")}
             SmallButton {visible:!!root.selected;text:root.current.busy || root.current.state==="quota_paused"?Umeko.I18n.t("切换模型"):Umeko.I18n.t("设置");onClicked:root.form(root.selected)}
         }
-        RowLayout {
-            visible:!root.selected;spacing:8
+        Flow {
+            Layout.fillWidth: true
+            visible: !root.selected
+            spacing: 6
             SmallButton {objectName:"globalSubagentsTabButton";text:Umeko.I18n.t("子智能体  %1").arg(root.state.agents.length);primary:root.section==="agents";onClicked:root.section="agents"}
             SmallButton {objectName:"agentBusTabButton";text:Umeko.I18n.t("智能体总线");primary:root.section==="bridge";onClicked:root.section="bridge"}
             SmallButton {objectName:"agentBusRequestsTabButton";text:root.requestsLabel;primary:root.section==="requests";onClicked:root.section="requests"}
+            SmallButton {objectName:"teamBoardTabButton";text:Umeko.I18n.t("团队看板");primary:root.section==="team";onClicked:root.section="team"}
         }
         CompactCheckBox {objectName:"allowAutomaticGlobalCreation";visible:!root.selected && root.section==="agents";text:Umeko.I18n.t("允许自动被创建");checked:!!root.state.allowAutomaticCreation;onToggled:root.call("setAutomaticCreation",{enabled:checked})}
         LabelText {visible:!!root.error || !!root.state.error;text:root.error || root.state.error || "";color:root.c.danger;wrapMode:Text.Wrap;elide:Text.ElideNone;Layout.fillWidth:true}
         StackLayout {
             Layout.fillWidth:true;Layout.fillHeight:true
-            currentIndex:root.selected?3:root.section==="agents"?0:root.section==="bridge"?1:2
+            currentIndex:root.selected?3:root.section==="agents"?0:root.section==="bridge"?1:root.section==="requests"?2:4
             Item {
                 ColumnLayout {anchors.centerIn:parent;spacing:12;visible:!root.state.agents.length
                     LabelText {text:Umeko.I18n.t("暂无全局子智能体");color:root.c.muted;Layout.alignment:Qt.AlignHCenter}
@@ -513,6 +517,11 @@ Rectangle {
                     LabelText {text:Umeko.I18n.t("Ctrl+Enter / Alt+Enter / Shift+Enter 换行");font.pixelSize:10*root.sdk.scale;color:root.c.muted}
                     SmallButton {objectName:"sendGlobalAgentButton";text:root.current.busy?Umeko.I18n.t("引导"):Umeko.I18n.t("发送");primary:true;enabled:!!input.text.trim();onClicked:root.send()}
                 }
+            }
+            TeamBoard {
+                sdk: root.sdk
+                active: root.teamBoardVisible
+                collaborationEnabled: backend.desktopSettings.teamCollaborationEnabled === true
             }
         }
     }
